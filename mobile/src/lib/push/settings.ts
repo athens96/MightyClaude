@@ -42,22 +42,54 @@ export function enabledKinds(settings: PushSettings): PushKind[] {
 
 export function createPushSettings(store: SecretStore) {
   let current = DEFAULT_PUSH_SETTINGS;
-  /** A change made before the saved file was read wins over that file. */
-  let changed = false;
+  /** The saved file could not be read: it is read again before a change, and never overwritten unread. */
+  let readFailed = false;
   const listeners = new Set<() => void>();
   const tell = (): void => {
-    for (const listener of listeners) listener();
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch {
+        // One broken listener must not keep the others from hearing.
+      }
+    }
   };
-  const ready = Promise.resolve()
-    .then(() => store.getItemAsync(PUSH_SETTINGS_KEY))
-    .then((text) => {
-      if (changed) return;
-      const loaded = parsePushSettings(text);
-      if (JSON.stringify(loaded) === JSON.stringify(current)) return;
-      current = loaded;
+  const read = async (): Promise<PushSettings | null> => {
+    try {
+      const text = await store.getItemAsync(PUSH_SETTINGS_KEY);
+      readFailed = false;
+      return parsePushSettings(text);
+    } catch {
+      readFailed = true;
+      return null;
+    }
+  };
+  const ready = read().then((loaded) => {
+    if (loaded === null || JSON.stringify(loaded) === JSON.stringify(current)) return;
+    current = loaded;
+    tell();
+  });
+  /** Changes run one after another, each on the value the one before it left. */
+  let queue: Promise<void> = ready;
+
+  function update(change: (now: PushSettings) => PushSettings): Promise<void> {
+    const run = async (): Promise<void> => {
+      if (readFailed) {
+        const loaded = await read();
+        if (loaded !== null) current = loaded;
+      }
+      current = change(current);
+      const saved = readFailed
+        ? Promise.resolve()
+        : store.setItemAsync(PUSH_SETTINGS_KEY, JSON.stringify(current)).catch(() => undefined);
       tell();
-    })
-    .catch(() => undefined);
+      await saved;
+    };
+    const done = queue.then(run);
+    queue = done.catch(() => undefined);
+    return done;
+  }
+
   return {
     get: (): PushSettings => current,
     ready,
@@ -67,12 +99,9 @@ export function createPushSettings(store: SecretStore) {
         listeners.delete(listener);
       };
     },
-    async set(next: PushSettings): Promise<void> {
-      changed = true;
-      current = next;
-      tell();
-      await store.setItemAsync(PUSH_SETTINGS_KEY, JSON.stringify(next)).catch(() => undefined);
-    },
+    /** Applies `change` to the latest settings once the changes before it are done. */
+    update,
+    set: (next: PushSettings): Promise<void> => update(() => next),
   };
 }
 

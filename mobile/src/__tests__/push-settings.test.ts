@@ -58,6 +58,59 @@ describe('push settings', () => {
     await early.ready;
     expect(early.get()).toEqual({ ...DEFAULT_PUSH_SETTINGS, crashReports: false });
   });
+
+  it('builds each change on the latest value, so two quick toggles both stay', async () => {
+    const store = memoryStore();
+    const settings = createPushSettings(store);
+    const first = settings.update((now) => ({ ...now, kinds: { ...now.kinds, completed: false } }));
+    const second = settings.update((now) => ({ ...now, kinds: { ...now.kinds, plan: false } }));
+    await Promise.all([first, second]);
+    expect(enabledKinds(settings.get())).toEqual(['failed', 'permission', 'question', 'signin']);
+    expect(parsePushSettings(store.items.get(PUSH_SETTINGS_KEY)!)).toEqual(settings.get());
+  });
+
+  it('reads the saved file again before a change when the first read failed', async () => {
+    const store = memoryStore();
+    store.items.set(PUSH_SETTINGS_KEY, JSON.stringify({ crashReports: false }));
+    let failures = 1;
+    const flaky: SecretStore = {
+      ...store,
+      getItemAsync: async (key) => {
+        if (failures > 0) { failures -= 1; throw new Error('locked'); }
+        return store.getItemAsync(key);
+      },
+    };
+    const settings = createPushSettings(flaky);
+    await settings.ready;
+    expect(settings.get()).toEqual(DEFAULT_PUSH_SETTINGS);
+    await settings.update((now) => ({ ...now, kinds: { ...now.kinds, question: false } }));
+    const saved = parsePushSettings(store.items.get(PUSH_SETTINGS_KEY)!);
+    expect(saved.crashReports).toBe(false);
+    expect(saved.kinds.question).toBe(false);
+  });
+
+  it('never overwrites a saved file it could not read', async () => {
+    const store = memoryStore();
+    store.items.set(PUSH_SETTINGS_KEY, JSON.stringify({ crashReports: false }));
+    const unreadable: SecretStore = { ...store, getItemAsync: async () => { throw new Error('locked'); } };
+    const settings = createPushSettings(unreadable);
+    await settings.ready;
+    await settings.set({ ...DEFAULT_PUSH_SETTINGS, kinds: { ...DEFAULT_PUSH_SETTINGS.kinds, plan: false } });
+    expect(settings.get().kinds.plan).toBe(false);
+    expect(store.items.get(PUSH_SETTINGS_KEY)).toBe(JSON.stringify({ crashReports: false }));
+  });
+
+  it('saves and tells every other listener when one listener throws', async () => {
+    const store = memoryStore();
+    const settings = createPushSettings(store);
+    await settings.ready;
+    let told = 0;
+    settings.subscribe(() => { throw new Error('broken listener'); });
+    settings.subscribe(() => { told += 1; });
+    await expect(settings.set({ ...DEFAULT_PUSH_SETTINGS, crashReports: false })).resolves.toBeUndefined();
+    expect(told).toBe(1);
+    expect(parsePushSettings(store.items.get(PUSH_SETTINGS_KEY)!).crashReports).toBe(false);
+  });
 });
 
 describe('viewing reporter', () => {
@@ -103,6 +156,26 @@ describe('viewing reporter', () => {
     h.reporter.enter('host-a', 'pane-2');
     h.tick();
     expect(h.sent).toEqual([['host-a', 'pane-1'], ['host-a', 'pane-2'], ['host-a', 'pane-2']]);
+  });
+
+  it('does not say the same session again when it is entered again', () => {
+    const h = harness();
+    h.reporter.enter('host-a', 'pane-1');
+    h.reporter.enter('host-a', 'pane-1');
+    expect(h.sent).toEqual([['host-a', 'pane-1']]);
+    expect(h.running()).toBe(true);
+  });
+
+  it('keeps going when sending throws at once', () => {
+    const reporter = createViewingReporter({
+      send: () => { throw new Error('no client'); },
+      setInterval: () => 1,
+      clearInterval: () => undefined,
+    });
+    expect(() => {
+      reporter.enter('host-a', 'pane-1');
+      reporter.leave();
+    }).not.toThrow();
   });
 
   it('says nothing while in the background, even on entering or leaving', () => {
