@@ -14,6 +14,7 @@ import {
   antigravityAnswerBody,
   antigravityAnsweredToast,
   antigravityOffersAlways,
+  antigravityOnceOnlyText,
   sendAntigravityAnswer,
   type AntigravityDecision,
 } from '@/lib/antigravity-permission';
@@ -31,6 +32,7 @@ const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
     permissionPlain: { permission: MobilePermission };
     answers: { body: { requestId: string; runId: string; allow: boolean; always?: boolean }; decision?: AntigravityDecision; status?: number }[];
     refusals: { case: string; status: number; error: string }[];
+    onceOnlyReasons: Record<string, string>;
   };
 };
 /** The recorded curl card: its piped command may be allowed only once. */
@@ -79,6 +81,7 @@ describe('reading an Antigravity card', () => {
         target: "curl -s https://example.com | grep -i '<title>'",
         rule: "command(curl -s https://example.com | grep -i '<title>')",
         onceOnly: true,
+        onceOnlyReason: 'risky',
       },
       { kind: 'other', action: 'notebook_execution', displayName: 'NotebookExecution' },
     ]);
@@ -232,6 +235,29 @@ describe('the Antigravity card', () => {
     // What the host answers when always comes anyway.
     expect(fixture.mobile.refusals).toEqual([{ case: expect.any(String), status: 409, error: 'remote.error.antigravityOnceOnly' }]);
     expect(t('remote.error.antigravityOnceOnly')).not.toBe('remote.error.antigravityOnceOnly');
+  });
+
+  it('says why each once-only rule is once-only, and an older host gets the general words', () => {
+    const base = { kind: 'command' as const, action: 'command', displayName: 'RunCommand', rule: 'command(bash)', onceOnly: true };
+    for (const [reason, key] of Object.entries(fixture.mobile.onceOnlyReasons)) {
+      expect(antigravityOnceOnlyText({ ...base, onceOnlyReason: reason as 'risky' })).toBe(t(key));
+      expect(t(key)).not.toBe(key);
+    }
+    expect(Object.keys(fixture.mobile.onceOnlyReasons).sort()).toEqual(['agyFolder', 'interpreter', 'risky']);
+    expect(antigravityOnceOnlyText(base)).toBe(t('antigravity.permission.onceOnly'));
+    expect(antigravityOnceOnlyText({ ...base, onceOnly: undefined })).toBeUndefined();
+    // A reason this phone does not know reads as none, and shows the general words.
+    const read = antigravityActions({ ...card, antigravity: { actions: [{ ...base, onceOnlyReason: 'future' }] } } as unknown as MobilePermission)!;
+    expect(read[0]!.onceOnlyReason).toBeUndefined();
+    expect(antigravityOnceOnlyText(read[0]!)).toBe(t('antigravity.permission.onceOnly'));
+    const interpreter: MobilePermission = {
+      ...card,
+      antigravity: { actions: [{ ...base, target: 'bash', onceOnlyReason: 'interpreter' }] },
+    };
+    const renderer = render(interpreter, () => undefined);
+    expect(texts(renderer)).toContain(t('antigravity.permission.onceOnlyInterpreter'));
+    expect(texts(renderer)).not.toContain(t('antigravity.permission.onceOnly'));
+    act(() => renderer.unmount());
   });
 
   it('offers no allow button when no rule can allow it, only the guidance', () => {

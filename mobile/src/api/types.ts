@@ -263,7 +263,17 @@ export interface MobileAntigravityAction {
    * may destroy data): the card offers no 항상 허용, and the host refuses `always`.
    */
   onceOnly?: boolean;
+  /**
+   * Why, with `onceOnly`: `risky` (chains, pipes, redirects or may destroy data),
+   * `interpreter` (a shell, interpreter or wrapper running code) or `agyFolder` (it
+   * touches Antigravity's own .gemini folder). It picks the card's words; absent from an
+   * older host, and a value this phone does not know reads as absent.
+   */
+  onceOnlyReason?: MobileAntigravityOnceReason;
 }
+
+/** Why a rule may be allowed only once (`onceOnlyReason`). */
+export type MobileAntigravityOnceReason = 'risky' | 'interpreter' | 'agyFolder';
 
 export interface MobileAntigravityCard {
   actions: MobileAntigravityAction[];
