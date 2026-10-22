@@ -1644,7 +1644,7 @@ Create `native/contracts/fixtures/push.json` with exactly this content:
     "keyB64": "JzXs+EzwuV8UDZFIKJvoYxb9N5riD9wfYDeNtmQMRYY=",
     "nonceB64": "AAECAwQFBgcICQoL",
     "aad": "mighty-push-v1:__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
-    "plaintext": "{\"v\":1,\"id\":\"perm:run-1:req-1\",\"kind\":\"permission\",\"hostId\":\"host-1\",\"hostName\":\"Test Mac\",\"workspace\":\"demo\",\"title\":\"Claude 1\",\"summary\":\"git status\",\"sessionId\":\"pane-1\",\"permission\":{\"requestId\":\"req-1\",\"runId\":\"run-1\",\"buttons\":\"claude\"},\"at\":\"2026-10-23T01:02:03Z\"}",
+    "plaintext": "{\"v\":1,\"id\":\"request:run-1:req-1\",\"kind\":\"permission\",\"hostId\":\"host-1\",\"hostName\":\"Test Mac\",\"workspace\":\"demo\",\"title\":\"Claude 1\",\"summary\":\"git status\",\"sessionId\":\"pane-1\",\"permission\":{\"requestId\":\"req-1\",\"runId\":\"run-1\",\"buttons\":\"claude\"},\"at\":\"2026-10-23T01:02:03Z\"}",
     "envelope": "AQABAgMEBQYHCAkKC10m-R6zdQ5pj0SATLOGKPuGaNgTwb_MKx-ihIwRZL_sZZZXABwjmFdYp_YG5eEHDYzWBUpeDORPjZiglEjtaNTLIGiieN3u6W5va7UjojkWOwBuFmQHuom51zcUdFbVrKkXJkQJslIBeTZsmjelyejmlsVcDKH_D69ezWZoeowWQNzrVg6aBeBLSUIMfOmtkCr_6ei6MP19DqKTKjBxilR3irTCy1_I_QQ3UGu6IqRwMgBp6PP9BnXiImYr6p08WRcTEaj_qHhFhquPgwLs70dN-P1GfkVRYZSZ-oszZSmXRhp2JD6ZLJd_kQ-BmO29g26uLryt_upXRS_AT80vu93stMX0Xbp6S9wwq3ZDzvG0vbujqZv_9e1_AwVeLDOv",
     "tampered": [
       "AQABAgMEBQYHCAkKC10m-R6zdQ5oj0SATLOGKPuGaNgTwb_MKx-ihIwRZL_sZZZXABwjmFdYp_YG5eEHDYzWBUpeDORPjZiglEjtaNTLIGiieN3u6W5va7UjojkWOwBuFmQHuom51zcUdFbVrKkXJkQJslIBeTZsmjelyejmlsVcDKH_D69ezWZoeowWQNzrVg6aBeBLSUIMfOmtkCr_6ei6MP19DqKTKjBxilR3irTCy1_I_QQ3UGu6IqRwMgBp6PP9BnXiImYr6p08WRcTEaj_qHhFhquPgwLs70dN-P1GfkVRYZSZ-oszZSmXRhp2JD6ZLJd_kQ-BmO29g26uLryt_upXRS_AT80vu93stMX0Xbp6S9wwq3ZDzvG0vbujqZv_9e1_AwVeLDOv",
@@ -4119,7 +4119,7 @@ describe('push seal (native/contracts/fixtures/push.json)', () => {
     expect(utf8Decode(opened!)).toBe(seal.plaintext);
     expect(parsePushMessage(opened!)).toEqual({
       v: 1,
-      id: 'perm:run-1:req-1',
+      id: 'request:run-1:req-1',
       kind: 'permission',
       hostId: 'host-1',
       hostName: 'Test Mac',
@@ -4164,7 +4164,7 @@ describe('parsePushMessage', () => {
 });
 ```
 
-The fixture's `plaintext` uses the id `perm:run-1:req-1`. That message only tests the seal; the planner's own ids (`request:…`) are checked by the Mac and Windows tests.
+The fixture's `plaintext` uses the id `request:run-1:req-1`. That message only tests the seal; the planner's own ids (`request:…`) are checked by the Mac and Windows tests.
 
 - [ ] **Step 2: Run it and expect it to fail**
 
