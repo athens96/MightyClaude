@@ -34,6 +34,15 @@ internal static class MightyTimelineVerification
         Check(MightyTimeline.KindLabel("steer", notice.Input) == "위임 알림" && MightyTimeline.KindLabel("steer", person.Input) == "중간 요청" && MightyGraphSupport.BlockKind(notice) == "steer", "the timeline names the kind the same way, and the kind stays steer");
         var steered = MightyGraphBlockModel.ToolbarSummary([Run("steered", "completed", "done", notice, followUp, person)]);
         Check(steered.Contains("중간 요청 1", StringComparison.Ordinal) && !steered.Contains("중간 요청 3", StringComparison.Ordinal), "the toolbar counts only a person's steers; got " + steered);
+        // A run that ends before a steer is answered says so in the block's words: a delegation notice's or a person's.
+        var emitted = new Dictionary<string, ExecutionGraphNode>();
+        var tracker = new ExecutionGraphTracker("steer-run", "root prompt", "claude", null, node => emitted[node.Id] = node);
+        tracker.Steer("n", notice.Input!); tracker.Steer("f", followUp.Input!); tracker.Steer("p", person.Input!);
+        tracker.Finish("completed");
+        string Unfinished(string id) => emitted[ExecutionGraphSupport.Identifier("steer-run", "steer:" + id)].Entries[^1].Text;
+        Check(Unfinished("n") == Locale.Get("graph.block.unfinished.delegationNotice") && Unfinished("f") == Locale.Get("graph.block.unfinished.delegationNotice")
+            && Unfinished("p") == Locale.Get("graph.block.unfinished.steer") && Locale.Get("graph.block.unfinished.delegationNotice") != Locale.Get("graph.block.unfinished.steer"),
+            $"an unanswered delegation notice ends with its own words, a person's steer with the 중간 요청 words; got '{Unfinished("n")}', '{Unfinished("f")}', '{Unfinished("p")}'");
         return Task.CompletedTask;
     }
     /// macOS MightyTimelineTests.theRequestRowHoldsTheInputAndTheExecutionRowTheWork.

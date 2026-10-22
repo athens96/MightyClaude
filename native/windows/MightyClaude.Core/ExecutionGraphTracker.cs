@@ -702,7 +702,8 @@ public sealed partial class ExecutionGraphTracker
                 var text = value.Kind switch
                 {
                     "task" => Locale.Get("graph.block.unfinished.task"),
-                    "steer" => Locale.Get("graph.block.unfinished.steer"),
+                    // A notice or follow-up delegation handed into the turn is a 위임 알림, not a person's 중간 요청 (macOS).
+                    "steer" => Locale.Get(MightyGraphSupport.IsDelegationNotice(value.Input) ? "graph.block.unfinished.delegationNotice" : "graph.block.unfinished.steer"),
                     "question" => Locale.Get("graph.block.unfinished.question"),
                     _ => Locale.Get("graph.block.unfinished.agent"),
                 };

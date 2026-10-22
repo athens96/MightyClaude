@@ -452,7 +452,7 @@ public sealed partial class MainWindow
         var pane = MobilePane(request.SessionId); var body = request.Body;
         switch (request.Action)
         {
-            case "submit": return await pane.MobileSubmit(body.Text("text") ?? "", body.Text("mode"), request.Attachments ?? [], token);
+            case "submit": return await pane.MobileSubmit(body.Text("text") ?? "", request.Attachments ?? [], token);
             case "stop": var running = service.IsSessionRunning(request.SessionId); pane.MobileStopQueue(); await service.StopAsync(request.SessionId); return running;
             case "queue-remove": pane.MobileQueueRemove(body.Text("id") ?? ""); return null;
             case "queue-next": return await pane.MobileRunNext(token);
@@ -497,16 +497,18 @@ public sealed partial class MainWindow
             if (!queueKeptOnStop) { CancelQueueOnStop(); MobileCancelQueue(); } else { composerSubmissionVersion++; queueDrainTimer.Stop(); }
         }
         internal void MobileCancelQueue() { composerSubmissionVersion++; queueDrainTimer.Stop(); queuedInputs.Clear(); RenderQueuedInputs(); RefreshComposerState(); }
-        internal async Task<string> MobileSubmit(string text, string? mode, IReadOnlyList<RunAttachment> files, CancellationToken token, bool prepared = false, string? queueId = null)
+        internal async Task<string> MobileSubmit(string text, IReadOnlyList<RunAttachment> files, CancellationToken token, bool prepared = false, string? queueId = null)
         {
             token.ThrowIfCancellationRequested(); var pane = Session;
             if (owner.ManualMutationBlockReason(pane) is { } block) throw new MobileRequestException(409, block);
             var request = new StartRunRequest(id, pane.WorkspaceId, pane.Kind, text, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files).Validate();
             if (MobileBusy)
             {
-                // A busy pane always queues the text as its next request, whatever mode asks for: nothing a person sends joins the
-                // running turn, and mode "steer" from an older phone is queued too. The desktop composer's draft is left as it is.
-                // A plan-mode style's queued request plans fresh (§1.17.4).
+                // A busy pane always queues the text as its next request, whatever mode the phone sent (the router only checks it is
+                // "queue" or "steer"): nothing a person sends joins the running turn, and "steer" from an older phone is queued too.
+                // The desktop composer's draft is left as it is. A full queue refuses before anything is taken
+                // (M/AppStore+MobileRemote.swift). A plan-mode style's queued request plans fresh (§1.17.4).
+                if (queuedInputs.Items.Count >= QueuedInputBuffer.MaximumItems) throw new MobileRequestException(409, Locale.Get("remote.error.queueFull"));
                 token.ThrowIfCancellationRequested(); queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(LaunchesInPlanMode), prepared); RenderQueuedInputs(); RefreshComposerState(); if (!MobileBusy) queueDrainTimer.Start(); return "queued";
             }
             var submission = ++composerSubmissionVersion; starting = true; RefreshComposerState();
@@ -540,7 +542,7 @@ public sealed partial class MainWindow
             }
             if (MobileBusy) throw new MobileRequestException(409, "Session is still running.");
             var next = queuedInputs.Items.FirstOrDefault() ?? throw new MobileRequestException(409, "The queue is empty.");
-            await MobileSubmit(next.Text, "queue", next.Attachments, token, next.Prepared, next.Id); queuedInputs.Remove(next.Id); RenderQueuedInputs(); RefreshComposerState(); return null;
+            await MobileSubmit(next.Text, next.Attachments, token, next.Prepared, next.Id); queuedInputs.Remove(next.Id); RenderQueuedInputs(); RefreshComposerState(); return null;
         }
         /// <summary>
         /// The style this pane is really running: a Claude pane in the Mighty view whose stored style is registered, approved and
@@ -647,7 +649,7 @@ public sealed partial class MainWindow
             if (action.RequiresText && request.Text.Length == 0) throw new MobileRequestException(400, "This action needs text.");
             token.ThrowIfCancellationRequested(); if (Session.MightyStyle != request.Style || !StyleRegistry.Unchanged(style)) throw new MobileRequestException(409, "Style changed.");
             // An action reads its argument up to the first line break, so the phone's text is folded to one line first.
-            return await MobileSubmit(action.Prompt(action.TakesText ? MobileRemoteSupport.SingleLine(request.Text) : ""), null, [], token, true);
+            return await MobileSubmit(action.Prompt(action.TakesText ? MobileRemoteSupport.SingleLine(request.Text) : ""), [], token, true);
         }
     }
 }

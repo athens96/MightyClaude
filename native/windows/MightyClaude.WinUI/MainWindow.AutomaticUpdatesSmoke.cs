@@ -52,7 +52,7 @@ public sealed partial class MainWindow
                 updating = true; input.Text = "keep blocked draft"; updating = false; RefreshComposerState(); await Send();
                 Require(input.Text == "keep blocked draft" && !send.IsEnabled && started == 0 && queuedInputs.Items.Count == 0, "Blocked local send must keep its draft and avoid queueing or launching.");
                 var refused = false;
-                try { await MobileSubmit("keep blocked phone request", "queue", [], CancellationToken.None); } catch (MobileRequestException) { refused = true; }
+                try { await MobileSubmit("keep blocked phone request", [], CancellationToken.None); } catch (MobileRequestException) { refused = true; }
                 Require(refused && queuedInputs.Items.Count == 0 && started == 0, "Blocked mobile request must be refused before queue admission.");
                 // A manual update is a passing block: what waited is held, not dropped, and nothing starts (RunBlock keeps drops for lasting reasons).
                 queuedInputs.Add("keep blocked queued request", []); await StartNextQueuedInput();
@@ -71,7 +71,7 @@ public sealed partial class MainWindow
                         "A manual plugin mutation must block Claude and Codex only.");
                     await Send(); Require(input.Text == "keep blocked draft" && started == 0, "Plugin mutation must preserve the pending local draft.");
                     refused = false;
-                    try { await MobileSubmit("keep blocked phone request", "queue", [], CancellationToken.None); } catch (MobileRequestException) { refused = true; }
+                    try { await MobileSubmit("keep blocked phone request", [], CancellationToken.None); } catch (MobileRequestException) { refused = true; }
                     Require(refused && queuedInputs.Items.Count == 0, "Plugin mutation must refuse phone input without consuming it.");
                 }
                 finally { cancellation.Cancel(); await mutation; reader.Shutdown(); }
@@ -103,10 +103,10 @@ public sealed partial class MainWindow
                 updating = true; input.Text = "local held instruction"; updating = false;
                 RefreshComposerState(); await Send();
                 Require(queuedInputs.Items.Count == 1 && input.Text.Length == 0 && calls.Count == 0, "Local send must preserve input in the queue while plugins update.");
-                // An older phone's "steer" is queued too, and the desktop composer's draft is left as it is.
+                // A phone send to a held pane is queued whatever mode it asked for, and the desktop composer's draft is left as it is.
                 updating = true; input.Text = "desktop draft"; updating = false;
-                Require(await MobileSubmit("mobile held instruction", "steer", [], CancellationToken.None) == "queued" && queuedInputs.Items.Count == 2 && input.Text == "desktop draft",
-                    "Mobile send must use the same provider hold and queue, also when it asks to steer, and leave the desktop draft alone.");
+                Require(await MobileSubmit("mobile held instruction", [], CancellationToken.None) == "queued" && queuedInputs.Items.Count == 2 && input.Text == "desktop draft",
+                    "Mobile send must use the same provider hold and queue and leave the desktop draft alone.");
                 updating = true; input.Text = ""; updating = false;
                 await StartNextQueuedInput();
                 Require(calls.Count == 0 && !owner.ReadyForAutomaticUpdate("claude"), "Queued requests must neither start under a hold nor admit another idle update.");
@@ -116,7 +116,7 @@ public sealed partial class MainWindow
                 queueDrainTimer.Stop(); await StartNextQueuedInput(); await StartNextQueuedInput();
                 Require(calls.SequenceEqual(["local held instruction", "mobile held instruction"]) && queuedInputs.Items.Count == 0, "Released local and mobile inputs must retain FIFO order.");
                 owner.automaticUpdateRunning = true; owner.automaticallyUpdatingProvider = "claude";
-                await MobileSubmit("cancel held instruction", "queue", [], CancellationToken.None);
+                await MobileSubmit("cancel held instruction", [], CancellationToken.None);
                 await StopActiveRun();
                 Require(queuedInputs.Items.Count == 0 && !queueDrainTimer.IsEnabled && calls.Count == 2, "Stop must discard held requests without starting a CLI.");
                 return new() { ["sameProviderLocalAndMobileHeld"] = true, ["releasedQueuePreservesOrder"] = true, ["stopCancelsHeldRequests"] = true };

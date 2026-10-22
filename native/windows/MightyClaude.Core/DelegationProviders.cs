@@ -12,7 +12,8 @@ namespace MightyClaude.Core;
 /// Antigravity has no delegation tools, so its children come only from the human.</item>
 /// <item>A child of the parent's agent may start in a mode no wider than the parent's by rank. A child of another agent may start
 /// in a mode that may do nothing the parent's mode may not (<see cref="Capabilities"/>). A child's mode is always one of its own agent's.</item>
-/// <item>Only a Claude run takes text while it runs (steer).</item>
+/// <item>Only a Claude run takes text while it runs (steer), and only delegation's notices and follow-ups are steered into it; nothing a
+/// person sends, from the composer or a phone, joins a running turn.</item>
 /// <item>A Claude child commits its own work. A Codex or Antigravity child cannot commit outside fullAccess, so the app commits
 /// what it leaves when its report changes (<see cref="ChildAutoCommit"/>). Everything that runs or reads the child follows the
 /// child's agent; notices and merges follow the parent's.</item>
@@ -56,7 +57,7 @@ public static class DelegationProviders
     /// <summary>Whether the pane, in <paramref name="mode"/> now, may have a child the human starts: an agent pane whose child, in the same mode, can change files.</summary>
     public static bool CanParentByHuman(string kind, string provider, string mode) => IsAgentPane(kind, provider) && ChildCanWrite(provider, mode);
 
-    /// <summary>Whether a running turn of this pane takes text (steer): Claude only.</summary>
+    /// <summary>Whether a running turn of this pane takes delegation's notices and follow-ups (steer): Claude only. A person's text is always queued.</summary>
     public static bool CanSteer(string kind, string provider) => kind == "claude" && provider == "claude";
 
     /// <summary>The modes a child of <paramref name="provider"/> may start in, narrowest first.</summary>
