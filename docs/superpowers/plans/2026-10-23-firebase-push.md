@@ -14,7 +14,7 @@
 - **봉인.** `key = HKDF-SHA256(ikm = SHA-256(UTF-8 deviceToken) 32바이트, salt = UTF-8 clientId, info = "mighty-push-v1", 32바이트)`. 호스트는 저장해 둔 `tokenHash`(16진수)를 풀어 같은 32바이트를 얻는다. 봉투는 `base64url(0x01 ‖ nonce 12B ‖ ChaCha20-Poly1305 암호문 ‖ 태그 16B)`, AAD는 `"mighty-push-v1:" + handle`이다. 릴레이 연결이든 Tailscale 직접 연결이든 같은 기기 토큰으로 인증하므로 키도 같다. 공유 픽스처 `native/contracts/fixtures/push.json`을 Mac·Windows·폰 테스트가 읽는다.
 - **호스트(Mac 기준, Windows 동일).** 순수 계획기 `MobilePushPlanner`가 창 목록(`MobilePushPane`)의 변화에서 메시지 6종을 만든다(중복 제거, 첫 관찰은 기준선). 같은 픽스처의 `planner` 단계로 두 플랫폼이 같게 동작함을 묶는다. 기기 기록에 핸들과 받을 종류를 둔다. m1 `POST /m1/push/register|unregister|viewing`과 기능 `"push"`를 더한다. 폰이 그 세션을 보고 있으면(45초 TTL) 보내지 않는다. 전송은 `https://<릴레이>/push/v1/send`로 최대 3번 시도하고, 실패는 진단 기록에만 남긴다.
 - **폰.** `@react-native-firebase/{app,messaging,crashlytics}` 26.4.x와 `react-native-notify-kit`(Notifee API의 유지되는 포크)을 쓴다. 데이터 메시지 → 백그라운드 처리기가 핸들로 페어링을 찾아 연다 → 로컬 알림. 버튼 → 헤드리스 이벤트에서 잠금 확인(로컬 모듈 `device-lock`) → 기존 클라이언트로 `POST …/permission`. 409는 "이미 처리됨", 실패는 "눌러서 열기"가 된다. 탭하면 `mightyclaude://host/<id>/session/<sid>` 화면이 열린다. 설정 화면에서 종류별 알림과 Crashlytics를 켜고 끈다. `google-services.json`은 저장소 밖 파일을 `GOOGLE_SERVICES_JSON`이 가리킨다.
-- **App Distribution.** 저장소 밖 `~/Work/.mc-release/appdist.sh`가 Firebase CLI로 APK를 올린다. 테스터 목록은 그 폴더의 로컬 파일에만 둔다.
+- **App Distribution.** 저장소 밖 `<release-tools>/appdist.sh`가 Firebase CLI로 APK를 올린다. 테스터 목록은 그 폴더의 로컬 파일에만 둔다.
 
 **Tech Stack:**
 - Node 22 + TypeScript, `ws`, vitest(릴레이). `node:crypto`(`createSign` RS256, SHA-256, `timingSafeEqual`), 전역 `fetch`.
@@ -60,13 +60,15 @@
 
 ## Commands used by every task
 
-- **RELAY-RUN:** `cd /Users/young/Work/MightyClaude-firebase/relay && npm test -- <파일 이름 일부>`. 처음 한 번 `npm install`(그 폴더 안에서만).
-- **MAC-RUN:** `cd /Users/young/Work/MightyClaude-firebase && DEVELOPER_DIR=/Library/Developer/CommandLineTools bash scripts/test-native-macos.sh --scratch-path /tmp/mc-fb --filter '<정규식>'`. `--filter`를 빼지 않는다(전체 스위트는 로컬에서 멈춘다).
-- **MAC-BUILD:** `cd /Users/young/Work/MightyClaude-firebase && DEVELOPER_DIR=/Library/Developer/CommandLineTools swift build --package-path native/macos --scratch-path /tmp/mc-fb`. 앱 타깃(`MightyClaude`)까지 컴파일만 한다. 실행하지 않는다.
-- **CORE-RUN:** `bash ~/Work/MightyClaude-wincatch/.superpowers/sdd/bin/core-checks.sh /Users/young/Work/MightyClaude-firebase '<정규식>'`. **Pass:** 새 검사가 `PASS`로 보이고 `RESULT: BASELINE`(9개의 Windows 전용 실패만)이다. **Expected failure**는 태스크가 적는다.
-- **WINUI-COMPILE:** `cd /Users/young/Work/MightyClaude-firebase && bash scripts/check-winui-compile.sh`. **Pass:** `WinUI: C# 컴파일 오류 없음`.
-- **PHONE-RUN:** `cd /Users/young/Work/MightyClaude-firebase/mobile && npx jest <파일> && npm run typecheck`.
-- **LOCALES:** `cd /Users/young/Work/MightyClaude-firebase && node scripts/check-locales.js && node scripts/check-locales.js --check`.
+자리 표시: `<worktree>`는 이 브랜치의 작업 체크아웃, `<windows-core-checks>`는 Windows Core 검사를 macOS에서 돌리는 로컬 도우미 스크립트, `<release-tools>`는 저장소 밖의 로컬 릴리즈 도구 폴더다.
+
+- **RELAY-RUN:** `cd <worktree>/relay && npm test -- <파일 이름 일부>`. 처음 한 번 `npm install`(그 폴더 안에서만).
+- **MAC-RUN:** `cd <worktree> && DEVELOPER_DIR=/Library/Developer/CommandLineTools bash scripts/test-native-macos.sh --scratch-path /tmp/mc-fb --filter '<정규식>'`. `--filter`를 빼지 않는다(전체 스위트는 로컬에서 멈춘다).
+- **MAC-BUILD:** `cd <worktree> && DEVELOPER_DIR=/Library/Developer/CommandLineTools swift build --package-path native/macos --scratch-path /tmp/mc-fb`. 앱 타깃(`MightyClaude`)까지 컴파일만 한다. 실행하지 않는다.
+- **CORE-RUN:** `bash <windows-core-checks> <worktree> '<정규식>'`. **Pass:** 새 검사가 `PASS`로 보이고 `RESULT: BASELINE`(9개의 Windows 전용 실패만)이다. **Expected failure**는 태스크가 적는다.
+- **WINUI-COMPILE:** `cd <worktree> && bash scripts/check-winui-compile.sh`. **Pass:** `WinUI: C# 컴파일 오류 없음`.
+- **PHONE-RUN:** `cd <worktree>/mobile && npx jest <파일> && npm run typecheck`.
+- **LOCALES:** `cd <worktree> && node scripts/check-locales.js && node scripts/check-locales.js --check`.
 
 ---
 
@@ -121,7 +123,7 @@
 | `mobile/src/__tests__/push-*.test.ts`, `mobile/src/__tests__/routes.test.ts` | Create / Modify | 폰 테스트. |
 | `locales/{ko,en,zh,ja}.json` + 사본 둘 + `docs/i18n.md` | Modify | 호스트 오류 2개, `phone.push.*` 19개, `phone.settings.*` 13개. |
 | `docs/mobile-remote.md`, `docs/help/content/{ko,en,zh,ja}/phone.md` | Modify | 계약과 도움말. |
-| `~/Work/.mc-release/apk-local.sh`, `~/Work/.mc-release/appdist.sh` | Modify / Create (저장소 밖) | APK 빌드에 `GOOGLE_SERVICES_JSON`, App Distribution 업로드. |
+| `<release-tools>/apk-local.sh`, `<release-tools>/appdist.sh` | Modify / Create (저장소 밖) | APK 빌드에 `GOOGLE_SERVICES_JSON`, App Distribution 업로드. |
 
 **태스크 순서.**
 - 1→2→3→4: 릴레이.
@@ -144,7 +146,7 @@ Windows와 폰은 Mac Task 7(로케일 키)이 끝난 뒤 시작한다.
 
 - [ ] **Step 1: 병합 확인**
 
-Run: `cd /Users/young/Work/MightyClaude-firebase && git fetch origin && git log --oneline origin/main | grep -m1 "Antigravity card"`
+Run: `cd <worktree> && git fetch origin && git log --oneline origin/main | grep -m1 "Antigravity card"`
 Expected: Antigravity 카드 커밋이 한 줄 보인다. 안 보이면 멈추고 사용자에게 알린다(병합 전에는 시작하지 않는다).
 
 - [ ] **Step 2: rebase**
@@ -1527,7 +1529,7 @@ console.log('✔ 푸시 경로: 호스트 인증 401, FCM까지 가서 가짜 �
 
 - [ ] **Step 5: .gitignore**
 
-Append to `/Users/young/Work/MightyClaude-firebase/.gitignore`:
+Append to `<worktree>/.gitignore`:
 
 ```gitignore
 
@@ -4389,7 +4391,7 @@ Expected: FAIL — `Cannot find module '../../app.config.js'`.
 
 If `mobile/node_modules` is a symbolic link (into the main checkout), remove the link itself, so this worktree gets its own folder: `test -L mobile/node_modules && rm mobile/node_modules`. Do not delete the link target. Then:
 
-Run: `cd /Users/young/Work/MightyClaude-firebase/mobile && npm install @react-native-firebase/app@~26.4.0 @react-native-firebase/messaging@~26.4.0 @react-native-firebase/crashlytics@~26.4.0 react-native-notify-kit@~10.9.0`
+Run: `cd <worktree>/mobile && npm install @react-native-firebase/app@~26.4.0 @react-native-firebase/messaging@~26.4.0 @react-native-firebase/crashlytics@~26.4.0 react-native-notify-kit@~10.9.0`
 Expected: `package.json` gains the four dependencies; `package-lock.json` is updated.
 
 - [ ] **Step 4: Config files**
@@ -4538,7 +4540,7 @@ git commit -m "(mobile) the phone build carries Firebase messaging and Crashlyti
 
 Tell the user, then go on; only Task 21's APK build needs it.
 1. Firebase 콘솔 → 기존 프로젝트 → 앱 추가 → Android. 패키지 이름은 `dev.mightyclaude.mobile`이다. SHA-1은 이 기능에 필요 없다.
-2. `google-services.json`을 받아 `~/Work/.mc-release/google-services.json`에 둔다. 저장소에는 넣지 않는다(`.gitignore`가 `mobile/google-services.json`도 막는다).
+2. `google-services.json`을 받아 `<release-tools>/google-services.json`에 둔다. 저장소에는 넣지 않는다(`.gitignore`가 `mobile/google-services.json`도 막는다).
 3. 같은 프로젝트에서 Crashlytics를 연다(콘솔의 Crashlytics → 시작하기). 첫 충돌 보고가 오면 대시보드가 켜진다.
 
 ---
@@ -6218,12 +6220,12 @@ In `mobile/app/host/[hostId]/session/[sessionId].tsx`:
 
 - [ ] **Step 6: Check**
 
-Run: `cd /Users/young/Work/MightyClaude-firebase/mobile && npm run typecheck && npx jest --silent`
+Run: `cd <worktree>/mobile && npm run typecheck && npx jest --silent`
 Expected: typecheck clean; the whole jest suite passes.
 
 If a test that imports the session screen or `_layout` now fails because notify-kit or RNFB has no jest mock, add `jest.mock('@/lib/push/runtime', () => ({ pushViewing: { enter: jest.fn(), leave: jest.fn(), setActive: jest.fn() } }))` to that test. Do not add a global mock in `jest.setup.js`.
 
-Run: `cd /Users/young/Work/MightyClaude-firebase && node scripts/check-locales.js --check && node scripts/check-design-tokens.js --check`
+Run: `cd <worktree> && node scripts/check-locales.js --check && node scripts/check-design-tokens.js --check`
 Expected: no error (no Korean literal and no spacing literal in the new files).
 
 - [ ] **Step 7: Commit**
@@ -6376,7 +6378,7 @@ When the app crashes it sends only where it stopped, never conversations, comman
 
 - [ ] **Step 3: Check**
 
-Run: `cd /Users/young/Work/MightyClaude-firebase && node scripts/help/build.mjs --check && node scripts/check-locales.js --check`
+Run: `cd <worktree> && node scripts/help/build.mjs --check && node scripts/check-locales.js --check`
 Expected: both exit 0. `build.mjs` accepts every `{{ui:…}}` key above: they all exist and none has a `{placeholder}`.
 
 - [ ] **Step 4: Commit**
@@ -6390,32 +6392,32 @@ git commit -m "(docs) the phone contract and the help pages (four languages) exp
 
 ## Task 20: 릴리즈 도구가 같은 APK를 App Distribution으로도 올린다 (저장소 밖)
 
-**Files (저장소 밖, `~/Work/.mc-release`, git 아님 — 커밋 없음):**
-- Modify: `~/Work/.mc-release/apk-local.sh` (빌드 전에 `GOOGLE_SERVICES_JSON`)
-- Create: `~/Work/.mc-release/appdist.sh`
-- 사용자가 만든다: `~/Work/.mc-release/appdist.env`(`FIREBASE_ANDROID_APP_ID=…`), `~/Work/.mc-release/appdist-testers.txt`(쉼표로 이은 테스터 주소), `~/Work/.mc-release/google-services.json`(Task 14 Step 8)
+**Files (저장소 밖, `<release-tools>`, git 아님 — 커밋 없음):**
+- Modify: `<release-tools>/apk-local.sh` (빌드 전에 `GOOGLE_SERVICES_JSON`)
+- Create: `<release-tools>/appdist.sh`
+- 사용자가 만든다: `<release-tools>/appdist.env`(`FIREBASE_ANDROID_APP_ID=…`), `<release-tools>/appdist-testers.txt`(쉼표로 이은 테스터 주소), `<release-tools>/google-services.json`(Task 14 Step 8)
 
 **Interfaces:**
 - Consumes: `staging/MightyClaude-android.apk`, `staging/notes-<V>.txt`(지금 릴리즈 흐름이 만든다), Firebase CLI(`npx -y firebase-tools@15`).
-- Produces: `bash ~/Work/.mc-release/appdist.sh <버전>`. R2 업로드(`upload.sh … apk`)와 따로 돈다. R2 다운로드 페이지는 그대로다.
+- Produces: `bash <release-tools>/appdist.sh <버전>`. R2 업로드(`upload.sh … apk`)와 따로 돈다. R2 다운로드 페이지는 그대로다.
 
 - [ ] **Step 1: apk-local.sh**
 
-In `~/Work/.mc-release/apk-local.sh`, insert these lines right before the `npx eas-cli build …` line:
+In `<release-tools>/apk-local.sh`, insert these lines right before the `npx eas-cli build …` line:
 
 ```bash
 # Firebase(푸시·Crashlytics) 설정 파일. 저장소 밖에만 있다(mobile/app.config.js가 읽는다).
-export GOOGLE_SERVICES_JSON="$HOME/Work/.mc-release/google-services.json"
+export GOOGLE_SERVICES_JSON="<release-tools>/google-services.json"
 [ -f "$GOOGLE_SERVICES_JSON" ] || { echo "✘ $GOOGLE_SERVICES_JSON 이 없습니다 (Firebase 콘솔 → Android 앱 → google-services.json)" >&2; exit 1; }
 ```
 
 - [ ] **Step 2: appdist.sh**
 
-Create `~/Work/.mc-release/appdist.sh`:
+Create `<release-tools>/appdist.sh`:
 
 ```bash
 #!/usr/bin/env bash
-# 용법: bash ~/Work/.mc-release/appdist.sh 0.4.34
+# 용법: bash <release-tools>/appdist.sh 0.4.34
 # R2에 올린 것과 같은 APK(staging/MightyClaude-android.apk)를 Firebase App Distribution으로
 # 테스터에게 보낸다. 앱 ID와 테스터 주소는 이 폴더의 로컬 파일에만 있다(공개 저장소에 넣지 않는다).
 # 처음 한 번 사용자가 터미널 창에서 `npx -y firebase-tools@15 login`을 직접 해야 한다.
@@ -6447,21 +6449,21 @@ echo "✘ App Distribution 업로드 실패 (firebase login이 되어 있는지 
 exit 1
 ```
 
-Run: `chmod +x ~/Work/.mc-release/appdist.sh && bash -n ~/Work/.mc-release/appdist.sh && bash -n ~/Work/.mc-release/apk-local.sh`
+Run: `chmod +x <release-tools>/appdist.sh && bash -n <release-tools>/appdist.sh && bash -n <release-tools>/apk-local.sh`
 Expected: no output.
 
 - [ ] **Step 3: 사용자 설정 C — App Distribution과 로그인 (사용자가 직접)**
 
 Tell the user these steps:
 1. Firebase 콘솔 → App Distribution → 시작하기(Android 앱 `dev.mightyclaude.mobile`). 테스터 그룹은 쓰지 않아도 된다.
-2. 프로젝트 설정 → 일반 → Android 앱의 **앱 ID**(`1:…:android:…`)를 복사해 `~/Work/.mc-release/appdist.env`에 한 줄로 둔다: `FIREBASE_ANDROID_APP_ID=<복사한 값>`.
-3. 테스터 주소를 쉼표로 이어 `~/Work/.mc-release/appdist-testers.txt`에 둔다. 이 두 파일은 저장소에 넣지 않는다.
+2. 프로젝트 설정 → 일반 → Android 앱의 **앱 ID**(`1:…:android:…`)를 복사해 `<release-tools>/appdist.env`에 한 줄로 둔다: `FIREBASE_ANDROID_APP_ID=<복사한 값>`.
+3. 테스터 주소를 쉼표로 이어 `<release-tools>/appdist-testers.txt`에 둔다. 이 두 파일은 저장소에 넣지 않는다.
 4. 터미널 창에서 직접 `npx -y firebase-tools@15 login`을 실행하고 브라우저로 로그인한다. 에이전트는 이 프롬프트를 몰지 않는다(필요하면 `run_in_terminal`로 열어 사용자가 답하게 한다).
 5. 확인: `npx -y firebase-tools@15 projects:list`에 그 프로젝트가 보인다.
 
 - [ ] **Step 4: 릴리즈 순서에 넣기**
 
-A release now runs, after `apk-local.sh` and `upload.sh <V> apk`: `bash ~/Work/.mc-release/appdist.sh <V>`. The memory note for releases (`cloudflare-release.md`) gets one line: "APK도 App Distribution으로: appdist.sh <V>(로컬 appdist.env·appdist-testers.txt, firebase login 필요)".
+A release now runs, after `apk-local.sh` and `upload.sh <V> apk`: `bash <release-tools>/appdist.sh <V>`. The memory note for releases (`cloudflare-release.md`) gets one line: "APK도 App Distribution으로: appdist.sh <V>(로컬 appdist.env·appdist-testers.txt, firebase login 필요)".
 
 ---
 
@@ -6469,13 +6471,13 @@ A release now runs, after `apk-local.sh` and `upload.sh <V> apk`: `bash ~/Work/.
 
 **Files:** 없음(검사만). 실패하면 그 태스크로 돌아가 고치고 거기서 커밋한다.
 
-- [ ] **Step 1: Relay.** Run `cd /Users/young/Work/MightyClaude-firebase/relay && npm test && npx tsc --noEmit`. Expected: every suite passes (`relay`, `push-store`, `fcm`, `push`), tsc silent.
+- [ ] **Step 1: Relay.** Run `cd <worktree>/relay && npm test && npx tsc --noEmit`. Expected: every suite passes (`relay`, `push-store`, `fcm`, `push`), tsc silent.
 
-- [ ] **Step 2: Mac.** Run `cd /Users/young/Work/MightyClaude-firebase && DEVELOPER_DIR=/Library/Developer/CommandLineTools bash scripts/test-native-macos.sh --scratch-path /tmp/mc-fb --filter '\.(MobilePushSealTests|MobilePushPlannerTests|MobilePushRelayTests|MobileRemoteTests|MobileRemoteStructureTests|MobileDeviceRegistryTests|AntigravityPermissionTests|WorkDashboardTests|ScreenShareEngineTests)/'`, then MAC-BUILD. Expected: all pass; `Build complete!`. Nothing is launched.
+- [ ] **Step 2: Mac.** Run `cd <worktree> && DEVELOPER_DIR=/Library/Developer/CommandLineTools bash scripts/test-native-macos.sh --scratch-path /tmp/mc-fb --filter '\.(MobilePushSealTests|MobilePushPlannerTests|MobilePushRelayTests|MobileRemoteTests|MobileRemoteStructureTests|MobileDeviceRegistryTests|AntigravityPermissionTests|WorkDashboardTests|ScreenShareEngineTests)/'`, then MAC-BUILD. Expected: all pass; `Build complete!`. Nothing is launched.
 
-- [ ] **Step 3: Windows.** Run `bash ~/Work/MightyClaude-wincatch/.superpowers/sdd/bin/core-checks.sh /Users/young/Work/MightyClaude-firebase 'mobile push|Mobile remote|Mobile host|antigravity cards'` and `cd /Users/young/Work/MightyClaude-firebase && bash scripts/check-winui-compile.sh`. Expected: `RESULT: BASELINE`, every `mobile push:` line PASS; `WinUI: C# 컴파일 오류 없음`.
+- [ ] **Step 3: Windows.** Run `bash <windows-core-checks> <worktree> 'mobile push|Mobile remote|Mobile host|antigravity cards'` and `cd <worktree> && bash scripts/check-winui-compile.sh`. Expected: `RESULT: BASELINE`, every `mobile push:` line PASS; `WinUI: C# 컴파일 오류 없음`.
 
-- [ ] **Step 4: Phone.** Run `cd /Users/young/Work/MightyClaude-firebase/mobile && npm run typecheck && npx jest`. Expected: clean typecheck; every suite passes.
+- [ ] **Step 4: Phone.** Run `cd <worktree>/mobile && npm run typecheck && npx jest`. Expected: clean typecheck; every suite passes.
 
 - [ ] **Step 5: Repository checks.** Run from the repo root:
   - `node scripts/check-locales.js && node scripts/check-locales.js --check`
@@ -6485,10 +6487,10 @@ A release now runs, after `apk-local.sh` and `upload.sh <V> apk`: `bash ~/Work/.
 
   Expected: all exit 0; the style freeze prints OK (no frozen path changed).
 
-- [ ] **Step 6: Public-repo hygiene.** Run `git diff origin/main -- . ':(exclude)docs/superpowers' | grep -nE '/Users/|C:\\\\Users\\\\|@gbike|BEGIN (RSA )?PRIVATE KEY|"private_key"|AIza[0-9A-Za-z_-]{20}|client_email"\s*:\s*"[^"]*iam' ; git ls-files | grep -E 'google-services\.json|fcm-service-account'`
+- [ ] **Step 6: Public-repo hygiene.** Run `git diff origin/main -- . ':(exclude)docs/superpowers' | grep -nE '/Users/|C:\\\\Users\\\\|@<work-email-domain>|BEGIN (RSA )?PRIVATE KEY|"private_key"|AIza[0-9A-Za-z_-]{20}|client_email"\s*:\s*"[^"]*iam' ; git ls-files | grep -E 'google-services\.json|fcm-service-account'`
   Expected: no output. The only `private_key` text is in `relay/test/fcm.test.ts`, which builds it from a key generated at run time, not a literal; the pattern looks for the quoted JSON key with a literal value. If that test line matches, check it by eye and go on.
 
-- [ ] **Step 7: A real APK (after 사용자 설정 B).** Run in the background, since it takes minutes: `cd /Users/young/Work/MightyClaude-firebase/mobile && JAVA_HOME=$(/usr/libexec/java_home -v 17) GOOGLE_SERVICES_JSON=$HOME/Work/.mc-release/google-services.json npx eas-cli build -p android --profile preview --local --non-interactive --output /tmp/mc-fb.apk`. Expected: the build ends with the APK at `/tmp/mc-fb.apk`. This only builds; it installs and launches nothing. If the Kotlin version stops the Firebase modules, check that RNFB is 26.4.x, not 27.
+- [ ] **Step 7: A real APK (after 사용자 설정 B).** Run in the background, since it takes minutes: `cd <worktree>/mobile && JAVA_HOME=$(/usr/libexec/java_home -v 17) GOOGLE_SERVICES_JSON=<release-tools>/google-services.json npx eas-cli build -p android --profile preview --local --non-interactive --output /tmp/mc-fb.apk`. Expected: the build ends with the APK at `/tmp/mc-fb.apk`. This only builds; it installs and launches nothing. If the Kotlin version stops the Firebase modules, check that RNFB is 26.4.x, not 27.
 
 - [ ] **Step 8: The live relay (after 사용자 설정 A and a deploy of this branch's relay).** Run `node relay/deploy/oracle/push-check.mjs mightyclaude.duckdns.org`. Expected: `✔ 푸시 경로: 호스트 인증 401, FCM까지 가서 가짜 토큰을 410으로 지움`.
 
@@ -6513,7 +6515,7 @@ A release now runs, after `apk-local.sh` and `upload.sh <V> apk`: `bash ~/Work/.
 | 단계 | 언제(어느 태스크) | 무엇을 | 막는 것 |
 |---|---|---|---|
 | A | Task 4 Step 9 | Firebase 서비스 계정 키(FCM API 사용 설정) → 릴레이 서버 `relay/deploy/oracle/fcm-service-account.json` → `setup.sh` 다시 실행 → `push-check.mjs` | Task 21 Step 8과 실제 알림 도착 |
-| B | Task 14 Step 8 | Firebase 콘솔에 Android 앱 `dev.mightyclaude.mobile` 등록 → `google-services.json`을 `~/Work/.mc-release/`에 둔다. Crashlytics 시작하기 | Task 21 Step 7(APK 빌드) |
+| B | Task 14 Step 8 | Firebase 콘솔에 Android 앱 `dev.mightyclaude.mobile` 등록 → `google-services.json`을 `<release-tools>/`에 둔다. Crashlytics 시작하기 | Task 21 Step 7(APK 빌드) |
 | C | Task 20 Step 3 | App Distribution 시작하기, `appdist.env`(앱 ID), `appdist-testers.txt`, 터미널 창에서 `npx -y firebase-tools@15 login` | 릴리즈의 App Distribution 업로드 |
 
 ---
