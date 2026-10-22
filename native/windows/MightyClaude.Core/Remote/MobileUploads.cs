@@ -36,6 +36,9 @@ public sealed class MobileUploads : IDisposable
     private void Sweep()
     { foreach (var item in uploads.Values.Where(u => u.Claim is null && DateTimeOffset.UtcNow - u.Updated > TimeSpan.FromMinutes(10)).ToArray()) Remove(item.Id); }
     private void Remove(string id) { if (uploads.Remove(id, out var item)) item.File.Dispose(); }
+    /// Uploads this computer holds for the phone (open, or complete and not yet
+    /// claimed by a request); an app restart would drop them (AppIdleFacts.PhoneUploads).
+    public int Count { get { lock (sync) return uploads.Count; } }
     private Upload Owned(string id, string device) => uploads.TryGetValue(id, out var value) && value.Device == device ? value : throw new MobileRequestException(404, "Upload not found.");
     public MobileUploadTicket Begin(string session, string device, string rawName, int size)
     {

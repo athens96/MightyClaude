@@ -27,6 +27,9 @@ public sealed partial class MainWindow
     /// <summary>The accent "new version" badge, shown while an app update is available or ready (M/WorkspaceView.swift:383-388).</summary>
     private Button? updateBadge, setupBadge;
     private readonly TextBlock updateBadgeText = new() { TextSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
+    private readonly StackPanel updateStaged = new() { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+    private readonly TextBlock updateStagedText = new() { TextSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
+    private Button? updateRestartNow;
     /// <summary>The line after the usage chips, shown with them (M/StatusBarUsage.swift:169).</summary>
     private Border? usageDivider;
     /// <summary>The status bar's trailing parts, in the Mac's order (M/WorkspaceView.swift:380-391).</summary>
@@ -141,7 +144,8 @@ public sealed partial class MainWindow
         Grid.SetColumn(counts.View, 1); workspaceHeader.Children.Add(counts.View);
         workspaceHeaderFiles.Click += async (_, _) => { if (!dialogOpen && workspaceHeaderId is { } id) await OpenFilePane(id); };
         Grid.SetColumn(workspaceHeaderFiles, 2); workspaceHeader.Children.Add(workspaceHeaderFiles);
-        detailTop.Children.Add(resourceBanner); detailTop.Children.Add(errorBanner); detailTop.Children.Add(workspaceHeader);
+        // The update countdown leads the detail column, over the resource band (M/WorkspaceView.swift:16-18).
+        detailTop.Children.Add(BuildAppUpdateCountdown()); detailTop.Children.Add(resourceBanner); detailTop.Children.Add(errorBanner); detailTop.Children.Add(workspaceHeader);
     }
 
     /// <summary>The resource band's parts, the error banner's in the warning colours; its close button only hides it, as the Mac's does.</summary>
@@ -241,6 +245,20 @@ public sealed partial class MainWindow
         PaintPlainButton(updateBadge, brushes.Transparent, brushes.Transparent);
         AutomationProperties.SetAutomationId(updateBadge, "app-update-badge");
         statusTrailing.Children.Add(updateBadge);
+        // A staged update (switch on): shippingbox.fill and "installs at the next launch", then a small "restart now"
+        // (M/WorkspaceView.swift app-update-staged / app-update-restart); it takes the badge's place.
+        var stagedBox = new FontIcon { Glyph = "\uE7B8", TextSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center };
+        AutomationProperties.SetAccessibilityView(stagedBox, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        updateStagedText.Foreground = brushes.Brush(DesignToken.Accent);
+        AutomationProperties.SetAutomationId(updateStagedText, AppUpdateStagedId);
+        var restartWords = new TextBlock { Text = Locale.Get("window.status.updateRestartNow"), TextSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center };
+        updateRestartNow = Button(Locale.Get("window.status.updateRestartNow"), () => AppUpdate.InstallAsync()); updateRestartNow.Content = restartWords;
+        updateRestartNow.MinWidth = 0; updateRestartNow.MinHeight = 0; updateRestartNow.Padding = new Thickness(0); updateRestartNow.BorderThickness = new Thickness(0); updateRestartNow.VerticalAlignment = VerticalAlignment.Center;
+        PaintPlainButton(updateRestartNow, brushes.Transparent, brushes.Transparent);
+        ToolTipService.SetToolTip(updateRestartNow, Locale.Get("window.status.updateStagedHelp"));
+        AutomationProperties.SetAutomationId(updateRestartNow, AppUpdateRestartId);
+        updateStaged.Children.Add(stagedBox); updateStaged.Children.Add(updateStagedText); updateStaged.Children.Add(updateRestartNow);
+        statusTrailing.Children.Add(updateStaged);
         // shippingbox.fill and the words, in the accent, as the update badge.
         var setupWords = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
         setupWords.Children.Add(new FontIcon { Glyph = "\uE7B8", TextSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center });
@@ -299,7 +317,15 @@ public sealed partial class MainWindow
         // Only the panes the dashboard counts (M/WorkspaceView.swift:580): an agent's own terminal or browser and the files pane are left out.
         statusRunning.Text = Locale.Get("window.status.runningCount", new Dictionary<string, string> { ["count"] = Count(WorkDashboard.Count(state.Sessions, DashboardAttention).Running) });
         var version = appUpdate?.State is { Phase: AppUpdatePhase.Available or AppUpdatePhase.Ready, Availability.Manifest.Version: { Length: > 0 } newer } ? newer : null;
-        updateBadge.Visibility = version is null ? Visibility.Collapsed : Visibility.Visible;
+        // Staged with the switch on, it installs when the app quits, or now; otherwise the badge opens Settings.
+        var staged = version is not null && appUpdate!.State.Phase == AppUpdatePhase.Ready && appUpdate.Automatic;
+        updateStaged.Visibility = staged ? Visibility.Visible : Visibility.Collapsed;
+        updateBadge.Visibility = version is null || staged ? Visibility.Collapsed : Visibility.Visible;
+        if (staged)
+        {
+            updateStagedText.Text = Locale.Get("window.status.updateStaged", new Dictionary<string, string> { ["version"] = version! });
+            return;
+        }
         if (version is null) return;
         updateBadgeText.Text = Locale.Get("window.status.updateBadge", new Dictionary<string, string> { ["version"] = version });
         if (AutomationProperties.GetName(updateBadge) != updateBadgeText.Text) AutomationProperties.SetName(updateBadge, updateBadgeText.Text);

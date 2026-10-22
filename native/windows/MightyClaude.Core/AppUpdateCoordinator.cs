@@ -303,7 +303,8 @@ public sealed class AppUpdateCoordinator
                 asset, manifest.Version, fraction => Mutate(s => s with { DownloadFraction = fraction }), work.Token);
             Mutate(s => s with { Phase = AppUpdatePhase.Staging, PackagePath = package });
 
-            var staged = AppUpdateService.Stage(package, architecture);
+            // Unpacking is off the caller's thread (the app's dispatcher); the state is changed back on it.
+            var staged = await Task.Run(() => AppUpdateService.Stage(package, architecture));
             var plan = installDirectory is null
                 ? null
                 : AppUpdateInstallPlan.Create(
