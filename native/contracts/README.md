@@ -728,9 +728,12 @@ about is refused and the turn goes on; the pane asks afterwards with a card
   offers 항상 허용.
 - `rules`: which rules a card may offer — `refused` (never offered or added:
   `*`, a parenthesis, a control character, an empty argument, `/`, `~`, a
-  drive root, a permission outside the mapping), `once` (a command that
+  drive root, a permission outside the mapping, a file rule that is not
+  absolute or lies inside, equals or is above a protected folder — agy's own
+  `~/.gemini` or the app's data folder with its ledger; the cases use
+  `context.protected`), `once` (a command that
   chains, pipes, redirects, substitutes or runs a closed list of destructive
-  programs: offered only as 이번만 허용; a host refuses `always` with 409
+  programs, or mentions `.gemini`: offered only as 이번만 허용; a host refuses `always` with 409
   `remote.error.antigravityOnceOnly`) and `always`. agy's rules are prefixes
   (probed on agy 1.4.5): `command(echo hi)` allows every command starting with
   that text, `write_file(<folder>)` everything in it, `command(*)` everything.
