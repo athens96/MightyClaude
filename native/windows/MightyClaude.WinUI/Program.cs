@@ -172,7 +172,8 @@ internal static class Program
                     WorkingDirectory = Path.GetDirectoryName(executable)!,
                 })) { }
                 return Task.CompletedTask;
-            }).GetAwaiter().GetResult();
+            },
+            runningAgain: token => AppUpdateReplacement.RunningFromInstallAsync(plan.InstallDirectory, TimeSpan.FromSeconds(30), token)).GetAwaiter().GetResult();
         if (result.Replaced && typeof(Program).Assembly.GetName().Version?.ToString(3) is { } version)
             InstallerRegistration.SyncDisplayVersion(plan.InstallDirectory, version);
         try
@@ -180,10 +181,10 @@ internal static class Program
             File.WriteAllText(
                 Path.Combine(Path.GetDirectoryName(plan.PackagePath) ?? Path.GetTempPath(), "install.log"),
                 $"{DateTimeOffset.UtcNow:O} replaced={result.Replaced} rolledBack={result.RolledBack} " +
-                $"relaunch={plan.Relaunch} started={result.Started} backupRemoved={result.BackupRemoved} {result.Error}\n");
+                $"relaunch={plan.Relaunch} skipped={result.Skipped} started={result.Started} backupRemoved={result.BackupRemoved} {result.Error}\n");
         }
         catch (IOException) { /* The outcome must not depend on the log. */ }
-        return result.Replaced ? 0 : 1;
+        return result.Replaced || result.Skipped ? 0 : 1;
     }
 }
 
