@@ -176,6 +176,7 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 | `mighty` | 헤더의 `대화`/`블록` 전환, 요청별 블록 목록, 스타일 패널(Ouroboros 등) |
 | `attachments` | 입력창의 `＋` 버튼(사진·파일), 첨부 칩, 청크 업로드 |
 | `files` | 호스트 화면의 워크스페이스마다 `파일` 버튼 → 읽기 전용 폴더 목록과 미리보기 |
+| `push` | 호스트에 푸시 핸들과 켠 종류를 주고(`/m1/push/register`), 세션 화면을 보는 동안 `viewing`을 알림. 설정 화면의 알림 스위치 |
 
 - 이전 기록은 호스트가 `hasOlder`라고 말할 때만 더 불러오고, `hasMore: false`이거나
   빈 배열(= `before`가 밀려남)이 오면 멈춥니다. 불러오는 동안 롱폴로 들어온 항목과
@@ -308,12 +309,21 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 `docs/mobile-remote.md`의 "휴대폰에서 의도적으로 제외한 Mac 기능" 그대로이며, 앞으로도
 넣지 않습니다:
 
-- 알림(푸시·로컬) — 앱이 백그라운드면 폴링도 멈춥니다
+- 로컬 알림(Mac이 스스로 띄우는 알림). 휴대폰의 푸시 알림은 `push` 기능으로 있습니다(아래 "푸시 알림")
 - 터미널 실행 창 조작
 - 작업 공간 추가·이름 변경·제거
 - 그래프 배치·블록 크기 조절·참조 말풍선 (블록은 **목록**으로만 봅니다)
-- CLI 계정 전환·CLI 업데이트·앱 자체 업데이트·앱 설정
+- CLI 계정 전환·CLI 업데이트·앱 자체 업데이트·데스크톱 앱 설정
 - 펫, 다국어 (화면 문구는 한국어 하나입니다)
+
+### 푸시 알림 (`push`)
+
+Android 앱은 연결된 컴퓨터가 보내는 푸시를 받습니다: 작업 완료·실패, 권한 요청·질문·계획 승인·로그인 만료.
+호스트가 `push` 기능을 알리는 페어링마다 앱이 릴레이에서 핸들을 받아 호스트에 주고, 호스트는 내용을
+이 휴대폰만 열 수 있게 봉인해 릴레이로 보냅니다. 권한 알림의 버튼은 휴대폰이 잠겨 있으면 동작하지 않고,
+설정 화면(`app/settings.tsx`)에서 종류별로 끌 수 있으며 충돌 보고(Crashlytics, 대화·명령·경로 없이 오류
+위치만)도 끌 수 있습니다. 빌드에는 저장소 밖의 `google-services.json`을 가리키는 환경 변수
+`GOOGLE_SERVICES_JSON`이 필요합니다(`app.config.js`). 규칙 전체는 `docs/mobile-remote.md`의 "푸시 알림"입니다.
 
 ---
 
@@ -330,6 +340,7 @@ npm test            # jest (암호·페어링·전송 계층 단위 테스트)
 주요 구조:
 
 ```
+index.js                 JS 진입점: 기본 오류 처리기, 백그라운드 푸시·알림 처리기(`lib/push/background`)를 먼저 등록한 뒤 expo-router
 app/                     expo-router 화면
   _layout.tsx            루트 스택 + 시스템 테마 연동 + crypto 폴리필
   (tabs)/_layout.tsx     하단 탭 바 + 호스트별 세션 목록 롱폴(HostPoller) + 첫 실행 안내로 보내기
@@ -338,6 +349,7 @@ app/                     expo-router 화면
   (tabs)/alerts.tsx      알림 (질문·권한·오류·끝난 실행)
   (tabs)/hosts.tsx       호스트 목록 (예전 "/")
   pair.tsx               QR/수동 페어링 (v2)
+  settings.tsx           알림 종류별 스위치와 충돌 보고 스위치
   host/[hostId]/index.tsx                작업 공간 + 세션 카드 (탭 위 스택 화면)
   host/[hostId]/session/[sessionId].tsx  세션 상세 (기록 페이징·설정·명령·창 메뉴)
 src/
@@ -353,6 +365,7 @@ src/
              host-status.tsx(연결 점), icons.tsx(탭·전송·중지 선 아이콘)
              sheets.tsx(선택·입력·확인·본문·목록 모달), permission-card.tsx(한 번에 한 질문)
              antigravity-permission-card.tsx(Antigravity 권한 카드)
+             push-root.tsx(푸시 시작·동기화·알림 탭 열기·세션 보는 중 알림)
              mighty-blocks.tsx(요청·블록 타임라인), structure-view.tsx(파이프라인 보드), guided-panel.tsx
   hooks/     use-long-poll.ts (AbortController + 포커스 + notify 연동)
              use-capabilities.ts (호스트별 /m1/info 캐시)
@@ -365,9 +378,14 @@ src/
              file-slices.ts(expo-file-system 범위 읽기), device-token.ts, host-secrets.ts
              provider-marks.ts(프로바이더 마크 24×24 아웃라인)
              antigravity-permission.ts(Antigravity 카드 읽기·답 본문)
+  lib/push/  푸시: seal.ts(봉투 열기), message.ts(평문 검사), notification.ts(알림 모양·버튼·결과 문구),
+             runtime.ts(표시·버튼 응답·핸들 동기화), registry.ts(페어링별 릴레이 핸들), actions.ts(권한 답),
+             device-lock.ts(잠금 확인), viewing.ts(보는 세션 알림), settings.ts(알림·충돌 보고 설정),
+             crash.ts(내용 없는 충돌 보고), host-lease.ts(앱이 닫혀 있을 때의 호스트 연결), background.ts
   store/     hosts.ts(secure store), live.ts(상태·기능·명령 캐시), toast.ts,
              dashboard.ts(현황이 보는 호스트, 탭 롱폴 상태)
   theme/     팔레트(밝게/어둡게) / 상태 색 묶음(toneColors) / 글꼴 / 간격 / 라벨
+modules/                 로컬 네이티브 모듈: device-lock(휴대폰 잠금 확인, 푸시 버튼용), control-key
 ```
 
 새 기능의 순수 로직은 모두 `src/lib`에 있고 `src/__tests__`에서 직접 테스트합니다:
