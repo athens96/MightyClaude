@@ -22,8 +22,11 @@ struct AppUpdateAutoTests {
         #expect(AppUpdateAuto.checkDue(enabled: true, hasKey: true, lastCheck: nil, lastAttempt: nil, now: now))
         #expect(!AppUpdateAuto.checkDue(enabled: true, hasKey: true, lastCheck: now.addingTimeInterval(-interval + 1), lastAttempt: nil, now: now))
         #expect(AppUpdateAuto.checkDue(enabled: true, hasKey: true, lastCheck: now.addingTimeInterval(-interval), lastAttempt: nil, now: now))
-        // A clock set back since the last check does not stop checks for good.
+        // A clock set back since the last check does not stop checks for good…
         #expect(AppUpdateAuto.checkDue(enabled: true, hasKey: true, lastCheck: now.addingTimeInterval(interval * 10), lastAttempt: nil, now: now))
+        // …but an attempt since then still holds the next one back.
+        #expect(!AppUpdateAuto.checkDue(enabled: true, hasKey: true, lastCheck: now.addingTimeInterval(interval * 10), lastAttempt: now.addingTimeInterval(-AppUpdateAuto.tick), now: now))
+        #expect(AppUpdateAuto.checkDue(enabled: true, hasKey: true, lastCheck: now.addingTimeInterval(interval * 10), lastAttempt: now.addingTimeInterval(-interval), now: now))
     }
 
     @Test func aFailedAttemptIsRetriedAtTheNextCycleNotEveryTick() {
@@ -90,43 +93,58 @@ struct AppUpdateAutoTests {
     // MARK: restartOffer
 
     @Test func anIdleAppCountsDownThenRestarts() {
-        let start = AppUpdateAuto.restartOffer(.idle, ready: true, automatic: true, idle: true, now: now)
+        let start = AppUpdateAuto.restartOffer(.idle, ready: true, automatic: true, blockers: [], now: now)
         let until = now.addingTimeInterval(AppUpdateAuto.countdown)
         #expect(start == AppUpdateRestartDecision(state: .countingDown(until: until), action: .startCountdown))
-        let midway = AppUpdateAuto.restartOffer(start.state, ready: true, automatic: true, idle: true, now: now.addingTimeInterval(30))
+        let midway = AppUpdateAuto.restartOffer(start.state, ready: true, automatic: true, blockers: [], now: now.addingTimeInterval(30))
         #expect(midway == AppUpdateRestartDecision(state: .countingDown(until: until), action: .none))
-        let done = AppUpdateAuto.restartOffer(midway.state, ready: true, automatic: true, idle: true, now: until)
+        let done = AppUpdateAuto.restartOffer(midway.state, ready: true, automatic: true, blockers: [], now: until)
         #expect(done == AppUpdateRestartDecision(state: .idle, action: .restart))
     }
 
     @Test func nothingIsOfferedWhileBusyNotReadyOrSwitchedOff() {
-        #expect(AppUpdateAuto.restartOffer(.idle, ready: true, automatic: true, idle: false, now: now) == AppUpdateRestartDecision(state: .idle, action: .none))
-        #expect(AppUpdateAuto.restartOffer(.idle, ready: false, automatic: true, idle: true, now: now) == AppUpdateRestartDecision(state: .idle, action: .none))
-        #expect(AppUpdateAuto.restartOffer(.idle, ready: true, automatic: false, idle: true, now: now) == AppUpdateRestartDecision(state: .idle, action: .none))
+        #expect(AppUpdateAuto.restartOffer(.idle, ready: true, automatic: true, blockers: [.agentRun], now: now) == AppUpdateRestartDecision(state: .idle, action: .none))
+        #expect(AppUpdateAuto.restartOffer(.idle, ready: false, automatic: true, blockers: [], now: now) == AppUpdateRestartDecision(state: .idle, action: .none))
+        #expect(AppUpdateAuto.restartOffer(.idle, ready: true, automatic: false, blockers: [], now: now) == AppUpdateRestartDecision(state: .idle, action: .none))
     }
 
     @Test func aCountdownIsCancelledQuietlyWhenTheAppStopsBeingIdle() {
         let counting = AppUpdateRestartState.countingDown(until: now.addingTimeInterval(40))
-        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, idle: false, now: now) == AppUpdateRestartDecision(state: .idle, action: .cancel))
+        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, blockers: [.agentRun], now: now) == AppUpdateRestartDecision(state: .idle, action: .cancel))
         // Even when the time is already up, a busy app is not restarted.
-        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, idle: false, now: now.addingTimeInterval(60)) == AppUpdateRestartDecision(state: .idle, action: .cancel))
+        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, blockers: [.agentRun], now: now.addingTimeInterval(60)) == AppUpdateRestartDecision(state: .idle, action: .cancel))
+    }
+
+    @Test func inputDoesNotStartACountdownButDoesNotCancelOneEither() {
+        // The user at the keyboard or mouse keeps the banner from appearing…
+        #expect(AppUpdateAuto.restartOffer(.idle, ready: true, automatic: true, blockers: [.userActive], now: now) == AppUpdateRestartDecision(state: .idle, action: .none))
+        // …but once it is up, reaching for its buttons does not take it away, and the time still runs out.
+        let until = now.addingTimeInterval(40)
+        let counting = AppUpdateRestartState.countingDown(until: until)
+        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, blockers: [.userActive], now: now) == AppUpdateRestartDecision(state: counting, action: .none))
+        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, blockers: [.userActive], now: until) == AppUpdateRestartDecision(state: .idle, action: .restart))
+        // Every other reason still cancels, alone or together with input.
+        for blocker in AppIdleBlocker.allCases where blocker != .userActive {
+            #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, blockers: [blocker], now: now) == AppUpdateRestartDecision(state: .idle, action: .cancel), "\(blocker)")
+            #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, blockers: [blocker, .userActive], now: now) == AppUpdateRestartDecision(state: .idle, action: .cancel), "\(blocker)")
+        }
     }
 
     @Test func switchingOffOrLosingTheStagedUpdateCancelsACountdown() {
         let counting = AppUpdateRestartState.countingDown(until: now.addingTimeInterval(40))
-        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: false, idle: true, now: now) == AppUpdateRestartDecision(state: .idle, action: .cancel))
-        #expect(AppUpdateAuto.restartOffer(counting, ready: false, automatic: true, idle: true, now: now) == AppUpdateRestartDecision(state: .idle, action: .cancel))
+        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: false, blockers: [], now: now) == AppUpdateRestartDecision(state: .idle, action: .cancel))
+        #expect(AppUpdateAuto.restartOffer(counting, ready: false, automatic: true, blockers: [], now: now) == AppUpdateRestartDecision(state: .idle, action: .cancel))
     }
 
     @Test func laterSnoozesForFourHours() {
         let snoozed = AppUpdateAuto.later(now: now)
         let until = now.addingTimeInterval(AppUpdateAuto.snooze)
         #expect(snoozed == .snoozed(until: until))
-        #expect(AppUpdateAuto.restartOffer(snoozed, ready: true, automatic: true, idle: true, now: until.addingTimeInterval(-1)) == AppUpdateRestartDecision(state: snoozed, action: .none))
+        #expect(AppUpdateAuto.restartOffer(snoozed, ready: true, automatic: true, blockers: [], now: until.addingTimeInterval(-1)) == AppUpdateRestartDecision(state: snoozed, action: .none))
         // Switching off keeps the snooze; it is not a countdown to cancel.
-        #expect(AppUpdateAuto.restartOffer(snoozed, ready: true, automatic: false, idle: true, now: now) == AppUpdateRestartDecision(state: snoozed, action: .none))
+        #expect(AppUpdateAuto.restartOffer(snoozed, ready: true, automatic: false, blockers: [], now: now) == AppUpdateRestartDecision(state: snoozed, action: .none))
         // Once it is over, an idle app is asked again.
-        #expect(AppUpdateAuto.restartOffer(snoozed, ready: true, automatic: true, idle: true, now: until) == AppUpdateRestartDecision(state: .countingDown(until: until.addingTimeInterval(AppUpdateAuto.countdown)), action: .startCountdown))
-        #expect(AppUpdateAuto.restartOffer(snoozed, ready: true, automatic: true, idle: false, now: until) == AppUpdateRestartDecision(state: .idle, action: .none))
+        #expect(AppUpdateAuto.restartOffer(snoozed, ready: true, automatic: true, blockers: [], now: until) == AppUpdateRestartDecision(state: .countingDown(until: until.addingTimeInterval(AppUpdateAuto.countdown)), action: .startCountdown))
+        #expect(AppUpdateAuto.restartOffer(snoozed, ready: true, automatic: true, blockers: [.agentRun], now: until) == AppUpdateRestartDecision(state: .idle, action: .none))
     }
 }

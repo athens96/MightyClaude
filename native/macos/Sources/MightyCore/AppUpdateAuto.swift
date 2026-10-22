@@ -42,13 +42,13 @@ public enum AppUpdateAuto {
     ///     and knows the manifest address); unsigned builds never check on their own.
     ///   - lastCheck: the last successful check, persisted across launches.
     ///   - lastAttempt: the last attempt this run, successful or not (in memory).
-    /// A last time later than `now` (the clock was set back) counts as due, so
-    /// checks do not stop until the clock catches up.
+    /// A time later than `now` (the clock was set back) is ignored, so a
+    /// future `lastCheck` alone does not stop checks until the clock catches
+    /// up, while a past `lastAttempt` still holds the next try back.
     public static func checkDue(enabled: Bool, hasKey: Bool, lastCheck: Date?, lastAttempt: Date?, now: Date) -> Bool {
         guard enabled, hasKey else { return false }
-        guard let last = [lastCheck, lastAttempt].compactMap({ $0 }).max() else { return true }
-        let elapsed = now.timeIntervalSince(last)
-        return elapsed < 0 || elapsed >= checkInterval
+        guard let last = [lastCheck, lastAttempt].compactMap({ $0 }).filter({ $0 <= now }).max() else { return true }
+        return now.timeIntervalSince(last) >= checkInterval
     }
 
     /// Every reason the app is not idle, in `AppIdleBlocker.allCases` order;
@@ -82,21 +82,24 @@ public enum AppUpdateAuto {
     /// - Parameters:
     ///   - ready: an update is staged and no install is under way.
     ///   - automatic: the "automatic" switch.
-    ///   - idle: `isIdle(...)` right now.
-    /// Rules: a ready, automatic, idle app starts a `countdown`; the countdown
-    /// restarts the app when it runs out while still idle, and is cancelled
-    /// quietly as soon as the app is busy, the switch goes off or the update is
-    /// no longer ready. A snooze holds until it ends, then the app is asked
-    /// again the next time it is idle.
-    public static func restartOffer(_ state: AppUpdateRestartState, ready: Bool, automatic: Bool, idle: Bool, now: Date) -> AppUpdateRestartDecision {
+    ///   - blockers: `idleBlockers(...)` right now.
+    /// Rules: a ready, automatic app with no blocker at all starts a
+    /// `countdown`; the countdown restarts the app when it runs out, and is
+    /// cancelled quietly as soon as any blocker other than `.userActive`
+    /// appears, the switch goes off or the update is no longer ready. Input
+    /// alone does not cancel a running countdown, so the pointer can reach the
+    /// banner's buttons ("restart now", "later"), which the app handles itself.
+    /// A snooze holds until it ends, then the app is asked again the next time
+    /// it is idle.
+    public static func restartOffer(_ state: AppUpdateRestartState, ready: Bool, automatic: Bool, blockers: [AppIdleBlocker], now: Date) -> AppUpdateRestartDecision {
         switch state {
         case .countingDown(let until):
-            guard ready, automatic, idle else { return AppUpdateRestartDecision(state: .idle, action: .cancel) }
+            guard ready, automatic, blockers.allSatisfy({ $0 == .userActive }) else { return AppUpdateRestartDecision(state: .idle, action: .cancel) }
             return now >= until ? AppUpdateRestartDecision(state: .idle, action: .restart) : AppUpdateRestartDecision(state: state, action: .none)
         case .snoozed(let until) where now < until:
             return AppUpdateRestartDecision(state: state, action: .none)
         case .snoozed, .idle:
-            guard ready, automatic, idle else { return AppUpdateRestartDecision(state: .idle, action: .none) }
+            guard ready, automatic, blockers.isEmpty else { return AppUpdateRestartDecision(state: .idle, action: .none) }
             return AppUpdateRestartDecision(state: .countingDown(until: now.addingTimeInterval(countdown)), action: .startCountdown)
         }
     }
@@ -158,7 +161,8 @@ public enum AppIdleBlocker: String, CaseIterable, Sendable {
 public enum AppUpdateRestartState: Sendable, Equatable {
     /// No banner; the app is offered a restart the next time it is idle.
     case idle
-    /// The banner is up; the app restarts at `until` if it is still idle.
+    /// The banner is up; the app restarts at `until` unless something other
+    /// than user input got in the way.
     case countingDown(until: Date)
     /// The user chose "later"; no banner before `until`.
     case snoozed(until: Date)
@@ -171,6 +175,7 @@ public enum AppUpdateRestartAction: Sendable, Equatable {
     /// Show the countdown banner.
     case startCountdown
     /// Hide the banner and install the staged update, relaunching the app.
+    /// (The banner's own "restart now" does the same without waiting.)
     case restart
     /// Hide the banner without a word.
     case cancel

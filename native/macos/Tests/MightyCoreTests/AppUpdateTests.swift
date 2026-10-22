@@ -220,22 +220,100 @@ import Testing
         let destination = URL(fileURLWithPath: "/Applications/Mighty (it's) [1].app")
         let quiet = AppUpdateService.installScript(stagedApp: staged, destination: destination, pid: 42, relaunch: false)
         #expect(!quiet.contains("open -n"))
-        #expect(quiet.contains("pgrep -f"))
-        // The pattern is the destination's executable folder with every regex character escaped.
-        #expect(quiet.contains("pgrep -f '/Applications/Mighty \\(it'\\''s\\) \\[1\\]\\.app/Contents/MacOS/'"))
+        // The pattern is the destination's executable at the start of a command line, every regex
+        // character escaped; the app's headless modes are filtered out.
+        #expect(quiet.contains("pgrep -lf '^/Applications/Mighty \\(it'\\''s\\) \\[1\\]\\.app/Contents/MacOS/MightyClaude( |$)'"))
+        #expect(quiet.contains("grep -Ev -- ' (--agent-io-mcp|--agent-delegation-mcp|--verify-resources)( |$)'"))
         #expect(quiet.contains("OLD=\"$DESTINATION.update-old\"") && quiet.contains("mv \"$DESTINATION\" \"$OLD\"") && quiet.contains("mv \"$NEW\" \"$DESTINATION\"") && quiet.contains("rm -rf \"$OLD\""))
         // The running check comes after the new copy is ready and before the old app is moved aside.
-        let check = quiet.range(of: "pgrep -f")!.lowerBound
+        let check = quiet.range(of: "pgrep -lf")!.lowerBound
         #expect(quiet.range(of: "ditto \"$SOURCE\" \"$NEW\"")!.lowerBound < check)
         #expect(check < quiet.range(of: "mv \"$DESTINATION\" \"$OLD\"")!.lowerBound)
-        // A failed swap puts the old app back.
-        #expect(quiet.contains("mv \"$OLD\" \"$DESTINATION\""))
+        // A failed swap puts the old app back, and says so when even that fails.
+        #expect(quiet.contains("mv \"$OLD\" \"$DESTINATION\" || echo \"Could not restore the previous version"))
+        // Signals cannot stop the helper between the two renames.
+        let ignore = quiet.range(of: "trap '' HUP INT TERM")!.lowerBound, restore = quiet.range(of: "trap - HUP INT TERM")!.lowerBound
+        #expect(ignore < quiet.range(of: "mv \"$DESTINATION\" \"$OLD\"")!.lowerBound && quiet.range(of: "mv \"$NEW\" \"$DESTINATION\"")!.lowerBound < restore)
+        // A leftover that cannot be removed stops the update rather than letting `mv` move the app into it.
+        #expect(quiet.contains("if [ -e \"$OLD\" ]; then echo \"Could not remove the leftover $OLD; skipping the update.\" >&2; rm -rf \"$NEW\"; exit 1; fi"))
+        // The old bundle leaves LaunchServices before it is deleted.
+        #expect(quiet.contains("\"$LSREGISTER\" -u \"$OLD\""))
+        // A helper killed between the renames anyway is repaired by the next one, before anything else.
+        let repair = quiet.range(of: "if [ ! -e \"$DESTINATION\" ] && [ -d \"$OLD\" ]; then")!.lowerBound
+        #expect(repair < quiet.range(of: "kill -0 \"$PID\"")!.lowerBound)
         // No copy into a temporary backup any more: the swap is two renames.
         #expect(!quiet.contains("BACKUP") && !quiet.contains("MightyClaude.app.bak"))
 
         let relaunching = AppUpdateService.installScript(stagedApp: staged, destination: destination, pid: 42, relaunch: true)
         #expect(relaunching.contains("open -n \"$DESTINATION\""))
-        #expect(!relaunching.contains("pgrep"))
+        #expect(!relaunching.contains("pgrep") && relaunching.contains("trap '' HUP INT TERM"))
         #expect(relaunching.contains("OLD=\"$DESTINATION.update-old\"") && relaunching.contains("rm -rf \"$OLD\""))
+    }
+
+    /// The guard against a running app, run for real against fake apps in a temporary folder:
+    /// the destination's executable is a re-signed copy of bash that waits on its standard input,
+    /// started once plainly (the app's window) and once in a headless mode (`--agent-io-mcp`, an
+    /// MCP child that may outlive the window). Only the plain one keeps the update staged. The
+    /// path has spaces, parentheses and brackets, so this also checks the escaping against the real
+    /// BSD `pgrep`.
+    @Test func installOnQuitWaitsForTheAppButNotForItsHeadlessChildren() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("app-onquit-" + UUID().uuidString, isDirectory: true)
+        var children: [(Process, Pipe)] = []
+        defer {
+            for (child, input) in children where child.isRunning { child.terminate(); try? input.fileHandleForWriting.close(); child.waitUntilExit() }
+            try? FileManager.default.removeItem(at: root)
+        }
+        let staged = try makeFakeApp(at: root.appendingPathComponent("updates/0.2.0/staged", isDirectory: true), version: "0.2.0")
+        let installed = try makeFakeApp(at: root.appendingPathComponent("X (1) [a]", isDirectory: true), version: "0.1.0")
+        let binary = installed.appendingPathComponent("Contents/MacOS/MightyClaude")
+        try FileManager.default.removeItem(at: binary)
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/bash"), to: binary)
+        // A copied system binary is killed at launch unless it carries its own (ad-hoc) signature.
+        let sign = try await AppUpdateService.run("/usr/bin/codesign", ["-f", "-s", "-", binary.path])
+        #expect(sign.exitCode == 0, "codesign: \(String(decoding: sign.stderr, as: UTF8.self))")
+        func start(_ arguments: [String]) throws -> Process {
+            let child = Process(), input = Pipe()
+            child.executableURL = binary
+            child.arguments = arguments
+            child.standardInput = input
+            child.standardOutput = FileHandle.nullDevice
+            child.standardError = FileHandle.nullDevice
+            try child.run()
+            children.append((child, input))
+            return child
+        }
+        func stop(_ child: Process) { child.terminate(); child.waitUntilExit() }
+        let gone = Process()
+        gone.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try gone.run(); gone.waitUntilExit()
+        let helper = root.appendingPathComponent("install.sh")
+        try Data(AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: gone.processIdentifier, relaunch: false).utf8).write(to: helper)
+        func version() throws -> String? {
+            let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: installed.appendingPathComponent("Contents/Info.plist")), format: nil) as? [String: Any]
+            return plist?["CFBundleShortVersionString"] as? String
+        }
+
+        // The app itself is running again from the destination: nothing is replaced.
+        let window = try start([])
+        #expect(window.isRunning)
+        let skipped = try await AppUpdateService.run("/bin/sh", [helper.path])
+        let skippedLog = String(decoding: skipped.stdout + skipped.stderr, as: UTF8.self)
+        #expect(skipped.exitCode == 0 && skippedLog.contains("running again"), "\(skippedLog)")
+        #expect(try version() == "0.1.0")
+        #expect(FileManager.default.fileExists(atPath: staged.path)) // still staged for the next quit
+        #expect(!FileManager.default.fileExists(atPath: installed.path + ".update-new"))
+        #expect(window.isRunning) // it was there the whole time
+        stop(window)
+
+        // Only a headless child of the app is left: the update goes in.
+        // `--` keeps bash from reading the flag as one of its own options and exiting.
+        let child = try start(["-s", "--", PaneMCPServerLocation.headlessArgument])
+        let done = try await AppUpdateService.run("/bin/sh", [helper.path])
+        let doneLog = String(decoding: done.stdout + done.stderr, as: UTF8.self)
+        #expect(done.exitCode == 0 && doneLog.contains("Installed: "), "\(doneLog)")
+        #expect(try version() == "0.2.0")
+        #expect(!FileManager.default.fileExists(atPath: installed.path + ".update-old"))
+        #expect(child.isRunning) // it was there the whole time, and did not hold the update back
+        stop(child)
     }
 }
