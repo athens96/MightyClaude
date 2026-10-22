@@ -159,8 +159,8 @@ export interface MobileSessionSummary {
    */
   resolvedModel?: string;
   /**
-   * Whether text sent while the pane runs can join the running turn (steer): only a Claude
-   * pane can; a Codex or Antigravity pane queues it. Absent on older hosts: offer steer.
+   * Whether text sent while the pane runs could join the running turn (steer). Always false
+   * from host 0.4.35; the phone doesn't read it and always sends `mode: 'queue'` to a busy pane.
    */
   canSteer?: boolean;
   /**

@@ -31,7 +31,6 @@ export function Composer({
   running,
   sending,
   submitModes,
-  canSteer,
   commands,
   attachments,
   onSend,
@@ -46,13 +45,8 @@ export function Composer({
   terminal: boolean;
   running: boolean;
   sending: boolean;
-  /** "submit-mode": the host tells steering and queueing apart, so both are offered. */
+  /** "submit-mode": the host takes `mode: 'queue'`, so a draft on a running pane queues. */
   submitModes: boolean;
-  /**
-   * The host's word on whether this pane's running turn takes a follow-up (Claude only);
-   * false hides steer so a draft can only queue. Absent from older hosts: steer stays.
-   */
-  canSteer?: boolean;
   /** "commands": what `/` offers; empty on a host without the capability. */
   commands: MobileCommand[];
   /** "attachments": absent when the host or the pane cannot take files. */
@@ -105,9 +99,8 @@ export function Composer({
   const picked = attachments?.files ?? [];
   const empty = text.trim().length === 0 && picked.length === 0;
   const blocked = disabled || tooLong || empty;
-  // The host cannot fold files into a turn that is already open, so a request carrying
-  // attachments is never offered as "send now": it queues, or it starts the pane.
-  const busyChoices = busySendChoices({ submitModes, canSteer, attachments: picked.length });
+  // A draft on a running pane always queues as the next request, files or not.
+  const busyChoices = busySendChoices({ submitModes });
   // While a run is busy the round buttons show only for a draft with something in it,
   // and stop shrinks beside them, as on the Mac and Windows.
   const offersDraft = running && !empty;
@@ -120,7 +113,7 @@ export function Composer({
     if (await onSend(value, mode)) onChangeText('');
   };
 
-  // Send, steer and queue are one look: the round run-blue button, faded while it cannot go.
+  // Send and queue are one look: the round run-blue button, faded while it cannot go.
   const roundButton = (icon: IconName, label: string, mode?: SubmitMode) => (
     <Pressable
       key={mode ?? 'send'}
@@ -242,17 +235,15 @@ export function Composer({
               <Icon name="stop" color={palette.onStatus} size={offersDraft ? 16 : 18} />
             </Pressable>
           ) : null}
-          {/* Stop, then steer, then queue at the far right where send sits when idle. */}
+          {/* Stop, then queue at the far right where send sits when idle. */}
           {!running
             ? roundButton('send', t('phone.composer.send'))
             : !offersDraft
               ? null
               : busyChoices.map((choice) =>
-                  choice === 'steer'
-                    ? roundButton('steer', t('phone.composer.steer'), 'steer')
-                    : choice === 'queue'
-                      ? roundButton('queue', t('queue.add'), 'queue')
-                      : roundButton('send', t('phone.composer.send')),
+                  choice === 'queue'
+                    ? roundButton('queue', t('queue.add'), 'queue')
+                    : roundButton('send', t('phone.composer.send')),
                 )}
         </View>
       </View>

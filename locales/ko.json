@@ -2652,7 +2652,6 @@
   "phone.composer.removeAttachment": "{name} 빼기",
   "phone.composer.uploading": "첨부를 보내는 중…",
   "phone.composer.attachmentsQueue": "첨부가 있는 요청은 대기열로 들어갑니다.",
-  "phone.composer.steer": "바로 전달",
   "phone.composer.placeholder": "메시지를 입력하세요",
   "phone.composer.pickPhotos": "사진 선택",
   "phone.composer.pickFiles": "파일 선택",

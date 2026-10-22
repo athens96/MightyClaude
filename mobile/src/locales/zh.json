@@ -2652,7 +2652,6 @@
   "phone.composer.removeAttachment": "移除 {name}",
   "phone.composer.uploading": "正在发送附件…",
   "phone.composer.attachmentsQueue": "带附件的请求会进入队列。",
-  "phone.composer.steer": "立即发送",
   "phone.composer.placeholder": "输入消息",
   "phone.composer.pickPhotos": "选择照片",
   "phone.composer.pickFiles": "选择文件",

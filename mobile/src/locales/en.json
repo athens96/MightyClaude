@@ -2652,7 +2652,6 @@
   "phone.composer.removeAttachment": "Remove {name}",
   "phone.composer.uploading": "Sending attachments…",
   "phone.composer.attachmentsQueue": "A request with attachments goes to the queue.",
-  "phone.composer.steer": "Send now",
   "phone.composer.placeholder": "Type a message",
   "phone.composer.pickPhotos": "Choose photos",
   "phone.composer.pickFiles": "Choose files",
