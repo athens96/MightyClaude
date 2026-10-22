@@ -9,7 +9,7 @@ struct MobileRemoteProviderTests {
     private func summary(_ pane: RunSession, catalog: ModelCatalog) throws -> [String: Any] {
         let value = MobileSessionSummary(id: pane.id, workspaceId: pane.workspaceId, title: pane.title, kind: pane.kind, provider: pane.provider, model: pane.model,
                                          status: "running", revision: 1, updatedAt: pane.createdAt,
-                                         resolvedModel: MobileRemoteSupport.resolvedModel(pane, catalog: catalog), canSteer: MobileRemoteSupport.canSteer(pane))
+                                         resolvedModel: MobileRemoteSupport.resolvedModel(pane, catalog: catalog), canSteer: false)
         return try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? [String: Any])
     }
 
@@ -32,16 +32,16 @@ struct MobileRemoteProviderTests {
         let wire = try summary(pane, catalog: catalog)
         #expect(wire["provider"] as? String == "gemini" && wire["model"] as? String == "default")
         #expect(wire["resolvedModel"] == nil, "the phone reads just the Antigravity default label")
-        #expect(wire["canSteer"] as? Bool == false, "an agy turn takes no follow-up, so the phone only queues")
+        #expect(wire["canSteer"] as? Bool == false, "the phone only queues")
     }
 
-    @Test func onlyAClaudeAgentPaneSteers() throws {
+    @Test func noPaneSteersAndAClaudePaneSaysSoToOlderPhones() throws {
         let claude = RunSession(workspaceId: "w", title: "c", provider: "claude", model: "opus", sessionUsage: usage("claude", model: "claude-opus-5-5", selected: "opus"))
         let codex = RunSession(workspaceId: "w", title: "x", provider: "codex", model: "default")
         let shell = RunSession(workspaceId: "w", title: "s", kind: SessionKind.shell, provider: "claude")
-        #expect(MobileRemoteSupport.canSteer(claude) && !MobileRemoteSupport.canSteer(codex) && !MobileRemoteSupport.canSteer(shell))
-        #expect(MobileRemoteSupport.canSteer(claude) == DelegationProviders.canSteer(kind: claude.kind, provider: claude.provider), "one rule with the Mac composer")
-        #expect(try summary(claude, catalog: ProviderOptions.fallbackCatalog("claude"))["canSteer"] as? Bool == true)
+        // Since 0.4.35 a send to a busy pane always queues: an older phone, which offers steer
+        // when canSteer is true or missing, is told false even for a Claude pane.
+        #expect(try summary(claude, catalog: ProviderOptions.fallbackCatalog("claude"))["canSteer"] as? Bool == false)
         #expect(try summary(codex, catalog: ProviderOptions.fallbackCatalog("codex"))["canSteer"] as? Bool == false)
         // A family alias takes the model reported for it; a command pane has no model to name.
         #expect(MobileRemoteSupport.resolvedModel(claude, catalog: ProviderOptions.fallbackCatalog("claude")) == "claude-opus-5-5")

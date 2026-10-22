@@ -49,11 +49,11 @@ struct MobileRemoteTracking {
     }
 }
 
-/// What a phone's submit actually did. Steering is only known once the runner
-/// answers, so the task carries the verdict to the bridge.
+/// What a phone's submit actually did. Releasing items held for the pane is
+/// only known once its run starts, so the task carries the verdict to the bridge.
 enum MobileSubmitOutcome {
     case immediate(SubmitOutcome)
-    case steering(Task<SubmitOutcome, Never>)
+    case pending(Task<SubmitOutcome, Never>)
 }
 
 /// Hops every protocol call onto the main actor where the store lives.
@@ -80,9 +80,9 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         let effect: SubmitOutcome
         switch outcome {
         case .immediate(let value): effect = value
-        // The runner decides: a turn whose stdin already closed queues instead,
-        // and settling that queue may have started the item right away.
-        case .steering(let task): effect = await task.value
+        // Held items released with the text: started, queued behind a run
+        // that began meanwhile, or dropped.
+        case .pending(let task): effect = await task.value
         }
         // Dropped: the text reached neither the turn nor the queue, so the phone
         // is told it failed instead of being shown an item that does not exist.
@@ -367,7 +367,8 @@ extension AppStore {
             styleId: session.kind == "shell" ? nil : mobileStyleId(session),
             titleMode: session.titleMode ?? "auto",
             resolvedModel: MobileRemoteSupport.resolvedModel(session, catalog: providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog),
-            canSteer: MobileRemoteSupport.canSteer(session),
+            // Always false since 0.4.35 (a busy pane only queues), for older phones.
+            canSteer: false,
             parentSessionId: child?.parent, childState: child?.state)
     }
 
@@ -618,10 +619,11 @@ extension AppStore {
 
     // MARK: Commands
 
-    /// `mode: "queue"` only means "do not steer". A pane that is not running has
-    /// nothing to drain its queue, so the request starts the run either way.
-    /// Files never steer — `deferInput` holds that rule for the Mac composer
-    /// too — so a request with attachments queues and is told `queued`.
+    /// A busy pane always queues the text as its next request and says
+    /// `queued`, whatever `mode` asks for: nothing a person sends joins the
+    /// running turn, and `mode: "steer"` from an older phone is queued too. A
+    /// pane that is not running has nothing to drain its queue, so the request
+    /// starts the run either way.
     func mobileSubmit(_ id: String, text: String, mode: String? = nil, attachments: [RunAttachment] = []) throws -> MobileSubmitOutcome {
         guard !ending, !closingSessions.contains(id), let session = mobilePane(id),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { throw MightyError(L("remote.error.paneNotFound")) }
@@ -631,21 +633,18 @@ extension AppStore {
         let held = backgroundUpdateHolds(session)
         if session.status == "running" || pendingRuns.contains(id) || held {
             guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { throw MightyError(L("remote.error.queueFull")) }
-            // The composer's rule (§1.17.4): a plan-mode style never steers into a
-            // turn that only waits on background work; it queues and plans fresh.
+            // The composer's rule: a plan-mode style's queued request plans fresh (§1.17.4).
             let plans = styleLaunchesInPlanMode(session)
             let item = QueuedInput(text: text, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: plans))
             if held { heldForUpdate.insert(id) }
-            let steers = BackgroundQueuePolicy.phoneSteers(mode: mode, work: session.backgroundWork, launchesInPlan: plans)
-            let deferred = mobileCapturingError { deferInput(id, session: session, workspace: workspace, item: item, steering: steers && !held) }
+            let deferred = mobileCapturingError { deferInput(id, session: session, workspace: workspace, item: item) }
             switch deferred.value {
-            case .steering(let task): return .steering(task)
             case .queued: return .immediate(.queued)
             case .refused: throw MightyError(deferred.failure ?? L("remote.error.queueRefused"))
             }
         }
         // Items held for the pane go first, in this one run.
-        if !(delegationHeld[id] ?? []).isEmpty { return .steering(releaseHeld(id, input: text, attachments: attachments, from: .phone)) }
+        if !(delegationHeld[id] ?? []).isEmpty { return .pending(releaseHeld(id, input: text, attachments: attachments, from: .phone)) }
         let started = mobileCapturingError { start(id, session: session, workspace: workspace, input: text, attachments: attachments, restoringDraft: nil) }
         guard started.value else { throw MightyError(started.failure ?? L("remote.error.startFailed")) }
         return .immediate(.started)

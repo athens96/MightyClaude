@@ -2,38 +2,21 @@ import Foundation
 import Testing
 @testable import MightyCore
 
-/// How new input meets a busy run when a plan-mode style starts every request
-/// in plan mode (docs/mighty-styles.md §1.17.4); Windows Core checks the same
-/// rules in `ClaudePlanStyleVerification.QueueAndStoredMode`.
+/// How new input meets a busy run: it always waits in the queue, and a
+/// plan-mode style (docs/mighty-styles.md §1.17.4) records plan mode on it;
+/// Windows Core checks the same rules in `ClaudePlanStyleVerification.QueueAndStoredMode`.
 struct BackgroundQueuePolicyTests {
     private let running = BackgroundTask(id: "b", kind: "agent", description: "x", startedAt: "2026-10-06T01:00:00.000Z")
     private var waiting: BackgroundWork { BackgroundWork(tasks: [running], turnEnded: true) }
     private var busy: BackgroundWork { BackgroundWork(tasks: [running], turnEnded: false) }
 
-    @Test func theComposerJoinsATurnThatOnlyWaitsUnlessTheStylePlansEachRequest() {
-        #expect(BackgroundQueuePolicy.composerJoins(steering: false, work: waiting, launchesInPlan: false))
-        #expect(!BackgroundQueuePolicy.composerJoins(steering: false, work: waiting, launchesInPlan: true))
-        // ⌘Enter is the user's own say: it still steers.
-        #expect(BackgroundQueuePolicy.composerJoins(steering: true, work: waiting, launchesInPlan: true))
-        #expect(!BackgroundQueuePolicy.composerJoins(steering: false, work: busy, launchesInPlan: false))
-        #expect(!BackgroundQueuePolicy.composerJoins(steering: false, work: nil, launchesInPlan: false))
-    }
-
-    @Test func thePhoneQueuesRatherThanSteersInTheSameCase() {
-        #expect(BackgroundQueuePolicy.phoneSteers(mode: nil, work: waiting, launchesInPlan: false))
-        #expect(!BackgroundQueuePolicy.phoneSteers(mode: nil, work: waiting, launchesInPlan: true))
-        #expect(!BackgroundQueuePolicy.phoneSteers(mode: "steer", work: waiting, launchesInPlan: true))
-        #expect(BackgroundQueuePolicy.phoneSteers(mode: "steer", work: busy, launchesInPlan: true))
-        #expect(!BackgroundQueuePolicy.phoneSteers(mode: "queue", work: nil, launchesInPlan: false))
-    }
-
-    @Test func theQueueSaysItWaitsOnBackgroundWork() {
-        #expect(BackgroundQueuePolicy.waitsOnBackground(work: waiting, launchesInPlan: true, queued: 1))
-        #expect(!BackgroundQueuePolicy.waitsOnBackground(work: waiting, launchesInPlan: true, queued: 0))
-        #expect(!BackgroundQueuePolicy.waitsOnBackground(work: waiting, launchesInPlan: false, queued: 1))
-        #expect(!BackgroundQueuePolicy.waitsOnBackground(work: busy, launchesInPlan: true, queued: 1))
+    @Test func theQueueSaysItWaitsOnBackgroundWorkInEveryStyle() {
+        #expect(BackgroundQueuePolicy.waitsOnBackground(work: waiting, queued: 1))
+        #expect(!BackgroundQueuePolicy.waitsOnBackground(work: waiting, queued: 0))
+        #expect(!BackgroundQueuePolicy.waitsOnBackground(work: busy, queued: 1))
+        #expect(!BackgroundQueuePolicy.waitsOnBackground(work: nil, queued: 1))
         LocaleOverride.$language.withValue(.ko) {
-            #expect(L("queue.waitingOnBackground.mac") == "백그라운드 작업이 끝나야 시작합니다 · ⌘Enter로 끼워 넣기 / 중지")
+            #expect(L("queue.waitingOnBackground.mac") == "백그라운드 작업이 끝나야 시작합니다 · 지금 시작하려면 중지")
         }
     }
 

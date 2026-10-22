@@ -108,7 +108,7 @@ enum ComposerInputTransactionDiagnostics {
         }
         report["imeConsumedReturnDoesNotSubmit"] = sends.isEmpty
         _ = interpreted(modifiers: .command)
-        report["commandReturnForwardsSteeringOnce"] = sends == ["한"] && commandFlags == [true]
+        report["commandReturnForwardsSecondSendOnce"] = sends == ["한"] && commandFlags == [true]
         sends.removeAll(); commandFlags.removeAll()
         report["nativeNoopForExactCommandReturnSubmitsOnce"] = interpreted("noop:", modifiers: .command) && sends == ["한"] && commandFlags == [true]
         sends.removeAll(); commandFlags.removeAll()
@@ -180,7 +180,7 @@ enum ComposerInputTransactionDiagnostics {
             editor.insertText("글", replacementRange: editor.markedRange())
             _ = fixture.coordinator.textView(editor, doCommandBy: NSSelectorFromString("insertNewline:"))
         }
-        report["explicitCommandReturnAfterCommitSteersExactlyOnce"] = sends == ["한글"] && commandFlags == [true]
+        report["explicitCommandReturnAfterCommitSecondSendsExactlyOnce"] = sends == ["한글"] && commandFlags == [true]
         sends.removeAll(); commandFlags.removeAll()
         editor.replaceDraft("한")
         editor.setMarkedText("글", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: 1, length: 0))

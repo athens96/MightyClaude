@@ -189,9 +189,9 @@ extension AppStore {
         if session.status == "running" || pendingRuns.contains(id) {
             if let item = origin.queued { queuedInputs[id, default: []].insert(item, at: 0); return .queued }
             let item = QueuedInput(text: input, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: styleLaunchesInPlanMode(session)))
-            switch deferInput(id, session: session, workspace: workspace, item: item, steering: false) {
+            switch deferInput(id, session: session, workspace: workspace, item: item) {
             case .queued: return .queued
-            case .refused, .steering:
+            case .refused:
                 giveBack(id, attachments: attachments, from: origin)
                 return .dropped
             }
@@ -348,17 +348,16 @@ extension AppStore {
     }
 
     /// The text of a second send that no new child runs
-    /// (``ComposerSecondSend/fallback(steerable:)``): steered into the
-    /// pane's running Claude turn when that can take it, otherwise the pane's
-    /// next request, queued behind the run or started now when the run ended
-    /// meanwhile, with any items held for the pane ahead of it. With the queue
+    /// (``ComposerSecondSend/choose(kind:provider:mode:isChild:delegationOn:canHostWorktree:)``):
+    /// the pane's next request, queued behind the run or started now when the
+    /// run ended meanwhile, with any items held for the pane ahead of it; it
+    /// never joins the running turn. With the queue
     /// full it goes back to the composer instead. The pane's transcript says
     /// which, and why; a draft typed meanwhile is never touched.
     private func runAfterNoWorktree(_ id: String, input: String, attachments: [RunAttachment], draft: String, reason: String) {
         guard !ending, !closingSessions.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
         let busy = session.status == "running" || pendingRuns.contains(id)
-        let fallback = ComposerSecondSend.fallback(steerable: busy && canSteer(session) && attachments.isEmpty)
         func note(_ key: String) {
             updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L(key, ["reason": reason]))); $0.logs = TranscriptRetention.trimmed($0.logs) }
         }
@@ -368,11 +367,10 @@ extension AppStore {
             giveBack(id, attachments: attachments, from: .composer(draft: draft))
             return
         }
-        note(fallback == .steer ? "delegation.human.steered" : "delegation.human.queued")
+        note("delegation.human.queued")
         let item = QueuedInput(text: input, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: styleLaunchesInPlanMode(session)))
         if busy {
-            // A turn that ends before taking the steer runs it next instead.
-            deferInput(id, session: session, workspace: workspace, item: item, steering: fallback == .steer, takingDraft: false)
+            deferInput(id, session: session, workspace: workspace, item: item, takingDraft: false)
             return
         }
         let waiting = queuedInputs[id]?.isEmpty == false
@@ -611,8 +609,8 @@ extension AppStore {
         await startDelivered(sessionId, input: input, attachments: [], restoringDraft: nil, titleFrom: "")
     }
 
-    /// `input` steered into the pane's running Claude run, shown in its
-    /// transcript like a steered send, or started as its next run.
+    /// A delegation notice or follow-up: steered into the pane's running
+    /// Claude run and shown in its transcript, or started as its next run.
     func deliver(_ input: String, to sessionId: String, route: DeliveryRoute) async -> String? {
         switch route {
         case .queue:

@@ -11,8 +11,8 @@ import Foundation
 /// the Mac composer's second send on a busy Claude, Codex or Antigravity pane
 /// runs the text in a new child worktree (``ComposerSecondSend``); which panes
 /// take part is ``DelegationProviders``'s. While it is off, no run gets the
-/// server, delegation calls reach nothing and the second send steers or
-/// queues as before. Turning it off only detaches the server: existing
+/// server, delegation calls reach nothing and the second send queues, as
+/// Enter does. Turning it off only detaches the server: existing
 /// children keep working.
 public enum DelegationSwitch {
     public static let defaultsKey = "delegation.enabled"
@@ -30,29 +30,21 @@ public enum ComposerSecondSend: String, Sendable, CaseIterable {
     /// one, runs the text now (``DelegationCoordinator/startHumanChild(_:parentId:planFirst:agent:starter:)``).
     /// The round button's menu runs it in a child of another agent instead.
     case worktree
-    /// The text joins the running Claude turn.
-    case steer
     /// The text waits for the next request, as Enter does.
     case queue
 
-    /// The first rule that applies: a Claude, Codex or Antigravity pane that
-    /// may have children (delegation on, not a child itself, and for Codex or
-    /// Antigravity a `mode` in which its child can change files) in a folder
-    /// that can host a child worktree (``ChildWorktreeCheck/canHostWorktree``)
-    /// opens a new worktree; any other pane whose running turn takes text
-    /// steers (a delegated Claude child, a Claude pane with delegation off or
-    /// outside a usable git checkout); every other pane queues.
-    public static func choose(kind: String, provider: String, mode: String, isChild: Bool, delegationOn: Bool, canHostWorktree: Bool, steerable: Bool) -> ComposerSecondSend {
+    /// A Claude, Codex or Antigravity pane that may have children (delegation
+    /// on, not a child itself, and for Codex or Antigravity a `mode` in which
+    /// its child can change files) in a folder that can host a child worktree
+    /// (``ChildWorktreeCheck/canHostWorktree``) opens a new worktree; every
+    /// other pane queues. Nothing a person sends joins the running turn. A
+    /// text whose new worktree could not be made or whose child could not
+    /// start queues as well — it is never dropped — unless it goes back to
+    /// the composer (``returnsToComposer(childAgent:parentAgent:)``).
+    public static func choose(kind: String, provider: String, mode: String, isChild: Bool, delegationOn: Bool, canHostWorktree: Bool) -> ComposerSecondSend {
         if delegationOn, !isChild, canHostWorktree, DelegationProviders.canParentByHuman(kind: kind, provider: provider, mode: mode) { return .worktree }
-        return steerable ? .steer : .queue
+        return .queue
     }
-
-    /// What a text does when its new worktree could not be made or its child
-    /// could not start: it goes to the running turn when that can take it,
-    /// and is otherwise the pane's next request, as Enter would make it. It
-    /// is never dropped. A text the human meant for another agent never goes
-    /// to the pane (``returnsToComposer(childAgent:parentAgent:)``).
-    public static func fallback(steerable: Bool) -> ComposerSecondSend { steerable ? .steer : .queue }
 
     /// Whether a text whose child could not be made or started goes back to
     /// the composer instead of to the pane: the human picked another agent

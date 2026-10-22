@@ -452,6 +452,29 @@ private func blockingRawExchange(port: Int, _ request: String) throws -> String 
         } catch { await fixture.cleanup(); throw error }
     }
 
+    @Test func aSteerToARunningClaudeTurnIsCheckedAndRefused() async throws {
+        let fixture = try await fixture()
+        do {
+            let (key, port) = try await share(fixture)
+            let target = RemoteTarget(address: RemoteAddress(host: "127.0.0.1", port: port), ip: "127.0.0.1", port: port)
+            let start = StartRunRequest(sessionId: "x", workspaceId: fixture.workspace.id, input: "Look around", settings: RunSettings(permissionMode: "manual"))
+            let job = try JSONDecoder().decode(RemoteWireJob.self, from: try await RemoteTransport.request(target, key: key, method: "POST", path: "/v2/runs",
+                                                                                                             body: JSONEncoder().encode(RemoteWireStart(request: start)))).jobId
+            // The fake Claude waits on its tool request, so the turn is still running.
+            try await remoteWait {
+                let poll = try? JSONDecoder().decode(RemoteWirePoll.self, from: try await RemoteTransport.request(target, key: key, method: "GET", path: "/v2/runs/\(job)/events?cursor=0"))
+                return poll?.events.contains { $0.event.permission?.state == "pending" } == true
+            }
+            // Nothing a person sends joins a running turn: an older client gets false and queues the text itself.
+            let answer = try JSONDecoder().decode(RemoteWireAnswer.self, from: try await RemoteTransport.request(target, key: key, method: "POST", path: "/v2/runs/\(job)/steer",
+                                                                                                                   body: JSONEncoder().encode(RemoteWireSteer(text: "and one more thing"))))
+            #expect(answer.accepted == false)
+            // The request is still checked first.
+            #expect(await failureStatus { _ = try await RemoteTransport.request(target, key: key, method: "POST", path: "/v2/runs/\(job)/steer", body: JSONEncoder().encode(RemoteWireSteer(text: " "))) } == 400)
+            await fixture.cleanup()
+        } catch { await fixture.cleanup(); throw error }
+    }
+
     @Test func aRunNobodyPollsIsStoppedAndADroppedHostEndsTheClientsRuns() async throws {
         let fixture = try await fixture(heartbeat: 1)
         do {

@@ -12,9 +12,9 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
     var runNextFails = false
     /// The pane is busy, so a submit defers instead of starting.
     var running = true
-    /// What the steer chain finally reported. The runner may refuse the text
-    /// and settling the queue may start it at once, so all four are possible.
-    var steerEffect = SubmitOutcome.steered
+    /// What a send to the busy pane finally reported: queued, as the store
+    /// does whatever `mode` says, unless a test makes it something else.
+    var busyEffect = SubmitOutcome.queued
     /// The pane's view mode; guided styles exist only inside Mighty view.
     var viewMode = MobileWire.plainViewMode
     /// The guided style this pane is in; a `guided` request for another one 409s.
@@ -63,12 +63,9 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
         if failSubmit { throw MightyError("실행 준비가 필요합니다.") }
         let files = attachments.map(\.name).joined(separator: ",")
         commands.append("submit:\(sessionId):\(text)" + (files.isEmpty ? "" : ":" + files))
-        // Idle: `mode` only means "do not steer", and nothing would drain a
-        // queue here, so the run starts either way.
-        var effect = SubmitOutcome.started
-        // Files cannot ride a steer, so a busy pane queues them however the
-        // phone asked — the same rule the store applies.
-        if running { effect = (mode == "queue" || !attachments.isEmpty) ? .queued : steerEffect }
+        // Idle: nothing would drain a queue here, so the run starts whatever
+        // `mode` says. Busy: the store queues whatever `mode` says.
+        let effect = running ? busyEffect : SubmitOutcome.started
         guard let accepted = effect.accepted else { throw MobileHostError.conflict(MobileRemoteSupport.droppedMessage) }
         return accepted
     }
@@ -260,7 +257,7 @@ struct MobileRemoteTests {
             #expect(try await call(service, "GET", "/m1/sessions/missing?since=0").0 == 404)
             #expect(try await call(service, "GET", "/m1/sessions/../x").0 == 404)
 
-            #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "  테스트 추가해줘 "]).1["accepted"] as? String == "steered")
+            #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "  테스트 추가해줘 "]).1["accepted"] as? String == "queued")
             #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "   "]).0 == 400)
             #expect(try await call(service, "POST", "/m1/sessions/session-1/submit").0 == 400)
             host.failSubmit = true
@@ -538,26 +535,22 @@ struct MobileRemoteTests {
         let host = FakeMobileHost()
         let (service, directory) = await service(host)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let steered = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "이어서", "mode": "steer"])
-        #expect(steered.0 == 202 && steered.1["accepted"] as? String == "steered")
-        let queued = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "이어서", "mode": "queue"])
-        #expect(queued.0 == 202 && queued.1["accepted"] as? String == "queued")
-        let omitted = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "이어서"])
-        #expect(omitted.1["accepted"] as? String == "steered")
-        // The runner refused the text and settling the queue started it at once.
-        host.steerEffect = .started
+        // A busy pane queues whatever the phone asked: "steer" from an older phone is
+        // still a valid mode (not 400), and it is queued like the others.
+        for body in [["text": "이어서", "mode": "steer"], ["text": "이어서", "mode": "queue"], ["text": "이어서"]] {
+            let reply = try await call(service, "POST", "/m1/sessions/session-1/submit", body: body)
+            #expect(reply.0 == 202 && reply.1["accepted"] as? String == "queued", "\(body)")
+        }
+        // Held items released with the text started a run at once.
+        host.busyEffect = .started
         let restarted = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "이어서"])
         #expect(restarted.1["accepted"] as? String == "started")
-        // The turn had closed: the item waits instead of joining it.
-        host.steerEffect = .queued
-        let deferred = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "이어서"])
-        #expect(deferred.1["accepted"] as? String == "queued")
-        // Neither steered nor queued: a refusal, never a queued item that is not there.
-        host.steerEffect = .dropped
+        // Neither started nor queued: a refusal, never a queued item that is not there.
+        host.busyEffect = .dropped
         let dropped = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "이어서"])
         #expect(dropped.0 == 409 && dropped.1["accepted"] == nil)
         #expect(dropped.1["error"] as? String == MobileRemoteSupport.droppedMessage)
-        host.steerEffect = .steered
+        host.busyEffect = .queued
         #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "x", "mode": "later"]).0 == 400)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "x", "mode": ""]).0 == 400)
         host.failSubmit = true
@@ -569,8 +562,8 @@ struct MobileRemoteTests {
         host.running = false
         let (service, directory) = await service(host)
         defer { try? FileManager.default.removeItem(at: directory) }
-        // `mode` only says "do not steer". Nothing would ever drain a queue on
-        // an idle pane, so the request starts the run and says so.
+        // Nothing would ever drain a queue on an idle pane, so the request
+        // starts the run and says so, whatever `mode` asks for.
         for mode in ["queue", "steer"] {
             let reply = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "시작", "mode": mode])
             #expect(reply.0 == 202 && reply.1["accepted"] as? String == "started")

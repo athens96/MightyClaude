@@ -339,8 +339,6 @@ public actor RemoteClientService {
         return (try? JSONDecoder().decode(RemoteWireAnswer.self, from: data))?.accepted == true
     }
 
-    /// Hands a follow-up to the running Claude turn on the host; false when it did not take it.
-    public func steer(id: String, text: String) async -> Bool { (try? await send(id, "steer", RemoteWireSteer(text: text))) ?? false }
     public func respondToPermission(sessionId: String, runId: String, requestId: String, allow: Bool) async throws {
         _ = try await send(sessionId, "permission", RemoteWirePermission(runId: runId, requestId: requestId, allow: allow))
     }

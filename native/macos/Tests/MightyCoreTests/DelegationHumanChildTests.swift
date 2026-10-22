@@ -167,45 +167,37 @@ private func openChild(_ id: String, byHuman: Bool = false) -> ChildRecord {
 /// The composer's second send on a busy pane, and the default-on switch.
 @Suite(.delegationLane) struct ComposerSecondSendTests {
     @Test func aClaudePaneThatMayHaveChildrenInAUsableCheckoutOpensANewWorktree() {
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true, steerable: true) == .worktree)
-        // Whether its running turn could take the text does not matter: a new worktree takes files too.
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true, steerable: false) == .worktree)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true) == .worktree)
     }
 
-    @Test func aChildASwitchedOffPaneOrAFolderWithNoUsableCheckoutSteersAsBefore() {
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: true, delegationOn: true, canHostWorktree: true, steerable: true) == .steer)
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: false, canHostWorktree: true, steerable: true) == .steer)
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: false, steerable: true) == .steer)
-        // A Claude run still starting cannot take it yet: it queues.
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: false, steerable: false) == .queue)
+    @Test func aChildASwitchedOffPaneOrAFolderWithNoUsableCheckoutQueuesAndNeverSteers() {
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: true, delegationOn: true, canHostWorktree: true) == .queue)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: false, canHostWorktree: true) == .queue)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: false) == .queue)
+        // Nothing a person sends joins a running turn: there is no steer choice left.
+        #expect(ComposerSecondSend.allCases == [.worktree, .queue])
     }
 
-    @Test func codexAndAntigravityPanesOpenANewWorktreeTooAndOtherwiseQueueAsBefore() {
+    @Test func codexAndAntigravityPanesOpenANewWorktreeTooAndOtherwiseQueue() {
         for provider in ["codex", "gemini"] {
-            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true, steerable: false) == .worktree, "\(provider)")
-            // A child, the switch off or no usable checkout: their runs take no text, so it queues.
-            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: true, delegationOn: true, canHostWorktree: true, steerable: false) == .queue, "\(provider)")
-            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: false, delegationOn: false, canHostWorktree: true, steerable: false) == .queue, "\(provider)")
-            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: false, steerable: false) == .queue, "\(provider)")
+            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true) == .worktree, "\(provider)")
+            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: true, delegationOn: true, canHostWorktree: true) == .queue, "\(provider)")
+            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: false, delegationOn: false, canHostWorktree: true) == .queue, "\(provider)")
+            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: false) == .queue, "\(provider)")
         }
-        #expect(ComposerSecondSend.choose(kind: SessionKind.shell, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true, steerable: false) == .queue)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.shell, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true) == .queue)
     }
 
     @Test func aCodexOrAntigravityPaneInAModeItsChildCouldNotWriteInQueuesAsBefore() {
         for (provider, mode, worktree) in [("codex", "manual", false), ("codex", "acceptEdits", true), ("codex", "onRequest", true), ("codex", "fullAccess", true),
                                            ("gemini", "manual", false), ("gemini", "plan", false), ("gemini", "acceptEdits", true), ("gemini", "fullAccess", true)] {
-            let chosen = ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: mode, isChild: false, delegationOn: true, canHostWorktree: true, steerable: false)
+            let chosen = ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: mode, isChild: false, delegationOn: true, canHostWorktree: true)
             #expect(chosen == (worktree ? .worktree : .queue), "\(provider) \(mode)")
         }
         // Claude's child asks the human in any mode, so every Claude mode opens one.
         for mode in DelegationProviders.startingModes(provider: "claude") {
-            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: mode, isChild: false, delegationOn: true, canHostWorktree: true, steerable: true) == .worktree, "\(mode)")
+            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: mode, isChild: false, delegationOn: true, canHostWorktree: true) == .worktree, "\(mode)")
         }
-    }
-
-    @Test func aTextNoNewChildRunsSteersWhenItCanAndIsOtherwiseQueuedNeverDropped() {
-        #expect(ComposerSecondSend.fallback(steerable: true) == .steer)
-        #expect(ComposerSecondSend.fallback(steerable: false) == .queue)
     }
 
     @Test func aCheckoutCanHostAWorktreeWhenOnlyTheDiskIsShort() {

@@ -48,13 +48,12 @@ struct SessionPaneView: View {
     }
     /// What ⌘Enter and the second round button do while a run is busy.
     private var secondSend: ComposerSecondSend { store.composerSecondSend(session) }
-    /// The second button is offered for a new worktree while the draft has words
-    /// for its task (files go with them), and for steer only with a draft the
-    /// running turn can take: files always queue.
+    /// The second button is offered for a new worktree (or its menu alone)
+    /// while the draft has words for its task (files go with them). Nothing a
+    /// person sends joins the running turn, so there is no other second button.
     private var offersSecondSend: Bool {
         switch secondSend {
         case .worktree: !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .steer: attachments.isEmpty
         case .queue: worktreeMenuOnly && !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
@@ -116,7 +115,6 @@ struct SessionPaneView: View {
         if running {
             switch secondSend {
             case .worktree: return L("composer.placeholder.busyWorktreeMac")
-            case .steer: return L("composer.placeholder.busyMac")
             case .queue: return L("composer.placeholder.busyQueue")
             }
         }
@@ -125,7 +123,6 @@ struct SessionPaneView: View {
     private var inputHelpWhileBusy: String {
         switch secondSend {
         case .worktree: L("composer.inputHelp.worktree")
-        case .steer: L("composer.inputHelp.steer")
         case .queue: L("composer.inputHelp.queue")
         }
     }
@@ -638,8 +635,8 @@ struct SessionPaneView: View {
             if !queued.isEmpty || !held.isEmpty {
                 QueuedInputsView(sessionID: session.id, held: held, items: queued, running: running || store.hasModal,
                                  onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) },
-                                 notice: BackgroundQueuePolicy.waitsOnBackground(work: session.backgroundWork, launchesInPlan: store.styleLaunchesInPlanMode(session),
-                                                                                 queued: queued.count) ? L(secondSend == .worktree ? "queue.waitingOnBackground.macWorktree" : "queue.waitingOnBackground.mac") : nil)
+                                 notice: BackgroundQueuePolicy.waitsOnBackground(work: session.backgroundWork, queued: queued.count)
+                                     ? L(secondSend == .worktree ? "queue.waitingOnBackground.macWorktree" : "queue.waitingOnBackground.mac") : nil)
                     .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, attachments.isEmpty ? DesignMetrics.Spacing.sm : 0)
             }
             if paletteVisible {
@@ -799,7 +796,7 @@ struct SessionPaneView: View {
 
     private var composerToolbar: some View {
         GeometryReader { geometry in
-            // Stop beside the second send (new worktree or steer) and queue, or send alone; the resume mark; the context ring;
+            // Stop beside the second send (new worktree) and queue, or send alone; the resume mark; the context ring;
             // the background-work and status-line toggles of Claude panes.
             let height = ComposerToolbarMetrics.height, gap = ComposerToolbarMetrics.spacing
             let actionsWidth = (running && canSend ? Self.compactStop + gap + height + (offersSecondSend ? height + gap : 0) : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap) + (showsBackgroundWorkToggle ? 16 + gap : 0) + (showsStatusLineToggle ? 16 + gap : 0)
@@ -847,18 +844,16 @@ struct SessionPaneView: View {
                         .accessibilityLabel(stopping ? L("composer.stop.stoppingAccessibility") : L("phone.composer.stop"))
                         .accessibilityIdentifier("composer-stop-" + session.id)
                         .background(AccessibilityStateProbe(identifier: "composer-stop-" + session.id, enabled: !stopping))
-                        // A busy pane offers the draft both ways, each the send button's
-                        // round disc: the second send (⌘Enter) runs it now in a new child
-                        // worktree, or hands it to the running turn; queue (Enter) waits
-                        // for the next request, at the far right where send sits.
+                        // A busy pane offers the draft in round discs like the send
+                        // button's: the second send (⌘Enter) runs it now in a new child
+                        // worktree where one can be made; queue (Enter) waits for the
+                        // next request, at the far right where send sits.
                         if canSend {
                             if offersSecondSend {
                                 if secondSend == .worktree {
                                     worktreeButton
-                                } else if worktreeMenuOnly {
-                                    worktreeMenuButton
                                 } else {
-                                    roundSendButton(systemImage: "bolt.fill", size: 12, help: L("queue.steerHintMac"), label: L("phone.composer.steer"), identifier: "composer-steer-" + session.id) { submitComposer(command: true) }
+                                    worktreeMenuButton
                                 }
                             }
                             roundSendButton(systemImage: "text.badge.plus", size: 12, help: L("queue.addHint"), label: L("queue.add"), identifier: "send-" + session.id) { submitComposer() }
@@ -876,7 +871,7 @@ struct SessionPaneView: View {
     /// The stop square beside the second send and queue while text waits: 4pt under the toolbar's height.
     private static let compactStop = ComposerToolbarMetrics.height - 4
 
-    /// The send button's look, shared by send, new worktree, steer and queue: the toolbar-high
+    /// The send button's look, shared by send, new worktree and queue: the toolbar-high
     /// circle in run blue while the draft can go, the track grey (and disabled) while not.
     private func roundSendButton(systemImage: String, size: CGFloat, help: String, label: String, identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) { roundSendDisc(systemImage: systemImage, size: size) }
@@ -1004,9 +999,9 @@ struct SessionPaneView: View {
     /// be prompt text: `/clear` runs, `/model opus` applies the choice, and a
     /// `/model` with no or an unknown argument reopens (or explains) the list.
     /// Enter sends now, or queues for the next request while a run is busy;
-    /// ⌘Enter then does the second send: a new child worktree, or the running
-    /// Claude turn (`ComposerSecondSend`). `agent`, from the worktree button's
-    /// menu, is the agent of that new child.
+    /// ⌘Enter then does the second send: a new child worktree where one can
+    /// be made, otherwise the queue too (`ComposerSecondSend`). `agent`, from
+    /// the worktree button's menu, is the agent of that new child.
     private func submitComposer(command: Bool = false, agent: String? = nil) {
         guard canSend, !store.hasModal else { return }
         if let style {
@@ -1043,7 +1038,7 @@ struct SessionPaneView: View {
             applyCompletion(builtin); return
         }
         composerInput.prepareForSubmission()
-        store.submit(session.id, steering: command, agent: agent)
+        store.submit(session.id, secondSend: command, agent: agent)
     }
 
     /// The built-in the trimmed draft names exactly (`/clear`, `/model`, `/model opus`).

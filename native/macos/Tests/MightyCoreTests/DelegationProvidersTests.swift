@@ -35,7 +35,7 @@ import Testing
         for mode in DelegationProviders.startingModes(provider: "gemini") { #expect(!DelegationProviders.attachesDelegation(kind: SessionKind.claude, provider: "gemini", mode: mode)) }
         #expect(!DelegationProviders.attachesDelegation(kind: SessionKind.shell, provider: "claude", mode: "manual"))
         // ⌘Enter does not depend on the tools: an onRequest Codex pane still makes children.
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "codex", mode: "onRequest", isChild: false, delegationOn: true, canHostWorktree: true, steerable: false) == .worktree)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "codex", mode: "onRequest", isChild: false, delegationOn: true, canHostWorktree: true) == .worktree)
     }
 
     @Test func aChildCanWriteInEveryClaudeModeAndOnlyInTheEditingModesOfTheOthers() {
