@@ -196,6 +196,14 @@ final class AppStore: ObservableObject, DelegationHost {
     /// Korean composition broke in a composer; shown until reconnected or dismissed.
     @Published var inputMethodProblem: InputMethodMonitor.Problem?
     var appUpdateServiceStorage: AppUpdateService?
+    /// The automatic app update (AppStore+AppUpdate.swift): its periodic loop,
+    /// the last check attempt this run (successful or not), a check in flight,
+    /// and whether the Mac is logging out or shutting down.
+    var appUpdateLoop: Task<Void, Never>?
+    var appUpdateLastAttempt: Date?
+    var appUpdateCheckInFlight = false
+    var appUpdatePoweringOff = false
+    var appUpdatePowerOffObserver: AnyCancellable?
     var slashScansInFlight = Set<String>()
     @Published var attachmentErrors: [String: String] = [:]
     @Published var importingAttachments = Set<String>()
@@ -454,7 +462,9 @@ final class AppStore: ObservableObject, DelegationHost {
             if !helpCapturing { await refreshRuntime() }
             Task { await self.presentSetupIfNeeded() }
             if !smokeTesting { beginAutomaticCLIUpdatesIfNeeded() }
+            discardStaleAppUpdates()
             checkForAppUpdateAutomatically()
+            startAppUpdateLoop()
         }
         configureMobileRemote()
         configureScreenShare()
@@ -1451,6 +1461,8 @@ final class AppStore: ObservableObject, DelegationHost {
     }
 
     func shutdown() async {
+        // Before anything stops: a staged update installs once the app is gone.
+        let updateOnQuit = launchAppUpdateOnQuit()
         ending = true
         // Agent runs and agent terminal panes' processes end now, before any
         // cleanup below that could be slow; a run still starting never spawns.
@@ -1464,6 +1476,7 @@ final class AppStore: ObservableObject, DelegationHost {
         pluginBrowser = nil
         cliUpdateTask?.cancel()
         cliAutoUpdateLoop?.cancel()
+        stopAppUpdateLoop()
         for provider in Array(backgroundLoginJobs.keys) { cancelBackgroundLogin(provider) }
         await cliUpdater.shutdown()
         await cliUpdateTask?.value
@@ -1512,6 +1525,7 @@ final class AppStore: ObservableObject, DelegationHost {
         }
         do { if canSave { try await repository.save(snapshot) } }
         catch { NSLog("MightyClaude save failed: %@", error.localizedDescription) }
+        await updateOnQuit?.value
     }
 
     // i18n-exempt-begin: the GUI smoke (--smoke-test) and its fixtures; it writes smoke-result.json, not UI.

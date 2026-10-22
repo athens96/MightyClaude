@@ -623,7 +623,14 @@ struct WorkspaceView: View {
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("setup-finished-badge")
             }
-            if let version = store.appUpdate.availability?.manifest.version, [.available, .ready].contains(store.appUpdate.phase) {
+            if let version = store.appUpdate.availability?.manifest.version, store.appUpdate.phase == .ready, store.appUpdateAutomatic {
+                // Staged: it installs when the app quits, or now.
+                Label(L("window.status.updateStaged", ["version": version]), systemImage: "shippingbox.fill").font(.ui(size: 10, weight: .medium)).foregroundStyle(Palette.accent)
+                    .accessibilityIdentifier("app-update-staged")
+                Button(L("window.status.updateRestartNow")) { store.installAppUpdateAndRelaunch() }
+                    .buttonStyle(.plain).font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.accent)
+                    .help(L("window.status.updateStagedHelp")).accessibilityIdentifier("app-update-restart")
+            } else if let version = store.appUpdate.availability?.manifest.version, [.available, .ready].contains(store.appUpdate.phase) {
                 Button { store.showSettings = true } label: {
                     Label(L("window.status.updateBadge", ["version": version]), systemImage: "arrow.down.circle.fill").font(.ui(size: 10, weight: .medium)).foregroundStyle(Palette.accent)
                 }

@@ -29,8 +29,10 @@ struct AppUpdateSettingsSection: View {
                         Text(L("settings.appUpdate.manifestUrlHint")).font(.ui(size: 11)).foregroundStyle(.secondary)
                     }
                 }
-                Toggle(L("settings.appUpdate.autoCheckToggle"), isOn: Binding(get: { store.appUpdateAutomatic }, set: { store.appUpdateAutomatic = $0 }))
+                Toggle(L("settings.appUpdate.autoUpdateToggle"), isOn: Binding(get: { store.appUpdateAutomatic }, set: { store.appUpdateAutomatic = $0 }))
                     .accessibilityIdentifier("app-update-automatic")
+                Text(L("settings.appUpdate.autoUpdateDescription"))
+                    .font(.ui(size: 10)).foregroundStyle(.secondary)
                 Text(L("settings.appUpdate.signatureVerified"))
                     .font(.ui(size: 10)).foregroundStyle(.secondary)
                 HStack(spacing: DesignMetrics.Spacing.md) {
@@ -38,6 +40,7 @@ struct AppUpdateSettingsSection: View {
                     Spacer()
                     actionButton
                 }
+                failureNotice
                 if let manifest = store.appUpdate.availability?.manifest, store.appUpdate.availability?.isNewer == true, let notes = manifest.notes, !notes.isEmpty {
                     Text(notes).font(.ui(size: 11)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(8)
                 }
@@ -62,7 +65,10 @@ struct AppUpdateSettingsSection: View {
         case .staging:
             ProgressView().controlSize(.small); Text(L("settings.appUpdate.stagingProgress")).font(.ui(size: 11))
         case .ready:
-            Label(L("settings.appUpdate.readyTemplate", ["version": store.appUpdate.availability?.manifest.version ?? ""]), systemImage: "shippingbox").font(.ui(size: 11)).foregroundStyle(.secondary)
+            // Turned off, quitting does not install: the update only waits for "restart now".
+            let version = store.appUpdate.availability?.manifest.version ?? ""
+            Label(store.appUpdateAutomatic ? L("settings.appUpdate.stagedTemplate", ["version": version]) : L("settings.appUpdate.availableTemplate", ["version": version]),
+                  systemImage: "shippingbox").font(.ui(size: 11)).foregroundStyle(.secondary)
         case .installing:
             ProgressView().controlSize(.small); Text(L("settings.appUpdate.installing")).font(.ui(size: 11))
         case .failed(let message):
@@ -77,11 +83,27 @@ struct AppUpdateSettingsSection: View {
         case .downloading:
             Button(L("settings.appUpdate.cancelButton")) { store.cancelAppUpdateDownload() }
         case .ready:
-            Button(L("settings.appUpdate.installButton")) { store.installAppUpdateAndRelaunch() }.accessibilityIdentifier("app-update-install")
+            Button(L("settings.appUpdate.restartNowButton")) { store.installAppUpdateAndRelaunch() }.accessibilityIdentifier("app-update-install")
         case .checking, .installing, .staging:
             Button(L("settings.appUpdate.inProgressButton")) {}.disabled(true)
         default:
             Button(L("settings.appUpdate.checkButton")) { store.checkForAppUpdate() }.disabled(store.appUpdateManifestURL == nil).accessibilityIdentifier("app-update-check")
+        }
+    }
+
+    /// A failure is only shown here. With an update ready it stays ready and
+    /// the error sits under it; with the switch on, the next check tries again.
+    @ViewBuilder private var failureNotice: some View {
+        if let error = store.appUpdate.lastError, store.appUpdate.phase == .ready || store.appUpdateAutomatic {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+                if store.appUpdate.phase == .ready {
+                    Label(error, systemImage: "exclamationmark.triangle").font(.ui(size: 11)).foregroundStyle(Palette.waitText).lineLimit(3).textSelection(.enabled)
+                }
+                if store.appUpdateAutomatic {
+                    Text(L("settings.appUpdate.retryNotice")).font(.ui(size: 10)).foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityIdentifier("app-update-retry")
         }
     }
 }
