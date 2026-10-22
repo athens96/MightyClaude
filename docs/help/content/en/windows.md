@@ -22,7 +22,7 @@ It runs on Windows 10 (version 2004) or later, or Windows 11. The .NET runtime i
 > [!warning]
 > The app isn't code-signed, so Windows (SmartScreen) may block the setup program or the first launch. If it does, click **More info**, then **Run anyway**. If it says the Visual C++ runtime is missing, install the Microsoft Visual C++ Redistributable (v14). Terminal and browser panes need the Microsoft Edge WebView2 runtime.
 
-Updates come from {{ui:menu.settings}} → {{ui:settings.nav.about}}, as on the Mac. An installed app is replaced by the new version in the same folder, and the version shown in Installed apps follows. Running a newer setup program over it works too.
+Updates work as on the Mac: a new version is downloaded by itself and installed when you close the app, or after a one-minute notice that restarts the app while it sits idle ([Updates](getting-started.md#update)). To update by hand, use {{ui:menu.settings}} → {{ui:settings.nav.about}}. An installed app is replaced by the new version in the same folder, and the version shown in Installed apps follows. Running a newer setup program over it works too.
 
 ## Keyboard shortcuts {#shortcuts}
 Use {{kbd:Ctrl}} instead of {{kbd:⌘}}. Only collapsing the sidebar and stopping remote screen sessions use different keys.
@@ -37,7 +37,7 @@ Use {{kbd:Ctrl}} instead of {{kbd:⌘}}. Only collapsing the sidebar and stoppin
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
 | {{kbd:⌘=}} / {{kbd:⌘-}} / {{kbd:⌘0}} | {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}} | {{ui:menu.textBigger}} / {{ui:menu.textSmaller}} / {{ui:menu.textActualSize}} |
-| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | Run it now in a new worktree, or send to the running Claude now |
+| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | In a running pane, run it now in a new worktree, or add it to the queue where that can't be done |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | Stop every remote screen session from phones ([Screen view](phone.md#screen)) |
 
 Windows has no menu bar. The same commands are in the sidebar and the {{ui:workspace.addPane}} menu.

@@ -91,5 +91,5 @@ The … button in a pane's header has:
 | {{kbd:⌘,}} | {{ui:menu.settings}} |
 | {{kbd:Enter}} | Send the request |
 | {{kbd:⇧Enter}} | New line |
-| {{kbd:⌘Enter}} | Run it now in a new worktree (a Claude pane with [Mighty Orchestration](delegation.md#worktree) on, in a git repository); otherwise send to the running Claude now |
+| {{kbd:⌘Enter}} | In a running pane, run it now in a new worktree (a pane with [Mighty Orchestration](delegation.md#worktree) on, in a git repository); in any other running pane, add it to the queue |
 | {{kbd:Esc}} | Close a sheet or the slash list |

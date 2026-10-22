@@ -8,7 +8,7 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 2. Mac의 **설정 → 모바일 리모트**에 릴레이 주소를 넣고 스위치를 켠다. 앱이 릴레이에 접속하면 QR 코드가 나타난다. QR에는 호스트 ID, 호스트 공개키, 릴레이 주소, 페어링 키가 들어 있다. 스위치 상태·릴레이 주소·키는 저장되어 앱을 다시 켜도 유지되며, 릴레이가 끊기면 자동으로 재접속한다.
 3. 휴대폰 앱에서 QR을 스캔하거나 페어링 링크를 붙여 넣는다. 앱은 릴레이를 통해 Mac과 X25519 키 교환을 하고, 페어링 키로 인증한 뒤 키를 보안 저장소에 남긴다.
 4. 이후 앱은 암호화된 채널로 `/m1/*` 요청을 보내고, Mac은 변화가 있을 때 `notify`를 보내 즉시 갱신하게 한다.
-5. 요청 전송은 데스크톱의 입력창과 같은 규칙을 따른다. 실행 중인 로컬 Claude 창이면 진행 중인 턴에 바로 전달되고, 그 밖에는 대기열에 들어간다. 중지, 권한 허용·거부, 질문 답변, 새 실행 창 만들기도 가능하다.
+5. 요청 전송은 데스크톱의 입력창과 같은 규칙을 따른다. 실행 중인 창에 보낸 글은 언제나 그 창의 대기열에 들어가 다음 요청이 되고, 진행 중인 턴에 끼어들지 않는다. 중지, 권한 허용·거부, 질문 답변, 새 실행 창 만들기도 가능하다.
 
 ## Tailscale 직접 연결
 
@@ -37,7 +37,7 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 | GET | `/m1/info` | | `{ protocol, hostId, hostName, appVersion, platform }` |
 | GET | `/m1/state?since=<rev>&wait=<0..10>` | | `MobileState` — `revision`이 `since`보다 커질 때까지 최대 `wait`초 기다렸다가 응답. 시간 안에 변화가 없으면 같은 `revision`으로 현재 상태를 돌려준다 |
 | GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>[&structure=<tag>]` | | `MobileSessionDetail` — 세션 단위 `revision`으로 같은 방식. `structure`는 `"structure"` 기능이 있는 호스트(Mac·Windows)에만(아래 "구조 보기" 절) |
-| POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "steered" \| "queued" }` · 실행할 수 없으면 409 |
+| POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "queued" }`(`"steered"`는 구버전 호스트만) · 실행할 수 없으면 409 |
 | POST | `/m1/sessions/{id}/stop` | | `{ protocol, stopped }` — 실행 중인 요청이 없어 멈출 것이 없었으면 `stopped: false` |
 | POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow, always? }` | `{ protocol, ok: true }` — `always`는 Antigravity 권한 카드에만(아래 "Antigravity 권한 카드" 절) |
 | POST | `/m1/sessions/{id}/answers` | `{ requestId, runId, answers: { "<질문 문장>": { selectedOptions, customText? } } }` | `{ protocol, ok: true }` |
@@ -60,13 +60,13 @@ MobileSessionSummary {
   resumeId?: string, terminal: boolean, // terminal: 앱 안 로컬 터미널 창이라 모바일에서 명령 불가
   titleMode?: "auto" | "fixed",        // "auto"=요청 따름, "fixed"=직접 지정; 없으면 "auto"로 처리
   resolvedModel?: string,              // model이 지금 가리키는 전체 id(opus → claude-opus-5-5); 모르면 없음
-  canSteer?: boolean,                  // 실행 중에 보낸 글이 진행 중인 턴에 합류(조정)할 수 있는지. Claude 에이전트 창만 true
+  canSteer?: boolean,                  // 0.4.35부터 언제나 false(구버전 휴대폰용으로 남김). 구버전 호스트에서는 Claude 에이전트 창만 true
   parentSessionId?: string,            // 마이티 오케스트레이션 자식 창의 부모 창 id(Mac 호스트가 싣는다. Windows 호스트는 아직 싣지 않는다); 자식이 아니면 없음
   childState?: string                  // 그 자식의 상태(Mac 사이드바 자식 행과 같은 ChildState 값); parentSessionId와 함께만
 }
 ```
 
-`canSteer`(선택)는 호스트가 그 창에서 조정을 할 수 있는지를 창마다 알려 준다. 값은 호스트 자신의 데스크톱 입력창과 같은 규칙에서 나온다(Mac `DelegationProviders.canSteer` → `MobileRemoteSupport.canSteer`, Windows `DelegationProviders.CanSteer`): Claude 에이전트 창(`kind: "claude"`, `provider: "claude"`)만 `true`이고, Codex·Antigravity(`provider: "gemini"`) 창과 명령 창은 `false`다 — 이 창들에는 실행 중에 보낸 글이 언제나 대기열로 간다. 휴대폰은 `false`인 창에서 실행 중 "바로 전달" 버튼을 숨기고 대기열 추가만 보인다(Mac 입력창이 이 창들에서 조정을 내놓지 않는 것과 같다). `canSteer: true`는 약속이 아니다: 호스트는 실행이 막 시작되는 중이거나, 업데이트가 실행을 붙잡고 있거나, 계획 모드 스타일이 백그라운드 작업만 기다리는 중이면 여전히 대기열에 넣고 `queued`로 답한다. 구버전 휴대폰은 이 필드를 무시하고, 필드가 없는 구버전 호스트에서는 휴대폰이 지금처럼 조정을 내놓는다(호스트가 조정할 수 없으면 `queued`로 답한다).
+`canSteer`(선택)는 예전에 호스트가 그 창에서 조정(실행 중인 턴에 글을 합류시키기)을 할 수 있는지를 창마다 알려 주던 필드다. 0.4.35부터 데스크톱 입력창이 사람이 보낸 글을 실행 중인 턴에 넣지 않으므로(바쁜 창의 Enter는 언제나 대기열, ⌘Enter·Ctrl+Enter는 새 worktree 자식 아니면 대기열), 호스트는 모든 창에 `canSteer: false`를 싣는다. 필드는 구버전 휴대폰이 "바로 전달" 버튼을 숨기도록 남겨 둔다. 지금 휴대폰은 이 필드를 읽지 않고, 바쁜 창에는 "대기열에 추가"만 보이며 언제나 `mode: "queue"`를 보낸다. 구버전 호스트(0.4.34 이하)는 Claude 에이전트 창(`kind: "claude"`, `provider: "claude"`)에만 `true`를 싣고 `mode: "steer"`를 받으면 조정해 `steered`로 답했다. 휴대폰은 그때를 위해 `steered` 라벨을 계속 그린다.
 
 마이티 오케스트레이션 자식 창은 Mac 호스트에서는 Mac의 위임 파일이 자식으로 적어 둔 창만 `parentSessionId`·`childState`를 싣는다(`MobileRemoteSupport.childLink`). `childState`는 사이드바 자식 행이 보이는 그대로다(`creating`·`running`·`waiting`·`reported`·`merged`·`ended`·`interrupted`·`failed`·`closed`·`discarded`, 사람이 답해야 하는 요청을 기다리는 실행 중 자식은 `waiting`). 휴대폰은 같은 워크스페이스 목록에 부모 창이 있고 그 부모가 자식이 아니면 자식 행을 부모 바로 아래 한 단 들여 그리고 오른쪽에 상태 낱말을 보인다(`groupSessionsByWorkspace`·`childStateLabel`). 부모가 닫혔거나 목록에 없으면 보통 창처럼 둔다. 병합·버리기·되돌리기는 휴대폰에 없고 데스크톱 앱의 자식 카드에서만 한다. 지금 이 두 필드는 Mac 호스트만 싣는다: Windows 호스트의 `MobileDesktopRouter`는 아직 `parentSessionId`·`childState`를 보내지 않아서, Windows 호스트의 자식 창은 휴대폰 목록에서 평범한 창으로 보인다. 구버전 휴대폰은 두 필드를 무시하고, 구버전 Mac에서는 필드가 없어 목록이 지금처럼 평평하다.
 
@@ -127,8 +127,8 @@ MobilePermission {
 | `mightyStyle` | `cli` `ouroboros` — 둘 고정(v6까지는 `paperthin`도 있었고 v7에서 그 스타일과 함께 뺐다). `ouroboros`가 아닌 스타일(번들 클러드 플랜 포함)에는 언제나 `cli`가 실린다(진짜 값은 `styleId`, 아래 "스타일" 절) |
 | 블록 `kind` | `main` `agent` `task` `steer` `compact` `question` |
 | 블록 `status` | `running` `waiting` `completed` `error` `stopped` |
-| `accepted` | `started` `steered` `queued` |
-| `mode` | `steer` `queue` |
+| `accepted` | `started` `queued`(`steered`는 구버전 호스트만 보낸다) |
+| `mode` | `steer` `queue`(둘 다 받지만 실행 중이면 둘 다 대기열) |
 | 명령 `source` | `app` `builtin` `project` `user` `plugin` |
 | 명령 `action` | `model` `permission` `clear` `usage` `help` `rename` |
 
@@ -136,7 +136,7 @@ MobilePermission {
 
 | 메서드 | 경로 | 요청 | 응답 |
 |---|---|---|---|
-| POST | `/m1/sessions/{id}/submit` | `{ text, mode?, attachments?: [uploadId] }` | 202 `{ protocol, accepted }` — `accepted`는 **실제로 일어난 일**이다. `mode: "queue"`면 조정하지 않고 대기열에 넣는다. `mode: "steer"`(또는 생략)면 조정을 시도하고, 조정할 수 없는 창(로컬 Claude가 아님, 턴이 이미 닫힘)이면 대기열로 가며 `queued`를 돌려준다. 실행 중이 아니면 `mode`와 상관없이 바로 시작하고 `started`를 돌려준다. 대기열이 가득 차면 409 |
+| POST | `/m1/sessions/{id}/submit` | `{ text, mode?, attachments?: [uploadId] }` | 202 `{ protocol, accepted }` — `accepted`는 **실제로 일어난 일**이다. 실행 중이면 `mode`와 상관없이(`"queue"`, `"steer"`, 생략 모두) 대기열에 넣고 `queued`를 돌려준다. `mode: "steer"`도 400이 아니라 대기열이다(구버전 휴대폰 호환). 실행 중인 턴에는 넣지 않는다. 실행 중이 아니면 `mode`와 상관없이 바로 시작하고 `started`를 돌려준다. 대기열이 가득 차면 409 |
 | POST | `/m1/sessions/{id}/queue/{itemId}/remove` | | `{ protocol, ok }` · 없는 항목 404 |
 | POST | `/m1/sessions/{id}/queue/run-next` | | `{ protocol, ok }` · 실행 중이거나 대기열이 비면 409 |
 | POST | `/m1/sessions/{id}/rename` | `{ title }` (앞뒤 공백 제거 후 1~80자) 또는 `{ title: "", titleMode: "auto" }` | `{ protocol, ok }` — `titleMode: "auto"`이면 `title`을 무시하고 제목을 자동 모드로 되돌린다; 오래된 폰이 `title`만 보내면 고정 이름으로 처리 |
@@ -155,7 +155,7 @@ MobilePermission {
 
 `POST /m1/workspaces/{id}/sessions`는 **로컬** 워크스페이스에서 `kind: "shell"`을 409로 거절한다(휴대폰에서 쓸 수 없는 창이 되기 때문).
 
-첨부 한도는 Mac과 같다: 요청당 파일 8개, 개당 5 MB, 합계 8 MB. `chunkSize`는 196 608바이트(192 KiB). 끝내지 않은 업로드는 10분 뒤 지운다. `submit`의 `attachments`는 `complete`를 마친, **같은 실행 창·같은 기기**의 `uploadId`만 받고(아니면 400), 한 번 쓰면 사라진다. 같은 업로드를 두 요청이 동시에 쓰면 하나만 성공한다. 전송이 실패하면 업로드는 그대로 남으므로 휴대폰이 `cancel`로 정리한다. 다른 기기의 `uploadId`로 `chunks`·`complete`·`cancel`을 부르면 404다. 실행 창을 닫거나 기기를 해제하면 그 업로드는 바로 지운다. 파일 이름은 경로·앞쪽 점·제어 문자·보이지 않는 방향 제어 문자를 없앤 120자 이내의 이름만 남긴다. 첨부가 있는 요청은 조정(steer)되지 않는다.
+첨부 한도는 Mac과 같다: 요청당 파일 8개, 개당 5 MB, 합계 8 MB. `chunkSize`는 196 608바이트(192 KiB). 끝내지 않은 업로드는 10분 뒤 지운다. `submit`의 `attachments`는 `complete`를 마친, **같은 실행 창·같은 기기**의 `uploadId`만 받고(아니면 400), 한 번 쓰면 사라진다. 같은 업로드를 두 요청이 동시에 쓰면 하나만 성공한다. 전송이 실패하면 업로드는 그대로 남으므로 휴대폰이 `cancel`로 정리한다. 다른 기기의 `uploadId`로 `chunks`·`complete`·`cancel`을 부르면 404다. 실행 창을 닫거나 기기를 해제하면 그 업로드는 바로 지운다. 파일 이름은 경로·앞쪽 점·제어 문자·보이지 않는 방향 제어 문자를 없앤 120자 이내의 이름만 남긴다. 첨부가 있든 없든 실행 중인 창에 보낸 요청은 대기열로 간다.
 
 ### 추가 필드
 

@@ -22,7 +22,7 @@ Windows 10(バージョン2004)以降またはWindows 11で動作します。必
 > [!warning]
 > このアプリにはコード署名がないため、インストーラーや初回の実行がWindows(SmartScreen)にブロックされることがあります。その場合は**詳細情報**を押してから**実行**を押してください。Visual C++ランタイムが見つからないと表示された場合は、Microsoft Visual C++ 再頒布可能パッケージ(v14)をインストールしてください。ターミナルペインとブラウザペインには、Microsoft Edge WebView2ランタイムが必要です。
 
-アップデートは、Macと同じく{{ui:menu.settings}} → {{ui:settings.nav.about}}で行います。インストーラーで入れたアプリは同じフォルダで新しいバージョンに置き換わり、インストールされているアプリの一覧に表示されるバージョンも追従します。新しいインストーラーを上書きで実行してもかまいません。
+アップデートもMacと同じです。新しいバージョンを自動でダウンロードしておき、アプリを閉じて終了するときにインストールし、アプリが休んでいるときは1分の通知のあと再起動してインストールします([アップデート](getting-started.md#update))。手動で行うときは{{ui:menu.settings}} → {{ui:settings.nav.about}}を使います。インストーラーで入れたアプリは同じフォルダで新しいバージョンに置き換わり、インストールされているアプリの一覧に表示されるバージョンも追従します。新しいインストーラーを上書きで実行してもかまいません。
 
 ## ショートカット {#shortcuts}
 {{kbd:⌘}}の代わりに{{kbd:Ctrl}}を使います。サイドバーの折りたたみとリモート画面の停止だけはキーが異なります。
@@ -37,7 +37,7 @@ Windows 10(バージョン2004)以降またはWindows 11で動作します。必
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
 | {{kbd:⌘=}} / {{kbd:⌘-}} / {{kbd:⌘0}} | {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}} | {{ui:menu.textBigger}} / {{ui:menu.textSmaller}} / {{ui:menu.textActualSize}} |
-| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 新しいworktreeですぐに実行、または実行中のClaudeにすぐに伝える |
+| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 実行中のペインで新しいworktreeですぐに実行、できないときはキューに追加 |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | スマートフォンからのリモート画面セッションをすべて止める([リモート画面](phone.md#screen)) |
 
 Windowsにはメニューバーがありません。同じ機能は、サイドバーと{{ui:workspace.addPane}}メニューにあります。

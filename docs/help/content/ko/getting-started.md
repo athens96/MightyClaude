@@ -25,14 +25,31 @@ Mighty Claude는 Claude Code, Codex CLI, Google의 Antigravity CLI를 한 창에
 > 이 앱은 Apple 공증을 받지 않았습니다. macOS가 처음 열 때 막으면 Finder에서 앱을 Control-클릭한 뒤 **열기**를 고르거나, 시스템 설정 → 개인정보 보호 및 보안에서 열기를 허용하세요.
 
 ## 업데이트 {#update}
-앱은 하루 한 번, 앱을 열 때 새 버전이 있는지 확인합니다. 새 버전이 있으면 창 아래 상태 줄에 알림이 뜹니다. 그 알림을 누르면 설정이 열립니다.
+{{ui:settings.appUpdate.autoUpdateToggle}}가 켜져 있으면(처음부터 켜져 있습니다) 앱이 새 버전을 알아서 받고 설치합니다.
+
+- 앱을 열 때와 실행 중에 6시간마다 새 버전이 있는지 확인합니다. 확인에 실패하면 다음 확인 때 다시 시도하고, 실패는 설정에만 보입니다.
+- 새 버전이 있으면 묻지 않고 받아 서명과 파일을 확인한 뒤 준비해 둡니다. 준비가 끝나면 창 아래 상태 줄에 다음 실행 때 설치된다는 표시와 {{ui:window.status.updateRestartNow}} 단추가 보입니다.
+- 앱을 종료하면 준비된 업데이트를 설치합니다. 앱은 다시 열리지 않고, 다음에 열 때 새 버전으로 열립니다. {{platform:mac}} 로그아웃, 재시동, 시스템 종료로 앱이 닫힐 때는 설치하지 않고 다음 종료를 기다립니다.
+- 앱이 한동안 쉬고 있으면 창 위쪽에 1분 알림이 뜹니다. 시간이 다 되면 앱이 다시 시작하며 업데이트를 설치하고, 열려 있던 워크스페이스와 창은 그대로 돌아옵니다. {{ui:appUpdate.countdown.restartNow}}을 누르면 바로 다시 시작하고, {{ui:appUpdate.countdown.later}}를 누르면 4시간 동안 알림을 띄우지 않습니다. 그사이 앱을 종료하면 그때 설치됩니다.
+
+앱이 쉬고 있다는 것은 아래가 모두 맞는다는 뜻입니다. 알림이 떠 있는 동안 이 가운데 하나라도 깨지면 알림은 조용히 사라지고 다음에 쉴 때를 기다립니다. 키보드나 마우스 입력만으로는 사라지지 않으므로 알림의 단추를 누를 수 있습니다.
+- 실행 중이거나 시작을 기다리는 에이전트 작업, 답을 기다리는 카드, 대기열의 요청이 없습니다.
+- 입력창에 보내지 않은 글이나 첨부 파일이 없습니다.
+- 명령이 돌고 있는 터미널이 없고, CLI 로그인·업데이트·설치가 진행 중이지 않습니다.
+- 휴대폰 업로드, 화면 공유, 이 컴퓨터가 다른 컴퓨터를 위해 돌리는 원격 실행이 없습니다.
+- 설정이나 대화상자가 열려 있지 않습니다.
+- 5분 동안 키보드·마우스 입력이 없었고, 3분 안에 끝난 실행이나 보낸 요청이 없습니다.
+
+직접 업데이트하려면:
 
 1. {{ui:menu.settings}}({{kbd:⌘,}})을 열고 {{ui:settings.nav.about}} 탭으로 갑니다.
 2. {{ui:settings.appUpdate.sectionTitle}}에서 {{ui:settings.appUpdate.checkButton}}을 누릅니다.
-3. 새 버전이 있으면 {{ui:settings.appUpdate.downloadButton}} 단추를 누릅니다.
-4. 준비가 끝나면 {{ui:settings.appUpdate.installButton}}을 누릅니다. 앱이 종료된 뒤 새 버전으로 바뀌고 다시 열립니다.
+3. 새 버전이 있는데 아직 받지 않았으면 {{ui:settings.appUpdate.downloadButton}} 단추를 누릅니다.
+4. 준비가 끝나면 {{ui:settings.appUpdate.restartNowButton}}을 누릅니다. 앱이 종료된 뒤 새 버전으로 바뀌고 다시 열립니다.
 
-자동 확인을 끄려면 {{ui:settings.appUpdate.autoCheckToggle}}을 끄세요. 업데이트 파일은 서명을 확인한 뒤에만 설치합니다.
+{{ui:settings.appUpdate.autoUpdateToggle}}를 끄면 앱이 스스로 확인하거나 받지 않고, 1분 알림을 띄우지 않으며, 종료할 때도 설치하지 않습니다. 이미 받아 둔 업데이트도 {{ui:settings.appUpdate.restartNowButton}}을 눌러야 설치됩니다. 어느 쪽이든 업데이트 파일은 서명을 확인한 뒤에만 설치합니다.
+
+Windows 앱도 같은 방식으로 업데이트합니다([Windows에서 다른 점](windows.md#install)).
 
 > [!note]
 > AI CLI의 업데이트는 앱 업데이트와 따로 합니다. {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliUpdate.sectionTitle}} 항목을 쓰세요.

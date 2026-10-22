@@ -20,7 +20,7 @@ section: faq
 메뉴 막대의 {{ui:menu.workspace}} 메뉴에서 {{ui:menu.reconnectInputMethod}} 항목을 누르세요. 그래도 계속되면 {{ui:menu.saveInputDiagnostics}}으로 진단 파일을 저장해 알려 주세요.
 
 > [!warning]
-> 앱이 실행 중일 때 앱 파일을 덮어쓰거나 앱을 두 개 띄우지 마세요. macOS 입력기 연결이 끊어져 한글이 자모로 풀릴 수 있습니다. 업데이트는 앱 안의 {{ui:settings.appUpdate.installButton}}을 쓰세요.
+> 앱이 실행 중일 때 앱 파일을 덮어쓰거나 앱을 두 개 띄우지 마세요. macOS 입력기 연결이 끊어져 한글이 자모로 풀릴 수 있습니다. 업데이트는 앱이 받아 두었다가 종료할 때 설치하게 두거나, 앱 안의 {{ui:settings.appUpdate.restartNowButton}}을 쓰세요([업데이트](getting-started.md#update)).
 
 ## 브라우저 창이 비어 있어요 {#browser-empty}
 브라우저 창은 처음에 꺼져 있습니다. {{ui:settings.nav.general}}에서 {{ui:settings.display.browserToggle}}를 켜고 앱을 다시 여세요. [브라우저 창](terminal-files-browser.md#browser)을 보세요.

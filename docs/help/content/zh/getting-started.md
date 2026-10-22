@@ -25,14 +25,31 @@ Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claud
 > 此应用未经过 Apple 公证。如果 macOS 在首次打开时阻止了它，请在 Finder 中按住 Control 键点按该应用并选择**打开**，或在“系统设置 → 隐私与安全性”中允许打开。
 
 ## 更新 {#update}
-应用每天检查一次新版本，在打开应用时进行。如有新版本，窗口底部的状态栏会显示提醒。点击该提醒即可打开设置。
+{{ui:settings.appUpdate.autoUpdateToggle}}开启时（默认开启），应用会自行下载并安装新版本。
+
+- 应用在打开时以及运行期间每 6 小时检查一次新版本。检查失败时会在下次检查时重试，失败只显示在设置中。
+- 有新版本时，应用会直接下载，验证签名和文件后准备好。准备完成后，窗口底部的状态栏会显示下次启动时安装，并出现{{ui:window.status.updateRestartNow}}按钮。
+- 退出应用时会安装准备好的更新。应用不会重新打开，下次打开时就是新版本。{{platform:mac}} 因注销、重新启动或关机而关闭应用时不会安装，更新会等到下一次退出。
+- 应用空闲一段时间后，窗口上方会出现一分钟的提示。倒计时结束后，应用会重新启动并安装更新，打开的工作区和窗格会原样恢复。点击{{ui:appUpdate.countdown.restartNow}}会立即重新启动；点击{{ui:appUpdate.countdown.later}}则 4 小时内不再提示。在此期间退出应用，会在退出时安装。
+
+应用空闲是指以下各项都成立。提示显示期间只要有一项不再成立，提示就会悄悄消失，等待下一次空闲。仅有键盘或鼠标输入不会让提示消失，所以可以点击提示上的按钮。
+- 没有正在运行或等待开始的智能体任务，没有等待回答的卡片，队列中也没有请求。
+- 输入框中没有未发送的文字或附件。
+- 没有正在执行命令的终端，也没有进行中的 CLI 登录、更新或安装。
+- 没有手机上传、屏幕共享，也没有本机为其他电脑运行的远程任务。
+- 没有打开的设置或对话框。
+- 5 分钟内没有键盘或鼠标输入，3 分钟内也没有结束的运行或发送的请求。
+
+要手动更新：
 
 1. 打开{{ui:menu.settings}}（{{kbd:⌘,}}），进入{{ui:settings.nav.about}}标签页。
 2. 在{{ui:settings.appUpdate.sectionTitle}}中点击{{ui:settings.appUpdate.checkButton}}。
-3. 如有新版本，点击{{ui:settings.appUpdate.downloadButton}}按钮。
-4. 准备完成后，点击{{ui:settings.appUpdate.installButton}}。应用退出后会替换为新版本并重新打开。
+3. 如有尚未下载的新版本，点击{{ui:settings.appUpdate.downloadButton}}按钮。
+4. 准备完成后，点击{{ui:settings.appUpdate.restartNowButton}}。应用退出后会替换为新版本并重新打开。
 
-要停止自动检查，请关闭{{ui:settings.appUpdate.autoCheckToggle}}。更新文件只有在签名验证通过后才会安装。
+关闭{{ui:settings.appUpdate.autoUpdateToggle}}后，应用不会自行检查或下载，不会显示一分钟提示，退出时也不会安装；已下载的更新只有点击{{ui:settings.appUpdate.restartNowButton}}才会安装。无论哪种方式，更新文件都只有在签名验证通过后才会安装。
+
+Windows 应用也以同样的方式更新（[Windows 上的不同之处](windows.md#install)）。
 
 > [!note]
 > AI CLI 的更新与应用更新分开进行。请使用{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliUpdate.sectionTitle}}。

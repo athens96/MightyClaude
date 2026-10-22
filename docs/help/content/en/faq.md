@@ -20,7 +20,7 @@ Turn on {{ui:settings.cliAccounts.autoLoginToggle}} on the {{ui:settings.nav.cli
 In the menu bar's {{ui:menu.workspace}} menu, click {{ui:menu.reconnectInputMethod}}. If it keeps happening, save a diagnostics file with {{ui:menu.saveInputDiagnostics}} and send it to us.
 
 > [!warning]
-> Don't overwrite the app's files while it runs, and don't open a second copy of the app. That can break the connection to the macOS input method, so Korean breaks into separate letters. Update with {{ui:settings.appUpdate.installButton}} inside the app.
+> Don't overwrite the app's files while it runs, and don't open a second copy of the app. That can break the connection to the macOS input method, so Korean breaks into separate letters. Let the app install a downloaded update when it quits, or use {{ui:settings.appUpdate.restartNowButton}} inside the app ([Updates](getting-started.md#update)).
 
 ## The browser pane is empty {#browser-empty}
 Browser panes are off at first. Turn on {{ui:settings.display.browserToggle}} on {{ui:settings.nav.general}} and reopen the app. See [Browser pane](terminal-files-browser.md#browser).
