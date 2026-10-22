@@ -1019,7 +1019,7 @@ internal static class AppUpdateVerification
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "native", "macos", "Sources", "MightyCore", "AppUpdateAuto.swift"))) directory = directory.Parent;
         Check(directory is not null, "AppUpdateAuto.swift was not found from the test folder");
-        var swift = File.ReadAllText(Path.Combine(directory!.FullName, "native", "macos", "Sources", "MightyCore", "AppUpdateAuto.swift"));
+        var swift = File.ReadAllText(Path.Combine(directory!.FullName, "native", "macos", "Sources", "MightyCore", "AppUpdateAuto.swift")).Replace("\r\n", "\n");
         var cases = string.Join(", ", Enum.GetValues<AppIdleBlocker>().Select(blocker => char.ToLowerInvariant(blocker.ToString()[0]) + blocker.ToString()[1..]));
         Check(swift.Contains("case " + cases + "\n"), "AppIdleBlocker must list the macOS cases in the macOS order: " + cases);
         foreach (var constant in new[] { "checkInterval: TimeInterval = 6 * 60 * 60", "tick: TimeInterval = 10 * 60", "userIdleDelay: TimeInterval = 5 * 60",
