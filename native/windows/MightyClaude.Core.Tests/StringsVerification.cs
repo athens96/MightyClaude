@@ -480,7 +480,8 @@ internal static class StringsVerification
         ("ManifestUrlPlaceholder", "settings.appUpdate.manifestUrlPlaceholder"),
         ("BuiltInAddressTemplate", "settings.appUpdate.builtInAddressTemplate"),
         ("ManifestUrlHint", "settings.appUpdate.manifestUrlHintWindows"),
-        ("AutoCheckToggle", "settings.appUpdate.autoCheckToggle"),
+        ("AutoUpdateToggle", "settings.appUpdate.autoUpdateToggle"),
+        ("AutoUpdateDescription", "settings.appUpdate.autoUpdateDescription"),
         ("SignatureVerified", "settings.appUpdate.signatureVerified"),
         ("NotCheckedYet", "settings.appUpdate.notCheckedYet"),
         ("LastCheckedTemplate", "settings.appUpdate.lastCheckedTemplate"),
@@ -489,13 +490,15 @@ internal static class StringsVerification
         ("AvailableTemplate", "settings.appUpdate.availableTemplate"),
         ("DownloadingTemplate", "settings.appUpdate.downloadingTemplate"),
         ("StagingProgress", "settings.appUpdate.stagingProgress"),
+        ("StagedTemplate", "settings.appUpdate.stagedTemplate"),
         ("ReadyTemplate", "settings.appUpdate.readyTemplate"),
         ("Installing", "settings.appUpdate.installing"),
         ("CheckButton", "settings.appUpdate.checkButton"),
         ("DownloadButton", "settings.appUpdate.downloadButton"),
         ("CancelButton", "settings.appUpdate.cancelButton"),
-        ("InstallButton", "settings.appUpdate.installButton"),
+        ("RestartNowButton", "settings.appUpdate.restartNowButton"),
         ("InProgressButton", "settings.appUpdate.inProgressButton"),
+        ("RetryNotice", "settings.appUpdate.retryNotice"),
         ("NoPublicKeyNotice", "settings.appUpdate.noPublicKeyNoticeWindows")
     ));
 

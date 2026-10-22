@@ -9,6 +9,9 @@ public sealed record AppUpdateMove(string Kind, string From, string To);
 /// Everything the detached helper needs to replace the install after the app
 /// has quit. Built in Core so the argument list, the plan of moves and the
 /// rollback decision are plain facts a Mac-side check can read.
+///
+/// `Relaunch` false is the install on quit: the helper replaces the install and
+/// does not start the app again (M/AppUpdate.swift `installScript(relaunch:)`).
 public sealed record AppUpdateInstallPlan(
     string StagedDirectory,
     string InstallDirectory,
@@ -18,9 +21,11 @@ public sealed record AppUpdateInstallPlan(
     long Size,
     int AppProcessId,
     string NewExecutable,
-    string PreviousExecutable)
+    string PreviousExecutable,
+    bool Relaunch = true)
 {
     public const string HelperFlag = "--update-helper";
+    public const string RelaunchFlag = "--relaunch";
 
     public static AppUpdateInstallPlan Create(
         string stagedDirectory, string installDirectory, string packagePath,
@@ -48,6 +53,7 @@ public sealed record AppUpdateInstallPlan(
         "--sha256", Sha256,
         "--size", Size.ToString(),
         "--wait-pid", AppProcessId.ToString(),
+        RelaunchFlag, Relaunch ? "1" : "0",
     ];
 
     /// The minimal environment the helper is started with: no inherited
@@ -57,7 +63,9 @@ public sealed record AppUpdateInstallPlan(
 
     /// Rebuilds the plan from the argument list the helper was started with.
     /// Returns null when an argument is missing or malformed — the helper then
-    /// does nothing and the existing install stays untouched.
+    /// does nothing and the existing install stays untouched. `--relaunch` may
+    /// be missing: the helper is the new version, started by the old one, and an
+    /// app from before the install on quit always meant to start it again.
     public static AppUpdateInstallPlan? TryParse(IReadOnlyList<string> arguments)
     {
         if (arguments.Count == 0 || arguments[0] != HelperFlag) return null;
@@ -74,11 +82,17 @@ public sealed record AppUpdateInstallPlan(
         if (!values.TryGetValue("--sha256", out var sha256)) return null;
         if (!values.TryGetValue("--size", out var sizeText) || !long.TryParse(sizeText, out var size) || size <= 0) return null;
         if (!values.TryGetValue("--wait-pid", out var pidText) || !int.TryParse(pidText, out var pid) || pid <= 0) return null;
+        var relaunch = true;
+        if (values.TryGetValue(RelaunchFlag, out var relaunchText))
+        {
+            if (relaunchText is not ("1" or "0")) return null;
+            relaunch = relaunchText == "1";
+        }
 
         var plan = new AppUpdateInstallPlan(
             staged, install, backup, package, sha256.ToLowerInvariant(), size, pid,
             Path.Combine(install, AppUpdateService.ExecutableName),
-            Path.Combine(backup, AppUpdateService.ExecutableName));
+            Path.Combine(backup, AppUpdateService.ExecutableName), relaunch);
         return plan.IsValid ? plan : null;
     }
 
@@ -110,8 +124,8 @@ public sealed record AppUpdateReplacementResult(
     bool BackupRemoved);
 
 /// The replacement itself: wait for the app to quit, verify the package again,
-/// move the install aside, move the new folder in, start the new app, and put
-/// the old one back on any failure.
+/// move the install aside, move the new folder in, start the new app (unless
+/// the plan says not to relaunch), and put the old one back on any failure.
 ///
 /// The whole sequence is here rather than in a shell script, so the same code
 /// that runs on Windows is exercised on macOS with temporary folders by
@@ -209,6 +223,8 @@ public static class AppUpdateReplacement
     /// so the Mac-side check can run it end to end against temporary folders
     /// without a real process; on Windows the helper passes the real
     /// implementations. `copier` is null in production (uses CopyDirectory).
+    /// With `plan.Relaunch` false `startApp` is never called: not after the swap,
+    /// not after a rollback.
     public static async Task<AppUpdateReplacementResult> RunAsync(
         AppUpdateInstallPlan plan,
         Func<CancellationToken, Task<bool>> waitForExit,
@@ -249,18 +265,19 @@ public static class AppUpdateReplacement
             moves.Add(Plan(plan)[1]);
             installed = true;
 
-            await startApp(plan.NewExecutable);
+            if (plan.Relaunch) await startApp(plan.NewExecutable);
         }
         catch (Exception error)
         {
             return await UndoAsync(plan, moves, backupTaken, installed, startApp, error.Message);
         }
 
-        // The backup is only removed once the new app has started.
+        // The backup is only removed once the new app has started, or, without
+        // a relaunch, once the new folder is in place.
         var removed = false;
         try { if (Directory.Exists(plan.BackupDirectory)) { Directory.Delete(plan.BackupDirectory, true); removed = true; } }
         catch (IOException) { } catch (UnauthorizedAccessException) { }
-        return new(true, false, null, moves, true, removed);
+        return new(true, false, null, moves, plan.Relaunch, removed);
     }
 
     private static async Task<AppUpdateReplacementResult> UndoAsync(
@@ -285,7 +302,7 @@ public static class AppUpdateReplacement
         }
 
         var started = false;
-        if (restored)
+        if (restored && plan.Relaunch)
         {
             try { await startApp(plan.NewExecutable); started = true; }
             catch (Exception) { started = false; }

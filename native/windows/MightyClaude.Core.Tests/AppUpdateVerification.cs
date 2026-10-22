@@ -599,9 +599,9 @@ internal static class AppUpdateVerification
 
     // — Automatic check and the section —
 
-    /// The automatic check is a saved preference with the macOS default, at
-    /// most once a day, and never without a public key.
-    internal static async Task AutomaticCheckHappensAtMostOnceADay()
+    /// The automatic check is a saved preference with the macOS default, every
+    /// six hours, and never without a public key.
+    internal static async Task AutomaticCheckHappensEverySixHours()
     {
         Check(new AppSnapshot().AppUpdateAutoCheck, "the macOS default is on");
         Check(new AppSnapshot().Version == 1, "the snapshot version must stay 1");
@@ -613,8 +613,9 @@ internal static class AppUpdateVerification
 
         var now = DateTimeOffset.UtcNow;
         Check(AppUpdateCoordinator.IsDue(true, true, null, now), "a first run is due");
-        Check(AppUpdateCoordinator.IsDue(true, true, now.AddHours(-25), now), "a check older than a day is due");
-        Check(!AppUpdateCoordinator.IsDue(true, true, now.AddHours(-23), now), "a check inside the day is not due");
+        Check(AppUpdateCoordinator.IsDue(true, true, now.AddHours(-6), now), "a check six hours old is due");
+        Check(!AppUpdateCoordinator.IsDue(true, true, now.AddHours(-5), now), "a check inside six hours is not due");
+        Check(!AppUpdateCoordinator.IsDue(true, true, now.AddHours(-7), now, now.AddHours(-1)), "a recent failed attempt holds the next check back");
         Check(!AppUpdateCoordinator.IsDue(false, true, null, now), "the preference off means never");
         Check(!AppUpdateCoordinator.IsDue(true, false, null, now), "no public key means never");
 
@@ -626,8 +627,11 @@ internal static class AppUpdateVerification
             var coordinator = new AppUpdateCoordinator(service, "0.1.0", builtInManifestUrl: ManifestUrl);
             Check(await coordinator.CheckAutomaticallyIfDueAsync(null, true, null, now), "the first automatic check runs");
             Check(coordinator.State.Phase == AppUpdatePhase.Available, "the automatic check must find the new version");
-            Check(!await coordinator.CheckAutomaticallyIfDueAsync(null, true, now, now), "a second check inside the day is skipped");
+            Check(coordinator.LastAttempt == now, "the attempt is remembered");
+            Check(!await coordinator.CheckAutomaticallyIfDueAsync(null, true, null, now.AddHours(1)), "an attempt inside six hours holds the next one back even with no saved check");
+            Check(!await coordinator.CheckAutomaticallyIfDueAsync(null, true, now, now), "a second check inside six hours is skipped");
             Check(handler.Requested.Count == 1, "only one manifest request may be made");
+            Check(coordinator.State.Phase == AppUpdatePhase.Available, "with the switch off a found version waits for the download button");
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -645,12 +649,15 @@ internal static class AppUpdateVerification
         Check(statuses[1] == "새 버전 9.9.9 이 있습니다.", "the available sentence must name the version");
         Check(statuses[2] == "42% 받는 중…", "the download sentence must carry the percentage");
         Check(statuses[3] == AppUpdateStrings.StagingProgress, "the staging sentence must be the macOS one");
+        Check(statuses[4] == AppUpdateStrings.StagedTemplate.Replace("{version}", "9.9.9"), "a staged update says it installs at the next launch");
+        Check(AppUpdatePresentation.Describe(AppUpdateSmoke.FixtureStates[4], true, null, _ => "00:00", automatic: false).StatusText
+            == AppUpdateStrings.ReadyTemplate.Replace("{version}", "9.9.9"), "with the switch off a staged update waits for restart now, as on macOS");
         Check(statuses[5] == AppUpdateStrings.Installing, "the installing sentence must be the macOS one");
         Check(statuses[6] == AppUpdateStrings.UpToDate, "the up-to-date sentence must be the macOS one");
         Check(statuses[7] == "업데이트 확인 중 오류가 발생했습니다.", "the failed state shows the error message");
         Check(buttons.SequenceEqual([
             AppUpdateStrings.InProgressButton, AppUpdateStrings.DownloadButton, AppUpdateStrings.CancelButton,
-            AppUpdateStrings.InProgressButton, AppUpdateStrings.InstallButton, AppUpdateStrings.InProgressButton,
+            AppUpdateStrings.InProgressButton, AppUpdateStrings.RestartNowButton, AppUpdateStrings.InProgressButton,
             AppUpdateStrings.CheckButton, AppUpdateStrings.CheckButton]),
             "the buttons must follow the macOS order: " + string.Join(", ", buttons));
 
@@ -980,5 +987,218 @@ internal static class AppUpdateVerification
         Check(script.Contains("AppId={{" + guid + "}"), "MightyClaude.iss AppId must match InstallerRegistration.UninstallKey");
         Check(script.Contains("PrivilegesRequired=lowest") && script.Contains("DisableDirPage=yes"), "setup installs for this user only, into its fixed folder");
         return Task.CompletedTask;
+    }
+    // — Fully automatic update (M/AppUpdateAuto.swift, M/AppUpdateAutoSteps.swift) —
+
+    /// The automatic rules are the macOS ones: the same constants, a check every
+    /// six hours after the later of the last check and the last attempt, each
+    /// idle blocker on its own, and the countdown that input alone does not cancel.
+    internal static Task AutomaticPolicyFollowsTheMacOSRules()
+    {
+        Check(AppUpdateAuto.CheckInterval == TimeSpan.FromHours(6) && AppUpdateAuto.Tick == TimeSpan.FromMinutes(10)
+            && AppUpdateAuto.UserIdleDelay == TimeSpan.FromMinutes(5) && AppUpdateAuto.AgentIdleDelay == TimeSpan.FromMinutes(3)
+            && AppUpdateAuto.Countdown == TimeSpan.FromSeconds(60) && AppUpdateAuto.CountdownTick == TimeSpan.FromSeconds(1)
+            && AppUpdateAuto.Snooze == TimeSpan.FromHours(4), "the constants must be the macOS ones");
+
+        // The macOS source names the same blockers in the same order and the same constants.
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "native", "macos", "Sources", "MightyCore", "AppUpdateAuto.swift"))) directory = directory.Parent;
+        Check(directory is not null, "AppUpdateAuto.swift was not found from the test folder");
+        var swift = File.ReadAllText(Path.Combine(directory!.FullName, "native", "macos", "Sources", "MightyCore", "AppUpdateAuto.swift"));
+        var cases = string.Join(", ", Enum.GetValues<AppIdleBlocker>().Select(blocker => char.ToLowerInvariant(blocker.ToString()[0]) + blocker.ToString()[1..]));
+        Check(swift.Contains("case " + cases + "\n"), "AppIdleBlocker must list the macOS cases in the macOS order: " + cases);
+        foreach (var constant in new[] { "checkInterval: TimeInterval = 6 * 60 * 60", "tick: TimeInterval = 10 * 60", "userIdleDelay: TimeInterval = 5 * 60",
+                     "agentIdleDelay: TimeInterval = 3 * 60", "countdown: TimeInterval = 60", "countdownTick: TimeInterval = 1", "snooze: TimeInterval = 4 * 60 * 60" })
+            Check(swift.Contains(constant), "the macOS constant changed: " + constant);
+
+        var now = new DateTimeOffset(2026, 10, 23, 12, 0, 0, TimeSpan.Zero);
+        Check(AppUpdateAuto.CheckDue(true, true, null, null, now), "a first run is due");
+        Check(AppUpdateAuto.CheckDue(true, true, now.AddHours(-6), null, now), "six hours after the last check is due");
+        Check(!AppUpdateAuto.CheckDue(true, true, now.AddHours(-6).AddSeconds(1), null, now), "inside six hours is not due");
+        Check(!AppUpdateAuto.CheckDue(true, true, now.AddDays(-2), now.AddHours(-1), now), "a failed attempt waits for the next cycle");
+        Check(AppUpdateAuto.CheckDue(true, true, now.AddDays(-2), now.AddHours(-6), now), "the next cycle after a failed attempt is due");
+        Check(!AppUpdateAuto.CheckDue(false, true, null, null, now), "the switch off means never");
+        Check(!AppUpdateAuto.CheckDue(true, false, null, null, now), "no key means never");
+        Check(AppUpdateAuto.CheckDue(true, true, now.AddDays(3), null, now), "a check dated in the future (clock set back) is ignored");
+        Check(!AppUpdateAuto.CheckDue(true, true, now.AddDays(3), now.AddHours(-1), now), "a past attempt still holds the next try back");
+
+        Check(AppUpdateAuto.IdleBlockers(new AppIdleFacts(), now).Count == 0 && AppUpdateAuto.IsIdle(new AppIdleFacts(), now), "nothing going on is idle");
+        var alone = new (AppIdleFacts Facts, AppIdleBlocker Blocker)[]
+        {
+            (new() { AgentRuns = 1 }, AppIdleBlocker.AgentRun),
+            (new() { PendingCards = 1 }, AppIdleBlocker.PendingCard),
+            (new() { QueuedInputs = 1 }, AppIdleBlocker.QueuedInput),
+            (new() { Drafts = 1 }, AppIdleBlocker.Draft),
+            (new() { Terminals = 1 }, AppIdleBlocker.Terminal),
+            (new() { CliWork = true }, AppIdleBlocker.CliWork),
+            (new() { ScreenSharing = true }, AppIdleBlocker.Remote),
+            (new() { PhoneUploads = 1 }, AppIdleBlocker.Remote),
+            (new() { RemoteHostRuns = 1 }, AppIdleBlocker.Remote),
+            (new() { BlockingModal = true }, AppIdleBlocker.Modal),
+            (new() { LastUserInput = now.AddMinutes(-4) }, AppIdleBlocker.UserActive),
+            (new() { LastUserInput = now.AddMinutes(1) }, AppIdleBlocker.UserActive),
+            (new() { LastAgentActivity = now.AddMinutes(-2) }, AppIdleBlocker.RecentAgentActivity),
+        };
+        foreach (var (facts, blocker) in alone)
+            Check(AppUpdateAuto.IdleBlockers(facts, now).SequenceEqual([blocker]), blocker + " must block on its own");
+        Check(AppUpdateAuto.IsIdle(new() { LastUserInput = now.AddMinutes(-5), LastAgentActivity = now.AddMinutes(-3) }, now), "input and runs past their delays are idle");
+        Check(AppUpdateAuto.IdleBlockers(new() { AgentRuns = 1, Drafts = 2, LastUserInput = now }, now)
+            .SequenceEqual([AppIdleBlocker.AgentRun, AppIdleBlocker.Draft, AppIdleBlocker.UserActive]), "the blockers come in the macOS order");
+
+        // The countdown: starts when idle, survives input, cancels on anything else, restarts when it runs out.
+        var idle = AppUpdateRestartState.Idle;
+        Check(AppUpdateAuto.RestartOffer(idle, false, true, [], now) == new AppUpdateRestartDecision(idle, AppUpdateRestartAction.None), "nothing staged offers nothing");
+        Check(AppUpdateAuto.RestartOffer(idle, true, false, [], now).Action == AppUpdateRestartAction.None, "the switch off offers nothing");
+        Check(AppUpdateAuto.RestartOffer(idle, true, true, [AppIdleBlocker.UserActive], now).Action == AppUpdateRestartAction.None, "a busy app is not offered a restart");
+        var started = AppUpdateAuto.RestartOffer(idle, true, true, [], now);
+        Check(started == new AppUpdateRestartDecision(AppUpdateRestartState.CountingDown(now + AppUpdateAuto.Countdown), AppUpdateRestartAction.StartCountdown), "an idle app starts the countdown");
+        var ticked = AppUpdateAuto.RestartOffer(started.State, true, true, [AppIdleBlocker.UserActive], now.AddSeconds(1));
+        Check(ticked == new AppUpdateRestartDecision(started.State, AppUpdateRestartAction.None), "input alone does not cancel a running countdown");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, true, [AppIdleBlocker.UserActive, AppIdleBlocker.Draft], now.AddSeconds(2))
+            == new AppUpdateRestartDecision(idle, AppUpdateRestartAction.Cancel), "any other blocker cancels quietly");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, false, [], now.AddSeconds(2)).Action == AppUpdateRestartAction.Cancel, "the switch going off cancels");
+        Check(AppUpdateAuto.RestartOffer(started.State, false, true, [], now.AddSeconds(2)).Action == AppUpdateRestartAction.Cancel, "an update no longer ready cancels");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, true, [], now.AddSeconds(59)).Action == AppUpdateRestartAction.None, "the countdown runs its sixty seconds");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, true, [], now.AddSeconds(60)) == new AppUpdateRestartDecision(idle, AppUpdateRestartAction.Restart), "the end of the countdown restarts");
+
+        var later = AppUpdateAuto.Later(now);
+        Check(later == AppUpdateRestartState.Snoozed(now.AddHours(4)), "later snoozes four hours");
+        Check(AppUpdateAuto.RestartOffer(later, true, true, [], now.AddHours(4).AddSeconds(-1)) == new AppUpdateRestartDecision(later, AppUpdateRestartAction.None), "a snooze holds until it ends");
+        Check(AppUpdateAuto.RestartOffer(later, true, true, [], now.AddHours(4)).Action == AppUpdateRestartAction.StartCountdown, "after the snooze an idle app is asked again");
+
+        Check(AppUpdateAuto.InstallsOnQuit(true, true, true, false), "a staged update installs on quit");
+        Check(!AppUpdateAuto.InstallsOnQuit(false, true, true, false) && !AppUpdateAuto.InstallsOnQuit(true, false, true, false)
+            && !AppUpdateAuto.InstallsOnQuit(true, true, false, false) && !AppUpdateAuto.InstallsOnQuit(true, true, true, true),
+            "nothing staged, the switch off, no key or a shutdown installs nothing on quit");
+        return Task.CompletedTask;
+    }
+
+    /// `--relaunch 0` survives the trip through the helper's argument list; an
+    /// old app that never passes the flag still means "start it again".
+    internal static Task HelperRelaunchFlagRoundTrips()
+    {
+        var plan = AppUpdateInstallPlan.Create(
+            Path.Combine(Path.GetTempPath(), "staged"), Path.Combine(Path.GetTempPath(), "MightyClaude"),
+            Path.Combine(Path.GetTempPath(), "package.zip"), new string('c', 64), 10, 4242);
+        Check(plan.Relaunch, "a plan relaunches by default");
+        var quiet = plan with { Relaunch = false };
+        var arguments = quiet.HelperArguments;
+        Check(arguments.Count >= 2 && arguments[^2] == AppUpdateInstallPlan.RelaunchFlag && arguments[^1] == "0", "a plan without relaunch says --relaunch 0");
+        Check(plan.HelperArguments[^1] == "1", "a plan with relaunch says --relaunch 1");
+        Check(AppUpdateInstallPlan.TryParse(arguments) == quiet, "--relaunch 0 must round trip");
+        Check(AppUpdateInstallPlan.TryParse(plan.HelperArguments) == plan, "--relaunch 1 must round trip");
+        Check(AppUpdateInstallPlan.TryParse(plan.HelperArguments.Take(plan.HelperArguments.Count - 2).ToList()) == plan,
+            "an argument list from an app before --relaunch existed must relaunch");
+        Check(AppUpdateInstallPlan.TryParse([.. plan.HelperArguments.Take(plan.HelperArguments.Count - 1), "yes"]) is null,
+            "a --relaunch value other than 1 or 0 must not produce a plan");
+        return Task.CompletedTask;
+    }
+
+    /// The install on quit replaces the install and removes the backup without
+    /// starting the app; when the swap fails the old install is put back and
+    /// still nothing is started.
+    internal static async Task ReplacementWithoutRelaunchNeverStartsTheApp()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyClaude");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242) with { Relaunch = false };
+
+            var started = new List<string>();
+            Task Start(string path) { started.Add(path); return Task.CompletedTask; }
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), Start);
+            Check(result.Replaced && !result.RolledBack, "the install on quit must replace the install: " + result.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyClaude.exe")) == "new", "the new app must be in place");
+            Check(started.Count == 0 && !result.Started, "the install on quit must not start the app");
+            Check(result.BackupRemoved && !Directory.Exists(plan.BackupDirectory), "the backup must be removed after a swap without relaunch");
+
+            // A failed copy puts the old install back and starts nothing either.
+            MakeInstall(staged, "newer");
+            var failing = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242) with { Relaunch = false };
+            var rolled = await AppUpdateReplacement.RunAsync(failing, _ => Task.FromResult(true), Start,
+                (_, destination) => { Directory.CreateDirectory(destination); throw new IOException("복사 실패"); });
+            Check(!rolled.Replaced && rolled.RolledBack, "a failed swap must roll back: " + rolled.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyClaude.exe")) == "new", "the install must be the one before the swap");
+            Check(started.Count == 0 && !rolled.Started, "a rollback without relaunch must not start the app");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// With the switch on a check downloads and stages without asking; a check
+    /// that finds the staged version keeps it ready without a second download; a
+    /// failed check beside a staged update only lands in LastError; quitting
+    /// installs it without a relaunch, and not with the switch off.
+    internal static async Task AStagedUpdateStaysReadyAndInstallsOnQuit()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyClaude");
+            MakeInstall(install, "old");
+            var packagePath = MakeZip(root, "MightyClaude-windows-x64.zip", zip => AddEntry(zip, "MightyClaude.exe", FakeExecutable("x64")));
+            var packageBytes = await File.ReadAllBytesAsync(packagePath);
+            string Manifest(string version) => "{\"version\":\"" + version + "\",\"windows\":{\"x64\":{"
+                + "\"url\":\"https://updates.example/" + version + "/MightyClaude-windows-x64.zip\","
+                + $"\"sha256\":\"{Sha256Of(packageBytes)}\",\"size\":{packageBytes.Length}}}}}}}";
+            var manifestVersion = "9.9.9";
+            var fail = false;
+            var handler = new FakeHttp(url =>
+                url.ToString() == ManifestUrl
+                    ? fail ? new HttpResponseMessage(HttpStatusCode.InternalServerError) : Ok(Envelope(Manifest(manifestVersion)))
+                    : Ok(packageBytes));
+            using var service = new AppUpdateService(Path.Combine(root, "state"), FixtureKey, handler);
+            var launched = new List<AppUpdateInstallPlan>();
+            var automatic = true;
+            var coordinator = new AppUpdateCoordinator(
+                service, "0.1.0", ManifestUrl, "x64", install, plan => { launched.Add(plan); return Task.CompletedTask; }, () => automatic);
+
+            var now = DateTimeOffset.UtcNow;
+            Check(await coordinator.CheckAutomaticallyIfDueAsync(null, true, null, now), "the first automatic check runs");
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready, "with the switch on a found version is downloaded and staged: " + coordinator.State.ErrorMessage);
+            var downloads = handler.Requested.Count(url => url.ToString() != ManifestUrl);
+            Check(downloads == 1, "one package download");
+            var view = coordinator.Describe(_ => "00:00");
+            Check(view.StatusText == AppUpdateStrings.StagedTemplate.Replace("{version}", "9.9.9") && view.ButtonLabel == AppUpdateStrings.RestartNowButton,
+                "a staged update says it installs at the next launch and offers restart now");
+
+            await coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready, "the same version keeps the staged update ready");
+            Check(handler.Requested.Count(url => url.ToString() != ManifestUrl) == downloads, "the same version is not downloaded twice");
+
+            fail = true;
+            await coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready && coordinator.State.InstallPlan is not null, "a failed check never drops a staged update");
+            Check(coordinator.State.LastError is { Length: > 0 }, "the failure is kept in LastError");
+            view = coordinator.Describe(_ => "00:00");
+            Check(view.KeptError == coordinator.State.LastError && view.RetryNotice == AppUpdateStrings.RetryNotice, "the section shows the failure and the retry notice");
+            Check(view.StatusText == AppUpdateStrings.StagedTemplate.Replace("{version}", "9.9.9"), "the status still says the update is staged");
+            fail = false;
+
+            automatic = false;
+            Check(!await coordinator.InstallOnQuitAsync(), "with the switch off quitting installs nothing");
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready && launched.Count == 0, "the staged update waits for restart now");
+            automatic = true;
+            Check(!await coordinator.InstallOnQuitAsync(poweringOff: true), "a shutdown leaves the update for the next quit");
+            Check(await coordinator.InstallOnQuitAsync(), "quitting installs the staged update");
+            Check(coordinator.State.Phase == AppUpdatePhase.Installing, "the install hands over to the helper");
+            Check(launched.Count == 1 && !launched[0].Relaunch && launched[0].HelperArguments[^1] == "0", "the helper is started with --relaunch 0");
+            Check(!await coordinator.InstallOnQuitAsync(), "an install under way is not started twice");
+
+            // A failed check with nothing staged is the section's state, with the retry notice while the switch is on.
+            var fresh = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, null, () => true);
+            fail = true;
+            await fresh.CheckAsync(null);
+            Check(fresh.State.Phase == AppUpdatePhase.Failed, "a failed check with nothing staged fails");
+            Check(fresh.Describe(_ => "00:00").RetryNotice == AppUpdateStrings.RetryNotice && fresh.Describe(_ => "00:00").KeptError is null,
+                "the retry notice shows, the error is the status itself");
+        }
+        finally { Directory.Delete(root, true); }
     }
 }

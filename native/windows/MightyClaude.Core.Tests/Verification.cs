@@ -1145,7 +1145,11 @@ internal static class Verification
         await Test("app update helper waits for the app to quit before it moves anything", AppUpdateVerification.AppUpdateHelperWaitsForTheAppToQuitBeforeItMovesAnything);
         await Test("app update helper verifies the package again before the install is moved aside", AppUpdateVerification.AppUpdateHelperVerifiesThePackageAgainBeforeTheInstallIsMovedAside);
         await Test("app update helper keeps the backup until the new app has started", AppUpdateVerification.AppUpdateHelperKeepsTheBackupUntilTheNewAppHasStarted);
-        await Test("app update automatic check happens at most once a day", AppUpdateVerification.AutomaticCheckHappensAtMostOnceADay);
+        await Test("app update automatic check happens every six hours", AppUpdateVerification.AutomaticCheckHappensEverySixHours);
+        await Test("app update automatic policy follows the macOS rules", AppUpdateVerification.AutomaticPolicyFollowsTheMacOSRules);
+        await Test("app update helper --relaunch round trips", AppUpdateVerification.HelperRelaunchFlagRoundTrips);
+        await Test("app update replacement without relaunch never starts the app", AppUpdateVerification.ReplacementWithoutRelaunchNeverStartsTheApp);
+        await Test("app update a staged update stays ready and installs on quit", AppUpdateVerification.AStagedUpdateStaysReadyAndInstallsOnQuit);
         await Test("app update section shows the macOS copy for every phase", AppUpdateVerification.SectionShowsTheMacOSCopyForEveryPhase);
         await Test("app update pipeline runs from a fixture-signed manifest to a ready install plan", AppUpdateVerification.PipelineRunsFromAFixtureSignedManifestToAReadyInstallPlan);
         await Test("app update keeps the setup program's uninstall entry at the app's version", AppUpdateVerification.InstallerEntryFollowsTheAppsOwnUpdates);
