@@ -279,6 +279,7 @@ public sealed partial class DesktopService : IAsyncDisposable
         {
             if (remote) SayIfOwned(request.SessionId, route, RunEvent.Log(request.SessionId, "error", ex.Message), RunEvent.State(request.SessionId, "error"));
             else { Receive(RunEvent.Log(request.SessionId, "error", ex.Message)); Receive(RunEvent.State(request.SessionId, "error")); }
+            ContinuationFailed(request, ex.Message);
             throw;
         }
     }

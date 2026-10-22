@@ -47,7 +47,8 @@ public sealed partial class MainWindow
         /// <summary>
         /// The Claude card's shape for what an Antigravity turn was refused (M/ToolPermissionBar.swift AntigravityPermissionCard): the hand
         /// on its amber disc and the title, what the card does, each action in a body that scrolls from 180, the reason an answer did not
-        /// go through, and the scope note with Deny, Always allow and Allow once (the last two disabled when no rule can allow it).
+        /// go through, and the scope note with Deny, Always allow and Allow once (both off when no rule can allow it, Always allow off with its
+        /// reason when a rule may be allowed only once).
         /// </summary>
         private Border AntigravityCard(AntigravityPermissionRequest card, string? reason, bool busy)
         {
@@ -72,9 +73,11 @@ public sealed partial class MainWindow
                             Padding = new Thickness(DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = b.Brush(DesignToken.CardRaised) });
                     else block.Children.Add(new TextBlock { Text = target, TextSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
                 }
-                block.Children.Add(action.Rule is { } rule
-                    ? new TextBlock { Text = Locale.Get("antigravity.permission.rule", new Dictionary<string, string> { ["rule"] = rule }), TextFont = TextArea.Code, TextSize = 10, Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true }
+                block.Children.Add(AntigravityPermissionFlow.RuleLine(action) is { } line
+                    ? new TextBlock { Text = line, TextFont = TextArea.Code, TextSize = 10, Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 3, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true }
                     : new TextBlock { Text = Locale.Get("antigravity.permission.noRule"), TextSize = 10, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
+                // A rule that may be allowed only once says so under it; 항상 허용 is off for the card.
+                if (action.OnceOnly) block.Children.Add(new TextBlock { Text = Locale.Get("antigravity.permission.onceOnly"), TextSize = 10, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
                 actions.Children.Add(block);
             }
 
@@ -107,7 +110,8 @@ public sealed partial class MainWindow
                 return button;
             }
             Answer("antigravity.permission.deny", "antigravity-permission-deny-", AntigravityPermissionDecision.Deny, false, true, 2);
-            Answer("antigravity.permission.allowAlways", "antigravity-permission-allow-always-", AntigravityPermissionDecision.Always, false, card.CanAllow, 3);
+            var always = Answer("antigravity.permission.allowAlways", "antigravity-permission-allow-always-", AntigravityPermissionDecision.Always, false, card.CanAllowAlways, 3);
+            if (card.CanAllow && !card.CanAllowAlways) ToolTipService.SetToolTip(always, Locale.Get("antigravity.permission.onceOnly"));
             Answer("permission.allowOnce", "antigravity-permission-allow-once-", AntigravityPermissionDecision.Once, true, card.CanAllow, 4);
             body.Children.Add(footer);
 
@@ -129,6 +133,8 @@ public sealed partial class MainWindow
             service.SetAntigravityError(id, null);
             if (decision == AntigravityPermissionDecision.Deny) { service.TakeAntigravityCard(id); return null; }
             string Refuse(string reason) { service.SetAntigravityError(id, reason); return reason; }
+            // No rule, or 항상 허용 for a rule that may be allowed only once.
+            if (AntigravityPermissionFlow.Refusal(card, decision) is { } refusal) return Refuse(refusal);
             if (AntigravityPermissionFlow.Continuation(card, decision) is not { } continuation) return Refuse(Locale.Get("antigravity.permission.noRule"));
             if (!service.BeginAntigravityAnswer(id, card)) return notPending;
             try
@@ -145,15 +151,15 @@ public sealed partial class MainWindow
                 {
                     // The composer's rule for a busy pane: it waits in the queue, and its rules go in place when that run starts.
                     if (queuedInputs.Items.Count >= QueuedInputBuffer.MaximumItems) return Refuse(Locale.Get("queue.fullCount", new Dictionary<string, string> { ["count"] = QueuedInputBuffer.MaximumItems.ToString() }));
-                    queuedInputs.Add(continuation.Prompt, [], null, prepared: true, antigravityGrant: continuation.Grant);
+                    queuedInputs.Add(continuation.Prompt, [], null, prepared: true, antigravityGrant: continuation.Grant, antigravityCard: card);
                     service.TakeAntigravityCard(id);
                     RenderQueuedInputs(); RefreshComposerState();
                     if (!MobileBusy) queueDrainTimer.Start();
                     return null;
                 }
-                if (!service.IsRemoteWorkspace(pane.WorkspaceId) && owner.AdmissionRefusal(pane.Kind, pane.Provider) is { } refusal) return Refuse(refusal);
+                if (!service.IsRemoteWorkspace(pane.WorkspaceId) && owner.AdmissionRefusal(pane.Kind, pane.Provider) is { } admission) return Refuse(admission);
                 var run = new StartRunRequest(id, pane.WorkspaceId, pane.Kind, continuation.Prompt, RegisteredModelsFor(pane.Provider, Workspace, service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId)
-                    { AntigravityGrant = continuation.Grant };
+                    { AntigravityGrant = continuation.Grant, AntigravityCard = card };
                 service.TakeAntigravityCard(id);
                 starting = true; RefreshComposerState();
                 try { await service.StartReachedAsync(run); return null; }

@@ -3,7 +3,9 @@ namespace MightyClaude.Core;
 /// <param name="PermissionModeOverride">Decided when queued: "plan" when a plan-mode style asked for it (§1.17.4).</param>
 /// <param name="Prepared">The text is already a style's prompt (a style button pressed on the phone): it is sent as it is, never rewritten again.</param>
 /// <param name="AntigravityGrant">The continuation of an allowed Antigravity card: the rules its run puts in place (AntigravityPermissions.cs). Not saved.</param>
-public sealed record QueuedComposerInput(string Id, string Text, IReadOnlyList<RunAttachment> Attachments, string? PermissionModeOverride = null, bool Prepared = false, AntigravityAllowGrant? AntigravityGrant = null);
+/// <param name="AntigravityCard">That card, which comes back with the reason when its run cannot start. Not saved.</param>
+public sealed record QueuedComposerInput(string Id, string Text, IReadOnlyList<RunAttachment> Attachments, string? PermissionModeOverride = null, bool Prepared = false, AntigravityAllowGrant? AntigravityGrant = null,
+    AntigravityPermissionRequest? AntigravityCard = null);
 
 /// <summary>Ephemeral requests behind a running turn. Errors pause; an explicit stop cancels.</summary>
 public sealed class QueuedInputBuffer
@@ -11,13 +13,14 @@ public sealed class QueuedInputBuffer
     public const int MaximumItems = 16;
     private readonly List<QueuedComposerInput> items = [];
     public IReadOnlyList<QueuedComposerInput> Items => items;
-    public QueuedComposerInput Add(string text, IEnumerable<RunAttachment> attachments, string? permissionModeOverride = null, bool prepared = false, AntigravityAllowGrant? antigravityGrant = null)
+    public QueuedComposerInput Add(string text, IEnumerable<RunAttachment> attachments, string? permissionModeOverride = null, bool prepared = false, AntigravityAllowGrant? antigravityGrant = null,
+        AntigravityPermissionRequest? antigravityCard = null)
     {
         if (items.Count >= MaximumItems) throw new InvalidOperationException(Locale.Get("queue.full"));
         var files = attachments.ToArray();
         if (string.IsNullOrWhiteSpace(text) && files.Length == 0 || text.Length > 100_000 || text.Contains('\0')) throw new ArgumentException(Locale.Get("wire.startRun.emptyInput"));
         if (files.Length > 0) AttachmentSupport.Validate(files);
-        var item = new QueuedComposerInput(Wire.Id(), text, files, permissionModeOverride, prepared, antigravityGrant); items.Add(item); return item;
+        var item = new QueuedComposerInput(Wire.Id(), text, files, permissionModeOverride, prepared, antigravityGrant, antigravityCard); items.Add(item); return item;
     }
     public bool Remove(string id) => items.RemoveAll(item => item.Id == id) > 0;
     public void Clear() => items.Clear();

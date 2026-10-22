@@ -76,9 +76,21 @@ public sealed partial class DesktopService
     {
         if (request.AntigravityGrant is not { } grant || request.Provider != "gemini" || request.Kind != "claude") return;
         if (await Task.Run(() => AntigravityRules.Apply(grant)) is not { } lease) return;
+        // Quitting meanwhile: the rules go again rather than outlive the app.
+        bool ending; lock (sync) ending = closing;
+        if (ending) { await Task.Run(() => AntigravityRules.Release(lease)); throw new OperationCanceledException(); }
         AntigravityRuleLeases.Lease? previous;
         lock (antigravityGate) { antigravityLeases.Remove(request.SessionId, out previous); antigravityLeases[request.SessionId] = lease; }
         if (previous is not null) _ = Task.Run(() => AntigravityRules.Release(previous));
+    }
+
+    /// <summary>An allowed card's continuation that could not start (a queued one too): the card comes back with the reason.</summary>
+    private void ContinuationFailed(StartRunRequest request, string reason)
+    {
+        if (request.AntigravityCard is not { } card) return;
+        RestoreAntigravityCard(request.SessionId, card);
+        bool back; lock (antigravityGate) back = antigravityBoard[request.SessionId] == card;
+        if (back) SetAntigravityError(request.SessionId, reason);
     }
 
     /// <summary>A closed pane's card and reason go with it.</summary>

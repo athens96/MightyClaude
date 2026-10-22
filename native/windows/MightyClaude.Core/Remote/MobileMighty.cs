@@ -201,10 +201,18 @@ public static class MobileMightySupport
 
 public sealed record MobilePermissionField(string Label, string Value);
 /// <summary><c>MobilePermission.antigravity</c>: what an Antigravity turn was refused, each action as the card shows it.</summary>
-public sealed record MobileAntigravityCard(IReadOnlyList<AntigravityDeniedAction> Actions)
+public sealed record MobileAntigravityCard(IReadOnlyList<MobileAntigravityAction> Actions)
 {
     public const string ToolName = "AntigravityPermission";
+    public static MobileAntigravityCard From(AntigravityPermissionRequest card) =>
+        new(card.Actions.Select(a => new MobileAntigravityAction(a.Kind, a.Action, a.DisplayName, a.Target, a.Rule, a.OnceOnly ? true : null)).ToArray());
 }
+/// <summary>
+/// One action of <see cref="MobileAntigravityCard"/> (M/MightyCore/Remote/MobileRemoteModels.swift MobileAntigravityAction). <c>OnceOnly</c> is
+/// true when its rule may be allowed only once (it chains, pipes, redirects or runs a destructive command): the card offers no 항상 허용 and
+/// the host refuses always; absent otherwise.
+/// </summary>
+public sealed record MobileAntigravityAction(string Kind, string Action, string DisplayName, string? Target = null, string? Rule = null, bool? OnceOnly = null);
 /// <summary>A pending request as the phone's card shows it. <c>Plan</c> is the Markdown of a Claude plan approval, answered with <c>POST …/plan</c>.
 /// <c>Antigravity</c> is an Antigravity card (the actions a finished turn was refused), answered with <c>POST …/permission</c> and <c>always</c>; absent for any other request.</summary>
 public sealed record MobilePermission(string Id, string RunId, string ToolName, string Title, string? Headline, IReadOnlyList<MobilePermissionField> Fields, string Summary, bool CanAllow, UserQuestionnaire? Questionnaire = null, string? Plan = null, string? ReceivedAt = null, MobileAntigravityCard? Antigravity = null)
@@ -216,7 +224,7 @@ public sealed record MobilePermission(string Id, string RunId, string ToolName, 
     public static MobilePermission FromAntigravity(AntigravityPermissionRequest card) =>
         new(card.Id, card.RunId, MobileAntigravityCard.ToolName, Locale.Get("antigravity.permission.title"), null,
             card.Actions.Select(a => new MobilePermissionField(AntigravityPermissionFlow.KindLabel(a.Kind), a.Target ?? a.DisplayName)).ToArray(),
-            ActivitySupport.Clean(string.Join(", ", card.Names), 2_048, true), card.CanAllow, ReceivedAt: card.ReceivedAt, Antigravity: new(card.Actions));
+            ActivitySupport.Clean(string.Join(", ", card.Names), 2_048, true), card.CanAllow, ReceivedAt: card.ReceivedAt, Antigravity: MobileAntigravityCard.From(card));
     /// <summary>
     /// The structured card the desktop shows, so both surfaces read alike (M/MightyCore/Remote/MobileRemoteModels.swift:229-240).
     /// A plan carries its text as <c>plan</c>, and once more as its one field so a phone that does not know plans still shows it.

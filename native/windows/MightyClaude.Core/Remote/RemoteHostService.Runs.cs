@@ -35,7 +35,7 @@ public sealed partial class RemoteHostService
         public AntigravityRuleLeases.Lease? Lease;
     }
 
-    /// <summary>The Antigravity cards this host's runs reported, by card id: a client's continuation may add only these rules here (for a day, the newest 128). Under <c>gate</c>.</summary>
+    /// <summary>The Antigravity cards this host's runs reported, by card id: a client's continuation may add only these rules here, once (for a day, the newest 128). Under <c>gate</c>.</summary>
     private readonly Dictionary<string, (HashSet<string> Rules, DateTimeOffset At)> reportedRules = new(StringComparer.Ordinal);
     private static readonly TimeSpan ReportedRulesKept = TimeSpan.FromDays(1);
     private const int MaximumReportedCards = 128;
@@ -150,12 +150,26 @@ public sealed partial class RemoteHostService
         AntigravityRuleLeases.Lease? lease = null;
         if (wire.AntigravityGrant is { } grant && run.Provider == "gemini" && run.Kind == "claude")
         {
-            bool reported;
-            lock (gate) reported = grant.IsValid && reportedRules.TryGetValue(grant.RequestId, out var known) && options.Clock() - known.At < ReportedRulesKept && grant.Rules.All(known.Rules.Contains);
-            if (!reported) throw new HostFailure(403, Locale.Get("remote.host.error.antigravityRules"));
-            if (options.AntigravityRules is not { } rules) throw new HostFailure(409, Locale.Get("remote.host.error.antigravityRules"));
+            (HashSet<string> Rules, DateTimeOffset At) known;
+            lock (gate)
+            {
+                if (!grant.IsValid || !reportedRules.TryGetValue(grant.RequestId, out known) || options.Clock() - known.At >= ReportedRulesKept || !grant.Rules.All(known.Rules.Contains))
+                    throw new HostFailure(403, Locale.Get("remote.host.error.antigravityRules"));
+                // Kept for good only when this PC lets others run with full access.
+                if (!grant.Temporary && !allowsFullAccess) throw new HostFailure(403, Locale.Get("remote.host.error.antigravityAlways"));
+                if (!grant.KeepsOnlyAllowedRules) throw new HostFailure(409, Locale.Get("remote.error.antigravityOnceOnly"));
+                if (options.AntigravityRules is null) throw new HostFailure(409, Locale.Get("remote.host.error.antigravityRules"));
+                // A card's rules are granted once: the first accepted grant uses them up.
+                reportedRules.Remove(grant.RequestId);
+            }
+            var rules = options.AntigravityRules;
             try { lease = await Task.Run(() => rules.Apply(grant)); }
-            catch (Exception ex) when (ex is not OutOfMemoryException) { throw new HostFailure(409, ex.Message); }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Nothing was added: the card may be granted again.
+                lock (gate) reportedRules.TryAdd(grant.RequestId, known);
+                throw new HostFailure(409, ex.Message);
+            }
         }
         Job job; IRemoteRunner active;
         try
