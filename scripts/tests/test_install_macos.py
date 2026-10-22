@@ -35,19 +35,23 @@ class InstallerTests(unittest.TestCase):
                 script = bins / name
                 script.write_text("#!/bin/bash\n" + body + "\n")
                 script.chmod(0o700)
-            # Only replace OS integration targets and backup destination. The
-            # actual lock/wait/backup/copy code is read from the shipping script.
+            # Only replace OS integration targets, the backup destination and
+            # the bundle's --verify-resources run (the fixture binaries are not
+            # programs). The actual lock/wait/backup/copy code is read from the
+            # shipping script.
             source_script = (root / "scripts/install-macos.sh").read_text()
             fixture_script = source_script.replace(
                 "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
                 str(bins / "lsregister"),
-            ).replace("/tmp/MightyClaude-app-backup-", str(folder / "backup-"))
+            ).replace("/tmp/MightyClaude-app-backup-", str(folder / "backup-")).replace(
+                '"$SOURCE/Contents/MacOS/MightyClaude" --verify-resources', "echo resources-verified")
             installer = folder / "install.sh"
             installer.write_text(fixture_script)
             environment = os.environ.copy()
             environment.pop("MIGHTY_INSTALL_UNDER_LOCK", None)
             environment.update(PATH=str(bins) + ":/usr/bin:/bin:/usr/sbin:/sbin", TMPDIR=str(folder),
-                               MIGHTY_INSTALL_PATH=str(destination), FIXTURE_GATE=str(gate))
+                               MIGHTY_INSTALL_PATH=str(destination), FIXTURE_GATE=str(gate),
+                               MIGHTY_DATA_DIR=str(folder / "data"))
             first_log = folder / "first.log"
             with first_log.open("w") as log:
                 first = subprocess.Popen(["/bin/bash", str(installer), str(source)], env=environment,
@@ -113,7 +117,8 @@ class InstallerTests(unittest.TestCase):
             fixture_script = (root / "scripts/install-macos.sh").read_text().replace(
                 "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
                 str(bins / "lsregister"),
-            ).replace("/tmp/MightyClaude-app-backup-", str(folder / "backup-"))
+            ).replace("/tmp/MightyClaude-app-backup-", str(folder / "backup-")).replace(
+                '"$SOURCE/Contents/MacOS/MightyClaude" --verify-resources', "echo resources-verified")
             installer = folder / "install.sh"
             installer.write_text(fixture_script)
             first_tmp = folder / "first-tmp"
@@ -124,7 +129,7 @@ class InstallerTests(unittest.TestCase):
             environment.pop("MIGHTY_INSTALL_UNDER_LOCK", None)
             environment.update(PATH=str(bins) + ":/usr/bin:/bin:/usr/sbin:/sbin", TMPDIR=str(first_tmp),
                                MIGHTY_INSTALL_PATH=str(destination), FIXTURE_GATE=str(gate),
-                               FIXTURE_LAUNCHED=str(launched))
+                               FIXTURE_LAUNCHED=str(launched), MIGHTY_DATA_DIR=str(folder / "data"))
             other_environment = dict(environment, TMPDIR=str(second_tmp))
             log_path = folder / "cancelled.log"
             with log_path.open("w") as log:
@@ -166,6 +171,71 @@ class InstallerTests(unittest.TestCase):
                     except ProcessLookupError:
                         pass
                     waiter.wait(timeout=5)
+
+    def test_waits_for_the_apps_update_helper_and_drops_staged_updates(self):
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory(prefix="mighty-install-helper-test-") as temporary:
+            folder = Path(temporary)
+            bins = folder / "bin"
+            bins.mkdir()
+            helper_gate = folder / "helper-running"
+            helper_gate.touch()
+            data = folder / "data"
+            staged = data / "updates/9.9.9/MightyClaude.app/Contents/MacOS/MightyClaude"
+            staged.parent.mkdir(parents=True)
+            staged.write_text("staged-release")
+            destination = folder / "Applications/MightyClaude.app"
+            binary = destination / "Contents/MacOS/MightyClaude"
+            binary.parent.mkdir(parents=True)
+            binary.write_text("old")
+            source = folder / "release/MightyClaude.app"
+            source_binary = source / "Contents/MacOS/MightyClaude"
+            source_binary.parent.mkdir(parents=True)
+            source_binary.write_text("dev-build")
+            for name, body in {
+                # The app has quit; its update helper is still running.
+                "ps": 'if [ -f "$FIXTURE_HELPER_GATE" ]; then printf "/bin/sh %s\n" "$MIGHTY_DATA_DIR/updates/9.9.9/install.sh"; fi',
+                "codesign": "exit 0",
+                "open": "exit 0",
+                "lsregister": "exit 0",
+            }.items():
+                script = bins / name
+                script.write_text("#!/bin/bash\n" + body + "\n")
+                script.chmod(0o700)
+            fixture_script = (root / "scripts/install-macos.sh").read_text().replace(
+                "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+                str(bins / "lsregister"),
+            ).replace("/tmp/MightyClaude-app-backup-", str(folder / "backup-")).replace(
+                '"$SOURCE/Contents/MacOS/MightyClaude" --verify-resources', "echo resources-verified")
+            installer = folder / "install.sh"
+            installer.write_text(fixture_script)
+            environment = os.environ.copy()
+            environment.pop("MIGHTY_INSTALL_UNDER_LOCK", None)
+            environment.update(PATH=str(bins) + ":/usr/bin:/bin:/usr/sbin:/sbin", TMPDIR=str(folder),
+                               MIGHTY_INSTALL_PATH=str(destination), MIGHTY_DATA_DIR=str(data),
+                               FIXTURE_HELPER_GATE=str(helper_gate))
+            log_path = folder / "helper.log"
+            with log_path.open("w") as log:
+                waiter = subprocess.Popen(["/bin/bash", str(installer), str(source)], env=environment,
+                                          stdout=log, stderr=subprocess.STDOUT)
+                try:
+                    deadline = time.monotonic() + 10
+                    while "업데이트 도우미" not in log_path.read_text() and waiter.poll() is None and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                    self.assertIn("업데이트 도우미", log_path.read_text())
+                    time.sleep(0.5)
+                    # Nothing is copied or removed while the helper runs.
+                    self.assertEqual(binary.read_text(), "old")
+                    self.assertTrue(staged.exists())
+                    helper_gate.unlink()
+                    self.assertEqual(waiter.wait(timeout=15), 0, log_path.read_text())
+                finally:
+                    if waiter.poll() is None:
+                        helper_gate.unlink(missing_ok=True)
+                        waiter.terminate()
+                        waiter.wait(timeout=10)
+            self.assertEqual(binary.read_text(), "dev-build")
+            self.assertEqual(list((data / "updates").iterdir()), [])
 
 
 if __name__ == "__main__":

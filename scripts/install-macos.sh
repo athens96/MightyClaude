@@ -12,6 +12,9 @@
 # id, so after the swap this script unregisters the other copies and
 # re-registers the installed one, keeps the backup under a name that is not an
 # app bundle, and gives the old process a moment to disappear before relaunch.
+# The app's own update helper (`install.sh` under the data folder's updates/,
+# started when the app quits with an update staged) is let finish first, and
+# staged updates are removed, so a staged release never replaces this build.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,6 +22,8 @@ SOURCE="${1:-$PROJECT_ROOT/release/native-macos/MightyClaude.app}"
 DESTINATION="${MIGHTY_INSTALL_PATH:-/Applications/MightyClaude.app}"
 BINARY="$DESTINATION/Contents/MacOS/MightyClaude"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+# The app's data folder (MIGHTY_DATA_DIR for a --profile folder).
+UPDATES="${MIGHTY_DATA_DIR:-$HOME/Library/Application Support/MightyClaude Native}/updates"
 
 # Serialize the entire wait/copy/relaunch sequence. Two pending installers used
 # to wake on the same app exit and write the same timestamped backup together.
@@ -31,6 +36,9 @@ exec 9>"$LOCK_PATH"
 /usr/bin/lockf -t 0 9
 
 running() { ps -axo command | grep -F "$BINARY" | grep -v grep >/dev/null; }
+# The helper runs as `/bin/sh <updates>/<version>/install.sh`. No single grep
+# in this pipeline carries both strings, so it never matches itself.
+update_helper_running() { ps -axo command | grep -F "$UPDATES/" | grep -F "/install.sh" >/dev/null; }
 
 [ -d "$SOURCE" ] || { echo "설치할 앱이 없습니다: $SOURCE" >&2; exit 1; }
 codesign --verify --deep --strict "$SOURCE"
@@ -51,6 +59,13 @@ if running; then
   # Let the input method and LaunchServices finish tearing down the old process.
   sleep 2
 fi
+
+if update_helper_running; then
+  echo "Mighty Claude의 업데이트 도우미가 끝나기를 기다립니다…"
+  while update_helper_running; do sleep 1; done
+fi
+# A staged update would replace this build at the app's next quit.
+rm -rf "$UPDATES"/*
 
 # Keep two backups, named so LaunchServices does not treat them as apps.
 ls -dt /tmp/MightyClaude-app-backup-* 2>/dev/null | tail -n +3 | xargs rm -rf 2>/dev/null || true
