@@ -350,7 +350,7 @@ extension AppStore {
         // An Antigravity card waits on a human like a permission does.
         let antigravityCards = (antigravity ?? antigravityBoard)[session.id] == nil ? 0 : 1
         // The sidebar's own test for a child waiting on a human (`WorkspaceView.paneRow`).
-        let asksHuman = WorkDashboard.attention((permissions ?? toolPermissions)[session.id]).total > 0 || antigravityCards > 0
+        let asksHuman = WorkDashboard.attention((permissions ?? toolPermissions)[session.id], antigravity: (antigravity ?? antigravityBoard)[session.id]).total > 0
         let child = MobileRemoteSupport.childLink(sessionId: session.id, children: children ?? delegationChildren, asksHuman: asksHuman)
         let last = session.logs.last(where: { $0.activity == nil && !$0.text.isEmpty })
         return MobileSessionSummary(

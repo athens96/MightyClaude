@@ -52,11 +52,14 @@ public enum WorkDashboard {
 
     /// Only requests still `pending` count; a question is one the user answers in a
     /// questionnaire (`canAnswerQuestions`), everything else is a permission request.
-    public static func attention(_ requests: [ToolPermissionRequest]?) -> Attention {
+    /// A pane's Antigravity card (`AntigravityPermissionBoard`) is one more permission
+    /// request, as the phone's `pendingPermissions` counts it.
+    public static func attention(_ requests: [ToolPermissionRequest]?, antigravity: AntigravityPermissionRequest? = nil) -> Attention {
         var value = Attention()
         for request in requests ?? [] where request.state == "pending" {
             if request.canAnswerQuestions { value.questions += 1 } else { value.permissions += 1 }
         }
+        if antigravity != nil { value.permissions += 1 }
         return value
     }
 
@@ -66,20 +69,20 @@ public enum WorkDashboard {
         attention.total > 0 ? "waiting" : status
     }
 
-    public static func stats(sessions: [RunSession], permissions: [String: [ToolPermissionRequest]]) -> Stats {
+    public static func stats(sessions: [RunSession], permissions: [String: [ToolPermissionRequest]], antigravity: AntigravityPermissionBoard = .init()) -> Stats {
         var stats = Stats()
         for session in sessions where isCounted(session.kind) {
-            stats.waiting += attention(permissions[session.id]).total
+            stats.waiting += attention(permissions[session.id], antigravity: antigravity[session.id]).total
             if session.status == "running" { stats.running += 1 }
             else if session.status == "completed" { stats.done += 1 }
         }
         return stats
     }
 
-    public static func badges(sessions: [RunSession], permissions: [String: [ToolPermissionRequest]]) -> Badges {
+    public static func badges(sessions: [RunSession], permissions: [String: [ToolPermissionRequest]], antigravity: AntigravityPermissionBoard = .init()) -> Badges {
         var badges = Badges()
         for session in sessions where isCounted(session.kind) {
-            let pending = attention(permissions[session.id])
+            let pending = attention(permissions[session.id], antigravity: antigravity[session.id])
             badges.questions += pending.questions
             badges.permissions += pending.permissions
             switch DesignTone(status: displayStatus(session.status, attention: pending)) {
@@ -130,8 +133,8 @@ public enum WorkDashboard {
 
     /// `activity: false` skips the log scan for `lastActivity` (left nil), for a caller
     /// that redraws on every streamed line and never shows it (the pane's header).
-    public static func card(_ session: RunSession, permissions: [ToolPermissionRequest]?, activity: Bool = true) -> Card {
-        let pending = attention(permissions)
+    public static func card(_ session: RunSession, permissions: [ToolPermissionRequest]?, antigravity: AntigravityPermissionRequest? = nil, activity: Bool = true) -> Card {
+        let pending = attention(permissions, antigravity: antigravity)
         let usage = session.sessionUsage?.provider == session.provider ? session.sessionUsage : nil
         let percent = usage?.contextPercent.flatMap { $0.isFinite ? min(100, max(0, $0)) : nil }
         let timing = session.runTiming.flatMap { $0.isValid ? $0 : nil }

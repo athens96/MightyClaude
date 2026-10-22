@@ -261,7 +261,7 @@ struct SessionPaneView: View {
     private var headerCard: WorkDashboard.Card {
         var shown = session
         if running { shown.status = "running" }
-        return WorkDashboard.card(shown, permissions: store.toolPermissions[session.id], activity: false)
+        return WorkDashboard.card(shown, permissions: store.toolPermissions[session.id], antigravity: store.antigravityBoard[session.id], activity: false)
     }
 
     /// A small status word in its ink, then the figures in mono, which fade at the right

@@ -69,6 +69,33 @@ struct WorkDashboardTests {
         #expect(badges == WorkDashboard.Badges(questions: 1, permissions: 1, errors: 2, running: 1, done: 1))
     }
 
+    /// An Antigravity card is one pending permission request wherever the Mac
+    /// counts them (tiles, sidebar and header badges, the pane's card and dock),
+    /// as the phone's `pendingPermissions` does; its finished pane shows as waiting.
+    @Test func anAntigravityCardCountsAsOnePendingPermission() {
+        let card = AntigravityPermissionRequest(id: "agy-1", runId: "r", actions: [AntigravityDeniedAction(kind: .command, action: "command", displayName: "RunCommand", target: "ls", rule: "command(ls)")])
+        var board = AntigravityPermissionBoard()
+        board.received(card, sessionId: "agy")
+        board.received(card, sessionId: "io")
+        let sessions = [
+            Self.pane("agy", provider: "gemini", status: "completed"),
+            Self.pane("claude", status: "running"),
+            // An agent's own terminal is not counted, as everywhere else.
+            Self.pane("io", kind: AgentIOPaneKind.terminal),
+        ]
+        let permissions = ["claude": [Self.request("p")]]
+        #expect(WorkDashboard.attention(nil, antigravity: card) == WorkDashboard.Attention(permissions: 1))
+        #expect(WorkDashboard.attention([Self.request("q", question: true), Self.request("p")], antigravity: card) == WorkDashboard.Attention(questions: 1, permissions: 2))
+        // The tiles count requests as waiting and panes by their own status, as for Claude's.
+        #expect(WorkDashboard.stats(sessions: sessions, permissions: permissions, antigravity: board) == WorkDashboard.Stats(running: 1, waiting: 2, done: 1))
+        #expect(WorkDashboard.badges(sessions: sessions, permissions: permissions, antigravity: board) == WorkDashboard.Badges(permissions: 2))
+        let shown = WorkDashboard.card(sessions[0], permissions: nil, antigravity: board["agy"])
+        #expect(shown.displayStatus == "waiting" && shown.attention.total == 1 && shown.tone == .wait)
+        // Without the card the same pane is simply done.
+        #expect(WorkDashboard.badges(sessions: sessions, permissions: permissions) == WorkDashboard.Badges(permissions: 1, done: 1))
+        #expect(WorkDashboard.card(sessions[0], permissions: nil).displayStatus == "completed")
+    }
+
     @Test func badgesAlsoCountWhatHasSettledForTheWorkspaceHeader() {
         let sessions = [
             Self.pane("done", status: "completed"),
