@@ -13,6 +13,7 @@ import {
   antigravityActions,
   antigravityAnswerBody,
   antigravityAnsweredToast,
+  antigravityOffersAlways,
   sendAntigravityAnswer,
   type AntigravityDecision,
 } from '@/lib/antigravity-permission';
@@ -27,10 +28,15 @@ const fixturePath = resolve(__dirname, '../../../native/contracts/fixtures/antig
 const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
   mobile: {
     permission: MobilePermission;
+    permissionPlain: { permission: MobilePermission };
     answers: { body: { requestId: string; runId: string; allow: boolean; always?: boolean }; decision?: AntigravityDecision; status?: number }[];
+    refusals: { case: string; status: number; error: string }[];
   };
 };
+/** The recorded curl card: its piped command may be allowed only once. */
 const card = fixture.mobile.permission;
+/** The recorded `date +%Y` card: 항상 허용 is offered. */
+const plainCard = fixture.mobile.permissionPlain.permission;
 
 /** A card no rule can allow: the host says `canAllow: false` and no action carries a rule. */
 const noRuleCard: MobilePermission = {
@@ -72,6 +78,7 @@ describe('reading an Antigravity card', () => {
         displayName: 'RunCommand',
         target: "curl -s https://example.com | grep -i '<title>'",
         rule: "command(curl -s https://example.com | grep -i '<title>')",
+        onceOnly: true,
       },
       { kind: 'other', action: 'notebook_execution', displayName: 'NotebookExecution' },
     ]);
@@ -187,7 +194,8 @@ describe('the Antigravity card', () => {
     expect(drawn).toContain(t('antigravity.permission.subtitle'));
     expect(drawn).toContain(`${t('antigravity.permission.kind.command')} · RunCommand`);
     expect(drawn).toContain("curl -s https://example.com | grep -i '<title>'");
-    expect(drawn).toContain(t('antigravity.permission.rule', { rule: "command(curl -s https://example.com | grep -i '<title>')" }));
+    expect(drawn).toContain(t('antigravity.permission.ruleCommand', { rule: "command(curl -s https://example.com | grep -i '<title>')" }));
+    expect(t('antigravity.permission.ruleCommand', { rule: 'x' })).toContain('시작하는 모든 명령');
     expect(drawn).toContain(`${t('antigravity.permission.kind.other')} · NotebookExecution`);
     expect(drawn).toContain(t('antigravity.permission.noRule'));
     expect(drawn).toContain(t('antigravity.permission.scopeNote'));
@@ -196,7 +204,7 @@ describe('the Antigravity card', () => {
 
   it("answers with each button's own decision", () => {
     const answers: AntigravityDecision[] = [];
-    const renderer = render(card, (decision) => answers.push(decision));
+    const renderer = render(plainCard, (decision) => answers.push(decision));
     expect(labels(renderer)).toEqual([
       t('antigravity.permission.deny'),
       t('antigravity.permission.allowAlways'),
@@ -206,6 +214,24 @@ describe('the Antigravity card', () => {
     for (const label of ['이번만 허용', '항상 허용', '거절']) act(() => button(renderer, label).props.onPress());
     expect(answers).toEqual(['once', 'always', 'deny']);
     act(() => renderer.unmount());
+  });
+
+  it('hides 항상 허용 when a rule may be allowed only once, and says why', () => {
+    const actions = antigravityActions(card)!;
+    expect(actions[0]!.onceOnly).toBe(true);
+    expect(actions[1]!.onceOnly).toBeUndefined();
+    expect(antigravityOffersAlways(actions)).toBe(false);
+    expect(antigravityOffersAlways(antigravityActions(plainCard)!)).toBe(true);
+    const renderer = render(card, () => undefined);
+    expect(labels(renderer)).toEqual([t('antigravity.permission.deny'), t('permission.allowOnce')]);
+    expect(texts(renderer)).toContain(t('antigravity.permission.onceOnly'));
+    act(() => renderer.unmount());
+    const plain = render(plainCard, () => undefined);
+    expect(texts(plain)).not.toContain(t('antigravity.permission.onceOnly'));
+    act(() => plain.unmount());
+    // What the host answers when always comes anyway.
+    expect(fixture.mobile.refusals).toEqual([{ case: expect.any(String), status: 409, error: 'remote.error.antigravityOnceOnly' }]);
+    expect(t('remote.error.antigravityOnceOnly')).not.toBe('remote.error.antigravityOnceOnly');
   });
 
   it('offers no allow button when no rule can allow it, only the guidance', () => {
@@ -219,7 +245,7 @@ describe('the Antigravity card', () => {
 
   it("keeps its buttons and shows the host's reason after a refusal", () => {
     const reason = t('antigravity.settings.error.allowNotArray', { path: '~/.gemini/antigravity-cli/settings.json' });
-    const renderer = render(card, () => undefined, reason);
+    const renderer = render(plainCard, () => undefined, reason);
     const error = renderer.root.findAll((node) => node.type === Text && node.props.testID === 'antigravity-permission-error');
     expect(error.map((node) => node.props.children)).toEqual([reason]);
     expect(labels(renderer)).toHaveLength(3);

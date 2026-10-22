@@ -253,8 +253,16 @@ export interface MobileAntigravityAction {
   displayName: string;
   /** The whole command, the domain or the path, when agy said it. */
   target?: string;
-  /** The `permissions.allow` rule allowing this action alone; absent when no rule can. */
+  /**
+   * The `permissions.allow` rule allowing this action; absent when no rule can. agy's rules
+   * are prefixes: a command rule allows every command starting with it.
+   */
   rule?: string;
+  /**
+   * true when the rule may be allowed only once (the command chains, pipes, redirects or
+   * may destroy data): the card offers no 항상 허용, and the host refuses `always`.
+   */
+  onceOnly?: boolean;
 }
 
 export interface MobileAntigravityCard {
