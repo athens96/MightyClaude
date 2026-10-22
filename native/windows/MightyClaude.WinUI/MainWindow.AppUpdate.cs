@@ -79,7 +79,12 @@ public sealed partial class MainWindow
         info.Environment.Clear();
         foreach (var (key, value) in AppUpdateInstallPlan.HelperEnvironment) info.Environment[key] = value;
         using (Process.Start(info)) { }
-        if (plan.Relaunch) DispatcherQueue.TryEnqueue(() => _ = QuitAsync());
+        if (plan.Relaunch) DispatcherQueue.TryEnqueue(async () =>
+        {
+            await QuitAsync();
+            // The shutdown failed (its error shows) and the app runs on: the update is ready again.
+            if (!canClose && !closing) appUpdate?.InstallAbandoned();
+        });
         return Task.CompletedTask;
     }
 
@@ -272,19 +277,30 @@ public sealed partial class MainWindow
         // Without it a quit during a sign-out would still install; the update itself goes on.
         try { WatchSessionEnding(); }
         catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceWarning("session ending not watched: " + ex.Message); }
+        // An update an install on quit kept is looked at from the first tick on, not now: the helper that kept it was
+        // started by the quit just before this start and may still run from its staged folder.
+        appUpdateKeptPending = true;
         StartAppUpdateLoop();
-        CheckAppUpdateAtStart();
+        CheckAppUpdateIfDue();
     }
 
-    /// An update an install on quit kept (the app was opened again before the
-    /// helper could swap) is checked at once and staged again from the package
-    /// on disk; otherwise the start checks when one is due.
-    private async void CheckAppUpdateAtStart()
+    /// Set at start until a kept update was checked or there is none (`AppUpdateCoordinator.CheckKeptUpdateAsync`).
+    private bool appUpdateKeptPending;
+
+    /// A tick's check: a kept update first (it waits, tick after tick, while
+    /// staging is busy), then a download that found staging busy, then the due check.
+    private async void CheckAppUpdateOnTick()
     {
-        if (closing || !AppUpdateCanRunAutomatically) return;
+        if (closing || !AppUpdateCanRunAutomatically || appUpdate is null) return;
         var snapshot = service.Snapshot;
         // Failures land in the section (LastError); nothing here can throw past the coordinator.
-        if (snapshot.AppUpdateAutoCheck && await AppUpdate.CheckKeptUpdateAsync(snapshot.AppUpdateManifestUrlOverride, DateTimeOffset.UtcNow)) return;
+        if (appUpdateKeptPending)
+        {
+            var kept = await appUpdate.CheckKeptUpdateAsync(snapshot.AppUpdateManifestUrlOverride, DateTimeOffset.UtcNow);
+            if (kept != AppUpdateKeptCheck.Waiting) appUpdateKeptPending = false;
+            if (kept != AppUpdateKeptCheck.None) return;
+        }
+        if (appUpdate.StagingDeferred) { await appUpdate.RetryDeferredStagingAsync(); return; }
         CheckAppUpdateIfDue();
     }
 
@@ -366,7 +382,7 @@ public sealed partial class MainWindow
     private void AppUpdateTick()
     {
         if (closing) return;
-        if (appUpdateRestart.Kind != AppUpdateRestartKind.CountingDown) CheckAppUpdateIfDue();
+        if (appUpdateRestart.Kind != AppUpdateRestartKind.CountingDown) CheckAppUpdateOnTick();
         OfferAppUpdateRestart();
     }
 

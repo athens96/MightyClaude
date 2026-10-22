@@ -280,6 +280,41 @@ public static class AppUpdateReplacement
         }
     }
 
+    /// True while the app must not stage an update: a process other than this
+    /// one runs an image from under `updatesDirectory` (an install on quit's
+    /// helper runs from `updates/<version>/staged`, and keeps polling up to 30
+    /// seconds after the app opened again), or the copy beside the install was
+    /// written within `NewCopyGrace` (a helper may still be filling it). Staging
+    /// deletes and rewrites the staged folder, which would break either. A check
+    /// that cannot tell reads as busy.
+    public static bool StagingBusy(string updatesDirectory, string? installDirectory, DateTime? now = null)
+    {
+        try
+        {
+            if (Directory.Exists(updatesDirectory) && AnyRunningFrom(updatesDirectory)) return true;
+            return installDirectory is not null
+                && WrittenSince(Path.GetFullPath(installDirectory.TrimEnd(Path.DirectorySeparatorChar)) + ".update-new", (now ?? DateTime.UtcNow) - NewCopyGrace);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException) { return true; }
+    }
+
+    /// Why the copy at `actual` is not the staged tree at `expected` (the same
+    /// relative files with the same sizes), or null when it is. The helper
+    /// checks this right before the renames: a copy cut short, or a staged
+    /// folder changed under it, is never swapped in.
+    public static string? TreeMismatch(string expected, string actual)
+    {
+        static Dictionary<string, long> Files(string root) =>
+            Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .ToDictionary(file => Path.GetRelativePath(root, file), file => new FileInfo(file).Length, StringComparer.Ordinal);
+        var want = Files(expected);
+        var have = Files(actual);
+        if (want.Keys.FirstOrDefault(file => !have.ContainsKey(file)) is { } missing) return "missing " + missing;
+        if (have.Keys.FirstOrDefault(file => !want.ContainsKey(file)) is { } extra) return "unexpected " + extra;
+        if (want.FirstOrDefault(file => have[file.Key] != file.Value) is { Key: { } differs }) return "size differs for " + differs;
+        return null;
+    }
+
     private static bool AnyRunningFrom(string installDirectory)
     {
         var folder = Path.GetFullPath(installDirectory.TrimEnd(Path.DirectorySeparatorChar)) + Path.DirectorySeparatorChar;
@@ -410,6 +445,19 @@ public static class AppUpdateReplacement
                 RemoveFolder(plan.NewDirectory);
                 return new(false, false, unsure, moves, false, false, Skipped: true);
             }
+        }
+
+        // Right before the renames: the copy must be the staged tree, file for file and size for size. A copy cut short or a
+        // staged folder changed under it (the app staging again) is never swapped in; the staged update is kept. The reason
+        // goes to install.log only, so it is plain text.
+        string? mismatch;
+        try { mismatch = TreeMismatch(plan.StagedDirectory, plan.NewDirectory); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { mismatch = error.Message; }
+        if (mismatch is not null)
+        {
+            RemoveFolder(plan.NewDirectory);
+            var startedOld = plan.Relaunch && await TryStartAsync(startApp, plan.NewExecutable);
+            return new(false, false, "the copy beside the install does not match the staged update: " + mismatch, moves, startedOld, false);
         }
 
         var backupTaken = false;
