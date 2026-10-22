@@ -149,7 +149,9 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         Task graphTask = Task.CompletedTask;
         var parser = new OutputParser(request.Provider, (kind, text) => Log(run, kind, text), id => emit(new(request.SessionId, "resume", ResumeId: id)), value => { if (tracker?.Activity(value) != true) Activity(run, value); }, value => { if (!run.Finalizing) emit(new(request.SessionId, "usage", Usage: value)); }, run.ActivityId,
             images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); },
-            requestedResume: request.Provider == "gemini" ? request.ResumeId : null, answer: text => tracker?.AntigravityAnswer(text));
+            requestedResume: request.Provider == "gemini" ? request.ResumeId : null, answer: text => tracker?.AntigravityAnswer(text),
+            // The card goes out before the run's last status (M/ProcessRunner.swift antigravityPermission).
+            antigravityPermission: card => { if (!run.Finished && request.Kind == "claude") emit(new(request.SessionId, "antigravityPermission", AntigravityPermission: card)); });
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
             tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), node => { Interlocked.Exchange(ref graphDirty, 1); HandOver(run, node); });
         run.Tracker = tracker;

@@ -191,7 +191,9 @@ public sealed partial class MainWindow
         {
             var pending = CardRequests;
             RenderGuidedStyle();
-            if (pending.Count == 0) { HideQuestionnaire(); HidePlanDock(); NotePlanShown(null); permissionShown = null; toolPermissionHost.Visibility = Visibility.Collapsed; return; }
+            // With no Claude request waiting, the pane's Antigravity card takes the card's place (MainWindow.AntigravityPermission.cs).
+            if (pending.Count == 0) { HideQuestionnaire(); HidePlanDock(); NotePlanShown(null); permissionShown = null; if (!TryRenderAntigravity()) toolPermissionHost.Visibility = Visibility.Collapsed; return; }
+            HideAntigravity();
             var current = pending[0];
             // Claude's plan (ExitPlanMode) has its own card, docked here or in the diagram (MainWindow.PlanCard.cs).
             if (TryRenderPlan(current, pending.Count)) return;

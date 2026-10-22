@@ -29,6 +29,8 @@ public sealed record RemoteHostOptions
     public Func<DateTimeOffset> Clock { get; init; } = () => DateTimeOffset.UtcNow;
     /// <summary>This PC runs Windows, where Codex and Antigravity are not confined as on a Mac (FullAccessRefusal); checks set it.</summary>
     public bool WindowsHost { get; init; } = OperatingSystem.IsWindows();
+    /// <summary>agy's settings on this PC, shared with its own panes: an allowed card's continuation puts its rules here. Null refuses every grant.</summary>
+    public AntigravityRuleLeases? AntigravityRules { get; init; }
 }
 
 /// <summary>
@@ -216,15 +218,20 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
     /// <summary>Ends the sharing (only <paramref name="only"/>'s, when given): the state, key and switch are gone before the first wait.</summary>
     private async Task StopNowAsync(Guid? only = null)
     {
-        List<RemoteHttpListener> old; IRemoteRunner? oldRunner; CancellationTokenSource? oldLease; List<CancellationTokenSource> launches;
+        List<RemoteHttpListener> old; IRemoteRunner? oldRunner; CancellationTokenSource? oldLease; List<CancellationTokenSource> launches; List<AntigravityRuleLeases.Lease> leases;
         lock (gate)
         {
             if (only is { } expected && expected != generation) return;
             generation = Guid.NewGuid(); old = [.. servers]; servers.Clear(); oldRunner = runner; runner = null;
             state = new(); allowsFullAccess = false; oldLease = lease; lease = null;
-            launches = jobs.Values.Select(j => j.Cancel).ToList(); jobs.Clear();
+            launches = jobs.Values.Select(j => j.Cancel).ToList();
+            leases = jobs.Values.Select(j => j.Lease).OfType<AntigravityRuleLeases.Lease>().ToList();
+            foreach (var job in jobs.Values) job.Lease = null;
+            jobs.Clear(); reportedRules.Clear();
         }
         oldLease?.Cancel();
+        // The temporary Antigravity rules of the runs that end here leave agy's settings with them.
+        if (options.AntigravityRules is { } rules) foreach (var held in leases) rules.Release(held);
         // A run not handed to the runner yet never is; the runner's own runs end with its disposal below.
         foreach (var launch in launches) launch.Cancel();
         try

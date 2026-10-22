@@ -371,6 +371,9 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     // A delegated child's worktree when its run works in a folder inside it (a workspace that is a subfolder of its repository):
     // REPORT.md lies outside that folder, so a Codex run may also write here and an Antigravity run adds it. Not persisted.
     [JsonIgnore] public string? DelegationWorktreeRoot { get; init; }
+    // An Antigravity continuation's rules (AntigravityAllowGrant): the computer that runs it puts them in agy's settings for this run,
+    // or for good. Not persisted; a remote run carries it beside the request (RemoteWireStart.AntigravityGrant).
+    [JsonIgnore] public AntigravityAllowGrant? AntigravityGrant { get; init; }
     private readonly IReadOnlyList<RunAttachment>? attachments = Attachments;
     public IReadOnlyList<RunAttachment>? Attachments { get => attachments is { Count: > 0 } ? attachments : null; init => attachments = value; }
     public IReadOnlyList<RegisteredModelEntry> RegisteredModels { get; init; } = RegisteredModels ?? [];
@@ -396,11 +399,13 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
 /// <param name="Plan">"plan": an answered (or withdrawn) ExitPlanMode request.</param>
 /// <param name="Todos">"todos": the main agent's checklist after a change.</param>
 /// <param name="Background">"background": the run's background tasks after a change.</param>
-public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = null, string? Status = null, string? ResumeId = null, AgentActivity? Activity = null, SessionUsage? Usage = null, ToolPermissionRequest? Permission = null, MightyGraphRun? GraphRun = null, string? Reason = null, PlanRecord? Plan = null, TodoProgress? Todos = null, BackgroundWork? Background = null)
+/// <param name="AntigravityPermission">"antigravityPermission": the actions an Antigravity turn was refused, sent once the turn ended and before its run's final status.</param>
+public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = null, string? Status = null, string? ResumeId = null, AgentActivity? Activity = null, SessionUsage? Usage = null, ToolPermissionRequest? Permission = null, MightyGraphRun? GraphRun = null, string? Reason = null, PlanRecord? Plan = null, TodoProgress? Todos = null, BackgroundWork? Background = null, AntigravityPermissionRequest? AntigravityPermission = null)
 {
     public static RunEvent Log(string id, string kind, string text, string? provider = null) => new(id, "log", new(Wire.Id(), kind, ActivitySupport.Clean(text, kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768), Wire.Now(), provider));
     public static RunEvent State(string id, string state, string? reason = null) => new(id, "status", Status: state, Reason: reason);
-    public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.Identifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && LogEntry.Stored.Contains(Entry.Kind) && (Entry.Kind != "image" || AgentImageSupport.Normalized(Entry.Images) is not null) && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage" || Type == "graph_run" && GraphRun is not null && Wire.Identifier(GraphRun.Id) || Type == "plan" && Plan is not null && Wire.Identifier(Plan.Id) && PlanOutcome.All.Contains(Plan.Outcome) || Type == "todos" && Todos is not null || Type == "background" && Background is not null);
+    public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.Identifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && LogEntry.Stored.Contains(Entry.Kind) && (Entry.Kind != "image" || AgentImageSupport.Normalized(Entry.Images) is not null) && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage" || Type == "graph_run" && GraphRun is not null && Wire.Identifier(GraphRun.Id) || Type == "plan" && Plan is not null && Wire.Identifier(Plan.Id) && PlanOutcome.All.Contains(Plan.Outcome) || Type == "todos" && Todos is not null || Type == "background" && Background is not null
+        || Type == "antigravityPermission" && AntigravityPermission is { } card && RemoteWorkspaceValidation.AntigravityCard(card));
 }
 public sealed record ModelOption(string Value, string DisplayName, string Description, string? ResolvedModel = null, bool? SupportsEffort = null, string[]? SupportedEffortLevels = null);
 public sealed record ModelCatalog(string Source, List<ModelOption> Models, string Detail);

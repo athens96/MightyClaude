@@ -33,6 +33,9 @@ public sealed class OutputParser
     private bool newConversationNoted;
     /// <summary>Hears each Antigravity reply as the transcript shows it: the latest one is the request's answer in the graph.</summary>
     private readonly Action<string>? answer;
+    /// <summary>The turn's refused actions, for the pane's card; null keeps the older notice that tells how to add an allow rule by hand.</summary>
+    private readonly Action<AntigravityPermissionRequest>? antigravityPermission;
+    private readonly AntigravityDenialCollector denials = new();
     private readonly AgentImageCache? imageCache;
     private readonly Action<LogEntry>? imageEntry;
     private int storedImages;
@@ -46,9 +49,11 @@ public sealed class OutputParser
     /// <param name="imageEntry">Receives each <c>image</c> entry (macOS CLIStreamParser.imageEntry): references only, never the bytes.</param>
     /// <param name="requestedResume">The Antigravity conversation the run was asked to continue (M/MightyCore/CLIStreamParser.swift requestedResume).</param>
     /// <param name="answer">Hears each Antigravity reply the transcript shows (M/MightyCore/CLIStreamParser.swift flushText → antigravityAnswer).</param>
-    public OutputParser(string provider, Action<string, string> log, Action<string> resume, Action<AgentActivity>? activity = null, Action<SessionUsage>? usage = null, string? activityNamespace = null, Func<double>? activityClock = null, AgentImageCache? images = null, Action<LogEntry>? imageEntry = null, string? requestedResume = null, Action<string>? answer = null)
+    /// <param name="antigravityPermission">Hears the card an Antigravity turn leaves when it was refused anything (M/MightyCore/CLIStreamParser.swift antigravityPermission).</param>
+    public OutputParser(string provider, Action<string, string> log, Action<string> resume, Action<AgentActivity>? activity = null, Action<SessionUsage>? usage = null, string? activityNamespace = null, Func<double>? activityClock = null, AgentImageCache? images = null, Action<LogEntry>? imageEntry = null, string? requestedResume = null, Action<string>? answer = null, Action<AntigravityPermissionRequest>? antigravityPermission = null)
     {
         this.provider = provider; this.log = log; this.resume = resume; this.activity = activity; this.requestedResume = requestedResume; this.answer = answer;
+        this.antigravityPermission = provider == "gemini" ? antigravityPermission : null;
         this.usage = new(provider, usage); this.activityNamespace = activityNamespace ?? Wire.Id();
         var origin = Stopwatch.GetTimestamp(); clock = activityClock ?? (() => Stopwatch.GetElapsedTime(origin).TotalMilliseconds);
         imageCache = images; this.imageEntry = imageEntry;
@@ -355,6 +360,7 @@ public sealed class OutputParser
                         var key = "step:" + index.ToString(System.Globalization.CultureInfo.InvariantCulture);
                         var started = activities.ContainsKey(ActivitySupport.Id(activityNamespace, key));
                         var ended = toolState != "running";
+                        denials.Observe(payload);
                         Tool(key, toolState, tool, AntigravityParameters(MetadataJson.Property(info, "parameters")), ended ? failure ?? info.Text("output") : null);
                         if (activity is null)
                         {
@@ -386,10 +392,20 @@ public sealed class OutputParser
                 if (!antigravityStreamed && payload.Text("response") is { } response && TrailingTrimmed(response) is { Length: > 0 } full)
                 { log("assistant", ActivitySupport.PrefixUtf8(full, ActivitySupport.MaximumMessageBytes)); answer?.Invoke(full); }
                 antigravityStreamed = false;
-                // What headless mode could not ask about was declined and the turn went on.
-                var deniedRows = MetadataJson.Property(payload, "denied_actions");
-                var denied = deniedRows.ValueKind == JsonValueKind.Array ? deniedRows.EnumerateArray().Take(16).Select(row => row.Text("display_name") ?? row.Text("action")).OfType<string>().ToList() : [];
-                if (denied.Count > 0) log("system", Locale.Get("run.notice.antigravityDenied", new Dictionary<string, string> { ["actions"] = ActivitySupport.Clean(string.Join(", ", denied), 512, true) }));
+                // What headless mode could not ask about was declined and the turn went on; the pane asks now, with a card (AntigravityPermissions.cs).
+                var refused = denials.Finish(payload);
+                if (antigravityPermission is not null && refused.Count > 0)
+                {
+                    var card = AntigravityPermissionRequest.Make(activityNamespace, refused);
+                    log("system", AntigravityPermissionFlow.TranscriptLine(card));
+                    antigravityPermission(card);
+                }
+                else
+                {
+                    var deniedRows = MetadataJson.Property(payload, "denied_actions");
+                    var denied = deniedRows.ValueKind == JsonValueKind.Array ? deniedRows.EnumerateArray().Take(16).Select(row => row.Text("display_name") ?? row.Text("action")).OfType<string>().ToList() : [];
+                    if (denied.Count > 0) log("system", Locale.Get("run.notice.antigravityDenied", new Dictionary<string, string> { ["actions"] = ActivitySupport.Clean(string.Join(", ", denied), 512, true) }));
+                }
                 var status = (payload.Text("status") ?? "").ToUpperInvariant();
                 if (status is "ERROR" or "INVALID" || StoppedStates.Contains(status))
                 {

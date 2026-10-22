@@ -461,6 +461,11 @@ public sealed partial class MainWindow
             case "close": pane.MobileCancelQueue(); token.ThrowIfCancellationRequested(); await ClosePane(request.SessionId); return null;
             case "settings": await pane.MobileSettings(body, token); return null;
             case "guided": return await pane.MobileGuided(body, token);
+            // An Antigravity card answered on the phone, as its own buttons answer it; what comes back is why nothing happened.
+            case "antigravityPermission":
+                var card = service.PendingAntigravityCard(request.SessionId, body.Text("requestId") ?? "", body.Text("runId") ?? "") ?? throw new MobileRequestException(409, Locale.Get("remote.error.notPendingPermission"));
+                token.ThrowIfCancellationRequested();
+                return await pane.AnswerAntigravityPermission(card, Enum.Parse<AntigravityPermissionDecision>(body.Text("decision") ?? "deny", ignoreCase: true));
             case "command":
                 if (body.Text("action") == "help") return SlashCommandCatalog.HelpText(pane.MobileSession.Provider);
                 if (body.Text("action") == "usage") return pane.MobileUsage();
@@ -513,7 +518,7 @@ public sealed partial class MainWindow
                 request = request with { Model = Session.Model, Settings = Session.Settings };
                 var submitted = prepared ? text : await PrepareStyleSubmission(text, files.Count > 0); request = await PrepareStyleRunRequest(request with { Input = submitted });
                 // A queued item keeps the launch decision made when it was queued (§1.17.4).
-                if (queueId is not null && queuedInputs.Items.FirstOrDefault(q => q.Id == queueId) is { } queuedItem) request = request with { PermissionModeOverride = queuedItem.PermissionModeOverride };
+                if (queueId is not null && queuedInputs.Items.FirstOrDefault(q => q.Id == queueId) is { } queuedItem) request = request with { PermissionModeOverride = queuedItem.PermissionModeOverride, AntigravityGrant = queuedItem.AntigravityGrant };
                 token.ThrowIfCancellationRequested(); if (!QueuePaneAlive || submission != composerSubmissionVersion || queueId is not null && !queuedInputs.Items.Any(q => q.Id == queueId)) throw new OperationCanceledException();
                 // A phone send no run took is dropped, and never put in the composer (M/AppStore+Delegation.swift:196-198).
                 return await owner.StartFromComposer(request) is DelegationRelease.NotStarted ? throw new MobileRequestException(409, Locale.Get("remote.error.dropped")) : "started";

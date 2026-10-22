@@ -55,6 +55,7 @@ public sealed class MobileDesktopRouter : IDisposable
     {
         this.service = service; this.action = action; this.extra = extra; HostName = hostName;
         uploads = new(Path.Combine(directory, "uploads")); service.RunEventReceived += Receive; service.ToolPermissionChanged += Permission; service.DelegationChanged += Changed;
+        service.AntigravityCardChanged += CardChanged;
     }
     /// <summary>Something a phone may show has moved; the panes are read again at the next <see cref="Observe"/>.</summary>
     public void Changed() => Volatile.Write(ref moved, 1);
@@ -86,6 +87,8 @@ public sealed class MobileDesktopRouter : IDisposable
     /// <summary>The scopes whose revision moved since the last call, <c>state</c> before the sessions, each with its newest revision.</summary>
     public IReadOnlyList<(string Scope, long Revision)> TakeNotifications() { lock (sync) { var taken = notifications.ToArray(); notifications.Clear(); return taken; } }
     private void Receive(RunEvent value) => Changed();
+    /// <summary>A pane's Antigravity card came, went or changed: the pane moves (M/AppStore+MobileRemote.swift mobileObserve antigravity).</summary>
+    private void CardChanged(string sessionId) => Changed();
     private void Permission(ToolPermissionRequest value)
     {
         // A remote pane's requests are its host's: never kept here, never answerable from the phone.
@@ -189,6 +192,26 @@ public sealed class MobileDesktopRouter : IDisposable
                 if (method == "POST" && route.Length == 4)
                 {
                     var operation = route[3];
+                    if (operation == "permission")
+                    {
+                        // An Antigravity card is answered here too (docs/mobile-remote.md, "Antigravity 권한 카드"): allow alone is
+                        // 이번만 허용, with always 항상 허용; always never comes without allow, and only on such a card.
+                        var value = Object(body); var requestId = Required(value, "requestId"); var runId = Required(value, "runId");
+                        if (!Wire.Identifier(requestId) || !Wire.Identifier(runId)) throw new MobileRequestException(400, Locale.Get("remote.error.badPermissionId"));
+                        if (!value.TryGetProperty("allow", out var allow) || allow.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new MobileRequestException(400, "Missing permission choice.");
+                        var always = !value.TryGetProperty("always", out var flag) ? false : flag.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False or JsonValueKind.Null => false, _ => throw new MobileRequestException(400, "Invalid permission choice.") };
+                        if (always && !allow.GetBoolean()) throw new MobileRequestException(400, Locale.Get("remote.error.alwaysNeedsAllow"));
+                        if (service.PendingAntigravityCard(pane.Id, requestId, runId) is not null)
+                        {
+                            token.ThrowIfCancellationRequested();
+                            var decision = AntigravityPermissionFlow.Decision(allow.GetBoolean(), always);
+                            // The pane answers as its own buttons do; what it says back is why nothing happened.
+                            var answer = JsonSerializer.SerializeToElement(new { requestId, runId, decision = decision.ToString().ToLowerInvariant() });
+                            if (await action(new(pane.Id, "antigravityPermission", answer), token) is string failure) throw new MobileRequestException(409, failure);
+                            Changed(); return Reply(OK());
+                        }
+                        if (always) throw new MobileRequestException(409, Locale.Get("remote.error.notAntigravityPermission"));
+                    }
                     if (operation == "permission" || operation == "answers")
                     {
                         var value = Object(body); var requestId = Required(value, "requestId"); var runId = Required(value, "runId");
@@ -290,7 +313,7 @@ public sealed class MobileDesktopRouter : IDisposable
         // A pane that is not an agent's has no view and no style; "plain" and "cli" would invite pickers the phone cannot use.
         var agent = pane.Kind == "claude"; var style = !agent ? null : ActiveStyle is null ? pane.MightyStyle : ActiveStyle(pane);
         return new { pane.Id, pane.WorkspaceId, pane.Title, pane.Kind, pane.Provider, pane.Model, pane.Status, revision, updatedAt = pane.Logs.LastOrDefault()?.Timestamp ?? pane.CreatedAt,
-            preview = tail is null ? null : new { tail.Kind, text = Wire.Clean(tail.Text, 200) }, pendingPermissions = pending.Count(p => !p.CanAnswerQuestions), pendingQuestions = pending.Count(p => p.CanAnswerQuestions), queued = QueueCount is { } count ? count(pane.Id) + service.HeldItems(pane.Id).Count : extra(pane).Queued.Count,
+            preview = tail is null ? null : new { tail.Kind, text = Wire.Clean(tail.Text, 200) }, pendingPermissions = pending.Count(p => !p.CanAnswerQuestions) + (service.AntigravityCard(pane.Id) is null ? 0 : 1), pendingQuestions = pending.Count(p => p.CanAnswerQuestions), queued = QueueCount is { } count ? count(pane.Id) + service.HeldItems(pane.Id).Count : extra(pane).Queued.Count,
             pane.ResumeId, terminal = !agent, agentViewMode = agent ? MobileRemoteSupport.ViewMode(pane.AgentViewMode) : null, mightyStyle = agent ? MobileRemoteSupport.Style(style) : null, styleId = agent ? style ?? MobileWire.CliStyle : null, titleMode = pane.TitleMode ?? "auto",
             // The Mac's rules (M/MightyClaude/AppStore+MobileRemote.swift mobileSummary): the model the composer's chip reads the
             // selection through, never a model reported for an earlier one; and steer only where the desktop composer steers.
@@ -323,7 +346,7 @@ public sealed class MobileDesktopRouter : IDisposable
     {
         var usage = pane.SessionUsage; var revision = SessionRevision(pane.Id);
         return new { protocol = 1, revision, session = Summary(pane, revision), entries = MobileRemoteSupport.PhoneEntries(pane.Logs.TakeLast(MobileWire.MaximumEntries)), hasOlder = pane.Logs.Count > MobileWire.MaximumEntries,
-            permissions = Pending(pane.Id).Select(MobilePermission.From).ToArray(), queued = detail.Queued,
+            permissions = Pending(pane.Id).Select(MobilePermission.From).Concat(service.AntigravityCard(pane.Id) is { } card ? [MobilePermission.FromAntigravity(card)] : []).ToArray(), queued = detail.Queued,
             usage = usage is null ? null : new { usage.Model, usage.ContextUsedTokens, usage.ContextWindowTokens, usage.ContextPercent, usage.TotalTokens, usage.CostUSD }, elapsedSeconds = pane.RunTiming?.Elapsed(), settings = detail.Settings, mighty = Mighty(detail.Mighty, structure, structureTag), statusLine = detail.StatusLine,
             rateLimits = MobileRemoteSupport.RateLimits(usage?.RateLimits) };
     }
@@ -366,5 +389,5 @@ public sealed class MobileDesktopRouter : IDisposable
         }
     }
     public void ResetUploads() => uploads.Clear();
-    public void Dispose() { service.RunEventReceived -= Receive; service.ToolPermissionChanged -= Permission; service.DelegationChanged -= Changed; uploads.Dispose(); }
+    public void Dispose() { service.RunEventReceived -= Receive; service.ToolPermissionChanged -= Permission; service.DelegationChanged -= Changed; service.AntigravityCardChanged -= CardChanged; uploads.Dispose(); }
 }
