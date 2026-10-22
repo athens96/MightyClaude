@@ -1243,7 +1243,6 @@ export default function SessionScreen() {
           running={running}
           sending={sending}
           submitModes={hasCapability(capabilities, 'submit-mode')}
-          canSteer={session?.canSteer}
           commands={canCommands ? commands : []}
           attachments={canAttach && session?.kind === 'claude' ? attachments : undefined}
           onSend={send}

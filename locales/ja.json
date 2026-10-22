@@ -2652,7 +2652,6 @@
   "phone.composer.removeAttachment": "{name}を削除",
   "phone.composer.uploading": "添付を送信中…",
   "phone.composer.attachmentsQueue": "添付のあるリクエストはキューに追加されます。",
-  "phone.composer.steer": "今すぐ送信",
   "phone.composer.placeholder": "メッセージを入力",
   "phone.composer.pickPhotos": "写真を選択",
   "phone.composer.pickFiles": "ファイルを選択",
