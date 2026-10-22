@@ -25,8 +25,13 @@ public sealed class MobilePushHub : IDisposable
     private IReadOnlyList<MobilePushPane>? last;
     /// <summary>Set when something a push depends on was reported; the panes are read again at the next <see cref="Observe"/>.</summary>
     private int moved = 1;
+    /// <summary>Panes whose run (or shell command) started since the last read: one that already ended is still pushed as a run.</summary>
+    private readonly HashSet<string> started = [];
     /// <summary>Cancelled when the hub is disposed: nothing is sent or tried again after that.</summary>
     private readonly CancellationTokenSource stopping = new();
+    /// <summary>The stopping token, taken once: it still reads as cancelled after the source is disposed.</summary>
+    private readonly CancellationToken stopped;
+    private int disposed;
     public string HostName { get; }
     /// <summary>Whether the pane's sign-in was confirmed lost (the WinUI login recovery's remembered requests); read on the caller's thread.</summary>
     public Func<string, bool> SignInLost { get; set; } = _ => false;
@@ -43,7 +48,7 @@ public sealed class MobilePushHub : IDisposable
     internal Func<bool> RemoteOn { get; set; }
     public MobilePushHub(DesktopService service, MobileRelayHost host, string hostName)
     {
-        this.service = service; this.host = host; HostName = hostName; Relay = () => host.RelayForPush; RemoteOn = () => host.Enabled;
+        this.service = service; this.host = host; HostName = hostName; Relay = () => host.RelayForPush; RemoteOn = () => host.Enabled; stopped = stopping.Token;
         host.Identity.Rotated += Forget;
         service.ToolPermissionChanged += Permission; service.RunEventReceived += Receive; service.AntigravityCardChanged += Card;
     }
@@ -55,10 +60,21 @@ public sealed class MobilePushHub : IDisposable
         lock (sync) { permissions.RemoveAll(p => p.RunId == value.RunId && p.Id == value.Id); if (value.State == "pending") permissions.Add(value); }
         Changed();
     }
-    private void Receive(RunEvent value) => Changed();
+    /// <summary>Only a status moves what a push depends on (requests, cards and sign-ins have their own paths): streamed output is not read again.</summary>
+    private void Receive(RunEvent value)
+    {
+        if (value.Type != "status") return;
+        if (value.Status == "running") Began(value.SessionId); else Changed();
+    }
     private void Card(string sessionId) => Changed();
     /// <summary>Something a push may depend on moved: the panes are read again at the next <see cref="Observe"/>.</summary>
     public void Changed() => Volatile.Write(ref moved, 1);
+    /// <summary>A pane's run (or a shell's command) started: if it has ended by the next read, it is still pushed as a finished run.</summary>
+    public void Began(string sessionId)
+    {
+        lock (sync) started.Add(sessionId);
+        Changed();
+    }
     public MobilePushRegistrationResult Register(string device, string handle, IReadOnlyList<string> kinds) => host.Identity.SetPush(device, handle, kinds);
     /// <summary>False when the handle could not be cleared from the file: it is still there, and so is the view.</summary>
     public bool Unregister(string device)
@@ -85,18 +101,29 @@ public sealed class MobilePushHub : IDisposable
     /// </summary>
     public IReadOnlyList<Task> Observe()
     {
-        if (stopping.IsCancellationRequested) return [];
-        if (!RemoteOn()) { lock (planning) last = null; Changed(); return []; }
+        if (stopped.IsCancellationRequested) return [];
+        if (!RemoteOn()) { lock (planning) last = null; lock (sync) started.Clear(); Changed(); return []; }
         IReadOnlyList<MobilePushPane>? previous;
         lock (planning) previous = last;
         if (Interlocked.Exchange(ref moved, 0) == 0 && previous is not null && previous.All(pane => SignInLost(pane.SessionId) == pane.SignInLost)) return [];
         try
         {
+            HashSet<string> begun;
+            lock (sync) { begun = [.. started]; started.Clear(); }
             var snapshot = service.Snapshot;
             Dictionary<string, IReadOnlyList<ToolPermissionRequest>> pending;
             lock (sync) pending = permissions.GroupBy(p => p.RunId).ToDictionary(g => g.Key, g => (IReadOnlyList<ToolPermissionRequest>)g.ToArray());
             // A style's own requests never reach the list (Permission), so none is left out here.
-            return Push(MobilePushPane.Project(snapshot.Sessions, snapshot.Workspaces, pending, (_, _) => false, service.AntigravityCard, SignInLost));
+            var panes = MobilePushPane.Project(snapshot.Sessions, snapshot.Workspaces, pending, (_, _) => false, service.AntigravityCard, SignInLost);
+            // The requests of panes that are gone are let go.
+            var shown = panes.Select(pane => pane.SessionId).ToHashSet();
+            lock (sync) permissions.RemoveAll(p => !shown.Contains(p.RunId));
+            if (previous is null || begun.Count == 0) return Push(panes);
+            // A run that started and ended between two reads: handed on as running first, so the planner sees it end (the Mac sees
+            // every change). Both hand-offs are this one read's, in order.
+            var before = previous.ToDictionary(pane => pane.SessionId, pane => pane.Status);
+            var bridged = panes.Select(pane => begun.Contains(pane.SessionId) && pane.Status != "running" && before.GetValueOrDefault(pane.SessionId) != "running" ? pane with { Status = "running" } : pane).ToArray();
+            return bridged.SequenceEqual(panes) ? Push(panes) : [.. Push(bridged), .. Push(panes)];
         }
         catch { Changed(); throw; }
     }
@@ -112,7 +139,7 @@ public sealed class MobilePushHub : IDisposable
         lock (planning)
         {
             // Off or shut down, nothing goes out whatever the caller hands on.
-            if (stopping.IsCancellationRequested || !RemoteOn()) { last = null; return []; }
+            if (stopped.IsCancellationRequested || !RemoteOn()) { last = null; return []; }
             if (last is not null && last.SequenceEqual(panes)) return [];
             if (last is null) planner.Reset();
             last = panes.ToArray();
@@ -152,7 +179,7 @@ public sealed class MobilePushHub : IDisposable
 
     private async Task Deliver(MobilePushSendRequest request, Uri url, string hostToken, string deviceId, string messageId)
     {
-        var token = stopping.Token;
+        var token = stopped;
         var waits = new Queue<TimeSpan>(RetryDelays);
         while (true)
         {
@@ -190,7 +217,8 @@ public sealed class MobilePushHub : IDisposable
 
     public void Dispose()
     {
-        stopping.Cancel();
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        stopping.Cancel(); stopping.Dispose();
         host.Identity.Rotated -= Forget;
         service.ToolPermissionChanged -= Permission; service.RunEventReceived -= Receive; service.AntigravityCardChanged -= Card;
     }

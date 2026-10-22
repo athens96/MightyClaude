@@ -530,4 +530,67 @@ internal static class MobilePushVerification
         finally { push.Dispose(); }
         Check(events.Select(name => Handlers(service, name)).Append(Handlers(host.Identity, "Rotated")).SequenceEqual(before), "disposing lets go of all four");
     }
+
+    /// <summary>The service's own run events, as a runner reports them (DesktopService.Receive applies, then raises RunEventReceived).</summary>
+    private static void Report(DesktopService service, RunEvent value)
+        => typeof(DesktopService).GetMethod("Receive", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(RunEvent)])!.Invoke(service, [value]);
+
+    /// <summary>
+    /// A run that starts and ends between two ticks (a start that fails at once, a queued follow-up, a delegated child) still gets
+    /// its push; a shell's command does too, through the WinUI's Began/Changed; only status events make the panes be read again;
+    /// and a request whose pane is gone is let go.
+    /// </summary>
+    internal static async Task ARunBetweenTwoTicksIsStillPushed()
+    {
+        var directory = Verification.Temp();
+        await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory);
+        await service.InitializeAsync();
+        var (host, clientId, token) = PairedHost(directory);
+        await using var _host = host;
+        var transport = new RecordingTransport();
+        using var push = new MobilePushHub(service, host, "Test PC") { Transport = transport, RetryDelays = [], Relay = () => "wss://relay.example.invalid", RemoteOn = () => true };
+        Check(push.Register(clientId, new string('h', 43), [MobilePushKinds.Completed, MobilePushKinds.Failed]) == MobilePushRegistrationResult.Saved, "registered");
+        var workspace = await service.AddWorkspaceAsync(directory);
+        var pane = new RunSession { Id = "pane-1", WorkspaceId = workspace.Id, Title = "Claude 1", Logs = [new("1", "assistant", "done", "t")] };
+        var shell = new RunSession { Id = "shell-1", WorkspaceId = workspace.Id, Title = "Terminal", Kind = "shell" };
+        await service.UpdateAsync(s => s with { Sessions = [pane, shell] });
+        var key = MobilePushSeal.Key(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant(), clientId)!;
+        async Task<string[]> Observe()
+        {
+            var count = transport.Count; await Task.WhenAll(push.Observe());
+            return transport.Sent.Skip(count).Select(s => JsonDocument.Parse(MobilePushSeal.Open(s.Request.Payload, key, s.Request.Handle)!).RootElement.GetProperty("id").GetString()!).ToArray();
+        }
+        Check((await Observe()).Length == 0, "the baseline");
+        Report(service, RunEvent.State("pane-1", "running")); Report(service, RunEvent.State("pane-1", "completed"));
+        var completed = await Observe();
+        Check(completed.SequenceEqual(["run:pane-1:1:completed"]), "running then completed between two ticks: " + string.Join(",", completed));
+        Report(service, RunEvent.State("pane-1", "running")); Report(service, RunEvent.Log("pane-1", "error", "could not start")); Report(service, RunEvent.State("pane-1", "error"));
+        var failed = await Observe();
+        Check(failed.SequenceEqual(["run:pane-1:2:failed"]), "running then error between two ticks: " + string.Join(",", failed));
+        Report(service, RunEvent.State("pane-1", "running"));
+        Check((await Observe()).Length == 0, "a run seen running");
+        Report(service, RunEvent.State("pane-1", "completed"));
+        Check((await Observe()).SequenceEqual(["run:pane-1:3:completed"]), "and seen ending: one push, not two");
+
+        Check(service.SetShellStatus("shell-1", "running"), "the shell runs a command"); push.Began("shell-1");
+        Check(service.SetShellStatus("shell-1", "completed"), "the shell exits"); push.Changed();
+        var exited = await Observe();
+        Check(exited.SequenceEqual(["run:shell-1:1:completed"]), "a shell's run between two ticks: " + string.Join(",", exited));
+
+        // Output alone does not make the panes be read again: the change below is seen only once a status event comes.
+        await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == "pane-1" ? p with { Status = "running" } : p).ToList() });
+        Report(service, RunEvent.Log("pane-1", "assistant", "streaming"));
+        Check((await Observe()).Length == 0, "output alone sends nothing");
+        await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == "pane-1" ? p with { Status = "completed" } : p).ToList() });
+        push.Changed();
+        Check((await Observe()).Length == 0, "output did not make the panes be read while the pane was running");
+
+        // A pending request whose pane is no longer there is let go at the next read.
+        var raise = (Action<ToolPermissionRequest>)typeof(DesktopService).GetField("ToolPermissionChanged", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
+        raise(new("req-gone", "pane-gone", "tu", "Bash", "{}", "ls"));
+        raise(new("req-here", "pane-1", "tu", "Bash", "{}", "ls"));
+        await Observe();
+        var kept = (List<ToolPermissionRequest>)typeof(MobilePushHub).GetField("permissions", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(push)!;
+        lock (kept) Check(kept.Select(p => p.Id).SequenceEqual(["req-here"]), "only the requests of panes still there: " + string.Join(",", kept.Select(p => p.Id)));
+    }
 }
