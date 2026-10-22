@@ -225,12 +225,15 @@ public struct QueuedInput: Sendable, Equatable, Identifiable {
     /// does not change what was queued.
     public var permissionModeOverride: String?
     /// The continuation of an allowed Antigravity card: the rules its run puts
-    /// in place (`AntigravityPermissions.swift`). Not saved.
+    /// in place (`AntigravityPermissions.swift`), and the card, which comes
+    /// back with the reason when they cannot be. Not saved.
     public var antigravityGrant: AntigravityAllowGrant?
+    public var antigravityCard: AntigravityPermissionRequest?
     public static let maximumItems = 16
-    public init(id: String = UUID().uuidString, text: String, attachments: [RunAttachment] = [], createdAt: String = mightyTimestamp(), permissionModeOverride: String? = nil, antigravityGrant: AntigravityAllowGrant? = nil) {
+    public init(id: String = UUID().uuidString, text: String, attachments: [RunAttachment] = [], createdAt: String = mightyTimestamp(), permissionModeOverride: String? = nil, antigravityGrant: AntigravityAllowGrant? = nil,
+                antigravityCard: AntigravityPermissionRequest? = nil) {
         self.id = id; self.text = text; self.attachments = attachments; self.createdAt = createdAt; self.permissionModeOverride = permissionModeOverride
-        self.antigravityGrant = antigravityGrant
+        self.antigravityGrant = antigravityGrant; self.antigravityCard = antigravityCard
     }
     public var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty }
 }

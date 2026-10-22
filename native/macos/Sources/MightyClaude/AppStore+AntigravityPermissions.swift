@@ -40,6 +40,8 @@ extension AppStore {
         antigravityPermissionErrors.removeValue(forKey: sessionId)
         guard decision != .deny else { antigravityBoard.remove(sessionId: sessionId); return nil }
         func refuse(_ reason: String) -> String { antigravityPermissionErrors[sessionId] = reason; return reason }
+        // No rule, or "항상 허용" for a rule that may be allowed only once.
+        if let reason = AntigravityPermissionFlow.refusal(card, decision: decision) { return refuse(reason) }
         guard let continuation = AntigravityPermissionFlow.continuation(card, decision: decision) else { return refuse(L("antigravity.permission.noRule")) }
         antigravityResponses.insert(key)
         defer { antigravityResponses.remove(key) }
@@ -52,7 +54,7 @@ extension AppStore {
               let session = snapshot.sessions.first(where: { $0.id == sessionId }), session.kind == "claude", session.provider == "gemini",
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return L("remote.error.notPendingPermission") }
         if let reason = runBlockedReason(session) { return refuse(reason) }
-        let item = QueuedInput(text: continuation.prompt, antigravityGrant: continuation.grant)
+        let item = QueuedInput(text: continuation.prompt, antigravityGrant: continuation.grant, antigravityCard: card)
         let held = backgroundUpdateHolds(session)
         if session.status == "running" || pendingRuns.contains(sessionId) || held {
             // The composer's rule for a busy pane: it waits in the queue.

@@ -1117,9 +1117,9 @@ final class AppStore: ObservableObject, DelegationHost {
                 // §1.17: a plan-mode style starts every new request in plan mode,
                 // leaving the pane's stored mode as it is; a queued item keeps
                 // the decision made when it was queued.
-                if let queued { request.permissionModeOverride = queued.permissionModeOverride }
+                request.permissionModeOverride = BackgroundQueuePolicy.launchOverride(queued: queued, launchesInPlan: styleLaunchesInPlanMode(current))
+                // An allowed Antigravity card's continuation carries its rules.
                 if current.provider == "gemini", current.kind == "claude" { request.antigravityGrant = queued?.antigravityGrant }
-                else if styleLaunchesInPlanMode(current) { request.permissionModeOverride = StyleLaunchPermissionMode.plan.rawValue }
                 try CoreValidation.validate(request)
                 if current.kind != "shell" {
                     let provider = providerRuntime(current.provider, workspaceId: workspace.id)
@@ -1143,7 +1143,11 @@ final class AppStore: ObservableObject, DelegationHost {
                     // An allowed Antigravity card's rules are in place before its run starts.
                     if let grant = request.antigravityGrant {
                         // Held from here: the run's end, or its failed start, releases it.
-                        if let lease = try await antigravityRules.apply(grant) { antigravityLeases[id] = lease }
+                        if let lease = try await antigravityRules.apply(grant) {
+                            // Quitting meanwhile: the rules go again rather than outlive the app.
+                            guard !ending else { await antigravityRules.release(lease); throw CancellationError() }
+                            if let previous = antigravityLeases.updateValue(lease, forKey: id) { await antigravityRules.release(previous) }
+                        }
                         try Task.checkCancellation()
                     }
                     // A child's run, its terminal tool and its MCP binding work in its worktree folder.
@@ -1164,6 +1168,12 @@ final class AppStore: ObservableObject, DelegationHost {
                 } else {
                     apply(RunEvent(sessionId: id, type: "log", entry: LogEntry(kind: "error", text: error.localizedDescription)))
                     apply(RunEvent(sessionId: id, type: "status", status: "error"))
+                    // An allowed card's continuation that could not start (a queued one
+                    // too): the card comes back with the reason.
+                    if let card = queued?.antigravityCard, !ending, !closingSessions.contains(id), snapshot.sessions.contains(where: { $0.id == id }) {
+                        antigravityBoard.restore(card, sessionId: id)
+                        antigravityPermissionErrors[id] = error.localizedDescription
+                    }
                 }
             }
             pendingRuns.remove(id)

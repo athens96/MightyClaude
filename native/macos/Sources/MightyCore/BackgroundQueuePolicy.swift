@@ -29,4 +29,12 @@ public enum BackgroundQueuePolicy {
 
     /// The permission mode a queued item records for its run.
     public static func queuedOverride(launchesInPlan: Bool) -> String? { launchesInPlan ? "plan" : nil }
+
+    /// The permission mode a run starts with: a queued item keeps the
+    /// decision recorded when it was queued; anything else starts in plan
+    /// mode when the pane's style plans every request.
+    public static func launchOverride(queued: QueuedInput?, launchesInPlan: Bool) -> String? {
+        if let queued { return queued.permissionModeOverride }
+        return launchesInPlan ? StyleLaunchPermissionMode.plan.rawValue : nil
+    }
 }

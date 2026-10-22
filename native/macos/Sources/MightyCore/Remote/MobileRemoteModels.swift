@@ -621,7 +621,9 @@ public struct MobileAntigravityCard: Codable, Sendable, Equatable {
     public var actions: [MobileAntigravityAction]
     public init(actions: [MobileAntigravityAction]) { self.actions = actions }
     public init(_ card: AntigravityPermissionRequest) {
-        actions = card.actions.map { MobileAntigravityAction(kind: $0.kind.rawValue, action: $0.action, displayName: $0.displayName, target: $0.target, rule: $0.rule) }
+        actions = card.actions.map {
+            MobileAntigravityAction(kind: $0.kind.rawValue, action: $0.action, displayName: $0.displayName, target: $0.target, rule: $0.rule, onceOnly: $0.onceOnly ? true : nil)
+        }
     }
 }
 public struct MobileAntigravityAction: Codable, Sendable, Equatable {
@@ -635,8 +637,12 @@ public struct MobileAntigravityAction: Codable, Sendable, Equatable {
     public var target: String?
     /// The allow rule; absent when none can allow it (change the permission mode instead).
     public var rule: String?
-    public init(kind: String, action: String, displayName: String, target: String? = nil, rule: String? = nil) {
-        self.kind = kind; self.action = action; self.displayName = displayName; self.target = target; self.rule = rule
+    /// true when the rule may be allowed only once (it chains, pipes,
+    /// redirects or runs a destructive command): the card offers no "항상
+    /// 허용" and the host refuses `always`. Absent otherwise.
+    public var onceOnly: Bool?
+    public init(kind: String, action: String, displayName: String, target: String? = nil, rule: String? = nil, onceOnly: Bool? = nil) {
+        self.kind = kind; self.action = action; self.displayName = displayName; self.target = target; self.rule = rule; self.onceOnly = onceOnly
     }
 }
 /// `POST /m1/sessions/{id}/plan`: one of the plan card's four answers.

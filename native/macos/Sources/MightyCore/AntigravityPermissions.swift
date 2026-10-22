@@ -29,6 +29,8 @@ public struct AntigravityDeniedAction: Codable, Sendable, Equatable {
     public init(kind: Kind, action: String, displayName: String, target: String? = nil, rule: String? = nil) {
         self.kind = kind; self.action = action; self.displayName = displayName; self.target = target; self.rule = rule
     }
+    /// Its rule may be allowed only for the follow-up run (`AntigravityRuleSafety`).
+    public var onceOnly: Bool { rule.map { AntigravityRuleSafety.verdict($0) == .once } ?? false }
 }
 
 /// The card one Antigravity turn leaves: what it was refused, together.
@@ -44,13 +46,16 @@ public struct AntigravityPermissionRequest: Codable, Sendable, Equatable, Identi
     public init(id: String = "agy-" + UUID().uuidString.lowercased(), runId: String, actions: [AntigravityDeniedAction], receivedAt: String? = mightyTimestamp()) {
         self.id = id; self.runId = runId; self.actions = actions; self.receivedAt = receivedAt
     }
-    /// The rules an allow adds, once each, in order.
+    /// The rules an allow adds, once each, in order (never one `AntigravityRuleSafety` refuses).
     public var rules: [String] {
         var seen = Set<String>()
-        return actions.compactMap(\.rule).filter { seen.insert($0).inserted }
+        return actions.compactMap(\.rule).filter { AntigravityRuleSafety.verdict($0) != .refused && seen.insert($0).inserted }
     }
     /// At least one action can be allowed with a rule.
     public var canAllow: Bool { !rules.isEmpty }
+    /// "항상 허용" is offered: every rule may be kept (none chains, pipes,
+    /// redirects or runs a destructive command).
+    public var canAllowAlways: Bool { canAllow && rules.allSatisfy { AntigravityRuleSafety.verdict($0) == .always } }
     /// What the transcript line and the continuation name: the targets, else agy's names.
     public var names: [String] { actions.map { $0.target ?? $0.displayName } }
 }
@@ -75,8 +80,95 @@ public struct AntigravityAllowGrant: Codable, Sendable, Equatable {
         guard rule.utf8.count <= maximumRuleBytes, !rule.contains("\0"), !rule.contains("\n"), !rule.contains("\r") else { return false }
         return rule.range(of: "\\A[a-z][a-z_]{0,63}\\(.+\\)\\z", options: .regularExpression) != nil
     }
+    /// Well formed, and no rule `AntigravityRuleSafety` refuses. Whether it
+    /// may be kept for good is `keepsOnlyAllowedRules`.
     public var isValid: Bool {
-        CoreValidation.identifier(requestId) && !rules.isEmpty && rules.count <= AntigravityPermissionRequest.maximumActions && rules.allSatisfy(Self.validRule)
+        CoreValidation.identifier(requestId) && !rules.isEmpty && rules.count <= AntigravityPermissionRequest.maximumActions
+            && rules.allSatisfy { Self.validRule($0) && AntigravityRuleSafety.verdict($0) != .refused }
+    }
+    /// A temporary grant, or one whose every rule may be kept.
+    public var keepsOnlyAllowedRules: Bool { temporary || rules.allSatisfy { AntigravityRuleSafety.verdict($0) == .always } }
+}
+
+/// Which rules an allow may add. agy's rules are prefixes (probed on agy
+/// 1.4.5: `command(echo hi)` allows `echo hi there`, `write_file(<folder>)`
+/// everything in it, `command(*)` every command) and a temporary one applies
+/// to every agy run on the computer while it is in place, so they are kept
+/// narrow: a closed mapping from tool to permission, no wildcard, no whole
+/// disk, no parenthesis, and a command that chains, pipes, redirects or
+/// runs one of a closed list of destructive programs only once.
+public enum AntigravityRuleSafety {
+    public enum Verdict: String, Sendable, Codable, CaseIterable {
+        /// Never offered or added.
+        case refused
+        /// Offered and added only for the follow-up run (no "항상 허용").
+        case once
+        /// May be kept for good.
+        case always
+    }
+
+    /// The permission an agy tool's rule names; any other tool gets no rule.
+    public static let toolPermissions: [String: String] = [
+        "run_command": "command",
+        "write_file": "write_file", "write_to_file": "write_file", "replace_file_content": "write_file", "multi_replace_file_content": "write_file",
+        "sed_file": "write_file", "notebook_edit": "write_file",
+        "view_file": "read_file", "read_file": "read_file", "list_dir": "read_file",
+        "read_url_content": "read_url",
+    ]
+    /// The permissions a rule may name.
+    public static let permissions: Set<String> = Set(toolPermissions.values)
+    /// Programs that destroy data, escalate or end processes (compared by
+    /// their name in lower case, without a folder or `.exe`); `mkfs…` too.
+    public static let destructivePrograms: Set<String> = [
+        "rm", "rmdir", "unlink", "shred", "dd", "sudo", "su", "doas", "kill", "killall", "pkill", "shutdown", "reboot", "halt", "poweroff", "eval",
+        "del", "erase", "rd", "format", "remove-item", "taskkill", "stop-process", "stop-computer", "restart-computer",
+    ]
+    /// Characters that chain, pipe, redirect, background or substitute.
+    public static let chainCharacters: Set<Character> = [";", "&", "|", ">", "<", "`"]
+
+    /// `name` and the argument of a well-formed rule.
+    public static func parts(_ rule: String) -> (name: String, argument: String)? {
+        guard AntigravityAllowGrant.validRule(rule), let open = rule.firstIndex(of: "(") else { return nil }
+        return (String(rule[..<open]), String(rule[rule.index(after: open)..<rule.index(before: rule.endIndex)]))
+    }
+
+    public static func verdict(_ rule: String) -> Verdict {
+        guard let (name, argument) = parts(rule), permissions.contains(name), !refusedArgument(argument) else { return .refused }
+        return name == "command" && risky(argument) ? .once : .always
+    }
+
+    /// Empty, the whole disk or home (`/`, `~`, `C:\`), a wildcard, a parenthesis or a control character.
+    static func refusedArgument(_ argument: String) -> Bool {
+        if argument.contains("*") || argument.contains("(") || argument.contains(")") { return true }
+        if argument.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) { return true }
+        var core = argument.trimmingCharacters(in: .whitespaces)
+        while let last = core.last, last == "/" || last == "\\" { core.removeLast() }
+        core = core.trimmingCharacters(in: .whitespaces)
+        if core.isEmpty || core == "~" { return true }
+        if core.count == 2, core.hasSuffix(":"), let drive = core.first, drive.isASCII, drive.isLetter { return true }
+        return false
+    }
+
+    /// A command line that may be allowed only once.
+    public static func risky(_ command: String) -> Bool {
+        if command.contains(where: { chainCharacters.contains($0) }) || command.contains("$(") { return true }
+        let words = command.split(whereSeparator: { $0 == " " || $0 == "\t" }).map { word -> String in
+            var value = word.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            if let slash = value.lastIndex(where: { $0 == "/" || $0 == "\\" }) { value = String(value[value.index(after: slash)...]) }
+            value = value.lowercased()
+            if value.hasSuffix(".exe") { value.removeLast(4) }
+            return value
+        }
+        if words.contains(where: { destructivePrograms.contains($0) || $0.hasPrefix("mkfs") }) { return true }
+        let shortFlag = { (word: String, letter: Character) in word.hasPrefix("-") && !word.hasPrefix("--") && word.contains(letter) }
+        if words.contains(where: { $0 == "chmod" || $0 == "chown" }), words.contains(where: { shortFlag($0, "r") || $0 == "--recursive" }) { return true }
+        if words.contains("git") {
+            if words.contains("push"), words.contains(where: { $0 == "-f" || $0.hasPrefix("--force") || $0.hasPrefix("+") || shortFlag($0, "f") }) { return true }
+            if words.contains("reset"), words.contains("--hard") { return true }
+            if words.contains("clean") { return true }
+        }
+        if words.contains("find"), words.contains("-delete") { return true }
+        return false
     }
 }
 
@@ -84,7 +176,8 @@ public struct AntigravityAllowGrant: Codable, Sendable, Equatable {
 
 /// Collects one turn's refusals from agy's stream-json: each tool step that
 /// ended `ERROR` with a permission denial ("permission check failed … user
-/// denied permission …"), then the result's `denied_actions`.
+/// denied permission …") whose permission the result's `denied_actions`
+/// lists, then what `denied_actions` lists that no step showed.
 public struct AntigravityDenialCollector: Sendable {
     private var steps: [Int: AntigravityDeniedAction] = [:]
     private var order: [Int] = []
@@ -123,8 +216,10 @@ public struct AntigravityDenialCollector: Sendable {
             guard result.count < AntigravityPermissionRequest.maximumActions, seen.insert(key).inserted else { return }
             result.append(value)
         }
+        // A step counts only when the result says its permission was refused.
+        let listed = Set(reported.map(\.0))
         for index in order {
-            guard var value = steps[index] else { continue }
+            guard var value = steps[index], listed.contains(value.action) else { continue }
             if let name = reported.first(where: { $0.0 == value.action })?.1 { value.displayName = name }
             add(value)
         }
@@ -145,28 +240,31 @@ public struct AntigravityDenialCollector: Sendable {
     }
 
     /// What one denied step was. A command is allowed by its whole command
-    /// line (`command(<line>)`, a prefix rule in agy); any other denial names
-    /// its own rule ("user denied permission for write_file(/path)"), which is
-    /// used as agy wrote it.
+    /// line (`command(<line>)`, a word-prefix rule in agy); any other denial
+    /// names its own rule ("user denied permission for write_file(/path)"),
+    /// used as agy wrote it when it names the tool's own permission
+    /// (`AntigravityRuleSafety.toolPermissions`). A rule the safety rules
+    /// refuse, or a tool outside the mapping, leaves the action without one.
     static func action(tool: String, parameters: [String: Any]?, message: String) -> AntigravityDeniedAction {
         func parameter(_ names: [String]) -> String? {
             for name in names { if let value = parameters?[name] as? String, !value.isEmpty { return String(value.prefix(AntigravityAllowGrant.maximumRuleBytes)) } }
             return nil
         }
-        if tool == "run_command" || message.lowercased().contains("denied permission to run command") {
+        let permission = AntigravityRuleSafety.toolPermissions[tool]
+        if permission == "command" {
             let line = parameter(["CommandLine", "Command", "command"])
-            let rule = line.map { "command(\($0))" }.flatMap { AntigravityAllowGrant.validRule($0) ? $0 : nil }
+            let rule = line.map { "command(\($0))" }.flatMap { AntigravityRuleSafety.verdict($0) == .refused ? nil : $0 }
             return AntigravityDeniedAction(kind: .command, action: "command", displayName: tool, target: line, rule: rule)
         }
-        if let rule = namedRule(message) {
-            let name = String(rule[..<rule.firstIndex(of: "(")!])
-            var target = String(rule[rule.index(after: rule.firstIndex(of: "(")!)...].dropLast())
+        if let permission, let rule = namedRule(message), let (name, argument) = AntigravityRuleSafety.parts(rule), name == permission,
+           AntigravityRuleSafety.verdict(rule) != .refused {
+            var target = argument
             let kind = Self.kind(action: name, tool: tool)
             // A URL rule names a domain; show the domain, as the rule does.
             if kind == .url, let host = URL(string: target)?.host, !host.isEmpty { target = host }
             return AntigravityDeniedAction(kind: kind, action: name, displayName: tool, target: target, rule: rule)
         }
-        let kind = Self.kind(action: tool, tool: tool)
+        let kind = Self.kind(action: permission ?? tool, tool: tool)
         var target: String?
         switch kind {
         case .url: target = parameter(["Url", "URL", "url"]).map { URL(string: $0)?.host ?? $0 }
@@ -174,7 +272,7 @@ public struct AntigravityDenialCollector: Sendable {
         case .command: target = parameter(["CommandLine"])
         case .other: target = nil
         }
-        return AntigravityDeniedAction(kind: kind, action: tool, displayName: tool, target: target)
+        return AntigravityDeniedAction(kind: kind, action: permission ?? tool, displayName: tool, target: target)
     }
 
     /// The rule a denial names: the text after "denied permission for " up to
@@ -233,9 +331,19 @@ public struct AntigravityContinuation: Sendable, Equatable {
 }
 
 public enum AntigravityPermissionFlow {
-    /// nil for `deny`, and for an allow of a card no rule can allow.
+    /// Why an allow cannot go ahead: no rule can allow the card, or "항상
+    /// 허용" on a card with a rule that may be allowed only once. nil for
+    /// `deny` and for an allow that can.
+    public static func refusal(_ card: AntigravityPermissionRequest, decision: AntigravityPermissionDecision) -> String? {
+        guard decision != .deny else { return nil }
+        guard card.canAllow else { return L("antigravity.permission.noRule") }
+        if decision == .always, !card.canAllowAlways { return L("remote.error.antigravityOnceOnly") }
+        return nil
+    }
+
+    /// nil for `deny`, and for an allow `refusal` refuses.
     public static func continuation(_ card: AntigravityPermissionRequest, decision: AntigravityPermissionDecision) -> AntigravityContinuation? {
-        guard decision != .deny, card.canAllow else { return nil }
+        guard decision != .deny, refusal(card, decision: decision) == nil else { return nil }
         let allowed = card.actions.filter { $0.rule != nil }.map { $0.target ?? $0.displayName }
         let list = ActivitySupport.clean(allowed.joined(separator: ", "), maximumBytes: 2_048, singleLine: true)
         return AntigravityContinuation(grant: AntigravityAllowGrant(requestId: card.id, rules: card.rules, temporary: decision == .once),
@@ -245,6 +353,13 @@ public enum AntigravityPermissionFlow {
     /// The short transcript line a card leaves (what an older phone shows).
     public static func transcriptLine(_ card: AntigravityPermissionRequest) -> String {
         L("run.notice.antigravityAsked", ["actions": ActivitySupport.clean(card.names.joined(separator: ", "), maximumBytes: 512, singleLine: true)])
+    }
+
+    /// What the card says an action's rule allows: commands starting with it,
+    /// a file or everything in a folder, a domain.
+    public static func ruleLine(_ action: AntigravityDeniedAction) -> String? {
+        guard let rule = action.rule else { return nil }
+        return L(action.action == "command" ? "antigravity.permission.ruleCommand" : "antigravity.permission.rule", ["rule": rule])
     }
 
     /// The card's label for an action's kind.
@@ -269,6 +384,8 @@ public enum AntigravitySettingsError: Error, LocalizedError, Equatable {
     case allowNotArray(String)
     case writeFailed(String, String)
     case badRule
+    /// "항상 허용" for a rule that may be allowed only once.
+    case onceOnly
 
     public var errorDescription: String? {
         switch self {
@@ -280,6 +397,7 @@ public enum AntigravitySettingsError: Error, LocalizedError, Equatable {
         case .allowNotArray(let path): return L("antigravity.settings.error.allowNotArray", ["path": path])
         case .writeFailed(let path, let error): return L("antigravity.settings.error.writeFailed", ["path": path, "error": error])
         case .badRule: return L("antigravity.settings.error.badRule")
+        case .onceOnly: return L("remote.error.antigravityOnceOnly")
         }
     }
 }
@@ -287,12 +405,18 @@ public enum AntigravitySettingsError: Error, LocalizedError, Equatable {
 /// Edits `permissions.allow` in the bytes of agy's settings, leaving every
 /// other byte as it was: other keys, their order and values, unknown fields,
 /// whitespace. Rules are added after the last one in the style of the list
-/// (or of the file, for a list it has to create), and removing one takes out
-/// exactly what adding it put in.
+/// (or of the file, for a list it has to create, with its line endings), and
+/// removing one takes out exactly what adding it put in; `pruning` then takes
+/// out the `permissions` or `allow` adding had to create, once empty.
 public enum AntigravitySettingsText {
+    /// What adding made that was not there: the file, `permissions` (with its `allow`) or `allow`.
+    public enum Created: String, Codable, Sendable { case file, permissions, allow }
+
     /// The file's rules; throws when it is not an object, `permissions` is not
     /// an object or `allow` is not an array (non-string entries are skipped).
+    /// A UTF-8 byte order mark is not JSON here (agy writes none).
     public static func rules(_ data: Data, path: String) throws -> [String] {
+        guard !data.starts(with: [0xEF, 0xBB, 0xBF]) else { throw AntigravitySettingsError.notJSON(path) }
         guard let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else { throw AntigravitySettingsError.notJSON(path) }
         guard let top = object as? [String: Any] else { throw AntigravitySettingsError.notObject(path) }
         guard let permissions = top["permissions"] else { return [] }
@@ -307,13 +431,17 @@ public enum AntigravitySettingsText {
         Data(("{\n  \"permissions\": {\n    \"allow\": " + array(rules, indent: "    ", unit: "  ") + "\n  }\n}\n").utf8)
     }
 
-    /// `rules` not in the file yet, added. Returns the bytes and what was added.
-    public static func adding(_ rules: [String], to data: Data, path: String) throws -> (data: Data, added: [String]) {
+    /// `rules` not in the file yet, added. Returns the bytes, what was added
+    /// and what had to be created for it.
+    public static func adding(_ rules: [String], to data: Data, path: String) throws -> (data: Data, added: [String], created: [Created]) {
         let existing = Set(try Self.rules(data, path: path))
         var seen = Set<String>()
         let missing = rules.filter { !existing.contains($0) && seen.insert($0).inserted }
-        guard !missing.isEmpty else { return (data, []) }
+        guard !missing.isEmpty else { return (data, [], []) }
         var b = [UInt8](data)
+        let newline = data.range(of: Data("\r\n".utf8)) == nil ? "\n" : "\r\n"
+        func array(_ rules: [String], indent: String?, unit: String) -> String { Self.array(rules, indent: indent, unit: unit, newline: newline) }
+        func allowObject(_ rules: [String], indent: String?, unit: String) -> String { Self.allowObject(rules, indent: indent, unit: unit, newline: newline) }
         let scan = Scanner(bytes: b, path: path)
         let top = scan.skipWhitespace(0)
         guard top < b.count, b[top] == UInt8(ascii: "{") else { throw AntigravitySettingsError.notObject(path) }
@@ -321,18 +449,18 @@ public enum AntigravitySettingsText {
         let unit = scan.lineIndent(topObject.members.first?.keyStart ?? -1).flatMap { $0.isEmpty ? nil : $0 } ?? "  "
         guard let permissions = topObject.members.last(where: { $0.key == "permissions" }) else {
             let text = "\"permissions\": "
-            try insertMember(&b, scan: scan, object: topObject, indentOfObject: "", unit: unit) { indent in
+            try insertMember(&b, scan: scan, object: topObject, indentOfObject: "", unit: unit, newline: newline) { indent in
                 text + allowObject(missing, indent: indent, unit: unit)
             }
-            return (Data(b), missing)
+            return (Data(b), missing, [.permissions])
         }
         let permissionsIndent = scan.lineIndent(permissions.keyStart)
         let section = try scan.object(permissions.valueStart)
         guard let allow = section.members.last(where: { $0.key == "allow" }) else {
-            try insertMember(&b, scan: scan, object: section, indentOfObject: permissionsIndent, unit: unit) { indent in
+            try insertMember(&b, scan: scan, object: section, indentOfObject: permissionsIndent, unit: unit, newline: newline) { indent in
                 "\"allow\": " + array(missing, indent: indent, unit: unit)
             }
-            return (Data(b), missing)
+            return (Data(b), missing, [.allow])
         }
         let list = try scan.array(allow.valueStart)
         if let last = list.elements.last {
@@ -345,7 +473,7 @@ public enum AntigravitySettingsText {
             let rendered = Array(array(missing, indent: indent, unit: unit).utf8)
             b.replaceSubrange(list.open...list.close, with: rendered)
         }
-        return (Data(b), missing)
+        return (Data(b), missing, [])
     }
 
     /// One occurrence of each of `rules` taken out of `permissions.allow`
@@ -374,6 +502,41 @@ public enum AntigravitySettingsText {
         return (Data(b), removed)
     }
 
+    /// Takes out what adding created once it is empty: `permissions` when it
+    /// holds nothing but an empty `allow` (`.permissions`, `.file`), else an
+    /// empty `allow` (`.allow`). `empty`: the file is now `{}`, which a
+    /// created file is deleted for.
+    public static func pruning(_ created: Set<Created>, from data: Data, path: String) throws -> (data: Data, empty: Bool) {
+        _ = try Self.rules(data, path: path)
+        var b = [UInt8](data)
+        let scan = Scanner(bytes: b, path: path)
+        let top = try scan.object(scan.skipWhitespace(0))
+        let permissionMembers = top.members.indices.filter { top.members[$0].key == "permissions" }
+        if permissionMembers.count == 1, let index = permissionMembers.first {
+            let section = try scan.object(top.members[index].valueStart)
+            let allows = section.members.indices.filter { section.members[$0].key == "allow" }
+            let emptyAllow = try allows.count == 1 && scan.array(section.members[allows[0]].valueStart).elements.isEmpty
+            if created.contains(.permissions) || created.contains(.file) {
+                if section.members.isEmpty || (section.members.count == 1 && emptyAllow) { removeMember(&b, object: top, at: index) }
+            } else if created.contains(.allow), emptyAllow {
+                removeMember(&b, object: section, at: allows[0])
+            }
+        }
+        let after = Scanner(bytes: b, path: path)
+        let result = try after.object(after.skipWhitespace(0))
+        _ = try Self.rules(Data(b), path: path)
+        return (Data(b), result.members.isEmpty)
+    }
+
+    /// Takes a member out with the separator that adding put before it; the
+    /// only member leaves `{}`.
+    private static func removeMember(_ b: inout [UInt8], object: Scanner.Object, at index: Int) {
+        let members = object.members
+        if members.count == 1 { b.replaceSubrange(object.open...object.close, with: Array("{}".utf8)) }
+        else if index == members.count - 1 { b.removeSubrange(members[index - 1].valueEnd..<members[index].valueEnd) }
+        else { b.removeSubrange(members[index].keyStart..<members[index + 1].keyStart) }
+    }
+
     // MARK: Rendering
 
     static func encoded(_ rule: String) -> [UInt8] {
@@ -381,27 +544,27 @@ public enum AntigravitySettingsText {
         return [UInt8](data)
     }
     /// A list on its own lines under `indent`, or on one line when the place it goes is one line.
-    static func array(_ rules: [String], indent: String?, unit: String) -> String {
+    static func array(_ rules: [String], indent: String?, unit: String, newline: String = "\n") -> String {
         let items = rules.map { String(decoding: encoded($0), as: UTF8.self) }
         guard let indent else { return "[" + items.joined(separator: ", ") + "]" }
-        return "[\n" + items.map { indent + unit + $0 }.joined(separator: ",\n") + "\n" + indent + "]"
+        return "[" + newline + items.map { indent + unit + $0 }.joined(separator: "," + newline) + newline + indent + "]"
     }
-    static func allowObject(_ rules: [String], indent: String?, unit: String) -> String {
+    static func allowObject(_ rules: [String], indent: String?, unit: String, newline: String = "\n") -> String {
         guard let indent else { return "{\"allow\": " + array(rules, indent: nil, unit: unit) + "}" }
-        return "{\n" + indent + unit + "\"allow\": " + array(rules, indent: indent + unit, unit: unit) + "\n" + indent + "}"
+        return "{" + newline + indent + unit + "\"allow\": " + array(rules, indent: indent + unit, unit: unit, newline: newline) + newline + indent + "}"
     }
 
     /// Adds a member to `object`: after its last member, in that member's
     /// style, or as the only member of an empty object. `render` gets the
     /// member's indent (nil when it goes on one line).
-    private static func insertMember(_ b: inout [UInt8], scan: Scanner, object: Scanner.Object, indentOfObject: String?, unit: String, render: (String?) -> String) throws {
+    private static func insertMember(_ b: inout [UInt8], scan: Scanner, object: Scanner.Object, indentOfObject: String?, unit: String, newline: String, render: (String?) -> String) throws {
         if let last = object.members.last {
             let previousEnd = object.members.count > 1 ? object.members[object.members.count - 2].valueEnd : object.open
             let separator = Array(b[scan.separatorEnd(before: last.keyStart, after: previousEnd)..<last.keyStart])
             let indent = scan.lineIndent(last.keyStart)
             b.insert(contentsOf: Array(",".utf8) + separator + Array(render(indent).utf8), at: last.valueEnd)
         } else if let outer = indentOfObject {
-            let text = "{\n" + outer + unit + render(outer + unit) + "\n" + outer + "}"
+            let text = "{" + newline + outer + unit + render(outer + unit) + newline + outer + "}"
             b.replaceSubrange(object.open...object.close, with: Array(text.utf8))
         } else {
             b.replaceSubrange(object.open...object.close, with: Array(("{" + render(nil) + "}").utf8))
@@ -511,9 +674,12 @@ public enum AntigravitySettingsText {
 /// panes on this Mac and the runs it hosts for other computers share it, so a
 /// rule two of them hold at once stays until the last is done. Every rule it
 /// adds for a while is written to its ledger first, and taken out of it only
-/// after the settings no longer have it, so a crash leaves nothing a next
-/// launch (`removeLeftovers`) does not clean up. A rule the settings already
-/// had is never removed.
+/// once the settings are seen without it a little after it was removed (a
+/// running agy that rewrites its settings could bring it back); a removal
+/// that fails is tried again with growing pauses, then again on the next
+/// apply or release and at the next launch (`removeLeftovers`). A rule the
+/// settings already had is never removed, and what adding had to create
+/// (`permissions`, `allow`, the file) goes again once it is empty.
 public actor AntigravityRuleLeases {
     public struct Lease: Sendable, Hashable {
         public let id = UUID()
@@ -521,12 +687,25 @@ public actor AntigravityRuleLeases {
         public let rules: [String]
     }
     private struct LedgerEntry: Codable, Equatable { var settings: String; var rule: String }
-    private struct Ledger: Codable { var version = 1; var entries: [LedgerEntry] = [] }
+    private struct CreatedEntry: Codable, Equatable { var settings: String; var part: AntigravitySettingsText.Created }
+    private struct Ledger: Codable {
+        var version = 1
+        var entries: [LedgerEntry] = []
+        var created: [CreatedEntry]?
+        var isEmpty: Bool { entries.isEmpty && (created ?? []).isEmpty }
+    }
 
     public let settingsURL: URL
     private let ledgerURL: URL?
+    private let retryDelays: [Duration]
+    private let recheckDelay: Duration
     private var counts: [String: Int] = [:]
     private var leases: Set<Lease> = []
+    /// Rules removed and waiting to be looked for once more.
+    private var awaitingRecheck: Set<String> = []
+    private var rechecks: [UUID: Task<Void, Never>] = [:]
+    /// Quit released everything: nothing is added any more.
+    private var closed = false
 
     /// `~/.gemini/antigravity-cli/settings.json` (on Windows the user profile's same path).
     public static func defaultSettingsURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
@@ -535,8 +714,11 @@ public actor AntigravityRuleLeases {
 
     /// `ledgerURL`: where the rules added for a while are recorded (the app's
     /// data folder); nil keeps no record (tests of the counting alone).
-    public init(settingsURL: URL = AntigravityRuleLeases.defaultSettingsURL(), ledgerURL: URL?) {
-        self.settingsURL = settingsURL; self.ledgerURL = ledgerURL
+    /// `retryDelays`: the pauses before each new try of a failed removal;
+    /// `recheckDelay`: how long after a removal the settings are looked at again.
+    public init(settingsURL: URL = AntigravityRuleLeases.defaultSettingsURL(), ledgerURL: URL?,
+                retryDelays: [Duration] = [.milliseconds(250), .seconds(1), .seconds(3)], recheckDelay: Duration = .seconds(5)) {
+        self.settingsURL = settingsURL; self.ledgerURL = ledgerURL; self.retryDelays = retryDelays; self.recheckDelay = recheckDelay
     }
 
     /// The rules the app holds for a while now, with their counts.
@@ -547,63 +729,168 @@ public actor AntigravityRuleLeases {
         _ = try read()
     }
 
+    /// Waits for the look-agains removals started (tests).
+    public func settled() async {
+        while let task = rechecks.values.first { await task.value }
+    }
+
     /// Puts `grant`'s rules in place. A temporary grant returns the lease to
-    /// `release` when its run ends; one for good returns nil.
+    /// `release` when its run ends; one for good returns nil. After quit's
+    /// `releaseAll` it throws `CancellationError` and adds nothing.
     public func apply(_ grant: AntigravityAllowGrant) throws -> Lease? {
+        guard !closed else { throw CancellationError() }
         guard grant.isValid else { throw AntigravitySettingsError.badRule }
+        guard grant.keepsOnlyAllowedRules else { throw AntigravitySettingsError.onceOnly }
+        retryPending()
         let current = try read()
         let existing = Set(current.rules)
         var seen = Set<String>()
         let rules = grant.rules.filter { seen.insert($0).inserted }
         guard grant.temporary else {
-            // Kept for good: a rule the app holds for a while is no longer its to remove.
-            let owned = rules.filter { counts[$0] != nil }
-            try write(adding: rules.filter { !existing.contains($0) }, to: current)
-            for rule in owned { counts.removeValue(forKey: rule) }
-            try? forget(owned)
+            // Kept for good: a rule the app holds or held for a while is no longer its to remove.
+            let missing = rules.filter { !existing.contains($0) }
+            if !missing.isEmpty { try save(try changed(current, adding: missing).data) }
+            for rule in rules { counts.removeValue(forKey: rule); awaitingRecheck.remove(rule) }
+            try? forget(rules)
             return nil
         }
-        var held: [String] = []
+        // Still in the settings from an earlier hold whose removal is pending: held again.
+        let pending = Set(ledgerRules())
+        var incremented: [String] = []
+        var reclaimed: [String] = []
         var added: [String] = []
         for rule in rules {
-            if let count = counts[rule] { counts[rule] = count + 1; held.append(rule) }
+            if let count = counts[rule] { counts[rule] = count + 1; incremented.append(rule) }
             else if !existing.contains(rule) { added.append(rule) }
+            else if pending.contains(rule) { counts[rule] = 1; awaitingRecheck.remove(rule); reclaimed.append(rule) }
         }
         if !added.isEmpty {
-            try record(added)
-            do { try write(adding: added, to: current) }
-            catch { try? forget(added); for rule in held { counts[rule] = (counts[rule] ?? 1) - 1 }; throw error }
+            do {
+                let change = try changed(current, adding: added)
+                try record(added, created: change.created)
+                try save(change.data)
+            } catch {
+                try? forget(added)
+                for rule in incremented { counts[rule] = (counts[rule] ?? 1) - 1 }
+                for rule in reclaimed { counts.removeValue(forKey: rule) }
+                throw error
+            }
             for rule in added { counts[rule] = 1 }
-            held += added
         }
-        let lease = Lease(rules: held)
+        let lease = Lease(rules: incremented + reclaimed + added)
         leases.insert(lease)
         return lease
     }
 
     /// The lease's run ended: a rule nobody holds any more leaves the settings.
-    public func release(_ lease: Lease) {
+    public func release(_ lease: Lease) async {
         guard leases.remove(lease) != nil else { return }
         var gone: [String] = []
         for rule in lease.rules {
             guard let count = counts[rule] else { continue }
             if count > 1 { counts[rule] = count - 1 } else { counts.removeValue(forKey: rule); gone.append(rule) }
         }
-        remove(gone)
+        retryPending(except: gone)
+        await remove(gone)
     }
 
-    /// Quit: every rule held for a while leaves now.
-    public func releaseAll() {
-        let gone = Array(counts.keys)
+    /// Quit: every rule held for a while leaves now, and nothing is added after.
+    public func releaseAll() async {
+        closed = true
+        let gone = Array(Set(Array(counts.keys) + ledgerRules().filter { !awaitingRecheck.contains($0) }))
         counts.removeAll(); leases.removeAll()
-        remove(gone)
+        await remove(gone)
     }
 
     /// Launch: what a previous run of the app added for a while and could not take out.
-    public func removeLeftovers() {
+    public func removeLeftovers() async {
+        let left = ledgerRules().filter { counts[$0] == nil && !awaitingRecheck.contains($0) }
+        if left.isEmpty { pruneIfDone() } else { await remove(left) }
+    }
+
+    // MARK: Removing
+
+    /// Takes `rules` out of the settings, trying again after each of
+    /// `retryDelays`; then looks again after `recheckDelay`. A rule held
+    /// again meanwhile is left in.
+    private func remove(_ rules: [String]) async {
+        guard !rules.isEmpty else { return }
+        if await removeWithRetries(rules) { scheduleRecheck(rules.filter { counts[$0] == nil }) }
+    }
+
+    private func removeWithRetries(_ rules: [String]) async -> Bool {
+        var attempt = 0
+        while true {
+            let still = rules.filter { counts[$0] == nil }
+            guard !still.isEmpty else { return true }
+            do { try removeOnce(still); return true }
+            catch {
+                guard attempt < retryDelays.count else { return false }
+                try? await Task.sleep(for: retryDelays[attempt])
+                attempt += 1
+            }
+        }
+    }
+
+    private func removeOnce(_ rules: [String]) throws {
+        let current = try read()
+        guard let data = current.data else { return }
+        let result = try AntigravitySettingsText.removing(rules, from: data, path: settingsURL.path)
+        if !result.removed.isEmpty { try save(result.data) }
+    }
+
+    private func scheduleRecheck(_ rules: [String]) {
+        guard !rules.isEmpty else { return }
+        awaitingRecheck.formUnion(rules)
+        let id = UUID()
+        let delay = recheckDelay
+        rechecks[id] = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            await self?.recheck(rules, id: id)
+        }
+    }
+
+    /// A little after a removal: a rule agy wrote back is taken out again;
+    /// then the ledger lets go of it.
+    private func recheck(_ rules: [String], id: UUID) async {
+        defer { rechecks.removeValue(forKey: id) }
+        let ledger = Set(ledgerRules())
+        let still = rules.filter { counts[$0] == nil && awaitingRecheck.contains($0) && ledger.contains($0) }
+        awaitingRecheck.subtract(rules.filter { counts[$0] == nil })
+        guard !still.isEmpty else { return }
+        guard await removeWithRetries(still) else { return }
+        let done = still.filter { counts[$0] == nil }
+        do { try forget(done) } catch { return }
+        pruneIfDone()
+    }
+
+    /// One try, without waiting, at what the ledger still holds that nobody
+    /// holds now (an earlier removal that failed).
+    private func retryPending(except: [String] = []) {
+        let skip = Set(except)
+        let pending = ledgerRules().filter { counts[$0] == nil && !awaitingRecheck.contains($0) && !skip.contains($0) }
+        guard !pending.isEmpty, (try? removeOnce(pending)) != nil else { return }
+        scheduleRecheck(pending)
+    }
+
+    /// Nothing held and nothing left in the ledger: what adding created goes once empty.
+    private func pruneIfDone() {
+        guard counts.isEmpty, ledgerRules().isEmpty, let ledger = readLedger() else { return }
         let path = settingsURL.path
-        let left = (readLedger()?.entries ?? []).filter { $0.settings == path }.map(\.rule).filter { counts[$0] == nil }
-        remove(left)
+        let created = Set((ledger.created ?? []).filter { $0.settings == path }.map(\.part))
+        guard !created.isEmpty else { return }
+        do {
+            let current = try read()
+            if let data = current.data {
+                let result = try AntigravitySettingsText.pruning(created, from: data, path: path)
+                let link = (try? FileManager.default.destinationOfSymbolicLink(atPath: path)) != nil
+                if result.empty, created.contains(.file), !link { try FileManager.default.removeItem(at: settingsURL) }
+                else if result.data != data { try save(result.data) }
+            }
+            var next = ledger
+            next.created = (next.created ?? []).filter { $0.settings != path }
+            try writeLedger(next)
+        } catch {}
     }
 
     // MARK: Files
@@ -612,8 +899,10 @@ public actor AntigravityRuleLeases {
 
     private func read() throws -> Current {
         let path = settingsURL.path
-        let target = settingsURL.resolvingSymlinksInPath()
         let manager = FileManager.default
+        // A link to nothing is not replaced by a new file.
+        if (try? manager.destinationOfSymbolicLink(atPath: path)) != nil, !manager.fileExists(atPath: path) { throw AntigravitySettingsError.unreadable(path) }
+        let target = settingsURL.resolvingSymlinksInPath()
         var isDirectory: ObjCBool = false
         guard manager.fileExists(atPath: target.deletingLastPathComponent().path, isDirectory: &isDirectory), isDirectory.boolValue else { throw AntigravitySettingsError.missingFolder(target.deletingLastPathComponent().path) }
         guard manager.fileExists(atPath: target.path) else { return Current(data: nil, rules: []) }
@@ -621,24 +910,11 @@ public actor AntigravityRuleLeases {
         return Current(data: data, rules: try AntigravitySettingsText.rules(data, path: path))
     }
 
-    private func write(adding rules: [String], to current: Current) throws {
-        guard !rules.isEmpty else { return }
-        let data = try current.data.map { try AntigravitySettingsText.adding(rules, to: $0, path: settingsURL.path).data } ?? AntigravitySettingsText.newFile(rules)
-        try save(data)
-    }
-
-    /// Takes `rules` out of the settings, then out of the ledger. A file that
-    /// cannot be read or written keeps them in the ledger for the next launch.
-    private func remove(_ rules: [String]) {
-        guard !rules.isEmpty else { return }
-        do {
-            let current = try read()
-            if let data = current.data {
-                let result = try AntigravitySettingsText.removing(rules, from: data, path: settingsURL.path)
-                if !result.removed.isEmpty { try save(result.data) }
-            }
-            try forget(rules)
-        } catch {}
+    /// The settings with `rules` added, and what that created.
+    private func changed(_ current: Current, adding rules: [String]) throws -> (data: Data, created: [AntigravitySettingsText.Created]) {
+        guard let data = current.data else { return (AntigravitySettingsText.newFile(rules), [.file]) }
+        let result = try AntigravitySettingsText.adding(rules, to: data, path: settingsURL.path)
+        return (result.data, result.created)
     }
 
     /// Writes beside the file and renames over it, keeping its permissions; a
@@ -663,20 +939,29 @@ public actor AntigravityRuleLeases {
         guard let ledgerURL, let data = try? Data(contentsOf: ledgerURL) else { return nil }
         return try? JSONDecoder().decode(Ledger.self, from: data)
     }
+    /// The rules the ledger holds for these settings.
+    private func ledgerRules() -> [String] {
+        let path = settingsURL.path
+        var seen = Set<String>()
+        return (readLedger()?.entries ?? []).filter { $0.settings == path && seen.insert($0.rule).inserted }.map(\.rule)
+    }
     private func writeLedger(_ ledger: Ledger) throws {
         guard let ledgerURL else { return }
-        if ledger.entries.isEmpty { try? FileManager.default.removeItem(at: ledgerURL); return }
+        if ledger.isEmpty { try? FileManager.default.removeItem(at: ledgerURL); return }
         try FileManager.default.createDirectory(at: ledgerURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try encoder.encode(ledger).write(to: ledgerURL, options: .atomic)
     }
-    private func record(_ rules: [String]) throws {
-        guard ledgerURL != nil else { return }
+    private func record(_ rules: [String], created: [AntigravitySettingsText.Created]) throws {
+        guard let ledgerURL else { return }
         var ledger = readLedger() ?? Ledger()
         for rule in rules where !ledger.entries.contains(LedgerEntry(settings: settingsURL.path, rule: rule)) {
             ledger.entries.append(LedgerEntry(settings: settingsURL.path, rule: rule))
         }
-        do { try writeLedger(ledger) } catch { throw AntigravitySettingsError.writeFailed(ledgerURL!.path, error.localizedDescription) }
+        for part in created where !(ledger.created ?? []).contains(CreatedEntry(settings: settingsURL.path, part: part)) {
+            ledger.created = (ledger.created ?? []) + [CreatedEntry(settings: settingsURL.path, part: part)]
+        }
+        do { try writeLedger(ledger) } catch { throw AntigravitySettingsError.writeFailed(ledgerURL.path, error.localizedDescription) }
     }
     private func forget(_ rules: [String]) throws {
         guard ledgerURL != nil, !rules.isEmpty, var ledger = readLedger() else { return }
