@@ -1,5 +1,10 @@
 import { describeError, type MobileClient } from '@/api/client';
-import type { MobileAntigravityAction, MobileAntigravityKind, MobilePermission } from '@/api/types';
+import type {
+  MobileAntigravityAction,
+  MobileAntigravityKind,
+  MobileAntigravityOnceReason,
+  MobilePermission,
+} from '@/api/types';
 import { t } from '@/lib/i18n';
 
 /** The `toolName` of an Antigravity card (docs/mobile-remote.md "Antigravity 권한 카드"). */
@@ -9,6 +14,7 @@ export const ANTIGRAVITY_PERMISSION_TOOL = 'AntigravityPermission';
 export type AntigravityDecision = 'once' | 'always' | 'deny';
 
 const KINDS: readonly MobileAntigravityKind[] = ['command', 'url', 'file', 'other'];
+const ONCE_REASONS: readonly MobileAntigravityOnceReason[] = ['risky', 'interpreter', 'agyFolder'];
 
 function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
@@ -30,7 +36,29 @@ function actionFrom(value: unknown): MobileAntigravityAction | undefined {
     ...(target !== undefined ? { target } : {}),
     ...(rule !== undefined ? { rule } : {}),
     ...(rule !== undefined && raw.onceOnly === true ? { onceOnly: true } : {}),
+    ...(rule !== undefined && raw.onceOnly === true ? onceReason(raw.onceOnlyReason) : {}),
   };
+}
+
+function onceReason(value: unknown): { onceOnlyReason?: MobileAntigravityOnceReason } {
+  const known = ONCE_REASONS.find((reason) => reason === value);
+  return known !== undefined ? { onceOnlyReason: known } : {};
+}
+
+/**
+ * The words under a rule that may be allowed only once, by its reason; the general ones
+ * when the host did not say why. Undefined when the rule may be kept.
+ */
+export function antigravityOnceOnlyText(action: MobileAntigravityAction): string | undefined {
+  if (action.onceOnly !== true) return undefined;
+  switch (action.onceOnlyReason) {
+    case 'interpreter':
+      return t('antigravity.permission.onceOnlyInterpreter');
+    case 'agyFolder':
+      return t('antigravity.permission.onceOnlyAgyFolder');
+    default:
+      return t('antigravity.permission.onceOnly');
+  }
 }
 
 /**

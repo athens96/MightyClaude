@@ -4,6 +4,7 @@ import { Button, Card } from '@/components/ui';
 import {
   antigravityKindLabel,
   antigravityOffersAlways,
+  antigravityOnceOnlyText,
   antigravityRuleLine,
   type AntigravityDecision,
 } from '@/lib/antigravity-permission';
@@ -59,7 +60,7 @@ export function AntigravityPermissionCard({
             ) : (
               <Text style={styles.noRule}>{t('antigravity.permission.noRule')}</Text>
             )}
-            {action.onceOnly === true ? <Text style={styles.noRule}>{t('antigravity.permission.onceOnly')}</Text> : null}
+            {action.onceOnly === true ? <Text style={styles.noRule}>{antigravityOnceOnlyText(action)}</Text> : null}
           </View>
         ))}
 
