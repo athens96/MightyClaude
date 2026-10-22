@@ -212,11 +212,14 @@ export class PushRoutes {
     if (typeof payload === 'string' && payload.length > PUSH_PAYLOAD_MAX) return failure(res, 413, 'too-large');
     if (typeof payload !== 'string' || !PUSH_PAYLOAD_PATTERN.test(payload)) return failure(res, 400, 'bad-request');
     if (this.#sender === null) return failure(res, 503, 'push-unavailable');
-    const rate = this.#take([[this.#sendByServerId, serverId], [this.#sendByIp, ip], [this.#sendGlobal, '*']]);
+    const rate = this.#take([[this.#sendByServerId, serverId], [this.#sendByIp, ip]]);
     if (!rate.ok) return failure(res, 429, 'rate-limited', rate.retryAfterSecs);
     const bound = await this.#store.bind(handle, serverId, this.#now());
     if (bound.kind === 'unknown') return failure(res, 404, 'unknown-handle');
     if (bound.kind === 'foreign') return failure(res, 403, 'foreign-handle');
+    // Only a send that would reach FCM spends the shared budget, so guessed or foreign handles cannot use it up.
+    const global = this.#take([[this.#sendGlobal, '*']]);
+    if (!global.ok) return failure(res, 429, 'rate-limited', global.retryAfterSecs);
     const result = await this.#sender.send(bound.fcmToken, { v: '1', h: handle, p: payload });
     switch (result.kind) {
       case 'sent':
@@ -229,8 +232,9 @@ export class PushRoutes {
       case 'retry':
         return failure(res, 502, 'fcm-failed', clampRetryAfter(result.retryAfterSecs));
       case 'failed':
-        this.#log(`[${shortId(serverId)}] push failed: fcm ${result.status}`);
-        return failure(res, 502, 'fcm-failed', 30);
+        // The FCM error code (for example SENDER_ID_MISMATCH: a key from another Firebase project) names the setup problem.
+        this.#log(`[${shortId(serverId)}] push failed: fcm ${result.status}${result.code === undefined ? '' : ` ${result.code}`}`);
+        return reply(res, 502, result.code === undefined ? { error: 'fcm-failed' } : { error: 'fcm-failed', fcmError: result.code }, 30);
     }
   }
 }
@@ -253,7 +257,7 @@ export async function createPushRoutes(
       const account = parseServiceAccount(await readFile(config.fcmServiceAccountFile, 'utf8'));
       // A key that does not parse fails here, once, instead of on every send.
       createPrivateKey(account.privateKey);
-      resolved = new FcmHttpV1Sender(account);
+      resolved = new FcmHttpV1Sender(account, undefined, undefined, log);
       log('[push] FCM sending on');
     } catch {
       log('[push] FCM disabled: service account unreadable');

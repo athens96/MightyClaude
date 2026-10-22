@@ -105,14 +105,46 @@ describe('FcmHttpV1Sender', () => {
     expect(calls.map((c) => c.url.includes('oauth2'))).toEqual([true, false, false, true, false]);
   });
 
-  it('maps a gone token, a bad token and another project to invalid-token', async () => {
+  it('maps a gone token and a malformed registration token to invalid-token', async () => {
     for (const answer of [
       reply(404, { error: { status: 'NOT_FOUND', details: [{ errorCode: 'UNREGISTERED' }] } }),
-      reply(400, { error: { status: 'INVALID_ARGUMENT' } }),
-      reply(403, { error: { status: 'PERMISSION_DENIED', details: [{ errorCode: 'SENDER_ID_MISMATCH' }] } }),
+      reply(400, {
+        error: {
+          code: 400,
+          message: 'The registration token is not a valid FCM registration token',
+          status: 'INVALID_ARGUMENT',
+          details: [{ '@type': 'type.googleapis.com/google.firebase.fcm.v1.FcmError', errorCode: 'INVALID_ARGUMENT' }],
+        },
+      }),
+      reply(400, {
+        error: {
+          status: 'INVALID_ARGUMENT',
+          details: [{ '@type': 'type.googleapis.com/google.rpc.BadRequest', fieldViolations: [{ field: 'message.token', description: 'bad' }] }],
+        },
+      }),
     ]) {
       const sender = new FcmHttpV1Sender(parseServiceAccount(ACCOUNT_JSON), fake([TOKEN_REPLY, answer], []), () => 0);
       expect(await sender.send('t', { v: '1' })).toEqual({ kind: 'invalid-token' });
+    }
+  });
+
+  it('keeps the token on a project mismatch, a bare 404 or another bad argument, naming the FCM code', async () => {
+    const cases: Array<[ReturnType<typeof reply>, unknown]> = [
+      [
+        reply(403, { error: { status: 'PERMISSION_DENIED', details: [{ errorCode: 'SENDER_ID_MISMATCH' }] } }),
+        { kind: 'failed', status: 403, code: 'SENDER_ID_MISMATCH' },
+      ],
+      [reply(404, { error: { status: 'NOT_FOUND', message: 'Requested entity was not found.' } }), { kind: 'failed', status: 404, code: 'NOT_FOUND' }],
+      [reply(404, {}), { kind: 'failed', status: 404 }],
+      [
+        reply(400, { error: { status: 'INVALID_ARGUMENT', message: 'Invalid value at message.data', details: [{ errorCode: 'INVALID_ARGUMENT' }] } }),
+        { kind: 'failed', status: 400, code: 'INVALID_ARGUMENT' },
+      ],
+      [reply(400, { error: { status: 'not a code; rm -rf' } }), { kind: 'failed', status: 400 }],
+    ];
+    for (const [answer, expected] of cases) {
+      const sender = new FcmHttpV1Sender(parseServiceAccount(ACCOUNT_JSON), fake([TOKEN_REPLY, answer], []), () => 0);
+      expect(await sender.send('t', { v: '1' })).toEqual(expected);
     }
   });
 
@@ -140,5 +172,30 @@ describe('FcmHttpV1Sender', () => {
     expect(await sender.send('t', { v: '1' })).toEqual({ kind: 'failed', status: 401 });
     expect(await sender.send('t', { v: '1' })).toEqual({ kind: 'sent' });
     expect(calls.filter((c) => c.url.includes('oauth2'))).toHaveLength(2);
+  });
+
+  it('gives both requests a ten-second timeout signal', async () => {
+    const calls: Call[] = [];
+    const sender = new FcmHttpV1Sender(parseServiceAccount(ACCOUNT_JSON), fake([TOKEN_REPLY, reply(200, {})], calls), () => 0);
+    await sender.send('t', { v: '1' });
+    expect(calls).toHaveLength(2);
+    for (const call of calls) expect(call.init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('logs once when the access-token exchange starts failing and once when it recovers, without secrets', async () => {
+    const lines: string[] = [];
+    const calls: Call[] = [];
+    const sender = new FcmHttpV1Sender(
+      parseServiceAccount(ACCOUNT_JSON),
+      fake([reply(400, { error: 'invalid_grant' }), reply(500, {}), TOKEN_REPLY, reply(200, {}), reply(200, {})], calls),
+      () => 0,
+      (line) => lines.push(line),
+    );
+    expect(await sender.send('device-token', { v: '1' })).toEqual({ kind: 'retry', retryAfterSecs: 60 });
+    expect(await sender.send('device-token', { v: '1' })).toEqual({ kind: 'retry', retryAfterSecs: 60 });
+    expect(await sender.send('device-token', { v: '1' })).toEqual({ kind: 'sent' });
+    expect(await sender.send('device-token', { v: '1' })).toEqual({ kind: 'sent' });
+    expect(lines).toEqual(['[push] FCM access token exchange failing', '[push] FCM access token exchange working again']);
+    expect(lines.join('\n')).not.toMatch(/device-token|ya29|PRIVATE KEY|demo-project/);
   });
 });

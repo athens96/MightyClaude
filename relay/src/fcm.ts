@@ -5,7 +5,7 @@ export type PushSendResult =
   | { readonly kind: 'sent' }
   | { readonly kind: 'invalid-token' }
   | { readonly kind: 'retry'; readonly retryAfterSecs: number }
-  | { readonly kind: 'failed'; readonly status: number };
+  | { readonly kind: 'failed'; readonly status: number; readonly code?: string };
 
 /** Delivers one data-only message to one FCM registration token. */
 export interface PushSender {
@@ -21,12 +21,15 @@ export interface ServiceAccount {
 
 export type FetchLike = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body: string },
+  init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal },
 ) => Promise<{ status: number; headers: { get(name: string): string | null }; text(): Promise<string> }>;
 
 const SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
 const DEFAULT_RETRY_SECS = 60;
+const FETCH_TIMEOUT_MS = 10_000;
+/** FCM error codes are upper-case words; anything else is never written to a log. */
+const ERROR_CODE_PATTERN = /^[A-Z_]{1,40}$/;
 
 export function parseServiceAccount(text: string): ServiceAccount {
   let parsed: Record<string, unknown>;
@@ -49,17 +52,34 @@ function base64url(value: string): string {
   return Buffer.from(value, 'utf8').toString('base64url');
 }
 
-function errorCodes(body: string): string[] {
+interface FcmError {
+  /** `error.status` first, then each `details[].errorCode`, upper-case words only. */
+  readonly codes: string[];
+  /** Whether the error is about the registration token itself (a field violation on `message.token` or a message naming it). */
+  readonly namesToken: boolean;
+}
+
+function readError(body: string): FcmError {
   try {
-    const parsed = JSON.parse(body) as { error?: { status?: unknown; details?: Array<{ errorCode?: unknown }> } };
+    const parsed = JSON.parse(body) as {
+      error?: {
+        status?: unknown;
+        message?: unknown;
+        details?: Array<{ errorCode?: unknown; fieldViolations?: Array<{ field?: unknown }> }>;
+      };
+    };
     const codes: string[] = [];
-    if (typeof parsed.error?.status === 'string') codes.push(parsed.error.status);
+    let namesToken = typeof parsed.error?.message === 'string' && /registration token/i.test(parsed.error.message);
+    if (typeof parsed.error?.status === 'string' && ERROR_CODE_PATTERN.test(parsed.error.status)) codes.push(parsed.error.status);
     for (const detail of parsed.error?.details ?? []) {
-      if (typeof detail.errorCode === 'string') codes.push(detail.errorCode);
+      if (typeof detail.errorCode === 'string' && ERROR_CODE_PATTERN.test(detail.errorCode)) codes.push(detail.errorCode);
+      for (const violation of detail.fieldViolations ?? []) {
+        if (violation.field === 'message.token') namesToken = true;
+      }
     }
-    return codes;
+    return { codes, namesToken };
   } catch {
-    return [];
+    return { codes: [], namesToken: false };
   }
 }
 
@@ -68,12 +88,21 @@ export class FcmHttpV1Sender implements PushSender {
   readonly #account: ServiceAccount;
   readonly #fetch: FetchLike;
   readonly #now: () => number;
+  readonly #log: (line: string) => void;
   #token: { readonly value: string; readonly expiresAt: number } | null = null;
+  /** Whether the last access-token exchange failed; logged only when this changes. */
+  #tokenFailing = false;
 
-  constructor(account: ServiceAccount, fetchImpl: FetchLike = fetch as unknown as FetchLike, now: () => number = Date.now) {
+  constructor(
+    account: ServiceAccount,
+    fetchImpl: FetchLike = fetch as unknown as FetchLike,
+    now: () => number = Date.now,
+    log: (line: string) => void = () => {},
+  ) {
     this.#account = account;
     this.#fetch = fetchImpl;
     this.#now = now;
+    this.#log = log;
   }
 
   static async fromFile(path: string, fetchImpl?: FetchLike): Promise<FcmHttpV1Sender> {
@@ -85,34 +114,39 @@ export class FcmHttpV1Sender implements PushSender {
     try {
       access = await this.#accessToken();
     } catch {
+      if (!this.#tokenFailing) this.#log('[push] FCM access token exchange failing');
+      this.#tokenFailing = true;
       return { kind: 'retry', retryAfterSecs: DEFAULT_RETRY_SECS };
     }
+    if (this.#tokenFailing) this.#log('[push] FCM access token exchange working again');
+    this.#tokenFailing = false;
     let response: Awaited<ReturnType<FetchLike>>;
-    let codes: string[] = [];
+    let error: FcmError = { codes: [], namesToken: false };
     try {
       response = await this.#fetch(`https://fcm.googleapis.com/v1/projects/${this.#account.projectId}/messages:send`, {
         method: 'POST',
         headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
         body: JSON.stringify({ message: { token: fcmToken, data, android: { priority: 'HIGH', ttl: '3600s' } } }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (response.status === 200) return { kind: 'sent' };
-      codes = errorCodes(await response.text());
+      error = readError(await response.text());
     } catch {
-      // A network failure says nothing about the token; the caller may try again later.
+      // A network failure or a timeout says nothing about the token; the caller may try again later.
       return { kind: 'retry', retryAfterSecs: DEFAULT_RETRY_SECS };
     }
-    if (response.status === 404 || codes.includes('UNREGISTERED')) return { kind: 'invalid-token' };
-    if (response.status === 400 && codes.includes('INVALID_ARGUMENT')) return { kind: 'invalid-token' };
-    if (response.status === 403 && codes.includes('SENDER_ID_MISMATCH')) return { kind: 'invalid-token' };
-    if (response.status === 401) {
-      this.#token = null;
-      return { kind: 'failed', status: 401 };
-    }
+    // Only a token FCM says is gone or malformed is forgotten. SENDER_ID_MISMATCH (a key from another
+    // Firebase project than the app) or a bare 404 is the relay's own setup, so the handle is kept.
+    if (error.codes.includes('UNREGISTERED')) return { kind: 'invalid-token' };
+    if (error.codes.includes('INVALID_ARGUMENT') && error.namesToken) return { kind: 'invalid-token' };
+    if (response.status === 401) this.#token = null;
     if (response.status === 429 || response.status >= 500) {
       const after = Number.parseInt(response.headers.get('retry-after') ?? '', 10);
       return { kind: 'retry', retryAfterSecs: Number.isFinite(after) && after > 0 ? after : DEFAULT_RETRY_SECS };
     }
-    return { kind: 'failed', status: response.status };
+    // The most specific code: a details errorCode over the general status.
+    const code = error.codes.at(-1);
+    return code === undefined ? { kind: 'failed', status: response.status } : { kind: 'failed', status: response.status, code };
   }
 
   async #accessToken(): Promise<string> {
@@ -130,6 +164,7 @@ export class FcmHttpV1Sender implements PushSender {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }).toString(),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (response.status !== 200) throw new Error(`token ${response.status}`);
     const parsed = JSON.parse(await response.text()) as { access_token?: unknown; expires_in?: unknown };
