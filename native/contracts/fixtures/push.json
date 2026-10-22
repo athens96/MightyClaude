@@ -403,6 +403,226 @@
             }
           }
         ]
+      },
+      {
+        "note": "a pane missing from one observation is forgotten, but its run and sign-in counts are kept",
+        "panes": [
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-3",
+            "workspace": "other",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "stopped",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-4",
+            "workspace": "demo",
+            "title": "Antigravity 2",
+            "status": "completed",
+            "requests": [
+              {
+                "id": "agy-1",
+                "runId": "run-4",
+                "kind": "permission",
+                "summary": "rm -rf build",
+                "buttons": "antigravityOnce"
+              }
+            ],
+            "signInLost": false
+          }
+        ],
+        "expect": []
+      },
+      {
+        "note": "the pane comes back running: nothing is sent",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "running",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-3",
+            "workspace": "other",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "stopped",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-4",
+            "workspace": "demo",
+            "title": "Antigravity 2",
+            "status": "completed",
+            "requests": [
+              {
+                "id": "agy-1",
+                "runId": "run-4",
+                "kind": "permission",
+                "summary": "rm -rf build",
+                "buttons": "antigravityOnce"
+              }
+            ],
+            "signInLost": false
+          }
+        ],
+        "expect": []
+      },
+      {
+        "note": "its next completion and lost sign-in carry the next numbers and are sent",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "completed",
+            "requests": [],
+            "signInLost": true,
+            "preview": "Back again"
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-3",
+            "workspace": "other",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "stopped",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-4",
+            "workspace": "demo",
+            "title": "Antigravity 2",
+            "status": "completed",
+            "requests": [
+              {
+                "id": "agy-1",
+                "runId": "run-4",
+                "kind": "permission",
+                "summary": "rm -rf build",
+                "buttons": "antigravityOnce"
+              }
+            ],
+            "signInLost": false
+          }
+        ],
+        "expect": [
+          {
+            "id": "run:pane-1:3:completed",
+            "kind": "completed",
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "summary": "Back again"
+          },
+          {
+            "id": "signin:pane-1:2",
+            "kind": "signin",
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "summary": ""
+          }
+        ]
+      },
+      {
+        "note": "control characters are escaped six bytes each: over 2048 bytes the pushed message drops its summary",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "completed",
+            "requests": [],
+            "signInLost": true
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-3",
+            "workspace": "other",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "stopped",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-4",
+            "workspace": "demo",
+            "title": "Antigravity 2",
+            "status": "completed",
+            "requests": [
+              {
+                "id": "agy-1",
+                "runId": "run-4",
+                "kind": "permission",
+                "summary": "rm -rf build",
+                "buttons": "antigravityOnce"
+              }
+            ],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-5",
+            "workspace": "\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b",
+            "title": "\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b",
+            "status": "running",
+            "requests": [
+              {
+                "id": "wide-1",
+                "runId": "run-5",
+                "kind": "question",
+                "summary": "\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b",
+                "buttons": "none"
+              }
+            ],
+            "signInLost": false
+          }
+        ],
+        "expect": [
+          {
+            "id": "request:run-5:wide-1",
+            "kind": "question",
+            "sessionId": "pane-5",
+            "workspace": "\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b",
+            "title": "\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b",
+            "summary": "\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b\u001b",
+            "pushSummary": ""
+          }
+        ]
       }
     ]
   }
