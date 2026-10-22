@@ -379,7 +379,7 @@ public actor AppUpdateService {
 
     /// Writes the helper next to the package and starts it detached with a
     /// minimal environment, logging to `install.log` beside it.
-    public func launchInstaller(script: String, near package: URL) throws {
+    public nonisolated func launchInstaller(script: String, near package: URL) throws {
         let folder = package.deletingLastPathComponent()
         let path = folder.appendingPathComponent("install.sh")
         try Data(script.utf8).write(to: path, options: .atomic)

@@ -193,7 +193,7 @@ import Testing
         // seconds here but far longer on a loaded three-core CI runner, so the bound is generous;
         // a pass returns as soon as the line appears.
         let service = AppUpdateService(directory: root.appendingPathComponent("updates"), allowsFileURLs: true)
-        try await service.launchInstaller(script: script, near: package)
+        try service.launchInstaller(script: script, near: package)
         let log = root.appendingPathComponent("updates/0.2.0/install.log")
         let failures = ["skipping the update", "No app to install", "Could not copy", "Could not back up", "restoring the previous version"]
         var finished = false, failed = false, text = ""

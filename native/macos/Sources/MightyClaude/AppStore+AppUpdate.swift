@@ -129,16 +129,28 @@ extension AppStore {
     /// What the app is doing right now, for `AppUpdateAuto.idleBlockers`: one
     /// source per row of the plan's idle table.
     func appIdleFacts(now: Date) async -> AppIdleFacts {
-        // The actors first, so everything read on the main actor below is current.
-        let phoneUploads = await mobileRemote.openUploadCount()
-        let delegationPending = await delegation?.pendingWork() ?? 0
+        let counts = await appIdleActorCounts()
+        return appIdleFacts(now: now, phoneUploads: counts.phoneUploads, delegationPending: counts.delegationPending)
+    }
+
+    /// The two idle facts that live on actors: files the phone holds here, and
+    /// delegation work under way.
+    private func appIdleActorCounts() async -> (phoneUploads: Int, delegationPending: Int) {
+        (await mobileRemote.openUploadCount(), await delegation?.pendingWork() ?? 0)
+    }
+
+    /// Everything else, read on the main actor without a suspension, so a
+    /// caller can act on the answer in the same turn.
+    private func appIdleFacts(now: Date, phoneUploads: Int, delegationPending: Int) -> AppIdleFacts {
         let sessions = snapshot.sessions
         let agentRuns = sessions.filter { $0.kind != "shell" && $0.status == "running" }.count + pendingRuns.count + heldForUpdate.count
             + (delegation?.endingRuns.count ?? 0) + delegationPending
         let pendingCards = toolPermissions.values.reduce(0) { $0 + $1.count } + antigravityBoard.cards.count + webOpenRequests.count
         let drafts = self.drafts.values.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
             + attachmentDrafts.values.filter { !$0.isEmpty }.count + importingAttachments.count
+        // A shell at its prompt still holding a background or stopped job counts as running.
         let terminals = sessions.filter { $0.kind == "shell" && $0.status == "running" }.count
+            + localTerminals.values.filter { $0.shellProcessId.map { ShellProcessProbe.hasChildren(pid: $0) } ?? false }.count
             + agentTerminals.values.reduce(0) { $0 + $1.pane.runningHandles().count }
             + (setupRun?.finished == false ? 1 : 0) + setupTerminals.count + cliLoginPending.count + backgroundLoginJobs.count
         let cliWork = isUpdatingCLIs || automaticUpdateRunning || isManagingPlugins || updatingPluginsFor != nil
@@ -150,6 +162,7 @@ extension AppStore {
         return AppIdleFacts(agentRuns: agentRuns, pendingCards: pendingCards, queuedInputs: queuedInputs.values.filter { !$0.isEmpty }.count,
                             drafts: drafts, terminals: terminals, cliWork: cliWork,
                             screenSharing: screenShareMenuBar?.isActive ?? false, phoneUploads: phoneUploads, remoteHostRuns: remoteHostState.activeRuns,
+                            sharingWorkspaces: remoteHostState.enabled,
                             blockingModal: modal, lastUserInput: now.addingTimeInterval(-inputIdle), lastAgentActivity: providerLastActive.values.max())
     }
 
@@ -157,7 +170,8 @@ extension AppStore {
     /// the countdown banner when the app is idle, cancels it quietly when it no
     /// longer is, and restarts to install when it runs out.
     func offerAppUpdateRestart() async {
-        guard !ending else { return }
+        // Nothing staged and no banner or snooze: nothing to decide.
+        guard !ending, appUpdate.phase == .ready || appUpdateRestart != .idle else { return }
         let facts = await appIdleFacts(now: Date())
         guard !ending else { return }
         let now = Date()
@@ -172,7 +186,37 @@ extension AppStore {
         case .cancel: stopAppUpdateCountdownTicks()
         case .restart:
             stopAppUpdateCountdownTicks()
-            installAppUpdateAndRelaunch()
+            restartForAppUpdateAutomatically()
+        }
+    }
+
+    /// The countdown ran out. The package is verified first (off the main
+    /// actor); then, in one main-actor turn with no suspension, the app is
+    /// asked again whether it is idle (input aside, as during the countdown),
+    /// and only then is the helper started and the app quit. Something that
+    /// started meanwhile (a run, a card, a dialog…) puts the update back to
+    /// ready and the next idle tick offers a fresh countdown.
+    private func restartForAppUpdateAutomatically() {
+        guard !ending, let install = prepareAppUpdateInstall(relaunch: true) else { return }
+        let store = AppUpdateProgressSink(self)
+        Task {
+            do { try await install.verify() } catch {
+                store.owner?.appUpdate.phase = .failed(L("settings.appUpdate.errorInstall", ["error": error.localizedDescription])); return
+            }
+            guard let owner = store.owner else { return }
+            let counts = await owner.appIdleActorCounts()
+            // From here to the quit: no suspension, so nothing can start in between.
+            let now = Date()
+            let blockers = AppUpdateAuto.idleBlockers(owner.appIdleFacts(now: now, phoneUploads: counts.phoneUploads, delegationPending: counts.delegationPending), now: now)
+            guard !owner.ending, owner.appUpdate.phase == .installing, owner.appUpdateAutomatic,
+                  blockers.allSatisfy({ $0 == .userActive }) else {
+                if owner.appUpdate.phase == .installing { owner.appUpdate.phase = .ready }
+                return
+            }
+            do { try install.launch() } catch {
+                owner.appUpdate.phase = .failed(L("settings.appUpdate.errorInstall", ["error": error.localizedDescription])); return
+            }
+            NSApp.terminate(nil)
         }
     }
 
@@ -315,10 +359,11 @@ extension AppStore {
         let store = AppUpdateProgressSink(self)
         Task {
             do {
-                try await install()
-                await MainActor.run { NSApp.terminate(nil) }
+                try await install.verify()
+                try install.launch()
+                NSApp.terminate(nil)
             } catch {
-                await MainActor.run { store.owner?.appUpdate.phase = .failed(L("settings.appUpdate.errorInstall", ["error": error.localizedDescription])) }
+                store.owner?.appUpdate.phase = .failed(L("settings.appUpdate.errorInstall", ["error": error.localizedDescription]))
             }
         }
     }
@@ -333,16 +378,16 @@ extension AppStore {
                                            hasKey: appUpdateCanRunAutomatically, poweringOff: appUpdatePoweringOff),
               let install = prepareAppUpdateInstall(relaunch: false) else { return nil }
         return Task {
-            do { try await install() }
+            do { try await install.verify(); try install.launch() }
             catch { NSLog("MightyClaude update on quit not started: %@", error.localizedDescription) }
         }
     }
 
     /// The checks both installs share, run before anything changes: the staged
     /// bundle, its package and asset, and a writable destination. On success
-    /// the phase is `.installing` and the returned step re-verifies the package
-    /// on disk and starts the helper.
-    private func prepareAppUpdateInstall(relaunch: Bool) -> (() async throws -> Void)? {
+    /// the phase is `.installing`; `verify` re-checks the package on disk off
+    /// the main actor and `launch` then starts the helper (at once, on the caller's actor).
+    private func prepareAppUpdateInstall(relaunch: Bool) -> (verify: () async throws -> Void, launch: () throws -> Void)? {
         guard case .ready = appUpdate.phase, let staged = appUpdate.stagedApp, let package = appUpdate.package else { return nil }
         guard let asset = appUpdate.availability?.manifest.macos else {
             appUpdate.phase = .failed(L("settings.appUpdate.errorNoPackage")); return nil
@@ -356,12 +401,13 @@ extension AppStore {
         appUpdate.phase = .installing
         let script = AppUpdateService.installScript(stagedApp: staged, destination: destination, pid: ProcessInfo.processInfo.processIdentifier, relaunch: relaunch)
         let service = appUpdateService
-        return {
+        return (verify: {
             // Rule 4: re-verify the package on disk immediately before replacement,
             // off the main actor (hashing the package takes a while).
             try await Task.detached { try Self.verifyAppUpdatePackage(package, asset: asset) }.value
-            try await service.launchInstaller(script: script, near: package)
-        }
+        }, launch: {
+            try service.launchInstaller(script: script, near: package)
+        })
     }
 
     private nonisolated static func verifyAppUpdatePackage(_ package: URL, asset: AppUpdateAsset) throws {

@@ -12,6 +12,7 @@ struct AppUpdateAutoTests {
         #expect(AppUpdateAuto.agentIdleDelay == 3 * 60)
         #expect(AppUpdateAuto.countdown == 60)
         #expect(AppUpdateAuto.countdownTick == 1)
+        #expect(AppUpdateAuto.countdownGrace == 5)
         #expect(AppUpdateAuto.snooze == 4 * 60 * 60)
     }
 
@@ -71,6 +72,7 @@ struct AppUpdateAutoTests {
             (AppIdleFacts(screenSharing: true), .remote),
             (AppIdleFacts(phoneUploads: 1), .remote),
             (AppIdleFacts(remoteHostRuns: 3), .remote),
+            (AppIdleFacts(sharingWorkspaces: true), .remote),
             (AppIdleFacts(blockingModal: true), .modal),
             (AppIdleFacts(lastUserInput: now.addingTimeInterval(-AppUpdateAuto.userIdleDelay + 1)), .userActive),
             (AppIdleFacts(lastAgentActivity: now.addingTimeInterval(-AppUpdateAuto.agentIdleDelay + 1)), .recentAgentActivity),
@@ -128,6 +130,19 @@ struct AppUpdateAutoTests {
         #expect(AppUpdateAuto.restartOffer(cancelled.state, ready: true, automatic: true, blockers: [.recentAgentActivity], now: now.addingTimeInterval(31)).action == .none)
         // Idle again: a full countdown, never the rest of the old one.
         let later = now.addingTimeInterval(600)
+        #expect(AppUpdateAuto.restartOffer(.idle, ready: true, automatic: true, blockers: [], now: later) == AppUpdateRestartDecision(state: .countingDown(until: later.addingTimeInterval(AppUpdateAuto.countdown)), action: .startCountdown))
+    }
+
+    @Test func aCountdownTheMacSleptThroughIsCancelledOnWakeNotActedOn() {
+        let until = now.addingTimeInterval(40)
+        let counting = AppUpdateRestartState.countingDown(until: until)
+        // A late tick (the main thread was busy) still restarts…
+        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, blockers: [], now: until.addingTimeInterval(AppUpdateAuto.countdownGrace)) == AppUpdateRestartDecision(state: .idle, action: .restart))
+        // …but waking long after the end cancels quietly, input or not.
+        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, blockers: [], now: until.addingTimeInterval(AppUpdateAuto.countdownGrace + 1)) == AppUpdateRestartDecision(state: .idle, action: .cancel))
+        #expect(AppUpdateAuto.restartOffer(counting, ready: true, automatic: true, blockers: [.userActive], now: until.addingTimeInterval(3_600)) == AppUpdateRestartDecision(state: .idle, action: .cancel))
+        // Idle again later: a fresh, full countdown.
+        let later = until.addingTimeInterval(3_600)
         #expect(AppUpdateAuto.restartOffer(.idle, ready: true, automatic: true, blockers: [], now: later) == AppUpdateRestartDecision(state: .countingDown(until: later.addingTimeInterval(AppUpdateAuto.countdown)), action: .startCountdown))
     }
 

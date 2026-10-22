@@ -46,20 +46,23 @@ extension AppUpdateAuto {
         ready && automatic && hasKey && !poweringOff
     }
 
-    /// The `kAEQuitReason` codes of a quit sent by a logout, restart or
-    /// shutdown (`kAELogOut`, `kAEReallyLogOut`, `kAEShowRestartDialog`,
-    /// `kAEShowShutdownDialog`, `kAERestart`, `kAEShutDown`), as four-char codes.
-    public static let powerOffQuitReasons: Set<UInt32> = Set(["logo", "rlgo", "rrst", "rsdn", "rest", "shut"].map(fourCharCode))
+    /// `kAEQuitApplication` as a four-char code: a quit reason that names a
+    /// plain quit.
+    public static let ordinaryQuitReason: UInt32 = "quit".utf8.reduce(0) { $0 << 8 | UInt32($1) }
 
-    /// Whether a quit whose Apple event carries this `kAEQuitReason` enum code
-    /// comes from a logout, restart or shutdown. Decided at quit time, so a
-    /// logout the user cancelled leaves nothing behind; a quit with no reason,
-    /// or any other reason, is an ordinary quit.
+    /// Whether a quit comes from a logout, restart or shutdown, from its Apple
+    /// event's `kAEQuitReason` code (nil when the event has no such attribute,
+    /// 0 when it has one that reads as no code). Logout, restart and shutdown
+    /// send `kAELogOut`, `kAEReallyLogOut`, `kAEShowRestartDialog`,
+    /// `kAEShowShutdownDialog`, `kAERestart` or `kAEShutDown`; any reason other
+    /// than a plain quit, unknown or unreadable ones included, is taken as one
+    /// of them, so the swap is never started where it could be cut off. Only a
+    /// quit without a reason, or with `kAEQuitApplication`, is ordinary.
+    /// Decided at quit time, so a logout the user cancelled leaves nothing behind.
     public static func quitReasonPowersOff(_ code: UInt32?) -> Bool {
-        code.map(powerOffQuitReasons.contains) ?? false
+        guard let code else { return false }
+        return code != ordinaryQuitReason
     }
-
-    private static func fourCharCode(_ text: String) -> UInt32 { text.utf8.reduce(0) { $0 << 8 | UInt32($1) } }
 
     /// The folders under the app's `updates/` (one per downloaded version,
     /// named by `AppVersion.normalized`) to delete at launch: every version not

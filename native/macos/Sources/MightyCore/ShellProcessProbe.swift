@@ -74,6 +74,16 @@ public enum ShellProcessProbe {
         return nil
     }
 
+    /// Whether the process has any child process: a shell at its prompt that
+    /// still holds a background job or a stopped one (`npm run dev &`, a
+    /// suspended editor). False when it has none or cannot be read.
+    public static func hasChildren(pid: pid_t) -> Bool {
+        guard pid > 1 else { return false }
+        var children = [pid_t](repeating: 0, count: 64)
+        let count = children.withUnsafeMutableBytes { proc_listchildpids(pid, $0.baseAddress, Int32($0.count)) }
+        return count > 0
+    }
+
     /// `e_pgid`, `e_tpgid` and the parent of one process, from `KERN_PROC_PID`. Nil when it is gone or unreadable.
     public static func groups(pid: pid_t) -> Groups? {
         guard pid > 1 else { return nil }

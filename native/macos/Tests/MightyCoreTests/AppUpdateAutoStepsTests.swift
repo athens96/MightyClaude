@@ -41,14 +41,16 @@ struct AppUpdateAutoStepsTests {
         #expect(AppUpdateAuto.afterCheck(found("0.4.36", minimumSystem: "99.0"), stagedVersion: "0.4.35", automatic: false) == .keepStaged)
     }
 
-    @Test func onlyALogoutRestartOrShutdownQuitReasonKeepsTheUpdateForLater() {
+    @Test func onlyAQuitWithoutAReasonOrAPlainQuitReasonInstalls() {
+        #expect(AppUpdateAuto.ordinaryQuitReason == UInt32(kAEQuitApplication))
         let powerOff = [kAELogOut, kAEReallyLogOut, kAEShowRestartDialog, kAEShowShutdownDialog, kAERestart, kAEShutDown].map { UInt32($0) }
-        #expect(AppUpdateAuto.powerOffQuitReasons == Set(powerOff))
         for code in powerOff { #expect(AppUpdateAuto.quitReasonPowersOff(code)) }
-        // An ordinary quit (no reason) or any other reason installs.
+        // A reason that reads as no code, or one this app does not know, is taken as a power-off too.
+        #expect(AppUpdateAuto.quitReasonPowersOff(0))
+        #expect(AppUpdateAuto.quitReasonPowersOff(0x7A7A_7A7A))
+        // An ordinary quit: no reason at all, or a plain quit reason.
         #expect(!AppUpdateAuto.quitReasonPowersOff(nil))
         #expect(!AppUpdateAuto.quitReasonPowersOff(UInt32(kAEQuitApplication)))
-        #expect(!AppUpdateAuto.quitReasonPowersOff(0))
     }
 
     @Test func quittingInstallsOnlyAReadyUpdateWithTheSwitchOnAndNoPowerOff() {
