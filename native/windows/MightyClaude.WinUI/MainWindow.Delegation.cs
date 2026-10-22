@@ -439,8 +439,8 @@ public sealed partial class MainWindow
             if (!QueuePaneAlive) return;
             queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(LaunchesInPlanMode));
             RenderQueuedInputs(); RefreshComposerState();
-            // The run ended meanwhile: it is the next request now.
-            if (!busy) queueDrainTimer.Start();
+            // The run ended meanwhile, before the note or while it was written: it is the next request now (as DeferBusyComposer).
+            if (!busy || Session.Status is "completed" or "idle") queueDrainTimer.Start();
         }
     }
 }

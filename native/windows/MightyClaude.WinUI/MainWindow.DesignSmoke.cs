@@ -1173,8 +1173,7 @@ public sealed partial class MainWindow
             Require(cluster.IndexOf(resumeHost) == 0 && cluster.IndexOf(context) == 1 && cluster.IndexOf(backgroundWorkToggle) == 2 && cluster.IndexOf(statusLineToggle) == 3 && cluster.IndexOf(queueStopButton!) == cluster.Count - 3 && cluster.IndexOf(worktreeHost) == cluster.Count - 2 && cluster.IndexOf(sendHost) == cluster.Count - 1 && !paneHeaderControls.Children.Contains(statusLineToggle),
                 $"{key} ({theme}): the right cluster must be the resume mark, the context ring, the background-work and status-line toggles, then stop, the new worktree and send / queue, and the status-line toggle must have left the pane header");
             // Nothing a person sends joins the running turn: the second send holds the worktree button alone, never a steer button.
-            Require(worktreeHost.Children.Count == 2 && worktreeHost.Children[0] == worktreeDisc && worktreeHost.Children[1] == worktreeButton
-                && !worktreeHost.Children.Any(child => AutomationProperties.GetAutomationId(child).StartsWith("composer-steer-", StringComparison.Ordinal)),
+            Require(worktreeHost.Children.Count == 2 && worktreeHost.Children[0] == worktreeDisc && worktreeHost.Children[1] == worktreeButton,
                 $"{key} ({theme}): the second send must hold the worktree disc and button alone, with no steer button; got {worktreeHost.Children.Count} children");
             // The worktree button wears the send button's look in both states, set directly here (the busy pane's own state is checked in the composer capture).
             Require(ReferenceEquals(worktreeButton.Content, worktreeBranch.View) && ReferenceEquals(OwnResource(worktreeButton, "ButtonBackground"), b.Transparent) && ReferenceEquals(OwnResource(worktreeButton, "ButtonBackgroundDisabled"), b.Transparent)

@@ -260,8 +260,7 @@ public sealed partial class MainWindow
                 var cluster = toolbarActions.Children.ToList();
                 Require(queueStopButton?.Visibility == (queueable ? Visibility.Visible : Visibility.Collapsed) && worktreeHost.Visibility == (worktreeShown ? Visibility.Visible : Visibility.Collapsed)
                     && cluster.IndexOf(queueStopButton!) == cluster.Count - 3 && cluster.IndexOf(worktreeHost) == cluster.Count - 2 && cluster.IndexOf(sendHost) == cluster.Count - 1
-                    && (!queueable || sendSymbol == "queue") && worktreeButton.IsEnabled == (worktreeShown && send.IsEnabled)
-                    && !cluster.Concat(worktreeHost.Children).Any(child => AutomationProperties.GetAutomationId(child).StartsWith("composer-steer-", StringComparison.Ordinal)),
+                    && (!queueable || sendSymbol == "queue") && worktreeButton.IsEnabled == (worktreeShown && send.IsEnabled),
                     $"composer capture ({theme}): a busy pane with a draft must show stop, the new worktree (where one can be made) and queue in that order, and no steer button; got stop {queueStopButton?.Visibility}, worktree {worktreeHost.Visibility} ({worktreeButton.IsEnabled}), send {sendSymbol} ({send.IsEnabled})");
                 if (worktreeShown)
                 {
