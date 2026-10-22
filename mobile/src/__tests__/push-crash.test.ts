@@ -5,6 +5,7 @@ jest.mock('@react-native-firebase/crashlytics', () => ({
   deleteUnsentReports: jest.fn(async () => undefined),
 }));
 jest.mock('@/lib/push/default-error-handler', () => ({ defaultErrorHandler: jest.fn() }));
+jest.mock('promise/setimmediate/rejection-tracking', () => ({ __esModule: true, default: { enable: jest.fn(), disable: jest.fn() } }));
 jest.mock('@/lib/push/settings', () => {
   const listeners = new Set<() => void>();
   let crashReports = true;
@@ -28,6 +29,7 @@ import { deleteUnsentReports, recordError, setCrashlyticsCollectionEnabled } fro
 
 import { installCrashReporting, scrubError } from '@/lib/push/crash';
 import { defaultErrorHandler } from '@/lib/push/default-error-handler';
+import rejectionTracking from 'promise/setimmediate/rejection-tracking';
 
 const { setCrashReports } = jest.requireMock('@/lib/push/settings') as { setCrashReports(next: boolean): void };
 
@@ -79,13 +81,32 @@ describe('installCrashReporting', () => {
     await flush();
   });
 
-  it('records only the scrubbed error and still hands the error to React Native', () => {
-    const error = new Error('the secret plan');
-    handler?.(error, true);
+  it('records a non-fatal error only scrubbed and still hands it to React Native', () => {
+    (recordError as jest.Mock).mockClear();
+    handler?.(new Error('the secret plan'), false);
     expect(recordError).toHaveBeenCalledTimes(1);
     const recorded = (recordError as jest.Mock).mock.calls[0][1] as Error;
     expect(recorded.message).toBe('Error');
+    expect(defaultErrorHandler).toHaveBeenCalledWith(expect.any(Error), false);
+  });
+
+  it('leaves a fatal error to the native crash React Native makes of it', () => {
+    (recordError as jest.Mock).mockClear();
+    handler?.(new Error('the secret plan'), true);
+    expect(recordError).not.toHaveBeenCalled();
     expect(defaultErrorHandler).toHaveBeenCalledWith(expect.any(Error), true);
+  });
+
+  it('replaces the Crashlytics rejection tracker with one that records only scrubbed errors', () => {
+    const enable = rejectionTracking.enable as jest.Mock;
+    expect(enable).toHaveBeenCalledWith(expect.objectContaining({ allRejections: true }));
+    const { onUnhandled } = enable.mock.calls[0][0] as { onUnhandled: (id: number, error: unknown) => void };
+    (recordError as jest.Mock).mockClear();
+    onUnhandled(0, new Error('rejected with the secret plan'));
+    expect(recordError).toHaveBeenCalledTimes(1);
+    const recorded = (recordError as jest.Mock).mock.calls[0][1] as Error;
+    expect(recorded.message).toBe('Error');
+    expect(JSON.stringify({ m: recorded.message, s: recorded.stack })).not.toMatch(/secret|rejected/);
   });
 
   it('records nothing while crash reports are off', async () => {

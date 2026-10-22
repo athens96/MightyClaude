@@ -133,6 +133,11 @@ describe('showPush', () => {
     const { runtime } = load();
     expect(runtime.plainText('fix <Row> & <b>x</b>')).toBe('fix &lt;Row&gt; &amp; &lt;b&gt;x&lt;/b&gt;');
   });
+
+  it('keeps the line breaks of a body', () => {
+    const { runtime } = load();
+    expect(runtime.plainBody('first <a>\nsecond\r\nthird')).toBe('first &lt;a&gt;<br>second<br>third');
+  });
 });
 
 const permissionNotification = {
@@ -276,5 +281,17 @@ describe('startPush', () => {
     (await runtime.startPush())();
     (await runtime.startPush())();
     expect(m.permissions).toHaveBeenCalledTimes(1);
+  });
+
+  it('listens for pushes before the permission prompt is up', async () => {
+    const { runtime, m } = load();
+    let listening = false;
+    m.permissions.mockImplementationOnce(async () => {
+      listening = m.messaging['onMessage']!.mock.calls.length === 1 && m.messaging['onTokenRefresh']!.mock.calls.length === 1;
+      return 'granted';
+    });
+    (await runtime.startPush())();
+    expect(m.permissions).toHaveBeenCalledTimes(1);
+    expect(listening).toBe(true);
   });
 });

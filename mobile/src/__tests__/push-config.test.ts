@@ -18,6 +18,21 @@ describe('push build config', () => {
     expect(appJson.expo.android.blockedPermissions).not.toContain('android.permission.WAKE_LOCK');
   });
 
+  it('blocks what the notification library declares but the app never uses', () => {
+    for (const permission of ['SCHEDULE_EXACT_ALARM', 'RECEIVE_BOOT_COMPLETED', 'ACCESS_NOTIFICATION_POLICY', 'FOREGROUND_SERVICE']) {
+      expect(appJson.expo.android.blockedPermissions).toContain(`android.permission.${permission}`);
+    }
+  });
+
+  it('keeps FCM and Crashlytics quiet until the app decides, and Crashlytics away from raw JS errors', () => {
+    const firebase = (require('../../firebase.json') as { 'react-native': Record<string, unknown> })['react-native'];
+    expect(firebase['messaging_auto_init_enabled']).toBe(false);
+    expect(firebase['crashlytics_auto_collection_enabled']).toBe(false);
+    // Its own JS handler (replaced by ours anyway) would send the raw message; off, it only passes errors on.
+    expect(firebase['crashlytics_is_error_generation_on_js_crash_enabled']).toBe(false);
+    expect(firebase['crashlytics_javascript_exception_handler_chaining_enabled']).toBe(true);
+  });
+
   it('leaves the config alone without a google-services file outside a build', () => {
     delete process.env['GOOGLE_SERVICES_JSON'];
     delete process.env['EAS_BUILD'];

@@ -4,6 +4,7 @@ import {
   recordError,
   setCrashlyticsCollectionEnabled,
 } from '@react-native-firebase/crashlytics';
+import rejectionTracking from 'promise/setimmediate/rejection-tracking';
 
 import { defaultErrorHandler } from '@/lib/push/default-error-handler';
 import { pushSettings } from '@/lib/push/settings';
@@ -32,9 +33,12 @@ export function scrubError(error: unknown): Error {
 
 /**
  * Collection follows the setting (firebase.json keeps it off until the setting is read); turning
- * it off also deletes reports not yet sent. JS errors go out scrubbed, then to React Native's
- * handler — scrubbed too outside development, because a release build's fatal JS error becomes
- * a native crash that carries the message it was handed.
+ * it off also deletes reports not yet sent.
+ *
+ * A fatal JS error goes to React Native's handler scrubbed (outside development): a release build
+ * turns it into a native crash carrying the message it was handed, and that crash is the report.
+ * It is not also recorded here, because `recordError` finishes asynchronously and the process is
+ * gone before it would. A non-fatal JS error and an unhandled rejection are recorded scrubbed.
  */
 export function installCrashReporting(): void {
   let crashlytics: ReturnType<typeof getCrashlytics>;
@@ -51,17 +55,21 @@ export function installCrashReporting(): void {
       .then(() => (next ? undefined : deleteUnsentReports(crashlytics)))
       .catch(() => undefined);
   };
+  const record = (error: unknown): void => {
+    if (!enabled) return;
+    try {
+      recordError(crashlytics, scrubError(error));
+    } catch {
+      // The report is best effort.
+    }
+  };
   void pushSettings.ready.then(apply);
   pushSettings.subscribe(apply);
+  // Crashlytics' own tracker, set up by getCrashlytics() above, sends a rejection's raw message;
+  // enabling this one turns that one off (the tracker holds one set of options).
+  rejectionTracking.enable({ allRejections: true, onUnhandled: (_id, error) => record(error) });
   ErrorUtils.setGlobalHandler((error, isFatal) => {
-    const scrubbed = scrubError(error);
-    if (enabled) {
-      try {
-        recordError(crashlytics, scrubbed);
-      } catch {
-        // The report is best effort; the error still goes on to React Native.
-      }
-    }
-    defaultErrorHandler(__DEV__ ? error : scrubbed, isFatal);
+    if (!isFatal) record(error);
+    defaultErrorHandler(__DEV__ ? error : scrubError(error), isFatal);
   });
 }
