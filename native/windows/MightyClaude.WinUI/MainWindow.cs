@@ -426,7 +426,9 @@ public sealed partial class MainWindow : Window
             fast.Click += async (_, _) => { if (!updating) await ChangeSettings(s => s with { FastMode = !s.FastMode && Capabilities.FastMode }); };
             ToolTipService.SetToolTip(fast, Locale.Get("composer.fast.tooltip")); AutomationProperties.SetName(fast, "Codex Fast");
             ToolTipService.SetToolTip(input, InputShortcuts);
-            input.TextChanged += async (_, _) => { if (!updating) { var draft = input.Text; RefreshComposerState(); RefreshPalette(draft); await owner.Act(() => Change(p => p with { Draft = draft })); } };
+            // A keystroke changes the draft alone and its save waits up to 1.5 s (DesktopService.UpdateDraft): normalizing, copying
+            // and writing the whole state on every key stalled typing on a profile with long transcripts.
+            input.TextChanged += (_, _) => { if (!updating) { var draft = input.Text; RefreshComposerState(); RefreshPalette(draft); try { owner.service.UpdateDraft(id, draft); } catch (ObjectDisposedException) { /* Closing: the final save has the state. */ } } };
             input.TextCompositionStarted += (_, _) => composingInput = true;
             input.TextCompositionEnded += (_, _) =>
             {
