@@ -1,5 +1,6 @@
 // The messages between this page and the host (MightyClaude.WinUI/WebBridge.cs), JSON over
 // chrome.webview.postMessage / PostWebMessageAsJson.
+import type { ComposerState } from '../composer/types';
 import type { SessionDelta } from '../store/delta';
 import type { AppSnapshot, AppState, RunEvent, ToolPermissionRequest } from '../store/models';
 
@@ -55,7 +56,13 @@ export interface PermissionMessage {
   request: ToolPermissionRequest;
 }
 
-export type PushMessage = SnapshotMessage | DeltaMessage | EventMessage | PermissionMessage;
+/** host → web: a pane's composer state, when it changed (MainWindow.WebShell.Composer.cs). */
+export interface ComposerMessage {
+  kind: 'composer';
+  state: ComposerState;
+}
+
+export type PushMessage = SnapshotMessage | DeltaMessage | EventMessage | PermissionMessage | ComposerMessage;
 export type HostMessage = ResultMessage | PushMessage;
 
 /** What `getLocale` answers: the saved preference and the language it resolves to on this computer. */

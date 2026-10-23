@@ -2,6 +2,7 @@ import { memo } from 'react';
 import type { RunSession } from '../store/models';
 import { useServices } from '../app/context';
 import { Conversation } from '../conversation/Conversation';
+import { Composer } from '../composer/Composer';
 
 /** The selected pane: its title and state over its conversation (the header and the composer come later in phase 1). */
 export const PaneView = memo(function PaneView({ session }: { session: RunSession }) {
@@ -13,6 +14,7 @@ export const PaneView = memo(function PaneView({ session }: { session: RunSessio
         <span className={'pane-status status-' + session.status}>{t('session.state.' + session.status)}</span>
       </header>
       <Conversation key={session.id} session={session} />
+      {(session.kind === 'claude' || session.kind === 'shell') && <Composer key={'composer-' + session.id} session={session} />}
     </section>
   );
 });

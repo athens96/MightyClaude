@@ -1,0 +1,65 @@
+/* The agent pane's composer (spec §3): a card at the pane's foot over the rows that say why a draft waits. */
+.composer-region { position: relative; padding: var(--inset-composer-outer); background: var(--card-raised); }
+.composer-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--inset-composer-inner-h); font-size: var(--type-small); color: var(--ink2); }
+.composer-blocked strong { color: var(--wait-text); font-weight: 600; }
+.composer-hold { color: var(--ink2); }
+.composer-error { color: var(--err-text); }
+.composer-error span { flex: 1; }
+
+.composer-card {
+  display: flex; flex-direction: column; gap: var(--inset-composer-stack);
+  background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-composer);
+  padding: var(--space-sm) var(--inset-composer-inner-h) var(--inset-composer-inner-b);
+}
+.composer-card:focus-within { border-color: var(--accent); box-shadow: 0 0 0 calc(var(--stroke-focus) - var(--stroke-line)) var(--accent); }
+.composer-card.dropping { border-color: var(--accent); background: var(--accent-soft); }
+
+.composer-input {
+  width: 100%; resize: none; border: 0; outline: none; background: transparent; color: var(--ink);
+  font-family: var(--font-body); font-size: var(--type-body); line-height: 1.4; padding: 1px 5px; overflow-y: auto;
+}
+.composer-input::placeholder { color: var(--ink3); }
+
+.composer-toolbar { display: flex; align-items: center; gap: var(--space-xs); min-height: 32px; }
+.composer-spacer { flex: 1; }
+.composer-icon-button, .composer-text-button, .composer-menu-button {
+  border: 0; background: transparent; color: var(--ink2); font: inherit; font-size: var(--type-small);
+  border-radius: var(--radius-file-row); padding: var(--space-xxs) var(--space-xs); cursor: default;
+}
+.composer-icon-button:hover, .composer-text-button:hover, .composer-menu-button:hover { background: var(--track); }
+.composer-text-button { color: var(--accent); font-weight: 500; }
+.composer-icon-button:disabled, .composer-menu-button:disabled { opacity: 0.45; }
+.composer-icon-button:focus-visible, .composer-text-button:focus-visible, .composer-menu-button:focus-visible { outline: var(--stroke-focus) solid var(--accent); }
+
+.composer-primary, .composer-worktree, .composer-stop-small {
+  width: 32px; height: 32px; border: 0; border-radius: 16px; font-size: 14px; cursor: default;
+  background: var(--accent); color: var(--on-accent);
+}
+.composer-primary.mode-stop { background: var(--err); color: var(--on-status); }
+.composer-primary:disabled, .composer-worktree:disabled { background: var(--track); color: var(--ink3); }
+.composer-worktree { background: var(--run); color: var(--on-status); }
+.composer-stop-small { width: 28px; height: 28px; border-radius: 7px; background: var(--err); color: var(--on-status); font-size: 10px; }
+
+.composer-attachments { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.composer-chip { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-sm); border-radius: 9px; border: var(--stroke-line) solid var(--line); background: var(--track); }
+.composer-chip-face { display: flex; align-items: center; gap: var(--space-sm); border: 0; background: transparent; color: var(--ink); padding: 0; cursor: default; text-align: left; }
+.composer-chip-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--radius-file-row); color: var(--accent); background: var(--card-raised); }
+.composer-chip-words { display: flex; flex-direction: column; width: 106px; }
+.composer-chip-name { font-size: var(--type-pill); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-chip-size { font-size: var(--type-small); color: var(--ink2); }
+
+.composer-queue { display: flex; flex-direction: column; gap: var(--space-xs); }
+.composer-queue-header { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--type-small); font-weight: 500; color: var(--ink2); }
+.composer-queue-header > span { flex: 1; }
+.composer-queue-item { display: flex; align-items: flex-start; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-row); background: var(--track); }
+.composer-queue-number { width: 14px; text-align: right; font-size: var(--type-small); font-weight: 600; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.composer-queue-text { flex: 1; min-width: 0; font-size: var(--type-pill); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.composer-queue-files { display: block; font-size: var(--type-small); color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.composer-queue-pin { font-size: var(--type-badge); color: var(--ink2); }
+
+.composer-preview { position: fixed; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--page) 60%, transparent); z-index: 20; }
+.composer-preview-card { max-width: 640px; max-height: 80vh; overflow: auto; background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-block); padding: var(--inset-popover); display: flex; flex-direction: column; gap: var(--space-md); }
+.composer-preview-title { font-weight: 600; }
+.composer-preview-meta { font-size: var(--type-small); color: var(--ink2); }
+.composer-preview-card img { max-height: 420px; object-fit: contain; }
+.composer-preview-card pre { max-height: 350px; overflow: auto; white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--type-mono); }

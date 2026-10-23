@@ -2,6 +2,7 @@
 // hold (each pane's current activity, the tool-permission requests waiting). Pure functions; a pane that did not change
 // keeps its object, so a view memoized on it does not draw again.
 import type { PushMessage } from '../bridge/protocol';
+import type { ComposerState } from '../composer/types';
 import { applySessionDelta, type SessionDelta } from './delta';
 import type { AgentActivity, AppSnapshot, RunEvent, RunSession, ToolPermissionRequest } from './models';
 
@@ -11,9 +12,11 @@ export interface StoreState {
   activities: Readonly<Record<string, AgentActivity>>;
   /** Waiting tool-permission requests, by pane id, oldest first. */
   permissions: Readonly<Record<string, readonly ToolPermissionRequest[]>>;
+  /** Each pane's composer state as the host last pushed it (only panes the page has written in). */
+  composers: Readonly<Record<string, ComposerState>>;
 }
 
-export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {} };
+export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {} };
 
 const terminal = new Set(['completed', 'error', 'stopped']);
 
@@ -78,12 +81,15 @@ export function reduce(state: StoreState, message: PushMessage): StoreState {
       const activities = Object.fromEntries(Object.entries(state.activities).filter(([id]) => !gone.has(id)));
       const permissions = Object.fromEntries(Object.entries(state.permissions).filter(([id]) => !gone.has(id)));
       const snapshot: AppSnapshot = message.state ? { ...message.state, sessions } : { ...current, sessions };
-      return gone.size === 0 ? { ...state, snapshot } : { snapshot, activities, permissions };
+      const composers = Object.fromEntries(Object.entries(state.composers).filter(([id]) => !gone.has(id)));
+      return gone.size === 0 ? { ...state, snapshot } : { snapshot, activities, permissions, composers };
     }
     case 'event':
       return applyEvent(state, message.event);
     case 'permission':
       return applyPermission(state, message.request);
+    case 'composer':
+      return { ...state, composers: { ...state.composers, [message.state.paneId]: message.state } };
   }
 }
 

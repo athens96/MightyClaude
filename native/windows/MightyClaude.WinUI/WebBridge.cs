@@ -57,6 +57,9 @@ internal sealed class WebBridge : IDisposable
     /// <summary>Adds (or replaces) a method; each phase's methods are registered by the window that owns what they change.</summary>
     internal void Register(string method, Handler handler) => handlers[method] = handler;
 
+    /// <summary>Sends one push of the window's own (a pane's composer state); dropped until the page is ready, which asks again on mount.</summary>
+    internal void Push(object message) { if (ready && !disposed) Post(JsonSerializer.Serialize(message, Wire.Json)); }
+
     internal void Attach(CoreWebView2 view)
     {
         core = view;
