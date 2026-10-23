@@ -15,6 +15,7 @@ import type { DeviceAuthState } from '@/lib/device-token';
 import type { ConnectionRoute } from '@/lib/direct';
 import { t } from '@/lib/i18n';
 import { KEY_SEPARATOR } from '@/lib/keys';
+import type { PushKind } from '@/lib/push/message';
 import {
   ENTRY_PAGE_SIZE,
   MAX_ENTRY_PAGE,
@@ -292,6 +293,12 @@ export interface MobileClient {
     input: { requestId: string; runId: string; decision: PlanDecisionKind; feedback?: string },
     signal?: AbortSignal,
   ): Promise<OkResponse>;
+  /** Gives this host the relay push handle and the kinds this phone wants ("push" capability). */
+  registerPush(input: { handle: string; kinds: PushKind[] }, signal?: AbortSignal): Promise<OkResponse>;
+  /** Asks this host to stop pushing to this phone. */
+  unregisterPush(signal?: AbortSignal): Promise<OkResponse>;
+  /** The session on screen, or null; the host skips pushes about it for 45 s. */
+  reportViewing(sessionId: string | null, signal?: AbortSignal): Promise<OkResponse>;
   createSession(
     workspaceId: string,
     input: { kind: SessionKind; provider?: Provider },
@@ -602,6 +609,11 @@ export function createClient(channel: RelayChannel): MobileClient {
         input,
         signal,
       ),
+
+    registerPush: (input, signal) => request<OkResponse>('POST', '/m1/push/register', input, signal),
+    unregisterPush: (signal) => request<OkResponse>('POST', '/m1/push/unregister', {}, signal),
+    reportViewing: (sessionId, signal) =>
+      request<OkResponse>('POST', '/m1/push/viewing', { sessionId }, signal),
 
     createSession: (workspaceId, input, signal) =>
       request<CreateSessionResponse>(

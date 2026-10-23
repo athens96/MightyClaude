@@ -17,7 +17,7 @@ public sealed record MobileDesktopAction(string SessionId, string Action, JsonEl
 public sealed class MobileDesktopRouter : IDisposable
 {
     public Func<string[]>? ExtraCapabilities { get; set; }
-    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct"];
+    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push"];
     /// <summary>The direct path's endpoints for /m1/info (docs/mobile-remote.md, "direct"); empty when there is no host or it does not listen.</summary>
     public Func<IReadOnlyList<string>>? DirectEndpoints { get; set; }
     /// <summary>The largest reply body the host sends; a session detail over it sheds its structure first (<see cref="SessionReply"/>).</summary>
@@ -47,6 +47,8 @@ public sealed class MobileDesktopRouter : IDisposable
     public Func<string, byte[], CancellationToken, Task<MobileImageResult>>? ImagePreview { get; set; }
     public Func<string, string, JsonElement?, string, CancellationToken, Task<MobileReply>>? ScreenRoute { get; set; }
     public Func<string, int>? QueueCount { get; set; }
+    /// <summary>Where <c>/m1/push/*</c> keeps a phone's handle and view; null answers them as unknown routes.</summary>
+    public MobilePushHub? Push { get; set; }
     /// <summary>The model list this PC's CLI gave for the pane's provider, for the summary's <c>resolvedModel</c> (phone summaries cover local panes only, <see cref="RemoteWorkspacePhone"/>); null (or none) reads the provider's fallback list.</summary>
     public Func<RunSession, ModelCatalog?>? Catalog { get; set; }
     public string HostId { get; set; } = "";
@@ -132,6 +134,34 @@ public sealed class MobileDesktopRouter : IDisposable
             foreach (var item in url.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
             { var pair = item.Split('=', 2); if (!query.TryAdd(Uri.UnescapeDataString(pair[0]), Uri.UnescapeDataString(pair.Length == 2 ? pair[1] : ""))) throw new MobileRequestException(400, "Repeated query argument."); }
             if (method == "POST" && query.Count != 0) throw new MobileRequestException(400, "Unexpected query argument.");
+            // Always the authenticated device, never a body field (M/MobileRemoteService.swift push routes).
+            if (method == "POST" && route.Length == 3 && route[1] == "push" && Push is { } push)
+            {
+                switch (route[2])
+                {
+                    case "register":
+                        var value = Object(body);
+                        var handle = Required(value, "handle");
+                        if (!MobilePushWire.ValidHandle(handle)) throw new MobileRequestException(400, Locale.Get("remote.error.badPushHandle"));
+                        if (!value.TryGetProperty("kinds", out var list) || list.ValueKind != JsonValueKind.Array) throw new MobileRequestException(400, Locale.Get("remote.error.badBody"));
+                        var kinds = MobilePushWire.Kinds(list.EnumerateArray().Where(k => k.ValueKind == JsonValueKind.String).Select(k => k.GetString()!));
+                        return push.Register(device, handle, kinds) switch
+                        {
+                            MobilePushRegistrationResult.Saved => Reply(OK()),
+                            MobilePushRegistrationResult.NeedsToken => throw new MobileRequestException(409, Locale.Get("remote.error.pushNeedsToken")),
+                            _ => throw new MobileRequestException(503, Locale.Get("mobileRemote.device.saveFailed")),
+                        };
+                    case "unregister":
+                        if (!push.Unregister(device)) throw new MobileRequestException(503, Locale.Get("mobileRemote.device.saveFailed"));
+                        return Reply(OK());
+                    case "viewing":
+                        // No body, no sessionId and sessionId: null all clear the view.
+                        if (body is null or { ValueKind: JsonValueKind.Undefined or JsonValueKind.Null } || !Object(body).TryGetProperty("sessionId", out var session) || session.ValueKind == JsonValueKind.Null) push.View(device, null);
+                        else if (session.ValueKind == JsonValueKind.String && session.GetString() is { } shown && Wire.Identifier(shown)) push.View(device, shown);
+                        else throw new MobileRequestException(404, Locale.Get("remote.error.paneNotFound"));
+                        return Reply(OK());
+                }
+            }
             if (method == "GET" && route.SequenceEqual(new[] { "m1", "info" })) return Reply(new { protocol = 1, hostId = HostId, hostName = HostName, appVersion = AppVersion, platform = "win32", capabilities = Capabilities.Concat(ExtraCapabilities?.Invoke() ?? []).Distinct().ToArray(), direct = DirectEndpoints?.Invoke() ?? [] });
             if (method == "GET" && (route.SequenceEqual(new[] { "m1", "state" }) || route.Length == 3 && route[1] == "sessions"))
             {

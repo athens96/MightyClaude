@@ -225,6 +225,7 @@ extension AppStore {
         $delegationHeld.sink { [weak self] value in self?.mobileObserve(held: value) }.store(in: &mobileSubscriptions)
         // A child pane's parent and state ride in its summary.
         $delegationChildren.sink { [weak self] value in self?.mobileObserve(children: value) }.store(in: &mobileSubscriptions)
+        configureMobilePush()
         // Asleep, the Mac missed the relay's pings and its control socket may be
         // gone on the relay's side while it still looks open here.
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
@@ -242,6 +243,7 @@ extension AppStore {
 
     func shutdownMobileRemote() async {
         mobileRetryTask?.cancel(); mobileSubscriptions.removeAll()
+        mobilePushTask?.cancel(); mobilePushTask = nil
         await mobileRemote.shutdown()
     }
 
@@ -352,7 +354,7 @@ extension AppStore {
         // The sidebar's own test for a child waiting on a human (`WorkspaceView.paneRow`).
         let asksHuman = WorkDashboard.attention((permissions ?? toolPermissions)[session.id], antigravity: (antigravity ?? antigravityBoard)[session.id]).total > 0
         let child = MobileRemoteSupport.childLink(sessionId: session.id, children: children ?? delegationChildren, asksHuman: asksHuman)
-        let last = session.logs.last(where: { $0.activity == nil && !$0.text.isEmpty })
+        let last = MobileRemoteSupport.previewLine(session)
         return MobileSessionSummary(
             id: session.id, workspaceId: session.workspaceId, title: session.title, kind: session.kind, provider: session.provider, model: session.model,
             status: session.status, revision: revision, updatedAt: session.logs.last?.timestamp ?? session.createdAt,

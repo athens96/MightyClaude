@@ -97,6 +97,10 @@ public sealed class MobileRelayHost : IAsyncDisposable
     public MobileRelayStatus Status { get; private set; } = new(false, 0, "disabled");
     public IReadOnlyList<MobileDeviceInfo> Devices { get { var connected = clients.Values.Where(c => c.Authenticated).Select(c => c.DeviceId).ToHashSet(); return identity.Devices.Select(d => d with { Connected = connected.Contains(d.Id) }).ToArray(); } }
     public string HostId => identity.HostId;
+    internal MobileIdentity Identity => identity;
+    /// <summary>The relay this host dials; the push route sits beside it (docs/relay.md, the push section).</summary>
+    public string RelayForPush => NormalizeRelay(settings.RelayURL) ?? DefaultRelay;
+    public bool Enabled => settings.Enabled;
     public string PairingServerId => identity.ServerId;
     public string PairingKeyForDisplay => identity.PairingKey;
     public string AppVersion { get; init; } = "0.0.0";

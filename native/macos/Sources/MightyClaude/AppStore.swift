@@ -66,6 +66,10 @@ final class AppStore: ObservableObject, DelegationHost {
     /// The phone's structure view per pane, kept between reads (`MobileStructureCache`).
     let mobileStructures = MobileStructureCache()
     var mobileSubscriptions = Set<AnyCancellable>()
+    /// The last hand-off to the push planner; each waits for the one before, so observations keep their order.
+    var mobilePushTask: Task<Void, Never>?
+    /// The panes last handed to the push planner; nil while phone remote access is off, so the next hand-off starts it over.
+    var mobilePushLast: [MobilePushPane]?
     var mobileRetryTask: Task<Void, Never>?
     /// Settings → Components (AppStore+Components.swift).
     @Published var components: [ComponentStatus] = []
@@ -1302,8 +1306,10 @@ final class AppStore: ObservableObject, DelegationHost {
         if permission.state == "pending", session.status == "running" { requests.append(permission) }
         // A host can send any number; a remote pane keeps the newest.
         if isRemoteSession(session) { requests = RemotePendingPermissions.capped(requests) }
-        toolPermissions[event.sessionId] = requests
+        // Before the assignment: its observers (the phone's push) must already see a style's own
+        // approval as in flight. The answer itself runs in a later task, once the request is listed.
         if session.provider == "claude" { autoAllowGuidedTool(permission, session: session) }
+        toolPermissions[event.sessionId] = requests
         if previousFirst != requests.first.map({ permissionResponseKey(sessionId: event.sessionId, request: $0) }) {
             permissionErrors.removeValue(forKey: event.sessionId)
         }

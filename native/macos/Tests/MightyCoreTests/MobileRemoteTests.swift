@@ -902,3 +902,294 @@ private final class PushedStatuses: @unchecked Sendable {
     func append(_ value: Int) { lock.lock(); defer { lock.unlock() }; sequences.append(value) }
     func values() -> [Int] { lock.lock(); defer { lock.unlock() }; return sequences }
 }
+
+// MARK: Push (docs/mobile-remote.md "푸시 알림")
+
+extension MobileRemoteTests {
+    /// A host whose device list already holds the fixture's phone with its token hash.
+    fileprivate static func pushService(_ directory: URL) throws -> (MobileRemoteService, PushFixture.Seal) {
+        let seal = try PushFixture.load().seal
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let stamp = "2026-10-23T00:00:00.000Z"
+        let devices = [MobileDevice(id: seal.clientId, name: "Phone", tokenHash: seal.tokenHash, firstSeen: stamp, lastSeen: stamp)]
+        try JSONEncoder().encode(devices).write(to: directory.appendingPathComponent("devices.json"))
+        let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", appVersion: "9.9.9",
+                                          defaultRelayURL: "wss://relay.example.invalid", watchesNetwork: false)
+        return (service, seal)
+    }
+
+    @Test func aPhoneWithATokenRegistersAHandleAndTheKindsItWants() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let (status, _) = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission", "completed", "future-kind"]], device: seal.clientId)
+        #expect(status == 200)
+        let registry = MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json"))
+        #expect(registry.pushDevices() == [MobilePushDevice(deviceId: seal.clientId, handle: seal.handle, tokenHash: seal.tokenHash, kinds: [.permission, .completed])])
+        #expect(try await call(service, "POST", "/m1/push/unregister", body: [:], device: seal.clientId).0 == 200)
+        #expect(MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json")).pushDevices().isEmpty)
+    }
+
+    @Test func aBadHandleOrALegacyPhoneIsRefused() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let short = try await call(service, "POST", "/m1/push/register", body: ["handle": "short", "kinds": []], device: seal.clientId)
+        #expect(short.0 == 400 && short.1["error"] as? String == L("remote.error.badPushHandle"))
+        let legacy = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": []], device: MobileDeviceRegistry.legacyId)
+        #expect(legacy.0 == 409 && legacy.1["error"] as? String == L("remote.error.pushNeedsToken"))
+        let badId = try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": "bad id!"], device: seal.clientId)
+        #expect(badId.0 == 404 && badId.1["error"] as? String == L("remote.error.paneNotFound"))
+        #expect(try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": NSNull()], device: seal.clientId).0 == 200)
+    }
+
+    /// A phone told "notifications off" must not keep getting them: an unregister the Mac
+    /// cannot write is a failure the phone hears about, with the handle still in place.
+    @Test func anUnregisterThatCannotBeSavedIsReportedAndKeepsTheHandle() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        #expect(try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["completed"]], device: seal.clientId).0 == 200)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        let failed = try await call(service, "POST", "/m1/push/unregister", body: [:], device: seal.clientId)
+        #expect(failed.0 == 503 && failed.1["error"] as? String == L("mobileRemote.device.saveFailed"))
+        #expect(MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json")).pushDevices().map(\.handle) == [seal.handle])
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        #expect(try await call(service, "POST", "/m1/push/unregister", body: [:], device: seal.clientId).0 == 200)
+        // Nothing left to clear is not a failure.
+        #expect(try await call(service, "POST", "/m1/push/unregister", body: [:], device: seal.clientId).0 == 200)
+        #expect(MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json")).pushDevices().isEmpty)
+    }
+
+    /// A revoked phone or a rotated key leaves no "on screen" entry behind.
+    @Test func revokingOrRotatingForgetsWhatThePhoneWasViewing() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        #expect(try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": "pane-1"], device: seal.clientId).0 == 200)
+        #expect(await service.pushViewing[seal.clientId]?.sessionId == "pane-1")
+        _ = try await service.revokeDevice(seal.clientId)
+        #expect(await service.pushViewing.isEmpty)
+        #expect(try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": "pane-2"], device: "b3RoZXItcGhvbmUtMDAwMA").0 == 200)
+        #expect(await service.pushViewing.count == 1)
+        _ = try await service.regenerateKey()
+        #expect(await service.pushViewing.isEmpty)
+    }
+
+    /// A row that cannot use its handle loses the handle and keeps the phone.
+    @Test func theListDropsAHandleItCannotUse() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let seal = try PushFixture.load().seal
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let stamp = "2026-10-23T00:00:00.000Z"
+        let wellFormed = "cGhvbmUtdGhyZWUtMDAwMA"
+        let devices = [
+            MobileDevice(id: seal.clientId, name: "Bad handle", tokenHash: seal.tokenHash, firstSeen: stamp, lastSeen: stamp,
+                         push: MobilePushRegistration(handle: "not-a-handle", kinds: ["completed"], updatedAt: stamp)),
+            MobileDevice(id: MobileDeviceRegistry.legacyId, name: "Legacy", tokenHash: nil, firstSeen: stamp, lastSeen: stamp,
+                         push: MobilePushRegistration(handle: seal.handle, kinds: ["completed"], updatedAt: stamp)),
+            MobileDevice(id: wellFormed, name: "Good", tokenHash: String(repeating: "a", count: 64), firstSeen: stamp, lastSeen: stamp,
+                         push: MobilePushRegistration(handle: seal.otherHandle, kinds: ["completed", "future-kind"], updatedAt: stamp)),
+        ]
+        try JSONEncoder().encode(devices).write(to: directory.appendingPathComponent("devices.json"))
+        let registry = MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json"))
+        #expect(registry.all().map(\.id) == [seal.clientId, MobileDeviceRegistry.legacyId, wellFormed])
+        #expect(registry.all().map { $0.push == nil } == [true, true, false])
+        #expect(registry.pushDevices() == [MobilePushDevice(deviceId: wellFormed, handle: seal.otherHandle, tokenHash: String(repeating: "a", count: 64), kinds: [.completed])])
+    }
+
+    @Test func theHostAdvertisesPush() {
+        #expect(MobileCapability.all.contains("push"))
+    }
+
+    @Test func aNewPermissionIsSealedForThePhoneAndSentToTheRelay() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let transport = RecordingPushTransport()
+        await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+        await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
+        _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission"]], device: seal.clientId)
+        let idle = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+        for task in await service.pushObserve([idle]) { await task.value }
+        var asking = idle
+        asking.requests = [MobilePushRequest(id: "req-1", runId: "run-1", kind: .permission, summary: "git status", buttons: .claude)]
+        for task in await service.pushObserve([asking]) { await task.value }
+
+        let sent = transport.sent
+        #expect(sent.count == 1)
+        #expect(sent.first?.url.absoluteString == "https://relay.example.invalid/push/v1/send")
+        let first = try #require(sent.first)
+        #expect(first.request.serverId == RelayEndpoint.serverId(hostToken: first.hostToken))
+        #expect(first.request.handle == seal.handle)
+        let key = try #require(MobilePushSeal.key(tokenHash: seal.tokenHash, clientId: seal.clientId))
+        let plaintext = try #require(MobilePushSeal.open(first.request.payload, key: key, handle: seal.handle))
+        let message = try JSONDecoder().decode(MobilePushMessage.self, from: plaintext)
+        #expect(message.id == "request:run-1:req-1")
+        #expect(message.hostName == "Test Mac")
+        #expect(message.permission == MobilePushPermission(requestId: "req-1", runId: "run-1", buttons: .claude))
+        #expect(message.at == "1970-01-01T00:16:40Z")
+    }
+
+    @Test func nothingIsSentForAKindThePhoneTurnedOffOrASessionItIsViewing() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let transport = RecordingPushTransport()
+        await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+        await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
+        _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["completed"]], device: seal.clientId)
+        _ = try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": "pane-1"], device: seal.clientId)
+        let running = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+        var question = running; question.sessionId = "pane-2"
+        for task in await service.pushObserve([running, question]) { await task.value }
+        var done = running; done.status = "completed"
+        question.requests = [MobilePushRequest(id: "q", runId: "r", kind: .question, summary: "?", buttons: .none)]
+        for task in await service.pushObserve([done, question]) { await task.value }
+        #expect(transport.sent.isEmpty)
+    }
+
+    @Test func aHandleTheRelayNoLongerKnowsIsForgottenAndABusyRelayIsTriedThreeTimes() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let transport = RecordingPushTransport()
+        transport.outcomes = [.retry(after: nil), .retry(after: nil), .retry(after: nil), .gone]
+        await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+        await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
+        _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission"]], device: seal.clientId)
+        var pane = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+        for task in await service.pushObserve([pane]) { await task.value }
+        pane.requests = [MobilePushRequest(id: "a", runId: "r", kind: .permission, summary: "", buttons: .claude)]
+        for task in await service.pushObserve([pane]) { await task.value }
+        #expect(transport.sent.count == 3)
+        pane.requests.append(MobilePushRequest(id: "b", runId: "r", kind: .permission, summary: "", buttons: .claude))
+        for task in await service.pushObserve([pane]) { await task.value }
+        #expect(transport.sent.count == 4)
+        #expect(MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json")).pushDevices().isEmpty)
+    }
+
+    /// Off, nothing goes out. Switched back on, the app starts the planner over (`pushRestart`)
+    /// with the panes as they are, so what changed meanwhile is not replayed; only what is new from then.
+    @Test func nothingIsSentWhilePhoneRemoteAccessIsOffAndNothingIsReplayedWhenItComesBack() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let transport = RecordingPushTransport()
+        await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+        await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
+        _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission"]], device: seal.clientId)
+        var pane = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+        for task in await service.pushObserve([pane]) { await task.value }
+
+        await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: false))
+        pane.requests = [MobilePushRequest(id: "a", runId: "r", kind: .permission, summary: "", buttons: .claude)]
+        #expect(await service.pushObserve([pane]).isEmpty)
+        #expect(transport.sent.isEmpty)
+
+        // The app hands nothing on while off; on again, it starts over with the panes as they are.
+        await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
+        pane.requests.append(MobilePushRequest(id: "c", runId: "r", kind: .permission, summary: "", buttons: .claude))
+        await service.pushRestart()
+        #expect(await service.pushObserve([pane]).isEmpty)
+        pane.requests.append(MobilePushRequest(id: "b", runId: "r", kind: .permission, summary: "", buttons: .claude))
+        for task in await service.pushObserve([pane]) { await task.value }
+        #expect(transport.sent.count == 1)
+        let key = try #require(MobilePushSeal.key(tokenHash: seal.tokenHash, clientId: seal.clientId))
+        let plaintext = try #require(transport.sent.first.flatMap { MobilePushSeal.open($0.request.payload, key: key, handle: seal.handle) })
+        #expect(try JSONDecoder().decode(MobilePushMessage.self, from: plaintext).id == "request:r:b")
+    }
+
+    /// A send the relay asked to retry stops when phone remote access is switched off or the app
+    /// closes meanwhile, as on Windows: no retry goes out after that.
+    @Test func aRetryingSendStopsWhenRemoteAccessGoesOffOrTheAppCloses() async throws {
+        for closing in [false, true] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let (service, seal) = try Self.pushService(directory)
+            let host = FakeMobileHost()  // the service holds its delegate weakly
+            defer { withExtendedLifetime(host) {} }
+            await service.attach(host)
+            let transport = RecordingPushTransport()
+            transport.outcomes = [.retry(after: nil), .retry(after: nil), .retry(after: nil)]
+            await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+            await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
+            _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission"]], device: seal.clientId)
+            var pane = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+            for task in await service.pushObserve([pane]) { await task.value }
+            transport.onSend = { _ in
+                if closing { await service.shutdown() } else { await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: false)) }
+            }
+            pane.requests = [MobilePushRequest(id: "a", runId: "r", kind: .permission, summary: "", buttons: .claude)]
+            for task in await service.pushObserve([pane]) { await task.value }
+            #expect(transport.sent.count == 1, "closing: \(closing)")
+        }
+    }
+
+    @Test func nothingIsSentAfterShutdown() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let transport = RecordingPushTransport()
+        await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+        await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
+        _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission"]], device: seal.clientId)
+        var pane = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+        for task in await service.pushObserve([pane]) { await task.value }
+        await service.shutdown()
+        pane.requests = [MobilePushRequest(id: "a", runId: "r", kind: .permission, summary: "", buttons: .claude)]
+        #expect(await service.pushObserve([pane]).isEmpty)
+        #expect(transport.sent.isEmpty)
+    }
+}
+
+/// Records what would have gone to the relay and answers from a queue (`sent` when it runs dry).
+final class RecordingPushTransport: MobilePushTransport, @unchecked Sendable {
+    struct Sent { let request: MobilePushSendRequest; let url: URL; let hostToken: String }
+    private let lock = NSLock()
+    private var log: [Sent] = []
+    var outcomes: [MobilePushSendOutcome] = []
+    /// Runs after each send is recorded and before it is answered, with the number of sends so far.
+    var onSend: (@Sendable (Int) async -> Void)?
+    var sent: [Sent] { lock.lock(); defer { lock.unlock() }; return log }
+    func send(_ request: MobilePushSendRequest, to url: URL, hostToken: String) async -> MobilePushSendOutcome {
+        let (count, outcome, hook): (Int, MobilePushSendOutcome, (@Sendable (Int) async -> Void)?) = {
+            lock.lock(); defer { lock.unlock() }
+            log.append(Sent(request: request, url: url, hostToken: hostToken))
+            return (log.count, outcomes.isEmpty ? .sent : outcomes.removeFirst(), onSend)
+        }()
+        await hook?(count)
+        return outcome
+    }
+}

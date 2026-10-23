@@ -14,6 +14,7 @@ public sealed partial class MainWindow
 {
     private MobileRelayHost? mobileHost;
     private MobileDesktopRouter? mobileRouter;
+    private MobilePushHub? mobilePush;
     private readonly DispatcherTimer mobileNotify = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private bool mobileNotifying, mobileWatchesPower;
     private async Task InitializeMobileRemote()
@@ -26,12 +27,21 @@ public sealed partial class MainWindow
         mobileHost = new(directory, Environment.MachineName, MobileDesktopRouter.Capabilities, MobileRoute) { AppVersion = AppVersionText };
         mobileRouter.HostId = mobileHost.HostId;
         mobileRouter.DirectEndpoints = () => mobileHost?.DirectEndpoints ?? [];
+        // Phone notifications (M/MightyClaude/AppStore+MobilePush.swift), routed before the host starts so the "push" it advertises always
+        // has its routes. A confirmed lost sign-in is the login recovery's remembered request, read on this (the UI) thread.
+        mobilePush = new MobilePushHub(service, mobileHost, Environment.MachineName) { SignInLost = id => loginRetries.Requests.ContainsKey(id) };
+        mobileRouter.Push = mobilePush;
         await InitializeScreenShare(directory);
         // What a phone shows of each pane is read again four times a second while a phone is connected, and a phone is told
         // only of the panes (and the list) that moved (M/MightyClaude/AppStore+MobileRemote.swift:271-323).
         mobileNotify.Tick += async (_, _) =>
         {
-            if (closing || mobileNotifying || mobileRouter is null || mobileHost is null || mobileHost.Status.Connections == 0) return;
+            if (closing) return;
+            // Pushes are for phones that are not connected, so they are planned on every tick (nothing while the remote is off);
+            // sending happens off this thread.
+            try { mobilePush?.Observe(); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceWarning("mobile push: " + ex.GetType().Name); }
+            if (mobileNotifying || mobileRouter is null || mobileHost is null || mobileHost.Status.Connections == 0) return;
             mobileNotifying = true;
             try { mobileRouter.Changed(); mobileRouter.Observe(); foreach (var (scope, revision) in mobileRouter.TakeNotifications()) await mobileHost.NotifyAsync(scope, revision); }
             catch (Exception ex) when (ex is not OutOfMemoryException) { }
@@ -63,7 +73,8 @@ public sealed partial class MainWindow
     }
     private async Task ShutdownMobileRemote()
     {
-        mobileNotify.Stop(); if (mobileWatchesPower) { mobileWatchesPower = false; try { Microsoft.Windows.System.Power.PowerManager.SystemSuspendStatusChanged -= MobilePowerChanged; } catch (Exception ex) when (ex is not OutOfMemoryException) { } }
+        // Nothing is planned, sent or tried again from here on.
+        mobileNotify.Stop(); mobilePush?.Dispose(); mobilePush = null; if (mobileWatchesPower) { mobileWatchesPower = false; try { Microsoft.Windows.System.Power.PowerManager.SystemSuspendStatusChanged -= MobilePowerChanged; } catch (Exception ex) when (ex is not OutOfMemoryException) { } }
         await ShutdownScreenShare(); if (mobileHost is not null) await mobileHost.DisposeAsync(); mobileHost = null; mobileRouter?.Dispose(); mobileRouter = null;
     }
     // 모바일 리모트 (M/MobileRemoteSettingsView.swift:17-110): the allow switch over its explanation; the
