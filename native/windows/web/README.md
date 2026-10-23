@@ -10,7 +10,7 @@ metrics from `native/contracts/fixtures/design-tokens.json`, both imported where
 npm ci
 npm run build        # → dist/, relative asset paths
 npm run typecheck
-npm test             # vitest: store and deltas, bridge, locale, tokens, conversation (Markdown, references, questionnaire, windowing, views)
+npm test             # vitest: store and deltas, bridge, locale, tokens, conversation (Markdown, references, questionnaire, windowing, views), composer (keys, slash palette, attachments, menus, clock)
 ```
 
 `dotnet build` of `MightyClaude.WinUI` runs `npm ci` (only when `node_modules` is missing) and `npm run build` itself
@@ -38,4 +38,12 @@ the WinUI screens (`MainWindow.WebShell.cs`).
   dependency), file references and questionnaires ported from Core, the windowed list (`virtual.ts`, `Conversation.tsx`). Host
   methods it calls: `openUrl`, `openReference`, `imageData` (`MainWindow.WebShell.cs`). The provider marks come from
   `mobile/src/lib/provider-marks.ts` (alias `@mobile`).
+- `src/composer/` — the agent pane's composer and header figures. The draft is mirrored into a never-shown WinUI pane view
+  (`MainWindow.WebShell.Composer.cs`, made the way the phone's are), so send, queue, stop, block reasons, attachments, the
+  pills' menus (the WinUI MenuFlyouts read row by row), run settings and session info are the WinUI composer's code; the host
+  pushes a `composer` state per pane when it changes. Pure parts here: Enter rules (`keys.ts`), slash palette ranking and keys
+  (`slash.ts`, mirroring Core's SlashCommands.cs), attachment limits, the header clock. Host methods: `composerState`,
+  `updateDraft`, `send`, `stop`, `queueRemove`, `queueRunNext`, `installCli`, `pickAttachments`, `addAttachments`,
+  `removeAttachment`, `dismissAttachmentError`, `attachmentPreview`, `slashCommands`, `slashAction`, `composerMenu`,
+  `composerMenuChoose`, `toggleFast`, `runSettings`, `applyRunSettings`, `sessionInfo`, `newConversation`.
 - `src/shell/`, `src/pane/` — the views. `src/i18n/`, `src/theme/` — strings and design tokens.

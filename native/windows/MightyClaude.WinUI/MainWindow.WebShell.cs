@@ -151,6 +151,9 @@ public sealed partial class MainWindow
             var streamed = await WaitFor(Streamed);
             result["streamed"] = streamed.Clone(); result["lastDeltaBytes"] = shell.Bridge.LastDeltaBytes; Save();
             shown = shown && Drawn(drawn) && Streamed(streamed);
+            // The composer: a typed draft reaches the service, and Enter answers with what the send did (MainWindow.WebShell.Composer.cs).
+            var composed = await RunWebComposerSmoke(core, sessions[0].Id, result); result["composer"] = composed; Save();
+            shown = shown && composed;
             await core.ExecuteScriptAsync($"document.querySelector('[data-session-id=\"{sessions[1].Id}\"]')?.click()");
             var selected = await WaitFor(page => page.Text("selected") == titles[1]);
             result["afterClick"] = selected.Clone(); result["hostActiveSession"] = service.Snapshot.ActiveSessionId == sessions[1].Id;
