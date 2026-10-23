@@ -164,7 +164,18 @@ public sealed record RunSession : IJsonOnDeserializing
         {
             var logs = value.Logs.ToList(); var index = logs.FindIndex(l => l.Id == entry.Id);
             if (index >= 0) logs[index] = entry; else logs.Add(entry);
-            return value with { Logs = TranscriptRetention.Trimmed(logs) };
+            value = value with { Logs = TranscriptRetention.Trimmed(logs) };
+            // The request still running also shows the main agent's own work as it comes (M/MightyGraph.swift recordGraph "log"):
+            // the 실행 block and the timeline read RootEntries, which the run pipeline's graph only fills with the final answer.
+            if (entry.Kind != "user" && Kind == "claude" && MightyGraphSupport.Providers.Contains(Provider) && value.GraphRuns is { Count: > 0 } live
+                && !MightyGraphSupport.Terminal(live[^1].Status))
+            {
+                // Only the live request is copied: a streamed answer updates its entry many times a second.
+                var runs = live.ToList(); runs[^1] = runs[^1].Copy();
+                runs[^1].RootEntries = MightyGraphSupport.MergeRootEntries(runs[^1].RootEntries, [entry]);
+                value = value with { GraphRuns = runs };
+            }
+            return value;
         }
         // The run pipeline hands the finished execution graph of one request to
         // its own session; shell panes never produce one.
@@ -172,6 +183,10 @@ public sealed record RunSession : IJsonOnDeserializing
         {
             var runs = (GraphRuns ?? []).Select(r => r.Copy()).ToList();
             var at = runs.FindIndex(r => r.Id == newRun.Id);
+            // The pipeline's graph carries no transcript: keep what the request already showed, and a request seen for the
+            // first time starts with what the transcript holds since it was asked.
+            var shown = at >= 0 ? runs[at].RootEntries : value.Logs.Skip(value.Logs.FindLastIndex(l => l.Kind == "user") + 1);
+            newRun = newRun.Copy(); newRun.RootEntries = MightyGraphSupport.MergeRootEntries(shown, newRun.RootEntries);
             if (at >= 0) runs[at] = newRun; else runs.Add(newRun);
             var bounded = MightyGraphSupport.BoundedLiveHistory([.. runs.TakeLast(128)]);
             return value with { GraphRuns = bounded.Count > 0 ? bounded : null };
