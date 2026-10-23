@@ -7,9 +7,10 @@ import {
   wheelScrollTarget, zoomAnchored, zoomIn, zoomLabel, zoomOut, ZoomDefault, ZoomMax, ZoomMin, type Point,
 } from './camera';
 import {
-  ImagesSuffix, PlanRecordSuffix, finished, isAuxiliaryKind, latestResultID, makeLayout, minimumBlockSize, normalizedSizeFor,
-  resultDrag, resultDragSides, runOf, suffixOf, type Layout, type Size,
+  finished, isAuxiliaryKind, latestResultID, makeLayout, minimumBlockSize, normalizedSizeFor,
+  resultDrag, resultDragSides, runOf, type Layout, type Size,
 } from './layout';
+import { blockExtras } from './extras';
 import { setBlockSize } from './prefs';
 import { shareRuns } from './share';
 import type { MightyPane, MightyFile } from './types';
@@ -18,11 +19,6 @@ const Overscan = 300;
 
 interface Drag { id: string; edges: 'right' | 'bottom' | 'corner'; start: Size; origin: { x: number; y: number }; layout: Layout; target: 'result' | 'plan' | 'block' }
 
-function sameExtra(a: BlockExtra, b: BlockExtra): boolean {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof BlockExtra>;
-  for (const key of keys) if (a[key] !== b[key]) return false;
-  return true;
-}
 
 /** The edges as one path each (MightyGraph.cs edges): bottom-centre out, one turn 26 from the joining end, top-centre in under an arrow head. */
 function edgePaths(layout: Layout, running: ReadonlySet<string>): { quiet: string; live: string } {
@@ -310,35 +306,9 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
 
   // ── each block's own parts, kept while they do not change ──
   const planText = useMemo(() => (state.cards[paneId] ?? []).find((c) => c.kind === 'plan') as { plan?: string } | undefined, [state.cards, paneId])?.plan;
-  const extrasCache = useRef(new Map<string, BlockExtra>());
+  const extrasCache = useRef<ReadonlyMap<string, BlockExtra>>(new Map());
   const extras = useMemo(() => {
-    const byRun = new Map(runs.map((r) => [r.id, r]));
-    const next = new Map<string, BlockExtra>();
-    for (const node of layout.nodes) {
-      const run = byRun.get(runOf(node.id) ?? '');
-      const suffix = suffixOf(node.id) ?? '';
-      let extra: BlockExtra = {};
-      switch (node.kind) {
-        case 'request': extra = { input: run?.input }; break;
-        case 'work': extra = { entries: run?.rootEntries }; break;
-        case 'agent': { const agent = run?.agents.find((a) => 'agent:' + a.id === suffix); extra = { input: agent?.input, entries: agent?.entries }; break; }
-        case 'result': {
-          const files = run ? inputs?.files[run.id] : undefined;
-          extra = { entries: run?.resultEntries, finalOutput: run?.finalOutput, files, filesOpen: inputs?.resultFilesRunID === run?.id, fitted: layout.fittedResultID === node.id && !session.graphResultSize, measure: node.id === latest };
-          break;
-        }
-        case 'draft': extra = { draft: session.draft }; break;
-        case 'plan': extra = { markdown: planText }; break;
-        case 'planRecord': extra = { markdown: session.planHistory?.find((r) => r.id === suffix.slice(PlanRecordSuffix.length))?.plan }; break;
-        case 'resultFiles': extra = { files: run ? inputs?.files[run.id] : undefined }; break;
-        case 'images': { const step = suffix.slice(ImagesSuffix.length); extra = { images: run ? { runId: run.id, step, count: inputs?.galleries.find((g) => g.runID === run.id && g.step === step)?.count ?? 0 } : undefined }; break; }
-        case 'execution': extra = { execution: inputs?.executionCards[node.id] }; break;
-        case 'history': extra = { history: inputs?.history }; break;
-      }
-      const before = extrasCache.current.get(node.id);
-      if (before && extra.images && before.images && before.images.runId === extra.images.runId && before.images.step === extra.images.step && before.images.count === extra.images.count) extra = { ...extra, images: before.images };
-      next.set(node.id, before && sameExtra(before, extra) ? before : extra);
-    }
+    const next = blockExtras({ layout, runs, inputs, draft: session.draft, planHistory: session.planHistory, resultSize: session.graphResultSize, planText, latest }, extrasCache.current);
     extrasCache.current = next;
     return next;
   }, [layout, runs, inputs, session.draft, session.planHistory, session.graphResultSize, planText, latest]);
