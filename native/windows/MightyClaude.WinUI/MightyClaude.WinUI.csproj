@@ -70,4 +70,26 @@
     <Content Include="../../licenses/Win2D-LICENSE" Link="ThirdPartyLicenses/Win2D-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../licenses/QRCoder-LICENSE" Link="ThirdPartyLicenses/QRCoder-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <!-- The web shell (WebShell.cs, opt-in with ui-web): native/windows/web is built to dist/ before the build when its
+       sources, the shared locales or the design tokens changed (Inputs/Outputs), npm ci first only on a fresh checkout,
+       and dist/ ships as Assets/Web. The items are added after the build target, so a clean checkout's first build has
+       them too. -p:MightySkipWebBuild=true skips npm (whatever dist/ holds still ships). -->
+  <PropertyGroup>
+    <MightyWebDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../web/'))</MightyWebDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <MightyWebSource Include="$(MightyWebDirectory)src/**/*;$(MightyWebDirectory)index.html;$(MightyWebDirectory)package.json;$(MightyWebDirectory)package-lock.json;$(MightyWebDirectory)vite.config.ts;$(MightyWebDirectory)tsconfig.json" />
+    <MightyWebSource Include="../../../locales/*.json;../../contracts/fixtures/design-tokens.json" />
+  </ItemGroup>
+  <Target Name="MightyBuildWeb" Condition="'$(MightySkipWebBuild)' != 'true'" Inputs="@(MightyWebSource)" Outputs="$(MightyWebDirectory)dist/index.html">
+    <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(MightyWebDirectory)" Condition="!Exists('$(MightyWebDirectory)node_modules')" />
+    <Exec Command="npm run build" WorkingDirectory="$(MightyWebDirectory)" />
+  </Target>
+  <Target Name="MightyIncludeWeb" DependsOnTargets="MightyBuildWeb" BeforeTargets="AssignTargetPaths">
+    <ItemGroup>
+      <!-- Through its own item type: an unqualified %(RecursiveDir) here would batch over every Content item. -->
+      <MightyWebAsset Include="$(MightyWebDirectory)dist/**/*" />
+      <Content Include="@(MightyWebAsset)" Link="Assets/Web/%(MightyWebAsset.RecursiveDir)%(MightyWebAsset.Filename)%(MightyWebAsset.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>

@@ -53,6 +53,18 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
         if (Environment.GetEnvironmentVariable("MIGHTY_PERF_WEB") == "1") File.WriteAllText(Path.Combine(ProfileDirectory, "transcript-web"), "");
     }
 
+    /// <summary>
+    /// The web shell's smoke switch: with <c>MIGHTY_SMOKE_WEB=1</c> a smoke run's profile gets <c>ui-web</c> before the window
+    /// reads it (WebShell.Configure), so the run checks the web shell (MainWindow.WebShell.cs) instead of the WinUI screens.
+    /// Written after <see cref="Parse"/> checked that the profile was empty.
+    /// </summary>
+    internal void PrepareWebShellProfile()
+    {
+        if (!SmokeTest || ProfileDirectory is null || Environment.GetEnvironmentVariable("MIGHTY_SMOKE_WEB") != "1") return;
+        Directory.CreateDirectory(ProfileDirectory);
+        File.WriteAllText(Path.Combine(ProfileDirectory, "ui-web"), "");
+    }
+
     internal void TraceStartup(string stage)
     {
         if (!SmokeTest || ProfileDirectory is null) return;
@@ -140,7 +152,7 @@ internal static class Program
             var startup = StartupOptions.Parse(args);
             options = startup;
             startup.TraceStartup("options-parsed");
-            startup.PreparePerfProfile();
+            startup.PreparePerfProfile(); startup.PrepareWebShellProfile();
             if (startup.SmokeTest) AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             {
                 if (args.ExceptionObject is Exception error) startup.WriteStartupFailure(error);
