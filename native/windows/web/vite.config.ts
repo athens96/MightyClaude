@@ -20,11 +20,16 @@ const contentSecurityPolicy: Plugin = {
 // `base: './'` keeps every asset path relative, so the host can serve dist/ from any folder (WebShell.cs).
 export default defineConfig({
   base: './',
+  // One tsconfig for every file, also the phone app's modules imported from mobile/src (whose own extends Expo's).
+  tsconfig: './tsconfig.json',
   plugins: [react(), contentSecurityPolicy],
   resolve: {
     alias: {
       '@locales': repo('locales'),
       '@tokens': repo('native/contracts/fixtures'),
+      // Pure modules of the phone app (mobile/src/lib), which import each other as `@/…`.
+      '@mobile': repo('mobile/src'),
+      '@/': repo('mobile/src') + '/',
     },
   },
   server: { fs: { allow: [repo('')] } },

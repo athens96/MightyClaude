@@ -2,6 +2,7 @@
 // hold (each pane's current activity, the tool-permission requests waiting). Pure functions; a pane that did not change
 // keeps its object, so a view memoized on it does not draw again.
 import type { PushMessage } from '../bridge/protocol';
+import { applySessionDelta, type SessionDelta } from './delta';
 import type { AgentActivity, AppSnapshot, RunEvent, RunSession, ToolPermissionRequest } from './models';
 
 export interface StoreState {
@@ -16,14 +17,20 @@ export const emptyState: StoreState = { snapshot: null, activities: {}, permissi
 
 const terminal = new Set(['completed', 'error', 'stopped']);
 
-/** The panes after a delta: changed ones replaced or added, removed ones dropped, then put in `order` when it came. */
-export function mergeSessions(current: readonly RunSession[], changed: readonly RunSession[], removed: readonly string[], order?: readonly string[]): RunSession[] {
+/**
+ * The panes after a delta: changed ones patched (or added when the delta holds the whole record), removed ones dropped, then
+ * put in `order` when it came. A pane the delta does not name keeps its object.
+ */
+export function mergeSessions(current: readonly RunSession[], changed: readonly SessionDelta[], removed: readonly string[], order?: readonly string[]): RunSession[] {
   if (changed.length === 0 && removed.length === 0 && !order) return current as RunSession[];
   const byId = new Map(current.map((session) => [session.id, session]));
   for (const id of removed) byId.delete(id);
   const added: RunSession[] = [];
-  for (const session of changed) {
-    if (!byId.has(session.id)) added.push(session);
+  for (const delta of changed) {
+    const before = byId.get(delta.id);
+    const session = applySessionDelta(before, delta);
+    if (!session) continue;
+    if (!before) added.push(session);
     byId.set(session.id, session);
   }
   if (order) return order.map((id) => byId.get(id)).filter((session): session is RunSession => session !== undefined);

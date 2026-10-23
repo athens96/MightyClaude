@@ -14,7 +14,7 @@ namespace MightyClaude.WinUI;
 /// whole state once on <c>ready</c> (<c>{kind:"snapshot"}</c>), then <c>{kind:"delta"}</c> with only the panes whose record was
 /// replaced, every run event (<c>{kind:"event"}</c>) and every tool-permission change (<c>{kind:"permission"}</c>).
 /// Records are replaced, never edited (DesktopService.Snapshot), so a pane is "changed" exactly when its object is not the one
-/// sent last: a streamed line costs the one pane that streams, never the whole state.
+/// sent last, and it goes as what changed in it (<see cref="WebDelta"/>): a streamed line costs that line, never the pane.
 /// </summary>
 internal sealed class WebBridge : IDisposable
 {
@@ -35,6 +35,8 @@ internal sealed class WebBridge : IDisposable
     private bool ready, disposed;
     private AppSnapshot? sent;
     private readonly Dictionary<string, RunSession> sentSessions = new(StringComparer.Ordinal);
+    /// <summary>The fields last sent of a pane (<see cref="WebDelta.Fields"/>) and the record they were read from, kept so a streaming pane's are read once a flush.</summary>
+    private readonly Dictionary<string, (RunSession Session, JsonObject Fields)> sentFields = new(StringComparer.Ordinal);
     private List<string> sentOrder = [];
     private string? sentState;
 
@@ -49,6 +51,8 @@ internal sealed class WebBridge : IDisposable
 
     /// <summary>Whether the page asked for the state and has been sent it: the smoke waits for this.</summary>
     internal bool Ready => ready;
+    /// <summary>The size of the last delta sent, in UTF-8 bytes: the smoke records what a streamed change cost.</summary>
+    internal int LastDeltaBytes { get; private set; }
 
     /// <summary>Adds (or replaces) a method; each phase's methods are registered by the window that owns what they change.</summary>
     internal void Register(string method, Handler handler) => handlers[method] = handler;
@@ -61,8 +65,16 @@ internal sealed class WebBridge : IDisposable
         view.ContentLoading += (_, _) => { ready = false; poll.Stop(); };
     }
 
-    /// <summary>Runs on whatever thread the service raised it, possibly under its lock: only handed on.</summary>
-    private void ReceiveRunEvent(RunEvent value) => queue.TryEnqueue(() => { if (!ready) return; Post(JsonSerializer.Serialize(new { kind = "event", @event = value }, Wire.Json)); Schedule(); });
+    /// <summary>
+    /// Runs on whatever thread the service raised it, possibly under its lock: only handed on. A log line and a graph run go
+    /// without their record, which the pane's delta carries a frame later: a streamed answer is not sent twice.
+    /// </summary>
+    private void ReceiveRunEvent(RunEvent value) => queue.TryEnqueue(() =>
+    {
+        if (!ready) return;
+        var light = value.Type is "log" or "graph_run" ? value with { Entry = null, GraphRun = null } : value;
+        Post(JsonSerializer.Serialize(new { kind = "event", @event = light }, Wire.Json)); Schedule();
+    });
 
     private void ReceivePermission(ToolPermissionRequest value) => queue.TryEnqueue(() => { if (ready) Post(JsonSerializer.Serialize(new { kind = "permission", request = value }, Wire.Json)); });
 
@@ -102,7 +114,10 @@ internal sealed class WebBridge : IDisposable
 
     private void Schedule() { if (ready && !disposed && !flush.IsRunning) flush.Start(); }
 
-    /// <summary>Sends what changed since the last snapshot or delta: replaced panes, removed ids, the order when it moved, the rest of the state when it changed.</summary>
+    /// <summary>
+    /// Sends what changed since the last snapshot or delta: each replaced pane as its change (a new one whole), removed ids,
+    /// the order when it moved, the rest of the state when it changed.
+    /// </summary>
     private void Flush()
     {
         if (!ready || disposed) return;
@@ -119,18 +134,34 @@ internal sealed class WebBridge : IDisposable
         var removed = sentSessions.Keys.Where(id => !present.Contains(id)).ToList();
         var state = StateJson(current);
         var stateChanged = state != sentState; var orderChanged = !order.SequenceEqual(sentOrder);
-        Remember(current, order, state);
-        if (changed.Count == 0 && removed.Count == 0 && !stateChanged && !orderChanged) return;
-        using var buffer = new MemoryStream();
+        if (changed.Count == 0 && removed.Count == 0 && !stateChanged && !orderChanged) { Remember(current, order, state); return; }
+        using var buffer = new MemoryStream(); var panes = 0;
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject(); writer.WriteString("kind", "delta");
-            writer.WritePropertyName("sessions"); JsonSerializer.Serialize(writer, changed, Wire.Json);
+            writer.WriteStartArray("sessions");
+            foreach (var session in changed)
+            {
+                if (!sentSessions.TryGetValue(session.Id, out var previous))
+                {
+                    writer.WriteStartObject(); writer.WriteString("id", session.Id); writer.WritePropertyName("session"); JsonSerializer.Serialize(writer, session, Wire.Json); writer.WriteEndObject();
+                    panes++; continue;
+                }
+                var before = sentFields.TryGetValue(session.Id, out var known) && ReferenceEquals(known.Session, previous) ? known.Fields : WebDelta.Fields(previous);
+                var after = WebDelta.Fields(session);
+                if (WebDelta.Write(writer, previous, before, session, after)) panes++;
+                sentFields[session.Id] = (session, after);
+            }
+            writer.WriteEndArray();
             writer.WritePropertyName("removed"); JsonSerializer.Serialize(writer, removed, Wire.Json);
             if (orderChanged) { writer.WritePropertyName("order"); JsonSerializer.Serialize(writer, order, Wire.Json); }
             if (stateChanged) { writer.WritePropertyName("state"); writer.WriteRawValue(state, skipInputValidation: true); }
             writer.WriteEndObject();
         }
+        Remember(current, order, state);
+        // A pane made anew with the same values (a normalize) is no change to the page.
+        if (panes == 0 && removed.Count == 0 && !stateChanged && !orderChanged) return;
+        LastDeltaBytes = (int)buffer.Length;
         Post(Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length));
     }
 
@@ -138,6 +169,7 @@ internal sealed class WebBridge : IDisposable
     {
         sent = current; sentOrder = order; sentState = state; sentSessions.Clear();
         foreach (var session in current.Sessions) sentSessions[session.Id] = session;
+        foreach (var id in sentFields.Keys.Where(id => !sentSessions.ContainsKey(id)).ToList()) sentFields.Remove(id);
     }
 
     /// <summary>Every field of the state but the panes, as the page's <c>AppState</c>; compared as text to tell whether it changed.</summary>

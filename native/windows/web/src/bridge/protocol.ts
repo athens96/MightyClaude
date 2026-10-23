@@ -1,6 +1,7 @@
 // The messages between this page and the host (MightyClaude.WinUI/WebBridge.cs), JSON over
 // chrome.webview.postMessage / PostWebMessageAsJson.
-import type { AppSnapshot, AppState, RunEvent, RunSession, ToolPermissionRequest } from '../store/models';
+import type { SessionDelta } from '../store/delta';
+import type { AppSnapshot, AppState, RunEvent, ToolPermissionRequest } from '../store/models';
 
 /** web → host: one method call; the host answers with a {@link ResultMessage} of the same id. */
 export interface CallMessage {
@@ -27,18 +28,22 @@ export interface SnapshotMessage {
 
 /**
  * host → web: what changed since the last snapshot or delta, at most one per ~16 ms. `sessions` are the panes whose record
- * was replaced (the host compares by reference), `removed` the ids gone; `order` is every pane id in order, present only when
- * the order or membership changed; `state` is every other field, present only when one of them changed.
+ * was replaced (the host compares by reference), each as only what changed in it ({@link SessionDelta}); `removed` the ids
+ * gone; `order` is every pane id in order, present only when the order or membership changed; `state` is every other field,
+ * present only when one of them changed.
  */
 export interface DeltaMessage {
   kind: 'delta';
-  sessions: RunSession[];
+  sessions: SessionDelta[];
   removed: string[];
   order?: string[];
   state?: AppState;
 }
 
-/** host → web: one run event as applied (DesktopService.RunEventReceived). */
+/**
+ * host → web: one run event as applied (DesktopService.RunEventReceived). A `log` event comes without its `entry` and a
+ * `graph_run` event without its `graphRun`: the pane's delta carries them, so a streamed line is not sent twice.
+ */
 export interface EventMessage {
   kind: 'event';
   event: RunEvent;
