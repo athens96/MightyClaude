@@ -27,6 +27,8 @@ export default defineConfig({
     alias: {
       '@locales': repo('locales'),
       '@tokens': repo('native/contracts/fixtures'),
+      // The shared parity vectors (graph-vectors.json), read by the Mighty diagram's tests.
+      '@contracts': repo('native/contracts'),
       // Pure modules of the phone app (mobile/src/lib), which import each other as `@/…`.
       '@mobile': repo('mobile/src'),
       '@/': repo('mobile/src') + '/',
