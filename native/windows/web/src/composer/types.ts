@@ -47,6 +47,8 @@ export interface ComposerState {
   attachmentsAllowed: boolean;
   /** The toolbar's pills; null on a shell pane. */
   pills: Pills | null;
+  /** The pane header's word (in its tone) and the figures after the clock, with their tooltip. */
+  header: { word: string; tone: string; timed: boolean; rest: string; help: string };
 }
 
 /** What `send` answers: what the host did with the draft, the editor's text after it, and the composer then. */
