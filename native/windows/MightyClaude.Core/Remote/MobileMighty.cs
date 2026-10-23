@@ -273,6 +273,8 @@ public static class MobileRemoteSupport
 
     /// <summary>The desktop stores nothing or "default" for the plain transcript; the wire says "plain".</summary>
     public static string ViewMode(string? raw) => raw == "mighty" ? "mighty" : "plain";
+    /// <summary>The line a pane's preview shows in a push (M/MobileRemoteSupport.previewLine): the newest entry with text that is not a tool activity.</summary>
+    public static LogEntry? PreviewLine(RunSession session) => session.Logs.LastOrDefault(entry => entry.Activity is null && entry.Text.Length > 0);
     /// <summary>The old two-word field: only the bundled Ouroboros has a word of its own, every other style travels as "cli" and carries its truth in <c>styleId</c>.</summary>
     public static string Style(string? raw) => raw is not null && MobileWire.MightyStyles.Contains(raw) ? raw : MobileWire.CliStyle;
     /// <summary>Guided styles exist only for a Claude pane in the Mighty view. <paramref name="viewMode"/> is the view the pane will be in, so one request can turn the view on and pick a style.</summary>

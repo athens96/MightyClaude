@@ -144,6 +144,15 @@ public actor MobileRemoteService {
     /// Which device each live connection authenticated as, so revoking one
     /// phone can close exactly its sockets.
     private var connectedDevices: [String: String] = [:]
+    /// The session each phone said is on its screen; a push about it is not sent while it holds.
+    private(set) var pushViewing: [String: MobilePushViewing] = [:]
+    /// Clock for `pushViewing` and push timestamps; tests move it.
+    var pushClock: @Sendable () -> Date = { Date() }
+    private var pushPlanner = MobilePushPlanner()
+    private let pushStampFormatter = ISO8601DateFormatter()
+    private var pushTransport: any MobilePushTransport = MobilePushHTTPTransport()
+    /// Waits before the second and third attempt; a relay's Retry-After (up to 30 s) wins when longer.
+    private var pushRetryDelays: [TimeInterval] = [2, 8]
     /// How many requests may hold a submit's attachments in memory at once.
     /// Eight phones asking for eight 5 MB files each would otherwise be
     /// hundreds of megabytes of base64 alive at the same moment.
@@ -234,6 +243,8 @@ public actor MobileRemoteService {
     /// Test seam; see `keyRotationFailure`.
     func setKeyRotationFailure(_ value: String?) { keyRotationFailure = value }
     public func setAppVersion(_ value: String) { appVersion = value }
+    /// Test seam: settings taken as they are, without dialling the relay or binding the direct path.
+    func setSettingsWithoutStarting(_ value: MobileRemoteSettings) { settings = value.normalized }
     /// Test seam; see `keepaliveInterval`.
     func setKeepaliveInterval(_ value: TimeInterval) { keepaliveInterval = value }
     /// Test seam; see `disconnectPause`.
@@ -336,6 +347,8 @@ public actor MobileRemoteService {
         // registry so no stale token can authenticate again. clearAll writes []
         // atomically; a write failure is tolerated since the key is already rotated.
         if isRotation { try? deviceRegistry.clearAll() }
+        // Every phone has to pair again, so none of them is looking at anything here.
+        pushViewing.removeAll()
         dropKeyDependentClients()
         return (fresh, rotatedAt)
     }
@@ -396,6 +409,7 @@ public actor MobileRemoteService {
         // dropKeyDependentClients handles key-dependent connections; close
         // this device's token-authenticated socket explicitly.
         close(connections: connectedDevices.filter { $0.value == id }.map(\.key), reason: "device revoked")
+        pushViewing.removeValue(forKey: id)
         // The phone has lost its place: anything it is watching or controlling
         // stops now, not when it next tries to reconnect.
         await screenShare?.deviceRevoked(id)
@@ -1106,6 +1120,32 @@ public actor MobileRemoteService {
                 try await perform { try await delegate.mobileRemoveQueued(sessionId: id, itemId: route[3]) }
                 return reply(200, MobileOK())
             }
+            if method == "POST", route.count == 2, route[0] == "push", url.query == nil {
+                switch route[1] {
+                case "register":
+                    let request = try decode(body, as: MobilePushRegisterRequest.self)
+                    guard MobilePushWire.validHandle(request.handle) else { throw Failure(400, L("remote.error.badPushHandle")) }
+                    switch deviceRegistry.setPush(deviceId, handle: request.handle, kinds: MobilePushWire.kinds(request.kinds)) {
+                    case .saved: return reply(200, MobileOK())
+                    case .needsToken: throw Failure(409, L("remote.error.pushNeedsToken"))
+                    case .unsaved: throw Failure(503, L("mobileRemote.device.saveFailed"))
+                    }
+                case "unregister":
+                    guard deviceRegistry.clearPush(deviceId) else { throw Failure(503, L("mobileRemote.device.saveFailed")) }
+                    pushViewing.removeValue(forKey: deviceId)
+                    return reply(200, MobileOK())
+                case "viewing":
+                    let request = try decode(body, as: MobilePushViewingRequest.self)
+                    if let id = request.sessionId {
+                        pushViewing[deviceId] = MobilePushViewing(sessionId: try sessionID(id), until: pushClock().addingTimeInterval(MobilePushRecipients.viewingWindow))
+                    } else {
+                        pushViewing.removeValue(forKey: deviceId)
+                    }
+                    return reply(200, MobileOK())
+                default:
+                    break
+                }
+            }
             if method == "POST", route.count == 3, route[0] == "sessions", url.query == nil {
                 let id = try sessionID(route[1])
                 switch route[2] {
@@ -1398,6 +1438,90 @@ extension MobileRemoteService: ScreenShareTurnSource {
         let waiters = turnWaiters
         turnWaiters.removeAll()
         for continuation in waiters.values { continuation.resume(returning: credential) }
+    }
+}
+
+// MARK: Push
+
+extension MobileRemoteService {
+    /// The longest single wait a relay's Retry-After can ask for; two retries bound a send to about a minute.
+    static let pushMaximumRetryWait: TimeInterval = 30
+
+    func setPushTransport(_ transport: any MobilePushTransport, retryDelays: [TimeInterval], now: @escaping @Sendable () -> Date) {
+        pushTransport = transport; pushRetryDelays = retryDelays; pushClock = now
+    }
+
+    /// Phone remote access came back on: the next `pushObserve` only sets the planner's baseline,
+    /// so what changed while the app handed nothing on is not pushed. The app calls it in the same
+    /// ordered chain as its observations, right before the first one after the switch.
+    public func pushRestart() {
+        pushPlanner.reset()
+    }
+
+    /// Feeds the planner what the panes show now and sends what it decides, sealed per phone.
+    /// Best effort: a phone that is off or a relay that is down only misses the notification,
+    /// and failures go to the log, never to the screen.
+    @discardableResult
+    public func pushObserve(_ panes: [MobilePushPane]) async -> [Task<Void, Never>] {
+        let now = pushClock()
+        let stamp = pushStampFormatter.string(from: now)
+        let messages = pushPlanner.observe(panes, hostId: hostId, hostName: hostName, at: stamp)
+        // Off or shut down, nothing goes out whatever the caller hands on.
+        guard settings.enabled, !disposed, !messages.isEmpty else { return [] }
+        let devices = deviceRegistry.pushDevices()
+        guard !devices.isEmpty else { return [] }
+        guard let relay = relayURL, let url = MobilePushRelay.sendURL(relay), let hostToken = try? loadOrCreateControlToken() else {
+            Self.log.info("push: no relay to send through")
+            return []
+        }
+        let serverId = RelayEndpoint.serverId(hostToken: hostToken)
+        pushViewing = pushViewing.filter { $0.value.until > now }
+        var tasks: [Task<Void, Never>] = []
+        for message in messages {
+            guard let plaintext = message.encodedForPush() else {
+                Self.log.error("push: \(message.id, privacy: .public) is too large even without its summary; skipped")
+                continue
+            }
+            for device in MobilePushRecipients.targets(for: message, devices: devices, viewing: pushViewing, now: now) {
+                guard let key = MobilePushSeal.key(tokenHash: device.tokenHash, clientId: device.deviceId),
+                      let payload = try? MobilePushSeal.seal(plaintext, key: key, handle: device.handle) else {
+                    Self.log.error("push: \(message.id, privacy: .public) could not be sealed for a phone; skipped")
+                    continue
+                }
+                let request = MobilePushSendRequest(serverId: serverId, handle: device.handle, payload: payload)
+                let messageId = message.id
+                tasks.append(Task { await self.deliver(request, to: url, hostToken: hostToken, deviceId: device.deviceId, messageId: messageId) })
+            }
+        }
+        return tasks
+    }
+
+    private func deliver(_ request: MobilePushSendRequest, to url: URL, hostToken: String, deviceId: String, messageId: String) async {
+        var waits = pushRetryDelays
+        while true {
+            // Switched off or closing meanwhile: nothing more goes out.
+            guard settings.enabled, !disposed else { return }
+            switch await pushTransport.send(request, to: url, hostToken: hostToken) {
+            case .sent:
+                return
+            case .gone:
+                deviceRegistry.clearPush(deviceId, handle: request.handle)
+                Self.log.info("push: \(messageId, privacy: .public) the relay no longer knows a phone's handle; dropped it")
+                return
+            case .failed(let status):
+                Self.log.error("push: \(messageId, privacy: .public) refused by the relay (\(status, privacy: .public))")
+                return
+            case .retry(let after):
+                guard !waits.isEmpty else {
+                    Self.log.error("push: \(messageId, privacy: .public) the relay could not take it; gave up")
+                    return
+                }
+                guard settings.enabled, !disposed else { return }
+                let asked = after.flatMap { $0.isFinite ? max(0, $0) : nil } ?? 0
+                let wait = min(max(waits.removeFirst(), asked), Self.pushMaximumRetryWait)
+                if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+            }
+        }
     }
 }
 

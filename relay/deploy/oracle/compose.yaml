@@ -27,6 +27,20 @@ services:
       TURN_MAX_PER_SERVER_ID: "5"
       TURN_MAX_PER_IP: "10"
       TURN_MAX_GLOBAL: "60"
+      # Push (docs/relay.md "푸시 알림"): handles survive redeploys on relay_data;
+      # without the key file sending answers 503 and everything else still works.
+      PUSH_STORE_PATH: "/data/push-handles.json"
+      FCM_SERVICE_ACCOUNT_FILE: "/run/mighty-secrets/fcm-service-account.json"
+      PUSH_RATE_WINDOW_MS: "600000"
+      PUSH_MAX_SEND_PER_SERVER_ID: "120"
+      PUSH_MAX_SEND_PER_IP: "240"
+      PUSH_MAX_SEND_GLOBAL: "3000"
+      PUSH_MAX_HANDLE_OPS_PER_IP: "30"
+      PUSH_MAX_REGISTRATIONS_GLOBAL: "300"
+    volumes:
+      - relay_data:/data
+      # setup.sh makes this folder (owner uid 1000 = the image's node user, mode 500).
+      - ./secrets:/run/mighty-secrets:ro
 
   caddy:
     image: caddy:2-alpine
@@ -53,5 +67,6 @@ services:
     command: ["-c", "/etc/coturn/turnserver.conf"]
 
 volumes:
+  relay_data:
   caddy_data:
   caddy_config:

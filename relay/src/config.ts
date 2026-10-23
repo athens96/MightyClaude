@@ -38,6 +38,29 @@ export interface RelayConfig {
    * self-certified, so this global budget is what bounds a flood of fresh serverIds.
    */
   readonly turnMaxGlobal: number;
+  /** File for push handles on the server volume; '' keeps them in memory (local runs, tests). */
+  readonly pushStorePath: string;
+  /** FCM service account JSON; '' disables sending (POST /push/v1/send answers 503). */
+  readonly fcmServiceAccountFile: string;
+  /** Sliding window for push limits (ms). */
+  readonly pushRateWindowMs: number;
+  /** Push sends per serverId per window. */
+  readonly pushMaxSendPerServerId: number;
+  /** Push sends per source IP per window. */
+  readonly pushMaxSendPerIp: number;
+  /** Push sends across all hosts per window: host identity is self-certified, so this bounds a flood. */
+  readonly pushMaxSendGlobal: number;
+  /** Handle registrations, refreshes and deletions per source IP (IPv6: per /64) per window. */
+  readonly pushMaxHandleOpsPerIp: number;
+  /** Handle registrations across all IPs per window: registration needs no account, so this bounds a flood. */
+  readonly pushMaxRegistrationsGlobal: number;
+  /**
+   * Handles kept at most. When full, idle ones go first, then the least recently used
+   * handle no host has used yet; handles a host has used are never dropped for space.
+   */
+  readonly pushMaxHandles: number;
+  /** A handle neither refreshed nor used for this many days is dropped. */
+  readonly pushHandleIdleDays: number;
   /**
    * Trust the last `X-Forwarded-For` hop as the client IP (set when the relay sits
    * behind a reverse proxy that appends it, e.g. Caddy). Off by default: the header
@@ -63,6 +86,16 @@ const DEFAULTS: RelayConfig = {
   turnMaxPerServerId: 5,
   turnMaxPerIp: 10,
   turnMaxGlobal: 60,
+  pushStorePath: '',
+  fcmServiceAccountFile: '',
+  pushRateWindowMs: 600_000,
+  pushMaxSendPerServerId: 120,
+  pushMaxSendPerIp: 240,
+  pushMaxSendGlobal: 3000,
+  pushMaxHandleOpsPerIp: 30,
+  pushMaxRegistrationsGlobal: 300,
+  pushMaxHandles: 20_000,
+  pushHandleIdleDays: 120,
   trustProxy: false,
 };
 
@@ -92,6 +125,16 @@ export function loadConfig(overrides: Partial<RelayConfig> = {}): RelayConfig {
     turnMaxPerServerId: envInt('TURN_MAX_PER_SERVER_ID', DEFAULTS.turnMaxPerServerId),
     turnMaxPerIp: envInt('TURN_MAX_PER_IP', DEFAULTS.turnMaxPerIp),
     turnMaxGlobal: envInt('TURN_MAX_GLOBAL', DEFAULTS.turnMaxGlobal),
+    pushStorePath: process.env['PUSH_STORE_PATH']?.trim() ?? DEFAULTS.pushStorePath,
+    fcmServiceAccountFile: process.env['FCM_SERVICE_ACCOUNT_FILE']?.trim() ?? DEFAULTS.fcmServiceAccountFile,
+    pushRateWindowMs: envInt('PUSH_RATE_WINDOW_MS', DEFAULTS.pushRateWindowMs),
+    pushMaxSendPerServerId: envInt('PUSH_MAX_SEND_PER_SERVER_ID', DEFAULTS.pushMaxSendPerServerId),
+    pushMaxSendPerIp: envInt('PUSH_MAX_SEND_PER_IP', DEFAULTS.pushMaxSendPerIp),
+    pushMaxSendGlobal: envInt('PUSH_MAX_SEND_GLOBAL', DEFAULTS.pushMaxSendGlobal),
+    pushMaxHandleOpsPerIp: envInt('PUSH_MAX_HANDLE_OPS_PER_IP', DEFAULTS.pushMaxHandleOpsPerIp),
+    pushMaxRegistrationsGlobal: envInt('PUSH_MAX_REGISTRATIONS_GLOBAL', DEFAULTS.pushMaxRegistrationsGlobal),
+    pushMaxHandles: envInt('PUSH_MAX_HANDLES', DEFAULTS.pushMaxHandles),
+    pushHandleIdleDays: envInt('PUSH_HANDLE_IDLE_DAYS', DEFAULTS.pushHandleIdleDays),
     trustProxy: process.env['RELAY_TRUST_PROXY']?.trim() === '1',
   };
   return { ...fromEnv, ...overrides };

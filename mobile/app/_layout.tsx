@@ -4,6 +4,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { PushRoot } from '@/components/push-root';
 import { ToastHost } from '@/components/toast-host';
 import { installCryptoPolyfill } from '@/api/relay/random';
 import { useHostsStore } from '@/store/hosts';
@@ -67,6 +68,7 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false, title: t('phone.tabs.dashboard') }} />
             <Stack.Screen name="connect" options={{ title: t('phone.connect.title'), presentation: 'modal' }} />
             <Stack.Screen name="pair" options={{ title: t('phone.pair.title'), presentation: 'modal' }} />
+            <Stack.Screen name="settings" options={{ title: t('phone.settings.title') }} />
             <Stack.Screen name="host/[hostId]/index" options={{ title: t('phone.workspaces.title') }} />
             <Stack.Screen name="host/[hostId]/session/[sessionId]" options={{ title: t('phone.session.title') }} />
             {/* The only screen that may turn sideways; it unlocks landscape itself. */}
@@ -83,6 +85,7 @@ export default function RootLayout() {
               options={{ title: t('phone.files.title') }}
             />
           </Stack>
+          <PushRoot />
           <ToastHost />
         </GestureHandlerRootView>
       </ThemeProvider>

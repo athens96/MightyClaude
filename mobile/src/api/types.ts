@@ -85,7 +85,8 @@ export type Capability =
   | 'style'
   | 'files'
   | 'screenShare'
-  | 'structure';
+  | 'structure'
+  | 'push';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -101,6 +102,7 @@ export const CAPABILITIES: readonly Capability[] = [
   'files',
   'screenShare',
   'structure',
+  'push',
 ] as const;
 
 export interface HostInfo {

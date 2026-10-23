@@ -76,6 +76,8 @@ public sealed partial class MainWindow
     {
         if (closing || !service.SetShellStatus(id, status)) return;
         RefreshRunningIndicators(); mobileRouter?.Changed();
+        // A shell's status is not a run event: the push hub is told here, a started command too, so one that ends before the next tick is still pushed.
+        if (status == "running") mobilePush?.Began(id); else mobilePush?.Changed();
     }
     /// <summary>
     /// Reads whether each attached shell runs a command, at the Mac's interval (M/LocalTerminalSession.swift:211-216): one

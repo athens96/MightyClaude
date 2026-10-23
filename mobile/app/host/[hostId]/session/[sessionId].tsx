@@ -77,6 +77,7 @@ import {
   retainDropped,
 } from '@/lib/history';
 import { t } from '@/lib/i18n';
+import { pushViewing } from '@/lib/push/runtime';
 import { answeredToast, isPlanRequest, pendingPlan, planAnswerBody } from '@/lib/plan';
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
 import { defaultView, normalizeMighty } from '@/lib/mighty';
@@ -260,6 +261,7 @@ export default function SessionScreen() {
   // "style": the host drives the pane from a style manifest and sends `panel`. Without
   // it the built-in two still arrive as their old payloads and are read through those.
   const canStyle = hasCapability(capabilities, 'style');
+  const canPush = hasCapability(capabilities, 'push');
 
   /** Back to where we came from, or to the host when this screen was deep-linked into. */
   const leavePane = useCallback(() => {
@@ -397,6 +399,15 @@ export default function SessionScreen() {
         .catch(() => undefined);
       return () => controller.abort();
     }, [canCommands, client, hostId, sessionId, setCommands]),
+  );
+
+  // The host does not push about the session the phone is showing (docs/mobile-remote.md "푸시 알림").
+  useFocusEffect(
+    useCallback(() => {
+      if (!hostId || !sessionId || !canPush) return undefined;
+      pushViewing.enter(hostId, sessionId);
+      return () => pushViewing.leave();
+    }, [canPush, hostId, sessionId]),
   );
 
   const canLoadOlder = canHistory && (detail?.hasOlder ?? false) && !exhausted;
