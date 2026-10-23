@@ -9,6 +9,7 @@ import { loadTranslator } from './i18n/locale';
 import { Store } from './store/store';
 import { installTokens } from './theme/tokens';
 import './styles.css';
+import './conversation/conversation.css';
 
 async function start(bridge: Bridge): Promise<void> {
   installTokens(document);

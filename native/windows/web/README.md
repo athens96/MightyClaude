@@ -10,7 +10,7 @@ metrics from `native/contracts/fixtures/design-tokens.json`, both imported where
 npm ci
 npm run build        # → dist/, relative asset paths
 npm run typecheck
-npm test             # vitest: store/delta, bridge, locale, tokens
+npm test             # vitest: store and deltas, bridge, locale, tokens, conversation (Markdown, references, questionnaire, windowing, views)
 ```
 
 `dotnet build` of `MightyClaude.WinUI` runs `npm ci` (only when `node_modules` is missing) and `npm run build` itself
@@ -31,5 +31,11 @@ the WinUI screens (`MainWindow.WebShell.cs`).
 ## Layout
 
 - `src/bridge/` — the host protocol (`protocol.ts`, mirrored by `MightyClaude.WinUI/WebBridge.cs`) and the call/push client.
-- `src/store/` — wire models (`models.ts`, from the C# records as `Wire.Json` writes them) and the pure state reducer.
+- `src/store/` — wire models (`models.ts`, from the C# records as `Wire.Json` writes them), the pure state reducer and the
+  pane deltas (`delta.ts`: a pane's changed fields, and its `logs` / `graphRuns` as dropped, replaced and added records by id;
+  `MightyClaude.WinUI/WebDelta.cs` is the host's half).
+- `src/conversation/` — the agent pane's conversation: Markdown (`markdown.ts`, the WinUI transcript's subset and limits, no
+  dependency), file references and questionnaires ported from Core, the windowed list (`virtual.ts`, `Conversation.tsx`). Host
+  methods it calls: `openUrl`, `openReference`, `imageData` (`MainWindow.WebShell.cs`). The provider marks come from
+  `mobile/src/lib/provider-marks.ts` (alias `@mobile`).
 - `src/shell/`, `src/pane/` — the views. `src/i18n/`, `src/theme/` — strings and design tokens.

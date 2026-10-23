@@ -14,15 +14,20 @@ describe('mergeSessions', () => {
 
   it('replaces a changed pane in place and keeps the others by reference', () => {
     const a = pane('a'), b = pane('b'), c = pane('c');
-    const next = mergeSessions([a, b, c], [pane('b', 'renamed')], []);
+    const next = mergeSessions([a, b, c], [{ id: 'b', set: { title: 'renamed' } }], []);
     expect(next.map((s) => s.title)).toEqual(['a', 'renamed', 'c']);
     expect(next[0]).toBe(a);
     expect(next[2]).toBe(c);
   });
 
   it('drops removed panes and appends new ones', () => {
-    const next = mergeSessions([pane('a'), pane('b')], [pane('c')], ['a']);
+    const next = mergeSessions([pane('a'), pane('b')], [{ id: 'c', session: pane('c') }], ['a']);
     expect(next.map((s) => s.id)).toEqual(['b', 'c']);
+  });
+
+  it('ignores a patch for a pane it does not have', () => {
+    const sessions = [pane('a')];
+    expect(mergeSessions(sessions, [{ id: 'zz', set: { title: 'x' } }], []).map((s) => s.id)).toEqual(['a']);
   });
 
   it('follows the order when one comes', () => {
@@ -35,13 +40,13 @@ describe('mergeSessions', () => {
 
 describe('reduce', () => {
   it('ignores a delta before the snapshot', () => {
-    expect(reduce(emptyState, { kind: 'delta', sessions: [pane('x')], removed: [] })).toBe(emptyState);
+    expect(reduce(emptyState, { kind: 'delta', sessions: [{ id: 'x', session: pane('x') }], removed: [] })).toBe(emptyState);
   });
 
   it('applies a delta without touching unchanged panes', () => {
     const state = loaded();
     const [first, second] = state.snapshot!.sessions;
-    const next = reduce(state, { kind: 'delta', sessions: [{ ...second!, status: 'completed' }], removed: [] });
+    const next = reduce(state, { kind: 'delta', sessions: [{ id: second!.id, set: { status: 'completed' } }], removed: [] });
     expect(next.snapshot!.sessions[0]).toBe(first);
     expect(next.snapshot!.sessions[1]!.status).toBe('completed');
     expect(next.snapshot!.theme).toBe('dark');

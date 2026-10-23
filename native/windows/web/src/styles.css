@@ -35,8 +35,3 @@ body {
 .pane-header { display: flex; align-items: baseline; gap: var(--space-md); padding: var(--space-md) var(--inset-pane-header-trailing) var(--space-md) var(--inset-pane-header-leading); border-bottom: var(--stroke-line) solid var(--line); }
 .pane-title { margin: 0; font-family: var(--font-heading); font-size: var(--type-header); font-weight: 600; }
 .pane-status { color: var(--ink2); font-size: var(--type-small); }
-.pane-log { list-style: none; margin: 0; padding: var(--inset-transcript); overflow-y: auto; flex: 1; }
-.pane-entry pre { margin: 0 0 var(--space-md); white-space: pre-wrap; word-break: break-word; font-family: var(--font-body); }
-.pane-entry.kind-user pre { color: var(--accent); }
-.pane-entry.kind-error pre { color: var(--err-text); }
-.pane-entry.kind-output pre { font-family: var(--font-mono); font-size: var(--type-mono); color: var(--ink2); }

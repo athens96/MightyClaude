@@ -79,7 +79,7 @@
   </PropertyGroup>
   <ItemGroup>
     <MightyWebSource Include="$(MightyWebDirectory)src/**/*;$(MightyWebDirectory)index.html;$(MightyWebDirectory)package.json;$(MightyWebDirectory)package-lock.json;$(MightyWebDirectory)vite.config.ts;$(MightyWebDirectory)tsconfig.json" />
-    <MightyWebSource Include="../../../locales/*.json;../../contracts/fixtures/design-tokens.json" />
+    <MightyWebSource Include="../../../locales/*.json;../../contracts/fixtures/design-tokens.json;../../../mobile/src/lib/provider-marks.ts" />
   </ItemGroup>
   <Target Name="MightyBuildWeb" Condition="'$(MightySkipWebBuild)' != 'true'" Inputs="@(MightyWebSource)" Outputs="$(MightyWebDirectory)dist/index.html">
     <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(MightyWebDirectory)" Condition="!Exists('$(MightyWebDirectory)node_modules')" />

@@ -18,7 +18,9 @@
     "types": ["vite/client"],
     "paths": {
       "@locales/*": ["../../../locales/*"],
-      "@tokens/*": ["../../contracts/fixtures/*"]
+      "@tokens/*": ["../../contracts/fixtures/*"],
+      "@mobile/*": ["../../../mobile/src/*"],
+      "@/*": ["../../../mobile/src/*"]
     }
   },
   "include": ["src"]
