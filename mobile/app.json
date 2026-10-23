@@ -30,7 +30,7 @@
         "android.permission.POST_NOTIFICATIONS"
       ],
       "predictiveBackGestureEnabled": false,
-      "package": "dev.mightyclaude.mobile",
+      "package": "xyz.woorizip.mightyclaude",
       "versionCode": 2,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
