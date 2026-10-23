@@ -5,6 +5,7 @@ import { Conversation } from '../conversation/Conversation';
 import { Composer } from '../composer/Composer';
 import { Cards } from '../cards/Cards';
 import { clockLabel } from '../composer/clock';
+import { MightyView, ModeSwitch, showsModeSwitch } from '../mighty/MightyView';
 
 /** The header's clock, redrawn each second while the run is not finished (MW.Composer.cs RefreshElapsed). */
 function Clock({ session }: { session: RunSession }) {
@@ -29,6 +30,8 @@ export const PaneView = memo(function PaneView({ session }: { session: RunSessio
   const { t } = useServices();
   const header = useStoreState().composers[session.id]?.header;
   const agent = session.kind === 'claude' || session.kind === 'shell';
+  const switchable = showsModeSwitch(session);
+  const mighty = switchable && session.agentViewMode === 'mighty';
   return (
     <section className="pane" data-session-id={session.id}>
       <header className="pane-header">
@@ -40,8 +43,9 @@ export const PaneView = memo(function PaneView({ session }: { session: RunSessio
             {header.rest}
           </span>
         )}
+        {switchable && <ModeSwitch session={session} />}
       </header>
-      <Conversation key={session.id} session={session} />
+      {mighty ? <MightyView key={'mighty-' + session.id} session={session} /> : <Conversation key={session.id} session={session} />}
       {session.kind === 'claude' && <Cards key={'cards-' + session.id} paneId={session.id} />}
       {agent && <Composer key={'composer-' + session.id} session={session} />}
     </section>
