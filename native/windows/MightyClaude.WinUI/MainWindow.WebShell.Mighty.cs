@@ -132,9 +132,83 @@ public sealed partial class MainWindow
             if (older != sent.Older) { message["older"] = model.OlderRuns; sent.Older = older; }
             if (timeline != sent.Timeline) { message["timeline"] = model.Timeline; sent.Timeline = timeline; }
             if (structure != sent.Structure) { message["structure"] = model.Structure; sent.Structure = structure; }
-            if (message.Count == 2) continue;
             WebMightyLastSet.Clear(); WebMightyLastSet.AddRange(set.Keys);
+            if (message.Count == 2) continue;
             webShell.Bridge.Push(message);
+        }
+    }
+
+    /// <summary>
+    /// The Mighty part of the web smoke: the fixture pane gets three finished requests and one running (no CLI, no AI request)
+    /// and is put in Mighty mode. The page must draw every block, the edges (one into a running block) and the activity
+    /// outline; a streamed change of one sub-agent's entry must draw that block again and no other (each block counts its draws
+    /// in data-renders) with a small delta; the log and the pipeline views must draw the requests.
+    /// </summary>
+    private async Task<bool> RunWebMightySmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, string paneId, Dictionary<string, object?> result)
+    {
+        var shell = webShell ?? throw new InvalidOperationException("web shell missing");
+        async Task<bool> Wait(string script, int seconds = 15)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(seconds);
+            while (DateTime.UtcNow < deadline) { if (await core.ExecuteScriptAsync(script) == "true") return true; await Task.Delay(100); }
+            return false;
+        }
+        async Task<string> Read(string script) => JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync(script)) ?? "";
+        // One fixed time: the streamed copy of the running request must equal the first in all but the changed word.
+        var at = Wire.Now();
+        LogEntry Line(string id, string text) => new(id, "assistant", text, at, "claude");
+        MightyGraphRun Finished(int n) => new()
+        {
+            Id = "smoke-run-" + n, Input = "fixture request " + n, Status = "completed", Provider = "claude", FinalOutput = "fixture answer " + n,
+            RootEntries = [Line($"smoke-{n}-root", "working " + n)], ResultEntries = [Line($"smoke-{n}-result", "fixture answer " + n)],
+            Agents = [new() { Id = "reader", Title = "Reader", Input = "read " + n, Status = "completed", Entries = [Line($"smoke-{n}-reader", "read " + n)] }],
+        };
+        MightyGraphRun Running(string writer) => new()
+        {
+            Id = "smoke-run-4", Input = "fixture request 4", Status = "running", Provider = "claude", RootEntries = [Line("smoke-4-root", "planning")],
+            Agents =
+            [
+                new() { Id = "reader", Title = "Reader", Input = "read 4", Status = "completed", Entries = [Line("smoke-4-reader", "read 4")] },
+                new() { Id = "writer", Title = "Writer", Input = "write 4", Status = "running", Entries = [Line("smoke-4-writer", writer)] },
+            ],
+        };
+        var writerId = MightyGraphBlockSize.NodeId("smoke-run-4", "agent:writer");
+        try
+        {
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with
+            {
+                AgentViewMode = "mighty", GraphViewMode = "diagram", GraphRuns = [Finished(1), Finished(2), Finished(3), Running("writing")],
+            }).ToList() });
+            // 3 × (request, 실행, sub-agent, result) and the running request's request, 실행 and two sub-agents.
+            const string Blocks = "document.querySelectorAll('[data-testid=mighty-diagram] .mighty-block').length";
+            var drawn = await Wait(Blocks + " >= 16 && !!document.querySelector('.mighty-edges-quiet')?.getAttribute('d') && !!document.querySelector('.mighty-edges-live')?.getAttribute('d') && !!document.querySelector('[data-outline]')");
+            var counts = await Read("JSON.stringify({ blocks: " + Blocks + ", edges: document.querySelector('[data-testid=mighty-diagram]')?.dataset.edgeCount, outline: document.querySelector('[data-outline]')?.dataset.outline ?? null, titled: [...document.querySelectorAll('.mighty-title')].filter(e => e.textContent.length > 0).length })");
+            result["mightyDiagram"] = new { drawn, counts };
+            // Every block's draw count before the stream, then one word more in the writer's entry, as a streamed graph_run.
+            const string Renders = "JSON.stringify(Object.fromEntries([...document.querySelectorAll('.mighty-block')].map(e => [e.dataset.blockId, e.dataset.renders])))";
+            await Task.Delay(500);
+            var before = JsonSerializer.Deserialize<Dictionary<string, string>>(await Read(Renders)) ?? [];
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with
+            {
+                GraphRuns = [.. (s.GraphRuns ?? []).Take(3), Running("writing streamed-marker")],
+            }).ToList() });
+            var streamed = await Wait($"(() => {{ const e = document.querySelector('[data-block-id=\"{writerId}\"]'); return !!e && Number(e.dataset.renders) > {(before.TryGetValue(writerId, out var w) ? w : "0")}; }})()");
+            await Task.Delay(500);
+            var after = JsonSerializer.Deserialize<Dictionary<string, string>>(await Read(Renders)) ?? [];
+            var redrawn = after.Where(pair => !before.TryGetValue(pair.Key, out var was) || was != pair.Value).Select(pair => pair.Key).ToList();
+            var deltaBytes = shell.Bridge.LastDeltaBytes;
+            result["mightyStream"] = new { streamed, redrawn, deltaBytes, blocksPushed = WebMightyLastSet.ToList() };
+            var onlyChanged = streamed && redrawn.Count == 1 && redrawn[0] == writerId && deltaBytes < 16 * 1024;
+            await core.ExecuteScriptAsync("document.querySelector('button[data-presentation=timeline]')?.click()");
+            var timeline = await Wait("document.querySelectorAll('[data-testid=timeline-group]').length === 4");
+            await core.ExecuteScriptAsync("document.querySelector('button[data-presentation=structure]')?.click()");
+            var structure = await Wait("document.querySelectorAll('[data-testid=mighty-structure] [data-column-id]').length >= 3");
+            result["mightyViews"] = new { timeline, structure, mode = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId)?.GraphViewMode };
+            return drawn && onlyChanged && timeline && structure;
+        }
+        finally
+        {
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { AgentViewMode = "default", GraphViewMode = null, GraphRuns = null }).ToList() });
         }
     }
 

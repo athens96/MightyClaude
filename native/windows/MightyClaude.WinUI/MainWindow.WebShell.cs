@@ -157,6 +157,9 @@ public sealed partial class MainWindow
             // The cards: a fixture permission and a questionnaire drawn in the page and answered there (MainWindow.WebShell.Cards.cs).
             var carded = await RunWebCardsSmoke(core, sessions[0].Id, result); result["cards"] = carded; Save();
             shown = shown && carded;
+            // The Mighty views: the diagram's blocks, edges and outline, a streamed change drawing one block, the log and the pipeline (MainWindow.WebShell.Mighty.cs).
+            var mightied = await RunWebMightySmoke(core, sessions[0].Id, result); result["mighty"] = mightied; Save();
+            shown = shown && mightied;
             await core.ExecuteScriptAsync($"document.querySelector('[data-session-id=\"{sessions[1].Id}\"]')?.click()");
             var selected = await WaitFor(page => page.Text("selected") == titles[1]);
             result["afterClick"] = selected.Clone(); result["hostActiveSession"] = service.Snapshot.ActiveSessionId == sessions[1].Id;
