@@ -123,7 +123,8 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             var encoded = JsonSerializer.SerializeToUtf8Bytes(FilePaneKind.Stored(snapshot), Wire.Json);
             if (encoded.Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.stateTooLarge"));
             await AtomicWriteAsync(StatePath, encoded);
-            Snapshot = Wire.Clone(snapshot);
+            // Normalize made it, and its records are never edited: it is kept as it is, not copied again.
+            Snapshot = snapshot;
         }
         finally { gate.Release(); }
     }
@@ -203,6 +204,10 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         }
         return buffer.WrittenSpan.ToArray();
     }
+    /// <summary>A pane as a normalize left it: the text budget it started with and how much of it its text took.</summary>
+    private sealed record NormalizedSession(int BudgetBefore, int Cost);
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<RunSession, NormalizedSession> NormalizedSessions = new();
+
     public static AppSnapshot Normalize(AppSnapshot value, bool restoring)
     {
         if (value.Version != 1) return new();
@@ -218,6 +223,22 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             return log with { Text = Bounded(log.Text, log.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768), Provider = Wire.Providers.Contains(log.Provider) ? log.Provider : null, Activity = activity, Images = log.Kind == "image" ? AgentImageSupport.Normalized(log.Images) : null };
         }
         RunSession NormalizeSession(RunSession s)
+        {
+            // A pane this normalize made before and nothing replaced since is normalized already: it is taken as it is, its text
+            // counted against the budget as before, when at least as much budget is left as it was made with (its limits were no
+            // larger) and it is not running (a running pane's clock moves on each normalize). Normalizing every pane's whole
+            // history on each change took tens of milliseconds and ~100 MB for long transcripts, on the UI thread.
+            if (!restoring && s.Status != "running" && NormalizedSessions.TryGetValue(s, out var made) && textBudget >= made.BudgetBefore)
+            {
+                textBudget -= made.Cost;
+                return s;
+            }
+            var before = textBudget;
+            var result = NormalizeSessionFully(s);
+            if (!restoring) NormalizedSessions.AddOrUpdate(result, new NormalizedSession(before, before - textBudget));
+            return result;
+        }
+        RunSession NormalizeSessionFully(RunSession s)
         {
             // A files pane runs nothing and keeps nothing but its title (docs/file-pane.md).
             if (FilePaneKind.IsFilePane(s.Kind))

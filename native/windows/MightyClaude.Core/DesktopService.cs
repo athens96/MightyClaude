@@ -207,7 +207,10 @@ public sealed partial class DesktopService : IAsyncDisposable
     private Task QueueSave()
     {
         pendingSaveSince = null; lastSaveStart = System.Diagnostics.Stopwatch.GetTimestamp();
-        var value = Wire.Clone(snapshot);
+        // The state as it is now, held as it is: its records are replaced on every change, never edited (a graph run is changed
+        // only while it is being made, before it joins the state), so this one stays what it is now. A deep copy of the whole
+        // state was tens of MB and milliseconds for long transcripts on every change, on the caller's thread.
+        var value = snapshot;
         return saved = saved.ContinueWith(async _ => { try { await store.SaveAsync(value); } catch (Exception ex) { PersistenceFailed?.Invoke(ex); throw; } }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
     }
     private void Receive(RunEvent value)
