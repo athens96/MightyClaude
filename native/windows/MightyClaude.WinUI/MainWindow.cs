@@ -428,7 +428,8 @@ public sealed partial class MainWindow : Window
             ToolTipService.SetToolTip(input, InputShortcuts);
             // A keystroke changes the draft alone and its save waits up to 1.5 s (DesktopService.UpdateDraft): normalizing, copying
             // and writing the whole state on every key stalled typing on a profile with long transcripts.
-            input.TextChanged += (_, _) => { if (!updating) { var draft = input.Text; RefreshComposerState(); RefreshPalette(draft); try { owner.service.UpdateDraft(id, draft); } catch (ObjectDisposedException) { /* Closing: the final save has the state. */ } } };
+            // The diagram's draft block shows the next request as it is typed (M/MightyGraphView.swift:485-496); the timeline and structure draw no draft.
+            input.TextChanged += (_, _) => { if (!updating) { var draft = input.Text; RefreshComposerState(); RefreshPalette(draft); try { owner.service.UpdateDraft(id, draft); } catch (ObjectDisposedException) { /* Closing: the final save has the state. */ } if (graphHost?.Visibility == Visibility.Visible && graphViewport?.Visibility == Visibility.Visible) QueueGraphRefresh(); } };
             input.TextCompositionStarted += (_, _) => composingInput = true;
             input.TextCompositionEnded += (_, _) =>
             {
