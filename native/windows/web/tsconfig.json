@@ -19,6 +19,7 @@
     "paths": {
       "@locales/*": ["../../../locales/*"],
       "@tokens/*": ["../../contracts/fixtures/*"],
+      "@contracts/*": ["../../contracts/*"],
       "@mobile/*": ["../../../mobile/src/*"],
       "@/*": ["../../../mobile/src/*"]
     }
