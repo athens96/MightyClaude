@@ -286,6 +286,26 @@ public static class MightyGraphSupport
             agent.Entries = agent.Entries.Select(Label).ToList();
     }
 
+    /// <summary>How many of the main agent's entries a request keeps (M/MightyGraph.swift recordGraph: suffix(100)).</summary>
+    public const int MaximumRootEntries = 100;
+
+    /// <summary>
+    /// The main agent's entries of one request: <paramref name="earlier"/> with <paramref name="incoming"/> laid over them by id,
+    /// the request itself left out, the newest <see cref="MaximumRootEntries"/> kept. The result entry RefreshResult adds is
+    /// dropped when the transcript already holds the same answer, so the 실행 block does not say it twice.
+    /// </summary>
+    public static List<LogEntry> MergeRootEntries(IEnumerable<LogEntry> earlier, IEnumerable<LogEntry> incoming)
+    {
+        var merged = earlier.Where(e => e.Kind != "user").ToList();
+        foreach (var entry in incoming.Where(e => e.Kind != "user"))
+        {
+            var index = merged.FindIndex(e => e.Id == entry.Id);
+            if (index >= 0) merged[index] = entry; else merged.Add(entry);
+        }
+        merged.RemoveAll(e => e.Id.EndsWith("-result", StringComparison.Ordinal) && merged.Any(o => !ReferenceEquals(o, e) && o.Kind == "assistant" && o.Text == e.Text));
+        return merged.TakeLast(MaximumRootEntries).ToList();
+    }
+
     public static void RefreshResult(MightyGraphRun run)
     {
         if (run.Status != "completed" || !run.Agents.All(a => Terminal(a.Status)) || string.IsNullOrEmpty(run.FinalOutput))
