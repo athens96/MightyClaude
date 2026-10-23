@@ -4,6 +4,7 @@
 import type { PushMessage } from '../bridge/protocol';
 import type { Card } from '../cards/types';
 import type { ComposerState } from '../composer/types';
+import { applyMighty, type MightyPane } from '../mighty/types';
 import { applySessionDelta, type SessionDelta } from './delta';
 import type { AgentActivity, AppSnapshot, RunEvent, RunSession, ToolPermissionRequest } from './models';
 
@@ -19,6 +20,8 @@ export interface StoreState {
   cards: Readonly<Record<string, readonly Card[]>>;
   /** Words a card put in a pane's draft (a next action); `seq` counts them so the same words twice still fill. */
   fills: Readonly<Record<string, { text: string; seq: number }>>;
+  /** Each shown pane's Mighty model as the host pushed it (MainWindow.WebShell.Mighty.cs). */
+  mighty: Readonly<Record<string, MightyPane>>;
 }
 
 /** The page's own message: a card fills the pane's composer, which listens for it. */
@@ -30,7 +33,7 @@ export interface FillMessage {
 
 export type StoreMessage = PushMessage | FillMessage;
 
-export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {} };
+export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {}, mighty: {} };
 
 const terminal = new Set(['completed', 'error', 'stopped']);
 
@@ -98,7 +101,8 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       const composers = Object.fromEntries(Object.entries(state.composers).filter(([id]) => !gone.has(id)));
       const cards = Object.fromEntries(Object.entries(state.cards).filter(([id]) => !gone.has(id)));
       const fills = Object.fromEntries(Object.entries(state.fills).filter(([id]) => !gone.has(id)));
-      return gone.size === 0 ? { ...state, snapshot } : { snapshot, activities, permissions, composers, cards, fills };
+      const mighty = Object.fromEntries(Object.entries(state.mighty).filter(([id]) => !gone.has(id)));
+      return gone.size === 0 ? { ...state, snapshot } : { snapshot, activities, permissions, composers, cards, fills, mighty };
     }
     case 'event':
       return applyEvent(state, message.event);
@@ -108,6 +112,8 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       return { ...state, composers: { ...state.composers, [message.state.paneId]: message.state } };
     case 'cards':
       return { ...state, cards: { ...state.cards, [message.paneId]: message.cards } };
+    case 'mighty':
+      return { ...state, mighty: { ...state.mighty, [message.paneId]: applyMighty(state.mighty[message.paneId], message) } };
     case 'fill':
       return { ...state, fills: { ...state.fills, [message.paneId]: { text: message.text, seq: (state.fills[message.paneId]?.seq ?? 0) + 1 } } };
   }

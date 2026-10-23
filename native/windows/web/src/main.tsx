@@ -13,6 +13,7 @@ import './conversation/conversation.css';
 import './composer/composer.css';
 import './composer/toolbar.css';
 import './cards/cards.css';
+import './mighty/mighty.css';
 
 async function start(bridge: Bridge): Promise<void> {
   installTokens(document);
