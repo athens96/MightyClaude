@@ -197,7 +197,8 @@ public sealed partial class MainWindow
             var after = JsonSerializer.Deserialize<Dictionary<string, string>>(await Read(Renders)) ?? [];
             var redrawn = after.Where(pair => !before.TryGetValue(pair.Key, out var was) || was != pair.Value).Select(pair => pair.Key).ToList();
             var deltaBytes = shell.Bridge.LastDeltaBytes;
-            result["mightyStream"] = new { streamed, redrawn, deltaBytes, blocksPushed = WebMightyLastSet.ToList() };
+            var why = await Read("JSON.stringify(Object.fromEntries([...document.querySelectorAll('.mighty-block')].filter(e => e.dataset.changed).map(e => [e.dataset.blockId, e.dataset.changed])))");
+            result["mightyStream"] = new { streamed, redrawn, deltaBytes, blocksPushed = WebMightyLastSet.ToList(), why };
             var onlyChanged = streamed && redrawn.Count == 1 && redrawn[0] == writerId && deltaBytes < 16 * 1024;
             await core.ExecuteScriptAsync("document.querySelector('button[data-presentation=timeline]')?.click()");
             var timeline = await Wait("document.querySelectorAll('[data-testid=timeline-group]').length === 4");

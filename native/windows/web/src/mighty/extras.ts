@@ -24,6 +24,9 @@ export interface ExtrasInput {
 
 export function blockExtras({ layout, runs, inputs, draft, planHistory, resultSize, planText, latest }: ExtrasInput, previous: ReadonlyMap<string, BlockExtra>): Map<string, BlockExtra> {
   const byRun = new Map(runs.map((r) => [r.id, r]));
+  // A run whose file lookup found nothing and one not looked up yet draw the same: an empty list is no list, so the lookup
+  // coming back empty does not draw every settled result again.
+  const filesOf = (run: MightyGraphRun | undefined) => { const files = run ? inputs?.files[run.id] : undefined; return files && files.length > 0 ? files : undefined; };
   const next = new Map<string, BlockExtra>();
   for (const node of layout.nodes) {
     const run = byRun.get(runOf(node.id) ?? '');
@@ -34,14 +37,14 @@ export function blockExtras({ layout, runs, inputs, draft, planHistory, resultSi
       case 'work': extra = { entries: run?.rootEntries }; break;
       case 'agent': { const agent = run?.agents.find((a) => 'agent:' + a.id === suffix); extra = { input: agent?.input, entries: agent?.entries }; break; }
       case 'result': {
-        const files = run ? inputs?.files[run.id] : undefined;
+        const files = filesOf(run);
         extra = { entries: run?.resultEntries, finalOutput: run?.finalOutput, files, filesOpen: inputs?.resultFilesRunID === run?.id, fitted: layout.fittedResultID === node.id && !resultSize, measure: node.id === latest };
         break;
       }
       case 'draft': extra = { draft: draft }; break;
       case 'plan': extra = { markdown: planText }; break;
       case 'planRecord': extra = { markdown: planHistory?.find((r) => r.id === suffix.slice(PlanRecordSuffix.length))?.plan }; break;
-      case 'resultFiles': extra = { files: run ? inputs?.files[run.id] : undefined }; break;
+      case 'resultFiles': extra = { files: filesOf(run) }; break;
       case 'images': { const step = suffix.slice(ImagesSuffix.length); extra = { images: run ? { runId: run.id, step, count: inputs?.galleries.find((g) => g.runID === run.id && g.step === step)?.count ?? 0 } : undefined }; break; }
       case 'execution': extra = { execution: inputs?.executionCards[node.id] }; break;
       case 'history': extra = { history: inputs?.history }; break;

@@ -197,6 +197,10 @@ export const Block = memo(function Block(props: BlockProps) {
   const { t } = useServices();
   const renders = useRef(0);
   renders.current += 1;
+  // Which props differed from the last draw (by identity): the smoke reads it to tell why a block drew again.
+  const previous = useRef<BlockProps | null>(null);
+  const changed = previous.current ? (Object.keys(props) as (keyof BlockProps)[]).filter((key) => previous.current![key] !== props[key]).join(',') : '';
+  previous.current = props;
   const { id, kind, x, y, w, h, copy, extra, selected, expanded, actions } = props;
   if (kind === 'history') {
     const history = extra.history;
@@ -211,7 +215,7 @@ export const Block = memo(function Block(props: BlockProps) {
   const resizable = isResizable(kind);
   return (
     <div className={`mighty-block kind-${kind} tone-${tone}${selected ? ' selected' : ''}${copy?.outline === 'marching' || copy?.outline === 'solid' ? ' halo' : ''}`}
-      data-block-id={id} data-kind={kind} data-renders={renders.current} data-visible={props.visible ? '1' : '0'}
+      data-block-id={id} data-kind={kind} data-renders={renders.current} data-changed={changed} data-visible={props.visible ? '1' : '0'}
       style={{ left: x, top: y, width: w, height: h }} title={copy?.fromRecord ? t('graph.history.tag') : undefined}>
       <div className="mighty-head">
         <span className={'mighty-symbol kind-' + kind} aria-hidden="true" />
