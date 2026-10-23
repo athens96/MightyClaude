@@ -53,11 +53,15 @@ public sealed partial class MainWindow
             button.IsEnabledChanged += (_, _) => button.Opacity = button.IsEnabled ? 1 : CardButtonDisabled;
         }
 
-        /// <summary>The wait card the permission and question cards share (M/PaneChrome.swift:185-190).</summary>
+        /// <summary>
+        /// The wait card the permission and question cards share (M/PaneChrome.swift:185-190). Once the keyboard is in
+        /// the card, the arrow keys move between its answers and buttons; Space or Enter presses the one in focus.
+        /// </summary>
         private Border WaitCard(UIElement body) => new()
         {
             Child = body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer), BorderThickness = new Thickness(DesignMetrics.Stroke.Active),
             BorderBrush = owner.brushes.Brush(DesignToken.Wait), Background = owner.brushes.Brush(DesignToken.Card), Padding = new Thickness(DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Active),
+            XYFocusKeyboardNavigation = Microsoft.UI.Xaml.Input.XYFocusKeyboardNavigationMode.Enabled,
         };
 
         /// <summary>The amber disc that heads a card waiting on the user (M/PaneChrome.swift:172-180): 22 across in <c>wait</c>, its symbol in <c>onWait</c>.</summary>
@@ -187,7 +191,49 @@ public sealed partial class MainWindow
         /// <summary>The request the permission card shows now, so a new one starts with its JSON folded.</summary>
         private string? permissionShown;
 
+        /// <summary>
+        /// Draws the card for the first request waiting. The question and plan cards are rebuilt on each choice, so a
+        /// keyboard that was in the card stays there: on the control it was on, or else the card's first answer. Focus
+        /// anywhere else is left alone, so a request arriving never takes the keyboard from the composer.
+        /// </summary>
         private void RenderToolPermissions(bool preserveQuestionnaire = false)
+        {
+            var focused = toolPermissionHost.XamlRoot is { } root ? Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(root) as Control : null;
+            var inCard = focused is not null && IsWithin(focused, toolPermissionHost);
+            RenderToolPermissionCards(preserveQuestionnaire);
+            if (!inCard || IsWithin(focused!, toolPermissionHost)) return;
+            RestoreCardFocus(AutomationProperties.GetAutomationId(focused), focused!.FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic);
+        }
+
+        private static bool IsWithin(DependencyObject element, DependencyObject ancestor)
+        {
+            for (var at = element; at is not null; at = VisualTreeHelper.GetParent(at)) if (ReferenceEquals(at, ancestor)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Puts the keyboard back in the rebuilt card: the control with the same automation id if it can take focus, or
+        /// the question's first answer tile, or the card's first button; the composer once no card is left. A card's controls are only
+        /// reachable after its first layout, so a miss tries once more then.
+        /// </summary>
+        private void RestoreCardFocus(string automationId, FocusState state)
+        {
+            bool Place()
+            {
+                if (toolPermissionHost.Visibility != Visibility.Visible) return input.Focus(state);
+                static bool Takes(Control c) => c.IsEnabled && c.IsTabStop && c.Visibility == Visibility.Visible;
+                var shown = toolPermissionHost.Children.Where(c => c.Visibility == Visibility.Visible).ToArray();
+                var same = automationId.Length > 0 ? shown.Select(c => FindById<Control>(c, automationId)).FirstOrDefault(c => c is not null && Takes(c)) : null;
+                var controls = shown.SelectMany(VisualDescendants).OfType<Microsoft.UI.Xaml.Controls.Primitives.ButtonBase>().Where(Takes).ToArray();
+                var target = same ?? controls.FirstOrDefault(c => AutomationProperties.GetAutomationId(c).StartsWith("questionnaire-option-", StringComparison.Ordinal)) ?? controls.FirstOrDefault();
+                return target?.Focus(state) == true;
+            }
+            if (Place()) return;
+            void Retry(object? sender, object e) { toolPermissionHost.LayoutUpdated -= Retry; Place(); }
+            toolPermissionHost.LayoutUpdated += Retry;
+        }
+
+        private void RenderToolPermissionCards(bool preserveQuestionnaire)
         {
             var pending = CardRequests;
             RenderGuidedStyle();
