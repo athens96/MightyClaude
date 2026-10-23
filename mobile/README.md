@@ -402,8 +402,9 @@ modules/                 로컬 네이티브 모듈: device-lock(휴대폰 잠�
 
 ## 8. iOS 빌드
 
-- `app.json`: `ios.bundleIdentifier`는 Android `package`와 같은 `dev.mightyclaude.mobile`,
-  `ios.supportsTablet: true`, 사용 설명은 카메라(QR) 하나뿐입니다. 사진은 시스템 선택기로만
+- `app.json`: `ios.bundleIdentifier`는 `dev.mightyclaude.mobile`입니다(Android `package`는 Firebase 앱에 맞춘
+  `xyz.woorizip.mightyclaude`). iOS로 Firebase를 쓰려면 같은 프로젝트에 iOS 앱을 따로 등록합니다.
+  그 밖에 `ios.supportsTablet: true`, 사용 설명은 카메라(QR) 하나뿐입니다. 사진은 시스템 선택기로만
   고르므로 `NSPhotoLibraryUsageDescription`은 넣지 않습니다(`expo-image-picker` 플러그인의
   `photosPermission: false`).
 - `eas.json`에 `development` / `preview` / `production` 프로필이 있습니다.
