@@ -3,6 +3,7 @@ import type { RunSession } from '../store/models';
 import { useServices, useStoreState } from '../app/context';
 import { Conversation } from '../conversation/Conversation';
 import { Composer } from '../composer/Composer';
+import { Cards } from '../cards/Cards';
 import { clockLabel } from '../composer/clock';
 
 /** The header's clock, redrawn each second while the run is not finished (MW.Composer.cs RefreshElapsed). */
@@ -41,6 +42,7 @@ export const PaneView = memo(function PaneView({ session }: { session: RunSessio
         )}
       </header>
       <Conversation key={session.id} session={session} />
+      {session.kind === 'claude' && <Cards key={'cards-' + session.id} paneId={session.id} />}
       {agent && <Composer key={'composer-' + session.id} session={session} />}
     </section>
   );

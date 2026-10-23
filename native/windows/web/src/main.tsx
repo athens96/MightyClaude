@@ -12,6 +12,7 @@ import './styles.css';
 import './conversation/conversation.css';
 import './composer/composer.css';
 import './composer/toolbar.css';
+import './cards/cards.css';
 
 async function start(bridge: Bridge): Promise<void> {
   installTokens(document);

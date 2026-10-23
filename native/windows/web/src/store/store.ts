@@ -2,6 +2,7 @@
 // hold (each pane's current activity, the tool-permission requests waiting). Pure functions; a pane that did not change
 // keeps its object, so a view memoized on it does not draw again.
 import type { PushMessage } from '../bridge/protocol';
+import type { Card } from '../cards/types';
 import type { ComposerState } from '../composer/types';
 import { applySessionDelta, type SessionDelta } from './delta';
 import type { AgentActivity, AppSnapshot, RunEvent, RunSession, ToolPermissionRequest } from './models';
@@ -14,9 +15,22 @@ export interface StoreState {
   permissions: Readonly<Record<string, readonly ToolPermissionRequest[]>>;
   /** Each pane's composer state as the host last pushed it (only panes the page has written in). */
   composers: Readonly<Record<string, ComposerState>>;
+  /** Each pane's cards as the host last pushed them. */
+  cards: Readonly<Record<string, readonly Card[]>>;
+  /** Words a card put in a pane's draft (a next action); `seq` counts them so the same words twice still fill. */
+  fills: Readonly<Record<string, { text: string; seq: number }>>;
 }
 
-export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {} };
+/** The page's own message: a card fills the pane's composer, which listens for it. */
+export interface FillMessage {
+  kind: 'fill';
+  paneId: string;
+  text: string;
+}
+
+export type StoreMessage = PushMessage | FillMessage;
+
+export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {} };
 
 const terminal = new Set(['completed', 'error', 'stopped']);
 
@@ -68,7 +82,7 @@ export function applyPermission(state: StoreState, request: ToolPermissionReques
   return { ...state, permissions: { ...state.permissions, [request.runId]: next } };
 }
 
-export function reduce(state: StoreState, message: PushMessage): StoreState {
+export function reduce(state: StoreState, message: StoreMessage): StoreState {
   switch (message.kind) {
     case 'snapshot':
       return { ...state, snapshot: message.snapshot };
@@ -82,7 +96,9 @@ export function reduce(state: StoreState, message: PushMessage): StoreState {
       const permissions = Object.fromEntries(Object.entries(state.permissions).filter(([id]) => !gone.has(id)));
       const snapshot: AppSnapshot = message.state ? { ...message.state, sessions } : { ...current, sessions };
       const composers = Object.fromEntries(Object.entries(state.composers).filter(([id]) => !gone.has(id)));
-      return gone.size === 0 ? { ...state, snapshot } : { snapshot, activities, permissions, composers };
+      const cards = Object.fromEntries(Object.entries(state.cards).filter(([id]) => !gone.has(id)));
+      const fills = Object.fromEntries(Object.entries(state.fills).filter(([id]) => !gone.has(id)));
+      return gone.size === 0 ? { ...state, snapshot } : { snapshot, activities, permissions, composers, cards, fills };
     }
     case 'event':
       return applyEvent(state, message.event);
@@ -90,6 +106,10 @@ export function reduce(state: StoreState, message: PushMessage): StoreState {
       return applyPermission(state, message.request);
     case 'composer':
       return { ...state, composers: { ...state.composers, [message.state.paneId]: message.state } };
+    case 'cards':
+      return { ...state, cards: { ...state.cards, [message.paneId]: message.cards } };
+    case 'fill':
+      return { ...state, fills: { ...state.fills, [message.paneId]: { text: message.text, seq: (state.fills[message.paneId]?.seq ?? 0) + 1 } } };
   }
 }
 
@@ -109,7 +129,7 @@ export class Store {
     return () => this.listeners.delete(listener);
   };
 
-  dispatch(message: PushMessage): void {
+  dispatch(message: StoreMessage): void {
     const next = reduce(this.state, message);
     if (next === this.state) return;
     this.state = next;
