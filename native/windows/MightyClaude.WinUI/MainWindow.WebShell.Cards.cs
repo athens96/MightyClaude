@@ -67,6 +67,15 @@ public sealed partial class MainWindow
         if (!webCardsFlush.IsRunning) webCardsFlush.Start();
     }
 
+    /// <summary>A request for an agent pane the page has not shown yet: its never-shown view is made now, so the card waits there.</summary>
+    private bool WebPaneForRequest(ToolPermissionRequest request, out PaneView? pane)
+    {
+        pane = null;
+        if (webShell is null || request.State != "pending" || !service.Snapshot.Sessions.Any(s => s.Id == request.RunId && s.Kind == "claude")) return false;
+        pane = WebPane(request.RunId);
+        return true;
+    }
+
     private void FlushWebCards()
     {
         if (webShell is null) return;
