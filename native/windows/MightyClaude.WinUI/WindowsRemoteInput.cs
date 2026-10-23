@@ -13,7 +13,9 @@ internal sealed class WindowsRemoteInput : IDisposable
     private static readonly nuint Marker = 0x4D435352;
     private readonly object sync = new();
     private readonly Hook keyboardProc, mouseProc;
-    private readonly Thread observer;
+    private readonly Thread observer, hookThread;
+    private readonly ManualResetEventSlim hooksReady = new(false);
+    private uint hookThreadId;
     private readonly ManualResetEvent stop = new(false);
     private nint keyboardHook, mouseHook;
     private long lastLocalTicks = DateTimeOffset.UtcNow.UtcTicks, observedTicks;
@@ -24,8 +26,12 @@ internal sealed class WindowsRemoteInput : IDisposable
     public WindowsRemoteInput()
     {
         keyboardProc = Keyboard; mouseProc = Mouse;
-        keyboardHook = SetWindowsHookEx(13, keyboardProc, GetModuleHandle(null), 0);
-        mouseHook = SetWindowsHookEx(14, mouseProc, GetModuleHandle(null), 0);
+        // The low-level hooks live on their own thread with its own message loop. Windows calls a low-level hook on the thread
+        // that set it, for every key and pointer move on the whole desktop, and waits for it: set on the UI thread, every pointer
+        // move on the PC waited whenever the window was busy (a long transcript drawing, a state save), and the mouse stuttered
+        // in every app.
+        hookThread = new Thread(PumpHooks) { IsBackground = true, Name = "Screen input hooks", Priority = ThreadPriority.AboveNormal };
+        hookThread.Start(); hooksReady.Wait(TimeSpan.FromSeconds(5));
         observer = new Thread(Observe) { IsBackground = true, Name = "Screen privacy observer" }; observer.SetApartmentState(ApartmentState.MTA); observer.Start();
     }
     public ScreenSafety Safety
@@ -50,6 +56,18 @@ internal sealed class WindowsRemoteInput : IDisposable
         catch (Exception ex) when (ex is COMException or InvalidCastException or TypeLoadException) { }
         finally { if (automation is not null) Marshal.ReleaseComObject(automation); }
     }
+    private void PumpHooks()
+    {
+        hookThreadId = GetCurrentThreadId();
+        keyboardHook = SetWindowsHookEx(13, keyboardProc, GetModuleHandle(null), 0);
+        mouseHook = SetWindowsHookEx(14, mouseProc, GetModuleHandle(null), 0);
+        hooksReady.Set();
+        // Low-level hooks are delivered through this thread's message loop; WM_QUIT from Dispose ends it.
+        while (GetMessage(out var message, 0, 0, 0) > 0) { TranslateMessage(ref message); DispatchMessage(ref message); }
+        if (keyboardHook != 0) UnhookWindowsHookEx(keyboardHook);
+        if (mouseHook != 0) UnhookWindowsHookEx(mouseHook);
+        keyboardHook = mouseHook = 0;
+    }
     private nint Keyboard(int code, nint message, nint pointer)
     {
         if (code >= 0)
@@ -60,7 +78,8 @@ internal sealed class WindowsRemoteInput : IDisposable
                 Interlocked.Exchange(ref lastLocalTicks, DateTimeOffset.UtcNow.UtcTicks);
                 // A physical Ctrl+Alt+Escape is the global kill switch. Remote
                 // input is marked and cannot consume or generate this shortcut.
-                if ((message == 0x100 || message == 0x104) && key.Key == 0x1B && (GetAsyncKeyState(0x11) & 0x8000) != 0 && (GetAsyncKeyState(0x12) & 0x8000) != 0) KillRequested?.Invoke();
+                // The kill runs off the hook thread, which must hand every key back to Windows at once.
+                if ((message == 0x100 || message == 0x104) && key.Key == 0x1B && (GetAsyncKeyState(0x11) & 0x8000) != 0 && (GetAsyncKeyState(0x12) & 0x8000) != 0) ThreadPool.QueueUserWorkItem(_ => KillRequested?.Invoke());
             }
         }
         return CallNextHookEx(0, code, message, pointer);
@@ -131,7 +150,7 @@ internal sealed class WindowsRemoteInput : IDisposable
     private static Input KeyEvent(ushort key, char scan = '\0', uint flags = 0) => new() { Kind = 1, Data = new() { Keyboard = new() { Key = key, Scan = scan, Flags = flags, Extra = Marker } } };
     private static void Send(Input[] values, bool required = true) { if (values.Length > 0 && SendInput((uint)values.Length, values, Marshal.SizeOf<Input>()) != values.Length && required) throw new IOException("Windows could not deliver the remote input."); }
     public void Dispose()
-    { lock (sync) { if (disposed) return; disposed = true; } ReleaseAll(); stop.Set(); if (keyboardHook != 0) UnhookWindowsHookEx(keyboardHook); if (mouseHook != 0) UnhookWindowsHookEx(mouseHook); keyboardHook = mouseHook = 0; /* An unresponsive accessibility provider must not hold shutdown. */ }
+    { lock (sync) { if (disposed) return; disposed = true; } ReleaseAll(); stop.Set(); if (hookThreadId != 0) PostThreadMessage(hookThreadId, 0x0012, 0, 0); /* The hook thread unhooks as it leaves; an unresponsive accessibility provider must not hold shutdown. */ }
     private delegate nint Hook(int code, nint message, nint data);
     [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct KeyboardHook { public uint Key, Scan, Flags, Time; public nuint Extra; }
@@ -146,6 +165,12 @@ internal sealed class WindowsRemoteInput : IDisposable
     [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW")] private static extern nint SetWindowsHookEx(int id, Hook callback, nint module, uint thread);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool UnhookWindowsHookEx(nint hook);
     [DllImport("user32.dll")] private static extern nint CallNextHookEx(nint hook, int code, nint message, nint pointer);
+    [StructLayout(LayoutKind.Sequential)] private struct Message { public nint Window; public uint Id; public nint WParam, LParam; public uint Time; public Point Point; public uint Private; }
+    [DllImport("user32.dll", EntryPoint = "GetMessageW")] private static extern int GetMessage(out Message message, nint window, uint min, uint max);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool TranslateMessage(ref Message message);
+    [DllImport("user32.dll", EntryPoint = "DispatchMessageW")] private static extern nint DispatchMessage(ref Message message);
+    [DllImport("user32.dll", EntryPoint = "PostThreadMessageW")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool PostThreadMessage(uint thread, uint message, nint wParam, nint lParam);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern nint GetModuleHandle(string? name);
     [DllImport("user32.dll")] private static extern nint OpenInputDesktop(uint flags, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint access);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CloseDesktop(nint desktop);

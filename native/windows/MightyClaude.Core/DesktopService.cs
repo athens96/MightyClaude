@@ -33,7 +33,13 @@ public sealed partial class DesktopService : IAsyncDisposable
     /// </summary>
     public event Action<ToolPermissionRequest>? ToolPermissionChanged;
     public event Action<Exception>? PersistenceFailed;
-    public AppSnapshot Snapshot { get { lock (sync) { var copy = Wire.Clone(snapshot); return copy with { Sessions = copy.Sessions.Select(s => s with { CurrentActivity = snapshot.Sessions.FirstOrDefault(original => original.Id == s.Id)?.CurrentActivity }).ToList() }; } } }
+    /// <summary>
+    /// The state as it is now, shared, not copied: every change builds new records and lists (RunSession.Apply, UpdateAsync,
+    /// StateStore.Normalize) and never edits a published one, so a reader can keep and walk it while runs go on. Readers must not
+    /// change what they get. A JSON copy here cost tens of milliseconds for a profile with long transcripts, and the UI reads it
+    /// several times for every run event, which held the UI thread (and with it typing and the pointer) while agents streamed.
+    /// </summary>
+    public AppSnapshot Snapshot { get { lock (sync) return snapshot; } }
     /// <summary>The active pane's id alone, for a caller that asks on every pointer press and needs no copy of the state.</summary>
     public string? ActiveSessionId { get { lock (sync) return snapshot.ActiveSessionId; } }
     /// <summary>One pane's status alone, for the terminal that reads its shell twice a second and needs no copy of the state.</summary>
@@ -173,6 +179,26 @@ public sealed partial class DesktopService : IAsyncDisposable
         }
         foreach (var pane in closed) { ForgetAntigravity(pane.Id); PaneClosed(pane); }
         return save;
+    }
+    /// <summary>
+    /// A composer keystroke: only the pane's draft changes, and its save waits with a streaming run's (at most every 1.5 s,
+    /// <see cref="ScheduleSave"/>). <see cref="UpdateAsync"/> normalizes, copies and writes the whole state, tens of
+    /// milliseconds on the UI thread for a profile with long transcripts, on every key (and an IME sends several per syllable).
+    /// The draft is bounded as <see cref="StateStore.Normalize"/> bounds it; the next full normalize still applies its budget.
+    /// </summary>
+    public void UpdateDraft(string sessionId, string draft)
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(closing, this);
+            var at = snapshot.Sessions.FindIndex(s => s.Id == sessionId);
+            if (at < 0) return;
+            var bounded = Wire.Clean(draft, 100000);
+            if (snapshot.Sessions[at].Draft == bounded) return;
+            var sessions = snapshot.Sessions.ToList(); sessions[at] = sessions[at] with { Draft = bounded };
+            snapshot = snapshot with { Sessions = sessions };
+            ScheduleSave();
+        }
     }
     /// <summary>
     /// Under <see cref="sync"/>: a save of the state as it is now, after every save queued before it. It covers any save a run's
