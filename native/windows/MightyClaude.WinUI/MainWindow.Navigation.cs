@@ -123,20 +123,21 @@ public sealed partial class MainWindow
     /// </summary>
     private TextBlock SidebarKindLine(RunSession session, bool active)
     {
-        var words = session.Kind switch
-        {
-            "shell" => Locale.Get("dashboard.kind.shell") + " · " + Locale.Get("phone.card.localTerminal"),
-            "browser" => Locale.Get("browser.tab.title"),
-            AgentIOPaneKind.Terminal => Locale.Get("dashboard.kind.agentTerminal"),
-            AgentIOPaneKind.Browser => Locale.Get("dashboard.kind.agentBrowser"),
-            FilePaneKind.Kind => Locale.Get("files.pane.title"),
-            "claude" => Locale.Get("dashboard.kind.agent"),
-            _ => session.Kind,
-        };
-        var line = new TextBlock { Text = words, TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(active ? DesignToken.Ink2 : DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis, MinHeight = 15, VerticalAlignment = VerticalAlignment.Center };
+        var line = new TextBlock { Text = SidebarKindWords(session.Kind), TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(active ? DesignToken.Ink2 : DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis, MinHeight = 15, VerticalAlignment = VerticalAlignment.Center };
         sidebarKindLines[session.Id] = line;
         return line;
     }
+    /// <summary>A pane's kind in the sidebar's words (macOS DashboardText.kindLine).</summary>
+    private static string SidebarKindWords(string kind) => kind switch
+    {
+        "shell" => Locale.Get("dashboard.kind.shell") + " · " + Locale.Get("phone.card.localTerminal"),
+        "browser" => Locale.Get("browser.tab.title"),
+        AgentIOPaneKind.Terminal => Locale.Get("dashboard.kind.agentTerminal"),
+        AgentIOPaneKind.Browser => Locale.Get("dashboard.kind.agentBrowser"),
+        FilePaneKind.Kind => Locale.Get("files.pane.title"),
+        "claude" => Locale.Get("dashboard.kind.agent"),
+        _ => kind,
+    };
     /// <summary>Each tab's title, by session id.</summary>
     private readonly Dictionary<string, TextBlock> tabTitles = [];
     /// <summary>
@@ -316,21 +317,22 @@ public sealed partial class MainWindow
         menu.Items.Add(rename);
         menu.Items.Add(MenuItem(Locale.Get("workspace.menu.remove"), () => ConfirmRemoveWorkspace(id)));
         if (remote) return menu;
-        menu.Items.Add(MenuItem(Locale.Get("menu.showInExplorer"), () => Act(() =>
-        {
-            var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == id);
-            // A remote workspace's folder is on its host: Explorer never opens its path here.
-            if (LocalPath(workspace) is { } folder && WorkspaceFiles.RealPath(folder) is { } path && Directory.Exists(path))
-            {
-                var start = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe")) { UseShellExecute = false };
-                start.ArgumentList.Add(path); using var process = System.Diagnostics.Process.Start(start);
-            }
-            return Task.CompletedTask;
-        })));
+        menu.Items.Add(MenuItem(Locale.Get("menu.showInExplorer"), () => ShowWorkspaceInExplorer(id)));
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(OpenFilesMenuItem(id));
         return menu;
     }
+    /// <summary>Opens a local workspace's folder in File Explorer; a remote workspace's folder is on its host, so Explorer never opens its path here.</summary>
+    private Task ShowWorkspaceInExplorer(string id) => Act(() =>
+    {
+        var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == id);
+        if (LocalPath(workspace) is { } folder && WorkspaceFiles.RealPath(folder) is { } path && Directory.Exists(path))
+        {
+            var start = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe")) { UseShellExecute = false };
+            start.ArgumentList.Add(path); using var process = System.Diagnostics.Process.Start(start);
+        }
+        return Task.CompletedTask;
+    });
     /// <summary>
     /// A sidebar pane row's menu, the Mac's two items (M/WorkspaceView.swift:259-268): Rename… and Close
     /// pane, and a delegated child's card actions behind a separator. Focus view and a terminal's history stay in the
@@ -388,6 +390,8 @@ public sealed partial class MainWindow
     {
         // One sheet at a time: a rename asked for while Settings or another sheet is open (a tab's double-click, /rename) is not started.
         if (dialogOpen) return (false, null);
+        // Under the web shell the page draws the sheet; the rules and the saving stay here (MainWindow.WebShell.Shell.cs).
+        if (webShell is not null) return await WebRenameDialog(heading, hint, current, offerAutomatic);
         var title = new TextBlock { Text = heading, TextSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap };
         AutomationProperties.SetHeadingLevel(title, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level1);
         // The field's label is its placeholder, in AppKit's tertiary ink (M/RenameViews.swift:32).

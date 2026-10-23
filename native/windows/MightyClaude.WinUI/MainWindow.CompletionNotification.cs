@@ -88,6 +88,7 @@ public sealed partial class MainWindow
         {
             if (!service.Snapshot.Sessions.Any(s => s.Id == sessionId)) return;
             AppWindow.Show();
+            webShell?.Bridge.Push(new { kind = "select", paneId = sessionId });
             _ = Act(() => SelectLayoutSession(sessionId));
         });
     }

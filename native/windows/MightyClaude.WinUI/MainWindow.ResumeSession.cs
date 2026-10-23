@@ -51,7 +51,7 @@ public sealed partial class MainWindow
     /// runs under Act: a menu click awaits it from an async void handler, so no
     /// exception may escape.
     /// </summary>
-    private Task AddAgentPane(string provider, string? groupId) => Act(async () =>
+    private Task AddAgentPane(string provider, string? groupId) => webShell is not null ? WebAddAgentPane(provider, groupId) : Act(async () =>
     {
         if (!AddPaneMenu.MayAskResume(provider, fromMenu: true) || service.Snapshot.ActiveWorkspaceId is not { } workspaceId
             || service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == workspaceId) is not { } workspace

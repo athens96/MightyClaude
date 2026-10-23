@@ -318,9 +318,12 @@ public sealed partial class MainWindow
     private const double DividerSlack = 3;
 
     /// <summary>A double-click on a split's divider shares the room evenly again (M/PaneDockView.swift:146).</summary>
-    private Task ResetSplit(string workspace, string splitId) => Act(async () =>
+    private Task ResetSplit(string workspace, string splitId) => ResizeSplit(workspace, splitId, .5);
+
+    /// <summary>A split's share saved (the web shell's divider let go; ResetSplit's even share), and the layout made custom.</summary>
+    private Task ResizeSplit(string workspace, string splitId, double ratio) => Act(async () =>
     {
-        await service.UpdateAsync(s => EffectiveLayout(s, workspace) is { } current ? SaveLayoutMode(SaveLayout(s, workspace, PaneLayout.Resize(current, splitId, .5)), workspace, "custom") : s);
+        await service.UpdateAsync(s => EffectiveLayout(s, workspace) is { } current ? SaveLayoutMode(SaveLayout(s, workspace, PaneLayout.Resize(current, splitId, ratio)), workspace, "custom") : s);
         Render();
     });
 
