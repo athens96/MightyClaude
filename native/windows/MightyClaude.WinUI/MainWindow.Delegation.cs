@@ -208,7 +208,7 @@ public sealed partial class MainWindow
     private async Task<ContentDialogResult> ShowDelegationDialog(ContentDialog dialog)
     {
         dialogOpen = true;
-        try { return smokeDelegationDialog is { } driver ? await driver(dialog) : await dialog.ShowAsync(); }
+        try { return smokeDelegationDialog is { } driver ? await driver(dialog) : webShell is not null ? await WebDialog(dialog) : await dialog.ShowAsync(); }
         finally { dialogOpen = false; }
     }
 

@@ -21,7 +21,7 @@ public sealed partial class MainWindow
                 PrimaryButtonText = Locale.Get("workspace.menu.remove"), CloseButtonText = Locale.Get("settings.run.cancelButton"),
                 DefaultButton = ContentDialogButton.Close, XamlRoot = root.XamlRoot,
             });
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary || closing) return;
+            if (await (webShell is not null ? WebDialog(dialog) : dialog.ShowAsync().AsTask()) != ContentDialogResult.Primary || closing) return;
             // Keep the ID the user approved even if a remote selection changed.
             await RemoveWorkspaceConfirmed(id);
         }

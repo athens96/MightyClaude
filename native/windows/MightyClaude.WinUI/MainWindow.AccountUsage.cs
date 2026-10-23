@@ -197,20 +197,22 @@ public sealed partial class MainWindow
             // The Mac's mini switch (M/StatusBarUsage.swift:229), which is the form's: 26×15 with its 13pt knob, filled when off too.
             var toggle = usageDirectToggle = SettingsSwitch(AccountUsageStrings.ToggleLabel, usage.DirectClaudeLookupEnabled, "statusbar-usage-direct-toggle");
             AutomationProperties.SetHelpText(toggle, AccountUsageStrings.ToggleDescription);
-            RoutedEventHandler switched = async (_, _) =>
-            {
-                var on = toggle.IsChecked == true;
-                if (usage.DirectClaudeLookupEnabled == on) return;
-                usage.SetDirectClaudeLookup(on);
-                await service.UpdateAsync(s => s with { ClaudeDirectUsageLookupEnabled = on });
-                RenderAccountUsageDetails();
-                if (on) QueueAccountUsageRefresh(true);
-            };
+            RoutedEventHandler switched = async (_, _) => await SetUsageDirectLookup(toggle.IsChecked == true);
             toggle.Checked += switched; toggle.Unchecked += switched;
             Grid.SetColumn(toggle, 1); row.Children.Add(toggle);
             usageDetails.Children.Add(row);
         }
         usageDetails.Children.Add(new TextBlock { Text = AccountUsageStrings.SharedLimitsNote, TextSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
+    }
+
+    /// Claude's direct lookup switched (the popover's switch, the web page's): saved, and read at once when on.
+    private async Task SetUsageDirectLookup(bool on)
+    {
+        if (usage is null || usage.DirectClaudeLookupEnabled == on) return;
+        usage.SetDirectClaudeLookup(on);
+        await service.UpdateAsync(s => s with { ClaudeDirectUsageLookupEnabled = on });
+        RenderAccountUsageDetails();
+        if (on) QueueAccountUsageRefresh(true);
     }
 
     /// The read-only reset-entitlement rows. Core decides what they say and whether they

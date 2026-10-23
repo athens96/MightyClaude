@@ -43,7 +43,7 @@ public sealed partial class MainWindow
             PerfLog.Mark(line); options.TraceStartup(line);
             return Task.FromResult<object?>(null);
         });
-        RegisterConversationMethods(bridge); RegisterComposerMethods(bridge); RegisterCardMethods(bridge); RegisterMightyMethods(bridge);
+        RegisterConversationMethods(bridge); RegisterComposerMethods(bridge); RegisterCardMethods(bridge); RegisterMightyMethods(bridge); RegisterShellMethods(bridge);
         webShell = new WebShell(bridge, StateDirectory, options.SmokeTest, brushes.Brush(DesignToken.Page).Color);
         root.KeyboardAccelerators.Clear(); root.Children.Clear();
         Grid.SetRowSpan(webShell, 3); Grid.SetColumnSpan(webShell, 2); root.Children.Add(webShell);
