@@ -23,6 +23,8 @@ export function Composer({ session }: { session: RunSession }) {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<AttachmentPreview | null>(null);
   const [dropping, setDropping] = useState(false);
+  /** What the last send did (SendResult.outcome), on the card for the web smoke. */
+  const [outcome, setOutcome] = useState<string | null>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
   const sending = useRef(false);
   const [catalog, setCatalog] = useState<{ value: SlashCatalog; read: number } | null>(null);
@@ -71,8 +73,10 @@ export function Composer({ session }: { session: RunSession }) {
       const result = await bridge.call<SendResult>('send', { paneId, text: sent, second, attachments: state?.attachments.map((a) => a.id) ?? [] });
       store.dispatch({ kind: 'composer', state: result.state });
       if ((editor.current?.value ?? '') === sent) setText(result.draft);
+      setOutcome(result.outcome);
       if (result.outcome === 'notStarted') setError(t('remote.error.startFailed'));
     } catch (failure) {
+      setOutcome('error');
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       sending.current = false;
@@ -205,6 +209,7 @@ export function Composer({ session }: { session: RunSession }) {
       <div
         className={'composer-card' + (dropping ? ' dropping' : '')}
         data-testid="composer"
+        data-last-outcome={outcome ?? undefined}
         onDragOver={(event) => { if (event.dataTransfer.types.includes('Files') && state?.attachmentsAllowed) { event.preventDefault(); setDropping(true); } }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false); }}
         onDrop={drop}

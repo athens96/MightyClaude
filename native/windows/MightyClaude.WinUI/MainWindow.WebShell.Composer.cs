@@ -119,6 +119,52 @@ public sealed partial class MainWindow
         bridge.Register("attachmentPreview", args => Task.FromResult(WebPane(args.Text("paneId")).WebAttachmentPreview(args.Text("id") ?? "")));
     }
 
+    /// <summary>
+    /// The composer's part of the web smoke: text typed into the page's editor must reach the pane's draft in the service, and
+    /// Enter must come back with what the send did (<see cref="PaneView.Submit"/>). The start goes to a stand-in that records the
+    /// request (smokeStart): no CLI runs and no AI request is made. A send the pane refuses (no CLI in the smoke profile) is a result too.
+    /// </summary>
+    private async Task<bool> RunWebComposerSmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, string paneId, Dictionary<string, object?> result)
+    {
+        const string Typed = "web smoke draft-marker";
+        const string Type = "(() => { const e = document.querySelector('[data-testid=composer-input]'); if (!e) return false; e.focus(); "
+            + "Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(e, '" + Typed + "'); e.dispatchEvent(new Event('input', { bubbles: true })); return true; })()";
+        const string Enter = "(() => { const e = document.querySelector('[data-testid=composer-input]'); e?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true })); return !!e; })()";
+        const string Outcome = "JSON.stringify({ outcome: document.querySelector('[data-testid=composer]')?.dataset.lastOutcome ?? null, text: document.querySelector('[data-testid=composer-input]')?.value ?? null, primary: !!document.querySelector('[data-testid=composer-primary]') })";
+        var started = new List<string>(); var previous = smokeStart;
+        smokeStart = request => { started.Add(request.Input); return Task.CompletedTask; };
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (DateTime.UtcNow < deadline && await core.ExecuteScriptAsync("!!document.querySelector('[data-testid=composer-input]')") != "true") await Task.Delay(100);
+            var typed = await core.ExecuteScriptAsync(Type) == "true";
+            string? Draft() => service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId)?.Draft;
+            deadline = DateTime.UtcNow.AddSeconds(15);
+            while (DateTime.UtcNow < deadline && Draft() != Typed) await Task.Delay(100);
+            var drafted = Draft() == Typed;
+            result["composerTyped"] = typed; result["composerDraft"] = drafted;
+            await core.ExecuteScriptAsync(Enter);
+            JsonElement page = default; string? outcome = null;
+            deadline = DateTime.UtcNow.AddSeconds(20);
+            while (DateTime.UtcNow < deadline)
+            {
+                page = JsonDocument.Parse(JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync(Outcome)) ?? "{}").RootElement.Clone();
+                if ((outcome = page.Text("outcome")) is not null) break;
+                await Task.Delay(100);
+            }
+            result["composerSend"] = page; result["composerStarts"] = started.ToArray();
+            // A start must have reached the stand-in with the typed words; a refusal must leave them in the editor.
+            var answered = outcome switch
+            {
+                "started" => started.Any(text => text.Contains(Typed, StringComparison.Ordinal)),
+                "blocked" or "notStarted" or "queued" or "none" => started.Count == 0,
+                _ => false,
+            };
+            return typed && drafted && page.TryGetProperty("primary", out var primary) && primary.GetBoolean() && answered;
+        }
+        finally { smokeStart = previous; }
+    }
+
     private sealed partial class PaneView
     {
         internal string PaneId => id;
