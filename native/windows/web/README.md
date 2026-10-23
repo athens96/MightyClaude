@@ -10,7 +10,7 @@ metrics from `native/contracts/fixtures/design-tokens.json`, both imported where
 npm ci
 npm run build        # → dist/, relative asset paths
 npm run typecheck
-npm test             # vitest: store and deltas, bridge, locale, tokens, conversation (Markdown, references, questionnaire, windowing, views), composer (keys, slash palette, attachments, menus, clock), cards (question steps, card keyboard, the cards push)
+npm test             # vitest: store and deltas, bridge, locale, tokens, conversation (Markdown, references, questionnaire, windowing, views), composer (keys, slash palette, attachments, menus, clock), cards (question steps, card keyboard, the cards push), mighty (graph vectors, layout rules, run sharing, render cost)
 ```
 
 `dotnet build` of `MightyClaude.WinUI` runs `npm ci` (only when `node_modules` is missing) and `npm run build` itself
@@ -53,4 +53,13 @@ the WinUI screens (`MainWindow.WebShell.cs`).
   here: the question card's steps (`questionnaire.ts`) and the card keyboard (`keys.ts`). A next action's words come back from
   the host and reach the composer as the store's `fill`. Host methods: `cards`, `permissionAnswer`, `questionnaireAnswer`,
   `planAnswer`, `antigravityAnswer`, `webOpenChoose`, `loginAction`, `backgroundWork`, `nextActionFill`, `statusLineTrust`.
+- `src/mighty/` — the Mighty views in place of the conversation when the pane is in Mighty mode (spec: `.omc/plans/mighty-spec.md`).
+  The diagram is laid out here: `layout.ts` and `camera.ts` port MightyGraphLayout, the camera, follow, zoom and wheel, dot grid and
+  activity outline rules, `prefs.ts` the saved-size rules, checked against `native/contracts/graph-vectors.json` (alias `@contracts`).
+  Each block's copy, the layout's inputs (waiting plan, answered plans, pictures, executions, result files, history), the timeline's
+  groups and the pipeline's boards come from the never-shown pane view (`MainWindow.WebShell.Mighty.cs`) as `{kind:'mighty'}`, only
+  while the page shows the view, at most every 120 ms, blocks by id. `share.ts` keeps a streamed run's unchanged lists, so only the
+  changed blocks draw (`data-renders` counts each block's draws); a block out of view draws its header alone. Host methods:
+  `mightyVisible`, `mightySetMode`, `mightySetPresentation`, `mightySaveSize`, `mightyExpand`, `mightyResultFiles`, `mightyLoadOlder`,
+  `mightyImages`, `mightyTimelineFlip`.
 - `src/shell/`, `src/pane/` — the views. `src/i18n/`, `src/theme/` — strings and design tokens.
