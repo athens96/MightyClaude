@@ -94,8 +94,9 @@ public sealed partial class MainWindow
             ToolTipService.SetToolTip(backgroundWorkToggle, Locale.Get(backgroundWorkToggle.IsChecked == true ? "composer.backgroundWork.hide" : "composer.backgroundWork.show"));
 
         /// <summary>
-        /// The pane's background agents outside a style that draws its own list: in any view once the turn is over
-        /// and they still run, and in the Mighty view all along — folded to one line that opens to the task rows.
+        /// The pane's background agents outside a style that draws its own list: in any view once the turn is over, and
+        /// in the Mighty view all along, while they run and after they ended and told the agent — folded to one line that
+        /// opens to the task rows.
         /// </summary>
         internal void RefreshBackgroundWork(RunSession pane)
         {
@@ -121,7 +122,7 @@ public sealed partial class MainWindow
             face.Children.Add(ComposerGlyph.Icon("", 11).Ink(b.Brush(DesignToken.Accent)).View);
             var title = new TextBlock { Text = Locale.Get("plan.background.listTitle", new Dictionary<string, string> { ["count"] = count }), TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1); face.Children.Add(title);
-            var summary = new TextBlock { Text = PlanCardSupport.BackgroundSummary(work), TextSize = 11, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            var summary = new TextBlock { Text = PlanCardSupport.BackgroundStripSummary(work), TextSize = 11, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(summary, 2); face.Children.Add(summary);
             var chevron = (backgroundOpen ? ComposerGlyph.ChevronDown(8, 1.2) : ComposerGlyph.ChevronRight(8, 1.2)).Ink(ink2);
             Grid.SetColumn(chevron.View, 3); face.Children.Add(chevron.View);
@@ -215,8 +216,9 @@ public sealed partial class MainWindow
             await Change(p => p with { Status = "running", BackgroundWork = work }); Refresh();
         }
 
+        /// <summary>Kind · status · elapsed, then whether the agent hears of it when it ends or has heard (PlanCardSupport.BackgroundNotice).</summary>
         private static string TaskDetail(StylePresentation.TaskRow task, DateTimeOffset now) =>
-            string.Join(" · ", new[] { task.KindTitle, task.StatusTitle, task.Elapsed(now) }.Where(s => s.Length > 0));
+            string.Join(" · ", new[] { task.KindTitle, task.StatusTitle, task.Elapsed(now), PlanCardSupport.BackgroundNotice(task.Status) ?? "" }.Where(s => s.Length > 0));
 
         private void ForgetElapsed(List<(TextBlock Text, StylePresentation.TaskRow Task)> elapsed) => elapsed.Clear();
 

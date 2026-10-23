@@ -68,6 +68,7 @@ CLI 登录过期导致请求失败时，输入框上方会出现登录恢复卡�
 ## 后台任务 {#background}
 Claude 有时会在后台运行耗时较长的命令或子智能体。这时即使 Claude 的回答已经结束，任务也仍在进行。
 - 输入框上方会显示一行提示，说明本轮已结束，但后台任务仍在运行。点击{{ui:plan.background.show}}可以查看每个任务的类型、状态和用时。
+- 运行中的任务标有{{ui:plan.background.awaitingNotice}}。任务结束时会通知 Claude，Claude 收到结果后继续回答。结束的任务变为{{ui:plan.background.noticeDelivered}}，并一直留在这一行，直到发送下一个请求。
 - 在 Mighty 视图中显示为{{ui:graph.block.task}}块。
 - 此时发送的请求会进入队列，在后台任务结束后开始。要立即开始，请点击停止：队列会保留，其中的第一个请求接着开始。在开启了[Mighty 编排](delegation.md#worktree)、位于 git 仓库中的窗格里，也可以按{{kbd:⌘Enter}}立即在新的 worktree 中运行。
 - 如果这一行碍事，点击它右侧的眼睛按钮（{{ui:plan.background.hideStrip}}）。所有窗格中都会隐藏这一行，后台任务照常运行。

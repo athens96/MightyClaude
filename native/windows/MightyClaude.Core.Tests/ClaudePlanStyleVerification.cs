@@ -185,6 +185,17 @@ internal static class ClaudePlanStyleVerification
         var running = work with { TurnEnded = false };
         Check(PlanCardSupport.ShowsBackgroundStrip(work, false, false) && !PlanCardSupport.ShowsBackgroundStrip(running, false, false), "outside Mighty only once the turn is over");
         Check(PlanCardSupport.ShowsBackgroundStrip(running, true, false) && !PlanCardSupport.ShowsBackgroundStrip(work, true, true) && !PlanCardSupport.ShowsBackgroundStrip(null, true, false), "Mighty all along, unless the style draws its own");
+        var told = work with { Tasks = [work.Tasks[0] with { Status = "completed", EndedAt = "2026-10-06T01:01:00.000Z" }] };
+        var lost = work with { Tasks = [work.Tasks[0] with { Status = "unknown", EndedAt = "2026-10-06T01:01:00.000Z" }] };
+        Check(PlanCardSupport.ShowsBackgroundStrip(told, false, false) && PlanCardSupport.ShowsBackgroundStrip(told with { TurnEnded = false }, true, false) && !PlanCardSupport.ShowsBackgroundStrip(told with { TurnEnded = false }, false, false),
+            "work that ended and told the agent stays on the line, by the same view rule");
+        Check(!PlanCardSupport.ShowsBackgroundStrip(lost, false, false) && !PlanCardSupport.ShowsBackgroundStrip(lost, true, false), "work that ended with the process told no one and leaves the line");
+        Korean(() =>
+        {
+            Check(PlanCardSupport.BackgroundNotice("running") == "끝나면 알림" && PlanCardSupport.BackgroundNotice("failed") == "알림 전달됨" && PlanCardSupport.BackgroundNotice("unknown") is null, "each row says what the agent hears");
+            Check(PlanCardSupport.BackgroundStripSummary(work) == "턴 완료 · 백그라운드 1개 실행 중 · 끝나면 알림" && PlanCardSupport.BackgroundStripSummary(told) == "모두 끝남 · 알림 전달됨", "the folded line says the agent is told");
+            return 0;
+        });
         var payload = JsonSerializer.Serialize(StylePresentation.Payload(new StyleStateWidget("taskList", Tasks: [new StyleTaskItem("x", "agent", "running", "2026-10-06T01:00:00.000Z")])));
         Check(payload.Contains("\"kind\":\"taskList\"", StringComparison.Ordinal) && !payload.Contains("endedAt", StringComparison.Ordinal), "the task list payload carries only what it has");
         return Task.CompletedTask;

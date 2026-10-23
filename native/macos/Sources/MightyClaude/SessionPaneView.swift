@@ -205,9 +205,10 @@ struct SessionPaneView: View {
                    session.kind == "claude", let plans = session.planHistory, !plans.isEmpty {
                     PlanHistoryStrip(sessionId: session.id, records: plans)
                 }
-                // Background agents still running: in any view once the turn is
-                // over, and in the Mighty view all along — unless the pane's style
-                // draws its own task list or the user hid the line.
+                // Background agents, while they run and after they ended and told
+                // the agent: in any view once the turn is over, and in the Mighty
+                // view all along — unless the pane's style draws its own task
+                // list or the user hid the line.
                 if session.kind == "claude", let work = session.backgroundWork,
                    PlanCardSupport.showsBackgroundStrip(work, mighty: showsMightyGraph, styleDrawsTasks: PlanCardSupport.styleDrawsTasks(style?.manifest), enabled: store.showsBackgroundWork) {
                     BackgroundWorkStrip(sessionId: session.id, work: work)

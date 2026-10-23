@@ -124,6 +124,25 @@ struct PlanCardTests {
         #expect(!PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [task], turnEnded: false), mighty: true, styleDrawsTasks: false, enabled: false))
     }
 
+    @Test func theBackgroundLineSaysTheAgentIsToldAndStaysOnceItWas() {
+        let running = BackgroundTask(id: "a", kind: "shell", description: "build", startedAt: "2027-01-15T08:00:00.000Z")
+        var told = running; told.status = "completed"; told.endedAt = "2027-01-15T08:01:00.000Z"
+        var lost = told; lost.status = "unknown"
+        let waiting = BackgroundWork(tasks: [running], turnEnded: true)
+        let ended = BackgroundWork(tasks: [told], turnEnded: true)
+        #expect(PlanCardSupport.showsBackgroundStrip(ended, mighty: false, styleDrawsTasks: false))
+        #expect(PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [told], turnEnded: false), mighty: true, styleDrawsTasks: false))
+        #expect(!PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [told], turnEnded: false), mighty: false, styleDrawsTasks: false))
+        for mighty in [false, true] { #expect(!PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [lost], turnEnded: true), mighty: mighty, styleDrawsTasks: false)) }
+        LocaleOverride.$language.withValue(.ko) {
+            #expect(PlanCardSupport.backgroundNotice("running") == "끝나면 알림")
+            #expect(PlanCardSupport.backgroundNotice("failed") == "알림 전달됨")
+            #expect(PlanCardSupport.backgroundNotice("unknown") == nil)
+            #expect(PlanCardSupport.backgroundStripSummary(waiting) == "턴 완료 · 백그라운드 1개 실행 중 · 끝나면 알림")
+            #expect(PlanCardSupport.backgroundStripSummary(ended) == "모두 끝남 · 알림 전달됨")
+        }
+    }
+
     @Test func thePlanCardTakesTheResultsPlaceAndRecordsHangBesideTheRequest() throws {
         let agent = MightyGraphAgent(id: "a1", title: "조사")
         var running = Self.run("g2", source: "run-b"); running.agents = [agent]

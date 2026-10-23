@@ -2,7 +2,8 @@ import SwiftUI
 import MightyCore
 
 /// Background tasks, one row each: a status dot, what the task is doing, and
-/// its kind · status · elapsed time. The plan style's task-list widget and
+/// its kind · status · elapsed time · whether the agent hears of it when it
+/// ends or has heard (`PlanCardSupport.backgroundNotice`). The plan style's task-list widget and
 /// the pane's own background strip both draw this, so they read the same.
 struct BackgroundTaskRows: View {
     let tasks: [StyleWidgetPresentation.Task]
@@ -24,7 +25,7 @@ struct BackgroundTaskRows: View {
     }
 
     private func row(_ task: StyleWidgetPresentation.Task, now: Date) -> some View {
-        let detail = [task.kindTitle, task.statusTitle, task.elapsed(now: now)].filter { !$0.isEmpty }.joined(separator: " · ")
+        let detail = [task.kindTitle, task.statusTitle, task.elapsed(now: now), PlanCardSupport.backgroundNotice(task.status) ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
         return HStack(spacing: DesignMetrics.Spacing.sm) {
             Circle().fill(color(task.status)).frame(width: 6, height: 6)
             Text(verbatim: task.text).font(.ui(size: 11)).foregroundStyle(Palette.ink).lineLimit(1)
@@ -62,7 +63,7 @@ struct BackgroundWorkStrip: View {
                     HStack(spacing: DesignMetrics.Spacing.sm) {
                         Image(systemName: "square.stack.3d.up").foregroundStyle(Palette.accent)
                         Text(L("plan.background.listTitle", ["count": "\(work.tasks.count)"])).font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
-                        Text(verbatim: PlanCardSupport.backgroundSummary(work)).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
+                        Text(verbatim: PlanCardSupport.backgroundStripSummary(work)).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
                         Spacer(minLength: 0)
                         Image(systemName: open ? "chevron.up" : "chevron.down").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
                     }.contentShape(Rectangle())
