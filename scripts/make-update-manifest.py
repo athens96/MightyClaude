@@ -12,9 +12,11 @@ was built with MIGHTY_UPDATE_PUBLIC_KEY; the plain manifest is written next
 to it as latest.unsigned.json. The version defaults to the VERSION file and
 must match the app's rule: N(.N){0,3} with optional -prerelease/+build.
 Signing uses scripts/update-manifest-sign.swift (compiled with swiftc on
-first use), so it runs on macOS/CI without extra Python packages.
+first use), so it runs on macOS/CI without extra Python packages. Where there
+is no swiftc (Windows) it signs with Python's `cryptography` package
+(`pip install cryptography`), from the same key file. Key generation needs swiftc.
 """
-import argparse, base64, datetime, hashlib, json, os, re, subprocess, sys
+import argparse, base64, datetime, hashlib, json, os, re, shutil, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION_RE = re.compile(r"^v?[0-9]+(\.[0-9]+){0,3}(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$")
@@ -37,6 +39,14 @@ def signer():
         os.makedirs(os.path.dirname(binary), exist_ok=True)
         subprocess.run(["swiftc", "-O", source, "-o", binary], check=True)
     return binary
+
+def sign(key_path, path):
+    """The base64 Ed25519 signature over the file's bytes: the Swift signer where swiftc exists, else `cryptography`."""
+    if shutil.which("swiftc"):
+        return subprocess.run([signer(), "sign", key_path, path], capture_output=True, text=True, check=True).stdout.strip()
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    with open(key_path, encoding="utf-8") as f: seed = base64.b64decode(f.read().strip(), validate=True)
+    with open(path, "rb") as f: return base64.b64encode(Ed25519PrivateKey.from_private_bytes(seed).sign(f.read())).decode("ascii")
 
 def main():
     p = argparse.ArgumentParser()
@@ -72,8 +82,9 @@ def main():
     plain = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
     if a.sign_key:
         unsigned = os.path.splitext(a.out)[0] + ".unsigned.json"
-        with open(unsigned, "w", encoding="utf-8") as f: f.write(plain)
-        signature = subprocess.run([signer(), "sign", a.sign_key, unsigned], capture_output=True, text=True, check=True).stdout.strip()
+        # The signature covers the payload's bytes, so the file signed must hold them exactly: no CRLF on Windows.
+        with open(unsigned, "w", encoding="utf-8", newline="\n") as f: f.write(plain)
+        signature = sign(a.sign_key, unsigned)
         envelope = {"format": FORMAT, "version": manifest["version"], "payload": base64.b64encode(plain.encode("utf-8")).decode("ascii"), "signature": signature}
         with open(a.out, "w", encoding="utf-8") as f: json.dump(envelope, f, ensure_ascii=False, indent=2); f.write("\n")
         print(a.out, "(signed)", unsigned)
