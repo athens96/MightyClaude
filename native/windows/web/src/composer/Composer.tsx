@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { useServices, useStoreState } from '../app/context';
+import { ComposerCard } from '../cards/Cards';
 import type { RunSession } from '../store/models';
 import { attachmentRefusal, byteLabel, toBase64 } from './attachments';
 import { enterAction, maximumDraft } from './keys';
@@ -18,7 +19,9 @@ const catalogLifetime = 30_000;
  */
 export function Composer({ session }: { session: RunSession }) {
   const { bridge, store, t } = useServices();
-  const state: ComposerState | undefined = useStoreState().composers[session.id];
+  const stored = useStoreState();
+  const state: ComposerState | undefined = stored.composers[session.id];
+  const fill = stored.fills[session.id];
   const [text, setText] = useState(() => session.draft ?? '');
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<AttachmentPreview | null>(null);
@@ -63,6 +66,16 @@ export function Composer({ session }: { session: RunSession }) {
     setText(draft);
     void bridge.call('updateDraft', { paneId, text: draft }).catch(() => {});
   }, [bridge, paneId]);
+
+  // A card filled the draft (a next action, MainWindow.WebShell.Cards.cs): its words replace the editor's, and it takes the keyboard.
+  const filled = useRef(fill?.seq ?? 0);
+  useEffect(() => {
+    if (!fill || fill.seq === filled.current) return;
+    filled.current = fill.seq;
+    change(fill.text);
+    const element = editor.current;
+    if (element) { element.focus(); requestAnimationFrame(() => element.setSelectionRange(element.value.length, element.value.length)); }
+  }, [fill, change]);
 
   const send = useCallback(async (second: boolean) => {
     if (sending.current) return;
@@ -266,6 +279,7 @@ export function Composer({ session }: { session: RunSession }) {
           onKeyDown={keyDown}
           onPaste={paste}
         />
+        <ComposerCard paneId={paneId} kind="login" />
         <div className="composer-toolbar">
           {state?.attachmentsAllowed !== false && (
             <button type="button" className="composer-icon-button" aria-label={t('composer.attach.name')} title={t('composer.attach.name')} disabled={state?.attachmentsLoading} onClick={() => call('pickAttachments')}>＋</button>
@@ -290,6 +304,7 @@ export function Composer({ session }: { session: RunSession }) {
             {state?.primary === 'stop' ? '■' : state?.primary === 'queue' ? '☰' : '↑'}
           </button>
         </div>
+        <ComposerCard paneId={paneId} kind="statusLine" />
       </div>
       {preview && (
         <div className="composer-preview" role="dialog" aria-label={preview.name} onClick={() => setPreview(null)}>

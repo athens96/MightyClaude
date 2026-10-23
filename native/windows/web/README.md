@@ -10,7 +10,7 @@ metrics from `native/contracts/fixtures/design-tokens.json`, both imported where
 npm ci
 npm run build        # → dist/, relative asset paths
 npm run typecheck
-npm test             # vitest: store and deltas, bridge, locale, tokens, conversation (Markdown, references, questionnaire, windowing, views), composer (keys, slash palette, attachments, menus, clock)
+npm test             # vitest: store and deltas, bridge, locale, tokens, conversation (Markdown, references, questionnaire, windowing, views), composer (keys, slash palette, attachments, menus, clock), cards (question steps, card keyboard, the cards push)
 ```
 
 `dotnet build` of `MightyClaude.WinUI` runs `npm ci` (only when `node_modules` is missing) and `npm run build` itself
@@ -46,4 +46,11 @@ the WinUI screens (`MainWindow.WebShell.cs`).
   `updateDraft`, `send`, `stop`, `queueRemove`, `queueRunNext`, `installCli`, `pickAttachments`, `addAttachments`,
   `removeAttachment`, `dismissAttachmentError`, `attachmentPreview`, `slashCommands`, `slashAction`, `composerMenu`,
   `composerMenuChoose`, `toggleFast`, `runSettings`, `applyRunSettings`, `sessionInfo`, `newConversation`.
+- `src/cards/` — the cards over the composer (spec §4) and the status line in it (§5): next actions, plan history, background
+  work, the waiting tool permission / question / plan (Markdown by `src/conversation`), the Antigravity card, web-open prompts
+  and the sign-in card. The host reads them from the same never-shown WinUI pane view (`MainWindow.WebShell.Cards.cs`) and
+  pushes `{kind:'cards', paneId, cards}` when they change; every answer goes through the WinUI card's own method. Pure parts
+  here: the question card's steps (`questionnaire.ts`) and the card keyboard (`keys.ts`). A next action's words come back from
+  the host and reach the composer as the store's `fill`. Host methods: `cards`, `permissionAnswer`, `questionnaireAnswer`,
+  `planAnswer`, `antigravityAnswer`, `webOpenChoose`, `loginAction`, `backgroundWork`, `nextActionFill`, `statusLineTrust`.
 - `src/shell/`, `src/pane/` — the views. `src/i18n/`, `src/theme/` — strings and design tokens.

@@ -124,7 +124,7 @@ public sealed partial class MainWindow
         });
         bridge.Register("loginAction", async args => { await WebPane(args.Text("paneId")).WebLoginAction(args.Text("action") ?? "", args.Text("code")); return null; });
         bridge.Register("backgroundWork", async args => { await WebPane(args.Text("paneId")).WebBackgroundWork(args.Text("action") ?? ""); return null; });
-        bridge.Register("nextActionFill", args => Task.FromResult<object?>(WebPane(args.Text("paneId")).WebNextActionFill(args.Text("entryId") ?? "", args.TryGetProperty("index", out var at) && at.TryGetInt32(out var n) ? n : -1, args.Text("draft") ?? "")));
+        bridge.Register("nextActionFill", args => Task.FromResult<object?>(WebPane(args.Text("paneId")).WebNextActionFill(args.Text("entryId") ?? "", args.TryGetProperty("index", out var at) && at.TryGetInt32(out var n) ? n : -1)));
         bridge.Register("statusLineTrust", async args => { await WebPane(args.Text("paneId")).WebStatusLineTrust(Flag(args, "allow")); return null; });
     }
 
@@ -209,12 +209,12 @@ public sealed partial class MainWindow
             return actions.Count == 0 ? null : new(reply.Id, actions.Select(a => a.DisplayLabel).ToArray());
         }
 
-        /// <summary>A next action's words into the page's draft (<see cref="FillNextAction"/>'s checks and insertion); null when it may not.</summary>
-        internal string? WebNextActionFill(string entryId, int index, string draft)
+        /// <summary>A next action's words into the draft the page mirrors here (<see cref="FillNextAction"/>'s checks and insertion): the draft after it, or null when it may not.</summary>
+        internal string? WebNextActionFill(string entryId, int index)
         {
             if (!QueuePaneAlive || owner.dialogOpen || starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(Session)) return null;
             if (NextActions.Latest(Session.Logs) is not { } latest || latest.EntryId != entryId || index < 0 || index >= latest.Actions.Count) return null;
-            var insertion = NextActions.Insertion(draft, latest.Actions[index].Fill);
+            var draft = input.Text; var insertion = NextActions.Insertion(draft, latest.Actions[index].Fill);
             return insertion.ReplacesDraft ? insertion.Text : draft + insertion.Text;
         }
 

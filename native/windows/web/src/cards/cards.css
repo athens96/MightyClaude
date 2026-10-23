@@ -1,0 +1,146 @@
+/* The cards over the composer (spec §4) and the status line in it (spec §5); colours and metrics are the design tokens. */
+.cards { display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-sm) var(--space-md) 0; background: var(--card-raised); max-height: 60vh; overflow-y: auto; }
+.card-spacer { flex: 1; }
+.card-hint { flex: 1; font-size: 11px; color: var(--ink2); }
+.card-hint-row { display: flex; align-items: center; gap: var(--space-sm); }
+.card-note { font-size: 10px; color: var(--ink2); }
+.card-wait-note { font-size: 10px; color: var(--wait-text); }
+.card-error { font-size: 11px; color: var(--err-text); user-select: text; }
+.card-waiting { font-size: 12px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.card-spinner { width: 10px; height: 10px; border: 1.5px solid var(--ink3); border-top-color: var(--ink2); border-radius: 50%; animation: card-spin 0.8s linear infinite; display: inline-block; }
+@keyframes card-spin { to { transform: rotate(360deg); } }
+
+/* The wait card the permission, question and plan cards share (WaitCard): card inside a 2pt wait edge. */
+.wait-card {
+  display: flex; flex-direction: column; gap: var(--space-sm);
+  background: var(--card); border: var(--stroke-active) solid var(--wait); border-radius: var(--radius-composer);
+  padding: calc(var(--space-md) - var(--stroke-active)); color: var(--ink);
+}
+.wait-card-title { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
+.wait-card-footer { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
+.card-badge { width: 22px; height: 22px; border-radius: 11px; background: var(--wait); color: var(--on-wait); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex: none; }
+.card-title { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-tool { flex: 1; font-family: var(--font-mono); font-size: 11.5px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-headline { font-size: 14px; font-weight: 700; user-select: text; }
+.card-details { display: flex; flex-direction: column; gap: var(--space-sm); max-height: 180px; overflow-y: auto; }
+.card-field { display: flex; flex-direction: column; gap: var(--space-xxs); }
+.card-field-label { font-size: 10px; font-weight: 600; color: var(--ink2); }
+.card-field-value { font-size: 11px; white-space: pre-wrap; user-select: text; }
+.card-field-strong { font-size: 12px; font-weight: 600; user-select: text; }
+.card-field-code, .card-json { font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; background: var(--card-raised); border-radius: var(--radius-row); padding: var(--space-sm); user-select: text; margin: 0; }
+.card-json { font-size: 10px; background: transparent; padding: var(--space-xs) 0 0; }
+.card-rule { font-family: var(--font-mono); font-size: 10px; color: var(--ink2); user-select: text; }
+.card-path { font-size: 10px; }
+
+.card-button {
+  height: 28px; padding: 0 var(--space-md); border-radius: var(--radius-card-button); font: inherit; font-size: 12px; font-weight: 700; cursor: default;
+  background: var(--card-raised); color: var(--ink); border: var(--stroke-line) solid var(--line);
+}
+.card-button.prominent { background: var(--ink); color: var(--card); border: 0; }
+.card-button.accent { background: var(--accent); color: var(--on-accent); border: 0; }
+.card-button.small { height: 22px; padding: 0 var(--space-sm); font-size: 11px; font-weight: 500; border-radius: 5px; }
+.card-button:disabled { opacity: 0.45; }
+.card-button:focus-visible, .question-choice:focus-visible, .question-dot:focus-visible, .card-fold:focus-visible, .next-action:focus-visible, .card-icon-button:focus-visible { outline: var(--stroke-focus) solid var(--accent); outline-offset: 1px; }
+.card-icon-button { border: 0; background: transparent; color: var(--ink2); width: 22px; height: 20px; border-radius: var(--radius-file-row); cursor: default; }
+.card-icon-button:hover { background: var(--track); }
+.card-fold { display: flex; align-items: center; gap: var(--space-sm); flex: 1; min-width: 0; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 11px; padding: 0; text-align: left; cursor: default; border-radius: var(--radius-file-row); }
+.card-fold.small { font-size: 10px; flex: none; }
+.card-chevron { color: var(--ink2); font-size: 9px; }
+.card-text { width: 100%; min-height: 56px; max-height: 120px; resize: vertical; font: inherit; font-size: 12px; color: var(--ink); background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-row); padding: var(--space-xs) var(--space-sm); box-sizing: border-box; }
+.card-text::placeholder { color: var(--ink3); }
+
+/* The question card (Questionnaire.cs): dots, then the answers as tiles two a row where there is room. */
+.question-dots { display: inline-flex; gap: var(--space-xs); }
+.question-dot { width: 18px; height: 18px; border-radius: 9px; border: 0; padding: 0; font-size: 10px; font-weight: 700; background: var(--track); color: var(--ink2); font-variant-numeric: tabular-nums; cursor: default; }
+.question-dot.done { background: var(--wait-soft); color: var(--wait-text); }
+.question-dot.now { background: var(--wait); color: var(--on-wait); }
+.question-dot:disabled { opacity: 0.45; }
+.question-section { display: flex; flex-direction: column; gap: var(--space-sm); max-height: 300px; overflow-y: auto; }
+.question-kind { display: flex; align-items: center; gap: var(--space-sm); }
+.question-header { flex: 1; font-size: 11px; font-weight: 600; color: var(--wait-text); }
+.question-text { font-size: 14.5px; font-weight: 700; user-select: text; }
+.question-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.question-choice {
+  display: flex; gap: var(--space-sm); align-items: flex-start; min-height: 50px; text-align: left; font: inherit; color: var(--ink); cursor: default;
+  background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: 11px; padding: calc(var(--space-sm) - var(--stroke-line)) calc(var(--space-md) - var(--stroke-line));
+}
+.question-choice.on { background: var(--wait-soft); border: var(--stroke-active) solid var(--wait); padding: calc(var(--space-sm) - var(--stroke-active)) calc(var(--space-md) - var(--stroke-active)); }
+.question-mark { font-size: 14px; color: var(--ink2); }
+.question-choice.on .question-mark { color: var(--wait-text); }
+.question-words { display: flex; flex-direction: column; gap: var(--space-xxs); }
+.question-words strong { font-size: 13px; }
+.question-words span { font-size: 11.5px; color: var(--ink2); }
+
+/* The plan card (PlanCard.cs): the plan on the raised page, then the four answers, the accent one last. */
+.plan-document { background: var(--card-raised); border-radius: var(--radius-entry); padding: var(--space-sm) var(--space-md); max-height: 260px; overflow-y: auto; min-height: 40px; user-select: text; }
+.plan-revise { display: flex; flex-direction: column; gap: var(--space-sm); }
+.plan-revise-actions { display: flex; justify-content: flex-end; gap: var(--space-sm); }
+.plan-answers { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.card-dialog { position: fixed; inset: 0; background: color-mix(in srgb, var(--ink) 30%, transparent); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.card-dialog-body { width: min(860px, 92vw); height: min(680px, 88vh); display: flex; flex-direction: column; gap: var(--space-md); background: var(--card); border-radius: var(--radius-composer); padding: var(--space-lg); color: var(--ink); }
+.card-dialog-title { display: flex; gap: var(--space-sm); align-items: baseline; }
+.card-dialog-document { flex: 1; overflow-y: auto; user-select: text; }
+.card-dialog-body > .card-button { align-self: flex-end; }
+
+/* The folded strips (plan history, background work): one line on the card with a 1pt line. */
+.card-strip { display: flex; flex-direction: column; gap: var(--space-sm); background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-entry); padding: calc(var(--space-sm) - var(--stroke-line)) calc(var(--space-md) - var(--stroke-line)); }
+.card-strip-line { display: flex; align-items: center; gap: var(--space-sm); }
+.card-strip-mark { color: var(--accent); }
+.card-strip-summary { flex: 1; min-width: 0; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-strip-list { display: flex; flex-direction: column; gap: var(--space-sm); max-height: 280px; overflow-y: auto; }
+.plan-record { display: flex; flex-direction: column; gap: var(--space-sm); background: var(--card-raised); border-radius: var(--radius-row); padding: var(--space-sm); }
+.plan-pill { font-size: 10px; font-weight: 700; border-radius: 9px; padding: 1px var(--space-sm); }
+.plan-pill.tone-done { background: var(--done-soft); color: var(--done-text); }
+.plan-pill.tone-wait { background: var(--wait-soft); color: var(--wait-text); }
+.plan-pill.tone-stop { background: var(--stop-soft); color: var(--stop-text); }
+.plan-record-time { font-size: 10px; color: var(--ink2); }
+.plan-feedback { font-size: 10.5px; color: var(--wait-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plan-feedback.open { white-space: pre-wrap; user-select: text; }
+.background-task { display: flex; align-items: center; gap: var(--space-sm); font-size: 11px; }
+.background-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--ink2); flex: none; }
+.background-dot.status-running { background: var(--accent); }
+.background-dot.status-completed { background: var(--done); }
+.background-dot.status-failed { background: var(--err); }
+.background-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.background-detail { font-size: 10px; color: var(--ink2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Next actions (NextActions.cs): a heading, then each option as a card row with an accent arrow. */
+.next-actions { display: flex; flex-direction: column; gap: var(--space-xs); }
+.next-actions-label { font-size: 11.5px; font-weight: 700; color: var(--ink2); padding: 0 var(--space-xxs); }
+.next-action {
+  display: flex; align-items: center; gap: var(--space-md); text-align: left; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); cursor: default;
+  background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: 12px; padding: calc(var(--space-sm) - var(--stroke-line)) calc(var(--space-md) - var(--stroke-line));
+}
+.next-action:hover { background: var(--track); }
+.next-action > span:first-child { flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.next-action-arrow { color: var(--accent); font-weight: 700; }
+
+/* Web-open prompts (AgentWebPrompts.cs): the accent tint edge to edge, the address on an ink wash. */
+.web-open { display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-md); font-size: 12px; color: var(--ink); background: color-mix(in srgb, var(--accent) 5.5%, transparent); border-top: var(--stroke-line) solid var(--line); margin: 0 calc(-1 * var(--space-md)); }
+.web-open-title { display: flex; gap: var(--space-sm); align-items: center; font-size: 11px; }
+.web-open-mark { color: var(--accent); }
+.web-open-url { font-family: var(--font-mono); font-size: 11px; background: color-mix(in srgb, var(--ink) 5%, transparent); border-radius: var(--radius-segment); padding: var(--space-sm); word-break: break-all; user-select: text; }
+.web-open-remember { display: flex; gap: var(--space-xs); align-items: center; font-size: 11px; }
+
+/* The sign-in card in the composer (LoginRecovery.cs): one 11pt row. */
+.login-card { display: flex; gap: var(--space-sm); align-items: flex-start; font-size: 11px; padding: 0 var(--space-xs); }
+.login-mark { color: var(--wait-text); }
+.login-words { flex: 1; display: flex; flex-direction: column; gap: var(--space-xs); align-items: flex-start; }
+.login-title { color: var(--ink); font-weight: 500; }
+.login-line { display: flex; gap: var(--space-sm); align-items: center; }
+.login-line.tone-ink2 { color: var(--ink2); }
+.login-line.tone-wait { color: var(--wait-text); }
+.login-code { display: flex; gap: var(--space-sm); }
+.login-code input { width: 240px; font: inherit; font-size: 11px; color: var(--ink); background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-row); padding: 2px var(--space-sm); }
+.login-code input::placeholder { color: var(--ink3); }
+.login-buttons { display: flex; gap: var(--space-sm); align-items: center; }
+
+/* The status line (StatusLine.cs): 11pt mono rows in the terminal's colours, under the toolbar. */
+.status-line { display: flex; flex-direction: column; gap: var(--space-xxs); padding: var(--space-xxs) 0 0; font-family: var(--font-mono); font-size: 11px; color: var(--ink); }
+.status-row { white-space: pre; overflow: hidden; text-overflow: ellipsis; user-select: text; }
+.status-error { color: var(--ink2); }
+.status-trust { display: flex; flex-direction: column; gap: var(--space-xs); font-family: var(--font-body); margin-bottom: var(--space-xs); }
+.status-trust-question { display: flex; gap: var(--space-xs); color: var(--ink2); }
+.status-trust-command { font-family: var(--font-mono); background: var(--track); border-radius: var(--radius-segment); padding: var(--space-sm); user-select: text; }
+.status-trust-answers { display: flex; gap: var(--space-sm); align-items: center; }
+.status-trust-note { font-size: 10px; color: var(--ink3); }
