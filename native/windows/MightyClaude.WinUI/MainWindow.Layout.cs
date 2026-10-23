@@ -59,15 +59,106 @@ public sealed partial class MainWindow
     private Task SelectLayoutSession(string sessionId) => Act(async () =>
     {
         HideDashboard();
-        await service.UpdateAsync(state =>
+        // The state changes at once; its save is waited for after the screen has followed it, not before.
+        Task saving;
+        using (PerfLog.Measure("select: state update")) saving = service.UpdateAsync(state =>
         {
             var session = state.Sessions.FirstOrDefault(s => s.Id == sessionId);
             if (session is null) return state;
             var node = EffectiveLayout(state, session.WorkspaceId);
             return SaveLayoutSelection(SaveLayout(state, session.WorkspaceId, node is null ? null : PaneLayout.Select(node, sessionId)), session.WorkspaceId, sessionId) with { ActiveWorkspaceId = session.WorkspaceId, ActiveSessionId = sessionId };
         });
-        Render();
+        if (!SwitchTabInPlace(sessionId)) Render();
+        await saving;
     });
+
+    /// <summary>
+    /// A tab chosen in a group already on screen: its pane goes into the group's place and the tabs repaint, instead of
+    /// the whole layout being built again. Rebuilding takes every pane out of the window and puts it back, and each
+    /// conversation then writes its whole document again (AgentTranscript's Loaded repaint) — most of a slow switch.
+    /// False, and nothing changed, where the group is not the one on screen or its slim header would change.
+    /// </summary>
+    private bool SwitchTabInPlace(string sessionId)
+    {
+        using var perf = PerfLog.Measure("tab switch in place");
+        var state = service.Snapshot;
+        if (closing || rendering || state.ActiveWorkspaceId is not { } workspace || EffectiveLayout(state, workspace) is not { } layout) return false;
+        if (PaneLayout.Groups(layout).FirstOrDefault(g => g.SessionIds.Contains(sessionId)) is not { } group) return false;
+        // The strip on screen must hold exactly the group's tabs: a pane joined without a render falls back to one.
+        if (!tabStrips.ContainsKey(group.Id) || group.SessionIds.Any(id => !tabCells.ContainsKey(id)) || tabCells[group.SessionIds[0]].Cell.Parent is not Panel { } row || row.Children.Count != group.SessionIds.Count) return false;
+        var shownId = group.SessionIds.FirstOrDefault(paneHosts.ContainsKey);
+        if (shownId is null || !paneHosts.TryGetValue(shownId, out var host) || state.Sessions.FirstOrDefault(s => s.Id == sessionId) is not { } next) return false;
+        if (shownId != sessionId)
+        {
+            var shown = state.Sessions.FirstOrDefault(s => s.Id == shownId);
+            if (shown is null || GroupSlimHeaderKinds.Contains(shown.Kind) || GroupSlimHeaderKinds.Contains(next.Kind)) return false;
+            if (!views.TryGetValue(sessionId, out var pane)) { pane = new(this, sessionId); pane.InitRefresher(); views[sessionId] = pane; }
+            host.Child = pane.Container; host.ContextFlyout = SessionMenu(sessionId);
+            paneHosts.Remove(shownId); paneHosts[sessionId] = host;
+            pane.Refresh();
+        }
+        // The tabs as RenderGroup draws them: the selected one a card with a line border and its title in the selected weight.
+        foreach (var id in group.SessionIds)
+        {
+            if (!tabCells.TryGetValue(id, out var cell) || state.Sessions.FirstOrDefault(s => s.Id == id) is not { } session) continue;
+            var selected = id == sessionId;
+            cell.Shape.Background = selected ? brushes.Brush(DesignToken.Card) : brushes.Transparent; cell.Shape.BorderBrush = selected ? brushes.Brush(DesignToken.Line) : brushes.Transparent;
+            cell.Tab.Content = TabIndicator(session, selected);
+            tabCells[id] = cell with { Title = tabTitles[id] };
+        }
+        // As a full render does, a strip with more tabs than room shows the selected one in its middle.
+        if (tabCells[sessionId].Cell is { IsLoaded: true } chosen && chosen.Parent is StackPanel tabs && tabs.Parent is ScrollViewer bar && bar.ScrollableWidth > 0)
+        {
+            var left = chosen.TransformToVisual(tabs).TransformPoint(new Windows.Foundation.Point()).X;
+            bar.ChangeView(Math.Clamp(left + chosen.ActualWidth / 2 - bar.ViewportWidth / 2, 0, bar.ScrollableWidth), null, null, true);
+        }
+        FollowActivePane(state, layout);
+        perfTabFast++;
+        return true;
+    }
+
+    /// <summary>Counts for the perf scenario: full renders, in-place tab switches and in-place pane adds since start.</summary>
+    private int perfRenders, perfTabFast, perfAddFast;
+
+    /// <summary>What Render refreshes after the layout that follows the active pane: each group's strip rule, the panes' outlines, the sidebar and the bars.</summary>
+    private void FollowActivePane(AppSnapshot state, PaneLayoutNode layout)
+    {
+        foreach (var other in PaneLayout.Groups(layout))
+            if (tabStrips.TryGetValue(other.Id, out var strip))
+                strip.Rule.Background = state.ActiveSessionId is { } active && other.SessionIds.Contains(active) ? brushes.Brush(DesignToken.Accent, DesignMetrics.Opacity.TabActiveRule) : brushes.Brush(DesignToken.Line);
+        foreach (var (id, view) in views) view.ShowActive(id == state.ActiveSessionId);
+        using (PerfLog.Measure("follow: sidebar")) RenderSidebar();
+        using (PerfLog.Measure("follow: header + status bar")) { RefreshWorkspaceHeader(); RefreshStatusBar(); }
+        using (PerfLog.Measure("follow: agent io + login cards")) { ReconcileAgentIO(); RefreshLoginCards(); }
+        using (PerfLog.Measure("follow: models")) RefreshSelectedPaneModels();
+        using (PerfLog.Measure("follow: mobile router")) mobileRouter?.Changed();
+    }
+
+    /// <summary>The slot each tab group on screen stands in, by group id.</summary>
+    private readonly Dictionary<string, Border> groupSlots = [];
+
+    /// <summary>
+    /// A pane just added as a new tab of a group on screen (AddToLayout): only that group is built again, in its slot,
+    /// instead of the whole layout — which takes every pane out of the window and puts it back, each conversation then
+    /// writing its document again. False, and nothing changed, where the layout around that group is not the one drawn.
+    /// </summary>
+    private bool AddPaneInPlace(string sessionId)
+    {
+        var state = service.Snapshot;
+        if (closing || rendering || state.ActiveWorkspaceId is not { } workspace || EffectiveLayout(state, workspace) is not { } layout) return false;
+        if (LayoutMode(state, workspace) == "focus") return false;
+        if (PaneLayout.Groups(layout).FirstOrDefault(g => g.SessionIds.Contains(sessionId)) is not { } group || !groupSlots.TryGetValue(group.Id, out var slot)) return false;
+        // Every other pane of the layout must already be drawn where it is now: then the new tab is the only change.
+        var groups = PaneLayout.Groups(layout).ToList();
+        if (groups.Count != groupSlots.Count || groups.Any(g => !groupSlots.ContainsKey(g.Id)) || PaneLayout.Sessions(layout).Any(id => id != sessionId && !tabCells.ContainsKey(id))) return false;
+        if (group.SessionIds.FirstOrDefault(id => id != sessionId && paneHosts.ContainsKey(id)) is { } shown) { paneHosts[shown].Child = null; paneHosts.Remove(shown); }
+        foreach (var id in group.SessionIds) groupSlimHeaders.Remove(id);
+        slot.Child = BuildTabGroup(group, workspace, state);
+        renderedSessionIds.Add(sessionId);
+        FollowActivePane(state, layout);
+        perfAddFast++;
+        return true;
+    }
 
     /// <summary>The tab group holding the workspace's active pane: where a new pane joins, as on the Mac (M/AppStore.swift:520).</summary>
     private string? ActiveGroupId(AppSnapshot state, string workspace) => state.ActiveSessionId is { } active
@@ -141,7 +232,7 @@ public sealed partial class MainWindow
 
     private void RenderPaneLayout(AppSnapshot state)
     {
-        tabIndicators.Clear(); tabBetas.Clear(); tabStrips.Clear(); tabCells.Clear(); tabTitles.Clear(); groupSlimHeaders.Clear(); splitDividers.Clear(); dropHints.Clear();
+        tabIndicators.Clear(); tabBetas.Clear(); tabStrips.Clear(); tabCells.Clear(); tabTitles.Clear(); groupSlimHeaders.Clear(); splitDividers.Clear(); dropHints.Clear(); groupSlots.Clear();
         foreach (var stale in layoutDefaults.Keys.Where(id => !state.Workspaces.Any(w => w.Id == id)).ToArray()) layoutDefaults.Remove(stale);
         if (state.ActiveWorkspaceId is not { } workspace || EffectiveLayout(state, workspace) is not { } node)
         {
@@ -170,7 +261,8 @@ public sealed partial class MainWindow
 
     private FrameworkElement BuildLayoutNode(PaneLayoutNode node, string workspace, AppSnapshot state)
     {
-        if (node.Kind == "tabs") return BuildTabGroup(node, workspace, state);
+        // Each group stands in a slot of its own, so one group can be built again in place (AddPaneInPlace).
+        if (node.Kind == "tabs") { var slot = new Border { Child = BuildTabGroup(node, workspace, state) }; groupSlots[node.Id] = slot; return slot; }
         var horizontal = node.Axis == "horizontal"; var grid = new Grid(); var ratio = node.Ratio;
         if (horizontal)
         {

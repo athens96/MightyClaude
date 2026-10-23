@@ -452,21 +452,41 @@ public sealed partial class MainWindow
             if (graphDrawing) return;
             if (graphTranscripts.Values.Any(transcript => transcript.IsSelecting)) { graphDeferredDraw = true; return; }
             graphDrawing = true;
-            try { DrawGraphCore(pane); } finally { graphDrawing = false; TraceGraphSmoke("draw-exit"); }
+            try { using var perf = PerfLog.Measure("diagram draw"); DrawGraphCore(pane); } finally { graphDrawing = false; TraceGraphSmoke("draw-exit"); }
         }
 
+        /// <summary>The fewest milliseconds between two queued diagram draws: a streamed run asks for one per event.</summary>
+        private const int GraphRefreshGap = 120;
+        private long graphRefreshedAt;
+        private Microsoft.UI.Dispatching.DispatcherQueueTimer? graphRefreshTimer;
+
+        /// <summary>
+        /// Draws the diagram again soon: at the next turn of the UI thread, or, within <see cref="GraphRefreshGap"/> of the
+        /// last queued draw, once that gap has passed — every request in between joins the one draw.
+        /// </summary>
         private void QueueGraphRefresh()
         {
             if (graphRefreshQueued || !QueuePaneAlive) return;
             graphRefreshQueued = true;
-            if (!Container.DispatcherQueue.TryEnqueue(() =>
+            var wait = GraphRefreshGap - (long)System.Diagnostics.Stopwatch.GetElapsedTime(graphRefreshedAt).TotalMilliseconds;
+            if (graphRefreshedAt != 0 && wait > 0)
             {
-                graphRefreshQueued = false;
-                TraceGraphSmoke("queued-refresh");
-                if (QueuePaneAlive && graphHost?.Visibility == Visibility.Visible &&
-                    owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is { } current)
-                    RefreshMightyView(current);
-            })) graphRefreshQueued = false;
+                graphRefreshTimer ??= Container.DispatcherQueue.CreateTimer();
+                graphRefreshTimer.IsRepeating = false; graphRefreshTimer.Interval = TimeSpan.FromMilliseconds(wait);
+                graphRefreshTimer.Tick -= GraphRefreshDue; graphRefreshTimer.Tick += GraphRefreshDue;
+                graphRefreshTimer.Start();
+                return;
+            }
+            if (!Container.DispatcherQueue.TryEnqueue(() => GraphRefreshDue(null, null))) graphRefreshQueued = false;
+        }
+
+        private void GraphRefreshDue(Microsoft.UI.Dispatching.DispatcherQueueTimer? sender, object? args)
+        {
+            graphRefreshQueued = false; graphRefreshedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            TraceGraphSmoke("queued-refresh");
+            if (QueuePaneAlive && graphHost?.Visibility == Visibility.Visible &&
+                owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is { } current)
+                RefreshMightyView(current);
         }
 
         private void DrawGraphCore(RunSession pane)
@@ -929,7 +949,7 @@ public sealed partial class MainWindow
             if (block.Kind == "request") return view.Card;
             if (block.Entries.Count > 0 && view.Transcript is null)
             {
-                var transcript = new AgentTranscript { OpenReference = OpenReferencePreview, OpenImage = OpenTranscriptImage };
+                var transcript = new AgentTranscript { OpenReference = OpenReferencePreview, OpenImage = OpenTranscriptImage, WritesOnlyOnScreen = true };
                 if (owner.options.SmokeTest)
                 {
                     transcript.View.Loaded += (_, _) => TraceGraphSmoke("transcript-loaded");
