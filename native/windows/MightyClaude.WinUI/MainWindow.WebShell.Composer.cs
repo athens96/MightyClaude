@@ -31,6 +31,7 @@ public sealed partial class MainWindow
     private void WebComposerChanged(PaneView view)
     {
         if (webShell is null) return;
+        WebCardsChanged(view);
         webComposerDirty.Add(view.PaneId);
         if (webComposerFlush is null)
         {

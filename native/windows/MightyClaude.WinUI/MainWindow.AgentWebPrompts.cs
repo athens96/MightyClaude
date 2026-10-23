@@ -30,6 +30,7 @@ public sealed partial class MainWindow
         }
         internal void RenderAgentWebPrompts()
         {
+            owner.WebCardsChanged(this);
             var b = owner.brushes;
             var requests = owner.agentUrlPrompts.ForPane(id);
             var active = requests.Select(r => r.Id).ToHashSet();

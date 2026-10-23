@@ -329,6 +329,7 @@ public sealed partial class MainWindow
         private void InitializeLoginRecoveryCard() => AutomationProperties.SetAutomationId(loginRecoveryHost, "login-required-" + id);
         internal void RenderLoginRecovery()
         {
+            owner.WebCardsChanged(this);
             if (!owner.loginRetries.Requests.TryGetValue(id, out var retry)) { loginRecoveryHost.Children.Clear(); loginRecoveryHost.Visibility = Visibility.Collapsed; loginCardFingerprint = null; return; }
             var provider = retry.Request.Provider;
             var job = owner.loginJobs.GetValueOrDefault(provider); var progress = job?.Process?.Output;

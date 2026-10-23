@@ -201,6 +201,7 @@ public sealed partial class MainWindow
             var focused = toolPermissionHost.XamlRoot is { } root ? Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(root) as Control : null;
             var inCard = focused is not null && IsWithin(focused, toolPermissionHost);
             RenderToolPermissionCards(preserveQuestionnaire);
+            owner.WebCardsChanged(this);
             if (!inCard || IsWithin(focused!, toolPermissionHost)) return;
             RestoreCardFocus(AutomationProperties.GetAutomationId(focused), focused!.FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic);
         }
