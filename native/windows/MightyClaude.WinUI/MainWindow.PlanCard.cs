@@ -414,6 +414,7 @@ public sealed partial class MainWindow
         /// </summary>
         internal void RefreshPlanHistory(RunSession pane)
         {
+            owner.WebCardsChanged(this);
             if (planHistoryHost is null) return;
             var records = pane.Kind == "claude" && PlanCardSupport.ShowsHistoryStrip(InMightyDiagram) ? pane.PlanHistory ?? [] : [];
             var key = string.Join("|", records.Select(r => r.Id + ":" + r.Outcome + ":" + r.DecidedAt)) + "|" + planHistoryOpen + "|" + string.Join(",", planHistoryExpanded) + "|" + Locale.LanguagePreference;

@@ -173,7 +173,7 @@ public sealed partial class MainWindow
         internal void RenderStatusLine(StatusLineConfig? config, StatusLineConfig? untrusted, StatusLineResult? result, int padding = 0)
         {
             var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2);
-            statusLineUntrusted = untrusted;
+            statusLineUntrusted = untrusted; webStatusLine = (config, untrusted, result, padding); owner.WebCardsChanged(this);
             statusLineHost.Children.Clear();
             // The composer rows' sides (plus the command's own, 6 a step), 2 over and the composer's bottom inset under (M/StatusLineView.swift:42-43).
             statusLineHost.Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH + padding * 6, DesignMetrics.Spacing.Xxs, DesignMetrics.Inset.ComposerInnerH, DesignMetrics.Inset.ComposerInnerB);

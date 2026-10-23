@@ -100,6 +100,7 @@ public sealed partial class MainWindow
         /// </summary>
         internal void RefreshBackgroundWork(RunSession pane)
         {
+            owner.WebCardsChanged(this);
             if (backgroundHost is null) return;
             // The composer's toggle shows the saved value, on Claude panes alone (M/SessionPaneView.swift showsBackgroundWorkToggle).
             backgroundWorkToggle.IsChecked = owner.ShowsBackgroundWork;
