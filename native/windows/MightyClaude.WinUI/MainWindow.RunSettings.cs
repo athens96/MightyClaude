@@ -173,20 +173,9 @@ public sealed partial class MainWindow
             {
                 if (!QueuePaneAlive || runSettingsHeld || Session.Status == "running") return;
                 var current = Session;
-                var setting = current.Settings with { FastMode = fastMode, WebSearch = webSearch, NetworkAccess = current.Settings.PermissionMode is ("acceptEdits" or "onRequest") && networkAccess, MaxTurns = null, MaxBudgetUsd = null };
                 void Refuse(string message) { problem.Text = message; problem.Visibility = Visibility.Visible; }
-                if (turns is not null && turns.Text.Trim() is { Length: > 0 } wanted)
-                {
-                    if (!int.TryParse(wanted, NumberStyles.None, CultureInfo.InvariantCulture, out var count) || count is < 1 or > 1000) { Refuse(Locale.Get("settings.run.maxTurnsError")); return; }
-                    setting = setting with { MaxTurns = count };
-                }
-                if (budget is not null && budget.Text.Trim() is { Length: > 0 } cap)
-                {
-                    if (!double.TryParse(cap, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount) || !double.IsFinite(amount) || amount <= 0 || amount > 10_000) { Refuse(Locale.Get("settings.run.maxBudgetError")); return; }
-                    setting = setting with { MaxBudgetUsd = amount };
-                }
-                try { _ = new StartRunRequest(current.Id, current.WorkspaceId, current.Kind, "validation", [], current.Model, current.Provider, setting).Validate(); }
-                catch (Exception ex) { Refuse(ex.Message); return; }
+                var (setting, refusal) = RunSettingsFrom(current, fastMode, webSearch, networkAccess, turns?.Text, budget?.Text);
+                if (refusal is not null || setting is null) { Refuse(refusal ?? ""); return; }
                 await Change(p => p with { Settings = setting });
                 flyout.Hide(); Refresh(); input.Focus(FocusState.Programmatic);
             });
@@ -214,6 +203,28 @@ public sealed partial class MainWindow
         });
 
         /// <summary>Closes the run-settings popover, if it is open.</summary>
+        /// <summary>
+        /// The run settings an Apply saves, or why it refuses (the WinUI popover's and the web page's): a network switch only where
+        /// the permission mode allows it, max turns 1-1000, a budget in (0, 10000], then <see cref="StartRunRequest.Validate"/>.
+        /// A null or blank limit is unlimited.
+        /// </summary>
+        internal static (RunSettings? Setting, string? Refusal) RunSettingsFrom(RunSession current, bool fastMode, string webSearch, bool networkAccess, string? turns, string? budget)
+        {
+            var setting = current.Settings with { FastMode = fastMode, WebSearch = webSearch, NetworkAccess = current.Settings.PermissionMode is ("acceptEdits" or "onRequest") && networkAccess, MaxTurns = null, MaxBudgetUsd = null };
+            if (turns?.Trim() is { Length: > 0 } wanted)
+            {
+                if (!int.TryParse(wanted, NumberStyles.None, CultureInfo.InvariantCulture, out var count) || count is < 1 or > 1000) return (null, Locale.Get("settings.run.maxTurnsError"));
+                setting = setting with { MaxTurns = count };
+            }
+            if (budget?.Trim() is { Length: > 0 } cap)
+            {
+                if (!double.TryParse(cap, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount) || !double.IsFinite(amount) || amount <= 0 || amount > 10_000) return (null, Locale.Get("settings.run.maxBudgetError"));
+                setting = setting with { MaxBudgetUsd = amount };
+            }
+            try { _ = new StartRunRequest(current.Id, current.WorkspaceId, current.Kind, "validation", [], current.Model, current.Provider, setting).Validate(); }
+            catch (Exception ex) { return (null, ex.Message); }
+            return (setting, null);
+        }
         internal void HideRunSettings() => runSettingsFlyout?.Hide();
 
         /// <summary>What a web-search choice does (M/SettingsViews.swift:368-375).</summary>

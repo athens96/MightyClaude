@@ -1,5 +1,6 @@
 // What the host pushes of a pane's composer (MainWindow.WebShell.Composer.cs WebComposerState): read from the never-shown
 // WinUI composer the page's draft is mirrored into, so every rule (block reasons, busy, queue, attachments) stays C#'s.
+import type { Pills } from './menus';
 
 export interface QueueItem {
   id: string;
@@ -44,6 +45,8 @@ export interface ComposerState {
   attachments: ComposerAttachment[];
   attachmentError: string | null;
   attachmentsAllowed: boolean;
+  /** The toolbar's pills; null on a shell pane. */
+  pills: Pills | null;
 }
 
 /** What `send` answers: what the host did with the draft, the editor's text after it, and the composer then. */

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MightyClaude.Core;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 
 namespace MightyClaude.WinUI;
 
@@ -101,6 +102,20 @@ public sealed partial class MainWindow
             if (!Enum.TryParse<SlashCommandAction>(args.Text("action"), out var action)) throw new ArgumentException("Unknown action.");
             return await view.WebSlashAction(action, args.Text("arg"));
         });
+        // The pills' menus are the WinUI composer's own MenuFlyouts, built by the same code and read row by row; choosing a row runs its action.
+        bridge.Register("composerMenu", args => Task.FromResult<object?>(WebPane(args.Text("paneId")).WebMenu(args.Text("menu") ?? "")));
+        bridge.Register("composerMenuChoose", async args =>
+        {
+            var path = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("path", out var list) && list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().Select(i => i.TryGetInt32(out var n) ? n : -1).ToArray() : [];
+            await WebPane(args.Text("paneId")).WebMenuChoose(args.Text("menu") ?? "", path);
+            return null;
+        });
+        bridge.Register("runSettings", args => Task.FromResult<object?>(WebPane(args.Text("paneId")).WebRunSettings()));
+        bridge.Register("applyRunSettings", async args =>
+            await WebPane(args.Text("paneId")).WebApplyRunSettings(Flag(args, "fastMode"), args.Text("webSearch") ?? "default", Flag(args, "networkAccess"), args.Text("maxTurns"), args.Text("maxBudgetUsd")));
+        bridge.Register("toggleFast", async args => { await WebPane(args.Text("paneId")).WebToggleFast(); return null; });
+        bridge.Register("sessionInfo", args => Task.FromResult<object?>(WebPane(args.Text("paneId")).WebSessionInfo()));
+        bridge.Register("newConversation", async args => await WebPane(args.Text("paneId")).ResetConversationAsync(CancellationToken.None));
         bridge.Register("attachmentPreview", args => Task.FromResult(WebPane(args.Text("paneId")).WebAttachmentPreview(args.Text("id") ?? "")));
     }
 
@@ -190,6 +205,160 @@ public sealed partial class MainWindow
             return input.Text;
         }
 
+        /// <summary>The menu a pill opens, built as the WinUI pill builds it; kept until the next is asked for, so a choice runs the row the page showed.</summary>
+        private (string Name, MenuFlyout Menu)? webMenu;
+
+        private MenuFlyout WebBuildMenu(string name)
+        {
+            var pane = Session; var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot));
+            return name switch
+            {
+                "model" => ModelMenu(pane, catalog),
+                "effort" => ChoiceMenu(EffortChoices(pane, levels)),
+                "permission" => ChoiceMenu(PermissionChoices(pane, Capabilities)),
+                "options" => OptionsMenu(pane, Capabilities, levels),
+                "actions" => PaneActionsMenu(pane),
+                _ => throw new ArgumentException("Unknown menu."),
+            };
+        }
+
+        /// <summary>A menu's rows: a header, a separator, a choice (checked or not), an action, or a submenu with its own rows.</summary>
+        internal object WebMenu(string name)
+        {
+            var menu = WebBuildMenu(name); webMenu = (name, menu);
+            static object Row(MenuFlyoutItemBase item) => item switch
+            {
+                MenuFlyoutSubItem sub => new { kind = "submenu", text = sub.Text, enabled = sub.IsEnabled, items = sub.Items.Select(Row).ToArray() },
+                ToggleMenuFlyoutItem choice => new { kind = "choice", text = choice.Text, enabled = choice.IsEnabled, @checked = choice.IsChecked, help = ToolTipService.GetToolTip(choice) as string },
+                MenuFlyoutItem { Tag: null } header => new { kind = "header", text = header.Text },
+                // The options menu's last row opens the run settings, which the page draws itself.
+                MenuFlyoutItem more when more.Text == Locale.Get("composer.runSettings.more") => new { kind = "runSettings", text = more.Text },
+                MenuFlyoutItem action => new { kind = "action", text = action.Text, enabled = action.IsEnabled, help = ToolTipService.GetToolTip(action) as string },
+                _ => new { kind = "separator" },
+            };
+            return menu.Items.Select(Row).ToArray();
+        }
+
+        /// <summary>Runs the row at <paramref name="path"/> (indices, a submenu's row after its own) of the menu last listed.</summary>
+        internal async Task WebMenuChoose(string name, int[] path)
+        {
+            var menu = webMenu is { } kept && kept.Name == name ? kept.Menu : WebBuildMenu(name);
+            IList<MenuFlyoutItemBase> items = menu.Items; MenuFlyoutItemBase? row = null;
+            foreach (var index in path)
+            {
+                if (index < 0 || index >= items.Count) throw new ArgumentException("Unknown menu row.");
+                row = items[index]; items = row is MenuFlyoutSubItem sub ? sub.Items : [];
+            }
+            webMenu = null;
+            if (row is MenuFlyoutItem { IsEnabled: true, Tag: Func<Task> action }) await action();
+            if (QueuePaneAlive) RefreshComposerState();
+        }
+
+        /// <summary>The pills as the toolbar shows them: the labels, what is on, which show (ArrangeComposer's rules), and the context ring.</summary>
+        private object WebPills(RunSession pane)
+        {
+            var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            var capabilities = PaneRuntime(pane.Provider)?.Capabilities ?? ProviderCatalog.Capabilities(pane.Provider);
+            var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot));
+            var selection = ModelLabel.Selection(pane, catalog);
+            var selectedModel = catalog.Models.FirstOrDefault(m => m.Value == pane.Model);
+            var usage = pane.SessionUsage?.Provider == pane.Provider ? pane.SessionUsage : null;
+            return new
+            {
+                provider = pane.Provider, model = selection,
+                modelTip = ProviderCatalog.BetaLabel(pane.Provider, ProviderMark.Label(pane.Provider)) + " · " + selection + (selectedModel?.Description is { Length: > 0 } description ? "\n" + description : ""),
+                showsEffort = capabilities.Effort || pane.Settings.Effort != "default", effort = EffortLabel(pane.Settings.Effort), effortEnabled = levels.Length > 0 || pane.Settings.Effort != "default",
+                effortTip = levels.Length == 0 ? Locale.Get("composer.effort.unknownLevels") : Locale.Get("composer.effort.label") + " · " + Locale.Get("settings.run.appliesNextRequest"),
+                permission = PermissionLabel(pane.Provider, pane.Settings.PermissionMode), permissionHelp = PermissionHelp(pane.Provider, pane.Settings.PermissionMode), unlocked = pane.Settings.PermissionMode == "fullAccess",
+                showsFast = pane.Provider == "codex" && (capabilities.FastMode || pane.Settings.FastMode), fast = pane.Settings.FastMode, fastEnabled = Capabilities.FastMode || pane.Settings.FastMode,
+                moreOn = pane.Settings.WebSearch != "default" || pane.Settings.NetworkAccess || pane.Settings.MaxTurns is not null || pane.Settings.MaxBudgetUsd is not null,
+                contextPercent = usage?.ContextPercent is { } percent && double.IsFinite(percent) ? Math.Round(percent) : (double?)null,
+                resuming = pane.ResumeId is not null,
+            };
+        }
+
+        /// <summary>Codex Fast, as its pill toggles it.</summary>
+        internal Task WebToggleFast() => updating ? Task.CompletedTask : ChangeSettings(s => s with { FastMode = !s.FastMode && Capabilities.FastMode });
+
+        /// <summary>What the run settings popover shows (MainWindow.RunSettings.cs) and the values it starts from.</summary>
+        internal object WebRunSettings()
+        {
+            var pane = Session; var caps = Capabilities; var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            var selected = catalog.Models.FirstOrDefault(m => m.Value == pane.Model); var mode = pane.Settings.PermissionMode;
+            var allowed = mode is "acceptEdits" or "onRequest";
+            return new
+            {
+                provider = ProviderMark.Label(pane.Provider), beta = ProviderCatalog.IsBeta(pane.Provider),
+                model = ModelLabel.Selection(pane, catalog), modelDescription = selected?.Description is { Length: > 0 } d ? d : null,
+                modelSource = Locale.Get(catalog.Source == "cli" ? "settings.run.modelSourceCli" : "settings.run.modelSourceDefault"),
+                permission = PermissionLabel(pane.Provider, mode), permissionDescription = PermissionDescription(pane.Provider, mode),
+                approval = mode == "fullAccess" ? null : Locale.Get(pane.Provider == "claude" || pane.Provider == "codex" && mode == "onRequest" ? "settings.run.approvalInApp" : "settings.run.approvalUnsupported"),
+                fastSupported = caps.FastMode, webSearch = caps.WebSearch, networkAccess = caps.NetworkAccess, networkAllowed = allowed,
+                networkNote = Locale.Get(mode == "fullAccess" ? "settings.run.shellNetworkFullAccess" : allowed ? "settings.run.shellNetworkAcceptEdits" : "settings.run.shellNetworkLocked"),
+                maxTurns = caps.MaxTurns, maxBudgetUsd = caps.MaxBudgetUsd,
+                values = new
+                {
+                    fastMode = pane.Settings.FastMode, webSearch = pane.Settings.WebSearch, networkAccess = pane.Settings.NetworkAccess,
+                    maxTurns = pane.Settings.MaxTurns?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+                    maxBudgetUsd = pane.Settings.MaxBudgetUsd?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+                },
+                searchDescriptions = new[] { "default", "disabled", "cached", "live" }.ToDictionary(v => v, SearchDescription),
+                held = pane.Status == "running",
+            };
+        }
+
+        /// <summary>Apply, validated as the popover's (<see cref="RunSettingsFrom"/>): the refusal's message, or null once saved.</summary>
+        internal async Task<string?> WebApplyRunSettings(bool fastMode, string webSearch, bool networkAccess, string? turns, string? budget)
+        {
+            if (!QueuePaneAlive || Session.Status == "running") return null;
+            var (setting, refusal) = RunSettingsFrom(Session, fastMode, webSearch, networkAccess, turns, budget);
+            if (setting is null) return refusal ?? "";
+            await Change(p => p with { Settings = setting }); Refresh();
+            return null;
+        }
+
+        /// <summary>The session popover's rows (MainWindow.SessionInfo.cs RefreshSessionInfo), labels and values in the language.</summary>
+        internal object WebSessionInfo()
+        {
+            var pane = Session; var usage = pane.SessionUsage?.Provider == pane.Provider ? pane.SessionUsage : null;
+            var workspace = owner.service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId);
+            var rows = new List<object>();
+            void Row(string key, string label, string? value) { if (!string.IsNullOrEmpty(value)) rows.Add(new { key, label, value }); }
+            var contextText = usage?.ContextUsedTokens is { } used && usage.ContextWindowTokens is { } limit
+                ? Locale.Get("composer.sessionInfo.contextTokens", new Dictionary<string, string> { ["used"] = used.ToString("N0"), ["limit"] = limit.ToString("N0") })
+                : usage?.ContextUsedTokens is { } usedOnly ? Locale.Get("composer.sessionInfo.contextUsedOnly", new Dictionary<string, string> { ["tokens"] = usedOnly.ToString("N0") })
+                : usage?.ContextWindowTokens is { } limitOnly ? Locale.Get("composer.sessionInfo.contextLimitOnly", new Dictionary<string, string> { ["tokens"] = limitOnly.ToString("N0") })
+                : Locale.Get("composer.sessionInfo.contextUnavailable");
+            Row("model", Locale.Get(usage?.Model is null ? "composer.sessionInfo.selectedModel" : "composer.sessionInfo.usedModel"), usage?.Model is { } model ? ModelLabel.Text(model) : ModelLabel.Selection(pane, PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider)));
+            Row("elapsed", Locale.Get("composer.sessionInfo.latestRequestTime"), pane.RunTiming is { IsValid: true } timing ? timing.Label() : null);
+            Row("workspace", Locale.Get("composer.sessionInfo.workspace"), workspace?.Name);
+            Row("host", Locale.Get("remote.sessionInfo.host"), workspace?.Remote?.HostName);
+            Row("path", "", workspace?.Path);
+            var tokens = usage is not null && (usage.InputTokens ?? usage.OutputTokens ?? usage.CacheReadTokens ?? usage.CacheWriteTokens ?? usage.ReasoningTokens ?? usage.TotalTokens) is not null;
+            var tokenRows = new List<object>();
+            void Token(string key, string label, long? value) { if (value is { } n) tokenRows.Add(new { key, label = Locale.Get(label), value = n.ToString("N0") }); }
+            Token("input", "composer.sessionInfo.input", usage?.InputTokens); Token("output", "composer.sessionInfo.output", usage?.OutputTokens);
+            Token("cache-read", "composer.sessionInfo.cacheRead", usage?.CacheReadTokens); Token("cache-write", "composer.sessionInfo.cacheWrite", usage?.CacheWriteTokens);
+            Token("reasoning", "composer.sessionInfo.reasoning", usage?.ReasoningTokens); Token("total", "composer.sessionInfo.total", usage?.TotalTokens);
+            var cost = usage?.CostUSD is { } spent && double.IsFinite(spent) && spent >= 0 ? spent : (double?)null;
+            string? received = null;
+            if (usage is not null && DateTimeOffset.TryParse(usage.UpdatedAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var at))
+                received = Locale.Get("composer.sessionInfo.lastReceived", new Dictionary<string, string> { ["time"] = at.ToLocalTime().ToString("T", System.Globalization.CultureInfo.CurrentCulture) });
+            return new
+            {
+                title = pane.Title, provider = pane.Provider, providerLabel = ProviderMark.Label(pane.Provider), beta = ProviderCatalog.IsBeta(pane.Provider),
+                status = StateLabel(pane.Status), tone = StatusGlyph.Tone(pane.Status).ToString(),
+                contextPercent = usage?.ContextPercent, context = contextText, rows,
+                tokenScope = tokens ? Locale.Get("composer.sessionInfo.tokenScope", new Dictionary<string, string> { ["scope"] = UsageScope(usage!.TokenScope) }) : null, tokens = tokenRows,
+                note = tokens && (usage!.CacheReadTokens ?? usage.CacheWriteTokens ?? usage.ReasoningTokens) is not null ? Locale.Get("composer.sessionInfo.note") : null,
+                cost = cost is { } amount ? new { label = Locale.Get("composer.sessionInfo.costWithScope", new Dictionary<string, string> { ["scope"] = UsageScope(usage!.CostScope) }), value = $"${amount:0.####}" } : null,
+                noUsage = usage is null || !tokens && usage.CostUSD is null && usage.ContextUsedTokens is null && usage.ContextWindowTokens is null,
+                identifiers = new[] { (Label: Locale.Get("composer.sessionInfo.mightySessionId"), Value: pane.Id), (Label: Locale.Get("composer.sessionInfo.cliSessionId"), Value: usage?.ProviderSessionId ?? pane.ResumeId ?? "") }.Where(i => i.Value.Length > 0).Select(i => new { label = i.Label, value = i.Value }),
+                reported = usage is null ? null : Locale.Get("composer.sessionInfo.reported", new Dictionary<string, string> { ["provider"] = ProviderMark.Label(pane.Provider) }), source = usage?.Source, received,
+            };
+        }
+
         /// <summary>What the page draws of the composer, read from the state the last <see cref="RefreshComposerState"/> left.</summary>
         internal object WebComposerState()
         {
@@ -219,6 +388,7 @@ public sealed partial class MainWindow
                 attachments = pendingAttachments.Select(a => new { id = a.Id, name = a.Name, mediaType = a.MediaType, size = AttachmentSupport.DecodedLength(a) }),
                 attachmentError = attachmentErrorText.Text.Length == 0 ? null : attachmentErrorText.Text,
                 attachmentsAllowed = pane.Kind != "shell",
+                pills = pane.Kind == "shell" ? null : WebPills(pane),
             };
         }
     }

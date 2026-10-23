@@ -704,7 +704,7 @@ public sealed partial class MainWindow : Window
         private Task ChangeModel(string value) => owner.Act(async () => { if (Session.Status == "running") return; if (!Wire.Model(value)) throw new ArgumentException(Locale.Get("composer.model.invalidName")); var pane = Session; var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var registeredModels = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot); await Change(p => p with { Model = value, Settings = p.Settings with { Effort = ProviderCatalog.Efforts(p.Provider, value, catalog, registeredModels).Contains(p.Settings.Effort) ? p.Settings.Effort : "default" } }); Refresh(); input.Focus(FocusState.Programmatic); });
         private static MenuFlyoutItem Item(string text, Func<Task> action, string? help = null)
         {
-            var item = new MenuFlyoutItem { Text = text }; item.Click += async (_, _) => await action(); if (help is not null) ToolTipService.SetToolTip(item, help); return item;
+            var item = new MenuFlyoutItem { Text = text, Tag = action }; item.Click += async (_, _) => await action(); if (help is not null) ToolTipService.SetToolTip(item, help); return item;
         }
         /// <summary>
         /// A row of a choice menu, with the standard check mark on the current choice as the Mac's menus show it
@@ -713,7 +713,7 @@ public sealed partial class MainWindow : Window
         /// </summary>
         private static ToggleMenuFlyoutItem Choice(string text, Func<Task> action, bool selected, string? help = null)
         {
-            var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = selected };
+            var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = selected, Tag = action };
             item.Click += async (_, _) => { item.IsChecked = selected; await action(); };
             if (help is not null) ToolTipService.SetToolTip(item, help);
             return item;
