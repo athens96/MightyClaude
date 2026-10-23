@@ -4,6 +4,7 @@ import type { RunSession } from '../store/models';
 import { attachmentRefusal, byteLabel, toBase64 } from './attachments';
 import { enterAction, maximumDraft } from './keys';
 import { choose, closed, move, paletteDraft, paletteKey, paletteState, safeIndex, type PaletteState, type SlashCatalog, type SlashCommand } from './slash';
+import { Toolbar } from './Toolbar';
 import type { AttachmentPreview, ComposerState, SendResult } from './types';
 
 /** The editor grows to six lines, then scrolls (MainWindow.cs: ComposerLine + 5 × ComposerLineStep). */
@@ -15,7 +16,7 @@ const catalogLifetime = 30_000;
  * The agent pane's composer (spec §3). The draft lives here and is mirrored to the host on every keystroke (`updateDraft`);
  * what may happen to it (send, queue, stop, a block) is the host's composer state, pushed when it changes.
  */
-export function Composer({ session, slot, onShowUsage }: { session: RunSession; slot?: React.ReactNode; onShowUsage?: () => void }) {
+export function Composer({ session }: { session: RunSession }) {
   const { bridge, store, t } = useServices();
   const state: ComposerState | undefined = useStoreState().composers[session.id];
   const [text, setText] = useState(() => session.draft ?? '');
@@ -28,6 +29,8 @@ export function Composer({ session, slot, onShowUsage }: { session: RunSession; 
   const [dismissedFor, setDismissedFor] = useState<string | null>(null);
   const [palette, setPalette] = useState<PaletteState>(closed);
   const reading = useRef(false);
+  const [showUsage, setShowUsage] = useState(false);
+  const usageShown = useCallback(() => setShowUsage(false), []);
   const paneId = session.id;
 
   useEffect(() => {
@@ -97,7 +100,7 @@ export function Composer({ session, slot, onShowUsage }: { session: RunSession; 
     }
     setDismissedFor(null);
     // The usage popover is the page's own (the context ring's); every other action is the host's, notes included.
-    if (choice.action === 'ShowUsage') { change(''); onShowUsage?.(); return; }
+    if (choice.action === 'ShowUsage') { change(''); setShowUsage(true); return; }
     try {
       const draft = await bridge.call<string>('slashAction', { paneId, action: choice.action, arg: choice.actionArg });
       setText(draft ?? '');
@@ -262,7 +265,7 @@ export function Composer({ session, slot, onShowUsage }: { session: RunSession; 
           {state?.attachmentsAllowed !== false && (
             <button type="button" className="composer-icon-button" aria-label={t('composer.attach.name')} title={t('composer.attach.name')} disabled={state?.attachmentsLoading} onClick={() => call('pickAttachments')}>＋</button>
           )}
-          {slot}
+          {state?.pills && <Toolbar paneId={paneId} pills={state.pills} busy={state.busy} showUsage={showUsage} onUsageShown={usageShown} />}
           <span className="composer-spacer" />
           {state?.primary === 'queue' && (
             <button type="button" className="composer-stop-small" aria-label={t('composer.stop.name')} disabled={state.stopping} onClick={() => call('stop')}>■</button>

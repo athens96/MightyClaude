@@ -1,0 +1,81 @@
+/* The composer's pills (MW.Composer.cs RefreshMenus): model, effort, permission, Fast, the … pill and the context ring, and
+   the menus and popovers they open. */
+.composer-pills { position: relative; display: flex; align-items: center; gap: var(--space-xs); min-width: 0; flex: 1; }
+.composer-pill {
+  display: inline-flex; align-items: center; gap: var(--space-xs); max-width: 180px; height: 26px; padding: 0 var(--space-sm);
+  border: var(--stroke-line) solid var(--line); border-radius: 13px; background: transparent; color: var(--ink2);
+  font: inherit; font-size: var(--type-pill); cursor: default;
+}
+.composer-pill:hover:not(:disabled) { background: var(--track); color: var(--ink); }
+.composer-pill.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.composer-pill:disabled { opacity: 0.5; }
+.composer-pill:focus-visible, .context-ring:focus-visible { outline: var(--stroke-focus) solid var(--accent); }
+.pill-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-pill-problem { color: var(--err-text); font-size: var(--type-small); }
+.context-ring {
+  --percent: 0; width: 30px; height: 30px; flex: none; border: 0; border-radius: 50%; padding: 0; cursor: default;
+  font-size: 8px; font-weight: 600; color: var(--ink2);
+  background: radial-gradient(circle closest-side, var(--card) 76%, transparent 78%), conic-gradient(var(--accent) calc(var(--percent) * 1%), var(--track) 0);
+}
+.context-ring[data-high] {
+  color: var(--wait-text);
+  background: radial-gradient(circle closest-side, var(--card) 76%, transparent 78%), conic-gradient(var(--wait-text) calc(var(--percent) * 1%), var(--track) 0);
+}
+.context-ring.large { display: inline-grid; place-items: center; width: 44px; height: 44px; font-size: 10px; }
+
+.composer-popover {
+  position: absolute; bottom: calc(100% + var(--space-sm)); left: 0; z-index: 10; min-width: 220px; max-width: 370px; max-height: 60vh; overflow: auto;
+  background: var(--card); color: var(--ink); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-block);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 18%, transparent); font-size: var(--type-row);
+}
+.composer-menu { padding: var(--space-xs); }
+.menu-row {
+  display: flex; align-items: center; gap: var(--space-xs); width: 100%; padding: var(--space-xs) var(--space-sm);
+  border: 0; border-radius: var(--radius-file-row); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: default;
+}
+.menu-row:hover:not(:disabled), .menu-row:focus-visible { background: var(--accent-soft); outline: none; }
+.menu-row:disabled { color: var(--ink3); }
+.menu-check { width: 14px; flex: none; color: var(--accent); }
+.menu-chevron { margin-left: auto; color: var(--ink3); }
+.menu-header { padding: var(--space-sm) var(--space-md) var(--space-xxs); font-size: var(--type-pill); font-weight: 600; color: var(--ink3); }
+.menu-separator { height: var(--stroke-line); margin: var(--space-xs) 0; background: var(--line); }
+.menu-nested { padding-left: var(--space-md); }
+
+.run-settings, .session-info { width: 360px; display: flex; flex-direction: column; }
+.popover-header { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-lg); border-bottom: var(--stroke-line) solid var(--line); }
+.popover-header strong { flex: 1; font-size: 14px; }
+.popover-body { display: flex; flex-direction: column; gap: var(--space-md); padding: var(--space-lg); }
+.popover-body section { display: flex; flex-direction: column; gap: var(--space-sm); padding-bottom: var(--space-md); border-bottom: var(--stroke-line) solid var(--line); }
+.popover-body section:last-child { border-bottom: 0; padding-bottom: 0; }
+.popover-strong { font-weight: 500; }
+.popover-quiet { font-size: var(--type-pill); color: var(--ink2); }
+.popover-field { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+.popover-stack { display: flex; flex-direction: column; gap: var(--space-xs); font-size: var(--type-pill); }
+.popover-body input[inputmode], .popover-body select {
+  font: inherit; font-size: var(--type-row); color: var(--ink); background: var(--card-raised);
+  border: var(--stroke-line) solid var(--line); border-radius: var(--radius-file-row); padding: var(--space-xxs) var(--space-sm);
+}
+.popover-problem { padding: 0 var(--space-lg) var(--space-md); color: var(--err-text); font-size: var(--type-pill); }
+.popover-footer { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-md); border-top: var(--stroke-line) solid var(--line); }
+.popover-footer .popover-quiet { flex: 1; font-size: var(--type-small); }
+.popover-button {
+  font: inherit; font-size: var(--type-pill); padding: var(--space-xxs) var(--space-md); border-radius: var(--radius-file-row);
+  border: var(--stroke-line) solid var(--line); background: var(--card-raised); color: var(--ink);
+}
+.popover-button.prominent { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.popover-button:disabled { opacity: 0.5; }
+.beta-badge { font-size: var(--type-badge); color: var(--accent); border: var(--stroke-line) solid var(--accent); border-radius: 4px; padding: 0 3px; }
+.session-info-heading { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.session-info-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover-body .session-info-context { flex-direction: row; align-items: center; }
+.session-info-rows { margin: 0; display: flex; flex-direction: column; gap: var(--space-xxs); }
+.session-info-row { display: flex; gap: var(--space-md); font-size: var(--type-pill); }
+.session-info-row dt { color: var(--ink2); min-width: 110px; }
+.session-info-row dd { margin: 0; overflow-wrap: anywhere; }
+.session-info-row.row-path dd { color: var(--ink2); font-family: var(--font-mono); font-size: var(--type-small); }
+.selectable { user-select: text; }
+.status-dot.tone-run { background: var(--run); }
+.status-dot.tone-done { background: var(--done); }
+.status-dot.tone-err { background: var(--err); }
+.status-dot.tone-wait { background: var(--wait-text); }
+.status-dot.tone-idle { background: var(--ink3); }
