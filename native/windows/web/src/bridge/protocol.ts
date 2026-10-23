@@ -1,0 +1,60 @@
+// The messages between this page and the host (MightyClaude.WinUI/WebBridge.cs), JSON over
+// chrome.webview.postMessage / PostWebMessageAsJson.
+import type { AppSnapshot, AppState, RunEvent, RunSession, ToolPermissionRequest } from '../store/models';
+
+/** web → host: one method call; the host answers with a {@link ResultMessage} of the same id. */
+export interface CallMessage {
+  kind: 'call';
+  id: number;
+  method: string;
+  args?: unknown;
+}
+
+/** host → web: the answer to a call. */
+export interface ResultMessage {
+  kind: 'result';
+  id: number;
+  ok: boolean;
+  value?: unknown;
+  error?: string;
+}
+
+/** host → web: the whole state, once after `ready` (and again whenever the page loads again). */
+export interface SnapshotMessage {
+  kind: 'snapshot';
+  snapshot: AppSnapshot;
+}
+
+/**
+ * host → web: what changed since the last snapshot or delta, at most one per ~16 ms. `sessions` are the panes whose record
+ * was replaced (the host compares by reference), `removed` the ids gone; `order` is every pane id in order, present only when
+ * the order or membership changed; `state` is every other field, present only when one of them changed.
+ */
+export interface DeltaMessage {
+  kind: 'delta';
+  sessions: RunSession[];
+  removed: string[];
+  order?: string[];
+  state?: AppState;
+}
+
+/** host → web: one run event as applied (DesktopService.RunEventReceived). */
+export interface EventMessage {
+  kind: 'event';
+  event: RunEvent;
+}
+
+/** host → web: a Claude tool-permission request waiting or settled (DesktopService.ToolPermissionChanged). */
+export interface PermissionMessage {
+  kind: 'permission';
+  request: ToolPermissionRequest;
+}
+
+export type PushMessage = SnapshotMessage | DeltaMessage | EventMessage | PermissionMessage;
+export type HostMessage = ResultMessage | PushMessage;
+
+/** What `getLocale` answers: the saved preference and the language it resolves to on this computer. */
+export interface LocaleInfo {
+  preference: string;
+  language: string;
+}

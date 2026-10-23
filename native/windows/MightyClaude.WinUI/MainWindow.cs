@@ -85,7 +85,7 @@ public sealed partial class MainWindow : Window
                 if (!closing) TrackLoginTask(ManualUpdateFinished());
             }
         });
-        PerfLog.Configure(StateDirectory); WebTranscript.Configure(StateDirectory);
+        PerfLog.Configure(StateDirectory); WebTranscript.Configure(StateDirectory); WebShell.Configure(StateDirectory);
         InitializeLoginRecovery(); InitializeDelegation();
         service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; using var perf = PerfLog.Measure("run event " + value.Type); RecordProviderActivity(value); ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane) && (value.Type == "status" ? pane.Refresh() : pane.QueueRefresh())) { pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
@@ -140,8 +140,8 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); await CheckResources(); InitializeAgentIO(); InitializeRemoteWorkspaces(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); await PresentSetupIfNeeded(); }); return; }
-        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); if (options.PerfScenario) { await RunPerfScenario(); await FinishSmoke(true); } else await RunUISmoke(); }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); if (WebShell.Enabled) ShowWebShell(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); await CheckResources(); InitializeAgentIO(); InitializeRemoteWorkspaces(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); await PresentSetupIfNeeded(); }); return; }
+        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); if (WebShell.Enabled) ShowWebShell(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); if (options.PerfScenario) { await RunPerfScenario(); await FinishSmoke(true); } else if (webShell is not null) await RunWebShellSmoke(); else await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
         }
         finally { HideLaunchSplash(); }
@@ -253,11 +253,15 @@ public sealed partial class MainWindow : Window
         root.Background = WindowBackground(); ApplySidebarCollapsed();
         layout.SelectedItem = layout.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == LayoutMode(state, state.ActiveWorkspaceId)); RenderSidebar(); RefreshWorkspaceHeader();
         RenderAccountUsage();
-        DetachPaneViews(); panes.Children.Clear(); panes.RowDefinitions.Clear(); panes.ColumnDefinitions.Clear();
+        // Under the web shell the page draws the panes: no WinUI pane view is built, so none refreshes on a run event either.
+        if (webShell is null) { DetachPaneViews(); panes.Children.Clear(); panes.RowDefinitions.Clear(); panes.ColumnDefinitions.Clear(); }
         // A closed session runs nothing more: end its refresher before dropping the pane.
         foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) { CloseStatusLine(views[stale]); views[stale].ForgetGraphHistory(); views[stale].CloseReferencePreview(); views[stale].CloseBrowserView(); CloseTerminal(views[stale]); views.Remove(stale); }
-        RenderPaneLayout(state);
-        foreach (var (id, view) in views) view.ShowActive(id == state.ActiveSessionId);
+        if (webShell is null)
+        {
+            RenderPaneLayout(state);
+            foreach (var (id, view) in views) view.ShowActive(id == state.ActiveSessionId);
+        }
         RefreshStatusBar();
         rendering = false;
         RefreshWorkspaceGit();
