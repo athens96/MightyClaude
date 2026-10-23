@@ -93,6 +93,14 @@ public sealed partial class MainWindow
         });
         bridge.Register("removeAttachment", args => { WebPane(args.Text("paneId")).WebRemoveAttachment(args.Text("id") ?? ""); return Task.FromResult<object?>(null); });
         bridge.Register("dismissAttachmentError", args => { WebPane(args.Text("paneId")).WebDismissAttachmentError(); return Task.FromResult<object?>(null); });
+        // The slash palette: the rows the WinUI palette lists (built-ins, the scanned catalogue, each argument's choices); the page filters them.
+        bridge.Register("slashCommands", async args => await WebPane(args.Text("paneId")).WebSlashCatalog());
+        bridge.Register("slashAction", async args =>
+        {
+            var view = WebPane(args.Text("paneId"));
+            if (!Enum.TryParse<SlashCommandAction>(args.Text("action"), out var action)) throw new ArgumentException("Unknown action.");
+            return await view.WebSlashAction(action, args.Text("arg"));
+        });
         bridge.Register("attachmentPreview", args => Task.FromResult(WebPane(args.Text("paneId")).WebAttachmentPreview(args.Text("id") ?? "")));
     }
 
@@ -154,6 +162,32 @@ public sealed partial class MainWindow
             if (file.MediaType is "image/png" or "image/jpeg" or "image/gif" or "image/webp") return new { name = file.Name, mediaType = file.MediaType, size, image = "data:" + file.MediaType + ";base64," + file.DataBase64 };
             if (file.MediaType == "text/plain") { var text = System.Text.Encoding.UTF8.GetString(AttachmentSupport.Decode(file)); return new { name = file.Name, mediaType = file.MediaType, size, text = text[..Math.Min(text.Length, 20000)] }; }
             return new { name = file.Name, mediaType = file.MediaType, size };
+        }
+
+        private static object WebSlashRow(SlashCommand c) => new { invocation = c.Invocation, description = SlashPalette.Description(c), source = c.Source, origin = c.Origin.ToString(), action = c.Action?.ToString(), argument = c.Argument?.ToString(), actionArg = c.ActionArg };
+
+        /// <summary>The palette's rows for this pane, the catalogue scanned first when it is missing or older than 30 s (as <see cref="ScanSlashCommands"/>).</summary>
+        internal async Task<object> WebSlashCatalog()
+        {
+            var pane = Session;
+            if (pane.Kind == "shell") return new { builtins = Array.Empty<object>(), scanned = Array.Empty<object>(), choices = new Dictionary<string, object[]>() };
+            var path = SlashWorkspacePath;
+            if (owner.smokeSlashCommands is null && owner.slashCatalogs.IsStale(pane.Provider, path))
+            {
+                try { owner.slashCatalogs.Set(pane.Provider, path, await Task.Run(() => SlashCommandCatalog.Commands(pane.Provider, path))); }
+                catch (Exception ex) when (ex is not OutOfMemoryException) { /* A pane with no catalogue still shows its built-ins. */ }
+            }
+            var builtins = SlashPalette.Builtins(pane.Provider);
+            var scanned = owner.smokeSlashCommands ?? owner.slashCatalogs.Get(pane.Provider, path) ?? [];
+            var choices = builtins.Where(b => b.Argument is not null).ToDictionary(b => b.Invocation, b => ArgumentChoices(b.Argument!.Value, b.Invocation).Select(WebSlashRow).ToArray());
+            return new { builtins = builtins.Select(WebSlashRow), scanned = scanned.Select(WebSlashRow), choices };
+        }
+
+        /// <summary>A palette row's app action, run as the WinUI palette runs it (notes in the transcript included); the draft is cleared. The editor's text after it.</summary>
+        internal async Task<string> WebSlashAction(SlashCommandAction action, string? argument)
+        {
+            if (await PerformSlashAction(action, argument)) { slashDismissedFor = null; RefreshPalette(""); await SetDraft(""); }
+            return input.Text;
         }
 
         /// <summary>What the page draws of the composer, read from the state the last <see cref="RefreshComposerState"/> left.</summary>

@@ -63,3 +63,14 @@
 .composer-preview-meta { font-size: var(--type-small); color: var(--ink2); }
 .composer-preview-card img { max-height: 420px; object-fit: contain; }
 .composer-preview-card pre { max-height: 350px; overflow: auto; white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--type-mono); }
+
+/* The slash palette over the composer (MW.SlashPalette.cs): 40 px rows, eight visible, then a count. */
+.slash-palette { margin-bottom: var(--space-xs); background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-block); overflow: hidden; }
+.slash-rows { max-height: calc(40px * 8); overflow-y: auto; }
+.slash-row { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: var(--space-sm); height: 40px; padding: var(--space-xxs) var(--space-md); align-content: center; cursor: default; }
+.slash-row.highlighted { background: var(--accent-soft); }
+.slash-name { font-family: var(--font-mono); font-size: var(--type-row); font-weight: 600; color: var(--ink); }
+.slash-row.highlighted .slash-name { color: var(--accent); }
+.slash-source { font-size: var(--type-small); color: var(--ink3); justify-self: end; }
+.slash-description { grid-column: 1 / -1; font-size: var(--type-small); color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slash-count { padding: var(--space-xxs) var(--space-md); font-size: var(--type-small); color: var(--ink2); border-top: var(--stroke-line) solid var(--line); }

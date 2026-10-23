@@ -3,16 +3,19 @@ import { useServices, useStoreState } from '../app/context';
 import type { RunSession } from '../store/models';
 import { attachmentRefusal, byteLabel, toBase64 } from './attachments';
 import { enterAction, maximumDraft } from './keys';
+import { choose, closed, move, paletteDraft, paletteKey, paletteState, safeIndex, type PaletteState, type SlashCatalog, type SlashCommand } from './slash';
 import type { AttachmentPreview, ComposerState, SendResult } from './types';
 
 /** The editor grows to six lines, then scrolls (MainWindow.cs: ComposerLine + 5 × ComposerLineStep). */
 const maxLines = 6;
+/** The scanned catalogue is read again after this long (SlashCatalogCache, 30 s). */
+const catalogLifetime = 30_000;
 
 /**
  * The agent pane's composer (spec §3). The draft lives here and is mirrored to the host on every keystroke (`updateDraft`);
  * what may happen to it (send, queue, stop, a block) is the host's composer state, pushed when it changes.
  */
-export function Composer({ session, slot }: { session: RunSession; slot?: React.ReactNode }) {
+export function Composer({ session, slot, onShowUsage }: { session: RunSession; slot?: React.ReactNode; onShowUsage?: () => void }) {
   const { bridge, store, t } = useServices();
   const state: ComposerState | undefined = useStoreState().composers[session.id];
   const [text, setText] = useState(() => session.draft ?? '');
@@ -21,6 +24,10 @@ export function Composer({ session, slot }: { session: RunSession; slot?: React.
   const [dropping, setDropping] = useState(false);
   const editor = useRef<HTMLTextAreaElement>(null);
   const sending = useRef(false);
+  const [catalog, setCatalog] = useState<{ value: SlashCatalog; read: number } | null>(null);
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
+  const [palette, setPalette] = useState<PaletteState>(closed);
+  const reading = useRef(false);
   const paneId = session.id;
 
   useEffect(() => {
@@ -34,6 +41,17 @@ export function Composer({ session, slot }: { session: RunSession; slot?: React.
     element.style.height = 'auto';
     element.style.height = Math.min(element.scrollHeight, line * maxLines + 4) + 'px';
   }, [text]);
+
+  // The palette follows the draft; the host's rows are read when it first opens and again once they are 30 s old.
+  const wantsPalette = paletteDraft(session.kind, text, dismissedFor) !== null;
+  useEffect(() => {
+    if (!wantsPalette || reading.current || (catalog && Date.now() - catalog.read < catalogLifetime)) return;
+    reading.current = true;
+    bridge.call<SlashCatalog>('slashCommands', { paneId }).then((value) => { if (value) setCatalog({ value, read: Date.now() }); }, () => {}).finally(() => { reading.current = false; });
+  }, [bridge, paneId, wantsPalette, catalog]);
+  useEffect(() => {
+    setPalette((previous) => (catalog ? paletteState(catalog.value, session.kind, text, dismissedFor, previous) : closed));
+  }, [catalog, session.kind, text, dismissedFor]);
 
   const change = useCallback((value: string) => {
     const draft = value.slice(0, maximumDraft);
@@ -69,7 +87,37 @@ export function Composer({ session, slot }: { session: RunSession; slot?: React.
     else void send(false);
   }, [state, call, send]);
 
+  const pick = async (command: SlashCommand) => {
+    const choice = choose(command);
+    if (choice.effect !== 'action') {
+      setDismissedFor(choice.effect === 'argument' ? null : choice.draft);
+      change(choice.draft);
+      editor.current?.focus();
+      return;
+    }
+    setDismissedFor(null);
+    // The usage popover is the page's own (the context ring's); every other action is the host's, notes included.
+    if (choice.action === 'ShowUsage') { change(''); onShowUsage?.(); return; }
+    try {
+      const draft = await bridge.call<string>('slashAction', { paneId, action: choice.action, arg: choice.actionArg });
+      setText(draft ?? '');
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    }
+    editor.current?.focus();
+  };
+
   const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (palette.commands.length > 0 && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+      const key = paletteKey(event.key, event.shiftKey);
+      if (key) {
+        event.preventDefault();
+        if (key === 'up' || key === 'down') setPalette(move(palette, key === 'up' ? -1 : 1));
+        else if (key === 'dismiss') setDismissedFor(text);
+        else if (!event.repeat) { const chosen = palette.commands[safeIndex(palette)]; if (chosen) void pick(chosen); }
+        return;
+      }
+    }
     const action = enterAction({ ...event, isComposing: event.nativeEvent.isComposing });
     if (action === 'pass') return;
     event.preventDefault();
@@ -127,6 +175,28 @@ export function Composer({ session, slot }: { session: RunSession; slot?: React.
         <div className="composer-row composer-error" data-testid="composer-error" role="alert">
           <span>{state?.attachmentError ?? error}</span>
           <button type="button" className="composer-icon-button" aria-label={t('composer.attachment.dismissError')} onClick={() => { setError(null); if (state?.attachmentError) call('dismissAttachmentError'); }}>×</button>
+        </div>
+      )}
+      {palette.commands.length > 0 && (
+        <div className="slash-palette" data-testid="slash-palette" role="listbox">
+          <div className="slash-rows">
+            {palette.commands.map((command, index) => (
+              <div
+                key={command.invocation}
+                role="option"
+                aria-selected={index === safeIndex(palette)}
+                className={'slash-row' + (index === safeIndex(palette) ? ' highlighted' : '')}
+                ref={index === safeIndex(palette) ? (row) => row?.scrollIntoView({ block: 'nearest' }) : undefined}
+                onMouseEnter={() => setPalette({ ...palette, index })}
+                onMouseDown={(event) => { event.preventDefault(); void pick(command); }}
+              >
+                <span className="slash-name">/{command.invocation}</span>
+                <span className="slash-source">{command.source}</span>
+                <span className="slash-description">{command.description}</span>
+              </div>
+            ))}
+          </div>
+          <div className="slash-count">{t('slash.palette.count', { count: palette.commands.length })}</div>
         </div>
       )}
       <div
