@@ -285,6 +285,20 @@ public sealed partial class MainWindow
         /// </summary>
         private void RefreshHeaderFigures(RunSession pane)
         {
+            var (rest, full, help) = HeaderFigures(pane);
+            if (figuresRest.Text != rest) figuresRest.Text = rest;
+            var timed = pane.Kind != "shell" && pane.RunTiming is not null;
+            if (help == figuresHelp) return;
+            figuresHelp = help;
+            // One tooltip whose words change: a new one each second would close the one the pointer is holding open.
+            if (figuresTip is null) ToolTipService.SetToolTip(figuresWords!, figuresTip = new ToolTip());
+            figuresTip.Content = help; AutomationProperties.SetName(figuresHost!, full);
+            AutomationProperties.SetAutomationId(figuresHost!, (timed ? "agent-elapsed-" : "pane-figures-") + id);
+        }
+
+        /// <summary>The figures after the clock (" · 42% · $0.12 · tools 3"), every value with its name, and the tooltip (the web header reads them too).</summary>
+        internal (string After, string Full, string Help) HeaderFigures(RunSession pane)
+        {
             var invariant = System.Globalization.CultureInfo.InvariantCulture;
             static string Named(string key, string value) => Locale.Get("pane.hero.figure", new Dictionary<string, string> { ["label"] = Locale.Get(key), ["value"] = value });
             var shown = new List<string>(); var named = new List<string>();
@@ -312,7 +326,6 @@ public sealed partial class MainWindow
             }
             var rest = string.Join(" · ", shown);
             rest = rest.Length == 0 || !timed ? rest : " · " + rest;
-            if (figuresRest.Text != rest) figuresRest.Text = rest;
             named.Add(ProviderCatalog.Name(pane.Provider));
             var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             // The pane's own choice when it names one, else what the CLI reported.
@@ -321,12 +334,7 @@ public sealed partial class MainWindow
             var full = string.Join(" · ", named);
             // Under them the tooltip says what the clock counts (M/PaneChrome.swift:71, M/AgentElapsedView.swift:13-15).
             var help = !timed ? full : full + "\n" + Locale.Get(pane.RunTiming!.IsApproximate ? "pane.hero.elapsed.approximate" : pane.RunTiming.FinishedAt is null ? "pane.hero.elapsed.running" : "pane.hero.elapsed.finished");
-            if (help == figuresHelp) return;
-            figuresHelp = help;
-            // One tooltip whose words change: a new one each second would close the one the pointer is holding open.
-            if (figuresTip is null) ToolTipService.SetToolTip(figuresWords!, figuresTip = new ToolTip());
-            figuresTip.Content = help; AutomationProperties.SetName(figuresHost!, full);
-            AutomationProperties.SetAutomationId(figuresHost!, (timed ? "agent-elapsed-" : "pane-figures-") + id);
+            return (rest, full, help);
         }
 
         /// <summary>

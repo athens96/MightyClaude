@@ -359,6 +359,20 @@ public sealed partial class MainWindow
             };
         }
 
+        /// <summary>
+        /// The pane header's word and figures (spec section 1), as the WinUI header writes them: what waits on the user ("waiting 2"),
+        /// else the turn's background agents while it runs, else the status word; then the figures after the clock and the tooltip
+        /// (<see cref="HeaderFigures"/>). The clock itself ticks in the page from the pane's runTiming.
+        /// </summary>
+        private object WebHeader(RunSession pane)
+        {
+            var pending = PendingRequests; var shown = StatusGlyph.DisplayStatus(pane.Status, pending);
+            var word = pending > 0 ? Locale.Get("phone.card.attention", new Dictionary<string, string> { ["count"] = pending.ToString(System.Globalization.CultureInfo.InvariantCulture) })
+                : pane.Status == "running" && PlanCardSupport.BackgroundStatus(pane.BackgroundWork) is { } waiting ? waiting : StateLabel(shown);
+            var (rest, _, help) = HeaderFigures(pane);
+            return new { word, tone = StatusGlyph.Tone(shown).ToString().ToLowerInvariant(), timed = pane.Kind != "shell" && pane.RunTiming is not null, rest, help };
+        }
+
         /// <summary>What the page draws of the composer, read from the state the last <see cref="RefreshComposerState"/> left.</summary>
         internal object WebComposerState()
         {
@@ -389,6 +403,7 @@ public sealed partial class MainWindow
                 attachmentError = attachmentErrorText.Text.Length == 0 ? null : attachmentErrorText.Text,
                 attachmentsAllowed = pane.Kind != "shell",
                 pills = pane.Kind == "shell" ? null : WebPills(pane),
+                header = WebHeader(pane),
             };
         }
     }
