@@ -85,8 +85,9 @@ public sealed partial class MainWindow : Window
                 if (!closing) TrackLoginTask(ManualUpdateFinished());
             }
         });
+        PerfLog.Configure(StateDirectory); WebTranscript.Configure(StateDirectory);
         InitializeLoginRecovery(); InitializeDelegation();
-        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; RecordProviderActivity(value); ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane) && pane.Refresh()) { pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
+        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; using var perf = PerfLog.Measure("run event " + value.Type); RecordProviderActivity(value); ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane) && (value.Type == "status" ? pane.Refresh() : pane.QueueRefresh())) { pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
         // they are ephemeral, so they reach the pane that can show the bar and
         // nowhere else — not the snapshot.
@@ -140,7 +141,7 @@ public sealed partial class MainWindow : Window
         try
         {
         if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); await CheckResources(); InitializeAgentIO(); InitializeRemoteWorkspaces(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); await PresentSetupIfNeeded(); }); return; }
-        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); await RunUISmoke(); }
+        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); if (options.PerfScenario) { await RunPerfScenario(); await FinishSmoke(true); } else await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
         }
         finally { HideLaunchSplash(); }
@@ -225,8 +226,9 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private async Task<bool> AddPane(string kind, string provider = "claude", string? groupId = null, Func<RunSession, RunSession>? shape = null)
     {
+        using var perf = PerfLog.Measure("add pane " + kind + " (wall)");
         var added = false;
-        await Act(async () => { var state = service.Snapshot; var workspace = state.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); var target = state.Workspaces.FirstOrDefault(w => w.Id == workspace); if (kind is not ("claude" or "shell") && !RemoteWorkspaceFeatures.AllowsLocalOnly(target)) throw new InvalidOperationException(RemoteWindowsStrings.PaneUnavailable); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get(target?.Remote is null ? "session.title.shell" : "remote.pane.commandTitle") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, state.Sessions); if (shape is not null) pane = shape(pane); await service.UpdateAsync(s => PaneLayout.HasRoom(s) ? AddToLayout(s, workspace, pane, groupId) : throw new InvalidOperationException(Locale.Get("workspace.paneLimit"))); added = true; HideDashboard(); Render(); });
+        await Act(async () => { var state = service.Snapshot; var workspace = state.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); var target = state.Workspaces.FirstOrDefault(w => w.Id == workspace); if (kind is not ("claude" or "shell") && !RemoteWorkspaceFeatures.AllowsLocalOnly(target)) throw new InvalidOperationException(RemoteWindowsStrings.PaneUnavailable); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get(target?.Remote is null ? "session.title.shell" : "remote.pane.commandTitle") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, state.Sessions); if (shape is not null) pane = shape(pane); var saving = service.UpdateAsync(s => PaneLayout.HasRoom(s) ? AddToLayout(s, workspace, pane, groupId) : throw new InvalidOperationException(Locale.Get("workspace.paneLimit"))); added = true; HideDashboard(); if (!AddPaneInPlace(pane.Id)) Render(); await saving; });
         return added;
     }
     // While a check runs the status bar says so; at rest it names the machine, as the Mac's does (RefreshStatusBar).
@@ -243,7 +245,7 @@ public sealed partial class MainWindow : Window
     }
     private void Render()
     {
-        if (closing) return; rendering = true; var state = service.Snapshot; renderedSessionIds = state.Sessions.Select(s => s.Id).ToHashSet();
+        if (closing) return; using var perf = PerfLog.Measure("render (every pane)"); perfRenders++; rendering = true; var state = service.Snapshot; renderedSessionIds = state.Sessions.Select(s => s.Id).ToHashSet();
         brushes.Apply(DesignTokens.Palette(state.Theme));
         root.RequestedTheme = state.Theme == "light" ? ElementTheme.Light : ElementTheme.Dark; darkTheme = state.Theme != "light";
         // Every open window of this app shares the theme; ApplyTitleBar skips a bar already in this palette.
@@ -403,6 +405,8 @@ public sealed partial class MainWindow : Window
         /// </summary>
         private string? RunBlockReason(ProviderRuntime? runtime) => owner.service.RemoteReference(id) is { } remote
             ? RemoteWorkspaceFeatures.BlockedReason(Session, remote, owner.service.Remote?.Connection(remote.ConnectionId)) : RunBlock.Reason(Session, runtime);
+        /// <summary>Prototype: the conversation drawn by a web page instead of <see cref="output"/>'s RichEdit, only while <see cref="WebTranscript.Enabled"/>.</summary>
+        private WebTranscript? webOutput;
         internal PaneView(MainWindow owner, string id)
         {
             this.owner = owner; this.id = id; FitComposerToText(); AppText.Follow(input, FitComposerToText);
@@ -415,7 +419,17 @@ public sealed partial class MainWindow : Window
             // Copy lives in the header's … menu, as on the Mac (decision Q4).
             AddPaneMenu();
             Grid.SetRow(output.View, 1); grid.Children.Add(output.View);
-            PaintTranscriptSurface(grid); InitializeEmptyOutput(grid);
+            PaintTranscriptSurface(grid);
+            if (WebTranscript.Enabled && Session.Kind == "claude")
+            {
+                // The RichEditBox stays in its place, empty and unseen, so whatever shows or hides the conversation
+                // (the Mighty view, the empty state) still reads and sets its visibility; the page follows it.
+                var web = webOutput = new WebTranscript(owner.StateDirectory) { OpenReference = OpenReferencePreview, SideInset = TranscriptGutter + TranscriptRtf.Inset };
+                web.View.Margin = output.View.Margin; output.View.Opacity = 0; output.View.IsHitTestVisible = false;
+                Grid.SetRow(web.View, 1); grid.Children.Add(web.View);
+                output.View.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => web.View.Visibility = output.View.Visibility);
+            }
+            InitializeEmptyOutput(grid);
             // The composer and what hangs off it (MainWindow.Composer.cs).
             var composerScroll = BuildComposer(grid); var card = composerCard;
             Container = new Border { Child = grid, Background = owner.brushes.Brush(DesignToken.Card), BorderThickness = new Thickness(DesignMetrics.Stroke.Line), BorderBrush = owner.brushes.Brush(DesignToken.Line), CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane) };
@@ -530,6 +544,7 @@ public sealed partial class MainWindow : Window
                 pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files));
             if (!QueuePaneAlive || submissionVersion != composerSubmissionVersion) return;
             // A send no run took (the items held for the pane stay held) puts the draft back, as a refused start does.
+            PerfLog.Mark("request sent " + pane.Id);
             started = await owner.StartFromComposer(request) is not DelegationRelease.NotStarted;
             if (!started) { owner.error.Text = Locale.Get("remote.error.startFailed"); return; }
             if (!owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return;
@@ -874,14 +889,39 @@ public sealed partial class MainWindow : Window
             return menu;
         }
         /// <returns>False when the pane is gone: an event queued before its close (a run's end, a status) finds nothing to draw.</returns>
+        /// <summary>The milliseconds a run event's refresh waits for the ones after it: a streamed answer sends one per line.</summary>
+        private const int RefreshGap = 100;
+        private bool refreshQueued;
+        private Microsoft.UI.Dispatching.DispatcherQueueTimer? refreshTimer;
+
+        /// <summary>
+        /// Refreshes the pane once the run events of the next <see cref="RefreshGap"/> ms have joined this one, instead of
+        /// once per event: each refresh writes the conversation again, which took most of the UI thread while an answer streamed.
+        /// </summary>
+        /// <returns>False when the pane is gone, as <see cref="Refresh"/> returns.</returns>
+        internal bool QueueRefresh()
+        {
+            if (!owner.service.Snapshot.Sessions.Any(s => s.Id == id)) return false;
+            if (refreshQueued) return true;
+            refreshQueued = true;
+            refreshTimer ??= Container.DispatcherQueue.CreateTimer();
+            refreshTimer.IsRepeating = false; refreshTimer.Interval = TimeSpan.FromMilliseconds(RefreshGap);
+            refreshTimer.Tick -= RefreshDue; refreshTimer.Tick += RefreshDue;
+            refreshTimer.Start();
+            return true;
+        }
+
+        private void RefreshDue(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args) { refreshQueued = false; if (!owner.closing) Refresh(); }
+
         internal bool Refresh()
         {
+            using var perf = PerfLog.Measure("pane refresh");
             if (owner.service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { } pane) return false;
             // A files pane runs nothing: it draws its tree and preview instead (MainWindow.Files.cs).
             if (FilePaneKind.IsFilePane(pane.Kind)) { EnsureFilesView(); RethemeFilesMarkdown(); return true; }
             RefreshTerminalTheme(); RethemeMightyTranscripts(owner.service.Snapshot.Theme == "light"); RethemePlanViews(); RethemeStructureAnswers(); FitReferencePreview();
             updating = true; var runtime = PaneRuntime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
-            var state = owner.service.Snapshot; RefreshHeaderStatus(pane); output.Update(pane, state.Theme == "light", owner.pictures, LocalPath(state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId))); RefreshEmptyOutput(pane); RefreshElapsed(pane); RefreshPlanHistory(pane); RefreshBackgroundWork(pane); RedecidePlanPlace();
+            var state = owner.service.Snapshot; RefreshHeaderStatus(pane); if (webOutput is not null) webOutput.Update(pane, state.Theme == "light"); else output.Update(pane, state.Theme == "light", owner.pictures, LocalPath(state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId))); RefreshEmptyOutput(pane); RefreshElapsed(pane); RefreshPlanHistory(pane); RefreshBackgroundWork(pane); RedecidePlanPlace();
             // Do not rewrite or recreate the editor during output/metadata refreshes.
             if (!draftLoaded) { input.Text = pane.Draft; draftLoaded = true; RefreshPalette(input.Text); }
             RefreshMenus(pane, catalog);

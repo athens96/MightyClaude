@@ -8,12 +8,13 @@ namespace MightyClaude.WinUI;
 
 /// Explicit profiles never import the user's legacy profile. Smoke runs require
 /// a new/empty directory so CI cannot change saved conversations or credentials.
-public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeTest = false, bool SmokeExit = false)
+/// <c>--perf-scenario</c> runs the timing scenario (MainWindow.PerfScenario.cs) in the smoke's place, so it needs <c>--smoke-test</c>.
+public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeTest = false, bool SmokeExit = false, bool PerfScenario = false)
 {
     public static StartupOptions Parse(string[] args)
     {
         string? profile = null;
-        bool smoke = false, exit = false;
+        bool smoke = false, exit = false, perf = false;
         for (int index = 0; index < args.Length; index++)
         {
             switch (args[index])
@@ -25,15 +26,31 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
                     break;
                 case "--smoke-test": smoke = true; break;
                 case "--smoke-exit": exit = true; break;
+                case "--perf-scenario": perf = true; break;
                 default: throw new ArgumentException(Locale.Get("windows.startup.unsupportedArgument", new Dictionary<string, string> { ["argument"] = args[index] }));
             }
         }
         if (exit && !smoke) throw new ArgumentException(Locale.Get("windows.startup.smokeExitNeedsSmoke"));
+        // A developer's switch, never shown to a user: its refusal is not translated.
+        if (perf && !smoke) throw new ArgumentException("--perf-scenario needs --smoke-test.");
         if (smoke && profile is null) throw new ArgumentException(Locale.Get("windows.startup.smokeNeedsProfile"));
         if (profile is not null && File.Exists(profile)) throw new ArgumentException(Locale.Get("windows.startup.profileIsFile"));
         if (smoke && Directory.Exists(profile) && Directory.EnumerateFileSystemEntries(profile!).Any())
             throw new ArgumentException(Locale.Get("windows.startup.smokeProfileNotEmpty"));
-        return new(profile, smoke, exit);
+        return new(profile, smoke, exit, perf);
+    }
+
+    /// <summary>
+    /// The perf scenario's switches, as files in its profile before the window reads them at start: <c>perf.log</c> so the
+    /// heavy steps are timed (PerfLog), and <c>transcript-web</c> when <c>MIGHTY_PERF_WEB=1</c> so the run measures the web
+    /// transcript. Written after <see cref="Parse"/> checked that the profile was empty.
+    /// </summary>
+    internal void PreparePerfProfile()
+    {
+        if (!PerfScenario || ProfileDirectory is null) return;
+        Directory.CreateDirectory(ProfileDirectory);
+        File.WriteAllText(Path.Combine(ProfileDirectory, "perf.log"), "");
+        if (Environment.GetEnvironmentVariable("MIGHTY_PERF_WEB") == "1") File.WriteAllText(Path.Combine(ProfileDirectory, "transcript-web"), "");
     }
 
     internal void TraceStartup(string stage)
@@ -123,6 +140,7 @@ internal static class Program
             var startup = StartupOptions.Parse(args);
             options = startup;
             startup.TraceStartup("options-parsed");
+            startup.PreparePerfProfile();
             if (startup.SmokeTest) AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             {
                 if (args.ExceptionObject is Exception error) startup.WriteStartupFailure(error);

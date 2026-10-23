@@ -49,6 +49,12 @@ internal sealed partial class AgentTranscript
     /// timeline's result card shows its answer so (M/MightyGraphTimelineView.swift:232-237).
     /// </summary>
     internal bool PlainAnswer { get; set; }
+    /// <summary>
+    /// Writes its document only while some of it is on screen (a diagram block's conversation, of which a pane can hold
+    /// dozens): one scrolled or panned out of view keeps the session it was given and writes it when it comes back.
+    /// </summary>
+    internal bool WritesOnlyOnScreen { get; set; }
+    private bool onScreen = true, offScreenPending;
     /// <summary>The window's shared brushes for the painted blocks; a transcript without them keeps its own set, recoloured with its theme.</summary>
     internal DesignBrushes? Brushes { get; set; }
     internal AgentTranscript()
@@ -65,12 +71,21 @@ internal sealed partial class AgentTranscript
         View.ActualThemeChanged += (_, _) => Repaint();
         // A new text setting resizes the box, which paints its own size and font over the RTF as a theme change does.
         AppText.Follow(View, Repaint);
-        View.Loaded += (_, _) => { AttachBackdrop(); Repaint(); };
+        // Put back on screen (a tab switched to, the layout rebuilt, the Mighty view shown) it writes the whole document again
+        // only where the theme it was written in is not the one it has now, or it was never written: rewriting every
+        // conversation on every load was most of a slow pane switch, a diagram block's conversation each paying it.
+        View.Loaded += (_, _) => { AttachBackdrop(); if (writtenTheme != View.ActualTheme) Repaint(); };
         // The bubble's margin and a table's columns follow the width, and every painted block follows the wrapped lines.
         // A box drawn while it was hidden comes back at the size it had, with no size event: its viewport tells.
         // A box first loaded inside a collapsed parent has no template yet: its first size is when the painted layer can go in.
         View.SizeChanged += (_, _) => { AttachBackdrop(); RemeasureBackdrop(); Reflow(); };
-        View.EffectiveViewportChanged += (_, _) => Reflow();
+        View.EffectiveViewportChanged += (_, args) =>
+        {
+            var seen = args.EffectiveViewport is { Width: > 0, Height: > 0 } port && port.X < View.ActualWidth && port.X + port.Width > 0 && port.Y < View.ActualHeight && port.Y + port.Height > 0;
+            var back = seen && !onScreen; onScreen = seen;
+            if (back && offScreenPending) { offScreenPending = false; Redraw(); }
+            Reflow();
+        };
         // A new width draws everything again, and with it gives an entry remembered as out of time another go: what
         // ran out may have been a stalled machine's time, and nothing else would ever forget it.
         settled.Tick += (_, _) => { settled.Stop(); if (Outgrown) { timedOut.Clear(); Redraw(); } };
@@ -114,6 +129,16 @@ internal sealed partial class AgentTranscript
     {
         last = (session, light);
         if (selecting) { deferred = (session, light); return; }
+        if (WritesOnlyOnScreen && !onScreen) { offScreenPending = true; return; }
+        // RichEdit must not be written while it is writing: a refresh that reaches it from inside a write (a message
+        // pumped during SetText) draws the latest session once that write is over instead.
+        if (writing)
+        {
+            // A whole rewrite asked for (rendered cleared by a theme or text change) is still a whole rewrite after this write.
+            var whole = rendered.Length == 0;
+            View.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { if (whole) rendered = ""; Redraw(); });
+            return;
+        }
         own?.Apply(DesignTokens.Palette(!light));
         // The second pass only runs when the document's paragraphs are not the ones the renderer counted, so
         // its blocks cannot be placed: the plain look keeps every word readable without them.
@@ -123,7 +148,9 @@ internal sealed partial class AgentTranscript
             // A box that is not laid out now is drawn for the width it last had.
             var width = TextWidth; if (width >= 1) knownWidth = width; else width = knownWidth;
             var look = new TranscriptLook { Cards = Cards && !plainLook, Width = width, Scale = View.XamlRoot?.RasterizationScale ?? 1, TopInset = TopInset, BottomInset = BottomInset, BodySize = BodySize, PlainAnswer = PlainAnswer, References = OpenReference is not null && !Cards, TimedOut = timedOut };
+            var rtf = PerfLog.Measure("transcript rtf");
             var next = TranscriptRtf.Render(session, light, pictures, workspaceRoot, expandedTools, nextActions, look); actions = nextActions;
+            rtf.Dispose();
             drawnWidth = width;
             if (next == rendered) { ArrangeBackdrop(); return; }
             var selection = View.Document.Selection; var start = selection.StartPosition; var end = selection.EndPosition;
@@ -133,12 +160,16 @@ internal sealed partial class AgentTranscript
             // WinUI also blocks programmatic document writes while IsReadOnly is true.
             // Keep this synchronous so no user input can run before protection returns.
             var readOnly = View.IsReadOnly;
+            using var write = PerfLog.Measure("transcript write");
             try
             {
+                writing = true;
                 View.IsReadOnly = false;
                 // A streaming answer only changes the document's end: the entries before it stay as RichEdit
                 // holds them and the rest is written over the old tail, in front of the document's own last mark.
                 var kept = KeptEntries(next, look);
+                // A tail that would start outside the document as last read is not written into it: the whole document is.
+                if (kept > 0 && (look.Entries[kept].Paragraph >= paragraphStarts.Count || paragraphStarts[look.Entries[kept].Paragraph] < 0 || paragraphStarts[look.Entries[kept].Paragraph] > plain.Length - 1)) kept = 0;
                 if (kept > 0)
                 {
                     var from = look.Entries[kept];
@@ -151,7 +182,7 @@ internal sealed partial class AgentTranscript
                 // RichEdit keeps a last paragraph mark of its own under whatever it reads, a body line high: it is made one pixel.
                 if (plain.Length > 0) View.Document.GetRange(plain.Length - 1, plain.Length).ParagraphFormat.SetLineSpacing(LineSpacingRule.Exactly, TranscriptRtf.LastMark * 0.75f);
             }
-            finally { View.IsReadOnly = readOnly; }
+            finally { View.IsReadOnly = readOnly; writing = false; writtenTheme = View.ActualTheme; }
             rendered = next;
             var placed = Place(look);
             var prefix = 0; while (prefix < previous.Length && prefix < plain.Length && previous[prefix] == plain[prefix]) prefix++;
@@ -209,6 +240,10 @@ internal sealed partial class AgentTranscript
     private List<int> paragraphStarts = [0];
     private TranscriptLook? shown;
     private bool tailWrites = true;
+    /// <summary>The document is being written (Update); RichEdit is not written again until that is over.</summary>
+    private bool writing;
+    /// <summary>The theme the document was last written in; null before the first write.</summary>
+    private ElementTheme? writtenTheme;
     /// <summary>Where the drawn marks sit in the document: object characters that are not the agent's pictures.</summary>
     private HashSet<int> marks = [];
 
@@ -485,7 +520,7 @@ internal sealed record TranscriptLink(int First, int Last, string? Label, string
 
 /// <summary>Bounded Markdown to RTF. All source text is escaped; no HTML, images,
 /// file links, fields or executable RTF instructions from provider output run.</summary>
-internal static class TranscriptRtf
+internal static partial class TranscriptRtf
 {
     /// <summary>The text view's inset on every side (M/AgentTranscriptView.swift:168, 372-376).</summary>
     internal const double Inset = DesignMetrics.Inset.Transcript;
