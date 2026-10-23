@@ -5,6 +5,7 @@ import type { MightyGraphRun } from '../store/models';
 import { blockExtras } from './extras';
 import { makeLayout, type Layout } from './layout';
 import { shareRuns } from './share';
+import type { MightyInputs } from './types';
 
 const at = '2026-10-24T00:00:00Z';
 function fixture(): MightyGraphRun[] {
@@ -24,9 +25,9 @@ function fixture(): MightyGraphRun[] {
   }];
 }
 
-function pass(runs: readonly MightyGraphRun[], previous: ReadonlyMap<string, ReturnType<typeof blockExtras> extends Map<string, infer E> ? E : never>) {
+function pass(runs: readonly MightyGraphRun[], previous: ReadonlyMap<string, ReturnType<typeof blockExtras> extends Map<string, infer E> ? E : never>, inputs: MightyInputs | null = null) {
   const layout = makeLayout(runs, '', true, new Set(), { splitsExecution: true, viewport: { w: 1200, h: 800 }, zoom: 1 });
-  const extras = blockExtras({ layout, runs, inputs: null, draft: '', planHistory: undefined, resultSize: undefined, planText: undefined, latest: 'x' }, previous);
+  const extras = blockExtras({ layout, runs, inputs, draft: '', planHistory: undefined, resultSize: undefined, planText: undefined, latest: 'x' }, previous);
   return { layout, extras };
 }
 
@@ -60,5 +61,19 @@ describe('a streamed graph_run', () => {
     const two = pass(shareRuns(first, streamed), one.extras);
     // Siblings share a row: the two before it move aside to keep the row centred; nothing above them moves.
     expect(drawn(one, two).sort()).toEqual(['5:run-4:agent:a', '5:run-4:agent:b', '5:run-4:agent:c']);
+  });
+
+  it('keeps the settled results when the host sends its inputs again', () => {
+    // The host's inputs, sent again whole (any part changed): every completed request's file list is a new, equal array.
+    const inputs = (): MightyInputs => JSON.parse(JSON.stringify({
+      planRecords: [], galleries: [], executions: [], files: { 'run-1': [], 'run-2': [], 'run-3': [{ path: 'src/a.ts' }] }, older: 0, retainedStart: 0,
+      summary: 'Requests 4', summaryHelp: '', executionCards: {}, animations: true, header: 'Mighty',
+    }));
+    const first = shareRuns([], fixture());
+    const one = pass(first, new Map(), inputs());
+    const streamed = JSON.parse(JSON.stringify(fixture())) as MightyGraphRun[];
+    streamed[3]!.agents[1]!.entries[0]!.text += ' more';
+    const two = pass(shareRuns(first, streamed), one.extras, { ...inputs(), summary: 'Requests 4 · 1.2k' });
+    expect(drawn(one, two)).toEqual(['5:run-4:agent:b']);
   });
 });

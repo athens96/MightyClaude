@@ -47,7 +47,13 @@ export function blockExtras({ layout, runs, inputs, draft, planHistory, resultSi
       case 'history': extra = { history: inputs?.history }; break;
     }
     const before = previous.get(node.id);
-    if (before && extra.images && before.images && before.images.runId === extra.images.runId && before.images.step === extra.images.step && before.images.count === extra.images.count) extra = { ...extra, images: before.images };
+    // The host's pushed data (files, an execution's card, the history state, a gallery) arrives as new objects whenever any
+    // part of the inputs changed: a part equal by value keeps the object the block was drawn with.
+    if (before) {
+      for (const key of ['files', 'images', 'execution', 'history'] as const) {
+        if (extra[key] !== undefined && before[key] !== undefined && extra[key] !== before[key] && JSON.stringify(extra[key]) === JSON.stringify(before[key])) extra = { ...extra, [key]: before[key] };
+      }
+    }
     next.set(node.id, before && sameExtra(before, extra) ? before : extra);
   }
   return next;
