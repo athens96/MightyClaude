@@ -154,6 +154,7 @@ public sealed record RunSession : IJsonOnDeserializing
         if (ev.Type == "status")
         {
             var terminal = ev.Status is "completed" or "error" or "stopped";
+            if (ev.Status == "error" && ClaudeResume.Lost(value)) value = value with { ResumeId = null };
             return value with { Status = ev.Status!, CurrentActivity = terminal ? null : value.CurrentActivity, Logs = terminal ? value.Logs.Select(l => l.Activity is { State: "running" or "waiting" } a ? l with { Activity = a with { State = ev.Status == "stopped" ? "stopped" : "error" } } : l).ToList() : value.Logs };
         }
         if (ev.Type == "resume") return value with { ResumeId = ev.ResumeId };

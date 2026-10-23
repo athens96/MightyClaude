@@ -911,6 +911,7 @@ internal static class Verification
         await Test("cli runner cancellation stops the command and its children", CliRunnerVerification.CancellationStopsTheCommandAndItsChildren);
         await Test("strings match macOS", StringsVerification.MatchMacOS);
         await Test("tool permission handshake sends initialize before the prompt", ToolPermissionVerification.HandshakeRunsBeforeThePrompt);
+        await Test("claude resume: a pane forgets a conversation Claude Code does not have", ClaudeResumeVerification.APaneForgetsAConversationClaudeCodeDoesNotHave);
         await Test("tool permission handshake failure and timeout fail closed", ToolPermissionVerification.HandshakeFailureAndTimeoutFailClosed);
         await Test("tool permission 이번만 허용 returns the original input once", ToolPermissionVerification.AllowOnceReturnsTheOriginalInput);
         await Test("tool permission 거부 never returns allow rules or settings", ToolPermissionVerification.DenyNeverReturnsAllow);
