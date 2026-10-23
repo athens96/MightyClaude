@@ -60,7 +60,7 @@ public sealed partial class MainWindow
         /// say so and polling goes on at its slower pace. A hidden or closed pane reads nothing; it is read again when its
         /// diagram is next drawn.
         /// </summary>
-        private bool OuroborosShown => QueuePaneAlive && graphHost?.Visibility == Visibility.Visible && graphViewport is { Visibility: Visibility.Visible, IsLoaded: true };
+        private bool OuroborosShown => QueuePaneAlive && (webMightyShown || graphHost?.Visibility == Visibility.Visible && graphViewport is { Visibility: Visibility.Visible, IsLoaded: true });
 
         private async Task ReadOuroboros()
         {
