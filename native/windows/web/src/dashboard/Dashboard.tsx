@@ -5,6 +5,7 @@ import { ProviderMark } from '../conversation/ProviderMark';
 import { useAddMenu } from '../shell/addMenu';
 import { BetaBadge, GitCapsule, MiddlePath, StatusGlyph, useCall, usePaneInfo } from '../shell/parts';
 import type { DashboardModel } from '../shell/types';
+import { Icon } from '../icons/Icon';
 
 export function SidebarToggle() {
   const { t } = useServices();
@@ -14,7 +15,7 @@ export function SidebarToggle() {
   return (
     <button type="button" className="icon-button sidebar-toggle" title={label} aria-label={label} data-testid="sidebar-toggle"
       onClick={() => call('setSidebarCollapsed', { collapsed: !collapsed })}>
-      <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.2" /><path d="M6 2.5v11" stroke="currentColor" strokeWidth="1.2" /></svg>
+      <Icon name="panel-left" size={16} weight={1.5} />
     </button>
   );
 }
@@ -38,7 +39,7 @@ export function Dashboard({ model, onUsage }: { model: DashboardModel; onUsage: 
           <div className="dashboard-subtitle">{model.subtitle}</div>
         </div>
       </div>
-      <div className="dashboard-tiles">
+      <div className={'dashboard-tiles' + (model.usage ? ' with-usage' : '')}>
         {tiles.map(([key, count, label]) => (
           <div key={key} className={'dashboard-tile ' + key} data-testid={'dashboard-stat-' + key}>
             <span className="dashboard-tile-count">{count}</span>
@@ -67,8 +68,9 @@ export function Dashboard({ model, onUsage }: { model: DashboardModel; onUsage: 
             <MiddlePath path={workspace.path} className="mono" />
             {workspace.git && <GitCapsule git={workspace.git} />}
             <span className="spacer" />
-            {workspace.local && <button type="button" className="capsule" onClick={() => call('openFiles', { workspaceId: workspace.id })}>{t('files.pane.title')}</button>}
-            <button type="button" className="capsule strong" onClick={(event) => addMenu(event.currentTarget, { workspaceId: workspace.id })}>+ {t('workspace.addPane')}</button>
+            {workspace.local && <button type="button" className="dashboard-button" title={t('menu.showFiles')} onClick={() => call('openFiles', { workspaceId: workspace.id })}><Icon name="folder" size={13} weight={1.75} />{t('files.pane.title')}</button>}
+            <button type="button" className="dashboard-button strong" title={t('workspace.addPaneHelp')} aria-label={t('workspace.addPaneAccessibility', { workspace: workspace.name })}
+              onClick={(event) => addMenu(event.currentTarget, { workspaceId: workspace.id })}><Icon name="plus" size={13} weight={2.4} />{t('workspace.addPane')}</button>
           </div>
           {workspace.rows.length === 0 ? <div className="dashboard-none">{t('phone.workspaces.noSessions')}</div> : (
             <div className="dashboard-rows">
@@ -77,7 +79,7 @@ export function Dashboard({ model, onUsage }: { model: DashboardModel; onUsage: 
                 if (!info) return null;
                 return (
                   <button key={id} type="button" className="dashboard-row" data-session-id={id} onClick={() => { call('hideDashboard'); call('selectSession', { id }); }}>
-                    <StatusGlyph tone={info.tone} size={18} />
+                    <StatusGlyph tone={info.tone} size={18} kind={info.kind} />
                     <span className="dashboard-row-text">
                       <span className={'dashboard-row-title' + (info.settled ? '' : ' strong')}>{info.title}</span>
                       <span className="dashboard-row-meta">
@@ -99,19 +101,25 @@ export function Dashboard({ model, onUsage }: { model: DashboardModel; onUsage: 
   );
 }
 
-/** No project yet (BuildWelcome). */
+/** No project yet (BuildWelcome; M/WorkspaceView.swift welcome): the split mark, the title, the two lines, the open and connect buttons, the shortcuts, and the platform line at the foot. */
 export function Welcome({ setupNeeded }: { setupNeeded: boolean }) {
   const { t } = useServices();
   const call = useCall();
   return (
     <div className="welcome" data-testid="welcome">
       <div className="welcome-toggle"><SidebarToggle /></div>
+      <span className="welcome-spacer" />
+      <Icon name="columns-2" size={58} weight={0.9} className="welcome-mark" />
       <h1 className="welcome-title">{t('layout.welcome.title')}</h1>
       <p className="welcome-body">{t('layout.welcome.body')}</p>
-      <button type="button" className="accent-button" onClick={() => call('pickFolder')}>{t('layout.welcome.openProject')}</button>
-      {setupNeeded && <button type="button" className="plain-button" onClick={() => call('openSetup')}>{t('setup.title')}</button>}
-      <div className="welcome-note">{t('layout.welcome.shortcuts')}</div>
-      <div className="welcome-note">{t('layout.welcome.footer')}</div>
+      <div className="welcome-buttons">
+        <button type="button" className="accent-button with-icon" onClick={() => call('pickFolder')}><Icon name="folder-plus" size={15} />{t('layout.welcome.openProject')}</button>
+        <button type="button" className="plain-button with-icon" onClick={() => call('connectRemote')}><Icon name="globe" size={14} />{t('remote.menu.connect')}</button>
+        {setupNeeded && <button type="button" className="plain-button" onClick={() => call('openSetup')}>{t('setup.title')}</button>}
+      </div>
+      <div className="welcome-note welcome-shortcuts">{t('layout.welcome.shortcuts')}</div>
+      <span className="welcome-spacer" />
+      <div className="welcome-note welcome-footer">{t('layout.welcome.footer')}</div>
     </div>
   );
 }

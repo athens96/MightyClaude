@@ -1,34 +1,39 @@
 /* The conversation (spec §2, AgentTranscript.cs). Sizes are the WinUI transcript's; every colour is a design token. */
-.conversation { position: relative; flex: 1; min-height: 0; overflow-y: auto; background: var(--card-raised); user-select: text; font-family: var(--font-transcript, var(--font-body)); }
+.conversation { position: relative; flex: 1; min-height: 0; overflow-y: auto; background: var(--card); user-select: text; font-family: var(--font-transcript, var(--font-body)); }
 /* Every row is measured with its own spacing, the same wherever it stands; the inline padding stands in for rows not drawn. */
 .conversation-body { margin: var(--inset-transcript) 0; padding-left: var(--inset-transcript); padding-right: var(--inset-transcript); }
 .entry-row { padding: var(--space-xs) 0; display: flow-root; }
 
+/* M/AgentTranscriptFormat.swift userBubble: the ink block keeps the right 85% (a text block cannot shrink to its words); blocks round at 11. */
 .entry-user { display: flex; justify-content: flex-end; }
 .user-bubble {
-  max-width: 85%; background: var(--ink); color: var(--card); border-radius: var(--radius-entry);
+  width: 85%; background: var(--ink); color: var(--card); border-radius: var(--radius-pane);
   padding: var(--inset-user-bubble-t) var(--inset-user-bubble-h) var(--inset-user-bubble-b);
 }
 .user-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
-.user-time { text-align: right; font-size: 10.5px; opacity: 0.75; margin-top: var(--space-xxs); }
+.user-time { text-align: right; font-size: 10.5px; margin-top: 3px; }
 
 .reply-card {
-  background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-entry);
+  background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-pane);
   padding: var(--inset-reply-card-t) var(--inset-reply-card-h) var(--inset-reply-card-b);
 }
 .reply-head { display: flex; align-items: center; gap: var(--space-xs); color: var(--ink2); font-size: 12px; font-weight: 600; margin-bottom: var(--space-sm); white-space: pre; }
 .provider-mark { flex: none; color: var(--ink2); }
+.provider-mark.brand[data-provider="claude"] { color: var(--provider-claude); }
+.provider-mark.brand[data-provider="codex"] { color: var(--provider-codex); }
+.provider-mark.brand[data-provider="gemini"] { color: var(--provider-gemini); }
 
 .tool-chip {
-  display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-sm); row-gap: var(--space-xxs);
-  background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-row);
+  display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-md); row-gap: var(--space-xxs); min-height: 28px;
+  background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-pane);
   padding: var(--inset-tool-chip-v) var(--inset-tool-chip-h);
 }
 .tool-chip.failed { border-color: var(--err-text); }
-.tool-square { width: 8px; height: 8px; border-radius: 2px; flex: none; align-self: center; background: var(--stop); }
+/* The state as a 14pt filled square with its glyph (statusSquare): ✓ done, ✕ failed, ● going, – stopped. */
+.tool-square { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 4px; flex: none; align-self: center; background: var(--stop); color: var(--on-status); }
 .tool-square.done { background: var(--done); }
 .tool-square.err { background: var(--err); }
-.tool-square.wait { background: var(--wait); }
+.tool-square.wait { background: var(--wait); color: var(--on-wait); }
 .tool-square.run { background: var(--run); }
 .tool-name { font-size: 12.5px; font-weight: 700; }
 .tool-detail { font-family: var(--font-mono); font-size: var(--type-state); color: var(--ink2); overflow-wrap: anywhere; min-width: 0; }
@@ -113,7 +118,6 @@ ol.md-list > .md-item::before { content: attr(data-marker); }
 .pane-empty-shell { width: 24px; height: 24px; border: 2px solid var(--accent); border-radius: 5px; opacity: 0.75; }
 .pane-empty-title { display: flex; align-items: center; gap: var(--space-sm); font-size: 16px; font-weight: 500; }
 .pane-empty-body { font-size: var(--type-block); line-height: 20px; color: var(--ink2); }
-.beta-badge { font-size: var(--type-badge); font-weight: 500; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px var(--space-sm); }
 
 .context-menu {
   position: fixed; z-index: 10; min-width: 160px; display: flex; flex-direction: column; padding: var(--space-xs);
@@ -122,3 +126,4 @@ ol.md-list > .md-item::before { content: attr(data-marker); }
 .context-menu button { border: 0; background: none; color: var(--ink); font: inherit; text-align: left; padding: var(--space-sm) var(--space-md); border-radius: var(--radius-file-row); }
 .context-menu button:hover:not(:disabled) { background: var(--accent-soft); }
 .context-menu button:disabled { color: var(--ink3); }
+.tool-square-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }

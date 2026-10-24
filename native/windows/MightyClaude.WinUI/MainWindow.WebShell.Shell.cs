@@ -553,7 +553,10 @@ public sealed partial class MainWindow
         var added = menuShown && await Until(async () => service.Snapshot.Sessions.Count == before + 1 && Ids(await Probe(Frame), "tabs").Count == tabsBefore + 1);
         checks["addMenu"] = menuShown; checks["addedTab"] = added;
         // The columns preset: two groups side by side.
-        await Eval("(() => { const s = document.querySelector('[data-testid=layout-select]'); if (!s) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'columns'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+        // The header's layout button opens the presets' menu (the Mac's View menu).
+        await Eval("document.querySelector('[data-testid=layout-select]')?.click()");
+        await Until(async () => (await Eval("!!document.querySelector('[data-testid=layout-preset-columns]')")).ValueKind == JsonValueKind.True, 10);
+        await Eval("document.querySelector('[data-testid=layout-preset-columns]')?.click()");
         var split = await Until(async () => { var page = await Probe(Frame); return Count(page, "groups") >= 2 && Count(page, "splits") >= 1; });
         checks["split"] = split; checks["afterSplit"] = (await Probe(Frame)).Clone();
         var passed = listed && rowPicked && tabPicked && backPicked && added && split;

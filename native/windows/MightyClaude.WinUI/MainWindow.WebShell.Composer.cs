@@ -115,6 +115,14 @@ public sealed partial class MainWindow
         bridge.Register("applyRunSettings", async args =>
             await WebPane(args.Text("paneId")).WebApplyRunSettings(Flag(args, "fastMode"), args.Text("webSearch") ?? "default", Flag(args, "networkAccess"), args.Text("maxTurns"), args.Text("maxBudgetUsd")));
         bridge.Register("toggleFast", async args => { await WebPane(args.Text("paneId")).WebToggleFast(); return null; });
+        // The composer's two eye toggles of a Claude pane (M/SessionPaneView.swift backgroundWorkToggle, statusLineToggle): app-wide preferences.
+        bridge.Register("composerToggle", async args =>
+        {
+            if (args.Text("which") == "background") await Act(() => SetShowsBackgroundWork(!ShowsBackgroundWork));
+            else if (args.Text("which") == "statusLine") await Act(() => SetStatusLineEnabled(!service.Snapshot.StatusLineEnabled));
+            Render();
+            return null;
+        });
         bridge.Register("sessionInfo", args => Task.FromResult<object?>(WebPane(args.Text("paneId")).WebSessionInfo()));
         bridge.Register("newConversation", async args => await WebPane(args.Text("paneId")).ResetConversationAsync(CancellationToken.None));
         bridge.Register("attachmentPreview", args => Task.FromResult(WebPane(args.Text("paneId")).WebAttachmentPreview(args.Text("id") ?? "")));
@@ -451,6 +459,12 @@ public sealed partial class MainWindow
                 attachmentsAllowed = pane.Kind != "shell",
                 pills = pane.Kind == "shell" ? null : WebPills(pane),
                 header = WebHeader(pane),
+                // The marks at the toolbar's right (M/SessionPaneView.swift composerToolbar): the resume mark, and a Claude pane's
+                // background-work and status-line toggles with whether each is on.
+                resumed = pane.ResumeId is not null,
+                toggles = pane.Kind == "claude" && pane.Provider == "claude"
+                    ? new { background = owner.ShowsBackgroundWork, statusLine = LocalPath(Workspace) is null ? (bool?)null : owner.service.Snapshot.StatusLineEnabled }
+                    : null,
             };
         }
     }

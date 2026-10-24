@@ -8,6 +8,7 @@ import { SidebarToggle } from '../dashboard/Dashboard';
 import { BetaBadge, GitCapsule, MiddlePath, StatusCounts, useCall, useMenu, type MenuItem } from './parts';
 import type { HeaderModel, ShellModel, UsageDetails } from './types';
 import { usePageOverlay } from './overlay';
+import { Icon } from '../icons/Icon';
 
 export function Banners({ shell }: { shell: ShellModel }) {
   const { t } = useServices();
@@ -37,22 +38,41 @@ export function Banners({ shell }: { shell: ShellModel }) {
   );
 }
 
-export function WorkspaceHeader({ header, counts }: { header: HeaderModel; counts: ShellModel['workspaces'][number]['counts'] | undefined }) {
+const layoutPresets = ['grid', 'columns', 'focus', 'tabs', 'custom'] as const;
+
+/**
+ * The workspace header (M/WorkspaceView.swift workspaceHeader): the sidebar toggle, the name over the path and the Git badge,
+ * the long status counts, then the layout presets (the Mac's View menu; Windows has no menu bar) and the files pane's folder.
+ */
+export function WorkspaceHeader({ header, counts, layoutMode }: { header: HeaderModel; counts: ShellModel['workspaces'][number]['counts'] | undefined; layoutMode: string }) {
   const { t } = useServices();
   const call = useCall();
   const menu = useMenu();
   const rename: MenuItem[] = [{ label: t('menu.renameWorkspace'), action: () => call('renameWorkspace', { id: header.id }) }];
   const copy: MenuItem[] = [{ label: t('pane.copyButton'), action: () => void navigator.clipboard?.writeText(header.path).catch(() => {}) }];
+  const presets: MenuItem[] = layoutPresets.map((preset) => ({
+    label: t('layout.mode.' + preset), testId: 'layout-preset-' + preset, icon: preset === layoutMode ? <Icon name="check" size={12} /> : undefined,
+    action: () => call('applyLayoutPreset', { preset }),
+  }));
+  const layoutLabel = t('layout.mode.' + layoutMode);
   return (
     <header className="workspace-header" data-testid="workspace-header" onContextMenu={(event) => menu.atPointer(event, rename)}>
       <SidebarToggle />
-      <span className="workspace-header-name">{header.name}</span>
-      <span onContextMenu={(event) => menu.atPointer(event, copy)}><MiddlePath path={header.path} className="workspace-header-path mono" /></span>
-      {header.git && <GitCapsule git={header.git} />}
-      {header.remoteHost && <span className="capsule quiet">{header.remoteHost}</span>}
+      <div className="workspace-header-text">
+        <div className="workspace-header-line">
+          <span className="workspace-header-name">{header.name}</span>
+          {header.remoteHost && <span className="capsule quiet">{header.remoteHost}</span>}
+        </div>
+        <div className="workspace-header-line">
+          <span onContextMenu={(event) => menu.atPointer(event, copy)} className="workspace-header-path-box"><MiddlePath path={header.path} className="workspace-header-path mono" /></span>
+          {header.git && <GitCapsule git={header.git} />}
+        </div>
+      </div>
       {counts && <StatusCounts counts={counts} long />}
-      <span className="spacer" />
-      <button type="button" className="capsule" disabled={!header.filesEnabled} title={header.filesHelp} onClick={() => call('openFiles', { workspaceId: header.id })}>{t('menu.showFiles')}</button>
+      <button type="button" className="icon-button header-icon-button" title={layoutLabel} aria-label={layoutLabel} data-testid="layout-select"
+        onClick={(event) => menu.under(event.currentTarget, presets)}><Icon name="layout-grid" size={15} weight={1.5} /></button>
+      <button type="button" className="icon-button header-icon-button" disabled={!header.filesEnabled} title={header.filesHelp} aria-label={t('menu.showFiles')} data-testid="open-files"
+        onClick={() => call('openFiles', { workspaceId: header.id })}><Icon name="folder" size={16} weight={1.5} /></button>
     </header>
   );
 }
@@ -116,12 +136,12 @@ export function StatusBar({ shell, usageOpen, setUsageOpen }: { shell: ShellMode
   return (
     <footer className="status-bar" data-testid="status-bar">
       {status.remote === undefined
-        ? <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12v8H2zM5 14h6M8 11v3" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>
+        ? <Icon name="monitor" size={12} weight={1.75} />
         : <span className={'status-remote-dot' + (status.remote ? ' connected' : '')} />}
       <span className="status-machine" title={status.remote === undefined ? undefined : status.machine} data-testid="status-machine">{status.machine}</span>
       <span className="spacer" />
       <span data-testid="status-panes">{status.panes}</span>
-      <span>·</span>
+      <span className="status-dot-sep">·</span>
       <span data-testid="status-running">{status.running}</span>
       {status.update && <button type="button" className="status-update" title={status.updateHelp} onClick={() => call('openSettings')}>{status.update}</button>}
       {status.staged && (
@@ -149,7 +169,7 @@ export function StatusBar({ shell, usageOpen, setUsageOpen }: { shell: ShellMode
         <span className="status-companion">
           <button type="button" className={'status-paw' + (shell.companion.petOn ? ' on' : '')} aria-pressed={shell.companion.petOn} aria-label={shell.companion.petLabel || undefined}
             title={shell.companion.petHelp ?? shell.companion.petLabel} data-testid="companion-toggle" onClick={() => call('companionToggle')}>
-            <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><g fill={shell.companion.petOn ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.1"><ellipse cx="8" cy="11" rx="3.4" ry="2.8" /><circle cx="3.6" cy="7" r="1.5" /><circle cx="12.4" cy="7" r="1.5" /><circle cx="6" cy="3.6" r="1.5" /><circle cx="10" cy="3.6" r="1.5" /></g></svg>
+            <Icon name="paw-print" size={13} weight={1.75} fill={shell.companion.petOn} />
           </button>
           <button type="button" className="status-capsule" aria-label={shell.companion.statusLabel} title={shell.companion.statusLabel} data-testid="companion-status" onClick={() => call('companionStatus')}>
             <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">{shell.companion.busy

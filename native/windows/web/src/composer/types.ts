@@ -49,6 +49,10 @@ export interface ComposerState {
   pills: Pills | null;
   /** The pane header's word (in its tone) and the figures after the clock, with their tooltip. */
   header: { word: string; tone: string; timed: boolean; rest: string; help: string };
+  /** The pane goes on from an earlier session: the toolbar shows the resume mark. */
+  resumed?: boolean;
+  /** A Claude pane's background-work and status-line toggles, each on or off (no status line for a remote pane); null elsewhere. */
+  toggles?: { background: boolean; statusLine: boolean | null } | null;
 }
 
 /** What `send` answers: what the host did with the draft, the editor's text after it, and the composer then. */

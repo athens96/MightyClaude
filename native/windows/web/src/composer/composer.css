@@ -1,5 +1,5 @@
 /* The agent pane's composer (spec §3): a card at the pane's foot over the rows that say why a draft waits. */
-.composer-region { position: relative; padding: var(--inset-composer-outer); background: var(--card-raised); }
+.composer-region { position: relative; padding: var(--inset-composer-outer); background: transparent; }
 .composer-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--inset-composer-inner-h); font-size: var(--type-small); color: var(--ink2); }
 .composer-blocked strong { color: var(--wait-text); font-weight: 600; }
 .composer-hold { color: var(--ink2); }
@@ -8,19 +8,22 @@
 
 .composer-card {
   display: flex; flex-direction: column; gap: var(--inset-composer-stack);
-  background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-composer);
+  background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-composer); box-shadow: 0 1px 1px rgba(0, 0, 0, .05);
   padding: var(--space-sm) var(--inset-composer-inner-h) var(--inset-composer-inner-b);
 }
-.composer-card:focus-within { border-color: var(--accent); box-shadow: 0 0 0 calc(var(--stroke-focus) - var(--stroke-line)) var(--accent); }
+.composer-card:focus-within { border-color: color-mix(in srgb, var(--accent) 80%, transparent); box-shadow: 0 1px 1px rgba(0, 0, 0, .05), 0 0 0 calc(var(--stroke-focus) - var(--stroke-line)) color-mix(in srgb, var(--accent) 80%, transparent); }
 .composer-card.dropping { border-color: var(--accent); background: var(--accent-soft); }
 
 .composer-input {
   width: 100%; resize: none; border: 0; outline: none; background: transparent; color: var(--ink);
-  font-family: var(--font-body); font-size: var(--type-body); line-height: 1.4; padding: 1px 5px; overflow-y: auto;
+  font-family: var(--font-body); font-size: var(--type-body); line-height: 1.45; padding: 2px 0 4px; overflow-y: auto;
 }
 .composer-input::placeholder { color: var(--ink3); }
 
-.composer-toolbar { display: flex; align-items: center; gap: var(--space-xs); min-height: 32px; }
+.composer-toolbar { display: flex; align-items: center; gap: var(--space-sm); height: var(--layout-toolbar); }
+.composer-shell-title { flex: 1; min-width: 0; font-size: var(--type-pill); color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.composer-toggle { display: inline-grid; place-items: center; width: 16px; height: var(--layout-toolbar); flex: none; border: 0; padding: 0; background: transparent; color: var(--ink2); cursor: default; }
+.composer-toggle.on { color: var(--accent); }
 .composer-spacer { flex: 1; }
 .composer-icon-button, .composer-text-button, .composer-menu-button {
   border: 0; background: transparent; color: var(--ink2); font: inherit; font-size: var(--type-small);
@@ -31,14 +34,15 @@
 .composer-icon-button:disabled, .composer-menu-button:disabled { opacity: 0.45; }
 .composer-icon-button:focus-visible, .composer-text-button:focus-visible, .composer-menu-button:focus-visible { outline: var(--stroke-focus) solid var(--accent); }
 
+/* Send, queue and the new worktree: the toolbar-high run-blue disc (track grey while it cannot go); stop the red rounded square,
+   4pt smaller beside them (M/SessionPaneView.swift roundSendDisc, stop). */
 .composer-primary, .composer-worktree, .composer-stop-small {
-  width: 32px; height: 32px; border: 0; border-radius: 16px; font-size: 14px; cursor: default;
-  background: var(--accent); color: var(--on-accent);
+  display: inline-grid; place-items: center; flex: none; width: var(--layout-toolbar); height: var(--layout-toolbar); padding: 0; border: 0; border-radius: 50%; cursor: default;
+  background: var(--run); color: var(--on-status);
 }
-.composer-primary.mode-stop { background: var(--err); color: var(--on-status); }
-.composer-primary:disabled, .composer-worktree:disabled { background: var(--track); color: var(--ink3); }
-.composer-worktree { background: var(--run); color: var(--on-status); }
-.composer-stop-small { width: 28px; height: 28px; border-radius: 7px; background: var(--err); color: var(--on-status); font-size: 10px; }
+.composer-primary.mode-stop { border-radius: var(--radius-row); background: var(--err); color: var(--on-status); }
+.composer-primary:disabled, .composer-worktree:disabled { background: var(--track); color: var(--ink2); }
+.composer-stop-small { width: calc(var(--layout-toolbar) - 4px); height: calc(var(--layout-toolbar) - 4px); border-radius: 7px; background: var(--err); color: var(--on-status); }
 
 .composer-attachments { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 .composer-chip { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-sm); border-radius: 9px; border: var(--stroke-line) solid var(--line); background: var(--track); }

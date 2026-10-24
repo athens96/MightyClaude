@@ -1,27 +1,29 @@
 /* The composer's pills (MW.Composer.cs RefreshMenus): model, effort, permission, Fast, the … pill and the context ring, and
    the menus and popovers they open. */
-.composer-pills { position: relative; display: flex; align-items: center; gap: var(--space-xs); min-width: 0; flex: 1; }
+/* M/ComposerControls.swift: every control Layout.toolbar high, Spacing.sm apart; a pill is a white capsule with the line border,
+   its glyph, its words (11 medium) and a 7pt chevron; on, it takes the accent on the soft accent. */
+.composer-pills { position: relative; display: flex; align-items: center; gap: var(--space-sm); min-width: 0; flex: 1; }
 .composer-pill {
-  display: inline-flex; align-items: center; gap: var(--space-xs); max-width: 180px; height: 26px; padding: 0 var(--space-sm);
-  border: var(--stroke-line) solid var(--line); border-radius: 13px; background: transparent; color: var(--ink2);
-  font: inherit; font-size: var(--type-pill); cursor: default;
+  display: inline-flex; align-items: center; gap: 5px; max-width: 200px; height: var(--layout-toolbar); padding: 0 var(--space-md); flex: none;
+  border: var(--stroke-line) solid var(--line); border-radius: calc(var(--layout-toolbar) / 2); background: var(--card); color: var(--ink);
+  font: inherit; font-size: var(--type-pill); font-weight: 500; cursor: default;
 }
-.composer-pill:hover:not(:disabled) { background: var(--track); color: var(--ink); }
-.composer-pill.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.composer-pill.compact { width: var(--layout-toolbar); padding: 0; justify-content: center; }
+.composer-pill:hover:not(:disabled) { background: var(--subtle); }
+.composer-pill.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); }
 .composer-pill:disabled { opacity: 0.5; }
+.pill-glyph { display: inline-grid; place-items: center; width: 14px; height: 14px; flex: none; }
+.pill-chevron { flex: none; color: var(--ink2); }
+.composer-pills-end { display: inline-flex; align-items: center; gap: var(--space-sm); margin-left: auto; }
+.composer-resume { display: inline-grid; place-items: center; width: 16px; height: var(--layout-toolbar); color: var(--ink2); }
 .composer-pill:focus-visible, .context-ring:focus-visible { outline: var(--stroke-focus) solid var(--accent); }
 .pill-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-pill-problem { color: var(--err-text); font-size: var(--type-small); }
-.context-ring {
-  --percent: 0; width: 30px; height: 30px; flex: none; border: 0; border-radius: 50%; padding: 0; cursor: default;
-  font-size: 8px; font-weight: 600; color: var(--ink2);
-  background: radial-gradient(circle closest-side, var(--card) 76%, transparent 78%), conic-gradient(var(--accent) calc(var(--percent) * 1%), var(--track) 0);
-}
-.context-ring[data-high] {
-  color: var(--wait-text);
-  background: radial-gradient(circle closest-side, var(--card) 76%, transparent 78%), conic-gradient(var(--wait-text) calc(var(--percent) * 1%), var(--track) 0);
-}
-.context-ring.large { display: inline-grid; place-items: center; width: 44px; height: 44px; font-size: 10px; }
+.context-ring { display: inline-grid; place-items: center; width: var(--layout-toolbar); height: var(--layout-toolbar); flex: none; border: 0; border-radius: 50%; padding: 0; background: transparent; color: var(--ink); cursor: default; }
+.context-ring-arc { stroke: var(--accent); }
+.context-ring-mark.high .context-ring-arc { stroke: var(--wait-text); }
+.context-ring-text { fill: currentColor; font-weight: 600; font-variant-numeric: tabular-nums; }
+.context-ring.large { width: 44px; height: 44px; }
 
 .composer-popover {
   position: absolute; bottom: calc(100% + var(--space-sm)); left: 0; z-index: 10; min-width: 220px; max-width: 370px; max-height: 60vh; overflow: auto;
@@ -64,7 +66,6 @@
 }
 .popover-button.prominent { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .popover-button:disabled { opacity: 0.5; }
-.beta-badge { font-size: var(--type-badge); color: var(--accent); border: var(--stroke-line) solid var(--accent); border-radius: 4px; padding: 0 3px; }
 .session-info-heading { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .session-info-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popover-body .session-info-context { flex-direction: row; align-items: center; }

@@ -49,11 +49,16 @@ export function tokenStyleSheet(): string {
     `--font-mono:${quoteFamilies(metrics.font.mono)}, monospace;` +
     // The design's own families, behind a family the text setting chose (theme/text.ts).
     `--font-design-body:${quoteFamilies(metrics.font.body)}, sans-serif;` +
-    `--font-design-mono:${quoteFamilies(metrics.font.mono)}, monospace;`;
+    `--font-design-mono:${quoteFamilies(metrics.font.mono)}, monospace;` +
+    // The agents' brand marks (ProviderMark.swift), the same in both themes.
+    Object.entries(tokens.windowsOnly.provider).filter((entry): entry is [string, string[]] => Array.isArray(entry[1])).map(([name, colors]) => `--provider-${name}:${colors[0]};`).join('');
   const extra = (theme: 'light' | 'dark') => {
     const subtle = tokens.windowsOnly.subtle[theme];
     const syntax = tokens.windowsOnly.syntax[theme];
-    return `--subtle:${hexAlpha(subtle.color, subtle.opacity)};--syntax-keyword:${syntax.keyword};--syntax-string:${syntax.string};--syntax-number:${syntax.number};--terminal-background:${tokens.windowsOnly.terminal[theme].background};`;
+    const derived = tokens.derived[theme];
+    const glyphs = Object.entries(derived.tones).map(([tone, value]) => `--glyph-${tone}:${value.glyph};`).join('');
+    const discs = Object.entries(derived.disc).map(([tone, value]) => `--disc-${tone}:${value.fill};--disc-${tone}-ink:${value.ink};`).join('');
+    return glyphs + discs + `--segment-track:${derived.segmentTrack};--segment-on:${derived.segmentOn};--subtle:${hexAlpha(subtle.color, subtle.opacity)};--syntax-keyword:${syntax.keyword};--syntax-string:${syntax.string};--syntax-number:${syntax.number};--terminal-background:${tokens.windowsOnly.terminal[theme].background};`;
   };
   return (
     `:root{${shared}}` +

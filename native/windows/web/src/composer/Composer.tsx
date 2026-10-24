@@ -6,6 +6,7 @@ import { attachmentRefusal, byteLabel, toBase64 } from './attachments';
 import { enterAction, maximumDraft } from './keys';
 import { choose, closed, move, paletteDraft, paletteKey, paletteState, safeIndex, type PaletteState, type SlashCatalog, type SlashCommand } from './slash';
 import { Toolbar } from './Toolbar';
+import { Icon } from '../icons/Icon';
 import type { AttachmentPreview, ComposerState, SendResult } from './types';
 import { usePageOverlay } from '../shell/overlay';
 
@@ -284,15 +285,23 @@ export function Composer({ session }: { session: RunSession }) {
         <ComposerCard paneId={paneId} kind="login" />
         <div className="composer-toolbar">
           {state?.attachmentsAllowed !== false && (
-            <button type="button" className="composer-icon-button" aria-label={t('composer.attach.name')} title={t('composer.attach.name')} disabled={state?.attachmentsLoading} onClick={() => call('pickAttachments')}>＋</button>
+            <button type="button" className="composer-pill compact composer-attach" aria-label={t('composer.attach.name')} title={t('composer.attach.name')} disabled={state?.attachmentsLoading} onClick={() => call('pickAttachments')}><Icon name="paperclip" size={14} weight={1.75} /></button>
           )}
-          {state?.pills && <Toolbar paneId={paneId} pills={state.pills} busy={state.busy} showUsage={showUsage} onUsageShown={usageShown} />}
-          <span className="composer-spacer" />
+          {state?.pills ? <Toolbar paneId={paneId} pills={state.pills} busy={state.busy} showUsage={showUsage} onUsageShown={usageShown} resumed={state.resumed} />
+            : <span className="composer-shell-title">{t('composer.shell.title')}</span>}
+          {state?.toggles && (
+            <button type="button" className={'composer-toggle' + (state.toggles.background ? ' on' : '')} aria-pressed={state.toggles.background} title={t(state.toggles.background ? 'composer.backgroundWork.hide' : 'composer.backgroundWork.show')}
+              aria-label={t('composer.backgroundWork.name')} onClick={() => call('composerToggle', { which: 'background' })}><Icon name="layers" size={13} weight={1.75} fill={state.toggles.background} /></button>
+          )}
+          {state?.toggles && state.toggles.statusLine !== null && (
+            <button type="button" className={'composer-toggle' + (state.toggles.statusLine ? ' on' : '')} aria-pressed={state.toggles.statusLine} title={t(state.toggles.statusLine ? 'composer.statusLine.hide' : 'composer.statusLine.show')}
+              aria-label={t('composer.statusLine.name')} onClick={() => call('composerToggle', { which: 'statusLine' })}><Icon name="panel-bottom" size={13} weight={1.75} /></button>
+          )}
           {state?.primary === 'queue' && (
-            <button type="button" className="composer-stop-small" aria-label={t('composer.stop.name')} disabled={state.stopping} onClick={() => call('stop')}>■</button>
+            <button type="button" className="composer-stop-small" aria-label={t('composer.stop.name')} disabled={state.stopping} onClick={() => call('stop')}><Icon name="square" size={9} weight={0} fill /></button>
           )}
           {state?.worktree && (
-            <button type="button" className="composer-worktree" data-testid="composer-worktree" aria-label={t('queue.worktree')} title={t(state.worktreeMenuOnly ? 'queue.worktreeMenuHintMac' : 'queue.worktreeHint')} disabled={!state.worktreeEnabled} onClick={() => void send(true)}>⑂</button>
+            <button type="button" className="composer-worktree" data-testid="composer-worktree" aria-label={t('queue.worktree')} title={t(state.worktreeMenuOnly ? 'queue.worktreeMenuHintMac' : 'queue.worktreeHint')} disabled={!state.worktreeEnabled} onClick={() => void send(true)}><Icon name="split" size={13} weight={2.2} /></button>
           )}
           <button
             type="button"
@@ -303,7 +312,7 @@ export function Composer({ session }: { session: RunSession }) {
             disabled={!state?.primaryEnabled}
             onClick={primary}
           >
-            {state?.primary === 'stop' ? '■' : state?.primary === 'queue' ? '☰' : '↑'}
+            {state?.primary === 'stop' ? <Icon name="square" size={11} weight={0} fill /> : state?.primary === 'queue' ? <Icon name="list-plus" size={14} weight={2.2} /> : <Icon name="arrow-up" size={15} weight={2.4} />}
           </button>
         </div>
         <ComposerCard paneId={paneId} kind="statusLine" />

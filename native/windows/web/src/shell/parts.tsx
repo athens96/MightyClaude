@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useServices, useStoreState } from '../app/context';
 import type { Counts, GitInfo, PaneInfo, ShellModel, Tone } from './types';
 import { usePageOverlay } from './overlay';
+import { Icon, type IconName } from '../icons/Icon';
 
 /** The frame's model, or null before the host sent it. */
 export function useShell(): ShellModel | null {
@@ -24,16 +25,34 @@ export function useCall(): (method: string, args?: unknown) => void {
   return useCallback((method: string, args?: unknown) => void bridge.call(method, args).catch(() => {}), [bridge]);
 }
 
-/** A tone's glyph (StatusGlyph: spark while running, a disc for waiting and error, a check, a square, a ring). */
-export function StatusGlyph({ tone, size = 14 }: { tone: Tone; size?: number }) {
+/** The symbol an idle pane that is not an agent's shows in place of the ring (M/DashboardView.swift paneSymbol). */
+function paneSymbol(kind: string): IconName {
+  if (kind === 'browser' || kind === 'agent-browser') return 'globe';
+  if (kind === 'files') return 'folder';
+  return 'square-terminal';
+}
+
+/**
+ * A tone's glyph (M/StatusGlyph.swift, Core StatusGlyphKind, on its 16-unit grid): the turning spark while running, the amber
+ * "?" disc, a check, a slashed ring, the red "!" disc, a small ring for an idle agent and the pane's own symbol for an idle pane
+ * that is not one. Inks are the tokens' derived glyph and disc colours.
+ */
+export function StatusGlyph({ tone, size = 14, kind = 'claude' }: { tone: Tone; size?: number; kind?: string }) {
+  const line = (width: number) => ({ stroke: 'currentColor', strokeWidth: width, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, fill: 'none' });
+  if (tone === 'idle' && kind !== 'claude') return <span className="status-glyph tone-idle" data-tone={tone} style={{ width: size, height: size }}><Icon name={paneSymbol(kind)} size={size} weight={2} /></span>;
   const body = (() => {
     switch (tone) {
-      case 'run': return <g className="glyph-spark"><path d="M8 2v4M8 10v4M2 8h4M10 8h4M4.6 4.6l1.5 1.5M9.9 9.9l1.5 1.5M4.6 11.4l1.5-1.5M9.9 6.1l1.5-1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /></g>;
-      case 'wait': return <><circle cx="8" cy="8" r="7" fill="currentColor" /><path d="M6.2 6.2a1.8 1.8 0 1 1 2.6 1.6c-.5.3-.8.6-.8 1.2v.4" stroke="var(--on-wait)" strokeWidth="1.4" fill="none" strokeLinecap="round" /><circle cx="8" cy="11.6" r=".9" fill="var(--on-wait)" /></>;
-      case 'err': return <><circle cx="8" cy="8" r="7" fill="currentColor" /><path d="M8 4.5v4.2" stroke="var(--on-status)" strokeWidth="1.6" strokeLinecap="round" /><circle cx="8" cy="11.4" r=".95" fill="var(--on-status)" /></>;
-      case 'done': return <><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M5.2 8.2l1.9 1.9 3.8-4" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" /></>;
-      case 'stop': return <><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" strokeWidth="1.3" /><rect x="5.6" y="5.6" width="4.8" height="4.8" rx="1" fill="currentColor" /></>;
-      default: return <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.3" />;
+      case 'run': return (
+        <g className="glyph-spark">
+          <path d="M8 1.6v4M8 10.4v4M1.6 8h4M10.4 8h4" {...line(2)} />
+          <path d="M4.6 4.6l1.5 1.5M9.9 9.9l1.5 1.5M4.6 11.4l1.5-1.5M9.9 6.1l1.5-1.5" {...line(2)} opacity={0.7} />
+        </g>
+      );
+      case 'wait': return <><circle cx="8" cy="8" r="7.2" fill="var(--disc-wait)" /><path d="M5.9 6.11A2.1 2.1 0 1 1 8.8 8.05C8.3 8.27 8 8.65 8 9.2L8 9.55" fill="none" stroke="var(--disc-wait-ink)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /><circle cx="8" cy="11.7" r="1.05" fill="var(--disc-wait-ink)" /></>;
+      case 'err': return <><circle cx="8" cy="8" r="7.2" fill="var(--disc-err)" /><path d="M8 4.3v4.6" stroke="var(--disc-err-ink)" strokeWidth="1.9" strokeLinecap="round" /><circle cx="8" cy="11.6" r="1.05" fill="var(--disc-err-ink)" /></>;
+      case 'done': return <path d="M3.2 8.5l3 3 6.6-7" {...line(1.8)} />;
+      case 'stop': return <><circle cx="8" cy="8" r="6" {...line(1.8)} /><path d="M3.9 12.1l8.2-8.2" {...line(1.8)} /></>;
+      default: return <circle cx="8" cy="8" r="3.6" {...line(1.8)} />;
     }
   })();
   return <svg className={'status-glyph tone-' + tone} width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" focusable="false" data-tone={tone}>{body}</svg>;

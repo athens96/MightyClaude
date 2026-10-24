@@ -130,6 +130,15 @@ The Claude, Codex (OpenAI) and Gemini marks drawn in the app come from outline d
 The phone app draws the same outlines: the data is copied into `mobile/src/lib/provider-marks.ts` and rendered with `react-native-svg`, under the same terms.
 
 
+## Windows web shell icons — ISC
+
+Windows 웹 화면의 아이콘은 Lucide(lucide-static 1.61.0)의 도형 데이터를 `native/windows/web/src/icons/lucide.ts`로 옮겨 그립니다. 라이선스 전문은 Windows 배포물의 `ThirdPartyLicenses`에 포함됩니다.
+
+The Windows web shell draws Lucide icons (lucide-static 1.61.0), their shapes copied into `native/windows/web/src/icons/lucide.ts`. The license text accompanies the Windows distribution in `ThirdPartyLicenses`.
+
+- Lucide 1.61.0 — https://lucide.dev — Copyright (c) Lucide Icons and Contributors (ISC; the icons derived from Feather, Copyright (c) 2013-present Cole Bemis, MIT); `native/licenses/lucide-LICENSE`.
+
+
 ## Windows mobile remote cryptography and pairing — MIT
 
 Windows 모바일 리모트는 Bouncy Castle의 X25519·ChaCha20-Poly1305와 QRCoder의 PNG QR 렌더러를 사용합니다. 두 라이선스 전문은 Windows 배포물의 `ThirdPartyLicenses`에 포함됩니다.
