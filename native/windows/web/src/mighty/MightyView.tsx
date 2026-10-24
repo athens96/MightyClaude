@@ -64,7 +64,7 @@ export function MightyView({ session }: { session: RunSession }) {
         <span className="mighty-summary" title={mighty.inputs?.summaryHelp} data-testid="mighty-summary">{mighty.inputs?.summary ?? ''}</span>
       </div>
       {presentation === 'diagram' ? <Diagram session={session} mighty={mighty} aim={aim} onAimed={aimed} />
-        : presentation === 'timeline' ? <Timeline session={session} groups={mighty.timeline} older={mighty.older} />
+        : presentation === 'timeline' ? <Timeline session={session} groups={mighty.timeline} older={mighty.older} onOpenRow={aimAt} />
           : <Structure boards={mighty.structure} onReveal={reveal} />}
     </div>
   );

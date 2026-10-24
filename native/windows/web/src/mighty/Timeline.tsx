@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useServices } from '../app/context';
 import { Entry } from '../conversation/Entry';
 import { Markdown } from '../conversation/MarkdownView';
@@ -43,11 +43,16 @@ const Row = memo(function Row({ row, run, paneId, provider, open, onToggle }: { 
   );
 });
 
-const Group = memo(function Group({ group, run, paneId, provider }: { group: TimelineGroup; run: MightyGraphRun | undefined; paneId: string; provider: string }) {
+const Group = memo(function Group({ group, run, paneId, provider, onOpenRow }: { group: TimelineGroup; run: MightyGraphRun | undefined; paneId: string; provider: string; onOpenRow?: (nodeId: string) => void }) {
   const { bridge, t } = useServices();
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const [full, setFull] = useState(false);
-  const toggle = useMemo(() => (id: string) => setOpen((s) => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n; }), []);
+  // Opening a row aims the diagram at its block (MainWindow.MightyTimeline.cs ToggleTimelineRow).
+  const toggle = useMemo(() => (id: string) => setOpen((s) => {
+    const n = new Set(s);
+    if (!n.delete(id)) { n.add(id); onOpenRow?.(id); }
+    return n;
+  }), [onOpenRow]);
   return (
     <section className="timeline-group" data-run-id={group.runId} data-testid="timeline-group">
       <header className="timeline-head">
@@ -71,24 +76,64 @@ const Group = memo(function Group({ group, run, paneId, provider }: { group: Tim
   );
 });
 
-/** The 로그 view (UI/MightyTimeline.cs): the host's groups, one per request, newest at the bottom, following it. */
-export function Timeline({ session, groups, older }: { session: RunSession; groups: readonly TimelineGroup[] | null; older: readonly MightyGraphRun[] }) {
+const terminalStatus = new Set(['completed', 'error', 'stopped']);
+
+/**
+ * The 로그 view (UI/MightyTimeline.cs): the host's groups, one per request, newest at the bottom. It follows the bottom when
+ * it first draws, when a new request arrives and when a request finishes; any other change (a row opened, older requests read
+ * in at the top, a streamed line) keeps the first group in view where it was (anchor restore). The top reads older requests.
+ */
+export function Timeline({ session, groups, older, onOpenRow }: { session: RunSession; groups: readonly TimelineGroup[] | null; older: readonly MightyGraphRun[]; onOpenRow?: (nodeId: string) => void }) {
   const { bridge, t } = useServices();
   const scroller = useRef<HTMLDivElement>(null);
   const runs = useMemo(() => new Map([...older, ...(session.graphRuns ?? [])].map((r) => [r.id, r])), [older, session.graphRuns]);
   const count = groups?.length ?? 0;
-  const lastStatus = groups?.[count - 1]?.status;
-  useEffect(() => {
+  const progress = useRef<{ last: string | null; finished: ReadonlyMap<string, boolean> } | null>(null);
+  const anchor = useRef<{ runId: string; offset: number } | null>(null);
+  const restoring = useRef(false);
+  const armed = useRef(false);
+
+  /** The first group whose bottom is in view, and how far its top stands from the view's top. */
+  const remember = () => {
     const element = scroller.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [count, lastStatus]);
+    if (!element) return;
+    const top = element.getBoundingClientRect().top;
+    const first = [...element.querySelectorAll<HTMLElement>('[data-run-id]')].find((g) => g.getBoundingClientRect().bottom >= top);
+    anchor.current = first ? { runId: first.dataset.runId ?? '', offset: first.getBoundingClientRect().top - top } : null;
+  };
+
+  useLayoutEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const list = groups ?? [];
+    const finished = new Map(list.map((g) => [g.runId, terminalStatus.has(g.status)]));
+    const last = list[list.length - 1]?.runId ?? null;
+    const before = progress.current;
+    const newlyFinished = !!before && list.some((g) => finished.get(g.runId) && before.finished.get(g.runId) === false);
+    const follow = before === null || last !== before.last || newlyFinished;
+    progress.current = { last, finished };
+    restoring.current = true;
+    if (follow) element.scrollTop = element.scrollHeight;
+    else if (anchor.current) {
+      const target = element.querySelector<HTMLElement>(`[data-run-id="${CSS.escape(anchor.current.runId)}"]`);
+      if (target) element.scrollTop += target.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.current.offset;
+    }
+    armed.current = element.scrollTop > 2;
+    remember();
+    requestAnimationFrame(() => { restoring.current = false; });
+  }, [groups]);
+
   const onScroll = () => {
-    if (scroller.current && scroller.current.scrollTop <= 2) void bridge.call('mightyLoadOlder', { paneId: session.id });
+    const element = scroller.current;
+    if (!element || restoring.current) return;
+    remember();
+    if (element.scrollTop > 2) armed.current = true;
+    else if (armed.current) { armed.current = false; void bridge.call('mightyLoadOlder', { paneId: session.id }); }
   };
   return (
     <div className="mighty-timeline" ref={scroller} data-testid="mighty-timeline" onScroll={onScroll}>
       {count === 0 ? <div className="mighty-muted mighty-pad">{t('graph.timeline.empty')}</div>
-        : groups!.map((group) => <Group key={group.runId} group={group} run={runs.get(group.runId)} paneId={session.id} provider={session.provider} />)}
+        : groups!.map((group) => <Group key={group.runId} group={group} run={runs.get(group.runId)} paneId={session.id} provider={session.provider} onOpenRow={onOpenRow} />)}
     </div>
   );
 }
