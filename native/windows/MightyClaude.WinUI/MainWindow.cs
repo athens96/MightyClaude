@@ -272,6 +272,7 @@ public sealed partial class MainWindow : Window
         RefreshSelectedPaneModels();
         mobileRouter?.Changed();
         if (settingsWindow?.Content is FrameworkElement settingsRoot) { settingsRoot.RequestedTheme = root.RequestedTheme; if (settingsRoot is Grid settingsFrame) settingsFrame.Background = WindowBackground(); }
+        QueueWebShellModel();
     }
     private static void Copy(string value) { var data = new DataPackage(); data.SetText(value); Clipboard.SetContent(data); }
 
