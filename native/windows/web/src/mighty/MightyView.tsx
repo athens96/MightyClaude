@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useContext, useEffect } from 'react';
+import { PaneShownContext } from '../pane/shown';
 import { useServices, useStoreState } from '../app/context';
 import type { RunSession } from '../store/models';
 import { Diagram } from './Diagram';
@@ -35,10 +36,13 @@ export function MightyView({ session }: { session: RunSession }) {
   const { bridge, t } = useServices();
   const mighty = useStoreState().mighty[session.id] ?? emptyMighty;
   const presentation = presentationOf(session);
+  // A pane kept mounted behind another tab is not on the page: the host pushes its model only while it shows.
+  const shown = useContext(PaneShownContext);
   useEffect(() => {
+    if (!shown) return;
     void bridge.call('mightyVisible', { paneId: session.id, visible: true });
     return () => void bridge.call('mightyVisible', { paneId: session.id, visible: false });
-  }, [bridge, session.id]);
+  }, [bridge, session.id, shown]);
   return (
     <div className="mighty" data-testid="mighty" data-presentation={presentation}>
       <div className="mighty-bar">

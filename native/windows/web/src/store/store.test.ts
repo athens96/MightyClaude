@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { devSnapshot } from '../bridge/devHost';
 import type { AppState, RunSession, ToolPermissionRequest } from './models';
-import { Store, applyPermission, emptyState, mergeSessions, reduce, selectedSession } from './store';
+import { Store, activeSessionId, applyPermission, emptyState, mergeSessions, reduce, selectedSession } from './store';
 
 const loaded = () => reduce(emptyState, { kind: 'snapshot', snapshot: devSnapshot() });
 const pane = (id: string, title = id): RunSession => ({ ...devSnapshot().sessions[0]!, id, title });
@@ -109,5 +109,25 @@ describe('Store', () => {
     store.dispatch({ kind: 'snapshot', snapshot: devSnapshot() });
     expect(calls).toBe(1);
     expect(selectedSession(store.getState().snapshot)?.id).toBe('s1');
+  });
+});
+
+describe('the frame', () => {
+  it('shows a chosen pane at once and forgets the choice once the host state has it', () => {
+    let state = reduce(loaded(), { kind: 'choose', paneId: 's2' });
+    expect(activeSessionId(state)).toBe('s2');
+    const { sessions: _sessions, ...rest } = state.snapshot!;
+    state = reduce(state, { kind: 'delta', sessions: [], removed: [], state: { ...rest, activeSessionId: 's2' } as AppState });
+    expect(state.chosen).toBeUndefined();
+    expect(activeSessionId(state)).toBe('s2');
+  });
+  it('keeps the dialogs the host asks for until one is answered or closed', () => {
+    let state = reduce(loaded(), { kind: 'dialog', id: 1, dialog: { type: 'resumeChoice', provider: 'claude', title: 't', message: 'm', checking: true } });
+    state = reduce(state, { kind: 'dialog', id: 2, dialog: { type: 'confirm', title: 'x', message: 'y', close: 'c', defaultPrimary: false } });
+    state = reduce(state, { kind: 'dialogUpdate', id: 1, checking: false });
+    expect(state.dialogs.map((d) => d.id)).toEqual([1, 2]);
+    expect(state.dialogs[0]!.dialog.type === 'resumeChoice' && state.dialogs[0]!.dialog.checking).toBe(false);
+    state = reduce(state, { kind: 'dialogClose', id: 2 });
+    expect(state.dialogs.map((d) => d.id)).toEqual([1]);
   });
 });

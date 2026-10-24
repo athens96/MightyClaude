@@ -120,10 +120,11 @@ public sealed partial class MainWindow
                 WorkspaceId = workspace.Id, Title = title, Kind = index == 2 ? "shell" : "claude", Provider = index == 1 ? "codex" : "claude", Status = "completed",
                 Logs = index == 0 ? claude : [new(Wire.Id(), "user", "fixture request " + index, Wire.Now()), new(Wire.Id(), "assistant", "fixture answer " + index, Wire.Now())],
             }).ToList();
-            await service.UpdateAsync(state => state with { Sessions = sessions, ActiveWorkspaceId = workspace.Id, ActiveSessionId = sessions[0].Id });
+            // One tab group, the workspace open in the sidebar: the frame's smoke clicks its rows and tabs (MainWindow.WebShell.Shell.cs).
+            await service.UpdateAsync(state => state with { Sessions = sessions, ActiveWorkspaceId = workspace.Id, ActiveSessionId = sessions[0].Id, Layout = "tabs", ExpandedWorkspaceIds = [workspace.Id] });
             var shell = webShell ?? throw new InvalidOperationException("web shell missing");
             var core = await shell.Started ?? throw new InvalidOperationException("WebView2 did not start");
-            const string Probe = "JSON.stringify({ mounted: !!document.querySelector('[data-testid=shell]'), titles: [...document.querySelectorAll('.sidebar-pane-title')].map(e => e.textContent), selected: document.querySelector('[data-testid=pane-title]')?.textContent ?? null, theme: document.documentElement.dataset.theme ?? null, "
+            const string Probe = "JSON.stringify({ mounted: !!document.querySelector('[data-testid=shell]'), titles: [...document.querySelectorAll('.sidebar-pane-title')].map(e => e.textContent), selected: (document.querySelector('.pane-slot.active:not(.hidden) [data-testid=pane-title]') ?? document.querySelector('[data-testid=pane-title]'))?.textContent ?? null, theme: document.documentElement.dataset.theme ?? null, "
                 + "entries: document.querySelector('[data-testid=conversation]')?.dataset.entryCount ?? null, kinds: Object.fromEntries(['user', 'assistant', 'tool', 'output', 'system', 'error', 'image'].map(k => [k, document.querySelectorAll('[data-entry-kind=' + k + ']').length])), "
                 + "tables: document.querySelectorAll('[data-md=table]').length, code: document.querySelectorAll('[data-code-block]').length, last: [...document.querySelectorAll('[data-entry-id]')].slice(-2).map(e => e.textContent) })";
             async Task<JsonElement> Read() => JsonDocument.Parse(JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync(Probe)) ?? "{}").RootElement;
@@ -160,6 +161,9 @@ public sealed partial class MainWindow
             // The Mighty views: the diagram's blocks, edges and outline, a streamed change drawing one block, the log and the pipeline (MainWindow.WebShell.Mighty.cs).
             var mightied = await RunWebMightySmoke(core, sessions[0].Id, result); result["mighty"] = mightied; Save();
             shown = shown && mightied;
+            // The frame: sidebar rows, a row click, timed tab clicks, the add-pane menu and a split preset (MainWindow.WebShell.Shell.cs).
+            var framed = await RunWebShellFrameSmoke(core, sessions.Select(s => s.Id).ToList(), result); Save();
+            shown = shown && framed;
             await core.ExecuteScriptAsync($"document.querySelector('[data-session-id=\"{sessions[1].Id}\"]')?.click()");
             var selected = await WaitFor(page => page.Text("selected") == titles[1]);
             result["afterClick"] = selected.Clone(); result["hostActiveSession"] = service.Snapshot.ActiveSessionId == sessions[1].Id;

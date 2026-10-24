@@ -482,4 +482,68 @@ public sealed partial class MainWindow
             setupNeeded = SetupNeedsAttention,
         };
     }
+
+    // ── Smoke ──
+
+    /// <summary>
+    /// The frame's part of the web smoke: the sidebar lists the workspace and its panes; a click on a pane row and one on a tab
+    /// make that pane the active one in the host's state and in the page (the tab switch timed in the page, from the click to the
+    /// frame after the pane shows, once onto a pane not drawn before and once back onto one kept mounted); the add-pane menu adds
+    /// a terminal tab; the columns preset draws two groups. Nothing is clicked that opens a dialog, the clipboard or another window.
+    /// </summary>
+    private async Task<bool> RunWebShellFrameSmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, IReadOnlyList<string> ids, Dictionary<string, object?> result)
+    {
+        async Task<JsonElement> Eval(string script) => JsonDocument.Parse(await core.ExecuteScriptAsync(script)).RootElement.Clone();
+        async Task<JsonElement> Probe(string script) => JsonDocument.Parse(JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("JSON.stringify(" + script + ")")) ?? "null").RootElement.Clone();
+        async Task<bool> Until(Func<Task<bool>> done, double seconds = 15)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(seconds);
+            while (DateTime.UtcNow < deadline) { if (await done()) return true; await Task.Delay(50); }
+            return false;
+        }
+        const string Frame = "({ workspaces: document.querySelectorAll('[data-testid=sidebar-workspace]').length, rows: [...document.querySelectorAll('[data-testid=sidebar-pane]')].map(e => e.dataset.sessionId), "
+            + "tabs: [...document.querySelectorAll('[data-testid=tab]')].map(e => e.dataset.tabId), groups: document.querySelectorAll('[data-testid=tab-group]').length, splits: document.querySelectorAll('[data-testid=split]').length, "
+            + "active: document.querySelector('.pane-slot.active:not(.hidden)')?.dataset.paneId ?? null, statusBar: !!document.querySelector('[data-testid=status-bar]'), header: !!document.querySelector('[data-testid=workspace-header]') })";
+        static List<string> Ids(JsonElement page, string name) => page.TryGetProperty(name, out var list) && list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().Select(e => e.GetString() ?? "").ToList() : [];
+        static int Count(JsonElement page, string name) => page.TryGetProperty(name, out var n) && n.TryGetInt32(out var value) ? value : 0;
+        var checks = new Dictionary<string, object?>(); result["frame"] = checks;
+        // The sidebar: the workspace and every pane; the header and the status bar.
+        var listed = await Until(async () => { var page = await Probe(Frame); return Count(page, "workspaces") >= 1 && ids.All(Ids(page, "rows").Contains) && page.GetProperty("statusBar").GetBoolean(); });
+        checks["sidebar"] = (await Probe(Frame)).Clone();
+        // A pane row: the shell pane becomes the active one.
+        await Eval($"document.querySelector('.sidebar [data-session-id=\"{ids[2]}\"]')?.click()");
+        var rowPicked = await Until(async () => service.Snapshot.ActiveSessionId == ids[2] && (await Probe(Frame)).Text("active") == ids[2]);
+        checks["rowClick"] = rowPicked;
+        // A tab, timed: the click to the frame after the chosen pane shows (window.__tabSwitch, in milliseconds).
+        string TimeTab(string id) => "(() => { window.__tabSwitch = null; const tab = document.querySelector('[data-tab-id=\"" + id + "\"] .tab-handle'); if (!tab) return false; const t0 = performance.now(); tab.click(); "
+            + "const shown = () => { const slot = document.querySelector('.pane-slot[data-pane-id=\"" + id + "\"]'); return !!slot && !slot.classList.contains('hidden') && !!slot.querySelector('.pane'); }; "
+            + "const sync = shown() ? performance.now() - t0 : null; const check = () => { if (shown()) requestAnimationFrame(() => { window.__tabSwitch = { sync, frame: performance.now() - t0 }; }); else requestAnimationFrame(check); }; check(); return true; })()";
+        async Task<JsonElement?> Timed(string id)
+        {
+            if ((await Eval(TimeTab(id))).ValueKind != JsonValueKind.True) return null;
+            JsonElement timing = default;
+            await Until(async () => (timing = await Probe("window.__tabSwitch")).ValueKind == JsonValueKind.Object, 5);
+            return timing.ValueKind == JsonValueKind.Object ? timing : null;
+        }
+        var first = await Timed(ids[1]);
+        var tabPicked = await Until(async () => service.Snapshot.ActiveSessionId == ids[1] && (await Probe(Frame)).Text("active") == ids[1]);
+        var back = await Timed(ids[2]);
+        var backPicked = await Until(async () => service.Snapshot.ActiveSessionId == ids[2] && (await Probe(Frame)).Text("active") == ids[2]);
+        checks["tabClick"] = tabPicked && backPicked; checks["tabSwitchFirstMs"] = first; checks["tabSwitchMountedMs"] = back;
+        result["tabSwitchMs"] = back is { } mounted && mounted.TryGetProperty("frame", out var frame) ? Math.Round(frame.GetDouble(), 1) : null;
+        // The add-pane menu: its terminal entry adds a tab to the active group.
+        var before = service.Snapshot.Sessions.Count; var tabsBefore = Ids(await Probe(Frame), "tabs").Count;
+        await Eval("document.querySelector('[data-testid=sidebar-add]')?.click()");
+        var menuShown = await Until(async () => (await Eval("!!document.querySelector('[data-testid=\"add-entry-shell\"]')")).ValueKind == JsonValueKind.True, 10);
+        await Eval("document.querySelector('[data-testid=\"add-entry-shell\"]')?.click()");
+        var added = menuShown && await Until(async () => service.Snapshot.Sessions.Count == before + 1 && Ids(await Probe(Frame), "tabs").Count == tabsBefore + 1);
+        checks["addMenu"] = menuShown; checks["addedTab"] = added;
+        // The columns preset: two groups side by side.
+        await Eval("(() => { const s = document.querySelector('[data-testid=layout-select]'); if (!s) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'columns'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+        var split = await Until(async () => { var page = await Probe(Frame); return Count(page, "groups") >= 2 && Count(page, "splits") >= 1; });
+        checks["split"] = split; checks["afterSplit"] = (await Probe(Frame)).Clone();
+        var passed = listed && rowPicked && tabPicked && backPicked && added && split;
+        checks["passed"] = passed;
+        return passed;
+    }
 }
