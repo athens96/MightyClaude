@@ -7,10 +7,11 @@ import {
   wheelScrollTarget, zoomAnchored, zoomIn, zoomLabel, zoomOut, ZoomDefault, ZoomMax, ZoomMin, type Point,
 } from './camera';
 import {
-  finished, isAuxiliaryKind, latestResultID, makeLayout, minimumBlockSize, normalizedSizeFor,
+  finished, isAuxiliaryKind, isResizable, latestResultID, makeLayout, MaximumHeight, MaximumWidth, minimumBlockSize, normalizedSizeFor,
   resultDrag, resultDragSides, runOf, type Layout, type Size,
 } from './layout';
 import { blockExtras } from './extras';
+import { edgesCursor, pinnedAnchor, pinnedCamera, pinnedUnit, resizedSize, resizeTarget, type Edges } from './resize';
 import { setBlockSize } from './prefs';
 import { shareRuns } from './share';
 import type { MightyPane, MightyFile } from './types';
@@ -18,7 +19,7 @@ import { ReferenceContext, useReferenceClick } from '../conversation/referenceCl
 
 const Overscan = 300;
 
-interface Drag { id: string; edges: 'right' | 'bottom' | 'corner'; start: Size; origin: { x: number; y: number }; layout: Layout; target: 'result' | 'plan' | 'block' }
+interface Drag { id: string; edges: Edges; start: Size; origin: { x: number; y: number }; layout: Layout; target: 'result' | 'plan' | 'block' }
 
 
 /** The edges as one path each (MightyGraph.cs edges): bottom-centre out, one turn 26 from the joining end, top-centre in under an arrow head. */
@@ -67,6 +68,8 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
   const [pending, setPending] = useState<{ sizes: Record<string, GraphBlockSize> | null; base: unknown } | null>(null);
   const [measured, setMeasured] = useState<Record<string, number>>({});
   const drag = useRef<Drag | null>(null);
+  /** The corner across from a drag's sides, kept at its place on screen while and after the drag until the view is moved. */
+  const pin = useRef<{ id: string; unit: { x: number; y: number }; anchor: Point } | null>(null);
   // A file named in a block opens in the pane's reference bubble; kept in a ref so the blocks' actions keep their identity.
   const referenceShown = useContext(ReferenceContext);
   const showReference = useRef(referenceShown);
@@ -163,10 +166,16 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
     const targetID = followTargetID(layout, runs);
     const next = watch.current.observe(targetID, frameOf(targetID), camera.current, viewport, zoom);
     if (next) camera.current = next;
+    // A resized block: the layout recentres it, the camera keeps the corner across from the dragged sides where it was.
+    const pinned = pin.current;
+    const pinnedFrame = pinned ? frameOf(pinned.id) : null;
+    if (pinned && pinnedFrame) camera.current = pinnedCamera(pinned.anchor, pinned.unit, pinnedFrame, zoom);
+    else pin.current = null;
     applyCamera();
   }, [layout, viewport, zoom]);
 
   const userMoved = useCallback(() => {
+    pin.current = null;
     const l = layoutRef.current;
     const targetID = followTargetID(l, shared.current);
     watch.current.moved(targetID, frameOf(targetID), camera.current, { w: viewportRef.current?.clientWidth ?? 0, h: viewportRef.current?.clientHeight ?? 0 }, zoomRef.current);
@@ -208,8 +217,27 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
 
   // ── background drag pans and clears the selection; a press on a block selects it ──
   const panning = useRef<{ x: number; y: number; pointer: number } | null>(null);
+  /** The block and sides a press at the client point would resize: the corner handle, then a band along each border. */
+  const resizeAt = (clientX: number, clientY: number) => {
+    const vp = viewportRef.current;
+    if (!vp) return null;
+    const box = vp.getBoundingClientRect(), cam = camera.current, z = zoomRef.current;
+    const frames = layoutRef.current.nodes.filter((n) => isResizable(n.kind))
+      .map((n) => ({ id: n.id, frame: { x: n.frame.x * z + cam.x, y: n.frame.y * z + cam.y, w: n.frame.w * z, h: n.frame.h * z } }));
+    return resizeTarget(clientX - box.left, clientY - box.top, frames, z);
+  };
+  const resizeCursor = useRef('');
+  const showResizeCursor = (cursor: string) => {
+    const vp = viewportRef.current;
+    if (!vp || resizeCursor.current === cursor) return;
+    resizeCursor.current = cursor;
+    vp.style.cursor = cursor;
+    if (cursor) vp.dataset.resizeCursor = ''; else delete vp.dataset.resizeCursor;
+  };
   const onPointerDown = (event: React.PointerEvent) => {
     if (event.button !== 0) return;
+    const hit = resizeAt(event.clientX, event.clientY);
+    if (hit && !(event.target as Element).closest('button')) { actions.startResize(hit.id, hit.edges, event); return; }
     const block = (event.target as Element).closest('[data-block-id]') as HTMLElement | null;
     if (block) {
       if (block.dataset.kind !== 'history') setSelected(block.dataset.blockId ?? null);
@@ -223,11 +251,9 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
   const onPointerMove = (event: React.PointerEvent) => {
     const d = drag.current;
     if (d) {
-      const z = zoomRef.current;
-      const w = d.edges === 'bottom' ? d.start.w : d.start.w + (event.clientX - d.origin.x) / z;
-      const h = d.edges === 'right' ? d.start.h : d.start.h + (event.clientY - d.origin.y) / z;
       const least = minimumBlockSize(d.layout.nodes.find((n) => n.id === d.id)?.kind ?? '');
-      const size = { width: Math.max(least.w, w), height: Math.max(least.h, h) };
+      const dragged = resizedSize(d.edges, d.start, event.clientX - d.origin.x, event.clientY - d.origin.y, zoomRef.current, least, { w: MaximumWidth, h: MaximumHeight });
+      const size = { width: dragged.w, height: dragged.h };
       if (d.target === 'block') setLive({ id: d.id, size: normalizedSizeFor(size, d.id) ?? size, target: 'block' });
       else {
         const limit = d.target === 'result' ? d.layout.resultLimit : d.layout.planLimit;
@@ -237,7 +263,7 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
       return;
     }
     const p = panning.current;
-    if (!p) return;
+    if (!p) { showResizeCursor(edgesCursor(resizeAt(event.clientX, event.clientY)?.edges ?? 0)); return; }
     pan(event.clientX - p.x, event.clientY - p.y);
     panning.current = { ...p, x: event.clientX, y: event.clientY };
   };
@@ -281,6 +307,10 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
       if (!node) return;
       const target = id === latestResultID(shared.current) ? 'result' : node.kind === 'plan' ? 'plan' : 'block';
       drag.current = { id, edges, start: { w: node.frame.w, h: node.frame.h }, origin: { x: event.clientX, y: event.clientY }, layout: l, target };
+      const unit = pinnedUnit(edges);
+      pin.current = { id, unit, anchor: pinnedAnchor(unit, node.frame, camera.current, zoomRef.current) };
+      watch.current.userChangedLayout();
+      setSelected(id);
       viewportRef.current?.setPointerCapture(event.pointerId);
       viewportRef.current?.focus();
     },
@@ -305,6 +335,7 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
 
   const setZoomTo = (next: number) => {
     const vp = { w: viewportRef.current?.clientWidth ?? 0, h: viewportRef.current?.clientHeight ?? 0 };
+    pin.current = null;
     camera.current = zoomAnchored(camera.current, vp, zoom, next);
     watch.current.stop();
     setZoom(next);
@@ -332,7 +363,7 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
   return (
     <div className="mighty-diagram" data-testid="mighty-diagram" data-node-count={layout.nodes.length} data-edge-count={layout.edges.length}>
       <div className="mighty-diagram-zoom">{toolbarZoom}</div>
-      <div className="mighty-viewport" ref={viewportRef} tabIndex={0} onPointerDown={onPointerDown} onPointerMove={onPointerMove}
+      <div className="mighty-viewport" ref={viewportRef} tabIndex={0} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerLeave={() => { if (!drag.current) showResizeCursor(''); }}
         onPointerUp={(e) => endDrag(e, false)} onPointerCancel={() => endDrag(null, true)} onLostPointerCapture={() => { if (drag.current || panning.current) endDrag(null, !!drag.current); }}
         onKeyDown={onKeyDown}>
         <svg className="mighty-layer" aria-hidden="true">
