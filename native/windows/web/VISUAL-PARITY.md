@@ -54,7 +54,7 @@ button (the Mac puts the presets in its menu bar, which Windows has not).
 | plan-document | 860×677 sheet: clipboard glyph and 계획 over a rule, Close at the right, the plan padded 12 with plain inline code. | Corners are rounded (the Mac's sheet is square at the top). |
 | background-work | Default view with the transcript, the strip with the layers glyph, chevron and eye-off. | — |
 | settings-general | Mac header (gear in the accent, title at 17 in the heading font, platform line, grey close disc), Lucide category symbols, grey section titles, theme and language segments and the text pickers filling their row. | Surfaces from the tokens (the Mac's grouped boxes are grey on grey); Windows rows keep their dividers; the delegation switch reads this profile's value. |
-| settings-models | Same frame; the pickers keep the WinUI form's widths. | The Mac's phase pickers are wider (its three-column rows give the picker the middle). |
+| settings-models | Same frame; every pop-up fills its fixed column (the phase models' 220 and the effort's 110, the aliases' 220 at the right). | The registered-name row keeps its label beside the field (the Mac puts it in the placeholder). |
 | settings-styles | Same frame; registration buttons, the built-in styles with their source, hash, counts and file. | The built-in styles' path is the Windows resource name. |
 | settings-tools | Same frame. | The components list is empty: the Mac capture fakes every component as installed, the Windows one does not probe this PC's tools. |
 | settings-cli | Same frame; the three CLIs with their versions and states. | Accounts show "확인 중…": the capture does not fake signed-in accounts as the Mac's does. |

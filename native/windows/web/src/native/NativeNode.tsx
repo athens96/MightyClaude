@@ -15,13 +15,23 @@ export const SettingsFormContext = createContext(false);
  * gives the label its own width and the picker the rest of the row (M/SettingsViews.swift), where the WinUI form keeps a share or
  * the picker's own width at the right. Null for any other grid.
  */
+const fixedColumn = (track: string | undefined) => !!track && /^\d+(\.\d+)?px$/.test(track.trim());
+const sized = (n: Node): boolean => n.w !== undefined || ((n.t === 'grid' || n.t === 'box' || n.t === 'stack') && n.c.length === 1 && sized(n.c[0]!));
+const framedSelect = (n: Node): boolean => n.t === 'select' || ((n.t === 'grid' || n.t === 'box' || n.t === 'stack') && n.c.length === 1 && framedSelect(n.c[0]!));
+
+/** The children of a Settings grid that fill their cell: a pop-up in a column of fixed width takes all of it, as the Mac's do. */
+export function fillsFixedCell(node: Extract<Node, { t: 'grid' }>, child: Node): boolean {
+  return framedSelect(child) && !sized(child) && fixedColumn(node.cols?.[child.col ?? 0]);
+}
+
 export function labelledPickerRow(node: Extract<Node, { t: 'grid' }>): number | null {
   if (node.cols?.length !== 2 || node.c.length !== 2) return null;
   const control = node.c.findIndex((child) => (child.col ?? 0) === 1);
   const label = node.c.findIndex((child) => (child.col ?? 0) === 0);
   if (control < 0 || label < 0) return null;
   const picker = node.c[control]!;
-  const framedSelect = (n: Node): boolean => n.t === 'select' || ((n.t === 'grid' || n.t === 'box' || n.t === 'stack') && n.c.length === 1 && framedSelect(n.c[0]!));
+  // A picker the form gives a column of its own width keeps it, as the Mac's fixed-width pickers do (the phase models' 220).
+  if (fixedColumn(node.cols[1]) || sized(picker)) return null;
   const pickerLike = picker.t === 'segmented' || framedSelect(picker) || (picker.t === 'grid' && picker.c.length > 1 && picker.c.every((c) => c.t === 'button' || c.t === 'box' || c.t === 'rule'));
   return pickerLike && node.c[label]!.t === 'text' ? control : null;
 }
@@ -172,7 +182,7 @@ function Inner({ node }: { node: Node }) {
         gridTemplateColumns: fill !== null ? 'auto minmax(0, 1fr)' : node.cols?.join(' '), gridTemplateRows: node.rows?.join(' '), rowGap: node.gap[0],
         columnGap: fill !== null ? 'var(--space-md)' : node.gap[1], padding: node.pad ? edges(node.pad) : undefined, background: ink(node.fill),
       };
-      return <div className="native-grid" style={style}>{node.c.map((child, index) => <NativeNode key={index} node={child} fill={index === fill} />)}</div>;
+      return <div className="native-grid" style={style}>{node.c.map((child, index) => <NativeNode key={index} node={child} fill={index === fill || (settingsForm && fillsFixedCell(node, child))} />)}</div>;
     }
     case 'box': {
       const style: CSSProperties = {
