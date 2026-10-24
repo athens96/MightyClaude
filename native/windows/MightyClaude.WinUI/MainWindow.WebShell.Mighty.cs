@@ -186,8 +186,11 @@ public sealed partial class MainWindow
             result["mightyDiagram"] = new { drawn, counts };
             // Every block's draw count before the stream, then one word more in the writer's entry, as a streamed graph_run.
             const string Renders = "JSON.stringify(Object.fromEntries([...document.querySelectorAll('.mighty-block')].map(e => [e.dataset.blockId, e.dataset.renders])))";
-            await Task.Delay(500);
-            var before = JsonSerializer.Deserialize<Dictionary<string, string>>(await Read(Renders)) ?? [];
+            // The diagram settles first (the newest result's height is measured after its first draw and moves what is under it):
+            // the counts are taken once two reads 700 ms apart agree, so only what the stream itself draws is counted.
+            var settledAt = DateTime.UtcNow.AddSeconds(10); var settling = await Read(Renders);
+            while (DateTime.UtcNow < settledAt) { await Task.Delay(700); var again = await Read(Renders); if (again == settling) break; settling = again; }
+            var before = JsonSerializer.Deserialize<Dictionary<string, string>>(settling) ?? [];
             await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with
             {
                 GraphRuns = [.. (s.GraphRuns ?? []).Take(3), Running("writing streamed-marker")],
