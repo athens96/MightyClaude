@@ -3,12 +3,14 @@ import type { RunSession } from '../../store/models';
 import { useServices } from '../../app/context';
 import { PaneShownContext } from '../../pane/shown';
 import { listenPane } from '../channel';
+import { overlapsAny, overlayBoxes } from '../../shell/overlay';
 import { sameBounds, slotBounds, type BrowserState, type SlotBounds } from './types';
 
 /**
  * A browser pane (M/BrowserPaneView.swift:30-108; WinUI MainWindow.Browser.cs): the toolbar (back, forward, reload, the address
  * field) over a slot the host's own WebView2 covers. The page reports the slot in device pixels whenever it may have moved, and
- * as hidden while the pane is behind another tab, a dialog is open or the pane is gone, so the native browser never stands over
+ * as hidden while the pane is behind another tab, a dialog is open, a page menu or popover covers the slot (src/shell/overlay.ts)
+ * or the pane is gone, so the native browser never stands over
  * something else. Every rule (address, history, profile, refusals) is the host's (Core BrowserAddress, BrowserHistory, BrowserProfile).
  */
 export function BrowserView({ session }: { session: RunSession }) {
@@ -39,8 +41,11 @@ export function BrowserView({ session }: { session: RunSession }) {
     const measure = () => {
       frame = 0;
       const current = store.getState();
-      const blocked = current.dialogs.length > 0 || current.natives.length > 0 || (current.shell?.dialogOpen ?? false);
-      const next = slotBounds(element.getBoundingClientRect(), window.devicePixelRatio || 1, shown && !blocked && element.isConnected);
+      const box = element.getBoundingClientRect();
+      // A page menu, popover or in-page dialog over the slot would be hidden under the native control: it steps aside meanwhile.
+      const covered = current.overlays > 0 && overlapsAny(box, overlayBoxes(document));
+      const blocked = current.dialogs.length > 0 || current.natives.length > 0 || (current.shell?.dialogOpen ?? false) || covered;
+      const next = slotBounds(box, window.devicePixelRatio || 1, shown && !blocked && element.isConnected);
       if (sameBounds(last, next)) return;
       last = next;
       void bridge.call('browserBounds', { paneId, ...next }).catch(() => {});
@@ -53,7 +58,7 @@ export function BrowserView({ session }: { session: RunSession }) {
     let seen = store.getState();
     const unsubscribe = store.subscribe(() => {
       const current = store.getState();
-      if (current.shell !== seen.shell || current.dialogs !== seen.dialogs || current.natives !== seen.natives || current.chosen !== seen.chosen) schedule();
+      if (current.shell !== seen.shell || current.dialogs !== seen.dialogs || current.natives !== seen.natives || current.chosen !== seen.chosen || current.overlays !== seen.overlays) schedule();
       seen = current;
     });
     window.addEventListener('resize', schedule);

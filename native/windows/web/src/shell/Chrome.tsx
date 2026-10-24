@@ -7,6 +7,7 @@ import { ProviderMark } from '../conversation/ProviderMark';
 import { SidebarToggle } from '../dashboard/Dashboard';
 import { BetaBadge, GitCapsule, MiddlePath, StatusCounts, useCall, useMenu, type MenuItem } from './parts';
 import type { HeaderModel, ShellModel, UsageDetails } from './types';
+import { usePageOverlay } from './overlay';
 
 export function Banners({ shell }: { shell: ShellModel }) {
   const { t } = useServices();
@@ -59,6 +60,7 @@ export function WorkspaceHeader({ header, counts }: { header: HeaderModel; count
 function UsagePopover({ usage, onClose }: { usage: UsageDetails; onClose: () => void }) {
   const call = useCall();
   const element = useRef<HTMLDivElement>(null);
+  usePageOverlay(true);
   useEffect(() => {
     call('usageRefresh', { force: false });
     const close = (event: Event) => { if (!(event.target instanceof Node && element.current?.contains(event.target)) && !(event.target instanceof Element && event.target.closest('[data-usage-chips]'))) onClose(); };
@@ -67,7 +69,7 @@ function UsagePopover({ usage, onClose }: { usage: UsageDetails; onClose: () => 
     return () => { window.removeEventListener('mousedown', close, true); window.removeEventListener('keydown', key, true); };
   }, [call, onClose]);
   return (
-    <div className="usage-popover" ref={element} role="dialog" aria-label={usage.title} data-testid="usage-popover">
+    <div className="usage-popover" ref={element} role="dialog" data-page-overlay="" aria-label={usage.title} data-testid="usage-popover">
       <div className="usage-head">
         <strong>{usage.title}</strong>
         <button type="button" className="icon-button" disabled={usage.refreshing} aria-label={usage.refreshLabel} title={usage.refreshTooltip} onClick={() => call('usageRefresh', { force: true })}>

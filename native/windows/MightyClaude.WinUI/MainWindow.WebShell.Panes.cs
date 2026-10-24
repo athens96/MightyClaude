@@ -537,7 +537,7 @@ public sealed partial class MainWindow
         var browser = created ? webBrowsers[browserId] : null;
         if (browser is not null) await browser.Ready.WaitAsync(TimeSpan.FromSeconds(30));
         checks["browserStatus"] = browser?.Status;
-        bool placed = false, browsed = false, hidden = false;
+        bool placed = false, browsed = false, hidden = false, overlaid = false;
         var pages = Path.Combine(Path.GetTempPath(), "MightyWebBrowserSmoke_" + Wire.Id());
         try
         {
@@ -564,6 +564,13 @@ public sealed partial class MainWindow
                     checks["browserBounds"] = new { page = measured, native };
                     return measured.Zip(native).All(pair => Math.Abs(pair.First - pair.Second) <= 2);
                 });
+                // A page menu opened over the slot (the tab's menu at a point inside it): the native control steps aside, and comes back once the menu closes.
+                var menuOpened = placed && await True("(() => { const s = " + slot + "?.getBoundingClientRect(); const h = " + Slot(browserId) + "?.closest('[data-testid=tab-group]')?.querySelector('[data-testid=tab][data-tab-id=' + " + Js(JsonSerializer.Serialize(browserId)) + " + '] .tab-handle'); if (!s || !h) return false; "
+                    + "h.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: s.left + 20, clientY: s.top + 20 })); return true; })()");
+                var steppedAside = menuOpened && await Until(() => Task.FromResult(view.Visibility == Visibility.Collapsed));
+                var menuClosed = steppedAside && await True("(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true; })()") && await Until(async () => view.Visibility == Visibility.Visible && await True("!document.querySelector('[data-testid=menu]')"));
+                checks["browserMenuOver"] = new { menuOpened, steppedAside, menuClosed };
+                overlaid = steppedAside && menuClosed;
                 // Another tab of the same group: the slot is hidden, so the native control must be too.
                 var other = await Probe("(() => { const group = " + Slot(browserId) + "?.closest('[data-testid=tab-group]'); const tab = [...(group?.querySelectorAll('[data-testid=tab]') ?? [])].find(t => t.dataset.tabId !== " + Js(browserId) + "); tab?.querySelector('.tab-handle')?.click(); return tab?.dataset.tabId ?? null; })()");
                 hidden = other.ValueKind == JsonValueKind.String && await Until(() => Task.FromResult(view.Visibility == Visibility.Collapsed));
@@ -575,8 +582,8 @@ public sealed partial class MainWindow
             try { if (Directory.Exists(pages)) Directory.Delete(pages, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
         var released = !webBrowsers.ContainsKey(browserId) && (browser?.View is null);
-        checks["browserNavigated"] = browsed; checks["browserPlaced"] = placed; checks["browserHiddenOnTabSwitch"] = hidden; checks["browserClosed"] = released;
-        return listed && opened && previewed && started && echoed && browsed && placed && hidden && released;
+        checks["browserNavigated"] = browsed; checks["browserPlaced"] = placed; checks["browserHiddenUnderMenu"] = overlaid; checks["browserHiddenOnTabSwitch"] = hidden; checks["browserClosed"] = released;
+        return listed && opened && previewed && started && echoed && browsed && placed && overlaid && hidden && released;
     }
 
     private sealed partial class PaneView

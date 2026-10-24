@@ -7,6 +7,7 @@ import {
   type Page, type PanTarget, type Scroll, type XY,
 } from './structureMotion';
 import type { StructureBoard, StructureCard } from './types';
+import { usePageOverlay } from '../shell/overlay';
 
 /** Shows a block in the diagram: the block, or its request when the diagram does not draw it. */
 export type Reveal = (nodeId: string, fallbackNodeId: string) => void;
@@ -80,6 +81,7 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
   const [, setVersion] = useState(0);
   const redraw = () => setVersion((v) => v + 1);
   const [listOpen, setListOpen] = useState(false);
+  usePageOverlay(listOpen);
   const page = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const follow = useRef(new ColumnWatch());
@@ -232,7 +234,7 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
             {position(board, index)} <span aria-hidden="true">▾</span>
           </button>
           {listOpen && (
-            <div className="structure-list popover" role="listbox" aria-label={t('graph.structure.board.list')} data-testid="structure-list">
+            <div className="structure-list popover" role="listbox" data-page-overlay="" aria-label={t('graph.structure.board.list')} data-testid="structure-list">
               {list.map((b, at) => (
                 <button key={b.id} role="option" aria-selected={at === index} className={'structure-entry' + (at === index ? ' chosen' : '')} data-board-id={b.id}
                   onClick={() => { setListOpen(false); move(() => navigation.select(b.id, list)); }}>

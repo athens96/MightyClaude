@@ -36,6 +36,11 @@ export interface StoreState {
   chosen?: string;
   /** Counts the host's `select` pushes (a notification's click), so the same pane twice still scrolls into view. */
   selected?: { paneId: string; seq: number };
+  /**
+   * How many of the page's menus, popovers and in-page dialogs are open (src/shell/overlay.ts); each marks its element with
+   * `data-page-overlay`. A browser pane hides its native control while one of them overlaps its slot.
+   */
+  overlays: number;
 }
 
 /** The page's own message: a card fills the pane's composer, which listens for it. */
@@ -51,9 +56,15 @@ export interface ChooseMessage {
   paneId?: string;
 }
 
-export type StoreMessage = PushMessage | FillMessage | ChooseMessage;
+/** The page's own message: one of its menus, popovers or in-page dialogs opened or closed (src/shell/overlay.ts). */
+export interface OverlayMessage {
+  kind: 'overlay';
+  open: boolean;
+}
 
-export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {}, mighty: {}, shell: null, dialogs: [], natives: [] };
+export type StoreMessage = PushMessage | FillMessage | ChooseMessage | OverlayMessage;
+
+export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {}, mighty: {}, shell: null, dialogs: [], natives: [], overlays: 0 };
 
 /** A choice the host's state has caught up with is forgotten. */
 function settle(state: StoreState): StoreState {
@@ -161,6 +172,8 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
     case 'terminal':
     case 'browser':
       return state;
+    case 'overlay':
+      return { ...state, overlays: Math.max(0, state.overlays + (message.open ? 1 : -1)) };
     case 'fill':
       return { ...state, fills: { ...state.fills, [message.paneId]: { text: message.text, seq: (state.fills[message.paneId]?.seq ?? 0) + 1 } } };
   }

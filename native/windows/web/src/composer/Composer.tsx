@@ -7,6 +7,7 @@ import { enterAction, maximumDraft } from './keys';
 import { choose, closed, move, paletteDraft, paletteKey, paletteState, safeIndex, type PaletteState, type SlashCatalog, type SlashCommand } from './slash';
 import { Toolbar } from './Toolbar';
 import type { AttachmentPreview, ComposerState, SendResult } from './types';
+import { usePageOverlay } from '../shell/overlay';
 
 /** The editor grows to six lines, then scrolls (MainWindow.cs: ComposerLine + 5 × ComposerLineStep). */
 const maxLines = 6;
@@ -33,6 +34,7 @@ export function Composer({ session }: { session: RunSession }) {
   const [catalog, setCatalog] = useState<{ value: SlashCatalog; read: number } | null>(null);
   const [dismissedFor, setDismissedFor] = useState<string | null>(null);
   const [palette, setPalette] = useState<PaletteState>(closed);
+  usePageOverlay(palette.commands.length > 0 || preview !== null);
   const reading = useRef(false);
   const [showUsage, setShowUsage] = useState(false);
   const usageShown = useCallback(() => setShowUsage(false), []);
@@ -198,7 +200,7 @@ export function Composer({ session }: { session: RunSession }) {
         </div>
       )}
       {palette.commands.length > 0 && (
-        <div className="slash-palette" data-testid="slash-palette" role="listbox">
+        <div className="slash-palette" data-testid="slash-palette" role="listbox" data-page-overlay="">
           <div className="slash-rows">
             {palette.commands.map((command, index) => (
               <div
@@ -307,7 +309,7 @@ export function Composer({ session }: { session: RunSession }) {
         <ComposerCard paneId={paneId} kind="statusLine" />
       </div>
       {preview && (
-        <div className="composer-preview" role="dialog" aria-label={preview.name} onClick={() => setPreview(null)}>
+        <div className="composer-preview" role="dialog" data-page-overlay="" aria-label={preview.name} onClick={() => setPreview(null)}>
           <div className="composer-preview-card" onClick={(event) => event.stopPropagation()}>
             <div className="composer-preview-title">{preview.name}</div>
             <div className="composer-preview-meta">{preview.mediaType} · {preview.size.toLocaleString()} bytes</div>

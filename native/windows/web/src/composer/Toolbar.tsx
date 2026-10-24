@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useServices } from '../app/context';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { clearUnsupported, contextLabel, unsupportedSettings, type MenuName, type MenuRow, type Pills, type RunSettingsInfo, type RunSettingsValues, type SessionInfo } from './menus';
+import { usePageOverlay } from '../shell/overlay';
 
 /** A toolbar narrower than this folds effort, permission and Fast into one options menu (ArrangeComposer's overflow). */
 const narrowToolbar = 420;
@@ -71,7 +72,7 @@ function RunSettingsPopover({ paneId, info, close }: { paneId: string; info: Run
     }
   };
   return (
-    <div ref={ref} className="composer-popover run-settings" data-testid="run-settings" role="dialog" aria-label={t('settings.run.title')} onKeyDown={(event) => { if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement) && !(event.target instanceof HTMLSelectElement)) { event.preventDefault(); void apply(); } }}>
+    <div ref={ref} className="composer-popover run-settings" data-testid="run-settings" data-page-overlay="" role="dialog" aria-label={t('settings.run.title')} onKeyDown={(event) => { if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement) && !(event.target instanceof HTMLSelectElement)) { event.preventDefault(); void apply(); } }}>
       <div className="popover-header"><strong>{t('settings.run.title')}</strong><span>{info.provider}</span>{info.beta && <span className="beta-badge">Beta</span>}</div>
       <div className="popover-body">
         <section>
@@ -135,7 +136,7 @@ function SessionInfoPopover({ info, close }: { info: SessionInfo; close: () => v
   const [shown, setShown] = useState(false);
   const ref = usePopover(close);
   return (
-    <div ref={ref} className="composer-popover session-info" data-testid="session-info" role="dialog" aria-label={t('composer.sessionInfo.title')}>
+    <div ref={ref} className="composer-popover session-info" data-testid="session-info" data-page-overlay="" role="dialog" aria-label={t('composer.sessionInfo.title')}>
       <div className="popover-header">
         <ProviderMark provider={info.provider} size={20} />
         <div className="session-info-heading"><strong title={info.title}>{info.title}</strong><span className="popover-quiet"><span className={'status-dot tone-' + info.tone.toLowerCase()} /> {info.providerLabel}{info.beta ? ' · Beta' : ''} · {info.status}</span></div>
@@ -178,6 +179,7 @@ export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown }: { pane
   const host = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(null), []);
   const menuRef = usePopover(close);
+  usePageOverlay(open !== null);
 
   useEffect(() => {
     const element = host.current?.parentElement;
@@ -232,7 +234,7 @@ export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown }: { pane
       </button>
       {problem && <span className="composer-pill-problem" role="alert">{problem}</span>}
       {open?.kind === 'menu' && (
-        <div ref={menuRef} className="composer-popover composer-menu" role="menu" data-menu={open.name}>
+        <div ref={menuRef} className="composer-popover composer-menu" role="menu" data-menu={open.name} data-page-overlay="">
           <MenuList rows={open.rows} path={[]} choose={choose(open.name)} />
         </div>
       )}
