@@ -57,7 +57,7 @@ try {
 
     dotnet publish native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj --configuration $Configuration --runtime "win-$Architecture" --self-contained true -p:WindowsAppSDKSelfContained=true "-p:Platform=$platform" @updateProperties --output $OutputDirectory
     if ($LASTEXITCODE -ne 0) { throw 'WinUI 빌드 실패' }
-    foreach ($required in @('LICENSE.txt', 'MightyClaude.exe', 'MightyClaude.dll', 'MightyClaude.runtimeconfig.json', 'resources.pri', 'coreclr.dll', 'hostfxr.dll', 'Microsoft.UI.Xaml.dll', 'Assets/MightyClaude.ico', 'Assets/mightyclaude.png', 'claude-mods/.claude-plugin/plugin.json')) {
+    foreach ($required in @('LICENSE.txt', 'MightyClaude.exe', 'MightyClaude.dll', 'MightyClaude.runtimeconfig.json', 'resources.pri', 'coreclr.dll', 'hostfxr.dll', 'Microsoft.UI.Xaml.dll', 'Assets/MightyClaude.ico', 'Assets/mightyclaude.png', 'Assets/Web/index.html', 'claude-mods/.claude-plugin/plugin.json')) {
         if (-not (Test-Path (Join-Path $OutputDirectory $required) -PathType Leaf)) { throw "배포 파일 누락: $required" }
     }
     $sdkVersion = (dotnet --version).Trim()

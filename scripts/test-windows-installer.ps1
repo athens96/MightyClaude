@@ -27,7 +27,7 @@ Write-Output "refused /DIR= elsewhere (exit $($refused.ExitCode))"
 
 $log = Join-Path ([IO.Path]::GetTempPath()) "mighty-setup-$([Guid]::NewGuid().ToString('N')).log"
 Invoke-Quiet $Setup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$log`"")
-foreach ($required in @('MightyClaude.exe', 'MightyClaude.dll', 'resources.pri', 'Microsoft.UI.Xaml.dll', 'Assets\MightyClaude.ico', 'claude-mods\.claude-plugin\plugin.json')) {
+foreach ($required in @('MightyClaude.exe', 'MightyClaude.dll', 'resources.pri', 'Microsoft.UI.Xaml.dll', 'Assets\MightyClaude.ico', 'Assets\Web\index.html', 'claude-mods\.claude-plugin\plugin.json')) {
     if (-not (Test-Path (Join-Path $installDirectory $required) -PathType Leaf)) { throw "setup did not install $required (log: $log)" }
 }
 $values = Get-ItemProperty $entry

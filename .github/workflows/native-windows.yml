@@ -25,6 +25,22 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: native/windows/web/package-lock.json
+      - name: Web UI — install, typecheck and unit tests
+        shell: pwsh
+        # The window is this page (native/windows/web); the .NET build below runs its npm run build into Assets/Web.
+        working-directory: native/windows/web
+        run: |
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { throw 'web typecheck failed' }
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw 'web unit tests failed' }
       - name: Locale gate — missing keys and touched-file Korean check
         shell: pwsh
         run: |
@@ -56,6 +72,10 @@ jobs:
         shell: pwsh
         timeout-minutes: 6
         run: ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-${{ matrix.architecture }}/MightyClaude.exe -ProfileDirectory "$env:RUNNER_TEMP/mighty-windows-smoke-${{ matrix.architecture }}"
+      - name: Launch the web shell with an isolated profile and check its smoke
+        shell: pwsh
+        timeout-minutes: 6
+        run: ./scripts/test-native-windows.ps1 -Web -Executable ./release/native-windows-${{ matrix.architecture }}/MightyClaude.exe -ProfileDirectory "$env:RUNNER_TEMP/mighty-windows-web-smoke-${{ matrix.architecture }}"
       - name: Install the setup program for this user, check it, and uninstall it
         shell: pwsh
         timeout-minutes: 6
@@ -85,4 +105,15 @@ jobs:
             ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/native-crash-events-error.txt
             ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/native-process.json
             ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/published-files.json
+          if-no-files-found: warn
+      - name: Upload the web shell smoke result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MightyClaude-windows-${{ matrix.architecture }}-web-smoke
+          path: |
+            ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/smoke-result.json
+            ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/*.log
+            ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/native-crash-events*.json
+            ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/native-process.json
           if-no-files-found: warn

@@ -2,7 +2,10 @@
 param(
     [Parameter(Mandatory = $true)][string]$Executable,
     [string]$ProfileDirectory = (Join-Path ([IO.Path]::GetTempPath()) "mighty-windows-smoke-$([Guid]::NewGuid().ToString('N'))"),
-    [ValidateRange(15, 600)][int]$TimeoutSeconds = 300
+    [ValidateRange(15, 600)][int]$TimeoutSeconds = 300,
+    # The web shell's smoke (MIGHTY_SMOKE_WEB=1, MainWindow.WebShell.cs) instead of the WinUI screens' smoke: only its
+    # smoke-result.json's passed is checked, since the WinUI checks below read keys only the WinUI smoke writes.
+    [switch]$Web
 )
 $ErrorActionPreference = 'Stop'
 # CI logs need a signed-in reader, check-run annotations do not. A failed run
@@ -34,6 +37,8 @@ $start.UseShellExecute = $false
 $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
 foreach ($argument in @('--smoke-test', '--smoke-exit', '--profile', $ProfileDirectory)) { $start.ArgumentList.Add($argument) }
+# The app writes ui-winui into the smoke profile unless MIGHTY_SMOKE_WEB=1 (Program.cs PrepareWebShellProfile).
+if ($Web) { $start.Environment['MIGHTY_SMOKE_WEB'] = '1' } else { [void]$start.Environment.Remove('MIGHTY_SMOKE_WEB') }
 $process = [Diagnostics.Process]::new()
 $process.StartInfo = $start
 $started = $false
@@ -57,6 +62,11 @@ try {
         $trace = @("$($result.exception)" -split "`n" | Select-Object -First 8) -join "`n"
         Write-SmokeAnnotation "ExitCode=$($process.ExitCode)`nphase: $($result.phase) [$($result.stepState)]`nerror: $($result.error)`ntype: $($result.exceptionType)`npassed before it: $reached`n$trace"
         throw "GUI 검증 실패: ExitCode=$($process.ExitCode), 결과: $resultPath"
+    }
+    if ($Web) {
+        if ($result.webShell -ne $true) { Write-SmokeAnnotation 'The web smoke ran without the web shell (no WebView2 runtime?)'; throw "웹 셸 검증이 웹 셸 없이 실행됐습니다: $resultPath" }
+        Write-Output "Windows web shell PASS: $resultPath"
+        return
     }
     foreach ($key in @('exifOrientation', 'svgRaster', 'tiffRaster')) {
         if ($result.agentImages.$key -ne $true) { throw "Windows native image smoke failed: agentImages.$key" }
