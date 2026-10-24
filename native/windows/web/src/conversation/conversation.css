@@ -1,5 +1,5 @@
 /* The conversation (spec §2, AgentTranscript.cs). Sizes are the WinUI transcript's; every colour is a design token. */
-.conversation { position: relative; flex: 1; min-height: 0; overflow-y: auto; background: var(--card-raised); user-select: text; }
+.conversation { position: relative; flex: 1; min-height: 0; overflow-y: auto; background: var(--card-raised); user-select: text; font-family: var(--font-transcript, var(--font-body)); }
 /* Every row is measured with its own spacing, the same wherever it stands; the inline padding stands in for rows not drawn. */
 .conversation-body { margin: var(--inset-transcript) 0; padding-left: var(--inset-transcript); padding-right: var(--inset-transcript); }
 .entry-row { padding: var(--space-xs) 0; display: flow-root; }

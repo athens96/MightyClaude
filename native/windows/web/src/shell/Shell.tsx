@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKe
 import { useServices, useStoreState } from '../app/context';
 import { Dashboard, EmptyPanes, Welcome } from '../dashboard/Dashboard';
 import { Dialogs } from '../dialogs/Dialogs';
+import { Surfaces } from '../native/Surfaces';
 import { Layout } from '../layout/Layout';
 import { layoutMetrics } from '../layout/geometry';
 import { Banners, StatusBar, WorkspaceHeader } from './Chrome';
@@ -109,7 +110,7 @@ export function Shell({ snapshot }: { snapshot: AppSnapshot | null }) {
     if (!selected) return;
     document.querySelector('.sidebar [data-session-id="' + selected.paneId + '"]')?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
-  useShortcuts(snapshot, state.dialogs.length > 0 || (shell?.dialogOpen ?? false));
+  useShortcuts(snapshot, state.dialogs.length > 0 || state.natives.length > 0 || (shell?.dialogOpen ?? false));
   if (!snapshot || !shell) return <div className="shell-loading" data-testid="loading">{t('launch.preparing')}</div>;
   const collapsed = snapshot.sidebarCollapsed;
   const width = live ?? snapshot.sidebarWidth;
@@ -133,6 +134,7 @@ export function Shell({ snapshot }: { snapshot: AppSnapshot | null }) {
           <StatusBar shell={shell} usageOpen={usageOpen} setUsageOpen={closeUsage} />
         </div>
       </div>
+      <Surfaces />
       <Dialogs />
     </MenuHost>
   );

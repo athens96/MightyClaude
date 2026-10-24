@@ -22,6 +22,7 @@ public sealed partial class MainWindow
     {
         // Asked for again while it is open, the settings window comes forward.
         if (settingsWindow is { } open) { open.Activate(); return; }
+        if (webShell is not null) { await ShowWebSettingsAsync(); return; }
         if (dialogOpen) return;
         dialogOpen = true;
         try
@@ -141,6 +142,7 @@ public sealed partial class MainWindow
     /// </summary>
     private bool SelectSettingsCategory(string id)
     {
+        if (SelectWebSettingsCategory(id)) return true;
         if (settingsWindow is not { } open || settingsNavigation is not { } navigation) return false;
         if (navigation.Items.OfType<ListViewItem>().FirstOrDefault(item => item.Tag is SettingsCategory { Id: var category } && category == id) is { } row) navigation.SelectedItem = row;
         open.Activate();

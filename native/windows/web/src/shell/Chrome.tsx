@@ -143,6 +143,20 @@ export function StatusBar({ shell, usageOpen, setUsageOpen }: { shell: ShellMode
           </button>
         </>
       )}
+      {shell.companion && (
+        <span className="status-companion">
+          <button type="button" className={'status-paw' + (shell.companion.petOn ? ' on' : '')} aria-pressed={shell.companion.petOn} aria-label={shell.companion.petLabel || undefined}
+            title={shell.companion.petHelp ?? shell.companion.petLabel} data-testid="companion-toggle" onClick={() => call('companionToggle')}>
+            <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><g fill={shell.companion.petOn ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.1"><ellipse cx="8" cy="11" rx="3.4" ry="2.8" /><circle cx="3.6" cy="7" r="1.5" /><circle cx="12.4" cy="7" r="1.5" /><circle cx="6" cy="3.6" r="1.5" /><circle cx="10" cy="3.6" r="1.5" /></g></svg>
+          </button>
+          <button type="button" className="status-capsule" aria-label={shell.companion.statusLabel} title={shell.companion.statusLabel} data-testid="companion-status" onClick={() => call('companionStatus')}>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">{shell.companion.busy
+              ? <polyline points="0,6 1.85,6 2.3,4.2 3.08,8.75 4.06,2.35 4.98,11.1 5.94,0.4 6.92,11.1 7.85,2.35 8.83,8.75 9.78,4.2 10.2,6 12,6" fill="none" stroke="currentColor" strokeWidth="0.8" strokeLinejoin="round" />
+              : <g fill="none" stroke="currentColor"><circle cx="3.1" cy="3.1" r="2.2" /><circle cx="8.9" cy="3.1" r="2.2" /><circle cx="3.1" cy="8.9" r="2.2" /><circle cx="8.9" cy="8.9" r="2.2" /></g>}</svg>
+            {shell.companion.count && <span>{shell.companion.count}</span>}
+          </button>
+        </span>
+      )}
       {usageOpen && shell.usage && <UsagePopover usage={shell.usage} onClose={() => setUsageOpen(false)} />}
     </footer>
   );

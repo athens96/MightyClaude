@@ -506,7 +506,7 @@ public sealed partial class MainWindow
             CloseButtonText = Locale.Get("settings.toolkit.cancelButton"),
             XamlRoot = SettingsXamlRoot,
         });
-        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ShowDialogAsync(confirm) != ContentDialogResult.Primary) return;
 
         HoldToolkit(true, store);
         try
@@ -923,7 +923,7 @@ public sealed partial class MainWindow
             CloseButtonText = CliAccountStrings.ButtonCancel,
             XamlRoot = SettingsXamlRoot,
         });
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
         RequireIdleAccount(provider);
         accountChanges.TryAdd(provider, 0);
         CliAccountStatus after;
@@ -1020,7 +1020,7 @@ public sealed partial class MainWindow
     {
         RequireIdleAccount("claude");
         var dialog = StyledDialog(new ContentDialog { Title = Locale.Get("settings.cliAccounts.resetBedrockButton"), Content = new TextBlock { Text = Locale.Get("settings.cliAccounts.resetBedrockConfirm"), TextWrapping = TextWrapping.Wrap }, PrimaryButtonText = Locale.Get("settings.cliAccounts.resetBedrockButton"), CloseButtonText = CliAccountStrings.ButtonCancel, XamlRoot = SettingsXamlRoot });
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
         RequireIdleAccount("claude");
         var environment = await CliEnvironment.RefreshAsync(true);
         if (closing) return;

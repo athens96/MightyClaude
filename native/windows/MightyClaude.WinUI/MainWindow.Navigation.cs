@@ -404,7 +404,7 @@ public sealed partial class MainWindow
         Button Choice(string words, string id, ContentDialogResult answer, int column)
         {
             var button = new Button { Content = words, TextSize = DesignMetrics.Type.Body };
-            button.Click += (_, _) => { picked = answer; sheet?.Hide(); };
+            button.Click += (_, _) => { picked = answer; HideDialog(sheet); };
             AutomationProperties.SetAutomationId(button, id); Grid.SetColumn(button, column);
             return button;
         }
@@ -436,7 +436,7 @@ public sealed partial class MainWindow
         field.RegisterPropertyChangedCallback(TextBox.TextProperty, (_, _) => Validate());
         Validate();
         // Return in the field saves, as the Mac's onSubmit and default action do (M/RenameViews.swift:35, 54).
-        field.KeyDown += (_, args) => { if (args.Key != VirtualKey.Enter || !save.IsEnabled) return; args.Handled = true; picked = ContentDialogResult.Primary; dialog.Hide(); };
+        field.KeyDown += (_, args) => { if (args.Key != VirtualKey.Enter || !save.IsEnabled) return; args.Handled = true; picked = ContentDialogResult.Primary; HideDialog(dialog); };
         dialog.Opened += (_, _) => { field.Focus(FocusState.Programmatic); field.SelectAll(); };
         dialogOpen = true;
         try
@@ -444,7 +444,7 @@ public sealed partial class MainWindow
             // A smoke driver answers in the buttons' place.
             var result = smokeAskName is { } driver
                 ? await driver(dialog, field, errors)
-                : await dialog.ShowAsync();
+                : await ShowDialogAsync(dialog);
             if (result == ContentDialogResult.None) result = picked;
             if (offerAutomatic && result == ContentDialogResult.Secondary) return (true, null);
             return (false, result == ContentDialogResult.Primary ? RenameSupport.DisplayName(field.Text) : null);

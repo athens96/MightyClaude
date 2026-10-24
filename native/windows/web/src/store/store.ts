@@ -8,6 +8,7 @@ import { applyMighty, type MightyPane } from '../mighty/types';
 import { applySessionDelta, type SessionDelta } from './delta';
 import type { AgentActivity, AppSnapshot, RunEvent, RunSession, ToolPermissionRequest } from './models';
 import type { OpenDialog, ShellModel } from '../shell/types';
+import { applyNative, type NativeOpen, type TextSetting } from '../native/types';
 
 export interface StoreState {
   snapshot: AppSnapshot | null;
@@ -27,6 +28,10 @@ export interface StoreState {
   shell: ShellModel | null;
   /** The dialogs the host's flows asked the page to draw, oldest first. */
   dialogs: readonly OpenDialog[];
+  /** The host's WinUI views drawn by the page (Settings, setup, sheets, dialogs, the companion popover), oldest first. */
+  natives: readonly NativeOpen[];
+  /** The text setting the page's sizes and families follow; undefined until the host says. */
+  text?: TextSetting;
   /** A pane the page made active before the host's state says so (a tab or row click), so the switch draws at once. */
   chosen?: string;
   /** Counts the host's `select` pushes (a notification's click), so the same pane twice still scrolls into view. */
@@ -48,7 +53,7 @@ export interface ChooseMessage {
 
 export type StoreMessage = PushMessage | FillMessage | ChooseMessage;
 
-export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {}, mighty: {}, shell: null, dialogs: [] };
+export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {}, mighty: {}, shell: null, dialogs: [], natives: [] };
 
 /** A choice the host's state has caught up with is forgotten. */
 function settle(state: StoreState): StoreState {
@@ -145,6 +150,10 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
         ...state,
         dialogs: state.dialogs.map((open) => (open.id === message.id && open.dialog.type === 'resumeChoice' ? { id: open.id, dialog: { ...open.dialog, checking: message.checking } } : open)),
       };
+    case 'native':
+      return { ...state, natives: applyNative(state.natives, message) };
+    case 'text':
+      return { ...state, text: { scale: message.scale, family: message.family, transcriptFamily: message.transcriptFamily, codeFamily: message.codeFamily } };
     case 'select':
       return { ...state, selected: { paneId: message.paneId, seq: (state.selected?.seq ?? 0) + 1 } };
     case 'choose':

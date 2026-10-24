@@ -160,6 +160,8 @@ export interface ShellModel {
   status: StatusModel;
   usage?: UsageDetails;
   setupNeeded: boolean;
+  /** The status bar's pet paw and agent status capsule (MainWindow.CompanionControls.cs). */
+  companion?: { petOn: boolean; petLabel: string; petHelp?: string | null; busy: boolean; count?: string | null; statusLabel: string } | null;
 }
 
 export interface AddMenuEntry {

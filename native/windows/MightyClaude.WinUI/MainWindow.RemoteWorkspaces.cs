@@ -504,7 +504,7 @@ public sealed partial class MainWindow
                 {
                     // Listed in the sidebar and made active, Settings closes and a workspace with no pane gets a Claude pane (M openRemoteWorkspace, addWorkspace).
                     var workspace = await service.OpenRemoteWorkspaceAsync(connection.Id, hosted.Id);
-                    settingsWindow?.Close();
+                    settingsWindow?.Close(); CloseWebSettings();
                     HideDashboard(); Render();
                     if (!service.Snapshot.Sessions.Any(s => s.WorkspaceId == workspace.Id)) await AddPane("claude");
                 })), SettingsControlSize.Small);

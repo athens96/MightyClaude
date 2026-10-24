@@ -212,7 +212,7 @@ export function Sidebar() {
         <button type="button" className="icon-button" title={t('menu.help')} aria-label={t('menu.help')} onClick={() => call('openHelp')}>?</button>
         <button type="button" className="icon-button" title={t('sidebar.toggleTheme')} aria-label={t('sidebar.toggleTheme')} data-testid="theme-toggle"
           onClick={() => call('setTheme', { theme: snapshot.theme === 'light' ? 'dark' : 'light' })}>{snapshot.theme === 'light' ? '☾' : '☀'}</button>
-        <button type="button" className="icon-button" title={t('settings.settingsWindowTitle')} aria-label={t('settings.settingsWindowTitle')} onClick={() => call('openSettings')}>
+        <button type="button" className="icon-button" title={t('settings.settingsWindowTitle')} aria-label={t('settings.settingsWindowTitle')} data-testid="sidebar-settings" onClick={() => call('openSettings')}>
           <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.2" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" strokeWidth="1.2" /></svg>
         </button>
       </footer>

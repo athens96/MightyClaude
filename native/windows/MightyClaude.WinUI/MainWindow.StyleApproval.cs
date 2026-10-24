@@ -106,7 +106,7 @@ public sealed partial class MainWindow
         var footer = new Grid { Padding = new Thickness(StyleApprovalInset, StyleApprovalEdge, StyleApprovalInset, StyleApprovalEdge), ColumnSpacing = DesignMetrics.Spacing.Sm };
         footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         footer.Children.Add(message);
-        var dismiss = SettingsPush(Button(readOnly ? Locale.Get("settings.closeButton") : Locale.Get("guidedPanel.cancelButton"), () => { dialog.Hide(); return Task.CompletedTask; }));
+        var dismiss = SettingsPush(Button(readOnly ? Locale.Get("settings.closeButton") : Locale.Get("guidedPanel.cancelButton"), () => { HideDialog(dialog); return Task.CompletedTask; }));
         AutomationProperties.SetAutomationId(dismiss, "style-approval-dismiss");
         Grid.SetColumn(dismiss, 1); footer.Children.Add(dismiss);
         if(!readOnly)
@@ -126,7 +126,7 @@ public sealed partial class MainWindow
                     }
                     return;
                 }
-                approved = true; dialog.Hide();
+                approved = true; HideDialog(dialog);
             })), prominent: true);
             allow.IsEnabled = false;
             AutomationProperties.SetAutomationId(allow, "style-approval-allow");
@@ -144,7 +144,7 @@ public sealed partial class MainWindow
         StyledDialog(dialog, StyleApprovalWidth, StyleApprovalHeight);
         // Enter and Space dismiss unless another control was chosen; Esc always does.
         dialog.Opened += (_,_) => dismiss.Focus(FocusState.Programmatic);
-        await dialog.ShowAsync();
+        await ShowDialogAsync(dialog);
         if(!approved||readOnly)return false;
         if(onApprove is not null)await onApprove(); else await ApproveStyle(style);
         return true;

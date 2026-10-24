@@ -122,6 +122,7 @@ public sealed partial class MainWindow
         setupFocus = focus;
         if (focus is not null && setupCatalog?.Item(focus) is { } item && SetupRows.IsSelectable(SetupStateOf(item), item)) setupSelection.Add(focus);
         if (setupWindow is { } open) { RedrawSetup(); open.Activate(); return; }
+        if (webShell is not null) { ShowWebSetup(); return; }
         var frame = new Grid { RequestedTheme = root.RequestedTheme, Language = WindowLanguage(), Background = WindowBackground(), KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden, Padding = new Thickness(DesignMetrics.Inset.Sheet), RowSpacing = DesignMetrics.Spacing.Md };
         foreach (var height in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) frame.RowDefinitions.Add(new() { Height = height });
         var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
@@ -416,7 +417,7 @@ public sealed partial class MainWindow
     private async Task RequestSetupInstall(XamlRoot? xamlRoot)
     {
         if (SetupRunning || RefuseSetupWhenElevated() || BuildSetupConfirmation(xamlRoot, out var steps) is not { } dialog) return;
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
         await StartSetupInstall(steps);
     }
 

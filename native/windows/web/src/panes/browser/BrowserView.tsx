@@ -39,7 +39,7 @@ export function BrowserView({ session }: { session: RunSession }) {
     const measure = () => {
       frame = 0;
       const current = store.getState();
-      const blocked = current.dialogs.length > 0 || (current.shell?.dialogOpen ?? false);
+      const blocked = current.dialogs.length > 0 || current.natives.length > 0 || (current.shell?.dialogOpen ?? false);
       const next = slotBounds(element.getBoundingClientRect(), window.devicePixelRatio || 1, shown && !blocked && element.isConnected);
       if (sameBounds(last, next)) return;
       last = next;
@@ -49,11 +49,11 @@ export function BrowserView({ session }: { session: RunSession }) {
     const observer = new ResizeObserver(schedule);
     observer.observe(element);
     observer.observe(document.documentElement);
-    // Only the frame's model and the dialogs move or cover the slot; a streamed reply elsewhere does not.
+    // Only the frame's model, the dialogs and the host's views move or cover the slot; a streamed reply elsewhere does not.
     let seen = store.getState();
     const unsubscribe = store.subscribe(() => {
       const current = store.getState();
-      if (current.shell !== seen.shell || current.dialogs !== seen.dialogs || current.chosen !== seen.chosen) schedule();
+      if (current.shell !== seen.shell || current.dialogs !== seen.dialogs || current.natives !== seen.natives || current.chosen !== seen.chosen) schedule();
       seen = current;
     });
     window.addEventListener('resize', schedule);

@@ -113,7 +113,7 @@ public sealed partial class MainWindow
                     var remove = SettingsPush(Button(Locale.Get("settings.styles.removeButton"), () => Act(async () =>
                     {
                         var confirm = StyledDialog(new ContentDialog { Title = Locale.Get("settings.styles.removeButton"), Content = new TextBlock { Text = style.Path, TextWrapping = TextWrapping.Wrap }, XamlRoot = SettingsXamlRoot, PrimaryButtonText = Locale.Get("settings.styles.removeButton"), CloseButtonText = Locale.Get("guidedPanel.cancelButton"), DefaultButton = ContentDialogButton.Close });
-                        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+                        if (await ShowDialogAsync(confirm) != ContentDialogResult.Primary) return;
                         await Task.Run(() =>
                         {
                             if (!StyleRegistry.Unchanged(style)) throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
@@ -363,7 +363,7 @@ public sealed partial class MainWindow
             if(current.Runnable(style.Id,style.Hash)==null)throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
             var actual=StyleRunPermissions.InstallCommand(command,PseudoTerminal.DefaultShell);
             var confirm=owner.StyledDialog(new ContentDialog{Title=Locale.Get("guidedPanel.installButton"),Content=new TextBox{Text=actual,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,AcceptsReturn=true},XamlRoot=owner.root.XamlRoot,PrimaryButtonText=Locale.Get("guidedPanel.installButton"),CloseButtonText=Locale.Get("guidedPanel.cancelButton"),DefaultButton=ContentDialogButton.Close});
-            if(await confirm.ShowAsync()!=ContentDialogResult.Primary)return;
+            if(await owner.ShowDialogAsync(confirm)!=ContentDialogResult.Primary)return;
             if(!StyleRegistry.Unchanged(style)||Session.MightyStyle!=style.Id||Session.MightyStyleHash!=style.Hash||owner.service.Snapshot.ActiveWorkspaceId!=Session.WorkspaceId)
                 throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
             var approved=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,folder));
