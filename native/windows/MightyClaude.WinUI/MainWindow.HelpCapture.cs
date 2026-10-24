@@ -35,9 +35,10 @@ public sealed partial class MainWindow
     }
 
     /// <summary>What one screen shows: the element to cut out (null: the whole page) and how to put things back.</summary>
-    private sealed record HelpTarget(string? Clip = null, Func<Task>? Cleanup = null);
+    private sealed record HelpTarget(string? Clip = null, Func<Task>? Cleanup = null, Func<string, Task>? Save = null);
 
-    private static readonly string[] HelpKnownScreens = ["welcome", "overview", "sidebar-collapsed", "dashboard", "agent-basic", "agent-mighty", "composer", "session-info", "plan-card", "question-card", "permission-card", "terminal-pane", "files-pane"];
+    private static readonly string[] HelpKnownScreens = ["welcome", "overview", "sidebar-collapsed", "dashboard", "agent-basic", "agent-mighty", "agent-mighty-overview", "agent-timeline", "agent-structure", "result-card", "composer", "composer-settings", "session-info", "plan-card", "plan-document", "question-card", "permission-card", "background-work", "terminal-pane", "files-pane", "companion-pet",
+        "resume-choice", "resume-list", "settings-general", "settings-models", "settings-styles", "settings-tools", "settings-cli", "settings-mobile", "settings-companion", "settings-about"];
 
     private async Task RunHelpCapture()
     {
@@ -171,6 +172,7 @@ public sealed partial class MainWindow
             demo.Panes[role] = session.Id; sessions.Add(session);
         }
         var firstWorkspace = demo.Workspaces[(string?)profile["activeWorkspace"] ?? ""];
+        await WriteHelpResumeRecords(demo, directory);
         // The shell pane is a real terminal, as the Mac's is; no status line runs the user's own command into a picture.
         smokeTerminalEnabled = true;
         await service.UpdateAsync(s => s with { StatusLineEnabled = false, Sessions = [.. s.Sessions, .. sessions], ActiveWorkspaceId = firstWorkspace, ActiveSessionId = sessions[0].Id, ExpandedWorkspaceIds = [.. demo.Workspaces.Values] });
@@ -228,6 +230,37 @@ public sealed partial class MainWindow
         await HelpSelect(demo);
         try { await PrepareHelpTerminal(demo, core); } catch (Exception ex) when (ex is not OutOfMemoryException) { demo.TerminalProblem = ex.Message; }
         return demo;
+    }
+
+    /// <summary>
+    /// The Claude session records "continue a session" lists, as the Mac's capture writes them (HelpDemoRecords.claudeLines): each
+    /// record's requests, each answered, the last <c>minutesAgo</c> back, under a history home in the profile that this process
+    /// alone reads (<see cref="PaneView.HistoryHomeOverride"/>), so the user's own records never show.
+    /// </summary>
+    private async Task WriteHelpResumeRecords(HelpDemo demo, string directory)
+    {
+        var home = Path.Combine(directory, "help-demo", "home");
+        var now = DateTimeOffset.UtcNow;
+        foreach (var record in (demo.Profile["resumeSessions"]?.AsArray() ?? []).OfType<JsonObject>().Where(r => (string?)r["provider"] == "claude"))
+        {
+            var workspace = service.Snapshot.Workspaces.First(w => w.Id == demo.Workspaces[HelpText(record["workspace"])]);
+            var folder = Path.Combine(home, ".claude", "projects", SessionHistory.ClaudeProjectFolder(workspace.Path));
+            Directory.CreateDirectory(folder);
+            var id = HelpText(record["sessionId"]); var title = HelpText(record["title"]);
+            var modified = now.AddMinutes(-(record["minutesAgo"]?.GetValue<double>() ?? 0));
+            var count = Math.Max(1, record["requests"]?.GetValue<int>() ?? 1);
+            var lines = new List<string>();
+            for (var index = 0; index < count; index++)
+            {
+                var stamp = modified.AddSeconds((index - count) * 90).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+                lines.Add(new JsonObject { ["cwd"] = workspace.Path, ["message"] = new JsonObject { ["content"] = title, ["role"] = "user" }, ["sessionId"] = id, ["timestamp"] = stamp, ["type"] = "user", ["uuid"] = $"u{index}-{id}" }.ToJsonString());
+                lines.Add(new JsonObject { ["cwd"] = workspace.Path, ["message"] = new JsonObject { ["content"] = new JsonArray(new JsonObject { ["text"] = title, ["type"] = "text" }), ["model"] = "claude-sonnet-5-5", ["role"] = "assistant" }, ["sessionId"] = id, ["timestamp"] = stamp, ["type"] = "assistant", ["uuid"] = $"a{index}-{id}" }.ToJsonString());
+            }
+            var file = Path.Combine(folder, id + ".jsonl");
+            await File.WriteAllTextAsync(file, string.Join("\n", lines) + "\n");
+            File.SetLastWriteTimeUtc(file, modified.UtcDateTime);
+        }
+        PaneView.HistoryHomeOverride = home;
     }
 
     /// <summary>
@@ -305,7 +338,15 @@ public sealed partial class MainWindow
                 if (!await HelpUntil(core, "document.documentElement.dataset.theme === " + JsonSerializer.Serialize(theme), 10)) throw new InvalidOperationException("the page did not take the " + theme + " theme");
                 await Task.Delay(700);
                 if (error.Text is { Length: > 0 } message) { value["clearedError"] = message; error.Text = ""; Render(); await Task.Delay(300); }
-                var (width, height) = await HelpSave(core, target.Clip, Path.Combine(output, $"{(string?)shot["id"]}-{theme}.png"));
+                var file = Path.Combine(output, $"{(string?)shot["id"]}-{theme}.png");
+                if (target.Save is { } save) await save(file);
+                var (width, height) = target.Save is null ? await HelpSave(core, target.Clip, file) : HelpPngSize(await File.ReadAllBytesAsync(file));
+                // MIGHTY_HELP_DOM=1 keeps the shot's markup beside its picture, for comparing a screen's layout with the Mac's.
+                if (Environment.GetEnvironmentVariable("MIGHTY_HELP_DOM") == "1")
+                {
+                    var markup = await core.ExecuteScriptAsync("(document.querySelector(" + JsonSerializer.Serialize(target.Clip ?? "body") + ") ?? document.body).outerHTML");
+                    await File.WriteAllTextAsync(Path.Combine(output, $"{(string?)shot["id"]}-{theme}.html"), JsonSerializer.Deserialize<string>(markup) ?? "");
+                }
                 value["pixelWidth"] = width; value["pixelHeight"] = height;
             }
             catch (Exception ex) when (ex is not OutOfMemoryException) { value["status"] = "failed"; value["error"] = ex.Message; }
@@ -338,16 +379,40 @@ public sealed partial class MainWindow
                 if (!await HelpUntil(core, "!!document.querySelector('[data-testid=dashboard]')", 10)) throw new InvalidOperationException("the dashboard did not open");
                 await Task.Delay(500);
                 return new(Cleanup: () => { HideDashboard(); RenderSidebar(); return Task.CompletedTask; });
-            case "agent-basic" or "agent-mighty" or "composer" or "plan-card" or "question-card" or "permission-card" or "terminal-pane":
+            case "agent-basic" or "agent-mighty" or "agent-mighty-overview" or "agent-timeline" or "agent-structure" or "result-card" or "composer" or "plan-card" or "question-card" or "permission-card" or "background-work" or "terminal-pane":
             {
-                var role = screen switch { "agent-basic" => "codex", "plan-card" => "plan", "question-card" => "question", "permission-card" => "permission", "terminal-pane" => "shell", _ => "mighty" };
+                var role = screen switch { "agent-basic" => "codex", "plan-card" => "plan", "question-card" => "question", "permission-card" => "permission", "terminal-pane" => "shell", "result-card" => "result", _ => "mighty" };
                 var id = demo.Pane(role);
                 CheckHelpScreen(screen, id, demo);
+                // As the Mac's capture: the timeline or the structure view, or the Default view while the background work runs.
+                var view = screen switch { "agent-timeline" => "timeline", "agent-structure" => "structure", _ => null };
+                if (view is not null || screen == "background-work")
+                    await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { GraphViewMode = view ?? p.GraphViewMode, AgentViewMode = screen == "background-work" ? "default" : p.AgentViewMode } : p).ToList() });
                 await SelectLayoutSession(id); await ApplyLayoutPreset("focus");
-                // The diagram aims at the next-request block while a draft is typed; the Mac's capture empties it for this screen.
-                if (screen == "agent-mighty") { await Task.Delay(400); await HelpDraft(id, ""); }
-                await Task.Delay(screen == "agent-mighty" ? 1500 : 900);
+                // The diagram aims at the next-request block while a draft is typed; the Mac's capture empties it for the screens that show the requests.
+                var showsRequests = screen is "agent-mighty" or "agent-mighty-overview" or "agent-timeline" or "agent-structure" or "background-work";
+                if (showsRequests) { await Task.Delay(400); await HelpDraft(id, ""); }
+                Render();
+                await Task.Delay(showsRequests || screen == "result-card" ? 1500 : 900);
                 return new();
+            }
+            case "composer-settings":
+            {
+                var id = demo.Pane("mighty");
+                await SelectLayoutSession(id); await ApplyLayoutPreset("focus"); await Task.Delay(600);
+                if (!await HelpTrue(core, "(() => { const b = document.querySelector('.pane-slot.active:not(.hidden) [data-pill=more]'); if (!b) return false; b.click(); return true; })()")) throw new InvalidOperationException("the pane has no run settings button");
+                if (!await HelpUntil(core, "!!document.querySelector('[data-testid=run-settings]')", 6)) throw new InvalidOperationException("the run settings did not open");
+                await Task.Delay(500);
+                return new("[data-testid=run-settings]", async () => { await core.ExecuteScriptAsync("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))"); await Task.Delay(200); });
+            }
+            case "plan-document":
+            {
+                var id = demo.Pane("plan");
+                await SelectLayoutSession(id); await ApplyLayoutPreset("focus"); await Task.Delay(800);
+                if (!await HelpUntil(core, "(() => { const b = document.querySelector('.pane-slot.active:not(.hidden) [data-answer=plan-expand]'); if (!b) return false; b.click(); return true; })()", 6)) throw new InvalidOperationException("the plan card has no expand button");
+                if (!await HelpUntil(core, "!!document.querySelector('[data-testid=plan-document]')", 6)) throw new InvalidOperationException("the plan document did not open");
+                await Task.Delay(500);
+                return new("[data-testid=plan-document]", async () => { await core.ExecuteScriptAsync("document.querySelector('[data-testid=plan-document-close]')?.click()"); await Task.Delay(200); });
             }
             case "session-info":
             {
@@ -357,6 +422,47 @@ public sealed partial class MainWindow
                 if (!await HelpUntil(core, "!!document.querySelector('[data-testid=session-info]')", 6)) throw new InvalidOperationException("the session details did not open");
                 await Task.Delay(500);
                 return new("[data-testid=session-info]", async () => { await core.ExecuteScriptAsync("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))"); await Task.Delay(200); });
+            }
+            case "settings-general" or "settings-models" or "settings-styles" or "settings-tools" or "settings-cli" or "settings-mobile" or "settings-companion" or "settings-about":
+            {
+                // As the Mac's: the saved category, then Settings opened; the sheet alone is the picture.
+                var category = screen["settings-".Length..];
+                await service.UpdateAsync(s => s with { SettingsPane = category });
+                if (!SelectWebSettingsCategory(category)) _ = ShowWebSettingsAsync();
+                if (!await HelpUntil(core, "!!document.querySelector('[data-testid=settings-form][data-category=" + category + "]')", 10)) throw new InvalidOperationException("Settings did not open on " + category);
+                await Task.Delay(900);
+                return new("[data-testid=native-settings]", async () => { CloseWebSettings(); await Task.Delay(300); });
+            }
+            case "resume-choice" or "resume-list":
+            {
+                // Add Pane → Claude in the active workspace, which has earlier sessions: the choice, and for the list its Continue.
+                await HelpSelect(demo);
+                _ = WebAddAgentPane("claude", null);
+                if (!await HelpUntil(core, "!!document.querySelector('[data-testid=resume-choice-resume]:not([disabled])')", 10)) throw new InvalidOperationException("the resume choice did not open");
+                if (screen == "resume-list")
+                {
+                    await core.ExecuteScriptAsync("document.querySelector('[data-testid=resume-choice-resume]')?.click()");
+                    if (!await HelpUntil(core, "document.querySelectorAll('[data-testid=resume-rows] .resume-row').length > 0", 10)) throw new InvalidOperationException("the session list shows no record");
+                }
+                await Task.Delay(600);
+                return new("[data-testid=dialog] .sheet", async () =>
+                {
+                    await core.ExecuteScriptAsync("document.querySelector('[data-testid=dialog] .sheet')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+                    await Task.Delay(400);
+                });
+            }
+            case "companion-pet":
+            {
+                // The pet is its own window (CompanionOverlay), not the page: its picture is the one it last put on screen, with the
+                // permission pane's approval in its bubble as the Mac's capture focuses it (store.companion.focus).
+                var id = demo.Pane("permission");
+                // A capture, as a smoke, starts without the pet; it comes up here, in the profile's own preferences.
+                await InitializeCompanionAsync();
+                if (!await HelpWait(() => companionOverlay is not null, 10) || !companionPreferences.Enabled) throw new InvalidOperationException("the pet is not shown");
+                companionPinned = id; RefreshCompanion();
+                await Task.Delay(1200);
+                return new(Cleanup: () => { companionPinned = null; RefreshCompanion(); return Task.CompletedTask; },
+                    Save: async path => { RefreshCompanion(); DrawCompanion(); await Task.Delay(300); if (companionOverlay is not { } pet || !await pet.SavePicture(path)) throw new InvalidOperationException("the pet has no picture"); });
             }
             case "files-pane":
             {
@@ -402,8 +508,10 @@ public sealed partial class MainWindow
         var session = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) ?? throw new InvalidOperationException("the pane is missing");
         switch (screen)
         {
-            case "agent-mighty" when session.AgentViewMode != "mighty" || session.GraphRuns?.Any(r => r.Status == "completed") != true:
+            case "agent-mighty" or "agent-mighty-overview" or "agent-timeline" or "agent-structure" or "result-card" when session.AgentViewMode != "mighty" || session.GraphRuns?.Any(r => r.Status == "completed") != true:
                 throw new InvalidOperationException("the Mighty pane has no finished request");
+            case "background-work" when session.BackgroundWork?.WaitingOnBackground != true:
+                throw new InvalidOperationException("the pane has no background work");
             case "terminal-pane" when demo.TerminalProblem is { } problem:
                 throw new InvalidOperationException("the terminal is not ready: " + problem);
         }
@@ -440,9 +548,12 @@ public sealed partial class MainWindow
             bytes = Convert.FromBase64String(result.RootElement.GetProperty("data").GetString() ?? "");
         }
         await File.WriteAllBytesAsync(path, bytes);
-        // PNG: the width and height are the IHDR's first two big-endian words.
-        return bytes.Length > 24 ? ((bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19], (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23]) : (0, 0);
+        return HelpPngSize(bytes);
     }
+
+    /// <summary>A PNG's width and height: the IHDR's first two big-endian words.</summary>
+    private static (int Width, int Height) HelpPngSize(byte[] bytes) =>
+        bytes.Length > 24 ? ((bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19], (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23]) : (0, 0);
 
     private static async Task<bool> HelpTrue(CoreWebView2 core, string script) => await core.ExecuteScriptAsync(script) == "true";
 

@@ -5,12 +5,17 @@
 .native-frame { display: contents; }
 .native-settings { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); border-radius: var(--radius-pane); overflow: hidden; background: var(--card); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); }
 .native-settings-head { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-lg); border-bottom: var(--stroke-line) solid var(--line); }
-.native-settings-gear { font-size: calc(21px * var(--text-scale, 1)); color: var(--accent); width: 31px; text-align: center; }
-.native-close { width: 17px; height: 17px; border: 0; border-radius: 50%; padding: 0; background: var(--ink3); color: var(--card); font-size: 13px; line-height: 17px; cursor: pointer; }
+/* M/SettingsViews.swift: the gear in the accent, the title in the heading font at 17 over the platform line, a 17pt grey close disc. */
+.native-settings-gear { display: inline-grid; place-items: center; width: 31px; color: var(--accent); }
+.native-settings-title { margin: 0; font-family: var(--font-heading); font-size: 17px; font-weight: 700; }
+.native-settings-subtitle { font-size: 11px; color: var(--ink2); }
+.native-close { display: inline-grid; place-items: center; width: 17px; height: 17px; border: 0; border-radius: 50%; padding: 0; background: var(--ink3); color: var(--card); cursor: pointer; }
 .native-settings-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: 0; }
 .native-settings-nav { display: flex; flex-direction: column; padding: var(--space-md); overflow: auto; background: var(--sidebar); border-right: var(--stroke-line) solid var(--line); }
 .native-nav-row { display: flex; align-items: center; gap: var(--space-xs); height: 30px; padding: 0 var(--space-sm); border: 0; border-radius: var(--radius-file-row); background: none; color: var(--ink); font: inherit; font-size: var(--type-title); text-align: left; cursor: pointer; }
 .native-nav-row .native-glyph { width: 18px; color: var(--accent); text-align: center; }
+.native-nav-symbol { display: inline-grid; place-items: center; width: 20px; margin-right: var(--space-xs); color: var(--ink); }
+.native-nav-row.selected .native-nav-symbol { color: var(--on-accent); }
 .native-nav-row:hover { background: var(--subtle); }
 .native-nav-row.selected { background: var(--accent); color: var(--on-accent); }
 .native-nav-row.selected .native-glyph { color: var(--on-accent); }
@@ -18,6 +23,9 @@
 .native-settings-foot { display: flex; padding: var(--space-lg); border-top: var(--stroke-line) solid var(--line); }
 .native-section { display: flex; flex-direction: column; gap: var(--space-sm); }
 .native-section-title { display: flex; align-items: center; gap: var(--space-sm); margin: 0 var(--space-md); font-size: var(--type-title); font-weight: 600; }
+.native-settings-form .native-section-title { color: var(--ink2); font-size: 13px; font-weight: 600; margin: 0 var(--space-xs); }
+.native-fill > .native-select, .native-fill > .native-segmented, .native-fill > .native-grid, .native-fill > .native-box, .native-fill > .native-stack { width: 100%; }
+.native-fill .native-n-select, .native-fill select.native-select { width: 100% !important; max-width: none !important; justify-self: stretch !important; }
 .native-section-box { border: var(--stroke-line) solid var(--line); border-radius: 6px; background: var(--card-raised); }
 .native-sheet { display: flex; flex-direction: column; gap: var(--space-md); max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); padding: var(--inset-sheet); border-radius: var(--radius-pane); background: var(--card); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); box-sizing: border-box; }
 .native-sheet.popover { padding: var(--inset-popover); max-height: calc(100vh - 80px); }
