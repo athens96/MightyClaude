@@ -14,6 +14,7 @@ import './composer/composer.css';
 import './composer/toolbar.css';
 import './cards/cards.css';
 import './mighty/mighty.css';
+import './shell/shell.css';
 
 async function start(bridge: Bridge): Promise<void> {
   installTokens(document);
