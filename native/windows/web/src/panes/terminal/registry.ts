@@ -7,7 +7,7 @@ import type { Bridge } from '../../bridge/bridge';
 import { listenPane } from '../channel';
 import { base64Bytes, clipboardKey, defaultFamily, terminalFamily, terminalSize, terminalThemes } from './rules';
 import type { TerminalInput } from './types';
-import { entries, fitShown, type TerminalEntry } from './entries';
+import { entries, fitShown, outputs, type TerminalEntry } from './entries';
 
 /** The pane's terminal, made the first time; its output and notices come as `terminal` pushes. */
 export function ensureTerminal(paneId: string, bridge: Bridge): TerminalEntry {
@@ -50,7 +50,8 @@ export function ensureTerminal(paneId: string, bridge: Bridge): TerminalEntry {
   const stop = listenPane('terminal', paneId, ({ message }) => {
     switch (message.type) {
       case 'output':
-        terminal.write(base64Bytes(message.data));
+        outputs.received += 1;
+        terminal.write(base64Bytes(message.data), () => { outputs.written += 1; });
         break;
       case 'paste':
         terminal.paste(message.text);
