@@ -31,6 +31,18 @@ export interface MightyExecutionCard {
   note?: string;
   footer: string;
   dashboard?: string;
+  /** The execution's key: what "open dashboard" names. */
+  key: string;
+  /** The AC list is open on the host (it reads the board only then). */
+  listOpen: boolean;
+  /** While the list is open with nothing to show: it is being read, or there is none. */
+  listNote?: string;
+  /** The first 300 acceptance criteria while the list is open. */
+  acs?: { title: string; status: string; statusWord: string; depth: number }[];
+  opening: boolean;
+  openFailed: boolean;
+  /** The share of the ACs done, 0–1, when the total is known. */
+  done?: number;
 }
 
 export interface MightyInputs {

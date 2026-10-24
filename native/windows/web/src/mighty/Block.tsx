@@ -124,15 +124,40 @@ function Images({ paneId, images }: { paneId: string; images: { runId: string; s
   );
 }
 
-function Execution({ card }: { card: MightyExecutionCard }) {
+/**
+ * A background Ouroboros execution (BuildOuroborosCard): the goal, the AC progress, the four counts, phase and activity, a note
+ * while nothing can be read, the AC list while it is open (the first 300, each its state's mark before its title, stepped per
+ * level), and the execution's id beside "open dashboard" (the host opens the run's loopback dashboard page).
+ */
+function Execution({ card, paneId, open }: { card: MightyExecutionCard; paneId: string; open: boolean }) {
+  const { bridge, t } = useServices();
   return (
     <div className="mighty-execution">
-      {card.goal && <div className="mighty-execution-goal">{card.goal}</div>}
-      {card.progress && <div className="mighty-execution-progress">{card.progress}</div>}
+      {card.goal && <div className={'mighty-execution-goal' + (open ? ' open' : '')} title={card.goal}>{card.goal}</div>}
+      {card.progress && (
+        <div className="mighty-execution-progress">
+          {card.done !== undefined && <div className={'mighty-execution-bar' + (card.status === 'failed' ? ' failed' : '')}><span style={{ width: `${card.done * 100}%` }} /></div>}
+          <span>{card.progress}</span>
+        </div>
+      )}
       {card.counts.length > 0 && <div className="mighty-execution-counts">{card.counts.map((c) => <span key={c}>{c}</span>)}</div>}
       {card.line && <div className="mighty-muted">{card.line}</div>}
       {card.note && <div className="mighty-muted">{card.note}</div>}
-      <div className="mighty-execution-foot">{card.footer}</div>
+      {open && (
+        <div className="mighty-execution-acs" data-testid="mighty-ouroboros-acs">
+          {card.acs ? card.acs.map((ac, i) => (
+            <div key={i} className={'mighty-ac ac-' + ac.status} style={{ paddingLeft: `calc(var(--space-sm) + ${ac.depth} * var(--space-lg))` }} title={ac.title} aria-label={ac.title + ', ' + ac.statusWord}>
+              <span className="mighty-ac-mark" aria-hidden="true" />
+              <span className="mighty-ac-title">{ac.title}</span>
+            </div>
+          )) : <div className="mighty-muted">{card.listNote ?? t('graph.ouroboros.loadingACs')}</div>}
+        </div>
+      )}
+      <div className="mighty-execution-foot">
+        <span className={card.openFailed ? 'mighty-execution-failed' : 'mighty-execution-id'}>{card.footer}</span>
+        <button className="mighty-link mighty-execution-open" data-testid="mighty-ouroboros-dashboard" disabled={card.opening}
+          onClick={() => void bridge.call('mightyOpenDashboard', { paneId, key: card.key }).catch(() => {})}>{t('graph.ouroboros.openDashboard')}</button>
+      </div>
     </div>
   );
 }
@@ -172,7 +197,7 @@ function Body(props: BlockProps) {
     case 'images':
       return <div className="mighty-body">{extra.images && <Images paneId={paneId} images={extra.images} />}</div>;
     case 'execution':
-      return <div className="mighty-body">{extra.execution && <Execution card={extra.execution} />}</div>;
+      return <div className="mighty-body">{extra.execution && <Execution card={extra.execution} paneId={paneId} open={props.expanded} />}</div>;
     default: {
       const entries = extra.entries ?? [];
       const any = entries.some((e) => e.kind !== 'user');
@@ -235,6 +260,10 @@ export const Block = memo(function Block(props: BlockProps) {
           )}
           {kind === 'result' && !extra.fitted && extra.measure && (
             <button className="mighty-icon" data-fit="" title={t('graph.result.fitToWindow')} onClick={() => actions.fitResult(id)}>⤢</button>
+          )}
+          {kind === 'execution' && (
+            <button className={'mighty-icon' + (expanded ? ' on' : '')} data-testid="mighty-ouroboros-list" title={t(expanded ? 'graph.ouroboros.hideACs' : 'graph.ouroboros.showACs')}
+              aria-pressed={expanded} onClick={() => actions.toggleExpand(id, !expanded)}>☰</button>
           )}
           {resizable && !extra.fitted && (
             <button className="mighty-icon" data-expand="" title={t(expanded ? 'graph.block.collapse' : 'graph.block.expand')}
