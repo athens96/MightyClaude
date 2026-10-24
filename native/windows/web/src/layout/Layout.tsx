@@ -103,6 +103,8 @@ function TabGroup({ node, workspaceId, sessions, activeId }: { node: PaneLayoutN
       { label: t('session.menu.focus'), action: () => call('focusPane', { id, toggle: true }) },
       { label: t('session.menu.close'), action: () => call('closeSession', { id }) },
     ];
+    // A shell's history of what its pane recorded (Navigation.cs:352-364), before the close.
+    if (sessions.get(id)?.kind === 'shell') items.splice(2, 0, { label: t('terminal.history.title'), action: () => call('terminalHistory', { paneId: id }) });
     return items;
   };
   const zone = (event: DragEvent<HTMLElement>): DropEdge => {
