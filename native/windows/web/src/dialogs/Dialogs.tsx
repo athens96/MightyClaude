@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { useServices, useStoreState } from '../app/context';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { BetaBadge, MiddlePath } from '../shell/parts';
+import { Icon } from '../icons/Icon';
 import type { DialogRequest, OpenDialog, ResumeRows } from '../shell/types';
 
 function Sheet({ id, width, label, children, onCancel }: { id: number; width: number; label: string; children: ReactNode; onCancel: () => void }) {
@@ -103,7 +104,11 @@ function ResumeList({ id, dialog, answer }: { id: number; dialog: Extract<Dialog
           <div className="resume-title"><ProviderMark provider={dialog.provider} size={16} /><h2 className="sheet-title">{dialog.title}</h2></div>
           <MiddlePath path={dialog.path} className="mono quiet" />
         </div>
-        <input className="sheet-field" type="search" data-autofocus placeholder={t('resume.search')} aria-label={t('resume.search')} value={search} onChange={(event) => setSearch(event.target.value)} />
+        {/* M/ResumeSessionViews.swift: the search field with its magnifier inside. */}
+        <label className="resume-search">
+          <Icon name="search" size={13} weight={2} />
+          <input className="sheet-field" type="search" data-autofocus placeholder={t('resume.search')} aria-label={t('resume.search')} value={search} onChange={(event) => setSearch(event.target.value)} />
+        </label>
         <div className="resume-rows" data-testid="resume-rows">
           {rows === null ? <div className="resume-empty"><span className="spinner" />{t('resume.loading')}</div>
             : rows.rows.length === 0 ? <div className="resume-empty"><strong>{rows.empty}</strong>{rows.reason && <span className="quiet">{rows.reason}</span>}</div>

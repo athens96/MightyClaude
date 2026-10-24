@@ -14,8 +14,13 @@ MightyClaude.exe --help-capture --smoke-exit --profile <empty dir under release\
 panes and runs (the canned CLI lines played by the app's own binary through the real run path, `HelpDemoCli.cs`), sets the
 window's content size, drives the page to each screen and saves `<profile>\help-shots\ko\<id>-<theme>.png` (CapturePreviewAsync;
 a popover is cut out by its element's box) beside `manifest.json`. The page is drawn with reduced motion, as the Mac's CI
-pictures are. A screen it does not draw yet is listed as `skipped`. `MIGHTY_HELP_SHOTS=<id>,<id>` takes only those shots.
-The pictures are 1440×900 at 100 % display scale (the Mac's are the same points at 2×).
+pictures are. A screen it does not draw yet is listed as `skipped`. `MIGHTY_HELP_SHOTS=<id>,<id>` takes only those shots;
+`MIGHTY_HELP_DOM=1` writes each shot's markup beside its picture. The pictures are 1440×900 at 100 % display scale (the Mac's
+are the same points at 2×); a sheet or popover is its own box, as the Mac's sheet and popover windows are.
+
+The capture also writes the demo's Claude session records (the resume list) under `<profile>\help-demo\home`, which it makes
+the history home of this process alone (`PaneView.HistoryHomeOverride`), and starts the pet as a normal start does; the pet's
+picture is the one its own window last drew (`CompanionOverlay.SavePicture`), as the Mac's is its panel's.
 
 ## Screens
 
@@ -39,7 +44,21 @@ button (the Mac puts the presets in its menu bar, which Windows has not).
 | permission-card | Hand badge; the details viewport 180 high as the Mac's (yields to 40), the raw-JSON disclosure with a chevron. | — |
 | terminal-pane | Light Alabaster surface in light theme, no PSReadLine colouring in the canned command, slim bar with "셸 · 로컬 터미널" and the state pill. | Prompt is PowerShell's `my-app > ` (the Mac's zsh shows `%`); footer names ConPTY and PowerShell; no cursor block (the terminal is not focused). |
 | files-pane | Tree with chevrons and Lucide symbols (folder in the accent, `</>` for source), preview head with encoding before the Preview/Source segment, plain inline code in the rendered page. | The Windows preview head keeps an open-in-app button beside the folder. |
-
-Not drawn by the Windows capture yet (skipped in its manifest): resume-choice, resume-list, agent-mighty-overview, agent-timeline,
-agent-structure, result-card, composer-settings, plan-document, background-work, the settings screens, companion-pet and the
-delegation screens.
+| resume-choice | The sheet as the Mac's: mark, title, message, Cancel at the left, Continue… and the accent Start new at the right. | Message wraps a word earlier (font metrics). |
+| resume-list | Mark and title over the mono path, the search field with its magnifier, rows with the mark, title and "N분 전 · 요청 N개 · Sonnet 5.5", Show all, the note and Cancel. | — |
+| agent-mighty-overview | The whole diagram in the 1500-high window: result with its file panel, request, 실행 and task blocks; the request block's arrow glyph and "요청 2 · ✳ Claude". | Block heights follow the Windows sizing of the canned transcript (a little shorter). |
+| agent-timeline | The history card on top; requests with the chevron, "요청 N · ✳ Claude" in the heading font at 16, the state pill, prompt and tally indented under it; rows on 24pt discs with the kind's glyph on 3-wide rails in the next tone, white cards at radius 14 with title, glyph and "kind · capsule", the latest line in mono, running cards with the 2pt run edge; the result card (green strip, mono caption) under every request, open or not. | The disc glyphs are Lucide's nearest (the Mac's are SF Symbols). |
+| agent-structure | ‹ 요청 2 / 2 ⌄ ›, the bolt and state pill under it over a rule; column chips (done green ✓, current accent ●, pending grey ○) with counts, joined by a line green while done; the request's words with the reveal button; 실행 with bolt, pill, tally, latest reply and tool calls with their glyphs; 결과를 기다리는 중; the task's small card with its status bar. | — |
+| result-card | Result strip without a pill, the files button with its count; the file panel titled with its count, rows with the file glyph, name and mono path. | The link-check block lists one tool row fewer (the canned run's timings and rows are Windows'). |
+| composer-settings | The run settings popover: model, permission, limits with their fields, the next-request note and Cancel / Apply. | No popover arrow (the page's popover has none). |
+| plan-document | 860×677 sheet: clipboard glyph and 계획 over a rule, Close at the right, the plan padded 12 with plain inline code. | Corners are rounded (the Mac's sheet is square at the top). |
+| background-work | Default view with the transcript, the strip with the layers glyph, chevron and eye-off. | — |
+| settings-general | Mac header (gear in the accent, title at 17 in the heading font, platform line, grey close disc), Lucide category symbols, grey section titles, theme and language segments and the text pickers filling their row. | Surfaces from the tokens (the Mac's grouped boxes are grey on grey); Windows rows keep their dividers; the delegation switch reads this profile's value. |
+| settings-models | Same frame; the pickers keep the WinUI form's widths. | The Mac's phase pickers are wider (its three-column rows give the picker the middle). |
+| settings-styles | Same frame; registration buttons, the built-in styles with their source, hash, counts and file. | The built-in styles' path is the Windows resource name. |
+| settings-tools | Same frame. | The components list is empty: the Mac capture fakes every component as installed, the Windows one does not probe this PC's tools. |
+| settings-cli | Same frame; the three CLIs with their versions and states. | Accounts show "확인 중…": the capture does not fake signed-in accounts as the Mac's does. |
+| settings-mobile | Same frame and order. | Windows adds the firewall rule rows; the screen-share section has the Windows controls. |
+| settings-companion | Same frame; the pet picker filling its row. | The import / refresh / reset buttons stack (the WinUI form's column); no pet thumbnail beside the picker. |
+| settings-about | Same frame; versions read from the build. | Windows lists its keyboard notes under the version. |
+| companion-pet | The pet's own window (282×494): the approval bubble (hand, 승인 요청, docs-site · 미리보기 배포, the command in its box, Open / Deny / Allow once, the pager 4 / 4) over the pet. | The bubble keeps the Windows expand button; Allow once is the accent (the Mac's is grey). |
