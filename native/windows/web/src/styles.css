@@ -29,7 +29,7 @@ body {
 .pane-figures { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; font-family: var(--font-mono); font-size: var(--type-mono); color: var(--ink2);
   mask-image: linear-gradient(to left, transparent, black 18px); }
 .pane-header-controls { flex: none; display: inline-flex; align-items: center; gap: var(--space-sm); padding-left: var(--space-xs); color: var(--ink2); }
-.pane-menu-button { width: 22px; height: 24px; min-width: 22px; padding: 0; color: inherit; }
+.pane-menu-button, .pane-plugins-button { width: 22px; height: 24px; min-width: 22px; padding: 0; color: inherit; }
 .pane-shell { padding: 0; }
 .pane-shell .pane-slim-header { gap: var(--space-md); }
 .pane-shell .pane-menu-button { color: var(--on-status); }

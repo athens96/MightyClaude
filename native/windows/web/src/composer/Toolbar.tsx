@@ -187,6 +187,35 @@ function SessionInfoPopover({ info, close }: { info: SessionInfo; close: () => v
 }
 
 /**
+ * The Mighty row over the editor (M/SessionPaneView.swift composer, M/GuidedPanel.swift MightyStylePicker): the style chip — its
+ * name in 10 medium, a source badge, a 7pt chevron on the subtle wash at radius 6 — and what the style is for in the tertiary ink.
+ * The menu is the WinUI chip's own, read and chosen through the host.
+ */
+export function StyleRow({ paneId, style }: { paneId: string; style: { label: string; badge: string | null; hint: string; enabled: boolean } }) {
+  const { bridge, t } = useServices();
+  const [rows, setRows] = useState<MenuRow[] | null>(null);
+  const close = useCallback(() => setRows(null), []);
+  const ref = usePopover(close);
+  usePageOverlay(rows !== null);
+  const open = async () => { try { setRows(await bridge.call<MenuRow[]>('composerMenu', { paneId, menu: 'style' })); } catch { setRows(null); } };
+  const choose = (path: number[]) => { setRows(null); void bridge.call('composerMenuChoose', { paneId, menu: 'style', path }).catch(() => {}); };
+  return (
+    <div className="composer-style-row" data-testid="composer-style-row">
+      <button type="button" className="composer-style-chip" data-testid="composer-style" aria-haspopup="menu" aria-label={t('guidedPanel.stylesMenuAccessibility')} title={t('guidedPanel.stylesMenuHelp')}
+        disabled={!style.enabled} onClick={() => void open()}>
+        <span>{style.label}</span>{style.badge && <span className="composer-style-badge">{style.badge}</span>}<Icon name="chevron-down" size={7} weight={3} className="pill-chevron" />
+      </button>
+      <span className="composer-style-hint">{style.hint}</span>
+      {rows && (
+        <div ref={ref} className="composer-popover composer-menu" role="menu" data-menu="style" data-page-overlay="">
+          <MenuList rows={rows} path={[]} choose={(path) => choose(path)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * The composer's pills (spec §3 Menus): model, effort, permission, Codex Fast, the … pill (run settings; its context menu holds
  * the pane's actions) and the context ring (session info). Every list and every change is the host's; while the pane is busy
  * the pills are off, as in WinUI.

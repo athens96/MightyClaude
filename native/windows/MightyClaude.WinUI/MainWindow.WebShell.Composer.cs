@@ -274,6 +274,8 @@ public sealed partial class MainWindow
                 "permission" => ChoiceMenu(PermissionChoices(pane, Capabilities)),
                 "options" => OptionsMenu(pane, Capabilities, levels),
                 "actions" => PaneActionsMenu(pane),
+                // The style menu (M/GuidedPanel.swift MightyStylePicker): the one the WinUI chip opens, built when the pane read its styles.
+                "style" => stylePicker.Flyout as MenuFlyout ?? new MenuFlyout { Items = { Choice("CLI", () => Task.CompletedTask, true) } },
                 _ => throw new ArgumentException("Unknown menu."),
             };
         }
@@ -458,6 +460,10 @@ public sealed partial class MainWindow
                 attachmentError = attachmentErrorText.Text.Length == 0 ? null : attachmentErrorText.Text,
                 attachmentsAllowed = pane.Kind != "shell",
                 pills = pane.Kind == "shell" ? null : WebPills(pane),
+                // The Mighty row over the editor (M/SessionPaneView.swift composer): the style chip with its source badge, and what the style is for.
+                style = styleHost.Visibility == Visibility.Visible
+                    ? new { label = stylePickerLabel.Text, badge = stylePickerBadge.Visibility == Visibility.Visible ? (stylePickerBadge.Child as TextBlock)?.Text : null, hint = styleHint.Text, enabled = stylePicker.IsEnabled }
+                    : null,
                 header = WebHeader(pane),
                 // The marks at the toolbar's right (M/SessionPaneView.swift composerToolbar): the resume mark, and a Claude pane's
                 // background-work and status-line toggles with whether each is on.

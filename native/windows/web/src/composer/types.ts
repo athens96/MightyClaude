@@ -53,6 +53,8 @@ export interface ComposerState {
   resumed?: boolean;
   /** A Claude pane's background-work and status-line toggles, each on or off (no status line for a remote pane); null elsewhere. */
   toggles?: { background: boolean; statusLine: boolean | null } | null;
+  /** A Mighty Claude pane's style row (M/SessionPaneView.swift composer): the chosen style's name, its source badge, what it is for; null elsewhere. */
+  style?: { label: string; badge: string | null; hint: string; enabled: boolean } | null;
 }
 
 /** What `send` answers: what the host did with the draft, the editor's text after it, and the composer then. */

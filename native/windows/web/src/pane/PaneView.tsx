@@ -12,6 +12,7 @@ import { ReferenceContext } from '../conversation/referenceClick';
 import type { ReferenceTarget } from '../conversation/references';
 import { ReferenceBubble, type ReferenceRequest } from './ReferenceBubble';
 import { Icon } from '../icons/Icon';
+import { providerLabel } from '../conversation/format';
 import { useCall, useMenu, type MenuItem } from '../shell/parts';
 
 /** The header's clock, redrawn each second while the run is not finished (MW.Composer.cs RefreshElapsed). */
@@ -52,7 +53,7 @@ function PaneMenu({ session }: { session: RunSession }) {
  * shell, the composer. The word and the figures after the clock are the host's (MainWindow.WebShell.Composer.cs WebHeader).
  */
 export const PaneView = memo(function PaneView({ session }: { session: RunSession }) {
-  const { t } = useServices();
+  const { t, bridge } = useServices();
   const store = useStoreState();
   const header = store.composers[session.id]?.header;
   const agent = session.kind === 'claude' || session.kind === 'shell';
@@ -108,6 +109,11 @@ export const PaneView = memo(function PaneView({ session }: { session: RunSessio
         </span>
         <span className="pane-header-controls">
           {switchable && <ModeSwitch session={session} />}
+          {mighty && (session.provider === 'claude' || session.provider === 'codex') && (
+            <button type="button" className="icon-button pane-plugins-button" data-testid="pane-plugins" title={t('pane.plugins.help', { provider: providerLabel(session.provider) })}
+              aria-label={t('plugins.titleTemplate', { provider: providerLabel(session.provider) })} onClick={() => void bridge.call('openPlugins', { id: session.id }).catch(() => {})}>
+              <Icon name="puzzle" size={14} weight={2.2} /></button>
+          )}
           <PaneMenu session={session} />
         </span>
       </header>

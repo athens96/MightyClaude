@@ -385,7 +385,7 @@ public sealed partial class MainWindow
             stylePickerLabel.Text=activeStyle?.Manifest.Name??"CLI";
             var badged=activeStyle is {Source:not "bundled"};stylePickerBadge.Visibility=badged?Visibility.Visible:Visibility.Collapsed;
             if(badged){stylePickerBadge.Child=new TextBlock{Text=StylePresentation.Source(activeStyle!.Source),TextSize=9,Foreground=ink2};stylePickerBadge.Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1);stylePickerBadge.CornerRadius=new(8);stylePickerBadge.Background=b.Subtle;}
-            styleHint.Text=activeStyle?.Manifest.Subtitle??Locale.Get("composer.style.free");
+            styleHint.Text=activeStyle?.Manifest.Subtitle??Locale.Get("composer.style.free");owner.WebComposerChanged(this);
             // The plan's answers keep their place across renders: taken out and put back, a change request being typed would lose the keyboard.
             var planActions=GuidedQuestion is null&&PanelPlan is {} panelPlan?PlanCard(panelPlan,PendingCount,PlanPlace.Actions):null;
             for(var kept=guidedBody.Children.Count-1;kept>=0;kept--)if(!ReferenceEquals(guidedBody.Children[kept],planActions))guidedBody.Children.RemoveAt(kept);
