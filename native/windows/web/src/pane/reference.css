@@ -1,0 +1,31 @@
+/* The reference bubble (src/pane/ReferenceBubble.tsx; WinUI MainWindow.ReferencePreview.cs): a card panel, radius block with a
+   1pt line edge and a 12pt tail toward the content, the head over a rule, the preview, the grip in the corner by the content. */
+.pane-room { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.reference-room { position: absolute; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 5; }
+.reference-bubble { position: absolute; top: 12px; display: flex; pointer-events: auto; }
+.reference-bubble.on-right { right: 12px; }
+.reference-bubble.on-left { left: 12px; flex-direction: row-reverse; }
+.reference-tail { position: absolute; z-index: 1; }
+.reference-bubble.on-right .reference-tail { left: 0; }
+.reference-bubble.on-left .reference-tail { right: 0; transform: scaleX(-1); }
+.reference-tail-fill { fill: var(--card); }
+.reference-tail-edge { fill: none; stroke: var(--line); stroke-width: var(--stroke-line); stroke-linejoin: round; }
+.reference-card {
+  position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--card);
+  border: var(--stroke-line) solid var(--line); border-radius: var(--radius-block); box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+}
+.reference-bubble.on-right .reference-card { margin-left: 12px; }
+.reference-bubble.on-left .reference-card { margin-right: 12px; }
+.reference-head { flex: none; display: flex; align-items: center; gap: var(--space-sm); height: calc(var(--layout-preview-head) - var(--stroke-line)); padding: 0 calc(var(--space-lg) - var(--stroke-line)); border-bottom: var(--stroke-line) solid var(--line); }
+.reference-symbol { flex: none; width: 12px; height: 12px; fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
+.reference-names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; margin-right: var(--space-xs); }
+.reference-title { font-size: var(--type-block); font-weight: 600; line-height: 15px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reference-path { font-family: var(--font-mono); font-size: var(--type-small); line-height: 12px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reference-tools { flex: none; display: flex; align-items: center; gap: var(--space-sm); }
+.reference-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.reference-notice { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-sm); padding: var(--space-lg); color: var(--ink); font-size: var(--type-block); font-weight: 500; text-align: center; }
+.reference-notice svg { width: 24px; height: 24px; fill: none; stroke: var(--ink2); stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
+.reference-grip { position: absolute; bottom: calc(var(--space-xxs) - var(--stroke-line)); width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-file-row); background: color-mix(in srgb, var(--card) 95%, transparent); color: var(--ink2); cursor: nwse-resize; touch-action: none; }
+.reference-bubble.on-right .reference-grip { left: calc(var(--space-xxs) - var(--stroke-line)); cursor: nesw-resize; }
+.reference-bubble.on-left .reference-grip { right: calc(var(--space-xxs) - var(--stroke-line)); }
+.reference-grip svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }

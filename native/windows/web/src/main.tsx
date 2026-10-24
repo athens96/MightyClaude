@@ -17,6 +17,7 @@ import './cards/cards.css';
 import './mighty/mighty.css';
 import './shell/shell.css';
 import './panes/panes.css';
+import './pane/reference.css';
 import './native/native.css';
 
 async function start(bridge: Bridge): Promise<void> {

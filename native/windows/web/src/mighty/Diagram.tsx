@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useServices, useStoreState } from '../app/context';
 import type { GraphBlockSize, MightyGraphRun, RunSession } from '../store/models';
 import { Block, type BlockActions, type BlockExtra } from './Block';
@@ -14,6 +14,7 @@ import { blockExtras } from './extras';
 import { setBlockSize } from './prefs';
 import { shareRuns } from './share';
 import type { MightyPane, MightyFile } from './types';
+import { ReferenceContext, useReferenceClick } from '../conversation/referenceClick';
 
 const Overscan = 300;
 
@@ -66,6 +67,11 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
   const [pending, setPending] = useState<{ sizes: Record<string, GraphBlockSize> | null; base: unknown } | null>(null);
   const [measured, setMeasured] = useState<Record<string, number>>({});
   const drag = useRef<Drag | null>(null);
+  // A file named in a block opens in the pane's reference bubble; kept in a ref so the blocks' actions keep their identity.
+  const referenceShown = useContext(ReferenceContext);
+  const showReference = useRef(referenceShown);
+  showReference.current = referenceShown;
+  const onReferenceClick = useReferenceClick();
   const loadingOlder = useRef<unknown>(null);
 
   const runs = useMemo(() => {
@@ -287,7 +293,7 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
     },
     toggleFiles(runId) { void bridge.call('mightyResultFiles', { paneId, runId }); },
     fitResult() { void bridge.call('mightySaveSize', { paneId, nodeId: latestResultID(shared.current) ?? '', target: 'result' }); },
-    openFile(file: MightyFile) { void bridge.call('openReference', { paneId, path: file.path, line: file.line ?? null }); },
+    openFile(file: MightyFile) { showReference.current?.({ path: file.path, line: file.line ?? null }); },
     loadOlder() { void bridge.call('mightyLoadOlder', { paneId }); },
     measured(id, height) { setMeasured((m) => (Math.abs((m[id] ?? -1) - height) < 1 ? m : { ...m, [id]: height })); },
   }), [bridge, paneId]);
@@ -341,7 +347,7 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
             <path className="mighty-edges-live" d={edges.live} />
           </g>
         </svg>
-        <div className="mighty-world" ref={worldRef}>
+        <div className="mighty-world" ref={worldRef} onClick={onReferenceClick}>
           {layout.nodes.map((node) => (
             <Block key={node.id} paneId={paneId} provider={session.provider} id={node.id} kind={node.kind}
               x={node.frame.x} y={node.frame.y} w={node.frame.w} h={node.frame.h}

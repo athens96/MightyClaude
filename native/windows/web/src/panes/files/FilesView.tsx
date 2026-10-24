@@ -48,7 +48,7 @@ const Tree = memo(function Tree({ model, onRow, onKey }: { model: FilesModel; on
   );
 });
 
-function SourceView({ preview }: { preview: FilePreview }) {
+export function SourceView({ preview }: { preview: FilePreview }) {
   const text = preview.text ?? '';
   return (
     <div className={'files-source' + (preview.wraps ? ' wraps' : '')} data-testid="files-source">
@@ -61,7 +61,7 @@ function SourceView({ preview }: { preview: FilePreview }) {
 }
 
 /** Fit (never larger than 1:1), zoom out, 1:1 and zoom in (M/FilePaneView.swift:202-216, 327-352); a CSS zoom of the host's picture. */
-function ImageView({ preview, zoom }: { preview: FilePreview; zoom: number | null }) {
+export function ImageView({ preview, zoom }: { preview: FilePreview; zoom: number | null }) {
   const image = preview.image;
   if (!image) return null;
   const ratio = image.bitmap ? window.devicePixelRatio || 1 : 1;
