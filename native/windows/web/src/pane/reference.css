@@ -1,6 +1,6 @@
 /* The reference bubble (src/pane/ReferenceBubble.tsx; WinUI MainWindow.ReferencePreview.cs): a card panel, radius block with a
    1pt line edge and a 12pt tail toward the content, the head over a rule, the preview, the grip in the corner by the content. */
-.pane-room { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pane-room { position: relative; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
 .reference-room { position: absolute; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 5; }
 .reference-bubble { position: absolute; top: 12px; display: flex; pointer-events: auto; }
 .reference-bubble.on-right { right: 12px; }

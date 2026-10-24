@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Icon } from '../icons/Icon';
 import { useServices, useStoreState } from '../app/context';
 import type { GraphBlockSize, MightyGraphRun, RunSession } from '../store/models';
 import { Block, type BlockActions, type BlockExtra } from './Block';
@@ -369,9 +370,9 @@ export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession
   const unfinished = useMemo(() => new Set(runs.filter((r) => !finished(r)).map((r) => r.id)), [runs]);
   const toolbarZoom = (
     <span className="mighty-zoom">
-      <button className="mighty-icon" title={t('graph.zoom.out')} disabled={zoom <= ZoomMin} onClick={() => setZoomTo(zoomOut(zoom))}>−</button>
+      <button className="mighty-icon" title={t('graph.zoom.out')} aria-label={t('graph.zoom.out')} disabled={zoom <= ZoomMin} onClick={() => setZoomTo(zoomOut(zoom))}><Icon name="zoom-out" size={15} weight={1.75} /></button>
       <button className="mighty-zoom-label" title={t('graph.zoom.reset')} onClick={() => setZoomTo(ZoomDefault)} data-testid="mighty-zoom">{zoomLabel(zoom)}</button>
-      <button className="mighty-icon" title={t('graph.zoom.in')} disabled={zoom >= ZoomMax} onClick={() => setZoomTo(zoomIn(zoom))}>+</button>
+      <button className="mighty-icon" title={t('graph.zoom.in')} aria-label={t('graph.zoom.in')} disabled={zoom >= ZoomMax} onClick={() => setZoomTo(zoomIn(zoom))}><Icon name="zoom-in" size={15} weight={1.75} /></button>
     </span>
   );
 

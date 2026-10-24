@@ -3,21 +3,15 @@ import type { RunSession } from '../../store/models';
 import { useServices } from '../../app/context';
 import { Markdown } from '../../conversation/MarkdownView';
 import { MiddlePath } from '../../shell/parts';
+import { Icon, type IconName } from '../../icons/Icon';
 import { lineNumbers, sourceSpans, treeKey } from './tree';
 import type { FilePreview, FileRow, FilesModel } from './types';
 
-/** The symbols of the tree and the head (WinUI FileSymbol): folder, document, picture, page with lines. */
+/** The symbols of the tree and the head (M/FilePaneView.swift, WinUI FileSymbol): folder, page, picture, source as </>. */
 function Symbol({ row, symbol }: { row?: FileRow; symbol?: string }) {
   const kind = row?.dir ? 'folder' : symbol ?? row?.symbol ?? 'unsupported';
-  return (
-    <svg className={'files-symbol files-symbol-' + kind} viewBox="0 0 14 14" aria-hidden="true">
-      {kind === 'folder' && <path d="M1.5 3.5h4l1.2 1.3h5.8v6.7h-11z" />}
-      {kind === 'image' && <><rect x="1.5" y="2.5" width="11" height="9" rx="1" /><path d="M2.5 10.5l3-3 2 2 1.5-1.5 2.5 2.5" /></>}
-      {kind === 'markdown' && <><path d="M3 1.5h5.5l2.5 2.5v8.5H3z" /><path d="M5 7h4M5 9h4" /></>}
-      {kind === 'source' && <><path d="M3 1.5h5.5l2.5 2.5v8.5H3z" /><path d="M6 6.5 4.8 8 6 9.5M8 6.5 9.2 8 8 9.5" /></>}
-      {kind === 'unsupported' && <path d="M3 1.5h5.5l2.5 2.5v8.5H3z" />}
-    </svg>
-  );
+  const name: IconName = kind === 'folder' ? 'folder' : kind === 'image' ? 'image' : kind === 'markdown' ? 'file-text' : kind === 'source' ? 'code-xml' : 'file';
+  return <span className={'files-symbol files-symbol-' + kind} aria-hidden="true"><Icon name={name} size={13} weight={1.6} /></span>;
 }
 
 const Tree = memo(function Tree({ model, onRow, onKey }: { model: FilesModel; onRow: (row: FileRow) => void; onKey: (event: KeyboardEvent<HTMLDivElement>) => void }) {
@@ -32,7 +26,7 @@ const Tree = memo(function Tree({ model, onRow, onKey }: { model: FilesModel; on
         <div key={row.path} className="files-row-group">
           <div id={'files-row-' + row.path} role="treeitem" className={'files-row' + (row.noise ? ' noise' : '')} aria-selected={row.path === model.selected} aria-expanded={row.dir && !model.filtering ? row.expanded : undefined}
             data-path={row.path} title={row.path} style={{ paddingLeft: 'calc(var(--space-xs) + ' + (8 + row.depth * 14) + 'px)' }} onClick={() => onRow(row)}>
-            <span className="files-chevron">{row.dir && !model.filtering ? (row.expanded ? '▾' : '▸') : ''}</span>
+            <span className="files-chevron">{row.dir && !model.filtering && <Icon name={row.expanded ? 'chevron-down' : 'chevron-right'} size={10} weight={2.8} />}</span>
             <Symbol row={row} />
             <span className="files-name">{row.name}</span>
             {row.symlink && <span className="files-link" aria-hidden="true">↗</span>}
@@ -207,13 +201,13 @@ export function FilesView({ session }: { session: RunSession }) {
                   <button type="button" className="files-tool" disabled={!image.zoomable} aria-label={t('files.image.zoomIn')} title={t('files.image.zoomIn')} onClick={() => step(1.25)}>+</button>
                 </>
               )}
+              {preview.encoding && <span className="files-encoding" title={t('files.preview.encoding')}>{preview.encoding}</span>}
               {preview.kind === 'markdown' && preview.markdown && (
                 <div className="files-segment" role="group">
                   <button type="button" className={showSource ? '' : 'chosen'} aria-pressed={!showSource} onClick={() => setShowSource(false)}>{t('files.markdown.rendered')}</button>
                   <button type="button" className={showSource ? 'chosen' : ''} aria-pressed={showSource} onClick={() => setShowSource(true)}>{t('files.markdown.source')}</button>
                 </div>
               )}
-              {preview.encoding && <span className="files-encoding" title={t('files.preview.encoding')}>{preview.encoding}</span>}
               <button type="button" className="files-tool" aria-label={t('graph.resultFiles.openFile', { path: preview.name })} title={t('graph.resultFiles.openFile', { path: preview.name })} onClick={open}>
                 <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M8 2h4v4M12 2 6.5 7.5M10.5 8.5V12h-8.5V3.5H5.5" /></svg>
               </button>
