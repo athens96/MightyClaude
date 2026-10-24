@@ -1,21 +1,12 @@
 // The terminal page's rules (Assets/Terminal/terminal.js), pure so they are tested: the surfaces, the font, the clipboard keys.
+import { terminalPalette } from '../../theme/tokens';
 
 /**
- * The Mac's terminal surface (native/macos/Sources/MightyClaude/AppStore+Terminals.swift:63-74): Ghostty's Afterglow on
- * #202020 with #DEDCD8 text and an #E1AB91 cursor by night, its Alabaster on #FAF9F6 by day.
+ * xterm's palettes by theme, from the design tokens (windowsOnly.terminal): the Mac's terminal surface
+ * (native/macos/Sources/MightyClaude/AppStore+Terminals.swift:63-66), Ghostty's Afterglow on #202020 with #DEDCD8 text and an
+ * #E1AB91 cursor by night, its Alabaster on #FAF9F6 by day.
  */
-export const terminalThemes = {
-  dark: {
-    background: '#202020', foreground: '#dedcd8', cursor: '#e1ab91', cursorAccent: '#202020', selectionBackground: '#303030',
-    black: '#151515', red: '#ac4142', green: '#7e8e50', yellow: '#e5b567', blue: '#6c99bb', magenta: '#9f4e85', cyan: '#7dd6cf', white: '#d0d0d0',
-    brightBlack: '#505050', brightRed: '#ac4142', brightGreen: '#7e8e50', brightYellow: '#e5b567', brightBlue: '#6c99bb', brightMagenta: '#9f4e85', brightCyan: '#7dd6cf', brightWhite: '#f5f5f5',
-  },
-  light: {
-    background: '#faf9f6', foreground: '#000000', cursor: '#007acc', cursorAccent: '#faf9f6', selectionBackground: '#bfdbfe',
-    black: '#000000', red: '#aa3731', green: '#448c27', yellow: '#cb9000', blue: '#325cc0', magenta: '#7a3e9d', cyan: '#0083b2', white: '#f7f7f7',
-    brightBlack: '#777777', brightRed: '#f05050', brightGreen: '#60cb00', brightYellow: '#ffbc5d', brightBlue: '#007acc', brightMagenta: '#e64ce6', brightCyan: '#00aacb', brightWhite: '#f7f7f7',
-  },
-} as const;
+export const terminalThemes = { dark: terminalPalette('dark'), light: terminalPalette('light') } as const;
 
 export const defaultFamily = 'Cascadia Mono, Consolas, monospace';
 

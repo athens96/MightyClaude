@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import tokens from '@tokens/design-tokens.json';
-import { kebab, paletteVariables, themeName, tokenStyleSheet } from './tokens';
+import { kebab, paletteVariables, terminalPalette, themeName, tokenStyleSheet } from './tokens';
+import { terminalThemes } from '../panes/terminal/rules';
 
 describe('tokens', () => {
   it('names variables in kebab case', () => {
@@ -20,5 +21,18 @@ describe('tokens', () => {
     expect(themeName('light')).toBe('light');
     expect(themeName('dark')).toBe('dark');
     expect(themeName(undefined)).toBe('dark');
+  });
+
+  it('takes the terminal palette from the fixture (windowsOnly.terminal), both themes, every xterm colour', () => {
+    const names = ['background', 'foreground', 'cursor', 'cursorAccent', 'selectionBackground', 'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
+      'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite'];
+    for (const theme of ['light', 'dark'] as const) {
+      const palette = terminalPalette(theme) as Record<string, string>;
+      expect(Object.keys(palette).sort()).toEqual([...names].sort());
+      for (const value of Object.values(palette)) expect(value).toMatch(/^#[0-9A-F]{6}$/);
+      expect(terminalThemes[theme]).toBe(terminalPalette(theme));
+      expect(tokenStyleSheet()).toContain(`--terminal-background:${palette.background};`);
+    }
+    expect(terminalPalette('dark').background).toBe('#202020');
   });
 });
