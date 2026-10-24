@@ -61,11 +61,13 @@ struct ExecutionGraphTests {
         try send(toolResult("child", text: "Actual child final answer"), to: parser)
         try send(["type": "result", "result": "Actual final answer", "is_error": false], to: parser)
         #expect(results == 1)
-        #expect(try latest(nodes, mainID).state == "running")
+        // The request's own answer ends its turn: main reads completed before the process exits, which changes nothing more.
+        #expect(try latest(nodes, mainID).state == "completed")
         parser.finishActivities(stopped: false); parser.finishGraph(state: "completed")
-        #expect(nodes.last?.id == mainID); #expect(nodes.last?.state == "completed")
-        #expect(nodes.last?.output == "Actual final answer"); #expect(nodes.last?.entries.isEmpty == true)
-        #expect(nodes.last?.input == "Actual main request")
+        let main = try latest(nodes, mainID)
+        #expect(main.state == "completed")
+        #expect(main.output == "Actual final answer"); #expect(main.entries.isEmpty)
+        #expect(main.input == "Actual main request")
         #expect(try latest(nodes, childID).output == "Actual child final answer")
     }
 
