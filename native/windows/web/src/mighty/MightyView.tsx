@@ -1,8 +1,8 @@
-import { useContext, useEffect } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { PaneShownContext } from '../pane/shown';
 import { useServices, useStoreState } from '../app/context';
 import type { RunSession } from '../store/models';
-import { Diagram } from './Diagram';
+import { Diagram, type Aim } from './Diagram';
 import { Structure } from './Structure';
 import { Timeline } from './Timeline';
 import { emptyMighty } from './types';
@@ -36,6 +36,14 @@ export function MightyView({ session }: { session: RunSession }) {
   const { bridge, t } = useServices();
   const mighty = useStoreState().mighty[session.id] ?? emptyMighty;
   const presentation = presentationOf(session);
+  // A block the diagram opens on next (a timeline row opened, a structure card revealed): selected, the camera on it.
+  const [aim, setAim] = useState<Aim | null>(null);
+  const aimed = useCallback(() => setAim(null), []);
+  const aimAt = useCallback((nodeId: string, fallbackNodeId?: string) => setAim({ nodeId, fallbackNodeId }), []);
+  const reveal = useCallback((nodeId: string, fallbackNodeId: string) => {
+    aimAt(nodeId, fallbackNodeId);
+    void bridge.call('mightySetPresentation', { paneId: session.id, mode: 'diagram' });
+  }, [aimAt, bridge, session.id]);
   // A pane kept mounted behind another tab is not on the page: the host pushes its model only while it shows.
   const shown = useContext(PaneShownContext);
   useEffect(() => {
@@ -55,9 +63,9 @@ export function MightyView({ session }: { session: RunSession }) {
         <span className="mighty-header">{mighty.inputs?.header ?? t('graph.view.mighty')}</span>
         <span className="mighty-summary" title={mighty.inputs?.summaryHelp} data-testid="mighty-summary">{mighty.inputs?.summary ?? ''}</span>
       </div>
-      {presentation === 'diagram' ? <Diagram session={session} mighty={mighty} />
+      {presentation === 'diagram' ? <Diagram session={session} mighty={mighty} aim={aim} onAimed={aimed} />
         : presentation === 'timeline' ? <Timeline session={session} groups={mighty.timeline} older={mighty.older} />
-          : <Structure boards={mighty.structure} />}
+          : <Structure boards={mighty.structure} onReveal={reveal} />}
     </div>
   );
 }

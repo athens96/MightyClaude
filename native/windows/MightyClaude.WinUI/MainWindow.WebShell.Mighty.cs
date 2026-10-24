@@ -31,7 +31,7 @@ internal sealed record WebTimelineGroup(string RunId, int Ordinal, string Title,
 internal sealed record WebStructureCard(string Id, string Kind, string RunId, string NodeId, string Title, string Status, string StatusWord, string Tone, string? Parent,
     string? Text, string? Message, string? Answer, IReadOnlyList<string> Activity, string? Tally, bool Finished, string? ResultLine);
 internal sealed record WebStructureColumn(string Id, string Title, string Step, string StepWord, int Count, IReadOnlyList<WebStructureCard> Cards);
-internal sealed record WebStructureBoard(string Id, string Kind, int Ordinal, string? Headline, string Status, string Tone, IReadOnlyList<string> RunIds, IReadOnlyList<WebStructureColumn> Columns);
+internal sealed record WebStructureBoard(string Id, string Kind, int Ordinal, string? Headline, string Status, string StatusWord, string Tone, IReadOnlyList<string> RunIds, IReadOnlyList<WebStructureColumn> Columns, string? StyleName);
 
 public sealed partial class MainWindow
 {
@@ -207,8 +207,12 @@ public sealed partial class MainWindow
             var timeline = await Wait("document.querySelectorAll('[data-testid=timeline-group]').length === 4");
             await core.ExecuteScriptAsync("document.querySelector('button[data-presentation=structure]')?.click()");
             var structure = await Wait("document.querySelectorAll('[data-testid=mighty-structure] [data-column-id]').length >= 3");
-            result["mightyViews"] = new { timeline, structure, mode = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId)?.GraphViewMode };
-            return drawn && onlyChanged && timeline && structure;
+            // A card's reveal: the diagram shows again with that block selected and the camera on it.
+            var revealClicked = structure && await core.ExecuteScriptAsync("(() => { const b = document.querySelector('[data-testid=mighty-structure] [data-card-id] [data-testid=structure-reveal]'); b?.click(); return !!b; })()") == "true";
+            var revealed = revealClicked && await Wait("(() => { if (document.querySelector('[data-testid=mighty]')?.dataset.presentation !== 'diagram') return false; const v = document.querySelector('[data-testid=mighty-diagram] .mighty-viewport')?.getBoundingClientRect(); const b = document.querySelector('[data-testid=mighty-diagram] .mighty-block.selected')?.getBoundingClientRect(); "
+                + "return !!v && !!b && b.bottom > v.top && b.top < v.bottom && b.right > v.left && b.left < v.right; })()");
+            result["mightyViews"] = new { timeline, structure, revealClicked, revealed, mode = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId)?.GraphViewMode };
+            return drawn && onlyChanged && timeline && structure && revealed;
         }
         finally
         {
@@ -375,9 +379,10 @@ public sealed partial class MainWindow
                     Locale.Get("graph.structure.tally", new Dictionary<string, string> { ["agents"] = item.Tally.Agents.ToString(), ["tools"] = item.Tally.Tools.ToString() }),
                     item.Finished, MightyStructure.Fold.ResultLine(item));
             }
-            return boards.Select(board => new WebStructureBoard(board.Id, board.Kind.ToString().ToLowerInvariant(), board.Ordinal, board.Headline, board.Status, Tone(board.Status), board.RunIds,
+            var styleName = activeStyle?.Manifest.Name;
+            return boards.Select(board => new WebStructureBoard(board.Id, board.Kind.ToString().ToLowerInvariant(), board.Ordinal, board.Headline, board.Status, MightyGraphBlockModel.StateLabel(board.Status), Tone(board.Status), board.RunIds,
                 board.Columns.Select(column => new WebStructureColumn(column.Id, column.Step.Title ?? Locale.Get("graph.structure.column." + column.Id), column.Step.Step.ToString().ToLowerInvariant(),
-                    StepWord(column.Step.Step), column.Count, column.Cards.Select(Card).ToList())).ToList())).ToList();
+                    StepWord(column.Step.Step), column.Count, column.Cards.Select(Card).ToList())).ToList(), board.Kind == MightyStructure.BoardKind.Pipeline ? styleName : null)).ToList();
         }
 
         /// <summary>A block drag released in the page, saved as the WinUI drag saves it (<see cref="EndResultResize"/>): the newest result and the waiting plan keep the pane's one size, any other block its own.</summary>

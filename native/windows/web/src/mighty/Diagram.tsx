@@ -19,6 +19,9 @@ import { ReferenceContext, useReferenceClick } from '../conversation/referenceCl
 
 const Overscan = 300;
 
+/** A block the diagram opens on (MightyGraphCamera.Anchor.Reaim): selected, the camera on it; its request when it is not drawn. */
+export interface Aim { nodeId: string; fallbackNodeId?: string }
+
 interface Drag { id: string; edges: Edges; start: Size; origin: { x: number; y: number }; layout: Layout; target: 'result' | 'plan' | 'block' }
 
 
@@ -44,7 +47,7 @@ function edgePaths(layout: Layout, running: ReadonlySet<string>): { quiet: strin
  * and the SVG's transforms directly, so moving the view draws no block; blocks draw only when their props change, and a
  * block off screen draws its header alone.
  */
-export function Diagram({ session, mighty }: { session: RunSession; mighty: MightyPane }) {
+export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession; mighty: MightyPane; aim?: Aim | null; onAimed?: () => void }) {
   const { bridge, t } = useServices();
   const state = useStoreState();
   const paneId = session.id;
@@ -166,13 +169,25 @@ export function Diagram({ session, mighty }: { session: RunSession; mighty: Migh
     const targetID = followTargetID(layout, runs);
     const next = watch.current.observe(targetID, frameOf(targetID), camera.current, viewport, zoom);
     if (next) camera.current = next;
+    // A block asked for from another view: after the run-id rules, so a send is followed first and this wins.
+    if (aim) {
+      const id = frameOf(aim.nodeId) ? aim.nodeId : aim.fallbackNodeId && frameOf(aim.fallbackNodeId) ? aim.fallbackNodeId : null;
+      const target = frameOf(id);
+      if (id && target) {
+        pin.current = null;
+        camera.current = cameraOffset(target, viewport, zoom, false);
+        watch.current.moved(targetID, frameOf(targetID), camera.current, viewport, zoom);
+        setSelected(id);
+        onAimed?.();
+      }
+    }
     // A resized block: the layout recentres it, the camera keeps the corner across from the dragged sides where it was.
     const pinned = pin.current;
     const pinnedFrame = pinned ? frameOf(pinned.id) : null;
     if (pinned && pinnedFrame) camera.current = pinnedCamera(pinned.anchor, pinned.unit, pinnedFrame, zoom);
     else pin.current = null;
     applyCamera();
-  }, [layout, viewport, zoom]);
+  }, [layout, viewport, zoom, aim]);
 
   const userMoved = useCallback(() => {
     pin.current = null;
