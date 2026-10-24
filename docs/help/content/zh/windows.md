@@ -20,7 +20,7 @@ section: windows
 可在 Windows 10（版本 2004）或更高版本，或 Windows 11 上运行。所需的 .NET 运行时已包含在安装程序和 zip 中。
 
 > [!warning]
-> 此应用没有代码签名，Windows（SmartScreen）可能会阻止安装程序或首次运行。遇到这种情况，请点按**更多信息**，再点按**仍要运行**。如果提示找不到 Visual C++ 运行时，请安装 Microsoft Visual C++ 可再发行程序包（v14）。终端窗格和浏览器窗格需要 Microsoft Edge WebView2 运行时。
+> 此应用没有代码签名，Windows（SmartScreen）可能会阻止安装程序或首次运行。遇到这种情况，请点按**更多信息**，再点按**仍要运行**。如果提示找不到 Visual C++ 运行时，请安装 Microsoft Visual C++ 可再发行程序包（v14）。应用窗口以及终端窗格和浏览器窗格都由 Microsoft Edge WebView2 运行时绘制。Windows 10 和 11 通常已自带；如果没有，应用会以之前的界面打开，并提示缺少该运行时。
 
 更新方式与 Mac 相同：应用会自行下载新版本，在你关闭应用时安装；应用空闲时，会在一分钟提示后重新启动并安装（[更新](getting-started.md#update)）。要手动更新，请在{{ui:menu.settings}} → {{ui:settings.nav.about}}中操作。用安装程序安装的应用会在同一文件夹中替换为新版本，已安装的应用列表中显示的版本也会随之更新。也可以直接运行新的安装程序覆盖安装。
 

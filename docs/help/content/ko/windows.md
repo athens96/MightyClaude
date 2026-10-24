@@ -20,7 +20,7 @@ section: windows
 Windows 10(버전 2004) 이상 또는 Windows 11에서 동작합니다. 필요한 .NET 런타임은 설치 프로그램과 zip에 들어 있습니다.
 
 > [!warning]
-> 이 앱은 코드 서명이 없어 Windows(SmartScreen)가 설치 프로그램이나 첫 실행을 막을 수 있습니다. 그러면 **추가 정보**를 누른 뒤 **실행**을 누르세요. 앱이 Visual C++ 런타임을 찾지 못한다고 하면 Microsoft Visual C++ 재배포 가능 패키지(v14)를 설치하세요. 터미널과 브라우저 창에는 Microsoft Edge WebView2 런타임이 필요합니다.
+> 이 앱은 코드 서명이 없어 Windows(SmartScreen)가 설치 프로그램이나 첫 실행을 막을 수 있습니다. 그러면 **추가 정보**를 누른 뒤 **실행**을 누르세요. 앱이 Visual C++ 런타임을 찾지 못한다고 하면 Microsoft Visual C++ 재배포 가능 패키지(v14)를 설치하세요. 앱 화면과 터미널·브라우저 창은 Microsoft Edge WebView2 런타임으로 그립니다. Windows 10·11에는 대개 이미 들어 있고, 없으면 앱은 이전 화면으로 열리며 런타임이 없다고 알려 줍니다.
 
 업데이트도 Mac과 같습니다. 새 버전을 알아서 받아 두었다가 앱을 닫아 종료할 때 설치하고, 앱이 쉬고 있으면 1분 알림 뒤 다시 시작하며 설치합니다([업데이트](getting-started.md#update)). 직접 하려면 {{ui:menu.settings}} → {{ui:settings.nav.about}}에서 합니다. 설치 프로그램으로 설치한 앱은 같은 폴더에서 새 버전으로 바뀌고, 설치된 앱 목록에 보이는 버전도 따라 바뀝니다. 새 설치 프로그램을 받아 그 위에 설치해도 됩니다.
 

@@ -20,7 +20,7 @@ To use it without installing, get the zip from the same page, unzip the whole fo
 It runs on Windows 10 (version 2004) or later, or Windows 11. The .NET runtime it needs is included in both the setup program and the zip.
 
 > [!warning]
-> The app isn't code-signed, so Windows (SmartScreen) may block the setup program or the first launch. If it does, click **More info**, then **Run anyway**. If it says the Visual C++ runtime is missing, install the Microsoft Visual C++ Redistributable (v14). Terminal and browser panes need the Microsoft Edge WebView2 runtime.
+> The app isn't code-signed, so Windows (SmartScreen) may block the setup program or the first launch. If it does, click **More info**, then **Run anyway**. If it says the Visual C++ runtime is missing, install the Microsoft Visual C++ Redistributable (v14). The app window, terminal panes and browser panes are drawn with the Microsoft Edge WebView2 runtime. Windows 10 and 11 usually have it already; without it the app opens in its earlier screens and says the runtime is missing.
 
 Updates work as on the Mac: a new version is downloaded by itself and installed when you close the app, or after a one-minute notice that restarts the app while it sits idle ([Updates](getting-started.md#update)). To update by hand, use {{ui:menu.settings}} → {{ui:settings.nav.about}}. An installed app is replaced by the new version in the same folder, and the version shown in Installed apps follows. Running a newer setup program over it works too.
 
