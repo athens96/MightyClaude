@@ -7,11 +7,13 @@ import type { LogEntry } from '../store/models';
 import { dashForCard, dashOffset } from './camera';
 import { isResizable, visibleImages } from './layout';
 import type { MightyBlockCopy, MightyExecutionCard, MightyFile } from './types';
+import { BottomRight, type Edges } from './resize';
 
 /** What a block's buttons and grips ask of the diagram; one stable object for every block. */
 export interface BlockActions {
   toggleExpand(id: string, expanded: boolean): void;
-  startResize(id: string, edges: 'right' | 'bottom' | 'corner', event: React.PointerEvent): void;
+  /** A press on the corner grip: the diagram hit-tests the four borders' bands itself (src/mighty/resize.ts). */
+  startResize(id: string, edges: Edges, event: React.PointerEvent): void;
   resetSize(id: string): void;
   toggleFiles(runId: string): void;
   fitResult(id: string): void;
@@ -245,9 +247,7 @@ export const Block = memo(function Block(props: BlockProps) {
       <Outline outline={copy?.outline ?? 'none'} w={w} h={h} />
       {resizable && (
         <>
-          <div className="mighty-band-right" onPointerDown={(e) => actions.startResize(id, 'right', e)} />
-          <div className="mighty-band-bottom" onPointerDown={(e) => actions.startResize(id, 'bottom', e)} />
-          <div className="mighty-grip" title={t('graph.block.resize')} onPointerDown={(e) => actions.startResize(id, 'corner', e)}
+          <div className="mighty-grip" title={t('graph.block.resize')} onPointerDown={(e) => actions.startResize(id, BottomRight, e)}
             onDoubleClick={() => actions.resetSize(id)} onContextMenu={(e) => { e.preventDefault(); actions.resetSize(id); }} />
         </>
       )}
