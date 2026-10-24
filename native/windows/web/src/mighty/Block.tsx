@@ -1,6 +1,7 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useServices } from '../app/context';
 import { Entry } from '../conversation/Entry';
+import { HeightCache, estimateHeight, layout, nearBottom, visibleRange } from '../conversation/virtual';
 import { Markdown } from '../conversation/MarkdownView';
 import { ProviderMark } from '../conversation/ProviderMark';
 import type { LogEntry } from '../store/models';
@@ -57,18 +58,77 @@ export interface BlockProps {
   actions: BlockActions;
 }
 
-/** The transcript of a block: its newest entries (a long one says how many came before), drawn by the conversation's Entry. */
+/**
+ * The transcript of a block, windowed as the conversation is (src/conversation/virtual.ts): every entry but the request, only
+ * those near the block body's viewport in the page, each measured once per width and the rest stood in for by their heights.
+ * It opens at its end and follows new entries while its body stands within 32 px of the bottom.
+ */
 const Transcript = memo(function Transcript({ entries, paneId, provider, running }: { entries: readonly LogEntry[]; paneId: string; provider: string; running: boolean }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
-  const shown = useMemo(() => entries.filter((e) => e.kind !== 'user').slice(-60), [entries]);
+  const shown = useMemo(() => entries.filter((e) => e.kind !== 'user'), [entries]);
   const toggle = useMemo(() => (id: string) => setOpen((s) => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n; }), []);
+  const root = useRef<HTMLDivElement>(null);
+  const [heights] = useState(() => new HeightCache());
+  const width = useRef(0);
+  const following = useRef(true);
+  const frame = useRef(0);
+  const [view, setView] = useState({ top: Number.MAX_SAFE_INTEGER, height: 400, width: 0 });
+  const [version, setVersion] = useState(0);
+  const scroller = useCallback(() => root.current?.closest<HTMLElement>('.mighty-body') ?? null, []);
+  const stick = useCallback(() => {
+    const body = scroller();
+    if (body && following.current) body.scrollTop = body.scrollHeight;
+  }, [scroller]);
+  const [rows] = useState(() => new ResizeObserver((records) => {
+    let changed = false;
+    for (const record of records) {
+      const element = record.target as HTMLElement;
+      const id = element.dataset.entryId;
+      if (!id || !element.isConnected) continue;
+      if (heights.set(id, width.current, Math.ceil(record.borderBoxSize[0]?.blockSize ?? element.offsetHeight))) changed = true;
+    }
+    if (!changed) return;
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => setVersion((v) => v + 1));
+  }));
+  useEffect(() => () => { cancelAnimationFrame(frame.current); rows.disconnect(); }, [rows]);
+  const observe = useCallback((element: HTMLDivElement | null) => {
+    if (!element) return undefined;
+    rows.observe(element);
+    return () => rows.unobserve(element);
+  }, [rows]);
+  useLayoutEffect(() => {
+    const body = scroller(), element = root.current;
+    if (!body || !element) return undefined;
+    // The transcript's own top inside the body (a request band may stand over it).
+    const read = () => {
+      following.current = nearBottom(body.scrollHeight, body.scrollTop, body.clientHeight);
+      const next = { top: body.scrollTop - element.offsetTop, height: body.clientHeight, width: Math.round(element.clientWidth) };
+      if (next.width !== width.current) width.current = next.width;
+      setView((current) => (current.top === next.top && current.height === next.height && current.width === next.width ? current : next));
+    };
+    const fit = () => { stick(); read(); };
+    fit();
+    const resize = new ResizeObserver(fit);
+    resize.observe(body);
+    body.addEventListener('scroll', read, { passive: true });
+    return () => { resize.disconnect(); body.removeEventListener('scroll', read); };
+  }, [scroller, stick]);
+  useLayoutEffect(stick);
+  const offsets = useMemo(() => layout(shown, (entry) => heights.get(entry.id, view.width) ?? estimateHeight(entry)), [shown, view.width, version, heights]);
+  const [start, end] = visibleRange(offsets, view.top, view.height);
+  const total = offsets[offsets.length - 1] ?? 0;
   return (
-    <div className="mighty-transcript">
-      {shown.map((entry) => (
-        <Entry key={entry.id} entry={entry} paneId={paneId} provider={provider} shell={false}
-          live={running && !!entry.activity && (entry.activity.state === 'running' || entry.activity.state === 'waiting')}
-          expanded={open.has(entry.id)} onToggle={toggle} />
-      ))}
+    <div className="mighty-transcript" ref={root} data-entry-count={shown.length}>
+      <div style={{ paddingTop: offsets[start], paddingBottom: total - (offsets[end] ?? total) }}>
+        {shown.slice(start, end).map((entry) => (
+          <div key={entry.id} data-entry-id={entry.id} ref={observe}>
+            <Entry entry={entry} paneId={paneId} provider={provider} shell={false}
+              live={running && !!entry.activity && (entry.activity.state === 'running' || entry.activity.state === 'waiting')}
+              expanded={open.has(entry.id)} onToggle={toggle} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 });
