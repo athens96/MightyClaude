@@ -244,6 +244,7 @@ public sealed partial class MainWindow
             new BitmapTransform { Bounds = new BitmapBounds { X = 0, Y = 0, Width = 192, Height = 208 } }, ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage);
         using var output = new InMemoryRandomAccessStream(); var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
         encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, 192, 208, 96, 96, pixels.DetachPixelData()); await encoder.FlushAsync(); output.Seek(0);
-        var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(output); return bitmap;
+        // The page draws the settings' preview from the same PNG (WebNative.cs).
+        var bitmap = new BitmapImage(); await WebNativeReader.RememberStream(bitmap, "image/png", output); await bitmap.SetSourceAsync(output); return bitmap;
     }
 }
