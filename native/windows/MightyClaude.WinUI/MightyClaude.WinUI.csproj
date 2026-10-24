@@ -24,7 +24,9 @@
     <!-- What Windows shows for the exe (Task Manager, file properties); the file name stays MightyClaude.exe. -->
     <AssemblyTitle>Mighty Claude</AssemblyTitle>
     <Product>Mighty Claude</Product>
-    <Version>0.2.0</Version>
+    <!-- The repo's VERSION, as the release build stamps it with -p:Version (scripts/build-windows.ps1); a build without the file says 0.2.0. -->
+    <Version Condition="Exists('$(MSBuildThisFileDirectory)../../../VERSION')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../../VERSION').Trim())</Version>
+    <Version Condition="'$(Version)' == ''">0.2.0</Version>
     <RootNamespace>MightyClaude.WinUI</RootNamespace>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>

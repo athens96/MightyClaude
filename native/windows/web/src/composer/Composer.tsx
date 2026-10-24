@@ -5,7 +5,7 @@ import type { RunSession } from '../store/models';
 import { attachmentRefusal, byteLabel, toBase64 } from './attachments';
 import { enterAction, maximumDraft } from './keys';
 import { choose, closed, move, paletteDraft, paletteKey, paletteState, safeIndex, type PaletteState, type SlashCatalog, type SlashCommand } from './slash';
-import { Toolbar } from './Toolbar';
+import { StyleRow, Toolbar } from './Toolbar';
 import { Icon } from '../icons/Icon';
 import type { AttachmentPreview, ComposerState, SendResult } from './types';
 import { usePageOverlay } from '../shell/overlay';
@@ -230,6 +230,7 @@ export function Composer({ session }: { session: RunSession }) {
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false); }}
         onDrop={drop}
       >
+        {state?.style && <StyleRow paneId={paneId} style={state.style} />}
         {state && state.attachments.length > 0 && (
           <div className="composer-attachments">
             {state.attachments.map((file) => (

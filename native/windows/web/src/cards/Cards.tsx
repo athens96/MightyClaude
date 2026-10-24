@@ -227,7 +227,7 @@ function Permission({ card, call }: { card: PermissionCard; call: Call }) {
         {card.path && <div className="card-path">{card.path}</div>}
         {card.reason && <div className="card-note">{card.reason}</div>}
         <button type="button" className="card-fold small" aria-expanded={json} onClick={() => setJson(!json)}>
-          <span className="card-chevron" aria-hidden="true">{json ? '▾' : '▸'}</span>{card.rawJson}
+          <Icon name={json ? 'chevron-down' : 'chevron-right'} size={9} weight={2.6} className="card-chevron" />{card.rawJson}
         </button>
         {json && <pre className="card-json">{card.inputJson}</pre>}
       </div>
@@ -359,6 +359,18 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
   const [revising, setRevising] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [full, setFull] = useState(false);
+  const answers = useRef<HTMLDivElement>(null);
+  const measure = useRef<HTMLDivElement>(null);
+  const [oneLine, setOneLine] = useState(true);
+  useLayoutEffect(() => {
+    const row = answers.current, ideal = measure.current;
+    if (!row || !ideal) return;
+    const fit = () => setOneLine(ideal.scrollWidth <= row.clientWidth + 0.5);
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, []);
   usePageOverlay(full);
   const answer = (decision: string) => void call('planAnswer', { requestId: card.requestId, decision, feedback: decision === 'revise' ? feedback : undefined });
   const tile = (key: string, decision: string | null, accent = false) => (
@@ -392,13 +404,23 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
         </div>
       )}
       {card.error && <div className="card-error" role="alert">{card.error}</div>}
-      {/* M/PlanApprovalCard.swift PlanActions: the hint, then the four answers at the right, on one line where they fit. */}
-      <div className="plan-answers">
-        <span className="card-hint-row">{card.sending && <span className="card-spinner" aria-hidden="true" />}<span className="card-hint">{t('plan.card.hint')}</span></span>
-        {tile('plan.card.cancel', 'cancel')}
-        {tile('plan.card.revise', null)}
-        {tile('plan.card.approveConfirm', 'approveConfirm')}
-        {tile('plan.card.approveAuto', 'approveAuto', true)}
+      {/* M/PlanApprovalCard.swift PlanActions (ViewThatFits): the hint, then the four answers at the right, on one line where all of
+          it fits at its own width; else no hint, Cancel and Revise on one row and the two approvals under them, both at the right. */}
+      <div className={'plan-answers' + (oneLine ? '' : ' stacked')} ref={answers}>
+        <div className="plan-answers-measure" ref={measure} aria-hidden="true">
+          <span className="card-hint">{t('plan.card.hint')}</span>
+          {['plan.card.cancel', 'plan.card.revise', 'plan.card.approveConfirm', 'plan.card.approveAuto'].map((key) => <span key={key} className="card-button">{t(key)}</span>)}
+        </div>
+        {oneLine && <span className="card-hint-row">{card.sending && <span className="card-spinner" aria-hidden="true" />}<span className="card-hint">{t('plan.card.hint')}</span></span>}
+        <span className="plan-answers-row">
+          {!oneLine && card.sending && <span className="card-spinner" aria-hidden="true" />}
+          {tile('plan.card.cancel', 'cancel')}
+          {tile('plan.card.revise', null)}
+        </span>
+        <span className="plan-answers-row">
+          {tile('plan.card.approveConfirm', 'approveConfirm')}
+          {tile('plan.card.approveAuto', 'approveAuto', true)}
+        </span>
       </div>
       {full && (
         <div className="card-dialog" role="dialog" data-page-overlay="" aria-label={t('plan.card.title')} onClick={() => setFull(false)}>

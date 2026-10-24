@@ -67,7 +67,13 @@ public sealed partial class MainWindow
         if (AgentIOPaneKind.IsAgentIO(kind)) return Locale.Get(kind == AgentIOPaneKind.Terminal ? "dashboard.kind.agentTerminal" : "dashboard.kind.agentBrowser") + " · " + ProviderMark.Label(card.Session.Provider);
         if (kind != "claude") return kind;
         var parts = new List<string>();
-        if (card.Model is { } model) parts.Add(ModelLabel.Text(model));
+        // Labelled exactly as the pane's composer chip (M/DashboardView.swift modelText): the catalogue's name for an alias.
+        if (card.Model is not null)
+        {
+            var session = card.Session;
+            var runtime = views.TryGetValue(session.Id, out var view) ? view.PaneRuntime(session.Provider) : Runtime(session.Provider);
+            parts.Add(ModelLabel.Selection(session, runtime?.ModelCatalog ?? ProviderCatalog.Fallback(session.Provider)));
+        }
         if (WorkDashboard.SidebarDetail(card, DateTimeOffset.UtcNow) is { Length: > 0 } detail) parts.Add(detail);
         return parts.Count == 0 ? "" : "· " + string.Join(" · ", parts);
     }

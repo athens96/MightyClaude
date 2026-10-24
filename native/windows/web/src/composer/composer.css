@@ -78,3 +78,16 @@
 .slash-source { font-size: var(--type-small); color: var(--ink3); justify-self: end; }
 .slash-description { grid-column: 1 / -1; font-size: var(--type-small); color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slash-count { padding: var(--space-xxs) var(--space-md); font-size: var(--type-small); color: var(--ink2); border-top: var(--stroke-line) solid var(--line); }
+
+/* The Mighty row over the editor (M/SessionPaneView.swift composer): chip and hint 12 apart. */
+.composer-style-row { position: relative; display: flex; align-items: center; gap: var(--space-md); min-height: 18px; }
+.composer-style-chip {
+  display: inline-flex; align-items: center; gap: var(--space-xs); flex: none; border: 0; cursor: default;
+  padding: var(--space-xxs) var(--space-sm); border-radius: var(--radius-segment); background: var(--subtle); color: var(--ink);
+  font: inherit; font-size: 10px; font-weight: 500; line-height: 1.2;
+}
+.composer-style-chip:disabled { opacity: .5; }
+.composer-style-chip .pill-chevron { color: var(--ink2); }
+.composer-style-badge { font-size: 9px; color: var(--ink2); background: var(--subtle); border-radius: 8px; padding: 1px var(--space-xs); }
+.composer-style-hint { min-width: 0; font-size: 10px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.composer-style-row .composer-menu { top: 100%; left: 0; bottom: auto; }

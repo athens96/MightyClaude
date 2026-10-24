@@ -28,7 +28,7 @@ export type MenuRow =
   | { kind: 'runSettings'; text: string }
   | { kind: 'submenu'; text: string; enabled: boolean; items: MenuRow[] };
 
-export type MenuName = 'model' | 'effort' | 'permission' | 'options' | 'actions';
+export type MenuName = 'model' | 'effort' | 'permission' | 'options' | 'actions' | 'style';
 
 export interface RunSettingsValues {
   fastMode: boolean;

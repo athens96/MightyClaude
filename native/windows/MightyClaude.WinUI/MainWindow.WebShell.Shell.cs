@@ -78,6 +78,12 @@ public sealed partial class MainWindow
             else await Act(async () => { await SelectLayoutSession(id); await ApplyLayoutPreset("focus"); });
             return null;
         });
+        // The pane header's plugin button (M/SessionPaneView.swift headerControls): the provider's plugin browser, as the WinUI button opens it.
+        bridge.Register("openPlugins", async args =>
+        {
+            if (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == args.Text("id")) is { Provider: "claude" or "codex" } pane && !dialogOpen) await OpenPluginBrowser(pane.Provider);
+            return null;
+        });
         bridge.Register("childAction", async args =>
         {
             if (args.Text("id") is not { } id || !Enum.TryParse<DelegationCardAction>(args.Text("action"), true, out var action)) return null;

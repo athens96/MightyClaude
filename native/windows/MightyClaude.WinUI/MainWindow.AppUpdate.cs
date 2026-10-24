@@ -190,8 +190,10 @@ public sealed partial class MainWindow
         return rows;
     }
 
+    /// <summary>The build's version as it was stamped (AssemblyInformationalVersion, without the source revision after '+').</summary>
     internal static string AppVersionText =>
-        typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
+        (System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(MainWindow).Assembly)?.InformationalVersion is { Length: > 0 } stamped ? stamped.Split('+')[0] : null)
+        ?? typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
 
     /// Puts the Core view on screen. Called when the section is built and again
     /// on every phase change, so the section follows a running check live.
