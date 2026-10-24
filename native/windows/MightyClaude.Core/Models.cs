@@ -167,8 +167,9 @@ public sealed record RunSession : IJsonOnDeserializing
             value = value with { Logs = TranscriptRetention.Trimmed(logs) };
             // The request still running also shows the main agent's own work as it comes (M/MightyGraph.swift recordGraph "log"):
             // the 실행 block and the timeline read RootEntries, which the run pipeline's graph only fills with the final answer.
+            // A request whose turn ended while its background tasks run reads completed, yet its notice turns still add to it.
             if (entry.Kind != "user" && Kind == "claude" && MightyGraphSupport.Providers.Contains(Provider) && value.GraphRuns is { Count: > 0 } live
-                && !MightyGraphSupport.Terminal(live[^1].Status))
+                && (!MightyGraphSupport.Terminal(live[^1].Status) || value.Status == "running" && value.BackgroundWork is { TurnEnded: true }))
             {
                 // Only the live request is copied: a streamed answer updates its entry many times a second.
                 var runs = live.ToList(); runs[^1] = runs[^1].Copy();

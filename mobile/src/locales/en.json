@@ -314,6 +314,8 @@
   "graph.ouroboros.unreachable": "The Ouroboros dashboard is not reachable, so the current status is unknown.",
   "graph.ouroboros.unreadable": "The dashboard cannot read this execution.",
   "graph.ouroboros.waiting": "Reading the status…",
+  "graph.result.afterNotice": "After a notice",
+  "graph.result.afterTaskNotice": "After task notice · {title}",
   "graph.result.fitToWindow": "Fit to window",
   "graph.resultFiles.closeButton": "Close file list",
   "graph.resultFiles.countLabel": "{count} result files · toggle list",

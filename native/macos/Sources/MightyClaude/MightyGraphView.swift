@@ -513,7 +513,7 @@ struct MightyGraphView: View {
             let run = runs[index]
             let runID = run.sourceRunID ?? run.id
             let runChildBlocks = GraphChildBlocks.map(responseRecords: run.responseRecords, agents: run.agents, runId: runID)
-            transcriptCard(node, title: L("graph.block.executionOf", ["n": "\(index + 1)"]), icon: Self.executionIcon, status: run.status,
+            transcriptCard(node, title: L("graph.block.executionOf", ["n": "\(index + 1)"]), icon: Self.executionIcon, status: run.status, statusText: Self.runStatusLabel(run),
                            input: "", entries: run.rootEntries, tint: Palette.agentText, usage: run.usage,
                            records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks,
                            fromRecord: index < olderCount)
@@ -583,7 +583,7 @@ struct MightyGraphView: View {
     /// white words on it; the other blocks keep a plain header on the white card.
     /// `inputOnly` is the request block: its input fills the card, and it has no status of
     /// its own — the 실행 block under it runs and settles.
-    private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, titleProvider: String? = nil, icon: String, status: String, input: String, entries: [LogEntry], tint: Color,
+    private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, titleProvider: String? = nil, icon: String, status: String, statusText: String? = nil, input: String, entries: [LogEntry], tint: Color,
                                 usage: GraphTokenUsage? = nil, usageLabel: String = L("graph.block.blockUsageLabel"), resultFilesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
                                 childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil,
@@ -609,7 +609,7 @@ struct MightyGraphView: View {
                 if selectedNodeID == node.id { blockScrollLabel(node.id, ink: onStrip ? Palette.onStatus : Palette.accent) }
                 if !onStrip && !inputOnly {
                     MightyGraphActivityIndicator(status: status, tint: Palette.run)
-                    MightyStatusPill(text: Self.statusLabel(status), tone: DesignTone(blockStatus: status))
+                    MightyStatusPill(text: statusText ?? Self.statusLabel(status), tone: DesignTone(blockStatus: status))
                 }
                 if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog, versioned: true) {
                     let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records, catalog: catalog, versioned: true)
@@ -748,6 +748,11 @@ struct MightyGraphView: View {
             .lineLimit(1).fixedSize().accessibilityIdentifier("mighty-block-scroll-" + id)
     }
 
+    /// A request's status word; one whose turn ended while its background tasks run says it waits on them.
+    static func runStatusLabel(_ run: MightyGraphRun) -> String {
+        run.backgroundWaiting > 0 ? L("plan.background.status", ["count": "\(run.backgroundWaiting)"]) : statusLabel(run.status)
+    }
+
     /// A status word as the diagram's pills say it; the structure view says it the same way.
     static func statusLabel(_ status: String) -> String {
         switch status {
@@ -858,7 +863,7 @@ struct MightyGraphView: View {
                             .help(L("graph.history.tag")).accessibilityLabel(L("graph.history.tag"))
                     }
                     Spacer(minLength: DesignMetrics.Spacing.sm)
-                    MightyStatusPill(text: Self.statusLabel(group.status), tone: DesignTone(status: group.status), height: 20)
+                    MightyStatusPill(text: Self.runStatusLabel(run), tone: DesignTone(status: group.status), height: 20)
                 }
                 Group {
                     if !prompt.isEmpty {

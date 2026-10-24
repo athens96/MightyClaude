@@ -53,6 +53,8 @@ final class ExecutionGraphTracker {
     private var messageConfigured: [String: Bool] = [:]
     private var nodeResponseOrder: [String: [String]] = [:]
     private var pendingSteers: [String] = []
+    /// The tasks whose notices arrived since the last root result: the next notice turn's answer is headed by them.
+    private var noticedTasks: [String] = []
     private var messageOrder: [String] = []
     private var unnamedUsage = 0
     private var compactions = 0
@@ -288,10 +290,23 @@ final class ExecutionGraphTracker {
             }
             // Task completion arrives as an injected user message, not a tool event.
             if let text = Self.text(message["content"]), text.contains("<task-notification>") { settleTasks(in: text) }
-        } else if type == "result", !ClaudeStream.isNotificationResult(value) {
+        } else if type == "result", ClaudeStream.isNotificationResult(value) {
+            // A notice turn's answer follows the request's in the result, headed by the notices it answered.
+            guard parentTool == nil else { return }
+            let titles = noticedTasks; noticedTasks.removeAll()
+            guard let answer = (value["result"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty else { return }
+            let header = titles.isEmpty ? L("graph.result.afterNotice") : L("graph.result.afterTaskNotice", ["title": titles.joined(separator: ", ")])
+            update(mainID) { $0.output = MightyGraphSupport.withNoticeSection($0.output, header: header, answer: answer) }
+        } else if type == "result" {
             if parentTool == nil {
-                // Main output comes only from the CLI's actual root result.
-                update(mainID) { $0.output = value["result"] as? String }
+                // Main output comes only from the CLI's actual root result. The request's own turn ended: it reads
+                // completed while background tasks it started still run; the process's end settles the rest.
+                noticedTasks.removeAll()
+                let failed = value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error")
+                update(mainID) { node in
+                    node.output = value["result"] as? String
+                    if !failed { node.state = "completed" }
+                }
             } else if current != mainID {
                 update(current) { node in
                     node.output = value["result"] as? String
@@ -622,7 +637,9 @@ final class ExecutionGraphTracker {
             }
             // The notice entered the turn like a steer: a 작업 알림 under main, once per task, whose reply is the next root-level answer.
             guard let notified = nodes[id] else { continue }
-            let line = (notified.title.isEmpty ? notified.input ?? "" : notified.title) + " · " + L(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
+            let named = notified.title.isEmpty ? notified.input ?? "" : notified.title
+            if !noticedTasks.contains(named), noticedTasks.count < 16 { noticedTasks.append(named) }
+            let line = named + " · " + L(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
             steer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + line + (summary.map { "\n" + $0 } ?? ""))
         }
     }

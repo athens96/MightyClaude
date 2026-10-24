@@ -163,6 +163,39 @@ struct ExecutionGraphTests {
         #expect(try latest(nodes, buildNotice.id).state == "completed"); #expect(try latest(nodes, buildNotice.id).output == "Both settled.")
     }
 
+    /// The request's own turn ended while its backgrounded command ran: it reads completed and waits on it; the
+    /// notice and its reply are still recorded, the result goes on with the notice turn's answer under a line naming
+    /// the notice, and an empty notice turn adds nothing (Windows SessionHistoryVerification.ANoticeTurnsAnswerFollowsTheRequestsLiveAndReplayed).
+    @Test func theRequestTurnEndsBeforeItsBackgroundTaskAndANoticeTurnsAnswerFollows() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var nodes: [ExecutionGraphNode] = []
+            let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "wait-run", graph: { nodes.append($0) }, graphInput: "ping it")
+            try send(assistant([command("ping-cmd", command: "ping -c 30 localhost", description: "ping")], id: "main-1"), to: parser)
+            try send(toolResult("ping-cmd", text: "Command running in background with ID: b1."), to: parser)
+            try send(assistant([["type": "text", "text": "Started ping."]], id: "main-2"), to: parser)
+            try send(["type": "result", "subtype": "success", "is_error": false, "result": "Started ping."], to: parser)
+            let mainID = ExecutionGraphSupport.mainNodeID(runId: "wait-run")
+            let pingID = ExecutionGraphSupport.agentNodeID(runId: "wait-run", toolUseId: "ping-cmd")
+            #expect(try latest(nodes, mainID).state == "completed"); #expect(try latest(nodes, pingID).state == "running")
+            let waiting = MightyGraphRun(id: "r", status: "completed", agents: [MightyGraphAgent(id: "t", status: "running", kind: "task")])
+            #expect(waiting.backgroundWaiting == 1); #expect(!waiting.settled)
+            try send(notification(task: "b1", tool: "ping-cmd", status: "completed", summary: "ping exited 0"), to: parser)
+            try send(assistant([["type": "text", "text": "Ping finished fine."]], id: "main-3"), to: parser)
+            try send(["type": "result", "subtype": "success", "is_error": false, "result": "Ping finished fine.", "origin": ["kind": "task-notification"]], to: parser)
+            try send(["type": "result", "subtype": "success", "is_error": false, "result": " ", "origin": ["kind": "task-notification"]], to: parser)
+            parser.finishGraph(state: "completed")
+            let notice = try latest(nodes, ExecutionGraphSupport.identifier("wait-run", "steer:notice:" + pingID))
+            #expect(notice.state == "completed"); #expect(notice.output == "Ping finished fine.")
+            #expect(try latest(nodes, mainID).output == "Started ping." + MightyGraphSupport.noticeSectionMark + "작업 알림 · ping 이후**\n\nPing finished fine.")
+            #expect(try latest(nodes, mainID).state == "completed")
+            // The main block keeps the request's own answer; the result's whole text is not copied into it again.
+            var run = MightyGraphRun(id: "r", status: "completed", rootEntries: [LogEntry(id: "a1", kind: "assistant", text: "Started ping."), LogEntry(id: "a2", kind: "assistant", text: "Ping finished fine.")],
+                                     finalOutput: try latest(nodes, mainID).output)
+            run.refreshResult()
+            #expect(run.resultEntries.first?.text == run.finalOutput); #expect(run.rootEntries.count == 2)
+        }
+    }
+
     @Test func aTaskNotificationIsATaskNoticeSteer() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             var nodes: [ExecutionGraphNode] = []

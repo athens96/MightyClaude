@@ -65,6 +65,63 @@ internal static class SessionHistoryVerification
         return lines;
     }
 
+    /// <summary>
+    /// A request whose own turn ended while its backgrounded command ran reads completed and says it waits on it; the task's
+    /// notice and the reply to it are still recorded, the result goes on with that notice turn's answer under a line naming the
+    /// notice, an empty notice turn adds nothing, and a replayed record builds the same result
+    /// (macOS SessionHistoryTests.aNoticeTurnsAnswerFollowsTheRequestsLiveAndReplayed).
+    /// </summary>
+    internal static Task ANoticeTurnsAnswerFollowsTheRequestsLiveAndReplayed()
+    {
+        var emitted = new List<ExecutionGraphNode>();
+        var tracker = new ExecutionGraphTracker("wait-run", "ping it", "claude", null, emitted.Add);
+        void Frame(object value) { using var json = JsonDocument.Parse(Json(value)); tracker.Consume(json.RootElement.Clone()); }
+        const string notice = "<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>ping-cmd</tool-use-id>\n<status>completed</status>\n<summary>ping exited 0</summary>\n</task-notification>";
+        var launch = new { type = "assistant", message = new { content = new object[] { new { type = "tool_use", id = "ping-cmd", name = "Bash", input = new { command = "ping -n 30 localhost", description = "ping", run_in_background = true } } } } };
+        var started = new { type = "user", message = new { content = new object[] { new { type = "tool_result", tool_use_id = "ping-cmd", content = "Command running in background with ID: b1." } } } };
+        Frame(launch); Frame(started);
+        Frame(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "Started ping." } } } });
+        Frame(new { type = "result", subtype = "success", is_error = false, result = "Started ping." });
+        var waiting = tracker.BuildRun(includeRunning: true)!;
+        Check(waiting.Status == "completed" && MightyGraphSupport.BackgroundWaiting(waiting) == 1 && !MightyGraphLayout.Finished(waiting)
+            && MightyGraphBlockModel.RunStateLabel(waiting) == "턴 완료 · 백그라운드 1개 실행 중", "the request reads completed and waits on its task; got " + waiting.Status + " / " + MightyGraphBlockModel.RunStateLabel(waiting));
+        Frame(new { type = "user", message = new { content = new[] { new { type = "text", text = notice } } } });
+        Frame(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "Ping finished fine." } } } });
+        Frame(new { type = "result", subtype = "success", is_error = false, result = "Ping finished fine.", origin = new { kind = "task-notification" } });
+        Frame(new { type = "result", subtype = "success", is_error = false, result = " ", origin = new { kind = "task-notification" } });
+        tracker.Finish("completed");
+        var live = tracker.BuildRun()!;
+        var expected = "Started ping." + MightyGraphSupport.NoticeSectionMark + "작업 알림 · ping 이후**\n\nPing finished fine.";
+        var reply = live.Agents.Single(a => MightyGraphSupport.IsTaskNotice(a));
+        Check(reply.Status == "completed" && reply.Entries.Any(e => e.Kind == "assistant" && e.Text == "Ping finished fine."), "the notice and its reply are recorded after the turn ended");
+        Check(live.FinalOutput == expected && MightyGraphSupport.BackgroundWaiting(live) == 0 && MightyGraphBlockModel.RunStateLabel(live) == "완료",
+            "the result is the request's answer, then the notice turn's under its line; an empty notice turn adds nothing; got " + live.FinalOutput);
+        // The main block keeps the request's own answer; the result's whole text is not copied into it again.
+        live.RootEntries = [new("a1", "assistant", "Started ping.", Stamp(Base)), new("a2", "assistant", "Ping finished fine.", Stamp(Base))];
+        MightyGraphSupport.RefreshResult(live);
+        Check(live.ResultEntries.Single().Text == expected && live.RootEntries.Count == 2, "the result block shows the whole result and the main block stays as it was");
+
+        // The transcript after the turn ended still reaches the waiting request's 실행 block.
+        var session = new RunSession { Id = "p", Kind = "claude", Provider = "claude", Status = "running", GraphRuns = [waiting], BackgroundWork = new([new("b1", "bash", "ping", Stamp(Base))], TurnEnded: true) };
+        var merged = new AppSnapshot { Sessions = [session] }.Apply(new RunEvent("p", "log", new("late", "assistant", "Ping finished fine.", Stamp(Base)))).Sessions.Single();
+        Check(merged.GraphRuns![^1].RootEntries.Any(e => e.Id == "late"), "a notice turn's transcript joins the request that waits on its task");
+
+        using var fixture = new Fixture();
+        var id = "7d1e2c1a-1111-4222-8333-444455556666";
+        var at = Base.AddHours(1);
+        fixture.ClaudeRecord(id, [
+            ClaudeUser("ping it", at, "u1", fixture.Workspace),
+            Json(new { launch.type, launch.message, uuid = "a1", timestamp = Stamp(at.AddSeconds(1)) }),
+            Json(new { started.type, started.message, toolUseResult = new { }, uuid = "t1", timestamp = Stamp(at.AddSeconds(2)) }),
+            ClaudeAnswer("Started ping.", at.AddSeconds(3), "a2"),
+            ClaudeUser(notice, at.AddSeconds(30), "n1", fixture.Workspace, new Dictionary<string, object?> { ["origin"] = new { kind = "task-notification" } }),
+            ClaudeAnswer("Ping finished fine.", at.AddSeconds(31), "a3"),
+        ]);
+        var replayed = SessionHistory.Load(new SessionHistoryRequest("claude", id, fixture.Workspace) { Home = fixture.Home }).Runs;
+        Check(replayed.Count == 1 && replayed[0].FinalOutput == expected, "a replayed record builds the live result; got " + string.Join(" | ", replayed.Select(r => r.Input + " => " + r.FinalOutput)));
+        return Task.CompletedTask;
+    }
+
     internal static Task ScrollingUpLoadsTheTenRequestsAboveTheRetainedOneFromAClaudeRecord()
     {
         using var fixture = new Fixture();

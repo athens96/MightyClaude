@@ -98,6 +98,13 @@ public static class MightyGraphSupport
     public static bool IsNotice(MightyGraphAgent agent) => IsDelegationNotice(agent) || IsTaskNotice(agent);
     /// <summary>What the block shows as its request: a task notice without its prefix (macOS MightyGraphAgent.shownInput).</summary>
     public static string ShownInput(MightyGraphAgent agent) => IsTaskNotice(agent) ? agent.Input[TaskNoticePrefix.Length..] : agent.Input;
+    /// <summary>What opens a notice turn's section in a request's result (macOS MightyGraphSupport.noticeSectionMark).</summary>
+    public const string NoticeSectionMark = "\n\n---\n\n**";
+    /// <summary>The result with a notice turn's answer after it, under a bold line naming the notice; the request's own answer stays first.</summary>
+    public static string WithNoticeSection(string? result, string header, string answer) =>
+        (string.IsNullOrEmpty(result) ? "**" : result + NoticeSectionMark) + header + "**\n\n" + answer;
+    /// <summary>Background tasks still running after the request's own turn ended: it reads completed and waits on them (macOS MightyGraphRun.backgroundWaiting).</summary>
+    public static int BackgroundWaiting(MightyGraphRun run) => run.Status == "completed" ? run.Agents.Count(a => BlockKind(a) == "task" && !Terminal(a.Status)) : 0;
 
     public static string AgentNodeId(string runId, string agentId) =>
         MightyGraphBlockSize.NodeId(runId, "agent:" + agentId);
@@ -324,7 +331,9 @@ public static class MightyGraphSupport
         var provider = run.Provider ?? "claude";
         var entry = new LogEntry(run.Id + "-result", "assistant", run.FinalOutput!, ts, provider);
         run.ResultEntries = [entry];
-        if (!run.RootEntries.Any(e => e.Kind == "assistant" && e.Text == run.FinalOutput))
+        // A result that goes on with notice sections starts with the request's own answer, which the main block already shows.
+        var own = run.FinalOutput!.Split(NoticeSectionMark)[0];
+        if (!run.RootEntries.Any(e => e.Kind == "assistant" && (e.Text == run.FinalOutput || e.Text == own)))
         {
             var idx = run.RootEntries.FindIndex(e => e.Id == entry.Id);
             if (idx >= 0) run.RootEntries[idx] = entry; else run.RootEntries.Add(entry);

@@ -123,6 +123,8 @@ public sealed partial class ExecutionGraphTracker
     private readonly Dictionary<string, bool> messageConfigured = [];
     private readonly Dictionary<string, List<string>> nodeResponseOrder = [];
     private readonly List<string> pendingSteers = [];
+    /// The tasks whose notices arrived since the last root result: the next notice turn's answer is headed by them.
+    private readonly List<string> noticedTasks = [];
     private readonly List<string> messageOrder = [];
     private int unnamedUsage;
     private int compactions;
@@ -384,9 +386,19 @@ public sealed partial class ExecutionGraphTracker
             // Task completion arrives as an injected user message, not a tool event.
             if (Text(MetadataJson.Property(message, "content")) is { } text && text.Contains("<task-notification>", StringComparison.Ordinal)) SettleTasks(text);
         }
-        else if (type == "result" && !ClaudeStream.IsNotificationResult(value))
+        else if (type == "result" && ClaudeStream.IsNotificationResult(value))
         {
-            if (parentTool is null) Update(mainID, n => n with { Output = value.Text("result") });
+            // A notice turn's answer follows the request's in the result, headed by the notices it answered (macOS).
+            if (parentTool is not null) return;
+            var titles = noticedTasks.ToList(); noticedTasks.Clear();
+            if (value.Text("result")?.Trim() is not { Length: > 0 } answer) return;
+            var header = titles.Count > 0 ? Locale.Get("graph.result.afterTaskNotice", new Dictionary<string, string> { ["title"] = string.Join(", ", titles) }) : Locale.Get("graph.result.afterNotice");
+            Update(mainID, n => n with { Output = MightyGraphSupport.WithNoticeSection(n.Output, header, answer) });
+        }
+        else if (type == "result")
+        {
+            // The request's own turn ended: it reads completed while background tasks it started still run; the process's end settles the rest.
+            if (parentTool is null) { noticedTasks.Clear(); Update(mainID, n => n with { Output = value.Text("result"), State = IsTrue(value, "is_error") || (value.Text("subtype") ?? "").StartsWith("error", StringComparison.Ordinal) ? n.State : "completed" }); }
             else if (current != mainID)
                 Update(current, n => n with
                 {
@@ -581,7 +593,9 @@ public sealed partial class ExecutionGraphTracker
             Update(id, n => ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = state, Output = summary ?? n.Output });
             // The notice entered the turn like a steer: a 작업 알림 under main, once per task, whose reply is the next root-level answer.
             var notified = nodes[id];
-            var line = (notified.Title is { Length: > 0 } title ? title : notified.Input ?? "") + " · " + Locale.Get(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped");
+            var named = notified.Title is { Length: > 0 } title ? title : notified.Input ?? "";
+            if (!noticedTasks.Contains(named) && noticedTasks.Count < 16) noticedTasks.Add(named);
+            var line = named + " · " + Locale.Get(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped");
             SteerLocked("notice:" + id, MightyGraphSupport.TaskNoticePrefix + line + (summary is null ? "" : "\n" + summary));
         }
     }
