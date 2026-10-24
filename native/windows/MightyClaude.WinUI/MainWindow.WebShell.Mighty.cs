@@ -373,7 +373,7 @@ public sealed partial class MainWindow
                 var tally = Locale.Get("phone.blocks.tally", new Dictionary<string, string> { ["total"] = group.Tally.Total.ToString(), ["settled"] = group.Tally.Settled.ToString() });
                 var total = run.TotalUsage;
                 var caption = Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = group.Ordinal.ToString() }) + (total is null || total.IsEmpty ? "" : " · " + total.Summary);
-                groups.Add(new(group.RunId, group.Ordinal, GraphRequestTitle(run, group.Ordinal), group.Status, MightyGraphBlockModel.StateLabel(group.Status),
+                groups.Add(new(group.RunId, group.Ordinal, GraphRequestTitle(run, group.Ordinal), group.Status, MightyGraphBlockModel.RunStateLabel(run),
                     Tone(StatusGlyph.Tone(group.Status)), group.Input, tally, MightyTimeline.GroupOpen(group, runs.Count, webTimelineFlipped), group.RunIndex < older, rows,
                     group.Result?.NodeId, group.Result is { } r ? Tone(r.Tone) : null, group.Result?.Text, group.Result?.Text is { } text && MightyTimeline.Folds(text), group.Result is null ? null : caption));
             }

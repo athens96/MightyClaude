@@ -772,11 +772,19 @@ public static class HistoryReplay
     }
 
     /// A Claude record line is the stream-json event it was printed as, minus the
-    /// final <c>result</c>, which is rebuilt from the last answer.
+    /// <c>result</c>s, which are rebuilt from the answers: the request's own before the
+    /// first task notification that opened a turn, then each notice turn's, as live.
     private static string Claude(List<byte[]> lines, ExecutionGraphTracker tracker, Action<JsonElement> at)
     {
         string? answer = null;
-        bool interrupted = false, failed = false;
+        bool interrupted = false, failed = false, answered = false;
+        void Result()
+        {
+            var result = new Dictionary<string, object> { ["type"] = "result", ["subtype"] = "success", ["is_error"] = false, ["result"] = answer ?? "" };
+            if (answered) result["origin"] = new Dictionary<string, object> { ["kind"] = "task-notification" };
+            tracker.Consume(Element(result));
+            answered = true; answer = null;
+        }
         for (var index = 0; index < lines.Count; index++)
         {
             if (HistoryScan.Parse(lines[index]) is not { } value || value.Text("type") is not ("assistant" or "user" or "system" or "attachment") || MetadataJson.Flag(value, "isSidechain")) continue;
@@ -806,6 +814,8 @@ public static class HistoryReplay
                     if (text?.StartsWith("[Request interrupted by user", StringComparison.Ordinal) == true) { interrupted = true; continue; }
                     // A local command's printed output is that command's result.
                     if (text is not null && HistoryScan.LocalCommandOutput(text) is { } output) { if (output.Length > 0) answer = output; continue; }
+                    // A task notification opens a turn of its own: the turn before it ended with its answer.
+                    if (text?.Contains("<task-notification>", StringComparison.Ordinal) == true) Result();
                     break;
                 default:
                     if (MetadataJson.Flag(value, "isApiErrorMessage")) failed = true;
@@ -815,7 +825,7 @@ public static class HistoryReplay
             }
             tracker.Consume(consumed);
         }
-        if (answer is not null) tracker.Consume(Element(new Dictionary<string, object> { ["type"] = "result", ["subtype"] = "success", ["is_error"] = false, ["result"] = answer }));
+        if (answer is not null) Result();
         if (interrupted) return "stopped";
         return failed ? "error" : "completed";
     }

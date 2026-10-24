@@ -257,6 +257,10 @@ public static class MightyGraphBlockModel
         _ => Locale.Get("graph.state.running"),
     };
 
+    /// <summary>A request's status word; one whose turn ended while its background tasks run says it waits on them (macOS MightyGraphView.runStatusLabel).</summary>
+    public static string RunStateLabel(MightyGraphRun run) => MightyGraphSupport.BackgroundWaiting(run) is var count and > 0
+        ? Locale.Get("plan.background.status", new Dictionary<string, string> { ["count"] = count.ToString(System.Globalization.CultureInfo.InvariantCulture) }) : StateLabel(run.Status);
+
     /// <summary>The 실행 block's title (`graph.block.executionOf`, "실행 · 요청 N"): it names its request, so each one reads apart from the others.</summary>
     public static string ExecutionTitle(int ordinal) =>
         Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture) });
@@ -338,7 +342,7 @@ public static class MightyGraphBlockModel
                 // The main agent's own work for the request: its replies, tool calls, status and tokens.
                 case MightyGraphLayout.WorkKind when run is not null:
                     blocks.Add(new(node.Id, MightyGraphLayout.WorkKind, node.Frame, ExecutionTitle(runIndex + 1),
-                        StateLabel(run.Status), "",
+                        RunStateLabel(run), "",
                         run.RootEntries.Where(e => e.Kind != "user").ToList(),
                         ModelUsageFormat.BlockCapsule(run.Usage, run.ResponseRecords ?? [], run.NodeModelLabel, catalog, versioned: true),
                         Help(run.Usage, run.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),
@@ -347,7 +351,7 @@ public static class MightyGraphBlockModel
                     break;
                 case "request" when run is not null:
                     blocks.Add(new(node.Id, "request", node.Frame, RequestTitle(runIndex + 1, providerLabel),
-                        StateLabel(run.Status), run.Input,
+                        RunStateLabel(run), run.Input,
                         run.RootEntries.Where(e => e.Kind != "user").ToList(),
                         ModelUsageFormat.BlockCapsule(run.Usage, run.ResponseRecords ?? [], run.NodeModelLabel, catalog, versioned: true),
                         Help(run.Usage, run.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),

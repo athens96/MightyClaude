@@ -62,6 +62,8 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
         return sum.isEmpty ? nil : sum
     }
     public var settled: Bool { MightyGraphSupport.terminal(status) && agents.allSatisfy { MightyGraphSupport.terminal($0.status) } }
+    /// Background tasks still running after the request's own turn ended: it reads completed and waits on them.
+    public var backgroundWaiting: Int { status == "completed" ? agents.filter { $0.isTask && !MightyGraphSupport.terminal($0.status) }.count : 0 }
 
     /// The owning session is authoritative, including pre-provider graph saves.
     mutating func applyProvider(_ value: String) {
@@ -85,8 +87,10 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
         let timestamp = resultEntries.first?.timestamp ?? rootEntries.last?.timestamp ?? mightyTimestamp()
         let entry = LogEntry(id: id + "-result", kind: "assistant", text: text, timestamp: timestamp, provider: provider ?? "claude")
         resultEntries = [entry]
-        // Keep the final answer in the main block as well as the result block.
-        if !rootEntries.contains(where: { $0.kind == "assistant" && $0.text == text }) {
+        // Keep the final answer in the main block as well as the result block. A result that goes on with notice
+        // sections starts with the request's own answer, which the main block already shows.
+        let own = text.components(separatedBy: MightyGraphSupport.noticeSectionMark)[0]
+        if !rootEntries.contains(where: { $0.kind == "assistant" && ($0.text == text || $0.text == own) }) {
             if let index = rootEntries.firstIndex(where: { $0.id == entry.id }) { rootEntries[index] = entry }
             else { rootEntries.append(entry) }
         }
@@ -128,6 +132,12 @@ public enum MightyGraphSupport {
     /// main, its readable line after this prefix; the next root-level answer is its
     /// reply. Such a block is a 작업 알림, not a 중간 요청.
     public static let taskNoticePrefix = "[Mighty Claude task notice] "
+    /// What opens a notice turn's section in a request's result.
+    public static let noticeSectionMark = "\n\n---\n\n**"
+    /// The result with a notice turn's answer after it, under a bold line naming the notice; the request's own answer stays first.
+    public static func withNoticeSection(_ result: String?, header: String, answer: String) -> String {
+        (result.map { $0.isEmpty ? "**" : $0 + noticeSectionMark } ?? "**") + header + "**\n\n" + answer
+    }
     public static func isTaskNotice(_ input: String) -> Bool { input.hasPrefix(taskNoticePrefix) }
     static func nextState(_ previous: String, _ incoming: String) -> String {
         if ["error", "stopped"].contains(previous) { return previous }

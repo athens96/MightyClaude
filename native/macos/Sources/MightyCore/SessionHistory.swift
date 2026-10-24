@@ -697,10 +697,18 @@ final class HistoryReplay {
     }
 
     /// A Claude record line is the stream-json event it was printed as, minus
-    /// the final `result`, which is rebuilt from the last answer.
+    /// the `result`s, which are rebuilt from the answers: the request's own before
+    /// the first task notification that opened a turn, then each notice turn's, as live.
     private func claude(_ lines: [Data], parser: CLIStreamParser) -> String {
         var answer: String?
         var interrupted = false
+        var answered = false
+        func result() {
+            var value: [String: Any] = ["type": "result", "subtype": "success", "is_error": false, "result": answer ?? ""]
+            if answered { value["origin"] = ["kind": "task-notification"] }
+            parser.receive(object: value)
+            answered = true; answer = nil
+        }
         for (index, line) in lines.enumerated() {
             guard var object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
                   let type = object["type"] as? String, ["assistant", "user", "system", "attachment"].contains(type),
@@ -724,6 +732,8 @@ final class HistoryReplay {
                     if !output.isEmpty { answer = output }
                     continue
                 }
+                // A task notification opens a turn of its own: the turn before it ended with its answer.
+                if text?.contains("<task-notification>") == true { result() }
             default:
                 if let blocks = (object["message"] as? [String: Any])?["content"] as? [[String: Any]] {
                     let text = blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined(separator: "\n")
@@ -732,7 +742,7 @@ final class HistoryReplay {
             }
             parser.receive(object: object)
         }
-        if let answer { parser.receive(object: ["type": "result", "subtype": "success", "is_error": false, "result": answer]) }
+        if answer != nil { result() }
         if interrupted { return "stopped" }
         return parser.failed ? "error" : "completed"
     }

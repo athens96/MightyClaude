@@ -351,7 +351,7 @@ public sealed partial class MainWindow
                 line.Children.Add(clock);
             }
             head.Children.Add(line);
-            var status = StatusPill(MightyGraphBlockModel.StateLabel(group.Status), StatusGlyph.Tone(group.Status), 20);
+            var status = StatusPill(MightyGraphBlockModel.RunStateLabel(run), StatusGlyph.Tone(group.Status), 20);
             Grid.SetColumn(status, 1); head.Children.Add(status); header.Children.Add(head);
             var promptText = string.Join(" ", group.Input.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)).Trim();
             TextBlock? prompt = null;

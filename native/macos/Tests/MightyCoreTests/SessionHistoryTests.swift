@@ -56,6 +56,30 @@ struct SessionHistoryTests {
     }
     private func inputs(_ chunk: SessionHistoryChunk) -> [String] { chunk.runs.map(\.input) }
 
+    /// A replayed record builds the live result: the request's answer, then each notice turn's under a line naming
+    /// the notice (ExecutionGraphTests.theRequestTurnEndsBeforeItsBackgroundTaskAndANoticeTurnsAnswerFollows).
+    @Test func aNoticeTurnsAnswerFollowsTheRequestsLiveAndReplayed() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            let notice = "<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>ping-cmd</tool-use-id>\n<status>completed</status>\n<summary>ping exited 0</summary>\n</task-notification>"
+            let lines = [
+                line(["type": "user", "uuid": "u1", "timestamp": stamp(1), "message": ["role": "user", "content": "ping it"]]),
+                line(["type": "assistant", "uuid": "a1", "timestamp": stamp(1, plus: 1),
+                      "message": ["id": "m1", "role": "assistant", "content": [["type": "tool_use", "id": "ping-cmd", "name": "Bash",
+                                                                                "input": ["command": "ping -c 30 localhost", "description": "ping", "run_in_background": true]]]]]),
+                line(["type": "user", "uuid": "t1", "timestamp": stamp(1, plus: 2), "toolUseResult": ["stdout": ""],
+                      "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "ping-cmd", "content": "Command running in background with ID: b1."]]]]),
+                line(["type": "assistant", "uuid": "a2", "timestamp": stamp(1, plus: 3), "message": ["id": "m2", "role": "assistant", "content": [["type": "text", "text": "Started ping."]]]]),
+                line(["type": "user", "uuid": "n1", "timestamp": stamp(1, plus: 30), "origin": ["kind": "task-notification"], "message": ["role": "user", "content": notice]]),
+                line(["type": "assistant", "uuid": "a3", "timestamp": stamp(1, plus: 31), "message": ["id": "m3", "role": "assistant", "content": [["type": "text", "text": "Ping finished fine."]]]]),
+            ]
+            let url = try folder().appendingPathComponent("notice.jsonl")
+            try write(lines, to: url)
+            let chunk = try SessionHistory.load(try request(url))
+            #expect(inputs(chunk) == ["ping it"])
+            #expect(chunk.runs.first?.finalOutput == "Started ping." + MightyGraphSupport.noticeSectionMark + "작업 알림 · ping 이후**\n\nPing finished fine.")
+        }
+    }
+
     // MARK: Reading backwards
 
     private func backwards(_ text: String, blockSize: Int, maximumLineBytes: Int = 1_000) throws -> [(Int, String)] {

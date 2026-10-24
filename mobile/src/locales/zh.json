@@ -314,6 +314,8 @@
   "graph.ouroboros.unreachable": "无法连接 Ouroboros 仪表板，因此当前状态未知。",
   "graph.ouroboros.unreadable": "仪表板无法读取此执行。",
   "graph.ouroboros.waiting": "正在读取状态…",
+  "graph.result.afterNotice": "通知之后",
+  "graph.result.afterTaskNotice": "任务通知 · {title} 之后",
   "graph.result.fitToWindow": "适应窗口",
   "graph.resultFiles.closeButton": "关闭文件列表",
   "graph.resultFiles.countLabel": "{count} 个结果文件 · 切换列表",
