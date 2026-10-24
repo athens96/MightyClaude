@@ -9,12 +9,15 @@ namespace MightyClaude.WinUI;
 /// Explicit profiles never import the user's legacy profile. Smoke runs require
 /// a new/empty directory so CI cannot change saved conversations or credentials.
 /// <c>--perf-scenario</c> runs the timing scenario (MainWindow.PerfScenario.cs) in the smoke's place, so it needs <c>--smoke-test</c>.
-public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeTest = false, bool SmokeExit = false, bool PerfScenario = false)
+/// <c>--help-capture --profile &lt;empty dir&gt; [-language ko|en|zh|ja] [--smoke-exit]</c> takes the help site's pictures of the
+/// page (MainWindow.HelpCapture.cs) in the smoke's place: it runs as a smoke run does, in its own empty profile.
+public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeTest = false, bool SmokeExit = false, bool PerfScenario = false, bool HelpCapture = false, string? HelpLanguage = null)
 {
     public static StartupOptions Parse(string[] args)
     {
         string? profile = null;
-        bool smoke = false, exit = false, perf = false;
+        bool smoke = false, exit = false, perf = false, help = false;
+        string? language = null;
         for (int index = 0; index < args.Length; index++)
         {
             switch (args[index])
@@ -27,17 +30,25 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
                 case "--smoke-test": smoke = true; break;
                 case "--smoke-exit": exit = true; break;
                 case "--perf-scenario": perf = true; break;
+                // Developer switches, never shown to a user: their refusals are not translated.
+                case "--help-capture": help = smoke = true; break;
+                case "-language":
+                    if (++index >= args.Length || !Locale.Languages.Contains(args[index])) throw new ArgumentException("-language needs ko, en, zh or ja.");
+                    language = args[index];
+                    break;
                 default: throw new ArgumentException(Locale.Get("windows.startup.unsupportedArgument", new Dictionary<string, string> { ["argument"] = args[index] }));
             }
         }
         if (exit && !smoke) throw new ArgumentException(Locale.Get("windows.startup.smokeExitNeedsSmoke"));
         // A developer's switch, never shown to a user: its refusal is not translated.
         if (perf && !smoke) throw new ArgumentException("--perf-scenario needs --smoke-test.");
+        if (language is not null && !help) throw new ArgumentException("-language goes with --help-capture.");
+        if (help && perf) throw new ArgumentException("--help-capture and --perf-scenario do not go together.");
         if (smoke && profile is null) throw new ArgumentException(Locale.Get("windows.startup.smokeNeedsProfile"));
         if (profile is not null && File.Exists(profile)) throw new ArgumentException(Locale.Get("windows.startup.profileIsFile"));
         if (smoke && Directory.Exists(profile) && Directory.EnumerateFileSystemEntries(profile!).Any())
             throw new ArgumentException(Locale.Get("windows.startup.smokeProfileNotEmpty"));
-        return new(profile, smoke, exit, perf);
+        return new(profile, smoke, exit, perf, help, help ? language ?? "ko" : null);
     }
 
     /// <summary>
@@ -63,7 +74,7 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
     /// </summary>
     internal void PrepareWebShellProfile()
     {
-        if (!SmokeTest || PerfScenario || ProfileDirectory is null || Environment.GetEnvironmentVariable("MIGHTY_SMOKE_WEB") == "1") return;
+        if (!SmokeTest || PerfScenario || HelpCapture || ProfileDirectory is null || Environment.GetEnvironmentVariable("MIGHTY_SMOKE_WEB") == "1") return;
         Directory.CreateDirectory(ProfileDirectory);
         File.WriteAllText(Path.Combine(ProfileDirectory, "ui-winui"), "");
     }
@@ -147,6 +158,8 @@ internal static class Program
         if (args.SequenceEqual(new[] { DelegationMcp.HeadlessArgument })) return DelegationMcp.MainAsync().GetAwaiter().GetResult();
         // The scripted Claude the delegation smoke starts in the CLI's place, the app's own binary in a second mode (M/AppStore+DelegationSmoke.swift:7-12).
         if (args.Length >= 2 && args[0] == DelegationFakeClaude.Argument && Path.IsPathFullyQualified(args[1])) return DelegationFakeClaude.RunAsync(args[1], args[2..]).GetAwaiter().GetResult();
+        // The help capture's canned CLI, the app's own binary in a third mode (HelpDemoCli.cs).
+        if (args.Length >= 2 && args[0] == HelpDemoCli.Argument && Path.IsPathFullyQualified(args[1])) return HelpDemoCli.Run(args[1], args[2..]);
         if (AppUpdateInstallPlan.TryParse(args) is { } plan) return RunUpdateHelper(plan);
 
         StartupOptions? options = null;

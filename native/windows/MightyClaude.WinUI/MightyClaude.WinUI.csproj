@@ -57,6 +57,9 @@
     <!-- The design-token smoke compares the colours it reads off the element tree with the
          shared palette fixture itself (Core.Tests and the macOS suite hold the code to it). -->
     <EmbeddedResource Include="../../contracts/fixtures/design-tokens.json" LogicalName="MightyClaude.WinUI.DesignTokens.json" />
+    <!-- The help capture (MainWindow.HelpCapture.cs) reads the help site's shot list and the demo profile the Mac capture reads. -->
+    <EmbeddedResource Include="../../../docs/help/shots.json" LogicalName="MightyClaude.WinUI.HelpShots.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/demo-profile.json" LogicalName="MightyClaude.WinUI.DemoProfile.json" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Assets/ScreenShare/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
