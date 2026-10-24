@@ -742,6 +742,8 @@ struct MightyStructureView: View {
     /// Opened, it shows them whole and its last few tool calls.
     private func nodeCard(_ node: MightyStructure.Node, column: CGFloat, parent: String?) -> some View {
         let task = node.kind == "task"
+        // A task notice (the only steer the structure keeps) wears the steer's glyph and ink.
+        let steer = node.kind == "steer"
         let key = Self.foldKey("node", node.nodeID)
         let open = memory.expanded.contains(key)
         // Folds are judged at the width the card's text really has at its depth.
@@ -752,12 +754,13 @@ struct MightyStructureView: View {
                                   charactersPerLine: MightyStructure.charactersPerLine(width: textWidth, fontSize: CGFloat(TextSettings.current.size(Double(Self.outputSize))))) == true
             || node.activity.count > 1
         let model = node.model.map { ModelUsageFormat.shortName($0, catalog: catalog, versioned: true) }
-        let meta = ([MightyTimelineText.kind(node.kind)] + [model].compactMap { $0 }).joined(separator: " · ")
+        // A task notice's title already names its kind.
+        let meta = ((steer ? [] : [MightyTimelineText.kind(node.kind)]) + [model].compactMap { $0 }).joined(separator: " · ")
         let shape = RoundedRectangle(cornerRadius: Self.nodeCorner, style: .continuous)
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: task ? "terminal" : "person.crop.square.filled.and.at.rectangle")
-                    .font(.ui(size: 9, weight: .semibold)).foregroundStyle(task ? Palette.taskText : Palette.agentText)
+                Image(systemName: task ? "terminal" : steer ? "text.bubble" : "person.crop.square.filled.and.at.rectangle")
+                    .font(.ui(size: 9, weight: .semibold)).foregroundStyle(task ? Palette.taskText : steer ? Palette.steerText : Palette.agentText)
                 Text(verbatim: node.title).font(.ui(size: Self.outputSize, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
                     .layoutPriority(1)
                 Text(meta).font(.ui(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)

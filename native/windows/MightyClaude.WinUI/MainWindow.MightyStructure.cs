@@ -1163,11 +1163,12 @@ public sealed partial class MainWindow
         /// </summary>
         private FrameworkElement StructureNodeCard(MightyStructure.Node node, string? parent, bool open, bool folds, string? model, string marks)
         {
-            var b = owner.brushes; var task = node.Kind == "task"; var key = "node:" + node.NodeId;
+            var b = owner.brushes; var task = node.Kind == "task"; var steer = node.Kind == "steer"; var key = "node:" + node.NodeId;
             var head = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm };
-            head.Add(MightySymbols.Create(BlockSymbol(node.Kind), 9, b.Brush(task ? DesignToken.TaskText : DesignToken.AgentText), MightySymbols.Weight.Semibold), PaneHeaderLine.Role.Fixed);
+            head.Add(MightySymbols.Create(BlockSymbol(node.Kind), 9, b.Brush(task ? DesignToken.TaskText : steer ? DesignToken.SteerText : DesignToken.AgentText), MightySymbols.Weight.Semibold), PaneHeaderLine.Role.Fixed);
             head.Add(StructureWords(node.Title, StructureOutputSize, b.Brush(DesignToken.Ink), FontWeights.SemiBold), PaneHeaderLine.Role.Shrink);
-            head.Add(StructureWords(MightyTimeline.KindLabel(node.Kind) + (model is null ? "" : " · " + model), DesignMetrics.Type.Small, b.Brush(DesignToken.Ink2)), PaneHeaderLine.Role.Fill);
+            // A task notice's title already names its kind (MightyStructure.Kept keeps no other steer).
+            head.Add(StructureWords(string.Join(" · ", new[] { steer ? null : MightyTimeline.KindLabel(node.Kind), model }.Where(p => !string.IsNullOrEmpty(p))), DesignMetrics.Type.Small, b.Brush(DesignToken.Ink2)), PaneHeaderLine.Role.Fill);
             if (StructureIndicator(node.Status, marks) is { } running) head.Add(running, PaneHeaderLine.Role.Fixed);
             head.Add(StructureRevealButton(node.NodeId, node.NodeId), PaneHeaderLine.Role.Fixed);
             var body = new StackPanel

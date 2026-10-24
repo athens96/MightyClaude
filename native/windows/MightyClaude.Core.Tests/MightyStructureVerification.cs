@@ -265,6 +265,20 @@ internal static class MightyStructureVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>A task's notice (a 작업 알림 steer) is a card of its own after its task, with the notice line and its reply; a person's steer stays out (macOS MightyStructureTests.aTaskNoticeIsACardAfterItsTask).</summary>
+    internal static Task ATaskNoticeIsACardAfterItsTask()
+    {
+        var notice = new MightyGraphAgent { Id = "n", Kind = "steer", Status = "completed", Input = MightyGraphSupport.TaskNoticePrefix + "Build · 완료\nBuild done", Entries = [Said("n-answer", "The build passed.")] };
+        var run = Run("r", agents: [Agent("t", kind: "task"), Agent("s", kind: "steer"), notice]);
+        var clusters = MightyStructure.Clusters(run);
+        Check(string.Join("|", clusters.Select(c => string.Join(",", c.Nodes.Select(n => n.AgentId)))) == "t|n", "the notice is its own card after its task, a person's steer is left out");
+        var card = clusters[1].Nodes[0];
+        Check(card.Title == "작업 알림" && card.Kind == "steer" && card.Prompt?.Text == "Build · 완료\nBuild done" && card.Output?.Text == "The build passed.",
+            "the card is titled 작업 알림 and shows the notice line and the reply; got " + card.Prompt?.Text + " / " + card.Output?.Text);
+        Check(MightyStructure.ItemFor(run, 0).Tally.Agents == 0, "a notice is not counted as a sub-agent");
+        return Task.CompletedTask;
+    }
+
     internal static Task SignatureAndItemCache()
     {
         var style = Style("ouroboros"); var goal = Phase(style, "goal");

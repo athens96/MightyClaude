@@ -290,6 +290,7 @@
 .structure-node.tone-stop::before { background: var(--stop); }
 .structure-node-glyph { display: inline-grid; flex: none; color: var(--agent-text); }
 .structure-node-glyph.task { color: var(--task-text); }
+.structure-node-glyph.steer { color: var(--steer-text); }
 .structure-node-title { font-size: 11px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .structure-node-meta { font-size: 10px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .structure-parent { display: flex; align-items: center; gap: var(--space-xs); font-size: 10px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

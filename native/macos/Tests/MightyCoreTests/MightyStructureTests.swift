@@ -410,6 +410,22 @@ struct MightyStructureTests {
         #expect(clusters[0].id == clusters[0].nodes[0].nodeID)
     }
 
+    /// A task's notice (a 작업 알림 steer) is a card of its own after its task, with the
+    /// notice line and its reply; a person's steer stays out.
+    @Test func aTaskNoticeIsACardAfterItsTask() {
+        LocaleOverride.$language.withValue(.ko) {
+            let notice = MightyGraphAgent(id: "n", input: MightyGraphSupport.taskNoticePrefix + "Build · 완료\nBuild done", status: "completed",
+                                          entries: [LogEntry(id: "n-answer", kind: "assistant", text: "The build passed.")], kind: "steer")
+            let run = Self.run("r", agents: [Self.agent("t", kind: "task"), Self.agent("s", kind: "steer"), notice])
+            let clusters = MightyStructure.clusters(run)
+            #expect(clusters.map { $0.nodes.map(\.agentID) } == [["t"], ["n"]])
+            let card = clusters[1].nodes[0]
+            #expect(card.title == "작업 알림"); #expect(card.kind == "steer")
+            #expect(card.prompt?.text == "Build · 완료\nBuild done"); #expect(card.output?.text == "The build passed.")
+            #expect(MightyStructure.item(run, index: 0).tally.agents == 0)
+        }
+    }
+
     @Test func aRepeatedBlockIDIsKeptAtItsFirstPlace() {
         let agents = [Self.agent("a"), Self.agent("b", parent: "a"), Self.agent("a", parent: "b"), Self.agent("a")]
         let clusters = MightyStructure.clusters(Self.run("r", agents: agents))

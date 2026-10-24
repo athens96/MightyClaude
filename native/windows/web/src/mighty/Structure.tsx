@@ -135,12 +135,14 @@ const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCar
       );
     default: {
       const task = card.nodeKind === 'task';
+      // A task notice (the only steer the structure keeps) wears the steer's glyph and ink, as its timeline row does.
+      const steer = card.nodeKind === 'steer';
       const last = card.activity[card.activity.length - 1];
       return (
         <div className={'structure-node tone-' + card.tone + (running ? ' live' : '')} data-card-id={card.id} data-node-id={card.nodeId}
           style={{ marginLeft: Math.min(card.depth ?? 0, 3) * 16 }}>
           <div className="structure-card-row">
-            <span className={'structure-node-glyph' + (task ? ' task' : '')}><Icon name={task ? 'square-terminal' : 'square-user-round'} size={11} weight={2} /></span>
+            <span className={'structure-node-glyph' + (task ? ' task' : steer ? ' steer' : '')}><Icon name={task ? 'square-terminal' : steer ? 'message-square-text' : 'square-user-round'} size={11} weight={2} /></span>
             <span className="structure-node-title">{card.title}</span>
             {card.meta && <span className="structure-node-meta">{card.meta}</span>}
             <span className="spacer" /><Bolt status={card.status} /><RevealButton id={card.nodeId} fallback={request} onReveal={onReveal} />

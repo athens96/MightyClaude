@@ -410,7 +410,8 @@ public sealed partial class MainWindow
                     text, item.Message?.Preview, item.Answer?.Text, activity,
                     Locale.Get("graph.structure.tally", new Dictionary<string, string> { ["agents"] = item.Tally.Agents.ToString(), ["tools"] = item.Tally.Tools.ToString() }),
                     item.Finished, MightyStructure.Fold.ResultLine(item),
-                    node?.Kind, node is null ? null : string.Join(" · ", new[] { MightyTimeline.KindLabel(node.Kind, null), model }.Where(p => !string.IsNullOrEmpty(p))),
+                    // A task notice's title already names its kind (MightyStructure.Kept keeps no other steer).
+                    node?.Kind, node is null ? null : string.Join(" · ", new[] { node.Kind == "steer" ? null : MightyTimeline.KindLabel(node.Kind, null), model }.Where(p => !string.IsNullOrEmpty(p))),
                     node?.Depth ?? 0, node?.Prompt?.Preview, item.ExecutionNodeId, MightyGraphLayout.NodeID(runs[item.RunIndex], "result"));
             }
             var styleName = activeStyle?.Manifest.Name;
