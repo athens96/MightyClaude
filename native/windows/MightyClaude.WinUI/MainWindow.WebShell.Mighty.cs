@@ -15,7 +15,10 @@ internal sealed record WebMightyBlock(string Kind, string Title, string State, s
     string? FilesRunId, string? RecordId, bool FromRecord, string? Provider);
 
 internal sealed record WebMightyFile(string Path, int? Line);
-internal sealed record WebMightyExecution(string Status, string StatusWord, string? Goal, string? Progress, IReadOnlyList<string> Counts, string? Line, string? Note, string Footer, string? Dashboard);
+internal sealed record WebMightyExecution(string Status, string StatusWord, string? Goal, string? Progress, IReadOnlyList<string> Counts, string? Line, string? Note, string Footer, string? Dashboard,
+    string Key, bool ListOpen, string? ListNote, IReadOnlyList<WebMightyAC>? Acs, bool Opening, bool OpenFailed, double? Done);
+/// <summary>One acceptance criterion of an opened execution card: its title, its state (pending, executing, completed, failed), the word for it and its level.</summary>
+internal sealed record WebMightyAC(string Title, string Status, string StatusWord, int Depth);
 internal sealed record WebMightyHistory(string Text, bool Acts, string Phase);
 
 /// <summary>What the page's layout needs besides the runs it holds, and the toolbar's words.</summary>
@@ -77,6 +80,12 @@ public sealed partial class MainWindow
         bridge.Register("mightyResultFiles", args => { WebPane(args.Text("paneId")).WebResultFiles(args.Text("runId")); MightyDirty(args.Text("paneId")); return Task.FromResult<object?>(null); });
         bridge.Register("mightyLoadOlder", args => { WebPane(args.Text("paneId")).LoadOlderGraphHistory(); MightyDirty(args.Text("paneId")); return Task.FromResult<object?>(null); });
         bridge.Register("mightyImages", async args => await WebPane(args.Text("paneId")).WebGalleryImages(args.Text("runId") ?? "", args.Text("step") ?? "", Flag(args, "expanded")));
+        bridge.Register("mightyOpenDashboard", async args =>
+        {
+            var paneId = args.Text("paneId"); var opening = WebPane(paneId).WebOpenDashboard(args.Text("key") ?? "");
+            MightyDirty(paneId); await opening; MightyDirty(paneId);
+            return null;
+        });
         bridge.Register("mightyTimelineFlip", args => { WebPane(args.Text("paneId")).WebTimelineFlip(args.Text("runId") ?? ""); MightyDirty(args.Text("paneId")); return Task.FromResult<object?>(null); });
     }
 
@@ -269,7 +278,7 @@ public sealed partial class MainWindow
                 if (block.Kind == MightyGraphLayout.ExecutionKind)
                 {
                     block = ExecutionBlock(block);
-                    if (block.RecordId is { } key && executions.FirstOrDefault(link => link.Key == key) is { } link) cards[block.Id] = WebExecutionCard(key, link);
+                    if (block.RecordId is { } key && executions.FirstOrDefault(link => link.Key == key) is { } link) cards[block.Id] = WebExecutionCard(key, link, graphExpanded.Contains(block.Id));
                 }
                 var fromRecord = LoadedFromRecord(block.Id, older) && block.Kind is "request" or MightyGraphLayout.WorkKind;
                 copy[block.Id] = new(block.Kind, block.Title, block.State, block.Capsule, block.CapsuleHelp, block.Indicator, block.Outline, block.Status,
@@ -298,7 +307,7 @@ public sealed partial class MainWindow
         }
 
         /// <summary>A background execution's card (BuildOuroborosCard), its words built here.</summary>
-        private WebMightyExecution WebExecutionCard(string key, OuroborosExecutionLink link)
+        private WebMightyExecution WebExecutionCard(string key, OuroborosExecutionLink link, bool listOpen)
         {
             var snapshot = graphOuroboros?.Snapshot(key);
             var status = snapshot?.Status ?? OuroborosExecutionStatus.Unknown;
@@ -318,8 +327,25 @@ public sealed partial class MainWindow
             };
             var footer = link.ExecutionID is { } execution ? Locale.Get("graph.ouroboros.executionID", new Dictionary<string, string> { ["id"] = execution })
                 : Locale.Get("graph.ouroboros.jobID", new Dictionary<string, string> { ["id"] = link.JobID ?? "" });
-            return new(word, Locale.Get("graph.ouroboros.status." + word), snapshot?.Goal, progress, counts, line.Length > 0 ? line : null, note is null ? null : Locale.Get(note), footer,
-                (snapshot?.DashboardURL ?? link.DashboardURL)?.AbsoluteUri);
+            // The AC list while it is open (BuildOuroborosACs): the first 300, or a line saying it is being read or there is none.
+            var items = snapshot?.Items;
+            var acs = listOpen && items is { Count: > 0 } ? items.Take(300).Select(item =>
+            {
+                var state = item.Status.ToString().ToLowerInvariant();
+                return new WebMightyAC(item.Title, state, Locale.Get("graph.ouroboros.ac." + state), item.Depth);
+            }).ToList() : null;
+            var listNote = listOpen && acs is null ? Locale.Get(items is null ? "graph.ouroboros.loadingACs" : "graph.ouroboros.noACs") : null;
+            var failed = graphOuroboros?.OpenFailed(key) == true;
+            double? done = snapshot?.Total is > 0 and var all ? Math.Min(all, snapshot.Completed ?? 0) / (double)all : null;
+            return new(word, Locale.Get("graph.ouroboros.status." + word), snapshot?.Goal, progress, counts, line.Length > 0 ? line : null, note is null ? null : Locale.Get(note),
+                failed ? Locale.Get("graph.ouroboros.openFailed") : footer, (snapshot?.DashboardURL ?? link.DashboardURL)?.AbsoluteUri,
+                key, listOpen, listNote, acs, graphOuroboros?.Opening(key) == true, failed, done);
+        }
+
+        /// <summary>The card's "open dashboard" (<see cref="OpenOuroborosDashboard"/>): the run's page on the loopback dashboard, started first when nothing answers.</summary>
+        internal async Task WebOpenDashboard(string key)
+        {
+            if (graphExecutionLinks.FirstOrDefault(link => link.Key == key) is { } link) await OpenOuroborosDashboard(link);
         }
 
         /// <summary>The timeline's groups (MightyTimeline.Groups), each row's words built here.</summary>
