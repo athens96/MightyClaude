@@ -29,6 +29,8 @@ public sealed partial class MainWindow
         internal Dictionary<string, string> Workspaces { get; } = [];
         internal Dictionary<string, string> Panes { get; } = [];
         internal string? TerminalProblem { get; set; }
+        internal bool DelegationSeeded { get; set; }
+        internal string? DelegationProblem { get; set; }
         internal string Pane(string role) => Panes.TryGetValue(role, out var id) ? id : throw new InvalidOperationException("the demo has no " + role + " pane");
         internal string? DelegationWorkspace => (string?)Profile["delegation"]?["workspace"];
         internal IEnumerable<JsonObject> Layouts => (Profile["layouts"]?.AsArray() ?? []).OfType<JsonObject>().Where(l => (string?)l["workspace"] != DelegationWorkspace);
@@ -38,7 +40,8 @@ public sealed partial class MainWindow
     private sealed record HelpTarget(string? Clip = null, Func<Task>? Cleanup = null, Func<string, Task>? Save = null);
 
     private static readonly string[] HelpKnownScreens = ["welcome", "overview", "sidebar-collapsed", "dashboard", "agent-basic", "agent-mighty", "agent-mighty-overview", "agent-timeline", "agent-structure", "result-card", "composer", "composer-settings", "session-info", "plan-card", "plan-document", "question-card", "permission-card", "background-work", "terminal-pane", "files-pane", "companion-pet",
-        "resume-choice", "resume-list", "settings-general", "settings-models", "settings-styles", "settings-tools", "settings-cli", "settings-mobile", "settings-companion", "settings-about"];
+        "resume-choice", "resume-list", "settings-general", "settings-models", "settings-styles", "settings-tools", "settings-cli", "settings-mobile", "settings-companion", "settings-about",
+        "delegation-tree", "delegation-held", "delegation-parent-closed"];
 
     private async Task RunHelpCapture()
     {
@@ -489,6 +492,8 @@ public sealed partial class MainWindow
                     }
                 });
             }
+            case "delegation-tree" or "delegation-held" or "delegation-parent-closed":
+                return await OpenHelpDelegation(screen, demo, core);
             default:
                 throw new InvalidOperationException("unknown screen " + screen);
         }
