@@ -129,6 +129,6 @@ Pick {{ui:graph.view.structure}} on the same switch to see requests as a kanban-
 ![[agent-structure]]
 
 ### The result card {#result}
-When a request ends, the {{ui:graph.block.result}} card sums up the result. If the result names files, {{ui:graph.resultFiles.openButton}} lists them. Clicking a file path inside a block opens a preview. The latest result card fits the pane; if you resized it yourself, a {{ui:graph.result.fitToWindow}} button appears.
+When a request ends, the {{ui:graph.block.result}} card sums up the result. A request reads completed once Claude's answer ends; if background work it started is still running, its status says how many tasks are left. When Claude answers a task's notice later, that answer is added below the result under a line naming the task. If the result names files, {{ui:graph.resultFiles.openButton}} lists them. Clicking a file path inside a block opens a preview. The latest result card fits the pane; if you resized it yourself, a {{ui:graph.result.fitToWindow}} button appears.
 
 ![[result-card]]

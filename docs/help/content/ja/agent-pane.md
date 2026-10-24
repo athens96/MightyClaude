@@ -129,6 +129,6 @@ Mighty表示の上部にある{{ui:graph.view.diagram}} | {{ui:graph.view.timeli
 ![[agent-structure]]
 
 ### 結果カード {#result}
-リクエストが終わると、{{ui:graph.block.result}}カードに結果がまとめられます。結果にファイルが含まれていれば、{{ui:graph.resultFiles.openButton}}ボタンで一覧を開きます。ブロック内のファイルパスをクリックするとプレビューが表示されます。最新の結果カードはウインドウのサイズに合わせて表示され、サイズを手動で変更した場合は{{ui:graph.result.fitToWindow}}ボタンが表示されます。
+リクエストが終わると、{{ui:graph.block.result}}カードに結果がまとめられます。Claudeの応答が終わるとリクエストは完了になり、そのリクエストが始めたバックグラウンドタスクがまだ実行中なら、状態に残りのタスク数が表示されます。タスクの通知を受けてClaudeがまた応答すると、その応答がタスク名を示す行の下で結果に続きます。結果にファイルが含まれていれば、{{ui:graph.resultFiles.openButton}}ボタンで一覧を開きます。ブロック内のファイルパスをクリックするとプレビューが表示されます。最新の結果カードはウインドウのサイズに合わせて表示され、サイズを手動で変更した場合は{{ui:graph.result.fitToWindow}}ボタンが表示されます。
 
 ![[result-card]]

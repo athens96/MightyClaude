@@ -129,6 +129,6 @@ Claude、Codex 和 Antigravity 窗格的标题栏中有{{ui:graph.view.default}}
 ![[agent-structure]]
 
 ### 结果卡片 {#result}
-请求结束后，{{ui:graph.block.result}}卡片会整理出结果。如果结果中提到了文件，可以用{{ui:graph.resultFiles.openButton}}按钮打开文件列表。点击块中的文件路径会弹出预览。最新的结果卡片会适应窗格大小；如果你手动调整过大小，会出现{{ui:graph.result.fitToWindow}}按钮。
+请求结束后，{{ui:graph.block.result}}卡片会整理出结果。Claude 的回答结束后请求即变为完成；如果它启动的后台任务仍在运行，状态中会显示剩余的任务数。Claude 收到任务通知后再次回答时，这段回答会接在结果下方，前面有一行标明任务名称。如果结果中提到了文件，可以用{{ui:graph.resultFiles.openButton}}按钮打开文件列表。点击块中的文件路径会弹出预览。最新的结果卡片会适应窗格大小；如果你手动调整过大小，会出现{{ui:graph.result.fitToWindow}}按钮。
 
 ![[result-card]]
