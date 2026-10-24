@@ -85,7 +85,7 @@ public sealed partial class MainWindow : Window
                 if (!closing) TrackLoginTask(ManualUpdateFinished());
             }
         });
-        PerfLog.Configure(StateDirectory); WebTranscript.Configure(StateDirectory); WebShell.Configure(StateDirectory);
+        PerfLog.Configure(StateDirectory); WebTranscript.Configure(StateDirectory); WebShell.Configure(StateDirectory, new WebView2RuntimeLocator().GetRuntimeVersion() is not null);
         InitializeLoginRecovery(); InitializeDelegation();
         service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; using var perf = PerfLog.Measure("run event " + value.Type); RecordProviderActivity(value); ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane) && (value.Type == "status" ? pane.Refresh() : pane.QueueRefresh())) { pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
@@ -140,7 +140,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); if (WebShell.Enabled) ShowWebShell(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); await CheckResources(); InitializeAgentIO(); InitializeRemoteWorkspaces(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); await PresentSetupIfNeeded(); }); return; }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); if (WebShell.Enabled) ShowWebShell(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); if (WebShell.RuntimeMissing) error.Text = Locale.Get("browser.runtime.missing"); await CheckResources(); InitializeAgentIO(); InitializeRemoteWorkspaces(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); await PresentSetupIfNeeded(); }); return; }
         try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); if (WebShell.Enabled) ShowWebShell(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); if (options.PerfScenario) { await RunPerfScenario(); await FinishSmoke(true); } else if (webShell is not null) await RunWebShellSmoke(); else await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
         }

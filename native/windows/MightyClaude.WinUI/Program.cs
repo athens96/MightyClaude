@@ -42,7 +42,8 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
 
     /// <summary>
     /// The perf scenario's switches, as files in its profile before the window reads them at start: <c>perf.log</c> so the
-    /// heavy steps are timed (PerfLog), and <c>transcript-web</c> when <c>MIGHTY_PERF_WEB=1</c> so the run measures the web
+    /// heavy steps are timed (PerfLog); with <c>MIGHTY_PERF_WINUI=1</c> <c>ui-winui</c>, so the run measures the WinUI screens
+    /// instead of the page, and with <c>MIGHTY_PERF_WEB=1</c> as well <c>transcript-web</c>, so those screens use the web
     /// transcript. Written after <see cref="Parse"/> checked that the profile was empty.
     /// </summary>
     internal void PreparePerfProfile()
@@ -50,19 +51,21 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
         if (!PerfScenario || ProfileDirectory is null) return;
         Directory.CreateDirectory(ProfileDirectory);
         File.WriteAllText(Path.Combine(ProfileDirectory, "perf.log"), "");
+        if (Environment.GetEnvironmentVariable("MIGHTY_PERF_WINUI") == "1") File.WriteAllText(Path.Combine(ProfileDirectory, "ui-winui"), "");
         if (Environment.GetEnvironmentVariable("MIGHTY_PERF_WEB") == "1") File.WriteAllText(Path.Combine(ProfileDirectory, "transcript-web"), "");
     }
 
     /// <summary>
-    /// The web shell's smoke switch: with <c>MIGHTY_SMOKE_WEB=1</c> a smoke run's profile gets <c>ui-web</c> before the window
-    /// reads it (WebShell.Configure), so the run checks the web shell (MainWindow.WebShell.cs) instead of the WinUI screens.
-    /// Written after <see cref="Parse"/> checked that the profile was empty.
+    /// The smoke's choice of front end: the page is the default (WebShell.Configure), so a smoke run's profile gets
+    /// <c>ui-winui</c> before the window reads it and the run checks the WinUI screens (RunUISmoke), unless
+    /// <c>MIGHTY_SMOKE_WEB=1</c> asks for the web shell's smoke (MainWindow.WebShell.cs). The perf scenario chooses for itself
+    /// (<see cref="PreparePerfProfile"/>). Written after <see cref="Parse"/> checked that the profile was empty.
     /// </summary>
     internal void PrepareWebShellProfile()
     {
-        if (!SmokeTest || ProfileDirectory is null || Environment.GetEnvironmentVariable("MIGHTY_SMOKE_WEB") != "1") return;
+        if (!SmokeTest || PerfScenario || ProfileDirectory is null || Environment.GetEnvironmentVariable("MIGHTY_SMOKE_WEB") == "1") return;
         Directory.CreateDirectory(ProfileDirectory);
-        File.WriteAllText(Path.Combine(ProfileDirectory, "ui-web"), "");
+        File.WriteAllText(Path.Combine(ProfileDirectory, "ui-winui"), "");
     }
 
     internal void TraceStartup(string stage)
