@@ -356,7 +356,7 @@ public static class MightyGraphBlockModel
                     break;
                 case "agent" when run is not null && run.Agents.FirstOrDefault(a => a.Id == agentId) is { } agent:
                     blocks.Add(new(node.Id, MightyGraphSupport.BlockKind(agent), node.Frame, MightyGraphSupport.BlockTitle(agent),
-                        StateLabel(agent.Status), agent.Input,
+                        StateLabel(agent.Status), MightyGraphSupport.ShownInput(agent),
                         agent.Entries.Where(e => e.Kind != "user").ToList(),
                         ModelUsageFormat.BlockCapsule(agent.Usage, agent.ResponseRecords ?? [], null, catalog, versioned: true),
                         Help(agent.Usage, agent.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),
@@ -428,8 +428,8 @@ public static class MightyGraphBlockModel
     public static string ToolbarSummary(IReadOnlyList<MightyGraphRun> runs)
     {
         static Dictionary<string, string> N(int n) => new() { ["n"] = n.ToString() };
-        // Only steers a person sent are counted; a delegation notice is not.
-        int Kind(string kind) => runs.Sum(r => r.Agents.Count(a => MightyGraphSupport.BlockKind(a) == kind && !MightyGraphSupport.IsDelegationNotice(a)));
+        // Only steers a person sent are counted; a delegation or task notice is not.
+        int Kind(string kind) => runs.Sum(r => r.Agents.Count(a => MightyGraphSupport.BlockKind(a) == kind && !MightyGraphSupport.IsNotice(a)));
         var parts = new List<string>
         {
             Locale.Get("graph.header.requests", N(runs.Count)),

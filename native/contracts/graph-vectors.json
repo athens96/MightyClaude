@@ -11394,6 +11394,27 @@
             "state" : "completed",
             "title" : "Build",
             "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+              {
+                "id" : "graph-6a977dfab3da5378fd2fde1a621278eb793860ee6d642e53",
+                "kind" : "system",
+                "provider" : "claude",
+                "text" : "작업 알림에 대한 응답을 받기 전에 실행이 종료되었습니다."
+              }
+            ],
+            "id" : "graph-bdbbfc6b5978faa0ac87733ef69a2b0881bcb4ee1a184fe8",
+            "input" : "[Mighty Claude task notice] Build · 완료\nBuild done",
+            "kind" : "steer",
+            "output" : null,
+            "parentId" : "graph-5fdc64ac5f29f7a77731646221870699f515fe05198e2da3",
+            "responseRecords" : null,
+            "runId" : "vec-cs-5",
+            "state" : "stopped",
+            "title" : "중간 요청",
+            "usage" : null
           }
         ]
       },

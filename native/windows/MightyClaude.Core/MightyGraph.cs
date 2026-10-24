@@ -73,7 +73,7 @@ public static class MightyGraphSupport
 
     public static string BlockTitle(MightyGraphAgent agent) => BlockKind(agent) switch
     {
-        "steer" => IsDelegationNotice(agent.Input) ? Locale.Get("graph.block.delegationNotice") : Locale.Get("graph.block.steer"),
+        "steer" => IsDelegationNotice(agent.Input) ? Locale.Get("graph.block.delegationNotice") : IsTaskNotice(agent.Input) ? Locale.Get("graph.block.taskNotice") : Locale.Get("graph.block.steer"),
         "compact" => ContextCompaction.Title,
         "question" => string.IsNullOrEmpty(agent.Title) ? Locale.Get("graph.block.question") : agent.Title,
         "task" => string.IsNullOrEmpty(agent.Title) ? Locale.Get("graph.block.task") : agent.Title,
@@ -88,6 +88,16 @@ public static class MightyGraphSupport
         input is not null && DelegationNoticePrefixes.Any(prefix => input.StartsWith(prefix, StringComparison.Ordinal));
     /// <summary>A steer that delegation sent, not a person.</summary>
     public static bool IsDelegationNotice(MightyGraphAgent agent) => BlockKind(agent) == "steer" && IsDelegationNotice(agent.Input);
+    /// <summary>A background task's <c>&lt;task-notification&gt;</c> the tracker shows as a steer under main, its readable line after this
+    /// prefix; the next root-level answer is its reply. Such a block is a 작업 알림 (macOS MightyGraphSupport.taskNoticePrefix).</summary>
+    public const string TaskNoticePrefix = "[Mighty Claude task notice] ";
+    public static bool IsTaskNotice(string? input) => input is not null && input.StartsWith(TaskNoticePrefix, StringComparison.Ordinal);
+    /// <summary>A steer the tracker made from a task notification, not a person.</summary>
+    public static bool IsTaskNotice(MightyGraphAgent agent) => BlockKind(agent) == "steer" && IsTaskNotice(agent.Input);
+    /// <summary>A steer no person sent: a delegation notice or a task notice (macOS MightyGraphAgent.isNotice).</summary>
+    public static bool IsNotice(MightyGraphAgent agent) => IsDelegationNotice(agent) || IsTaskNotice(agent);
+    /// <summary>What the block shows as its request: a task notice without its prefix (macOS MightyGraphAgent.shownInput).</summary>
+    public static string ShownInput(MightyGraphAgent agent) => IsTaskNotice(agent) ? agent.Input[TaskNoticePrefix.Length..] : agent.Input;
 
     public static string AgentNodeId(string runId, string agentId) =>
         MightyGraphBlockSize.NodeId(runId, "agent:" + agentId);

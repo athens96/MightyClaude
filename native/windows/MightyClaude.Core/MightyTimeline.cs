@@ -103,11 +103,11 @@ public static class MightyTimeline
         var milliseconds = (last - first).TotalMilliseconds;
         return milliseconds > 0 && ActivitySupport.ValidDuration(milliseconds) ? Math.Round(milliseconds) : null;
     }
-    /// <summary><paramref name="input"/> is what the block was asked; a steer that delegation sent is named for that.</summary>
+    /// <summary><paramref name="input"/> is what the block was asked; a steer that delegation sent, or a task notice, is named for that.</summary>
     public static string KindLabel(string kind, string? input = null) => kind switch
     {
         "main" => Locale.Get("graph.timeline.kind.request"), ExecutionKind => Locale.Get("graph.block.execution"), "task" => Locale.Get("graph.block.task"),
-        "steer" => MightyGraphSupport.IsDelegationNotice(input) ? Locale.Get("graph.block.delegationNotice") : Locale.Get("graph.block.steer"), "compact" => Locale.Get("graph.block.compact"),
+        "steer" => MightyGraphSupport.IsDelegationNotice(input) ? Locale.Get("graph.block.delegationNotice") : MightyGraphSupport.IsTaskNotice(input) ? Locale.Get("graph.block.taskNotice") : Locale.Get("graph.block.steer"), "compact" => Locale.Get("graph.block.compact"),
         "question" => Locale.Get("graph.block.question"), _ => Locale.Get("graph.block.agent"),
     };
     public static string? DurationLabel(double? milliseconds)

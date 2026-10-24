@@ -45,6 +45,50 @@ internal static class MightyTimelineVerification
             $"an unanswered delegation notice ends with its own words, a person's steer with the 중간 요청 words; got '{Unfinished("n")}', '{Unfinished("f")}', '{Unfinished("p")}'");
         return Task.CompletedTask;
     }
+    /// <summary>A background task's <c>&lt;task-notification&gt;</c> is a 작업 알림 steer under main, once per task, answered by the next
+    /// root-level reply; it is neither a person's 중간 요청 nor counted as one (macOS ExecutionGraphTests.aTaskNotificationIsATaskNoticeSteer).</summary>
+    internal static Task ATaskNotificationIsATaskNoticeSteer()
+    {
+        var emitted = new List<ExecutionGraphNode>();
+        var tracker = new ExecutionGraphTracker("notice-run", "Build project", "claude", null, emitted.Add);
+        static string Notification(string task, string tool, string status, string summary) =>
+            "[SYSTEM NOTIFICATION]\n<task-notification>\n<task-id>" + task + "</task-id>\n<tool-use-id>" + tool + "</tool-use-id>\n<status>" + status + "</status>\n<summary>" + summary + "</summary>\n</task-notification>";
+        void Frame(object value) { using var json = JsonDocument.Parse(JsonSerializer.Serialize(value)); tracker.Consume(json.RootElement.Clone()); }
+        void Said(string text) => Frame(new { type = "assistant", message = new { content = new[] { new { type = "text", text } } } });
+        void Told(string text) => Frame(new { type = "user", message = new { content = new[] { new { type = "text", text } } } });
+        Frame(new { type = "assistant", message = new { content = new object[] {
+            new { type = "tool_use", id = "build-cmd", name = "Bash", input = new { command = "npm run build", description = "Build", run_in_background = true } },
+            new { type = "tool_use", id = "lint-cmd", name = "Bash", input = new { command = "npm run lint", run_in_background = true } } } } });
+        Frame(new { type = "user", message = new { content = new object[] {
+            new { type = "tool_result", tool_use_id = "build-cmd", content = "Command running in background with ID: task-b1." },
+            new { type = "tool_result", tool_use_id = "lint-cmd", content = "could not start", is_error = true } } } });
+        Said("Started the build.");
+        Told(Notification("task-b1", "build-cmd", "completed", "Build done"));
+        Said("The build passed.");
+        // The same task told again, and a task whose launch had already failed.
+        Told(Notification("task-b1", "build-cmd", "failed", "Build done again"));
+        Told(Notification("task-l1", "lint-cmd", "stopped", ""));
+        tracker.Finish("completed");
+        var latest = new Dictionary<string, ExecutionGraphNode>(); foreach (var node in emitted) latest[node.Id] = node;
+        var main = ExecutionGraphSupport.MainNodeID("notice-run");
+        var notices = latest.Values.Where(n => n.Kind == "steer").ToList();
+        var build = latest[ExecutionGraphSupport.Identifier("notice-run", "steer:notice:" + ExecutionGraphSupport.AgentNodeID("notice-run", "build-cmd"))];
+        var lint = latest[ExecutionGraphSupport.Identifier("notice-run", "steer:notice:" + ExecutionGraphSupport.AgentNodeID("notice-run", "lint-cmd"))];
+        Check(notices.Count == 2 && notices.All(n => n.ParentId == main), "one 작업 알림 per notified task, under main; got " + notices.Count);
+        Check(build.Input == MightyGraphSupport.TaskNoticePrefix + "Build · 완료\nBuild done" && build.State == "completed" && build.Output == "The build passed.",
+            "the notice reads the task and its outcome, and the next root answer is its reply; got '" + build.Input + "' -> '" + build.Output + "'");
+        Check(lint.Input == MightyGraphSupport.TaskNoticePrefix + "npm run lint · 중단됨" && lint.State == "stopped" && lint.Entries[^1].Text == Locale.Get("graph.block.unfinished.taskNotice")
+            && Locale.Get("graph.block.unfinished.taskNotice") != Locale.Get("graph.block.unfinished.steer"), "a notice for a task already settled still shows, and an unanswered one ends in its own words; got '" + lint.Input + "'");
+        var run = tracker.BuildRun()!;
+        var agent = run.Agents.Single(a => a.Id == build.Id);
+        Check(MightyGraphSupport.BlockTitle(agent) == "작업 알림" && MightyGraphSupport.BlockKind(agent) == "steer" && MightyGraphSupport.IsTaskNotice(agent) && MightyGraphSupport.IsNotice(agent) && !MightyGraphSupport.IsDelegationNotice(agent)
+            && MightyGraphSupport.ShownInput(agent) == "Build · 완료\nBuild done", "the block is a 작업 알림 that shows its line without the prefix");
+        Check(MightyTimeline.KindLabel("steer", agent.Input) == "작업 알림" && MightyTimeline.KindLabel("steer", "Also add tests") == "중간 요청", "the timeline names it the same way");
+        run.Agents.Add(new MightyGraphAgent { Id = "person", Kind = "steer", Status = "completed", Input = "Also add tests" });
+        var summary = MightyGraphBlockModel.ToolbarSummary([run]);
+        Check(summary.Contains("중간 요청 1", StringComparison.Ordinal) && !summary.Contains("중간 요청 3", StringComparison.Ordinal), "task notices are not counted as a person's steers; got " + summary);
+        return Task.CompletedTask;
+    }
     /// macOS MightyTimelineTests.theRequestRowHoldsTheInputAndTheExecutionRowTheWork.
     internal static Task TheRequestRowHoldsTheInputAndTheExecutionRowTheWork()
     {

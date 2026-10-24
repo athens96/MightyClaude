@@ -579,6 +579,10 @@ public sealed partial class ExecutionGraphTracker
             var state = status == "completed" ? "completed" : status is "failed" or "error" ? "error" : "stopped";
             var summary = Tag(body, "summary");
             Update(id, n => ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = state, Output = summary ?? n.Output });
+            // The notice entered the turn like a steer: a 작업 알림 under main, once per task, whose reply is the next root-level answer.
+            var notified = nodes[id];
+            var line = (notified.Title is { Length: > 0 } title ? title : notified.Input ?? "") + " · " + Locale.Get(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped");
+            SteerLocked("notice:" + id, MightyGraphSupport.TaskNoticePrefix + line + (summary is null ? "" : "\n" + summary));
         }
     }
 
@@ -702,8 +706,9 @@ public sealed partial class ExecutionGraphTracker
                 var text = value.Kind switch
                 {
                     "task" => Locale.Get("graph.block.unfinished.task"),
-                    // A notice or follow-up delegation handed into the turn is a 위임 알림, not a person's 중간 요청 (macOS).
-                    "steer" => Locale.Get(MightyGraphSupport.IsDelegationNotice(value.Input) ? "graph.block.unfinished.delegationNotice" : "graph.block.unfinished.steer"),
+                    // A notice or follow-up delegation handed into the turn is a 위임 알림, a task's notification a 작업 알림, not a person's 중간 요청 (macOS).
+                    "steer" => Locale.Get(MightyGraphSupport.IsDelegationNotice(value.Input) ? "graph.block.unfinished.delegationNotice"
+                        : MightyGraphSupport.IsTaskNotice(value.Input) ? "graph.block.unfinished.taskNotice" : "graph.block.unfinished.steer"),
                     "question" => Locale.Get("graph.block.unfinished.question"),
                     _ => Locale.Get("graph.block.unfinished.agent"),
                 };
