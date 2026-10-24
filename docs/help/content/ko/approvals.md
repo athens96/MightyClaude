@@ -69,7 +69,7 @@ CLI 로그인이 만료되어 요청이 실패하면 입력창 위에 로그인 
 Claude는 오래 걸리는 명령이나 하위 에이전트를 백그라운드에서 돌리기도 합니다. 이때는 Claude의 답이 끝나도 일이 남아 있습니다.
 - 입력창 위에 턴이 끝났지만 백그라운드 작업이 실행 중이라는 줄이 보입니다. {{ui:plan.background.show}}를 누르면 작업별 종류, 상태, 걸린 시간을 봅니다.
 - 실행 중인 작업에는 {{ui:plan.background.awaitingNotice}} 표시가 붙습니다. 작업이 끝나면 Claude에게 알림이 가고, Claude가 그 결과를 받아 이어서 답합니다. 끝난 작업은 {{ui:plan.background.noticeDelivered}} 표시로 바뀌고, 다음 요청을 보낼 때까지 줄에 남습니다.
-- 마이티 보기에는 {{ui:graph.block.task}} 블록으로 보입니다.
+- 마이티 보기에는 {{ui:graph.block.task}} 블록으로 보입니다. 명령이 끝났다는 알림이 Claude에게 가면 주황색 {{ui:graph.block.taskNotice}} 블록에 그 명령과 끝난 상태, 요약, 그리고 Claude가 알림을 받고 한 답이 보입니다.
 - 이때 보낸 요청은 대기열에 들어가 백그라운드 작업이 끝난 뒤 시작합니다. 지금 시작하려면 중지 단추를 누릅니다. 대기열은 그대로 남고 첫 요청이 이어서 시작합니다. [마이티 오케스트레이션](delegation.md#worktree)이 켜진 git 저장소의 창에서는 {{kbd:⌘Enter}}로 새 worktree에서 바로 실행할 수도 있습니다.
 - 이 줄이 거슬리면 줄 오른쪽의 눈 가림 버튼({{ui:plan.background.hideStrip}})을 누릅니다. 모든 창에서 줄이 사라지고, 백그라운드 작업은 그대로 실행됩니다.
 - 다시 보려면 입력창 오른쪽의 {{ui:composer.backgroundWork.name}} 단추를 누릅니다. {{ui:menu.settings}} → {{ui:settings.nav.general}} → {{ui:settings.display.sectionTitle}}에서 {{ui:settings.display.backgroundWorkToggle}}를 켜거나, 창의 … 메뉴에서 {{ui:pane.menu.backgroundWork}}를 골라도 됩니다. 줄을 펼쳐 둔 상태도 기억합니다.

@@ -69,7 +69,7 @@ If you already signed in somewhere else, click {{ui:loginRecovery.resendButton}}
 Claude sometimes runs long commands or sub-agents in the background. Then work is still going on after Claude's answer is done.
 - A strip above the composer says the turn is done but background work is still running. Click {{ui:plan.background.show}} to see each task's kind, state and time.
 - A running task is marked {{ui:plan.background.awaitingNotice}}: when it ends, Claude is notified and carries on with the result. An ended task turns to {{ui:plan.background.noticeDelivered}} and stays on the strip until you send the next request.
-- The Mighty view shows them as {{ui:graph.block.task}} blocks.
+- The Mighty view shows them as {{ui:graph.block.task}} blocks. When a command's notice reaches Claude, an orange {{ui:graph.block.taskNotice}} block shows the command, how it ended and its summary, with Claude's answer to it.
 - A request you send now waits in the queue and starts after the background work ends. To start it now, click stop: the queue stays and its first request starts next. In a pane with [Mighty Orchestration](delegation.md#worktree) on, in a git repository, {{kbd:⌘Enter}} can also run it right away in a new worktree.
 - If the line is in the way, click the eye button ({{ui:plan.background.hideStrip}}) on its right. It goes away in every pane; the background work keeps running.
 - To see it again, click the {{ui:composer.backgroundWork.name}} button at the right of the composer. You can also turn on {{ui:settings.display.backgroundWorkToggle}} in {{ui:menu.settings}} → {{ui:settings.nav.general}} → {{ui:settings.display.sectionTitle}}, or choose {{ui:pane.menu.backgroundWork}} in the pane's … menu. Whether you left the line open is remembered too.
