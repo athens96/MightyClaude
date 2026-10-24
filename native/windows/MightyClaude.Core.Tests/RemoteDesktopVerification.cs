@@ -322,7 +322,9 @@ internal static class RemoteDesktopVerification
             ("MainWindow.DashboardWorkspaces.cs", "Text = workspace.Path"), ("MainWindow.DashboardWorkspaces.cs", "SetToolTip(path, workspace.Path)"),
             ("MainWindow.DashboardWorkspaces.cs", "MiddleTrim.Fit(path, workspace.Path"), ("MainWindow.Plugins.cs", "SettingsTertiary(workspace.Path"),
             ("MainWindow.Plugins.cs", "SetToolTip(workspacePath, workspace.Path)"), ("MainWindow.ResumeSession.cs", "MiddleTrim.Fit(path, workspace.Path"),
-            ("MainWindow.SessionInfo.cs", "Row(\"path\", workspace?.Path)"), ("MainWindow.WebShell.Composer.cs", "Row(\"path\", \"\", workspace?.Path)"), ("MainWindow.Shell.cs", "workspaceHeaderFullPath = workspace.Path"),
+            ("MainWindow.SessionInfo.cs", "Row(\"path\", workspace?.Path)"), ("MainWindow.WebShell.Composer.cs", "Row(\"path\", \"\", workspace?.Path)"),
+            // The web page shows these: the resume list's folder line and the sidebar's and dashboard's workspace rows.
+            ("MainWindow.WebShell.Shell.cs", "path = workspace.Path });"), ("MainWindow.WebShell.Shell.cs", "name = workspace.Name, path = workspace.Path,"), ("MainWindow.WebShell.Shell.cs", "name = w.Name, path = w.Path,"), ("MainWindow.Shell.cs", "workspaceHeaderFullPath = workspace.Path"),
             ("MainWindow.Sidebar.cs", "SetToolTip(select, workspace.Path)"), ("MainWindow.UpdateAdmission.cs", "w.Path == workspace.Path"),
             ("MainWindow.DashboardWorkspaces.cs", "c.Path != w.Path"), ("MainWindow.ModelRefresh.cs", "w.Path == key.Path"),
             // A reference preview target's own Path, in the transcript's self-check.
