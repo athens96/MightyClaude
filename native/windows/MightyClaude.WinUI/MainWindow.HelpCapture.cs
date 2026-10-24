@@ -31,6 +31,7 @@ public sealed partial class MainWindow
         internal string? TerminalProblem { get; set; }
         internal bool DelegationSeeded { get; set; }
         internal string? DelegationProblem { get; set; }
+        internal Dictionary<string, (double Seconds, bool Finished)> DelegationTimings { get; } = [];
         internal string Pane(string role) => Panes.TryGetValue(role, out var id) ? id : throw new InvalidOperationException("the demo has no " + role + " pane");
         internal string? DelegationWorkspace => (string?)Profile["delegation"]?["workspace"];
         internal IEnumerable<JsonObject> Layouts => (Profile["layouts"]?.AsArray() ?? []).OfType<JsonObject>().Where(l => (string?)l["workspace"] != DelegationWorkspace);

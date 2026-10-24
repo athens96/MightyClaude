@@ -29,6 +29,7 @@ public sealed partial class MainWindow
         var space = demo.Workspaces[demo.DelegationWorkspace!];
         var id = demo.Pane(screen == "delegation-parent-closed" ? "child-of-closed" : "parent");
         CheckHelpDelegation(screen, id, demo);
+        await HelpDelegationClocks(demo);
         var expanded = service.Snapshot.ExpandedWorkspaceIds;
         await SelectWorkspace(space);
         // The other workspaces' lists are closed, so the tree has the sidebar to itself.
@@ -124,7 +125,6 @@ public sealed partial class MainWindow
         await File.WriteAllTextAsync(script, new JsonObject { ["runs"] = runs }.ToJsonString());
         var executable = Environment.ProcessPath ?? throw new InvalidOperationException("the app's own binary is not known");
         service.Providers.Override("claude", new CliCommand(executable, [HelpDemoCli.Argument, script], "2.1.271"));
-        var timings = new Dictionary<string, AgentRunTiming>();
         foreach (var (role, id, run, marker) in plays)
         {
             var current = service.Snapshot.Sessions.First(s => s.Id == id);
@@ -135,10 +135,9 @@ public sealed partial class MainWindow
             if (finish is not null && !await HelpWait(() => service.Snapshot.Sessions.First(s => s.Id == id).Status is not "running" and not "idle", 30))
                 throw new InvalidOperationException("the " + role + " pane's run did not end");
             await Task.Delay(400);
-            var now = DateTimeOffset.UtcNow;
-            if (run["elapsedSeconds"]?.GetValue<double>() is { } seconds) timings[id] = new(now.AddSeconds(-seconds), now, finish is null ? null : now);
+            if (run["elapsedSeconds"]?.GetValue<double>() is { } seconds) demo.DelegationTimings[id] = (seconds, finish is not null);
         }
-        await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => timings.TryGetValue(p.Id, out var timing) ? p with { RunTiming = timing } : p).ToList() });
+        await HelpDelegationClocks(demo);
 
         // The records, as the Mac's HelpDemoDelegation.file writes them, loaded the way a launch loads them.
         var parentBranch = (string?)spec["parentBranch"] ?? "main"; var baseCommit = (string?)spec["baseCommit"] ?? "";
@@ -183,6 +182,28 @@ public sealed partial class MainWindow
             await SelectLayoutSession(demo.Pane(HelpText(layout["active"])));
         }
         RenderSidebar(); Render();
+    }
+
+    /// <summary>
+    /// The demo runs' clocks as the profile gives them, read from now: the shots come a while after the seeding, and the Mac's
+    /// pictures show the finished runs as just now and the running ones at their own elapsed time. Each pane's transcript moves
+    /// with them, its last line now, so its row's age reads just now too.
+    /// </summary>
+    private Task HelpDelegationClocks(HelpDemo demo)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var workspace = demo.Workspaces[demo.DelegationWorkspace!];
+        static DateTimeOffset? Time(string text) => DateTimeOffset.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var time) ? time : null;
+        RunSession Moved(RunSession pane)
+        {
+            if (pane.Logs.Count == 0 || Time(pane.Logs[^1].Timestamp) is not { } last) return pane;
+            var shift = now - last;
+            return pane with { Logs = pane.Logs.Select(l => Time(l.Timestamp) is { } at ? l with { Timestamp = (at + shift).ToString("O") } : l).ToList() };
+        }
+        return service.UpdateAsync(s => s with
+        {
+            Sessions = s.Sessions.Select(p => p.WorkspaceId != workspace ? p : demo.DelegationTimings.TryGetValue(p.Id, out var timing) ? Moved(p) with { RunTiming = new(now.AddSeconds(-timing.Seconds), now, timing.Finished ? now : null) } : Moved(p)).ToList(),
+        });
     }
 
     /// <summary>Checks that the delegation demo shows what the screen is meant to, as the Mac's capture does (checkDelegation).</summary>
