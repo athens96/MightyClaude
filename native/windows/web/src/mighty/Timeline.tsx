@@ -4,13 +4,15 @@ import { Entry } from '../conversation/Entry';
 import { Markdown } from '../conversation/MarkdownView';
 import type { LogEntry, MightyGraphRun, RunSession } from '../store/models';
 import type { TimelineGroup, TimelineRow } from './types';
+import { useReferenceClick } from '../conversation/referenceClick';
 
 /** A row's transcript, newest entries, drawn only while the row is open (UI/MightyTimeline.cs: a 260-tall body). */
 function RowBody({ entries, paneId, provider, input }: { entries: readonly LogEntry[]; paneId: string; provider: string; input?: string }) {
   const shown = useMemo(() => entries.filter((e) => e.kind !== 'user').slice(-40), [entries]);
   const toggle = useMemo(() => () => {}, []);
+  const onClick = useReferenceClick();
   return (
-    <div className="timeline-body">
+    <div className="timeline-body" onClick={onClick}>
       {input && <div className="mighty-band">{input}</div>}
       <div className="timeline-transcript">
         {shown.map((entry) => <Entry key={entry.id} entry={entry} paneId={paneId} provider={provider} shell={false} live={false} expanded={false} onToggle={toggle} />)}

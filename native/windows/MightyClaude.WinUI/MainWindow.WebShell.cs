@@ -53,10 +53,11 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// What the conversation asks of the host (native/windows/web/src/conversation). <c>openUrl</c> opens only http, https and
-    /// mailto in the default browser, the way the transcript's and the login recovery's links open. <c>openReference</c> takes a
-    /// file named in a pane the way the WinUI reference bubble resolves it (ReferencePreview.Resolve, inside the workspace, a
-    /// remote pane's never) and, while the bubble is not drawn by the page, opens it in its default app (Windows' launcher, which
-    /// refuses programs); the line is not carried there. <c>imageData</c> is a pane's picture by its hash, as a data URL the page's
+    /// mailto in the default browser, the way the transcript's and the login recovery's links open. The reference bubble's
+    /// methods (src/pane/ReferenceBubble.tsx): <c>referencePreview</c> resolves a file named in a pane the way the WinUI bubble
+    /// does (ReferencePreview.Resolve, inside the workspace, a remote pane's never) and reads it as the files pane does
+    /// (<see cref="WebFilePreview"/>); <c>referenceOpen</c> (Windows' launcher, which refuses programs) and <c>referenceReveal</c>
+    /// take the resolved path; <c>referenceSize</c> saves the bubble's size app-wide. <c>imageData</c> is a pane's picture by its hash, as a data URL the page's
     /// policy allows, or null.
     /// </summary>
     private void RegisterConversationMethods(WebBridge bridge)
@@ -67,15 +68,36 @@ public sealed partial class MainWindow
                 Process.Start(new ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true })?.Dispose();
             return Task.FromResult<object?>(null);
         });
-        bridge.Register("openReference", async args =>
+        bridge.Register("referencePreview", async args =>
         {
-            if (args.Text("paneId") is not { } paneId || args.Text("path") is not { Length: > 0 and <= 4096 } path) return null;
+            if (WebReferenceRoot(args) is not { } root || args.Text("path") is not { Length: > 0 and <= 4096 } path) return null;
             int? line = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("line", out var number) && number.ValueKind == JsonValueKind.Number && number.TryGetInt32(out var parsed) && parsed > 0 ? parsed : null;
-            var snapshot = service.Snapshot;
-            if (snapshot.Sessions.FirstOrDefault(s => s.Id == paneId) is not { } pane || LocalPath(snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)) is not { } root) return null;
-            var file = await Task.Run(() => ReferencePreview.Resolve(path, root, line) is { } target ? WorkspaceFiles.Resolve(target.RelativePath, root) : null);
-            if (file is null || Directory.Exists(file)) return false;
+            var target = await Task.Run(() => ReferencePreview.Resolve(path, root, line));
+            if (target is null) return new { found = false };
+            return new { found = true, relativePath = target.RelativePath, line = target.Line, preview = await WebFilePreview(root, target.RelativePath) };
+        });
+        // Resolved again at the click: the workspace or the file may have changed while the bubble was open.
+        bridge.Register("referenceOpen", async args =>
+        {
+            if (WebReferenceRoot(args) is not { } root || WorkspaceFiles.Resolve(args.Text("path") ?? "", root) is not { } file || Directory.Exists(file)) return false;
             return await Windows.System.Launcher.LaunchFileAsync(await Windows.Storage.StorageFile.GetFileFromPathAsync(file));
+        });
+        bridge.Register("referenceReveal", args =>
+        {
+            if (WebReferenceRoot(args) is { } root && WorkspaceFiles.Resolve(args.Text("path") ?? "", root) is { } file)
+            {
+                try { using var _ = Process.Start(new ProcessStartInfo("explorer.exe") { Arguments = "/select,\"" + file + "\"", UseShellExecute = false }); }
+                catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { error.Text = ex.Message; }
+            }
+            return Task.FromResult<object?>(null);
+        });
+        // The size a drag left, every pane's (none: 420 wide and as tall as the room), kept as ReferencePreview.BubbleSize keeps it.
+        bridge.Register("referenceSize", async args =>
+        {
+            static double? Number(JsonElement value, string name) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var n) && n.ValueKind == JsonValueKind.Number ? n.GetDouble() : null;
+            var (width, height) = ReferencePreview.BubbleSize(Number(args, "width"), Number(args, "height"));
+            await service.UpdateAsync(state => state with { ReferenceBubbleWidth = width, ReferenceBubbleHeight = height });
+            return null;
         });
         bridge.Register("imageData", async args =>
         {
@@ -86,6 +108,41 @@ public sealed partial class MainWindow
             var bytes = await Task.Run(() => service.Images.Data(image));
             return bytes is null ? null : "data:" + image.MediaType + ";base64," + Convert.ToBase64String(bytes);
         });
+    }
+
+    /// <summary>
+    /// The reference bubble's web smoke: a fixture file under the smoke project, the reply's <c>src/a.ts:3</c> clicked where it is
+    /// drawn (the caret under the point, as a person's click finds it), and the bubble must show the file's source with its line
+    /// numbers, at line 3, then close from its close button.
+    /// </summary>
+    private static async Task<bool> RunWebReferenceSmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, string project, Dictionary<string, object?> result)
+    {
+        Directory.CreateDirectory(Path.Combine(project, "src"));
+        await File.WriteAllTextAsync(Path.Combine(project, "src", "a.ts"), "// referenceMarker\nconst one = 1;\nconst three = 3;\nexport { one, three };\n");
+        async Task<bool> True(string script) => await core.ExecuteScriptAsync(script) == "true";
+        async Task<bool> Until(Func<Task<bool>> done)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(15);
+            while (DateTime.UtcNow < deadline) { if (await done()) return true; await Task.Delay(50); }
+            return false;
+        }
+        const string Room = "(document.querySelector('.pane-slot.active:not(.hidden)') ?? document)";
+        const string Click = "(() => { const c = " + Room + ".querySelector('[data-testid=conversation]'); if (!c) return false; const w = document.createTreeWalker(c, NodeFilter.SHOW_TEXT); let n; "
+            + "while ((n = w.nextNode())) { const i = n.textContent.indexOf('src/a.ts:3'); if (i < 0) continue; n.parentElement.scrollIntoView({ block: 'center' }); const r = document.createRange(); r.setStart(n, i + 2); r.setEnd(n, i + 3); const b = r.getBoundingClientRect(); "
+            + "n.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, clientX: b.left + b.width / 2, clientY: b.top + b.height / 2 })); return true; } return false; })()";
+        const string Bubble = Room + ".querySelector('[data-testid=reference-bubble]')";
+        var clicked = await True(Click);
+        var opened = clicked && await Until(() => True("(() => { const b = " + Bubble + "; return !!b && b.dataset.referenceKind === 'source' && b.dataset.referenceLine === '3' && (b.querySelector('[data-testid=files-source]')?.textContent ?? '').includes('referenceMarker') && (b.querySelector('.files-lines')?.textContent ?? '').startsWith('1'); })()"));
+        var closed = opened && await True("(() => { " + Bubble + "?.querySelector('[data-testid=reference-close]')?.click(); return true; })()") && await Until(() => True("!" + Bubble));
+        result["referenceChecks"] = new { clicked, opened, closed };
+        return opened && closed;
+    }
+
+    /// <summary>The folder of the pane a reference names a file in; null for a remote pane (its files are on its host) or an unknown one.</summary>
+    private string? WebReferenceRoot(JsonElement args)
+    {
+        var snapshot = service.Snapshot;
+        return snapshot.Sessions.FirstOrDefault(s => s.Id == args.Text("paneId")) is { } pane ? LocalPath(snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)) : null;
     }
 
     /// <summary>
@@ -155,6 +212,9 @@ public sealed partial class MainWindow
             var streamed = await WaitFor(Streamed);
             result["streamed"] = streamed.Clone(); result["lastDeltaBytes"] = shell.Bridge.LastDeltaBytes; Save();
             shown = shown && Drawn(drawn) && Streamed(streamed);
+            // The reference bubble: the reply's `src/a.ts:3` clicked opens the fixture file in the pane, at its line.
+            var referenced = await RunWebReferenceSmoke(core, project, result); result["reference"] = referenced; Save();
+            shown = shown && referenced;
             // The composer: a typed draft reaches the service, and Enter answers with what the send did (MainWindow.WebShell.Composer.cs).
             var composed = await RunWebComposerSmoke(core, sessions[0].Id, result); result["composer"] = composed; Save();
             shown = shown && composed;

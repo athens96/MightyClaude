@@ -1,10 +1,10 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useServices } from '../app/context';
 import type { LogEntry, RunSession } from '../store/models';
 import { Entry, type EntryProps } from './Entry';
 import { providerLabel } from './format';
 import { ProviderMark } from './ProviderMark';
-import { textTargetAt } from './references';
+import { ReferenceContext, clickedAt, linkAt, type Clicked } from './referenceClick';
 import { HeightCache, estimateHeight, layout, nearBottom, visibleRange } from './virtual';
 
 interface MenuState {
@@ -12,25 +12,6 @@ interface MenuState {
   y: number;
   selection: string;
   code: string | null;
-}
-
-interface Caret {
-  node: Node;
-  offset: number;
-}
-
-type CaretDocument = Document & {
-  caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
-  caretRangeFromPoint?: (x: number, y: number) => Range | null;
-};
-
-/** The text position under a point, by whichever of the two caret APIs the engine has. */
-function caretAt(x: number, y: number): Caret | null {
-  const doc = document as CaretDocument;
-  const position = doc.caretPositionFromPoint?.(x, y);
-  if (position) return { node: position.offsetNode, offset: position.offset };
-  const range = doc.caretRangeFromPoint?.(x, y);
-  return range ? { node: range.startContainer, offset: range.startOffset } : null;
 }
 
 const Row = memo(function Row({ observe, ...props }: EntryProps & { observe: (element: HTMLDivElement | null) => (() => void) | undefined }) {
@@ -138,39 +119,20 @@ export function Conversation({ session }: { session: RunSession }) {
     });
   }, []);
 
-  const open = useCallback((element: Element) => {
-    const url = element.closest<HTMLElement>('[data-url]')?.dataset.url;
-    if (url) {
-      void bridge.call('openUrl', { url }).catch(() => {});
-      return true;
-    }
-    const path = element.closest<HTMLElement>('[data-path]')?.dataset.path;
-    if (path) {
-      void bridge.call('openReference', { paneId: session.id, path, line: null }).catch(() => {});
-      return true;
-    }
-    return false;
-  }, [bridge, session.id]);
+  const showReference = useContext(ReferenceContext);
+  const follow = useCallback((clicked: Clicked) => {
+    if (!clicked) return false;
+    if ('url' in clicked) void bridge.call('openUrl', { url: clicked.url }).catch(() => {});
+    else showReference?.(clicked);
+    return true;
+  }, [bridge, showReference]);
+  const open = useCallback((element: Element) => follow(linkAt(element)), [follow]);
 
   const onClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as Element;
-    if (event.button !== 0 || target.closest('button')) return;
-    if (open(target)) return;
-    // A drag that selected words is not a click on them.
-    const selection = window.getSelection();
-    if (selection && !selection.isCollapsed) return;
-    // Otherwise the file named under the pointer (ReferencePreview.TextTargetAt), read on its line of its block.
-    const caret = caretAt(event.clientX, event.clientY);
-    if (!caret) return;
-    const from = caret.node.nodeType === Node.TEXT_NODE ? caret.node.parentElement : (caret.node as Element);
-    const block = from?.closest('[data-text]');
-    if (!block || !scroller.current?.contains(block)) return;
-    const range = document.createRange();
-    range.setStart(block, 0);
-    range.setEnd(caret.node, caret.offset);
-    const found = textTargetAt(block.textContent ?? '', range.toString().length);
-    if (found) void bridge.call('openReference', { paneId: session.id, path: found.path, line: found.line }).catch(() => {});
-  }, [bridge, open, session.id]);
+    if (event.button !== 0 || target.closest('button') || !scroller.current) return;
+    follow(clickedAt(target, event.clientX, event.clientY, scroller.current));
+  }, [follow]);
 
   const onKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' && event.ctrlKey && open(event.target as Element)) event.preventDefault();
