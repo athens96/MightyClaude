@@ -228,6 +228,8 @@ public sealed partial class MainWindow
             await ApplyLayoutPreset((string?)layout["preset"] ?? "grid");
         }
         await HelpSelect(demo);
+        // The pet comes up as in a normal start (a capture, as a smoke, starts without it): Settings' pet list and the pet's own picture need it.
+        await InitializeCompanionAsync();
         try { await PrepareHelpTerminal(demo, core); } catch (Exception ex) when (ex is not OutOfMemoryException) { demo.TerminalProblem = ex.Message; }
         return demo;
     }

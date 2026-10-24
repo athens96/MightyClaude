@@ -335,6 +335,9 @@ button { font: inherit; color: inherit; }
 .resume-choice-top { display: flex; gap: var(--space-md); align-items: flex-start; }
 .resume-list { display: flex; flex-direction: column; gap: var(--space-md); min-height: 0; }
 .resume-title { display: flex; gap: var(--space-sm); align-items: center; }
+.resume-search { position: relative; display: flex; }
+.resume-search > svg { position: absolute; left: var(--space-sm); top: 50%; transform: translateY(-50%); color: var(--ink2); pointer-events: none; }
+.resume-search > .sheet-field { flex: 1; padding-left: calc(var(--space-sm) + 19px); }
 .resume-rows { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-xxs); border-radius: var(--radius-row); background: var(--card-raised); padding: var(--space-xxs); }
 .resume-row { display: flex; gap: var(--space-md); align-items: flex-start; padding: var(--space-sm) var(--space-md); border: 0; border-radius: var(--radius-file-row); background: transparent; text-align: left; cursor: default; }
 .resume-row:hover { background: var(--card); }
