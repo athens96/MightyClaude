@@ -27,8 +27,70 @@ internal sealed class WebNativeReader(Func<Windows.UI.Color, string?> token)
     private static int nextId;
     private readonly Dictionary<int, object> elements = [];
 
-    /// <summary>A picture a section drew from bytes (the pairing QR): the page gets it as this data URL.</summary>
+    /// <summary>A WriteableBitmap whose PNG is being made, so a read made meanwhile does not start another.</summary>
+    private static readonly ConditionalWeakTable<ImageSource, object> encoding = new();
+
+    /// <summary>A picture a section drew from bytes (the pairing QR, the companion's preview): the page gets it as this data URL.</summary>
     internal static void RememberImage(ImageSource source, string mediaType, byte[] bytes) => images.AddOrUpdate(source, "data:" + mediaType + ";base64," + Convert.ToBase64String(bytes));
+
+    /// <summary>
+    /// A picture a section decoded from a stream (<see cref="BitmapImage.SetSourceAsync"/>), remembered as the PNG or other bytes it
+    /// was read from: the stream is read whole from its start, then put back where it was so the decode reads it as before.
+    /// </summary>
+    internal static async Task RememberStream(ImageSource source, string mediaType, Windows.Storage.Streams.IRandomAccessStream stream)
+    {
+        var position = stream.Position;
+        var bytes = new byte[stream.Size];
+        using (var reader = new Windows.Storage.Streams.DataReader(stream.GetInputStreamAt(0))) { await reader.LoadAsync((uint)stream.Size); reader.ReadBytes(bytes); }
+        stream.Seek(position);
+        RememberImage(source, mediaType, bytes);
+    }
+
+    private static readonly Dictionary<string, string> packageTypes = new(StringComparer.OrdinalIgnoreCase) { [".png"] = "image/png", [".jpg"] = "image/jpeg", [".jpeg"] = "image/jpeg", [".gif"] = "image/gif", [".ico"] = "image/x-icon", [".svg"] = "image/svg+xml" };
+
+    /// <summary>
+    /// A picture's data URL for the page: one remembered from its bytes; an http or https address as it is; a picture of the
+    /// app's own package (ms-appx) read from its file once; a WriteableBitmap encoded as a PNG off the read, so the page shows
+    /// it from the next push (the clock pushes again within a second). Anything else (a stream decoded elsewhere) has none.
+    /// </summary>
+    private static string? ImageUrl(ImageSource source)
+    {
+        if (images.TryGetValue(source, out var url)) return url;
+        if (source is BitmapImage { UriSource: { } uri })
+        {
+            if (uri.Scheme is "http" or "https") return uri.AbsoluteUri;
+            if (uri.Scheme == "ms-appx" && packageTypes.TryGetValue(System.IO.Path.GetExtension(uri.AbsolutePath), out var type))
+            {
+                var file = System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory, Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/')));
+                if (!file.StartsWith(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase) || !File.Exists(file) || new FileInfo(file).Length > 4 * 1_048_576) return null;
+                RememberImage(source, type, File.ReadAllBytes(file));
+                return images.TryGetValue(source, out var read) ? read : null;
+            }
+            return null;
+        }
+        if (source is WriteableBitmap { PixelWidth: > 0, PixelHeight: > 0 } bitmap && !encoding.TryGetValue(source, out _))
+        {
+            encoding.AddOrUpdate(source, new object());
+            _ = EncodeWriteable(bitmap);
+        }
+        return null;
+    }
+
+    /// <summary>A WriteableBitmap's pixels (BGRA, premultiplied) as a PNG, remembered for the next read.</summary>
+    private static async Task EncodeWriteable(WriteableBitmap bitmap)
+    {
+        try
+        {
+            var pixels = System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.ToArray(bitmap.PixelBuffer);
+            using var output = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+            var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, output);
+            encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied, (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, pixels);
+            await encoder.FlushAsync();
+            await RememberStream(bitmap, "image/png", output);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        finally { encoding.Remove(bitmap); }
+    }
 
     private int Id(object element)
     {
@@ -155,8 +217,7 @@ internal sealed class WebNativeReader(Func<Windows.UI.Color, string?> token)
                 return null;
             case Image image:
             {
-                string? src = image.Source is { } source && images.TryGetValue(source, out var url) ? url : null;
-                if (src is null && image.Source is BitmapImage { UriSource: { } uri } && uri.Scheme is "http" or "https") src = uri.AbsoluteUri;
+                var src = image.Source is { } source ? ImageUrl(source) : null;
                 return src is null ? null : new() { ["t"] = "image", ["src"] = src };
             }
             case Ellipse dot when Tone(dot.Fill) is { } fill:
