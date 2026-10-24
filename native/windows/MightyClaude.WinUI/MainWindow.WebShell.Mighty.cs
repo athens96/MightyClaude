@@ -368,7 +368,7 @@ public sealed partial class MainWindow
                     return new WebTimelineRow(row.NodeId, row.Kind, MightyTimeline.KindLabel(row.Kind, agent?.Input), row.Title, row.Status,
                         row.Status == MightyTimeline.RequestStatus ? "" : MightyGraphBlockModel.StateLabel(row.Status), Tone(row.Node.Tone), row.Node.Ring,
                         row.Node.Rail is { } rail ? Tone(rail) : null, row.Latest, MightyTimeline.DurationLabel(row.DurationMs), capsule,
-                        agent?.Input ?? (row.Kind == "main" ? run.Input : null), row.AgentIndex);
+                        (agent is null ? null : MightyGraphSupport.ShownInput(agent)) ?? (row.Kind == "main" ? run.Input : null), row.AgentIndex);
                 }).ToList();
                 var tally = Locale.Get("phone.blocks.tally", new Dictionary<string, string> { ["total"] = group.Tally.Total.ToString(), ["settled"] = group.Tally.Settled.ToString() });
                 var total = run.TotalUsage;

@@ -150,6 +150,40 @@ struct ExecutionGraphTests {
         try send(notification(task: "task-b1", tool: "build", status: "failed", summary: "late duplicate"), to: parser)
         #expect(try latest(nodes, buildID).state == "completed")
         #expect(try latest(nodes, mainID).state == "running"); #expect(try latest(nodes, mainID).entries.isEmpty)
+        // Each notification shows as a 작업 알림 under main instead of vanishing into main; the late duplicate makes no second one.
+        let notices = Set(nodes.filter { $0.kind == "steer" }.map(\.id))
+        #expect(notices.count == 2)
+        let buildNotice = try latest(nodes, ExecutionGraphSupport.identifier("task-run", "steer:notice:" + buildID))
+        #expect(buildNotice.parentId == mainID); #expect(buildNotice.state == "running")
+        #expect(buildNotice.input == MightyGraphSupport.taskNoticePrefix + "Build the app · " + L("graph.block.taskNotice.completed") + "\nBackground command \"Build the app\" completed (exit code 0)")
+        #expect(try latest(nodes, ExecutionGraphSupport.identifier("task-run", "steer:notice:" + syncID)).input
+            == MightyGraphSupport.taskNoticePrefix + "rsync -a src/ dst/ · " + L("graph.block.taskNotice.failed") + "\nrsync exited with code 23")
+        // The next root-level answer is their reply.
+        try send(assistant([["type": "text", "text": "Both settled."]], id: "main-2"), to: parser)
+        #expect(try latest(nodes, buildNotice.id).state == "completed"); #expect(try latest(nodes, buildNotice.id).output == "Both settled.")
+    }
+
+    @Test func aTaskNotificationIsATaskNoticeSteer() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var nodes: [ExecutionGraphNode] = []
+            let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "notice-run", graph: { nodes.append($0) }, graphInput: "Build project")
+            try send(assistant([command("lint", command: "npm run lint")], id: "main-1"), to: parser)
+            try send(["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": "lint", "is_error": true, "content": "could not start"]]]], to: parser)
+            // A task whose launch had already failed is still told, and the notice still shows.
+            try send(notification(task: "task-l1", tool: "lint", status: "stopped", summary: ""), to: parser)
+            parser.finishGraph(state: "completed")
+            let lintID = ExecutionGraphSupport.agentNodeID(runId: "notice-run", toolUseId: "lint")
+            let notice = try latest(nodes, ExecutionGraphSupport.identifier("notice-run", "steer:notice:" + lintID))
+            #expect(notice.input == MightyGraphSupport.taskNoticePrefix + "npm run lint · 중단됨")
+            #expect(notice.state == "stopped"); #expect(notice.entries.last?.text == L("graph.block.unfinished.taskNotice"))
+            #expect(L("graph.block.unfinished.taskNotice") != L("graph.block.unfinished.steer"))
+            let agent = MightyGraphAgent(id: notice.id, input: MightyGraphSupport.taskNoticePrefix + "Build · 완료\nBuild done", kind: "steer")
+            #expect(MightyGraphSupport.blockTitle(agent) == "작업 알림"); #expect(MightyGraphSupport.blockKind(agent) == "steer")
+            #expect(agent.isTaskNotice && agent.isNotice && !agent.isDelegationNotice); #expect(agent.shownInput == "Build · 완료\nBuild done")
+            let person = MightyGraphAgent(id: "p", input: "Also add tests", kind: "steer")
+            #expect(!person.isNotice); #expect(person.shownInput == "Also add tests")
+            #expect(!MightyGraphAgent(id: "a", input: agent.input).isTaskNotice)
+        }
     }
 
     @Test func unfinishedBackgroundCommandStopsWithRunAndLaunchFailureIsAnError() throws {

@@ -206,6 +206,7 @@ internal static class Verification
         await Test("GraphPreviewVerification RememberedGraphSizesDriveLayoutAndNormalize", GraphPreviewVerification.RememberedGraphSizesDriveLayoutAndNormalize);
         await Test("GraphPreviewVerification LocalHtmlReadsOnlyItsOwnBoundedDirectory", GraphPreviewVerification.LocalHtmlReadsOnlyItsOwnBoundedDirectory);
         await Test("MightyTimelineVerification RecordedOrderAndResultsMatchDiagram", MightyTimelineVerification.RecordedOrderAndResultsMatchDiagram);
+        await Test("MightyTimelineVerification ATaskNotificationIsATaskNoticeSteer", MightyTimelineVerification.ATaskNotificationIsATaskNoticeSteer);
         await Test("MightyTimelineVerification TheRequestRowHoldsTheInputAndTheExecutionRowTheWork", MightyTimelineVerification.TheRequestRowHoldsTheInputAndTheExecutionRowTheWork);
         await Test("MightyTimelineVerification StatusRailsCountsAndDurationStayHonest", MightyTimelineVerification.StatusRailsCountsAndDurationStayHonest);
         await Test("mighty execution block: a stable node id", MightyGraphExecutionBlockVerification.TheExecutionBlockHasAStableNodeID);

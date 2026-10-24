@@ -196,8 +196,8 @@ struct MightyGraphView: View {
         let agentCount = own.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer && !$0.isCompact && !$0.isQuestion }.count }
         let questionCount = own.reduce(0) { $0 + $1.agents.filter(\.isQuestion).count }
         let taskCount = own.reduce(0) { $0 + $1.agents.filter(\.isTask).count }
-        // Only steers a person sent; a delegation notice is not counted.
-        let steerCount = own.reduce(0) { $0 + $1.agents.filter { $0.isSteer && !$0.isDelegationNotice }.count }
+        // Only steers a person sent; a delegation or task notice is not counted.
+        let steerCount = own.reduce(0) { $0 + $1.agents.filter { $0.isSteer && !$0.isNotice }.count }
         let compactCount = own.reduce(0) { $0 + $1.agents.filter(\.isCompact).count }
         let tokens = own.reduce(GraphTokenUsage()) { $0 + ($1.totalUsage ?? GraphTokenUsage()) }
         let summary = Self.headerSummary(runs: own.count, agents: agentCount, tasks: taskCount, steers: steerCount, compactions: compactCount, questions: questionCount, tokens: tokens)
@@ -523,7 +523,7 @@ struct MightyGraphView: View {
             let look = Self.agentPresentation(agent)
             let runID = run.sourceRunID ?? run.id
             let agentChildBlocks = GraphChildBlocks.map(responseRecords: agent.responseRecords, agents: run.agents, runId: runID)
-            transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.input, entries: agent.entries, tint: look.tint, usage: agent.usage,
+            transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.shownInput, entries: agent.entries, tint: look.tint, usage: agent.usage,
                            records: agent.responseRecords ?? [], childBlocks: agentChildBlocks)
         case .result(let index):
             let run = runs[index]
@@ -935,7 +935,7 @@ struct MightyGraphView: View {
     @ViewBuilder private func timelineDetail(_ row: MightyTimeline.Row, run: MightyGraphRun, tint: Color) -> some View {
         let agent = row.agentIndex.map { run.agents[$0] }
         let request = agent == nil && !row.isExecution
-        let input = agent?.input ?? (row.isExecution ? "" : run.input)
+        let input = agent?.shownInput ?? (row.isExecution ? "" : run.input)
         let status = agent?.status ?? run.status
         let entries = request ? [] : (agent?.entries ?? run.rootEntries).filter { $0.kind != "user" }
         let runID = run.sourceRunID ?? run.id

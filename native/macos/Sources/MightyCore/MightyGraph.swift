@@ -21,6 +21,12 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     public var isSteer: Bool { kind == "steer" }
     /// A steer that delegation sent, not the user (see `MightyGraphSupport.isDelegationNotice`).
     public var isDelegationNotice: Bool { isSteer && MightyGraphSupport.isDelegationNotice(input) }
+    /// A steer the tracker made from a background task's notification (see `MightyGraphSupport.isTaskNotice`).
+    public var isTaskNotice: Bool { isSteer && MightyGraphSupport.isTaskNotice(input) }
+    /// A steer no person sent: a delegation notice or a task notice.
+    public var isNotice: Bool { isDelegationNotice || isTaskNotice }
+    /// What the block shows as its request: a task notice without its prefix.
+    public var shownInput: String { isTaskNotice ? String(input.dropFirst(MightyGraphSupport.taskNoticePrefix.count)) : input }
     /// The CLI summarized its context mid-turn; the block is complete on arrival.
     public var isCompact: Bool { kind == "compact" }
     /// A question the agent asked the user (AskUserQuestion); the answer is its output.
@@ -104,7 +110,7 @@ public enum MightyGraphSupport {
     /// Mighty view both read it here, so the two cannot drift apart.
     public static func blockTitle(_ agent: MightyGraphAgent) -> String {
         switch blockKind(agent) {
-        case "steer": return isDelegationNotice(agent.input) ? L("graph.block.delegationNotice") : L("graph.block.steer")
+        case "steer": return isDelegationNotice(agent.input) ? L("graph.block.delegationNotice") : isTaskNotice(agent.input) ? L("graph.block.taskNotice") : L("graph.block.steer")
         case "compact": return ContextCompaction.title
         case "question": return agent.title.isEmpty ? L("graph.block.question") : agent.title
         case "task": return agent.title.isEmpty ? L("graph.block.task") : agent.title
@@ -118,6 +124,11 @@ public enum MightyGraphSupport {
     public static func isDelegationNotice(_ input: String) -> Bool {
         delegationNoticePrefixes.contains { input.hasPrefix($0) }
     }
+    /// A background task's `<task-notification>` the tracker shows as a steer under
+    /// main, its readable line after this prefix; the next root-level answer is its
+    /// reply. Such a block is a 작업 알림, not a 중간 요청.
+    public static let taskNoticePrefix = "[Mighty Claude task notice] "
+    public static func isTaskNotice(_ input: String) -> Bool { input.hasPrefix(taskNoticePrefix) }
     static func nextState(_ previous: String, _ incoming: String) -> String {
         if ["error", "stopped"].contains(previous) { return previous }
         if ["error", "stopped"].contains(incoming) { return incoming }

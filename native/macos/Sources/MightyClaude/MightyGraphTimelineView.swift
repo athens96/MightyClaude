@@ -44,13 +44,14 @@ struct MightyViewSwitch: View {
 
 /// Words the timeline puts beside a block.
 enum MightyTimelineText {
-    /// `input` is what the block was asked; a steer that delegation sent is named for that.
+    /// `input` is what the block was asked; a steer that delegation sent, or a task notice, is named for that.
     static func kind(_ kind: String, input: String? = nil) -> String {
         switch kind {
         case "main": L("graph.timeline.kind.request")
         case MightyTimeline.executionKind: L("graph.block.execution")
         case "task": L("graph.block.task")
-        case "steer": MightyGraphSupport.isDelegationNotice(input ?? "") ? L("graph.block.delegationNotice") : L("graph.block.steer")
+        case "steer": MightyGraphSupport.isDelegationNotice(input ?? "") ? L("graph.block.delegationNotice")
+            : MightyGraphSupport.isTaskNotice(input ?? "") ? L("graph.block.taskNotice") : L("graph.block.steer")
         case "compact": L("graph.block.compact")
         case "question": L("graph.block.question")
         default: L("graph.block.agent")

@@ -614,11 +614,16 @@ final class ExecutionGraphTracker {
             guard let id = byTool ?? Self.tag(body, "task-id").flatMap({ taskAliases[$0] }), nodes[id]?.kind == "task" else { continue }
             let status = Self.tag(body, "status")?.lowercased() ?? "completed"
             let state = status == "completed" ? "completed" : ["failed", "error"].contains(status) ? "error" : "stopped"
+            let summary = Self.tag(body, "summary")
             update(id) { node in
                 guard !ExecutionGraphSupport.terminal(node.state) else { return }
                 node.state = state
-                if let summary = Self.tag(body, "summary") { node.output = summary }
+                if let summary { node.output = summary }
             }
+            // The notice entered the turn like a steer: a 작업 알림 under main, once per task, whose reply is the next root-level answer.
+            guard let notified = nodes[id] else { continue }
+            let line = (notified.title.isEmpty ? notified.input ?? "" : notified.title) + " · " + L(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
+            steer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + line + (summary.map { "\n" + $0 } ?? ""))
         }
     }
 
@@ -742,8 +747,9 @@ final class ExecutionGraphTracker {
             // agent succeeded or returned an answer.
             update(id) { value in
                 value.state = state == "error" ? "error" : "stopped"
-                // A steer delegation sent says so in its own words (MightyGraphSupport.isDelegationNotice).
-                let steer = MightyGraphSupport.isDelegationNotice(value.input ?? "") ? L("graph.block.unfinished.delegationNotice") : L("graph.block.unfinished.steer")
+                // A steer delegation sent, or a task's notification, says so in its own words (MightyGraphSupport.isDelegationNotice, isTaskNotice).
+                let steer = MightyGraphSupport.isDelegationNotice(value.input ?? "") ? L("graph.block.unfinished.delegationNotice")
+                    : MightyGraphSupport.isTaskNotice(value.input ?? "") ? L("graph.block.unfinished.taskNotice") : L("graph.block.unfinished.steer")
                 let text = value.kind == "task" ? L("graph.block.unfinished.task")
                     : value.kind == "steer" ? steer : value.kind == "question" ? L("graph.block.unfinished.question") : L("graph.block.unfinished.agent")
                 value.entries.append(LogEntry(id: ExecutionGraphSupport.identifier(runID, id + ":unfinished"), kind: "system", text: text, provider: provider))

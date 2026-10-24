@@ -435,7 +435,7 @@ public sealed partial class MainWindow
             {
                 var detail = new StackPanel(); AutomationProperties.SetAutomationId(detail, "mighty-timeline-detail-" + row.NodeId);
                 // What the block's diagram card holds: the request its input alone, its 실행 block the records alone.
-                var input = agent?.Input ?? (row.IsExecution ? "" : run.Input);
+                var input = (agent is null ? null : MightyGraphSupport.ShownInput(agent)) ?? (row.IsExecution ? "" : run.Input);
                 if (input.Length > 0)
                     detail.Children.Add(new Border
                     {
