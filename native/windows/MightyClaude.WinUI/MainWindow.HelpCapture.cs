@@ -249,8 +249,8 @@ public sealed partial class MainWindow
         var now = DateTimeOffset.UtcNow;
         foreach (var record in (demo.Profile["resumeSessions"]?.AsArray() ?? []).OfType<JsonObject>().Where(r => (string?)r["provider"] == "claude"))
         {
-            var workspace = service.Snapshot.Workspaces.First(w => w.Id == demo.Workspaces[HelpText(record["workspace"])]);
-            var folder = Path.Combine(home, ".claude", "projects", SessionHistory.ClaudeProjectFolder(workspace.Path));
+            var workspacePath = LocalFolder(service.Snapshot.Workspaces.First(w => w.Id == demo.Workspaces[HelpText(record["workspace"])]));
+            var folder = Path.Combine(home, ".claude", "projects", SessionHistory.ClaudeProjectFolder(workspacePath));
             Directory.CreateDirectory(folder);
             var id = HelpText(record["sessionId"]); var title = HelpText(record["title"]);
             var modified = now.AddMinutes(-(record["minutesAgo"]?.GetValue<double>() ?? 0));
@@ -259,8 +259,8 @@ public sealed partial class MainWindow
             for (var index = 0; index < count; index++)
             {
                 var stamp = modified.AddSeconds((index - count) * 90).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
-                lines.Add(new JsonObject { ["cwd"] = workspace.Path, ["message"] = new JsonObject { ["content"] = title, ["role"] = "user" }, ["sessionId"] = id, ["timestamp"] = stamp, ["type"] = "user", ["uuid"] = $"u{index}-{id}" }.ToJsonString());
-                lines.Add(new JsonObject { ["cwd"] = workspace.Path, ["message"] = new JsonObject { ["content"] = new JsonArray(new JsonObject { ["text"] = title, ["type"] = "text" }), ["model"] = "claude-sonnet-5-5", ["role"] = "assistant" }, ["sessionId"] = id, ["timestamp"] = stamp, ["type"] = "assistant", ["uuid"] = $"a{index}-{id}" }.ToJsonString());
+                lines.Add(new JsonObject { ["cwd"] = workspacePath, ["message"] = new JsonObject { ["content"] = title, ["role"] = "user" }, ["sessionId"] = id, ["timestamp"] = stamp, ["type"] = "user", ["uuid"] = $"u{index}-{id}" }.ToJsonString());
+                lines.Add(new JsonObject { ["cwd"] = workspacePath, ["message"] = new JsonObject { ["content"] = new JsonArray(new JsonObject { ["text"] = title, ["type"] = "text" }), ["model"] = "claude-sonnet-5-5", ["role"] = "assistant" }, ["sessionId"] = id, ["timestamp"] = stamp, ["type"] = "assistant", ["uuid"] = $"a{index}-{id}" }.ToJsonString());
             }
             var file = Path.Combine(folder, id + ".jsonl");
             await File.WriteAllTextAsync(file, string.Join("\n", lines) + "\n");

@@ -697,7 +697,7 @@ internal static class ToolkitVerification
         Check(source.Contains("foreach (var line in row.Lines)") && source.Contains("SettingsText(row.Name, 12, medium: true)"), "the confirm view must show each tool's name over every one of its lines");
         Check(source.Contains("new ContentDialog") && source.Contains("settings.toolkit.confirmTitle"),
             "the confirm view must be one dialog titled settings.toolkit.confirmTitle");
-        Check(source.Contains("if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;"),
+        Check(source.Contains("if (await ShowDialogAsync(confirm) != ContentDialogResult.Primary) return;"),
             "cancelling the confirm view must run nothing");
         Check(source.Contains("if (options.SmokeTest) return;"),
             "the smoke run must never reach a real install");
