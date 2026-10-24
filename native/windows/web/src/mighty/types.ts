@@ -106,7 +106,7 @@ export interface StructureCard {
 }
 
 export interface StructureColumn { id: string; title: string; step: string; stepWord: string; count: number; cards: StructureCard[] }
-export interface StructureBoard { id: string; kind: string; ordinal: number; headline?: string; status: string; tone: string; runIds: string[]; columns: StructureColumn[] }
+export interface StructureBoard { id: string; kind: string; ordinal: number; headline?: string; status: string; statusWord: string; tone: string; runIds: string[]; columns: StructureColumn[]; styleName?: string }
 
 /** host → web: a pane's Mighty model, only what changed: blocks by id, and the other parts whole when they changed. */
 export interface MightyMessage {
