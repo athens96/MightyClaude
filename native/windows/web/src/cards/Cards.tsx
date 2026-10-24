@@ -136,7 +136,7 @@ function NextActions({ paneId, card, call }: { paneId: string; card: NextActions
 function Fold({ open, label, onClick, children }: { open: boolean; label: string; onClick(): void; children: ReactNode }) {
   return (
     <button type="button" className="card-fold" aria-expanded={open} aria-label={label} onClick={onClick}>
-      {children}<span className="card-chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
+      {children}<Icon name={open ? 'chevron-up' : 'chevron-down'} size={11} weight={2.4} className="card-chevron" />
     </button>
   );
 }
@@ -183,11 +183,11 @@ function Background({ card, call }: { card: BackgroundCard; call: Call }) {
     <div className="card-strip" data-card="background">
       <div className="card-strip-line">
         <Fold open={card.open} label={t(card.open ? 'plan.background.hide' : 'plan.background.show')} onClick={() => void call('backgroundWork', { action: 'toggle' })}>
-          <span className="card-strip-mark" aria-hidden="true">⋯</span>
+          <span className="card-strip-mark" aria-hidden="true"><Icon name="layers" size={14} weight={1.75} /></span>
           <strong>{t('plan.background.listTitle', { count: card.count })}</strong>
           <span className="card-strip-summary">{card.summary}</span>
         </Fold>
-        <button type="button" className="card-icon-button" aria-label={t('plan.background.hideStrip')} title={t('plan.background.hideStripHelp')} onClick={() => void call('backgroundWork', { action: 'hide' })}>⊘</button>
+        <button type="button" className="card-icon-button" aria-label={t('plan.background.hideStrip')} title={t('plan.background.hideStripHelp')} onClick={() => void call('backgroundWork', { action: 'hide' })}><Icon name="eye-off" size={13} weight={1.75} /></button>
       </div>
       {card.open && (
         <div className="card-strip-list">
@@ -424,10 +424,14 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
       </div>
       {full && (
         <div className="card-dialog" role="dialog" data-page-overlay="" aria-label={t('plan.card.title')} onClick={() => setFull(false)}>
-          <div className="card-dialog-body" onClick={(event) => event.stopPropagation()}>
-            <div className="card-dialog-title"><strong>{t('plan.card.title')}</strong><span className="card-waiting">{card.received}</span></div>
+          {/* M/PlanApprovalCard.swift PlanDocumentSheet: the clipboard and the title over a rule with Close at the right, then the plan. */}
+          <div className="card-dialog-body" data-testid="plan-document" onClick={(event) => event.stopPropagation()}>
+            <div className="card-dialog-title">
+              <Icon name="clipboard-list" size={15} weight={1.8} className="card-dialog-mark" /><strong>{t('plan.card.title')}</strong>
+              <span className="card-spacer" />
+              <button type="button" className="card-dialog-close" data-testid="plan-document-close" autoFocus onClick={() => setFull(false)}>{t('plan.card.close')}</button>
+            </div>
             <div className="card-dialog-document"><Markdown text={card.plan} /></div>
-            <button type="button" className="card-button" autoFocus onClick={() => setFull(false)}>{t('plan.card.close')}</button>
           </div>
         </div>
       )}

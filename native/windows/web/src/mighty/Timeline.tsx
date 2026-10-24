@@ -5,6 +5,42 @@ import { Markdown } from '../conversation/MarkdownView';
 import type { LogEntry, MightyGraphRun, RunSession } from '../store/models';
 import type { TimelineGroup, TimelineRow } from './types';
 import { useReferenceClick } from '../conversation/referenceClick';
+import { Icon, type IconName } from '../icons/Icon';
+import { ProviderMark } from '../conversation/ProviderMark';
+import { providerLabel } from '../conversation/format';
+
+/** A row's glyph, as the diagram gives its block (M/MightyGraphView.swift timelineLook): the request's arrow, 실행's gears, a task's terminal… */
+function rowSymbol(kind: string): IconName {
+  switch (kind) {
+    case 'main': return 'circle-arrow-up';
+    case 'execution': return 'cog';
+    case 'task': return 'square-terminal';
+    case 'steer': return 'message-square-text';
+    case 'compact': return 'shrink';
+    case 'question': return 'message-circle-question-mark';
+    default: return 'square-user-round';
+  }
+}
+
+/** The tint of a row's kind, the diagram's (the request in the accent, 실행 and agents in the agent ink). */
+function rowTint(kind: string): string {
+  switch (kind) {
+    case 'main': return 'accent';
+    case 'task': return 'task';
+    case 'steer': return 'steer';
+    case 'compact': return 'compact';
+    case 'question': return 'question';
+    default: return 'agent';
+  }
+}
+
+/** "요청 1 · Claude" with the provider's mark before its name (ProviderBadgeIcon.labelled). */
+function RequestTitle({ title, provider }: { title: string; provider: string }) {
+  const label = providerLabel(provider);
+  const at = title.lastIndexOf(label);
+  if (at < 0) return <>{title}</>;
+  return <>{title.slice(0, at)}<span className="timeline-mark"><ProviderMark provider={provider} size={15} /></span>{title.slice(at)}</>;
+}
 
 /** A row's transcript, newest entries, drawn only while the row is open (UI/MightyTimeline.cs: a 260-tall body). */
 function RowBody({ entries, paneId, provider, input }: { entries: readonly LogEntry[]; paneId: string; provider: string; input?: string }) {
@@ -21,22 +57,33 @@ function RowBody({ entries, paneId, provider, input }: { entries: readonly LogEn
   );
 }
 
-const Row = memo(function Row({ row, run, paneId, provider, open, onToggle }: { row: TimelineRow; run: MightyGraphRun | undefined; paneId: string; provider: string; open: boolean; onToggle: (id: string) => void }) {
+/**
+ * One block on the timeline (M/MightyGraphTimelineView.swift MightyTimelineRowCard, MightyTimelineMarker): a 32-wide rail with a
+ * 24pt disc in the node's fill holding the kind's glyph, the rail on under it in the next tone; the white card at radius 14 with
+ * the title (13 bold), the glyph in its tint and "kind · capsule · duration" (11), the latest line in mono while it runs, the pill.
+ */
+const Row = memo(function Row({ row, run, paneId, provider, open, onToggle, first, last, above }: {
+  row: TimelineRow; run: MightyGraphRun | undefined; paneId: string; provider: string; open: boolean; onToggle: (id: string) => void; first: boolean; last: boolean; above?: string;
+}) {
   const entries = row.agentIndex !== undefined ? run?.agents[row.agentIndex]?.entries : row.kind === 'execution' ? run?.rootEntries : undefined;
   const meta = [row.kindLabel, row.capsule, row.duration].filter(Boolean).join(' · ');
+  const symbol = rowSymbol(row.kind);
   return (
     <div className={'timeline-row tone-' + row.tone} data-node-id={row.nodeId}>
-      <div className="timeline-rail">
-        <span className={'timeline-node tone-' + row.tone + (row.ring ? ' ring' : '')} />
-        {row.rail && <span className={'timeline-line tone-' + row.rail} />}
+      <div className="timeline-rail" aria-hidden="true">
+        {!first && <span className={'timeline-line above tone-' + (above ?? 'none')} />}
+        {!last && <span className={'timeline-line below tone-' + (row.rail ?? 'none')} />}
+        <span className={'timeline-node tone-' + row.tone + (row.ring ? ' ring' : '')}><Icon name={symbol} size={11} weight={2.4} /></span>
       </div>
-      <div className={'timeline-card' + (row.status === 'running' || row.status === 'waiting' ? ' edge' : '')}>
+      <div className={'timeline-card' + (row.tone === 'run' ? ' edge-run' : row.tone === 'wait' ? ' edge-wait' : '')}>
         <button className="timeline-card-head" onClick={() => onToggle(row.nodeId)} disabled={!entries && !row.input}>
-          <span className="timeline-title">{row.title}</span>
+          <span className="timeline-card-words">
+            <span className="timeline-title">{row.title}</span>
+            <span className="timeline-meta"><span className={'timeline-kind tint-' + rowTint(row.kind)}><Icon name={symbol} size={10} weight={2.4} /></span>{meta}</span>
+            {row.latest && <span className="timeline-latest">{row.tone === 'run' && <span className="timeline-pulse" />}<span>{row.latest}</span></span>}
+          </span>
           {row.statusWord && <span className={'mighty-pill tone-' + row.tone}>{row.statusWord}</span>}
         </button>
-        <div className="timeline-meta">{meta}</div>
-        {row.latest && <div className="timeline-latest"><span className="timeline-pulse" />{row.latest}</div>}
         {open && entries && <RowBody entries={entries} paneId={paneId} provider={provider} input={row.input} />}
       </div>
     </div>
@@ -53,23 +100,44 @@ const Group = memo(function Group({ group, run, paneId, provider, onOpenRow }: {
     if (!n.delete(id)) { n.add(id); onOpenRow?.(id); }
     return n;
   }), [onOpenRow]);
+  const prompt = group.input.split(/\r?\n/).join(' ').trim();
+  const resultTone = group.resultTone ?? 'done';
+  // M/MightyGraphView.swift timelineGroup: the header, the rows while the request is open, and its result card either way.
   return (
     <section className="timeline-group" data-run-id={group.runId} data-testid="timeline-group">
-      <header className="timeline-head">
-        <button className="mighty-icon" onClick={() => void bridge.call('mightyTimelineFlip', { paneId, runId: group.runId })}>{group.open ? '▾' : '▸'}</button>
-        <span className="timeline-group-title">{group.title}</span>
-        <span className={'mighty-pill tone-' + group.tone}>{group.statusWord}</span>
+      <button type="button" className="timeline-head" aria-expanded={group.open} onClick={() => void bridge.call('mightyTimelineFlip', { paneId, runId: group.runId })}>
+        <span className="timeline-head-line">
+          <span className="timeline-chevron"><Icon name={group.open ? 'chevron-down' : 'chevron-right'} size={10} weight={3} /></span>
+          <span className="timeline-group-title"><RequestTitle title={group.title} provider={provider} /></span>
+          {group.older && <span className="timeline-older" title={t('graph.history.tag')}><Icon name="clock-fading" size={11} weight={2} /></span>}
+          <span className="spacer" />
+          <span className={'mighty-pill tall tone-' + group.tone}>{group.statusWord}</span>
+        </span>
+        {prompt && <span className="timeline-prompt">{prompt}</span>}
         <span className="timeline-tally">{group.tally}</span>
-      </header>
-      <div className="timeline-prompt">{group.input}</div>
-      {group.open && group.rows.slice(1).map((row) => (
-        <Row key={row.nodeId} row={row} run={run} paneId={paneId} provider={provider} open={open.has(row.nodeId)} onToggle={toggle} />
-      ))}
-      {group.open && group.result !== undefined && (
-        <div className={'timeline-result tone-' + (group.resultTone ?? 'done')}>
-          <div className={'timeline-result-text' + (group.resultFolds && !full ? ' folded' : '')}>{group.result ? <Markdown text={group.result} /> : null}</div>
-          {group.resultFolds && <button className="mighty-link" onClick={() => setFull((f) => !f)}>{t(full ? 'phone.blocks.resultLess' : 'phone.blocks.resultMore')}</button>}
-          {group.resultCaption && <div className="timeline-meta">{group.resultCaption}</div>}
+      </button>
+      {group.open && (
+        <div className="timeline-rows">
+          {group.rows.map((row, index) => (
+            <Row key={row.nodeId} row={row} run={run} paneId={paneId} provider={provider} open={open.has(row.nodeId)} onToggle={toggle}
+              first={index === 0} last={index === group.rows.length - 1} above={index > 0 ? group.rows[index - 1]?.rail : undefined} />
+          ))}
+        </div>
+      )}
+      {group.result !== undefined && (
+        <div className={'timeline-result tone-' + resultTone} data-node-id={group.resultNodeId}>
+          <div className="timeline-result-head">
+            <Icon name={resultTone === 'err' ? 'triangle-alert' : resultTone === 'stop' ? 'circle-stop' : 'badge-check'} size={12} weight={2.4} />
+            <span className="timeline-result-title">{t('graph.block.result')}</span>
+            <span className="spacer" />
+            {group.resultCaption && <span className="timeline-result-caption">{group.resultCaption}</span>}
+          </div>
+          {group.result && (
+            <div className="timeline-result-body">
+              <div className={'timeline-result-text' + (group.resultFolds && !full ? ' folded' : '')}>{group.result}</div>
+              {group.resultFolds && <button className="mighty-link" onClick={() => setFull((f) => !f)}>{t(full ? 'phone.blocks.resultLess' : 'phone.blocks.resultMore')}</button>}
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -83,7 +151,9 @@ const terminalStatus = new Set(['completed', 'error', 'stopped']);
  * it first draws, when a new request arrives and when a request finishes; any other change (a row opened, older requests read
  * in at the top, a streamed line) keeps the first group in view where it was (anchor restore). The top reads older requests.
  */
-export function Timeline({ session, groups, older, onOpenRow }: { session: RunSession; groups: readonly TimelineGroup[] | null; older: readonly MightyGraphRun[]; onOpenRow?: (nodeId: string) => void }) {
+export function Timeline({ session, groups, older, history, onOpenRow }: {
+  session: RunSession; groups: readonly TimelineGroup[] | null; older: readonly MightyGraphRun[]; history?: { text: string; acts: boolean } | undefined; onOpenRow?: (nodeId: string) => void;
+}) {
   const { bridge, t } = useServices();
   const scroller = useRef<HTMLDivElement>(null);
   const runs = useMemo(() => new Map([...older, ...(session.graphRuns ?? [])].map((r) => [r.id, r])), [older, session.graphRuns]);
@@ -132,6 +202,13 @@ export function Timeline({ session, groups, older, onOpenRow }: { session: RunSe
   };
   return (
     <div className="mighty-timeline" ref={scroller} data-testid="mighty-timeline" onScroll={onScroll}>
+      {/* The history card the diagram has at its top (M/MightyGraphView.swift historyCard), centred. */}
+      {history && (
+        <div className="timeline-history">
+          {history.acts ? <button className="mighty-link" onClick={() => void bridge.call('mightyLoadOlder', { paneId: session.id })}><Icon name="circle-arrow-up" size={13} weight={2} />{history.text}</button>
+            : <span className="mighty-muted">{history.text}</span>}
+        </div>
+      )}
       {count === 0 ? <div className="mighty-muted mighty-pad">{t('graph.timeline.empty')}</div>
         : groups!.map((group) => <Group key={group.runId} group={group} run={runs.get(group.runId)} paneId={session.id} provider={session.provider} onOpenRow={onOpenRow} />)}
     </div>

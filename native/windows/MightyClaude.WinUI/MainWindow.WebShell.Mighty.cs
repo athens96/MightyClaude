@@ -31,8 +31,11 @@ internal sealed record WebTimelineRow(string NodeId, string Kind, string KindLab
 internal sealed record WebTimelineGroup(string RunId, int Ordinal, string Title, string Status, string StatusWord, string Tone, string Input, string Tally, bool Open, bool Older,
     IReadOnlyList<WebTimelineRow> Rows, string? ResultNodeId, string? ResultTone, string? Result, bool ResultFolds, string? ResultCaption);
 
+internal sealed record WebStructureActivity(string Kind, string State, string Text);
+/// <summary>A structure card for the page; an agent card adds its kind, "kind · model", its depth and its prompt apart from its output; <c>RevealId</c> is the block its reveal shows.</summary>
 internal sealed record WebStructureCard(string Id, string Kind, string RunId, string NodeId, string Title, string Status, string StatusWord, string Tone, string? Parent,
-    string? Text, string? Message, string? Answer, IReadOnlyList<string> Activity, string? Tally, bool Finished, string? ResultLine);
+    string? Text, string? Message, string? Answer, IReadOnlyList<WebStructureActivity> Activity, string? Tally, bool Finished, string? ResultLine,
+    string? NodeKind = null, string? Meta = null, int Depth = 0, string? Prompt = null, string? ExecutionNodeId = null, string? ResultNodeId = null);
 internal sealed record WebStructureColumn(string Id, string Title, string Step, string StepWord, int Count, IReadOnlyList<WebStructureCard> Cards);
 internal sealed record WebStructureBoard(string Id, string Kind, int Ordinal, string? Headline, string Status, string StatusWord, string Tone, IReadOnlyList<string> RunIds, IReadOnlyList<WebStructureColumn> Columns, string? StyleName);
 
@@ -392,10 +395,12 @@ public sealed partial class MainWindow
                 var item = card.Item;
                 var title = card.Node?.Title ?? GraphRequestTitle(runs[item.RunIndex], item.Ordinal);
                 var status = card.Node?.Status ?? item.Status;
-                var activity = (card.Node?.Activity ?? item.Activity).Select(a => a.Text).ToList();
+                var activity = (card.Node?.Activity ?? item.Activity).Select(a => new WebStructureActivity(a.Kind, a.State, a.Text)).ToList();
+                var node = card.Node;
+                var model = node?.Model is { } id ? ModelUsageFormat.ShortName(id, null, versioned: true) : null;
                 var text = card.Kind switch
                 {
-                    MightyStructure.CardKind.Agent => card.Node?.Output?.Preview ?? card.Node?.Prompt?.Preview,
+                    MightyStructure.CardKind.Agent => card.Node?.Output?.Preview,
                     MightyStructure.CardKind.Request => item.Request?.Preview,
                     _ => item.Request?.Preview,
                 };
@@ -403,7 +408,9 @@ public sealed partial class MainWindow
                     title, status, MightyGraphBlockModel.StateLabel(status), Tone(status), card.Parent is null ? null : Locale.Get("graph.structure.underParent", new Dictionary<string, string> { ["title"] = card.Parent }),
                     text, item.Message?.Preview, item.Answer?.Text, activity,
                     Locale.Get("graph.structure.tally", new Dictionary<string, string> { ["agents"] = item.Tally.Agents.ToString(), ["tools"] = item.Tally.Tools.ToString() }),
-                    item.Finished, MightyStructure.Fold.ResultLine(item));
+                    item.Finished, MightyStructure.Fold.ResultLine(item),
+                    node?.Kind, node is null ? null : string.Join(" · ", new[] { MightyTimeline.KindLabel(node.Kind, null), model }.Where(p => !string.IsNullOrEmpty(p))),
+                    node?.Depth ?? 0, node?.Prompt?.Preview, item.ExecutionNodeId, MightyGraphLayout.NodeID(runs[item.RunIndex], "result"));
             }
             var styleName = activeStyle?.Manifest.Name;
             return boards.Select(board => new WebStructureBoard(board.Id, board.Kind.ToString().ToLowerInvariant(), board.Ordinal, board.Headline, board.Status, MightyGraphBlockModel.StateLabel(board.Status), Tone(board.Status), board.RunIds,

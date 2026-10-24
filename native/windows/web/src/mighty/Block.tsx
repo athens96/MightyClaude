@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Icon, type IconName } from '../icons/Icon';
+import { providerLabel } from '../conversation/format';
 import { useServices } from '../app/context';
 import { Entry } from '../conversation/Entry';
 import { HeightCache, estimateHeight, layout, nearBottom, visibleRange } from '../conversation/virtual';
@@ -152,7 +153,7 @@ function Indicator({ kind }: { kind: string }) {
 /** Each block's symbol and its tint (M/MightyGraphView.swift: the request's arrow message, 실행's gears, an agent's card, a task's terminal…). */
 function blockSymbol(kind: string, tone: string): IconName {
   switch (kind) {
-    case 'request': return 'message-square-share';
+    case 'request': return 'circle-arrow-up';
     case 'work': return 'cog';
     case 'agent': return 'square-user-round';
     case 'task': return 'square-terminal';
@@ -273,8 +274,13 @@ function Body(props: BlockProps) {
       return (
         <div className="mighty-body">
           {(extra.files ?? []).map((file) => (
+            // M/MightyGraphResultFiles.swift: a row per file, its glyph, its name over its path in mono.
             <button key={file.path + ':' + (file.line ?? '')} className="mighty-file" title={t('graph.resultFiles.openFile', { path: file.path })} onClick={() => actions.openFile(file)}>
-              {file.path}{file.line ? ':' + file.line : ''}
+              <Icon name="file-text" size={13} weight={1.6} className="mighty-file-glyph" />
+              <span className="mighty-file-words">
+                <span className="mighty-file-name">{file.path.split(/[\\/]/).pop()}{file.line ? ':' + file.line : ''}</span>
+                <span className="mighty-file-path">{file.path}</span>
+              </span>
             </button>
           ))}
         </div>
@@ -332,16 +338,20 @@ export const Block = memo(function Block(props: BlockProps) {
       <div className="mighty-head">
         <span className={'mighty-symbol kind-' + kind} aria-hidden="true"><Icon name={blockSymbol(kind, tone)} size={14} weight={1.75} /></span>
         <span className="mighty-title">
-          {copy?.provider && <ProviderMark provider={copy.provider} size={12} />}
-          {copy?.title ?? ''}
+          {/* "요청 2 · Claude": the provider's mark before its name (ProviderBadgeIcon.labelled), else before the title. */}
+          {copy?.provider && (copy.title ?? '').lastIndexOf(providerLabel(copy.provider)) > 0
+            ? <>{copy.title!.slice(0, copy.title!.lastIndexOf(providerLabel(copy.provider)))}<ProviderMark provider={copy.provider} size={12} />{copy.title!.slice(copy.title!.lastIndexOf(providerLabel(copy.provider)))}</>
+            : <>{copy?.provider && <ProviderMark provider={copy.provider} size={12} />}{copy?.title ?? ''}</>}
+          {kind === 'resultFiles' && (extra.files?.length ?? 0) > 0 && <span className="mighty-title-count">{extra.files?.length}</span>}
         </span>
         <span className="mighty-controls">
           <Indicator kind={copy?.indicator ?? 'none'} />
-          {copy?.state && status !== '' && <span className={'mighty-pill tone-' + tone}>{copy.state}</span>}
+          {/* A result's strip says its outcome by its colour; it carries no pill (M/MightyGraphView.swift result header). */}
+          {copy?.state && status !== '' && kind !== 'result' && <span className={'mighty-pill tone-' + tone}>{copy.state}</span>}
           {copy?.capsule && <span className="mighty-capsule" title={copy.help}>{copy.capsule}</span>}
           {kind === 'result' && copy?.filesRunId && (extra.files?.length ?? 0) > 0 && (
             <button className={'mighty-icon' + (extra.filesOpen ? ' on' : '')} title={t(extra.filesOpen ? 'graph.resultFiles.closeButton' : 'graph.resultFiles.openButton')}
-              onClick={() => actions.toggleFiles(copy.filesRunId!)}>{extra.files?.length}</button>
+              onClick={() => actions.toggleFiles(copy.filesRunId!)}><Icon name="files" size={13} weight={1.75} /><span>{extra.files?.length}</span></button>
           )}
           {kind === 'result' && !extra.fitted && extra.measure && (
             <button className="mighty-icon" data-fit="" title={t('graph.result.fitToWindow')} onClick={() => actions.fitResult(id)}>⤢</button>

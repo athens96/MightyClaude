@@ -283,7 +283,7 @@ export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown, resumed 
         <button type="button" className={'composer-pill compact' + (pills.unlocked || pills.fast ? ' on' : '')} data-pill="options" aria-haspopup="menu" disabled={busy}
           title={t('composer.effort.label') + ' · ' + t('composer.label.permission') + ' · ' + t('settings.run.title')} onClick={() => void openMenu('options')}><Icon name="sliders-horizontal" size={13} weight={1.75} /></button>
       ) : (
-        <button type="button" className={'composer-pill compact' + (pills.moreOn ? ' on' : '')} aria-label={t('composer.more')} title={t('settings.run.title')} disabled={busy} onClick={() => void openRunSettings()} onContextMenu={(event) => { event.preventDefault(); void openMenu('actions'); }}><Icon name="ellipsis" size={14} weight={2.4} /></button>
+        <button type="button" className={'composer-pill compact' + (pills.moreOn ? ' on' : '')} data-pill="more" aria-label={t('composer.more')} title={t('settings.run.title')} onClick={() => void openRunSettings()} onContextMenu={(event) => { event.preventDefault(); void openMenu('actions'); }}><Icon name="ellipsis" size={14} weight={2.4} /></button>
       )}
       <span className="composer-pills-end">
         {resumed && <span className="composer-resume" title={t('composer.resume.help')} aria-label={t('composer.resume.name')}><Icon name="split" size={13} weight={1.75} /></span>}
