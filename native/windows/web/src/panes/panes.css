@@ -73,7 +73,7 @@
 /* Terminal (M/LocalTerminalView.swift:67-89): the terminal edge to edge, the notice and the footer on the subtle wash. */
 .terminal-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .terminal-host { flex: 1; min-height: 0; position: relative; overflow: hidden; }
-.terminal-surface { position: absolute; inset: 0; box-sizing: border-box; padding: 10px; background: #202020; }
+.terminal-surface { position: absolute; inset: 0; box-sizing: border-box; padding: 10px; background: var(--terminal-background); }
 .terminal-surface .xterm { height: 100%; }
 .terminal-notice { flex: none; display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-md); background: var(--subtle); color: var(--ink2); font-size: 11px; }
 .terminal-notice-text { flex: 1; white-space: pre-wrap; }

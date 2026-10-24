@@ -53,7 +53,7 @@ export function tokenStyleSheet(): string {
   const extra = (theme: 'light' | 'dark') => {
     const subtle = tokens.windowsOnly.subtle[theme];
     const syntax = tokens.windowsOnly.syntax[theme];
-    return `--subtle:${hexAlpha(subtle.color, subtle.opacity)};--syntax-keyword:${syntax.keyword};--syntax-string:${syntax.string};--syntax-number:${syntax.number};`;
+    return `--subtle:${hexAlpha(subtle.color, subtle.opacity)};--syntax-keyword:${syntax.keyword};--syntax-string:${syntax.string};--syntax-number:${syntax.number};--terminal-background:${tokens.windowsOnly.terminal[theme].background};`;
   };
   return (
     `:root{${shared}}` +
@@ -73,4 +73,9 @@ export function installTokens(document: Document): void {
 /** "light" is light; anything else is the dark theme, as the host's DesignTokens.Palette reads it. */
 export function themeName(theme: string | undefined): 'light' | 'dark' {
   return theme === 'light' ? 'light' : 'dark';
+}
+
+/** The terminal's xterm palette for a theme: the fixture's windowsOnly.terminal (the Mac terminal's Ghostty themes as values). */
+export function terminalPalette(theme: 'light' | 'dark') {
+  return tokens.windowsOnly.terminal[theme];
 }
