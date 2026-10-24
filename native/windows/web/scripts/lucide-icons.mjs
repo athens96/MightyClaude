@@ -13,6 +13,7 @@ const names = [
   'trash', 'info', 'triangle-alert', 'circle-x', 'network', 'list-checks', 'message-square', 'sparkles', 'play', 'square-pen',
   'columns-2', 'rows-2', 'clock-fading', 'list', 'share-2', 'puzzle', 'square-kanban', 'brain-circuit', 'shield-half', 'git-merge', 'arrow-down', 'panel-bottom', 'gallery-vertical-end', 'hand', 'message-circle-question-mark', 'list-todo', 'scroll-text', 'image', 'file-code', 'folder-closed', 'expand', 'shrink', 'move-diagonal-2', 'chevrons-up-down', 'arrow-up-right', 'square-arrow-out-up-right', 'dot', 'ellipsis-vertical', 'sliders-horizontal', 'circle-stop', 'circle-arrow-up', 'loader-circle', 'list-plus', 'lock-open', 'square-stack', 'layers-2', 'minus', 'clipboard-check', 'notebook-text', 'triangle', 'square-user-round', 'badge-check', 'message-square-text', 'cog', 'message-square-share', 'unfold-vertical', 'fold-vertical', 'circle-pause', 'files', 'code-xml',
   'wrench', 'users', 'file-search', 'pencil-line', 'corner-down-right', 'chevron-left', 'cpu', 'palette', 'package', 'box', 'smartphone', 'earth', 'bell', 'arrow-right', 'qr-code', 'download', 'rotate-ccw',
+  'rotate-ccw-clock', 'pin', 'monitor-x',
 ];
 const root = process.argv[2];
 if (!root) throw new Error('usage: node scripts/lucide-icons.mjs <unpacked lucide-static package folder>');

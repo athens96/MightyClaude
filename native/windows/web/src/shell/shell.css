@@ -145,7 +145,11 @@ button { font: inherit; color: inherit; }
   border: 0; border-radius: var(--radius-row); background: transparent; color: var(--sidebar-accent); font-size: var(--type-pill); text-align: left; cursor: default;
 }
 .sidebar-add:hover { background: var(--subtle); }
-.sidebar-parent-closed { display: flex; gap: var(--space-sm); padding: var(--inset-pane-row-v) var(--space-sm); color: var(--sidebar-ink2); font-size: var(--type-state); font-weight: 600; }
+.sidebar-parent-closed { display: flex; align-items: center; gap: var(--space-sm); padding: var(--inset-pane-row-v) var(--space-sm); color: var(--sidebar-ink2); font-size: var(--type-state); font-weight: 600; min-width: 0; }
+.sidebar-parent-closed-icon { width: 14px; flex: none; }
+.sidebar-parent-closed-label { white-space: nowrap; }
+.sidebar-parent-closed-branch { font-size: 10.5px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sidebar-parent-closed-count { font-size: var(--type-small); font-weight: 400; flex: none; }
 .child-card { display: flex; flex-direction: column; gap: 2px; margin: 0 var(--space-sm) var(--space-xs) calc(var(--space-xl) + var(--space-sm)); font-size: 10.5px; }
 .child-card-actions { display: flex; gap: var(--space-md); }
 .child-card-action { border: 0; background: none; padding: 0; color: var(--sidebar-accent); font-weight: 600; font-size: 10.5px; cursor: default; }

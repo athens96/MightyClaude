@@ -55,11 +55,14 @@
 .composer-queue { display: flex; flex-direction: column; gap: var(--space-xs); }
 .composer-queue-header { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--type-small); font-weight: 500; color: var(--ink2); }
 .composer-queue-header > span { flex: 1; }
-.composer-queue-item { display: flex; align-items: flex-start; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-row); background: var(--track); }
+.composer-queue-clock { color: var(--accent); flex: none; }
+.composer-queue-run { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: var(--type-small); padding: 0; }
+.composer-queue-notice { font-size: var(--type-small); color: var(--ink2); }
+.composer-queue-item { display: flex; align-items: flex-start; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-row); background: var(--subtle); }
 .composer-queue-number { width: 14px; text-align: right; font-size: var(--type-small); font-weight: 600; color: var(--ink2); font-variant-numeric: tabular-nums; }
 .composer-queue-text { flex: 1; min-width: 0; font-size: var(--type-pill); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .composer-queue-files { display: block; font-size: var(--type-small); color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.composer-queue-pin { font-size: var(--type-badge); color: var(--ink2); }
+.composer-queue-pin { display: inline-grid; place-items: center; width: 18px; height: 16px; flex: none; color: var(--ink2); }
 
 .composer-preview { position: fixed; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--page) 60%, transparent); z-index: 20; }
 .composer-preview-card { max-width: 640px; max-height: 80vh; overflow: auto; background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-block); padding: var(--inset-popover); display: flex; flex-direction: column; gap: var(--space-md); }
