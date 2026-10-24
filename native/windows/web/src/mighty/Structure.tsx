@@ -6,41 +6,172 @@ import {
   ColumnWatch, StructureNavigation, WheelTracker, confined, isDrag, mayPan, panOrigin, scrollable, stepsSummary, userMoving,
   type Page, type PanTarget, type Scroll, type XY,
 } from './structureMotion';
-import type { StructureBoard, StructureCard } from './types';
+import type { StructureActivity, StructureBoard, StructureCard } from './types';
 import { usePageOverlay } from '../shell/overlay';
+import { Icon, type IconName } from '../icons/Icon';
 
 /** Shows a block in the diagram: the block, or its request when the diagram does not draw it. */
 export type Reveal = (nodeId: string, fallbackNodeId: string) => void;
 
-const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCard; onFold: (element: HTMLElement) => void; onReveal: Reveal }) {
-  const { t } = useServices();
-  const [open, setOpen] = useState(!card.finished);
+/** M/MightyStructureView.swift's fold lines: a request's ten, the latest reply's eight, an agent's prompt two and output six. */
+const RequestLines = 10, MessageLines = 8, PromptLines = 2, OutputLines = 6;
+
+/** A tool call's glyph (M/AgentActivityView.swift AgentActivityRow.symbol); commands, reads and edits are set in mono. */
+function activitySymbol(kind: string): IconName {
+  switch (kind) {
+    case 'command': return 'square-terminal';
+    case 'read': return 'file-search';
+    case 'edit': return 'pencil-line';
+    case 'search': return 'search';
+    case 'web': return 'globe';
+    case 'agent': return 'users';
+    case 'turn': return 'sparkles';
+    default: return 'wrench';
+  }
+}
+const monospaced = new Set(['command', 'read', 'edit']);
+
+function ActivityRow({ line }: { line: StructureActivity }) {
   return (
-    <div className={'structure-card tone-' + card.tone + ' kind-' + card.kind} data-card-id={card.id} data-node-id={card.nodeId}>
-      <div className="structure-card-row">
-        <button className="structure-card-head" onClick={(event) => { onFold(event.currentTarget); setOpen((o) => !o); }} aria-expanded={open}>
-          <span className="structure-card-title">{card.title}</span>
-          <span className={'mighty-pill tone-' + card.tone}>{card.statusWord}</span>
-        </button>
-        <button className="mighty-icon structure-reveal" data-testid="structure-reveal" title={t('graph.structure.reveal')} aria-label={t('graph.structure.reveal')}
-          onClick={() => onReveal(card.nodeId, nodeId(card.runId, RequestStep))}>
-          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M5 2H2v8h8V7M7 2h3v3M10 2 5.5 6.5" /></svg>
-        </button>
-      </div>
-      {card.parent && <div className="mighty-muted">{card.parent}</div>}
-      {!open && card.resultLine && <div className="structure-line">{card.resultLine}</div>}
-      {open && (
-        <div className="structure-card-body">
-          {card.kind === 'result' || card.kind === 'summary' ? (card.answer ? <Markdown text={card.answer} /> : card.text && <div className="structure-text">{card.text}</div>)
-            : card.text && <div className="structure-text">{card.text}</div>}
-          {card.kind === 'execution' && card.message && <div className="structure-text">{card.message}</div>}
-          {card.activity.length > 0 && <ul className="structure-activity">{card.activity.map((a, i) => <li key={i}>{a}</li>)}</ul>}
-          {card.kind !== 'agent' && card.tally && <div className="mighty-muted">{card.tally}</div>}
-        </div>
-      )}
+    <div className="structure-activity-row" title={line.text}>
+      <span className={'structure-activity-glyph state-' + line.state}><Icon name={activitySymbol(line.kind)} size={11} weight={1.75} /></span>
+      <span className={'structure-activity-text' + (monospaced.has(line.kind) ? ' mono' : '')}>{line.text}</span>
     </div>
   );
+}
+
+/** Text folded to its first lines, with 더 보기 / 접기 where the lines cut it (foldableText). */
+function Fold({ text, lines, className, onFold }: { text: string; lines: number; className: string; onFold: (element: HTMLElement) => void }) {
+  const { t } = useServices();
+  const [open, setOpen] = useState(false);
+  const [cut, setCut] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { const e = ref.current; if (e && !open) setCut(e.scrollHeight > e.clientHeight + 1); }, [text, open]);
+  return (
+    <div className="structure-fold">
+      <div ref={ref} className={className} style={open ? undefined : { WebkitLineClamp: lines }} data-folded={open ? undefined : ''}>{text}</div>
+      {(cut || open) && <button type="button" className="structure-more" onClick={(event) => { onFold(event.currentTarget); setOpen((o) => !o); }}>{t(open ? 'graph.structure.less' : 'graph.structure.more')}</button>}
+    </div>
+  );
+}
+
+function RevealButton({ id, fallback, onReveal }: { id: string; fallback: string; onReveal: Reveal }) {
+  const { t } = useServices();
+  return (
+    <button className="structure-reveal" data-testid="structure-reveal" title={t('graph.structure.reveal')} aria-label={t('graph.structure.reveal')} onClick={() => onReveal(id, fallback)}>
+      <Icon name="square-arrow-out-up-right" size={12} weight={1.75} />
+    </button>
+  );
+}
+
+/** The bolt a running card shows (MightyGraphActivityIndicator, still under reduced motion). */
+const Bolt = ({ status }: { status: string }) => status === 'running' ? <span className="structure-bolt" aria-hidden="true"><Icon name="zap" size={12} weight={0} fill /></span> : null;
+
+/**
+ * A card of the board (M/MightyStructureView.swift card): the request's words; the 실행 part with its pill, tally, latest reply and
+ * tool calls; the result's answer or what it waits for; a styled board's summary; or a sub-agent's small card with its status bar.
+ */
+const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCard; onFold: (element: HTMLElement) => void; onReveal: Reveal }) {
+  const { t } = useServices();
+  const request = nodeId(card.runId, RequestStep);
+  const running = card.status === 'running' || card.status === 'waiting';
+  const base = 'structure-card tone-' + card.tone + ' kind-' + card.kind + (running ? ' live' : '');
+  const progress = (
+    <>
+      {card.message ? <Fold text={card.message} lines={MessageLines} className="structure-text" onFold={onFold} />
+        : !card.finished && card.activity.length === 0 ? <div className="structure-quiet">{t('graph.block.waitingResponse')}</div> : null}
+      {card.activity.length > 0 && <div className="structure-activity">{card.activity.map((a, i) => <ActivityRow key={i} line={a} />)}</div>}
+    </>
+  );
+  const pill = <span className={'mighty-pill tone-' + card.tone}>{card.statusWord}</span>;
+  switch (card.kind) {
+    case 'request':
+      return (
+        <div className={'structure-card kind-request'} data-card-id={card.id} data-node-id={card.nodeId}>
+          <div className="structure-card-row top">
+            {card.text ? <Fold text={card.text} lines={RequestLines} className="structure-text" onFold={onFold} /> : <span className="structure-heading">{card.title}</span>}
+            <RevealButton id={card.nodeId} fallback={request} onReveal={onReveal} />
+          </div>
+        </div>
+      );
+    case 'execution':
+      return (
+        <div className={base} data-card-id={card.id} data-node-id={card.nodeId}>
+          <div className="structure-card-row"><Bolt status={card.status} />{pill}<span className="structure-tally">{card.tally}</span><span className="spacer" /><RevealButton id={card.nodeId} fallback={request} onReveal={onReveal} /></div>
+          {progress}
+        </div>
+      );
+    case 'result': {
+      const ended = card.status === 'error' || card.status === 'stopped';
+      const reveal = <RevealButton id={card.finished ? card.resultNodeId ?? card.nodeId : card.executionNodeId ?? card.nodeId} fallback={request} onReveal={onReveal} />;
+      const outcome = card.answer ? <div className="structure-answer"><Markdown text={card.answer} /></div>
+        : <div className="structure-quiet">{card.finished ? card.statusWord : t('graph.structure.resultPending')}</div>;
+      return (
+        <div className={'structure-card tone-' + card.tone + ' kind-result'} data-card-id={card.id} data-node-id={card.nodeId}>
+          {ended ? <><div className="structure-card-row"><ResultTitle card={card} /><span className="spacer" />{reveal}</div>{outcome}</>
+            : <div className="structure-card-row top">{outcome}{reveal}</div>}
+        </div>
+      );
+    }
+    case 'summary':
+      return (
+        <div className={base} data-card-id={card.id} data-node-id={card.nodeId}>
+          <div className="structure-card-row"><span className="structure-heading">{card.title}</span><span className="spacer" /><RevealButton id={card.nodeId} fallback={request} onReveal={onReveal} /></div>
+          {card.text && <Fold text={card.text} lines={RequestLines} className="structure-text" onFold={onFold} />}
+          <div className="structure-rule" />
+          <div className="structure-card-row">
+            <span className="structure-execution"><Icon name="cog" size={11} weight={2} />{t('graph.block.executionOf', { n: String(card.title.match(/\d+/)?.[0] ?? '') })}</span>
+            <Bolt status={card.status} />{pill}<span className="structure-tally">{card.tally}</span><span className="spacer" />
+            <RevealButton id={card.executionNodeId ?? card.nodeId} fallback={request} onReveal={onReveal} />
+          </div>
+          {progress}
+          {card.finished && (
+            <div className="structure-card-row">
+              <ResultTitle card={card} /><span className={'structure-line' + (card.resultLine ? '' : ' tone-' + card.tone)} title={card.resultLine ?? undefined}>{card.resultLine ?? card.statusWord}</span><span className="spacer" />
+              <RevealButton id={card.resultNodeId ?? card.nodeId} fallback={request} onReveal={onReveal} />
+            </div>
+          )}
+        </div>
+      );
+    default: {
+      const task = card.nodeKind === 'task';
+      const last = card.activity[card.activity.length - 1];
+      return (
+        <div className={'structure-node tone-' + card.tone + (running ? ' live' : '')} data-card-id={card.id} data-node-id={card.nodeId}
+          style={{ marginLeft: Math.min(card.depth ?? 0, 3) * 16 }}>
+          <div className="structure-card-row">
+            <span className={'structure-node-glyph' + (task ? ' task' : '')}><Icon name={task ? 'square-terminal' : 'square-user-round'} size={11} weight={2} /></span>
+            <span className="structure-node-title">{card.title}</span>
+            {card.meta && <span className="structure-node-meta">{card.meta}</span>}
+            <span className="spacer" /><Bolt status={card.status} /><RevealButton id={card.nodeId} fallback={request} onReveal={onReveal} />
+          </div>
+          {card.parent && <div className="structure-parent"><Icon name="corner-down-right" size={10} weight={2} />{card.parent}</div>}
+          {card.prompt && <Fold text={card.prompt} lines={PromptLines} className="structure-prompt" onFold={onFold} />}
+          {card.text && <Fold text={card.text} lines={OutputLines} className="structure-output" onFold={onFold} />}
+          {last && <ActivityRow line={last} />}
+        </div>
+      );
+    }
+  }
 });
+
+/** The result's title in the outcome's ink once there is one (resultTitle). */
+function ResultTitle({ card }: { card: StructureCard }) {
+  const { t } = useServices();
+  const [key, icon]: [string, IconName] = card.status === 'error' ? ['graph.block.resultError', 'triangle-alert'] : card.status === 'stopped' ? ['graph.block.resultStopped', 'circle-stop'] : ['graph.block.result', 'badge-check'];
+  return <span className={'structure-result-title' + (card.finished ? ' tone-' + card.tone : '')}><Icon name={icon} size={11} weight={2} />{t(key)}</span>;
+}
+
+/** A column's step as the pipeline's chip (M/MightyStructureView.swift chip): done green with a check, current the accent with a dot, pending grey with a ring. */
+function stepIcon(step: string): IconName {
+  switch (step) {
+    case 'done': return 'check';
+    case 'current': return 'circle';
+    case 'error': return 'x';
+    case 'stopped': return 'square';
+    default: return 'circle';
+  }
+}
 
 /** What a press on the page lands on (MightyStructurePan.Target): selectable text and native controls take their own drag. */
 function pressTarget(event: ReactPointerEvent, root: HTMLElement): PanTarget {
@@ -228,10 +359,10 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
   return (
     <div className="mighty-structure" data-testid="mighty-structure" data-board-count={list.length} data-board-id={board.id} ref={root}>
       <nav className="structure-nav">
-        <button className="mighty-icon" title={t('graph.structure.board.previous')} aria-label={t('graph.structure.board.previous')} disabled={index <= 0} onClick={() => move(() => navigation.step(-1, list))}>◀</button>
+        <button className="structure-step" title={t('graph.structure.board.previous')} aria-label={t('graph.structure.board.previous')} disabled={index <= 0} onClick={() => move(() => navigation.step(-1, list))}><Icon name="chevron-left" size={13} weight={2.4} /></button>
         <span className="structure-place">
           <button className="structure-position" data-testid="structure-list-button" title={t('graph.structure.board.list')} aria-haspopup="listbox" aria-expanded={listOpen} onClick={() => setListOpen((o) => !o)}>
-            {position(board, index)} <span aria-hidden="true">▾</span>
+            {position(board, index)}<Icon name="chevron-down" size={9} weight={2.6} />
           </button>
           {listOpen && (
             <div className="structure-list popover" role="listbox" data-page-overlay="" aria-label={t('graph.structure.board.list')} data-testid="structure-list">
@@ -249,25 +380,27 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
             </div>
           )}
         </span>
-        <button className="mighty-icon" title={t('graph.structure.board.next')} aria-label={t('graph.structure.board.next')} disabled={index >= list.length - 1} onClick={() => move(() => navigation.step(1, list))}>▶</button>
+        <button className="structure-step" title={t('graph.structure.board.next')} aria-label={t('graph.structure.board.next')} disabled={index >= list.length - 1} onClick={() => move(() => navigation.step(1, list))}><Icon name="chevron-right" size={13} weight={2.4} /></button>
         {unseen && (
           <button className="structure-badge" data-testid="structure-unseen" title={t('graph.structure.board.showNewest')} onClick={() => move(() => navigation.showNewest(list))}>
             {t(board.kind === 'pipeline' ? 'graph.structure.board.newPipeline' : 'graph.structure.board.newRequest')}
           </button>
         )}
       </nav>
+      {/* The board's status, and a pipeline's name; a request's words are its 요청 card right below (M/MightyStructureView.swift header). */}
       <div className="structure-header">
-        <span className="structure-headline">{title(board, index)}</span>
+        <Bolt status={board.status} />
         <span className={'mighty-pill tone-' + board.tone}>{board.statusWord}</span>
+        {board.kind === 'pipeline' && <span className="structure-headline">{title(board, index)}</span>}
       </div>
       <div className="structure-columns" ref={page} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPress} onPointerCancel={endPress}
         onLostPointerCapture={endPress} onClickCapture={onClickCapture} onScrollCapture={onColumnScroll}>
-        {board.columns.map((column) => (
+        {board.columns.map((column, at) => (
           <div key={column.id} className={'structure-column step-' + column.step} data-column-id={column.id}>
-            <header className="structure-column-head">
-              <span className="structure-column-title">{column.title}</span>
-              <span className={'structure-chip step-' + column.step}>{column.stepWord}</span>
-              <span className="mighty-muted">{column.count}</span>
+            <header className="structure-column-head" title={column.title + ' · ' + column.stepWord}>
+              <span className={'structure-chip step-' + column.step}><Icon name={stepIcon(column.step)} size={8} weight={3.2} fill={column.step === 'current'} />{column.title}</span>
+              <span className="structure-count">{column.count}</span>
+              {at < board.columns.length - 1 && <span className={'structure-link' + (column.step === 'done' ? ' done' : '')} aria-hidden="true" />}
             </header>
             <div className="structure-column-body">{column.cards.map((card) => <Card key={card.id} card={card} onFold={onFold} onReveal={onReveal} />)}</div>
           </div>

@@ -93,12 +93,16 @@
 .plan-answers .card-hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-button.with-icon { display: inline-flex; align-items: center; gap: var(--space-xs); }
 .plan-document .md-code { color: var(--ink); background: transparent; padding: 0; }
+.card-dialog-document .md-code { color: var(--ink); background: var(--card-raised); padding: 0 2px; border-radius: 3px; }
+.card-dialog-document ol.md-list > .md-item::before { color: var(--ink2); }
 .plan-document ol.md-list > .md-item::before { color: var(--ink2); }
 .card-dialog { position: fixed; inset: 0; background: color-mix(in srgb, var(--ink) 30%, transparent); display: flex; align-items: center; justify-content: center; z-index: 20; }
-.card-dialog-body { width: min(860px, 92vw); height: min(680px, 88vh); display: flex; flex-direction: column; gap: var(--space-md); background: var(--card); border-radius: var(--radius-composer); padding: var(--space-lg); color: var(--ink); }
-.card-dialog-title { display: flex; gap: var(--space-sm); align-items: baseline; }
-.card-dialog-document { flex: 1; overflow-y: auto; user-select: text; }
-.card-dialog-body > .card-button { align-self: flex-end; }
+/* The plan as a document (M/PlanApprovalCard.swift PlanDocumentSheet): an 860 × 677 sheet, a 40-high head over a rule, the plan padded 12. */
+.card-dialog-body { width: min(860px, 92vw); height: min(677px, 88vh); display: flex; flex-direction: column; background: var(--card); border-radius: var(--radius-composer); color: var(--ink); overflow: hidden; }
+.card-dialog-title { display: flex; gap: var(--space-sm); align-items: center; height: 40px; flex: none; padding: 0 var(--space-md); border-bottom: var(--stroke-line) solid var(--line); font-size: 13px; }
+.card-dialog-mark { color: var(--accent); }
+.card-dialog-close { border: var(--stroke-line) solid var(--line); background: var(--card-raised); color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; height: 24px; padding: 0 var(--space-md); border-radius: 12px; cursor: default; }
+.card-dialog-document { flex: 1; overflow-y: auto; user-select: text; padding: var(--space-md); }
 
 /* The folded strips (plan history, background work): one line on the card with a 1pt line. */
 .card-strip { display: flex; flex-direction: column; gap: var(--space-sm); background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-entry); padding: calc(var(--space-sm) - var(--stroke-line)) calc(var(--space-md) - var(--stroke-line)); }

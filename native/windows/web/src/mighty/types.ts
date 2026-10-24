@@ -111,11 +111,22 @@ export interface StructureCard {
   text?: string;
   message?: string;
   answer?: string;
-  activity: string[];
+  activity: StructureActivity[];
   tally?: string;
   finished: boolean;
   resultLine?: string;
+  /** An agent card's block kind ("task", an agent's), "kind · model", how deep it is nested, and what it was asked. */
+  nodeKind?: string;
+  meta?: string;
+  depth?: number;
+  prompt?: string;
+  /** The 실행 block and the result block of the card's request, for the reveal buttons. */
+  executionNodeId?: string;
+  resultNodeId?: string;
 }
+
+/** One tool call on a card: its kind (command, read, edit, search, web, agent, turn, tool), its state and its words. */
+export interface StructureActivity { kind: string; state: string; text: string }
 
 export interface StructureColumn { id: string; title: string; step: string; stepWord: string; count: number; cards: StructureCard[] }
 export interface StructureBoard { id: string; kind: string; ordinal: number; headline?: string; status: string; statusWord: string; tone: string; runIds: string[]; columns: StructureColumn[]; styleName?: string }
