@@ -171,7 +171,15 @@ internal static class AntigravityPermissionVerification
         internal string SettingsPath => Path.Combine(Root, ".gemini", "antigravity-cli", "settings.json");
         internal string Ledger => Path.Combine(Root, "app", "antigravity-temporary-rules.json");
         internal void Make(string? text) { Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); if (text is not null) File.WriteAllText(SettingsPath, text); }
-        internal string? Text() => File.Exists(SettingsPath) ? File.ReadAllText(SettingsPath) : null;
+        // The app may be writing the file this very moment (a rule going in or out); a read that meets it waits a little, as the app's own retries do.
+        internal string? Text()
+        {
+            for (var attempt = 0; ; attempt++)
+            {
+                try { return File.Exists(SettingsPath) ? File.ReadAllText(SettingsPath) : null; }
+                catch (IOException) when (attempt < 40) { Thread.Sleep(25); }
+            }
+        }
         internal AntigravityRuleLeases Leases(int retryMilliseconds = 10, int recheckMilliseconds = 0) =>
             new(SettingsPath, Ledger, [TimeSpan.FromMilliseconds(retryMilliseconds), TimeSpan.FromMilliseconds(retryMilliseconds * 2)], TimeSpan.FromMilliseconds(recheckMilliseconds));
         public void Dispose() { try { Directory.Delete(Root, true); } catch (IOException) { } }
