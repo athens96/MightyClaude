@@ -10,7 +10,7 @@ metrics from `native/contracts/fixtures/design-tokens.json`, both imported where
 npm ci
 npm run build        # → dist/, relative asset paths
 npm run typecheck
-npm test             # vitest: store and deltas, bridge, locale, tokens, conversation (Markdown, references, questionnaire, windowing, views), composer (keys, slash palette, attachments, menus, clock), cards (question steps, card keyboard, the cards push), mighty (graph vectors, layout rules, run sharing, render cost)
+npm test             # vitest: store and deltas, bridge, locale, tokens, conversation (Markdown, references, questionnaire, windowing, views), composer (keys, slash palette, attachments, menus, clock), cards (question steps, card keyboard, the cards push), mighty (graph vectors, layout rules, run sharing, render cost), shell (layout geometry, search, shortcuts, chosen pane, dialogs)
 ```
 
 `dotnet build` of `MightyClaude.WinUI` runs `npm ci` (only when `node_modules` is missing) and `npm run build` itself
@@ -62,4 +62,19 @@ the WinUI screens (`MainWindow.WebShell.cs`).
   changed blocks draw (`data-renders` counts each block's draws); a block out of view draws its header alone. Host methods:
   `mightyVisible`, `mightySetMode`, `mightySetPresentation`, `mightySaveSize`, `mightyExpand`, `mightyResultFiles`, `mightyLoadOlder`,
   `mightyImages`, `mightyTimelineFlip`.
-- `src/shell/`, `src/pane/` — the views. `src/i18n/`, `src/theme/` — strings and design tokens.
+- `src/shell/`, `src/layout/`, `src/dashboard/`, `src/dialogs/` — the frame (spec: `.omc/plans/shell-spec.md`): sidebar, banners,
+  workspace header, status bar and usage popover, the layout of splits and tab groups (each group keeps the panes it has shown
+  mounted, hidden behind the selected one, so a tab switch draws no pane again), the dashboard and the empty states, and the
+  window's shortcuts (`shortcuts.ts`; the host clears its accelerators). Every word, count and order comes from the host as one
+  model (`{kind:'shell'}`, `MainWindow.WebShell.Shell.cs` WebShellModel, read from the WinUI frame's own rules and parts); every
+  action is the window's own method. A click shows its pane at once (the store's `chosen`) until the host's state follows. The
+  dialogs of the window's flows (remove workspace, delegation, parent close, rename, resume) are pushed as `{kind:'dialog'}` and
+  answered with `dialogAnswer`; the flow itself stays the host's. Ported here only for the drag preview and the scroll area:
+  PaneLayout's drop zone, share bounds and minimums (`layout/geometry.ts`) and the sidebar search (`shell/filter.ts`). Host
+  methods: `shellState`, `selectWorkspace`, `selectSession`, `activatePane`, `showDashboard`, `hideDashboard`, `toggleDisclosure`,
+  `setSidebarWidth`, `setSidebarCollapsed`, `applyLayoutPreset`, `resizeSplit`, `resetSplit`, `dockSession`, `closeSession`,
+  `renameSession`, `renameWorkspace`, `renameCheck`, `removeWorkspace`, `showInExplorer`, `openFiles`, `focusPane`, `childAction`,
+  `addMenu`, `addPaneEntry`, `newPane`, `pickFolder`, `connectRemote`, `openSettings`, `openSetup`, `openHelp`, `setTheme`,
+  `textSize`, `dismissError`, `dismissResource`, `restartForUpdate`, `postponeUpdate`, `usageRefresh`, `usageDirect`,
+  `dialogAnswer`, `resumeRows`. A notification's click pushes `{kind:'select'}`.
+- `src/pane/` — one pane (header, conversation or Mighty, cards, composer). `src/i18n/`, `src/theme/` — strings and design tokens.

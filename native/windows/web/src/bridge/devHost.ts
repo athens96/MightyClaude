@@ -4,6 +4,27 @@ import { diffSession, type SessionDelta } from '../store/delta';
 import type { AppSnapshot, LogEntry, RunSession } from '../store/models';
 import type { HostPort } from './bridge';
 import type { CallMessage, HostMessage } from './protocol';
+import type { ShellModel } from '../shell/types';
+
+const noCounts = { questions: 0, permissions: 0, errors: 0, running: 0, done: 0, stopped: 0, idle: 0 };
+
+/** A frame model like the host's (MainWindow.WebShell.Shell.cs WebShellModel) for the fixture state, in English words. */
+export function devShell(snapshot: AppSnapshot): ShellModel {
+  const tone = (status: string) => (status === 'running' ? 'run' : status === 'completed' ? 'done' : status === 'error' ? 'err' : status === 'stopped' ? 'stop' : 'idle') as 'run';
+  const ids = snapshot.sessions.filter((s) => s.workspaceId === snapshot.activeWorkspaceId).map((s) => s.id);
+  const counts = { ...noCounts, running: snapshot.sessions.filter((s) => s.status === 'running').length, done: snapshot.sessions.filter((s) => s.status === 'completed').length };
+  return {
+    version: 'dev', dialogOpen: false, setupNeeded: false, entry: counts,
+    panes: snapshot.sessions.map((s) => ({
+      id: s.id, workspaceId: s.workspaceId, title: s.title, help: s.title, kind: s.kind, provider: s.provider, beta: s.provider !== 'claude', tone: tone(s.status), word: s.status,
+      settled: s.status !== 'running', agent: s.provider, agentLabel: s.provider, meta: '· now', tabMark: s.status !== 'idle', waiting: 0, dashMeta: '· now', activityError: false,
+    })),
+    workspaces: snapshot.workspaces.map((w) => ({ id: w.id, name: w.name, path: w.path, local: true, counts, expanded: true, items: snapshot.sessions.filter((s) => s.workspaceId === w.id).map((s) => ({ type: 'pane' as const, id: s.id, depth: 0 })) })),
+    header: snapshot.workspaces[0] && { id: snapshot.workspaces[0].id, name: snapshot.workspaces[0].name, path: snapshot.workspaces[0].path, filesEnabled: true, filesHelp: 'Files (Ctrl+Shift+E)' },
+    layout: snapshot.activeWorkspaceId ? { workspaceId: snapshot.activeWorkspaceId, mode: 'tabs', root: { id: 'g1', kind: 'tabs', sessionIds: ids, selectedSessionId: snapshot.activeSessionId, ratio: 0.5, children: [] } } : undefined,
+    status: { machine: 'This PC', panes: ids.length + ' panes', running: counts.running + ' running', updateHelp: '', setup: false, chipsTitle: 'Usage', chipsTooltip: 'Usage' },
+  };
+}
 
 const at = '2026-10-24T00:00:00Z';
 
@@ -55,6 +76,7 @@ export function devHost(): HostPort {
     const { sessions: _all, ...state } = snapshot;
     sent = snapshot;
     send({ kind: 'delta', sessions, removed: [], state });
+    send({ kind: 'shell', shell: devShell(snapshot) });
   };
   const stream = () => {
     snapshot = {
@@ -75,7 +97,7 @@ export function devHost(): HostPort {
       const args = (call.args ?? {}) as Record<string, string | undefined>;
       if (call.method === 'selectSession') snapshot = { ...snapshot, activeSessionId: args.id };
       if (call.method === 'setTheme') snapshot = { ...snapshot, theme: args.theme ?? snapshot.theme };
-      const value = call.method === 'getLocale' ? { preference: 'system', language: navigator.language.split('-')[0] ?? 'en' } : null;
+      const value = call.method === 'getLocale' ? { preference: 'system', language: navigator.language.split('-')[0] ?? 'en' } : call.method === 'shellState' ? devShell(snapshot) : null;
       send({ kind: 'result', id: call.id, ok: true, value });
       if (call.method === 'ready') {
         sent = snapshot;

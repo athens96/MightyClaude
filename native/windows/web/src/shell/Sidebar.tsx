@@ -13,12 +13,12 @@ import type { CardAction, ChildCard, PaneInfo, SidebarItem, SidebarWorkspace } f
 export const sidebarSearchId = 'sidebar-search';
 
 /** Makes a pane the active one: drawn at once, then the host's SelectLayoutSession saves it. */
-export function useChoosePane(): (id: string) => void {
+export function useChoosePane(): (id: string, method?: 'selectSession' | 'activatePane') => void {
   const { bridge, store } = useServices();
-  return (id: string) => {
+  return (id: string, method: 'selectSession' | 'activatePane' = 'selectSession') => {
     store.dispatch({ kind: 'choose', paneId: id });
     // A choice the host turned down (a dialog was open) is forgotten after a while; one it took is forgotten as its state arrives.
-    void bridge.call('selectSession', { id }).catch(() => {}).finally(() => setTimeout(() => { if (store.getState().chosen === id) store.dispatch({ kind: 'choose', paneId: undefined }); }, 1500));
+    void bridge.call(method, { id }).catch(() => {}).finally(() => setTimeout(() => { if (store.getState().chosen === id) store.dispatch({ kind: 'choose', paneId: undefined }); }, 1500));
   };
 }
 

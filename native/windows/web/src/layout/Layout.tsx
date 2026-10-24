@@ -76,9 +76,10 @@ const Tab = memo(function Tab({ info, selected, workspaceId, groupId, index }: T
 const hintKey: Record<DropEdge, string> = { center: 'layout.drop.merge', left: 'layout.drop.left', right: 'layout.drop.right', top: 'layout.drop.top', bottom: 'layout.drop.bottom' };
 
 function TabGroup({ node, workspaceId, sessions, activeId }: { node: PaneLayoutNode; workspaceId: string; sessions: Map<string, RunSession>; activeId?: string }) {
-  const { t, store } = useServices();
+  const { t } = useServices();
   const call = useCall();
   const menu = useMenu();
+  const choose = useChoosePane();
   const panes = usePaneInfo();
   const strip = useRef<HTMLDivElement>(null);
   const [hint, setHint] = useState<DropEdge | null>(null);
@@ -131,7 +132,7 @@ function TabGroup({ node, workspaceId, sessions, activeId }: { node: PaneLayoutN
           const shown = id === selected;
           return (
             <div key={id} className={'pane-slot' + (shown ? '' : ' hidden') + (id === activeId ? ' active' : '')} data-pane-id={id} aria-hidden={!shown}
-              onPointerDownCapture={() => { if (activeId !== id) { store.dispatch({ kind: 'choose', paneId: id }); call('activatePane', { id }); } }}
+              onPointerDownCapture={() => { if (activeId !== id) choose(id, 'activatePane'); }}
               onContextMenu={(event) => { if ((event.target as Element).closest('.pane-header')) menu.atPointer(event, paneMenu(id)); }}>
               <PaneShownContext.Provider value={shown}>
                 <PaneView session={session} />
