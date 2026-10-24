@@ -480,6 +480,7 @@ public sealed partial class MainWindow
             },
             usage = WebUsageDetails(),
             setupNeeded = SetupNeedsAttention,
+            companion = WebCompanionControls(),
         };
     }
 

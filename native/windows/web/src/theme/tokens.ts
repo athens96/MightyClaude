@@ -46,7 +46,10 @@ export function tokenStyleSheet(): string {
     metricVariables('layout', metrics.layout) +
     `--font-body:${quoteFamilies(metrics.font.body)}, sans-serif;` +
     `--font-heading:${quoteFamilies(metrics.font.heading)}, sans-serif;` +
-    `--font-mono:${quoteFamilies(metrics.font.mono)}, monospace;`;
+    `--font-mono:${quoteFamilies(metrics.font.mono)}, monospace;` +
+    // The design's own families, behind a family the text setting chose (theme/text.ts).
+    `--font-design-body:${quoteFamilies(metrics.font.body)}, sans-serif;` +
+    `--font-design-mono:${quoteFamilies(metrics.font.mono)}, monospace;`;
   const extra = (theme: 'light' | 'dark') => {
     const subtle = tokens.windowsOnly.subtle[theme];
     const syntax = tokens.windowsOnly.syntax[theme];

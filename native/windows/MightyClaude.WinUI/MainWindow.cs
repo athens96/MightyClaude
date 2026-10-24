@@ -698,7 +698,7 @@ public sealed partial class MainWindow : Window
             if (file.MediaType.StartsWith("image/", StringComparison.Ordinal)) content.Children.Add(new Image { Source = await AttachmentInput.PreviewAsync(file), MaxHeight = 420, Stretch = Stretch.Uniform });
             else if (file.MediaType == "text/plain") { var text = System.Text.Encoding.UTF8.GetString(AttachmentSupport.Decode(file)); content.Children.Add(new TextBox { AcceptsReturn = true, Text = text[..Math.Min(text.Length, 20000)], IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 350 }); }
             else content.Children.Add(new TextBlock { Text = Locale.Get("composer.attachment.sentAsFile"), TextWrapping = TextWrapping.Wrap });
-            await owner.StyledDialog(new ContentDialog { Title = file.Name, Content = content, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = owner.root.XamlRoot }).ShowAsync();
+            await owner.ShowDialogAsync(owner.StyledDialog(new ContentDialog { Title = file.Name, Content = content, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = owner.root.XamlRoot }));
         });
         private Task Change(Func<RunSession, RunSession> update) => owner.service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? update(p) : p).ToList() });
         private Task ChangeSettings(Func<RunSettings, RunSettings> update) => owner.Act(async () => { if (Session.Status == "running") return; await Change(p => p with { Settings = update(p.Settings) }); Refresh(); input.Focus(FocusState.Programmatic); });
@@ -950,8 +950,9 @@ public sealed partial class MainWindow : Window
         {
             if (Session.Status == "running") return; var field = new TextBox { Header = Locale.Get("composer.model.idHeader"), Text = Session.Model }; var validation = new TextBlock { TextWrapping = TextWrapping.Wrap }; var content = new StackPanel { Spacing = DesignMetrics.Spacing.Sm }; content.Children.Add(field); content.Children.Add(validation);
             var dialog = owner.StyledDialog(new ContentDialog { Title = Locale.Get("composer.model.enterIdTitle"), Content = content, XamlRoot = owner.root.XamlRoot, PrimaryButtonText = Locale.Get("composer.model.select"), CloseButtonText = Locale.Get("settings.run.cancelButton") });
-            dialog.PrimaryButtonClick += (_, args) => { if (!Wire.Model(field.Text.Trim())) { validation.Text = Locale.Get("composer.model.invalidName"); args.Cancel = true; } };
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary) await ChangeModel(field.Text.Trim());
+            bool Valid() { if (Wire.Model(field.Text.Trim())) return true; validation.Text = Locale.Get("composer.model.invalidName"); return false; }
+            dialog.PrimaryButtonClick += (_, args) => { if (!Valid()) args.Cancel = true; };
+            if (await owner.ShowDialogAsync(dialog, accept: result => result != ContentDialogResult.Primary || Valid()) == ContentDialogResult.Primary) await ChangeModel(field.Text.Trim());
         });
     }
 }

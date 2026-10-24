@@ -3,6 +3,7 @@
 import type { Card } from '../cards/types';
 import type { ComposerState } from '../composer/types';
 import type { MightyMessage } from '../mighty/types';
+import type { NativePush } from '../native/types';
 import type { ShellPush } from '../shell/types';
 import type { PanePush } from '../panes/channel';
 import type { SessionDelta } from '../store/delta';
@@ -73,7 +74,7 @@ export interface CardsMessage {
   cards: Card[];
 }
 
-export type PushMessage = SnapshotMessage | DeltaMessage | EventMessage | PermissionMessage | ComposerMessage | CardsMessage | MightyMessage | ShellPush | PanePush;
+export type PushMessage = SnapshotMessage | DeltaMessage | EventMessage | PermissionMessage | ComposerMessage | CardsMessage | MightyMessage | ShellPush | PanePush | NativePush;
 export type HostMessage = ResultMessage | PushMessage;
 
 /** What `getLocale` answers: the saved preference and the language it resolves to on this computer. */

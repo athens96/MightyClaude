@@ -202,7 +202,7 @@ public sealed partial class MainWindow
 
         // The close button of the last line. It waits while an operation runs, as on the Mac.
         ContentDialog? sheet = null;
-        var close = SettingsPush(Button(PluginStrings.ButtonClose, () => { sheet?.Hide(); return Task.CompletedTask; }));
+        var close = SettingsPush(Button(PluginStrings.ButtonClose, () => { HideDialog(sheet); return Task.CompletedTask; }));
         AutomationProperties.SetAutomationId(close, PluginAutomationId(provider, "close"));
 
         // Wraps an install or refresh call: starts the operation (Phase set
@@ -426,7 +426,7 @@ public sealed partial class MainWindow
                     id => OperateAsync(() => operations.InstallAsync(browser, reader, id)),
                     () => OperateAsync(() => operations.RefreshMarketplacesAsync(browser, reader)),
                     browser.RequestCancel));
-            else await dialog.ShowAsync();
+            else await ShowDialogAsync(dialog, opened: webShell is null ? null : () => _ = LoadPluginsAsync(), canClose: () => browser.CanClose);
         }
         finally
         {

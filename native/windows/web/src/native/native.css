@@ -1,0 +1,80 @@
+/* The host's WinUI views (native/Surfaces.tsx): sizes and colours from the design tokens, the form's metrics from its nodes. */
+.native-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(0, 0, 0, .28); }
+.native-backdrop.dialog { z-index: 45; }
+.native-backdrop.popover { z-index: 35; background: transparent; place-items: end; padding: 0 var(--space-md) 34px 0; }
+.native-frame { display: contents; }
+.native-settings { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); border-radius: var(--radius-pane); overflow: hidden; background: var(--card); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); }
+.native-settings-head { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-lg); border-bottom: var(--stroke-line) solid var(--line); }
+.native-settings-gear { font-size: calc(21px * var(--text-scale, 1)); color: var(--accent); width: 31px; text-align: center; }
+.native-close { width: 17px; height: 17px; border: 0; border-radius: 50%; padding: 0; background: var(--ink3); color: var(--card); font-size: 13px; line-height: 17px; cursor: pointer; }
+.native-settings-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: 0; }
+.native-settings-nav { display: flex; flex-direction: column; padding: var(--space-md); overflow: auto; background: var(--sidebar); border-right: var(--stroke-line) solid var(--line); }
+.native-nav-row { display: flex; align-items: center; gap: var(--space-xs); height: 30px; padding: 0 var(--space-sm); border: 0; border-radius: var(--radius-file-row); background: none; color: var(--ink); font: inherit; font-size: var(--type-title); text-align: left; cursor: pointer; }
+.native-nav-row .native-glyph { width: 18px; color: var(--accent); text-align: center; }
+.native-nav-row:hover { background: var(--subtle); }
+.native-nav-row.selected { background: var(--accent); color: var(--on-accent); }
+.native-nav-row.selected .native-glyph { color: var(--on-accent); }
+.native-settings-form { display: flex; flex-direction: column; gap: var(--space-xl); padding: var(--space-lg); overflow: auto; }
+.native-settings-foot { display: flex; padding: var(--space-lg); border-top: var(--stroke-line) solid var(--line); }
+.native-section { display: flex; flex-direction: column; gap: var(--space-sm); }
+.native-section-title { display: flex; align-items: center; gap: var(--space-sm); margin: 0 var(--space-md); font-size: var(--type-title); font-weight: 600; }
+.native-section-box { border: var(--stroke-line) solid var(--line); border-radius: 6px; background: var(--card-raised); }
+.native-sheet { display: flex; flex-direction: column; gap: var(--space-md); max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); padding: var(--inset-sheet); border-radius: var(--radius-pane); background: var(--card); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); box-sizing: border-box; }
+.native-sheet.popover { padding: var(--inset-popover); max-height: calc(100vh - 80px); }
+.native-sheet-body { display: flex; flex-direction: column; gap: var(--space-md); min-height: 0; overflow: auto; }
+.native-node { display: flex; flex-direction: column; min-width: 0; }
+.native-stack { display: flex; min-width: 0; }
+.native-stack.v { flex-direction: column; }
+.native-stack.h { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.native-grid { display: grid; align-items: center; min-width: 0; }
+.native-box { min-width: 0; }
+.native-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: calc(13px * var(--text-scale, 1)); }
+.native-text.nowrap { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.native-text.mono { font-family: var(--font-mono); }
+.native-glyph { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", sans-serif; font-style: normal; line-height: 1; }
+.native-image { max-width: 100%; image-rendering: pixelated; }
+.native-dot { display: inline-block; border-radius: 50%; }
+.native-rule { display: block; height: var(--stroke-line); width: 100%; }
+.native-rule.vertical { width: var(--stroke-line); height: 100%; }
+.native-button, .native-pull { display: inline-flex; align-items: center; gap: var(--space-xs); min-height: 20px; padding: 0 6px; border: var(--stroke-line) solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); font: inherit; font-size: calc(13px * var(--text-scale, 1)); cursor: pointer; }
+.native-button.accent { border: 0; background: var(--accent); color: var(--on-accent); }
+.native-button.destructive { color: var(--err-text); }
+.native-button:disabled, .native-pull:disabled { opacity: .5; cursor: default; }
+.native-pull { border: 0; background: none; }
+.native-chevron { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: var(--subtle); font-size: 9px; }
+.native-plain { display: flex; align-items: center; gap: var(--space-xs); width: 100%; padding: 0; border: 0; border-radius: 5px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.native-plain:hover:not(:disabled) { background: var(--subtle); }
+.native-switch { position: relative; width: 26px; height: 15px; flex: none; padding: 0; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--ink2) 30%, transparent); cursor: pointer; }
+.native-switch.on { background: var(--accent); }
+.native-switch:disabled { opacity: .5; cursor: default; }
+.native-knob { position: absolute; top: 1px; left: 1px; width: 13px; height: 13px; border-radius: 50%; background: var(--on-status); transition: left .12s; }
+.native-switch.on .native-knob { left: 12px; background: var(--on-accent); }
+.native-segmented { display: flex; width: 100%; border: var(--stroke-line) solid var(--line); border-radius: 5px; overflow: hidden; background: var(--card); }
+.native-segmented button { flex: 1; min-width: 0; height: 20px; border: 0; background: none; color: var(--ink); font: inherit; font-size: calc(13px * var(--text-scale, 1)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.native-segmented button.on { background: var(--accent); color: var(--on-accent); }
+.native-segmented button:disabled { opacity: .5; cursor: default; }
+.native-select { height: 22px; max-width: 100%; border: var(--stroke-line) solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); font: inherit; font-size: calc(13px * var(--text-scale, 1)); }
+.native-field { min-height: 19px; width: 100%; padding: 1px var(--space-sm); border: var(--stroke-line) solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); font: inherit; font-size: calc(11px * var(--text-scale, 1)); box-sizing: border-box; }
+.native-field.mono { font-family: var(--font-mono); }
+textarea.native-field { resize: vertical; }
+.native-check { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: calc(11px * var(--text-scale, 1)); }
+.native-slider, .native-progress { width: 100%; accent-color: var(--accent); }
+.native-info { padding: var(--space-sm); border-radius: 5px; background: var(--subtle); }
+.native-info.error { background: var(--err-soft); color: var(--err-text); }
+.native-info.warning { background: var(--wait-soft); color: var(--wait-text); }
+.native-list { display: flex; flex-direction: column; }
+.native-list > div { padding: var(--space-xs) var(--space-sm); border-radius: 5px; cursor: pointer; }
+.native-list > div.selected { background: var(--accent); color: var(--on-accent); }
+.native-menu-host { position: relative; display: inline-flex; }
+.native-menu { position: absolute; top: 100%; right: 0; z-index: 2; display: flex; flex-direction: column; min-width: 180px; padding: var(--space-xs); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-segment); background: var(--card); box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
+.native-menu-row { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs) var(--space-sm); border: 0; border-radius: 4px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; white-space: nowrap; }
+.native-menu-row:hover:not(:disabled) { background: var(--subtle); }
+.native-menu-row:disabled { color: var(--ink3); }
+.native-menu-check { width: 12px; }
+.native-menu-sep { height: var(--stroke-line); margin: var(--space-xs) 0; background: var(--line); }
+.native-menu-heading { padding: var(--space-xs) var(--space-sm); color: var(--ink2); font-size: var(--type-small); }
+.native-buttons { flex-wrap: wrap; }
+.status-companion { display: inline-flex; align-items: center; gap: var(--space-md); }
+.status-paw, .status-capsule { display: inline-flex; align-items: center; gap: var(--space-xs); height: 21px; padding: 0 var(--space-sm); border: 0; border-radius: 11px; background: none; color: var(--ink2); font: inherit; font-size: var(--type-small); cursor: pointer; }
+.status-paw.on { color: var(--accent); }
+.status-capsule { background: var(--subtle); font-variant-numeric: tabular-nums; }

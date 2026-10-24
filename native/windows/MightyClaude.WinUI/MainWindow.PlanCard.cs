@@ -402,7 +402,7 @@ public sealed partial class MainWindow
             var dialog = owner.StyledDialog(new ContentDialog { Title = title, Content = content, CloseButtonText = Locale.Get("plan.card.close"), XamlRoot = owner.root.XamlRoot, RequestedTheme = owner.root.RequestedTheme }, 860, 680);
             AutomationProperties.SetAutomationId(dialog, "plan-document-sheet");
             owner.dialogOpen = true;
-            try { await dialog.ShowAsync(); }
+            try { await owner.ShowDialogAsync(dialog); }
             finally { owner.dialogOpen = false; ForgetPlanView(document); }
         }
 

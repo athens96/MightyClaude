@@ -43,9 +43,11 @@ public sealed partial class MainWindow
             PerfLog.Mark(line); options.TraceStartup(line);
             return Task.FromResult<object?>(null);
         });
-        RegisterConversationMethods(bridge); RegisterComposerMethods(bridge); RegisterCardMethods(bridge); RegisterMightyMethods(bridge); RegisterShellMethods(bridge); RegisterPaneMethods(bridge);
+        RegisterConversationMethods(bridge); RegisterComposerMethods(bridge); RegisterCardMethods(bridge); RegisterMightyMethods(bridge); RegisterShellMethods(bridge); RegisterPaneMethods(bridge); RegisterSettingsMethods(bridge);
         webShell = new WebShell(bridge, StateDirectory, options.SmokeTest, brushes.Brush(DesignToken.Page).Color);
         root.KeyboardAccelerators.Clear(); root.Children.Clear();
+        // The forms the page draws stay in the tree under it, invisible (MainWindow.WebShell.Settings.cs).
+        if (webNativeHost is { } forms) { Grid.SetRowSpan(forms, 3); Grid.SetColumnSpan(forms, 2); root.Children.Add(forms); }
         Grid.SetRowSpan(webShell, 3); Grid.SetColumnSpan(webShell, 2); root.Children.Add(webShell);
     }
 
@@ -168,6 +170,9 @@ public sealed partial class MainWindow
             // The panes that are not a conversation: files, a terminal and a browser (MainWindow.WebShell.Panes.cs).
             var paned = await RunWebPanesSmoke(core, workspace, result); Save();
             shown = shown && paned;
+            // Settings, the setup screen, the plugin browser and the dialogs drawn by the page (MainWindow.WebShell.Settings.cs).
+            var set = await RunWebSettingsSmoke(core, workspace, sessions[2].Id, result); Save();
+            shown = shown && set;
             await core.ExecuteScriptAsync($"document.querySelector('[data-session-id=\"{sessions[1].Id}\"]')?.click()");
             var selected = await WaitFor(page => page.Text("selected") == titles[1]);
             result["afterClick"] = selected.Clone(); result["hostActiveSession"] = service.Snapshot.ActiveSessionId == sessions[1].Id;
