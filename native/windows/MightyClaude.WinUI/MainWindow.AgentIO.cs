@@ -126,6 +126,8 @@ public sealed partial class MainWindow
             if (BrowserEngineEnabled)
             {
                 var paneId = await ShowAgentIOPane(binding, AgentIOPaneKind.Browser);
+                // The web shell lays its own browser over the page (MainWindow.WebShell.Panes.cs).
+                if (await WebOpenAgentBrowserUrl(binding, paneId, url, cancellation)) return new { destination = "inApp", url = url.AbsoluteUri };
                 if (!views.TryGetValue(paneId, out var pane)) { await SelectLayoutSession(paneId); pane = views.GetValueOrDefault(paneId); }
                 if (pane is not null)
                 {

@@ -189,6 +189,8 @@ public sealed partial class MainWindow
         }
         private void InstallTerminalRenderer()
         {
+            // The web shell's page draws the terminal itself and its "ready" starts the shell (MainWindow.WebShell.Panes.cs).
+            if (owner.webShell is not null) return;
             terminalView = new WebView2(); terminalHost!.Children.Insert(0, terminalView);
             terminalView.Loaded += (_, _) => terminalStartup ??= StartTerminalViewAsync();
             terminalView.GotFocus += (_, _) => PostTerminal(new { type = "focus" });
@@ -222,10 +224,17 @@ public sealed partial class MainWindow
         private async void ReceiveTerminalMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs args)
         {
             if (terminalClosed || !IsTerminalAddress(args.Source)) return;
+            await HandleTerminalMessage(args.WebMessageAsJson);
+        }
+
+        /// <summary>One message of the terminal view: the trusted terminal page's, or the web shell page's xterm (MainWindow.WebShell.Panes.cs).</summary>
+        internal async Task HandleTerminalMessage(string message)
+        {
+            if (terminalClosed) return;
             try
             {
-                if (args.WebMessageAsJson.Length > 1_048_576) return;
-                using var json = JsonDocument.Parse(args.WebMessageAsJson);
+                if (message.Length > 1_048_576) return;
+                using var json = JsonDocument.Parse(message);
                 var value = json.RootElement; var type = value.Text("type");
                 switch (type)
                 {
@@ -240,6 +249,8 @@ public sealed partial class MainWindow
                         }
                         await StartTerminalShellAsync();
                         break;
+                    // A web shell page loaded again: its new terminal takes the colours and the font again.
+                    case "ready": RefreshTerminalTheme(); break;
                     case "input":
                         if (value.Text("text") is { } text && (ownedAgentTerminal is { } owned ? owned.Write(text) : terminal?.TryWrite(text)) == false) owner.error.Text = Locale.Get("terminal.inputBusy");
                         break;
@@ -360,11 +371,13 @@ public sealed partial class MainWindow
             if (terminalClosed || !terminalReady) return;
             string text;
             lock (terminalOutputLock) { text = terminalPending.ToString(); terminalPending.Clear(); }
-            if (text.Length > 0) PostTerminal(new { type = "output", text });
+            // The web shell's page takes the bytes, so a chunk that ends inside a character is still written whole.
+            if (text.Length > 0) PostTerminal(owner.webShell is null ? new { type = "output", text } : new { type = "output", data = Convert.ToBase64String(Encoding.UTF8.GetBytes(text)) });
         }
         private void PostTerminal(object message)
         {
             if (terminalClosed || !terminalReady) return;
+            if (owner.webShell is { } web) { web.Bridge.Push(new { kind = "terminal", paneId = id, message }); return; }
             try { terminalView?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message, Wire.Json)); }
             catch (InvalidOperationException) { }
             catch (System.Runtime.InteropServices.COMException) { }

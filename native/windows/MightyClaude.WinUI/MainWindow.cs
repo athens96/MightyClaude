@@ -131,7 +131,7 @@ public sealed partial class MainWindow : Window
     private async Task QuitAsync()
     {
         if (canClose || closing) return;
-        closing = true; ShutdownCompanion(); settingsWindow?.Close(); setupWatch?.Cancel(); setupWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); modelRefreshes?.Shutdown(); StopWorkspaceGit(); root.IsHitTestVisible = false;
+        closing = true; ShutdownCompanion(); settingsWindow?.Close(); setupWatch?.Cancel(); setupWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } CloseWebBrowsers(null); clock.Stop(); modelRefreshes?.Shutdown(); StopWorkspaceGit(); root.IsHitTestVisible = false;
         try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await InstallAppUpdateOnQuitAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await ShutdownRemoteWorkspacesAsync(); await service.DisposeAsync(); canClose = true; Close(); }
         catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; modelRefreshes = null; }
     }
@@ -257,6 +257,7 @@ public sealed partial class MainWindow : Window
         if (webShell is null) { DetachPaneViews(); panes.Children.Clear(); panes.RowDefinitions.Clear(); panes.ColumnDefinitions.Clear(); }
         // A closed session runs nothing more: end its refresher before dropping the pane.
         foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) { CloseStatusLine(views[stale]); views[stale].ForgetGraphHistory(); views[stale].CloseReferencePreview(); views[stale].CloseBrowserView(); CloseTerminal(views[stale]); views.Remove(stale); }
+        CloseWebBrowsers(state);
         if (webShell is null)
         {
             RenderPaneLayout(state);

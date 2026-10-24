@@ -43,7 +43,7 @@ public sealed partial class MainWindow
             PerfLog.Mark(line); options.TraceStartup(line);
             return Task.FromResult<object?>(null);
         });
-        RegisterConversationMethods(bridge); RegisterComposerMethods(bridge); RegisterCardMethods(bridge); RegisterMightyMethods(bridge); RegisterShellMethods(bridge);
+        RegisterConversationMethods(bridge); RegisterComposerMethods(bridge); RegisterCardMethods(bridge); RegisterMightyMethods(bridge); RegisterShellMethods(bridge); RegisterPaneMethods(bridge);
         webShell = new WebShell(bridge, StateDirectory, options.SmokeTest, brushes.Brush(DesignToken.Page).Color);
         root.KeyboardAccelerators.Clear(); root.Children.Clear();
         Grid.SetRowSpan(webShell, 3); Grid.SetColumnSpan(webShell, 2); root.Children.Add(webShell);
@@ -165,6 +165,9 @@ public sealed partial class MainWindow
             // The frame: sidebar rows, a row click, timed tab clicks, the add-pane menu and a split preset (MainWindow.WebShell.Shell.cs).
             var framed = await RunWebShellFrameSmoke(core, sessions.Select(s => s.Id).ToList(), result); Save();
             shown = shown && framed;
+            // The panes that are not a conversation: files, a terminal and a browser (MainWindow.WebShell.Panes.cs).
+            var paned = await RunWebPanesSmoke(core, workspace, result); Save();
+            shown = shown && paned;
             await core.ExecuteScriptAsync($"document.querySelector('[data-session-id=\"{sessions[1].Id}\"]')?.click()");
             var selected = await WaitFor(page => page.Text("selected") == titles[1]);
             result["afterClick"] = selected.Clone(); result["hostActiveSession"] = service.Snapshot.ActiveSessionId == sessions[1].Id;
