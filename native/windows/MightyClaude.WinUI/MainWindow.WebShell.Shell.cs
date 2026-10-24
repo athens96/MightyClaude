@@ -133,6 +133,19 @@ public sealed partial class MainWindow
         webShellClock.Tick += (_, _) => PushWebShellModel(); webShellClock.Start();
     }
 
+    private bool webShellQueued;
+
+    /// <summary>
+    /// The frame's model at the next turn of the UI thread, joined with any other change in the same turn: a pane added or
+    /// chosen shows in the page at once, not on the 250 ms clock's next tick (that clock still catches changes made elsewhere).
+    /// </summary>
+    private void QueueWebShellModel()
+    {
+        if (webShell is null || webShellQueued) return;
+        webShellQueued = true;
+        if (!DispatcherQueue.TryEnqueue(() => { webShellQueued = false; PushWebShellModel(); })) webShellQueued = false;
+    }
+
     /// <summary>Pushes the frame's model when it changed since the last one sent; the page asks for it whole on mount (<c>shellState</c>).</summary>
     private void PushWebShellModel()
     {
