@@ -341,7 +341,8 @@ public static partial class MightyStructure
     /// One cluster per root of the run's sub-agent trees, by the diagram's rule (M/MightyCore/MightyStructure.swift:437-467): an
     /// agent whose parent is missing, unknown or itself is a root, a tree stops at <see cref="MaximumDepth"/>, and whatever a
     /// cycle or the cap left out starts a cluster of its own, so every block shows once. Steer, compaction and question blocks
-    /// are the conversation's own moments, not work handed to a sub-agent, and are left out; tasks are work, so they stay.
+    /// are the conversation's own moments, not work handed to a sub-agent, and are left out; tasks are work, so they stay, and
+    /// so does a task's notice (a 작업 알림 steer): it and its reply are the run's work on that task's outcome.
     /// </summary>
     public static IReadOnlyList<Cluster> Clusters(MightyGraphRun run)
     {
@@ -358,7 +359,7 @@ public static partial class MightyStructure
             if (depth >= MaximumDepth || !visited.Add(index)) return;
             var agent = run.Agents[index];
             nodes.Add(new(agent.Id, index, MightyGraphLayout.NodeID(run, "agent:" + agent.Id), depth, MightyGraphSupport.BlockTitle(agent), MightyTimeline.Status(agent.Status),
-                MightyGraphSupport.BlockKind(agent), ExcerptOf(agent.Input, PromptBytes, PromptLines), Reply(agent.Entries) is { } reply ? ExcerptOf(reply, OutputBytes, OutputLines) : null,
+                MightyGraphSupport.BlockKind(agent), ExcerptOf(MightyGraphSupport.ShownInput(agent), PromptBytes, PromptLines), Reply(agent.Entries) is { } reply ? ExcerptOf(reply, OutputBytes, OutputLines) : null,
                 Activity(agent.Entries, NodeActivity), agent.ResponseRecords?.Select(record => record.Model).FirstOrDefault(model => !string.IsNullOrEmpty(model))));
             foreach (var child in children.GetValueOrDefault(agent.Id) ?? []) if (child != index) Walk(child, depth + 1, nodes);
         }
@@ -376,12 +377,12 @@ public static partial class MightyStructure
         return result;
     }
 
-    /// <summary>The run's sub-agent and task blocks, by index. A block id the run repeats (a damaged save) is kept at its first place only, so every node id is unique.</summary>
+    /// <summary>The run's sub-agent, task and task-notice blocks, by index. A block id the run repeats (a damaged save) is kept at its first place only, so every node id is unique.</summary>
     private static List<int> Kept(MightyGraphRun run)
     {
         var seen = new HashSet<string>(); var kept = new List<int>();
         for (var index = 0; index < run.Agents.Count; index++)
-            if (MightyGraphSupport.BlockKind(run.Agents[index]) is "agent" or "task" && seen.Add(run.Agents[index].Id)) kept.Add(index);
+            if ((MightyGraphSupport.BlockKind(run.Agents[index]) is "agent" or "task" || MightyGraphSupport.IsTaskNotice(run.Agents[index])) && seen.Add(run.Agents[index].Id)) kept.Add(index);
         return kept;
     }
 

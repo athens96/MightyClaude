@@ -262,6 +262,7 @@ internal static class Verification
         await Test("Mighty structure: cards show the work in place", MightyStructureVerification.CardsShowTheWorkInPlace);
         await Test("Mighty structure: texts are capped and folded", MightyStructureVerification.TextsAreCappedAndFolded);
         await Test("Mighty structure: clusters are the root trees", MightyStructureVerification.ClustersAreTheRootTrees);
+        await Test("Mighty structure: a task notice is a card after its task", MightyStructureVerification.ATaskNoticeIsACardAfterItsTask);
         await Test("Mighty structure: the signature and the card cache", MightyStructureVerification.SignatureAndItemCache);
         await Test("Mighty structure: the saved choice survives a restart", MightyStructureVerification.SavedChoiceSurvivesARestart);
         await Test("Mighty structure: finished requests fold", MightyStructureVerification.FinishedRequestsFold);

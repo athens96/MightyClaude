@@ -28,7 +28,7 @@ public enum MightyStructure {
         public var title: String
         /// Bucketed as a block's status is (`MobileMightySupport.status`).
         public var status: String
-        /// `MightyGraphSupport.blockKind`: "agent" or "task" (the other kinds are left out).
+        /// `MightyGraphSupport.blockKind`: "agent", "task", or "steer" for a task notice (the other kinds are left out).
         public var kind: String
         /// What the block was asked: the agent's prompt or the task's command.
         public var prompt: Excerpt?
@@ -433,7 +433,8 @@ public enum MightyStructure {
     /// Steer, compaction and question blocks are left out. The diagram draws them as
     /// blocks under the request, but they are the conversation's own moments, not work
     /// handed to a sub-agent, and no block is ever their child; tasks (backgrounded
-    /// commands) are work, so they stay.
+    /// commands) are work, so they stay, and so does a task's notice (a 작업 알림
+    /// steer): it and its reply are the run's work on that task's outcome.
     public static func clusters(_ run: MightyGraphRun) -> [Cluster] {
         let kept = kept(run)
         let indexes = Dictionary(kept.map { (run.agents[$0].id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -446,7 +447,7 @@ public enum MightyStructure {
             nodes.append(Node(agentID: agent.id, agentIndex: index, nodeID: MightyGraphLayout.nodeID(run, suffix: "agent:" + agent.id),
                               depth: depth, title: MightyGraphSupport.blockTitle(agent), status: MobileMightySupport.status(agent.status),
                               kind: MightyGraphSupport.blockKind(agent),
-                              prompt: excerpt(agent.input, maximumBytes: promptBytes, lines: promptLines),
+                              prompt: excerpt(agent.shownInput, maximumBytes: promptBytes, lines: promptLines),
                               output: reply(agent.entries).flatMap { excerpt($0, maximumBytes: outputBytes, lines: outputLines) },
                               activity: activity(agent.entries, limit: nodeActivity),
                               model: agent.responseRecords?.lazy.compactMap(\.model).first { !$0.isEmpty }))
@@ -466,12 +467,12 @@ public enum MightyStructure {
         return result
     }
 
-    /// The run's sub-agent and task blocks, by index. A block id the run repeats (a
+    /// The run's sub-agent, task and task-notice blocks, by index. A block id the run repeats (a
     /// damaged save) is kept at its first place only, so every node id is unique.
     static func kept(_ run: MightyGraphRun) -> [Int] {
         var seen = Set<String>()
         return run.agents.indices.filter { index in
-            ["agent", "task"].contains(MightyGraphSupport.blockKind(run.agents[index])) && seen.insert(run.agents[index].id).inserted
+            (["agent", "task"].contains(MightyGraphSupport.blockKind(run.agents[index])) || run.agents[index].isTaskNotice) && seen.insert(run.agents[index].id).inserted
         }
     }
 

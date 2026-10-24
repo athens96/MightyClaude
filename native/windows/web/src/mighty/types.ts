@@ -115,7 +115,7 @@ export interface StructureCard {
   tally?: string;
   finished: boolean;
   resultLine?: string;
-  /** An agent card's block kind ("task", an agent's), "kind · model", how deep it is nested, and what it was asked. */
+  /** An agent card's block kind ("task", "steer" for a task notice, an agent's), "kind · model", how deep it is nested, and what it was asked. */
   nodeKind?: string;
   meta?: string;
   depth?: number;
