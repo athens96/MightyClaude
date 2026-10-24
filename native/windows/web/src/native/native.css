@@ -25,6 +25,7 @@
 .native-section-title { display: flex; align-items: center; gap: var(--space-sm); margin: 0 var(--space-md); font-size: var(--type-title); font-weight: 600; }
 .native-settings-form .native-section-title { color: var(--ink2); font-size: 13px; font-weight: 600; margin: 0 var(--space-xs); }
 .native-fill > .native-select, .native-fill > .native-segmented, .native-fill > .native-grid, .native-fill > .native-box, .native-fill > .native-stack { width: 100%; }
+.native-settings-form select.native-select { width: 100%; }
 .native-fill .native-n-select, .native-fill select.native-select { width: 100% !important; max-width: none !important; justify-self: stretch !important; }
 .native-section-box { border: var(--stroke-line) solid var(--line); border-radius: 6px; background: var(--card-raised); }
 .native-sheet { display: flex; flex-direction: column; gap: var(--space-md); max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); padding: var(--inset-sheet); border-radius: var(--radius-pane); background: var(--card); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); box-sizing: border-box; }
