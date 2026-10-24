@@ -6,7 +6,7 @@ Claude 또는 Codex 실행 창 상단에서 **기본 / 마이티**를 선택한�
 
 1. 처음에는 입력 대기 블록이 있다. 하단 입력창에 작성한 내용이 블록에 미리 표시된다.
 2. 전송하면 요청과 Claude 출력을 가진 메인 블록이 된다.
-3. Claude가 하위 에이전트를 만들면 해당 부모 아래에 요청·출력·상태를 가진 블록이 연결된다. 같은 부모의 에이전트는 좌우로 분기하며 중첩 위임도 연결한다. 백그라운드로 실행한 명령(`run_in_background`)도 같은 방식으로 **백그라운드 작업** 블록이 되어 명령과 시작 응답을 보여주고, Claude Code의 작업 완료 알림을 받으면 완료·실패·중단 상태와 요약으로 갱신된다. 알림 전에 실행이 끝나면 중단으로 표시한다.
+3. Claude가 하위 에이전트를 만들면 해당 부모 아래에 요청·출력·상태를 가진 블록이 연결된다. 같은 부모의 에이전트는 좌우로 분기하며 중첩 위임도 연결한다. 백그라운드로 실행한 명령(`run_in_background`)도 같은 방식으로 **백그라운드 작업** 블록이 되어 명령과 시작 응답을 보여주고, Claude Code의 작업 완료 알림을 받으면 완료·실패·중단 상태와 요약으로 갱신된다. 알림 전에 실행이 끝나면 중단으로 표시한다. 알림이 들어온 일 자체도 주황색 **작업 알림**(`graph.block.taskNotice`) 블록으로 메인 아래에 남는다. 블록 요청 칸에는 `<작업 제목> · 완료|실패|중단됨`과 알림의 요약이, 출력에는 그 알림을 받은 Claude의 다음 답변(루트에서 도구 호출 없이 나온 첫 텍스트)이 보인다. 작업마다 한 번만 생기며(같은 작업의 알림이 다시 와도 새 블록을 만들지 않는다), 시작 응답이 실패로 이미 끝난 작업이라도 알림이 오면 생긴다. 답을 받기 전에 실행이 끝나면 **작업 알림에 대한 응답을 받기 전에 실행이 종료되었습니다.**로 중단된다. 백그라운드 하위 에이전트(`Agent`의 `run_in_background`)의 알림은 작업 블록이 없으므로 여기에 해당하지 않는다.
 4. 메인과 하위 에이전트가 모두 종료되면 결과 블록이 연결된다. 실제 최종 응답은 메인 블록과 결과 블록에서 모두 볼 수 있다. 실패·중단은 그 상태대로 표시한다.
 5. 다음 입력 대기 블록이 이어진다. 지난 요청들은 위쪽 그래프에 남는다.
 
@@ -17,7 +17,7 @@ Claude 또는 Codex 실행 창 상단에서 **기본 / 마이티**를 선택한�
 - **Enter(또는 보내기 버튼)**: 텍스트를 언제나 **다음 요청**으로 대기열에 넣는다. 보낸 내용은 입력창 위 **대기 중** 목록에 순서대로 쌓이고, 현재 요청이 완료되면 첫 항목부터 자동으로 실행한다. 목록의 ✕로 항목을 지울 수 있다. 실행을 직접 중지하면 대기열도 취소되고, 오류로 끝나면 대기열은 남아 있으며 **다음 실행** 버튼으로 이어갈 수 있다. 대기열은 실행 창당 16개까지이며 앱을 다시 열면 비워진다.
 - **백그라운드 작업만 기다리는 창**: 대기열 안내가 모든 스타일에서 "백그라운드 작업이 끝나야 시작합니다 · 지금 시작하려면 중지"로 바뀐다. 이때 중지하면 대기열은 남고 첫 항목이 다음 실행으로 시작한다(`BackgroundQueuePolicy.stopKeepsQueue`).
 - **⌘Enter(Windows Ctrl+Enter)**: 마이티 오케스트레이션이 켜진 창이 새 worktree 자식을 가질 수 있으면 텍스트를 자식 창에서 바로 실행한다(`ComposerSecondSend.choose`, 도움말 `delegation.md#worktree`). 그 밖의 창(자식 창, 스위치를 끈 창, git 저장소 밖, 자식이 파일을 바꿀 수 없는 모드의 Codex·Antigravity 창)에서는 Enter처럼 대기열에 넣는다. 자식을 만들거나 시작하지 못한 텍스트도 대기열로 간다(대기열이 가득 차면 입력창으로 돌아온다).
-- **예전 중간 요청 블록**: 0.4.35 전에는 이 Mac의 Claude 창에서 ⌘Enter가 텍스트를 실행 중인 Claude의 stdin으로 바로 넣었고, 그래프에 주황색 **중간 요청**(`steer`) 블록이 생겼다. 그 블록은 예전 기록과 불러온 세션 기록에서 그대로 그린다. 위임 알림과 후속 지시가 실행 중인 Claude 부모에게 들어가는 경로(`DelegationDelivery` → `steerRunningTurn`)는 사람이 보내는 글이 아니라 위임 계약의 일부라서 남아 있고, 같은 `steer` 블록(같은 주황색)으로 그려진다. 다만 입력이 `[Mighty Claude notice ` 또는 `[Mighty Claude follow-up `으로 시작하는 블록은 제목과 타임라인의 종류 이름이 **위임 알림**(`graph.block.delegationNotice`)이다(맥 `MightyGraphSupport.blockTitle`/`MightyTimelineText.kind`, 윈도우 `MightyGraphSupport.BlockTitle`/`MightyTimeline.KindLabel`, 폰 `mighty.ts`의 `blockTitle`/`blockKindLabel`). 폰은 블록의 `summary`로 같은 판정을 해서 예전 호스트가 "중간 요청"이라고 보낸 제목도 바꿔 부른다. wire의 kind는 그대로 `steer`이고, 머리말의 "중간 요청 n"은 사람이 보낸 예전 steer만 센다(위임 알림은 세지 않는다).
+- **예전 중간 요청 블록**: 0.4.35 전에는 이 Mac의 Claude 창에서 ⌘Enter가 텍스트를 실행 중인 Claude의 stdin으로 바로 넣었고, 그래프에 주황색 **중간 요청**(`steer`) 블록이 생겼다. 그 블록은 예전 기록과 불러온 세션 기록에서 그대로 그린다. 위임 알림과 후속 지시가 실행 중인 Claude 부모에게 들어가는 경로(`DelegationDelivery` → `steerRunningTurn`)는 사람이 보내는 글이 아니라 위임 계약의 일부라서 남아 있고, 같은 `steer` 블록(같은 주황색)으로 그려진다. 다만 입력이 `[Mighty Claude notice ` 또는 `[Mighty Claude follow-up `으로 시작하는 블록은 제목과 타임라인의 종류 이름이 **위임 알림**(`graph.block.delegationNotice`)이고, 트래커가 백그라운드 작업의 `<task-notification>`으로 만든 `[Mighty Claude task notice] `로 시작하는 블록은 **작업 알림**(`graph.block.taskNotice`, 화면에는 접두어를 빼고 보여 준다, `MightyGraphSupport.shownInput`/`ShownInput`)이다(맥 `MightyGraphSupport.blockTitle`/`MightyTimelineText.kind`, 윈도우 `MightyGraphSupport.BlockTitle`/`MightyTimeline.KindLabel`, 폰 `mighty.ts`의 `blockTitle`/`blockKindLabel`). 폰은 블록의 `summary`로 같은 판정을 해서 예전 호스트가 "중간 요청"이라고 보낸 제목도 바꿔 부른다. wire의 kind는 그대로 `steer`이고, 머리말의 "중간 요청 n"은 사람이 보낸 예전 steer만 센다(위임 알림과 작업 알림은 세지 않는다, `isNotice`/`IsNotice`). 구조 보기(파이프라인)는 steer 가운데 작업 알림만 실행 열의 카드로 남긴다(`MightyStructure.kept`/`Kept`): 그 작업 뒤에 **작업 알림** 제목으로 알림 줄과 답변을 보여 준다.
 
 ### 컨텍스트 정리 블록
 
@@ -95,7 +95,7 @@ Claude 또는 Codex 실행 창 상단에서 **기본 / 마이티**를 선택한�
 ## 실행 데이터
 
 - Claude의 구조화된 CLI 출력과 인증된 Mods 이벤트를 사용한다. 실행 중인 그래프는 별도의 대화 로그 파일을 읽어 추측하지 않는다. CLI 세션 기록은 사용자가 [이전 다이어그램](#이전-다이어그램-불러오기)을 불러올 때와 [기존 세션 이어가기](session-resume.md)를 위해 **창 추가**에서 Claude·Codex를 고를 때와 그 목록을 열 때만 읽는다.
-- 백그라운드 작업 블록은 CLI 스트림의 `tool_use`(`run_in_background`)와 시작 응답, 이후 사용자 턴에 주입되는 `<task-notification>`(`tool-use-id`·`task-id`·`status`·`summary`)만 사용한다. Mods에는 작업 알림 이벤트가 없으므로 출력 파일을 읽어 추측하지 않는다.
+- 백그라운드 작업 블록은 CLI 스트림의 `tool_use`(`run_in_background`)와 시작 응답, 이후 사용자 턴에 주입되는 `<task-notification>`(`tool-use-id`·`task-id`·`status`·`summary`)만 사용한다. 같은 알림이 그 작업의 **작업 알림** 블록(`steer`, 노드 키 `steer:notice:<작업 노드 ID>`)을 만들고, 이어지는 루트 답변이 그 응답이 된다. Mods에는 작업 알림 이벤트가 없으므로 출력 파일을 읽어 추측하지 않는다.
 - Mods의 `agent.spawn`에서 실제 요청과 부모 에이전트를, `turn.complete`에서 해당 에이전트의 실제 최종 응답을 받는다. CLI의 `parent_tool_use_id`로 에이전트별 메시지와 도구 출력을 구분한다. 연동 계약은 [Claude Code의 공식 Mods 타입](https://github.com/anthropics/claude-code/blob/main/mods/types/claude-code.d.ts)의 2.1.273 정의로 확인했다.
 - 프로세스별 ID로 요청을 구분하고 같은 에이전트의 이벤트는 갱신한다. 늦게 도착한 이벤트가 다음 요청의 블록으로 섞이지 않도록 한다.
 - 새 기록에는 그래프 관계를 저장한다. 기존 기록은 사용자 요청을 기준으로 묶으며, 수집하지 않았던 과거 하위 에이전트의 관계나 요청 내용을 만들어 넣지 않는다.
@@ -122,7 +122,7 @@ Windows 앱에서도 Claude·Codex 실행 창 머리에 **기본 / 마이티** �
 
 **macOS와 같은 것**
 
-- 블록: 요청(메인)·하위 에이전트·백그라운드 작업·중간 요청·위임 알림·컨텍스트 정리·결과·입력 대기 블록과 연결선. 블록의 제목·상태·요청을 보여주고, 출력은 기본 화면과 같은 방식으로 그린다.
+- 블록: 요청(메인)·하위 에이전트·백그라운드 작업·중간 요청·위임 알림·작업 알림·컨텍스트 정리·결과·입력 대기 블록과 연결선. 블록의 제목·상태·요청을 보여주고, 출력은 기본 화면과 같은 방식으로 그린다.
 - 블록 제목줄의 모델·토큰 캡슐과 마우스를 올리면 나오는 항목별 내역, 상단 도구 모음의 실행 창 전체 합계.
 - 확대·축소: **축소 / 실제 크기(NN%) / 확대** 버튼으로 50%부터 150%까지 10%씩 바꾸고, 퍼센트 버튼은 100%로 되돌린다. 양 끝에서는 해당 버튼이 꺼진다.
 - 이동: 휠은 캔버스를 상하로, 가로 휠·휠 기울이기와 Shift+휠(Windows 관례)은 좌우로 옮긴다. 빈 배경을 누른 채 드래그해도 이동한다. 바깥 화면은 스크롤하지 않는다.
