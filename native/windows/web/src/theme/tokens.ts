@@ -28,6 +28,12 @@ function quoteFamilies(list: string): string {
   return list.split(',').map((family) => `"${family.trim()}"`).join(', ');
 }
 
+/** `#RRGGBB` at an opacity, as rgba(). */
+export function hexAlpha(hex: string, opacity: number): string {
+  const value = parseInt(hex.slice(1, 7), 16);
+  return `rgba(${(value >> 16) & 255},${(value >> 8) & 255},${value & 255},${opacity})`;
+}
+
 /** The whole style sheet of variables: metrics and fonts for both themes, then each theme's palette. */
 export function tokenStyleSheet(): string {
   const metrics = tokens.metrics;
@@ -37,13 +43,19 @@ export function tokenStyleSheet(): string {
     metricVariables('type', metrics.type) +
     metricVariables('space', metrics.spacing) +
     metricVariables('inset', metrics.inset) +
+    metricVariables('layout', metrics.layout) +
     `--font-body:${quoteFamilies(metrics.font.body)}, sans-serif;` +
     `--font-heading:${quoteFamilies(metrics.font.heading)}, sans-serif;` +
     `--font-mono:${quoteFamilies(metrics.font.mono)}, monospace;`;
+  const extra = (theme: 'light' | 'dark') => {
+    const subtle = tokens.windowsOnly.subtle[theme];
+    const syntax = tokens.windowsOnly.syntax[theme];
+    return `--subtle:${hexAlpha(subtle.color, subtle.opacity)};--syntax-keyword:${syntax.keyword};--syntax-string:${syntax.string};--syntax-number:${syntax.number};`;
+  };
   return (
     `:root{${shared}}` +
-    `:root[data-theme="light"]{color-scheme:light;${paletteVariables(tokens.light)}}` +
-    `:root[data-theme="dark"]{color-scheme:dark;${paletteVariables(tokens.dark)}}`
+    `:root[data-theme="light"]{color-scheme:light;${paletteVariables(tokens.light)}${extra('light')}}` +
+    `:root[data-theme="dark"]{color-scheme:dark;${paletteVariables(tokens.dark)}${extra('dark')}}`
   );
 }
 

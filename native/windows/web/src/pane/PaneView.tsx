@@ -6,6 +6,8 @@ import { Composer } from '../composer/Composer';
 import { Cards } from '../cards/Cards';
 import { clockLabel } from '../composer/clock';
 import { MightyView, ModeSwitch, showsModeSwitch } from '../mighty/MightyView';
+import { SlimPane, slimKinds } from '../panes/Panes';
+import { TerminalView } from '../panes/terminal/TerminalView';
 
 /** The header's clock, redrawn each second while the run is not finished (MW.Composer.cs RefreshElapsed). */
 function Clock({ session }: { session: RunSession }) {
@@ -32,6 +34,15 @@ export const PaneView = memo(function PaneView({ session }: { session: RunSessio
   const agent = session.kind === 'claude' || session.kind === 'shell';
   const switchable = showsModeSwitch(session);
   const mighty = switchable && session.agentViewMode === 'mighty';
+  if (slimKinds.has(session.kind)) return <SlimPane session={session} />;
+  // A shell's terminal stands where the conversation and the composer are; a remote workspace's shell keeps them (its commands go to the host).
+  const body = (
+    <>
+      {mighty ? <MightyView key={'mighty-' + session.id} session={session} /> : <Conversation key={session.id} session={session} />}
+      {session.kind === 'claude' && <Cards key={'cards-' + session.id} paneId={session.id} />}
+      {agent && <Composer key={'composer-' + session.id} session={session} />}
+    </>
+  );
   return (
     <section className="pane" data-session-id={session.id}>
       <header className="pane-header">
@@ -45,9 +56,7 @@ export const PaneView = memo(function PaneView({ session }: { session: RunSessio
         )}
         {switchable && <ModeSwitch session={session} />}
       </header>
-      {mighty ? <MightyView key={'mighty-' + session.id} session={session} /> : <Conversation key={session.id} session={session} />}
-      {session.kind === 'claude' && <Cards key={'cards-' + session.id} paneId={session.id} />}
-      {agent && <Composer key={'composer-' + session.id} session={session} />}
+      {session.kind === 'shell' ? <TerminalView key={'terminal-' + session.id} session={session} fallback={body} /> : body}
     </section>
   );
 });

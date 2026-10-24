@@ -7,6 +7,7 @@ import { devHost } from './bridge/devHost';
 import type { LocaleInfo } from './bridge/protocol';
 import { loadTranslator } from './i18n/locale';
 import { Store } from './store/store';
+import { dispatchPanePush, isPanePush } from './panes/channel';
 import { installTokens } from './theme/tokens';
 import './styles.css';
 import './conversation/conversation.css';
@@ -15,11 +16,13 @@ import './composer/toolbar.css';
 import './cards/cards.css';
 import './mighty/mighty.css';
 import './shell/shell.css';
+import './panes/panes.css';
 
 async function start(bridge: Bridge): Promise<void> {
   installTokens(document);
   const store = new Store();
-  bridge.onPush((message) => store.dispatch(message));
+  // A terminal's output and a browser's state go to the pane that listens, not through the store (panes/channel.ts).
+  bridge.onPush((message) => (isPanePush(message) ? dispatchPanePush(message) : store.dispatch(message)));
   window.addEventListener('error', (event) => void bridge.call('log', { level: 'error', message: String(event.message) }).catch(() => {}));
   const locale = await bridge.call<LocaleInfo>('getLocale');
   document.documentElement.lang = locale.language;

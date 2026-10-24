@@ -149,6 +149,9 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       return { ...state, selected: { paneId: message.paneId, seq: (state.selected?.seq ?? 0) + 1 } };
     case 'choose':
       return message.paneId === state.chosen ? state : settle({ ...state, chosen: message.paneId });
+    case 'terminal':
+    case 'browser':
+      return state;
     case 'fill':
       return { ...state, fills: { ...state.fills, [message.paneId]: { text: message.text, seq: (state.fills[message.paneId]?.seq ?? 0) + 1 } } };
   }
