@@ -4,6 +4,7 @@ import type { AgentActivity, AgentImageRef, LogEntry } from '../store/models';
 import { durationLabel, entryTime, lines, providerLabel, toolStateKey } from './format';
 import { CodeBlock, Markdown, Questionnaire } from './MarkdownView';
 import { ProviderMark } from './ProviderMark';
+import { Icon } from '../icons/Icon';
 import { parseQuestionnaire } from './questionnaire';
 
 export interface EntryProps {
@@ -86,7 +87,10 @@ function ToolChip({ entry, activity, live, expanded, onToggle }: EntryProps & { 
   return (
     <div className="entry entry-tool" data-entry-kind="tool" data-tool-state={activity.state}>
       <div className={'tool-chip' + (failed ? ' failed' : '')}>
-        <span className={'tool-square ' + square} aria-hidden="true" />
+        <span className={'tool-square ' + square} aria-hidden="true">
+          {square === 'done' ? <Icon name="check" size={11} weight={4} /> : square === 'err' ? <Icon name="x" size={11} weight={4} />
+            : square === 'stop' ? <Icon name="minus" size={11} weight={4} /> : <span className="tool-square-dot" />}
+        </span>
         {name && <span className="tool-name">{name}</span>}
         {detail && <span className="tool-detail" data-text="">{detail}</span>}
         {duration && <span className="tool-meta">{'· ' + duration}</span>}

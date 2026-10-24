@@ -6,6 +6,7 @@ import { Diagram, type Aim } from './Diagram';
 import { Structure } from './Structure';
 import { Timeline } from './Timeline';
 import { emptyMighty } from './types';
+import { Icon } from '../icons/Icon';
 
 /** Panes that offer the Default | Mighty switch (MightyGraphViewModel.ShowsModeSwitch). */
 export const showsModeSwitch = (session: RunSession) => session.kind === 'claude' && ['claude', 'codex', 'gemini'].includes(session.provider);
@@ -22,7 +23,9 @@ export function ModeSwitch({ session }: { session: RunSession }) {
     <span className="mighty-switch" role="group" aria-label={t('graph.view.switch')} data-testid="mighty-mode-switch">
       {(['default', 'mighty'] as const).map((mode) => (
         <button key={mode} className={(mode === 'mighty') === mighty ? 'on' : ''} data-mode={mode}
-          onClick={() => void bridge.call('mightySetMode', { paneId: session.id, mode })}>{t('graph.view.' + mode)}</button>
+          onClick={() => void bridge.call('mightySetMode', { paneId: session.id, mode })}>
+          <Icon name={mode === 'mighty' ? 'share-2' : 'text-align-start'} size={12} weight={2} />{t('graph.view.' + mode)}
+        </button>
       ))}
     </span>
   );
@@ -57,7 +60,9 @@ export function MightyView({ session }: { session: RunSession }) {
         <span className="mighty-switch" role="group" aria-label={t('graph.view.switch')}>
           {(['diagram', 'timeline', 'structure'] as const).map((mode) => (
             <button key={mode} className={mode === presentation ? 'on' : ''} data-presentation={mode}
-              onClick={() => void bridge.call('mightySetPresentation', { paneId: session.id, mode })}>{t('graph.view.' + mode)}</button>
+              onClick={() => void bridge.call('mightySetPresentation', { paneId: session.id, mode })}>
+              <Icon name={mode === 'diagram' ? 'share-2' : mode === 'timeline' ? 'list' : 'columns-3'} size={12} weight={2} />{t('graph.view.' + mode)}
+            </button>
           ))}
         </span>
         <span className="mighty-header">{mighty.inputs?.header ?? t('graph.view.mighty')}</span>

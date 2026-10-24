@@ -9,6 +9,8 @@ import { useAddMenu } from './addMenu';
 import { filterWorkspaces } from './filter';
 import { BetaBadge, StatusCounts, StatusGlyph, useCall, useMenu, usePaneInfo, useShell, type MenuItem } from './parts';
 import type { CardAction, ChildCard, PaneInfo, SidebarItem, SidebarWorkspace } from './types';
+import { Icon } from '../icons/Icon';
+import appIcon from '../assets/app-icon.png';
 
 export const sidebarSearchId = 'sidebar-search';
 
@@ -60,7 +62,7 @@ const PaneRow = memo(function PaneRow({ info, active, child }: { info: PaneInfo;
   return (
     <button type="button" className={'sidebar-pane' + (active ? ' active' : '')} data-session-id={info.id} data-testid="sidebar-pane" aria-current={active ? 'true' : undefined}
       onClick={() => choose(info.id)} onContextMenu={(event) => menu.atPointer(event, items)}>
-      <StatusGlyph tone={info.tone} />
+      <StatusGlyph tone={info.tone} kind={info.kind} />
       <span className="sidebar-pane-text">
         <span className="sidebar-pane-line">
           <span className={'sidebar-pane-title' + (info.settled ? '' : ' strong')} title={info.help}>{info.title}</span>
@@ -97,9 +99,7 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
     <section className={'sidebar-workspace' + (selected ? ' selected' : '')} data-workspace-id={workspace.id} data-testid="sidebar-workspace">
       <div className="sidebar-workspace-row" onContextMenu={(event) => menu.atPointer(event, items)}>
         <button type="button" className="sidebar-workspace-select" title={workspace.path} onClick={() => call('selectWorkspace', { id: workspace.id })}>
-          <svg className="sidebar-workspace-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-            <path d={workspace.local ? 'M1.5 4h4.5l1.2 1.6h7.3V13h-13z' : 'M2 3h12v8H2zM5 14h6M8 11v3'} fill="none" stroke="currentColor" strokeWidth="1.2" />
-          </svg>
+          <Icon name={workspace.local ? 'folder' : 'monitor'} size={15} weight={1.5} className="sidebar-workspace-icon" />
           <span className="sidebar-workspace-names">
             <span className="sidebar-workspace-name">{workspace.name}</span>
             {workspace.remoteHost && <span className="sidebar-workspace-host">{workspace.remoteHost}</span>}
@@ -108,7 +108,7 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
         </button>
         <button type="button" className="sidebar-disclosure" aria-label={disclosure} title={disclosure} aria-expanded={workspace.expanded}
           onClick={() => call('toggleDisclosure', { id: workspace.id })}>
-          <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d={workspace.expanded ? 'M1 2.5l3 3 3-3' : 'M2.5 1l3 3-3 3'} fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>
+          <Icon name={workspace.expanded ? 'chevron-down' : 'chevron-right'} size={11} weight={2.6} />
         </button>
       </div>
       {workspace.expanded && (
@@ -120,7 +120,7 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
               </div>
             );
             if (item.type === 'closedChild') return (
-              <div key={item.id} className="sidebar-child" style={{ paddingLeft: item.depth * 20 }}>
+              <div key={item.id} className="sidebar-child" style={{ paddingLeft: 22 + item.depth * 16 }}>
                 <div className="sidebar-closed-child" data-testid={'sidebar-child-' + item.id} onContextMenu={(event) => item.menu.length > 0 && menu.atPointer(event, childMenu(call, item.id, item.menu))}>
                   <StatusGlyph tone={item.tone} />
                   <span className="sidebar-pane-title" title={item.title}>{item.title}</span>
@@ -132,7 +132,7 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
             const info = panes.get(item.id);
             if (!info) return null;
             return (
-              <div key={item.id} className="sidebar-child" style={{ paddingLeft: item.depth * 20 }}>
+              <div key={item.id} className="sidebar-child" style={{ paddingLeft: 22 + item.depth * 16 }}>
                 <PaneRow info={info} active={!dashboard && item.id === activeId} child={item.depth > 0 ? item : undefined} />
                 {item.card && <ChildCardLine id={item.id} card={item.card} />}
               </div>
@@ -140,15 +140,13 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
           })}
           <button type="button" className="sidebar-add" title={t('workspace.addPaneHelp')} aria-label={t('workspace.addPaneAccessibility', { workspace: workspace.name })}
             data-testid="sidebar-add" onClick={(event) => addMenu(event.currentTarget, { workspaceId: workspace.id })}>
-            <span aria-hidden="true">+</span>{t('workspace.addPane')}
+            <Icon name="plus" size={11} weight={2.6} />{t('workspace.addPane')}
           </button>
         </div>
       )}
     </section>
   );
 }
-
-const presets = ['grid', 'columns', 'focus', 'tabs', 'custom'] as const;
 
 export function Sidebar() {
   const { t } = useServices();
@@ -166,12 +164,13 @@ export function Sidebar() {
   return (
     <nav className="sidebar" aria-label={t('sidebar.workspacesHeader')} data-testid="sidebar">
       <div className="sidebar-search">
+        <Icon name="search" size={14} weight={2} />
         <input id={sidebarSearchId} type="search" placeholder={t('sidebar.searchPlaceholder')} aria-label={t('sidebar.searchPlaceholder')} value={search}
           onChange={(event) => setSearch(event.target.value)} />
       </div>
       <button type="button" className={'sidebar-entry' + (dashboard ? ' selected' : '')} title={t('dashboard.sidebarHelp')} data-testid="sidebar-dashboard"
         onClick={() => call(dashboard ? 'hideDashboard' : 'showDashboard')}>
-        <span className="sidebar-entry-tile" aria-hidden="true"><StatusGlyph tone="run" size={12} /></span>
+        <span className="sidebar-entry-tile" aria-hidden="true"><Icon name="layout-grid" size={12} weight={2.6} fill /></span>
         <span className="sidebar-entry-title">{t('phone.dashboard.title')}</span>
         <StatusCounts counts={entryCounts} />
       </button>
@@ -180,40 +179,38 @@ export function Sidebar() {
         <span className="sidebar-section-count">{shell.workspaces.length}</span>
         <span className="spacer" />
         <button type="button" className="icon-button" title={t('menu.openProject')} aria-label={t('menu.openProject')} onClick={() => call('pickFolder')}>
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4h4.5l1.2 1.6h7.3V13h-13zM8 7.5v4M6 9.5h4" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>
+          <Icon name="folder-plus" size={13} />
         </button>
         <button type="button" className="icon-button" title={t('remote.menu.connect')} aria-label={t('remote.menu.connect')} onClick={() => call('connectRemote')}>
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12v7H2zM5 13h6M8 10v3" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>
+          <Icon name="globe" size={13} />
         </button>
       </div>
       <div className="sidebar-list">
         {listed.length === 0 && (
-          <div className="sidebar-empty">
-            <div>{t(search.trim().length > 0 ? 'sidebar.noSearchResults' : 'dashboard.empty')}</div>
-            <button type="button" className="sidebar-open-folder" onClick={() => call('pickFolder')}>{t('sidebar.openFolder')}</button>
-          </div>
+          <div className="sidebar-empty">{t(search.trim().length > 0 ? 'sidebar.noSearchResults' : 'dashboard.empty')}</div>
         )}
         {listed.map((workspace) => (
           <WorkspaceGroup key={workspace.id} workspace={workspace} panes={panes} activeId={activeId} dashboard={dashboard}
             selected={!dashboard && snapshot.activeWorkspaceId === workspace.id} />
         ))}
       </div>
-      <div className="sidebar-layout">
-        <select aria-label={t('layout.mode.custom')} value={shell.layout?.mode ?? snapshot.layout} data-testid="layout-select"
-          onChange={(event) => call('applyLayoutPreset', { preset: event.target.value })}>
-          {presets.map((preset) => <option key={preset} value={preset}>{t('layout.mode.' + preset)}</option>)}
-        </select>
-      </div>
+      {/* With no workspace listed (none yet, or none matching the search) this is the sidebar's way in (M/WorkspaceView.swift:161-166). */}
+      {listed.length === 0 && (
+        <button type="button" className="sidebar-open-folder" data-testid="sidebar-open-folder" onClick={() => call('pickFolder')}>
+          <Icon name="folder-plus" size={14} />{t('sidebar.openFolder')}
+        </button>
+      )}
       <footer className="sidebar-footer">
+        <img className="sidebar-app-icon" src={appIcon} width={20} height={20} alt="" />
         <span className="sidebar-brand">
-          <span className="sidebar-brand-name">Mighty Claude</span> <BetaBadge />
+          <span className="sidebar-brand-line"><span className="sidebar-brand-name">Mighty Claude</span><BetaBadge /></span>
           <span className="sidebar-version mono">v{shell.version}</span>
         </span>
-        <button type="button" className="icon-button" title={t('menu.help')} aria-label={t('menu.help')} onClick={() => call('openHelp')}>?</button>
-        <button type="button" className="icon-button" title={t('sidebar.toggleTheme')} aria-label={t('sidebar.toggleTheme')} data-testid="theme-toggle"
-          onClick={() => call('setTheme', { theme: snapshot.theme === 'light' ? 'dark' : 'light' })}>{snapshot.theme === 'light' ? '☾' : '☀'}</button>
-        <button type="button" className="icon-button" title={t('settings.settingsWindowTitle')} aria-label={t('settings.settingsWindowTitle')} data-testid="sidebar-settings" onClick={() => call('openSettings')}>
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.2" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" strokeWidth="1.2" /></svg>
+        <button type="button" className="icon-button sidebar-footer-button" title={t('menu.help')} aria-label={t('menu.help')} onClick={() => call('openHelp')}><Icon name="circle-question-mark" size={15} /></button>
+        <button type="button" className="icon-button sidebar-footer-button" title={t('sidebar.toggleTheme')} aria-label={t('sidebar.toggleTheme')} data-testid="theme-toggle"
+          onClick={() => call('setTheme', { theme: snapshot.theme === 'light' ? 'dark' : 'light' })}><Icon name={snapshot.theme === 'light' ? 'moon' : 'sun'} size={15} /></button>
+        <button type="button" className="icon-button sidebar-footer-button" title={t('settings.settingsWindowTitle')} aria-label={t('settings.settingsWindowTitle')} data-testid="sidebar-settings" onClick={() => call('openSettings')}>
+          <Icon name="settings" size={15} />
         </button>
       </footer>
     </nav>

@@ -37,9 +37,21 @@ export function ensureTerminal(paneId: string, bridge: Bridge): TerminalEntry {
     event.preventDefault();
     return false;
   });
+  const applyTheme = (light: boolean) => {
+    const theme = light ? terminalThemes.light : terminalThemes.dark;
+    terminal.options.theme = theme;
+    // The padding round the terminal is the surface's own, so it takes the surface colour.
+    root.style.background = theme.background;
+  };
+  // The page's theme is the app's (<html data-theme>): the terminal follows it as it changes, as the Mac's Ghostty surface does.
+  const pageTheme = () => applyTheme(document.documentElement.dataset.theme === 'light');
+  pageTheme();
+  const themeWatch = new MutationObserver(pageTheme);
+  themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   const entry: TerminalEntry = {
     terminal, fit, root, opened: false, footerListeners: new Set(), send,
     dispose: () => {
+      themeWatch.disconnect();
       stop();
       for (const disposer of disposers) disposer.dispose();
       terminal.dispose();
@@ -71,13 +83,9 @@ export function ensureTerminal(paneId: string, bridge: Bridge): TerminalEntry {
         fitShown(entry);
         break;
       }
-      case 'theme': {
-        const theme = message.light ? terminalThemes.light : terminalThemes.dark;
-        terminal.options.theme = theme;
-        // The padding round the terminal is the surface's own, so it takes the surface colour.
-        root.style.background = theme.background;
+      case 'theme':
+        applyTheme(message.light);
         break;
-      }
       case 'footer':
         entry.footer = message.footer;
         for (const listener of entry.footerListeners) listener(message.footer);

@@ -129,7 +129,7 @@ export function Shell({ snapshot }: { snapshot: AppSnapshot | null }) {
         </div>
         <div className="detail">
           <Banners shell={shell} />
-          {header && <WorkspaceHeader header={header} counts={counts} />}
+          {header && <WorkspaceHeader header={header} counts={counts} layoutMode={shell.layout?.mode ?? snapshot.layout} />}
           <main className="shell-main">{main}</main>
           <StatusBar shell={shell} usageOpen={usageOpen} setUsageOpen={closeUsage} />
         </div>

@@ -11,6 +11,8 @@ import { TerminalView } from '../panes/terminal/TerminalView';
 import { ReferenceContext } from '../conversation/referenceClick';
 import type { ReferenceTarget } from '../conversation/references';
 import { ReferenceBubble, type ReferenceRequest } from './ReferenceBubble';
+import { Icon } from '../icons/Icon';
+import { useCall, useMenu, type MenuItem } from '../shell/parts';
 
 /** The header's clock, redrawn each second while the run is not finished (MW.Composer.cs RefreshElapsed). */
 function Clock({ session }: { session: RunSession }) {
@@ -25,6 +27,24 @@ function Clock({ session }: { session: RunSession }) {
   }, [running]);
   if (!timing) return null;
   return <span className="pane-clock" data-testid="pane-clock">{clockLabel(timing, now, t('dashboard.card.approximate'))}</span>;
+}
+
+/** The pane's ··· menu (M/SessionPaneView.swift paneMenu): rename, focus or back to the layout, a new conversation, close. */
+function PaneMenu({ session }: { session: RunSession }) {
+  const { bridge, t } = useServices();
+  const menu = useMenu();
+  const call = useCall();
+  const focused = useStoreState().shell?.layout?.mode === 'focus';
+  const items: MenuItem[] = [
+    { label: t('menu.rename'), action: () => call('renameSession', { id: session.id }) },
+    { label: t(focused ? 'pane.menu.restoreLayout' : 'menu.focusPane'), action: () => call('focusPane', { id: session.id, toggle: true }) },
+  ];
+  if (session.kind !== 'shell') items.push({ label: t('pane.menu.newConversation'), disabled: session.status === 'running' || !session.resumeId, action: () => void bridge.call('newConversation', { paneId: session.id }).catch(() => {}) });
+  items.push({ separator: true }, { label: t('menu.closePane'), action: () => call('closeSession', { id: session.id }) });
+  return (
+    <button type="button" className="icon-button pane-menu-button" title={t('pane.menu.accessibility')} aria-label={t('pane.menu.accessibility')} data-testid="pane-menu"
+      onClick={(event) => menu.under(event.currentTarget, items)}><Icon name="ellipsis" size={15} weight={2.6} /></button>
+  );
 }
 
 /**
@@ -61,20 +81,37 @@ export const PaneView = memo(function PaneView({ session }: { session: RunSessio
       {agent && <Composer key={'composer-' + session.id} session={session} />}
     </>
   );
+  const word = header?.word ?? t('session.state.' + session.status);
+  // A shell keeps the slim ink bar (M/PaneChrome.swift SlimPaneHeader): what it is, its state in a pill, its menu.
+  if (session.kind === 'shell') return (
+    <section className="pane pane-shell" data-session-id={session.id}>
+      <header className="pane-slim-header" data-testid="pane-slim-header">
+        <h1 className="visually-hidden" data-testid="pane-title">{session.title}</h1>
+        <span className="pane-slim-words">{t('dashboard.kind.shell') + (remote ? '' : ' · ' + t('phone.card.localTerminal'))}</span>
+        <span className="spacer" />
+        <span className="hero-status-pill" data-testid="pane-state">{word}</span>
+        <PaneMenu session={session} />
+      </header>
+      <TerminalView key={'terminal-' + session.id} session={session} fallback={body} />
+    </section>
+  );
+  // An agent's header (M/SessionPaneView.swift agentHeader): its state word in its ink, the figures in mono fading at the right,
+  // then the Default | Mighty switch and the pane's menu. The name is on the tab right above, so it is not said twice.
   return (
     <section className="pane" data-session-id={session.id}>
       <header className="pane-header">
-        <h1 className="pane-title" data-testid="pane-title">{session.title}</h1>
-        <span className={'pane-status tone-' + (header?.tone ?? 'idle')} data-testid="pane-state">{header?.word ?? t('session.state.' + session.status)}</span>
-        {header && (
-          <span className="pane-figures" data-testid="pane-figures" title={header.help}>
-            {header.timed && <Clock session={session} />}
-            {header.rest}
-          </span>
-        )}
-        {switchable && <ModeSwitch session={session} />}
+        <h1 className="visually-hidden" data-testid="pane-title">{session.title}</h1>
+        <span className={'pane-status tone-' + (header?.tone ?? 'idle')} data-testid="pane-state">{word}</span>
+        <span className="pane-figures" data-testid="pane-figures" title={header?.help}>
+          {header?.timed && <Clock session={session} />}
+          {header?.rest}
+        </span>
+        <span className="pane-header-controls">
+          {switchable && <ModeSwitch session={session} />}
+          <PaneMenu session={session} />
+        </span>
       </header>
-      {session.kind === 'shell' ? <TerminalView key={'terminal-' + session.id} session={session} fallback={body} /> : body}
+      {body}
     </section>
   );
 });

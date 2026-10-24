@@ -3,6 +3,7 @@ import { useServices } from '../app/context';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { clearUnsupported, contextLabel, unsupportedSettings, type MenuName, type MenuRow, type Pills, type RunSettingsInfo, type RunSettingsValues, type SessionInfo } from './menus';
 import { usePageOverlay } from '../shell/overlay';
+import { Icon, type IconName } from '../icons/Icon';
 
 /** A toolbar narrower than this folds effort, permission and Fast into one options menu (ArrangeComposer's overflow). */
 const narrowToolbar = 420;
@@ -131,6 +132,21 @@ function RunSettingsPopover({ paneId, info, close }: { paneId: string; info: Run
   );
 }
 
+/** The context ring (M/SessionInfoViews.swift SessionContextRing): a 2pt track, the used share in the accent (amber from 95%), the percent. */
+export function ContextRing({ percent, size }: { percent: number | null; size: number }) {
+  const r = (size - 2) / 2;
+  const length = 2 * Math.PI * r;
+  const share = percent === null ? 0 : Math.min(1, Math.max(0, percent / 100));
+  return (
+    <svg className={'context-ring-mark' + (percent !== null && percent >= 95 ? ' high' : '')} width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeOpacity={0.12} strokeWidth={2} />
+      {percent !== null && <circle className="context-ring-arc" cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={2} strokeLinecap="round"
+        strokeDasharray={`${share * length} ${length}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />}
+      <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" className="context-ring-text" fontSize={size > 32 ? 13 : 8.5}>{contextLabel(percent)}</text>
+    </svg>
+  );
+}
+
 function SessionInfoPopover({ info, close }: { info: SessionInfo; close: () => void }) {
   const { t } = useServices();
   const [shown, setShown] = useState(false);
@@ -143,7 +159,7 @@ function SessionInfoPopover({ info, close }: { info: SessionInfo; close: () => v
       </div>
       <div className="popover-body">
         <section className="session-info-context">
-          <span className="context-ring large" style={{ ['--percent' as string]: String(info.contextPercent ?? 0) }}>{contextLabel(info.contextPercent)}</span>
+          <span className="context-ring large"><ContextRing percent={info.contextPercent} size={44} /></span>
           <div><div className="popover-strong">{t('composer.sessionInfo.contextUsage')}</div><div className="popover-quiet">{info.context}</div></div>
         </section>
         <dl className="session-info-rows">
@@ -171,7 +187,7 @@ function SessionInfoPopover({ info, close }: { info: SessionInfo; close: () => v
  * the pane's actions) and the context ring (session info). Every list and every change is the host's; while the pane is busy
  * the pills are off, as in WinUI.
  */
-export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown }: { paneId: string; pills: Pills; busy: boolean; showUsage: boolean; onUsageShown: () => void }) {
+export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown, resumed = false }: { paneId: string; pills: Pills; busy: boolean; showUsage: boolean; onUsageShown: () => void; resumed?: boolean }) {
   const { bridge, t } = useServices();
   const [open, setOpen] = useState<Open>(null);
   const [narrow, setNarrow] = useState(false);
@@ -212,26 +228,36 @@ export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown }: { pane
     void bridge.call('composerMenuChoose', { paneId, menu: name, path }).catch(fail);
   };
 
+  // M/ComposerControls.swift ComposerPill: a glyph, the words and a small chevron on a white capsule; the accent while it is on.
   const pill = (name: MenuName, label: ReactNode, title: string, enabled = true, on = false) => (
-    <button type="button" className={'composer-pill' + (on ? ' on' : '')} data-pill={name} title={title} aria-haspopup="menu" disabled={busy || !enabled} onClick={() => void openMenu(name)}>{label}</button>
+    <button type="button" className={'composer-pill' + (on ? ' on' : '')} data-pill={name} title={title} aria-haspopup="menu" disabled={busy || !enabled} onClick={() => void openMenu(name)}>
+      {label}<Icon name="chevron-down" size={8} weight={3} className="pill-chevron" />
+    </button>
   );
+  const glyph = (name: IconName) => <Icon name={name} size={13} weight={1.75} className="pill-glyph" />;
 
   return (
     <div ref={host} className="composer-pills">
-      {pill('model', <><ProviderMark provider={pills.provider} size={13} /><span className="pill-text">{pills.model}</span></>, pills.modelTip)}
-      {!narrow && pills.showsEffort && pill('effort', <span className="pill-text">{pills.effort}</span>, pills.effortTip, pills.effortEnabled)}
-      {!narrow && pill('permission', <><span aria-hidden>{pills.unlocked ? '🔓' : '⛉'}</span><span className="pill-text">{pills.permission}</span></>, pills.permissionHelp, true, pills.unlocked)}
+      {pill('model', <><span className="pill-glyph"><ProviderMark provider={pills.provider} size={12} /></span><span className="pill-text">{pills.model}</span></>, pills.modelTip)}
+      {!narrow && pills.showsEffort && pill('effort', <>{glyph('brain')}<span className="pill-text">{pills.effort}</span></>, pills.effortTip, pills.effortEnabled)}
+      {!narrow && pill('permission', <>{glyph(pills.unlocked ? 'lock-open' : 'shield-half')}<span className="pill-text">{pills.permission}</span></>, pills.permissionHelp, true, pills.unlocked)}
       {!narrow && pills.showsFast && (
-        <button type="button" className={'composer-pill' + (pills.fast ? ' on' : '')} aria-pressed={pills.fast} title={t('composer.fast.tooltip')} disabled={busy || !pills.fastEnabled} onClick={() => void bridge.call('toggleFast', { paneId }).catch(fail)}>Fast</button>
+        <button type="button" className={'composer-pill' + (pills.fast ? ' on' : '')} aria-pressed={pills.fast} title={t('composer.fast.tooltip')} disabled={busy || !pills.fastEnabled} onClick={() => void bridge.call('toggleFast', { paneId }).catch(fail)}>
+          <Icon name="zap" size={13} weight={1.75} className="pill-glyph" fill={pills.fast} /><span className="pill-text">Fast</span>
+        </button>
       )}
       {narrow ? (
-        pill('options', <span className="pill-text">⋯</span>, t('composer.effort.label') + ' · ' + t('composer.label.permission') + ' · ' + t('settings.run.title'), true, pills.unlocked || pills.fast)
+        <button type="button" className={'composer-pill compact' + (pills.unlocked || pills.fast ? ' on' : '')} data-pill="options" aria-haspopup="menu" disabled={busy}
+          title={t('composer.effort.label') + ' · ' + t('composer.label.permission') + ' · ' + t('settings.run.title')} onClick={() => void openMenu('options')}><Icon name="sliders-horizontal" size={13} weight={1.75} /></button>
       ) : (
-        <button type="button" className={'composer-pill' + (pills.moreOn ? ' on' : '')} aria-label={t('composer.more')} title={t('settings.run.title')} disabled={busy} onClick={() => void openRunSettings()} onContextMenu={(event) => { event.preventDefault(); void openMenu('actions'); }}>⋯</button>
+        <button type="button" className={'composer-pill compact' + (pills.moreOn ? ' on' : '')} aria-label={t('composer.more')} title={t('settings.run.title')} disabled={busy} onClick={() => void openRunSettings()} onContextMenu={(event) => { event.preventDefault(); void openMenu('actions'); }}><Icon name="ellipsis" size={14} weight={2.4} /></button>
       )}
-      <button type="button" className="context-ring" data-testid="context-ring" style={{ ['--percent' as string]: String(pills.contextPercent ?? 0) }} aria-label={t('composer.sessionInfo.title') + ' · ' + contextLabel(pills.contextPercent)} title={t(pills.contextPercent === null ? 'composer.context.unavailable' : 'composer.context.tooltip')} data-high={pills.contextPercent !== null && pills.contextPercent >= 95 ? '' : undefined} onClick={() => void openSessionInfo()}>
-        {contextLabel(pills.contextPercent)}
-      </button>
+      <span className="composer-pills-end">
+        {resumed && <span className="composer-resume" title={t('composer.resume.help')} aria-label={t('composer.resume.name')}><Icon name="split" size={13} weight={1.75} /></span>}
+        <button type="button" className="context-ring" data-testid="context-ring" aria-label={t('composer.sessionInfo.title') + ' · ' + contextLabel(pills.contextPercent)} title={t(pills.contextPercent === null ? 'composer.context.unavailable' : 'composer.context.tooltip')} data-high={pills.contextPercent !== null && pills.contextPercent >= 95 ? '' : undefined} onClick={() => void openSessionInfo()}>
+          <ContextRing percent={pills.contextPercent} size={24} />
+        </button>
+      </span>
       {problem && <span className="composer-pill-problem" role="alert">{problem}</span>}
       {open?.kind === 'menu' && (
         <div ref={menuRef} className="composer-popover composer-menu" role="menu" data-menu={open.name} data-page-overlay="">

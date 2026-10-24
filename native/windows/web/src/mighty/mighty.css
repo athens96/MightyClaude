@@ -3,9 +3,9 @@
 .mighty-bar { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-sm) var(--space-lg); border-bottom: var(--stroke-line) solid var(--line); background: var(--card); min-width: 0; }
 .mighty-header { font-size: var(--type-title); font-weight: 700; color: var(--ink); white-space: nowrap; }
 .mighty-summary { flex: 1; min-width: 0; font-size: var(--type-small); color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mighty-switch { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--radius-row); background: var(--track); }
-.mighty-switch button { height: 20px; padding: 0 var(--space-md); border: 0; border-radius: var(--radius-segment); background: transparent; color: var(--ink2); font-size: var(--type-pill); font-weight: 600; cursor: pointer; }
-.mighty-switch button.on { background: var(--card-raised); color: var(--ink); box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent); }
+.mighty-switch { display: inline-flex; flex: none; gap: 2px; padding: 2px; border-radius: var(--radius-row); background: var(--segment-track); }
+.mighty-switch button { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 var(--space-md); border: 0; border-radius: var(--radius-segment); background: transparent; color: var(--ink2); font-size: var(--type-pill); font-weight: 600; cursor: default; white-space: nowrap; }
+.mighty-switch button.on { background: var(--segment-on); color: var(--ink); box-shadow: 0 1px 1px rgba(0, 0, 0, .12); }
 .mighty-icon { min-width: 22px; height: 22px; padding: 0 4px; border: 0; border-radius: var(--radius-segment); background: transparent; color: var(--ink2); cursor: pointer; font-size: var(--type-body); line-height: 1; }
 .mighty-icon:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .mighty-icon:disabled { color: var(--ink3); cursor: default; }

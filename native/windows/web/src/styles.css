@@ -13,13 +13,24 @@ body {
 .status-dot.status-idle { background: var(--idle); }
 
 .pane { display: flex; flex-direction: column; height: 100%; background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-pane); overflow: hidden; }
-.pane-header { display: flex; align-items: baseline; gap: var(--space-md); padding: var(--space-md) var(--inset-pane-header-trailing) var(--space-md) var(--inset-pane-header-leading); border-bottom: var(--stroke-line) solid var(--line); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* M/SessionPaneView.swift agentHeader: one Layout.paneHeader line, the word, the fading figures, the switch and the menu. */
+.pane-header {
+  flex: none; display: flex; align-items: center; gap: var(--space-sm); height: var(--layout-pane-header);
+  padding: 0 var(--inset-pane-header-trailing) 0 var(--inset-pane-header-leading); border-bottom: var(--stroke-line) solid var(--line); background: var(--card);
+}
 .pane-title { margin: 0; font-family: var(--font-heading); font-size: var(--type-header); font-weight: 600; }
-.pane-status { color: var(--ink2); font-size: var(--type-state); font-weight: 600; }
-.pane-status.tone-run { color: var(--run); }
+.pane-status { flex: none; color: var(--ink2); font-size: var(--type-state); font-weight: 600; white-space: nowrap; }
+.pane-status.tone-run { color: var(--accent); }
 .pane-status.tone-wait { color: var(--wait-text); }
 .pane-status.tone-done { color: var(--done-text); }
 .pane-status.tone-err { color: var(--err-text); }
 .pane-status.tone-stop { color: var(--stop-text); }
 .pane-figures { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; font-family: var(--font-mono); font-size: var(--type-mono); color: var(--ink2);
   mask-image: linear-gradient(to left, transparent, black 18px); }
+.pane-header-controls { flex: none; display: inline-flex; align-items: center; gap: var(--space-sm); padding-left: var(--space-xs); color: var(--ink2); }
+.pane-menu-button { width: 22px; height: 24px; min-width: 22px; padding: 0; color: inherit; }
+.pane-shell { padding: 0; }
+.pane-shell .pane-slim-header { gap: var(--space-md); }
+.pane-shell .pane-menu-button { color: var(--on-status); }
+.hero-status-pill { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 var(--space-md); border: 1.5px solid currentColor; border-radius: 9px; font-size: var(--type-pill); font-weight: 700; white-space: nowrap; }

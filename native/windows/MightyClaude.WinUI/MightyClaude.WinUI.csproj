@@ -72,6 +72,7 @@
     <Content Include="../../licenses/zstd-LICENSE" Link="ThirdPartyLicenses/zstd-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../licenses/Win2D-LICENSE" Link="ThirdPartyLicenses/Win2D-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../licenses/QRCoder-LICENSE" Link="ThirdPartyLicenses/QRCoder-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/lucide-LICENSE" Link="ThirdPartyLicenses/lucide-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- The web shell (WebShell.cs, the window's front end unless the state folder holds ui-winui): native/windows/web is built to dist/ before the build when its
        sources, the shared locales or the design tokens changed (Inputs/Outputs), npm ci first only on a fresh checkout,
