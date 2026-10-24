@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Icon } from '../icons/Icon';
 import { useServices, useStoreState } from '../app/context';
 import { Markdown } from '../conversation/MarkdownView';
 import { moveFocus, restoreIndex } from './keys';
@@ -209,7 +210,7 @@ function Permission({ card, call }: { card: PermissionCard; call: Call }) {
   return (
     <div className="wait-card" data-card="permission" data-request-id={card.requestId}>
       <div className="wait-card-title">
-        <Badge>✋</Badge>
+        <Badge><Icon name="hand" size={12} weight={2.2} fill /></Badge>
         <strong className="card-title">{card.title}</strong>
         <span className="card-tool">{card.tool}</span>
         {card.waiting && <span className="card-waiting">{card.waiting}</span>}
@@ -373,12 +374,12 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
   return (
     <div className="wait-card" data-card="plan" data-request-id={card.requestId}>
       <div className="wait-card-title">
-        <Badge>☰</Badge>
+        <Badge><Icon name="clipboard-list" size={13} weight={2.4} /></Badge>
         <strong className="card-title">{t('plan.card.title')}</strong>
         <span className="card-waiting">{card.received}</span>
         <span className="card-spacer" />
         {card.count > 1 && <span className="card-waiting">{t('phone.questionnaire.waiting', { count: card.count })}</span>}
-        {!card.actionsOnly && <button type="button" className="card-button" data-answer="plan-expand" onClick={() => setFull(true)}>{t('plan.card.expand')}</button>}
+        {!card.actionsOnly && <button type="button" className="card-button with-icon" data-answer="plan-expand" onClick={() => setFull(true)}><Icon name="maximize-2" size={13} weight={2} />{t('plan.card.expand')}</button>}
       </div>
       {!card.actionsOnly && <div className="plan-document" data-testid="plan-text"><Markdown text={card.plan} /></div>}
       {revising && (
@@ -391,8 +392,9 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
         </div>
       )}
       {card.error && <div className="card-error" role="alert">{card.error}</div>}
-      <div className="card-hint-row">{card.sending && <span className="card-spinner" aria-hidden="true" />}<span className="card-hint">{t('plan.card.hint')}</span></div>
+      {/* M/PlanApprovalCard.swift PlanActions: the hint, then the four answers at the right, on one line where they fit. */}
       <div className="plan-answers">
+        <span className="card-hint-row">{card.sending && <span className="card-spinner" aria-hidden="true" />}<span className="card-hint">{t('plan.card.hint')}</span></span>
         {tile('plan.card.cancel', 'cancel')}
         {tile('plan.card.revise', null)}
         {tile('plan.card.approveConfirm', 'approveConfirm')}
@@ -421,7 +423,7 @@ function Antigravity({ card, call }: { card: AntigravityCard; call: Call }) {
   const shown = reason ?? card.reason;
   return (
     <div className="wait-card" data-card="antigravity">
-      <div className="wait-card-title"><Badge>✋</Badge><strong className="card-title">{t('antigravity.permission.title')}</strong></div>
+      <div className="wait-card-title"><Badge><Icon name="hand" size={12} weight={2.2} fill /></Badge><strong className="card-title">{t('antigravity.permission.title')}</strong></div>
       <div className="card-hint">{t('antigravity.permission.subtitle')}</div>
       <div className="card-details">
         {card.actions.map((action, index) => (

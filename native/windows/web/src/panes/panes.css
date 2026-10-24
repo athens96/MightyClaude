@@ -25,9 +25,9 @@
 .files-row[aria-selected="true"] { background: var(--accent-soft); }
 .files-tree:focus-visible .files-row[aria-selected="true"] { box-shadow: inset 0 0 0 var(--stroke-focus) var(--accent); }
 .files-row.noise { opacity: 0.55; }
-.files-chevron { flex: none; width: 10px; text-align: center; font-size: 9px; color: var(--ink2); }
-.files-symbol { flex: none; width: 14px; height: 14px; fill: none; stroke: var(--ink2); stroke-width: 1.1; stroke-linejoin: round; }
-.files-symbol-folder { stroke: var(--accent); }
+.files-chevron { flex: none; display: inline-grid; place-items: center; width: 10px; color: var(--ink2); }
+.files-symbol { flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; color: var(--ink2); }
+.files-symbol-folder { color: var(--accent); }
 .files-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .files-link { color: var(--ink3); font-size: var(--type-small); }
 .files-row-path { min-width: 48px; flex: 1; font-family: var(--font-mono); font-size: var(--type-badge); color: var(--ink3); }
@@ -36,7 +36,7 @@
 .files-note { padding: var(--space-sm) var(--space-md); font-size: var(--type-small); color: var(--ink2); }
 .files-preview-column { flex: 1; min-width: 160px; display: flex; flex-direction: column; min-height: 0; }
 .files-preview-head { flex: none; display: flex; align-items: center; gap: var(--space-sm); height: var(--layout-preview-head); padding: 0 var(--space-lg); background: var(--subtle); border-bottom: var(--stroke-line) solid var(--line); }
-.files-preview-head .files-symbol { stroke: var(--accent); }
+.files-preview-head .files-symbol { color: var(--accent); }
 .files-preview-names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .files-preview-title { font-size: var(--type-block); font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files-preview-path { font-family: var(--font-mono); font-size: var(--type-small); color: var(--ink2); }
@@ -98,3 +98,5 @@
 .browser-notice p { max-width: 380px; margin: 0; }
 .browser-notice svg { width: 36px; height: 36px; fill: none; stroke: currentColor; stroke-width: 1.2; }
 .browser-install-failed { color: var(--err-text); }
+/* The rendered page draws inline code in plain mono, as the Mac's Markdown view does (the conversation's accent chips are its transcript's). */
+.files-preview-body .md-code { color: var(--ink); background: transparent; padding: 0; }

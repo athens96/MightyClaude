@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Icon, type IconName } from '../icons/Icon';
 import { useServices } from '../app/context';
 import { Entry } from '../conversation/Entry';
 import { HeightCache, estimateHeight, layout, nearBottom, visibleRange } from '../conversation/virtual';
@@ -137,11 +138,35 @@ function Bars() {
   return <span className="mighty-bars" aria-hidden="true">{[0, 1, 2, 3].map((i) => <span key={i} style={{ animationDelay: `${-(i / 5) * 1.6}s` }} />)}</span>;
 }
 
+/** The bolt a running block shows where its bars would move (M/MightyGraphActivityView.swift, Reduce Motion). */
+const Bolt = ({ className }: { className?: string }) => <span className={'mighty-glyph tone-run ' + (className ?? '')} aria-hidden="true"><Icon name="zap" size={11} weight={0} fill /></span>;
+
 function Indicator({ kind }: { kind: string }) {
-  if (kind === 'animating') return <Bars />;
-  if (kind === 'static') return <svg className="mighty-glyph tone-run" viewBox="0 0 12 12" aria-hidden="true"><path d="M7 0 1 7h4l-1 5 6-7H6z" fill="currentColor" /></svg>;
-  if (kind === 'waiting') return <svg className="mighty-glyph tone-wait" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" /><path d="M4.5 3.5v5M7.5 3.5v5" stroke="currentColor" /></svg>;
+  // Under reduced motion the page draws the bolt in the bars' place, as the Mac does.
+  if (kind === 'animating') return <><Bars /><Bolt className="mighty-bolt-still" /></>;
+  if (kind === 'static') return <Bolt />;
+  if (kind === 'waiting') return <span className="mighty-glyph tone-wait" aria-hidden="true"><Icon name="circle-pause" size={13} weight={1.75} /></span>;
   return null;
+}
+
+/** Each block's symbol and its tint (M/MightyGraphView.swift: the request's arrow message, 실행's gears, an agent's card, a task's terminal…). */
+function blockSymbol(kind: string, tone: string): IconName {
+  switch (kind) {
+    case 'request': return 'message-square-share';
+    case 'work': return 'cog';
+    case 'agent': return 'square-user-round';
+    case 'task': return 'square-terminal';
+    case 'steer': return 'message-square-text';
+    case 'compact': return 'shrink';
+    case 'question': return 'message-circle-question-mark';
+    case 'result': return tone === 'err' ? 'triangle-alert' : tone === 'stop' ? 'circle-stop' : 'badge-check';
+    case 'plan': case 'planRecord': return 'clipboard-list';
+    case 'draft': return 'pencil';
+    case 'resultFiles': return 'files';
+    case 'images': return 'image';
+    case 'execution': return 'cog';
+    default: return 'square';
+  }
 }
 
 /** The running or waiting edge over a card (MightyGraphActivity): dashes fitted to its outline, marching once per period. */
@@ -305,7 +330,7 @@ export const Block = memo(function Block(props: BlockProps) {
       data-block-id={id} data-kind={kind} data-renders={renders.current} data-changed={changed} data-visible={props.visible ? '1' : '0'}
       style={{ left: x, top: y, width: w, height: h }} title={copy?.fromRecord ? t('graph.history.tag') : undefined}>
       <div className="mighty-head">
-        <span className={'mighty-symbol kind-' + kind} aria-hidden="true" />
+        <span className={'mighty-symbol kind-' + kind} aria-hidden="true"><Icon name={blockSymbol(kind, tone)} size={14} weight={1.75} /></span>
         <span className="mighty-title">
           {copy?.provider && <ProviderMark provider={copy.provider} size={12} />}
           {copy?.title ?? ''}
@@ -326,8 +351,8 @@ export const Block = memo(function Block(props: BlockProps) {
               aria-pressed={expanded} onClick={() => actions.toggleExpand(id, !expanded)}>☰</button>
           )}
           {resizable && !extra.fitted && (
-            <button className="mighty-icon" data-expand="" title={t(expanded ? 'graph.block.collapse' : 'graph.block.expand')}
-              onClick={() => actions.toggleExpand(id, !expanded)}>{expanded ? '−' : '+'}</button>
+            <button className="mighty-icon" data-expand="" title={t(expanded ? 'graph.block.collapse' : 'graph.block.expand')} aria-label={t(expanded ? 'graph.block.collapse' : 'graph.block.expand')}
+              onClick={() => actions.toggleExpand(id, !expanded)}><Icon name={expanded ? 'fold-vertical' : 'unfold-vertical'} size={14} weight={1.75} /></button>
           )}
         </span>
       </div>
@@ -337,7 +362,7 @@ export const Block = memo(function Block(props: BlockProps) {
       {resizable && (
         <>
           <div className="mighty-grip" title={t('graph.block.resize')} onPointerDown={(e) => actions.startResize(id, BottomRight, e)}
-            onDoubleClick={() => actions.resetSize(id)} onContextMenu={(e) => { e.preventDefault(); actions.resetSize(id); }} />
+            onDoubleClick={() => actions.resetSize(id)} onContextMenu={(e) => { e.preventDefault(); actions.resetSize(id); }}><Icon name="move-diagonal-2" size={11} weight={2} /></div>
         </>
       )}
     </div>

@@ -55,6 +55,9 @@ public sealed partial class MainWindow
             var shell = webShell ?? throw new InvalidOperationException("the help capture draws the web shell; the profile holds ui-winui");
             var core = await shell.Started ?? throw new InvalidOperationException("WebView2 did not start");
             if (!await HelpUntil(core, "!!document.querySelector('[data-testid=shell]')", 30)) throw new InvalidOperationException("the page did not mount");
+            // Still pictures, as the Mac's CI capture draws them: the page's reduced-motion rules (a still bolt for the moving
+            // bars, solid outlines for the marching ones, no turning spark).
+            await core.CallDevToolsProtocolMethodAsync("Emulation.setEmulatedMedia", "{\"features\":[{\"name\":\"prefers-reduced-motion\",\"value\":\"reduce\"}]}");
             var ordered = list.OfType<JsonObject>().Where(s => (string?)s["screen"] == "welcome").Concat(list.OfType<JsonObject>().Where(s => (string?)s["screen"] != "welcome"));
             HelpDemo? demo = null; string? seedError = null;
             foreach (var shot in ordered)
@@ -163,7 +166,7 @@ public sealed partial class MainWindow
                 WorkspaceId = demo.Workspaces[HelpText(pane["workspace"])], Kind = (string?)pane["kind"] ?? "claude", Provider = (string?)pane["provider"] ?? "claude",
                 Model = (string?)pane["model"] ?? "default", Title = (string?)pane["title"] ?? role, TitleMode = "fixed",
                 Settings = new((string?)pane["effort"] ?? "default", (string?)pane["permissionMode"] ?? "manual"),
-                AgentViewMode = (string?)pane["view"] == "mighty" ? "mighty" : null,
+                AgentViewMode = (string?)pane["view"] == "mighty" ? "mighty" : null, Draft = (string?)pane["draft"] ?? "",
             };
             demo.Panes[role] = session.Id; sessions.Add(session);
         }
@@ -211,9 +214,11 @@ public sealed partial class MainWindow
             {
                 if (!demo.Panes.ContainsValue(session.Id)) return session;
                 var spec = panes.First(p => demo.Panes[HelpText(p["role"])] == session.Id);
-                return session with { RunTiming = timings.GetValueOrDefault(session.Id, session.RunTiming!), Draft = (string?)spec["draft"] ?? "" };
+                return session with { RunTiming = timings.GetValueOrDefault(session.Id, session.RunTiming!) };
             }).ToList(),
         });
+        // The drafts as typed, so each composer's own rules (send or queue) see them too.
+        foreach (var pane in panes) if ((string?)pane["draft"] is { Length: > 0 } draft) await HelpDraft(demo.Panes[HelpText(pane["role"])], draft);
         foreach (var layout in demo.Layouts)
         {
             await SelectWorkspace(demo.Workspaces[HelpText(layout["workspace"])]);
@@ -246,7 +251,7 @@ public sealed partial class MainWindow
         Task Type(string text) => pane.HandleTerminalMessage(JsonSerializer.Serialize(new { type = "input", text }));
         var program = command.Split(' ')[0];
         await Type(Path.GetFileNameWithoutExtension(PseudoTerminal.DefaultShell).Equals("powershell", StringComparison.OrdinalIgnoreCase)
-            ? $"function global:prompt {{ '{name} > ' }}; function global:{program} {{ [Console]::Write([IO.File]::ReadAllText('{file.Replace("'", "''")}')) }}; Clear-Host\r"
+            ? $"Remove-Module PSReadLine -ErrorAction SilentlyContinue; function global:prompt {{ '{name} > ' }}; function global:{program} {{ [Console]::Write([IO.File]::ReadAllText('{file.Replace("'", "''")}')) }}; Clear-Host\r"
             : $"prompt {name} $G $S& doskey {program}=type \"{file}\"& cls\r");
         await Task.Delay(1200);
         await Type(command + "\r");
@@ -263,8 +268,9 @@ public sealed partial class MainWindow
             if (!demo.Panes.TryGetValue(HelpText(pane["role"]), out var id) || service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { } session) continue;
             var draft = (string?)pane["draft"] ?? "";
             var mode = (string?)pane["view"] == "mighty" ? "mighty" : null;
-            if (session.Draft != draft || session.AgentViewMode != mode || session.GraphViewMode is not null)
-                await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Draft = draft, AgentViewMode = mode, GraphViewMode = null } : p).ToList() });
+            if (session.AgentViewMode != mode || session.GraphViewMode is not null)
+                await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { AgentViewMode = mode, GraphViewMode = null } : p).ToList() });
+            if (session.Draft != draft) await HelpDraft(id, draft);
         }
         var active = (string?)demo.Profile["activeWorkspace"] ?? "";
         if (demo.Layouts.FirstOrDefault(l => (string?)l["workspace"] == active) is { } layout)
@@ -337,8 +343,9 @@ public sealed partial class MainWindow
                 var role = screen switch { "agent-basic" => "codex", "plan-card" => "plan", "question-card" => "question", "permission-card" => "permission", "terminal-pane" => "shell", _ => "mighty" };
                 var id = demo.Pane(role);
                 CheckHelpScreen(screen, id, demo);
-                if (screen == "agent-mighty") await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Draft = "" } : p).ToList() });
                 await SelectLayoutSession(id); await ApplyLayoutPreset("focus");
+                // The diagram aims at the next-request block while a draft is typed; the Mac's capture empties it for this screen.
+                if (screen == "agent-mighty") { await Task.Delay(400); await HelpDraft(id, ""); }
                 await Task.Delay(screen == "agent-mighty" ? 1500 : 900);
                 return new();
             }
@@ -355,14 +362,16 @@ public sealed partial class MainWindow
             {
                 var workspace = demo.Workspaces[HelpText(demo.Profile["activeWorkspace"])];
                 await OpenFilePane(workspace);
+                // The files pane on its own first: a change of layout draws the pane again, which would drop a selection made before it.
+                var paneId = service.Snapshot.ActiveSessionId;
+                await ApplyLayoutPreset("focus"); await Task.Delay(500);
                 if (!await HelpUntil(core, "!!document.querySelector('.pane-slot.active:not(.hidden) [data-testid=files-tree]')", 10)) throw new InvalidOperationException("the files pane did not open");
                 static string Click(string name) => "(() => { const row = [...document.querySelectorAll('.pane-slot.active:not(.hidden) [data-testid=files-tree] [data-path]')].find(e => e.dataset.path === " + JsonSerializer.Serialize(name) + "); if (!row) return false; row.click(); return true; })()";
                 if (!await HelpUntilClick(core, Click("src"))) throw new InvalidOperationException("the files tree has no src folder");
                 await Task.Delay(600);
                 if (!await HelpUntilClick(core, Click("README.md"))) throw new InvalidOperationException("the files tree has no README.md");
-                if (!await HelpUntil(core, "!!document.querySelector('.pane-slot.active:not(.hidden) [data-testid=files-preview]')", 10)) throw new InvalidOperationException("the README preview did not show");
-                var paneId = service.Snapshot.ActiveSessionId;
-                await ApplyLayoutPreset("focus"); await Task.Delay(700);
+                if (!await HelpUntil(core, "!!document.querySelector('.pane-slot.active:not(.hidden) [data-testid=files-preview] .markdown')", 10)) throw new InvalidOperationException("the README preview did not show");
+                await Task.Delay(500);
                 return new(Cleanup: async () =>
                 {
                     if (paneId is not null && service.Snapshot.Sessions.Any(s => s.Id == paneId && s.Kind != "claude" && s.Kind != "shell")) await CloseSession(paneId);
@@ -375,6 +384,16 @@ public sealed partial class MainWindow
             default:
                 throw new InvalidOperationException("unknown screen " + screen);
         }
+    }
+
+    /// <summary>A pane's draft as typed in its composer: the page's editor and the composer's own rules (send, queue) both see it.</summary>
+    private async Task HelpDraft(string id, string text)
+    {
+        if (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { Kind: "claude" or "shell" }) return;
+        WebPane(id).WebSetDraft(text, save: true);
+        // A composer the page already shows keeps its own editor's text: it is typed there as well, through the editor's input event.
+        if (webShell is not null && await webShell.Started is { } core)
+            await core.ExecuteScriptAsync("(() => { const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; for (const e of document.querySelectorAll('[data-session-id=\"" + id + "\"] [data-testid=composer-input]')) { set.call(e, " + JsonSerializer.Serialize(text) + "); e.dispatchEvent(new Event('input', { bubbles: true })); } })()");
     }
 
     /// <summary>Checks that the seeded pane is in the state the screen is meant to show, as the Mac's capture does.</summary>

@@ -1,5 +1,10 @@
 /* The cards over the composer (spec §4) and the status line in it (spec §5); colours and metrics are the design tokens. */
-.cards { display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-sm) var(--space-md) 0; background: var(--card-raised); max-height: 60vh; overflow-y: auto; }
+/* Over the composer the cards take what they need first; the conversation gets the rest, and where even that is short a wait
+   card gives up its document's height before its answers (M/SessionPaneView.swift: the transcript yields to the card). */
+.cards { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-sm) var(--space-md) 0; background: var(--card); max-height: 60vh; overflow-y: auto; }
+.cards > * { flex: none; }
+.cards > .card-host { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.card-host > .wait-card { flex: 0 1 auto; min-height: 0; }
 .card-spacer { flex: 1; }
 .card-hint { flex: 1; font-size: 11px; color: var(--ink2); }
 .card-hint-row { display: flex; align-items: center; gap: var(--space-sm); }
@@ -18,7 +23,7 @@
 }
 .wait-card-title { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
 .wait-card-footer { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
-.card-badge { width: 22px; height: 22px; border-radius: 11px; background: var(--wait); color: var(--on-wait); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex: none; }
+.card-badge { width: 22px; height: 22px; border-radius: 11px; background: var(--wait); color: var(--on-wait); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; flex: none; }
 .card-title { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-tool { flex: 1; font-family: var(--font-mono); font-size: 11.5px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-headline { font-size: 14px; font-weight: 700; user-select: text; }
@@ -32,8 +37,9 @@
 .card-rule { font-family: var(--font-mono); font-size: 10px; color: var(--ink2); user-select: text; }
 .card-path { font-size: 10px; }
 
+/* M/PaneChrome.swift PaneCardButtonStyle: 12 bold, 24 high, padded 12, radius 9; raised with the line, ink when prominent, accent for the one primary answer. */
 .card-button {
-  height: 28px; padding: 0 var(--space-md); border-radius: var(--radius-card-button); font: inherit; font-size: 12px; font-weight: 700; cursor: default;
+  min-height: 24px; padding: 0 var(--space-lg); border-radius: var(--radius-card-button); font: inherit; font-size: 12px; font-weight: 700; white-space: nowrap; cursor: default;
   background: var(--card-raised); color: var(--ink); border: var(--stroke-line) solid var(--line);
 }
 .card-button.prominent { background: var(--ink); color: var(--card); border: 0; }
@@ -72,10 +78,16 @@
 .question-words span { font-size: 11.5px; color: var(--ink2); }
 
 /* The plan card (PlanCard.cs): the plan on the raised page, then the four answers, the accent one last. */
-.plan-document { background: var(--card-raised); border-radius: var(--radius-entry); padding: var(--space-sm) var(--space-md); max-height: 260px; overflow-y: auto; min-height: 40px; user-select: text; }
+.plan-document { flex: 0 1 auto; background: var(--card-raised); border-radius: var(--radius-entry); padding: var(--space-sm) var(--space-md); max-height: 260px; overflow-y: auto; min-height: 40px; user-select: text; }
+.wait-card > :not(.plan-document) { flex: none; }
 .plan-revise { display: flex; flex-direction: column; gap: var(--space-sm); }
 .plan-revise-actions { display: flex; justify-content: flex-end; gap: var(--space-sm); }
-.plan-answers { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.plan-answers { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--space-sm); }
+.plan-answers .card-hint-row { flex: 1 1 auto; min-width: 0; }
+.plan-answers .card-hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-button.with-icon { display: inline-flex; align-items: center; gap: var(--space-xs); }
+.plan-document .md-code { color: var(--ink); background: transparent; padding: 0; }
+.plan-document ol.md-list > .md-item::before { color: var(--ink2); }
 .card-dialog { position: fixed; inset: 0; background: color-mix(in srgb, var(--ink) 30%, transparent); display: flex; align-items: center; justify-content: center; z-index: 20; }
 .card-dialog-body { width: min(860px, 92vw); height: min(680px, 88vh); display: flex; flex-direction: column; gap: var(--space-md); background: var(--card); border-radius: var(--radius-composer); padding: var(--space-lg); color: var(--ink); }
 .card-dialog-title { display: flex; gap: var(--space-sm); align-items: baseline; }
@@ -144,3 +156,4 @@
 .status-trust-command { font-family: var(--font-mono); background: var(--track); border-radius: var(--radius-segment); padding: var(--space-sm); user-select: text; }
 .status-trust-answers { display: flex; gap: var(--space-sm); align-items: center; }
 .status-trust-note { font-size: 10px; color: var(--ink3); }
+.question-kind .card-waiting { font-size: var(--type-small); }

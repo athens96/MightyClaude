@@ -43,7 +43,21 @@
 .menu-separator { height: var(--stroke-line); margin: var(--space-xs) 0; background: var(--line); }
 .menu-nested { padding-left: var(--space-md); }
 
-.run-settings, .session-info { width: 360px; display: flex; flex-direction: column; }
+.run-settings { width: 360px; display: flex; flex-direction: column; }
+/* The session details (M/SessionInfoViews.swift): 370 wide, 14 padded, 10 between the header and the body. */
+.session-info { width: 370px; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--radius-block); }
+.session-info .popover-body { padding: 0; gap: var(--space-sm); }
+.session-info-header { display: flex; align-items: center; gap: var(--space-sm); height: 32px; }
+.session-info-heading strong { font-size: 14px; font-weight: 600; }
+.session-info-heading .popover-quiet { display: inline-flex; align-items: center; gap: var(--space-sm); }
+.session-info-state { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: var(--type-small); color: var(--ink2); white-space: nowrap; }
+.session-info-state .status-dot { width: 6px; height: 6px; }
+.popover-body .session-info-context { padding: var(--space-md); gap: var(--space-md); border-bottom: 0; border-radius: var(--radius-entry); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.session-info-context-title { font-size: 12px; font-weight: 600; }
+.session-info-divider { height: 1px; background: var(--line); }
+.session-info-scope { font-size: var(--type-pill); font-weight: 600; }
+.session-info-foot { font-size: var(--type-small); color: var(--ink3); display: flex; flex-direction: column; gap: var(--space-xxs); }
+.session-info-disclosure { display: inline-flex; align-items: center; gap: var(--space-xs); border: 0; padding: 0; background: transparent; color: var(--ink2); font: inherit; font-size: var(--type-pill); cursor: default; }
 .popover-header { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-lg); border-bottom: var(--stroke-line) solid var(--line); }
 .popover-header strong { flex: 1; font-size: 14px; }
 .popover-body { display: flex; flex-direction: column; gap: var(--space-md); padding: var(--space-lg); }
@@ -69,11 +83,12 @@
 .session-info-heading { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .session-info-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popover-body .session-info-context { flex-direction: row; align-items: center; }
-.session-info-rows { margin: 0; display: flex; flex-direction: column; gap: var(--space-xxs); }
-.session-info-row { display: flex; gap: var(--space-md); font-size: var(--type-pill); }
-.session-info-row dt { color: var(--ink2); min-width: 110px; }
-.session-info-row dd { margin: 0; overflow-wrap: anywhere; }
-.session-info-row.row-path dd { color: var(--ink2); font-family: var(--font-mono); font-size: var(--type-small); }
+.session-info-rows { margin: 0; display: flex; flex-direction: column; gap: var(--space-sm); }
+.session-info-row { display: flex; justify-content: space-between; gap: var(--space-md); font-size: var(--type-pill); }
+.session-info-row dt { color: var(--ink2); flex: none; }
+.session-info-row dd { margin: 0; overflow-wrap: anywhere; text-align: right; }
+.session-info-row.token dd { font-family: var(--font-mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+.session-info-row.row-path dd { color: var(--ink2); font-family: var(--font-mono); font-size: var(--type-small); text-align: left; }
 .selectable { user-select: text; }
 .status-dot.tone-run { background: var(--run); }
 .status-dot.tone-done { background: var(--done); }

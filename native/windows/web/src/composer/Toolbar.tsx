@@ -3,6 +3,7 @@ import { useServices } from '../app/context';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { clearUnsupported, contextLabel, unsupportedSettings, type MenuName, type MenuRow, type Pills, type RunSettingsInfo, type RunSettingsValues, type SessionInfo } from './menus';
 import { usePageOverlay } from '../shell/overlay';
+import { BetaBadge } from '../shell/parts';
 import { Icon, type IconName } from '../icons/Icon';
 
 /** A toolbar narrower than this folds effort, permission and Fast into one options menu (ArrangeComposer's overflow). */
@@ -153,30 +154,33 @@ function SessionInfoPopover({ info, close }: { info: SessionInfo; close: () => v
   const ref = usePopover(close);
   return (
     <div ref={ref} className="composer-popover session-info" data-testid="session-info" data-page-overlay="" role="dialog" aria-label={t('composer.sessionInfo.title')}>
-      <div className="popover-header">
+      {/* M/SessionInfoViews.swift SessionInfoView: the mark, the title over the agent, the state at the right. */}
+      <div className="session-info-header">
         <ProviderMark provider={info.provider} size={20} />
-        <div className="session-info-heading"><strong title={info.title}>{info.title}</strong><span className="popover-quiet"><span className={'status-dot tone-' + info.tone.toLowerCase()} /> {info.providerLabel}{info.beta ? ' · Beta' : ''} · {info.status}</span></div>
+        <div className="session-info-heading"><strong title={info.title}>{info.title}</strong><span className="popover-quiet">{info.providerLabel}{info.beta && <> <BetaBadge /></>}</span></div>
+        <span className="session-info-state"><span className={'status-dot tone-' + info.tone.toLowerCase()} />{info.status}</span>
       </div>
       <div className="popover-body">
         <section className="session-info-context">
           <span className="context-ring large"><ContextRing percent={info.contextPercent} size={44} /></span>
-          <div><div className="popover-strong">{t('composer.sessionInfo.contextUsage')}</div><div className="popover-quiet">{info.context}</div></div>
+          <div><div className="session-info-context-title">{t('composer.sessionInfo.contextUsage')}</div><div className="popover-quiet">{info.context}</div></div>
         </section>
         <dl className="session-info-rows">
           {info.rows.map((row) => <div key={row.key} className={'session-info-row row-' + row.key}>{row.label && <dt>{row.label}</dt>}<dd>{row.value}</dd></div>)}
         </dl>
-        {info.tokenScope && <div className="popover-quiet">{info.tokenScope}</div>}
-        {info.tokens.length > 0 && <dl className="session-info-rows">{info.tokens.map((row) => <div key={row.key} className="session-info-row"><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>}
-        {info.note && <div className="popover-quiet">{info.note}</div>}
+        <div className="session-info-divider" role="separator" />
+        {info.tokenScope && <div className="session-info-scope">{info.tokenScope}</div>}
+        {info.tokens.length > 0 && <dl className="session-info-rows">{info.tokens.map((row) => <div key={row.key} className="session-info-row token"><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>}
+        {info.note && <div className="session-info-foot">{info.note}</div>}
         {info.cost && <dl className="session-info-rows"><div className="session-info-row"><dt>{info.cost.label}</dt><dd>{info.cost.value}</dd></div></dl>}
         {info.noUsage && <div className="popover-quiet">{t('composer.sessionInfo.noUsage')}</div>}
         {info.identifiers.length > 0 && (
           <div>
-            <button type="button" className="composer-text-button" aria-expanded={shown} onClick={() => setShown(!shown)}>{shown ? '▾' : '▸'} {t('composer.sessionInfo.sessionId')}</button>
+            <button type="button" className="session-info-disclosure" aria-expanded={shown} onClick={() => setShown(!shown)}><Icon name={shown ? 'chevron-down' : 'chevron-right'} size={10} weight={3} />{t('composer.sessionInfo.sessionId')}</button>
             {shown && <dl className="session-info-rows">{info.identifiers.map((row) => <div key={row.label} className="session-info-row"><dt>{row.label}</dt><dd className="selectable">{row.value}</dd></div>)}</dl>}
           </div>
         )}
-        {info.reported && <div className="popover-quiet" title={info.source ?? undefined}>{info.reported}{info.received ? ' · ' + info.received : ''}</div>}
+        {info.reported && <div className="session-info-foot" title={info.source ?? undefined}><div>{info.reported}</div>{info.received && <div>{info.received}</div>}</div>}
       </div>
     </div>
   );

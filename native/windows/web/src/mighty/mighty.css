@@ -1,7 +1,9 @@
 /* The Mighty views (UI/MightyGraph.cs, MightyTimeline.cs, MightyStructure.cs): colours only from the token variables. */
 .mighty { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--page); }
-.mighty-bar { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-sm) var(--space-lg); border-bottom: var(--stroke-line) solid var(--line); background: var(--card); min-width: 0; }
-.mighty-header { font-size: var(--type-title); font-weight: 700; color: var(--ink); white-space: nowrap; }
+/* M/MightyGraphView.swift: the bar (graphBar inset): the view switch, the header in 12 bold, the totals in 10, the zoom at the right. */
+.mighty { position: relative; }
+.mighty-bar { display: flex; align-items: center; gap: var(--space-md); padding: var(--inset-graph-bar-v) 110px var(--inset-graph-bar-v) var(--inset-graph-bar-h); border-bottom: var(--stroke-line) solid var(--line); background: var(--card); min-width: 0; }
+.mighty-header { font-size: var(--type-row); font-weight: 700; color: var(--ink); white-space: nowrap; }
 .mighty-summary { flex: 1; min-width: 0; font-size: var(--type-small); color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mighty-switch { display: inline-flex; flex: none; gap: 2px; padding: 2px; border-radius: var(--radius-row); background: var(--segment-track); }
 .mighty-switch button { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 var(--space-md); border: 0; border-radius: var(--radius-segment); background: transparent; color: var(--ink2); font-size: var(--type-pill); font-weight: 600; cursor: default; white-space: nowrap; }
@@ -16,9 +18,11 @@
 
 /* ── diagram ── */
 .mighty-diagram { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.mighty-diagram-zoom { position: absolute; top: var(--space-sm); right: var(--space-lg); z-index: 2; background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-row); }
+/* The zoom sits at the bar's right end (the bar keeps room for it), as the Mac's does. */
+.mighty-diagram { position: static; }
+.mighty-diagram-zoom { position: absolute; top: 0; right: var(--inset-graph-bar-h); height: 32px; display: flex; align-items: center; z-index: 2; }
 .mighty-zoom { display: inline-flex; align-items: center; gap: 2px; }
-.mighty-zoom-label { width: 44px; height: 22px; border: 0; background: transparent; color: var(--ink2); font-variant-numeric: tabular-nums; font-size: var(--type-body); cursor: pointer; }
+.mighty-zoom-label { width: 44px; height: 22px; border: 0; background: transparent; color: var(--ink2); font-variant-numeric: tabular-nums; font-size: var(--type-body); cursor: default; }
 .mighty-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; outline: none; cursor: default; touch-action: none; }
 .mighty-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .mighty-dot { fill: var(--line); }
@@ -29,31 +33,36 @@
 .mighty-block { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; border-radius: var(--radius-block); border: var(--stroke-line) solid var(--line); background: var(--card); color: var(--ink); contain: layout paint style; }
 .mighty-block.halo { box-shadow: 0 0 0 4px var(--run-soft); }
 .mighty-block.selected { outline: 2px solid var(--accent); outline-offset: -1px; }
-.mighty-head { flex: none; height: 38px; display: flex; align-items: center; gap: var(--space-sm); padding: 0 var(--space-md); border-bottom: var(--stroke-line) solid var(--line); min-width: 0; }
-.mighty-block.kind-result .mighty-head { background: color-mix(in srgb, var(--done) 14%, var(--card)); border-radius: var(--radius-block) var(--radius-block) 0 0; }
-.mighty-block.kind-result.tone-err .mighty-head { background: color-mix(in srgb, var(--err) 14%, var(--card)); }
-.mighty-block.kind-result.tone-stop .mighty-head { background: color-mix(in srgb, var(--stop) 14%, var(--card)); }
-.mighty-symbol { flex: none; width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
-.mighty-symbol.kind-work { background: var(--run); }
-.mighty-symbol.kind-agent { background: var(--agent); }
-.mighty-symbol.kind-task { background: var(--task); }
-.mighty-symbol.kind-steer { background: var(--steer-text); }
-.mighty-symbol.kind-compact { background: var(--compact-text); }
-.mighty-symbol.kind-question { background: var(--question-text); }
-.mighty-symbol.kind-result { background: var(--done); }
-.mighty-symbol.kind-draft, .mighty-symbol.kind-plan, .mighty-symbol.kind-planRecord { background: var(--accent); }
-.mighty-title { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 4px; font-size: var(--type-block); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A block's header (transcriptCard): Layout.blockHead high, its symbol in the kind's tint, the title in 12 bold; a result's header is a strip in its outcome's fill with white words. */
+.mighty-head { flex: none; height: var(--layout-block-head); display: flex; align-items: center; gap: var(--space-sm); padding: 0 var(--inset-graph-block-body-h); border-bottom: var(--stroke-line) solid var(--line); min-width: 0; }
+.mighty-block.kind-result .mighty-head { background: var(--done); color: var(--on-status); border-bottom-color: transparent; border-radius: calc(var(--radius-block) - 1px) calc(var(--radius-block) - 1px) 0 0; }
+.mighty-block.kind-result.tone-err .mighty-head { background: var(--err); }
+.mighty-block.kind-result.tone-stop .mighty-head { background: var(--stop); }
+.mighty-block.kind-result .mighty-head .mighty-icon, .mighty-block.kind-result .mighty-head .mighty-capsule { color: var(--on-status); }
+.mighty-block.kind-result .mighty-head .mighty-capsule { background: rgba(0, 0, 0, .18); }
+.mighty-symbol { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; color: var(--accent); }
+.mighty-symbol.kind-work, .mighty-symbol.kind-agent, .mighty-symbol.kind-execution { color: var(--agent-text); }
+.mighty-symbol.kind-task { color: var(--task-text); }
+.mighty-symbol.kind-steer { color: var(--steer-text); }
+.mighty-symbol.kind-compact { color: var(--compact-text); }
+.mighty-symbol.kind-question { color: var(--question-text); }
+.mighty-symbol.kind-result { color: var(--on-status); }
+.mighty-title { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 4px; font-size: var(--type-block); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mighty-controls { flex: none; display: inline-flex; align-items: center; gap: var(--space-sm); }
-.mighty-pill { height: 18px; line-height: 18px; padding: 0 var(--space-sm); border-radius: 9px; font-size: var(--type-pill); font-weight: 600; background: var(--track); color: var(--ink2); white-space: nowrap; }
-.mighty-pill.tone-run { background: var(--run-soft); color: var(--run); }
+.mighty-pill { height: 18px; line-height: 18px; padding: 0 var(--space-sm); border-radius: 9px; font-size: var(--type-small); font-weight: 700; background: var(--track); color: var(--ink2); white-space: nowrap; }
+.mighty-pill.tone-run { background: var(--run-soft); color: var(--accent); }
 .mighty-pill.tone-wait { background: var(--wait-soft); color: var(--wait-text); }
 .mighty-pill.tone-done { background: var(--done-soft); color: var(--done-text); }
 .mighty-pill.tone-err { background: var(--err-soft); color: var(--err-text); }
 .mighty-pill.tone-stop { background: var(--stop-soft); color: var(--stop-text); }
-.mighty-capsule { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-small); color: var(--ink2); padding: 1px 6px; border-radius: 8px; background: var(--card-raised); }
+.mighty-capsule { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--type-small); color: var(--ink2); padding: 2px 6px; border-radius: 8px; background: var(--card-raised); }
 .mighty-body { position: relative; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .mighty-band { padding: var(--space-sm) var(--space-md); background: color-mix(in srgb, var(--accent) 5.5%, transparent); font-size: var(--type-body); white-space: pre-wrap; word-break: break-word; user-select: text; }
-.mighty-transcript { padding: var(--space-sm); }
+/* A block's transcript (non-card format): replies and tool lines straight on the card, no chip or card borders. */
+.mighty-transcript { padding: var(--inset-graph-block-body-v) var(--inset-graph-block-body-h); }
+.mighty-transcript .reply-card, .mighty-transcript .tool-chip { border: 0; background: transparent; padding-left: 0; padding-right: 0; }
+.mighty-transcript .tool-chip { min-height: 24px; }
+.mighty-transcript .tool-square { background: transparent; color: var(--ink2); border: 1px solid var(--line); }
 .mighty-draft-body { padding: var(--space-md); }
 .mighty-draft-text { white-space: pre-wrap; color: var(--ink2); }
 .mighty-draft-outline { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
@@ -68,17 +77,20 @@
 .mighty-bars { display: inline-flex; align-items: center; gap: 2px; width: 18px; height: 14px; }
 .mighty-bars span { width: 3px; height: 12px; border-radius: 1.5px; background: var(--run); transform: scaleY(0.33); animation: mighty-bar 1.6s ease-in-out infinite; }
 @keyframes mighty-bar { 0%, 100% { transform: scaleY(0.33); } 50% { transform: scaleY(1); } }
-.mighty-glyph { width: 12px; height: 12px; }
+.mighty-glyph { display: inline-grid; place-items: center; width: 18px; height: 14px; }
+.mighty-bolt-still { display: none; }
 .mighty-glyph.tone-run { color: var(--run); }
 .mighty-glyph.tone-wait { color: var(--wait-text); }
 @media (prefers-reduced-motion: reduce) {
   .mighty-outline.outline-marching rect { animation: none; stroke-dasharray: none !important; }
   .mighty-bars span, .timeline-node.ring::after, .timeline-pulse { animation: none; }
+  .mighty-bars { display: none; }
+  .mighty-bolt-still { display: inline-grid; }
 }
 
 /* Over a border's band (6 out, 2 in: src/mighty/resize.ts) the viewport's resize cursor wins over the blocks' own. */
 .mighty-viewport[data-resize-cursor] * { cursor: inherit !important; }
-.mighty-grip { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; cursor: nwse-resize; border-bottom-right-radius: var(--radius-block); }
+.mighty-grip { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; display: grid; place-items: center; color: var(--ink2); cursor: nwse-resize; border-bottom-right-radius: var(--radius-block); }
 .mighty-block.selected .mighty-grip { background: linear-gradient(135deg, transparent 60%, var(--accent) 60%, var(--accent) 66%, transparent 66%); }
 
 .mighty-history { position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 22px; border: var(--stroke-line) dashed var(--line); background: var(--card); font-size: var(--type-pill); }
