@@ -198,6 +198,28 @@ struct ExecutionGraphTests {
         }
     }
 
+    /// A request handed into the run after its turn ended (run next while only background work is left) is a 중간 요청
+    /// whose reply is the next root answer, and that turn's answer follows the request's in the result under "중간 요청 이후"
+    /// (Windows SessionHistoryVerification.ASteerAfterTheTurnFollowsInTheResult).
+    @Test func aSteerAfterTheTurnFollowsInTheResult() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var nodes: [ExecutionGraphNode] = []
+            let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "steer-after", graph: { nodes.append($0) }, graphInput: "ping it")
+            parser.steer(id: "early", text: "Also log it")
+            try send(assistant([["type": "text", "text": "Started ping."]], id: "main-1"), to: parser)
+            try send(["type": "result", "subtype": "success", "is_error": false, "result": "Started ping."], to: parser)
+            parser.steer(id: "late", text: "What is the time?")
+            try send(assistant([["type": "text", "text": "It is noon."]], id: "main-2"), to: parser)
+            try send(["type": "result", "subtype": "success", "is_error": false, "result": "It is noon."], to: parser)
+            parser.finishGraph(state: "completed")
+            let mainID = ExecutionGraphSupport.mainNodeID(runId: "steer-after")
+            let late = try latest(nodes, ExecutionGraphSupport.identifier("steer-after", "steer:late"))
+            #expect(late.state == "completed"); #expect(late.output == "It is noon.")
+            #expect(try latest(nodes, mainID).state == "completed")
+            #expect(try latest(nodes, mainID).output == "Started ping." + MightyGraphSupport.noticeSectionMark + "중간 요청 이후**\n\nIt is noon.")
+        }
+    }
+
     @Test func aTaskNotificationIsATaskNoticeSteer() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             var nodes: [ExecutionGraphNode] = []

@@ -210,6 +210,19 @@ internal static class ClaudePlanStyleVerification
         Check(BackgroundQueuePolicy.WaitsOnBackground(waiting, 1) && !BackgroundQueuePolicy.WaitsOnBackground(waiting, 0) && !BackgroundQueuePolicy.WaitsOnBackground(busy, 1) && !BackgroundQueuePolicy.WaitsOnBackground(null, 1), "the queue says when it waits on background work, in every style");
         Check(Korean(() => Locale.Get("queue.waitingOnBackground.windows")) == "백그라운드 작업이 끝나야 시작합니다 · 지금 시작하려면 중지", "the background notice says Stop starts the queued request now");
         Check(BackgroundQueuePolicy.StopKeepsQueue(waiting) && !BackgroundQueuePolicy.StopKeepsQueue(busy) && !BackgroundQueuePolicy.StopKeepsQueue(null), "stopping a turn that is over keeps the queue");
+        // A run that only waits on background work takes run next as a new turn: local Claude, not stopping, a first request without attachments (M/BackgroundQueuePolicyTests.swift).
+        Check(BackgroundQueuePolicy.SteersRunNext(waiting, true, false, 1, false) && !BackgroundQueuePolicy.SteersRunNext(busy, true, false, 1, false) && !BackgroundQueuePolicy.SteersRunNext(null, true, false, 1, false)
+            && !BackgroundQueuePolicy.SteersRunNext(waiting, false, false, 1, false) && !BackgroundQueuePolicy.SteersRunNext(waiting, true, true, 1, false) && !BackgroundQueuePolicy.SteersRunNext(waiting, true, false, 0, false)
+            && !BackgroundQueuePolicy.SteersRunNext(waiting, true, false, 1, true) && !BackgroundQueuePolicy.SteersRunNext(new BackgroundWork([running with { Status = "completed" }], TurnEnded: true), true, false, 1, false),
+            "run next steers only into a run whose only work left is background work");
+        Check(DelegationQueueRows.OffersRunNext(true, 0, steers: true) && !DelegationQueueRows.OffersRunNext(true, 0, steers: false) && DelegationQueueRows.OffersRunNext(true, 1), "a busy pane offers run next when it can steer, and always for held items");
+        using (var started = JsonDocument.Parse("""{"type":"system","subtype":"task_started","task_id":"b1","task_type":"local_bash","description":"ping"}"""))
+        {
+            var tracker = new BackgroundTaskTracker(() => DateTimeOffset.Parse("2026-10-06T01:00:00Z", System.Globalization.CultureInfo.InvariantCulture));
+            tracker.Consume(started.RootElement);
+            Check(tracker.TurnEnded() is { WaitingOnBackground: true } && tracker.Reopen() is { TurnEnded: false, WaitingOnBackground: false } && tracker.Reopen() is null && tracker.TurnEnded() is { TurnEnded: true },
+                "a steer after the turn reopens it, and the next result ends it again");
+        }
 
         var queue = new QueuedInputBuffer();
         var item = queue.Add("결제", [], BackgroundQueuePolicy.QueuedOverride(true));

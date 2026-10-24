@@ -55,6 +55,10 @@ final class ExecutionGraphTracker {
     private var pendingSteers: [String] = []
     /// The tasks whose notices arrived since the last root result: the next notice turn's answer is headed by them.
     private var noticedTasks: [String] = []
+    /// The request's own root result arrived; a steer after it opens a turn whose answer follows in the result.
+    private var turnEnded = false
+    /// What the steer that opened such a turn is called (중간 요청 or 위임 알림): its answer's section is headed by it.
+    private var steeredTurn: String?
     private var messageOrder: [String] = []
     private var unnamedUsage = 0
     private var compactions = 0
@@ -72,13 +76,21 @@ final class ExecutionGraphTracker {
     /// between tool calls; the block under main shows it until the next
     /// root-level answer, which is taken as the reply.
     func steer(id: String, text: String) {
-        guard !finished, provider == "claude", nodes.count < ExecutionGraphSupport.maximumNodes else { return }
+        // After the request's result the steer starts a new turn in the same process.
+        if addSteer(id: id, text: text), turnEnded, steeredTurn == nil {
+            steeredTurn = L(MightyGraphSupport.isDelegationNotice(text) ? "graph.block.delegationNotice" : "graph.block.steer")
+        }
+    }
+    @discardableResult
+    private func addSteer(id: String, text: String) -> Bool {
+        guard !finished, provider == "claude", nodes.count < ExecutionGraphSupport.maximumNodes else { return false }
         let nodeID = ExecutionGraphSupport.identifier(runID, "steer:" + id)
-        guard nodes[nodeID] == nil else { return }
+        guard nodes[nodeID] == nil else { return false }
         let node = ExecutionGraphNode(id: nodeID, runId: runID, parentId: mainID, kind: "steer", state: "running", title: L("graph.block.steer"), input: text)
-        guard let normalized = ExecutionGraphSupport.normalized(node) else { return }
+        guard let normalized = ExecutionGraphSupport.normalized(node) else { return false }
         nodes[nodeID] = normalized; order.append(nodeID); emit(normalized)
         pendingSteers.append(nodeID)
+        return true
     }
 
     /// The CLI summarized its context. The block sits under the request, or
@@ -293,12 +305,19 @@ final class ExecutionGraphTracker {
         } else if type == "result", ClaudeStream.isNotificationResult(value) {
             // A notice turn's answer follows the request's in the result, headed by the notices it answered.
             guard parentTool == nil else { return }
-            let titles = noticedTasks; noticedTasks.removeAll()
+            let titles = noticedTasks; noticedTasks.removeAll(); steeredTurn = nil
             guard let answer = (value["result"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty else { return }
             let header = titles.isEmpty ? L("graph.result.afterNotice") : L("graph.result.afterTaskNotice", ["title": titles.joined(separator: ", ")])
             update(mainID) { $0.output = MightyGraphSupport.withNoticeSection($0.output, header: header, answer: answer) }
         } else if type == "result" {
-            if parentTool == nil {
+            if parentTool == nil, let steered = steeredTurn {
+                // A turn a steer opened after the request's result: its answer follows in the result, as a notice turn's does.
+                noticedTasks.removeAll(); steeredTurn = nil
+                if let answer = (value["result"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty {
+                    update(mainID) { $0.output = MightyGraphSupport.withNoticeSection($0.output, header: L("graph.result.afterSteer", ["block": steered]), answer: answer) }
+                }
+            } else if parentTool == nil {
+                turnEnded = true
                 // Main output comes only from the CLI's actual root result. The request's own turn ended: it reads
                 // completed while background tasks it started still run; the process's end settles the rest.
                 noticedTasks.removeAll()
@@ -640,7 +659,7 @@ final class ExecutionGraphTracker {
             let named = notified.title.isEmpty ? notified.input ?? "" : notified.title
             if !noticedTasks.contains(named), noticedTasks.count < 16 { noticedTasks.append(named) }
             let line = named + " · " + L(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
-            steer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + line + (summary.map { "\n" + $0 } ?? ""))
+            addSteer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + line + (summary.map { "\n" + $0 } ?? ""))
         }
     }
 

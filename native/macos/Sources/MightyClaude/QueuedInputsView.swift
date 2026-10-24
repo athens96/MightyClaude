@@ -15,6 +15,8 @@ struct QueuedInputsView: View {
     let onRunNext: () -> Void
     /// Why the queue waits beyond the current turn: its background work (§1.17.4).
     var notice: String? = nil
+    /// Run next can hand the first request into the run that only waits on background work.
+    var steersRunNext = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
@@ -22,7 +24,7 @@ struct QueuedInputsView: View {
                 Image(systemName: "clock.arrow.circlepath").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.accent)
                 Text(running ? L("queue.waitingBusy", ["count": "\(held.count + items.count)"]) : L("queue.waiting", ["count": "\(held.count + items.count)"])).font(.ui(size: 10, weight: .medium)).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
-                if DelegationQueueRows.offersRunNext(busy: running, held: held.count) {
+                if DelegationQueueRows.offersRunNext(busy: running, held: held.count, steers: steersRunNext) {
                     Button(action: onRunNext) { Label(L("queue.runNext"), systemImage: "play.fill").font(.ui(size: 10, weight: .medium)) }
                         .buttonStyle(.plain).foregroundStyle(Palette.accent)
                         .help(L("queue.runNextHelp")).accessibilityIdentifier("queue-run-\(sessionID)")

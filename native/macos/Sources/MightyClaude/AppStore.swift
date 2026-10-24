@@ -962,7 +962,27 @@ final class AppStore: ObservableObject, DelegationHost {
     /// as after an error left the queue paused.
     func runNextQueuedInput(_ id: String) {
         if !(delegationHeld[id] ?? []).isEmpty { Task { await runNextHeld(id) }; return }
+        // A run that only waits on background work takes the first row as a new turn; refused, it stays queued.
+        if steersRunNext(id) { Task { if !(await steerQueuedRow(id)) { runNextQueuedRow(id) } }; return }
         runNextQueuedRow(id)
+    }
+
+    /// The pane's first queued request can go into its running Claude process now (`BackgroundQueuePolicy.steersRunNext`).
+    func steersRunNext(_ id: String) -> Bool {
+        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.kind == "claude" else { return false }
+        let queue = queuedInputs[id] ?? []
+        return BackgroundQueuePolicy.steersRunNext(work: session.backgroundWork, localClaude: session.provider == "claude" && !isRemoteSession(session), stopping: false,
+                                                   queued: queue.count, firstHasAttachments: queue.first.map { !$0.attachments.isEmpty } ?? false)
+    }
+
+    /// Hands the first queued request into the run that only waits on background work, as a new turn in the same process
+    /// (Windows `SteerFirstQueuedInput`); the tracker shows it as a 중간 요청 under the request. False when it may not or the
+    /// run refused it: it stays queued.
+    func steerQueuedRow(_ id: String) async -> Bool {
+        guard steersRunNext(id), let next = queuedInputs[id]?.first, await runner.steer(sessionId: id, text: next.text) else { return false }
+        queuedInputs[id]?.removeAll { $0.id == next.id }
+        if queuedInputs[id]?.isEmpty == true { queuedInputs.removeValue(forKey: id) }
+        return true
     }
 
     /// Run next with items held for the pane: delegation releases them. False

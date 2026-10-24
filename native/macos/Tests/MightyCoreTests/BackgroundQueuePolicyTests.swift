@@ -20,6 +20,28 @@ struct BackgroundQueuePolicyTests {
         }
     }
 
+    /// Windows Core checks the same in `ClaudePlanStyleVerification.QueueAndStoredMode`.
+    @Test func runNextSteersOnlyIntoARunWhoseOnlyWorkLeftIsBackgroundWork() {
+        #expect(BackgroundQueuePolicy.steersRunNext(work: waiting, localClaude: true, stopping: false, queued: 1, firstHasAttachments: false))
+        #expect(!BackgroundQueuePolicy.steersRunNext(work: busy, localClaude: true, stopping: false, queued: 1, firstHasAttachments: false))
+        #expect(!BackgroundQueuePolicy.steersRunNext(work: nil, localClaude: true, stopping: false, queued: 1, firstHasAttachments: false))
+        #expect(!BackgroundQueuePolicy.steersRunNext(work: waiting, localClaude: false, stopping: false, queued: 1, firstHasAttachments: false))
+        #expect(!BackgroundQueuePolicy.steersRunNext(work: waiting, localClaude: true, stopping: true, queued: 1, firstHasAttachments: false))
+        #expect(!BackgroundQueuePolicy.steersRunNext(work: waiting, localClaude: true, stopping: false, queued: 0, firstHasAttachments: false))
+        #expect(!BackgroundQueuePolicy.steersRunNext(work: waiting, localClaude: true, stopping: false, queued: 1, firstHasAttachments: true))
+        var ended = running; ended.status = "completed"
+        #expect(!BackgroundQueuePolicy.steersRunNext(work: BackgroundWork(tasks: [ended], turnEnded: true), localClaude: true, stopping: false, queued: 1, firstHasAttachments: false))
+        #expect(DelegationQueueRows.offersRunNext(busy: true, held: 0, steers: true))
+        #expect(!DelegationQueueRows.offersRunNext(busy: true, held: 0, steers: false))
+        #expect(DelegationQueueRows.offersRunNext(busy: true, held: 1))
+        let tracker = BackgroundTaskTracker(clock: { Date(timeIntervalSince1970: 1_800_000_000) })
+        _ = tracker.consume(["type": "system", "subtype": "task_started", "task_id": "b1", "task_type": "local_bash", "description": "ping"])
+        #expect(tracker.turnEnded()?.waitingOnBackground == true)
+        let reopened = tracker.reopen()
+        #expect(reopened?.turnEnded == false); #expect(reopened?.waitingOnBackground == false)
+        #expect(tracker.reopen() == nil); #expect(tracker.turnEnded()?.turnEnded == true)
+    }
+
     @Test func stoppingATurnThatIsOverKeepsTheQueue() {
         #expect(BackgroundQueuePolicy.stopKeepsQueue(waiting))
         #expect(BackgroundQueuePolicy.stopKeepsQueue(BackgroundWork(tasks: [], turnEnded: true)))

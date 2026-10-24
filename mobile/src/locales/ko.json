@@ -315,6 +315,7 @@
   "graph.ouroboros.unreadable": "대시보드가 이 실행을 읽지 못합니다.",
   "graph.ouroboros.waiting": "상태를 읽는 중…",
   "graph.result.afterNotice": "알림 이후",
+  "graph.result.afterSteer": "{block} 이후",
   "graph.result.afterTaskNotice": "작업 알림 · {title} 이후",
   "graph.result.fitToWindow": "창에 맞추기",
   "graph.resultFiles.closeButton": "파일 목록 닫기",

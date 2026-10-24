@@ -720,6 +720,8 @@ extension AppStore {
             guard released else { throw MobileHostError.conflict(failure ?? L("remote.error.startFailed")) }
             return
         }
+        // A run that only waits on background work takes the first request as a new turn, as the desktop's run next does.
+        if await steerQueuedRow(id) { return }
         guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict(L("remote.error.nextAfterRun")) }
         // Settling a blocked pane throws the whole queue away with only a log
         // line; the phone would be told "ok" and watch its requests vanish.

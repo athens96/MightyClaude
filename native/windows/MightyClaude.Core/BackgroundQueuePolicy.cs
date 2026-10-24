@@ -12,6 +12,14 @@ public static class BackgroundQueuePolicy
     /// <summary>The queue's notice: what is queued starts only once the background work ends.</summary>
     public static bool WaitsOnBackground(BackgroundWork? work, int queued) => queued > 0 && work is { WaitingOnBackground: true };
 
+    /// <summary>
+    /// Run next hands the human's first queued request into the running Claude process as a new turn, at once: the pane's only
+    /// work left is background work after its turn ended, the run is local and not stopping, and the request has no attachments
+    /// (M/BackgroundQueuePolicy.swift steersRunNext). A refused steer leaves it queued.
+    /// </summary>
+    public static bool SteersRunNext(BackgroundWork? work, bool localClaude, bool stopping, int queued, bool firstHasAttachments) =>
+        queued > 0 && !firstHasAttachments && localClaude && !stopping && work is { WaitingOnBackground: true };
+
     /// <summary>Stop on a run whose turn is already over (it only waited on background work) keeps the queue and starts its first request next.</summary>
     public static bool StopKeepsQueue(BackgroundWork? work) => work is { TurnEnded: true };
 

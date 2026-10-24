@@ -551,6 +551,8 @@ public sealed partial class MainWindow
                 if (release is DelegationRelease.NotStarted) throw new MobileRequestException(409, Locale.Get("remote.error.startFailed"));
                 if (release is DelegationRelease.Released) { if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); } return null; }
             }
+            // A run that only waits on background work takes the first request as a new turn, as the desktop's run next does.
+            if (await SteerFirstQueuedInput()) return null;
             if (MobileBusy) throw new MobileRequestException(409, "Session is still running.");
             var next = queuedInputs.Items.FirstOrDefault() ?? throw new MobileRequestException(409, "The queue is empty.");
             await MobileSubmit(next.Text, next.Attachments, token, next.Prepared, next.Id); queuedInputs.Remove(next.Id); RenderQueuedInputs(); RefreshComposerState(); return null;

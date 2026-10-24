@@ -364,6 +364,8 @@ public final class CLIStreamParser {
     func receiveAntigravitySessions(_ agents: [CodexSessionAgent]) { for agent in agents { graphTracker?.antigravitySession(agent) } }
     /// A follow-up the runner wrote to Claude's stdin during this turn.
     public func steer(id: String, text: String) { graphTracker?.steer(id: id, text: text) }
+    /// A steer opened a new turn after the request's result: background work no longer stands alone.
+    public func reopenTurn() { if let background, let work = backgroundTracker.reopen() { background(work) } }
     func permissionActivity(_ request: ToolPermissionRequest, state: String) {
         permissionStates[ActivitySupport.id(namespace: activityNamespace, key: request.toolUseId)] = state
         tool(id: request.toolUseId, name: request.toolName, state: state, summary: request.summary)
