@@ -547,6 +547,14 @@ public final class BackgroundTaskTracker {
         return work.tasks.isEmpty ? nil : work
     }
 
+    /// A new turn started in the same process (a steer after the request's
+    /// result): the run no longer only waits on background work.
+    public func reopen() -> BackgroundWork? {
+        guard work.turnEnded else { return nil }
+        work.turnEnded = false
+        return work.tasks.isEmpty ? nil : work
+    }
+
     /// The process ended: a task without an end report is `unknown`.
     public func finish() -> BackgroundWork? {
         let before = work

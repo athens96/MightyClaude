@@ -190,7 +190,7 @@ public sealed partial class MainWindow
             var count = new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = total.ToString() }) + (waitsOnBackground ? "\n" + Locale.Get(owner.service.SecondSend(Session) == ComposerSecondSend.Worktree ? "queue.waitingOnBackground.windowsWorktree" : "queue.waitingOnBackground.windows") : ""), TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
             if (waitsOnBackground) AutomationProperties.SetAutomationId(count, "queue-background-" + id);
             Grid.SetColumn(count, 1); header.Children.Add(count);
-            if (DelegationQueueRows.OffersRunNext(busy, held.Count))
+            if (DelegationQueueRows.OffersRunNext(busy, held.Count, SteersRunNext))
             {
                 var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
                 label.Children.Add(new FontIcon { Glyph = "", TextSize = 8, VerticalAlignment = VerticalAlignment.Center });
@@ -240,8 +240,8 @@ public sealed partial class MainWindow
         private Task RunNext() => owner.Act(async () =>
         {
             if (!QueuePaneAlive) return;
-            // Nothing held: the first queued row runs at once, as before.
-            if (owner.service.HeldItems(id).Count == 0) { await StartNextQueuedInput(); return; }
+            // Nothing held: the first queued row runs at once, as before, or joins the run that only waits on background work as a new turn.
+            if (owner.service.HeldItems(id).Count == 0) { if (!await SteerFirstQueuedInput()) await StartNextQueuedInput(); return; }
             if (owner.DelegatedRunBlockReason(Session) is { } blocked) throw new InvalidOperationException(blocked);
             switch (await owner.service.RunNextAsync(id))
             {
@@ -250,6 +250,23 @@ public sealed partial class MainWindow
             }
             if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); }
         });
+
+        /// <summary>The pane's first queued request can go into its running Claude process now (<see cref="BackgroundQueuePolicy.SteersRunNext"/>).</summary>
+        private bool SteersRunNext => Session.Kind == "claude" && BackgroundQueuePolicy.SteersRunNext(Session.BackgroundWork, Session.Provider == "claude" && Workspace.Remote is null, stopping,
+            queuedInputs.Items.Count, queuedInputs.Items.FirstOrDefault()?.Attachments.Count > 0);
+
+        /// <summary>
+        /// Hands the first queued request into the run that only waits on background work, as a new turn in the same process
+        /// (M/AppStore.swift steerQueuedRow); the tracker shows it as a 중간 요청 under the request. False when it may not or the run
+        /// refused it: it stays queued.
+        /// </summary>
+        private async Task<bool> SteerFirstQueuedInput()
+        {
+            if (!SteersRunNext || queuedInputs.Items.FirstOrDefault() is not { } item || !await owner.service.TrySteerAsync(id, item.Text)) return false;
+            queuedInputs.Remove(item.Id);
+            if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); }
+            return true;
+        }
 
         private Task StartNextQueuedInput() => owner.Act(async () =>
         {

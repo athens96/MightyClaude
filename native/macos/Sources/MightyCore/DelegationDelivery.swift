@@ -48,7 +48,9 @@ public enum DelegationQueueRows {
 
     /// Whether the queued list offers run next: whenever items are held,
     /// otherwise only while the pane is not busy.
-    public static func offersRunNext(busy: Bool, held: Int) -> Bool { held > 0 || !busy }
+    /// Also while its first request can be steered into a run that only waits
+    /// on background work (`BackgroundQueuePolicy.steersRunNext`).
+    public static func offersRunNext(busy: Bool, held: Int, steers: Bool = false) -> Bool { held > 0 || !busy || steers }
 }
 
 extension DelegationFile {

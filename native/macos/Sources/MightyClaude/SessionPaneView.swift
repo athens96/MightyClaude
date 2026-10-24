@@ -637,7 +637,8 @@ struct SessionPaneView: View {
                 QueuedInputsView(sessionID: session.id, held: held, items: queued, running: running || store.hasModal,
                                  onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) },
                                  notice: BackgroundQueuePolicy.waitsOnBackground(work: session.backgroundWork, queued: queued.count)
-                                     ? L(secondSend == .worktree ? "queue.waitingOnBackground.macWorktree" : "queue.waitingOnBackground.mac") : nil)
+                                     ? L(secondSend == .worktree ? "queue.waitingOnBackground.macWorktree" : "queue.waitingOnBackground.mac") : nil,
+                                 steersRunNext: !stopping && store.steersRunNext(session.id))
                     .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, attachments.isEmpty ? DesignMetrics.Spacing.sm : 0)
             }
             if paletteVisible {

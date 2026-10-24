@@ -125,6 +125,10 @@ public sealed partial class ExecutionGraphTracker
     private readonly List<string> pendingSteers = [];
     /// The tasks whose notices arrived since the last root result: the next notice turn's answer is headed by them.
     private readonly List<string> noticedTasks = [];
+    /// <summary>The request's own root result arrived; a steer after it opens a turn whose answer follows in the result.</summary>
+    private bool turnEnded;
+    /// <summary>What the steer that opened such a turn is called (중간 요청 or 위임 알림): its answer's section is headed by it.</summary>
+    private string? steeredTurn;
     private readonly List<string> messageOrder = [];
     private int unnamedUsage;
     private int compactions;
@@ -142,7 +146,17 @@ public sealed partial class ExecutionGraphTracker
     /// A message the user sent while the turn ran. Claude reads it from stdin
     /// between tool calls; the block under main shows it until the next
     /// root-level answer, which is taken as the reply.
-    public void Steer(string id, string text) { lock (sync) SteerLocked(id, text); }
+    public void Steer(string id, string text)
+    {
+        lock (sync)
+        {
+            var before = pendingSteers.Count;
+            SteerLocked(id, text);
+            // After the request's result the steer starts a new turn in the same process (macOS).
+            if (turnEnded && steeredTurn is null && pendingSteers.Count > before)
+                steeredTurn = Locale.Get(MightyGraphSupport.IsDelegationNotice(text) ? "graph.block.delegationNotice" : "graph.block.steer");
+        }
+    }
     private void SteerLocked(string id, string text)
     {
         if (finished || Provider != "claude" || nodes.Count >= ExecutionGraphSupport.MaximumNodes) return;
@@ -390,7 +404,7 @@ public sealed partial class ExecutionGraphTracker
         {
             // A notice turn's answer follows the request's in the result, headed by the notices it answered (macOS).
             if (parentTool is not null) return;
-            var titles = noticedTasks.ToList(); noticedTasks.Clear();
+            var titles = noticedTasks.ToList(); noticedTasks.Clear(); steeredTurn = null;
             if (value.Text("result")?.Trim() is not { Length: > 0 } answer) return;
             var header = titles.Count > 0 ? Locale.Get("graph.result.afterTaskNotice", new Dictionary<string, string> { ["title"] = string.Join(", ", titles) }) : Locale.Get("graph.result.afterNotice");
             Update(mainID, n => n with { Output = MightyGraphSupport.WithNoticeSection(n.Output, header, answer) });
@@ -398,7 +412,18 @@ public sealed partial class ExecutionGraphTracker
         else if (type == "result")
         {
             // The request's own turn ended: it reads completed while background tasks it started still run; the process's end settles the rest.
-            if (parentTool is null) { noticedTasks.Clear(); Update(mainID, n => n with { Output = value.Text("result"), State = IsTrue(value, "is_error") || (value.Text("subtype") ?? "").StartsWith("error", StringComparison.Ordinal) ? n.State : "completed" }); }
+            if (parentTool is null && steeredTurn is { } steered)
+            {
+                // A turn a steer opened after the request's result: its answer follows in the result, as a notice turn's does.
+                noticedTasks.Clear(); steeredTurn = null;
+                if (value.Text("result")?.Trim() is { Length: > 0 } answer)
+                    Update(mainID, n => n with { Output = MightyGraphSupport.WithNoticeSection(n.Output, Locale.Get("graph.result.afterSteer", new Dictionary<string, string> { ["block"] = steered }), answer) });
+            }
+            else if (parentTool is null)
+            {
+                noticedTasks.Clear(); turnEnded = true;
+                Update(mainID, n => n with { Output = value.Text("result"), State = IsTrue(value, "is_error") || (value.Text("subtype") ?? "").StartsWith("error", StringComparison.Ordinal) ? n.State : "completed" });
+            }
             else if (current != mainID)
                 Update(current, n => n with
                 {

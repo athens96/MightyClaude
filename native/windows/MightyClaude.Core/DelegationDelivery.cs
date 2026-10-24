@@ -38,8 +38,9 @@ public static class DelegationQueueRows
     /// <summary><c>held_not_removable</c> when <paramref name="itemId"/> is one of the pane's held rows, and the remove route changes nothing; null when it may go on.</summary>
     public static DelegationReasonCode? RemoveRefusal(string itemId, IEnumerable<DelegationDeliveryItem> held) => held.Any(item => item.Id == itemId) ? DelegationReasonCode.HeldNotRemovable : null;
 
-    /// <summary>Whether the queued list offers run next: whenever items are held, otherwise only while the pane is not busy.</summary>
-    public static bool OffersRunNext(bool busy, int held) => held > 0 || !busy;
+    /// <summary>Whether the queued list offers run next: whenever items are held, otherwise while the pane is not busy or its first
+    /// request can be steered into a run that only waits on background work (<see cref="BackgroundQueuePolicy.SteersRunNext"/>).</summary>
+    public static bool OffersRunNext(bool busy, int held, bool steers = false) => held > 0 || !busy || steers;
 }
 
 public sealed partial record DelegationFile

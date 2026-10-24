@@ -1037,6 +1037,7 @@ internal static class Verification
         await Test("agent images: the transcript draws a PNG thumbnail at most 480 x 640", AgentImageVerification.TheTranscriptDrawsAPngThumbnailAtMost480By640);
         await Test("agent images: a line carrying a picture over 1 MiB reaches the parser", AgentImageVerification.ALineCarryingAPictureOverOneMiBReachesTheParser);
         await Test("session history: a notice turn's answer follows the request's, live and replayed", SessionHistoryVerification.ANoticeTurnsAnswerFollowsTheRequestsLiveAndReplayed);
+        await Test("session history: a steer after the turn follows in the result", SessionHistoryVerification.ASteerAfterTheTurnFollowsInTheResult);
         await Test("session history: scrolling up loads the ten requests above the retained one from a Claude record", SessionHistoryVerification.ScrollingUpLoadsTheTenRequestsAboveTheRetainedOneFromAClaudeRecord);
         await Test("session history: a replaced record starts over and a pane without a session has none", SessionHistoryVerification.AReplacedRecordStartsOverAndAPaneWithoutASessionHasNone);
         await Test("session history: only what the user typed is a request", SessionHistoryVerification.OnlyWhatTheUserTypedIsARequest);

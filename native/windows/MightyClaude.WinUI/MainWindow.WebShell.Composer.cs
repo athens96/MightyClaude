@@ -452,7 +452,7 @@ public sealed partial class MainWindow
                 {
                     held = held.Select(h => new { id = h.Id, text = h.Text }),
                     items = queuedInputs.Items.Select(q => new { id = q.Id, text = q.Text, attachments = q.Attachments.Select(a => a.Name) }),
-                    runNext = DelegationQueueRows.OffersRunNext(busy, held.Count),
+                    runNext = DelegationQueueRows.OffersRunNext(busy, held.Count, SteersRunNext),
                     waitsOnBackground = BackgroundQueuePolicy.WaitsOnBackground(pane.BackgroundWork, queuedInputs.Items.Count)
                         ? owner.service.SecondSend(pane) == ComposerSecondSend.Worktree ? "queue.waitingOnBackground.windowsWorktree" : "queue.waitingOnBackground.windows" : null,
                 },

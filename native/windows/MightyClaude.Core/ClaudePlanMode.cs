@@ -481,6 +481,14 @@ public sealed class BackgroundTaskTracker(Func<DateTimeOffset>? clock = null)
         return tasks.Count == 0 ? null : Work;
     }
 
+    /// <summary>A new turn started in the same process (a steer after the request's result): the run no longer only waits on background work.</summary>
+    public BackgroundWork? Reopen()
+    {
+        if (!turnEnded) return null;
+        turnEnded = false;
+        return tasks.Count == 0 ? null : Work;
+    }
+
     /// <summary>The process ended: a task without an end report is unknown.</summary>
     public BackgroundWork? Finish()
     {

@@ -13,6 +13,15 @@ public enum BackgroundQueuePolicy {
         queued > 0 && work?.waitingOnBackground == true
     }
 
+    /// Run next hands the human's first queued request into the running Claude
+    /// process as a new turn, at once: the pane's only work left is background
+    /// work after its turn ended, the run is local and not stopping, and the
+    /// request has no attachments (Windows `SteersRunNext`). A refused steer
+    /// leaves it queued.
+    public static func steersRunNext(work: BackgroundWork?, localClaude: Bool, stopping: Bool, queued: Int, firstHasAttachments: Bool) -> Bool {
+        queued > 0 && !firstHasAttachments && localClaude && !stopping && work?.waitingOnBackground == true
+    }
+
     /// Stop on a run whose turn is already over (it only waited on background
     /// work) keeps the queue and starts its first request next.
     public static func stopKeepsQueue(_ work: BackgroundWork?) -> Bool { work?.turnEnded == true }

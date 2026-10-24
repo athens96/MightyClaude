@@ -122,6 +122,30 @@ internal static class SessionHistoryVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// A request handed into the run after its turn ended (run next while only background work is left) is a 중간 요청 whose reply is
+    /// the next root answer, and that turn's answer follows the request's in the result under "중간 요청 이후"; the request stays
+    /// completed (macOS ExecutionGraphTests.aSteerAfterTheTurnFollowsInTheResult).
+    /// </summary>
+    internal static Task ASteerAfterTheTurnFollowsInTheResult()
+    {
+        var emitted = new List<ExecutionGraphNode>();
+        var tracker = new ExecutionGraphTracker("steer-after", "ping it", "claude", null, emitted.Add);
+        void Frame(object value) { using var json = JsonDocument.Parse(Json(value)); tracker.Consume(json.RootElement.Clone()); }
+        tracker.Steer("early", "Also log it");
+        Frame(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "Started ping." } } } });
+        Frame(new { type = "result", subtype = "success", is_error = false, result = "Started ping." });
+        tracker.Steer("late", "What is the time?");
+        Frame(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "It is noon." } } } });
+        Frame(new { type = "result", subtype = "success", is_error = false, result = "It is noon." });
+        tracker.Finish("completed");
+        var run = tracker.BuildRun()!;
+        var late = run.Agents.Single(a => a.Input == "What is the time?");
+        Check(run.Status == "completed" && late.Status == "completed" && late.Entries.Any(e => e.Text == "It is noon."), "the steered turn is a 중간 요청 answered by the next root answer");
+        Check(run.FinalOutput == "Started ping." + MightyGraphSupport.NoticeSectionMark + "중간 요청 이후**\n\nIt is noon.", "a steer before the result changes nothing; one after it adds its answer under its own line; got " + run.FinalOutput);
+        return Task.CompletedTask;
+    }
+
     internal static Task ScrollingUpLoadsTheTenRequestsAboveTheRetainedOneFromAClaudeRecord()
     {
         using var fixture = new Fixture();

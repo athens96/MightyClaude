@@ -315,6 +315,7 @@
   "graph.ouroboros.unreadable": "ダッシュボードがこの実行を読み込めません。",
   "graph.ouroboros.waiting": "状態を読み込み中…",
   "graph.result.afterNotice": "通知の後",
+  "graph.result.afterSteer": "{block} の後",
   "graph.result.afterTaskNotice": "タスク通知 · {title} の後",
   "graph.result.fitToWindow": "ウインドウに合わせる",
   "graph.resultFiles.closeButton": "ファイル一覧を閉じる",

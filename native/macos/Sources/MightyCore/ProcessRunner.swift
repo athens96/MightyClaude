@@ -741,8 +741,11 @@ public actor ProcessRunner {
               let child = run.child, child.inputIsOpen, let data = try? ProviderInput.claudeUserMessage(text) else { return false }
         // After the request's result this starts a new turn in the same process
         // (it stays open while background tasks run).
+        // The queue no longer reads as waiting only on background work until
+        // that turn's own result.
         run.lastOutputAt = Date()
         child.write(data)
+        run.parser?.reopenTurn()
         run.parser?.steer(id: UUID().uuidString, text: text)
         return true
     }

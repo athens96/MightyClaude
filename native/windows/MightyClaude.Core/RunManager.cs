@@ -48,6 +48,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         /// <summary>The latest Claude message the CLI marked as a lost sign-in, until a result ends its turn.</summary>
         internal string? AuthenticationFailureText;
         internal ExecutionGraphTracker? Tracker;
+        /// <summary>A steer opened a new turn: background work no longer stands alone (<see cref="BackgroundTaskTracker.Reopen"/>).</summary>
+        internal Action? TurnReopened;
         internal Task Task = Task.CompletedTask;
         internal int Bytes;
         internal bool Truncated;
@@ -159,6 +161,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         var todoTracker = new TodoProgressTracker(request.TodoProgress);
         run.Parser = parser;
         var backgroundTracker = new BackgroundTaskTracker();
+        run.TurnReopened = () => { lock (planGate) if (!run.Finished && backgroundTracker.Reopen() is { } work) emit(new(request.SessionId, "background", Background: work)); };
         void ReadPlanMode(System.Text.Json.JsonElement frame)
         {
             lock (planGate)
@@ -488,7 +491,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     {
         if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested || run.Request.Provider != "claude" || run.Permissions is not { } channel) return Task.FromResult(false);
         // After the request's result this starts a new turn in the same process (it stays open while background tasks run).
-        try { var accepted = channel.TrySteer(text); if (accepted) { Interlocked.Exchange(ref run.LastOutputTicks, Environment.TickCount64); run.Tracker?.Steer(Wire.Id(), text); } return Task.FromResult(accepted); } catch (IOException) { return Task.FromResult(false); } catch (ObjectDisposedException) { return Task.FromResult(false); }
+        // The queue no longer reads as waiting only on background work until that turn's own result (M/ProcessRunner.steer).
+        try { var accepted = channel.TrySteer(text); if (accepted) { Interlocked.Exchange(ref run.LastOutputTicks, Environment.TickCount64); run.TurnReopened?.Invoke(); run.Tracker?.Steer(Wire.Id(), text); } return Task.FromResult(accepted); } catch (IOException) { return Task.FromResult(false); } catch (ObjectDisposedException) { return Task.FromResult(false); }
     }
     /// <summary>Answers one pending ExitPlanMode request of one run (ClaudePlanMode.Response).</summary>
     public PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision)
