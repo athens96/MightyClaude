@@ -85,7 +85,7 @@ export function MiddlePath({ path, className }: { path: string; className?: stri
   return (
     <span className={'middle-path ' + (className ?? '')} title={path}>
       <span className="middle-path-head">{path.slice(0, half)}</span>
-      <span className="middle-path-tail">{path.slice(half)}</span>
+      <span className="middle-path-tail"><bdi dir="ltr">{path.slice(half)}</bdi></span>
     </span>
   );
 }
