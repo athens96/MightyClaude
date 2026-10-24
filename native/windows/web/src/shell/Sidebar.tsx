@@ -115,8 +115,14 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
         <div className="sidebar-workspace-panes">
           {(workspace.items ?? []).map((item) => {
             if (item.type === 'parentClosed') return (
-              <div key={'closed-' + item.id} className="sidebar-parent-closed" title={item.help} aria-label={item.name}>
-                <span>{item.label}</span>{item.branch && <span className="mono">{item.branch}</span>}<span className="mono">{item.count}</span>
+              <div key={'closed-' + item.id} className="sidebar-child" style={{ paddingLeft: 22 + item.depth * 16 }}>
+                <div className="sidebar-parent-closed" title={item.help} aria-label={item.name} data-testid={'sidebar-parent-closed-' + item.id}>
+                  <Icon name="monitor-x" size={12} weight={1.75} className="sidebar-parent-closed-icon" />
+                  <span className="sidebar-parent-closed-label">{item.label}</span>
+                  {item.branch && <span className="mono sidebar-parent-closed-branch">{item.branch}</span>}
+                  <span className="spacer" />
+                  <span className="mono sidebar-parent-closed-count">{item.count}</span>
+                </div>
               </div>
             );
             if (item.type === 'closedChild') return (

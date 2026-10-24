@@ -247,14 +247,17 @@ export function Composer({ session }: { session: RunSession }) {
         {queue && queued > 0 && (
           <div className="composer-queue" data-testid="composer-queue">
             <div className="composer-queue-header">
-              <span>◷ {t(state.busy ? 'queue.waitingBusy' : 'queue.waiting', { count: queued })}{queue.waitsOnBackground && <><br />{t(queue.waitsOnBackground)}</>}</span>
-              {queue.runNext && <button type="button" className="composer-text-button" onClick={() => call('queueRunNext')}>▶ {t('queue.runNext')}</button>}
+              <Icon name="rotate-ccw-clock" size={11} weight={2.4} className="composer-queue-clock" />
+              <span>{t(state.busy ? 'queue.waitingBusy' : 'queue.waiting', { count: queued })}</span>
+              {queue.runNext && <button type="button" className="composer-text-button composer-queue-run" title={t('queue.runNextHelp')} onClick={() => call('queueRunNext')}>
+                <Icon name="play" size={9} weight={1} fill />{t('queue.runNext')}</button>}
             </div>
+            {queue.waitsOnBackground && <div className="composer-queue-notice">{t(queue.waitsOnBackground)}</div>}
             {queue.held.map((item, index) => (
               <div className="composer-queue-item" key={item.id} data-queue-held={item.id}>
                 <span className="composer-queue-number">{index + 1}</span>
                 <span className="composer-queue-text">{item.text}</span>
-                <span className="composer-queue-pin" title={t('queue.heldHelp')} aria-label={t('queue.held')}>📌</span>
+                <span className="composer-queue-pin" title={t('queue.heldHelp')} aria-label={t('queue.held')}><Icon name="pin" size={10} weight={2.2} fill /></span>
               </div>
             ))}
             {queue.items.map((item, index) => (
