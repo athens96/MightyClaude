@@ -7,6 +7,7 @@ import type { ComposerState } from '../composer/types';
 import { applyMighty, type MightyPane } from '../mighty/types';
 import { applySessionDelta, type SessionDelta } from './delta';
 import type { AgentActivity, AppSnapshot, RunEvent, RunSession, ToolPermissionRequest } from './models';
+import type { OpenDialog, ShellModel } from '../shell/types';
 
 export interface StoreState {
   snapshot: AppSnapshot | null;
@@ -22,6 +23,14 @@ export interface StoreState {
   fills: Readonly<Record<string, { text: string; seq: number }>>;
   /** Each shown pane's Mighty model as the host pushed it (MainWindow.WebShell.Mighty.cs). */
   mighty: Readonly<Record<string, MightyPane>>;
+  /** The frame's model as the host last pushed it (MainWindow.WebShell.Shell.cs). */
+  shell: ShellModel | null;
+  /** The dialogs the host's flows asked the page to draw, oldest first. */
+  dialogs: readonly OpenDialog[];
+  /** A pane the page made active before the host's state says so (a tab or row click), so the switch draws at once. */
+  chosen?: string;
+  /** Counts the host's `select` pushes (a notification's click), so the same pane twice still scrolls into view. */
+  selected?: { paneId: string; seq: number };
 }
 
 /** The page's own message: a card fills the pane's composer, which listens for it. */
@@ -31,9 +40,20 @@ export interface FillMessage {
   text: string;
 }
 
-export type StoreMessage = PushMessage | FillMessage;
+/** The page's own message: a pane chosen by a click, shown before the host's state follows (undefined: forget the choice). */
+export interface ChooseMessage {
+  kind: 'choose';
+  paneId?: string;
+}
 
-export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {}, mighty: {} };
+export type StoreMessage = PushMessage | FillMessage | ChooseMessage;
+
+export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {}, mighty: {}, shell: null, dialogs: [] };
+
+/** A choice the host's state has caught up with is forgotten. */
+function settle(state: StoreState): StoreState {
+  return state.chosen !== undefined && state.snapshot?.activeSessionId === state.chosen ? { ...state, chosen: undefined } : state;
+}
 
 const terminal = new Set(['completed', 'error', 'stopped']);
 
@@ -88,7 +108,7 @@ export function applyPermission(state: StoreState, request: ToolPermissionReques
 export function reduce(state: StoreState, message: StoreMessage): StoreState {
   switch (message.kind) {
     case 'snapshot':
-      return { ...state, snapshot: message.snapshot };
+      return settle({ ...state, snapshot: message.snapshot });
     case 'delta': {
       const current = state.snapshot;
       if (!current) return state;
@@ -102,7 +122,7 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       const cards = Object.fromEntries(Object.entries(state.cards).filter(([id]) => !gone.has(id)));
       const fills = Object.fromEntries(Object.entries(state.fills).filter(([id]) => !gone.has(id)));
       const mighty = Object.fromEntries(Object.entries(state.mighty).filter(([id]) => !gone.has(id)));
-      return gone.size === 0 ? { ...state, snapshot } : { snapshot, activities, permissions, composers, cards, fills, mighty };
+      return settle(gone.size === 0 ? { ...state, snapshot } : { ...state, snapshot, activities, permissions, composers, cards, fills, mighty });
     }
     case 'event':
       return applyEvent(state, message.event);
@@ -114,6 +134,21 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       return { ...state, cards: { ...state.cards, [message.paneId]: message.cards } };
     case 'mighty':
       return { ...state, mighty: { ...state.mighty, [message.paneId]: applyMighty(state.mighty[message.paneId], message) } };
+    case 'shell':
+      return { ...state, shell: message.shell };
+    case 'dialog':
+      return { ...state, dialogs: [...state.dialogs.filter((open) => open.id !== message.id), { id: message.id, dialog: message.dialog }] };
+    case 'dialogClose':
+      return { ...state, dialogs: state.dialogs.filter((open) => open.id !== message.id) };
+    case 'dialogUpdate':
+      return {
+        ...state,
+        dialogs: state.dialogs.map((open) => (open.id === message.id && open.dialog.type === 'resumeChoice' ? { id: open.id, dialog: { ...open.dialog, checking: message.checking } } : open)),
+      };
+    case 'select':
+      return { ...state, selected: { paneId: message.paneId, seq: (state.selected?.seq ?? 0) + 1 } };
+    case 'choose':
+      return message.paneId === state.chosen ? state : settle({ ...state, chosen: message.paneId });
     case 'fill':
       return { ...state, fills: { ...state.fills, [message.paneId]: { text: message.text, seq: (state.fills[message.paneId]?.seq ?? 0) + 1 } } };
   }
@@ -147,4 +182,9 @@ export class Store {
 export function selectedSession(snapshot: AppSnapshot | null): RunSession | undefined {
   if (!snapshot) return undefined;
   return snapshot.sessions.find((session) => session.id === snapshot.activeSessionId) ?? snapshot.sessions[0];
+}
+
+/** The active pane as the page shows it: the one just chosen by a click, else the host's. */
+export function activeSessionId(state: StoreState): string | undefined {
+  return state.chosen ?? state.snapshot?.activeSessionId;
 }
