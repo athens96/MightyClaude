@@ -3,6 +3,7 @@ import { useServices, useStoreState } from '../app/context';
 import { Markdown } from '../conversation/MarkdownView';
 import { moveFocus, restoreIndex } from './keys';
 import * as draftOf from './questionnaire';
+import { usePageOverlay } from '../shell/overlay';
 import type {
   AntigravityCard, BackgroundCard, Card, LoginCard, NextActionsCard, PermissionCard, PlanCard, PlanHistoryCard, QuestionnaireCard,
   StatusLineCard, WebOpenCard,
@@ -357,6 +358,7 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
   const [revising, setRevising] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [full, setFull] = useState(false);
+  usePageOverlay(full);
   const answer = (decision: string) => void call('planAnswer', { requestId: card.requestId, decision, feedback: decision === 'revise' ? feedback : undefined });
   const tile = (key: string, decision: string | null, accent = false) => (
     <button
@@ -397,7 +399,7 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
         {tile('plan.card.approveAuto', 'approveAuto', true)}
       </div>
       {full && (
-        <div className="card-dialog" role="dialog" aria-label={t('plan.card.title')} onClick={() => setFull(false)}>
+        <div className="card-dialog" role="dialog" data-page-overlay="" aria-label={t('plan.card.title')} onClick={() => setFull(false)}>
           <div className="card-dialog-body" onClick={(event) => event.stopPropagation()}>
             <div className="card-dialog-title"><strong>{t('plan.card.title')}</strong><span className="card-waiting">{card.received}</span></div>
             <div className="card-dialog-document"><Markdown text={card.plan} /></div>

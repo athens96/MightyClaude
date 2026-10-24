@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { useServices, useStoreState } from '../app/context';
 import type { Counts, GitInfo, PaneInfo, ShellModel, Tone } from './types';
+import { usePageOverlay } from './overlay';
 
 /** The frame's model, or null before the host sent it. */
 export function useShell(): ShellModel | null {
@@ -123,6 +124,7 @@ export function MenuHost({ children }: { children: ReactNode }) {
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const element = useRef<HTMLDivElement>(null);
   const open = useCallback((at: { x: number; y: number }, items: MenuItem[]) => setMenu({ ...at, items }), []);
+  usePageOverlay(menu !== null);
   useEffect(() => {
     if (!menu) return;
     const close = (event: Event) => { if (!(event.target instanceof Node && element.current?.contains(event.target))) setMenu(null); };
@@ -137,7 +139,7 @@ export function MenuHost({ children }: { children: ReactNode }) {
     <MenuContext.Provider value={open}>
       {children}
       {menu && (
-        <div ref={element} className="menu" role="menu" style={style} data-testid="menu">
+        <div ref={element} className="menu" role="menu" style={style} data-testid="menu" data-page-overlay="">
           {menu.items.map((item, index) =>
             item.separator ? <div key={index} className="menu-separator" role="separator" /> : (
               <button key={index} type="button" role="menuitem" className="menu-item" disabled={item.disabled} data-testid={item.testId}

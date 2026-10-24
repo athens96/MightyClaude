@@ -6,6 +6,7 @@ import { providerLabel } from './format';
 import { ProviderMark } from './ProviderMark';
 import { ReferenceContext, clickedAt, linkAt, type Clicked } from './referenceClick';
 import { HeightCache, estimateHeight, layout, nearBottom, visibleRange } from './virtual';
+import { usePageOverlay } from '../shell/overlay';
 
 interface MenuState {
   x: number;
@@ -40,6 +41,7 @@ export function Conversation({ session }: { session: RunSession }) {
   const [version, setVersion] = useState(0);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [menu, setMenu] = useState<MenuState | null>(null);
+  usePageOverlay(menu !== null);
 
   const stickToBottom = useCallback(() => {
     const element = scroller.current;
@@ -186,7 +188,7 @@ export function Conversation({ session }: { session: RunSession }) {
         ))}
       </div>
       {menu && (
-        <div className="context-menu" role="menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()}>
+        <div className="context-menu" role="menu" data-page-overlay="" style={{ left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()}>
           <button type="button" role="menuitem" disabled={menu.selection.length === 0} onClick={() => { void navigator.clipboard.writeText(menu.selection).catch(() => {}); setMenu(null); }}>
             {t('pane.copyButton')}
           </button>
