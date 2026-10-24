@@ -4,7 +4,13 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { useServices, useStoreState } from '../app/context';
 import { BetaBadge } from '../shell/parts';
-import { ActContext, NativeNode, type Act } from './NativeNode';
+import { ActContext, NativeNode, SettingsFormContext, type Act } from './NativeNode';
+import { Icon, type IconName } from '../icons/Icon';
+
+/** Each category's symbol in the Mac's sidebar (M/SettingsViews.swift SettingsPane.symbol), as its Lucide counterpart. */
+const categorySymbol: Record<string, IconName> = {
+  general: 'settings', models: 'cpu', styles: 'palette', tools: 'box', cli: 'square-terminal', mobile: 'smartphone', remote: 'earth', companion: 'paw-print', about: 'info',
+};
 import type { NativeOpen, NativeSection, NativeView } from './types';
 
 function Sections({ sections, framed }: { sections: readonly NativeSection[]; framed: boolean }) {
@@ -25,24 +31,25 @@ function Settings({ open, view, call }: { open: NativeOpen; view: NativeView; ca
   // A new category starts at its top, as the WinUI form's scroll does.
   useEffect(() => { form.current?.scrollTo({ top: 0 }); }, [view.selected]);
   return (
-    <div className="native-settings" style={{ width: view.width ?? 800, height: view.height ?? 700 }}>
+    <div className="native-settings" data-testid="native-settings" style={{ width: view.width ?? 800, height: view.height ?? 700 }}>
       <header className="native-settings-head">
-        <span className="native-glyph native-settings-gear" aria-hidden="true">{''}</span>
-        <div><h2 className="sheet-title">{view.title}</h2>{view.subtitle && <div className="quiet small">{view.subtitle}</div>}</div>
+        <span className="native-settings-gear" aria-hidden="true"><Icon name="settings" size={22} weight={1.6} /></span>
+        <div><h2 className="native-settings-title">{view.title}</h2>{view.subtitle && <div className="native-settings-subtitle">{view.subtitle}</div>}</div>
         <span className="spacer" />
-        <button type="button" className="native-close" aria-label={view.close} title={view.close} onClick={() => call('nativeClose', { view: open.id })}>×</button>
+        <button type="button" className="native-close" aria-label={view.close} title={view.close} onClick={() => call('nativeClose', { view: open.id })}><Icon name="x" size={10} weight={3.4} /></button>
       </header>
       <div className="native-settings-body">
         <nav className="native-settings-nav" data-testid="settings-nav">
           {view.nav?.map((item) => (
             <button key={item.id} type="button" className={'native-nav-row' + (item.id === view.selected ? ' selected' : '')} aria-current={item.id === view.selected ? 'page' : undefined}
               data-category={item.id} onClick={() => call('nativeNav', { view: open.id, id: item.id })}>
-              <span className="native-glyph" aria-hidden="true">{item.glyph}</span>{item.title}
+              {categorySymbol[item.id] ? <span className="native-nav-symbol" aria-hidden="true"><Icon name={categorySymbol[item.id]!} size={15} weight={1.6} /></span>
+                : <span className="native-glyph" aria-hidden="true">{item.glyph}</span>}{item.title}
             </button>
           ))}
         </nav>
         <div className="native-settings-form" ref={form} data-testid="settings-form" data-category={view.selected}>
-          <Sections sections={view.sections} framed />
+          <SettingsFormContext.Provider value={true}><Sections sections={view.sections} framed /></SettingsFormContext.Provider>
         </div>
       </div>
       <footer className="native-settings-foot">

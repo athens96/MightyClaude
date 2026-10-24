@@ -1089,6 +1089,14 @@ internal sealed class CompanionOverlay : IDisposable
         top = Math.Clamp(top + pixelHeight, Math.Min(work.Top + room, work.Bottom + below), work.Bottom + below) - pixelHeight;
         if (move && window != 0) SetWindowPos(window, -1, left, top, pixelWidth, pixelHeight, 0x0010);
     }
+    /// <summary>The window's last picture as a PNG, for the help capture; false before the pet was drawn.</summary>
+    internal async Task<bool> SavePicture(string path)
+    {
+        if (surface is null || !presented) return false;
+        await surface.SaveAsync(path, CanvasBitmapFileFormat.Png);
+        return true;
+    }
+
     public void Dispose()
     {
         if (disposed) return; disposed = true;

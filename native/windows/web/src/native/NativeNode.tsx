@@ -7,6 +7,25 @@ export type Act = (id: number, op: 'invoke' | 'toggle' | 'select' | 'text' | 'va
 
 export const ActContext = createContext<Act>(() => {});
 
+/** True inside Settings' form, where a labelled picker row is laid out as the Mac's (the label at its width, the picker filling the rest). */
+export const SettingsFormContext = createContext(false);
+
+/**
+ * A row of Settings that is a label and a picker (SettingsLabeled with a segmented control or a pop-up): the Mac's LabeledContent
+ * gives the label its own width and the picker the rest of the row (M/SettingsViews.swift), where the WinUI form keeps a share or
+ * the picker's own width at the right. Null for any other grid.
+ */
+export function labelledPickerRow(node: Extract<Node, { t: 'grid' }>): number | null {
+  if (node.cols?.length !== 2 || node.c.length !== 2) return null;
+  const control = node.c.findIndex((child) => (child.col ?? 0) === 1);
+  const label = node.c.findIndex((child) => (child.col ?? 0) === 0);
+  if (control < 0 || label < 0) return null;
+  const picker = node.c[control]!;
+  const framedSelect = (n: Node): boolean => n.t === 'select' || ((n.t === 'grid' || n.t === 'box' || n.t === 'stack') && n.c.length === 1 && framedSelect(n.c[0]!));
+  const pickerLike = picker.t === 'segmented' || framedSelect(picker) || (picker.t === 'grid' && picker.c.length > 1 && picker.c.every((c) => c.t === 'button' || c.t === 'box' || c.t === 'rule'));
+  return pickerLike && node.c[label]!.t === 'text' ? control : null;
+}
+
 function Menu({ node }: { node: Extract<Node, { t: 'menu' }> }) {
   const act = useContext(ActContext);
   const [open, setOpen] = useState(false);
@@ -60,6 +79,7 @@ function Children({ nodes }: { nodes: readonly Node[] | null | undefined }) {
 
 function Inner({ node }: { node: Node }) {
   const act = useContext(ActContext);
+  const settingsForm = useContext(SettingsFormContext);
   switch (node.t) {
     case 'text': {
       const style: CSSProperties = { fontSize: node.size ? `calc(${node.size}px * var(--text-scale, 1))` : undefined, color: ink(node.ink), fontWeight: node.weight === 'bold' ? 600 : node.weight === 'medium' ? 500 : undefined };
@@ -147,11 +167,12 @@ function Inner({ node }: { node: Node }) {
       return <div className={'native-stack ' + node.dir} style={style}><Children nodes={node.c} /></div>;
     }
     case 'grid': {
+      const fill = settingsForm ? labelledPickerRow(node) : null;
       const style: CSSProperties = {
-        gridTemplateColumns: node.cols?.join(' '), gridTemplateRows: node.rows?.join(' '), rowGap: node.gap[0], columnGap: node.gap[1],
-        padding: node.pad ? edges(node.pad) : undefined, background: ink(node.fill),
+        gridTemplateColumns: fill !== null ? 'auto minmax(0, 1fr)' : node.cols?.join(' '), gridTemplateRows: node.rows?.join(' '), rowGap: node.gap[0],
+        columnGap: fill !== null ? 'var(--space-md)' : node.gap[1], padding: node.pad ? edges(node.pad) : undefined, background: ink(node.fill),
       };
-      return <div className="native-grid" style={style}><Children nodes={node.c} /></div>;
+      return <div className="native-grid" style={style}>{node.c.map((child, index) => <NativeNode key={index} node={child} fill={index === fill} />)}</div>;
     }
     case 'box': {
       const style: CSSProperties = {
@@ -165,10 +186,12 @@ function Inner({ node }: { node: Node }) {
 }
 
 /** One node with its placement (margin, alignment, size, grid cell). */
-export function NativeNode({ node }: { node: Node }) {
+export function NativeNode({ node, fill = false }: { node: Node; fill?: boolean }) {
   const style = boxStyle(node) as CSSProperties;
+  // A picker filling its labelled row (labelledPickerRow): the whole cell, whatever width or side the WinUI control kept.
+  if (fill) { style.width = undefined; style.maxWidth = undefined; style.justifySelf = 'stretch'; style.alignSelf = 'center'; }
   return (
-    <div className={'native-node native-' + node.t} style={style} title={node.t === 'button' ? undefined : node.help} data-aid={node.aid}>
+    <div className={'native-node native-n-' + node.t + (fill ? ' native-fill' : '')} style={style} title={node.t === 'button' ? undefined : node.help} data-aid={node.aid}>
       <Inner node={node} />
     </div>
   );
