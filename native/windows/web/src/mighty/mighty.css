@@ -51,7 +51,7 @@
 .mighty-pill.tone-err { background: var(--err-soft); color: var(--err-text); }
 .mighty-pill.tone-stop { background: var(--stop-soft); color: var(--stop-text); }
 .mighty-capsule { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-small); color: var(--ink2); padding: 1px 6px; border-radius: 8px; background: var(--card-raised); }
-.mighty-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.mighty-body { position: relative; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .mighty-band { padding: var(--space-sm) var(--space-md); background: color-mix(in srgb, var(--accent) 5.5%, transparent); font-size: var(--type-body); white-space: pre-wrap; word-break: break-word; user-select: text; }
 .mighty-transcript { padding: var(--space-sm); }
 .mighty-draft-body { padding: var(--space-md); }
