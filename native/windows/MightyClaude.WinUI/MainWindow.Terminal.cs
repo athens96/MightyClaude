@@ -252,6 +252,7 @@ public sealed partial class MainWindow
                     // A web shell page loaded again: its new terminal takes the colours and the font again.
                     case "ready": RefreshTerminalTheme(); break;
                     case "input":
+                        terminalInputs++;
                         if (value.Text("text") is { } text && (ownedAgentTerminal is { } owned ? owned.Write(text) : terminal?.TryWrite(text)) == false) owner.error.Text = Locale.Get("terminal.inputBusy");
                         break;
                     case "resize":
@@ -372,8 +373,13 @@ public sealed partial class MainWindow
             string text;
             lock (terminalOutputLock) { text = terminalPending.ToString(); terminalPending.Clear(); }
             // The web shell's page takes the bytes, so a chunk that ends inside a character is still written whole.
+            if (text.Length > 0) { terminalOutputPosts++; terminalOutputTail = (terminalOutputTail + text)[^Math.Min(400, terminalOutputTail.Length + text.Length)..]; }
             if (text.Length > 0) PostTerminal(owner.webShell is null ? new { type = "output", text } : new { type = "output", data = Convert.ToBase64String(Encoding.UTF8.GetBytes(text)) });
         }
+        /// <summary>For the smokes: whether the view said it is ready, output waiting, output chunks sent on, the shell running.</summary>
+        internal object TerminalDiagnostics() { int pending; lock (terminalOutputLock) pending = terminalPending.Length; return new { ready = terminalReady, closed = terminalClosed, pending, posts = terminalOutputPosts, flushing = terminalFlush.IsEnabled, inputs = terminalInputs, tail = terminalOutputTail }; }
+        private int terminalOutputPosts, terminalInputs;
+        private string terminalOutputTail = "";
         private void PostTerminal(object message)
         {
             if (terminalClosed || !terminalReady) return;

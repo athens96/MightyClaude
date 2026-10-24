@@ -17,6 +17,8 @@ export interface TerminalEntry {
 }
 
 export const entries = new Map<string, TerminalEntry>();
+/** Output chunks the page's terminals took and xterm finished writing, for the web smoke. */
+export const outputs = { received: 0, written: 0 };
 
 export function terminalEntry(paneId: string): TerminalEntry | undefined {
   return entries.get(paneId);
@@ -31,7 +33,14 @@ export function fitShown(entry: TerminalEntry): void {
 export function terminalText(paneId: string): string | null {
   const buffer = entries.get(paneId)?.terminal.buffer.active;
   if (!buffer) return null;
-  return Array.from({ length: buffer.length }, (_, index) => buffer.getLine(index)?.translateToString() ?? '').join('\n');
+  // A line the terminal wrapped joins the one before it: the text is what was written, not how wide the grid is.
+  let text = '';
+  for (let index = 0; index < buffer.length; index++) {
+    const line = buffer.getLine(index);
+    if (!line) continue;
+    text += (index > 0 && !line.isWrapped ? '\n' : '') + line.translateToString(true);
+  }
+  return text;
 }
 
 /** Types into the terminal as the keyboard does (its onData goes to the host), for the web smoke (`mightyPanes.terminalInput`). */
@@ -42,4 +51,4 @@ export function terminalInput(paneId: string, text: string): boolean {
   return true;
 }
 
-(globalThis as unknown as { mightyPanes?: object }).mightyPanes = { terminalText, terminalInput };
+(globalThis as unknown as { mightyPanes?: object }).mightyPanes = { terminalText, terminalInput, terminalOutputs: () => ({ ...outputs }) };

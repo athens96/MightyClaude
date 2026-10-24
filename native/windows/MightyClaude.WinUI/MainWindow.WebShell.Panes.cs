@@ -514,6 +514,10 @@ public sealed partial class MainWindow
             var typed = started && await Until(() => True("window.mightyPanes?.terminalInput(" + Js(terminalId) + ", " + Js(command) + ") === true"));
             echoed = typed && await Until(() => True("(window.mightyPanes?.terminalText(" + Js(terminalId) + ") ?? '').includes(" + Js(marker) + ")"), 20);
             checks["terminalTyped"] = typed;
+            // What the page's terminal holds, when the marker did not come back: the shell's prompt, an error, or nothing at all.
+            if (!echoed && terminal is not null) checks["terminalHost"] = terminal.TerminalDiagnostics();
+            if (!echoed) checks["terminalPage"] = await Probe("window.mightyPanes?.terminalOutputs?.() ?? null");
+            if (!echoed) checks["terminalText"] = await Probe("(window.mightyPanes?.terminalText(" + Js(terminalId) + ") ?? '(no terminal)').slice(-600)");
             checks["terminalFooter"] = await Probe(Slot(terminalId) + "?.querySelector('[data-testid=terminal-footer]')?.textContent ?? null");
         }
         finally
