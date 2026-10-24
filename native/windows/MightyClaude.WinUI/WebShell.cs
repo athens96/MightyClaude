@@ -9,7 +9,8 @@ namespace MightyClaude.WinUI;
 /// under a virtual host so it loads as a real origin without a server. Only that origin loads: any other navigation, a new
 /// window and a download are refused, and the page's messages are taken only from it (<see cref="WebBridge"/>). Developer
 /// tools and the stock context menu are there only in a smoke run or while the state folder holds <c>web-devtools</c>.
-/// Used only while the state folder holds <c>ui-web</c> at start (<see cref="Configure"/>); without it nothing changes.
+/// The window's front end unless the state folder holds <c>ui-winui</c> at start or no WebView2 runtime is installed
+/// (<see cref="Configure"/>); then the WinUI screens stand as before.
 /// </summary>
 internal sealed class WebShell : Grid
 {
@@ -17,10 +18,20 @@ internal sealed class WebShell : Grid
     internal const string Host = "app.mighty.invalid";
     internal const string Origin = "https://" + Host + "/";
 
-    /// <summary>Whether the state folder held <c>ui-web</c> when the app started.</summary>
+    /// <summary>Whether the page is the window's front end: on unless the state folder held <c>ui-winui</c> (the escape hatch) or WebView2 was missing at start.</summary>
     internal static bool Enabled { get; private set; }
-    /// <summary>Looks once, at start, as <see cref="PerfLog.Configure"/> does.</summary>
-    internal static void Configure(string stateDirectory) => Enabled = File.Exists(Path.Combine(stateDirectory, "ui-web"));
+    /// <summary>The page was wanted but no WebView2 runtime was installed, so the WinUI screens stand and say so.</summary>
+    internal static bool RuntimeMissing { get; private set; }
+    /// <summary>
+    /// Looks once, at start, as <see cref="PerfLog.Configure"/> does. <c>ui-web</c>, the switch of the days the page was opt-in,
+    /// is still read and changes nothing: the page is the default.
+    /// </summary>
+    internal static void Configure(string stateDirectory, bool runtimeInstalled)
+    {
+        var wanted = !File.Exists(Path.Combine(stateDirectory, "ui-winui"));
+        RuntimeMissing = wanted && !runtimeInstalled;
+        Enabled = wanted && runtimeInstalled;
+    }
 
     internal static bool Trusted(string? uri) => uri is not null && uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase);
 

@@ -6,8 +6,8 @@ using Microsoft.UI.Xaml.Controls;
 namespace MightyClaude.WinUI;
 
 /// <summary>
-/// The window's side of the web shell (WebShell.cs, docs: native/windows/web/README.md): while the state folder holds
-/// <c>ui-web</c> the page stands where the WinUI screens stood, and the methods it calls are this window's own actions,
+/// The window's side of the web shell (WebShell.cs, docs: native/windows/web/README.md): unless the state folder holds
+/// <c>ui-winui</c> the page stands where the WinUI screens stood, and the methods it calls are this window's own actions,
 /// so a choice made in the page goes through the same state update a WinUI click does. Everything else the window starts
 /// (the service, the companion, the phone link, notifications, updates) runs as before.
 /// </summary>
@@ -89,7 +89,7 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// The smoke for the web shell, in the UI smoke's place when the smoke profile holds <c>ui-web</c>: three fixture panes go
+    /// The smoke for the web shell, in the UI smoke's place when <c>MIGHTY_SMOKE_WEB=1</c> kept <c>ui-winui</c> out of the smoke profile: three fixture panes go
     /// into the state, and the page's DOM (read through ExecuteScriptAsync) must show the shell, every pane's title in the
     /// sidebar and the active pane in the main area; a click on the second row must make it the active pane in the host's
     /// state and in the page. The Claude pane holds one entry of each kind: the conversation must draw them (counted by their
