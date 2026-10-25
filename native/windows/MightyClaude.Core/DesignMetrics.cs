@@ -231,14 +231,14 @@ public static class DesignMetrics
 
     /// <summary>
     /// The 파이프라인 view's state colours (fixture <c>pipeline</c>, M/MightyCore/DesignMetrics.swift Pipeline): a column's cards sit
-    /// on its tone's soft tint at <see cref="ColumnTintOpacity"/>, each card on the same tint at the stronger
-    /// <see cref="CardTintOpacity"/>, with a <see cref="CardBarWidth"/> bar in the tone's mark down its leading edge
-    /// (<see cref="MightyStructure.Tone"/>).
+    /// on its tone's soft tint at <see cref="ColumnTintOpacity"/>, each card on the same tint at the lighter
+    /// <see cref="CardTintOpacity"/>, so it stands out from its column, with a <see cref="CardBarWidth"/> bar in the tone's mark
+    /// down its leading edge (<see cref="MightyStructure.Tone"/>).
     /// </summary>
     public static class Pipeline
     {
-        public const double ColumnTintOpacity = 0.45;
-        public const double CardTintOpacity = 0.85;
+        public const double ColumnTintOpacity = 0.6;
+        public const double CardTintOpacity = 0.35;
         public const double CardBarWidth = 3;
     }
 

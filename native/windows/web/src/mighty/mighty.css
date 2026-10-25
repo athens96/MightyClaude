@@ -246,6 +246,12 @@
 .structure-chip.step-current { background: var(--accent); color: var(--on-accent); font-weight: 700; }
 .structure-chip.step-error { background: var(--err); color: var(--on-status); }
 .structure-chip.step-stopped { background: var(--stop); color: var(--on-status); }
+/* The current step's chip in its column's tone (Core MightyStructure.Tone.OfColumn): amber while its request waits, green once done. */
+.structure-chip.step-current.chip-run { background: var(--run); color: var(--on-status); }
+.structure-chip.step-current.chip-wait { background: var(--wait); color: var(--on-wait); }
+.structure-chip.step-current.chip-done { background: var(--done); color: var(--on-status); }
+.structure-chip.step-current.chip-err { background: var(--err); color: var(--on-status); }
+.structure-chip.step-current.chip-stop { background: var(--stop); color: var(--on-status); }
 .structure-count { font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink2); background: var(--track); border-radius: 8px; padding: 0 var(--space-sm); line-height: 16px; }
 .structure-link { flex: 1; height: 2px; margin-right: calc(-1 * var(--space-lg)); background: var(--track); }
 .structure-link.done { background: var(--done); }
@@ -293,7 +299,7 @@
 .structure-output { font-family: var(--font-transcript); font-size: 11px; color: var(--ink); white-space: pre-wrap; word-break: break-word; }
 
 /* ── pipeline state colours (fixture `pipeline`, Core MightyStructure.Tone, M/MightyStructureView.swift) ── */
-/* A column's cards sit on its tone's soft tint; each card on a stronger one with a bar in the tone's mark down its leading edge.
+/* A column's cards sit on its tone's soft tint; each card on a lighter one, so it stands out, with a bar in the tone's mark down its leading edge.
    A step still to come has none. The sub-agent card's own bar is the same bar. */
 .tint-run { --tint-soft: var(--run-soft); --tint-mark: var(--run); }
 .tint-wait { --tint-soft: var(--wait-soft); --tint-mark: var(--wait-text); }

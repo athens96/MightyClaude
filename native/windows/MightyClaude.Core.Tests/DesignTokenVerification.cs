@@ -182,7 +182,8 @@ internal static class DesignTokenVerification
         var constants = typeof(DesignMetrics.Pipeline).GetFields(BindingFlags.Public | BindingFlags.Static).Where(f => f.IsLiteral).ToDictionary(f => Camel(f.Name), f => (double)f.GetRawConstantValue()!);
         Check(constants.Keys.ToHashSet().SetEquals(table.Keys), $"pipeline: C# [{string.Join(", ", constants.Keys.Order())}] vs fixture [{string.Join(", ", table.Keys.Order())}]");
         foreach (var (name, value) in table) Check(Near(constants[name], value), $"pipeline.{name}: expected {value}, got {constants[name]}");
-        Check(DesignMetrics.Pipeline.CardTintOpacity > DesignMetrics.Pipeline.ColumnTintOpacity, "a card's tint is stronger than its column's, so it stands out in a column of its own tone");
+        Check(Near(DesignMetrics.Pipeline.ColumnTintOpacity, 0.6) && Near(DesignMetrics.Pipeline.CardTintOpacity, 0.35) && Near(DesignMetrics.Pipeline.CardBarWidth, 3),
+            "the column's wash 0.6, the card's lighter tint 0.35 and the 3pt bar: " + DesignMetrics.Pipeline.ColumnTintOpacity + " " + DesignMetrics.Pipeline.CardTintOpacity + " " + DesignMetrics.Pipeline.CardBarWidth);
         return Task.CompletedTask;
     }
 

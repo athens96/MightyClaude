@@ -489,14 +489,15 @@ public sealed partial class MainWindow
             structureHeader.Child = lead;
         }
 
-        /// <summary>A step's fill, ink and mark (M/MightyStructureView.swift:333-342): done is green, current the accent, pending grey; an error or a stop in its own fill.</summary>
-        private (Brush Fill, Brush Ink, string Symbol) StructureLook(MightyStructure.Step step)
+        /// <summary>A step's fill, ink and mark (M/MightyStructureView.swift:333-342): done is green, current in its column's tone, pending grey; an error or a stop in its own fill.</summary>
+        private (Brush Fill, Brush Ink, string Symbol) StructureLook(MightyStructure.Step step, DesignTone? tone)
         {
             var b = owner.brushes;
             return step switch
             {
                 MightyStructure.Step.Done => (b.Fill(DesignTone.Done), b.FillInk(DesignTone.Done), "checkmark"),
-                MightyStructure.Step.Current => (b.Brush(DesignToken.Accent), b.Brush(DesignToken.OnAccent), "circle.fill"),
+                // The current step in its column's tone (MightyStructure.Tone.OfColumn): amber while its request waits, green once done.
+                MightyStructure.Step.Current => (b.Fill(tone ?? DesignTone.Run), b.FillInk(tone ?? DesignTone.Run), "circle.fill"),
                 MightyStructure.Step.Error => (b.Fill(DesignTone.Err), b.FillInk(DesignTone.Err), "xmark"),
                 MightyStructure.Step.Stopped => (b.Fill(DesignTone.Stop), b.FillInk(DesignTone.Stop), "stop.fill"),
                 _ => (b.Brush(DesignToken.Track), b.Brush(DesignToken.Ink2), "circle"),
@@ -507,9 +508,9 @@ public sealed partial class MainWindow
         /// One step as a chip (M/MightyStructureView.swift:316-331): a capsule 20 tall, padding <c>Spacing.Md</c>, its 8pt bold mark
         /// and its 11pt title (bold while current) <c>Spacing.Xs</c> apart, in its step's look.
         /// </summary>
-        private Border StructureChip(string title, MightyStructure.Step step)
+        private Border StructureChip(string title, MightyStructure.Step step, DesignTone? tone)
         {
-            var (fill, ink, symbol) = StructureLook(step);
+            var (fill, ink, symbol) = StructureLook(step, tone);
             var face = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
             face.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); face.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
             face.Children.Add(MightySymbols.Create(symbol, 8, ink, MightySymbols.Weight.Bold));
@@ -609,7 +610,7 @@ public sealed partial class MainWindow
         {
             var b = owner.brushes;
             var head = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm, Height = StructureChipHeight };
-            head.Add(StructureChip(StructureStepTitle(column.Step), column.Step.Step), PaneHeaderLine.Role.Shrink);
+            head.Add(StructureChip(StructureStepTitle(column.Step), column.Step.Step, MightyStructure.Tone.OfColumn(column)), PaneHeaderLine.Role.Shrink);
             head.Add(new Border
             {
                 Child = StructureWords(column.Count.ToString(CultureInfo.InvariantCulture), DesignMetrics.Type.Small, b.Brush(DesignToken.Ink2), FontWeights.SemiBold), Background = b.Brush(DesignToken.Track),

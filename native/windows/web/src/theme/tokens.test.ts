@@ -43,6 +43,9 @@ describe('tokens', () => {
     expect(sheet).toContain(`--pipeline-column-tint:${percent(tokens.pipeline.columnTintOpacity)};`);
     expect(sheet).toContain(`--pipeline-card-tint:${percent(tokens.pipeline.cardTintOpacity)};`);
     expect(sheet).toContain(`--pipeline-card-bar:${tokens.pipeline.cardBarWidth}px;`);
-    expect(tokens.pipeline.cardTintOpacity).toBeGreaterThan(tokens.pipeline.columnTintOpacity);
+    // The column's wash, the card's lighter tint (so a card stands out from its column) and the bar.
+    expect(tokens.pipeline).toEqual({ columnTintOpacity: 0.6, cardTintOpacity: 0.35, cardBarWidth: 3 });
+    expect(percent(tokens.pipeline.columnTintOpacity)).toBe('60%');
+    expect(percent(tokens.pipeline.cardTintOpacity)).toBe('35%');
   });
 });

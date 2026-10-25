@@ -28,9 +28,16 @@ public static partial class MightyStructure
             _ => null,
         };
 
-        /// <summary>A column's: its step's, the current one waiting while the column's newest request (its last card that is not a sub-agent's) waits.</summary>
+        /// <summary>
+        /// A column's: a done, error, stopped or pending step's own; the current step's follows the column's newest request (its last
+        /// card that is not a sub-agent's): running runs, waiting waits, completed is done, failed an error, cancelled or interrupted a
+        /// stop, and anything else, or no request at all, runs.
+        /// </summary>
         public static DesignTone? OfColumn(BoardColumn column) =>
-            OfStep(column.Step.Step, waiting: column.Cards.LastOrDefault(card => card.Kind != CardKind.Agent)?.Item.Status == "waiting");
+            column.Step.Step == Step.Current ? Current(column.Cards.LastOrDefault(card => card.Kind != CardKind.Agent)?.Item.Status) : OfStep(column.Step.Step);
+
+        /// <summary>The current step's tone for its newest request's status, in the block buckets; <c>done</c> is done.</summary>
+        private static DesignTone Current(string? status) => status == "done" ? DesignTone.Done : StatusGlyph.Tone(MightyTimeline.Status(status ?? "running"));
 
         /// <summary>A card's: a free board's 요청 and 결과 stand for their step and take their column's; the 실행 card, a styled board's request and every sub-agent, task and 작업 알림 card their own status's.</summary>
         public static DesignTone? OfCard(Card card, BoardColumn column) => card.Kind switch

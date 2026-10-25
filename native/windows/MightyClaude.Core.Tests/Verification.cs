@@ -287,6 +287,7 @@ internal static class Verification
         await Test("Mighty structure tone: a status and a step take the pipeline view's tone", MightyStructureToneVerification.AStatusAndAStepTakeThePipelineTone);
         await Test("Mighty structure tone: a free board tints its columns and cards", MightyStructureToneVerification.AFreeBoardTintsItsColumnsAndCards);
         await Test("Mighty structure tone: a pipeline tints its phases and each card by its own status", MightyStructureToneVerification.APipelineTintsItsPhasesAndEachCardByItsOwnStatus);
+        await Test("Mighty structure tone: a current column takes its newest request's status", MightyStructureToneVerification.ACurrentColumnTakesItsNewestRequestsStatus);
         await Test("WorkDashboardVerification CountsAndAttentionMatchMac", WorkDashboardVerification.CountsAndAttentionMatchMac);
         await Test("WorkDashboardVerification CardsRespectUsageIdentityAndStablePriority", WorkDashboardVerification.CardsRespectUsageIdentityAndStablePriority);
         await Test("WorkDashboardVerification ActivityAndAgeRemainBoundedAndTruthful", WorkDashboardVerification.ActivityAndAgeRemainBoundedAndTruthful);

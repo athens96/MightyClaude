@@ -6,13 +6,15 @@ using Tone = MightyClaude.Core.MightyStructure.Tone;
 
 /// <summary>
 /// The 파이프라인 view's state colours against the Mac's MightyStructureToneTests: a status, a step, a column and a card take the
-/// same tone, a waiting request turns its current step amber, and a step still to come takes none.
+/// same tone, a current step takes its newest request's (amber while it waits, green once it is done), and a step still to come
+/// takes none.
 /// </summary>
 internal static class MightyStructureToneVerification
 {
     private static void Check(bool value, string reason) { if (!value) throw new InvalidOperationException(reason); }
     private static string Words(IEnumerable<DesignTone?> tones) => string.Join(",", tones.Select(tone => tone?.ToString().ToLowerInvariant() ?? "-"));
-    private static IReadOnlyList<Board> Boards(IReadOnlyList<MightyGraphRun> runs, StyleEvaluator? style = null) => MightyStructure.Boards(MightyStructure.Make(runs, style, null));
+    private static IReadOnlyList<Board> Boards(IReadOnlyList<MightyGraphRun> runs, StyleEvaluator? style = null, string? phase = null, bool startingNew = false) =>
+        MightyStructure.Boards(MightyStructure.Make(runs, style, phase is null || style is null ? null : Phase(style, phase), startingNew));
     private static string Columns(Board board) => Words(board.Columns.Select(Tone.OfColumn));
     private static string Cards(MightyStructure.BoardColumn column) => Words(column.Cards.Select(card => Tone.OfCard(card, column)));
 
@@ -48,6 +50,24 @@ internal static class MightyStructureToneVerification
         Check(Cards(waiting.Columns[1]) == "done,done,err", "each card its own status's: " + Cards(waiting.Columns[1]));
         var running = Boards([Run("r1", "ooo interview 시작"), Run("r2", "ooo seed", status: "running")], style)[0];
         Check(Columns(running) == "done,done,run,-,-,-", "the running request's phase runs: " + Columns(running));
+        return Task.CompletedTask;
+    }
+
+    internal static Task ACurrentColumnTakesItsNewestRequestsStatus()
+    {
+        var style = Style("ouroboros");
+        // The pipeline stands at 시드 with its request over: the step reads as that request ended.
+        var seed = new[] { "completed", "stopped", "cancelled", "failed" }.Select(status =>
+        {
+            var board = Boards([Run("r1", "ooo interview 시작"), Run("r2", "ooo seed", status: status)], style)[0];
+            Check(board.Columns[2].Step.Step == Step.Current, status + ": the pipeline stands at 시드");
+            return Tone.OfColumn(board.Columns[2]);
+        }).ToList();
+        Check(Words(seed) == "done,stop,stop,err", "the current step by how its newest request ended: " + Words(seed));
+        // The pane stands at 실행 for the next request, which no request reached yet: the current step runs.
+        var moved = Boards([Run("r1", "ooo interview 시작"), Run("r2", "ooo seed")], style, "run", startingNew: true)[0];
+        Check(moved.Columns[3].Step.Step == Step.Current && moved.Columns[3].Cards.Count == 0, "the pane's next phase is current and empty");
+        Check(Tone.OfColumn(moved.Columns[3]) == DesignTone.Run, "an empty current step runs: " + Tone.OfColumn(moved.Columns[3]));
         return Task.CompletedTask;
     }
 }

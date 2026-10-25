@@ -7,7 +7,7 @@ import {
   type Page, type PanTarget, type Scroll, type XY,
 } from './structureMotion';
 import type { StructureActivity, StructureBoard, StructureCard } from './types';
-import { edgeClass, tintClass } from './structureTone';
+import { chipClass, edgeClass, tintClass } from './structureTone';
 import { usePageOverlay } from '../shell/overlay';
 import { Icon, type IconName } from '../icons/Icon';
 
@@ -400,7 +400,7 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
         {board.columns.map((column, at) => (
           <div key={column.id} className={'structure-column step-' + column.step + tintClass(column.tone)} data-column-id={column.id}>
             <header className="structure-column-head" title={column.title + ' · ' + column.stepWord}>
-              <span className={'structure-chip step-' + column.step}><Icon name={stepIcon(column.step)} size={8} weight={3.2} fill={column.step === 'current'} />{column.title}</span>
+              <span className={'structure-chip step-' + column.step + chipClass(column.step, column.tone)}><Icon name={stepIcon(column.step)} size={8} weight={3.2} fill={column.step === 'current'} />{column.title}</span>
               <span className="structure-count">{column.count}</span>
               {at < board.columns.length - 1 && <span className={'structure-link' + (column.step === 'done' ? ' done' : '')} aria-hidden="true" />}
             </header>
