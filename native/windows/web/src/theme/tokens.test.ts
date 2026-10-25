@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import tokens from '@tokens/design-tokens.json';
-import { kebab, paletteVariables, terminalPalette, themeName, tokenStyleSheet } from './tokens';
+import { kebab, paletteVariables, percent, terminalPalette, themeName, tokenStyleSheet } from './tokens';
 import { terminalThemes } from '../panes/terminal/rules';
 
 describe('tokens', () => {
@@ -34,5 +34,15 @@ describe('tokens', () => {
       expect(tokenStyleSheet()).toContain(`--terminal-background:${palette.background};`);
     }
     expect(terminalPalette('dark').background).toBe('#202020');
+  });
+
+  it('carries the pipeline tints and status bar from the fixture', () => {
+    expect(percent(0.45)).toBe('45%');
+    expect(percent(0.085)).toBe('8.5%');
+    const sheet = tokenStyleSheet();
+    expect(sheet).toContain(`--pipeline-column-tint:${percent(tokens.pipeline.columnTintOpacity)};`);
+    expect(sheet).toContain(`--pipeline-card-tint:${percent(tokens.pipeline.cardTintOpacity)};`);
+    expect(sheet).toContain(`--pipeline-card-bar:${tokens.pipeline.cardBarWidth}px;`);
+    expect(tokens.pipeline.cardTintOpacity).toBeGreaterThan(tokens.pipeline.columnTintOpacity);
   });
 });

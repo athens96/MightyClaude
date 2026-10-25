@@ -229,6 +229,19 @@ public static class DesignMetrics
         public const double FileSelection = 0.18;
     }
 
+    /// <summary>
+    /// The 파이프라인 view's state colours (fixture <c>pipeline</c>, M/MightyCore/DesignMetrics.swift Pipeline): a column's cards sit
+    /// on its tone's soft tint at <see cref="ColumnTintOpacity"/>, each card on the same tint at the stronger
+    /// <see cref="CardTintOpacity"/>, with a <see cref="CardBarWidth"/> bar in the tone's mark down its leading edge
+    /// (<see cref="MightyStructure.Tone"/>).
+    /// </summary>
+    public static class Pipeline
+    {
+        public const double ColumnTintOpacity = 0.45;
+        public const double CardTintOpacity = 0.85;
+        public const double CardBarWidth = 3;
+    }
+
     /// <summary>Dashed outlines, in pt as the Mac draws them.</summary>
     public static class Dash
     {

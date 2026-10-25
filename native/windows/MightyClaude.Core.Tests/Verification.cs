@@ -284,6 +284,9 @@ internal static class Verification
         await Test("Mighty structure wheel: the origin, the axis and the taker", MightyStructureBoardVerification.TheWheelMovesTheOriginAndStaysOnItsAxis);
         await Test("Mighty structure wheel: a gesture is decided once and is the user's until it settles", MightyStructureBoardVerification.AGestureIsDecidedOnceAndIsTheUsersUntilItSettles);
         await Test("Mighty structure wheel: a vertical wheel moves the column and a sideways one the page", MightyStructureBoardVerification.AVerticalWheelMovesTheColumnAndASidewaysOneThePage);
+        await Test("Mighty structure tone: a status and a step take the pipeline view's tone", MightyStructureToneVerification.AStatusAndAStepTakeThePipelineTone);
+        await Test("Mighty structure tone: a free board tints its columns and cards", MightyStructureToneVerification.AFreeBoardTintsItsColumnsAndCards);
+        await Test("Mighty structure tone: a pipeline tints its phases and each card by its own status", MightyStructureToneVerification.APipelineTintsItsPhasesAndEachCardByItsOwnStatus);
         await Test("WorkDashboardVerification CountsAndAttentionMatchMac", WorkDashboardVerification.CountsAndAttentionMatchMac);
         await Test("WorkDashboardVerification CardsRespectUsageIdentityAndStablePriority", WorkDashboardVerification.CardsRespectUsageIdentityAndStablePriority);
         await Test("WorkDashboardVerification ActivityAndAgeRemainBoundedAndTruthful", WorkDashboardVerification.ActivityAndAgeRemainBoundedAndTruthful);
@@ -1010,6 +1013,7 @@ internal static class Verification
         await Test("design tokens: provider and Windows-only colours match the fixture", DesignTokenVerification.WindowsOnlyColoursMatchTheFixture);
         await Test("design tokens: dashes convert to WinUI stroke units ([9,7] at 2pt is [4.5,3.5])", DesignTokenVerification.DashesConvertToStrokeUnits);
         await Test("design tokens: metrics and opacities match the fixture", DesignTokenVerification.MetricsAndOpacitiesMatchTheFixture);
+        await Test("design tokens: the pipeline view's tints and status bar match the fixture", DesignTokenVerification.PipelineTintsMatchTheFixture);
         await Test("design tokens: only the light theme setting picks the light palette", DesignTokenVerification.ThemeSettingPicksThePalette);
         await Test("design tokens: inks, fills and marks clear the macOS contrast rules", DesignTokenVerification.InksFillsAndMarksClearTheirContrast);
         // The text setting (M/MightyCore/TextAppearance.swift): at the standard values every size is today's.

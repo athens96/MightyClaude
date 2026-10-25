@@ -123,12 +123,14 @@ export interface StructureCard {
   /** The 실행 block and the result block of the card's request, for the reveal buttons. */
   executionNodeId?: string;
   resultNodeId?: string;
+  /** The card's state colour (Core MightyStructure.Tone.OfCard): run, wait, done, err or stop; none for a step still to come. */
+  tint?: string | null;
 }
 
 /** One tool call on a card: its kind (command, read, edit, search, web, agent, turn, tool), its state and its words. */
 export interface StructureActivity { kind: string; state: string; text: string }
 
-export interface StructureColumn { id: string; title: string; step: string; stepWord: string; count: number; cards: StructureCard[] }
+export interface StructureColumn { id: string; title: string; step: string; stepWord: string; count: number; cards: StructureCard[]; /** The step's state colour (MightyStructure.Tone.OfColumn), none while it is to come. */ tone?: string | null }
 export interface StructureBoard { id: string; kind: string; ordinal: number; headline?: string; status: string; statusWord: string; tone: string; runIds: string[]; columns: StructureColumn[]; styleName?: string }
 
 /** host → web: a pane's Mighty model, only what changed: blocks by id, and the other parts whole when they changed. */

@@ -35,8 +35,8 @@ internal sealed record WebStructureActivity(string Kind, string State, string Te
 /// <summary>A structure card for the page; an agent card adds its kind, "kind · model", its depth and its prompt apart from its output; <c>RevealId</c> is the block its reveal shows.</summary>
 internal sealed record WebStructureCard(string Id, string Kind, string RunId, string NodeId, string Title, string Status, string StatusWord, string Tone, string? Parent,
     string? Text, string? Message, string? Answer, IReadOnlyList<WebStructureActivity> Activity, string? Tally, bool Finished, string? ResultLine,
-    string? NodeKind = null, string? Meta = null, int Depth = 0, string? Prompt = null, string? ExecutionNodeId = null, string? ResultNodeId = null);
-internal sealed record WebStructureColumn(string Id, string Title, string Step, string StepWord, int Count, IReadOnlyList<WebStructureCard> Cards);
+    string? NodeKind = null, string? Meta = null, int Depth = 0, string? Prompt = null, string? ExecutionNodeId = null, string? ResultNodeId = null, string? Tint = null);
+internal sealed record WebStructureColumn(string Id, string Title, string Step, string StepWord, int Count, IReadOnlyList<WebStructureCard> Cards, string? Tone);
 internal sealed record WebStructureBoard(string Id, string Kind, int Ordinal, string? Headline, string Status, string StatusWord, string Tone, IReadOnlyList<string> RunIds, IReadOnlyList<WebStructureColumn> Columns, string? StyleName);
 
 public sealed partial class MainWindow
@@ -384,6 +384,8 @@ public sealed partial class MainWindow
         private List<WebStructureBoard> WebStructure(RunSession pane, IReadOnlyList<MightyGraphRun> runs)
         {
             static string Tone(string status) => StatusGlyph.Tone(MightyTimeline.Status(status)).ToString().ToLowerInvariant();
+            // The 파이프라인 view's state colours (Core MightyStructure.Tone), null for a step still to come.
+            static string? ToneWord(DesignTone? tone) => tone?.ToString().ToLowerInvariant();
             var (style, phase, pending) = StructureInputs(runs, styleStartingNew);
             var signature = new MightyStructure.Signature(runs, style, phase, styleStartingNew, pane.PlanHistory, pending);
             var boards = MightyStructure.Boards(MightyStructure.Make(runs, style, phase, styleStartingNew, pane.PlanHistory, pending, structureItems.Items(runs, signature)));
@@ -391,7 +393,7 @@ public sealed partial class MainWindow
             {
                 MightyStructure.Step.Done => "done", MightyStructure.Step.Current => "current", MightyStructure.Step.Error => "done", MightyStructure.Step.Stopped => "done", _ => "pending",
             });
-            WebStructureCard Card(MightyStructure.Card card)
+            WebStructureCard Card(MightyStructure.Card card, MightyStructure.BoardColumn column)
             {
                 var item = card.Item;
                 var title = card.Node?.Title ?? GraphRequestTitle(runs[item.RunIndex], item.Ordinal);
@@ -412,12 +414,12 @@ public sealed partial class MainWindow
                     item.Finished, MightyStructure.Fold.ResultLine(item),
                     // A task notice's title already names its kind (MightyStructure.Kept keeps no other steer).
                     node?.Kind, node is null ? null : string.Join(" · ", new[] { node.Kind == "steer" ? null : MightyTimeline.KindLabel(node.Kind, null), model }.Where(p => !string.IsNullOrEmpty(p))),
-                    node?.Depth ?? 0, node?.Prompt?.Preview, item.ExecutionNodeId, MightyGraphLayout.NodeID(runs[item.RunIndex], "result"));
+                    node?.Depth ?? 0, node?.Prompt?.Preview, item.ExecutionNodeId, MightyGraphLayout.NodeID(runs[item.RunIndex], "result"), ToneWord(MightyStructure.Tone.OfCard(card, column)));
             }
             var styleName = activeStyle?.Manifest.Name;
             return boards.Select(board => new WebStructureBoard(board.Id, board.Kind.ToString().ToLowerInvariant(), board.Ordinal, board.Headline, board.Status, MightyGraphBlockModel.StateLabel(board.Status), Tone(board.Status), board.RunIds,
                 board.Columns.Select(column => new WebStructureColumn(column.Id, column.Step.Title ?? Locale.Get("graph.structure.column." + column.Id), column.Step.Step.ToString().ToLowerInvariant(),
-                    StepWord(column.Step.Step), column.Count, column.Cards.Select(Card).ToList())).ToList(), board.Kind == MightyStructure.BoardKind.Pipeline ? styleName : null)).ToList();
+                    StepWord(column.Step.Step), column.Count, column.Cards.Select(card => Card(card, column)).ToList(), ToneWord(MightyStructure.Tone.OfColumn(column)))).ToList(), board.Kind == MightyStructure.BoardKind.Pipeline ? styleName : null)).ToList();
         }
 
         /// <summary>A block drag released in the page, saved as the WinUI drag saves it (<see cref="EndResultResize"/>): the newest result and the waiting plan keep the pane's one size, any other block its own.</summary>

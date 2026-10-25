@@ -7,6 +7,7 @@ import {
   type Page, type PanTarget, type Scroll, type XY,
 } from './structureMotion';
 import type { StructureActivity, StructureBoard, StructureCard } from './types';
+import { edgeClass, tintClass } from './structureTone';
 import { usePageOverlay } from '../shell/overlay';
 import { Icon, type IconName } from '../icons/Icon';
 
@@ -74,8 +75,7 @@ const Bolt = ({ status }: { status: string }) => status === 'running' ? <span cl
 const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCard; onFold: (element: HTMLElement) => void; onReveal: Reveal }) {
   const { t } = useServices();
   const request = nodeId(card.runId, RequestStep);
-  const running = card.status === 'running' || card.status === 'waiting';
-  const base = 'structure-card tone-' + card.tone + ' kind-' + card.kind + (running ? ' live' : '');
+  const base = 'structure-card tone-' + card.tone + ' kind-' + card.kind + edgeClass(card.status) + tintClass(card.tint);
   const progress = (
     <>
       {card.message ? <Fold text={card.message} lines={MessageLines} className="structure-text" onFold={onFold} />
@@ -87,7 +87,7 @@ const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCar
   switch (card.kind) {
     case 'request':
       return (
-        <div className={'structure-card kind-request'} data-card-id={card.id} data-node-id={card.nodeId}>
+        <div className={'structure-card kind-request' + tintClass(card.tint)} data-card-id={card.id} data-node-id={card.nodeId}>
           <div className="structure-card-row top">
             {card.text ? <Fold text={card.text} lines={RequestLines} className="structure-text" onFold={onFold} /> : <span className="structure-heading">{card.title}</span>}
             <RevealButton id={card.nodeId} fallback={request} onReveal={onReveal} />
@@ -107,7 +107,7 @@ const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCar
       const outcome = card.answer ? <div className="structure-answer"><Markdown text={card.answer} /></div>
         : <div className="structure-quiet">{card.finished ? card.statusWord : t('graph.structure.resultPending')}</div>;
       return (
-        <div className={'structure-card tone-' + card.tone + ' kind-result'} data-card-id={card.id} data-node-id={card.nodeId}>
+        <div className={'structure-card tone-' + card.tone + ' kind-result' + tintClass(card.tint)} data-card-id={card.id} data-node-id={card.nodeId}>
           {ended ? <><div className="structure-card-row"><ResultTitle card={card} /><span className="spacer" />{reveal}</div>{outcome}</>
             : <div className="structure-card-row top">{outcome}{reveal}</div>}
         </div>
@@ -139,7 +139,7 @@ const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCar
       const steer = card.nodeKind === 'steer';
       const last = card.activity[card.activity.length - 1];
       return (
-        <div className={'structure-node tone-' + card.tone + (running ? ' live' : '')} data-card-id={card.id} data-node-id={card.nodeId}
+        <div className={'structure-node tone-' + card.tone + edgeClass(card.status) + tintClass(card.tint)} data-card-id={card.id} data-node-id={card.nodeId}
           style={{ marginLeft: Math.min(card.depth ?? 0, 3) * 16 }}>
           <div className="structure-card-row">
             <span className={'structure-node-glyph' + (task ? ' task' : steer ? ' steer' : '')}><Icon name={task ? 'square-terminal' : steer ? 'message-square-text' : 'square-user-round'} size={11} weight={2} /></span>
@@ -398,7 +398,7 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
       <div className="structure-columns" ref={page} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPress} onPointerCancel={endPress}
         onLostPointerCapture={endPress} onClickCapture={onClickCapture} onScrollCapture={onColumnScroll}>
         {board.columns.map((column, at) => (
-          <div key={column.id} className={'structure-column step-' + column.step} data-column-id={column.id}>
+          <div key={column.id} className={'structure-column step-' + column.step + tintClass(column.tone)} data-column-id={column.id}>
             <header className="structure-column-head" title={column.title + ' · ' + column.stepWord}>
               <span className={'structure-chip step-' + column.step}><Icon name={stepIcon(column.step)} size={8} weight={3.2} fill={column.step === 'current'} />{column.title}</span>
               <span className="structure-count">{column.count}</span>

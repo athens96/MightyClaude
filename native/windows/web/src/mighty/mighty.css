@@ -282,12 +282,7 @@
 .structure-activity-text.mono { font-family: var(--font-mono); }
 .structure-node { position: relative; flex: none; display: flex; flex-direction: column; gap: var(--space-xxs); border-radius: 8px; border: var(--stroke-line) solid var(--line); background: var(--card); overflow: hidden;
   padding: var(--space-xs) var(--space-xs) var(--space-xs) var(--space-md); }
-.structure-node::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--idle); }
-.structure-node.tone-run::before { background: var(--run); }
-.structure-node.tone-done::before { background: var(--done); }
-.structure-node.tone-wait::before { background: var(--wait); }
-.structure-node.tone-err::before { background: var(--err); }
-.structure-node.tone-stop::before { background: var(--stop); }
+.structure-node::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--pipeline-card-bar); background: var(--idle); }
 .structure-node-glyph { display: inline-grid; flex: none; color: var(--agent-text); }
 .structure-node-glyph.task { color: var(--task-text); }
 .structure-node-glyph.steer { color: var(--steer-text); }
@@ -296,3 +291,20 @@
 .structure-parent { display: flex; align-items: center; gap: var(--space-xs); font-size: 10px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .structure-prompt { font-family: var(--font-transcript); font-size: 10.5px; color: var(--ink2); white-space: pre-wrap; word-break: break-word; }
 .structure-output { font-family: var(--font-transcript); font-size: 11px; color: var(--ink); white-space: pre-wrap; word-break: break-word; }
+
+/* ── pipeline state colours (fixture `pipeline`, Core MightyStructure.Tone, M/MightyStructureView.swift) ── */
+/* A column's cards sit on its tone's soft tint; each card on a stronger one with a bar in the tone's mark down its leading edge.
+   A step still to come has none. The sub-agent card's own bar is the same bar. */
+.tint-run { --tint-soft: var(--run-soft); --tint-mark: var(--run); }
+.tint-wait { --tint-soft: var(--wait-soft); --tint-mark: var(--wait-text); }
+.tint-done { --tint-soft: var(--done-soft); --tint-mark: var(--done); }
+.tint-err { --tint-soft: var(--err-soft); --tint-mark: var(--err); }
+.tint-stop { --tint-soft: var(--stop-soft); --tint-mark: var(--stop); }
+.structure-column.tinted > .structure-column-body { background: color-mix(in srgb, var(--tint-soft) var(--pipeline-column-tint), transparent); border-radius: 10px; }
+.structure-card.tinted, .structure-node.tinted { background-image: linear-gradient(color-mix(in srgb, var(--tint-soft) var(--pipeline-card-tint), transparent), color-mix(in srgb, var(--tint-soft) var(--pipeline-card-tint), transparent)); }
+.structure-card.tinted { position: relative; overflow: hidden; }
+.structure-card.tinted::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--pipeline-card-bar); background: var(--tint-mark); }
+.structure-node.tinted::before { background: var(--tint-mark); }
+/* A waiting card wears the wait line, as the diagram's waiting block does; only a running one the run line (.live). */
+.structure-card.waiting, .structure-node.waiting { border: 2px solid var(--wait); }
+.structure-card.waiting { padding: calc(var(--space-sm) - 1px) calc(var(--inset-graph-block-body-h) - 1px); }

@@ -101,13 +101,15 @@ public sealed partial class MainWindow
             internal readonly Border Header = header;
             internal readonly ScrollViewer Scroll = scroll;
             internal readonly StackPanel Cards = cards;
+            /// <summary>The column's state as a wash under its cards (<see cref="MightyStructure.Tone.OfColumn"/>), coloured with its header.</summary>
+            internal readonly Border Wash = new() { CornerRadius = new CornerRadius(StructureCardCorner), IsHitTestVisible = false };
             internal object? HeaderKey;
             internal bool Scrolling;
             internal double JudgedY;
         }
 
-        /// <summary>A chip's height, a card's and a sub-agent card's corners, a sub-agent card's status bar and a tool call's glyph column (M/MightyStructureView.swift:83-92).</summary>
-        private const double StructureChipHeight = 20, StructureCardCorner = DesignMetrics.Radius.Entry, StructureNodeCorner = DesignMetrics.Radius.Row, StructureStatusBar = DesignMetrics.Stroke.Rail, StructureGlyphWidth = 14;
+        /// <summary>A chip's height, a card's and a sub-agent card's corners and a tool call's glyph column (M/MightyStructureView.swift:83-92); every card's status bar is <see cref="DesignMetrics.Pipeline.CardBarWidth"/>.</summary>
+        private const double StructureChipHeight = 20, StructureCardCorner = DesignMetrics.Radius.Entry, StructureNodeCorner = DesignMetrics.Radius.Row, StructureGlyphWidth = 14;
         /// <summary>Type sizes: a card's texts, a sub-agent's output, its prompt (M/MightyStructureView.swift:93-96).</summary>
         private const double StructureTextSize = DesignMetrics.Type.Block, StructureOutputSize = DesignMetrics.Type.Pill, StructurePromptSize = 10.5;
         /// <summary>The list of boards (M/MightyStructureView.swift:97-99).</summary>
@@ -282,10 +284,13 @@ public sealed partial class MainWindow
                 {
                     if (!structureColumns.TryGetValue(column.Id, out var place)) continue;
                     var last = column.Id == board.Columns[^1].Id;
-                    var headerKey = (StructureStepTitle(column.Step), column.Step.Step, column.Count, language, last);
+                    var tone = MightyStructure.Tone.OfColumn(column);
+                    var headerKey = (StructureStepTitle(column.Step), column.Step.Step, column.Count, language, last, tone);
                     if (!Equals(place.HeaderKey, headerKey))
                     {
                         place.Header.Child = StructureColumnHeader(column, last); place.HeaderKey = headerKey;
+                        // The step's state as a wash under its cards (M/MightyStructureView.swift columnTint); none while it is to come.
+                        place.Wash.Background = tone is { } wash ? owner.brushes.Brush(DesignPalette.SoftToken(wash), DesignMetrics.Pipeline.ColumnTintOpacity) : owner.brushes.Transparent;
                         AutomationProperties.SetName(place.Scroll, StructureStepTitle(column.Step));
                         AutomationProperties.SetName(place.View, Locale.Get("graph.structure.board.columnAccessibility", new Dictionary<string, string>
                         {
@@ -297,7 +302,7 @@ public sealed partial class MainWindow
                     {
                         // A run id the pane repeats (a damaged save) is drawn once.
                         if (!drawn.Add(card.Id)) continue;
-                        var (view, built) = StructureCardView(card, width, GraphRequestTitle(runs[card.Item.RunIndex], card.Item.Ordinal), language, catalog);
+                        var (view, built) = StructureCardView(card, width, GraphRequestTitle(runs[card.Item.RunIndex], card.Item.Ordinal), language, catalog, MightyStructure.Tone.OfCard(card, column));
                         if (built) changed = true;
                         desired.Add(view);
                     }
@@ -568,6 +573,9 @@ public sealed partial class MainWindow
                 Grid.SetRow(scroll, 1); view.Children.Add(header); view.Children.Add(scroll);
                 AutomationProperties.SetAutomationId(view, "mighty-structure-column-" + column.Id);
                 var place = structureColumns[column.Id] = new(column.Id, view, header, scroll, cards);
+                // Under the cards, behind the column's scroll view: its state's wash (DrawMightyStructure colours it).
+                Grid.SetRow(place.Wash, 1); view.Children.Insert(1, place.Wash);
+                AutomationProperties.SetAccessibilityView(place.Wash, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
                 scroll.ViewChanging += (_, args) =>
                 {
                     var to = args.FinalView.VerticalOffset;
@@ -909,7 +917,7 @@ public sealed partial class MainWindow
         /// in its old place. Its folds are judged at the width its text really has, so a new width builds only a card whose folded
         /// lines it changes. A card with a press down in it or a selection in one of its texts waits (<see cref="StructureHeld"/>).
         /// </summary>
-        private (FrameworkElement View, bool Built) StructureCardView(MightyStructure.Card card, double width, string heading, string language, IReadOnlyList<ModelOption>? catalog)
+        private (FrameworkElement View, bool Built) StructureCardView(MightyStructure.Card card, double width, string heading, string language, IReadOnlyList<ModelOption>? catalog, DesignTone? tint)
         {
             var item = card.Item; var textWidth = width - 2 * DesignMetrics.Inset.GraphBlockBodyH;
             static bool Folds(MightyStructure.Excerpt? text, int lines, double size, double width) => text?.Folds(lines, MightyStructure.CharactersPerLine(width, size)) == true;
@@ -923,28 +931,28 @@ public sealed partial class MainWindow
             switch (card.Kind)
             {
                 case MightyStructure.CardKind.Request:
-                    key = (heading, item.Request, item.Input, item.NodeId, Open("request", item.RunId), requestCardFolds, language);
-                    build = () => StructureRequestCard(item, heading, requestCardFolds);
+                    key = (heading, item.Request, item.Input, item.NodeId, Open("request", item.RunId), requestCardFolds, language, tint);
+                    build = () => StructureRequestCard(item, heading, requestCardFolds, tint);
                     break;
                 case MightyStructure.CardKind.Execution:
-                    key = (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds, item.ExecutionNodeId, item.NodeId, language, structureMotion);
-                    build = () => StructureExecution(item, messageFolds, card.Id);
+                    key = (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds, item.ExecutionNodeId, item.NodeId, language, structureMotion, tint);
+                    build = () => StructureExecution(item, messageFolds, card.Id, tint);
                     break;
                 case MightyStructure.CardKind.Result:
-                    key = (item.Status, item.Finished, item.Answer, Open("answer", item.RunId), item.ExecutionNodeId, item.NodeId, language);
-                    build = () => StructureResult(item);
+                    key = (item.Status, item.Finished, item.Answer, Open("answer", item.RunId), item.ExecutionNodeId, item.NodeId, language, tint);
+                    build = () => StructureResult(item, tint);
                     break;
                 case MightyStructure.CardKind.Summary:
                     var line = MightyStructure.Fold.ResultLine(item);
-                    key = ((heading, item.Request, item.Input, item.NodeId, Open("request", item.RunId), requestFolds, language), (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds), (item.ExecutionNodeId, line, structureMotion));
-                    build = () => StructureSummary(item, heading, requestFolds, messageFolds, line, card.Id);
+                    key = ((heading, item.Request, item.Input, item.NodeId, Open("request", item.RunId), requestFolds, language), (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds), (item.ExecutionNodeId, line, structureMotion, tint));
+                    build = () => StructureSummary(item, heading, requestFolds, messageFolds, line, card.Id, tint);
                     break;
                 default:
                     var node = card.Node!; var open = Open("node", node.NodeId); var nodeWidth = MightyStructure.NodeTextWidth(width, node.Depth);
                     var folds = Folds(node.Prompt, MightyStructure.PromptLines, StructurePromptSize, nodeWidth) || Folds(node.Output, MightyStructure.OutputLines, StructureOutputSize, nodeWidth) || node.Activity.Count > 1;
                     var model = node.Model is { } named ? ModelUsageFormat.ShortName(named, catalog, versioned: true) : null;
-                    key = (node, card.Parent, open, folds, model, language, structureMotion);
-                    build = () => StructureNodeCard(node, card.Parent, open, folds, model, card.Id);
+                    key = (node, card.Parent, open, folds, model, language, structureMotion, tint);
+                    build = () => StructureNodeCard(node, card.Parent, open, folds, model, card.Id, tint);
                     break;
             }
             if (structureCards.TryGetValue(card.Id, out var part))
@@ -971,7 +979,7 @@ public sealed partial class MainWindow
         /// A free board's request (M/MightyStructureView.swift:586-603): the column says 요청 and the bar above which one, so the card
         /// is what was asked beside its reveal button; "Request N · Claude" (12 bold) only when there is no text.
         /// </summary>
-        private Border StructureRequestCard(MightyStructure.Item item, string heading, bool folds)
+        private Border StructureRequestCard(MightyStructure.Item item, string heading, bool folds, DesignTone? tint)
         {
             var request = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             request.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); request.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -979,7 +987,7 @@ public sealed partial class MainWindow
                 ? StructureText(text, "request:" + item.RunId, MightyStructure.RequestLines, StructureTextSize, folds, Locale.Get("graph.structure.column.request"))
                 : StructureWords(heading, StructureTextSize, owner.brushes.Brush(DesignToken.Ink), FontWeights.Bold));
             var reveal = StructureRevealButton(item.NodeId, item.NodeId); reveal.VerticalAlignment = VerticalAlignment.Top; Grid.SetColumn(reveal, 1); request.Children.Add(reveal);
-            var card = StructureSurface(request);
+            var card = StructureSurface(request, tint);
             AutomationProperties.SetAutomationId(card, "mighty-structure-request-" + item.RunId);
             AutomationProperties.SetName(card, Locale.Get("graph.structure.contentAccessibility", new Dictionary<string, string> { ["name"] = heading, ["text"] = item.Input }));
             return card;
@@ -1028,12 +1036,12 @@ public sealed partial class MainWindow
         /// A free board's 실행 card (M/MightyStructureView.swift:610-631): the main agent's status, tally, latest reply and tool calls,
         /// as the diagram's run block holds them, in the run block's edge while it runs or waits.
         /// </summary>
-        private FrameworkElement StructureExecution(MightyStructure.Item item, bool folds, string marks)
+        private FrameworkElement StructureExecution(MightyStructure.Item item, bool folds, string marks, DesignTone? tint)
         {
             var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
             body.Children.Add(StructureExecutionHeader(item, marks, titled: false));
             StructureProgress(body, item, folds);
-            var card = StructureSurface(body);
+            var card = StructureSurface(body, tint);
             AutomationProperties.SetAutomationId(card, "mighty-structure-execution-" + item.RunId);
             AutomationProperties.SetName(card, Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = item.Ordinal.ToString(CultureInfo.InvariantCulture) }));
             return StructureOutlined(card, item.Status, StructureCardCorner, marks);
@@ -1059,7 +1067,7 @@ public sealed partial class MainWindow
         /// renders a reply; without one, how the request ended (its last reply is in the run part already) or that it is still to
         /// come. Until the request finished there is no result block: its button shows the run instead.
         /// </summary>
-        private Border StructureResult(MightyStructure.Item item)
+        private Border StructureResult(MightyStructure.Item item, DesignTone? tint)
         {
             structureAnswers.Remove(item.RunId);
             var reveal = StructureRevealButton(item.Finished ? MightyGraphBlockSize.NodeId(item.RunId, "result") : item.ExecutionNodeId, item.NodeId);
@@ -1080,7 +1088,7 @@ public sealed partial class MainWindow
                 plain.Children.Add(outcome); reveal.VerticalAlignment = VerticalAlignment.Top; Grid.SetColumn(reveal, 1); plain.Children.Add(reveal);
                 body = plain;
             }
-            var card = StructureSurface(body);
+            var card = StructureSurface(body, tint);
             AutomationProperties.SetAutomationId(card, "mighty-structure-result-" + item.RunId);
             return card;
         }
@@ -1091,7 +1099,7 @@ public sealed partial class MainWindow
         /// one line (11): the answer's first line in <c>ink2</c>, else the outcome in its ink, beside the result's reveal button. It
         /// wears the run block's edge while the run runs or waits (M/MightyStructureView.swift:603-604).
         /// </summary>
-        private FrameworkElement StructureSummary(MightyStructure.Item item, string heading, bool requestFolds, bool messageFolds, string? line, string marks)
+        private FrameworkElement StructureSummary(MightyStructure.Item item, string heading, bool requestFolds, bool messageFolds, string? line, string marks, DesignTone? tint)
         {
             var b = owner.brushes;
             var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
@@ -1112,7 +1120,7 @@ public sealed partial class MainWindow
                 Grid.SetColumn(words, 1); ended.Children.Add(words);
                 body.Children.Add(StructureHeader(ended, StructureRevealButton(MightyGraphBlockSize.NodeId(item.RunId, "result"), item.NodeId)));
             }
-            var card = StructureSurface(body);
+            var card = StructureSurface(body, tint);
             AutomationProperties.SetAutomationId(card, "mighty-structure-request-" + item.RunId);
             AutomationProperties.SetName(card, Locale.Get("graph.structure.contentAccessibility", new Dictionary<string, string> { ["name"] = heading, ["text"] = item.Input }));
             return StructureOutlined(card, item.Status, StructureCardCorner, marks);
@@ -1153,7 +1161,7 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// A sub-agent or task as a small card (M/MightyStructureView.swift:675-739): radius 8 on <c>card</c> with a <c>line</c>
-        /// edge and its status as a 3pt bar in its mark colour; its kind's symbol (9) in its ink, its title (11 semibold, cut last)
+        /// edge and its status as a tint and a <see cref="DesignMetrics.Pipeline.CardBarWidth"/> bar in its mark colour; its kind's symbol (9) in its ink, its title (11 semibold, cut last)
         /// and "kind · model" (10 <c>ink2</c>) on one line; the block it runs under when it is nested (10 <c>ink2</c>); then what it
         /// was asked (10.5 <c>ink2</c>, two lines), its latest output (11, six lines) and its last tool call. Opened, it shows them
         /// whole and its last few tool calls. Each level of the tree stands <c>Spacing.Lg</c> further in, up to
@@ -1161,7 +1169,7 @@ public sealed partial class MainWindow
         /// While it runs or waits, the diagram's activity mark stands before its reveal button and the card wears the block's edge
         /// (M/MightyStructureView.swift:708, 741).
         /// </summary>
-        private FrameworkElement StructureNodeCard(MightyStructure.Node node, string? parent, bool open, bool folds, string? model, string marks)
+        private FrameworkElement StructureNodeCard(MightyStructure.Node node, string? parent, bool open, bool folds, string? model, string marks, DesignTone? tint)
         {
             var b = owner.brushes; var task = node.Kind == "task"; var steer = node.Kind == "steer"; var key = "node:" + node.NodeId;
             var head = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm };
@@ -1198,10 +1206,9 @@ public sealed partial class MainWindow
             }
             foreach (var line in open ? node.Activity : node.Activity.TakeLast(1)) body.Children.Add(StructureActivityRow(line));
             if (folds) body.Children.Add(StructureMoreButton(key, open));
-            // Inside the card's edge, its left corners following the card's own.
-            var bar = new Border { Width = StructureStatusBar, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(StructureNodeCorner - BlockEdge, 0, 0, StructureNodeCorner - BlockEdge), Background = b.Brush(StructureMark(StatusGlyph.Tone(node.Status))), IsHitTestVisible = false };
-            AutomationProperties.SetAccessibilityView(bar, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-            var face = new Grid(); face.Children.Add(bar); face.Children.Add(body);
+            // The sub-agent card's own bar is the pipeline's bar (StructureTinted): one bar, with the card's tint under it; a sub-agent
+            // still to come keeps its quiet idle bar without a tint, as the web shell's does.
+            var face = StructureTinted(body, tint ?? DesignTone.Idle, StructureNodeCorner);
             var card = new Border
             {
                 Child = face, CornerRadius = new CornerRadius(StructureNodeCorner), Background = b.Brush(DesignToken.Card), BorderThickness = new Thickness(BlockEdge), BorderBrush = b.Brush(DesignToken.Line),
@@ -1251,12 +1258,45 @@ public sealed partial class MainWindow
         /// A card of the structure (M/MightyStructureView.swift:824-830): the diagram's block card (<c>card</c>, a 1pt
         /// <c>line</c> edge) at radius 10, its content <c>Inset.GraphBlockBodyH</c> by <c>Spacing.Sm</c> in from the card's edge.
         /// </summary>
-        private Border StructureSurface(UIElement content) => new()
+        private Border StructureSurface(UIElement content, DesignTone? tint)
         {
-            Child = content, Background = owner.brushes.Brush(DesignToken.Card), CornerRadius = new CornerRadius(StructureCardCorner),
-            BorderThickness = new Thickness(BlockEdge), BorderBrush = owner.brushes.Brush(DesignToken.Line),
-            Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Spacing.Sm - BlockEdge, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Spacing.Sm - BlockEdge),
-        };
+            var b = owner.brushes;
+            var padded = new Border
+            {
+                Child = content,
+                Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Spacing.Sm - BlockEdge, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Spacing.Sm - BlockEdge),
+            };
+            return new Border
+            {
+                Child = StructureTinted(padded, tint, StructureCardCorner), Background = b.Brush(DesignToken.Card), CornerRadius = new CornerRadius(StructureCardCorner),
+                BorderThickness = new Thickness(BlockEdge), BorderBrush = b.Brush(DesignToken.Line),
+            };
+        }
+
+        /// <summary>
+        /// A 파이프라인 card's state (M/MightyStructureView.swift MightyStructureCardTint): the tone's soft tint at
+        /// <see cref="DesignMetrics.Pipeline.CardTintOpacity"/> under the content and a <see cref="DesignMetrics.Pipeline.CardBarWidth"/>
+        /// bar in its mark (<see cref="StructureMark"/>) down the leading edge, inside the card's edge with corners following the
+        /// card's own; the content alone for a step still to come, and the idle bar without a tint for <see cref="DesignTone.Idle"/>
+        /// (a sub-agent still to come). The outline and the pills stay as they are.
+        /// </summary>
+        private UIElement StructureTinted(UIElement content, DesignTone? tint, double corner)
+        {
+            if (tint is not { } tone) return content;
+            var b = owner.brushes; var inner = corner - BlockEdge;
+            var face = new Grid();
+            // DesignPalette.SoftToken has no idle tint (it would read as the stop's), so an idle card gets the bar alone.
+            if (tone != DesignTone.Idle)
+            {
+                var wash = new Border { Background = b.Brush(DesignPalette.SoftToken(tone), DesignMetrics.Pipeline.CardTintOpacity), CornerRadius = new CornerRadius(inner), IsHitTestVisible = false };
+                AutomationProperties.SetAccessibilityView(wash, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+                face.Children.Add(wash);
+            }
+            var bar = new Border { Width = DesignMetrics.Pipeline.CardBarWidth, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(inner, 0, 0, inner), Background = b.Brush(StructureMark(tone)), IsHitTestVisible = false };
+            AutomationProperties.SetAccessibilityView(bar, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            face.Children.Add(bar); face.Children.Add(content);
+            return face;
+        }
 
         /// <summary>The diagram's activity mark for a status (<see cref="BuildIndicator"/>), its capsules waved under <paramref name="marks"/>.</summary>
         private FrameworkElement? StructureIndicator(string status, string marks) =>
