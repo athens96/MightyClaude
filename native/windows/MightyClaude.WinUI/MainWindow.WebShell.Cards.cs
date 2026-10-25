@@ -177,13 +177,152 @@ public sealed partial class MainWindow
             var answered = await WaitHost(() => responses.ContainsKey("web-smoke-question"));
             var gone = await Wait("!document.querySelector('[data-card=questionnaire]') && !document.querySelector('[data-card=permission]')", 5);
             result["cardsQuestionnaire"] = new { shown = asked, submit, answered, picked = view.WebSmokeAnswer, gone };
-            return permission && allowed && asked && submit && answered && view.WebSmokeAnswer == "Blue" && gone;
+            var keyed = await RunWebCardKeysSmoke(core, paneId, result);
+            return permission && allowed && asked && submit && answered && view.WebSmokeAnswer == "Blue" && gone && keyed;
         }
         finally
         {
             smokePermissionResponses = null;
             view.ClearToolPermissions();
         }
+    }
+
+    /// <summary>
+    /// The cards' keyboard as a person uses it (src/cards/keys.ts, WaitCard): pressed with the mouse and real key events
+    /// (CDP Input.*, into this app's own WebView only), on a question, a permission and a plan card. A card arriving leaves the
+    /// composer's keyboard alone; a press on an answer or on the card's words puts the keyboard on the card; the arrows, Home
+    /// and End move it; Enter picks an answer and goes on to the forward button, Space only picks, Enter presses a button, and
+    /// Enter in the change request's box writes a new line. Each step's focus is kept in <c>cardsKeys</c>.
+    /// </summary>
+    private async Task<bool> RunWebCardKeysSmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, string paneId, Dictionary<string, object?> result)
+    {
+        var view = WebPane(paneId); var responses = smokePermissionResponses ?? [];
+        var steps = new List<object>(); var ok = true;
+        var plans = new List<PlanDecision>(); var previousPlan = smokePlanAnswerer;
+        async Task<string> Eval(string script) => await core.ExecuteScriptAsync(script);
+        async Task<string?> Active() => JsonSerializer.Deserialize<string?>(await Eval("(() => { const e = document.activeElement; return !e || e === document.body ? 'body' : e.dataset.answer ?? e.dataset.testid ?? e.className ?? e.tagName; })()"));
+        async Task<bool> Until(string script, int seconds = 3)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(seconds);
+            while (DateTime.UtcNow < deadline) { if (await Eval(script) == "true") return true; await Task.Delay(50); }
+            return false;
+        }
+        async Task Check(string step, string script)
+        {
+            var passed = await Until(script);
+            steps.Add(new { step, passed, active = await Active() });
+            ok &= passed;
+        }
+        Task Focused(string step, string answer) => Check(step, $"document.activeElement?.dataset?.answer === '{answer}'");
+        async Task Mouse(string selector)
+        {
+            var at = JsonSerializer.Deserialize<string>(await Eval("(() => { const e = document.querySelector(" + JsonSerializer.Serialize(selector) + "); if (!e) return '{}'; e.scrollIntoView({ block: 'nearest' }); "
+                + "const r = e.getBoundingClientRect(), x = r.left + Math.min(10, r.width / 2), y = r.top + r.height / 2; const hit = document.elementFromPoint(x, y); "
+                + "return JSON.stringify({ x, y, hit: e.contains(hit) }); })()")) ?? "{}";
+            using var point = JsonDocument.Parse(at);
+            if (!point.RootElement.TryGetProperty("x", out var x) || !point.RootElement.TryGetProperty("y", out var y)) { steps.Add(new { step = "mouse", passed = false, selector }); ok = false; return; }
+            if (!point.RootElement.TryGetProperty("hit", out var hit) || !hit.GetBoolean()) { steps.Add(new { step = "mouseCovered", passed = false, selector }); ok = false; }
+            foreach (var (type, buttons) in new[] { ("mouseMoved", 0), ("mousePressed", 1), ("mouseReleased", 0) })
+                await core.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new { type, x = x.GetDouble(), y = y.GetDouble(), button = type == "mouseMoved" ? "none" : "left", buttons, clickCount = type == "mouseMoved" ? 0 : 1 }));
+        }
+        // A real key: down (with its character for Enter and Space, as a keyboard's keypress) and up.
+        async Task Key(string key, string code, int virtualKey, string? text = null, int modifiers = 0)
+        {
+            var events = new List<string>();
+            foreach (var type in new[] { text is null ? "rawKeyDown" : "keyDown", "keyUp" })
+            {
+                var fields = new Dictionary<string, object> { ["type"] = type, ["key"] = key, ["code"] = code, ["windowsVirtualKeyCode"] = virtualKey, ["nativeVirtualKeyCode"] = virtualKey, ["modifiers"] = modifiers };
+                if (text is not null && type == "keyDown") { fields["text"] = text; fields["unmodifiedText"] = text; }
+                await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(fields));
+            }
+            await Task.Delay(60);
+        }
+        Task Down() => Key("ArrowDown", "ArrowDown", 0x28);
+        Task Up() => Key("ArrowUp", "ArrowUp", 0x26);
+        Task Right() => Key("ArrowRight", "ArrowRight", 0x27);
+        Task Left() => Key("ArrowLeft", "ArrowLeft", 0x25);
+        Task Home() => Key("Home", "Home", 0x24);
+        Task End() => Key("End", "End", 0x23);
+        Task Enter() => Key("Enter", "Enter", 0x0D, "\r");
+        Task Space() => Key(" ", "Space", 0x20, " ");
+        Task Tab() => Key("Tab", "Tab", 0x09);
+        const string Composer = "document.activeElement?.dataset?.testid === 'composer-input'";
+        try
+        {
+            smokePlanAnswerer = (_, _, decision) => plans.Add(decision);
+            // A question of two steps arrives while the composer has the keyboard: it stays there.
+            await Eval("document.querySelector('[data-testid=composer-input]')?.focus()");
+            const string Input = "{\"questions\":[{\"header\":\"Color\",\"question\":\"Which colour?\",\"multiSelect\":false,\"options\":[{\"label\":\"Red\",\"description\":\"warm\"},{\"label\":\"Blue\",\"description\":\"cool\"}]},"
+                + "{\"header\":\"Sides\",\"question\":\"Which sides?\",\"multiSelect\":true,\"options\":[{\"label\":\"Left\",\"description\":\"\"},{\"label\":\"Right\",\"description\":\"\"}]}]}";
+            view.ReceiveToolPermission(new ToolPermissionRequest("web-keys-question", paneId, "web-keys-tuid-1", "AskUserQuestion", Input, "Ask", CanAllow: false, CanAnswerQuestions: true));
+            ok &= await Until("!!document.querySelector('[data-card=questionnaire] [data-option=\"0\"]')", 15);
+            await Check("questionArrivesComposerKept", Composer);
+            // Pressed on an answer: the keyboard is on it (and it is picked); the arrows move, Home and End go to the ends.
+            await Mouse("[data-card=questionnaire] [data-answer=option-0-0]");
+            await Focused("mouseOnOption", "option-0-0");
+            await Check("mousePicked", "document.querySelector('[data-answer=option-0-0]')?.getAttribute('aria-checked') === 'true'");
+            await Down(); await Focused("arrowDown", "option-0-1");
+            await Up(); await Focused("arrowUp", "option-0-0");
+            await End(); await Focused("end", "next");
+            await Home(); await Focused("home", "step-0");
+            await Right(); await Focused("arrowRight", "step-1");
+            await End(); await Up(); await Up(); await Up(); await Focused("upFromEnd", "option-0-1");
+            // Enter on an answer picks it and goes on to Next; Enter there goes to the next step, the keyboard on its first answer.
+            await Enter();
+            await Check("enterPicks", "document.querySelector('[data-answer=option-0-1]')?.getAttribute('aria-checked') === 'true' && document.querySelector('[data-answer=option-0-0]')?.getAttribute('aria-checked') === 'false'");
+            await Focused("enterGoesForward", "next");
+            await Enter(); await Focused("enterNext", "option-1-0");
+            // A press on the question's words puts the keyboard on the card: its first answer here.
+            await Eval("document.querySelector('[data-testid=composer-input]')?.focus()");
+            await Mouse("[data-card=questionnaire] .question-text");
+            await Focused("mouseOnWords", "option-1-0");
+            // Several answers: Space and Enter both toggle and stay; End then Enter sends.
+            await Space(); await Check("spaceToggles", "document.querySelector('[data-answer=option-1-0]')?.getAttribute('aria-checked') === 'true'");
+            await Focused("spaceStays", "option-1-0");
+            await Down(); await Enter(); await Check("enterToggles", "document.querySelector('[data-answer=option-1-1]')?.getAttribute('aria-checked') === 'true'");
+            await Focused("enterStays", "option-1-1");
+            await End(); await Focused("endSubmit", "submit");
+            await Enter();
+            var answered = await Until("!document.querySelector('[data-card=questionnaire]')", 5) && responses.ContainsKey("web-keys-question");
+            steps.Add(new { step = "enterSubmits", passed = answered, picked = view.WebSmokeAnswer }); ok &= answered && view.WebSmokeAnswer == "Blue";
+
+            // A permission: a press on its title puts the keyboard on its first button; the arrows, then Enter allows.
+            view.ReceiveToolPermission(new ToolPermissionRequest("web-keys-perm", paneId, "web-keys-tuid-2", "Bash", "{\"command\":\"ls /tmp\"}", "Run command"));
+            ok &= await Until("!!document.querySelector('[data-card=permission] [data-answer=allow]')", 15);
+            await Mouse("[data-card=permission] .card-title");
+            await Focused("permissionMouseOnWords", "deny");
+            await Right(); await Focused("permissionRight", "allow");
+            await Left(); await Focused("permissionLeft", "deny");
+            await End(); await Enter();
+            var allowed = await Until("!document.querySelector('[data-card=permission]')", 5) && responses.TryGetValue("web-keys-perm", out var allow) && allow;
+            steps.Add(new { step = "permissionEnterAllows", passed = allowed }); ok &= allowed;
+
+            // A plan arrives while the composer has the keyboard; a press on the plan's words moves it to the card.
+            await Eval("document.querySelector('[data-testid=composer-input]')?.focus()");
+            view.ReceiveToolPermission(new ToolPermissionRequest("web-keys-plan", paneId, "toolu_web-keys-plan", ClaudePlanMode.ToolName,
+                "{\"plan\":\"# Smoke plan\\n\\n1. First step\\n2. Second step\"}", "plan", CanAllow: false, CanAnswerPlan: true, ReceivedAt: "2027-01-15T08:05:00.000Z"));
+            ok &= await Until("!!document.querySelector('[data-card=plan] [data-answer=plan-cancel]')", 15);
+            await Check("planArrivesComposerKept", Composer);
+            await Mouse("[data-card=plan] [data-testid=plan-text]");
+            await Focused("planMouseOnWords", "plan-expand");
+            await End(); await Focused("planEnd", "plan-approveAuto");
+            await Home(); await Right(); await Right(); await Focused("planRight", "plan-revise-open");
+            // Enter opens the change request; Enter in its box is a new line, Tab leaves it as usual, Enter on Send sends.
+            await Enter(); await Check("planReviseOpens", "document.activeElement?.matches('[data-card=plan] .plan-revise textarea') === true");
+            await core.CallDevToolsProtocolMethodAsync("Input.insertText", "{\"text\":\"fix\"}");
+            await Enter(); await Down();
+            await core.CallDevToolsProtocolMethodAsync("Input.insertText", "{\"text\":\"it\"}");
+            await Check("planEnterNewLine", "document.activeElement?.tagName === 'TEXTAREA' && document.activeElement.value === 'fix\\nit' && !!document.querySelector('[data-card=plan]')");
+            await Tab(); await Focused("planTab", "plan-revise-close");
+            await Tab(); await Focused("planTabSend", "plan-revise-send");
+            await Enter();
+            var sent = await Until("!document.querySelector('[data-card=plan]')", 5) && plans is [{ Kind: "revise", Feedback: "fix\nit" }];
+            steps.Add(new { step = "planEnterSends", passed = sent, decisions = plans.Select(p => p.Kind + ":" + p.Feedback).ToArray() }); ok &= sent;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { steps.Add(new { step = "error", passed = false, error = ex.Message }); ok = false; }
+        finally { smokePlanAnswerer = previousPlan; }
+        result["cardsKeys"] = new { passed = ok, steps };
+        return ok;
     }
 
     private sealed partial class PaneView

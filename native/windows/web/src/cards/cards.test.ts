@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { moveFocus, restoreIndex } from './keys';
+import { cardKey, forwardIndex, moveFocus, restoreIndex } from './keys';
 import { answered, answers, back, canJump, canSubmit, emptyDraft, jump, next, pick, setText, toggleCustom } from './questionnaire';
 import type { Question } from './types';
 import { reduce, emptyState } from '../store/store';
@@ -74,6 +74,37 @@ describe('card keyboard', () => {
     expect(restoreIndex(ids, [true, true, true, false], 'submit')).toBe(1);
     expect(restoreIndex(ids, [true, false, false, true], 'gone')).toBe(0);
     expect(restoreIndex(['deny', 'allow'], [false, false], null)).toBe(-1);
+  });
+
+  it('a press on the card goes to the chosen answer before the first one', () => {
+    const ids = ['step-0', 'option-0-0', 'option-0-1', 'custom-0', 'cancel', 'next'];
+    const on = [true, true, true, true, true, true];
+    expect(restoreIndex(ids, on, null, [false, false, true, false, false, false])).toBe(2);
+    expect(restoreIndex(ids, on, null, [false, false, false, false, false, false])).toBe(1);
+    expect(restoreIndex(ids, [true, true, false, true, true, true], null, [false, false, true, false, false, false])).toBe(1);
+    expect(restoreIndex(ids, on, 'cancel', [false, false, true, false, false, false])).toBe(4);
+    // Next turned into Send: the same answer is gone, so the step's chosen or first answer takes the keyboard.
+    expect(restoreIndex(['option-1-0', 'option-1-1', 'submit'], [true, true, false], 'next')).toBe(0);
+  });
+
+  it('Enter picks a single question\'s answer and goes on; Space, buttons and several answers keep their own press', () => {
+    expect(cardKey('Enter', 'radio', 1, 4)).toEqual({ kind: 'pickAndGoOn' });
+    expect(cardKey(' ', 'radio', 1, 4)).toBeNull();
+    expect(cardKey('Enter', 'checkbox', 1, 4)).toBeNull();
+    expect(cardKey(' ', 'checkbox', 1, 4)).toBeNull();
+    expect(cardKey('Enter', null, 3, 4)).toBeNull();
+    expect(cardKey('Tab', 'radio', 1, 4)).toBeNull();
+    expect(cardKey('ArrowDown', 'radio', 1, 4)).toEqual({ kind: 'move', index: 2 });
+    expect(cardKey('End', null, 0, 4)).toEqual({ kind: 'move', index: 3 });
+    expect(cardKey('ArrowDown', 'radio', 1, 4, true)).toBeNull();
+    expect(cardKey('Enter', 'radio', 1, 4, true)).toBeNull();
+  });
+
+  it('the forward button is Next or Send when it can be pressed', () => {
+    expect(forwardIndex(['option-0-0', 'cancel', 'next'], [true, true, true])).toBe(2);
+    expect(forwardIndex(['option-1-0', 'cancel', 'back', 'submit'], [true, true, true, true])).toBe(3);
+    expect(forwardIndex(['option-0-0', 'cancel', 'next'], [true, true, false])).toBe(-1);
+    expect(forwardIndex(['deny', 'allow'], [true, true])).toBe(-1);
   });
 });
 

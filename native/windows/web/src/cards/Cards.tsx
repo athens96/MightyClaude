@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { Icon } from '../icons/Icon';
 import { useServices, useStoreState } from '../app/context';
 import { Markdown } from '../conversation/MarkdownView';
-import { moveFocus, restoreIndex } from './keys';
+import { cardKey, forwardIndex, restoreIndex } from './keys';
 import * as draftOf from './questionnaire';
 import { usePageOverlay } from '../shell/overlay';
 import type {
@@ -69,8 +70,12 @@ export function Cards({ paneId }: { paneId: string }) {
 }
 
 /**
- * The permission host's keyboard (WaitCard, RestoreCardFocus): the arrows move between the card's answers; when the card is
- * drawn again with the keyboard in it, it stays there, on the same answer or the first one. Focus elsewhere is left alone.
+ * The permission host's keyboard (WaitCard, RestoreCardFocus): a press on the card's words or background puts the keyboard on
+ * it (the chosen answer, else the first answer tile, else the first button); the arrows move between the card's answers and
+ * Enter on a single question's answer picks it and goes on to Next or Send (keys.ts). When the card is drawn again (each pick
+ * redraws it, Next turns into Send) with the keyboard in it, it stays there, on the same answer or the first one. Focus
+ * elsewhere is left alone, so a card arriving never takes the keyboard from the composer. Keys in the card stay in the card:
+ * the window's shortcuts do not see them.
  */
 function KeyboardCard({ children }: { children: ReactNode }) {
   const host = useRef<HTMLDivElement>(null);
@@ -78,24 +83,58 @@ function KeyboardCard({ children }: { children: ReactNode }) {
   const inside = useRef(false);
   const answers = () => [...(host.current?.querySelectorAll<HTMLElement>('[data-answer]') ?? [])];
   const enabled = (element: HTMLElement) => !(element as HTMLButtonElement).disabled;
-
-  useLayoutEffect(() => {
-    const element = host.current;
-    if (!element || !inside.current || element.contains(document.activeElement)) return;
-    if (document.activeElement && document.activeElement !== document.body) { inside.current = false; return; }
+  const checked = (element: HTMLElement) => element.getAttribute('aria-checked') === 'true';
+  const focusAt = (list: HTMLElement[], index: number) => {
+    const element = list[index];
+    if (!element) return;
+    element.focus();
+    focused.current = element.dataset.answer ?? null;
+  };
+  const restore = (previous: string | null) => {
     const list = answers();
-    const index = restoreIndex(list.map((a) => a.dataset.answer ?? ''), list.map(enabled), focused.current);
-    if (index >= 0) list[index]?.focus();
-  });
+    focusAt(list, restoreIndex(list.map((a) => a.dataset.answer ?? ''), list.map(enabled), previous, list.map(checked)));
+  };
+
+  // Any redraw of the card, the host's pushes and the card's own state alike: a focused answer that went away, turned
+  // disabled or became another (Next into Send) gives the keyboard back to the card, never to the page.
+  useEffect(() => {
+    const element = host.current;
+    if (!element) return;
+    const settle = () => {
+      if (!inside.current) return;
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active !== element && element.contains(active)) {
+        if (active.dataset.answer === undefined || (enabled(active) && active.dataset.answer === focused.current)) return;
+      } else if (active && active !== document.body) { inside.current = false; return; }
+      restore(focused.current);
+    };
+    const observer = new MutationObserver(settle);
+    observer.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled', 'data-answer'] });
+    return () => observer.disconnect();
+  }, []);
 
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    event.stopPropagation();
     const target = event.target as HTMLElement;
-    if (!target.dataset.answer || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (!target.dataset.answer) return;
     const list = answers().filter(enabled);
-    const index = moveFocus(event.key, list.indexOf(target), list.length);
-    if (index === null) return;
+    const action = cardKey(event.key, target.getAttribute('role'), list.indexOf(target), list.length, event.altKey || event.ctrlKey || event.metaKey);
+    if (!action) return;
     event.preventDefault();
-    list[index]?.focus();
+    if (action.kind === 'move') { focusAt(list, action.index); return; }
+    if (event.repeat) return;
+    flushSync(() => target.click());
+    const all = answers();
+    focusAt(all, forwardIndex(all.map((a) => a.dataset.answer ?? ''), all.map(enabled)));
+  };
+
+  // A press on the card that is not on one of its controls, and selects no words, puts the keyboard on the card.
+  const click = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('button, a, input, textarea, select, label, [role=dialog]')) return;
+    if (window.getSelection()?.isCollapsed === false) return;
+    inside.current = true;
+    restore(null);
   };
 
   return (
@@ -103,6 +142,7 @@ function KeyboardCard({ children }: { children: ReactNode }) {
       ref={host}
       className="card-host"
       onKeyDown={keyDown}
+      onClick={click}
       onFocus={(event) => { inside.current = true; focused.current = (event.target as HTMLElement).dataset.answer ?? null; }}
       onBlur={(event) => { if (event.relatedTarget && !host.current?.contains(event.relatedTarget as Node)) inside.current = false; }}
     >
