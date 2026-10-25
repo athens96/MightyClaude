@@ -9,6 +9,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { Icon, type IconName } from '@/components/icons';
 import { t } from '@/lib/i18n';
 import {
   cardShadow,
@@ -208,10 +209,11 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
 }: {
-  options: readonly { id: T; label: string }[];
+  options: readonly { id: T; label: string; icon?: IconName }[];
   value: T;
   onChange: (id: T) => void;
 }) {
+  const palette = usePalette();
   const styles = useStyles(makeStyles);
   return (
     <View accessibilityRole="tablist" style={styles.segment}>
@@ -220,6 +222,7 @@ export function SegmentedControl<T extends string>({
         return (
           <Pressable
             key={option.id}
+            accessibilityLabel={option.label}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
             hitSlop={{ bottom: 4, top: 4 }}
@@ -228,11 +231,19 @@ export function SegmentedControl<T extends string>({
               void Haptics.selectionAsync();
               onChange(option.id);
             }}
-            style={[styles.segmentItem, selected && styles.segmentItemSelected]}
+            style={[
+              styles.segmentItem,
+              option.icon && styles.segmentIconItem,
+              selected && styles.segmentItemSelected,
+            ]}
           >
-            <Text style={[styles.segmentLabel, selected && styles.segmentLabelSelected]}>
-              {option.label}
-            </Text>
+            {option.icon ? (
+              <Icon name={option.icon} color={selected ? palette.text : palette.textMuted} />
+            ) : (
+              <Text style={[styles.segmentLabel, selected && styles.segmentLabelSelected]}>
+                {option.label}
+              </Text>
+            )}
           </Pressable>
         );
       })}
@@ -343,6 +354,7 @@ const makeStyles = (palette: Palette) =>
       justifyContent: 'center',
     },
     segmentItemSelected: { ...cardShadow, backgroundColor: palette.surface },
+    segmentIconItem: { minHeight: 44, minWidth: 44 },
     segmentLabel: { color: palette.textMuted, fontSize: 13, fontWeight: '700' },
     segmentLabelSelected: { color: palette.text },
     screenTitle: { ...typeScale.display, color: palette.text },

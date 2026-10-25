@@ -1225,9 +1225,9 @@ export default function SessionScreen() {
               panelHas.viewSwitch ? (
                 <SegmentedControl
                   options={[
-                    { id: 'log', label: t('phone.session.view.log') },
-                    { id: 'blocks', label: t('phone.session.view.blocks') },
-                    { id: 'structure', label: t('phone.session.view.structure') },
+                    { id: 'log', label: t('phone.session.view.log'), icon: 'log' },
+                    { id: 'blocks', label: t('phone.session.view.blocks'), icon: 'flow' },
+                    { id: 'structure', label: t('phone.session.view.structure'), icon: 'pipeline' },
                   ]}
                   value={view}
                   onChange={setChosenView}

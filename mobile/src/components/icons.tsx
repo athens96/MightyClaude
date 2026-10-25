@@ -4,7 +4,7 @@ import Svg, { Path, Rect } from 'react-native-svg';
 /**
  * The few line glyphs concept D draws: the four tab marks, the composer's plus, send,
  * queue (lines with a plus) and stop, the next-action arrow, and the remote
- * screen's full-screen expand and collapse.
+ * screen's full-screen expand and collapse, and the session view switch.
  * 24×24 strokes, round caps, coloured by the caller.
  * Decorative: whatever carries them holds the accessible label.
  */
@@ -21,6 +21,9 @@ export type IconName =
   | 'chevronDown'
   | 'terminal'
   | 'globe'
+  | 'log'
+  | 'flow'
+  | 'pipeline'
   | 'expand'
   | 'collapse';
 
@@ -83,6 +86,23 @@ export function Icon({
         <Path {...stroke} d="M6 9l6 6 6-6" />
       ) : name === 'terminal' ? (
         <Path {...stroke} d="M5 7l5 5-5 5M12 18h7" />
+      ) : name === 'log' ? (
+        <>
+          <Rect {...stroke} height={18} rx={2} width={14} x={5} y={3} />
+          <Path {...stroke} d="M9 8h6M9 12h6M9 16h4" />
+        </>
+      ) : name === 'flow' ? (
+        <>
+          <Path {...stroke} d="M12 8v4M6 16v-4h12v4" />
+          <Rect {...stroke} height={5} rx={1.5} width={6} x={9} y={3} />
+          <Rect {...stroke} height={5} rx={1.5} width={6} x={3} y={16} />
+          <Rect {...stroke} height={5} rx={1.5} width={6} x={15} y={16} />
+        </>
+      ) : name === 'pipeline' ? (
+        <>
+          <Rect {...stroke} height={18} rx={2} width={18} x={3} y={3} />
+          <Path {...stroke} d="M9 3v18M15 3v18M6 7v5M12 7v9M18 7v3" />
+        </>
       ) : name === 'expand' ? (
         <Path {...stroke} d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
       ) : name === 'collapse' ? (

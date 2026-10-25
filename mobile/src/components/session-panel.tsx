@@ -12,7 +12,7 @@ const ROW_HIT_SLOP = { top: 8, bottom: 8 };
  * top of the transcript, where reaching them also paged in older history. Collapsed it is
  * one row summing up the settings; a tap on the row opens the full panel and closes it
  * again. Opening it is the screen's call, so the keyboard can keep it compact. `accessory`
- * (a Mighty pane's log/blocks switch) sits at the row's end, open or not.
+ * (a Mighty pane's log/flow/pipeline switch) sits at the row's end, open or not.
  */
 export function SessionPanel({
   summary,
@@ -94,7 +94,7 @@ const makeStyles = (palette: Palette) =>
     },
     togglePressed: { backgroundColor: palette.surfaceRaised },
     spacer: { flex: 1 },
-    accessory: { width: 132 },
+    accessory: { width: 44 * 3 + spacing.xs * 2 },
     summary: { color: palette.textMuted, flexShrink: 1, fontSize: 12.5, fontWeight: '600' },
     chevronOpen: { transform: [{ rotate: '180deg' }] },
     body: { gap: spacing.sm, paddingTop: spacing.sm },
