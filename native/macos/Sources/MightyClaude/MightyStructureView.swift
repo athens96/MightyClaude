@@ -102,8 +102,7 @@ struct MightyStructureView: View {
     /// A card's and a sub-agent card's corners.
     static let cardCorner: CGFloat = 10
     private static let nodeCorner: CGFloat = 8
-    /// A sub-agent card's status bar, and the glyph column of a tool call row.
-    private static let statusBarWidth: CGFloat = 3
+    /// The glyph column of a tool call row. A card's status bar is `DesignMetrics.Pipeline.cardBarWidth`.
     private static let glyphWidth: CGFloat = 14
     /// Type sizes: a card's texts, a sub-agent's output, its prompt.
     private static let textSize: CGFloat = 12
@@ -422,6 +421,8 @@ struct MightyStructureView: View {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     columnHeader(column, last: column.id == board.columns.last?.id)
                     columnCards(column, board: board.id, onNewest: onNewest, width: cardWidth)
+                        // The step's state as a wash under its cards; none while it is still to come.
+                        .background { columnTint(MightyStructure.Tone.column(column)) }
                 }
                 .frame(width: width, height: height, alignment: .topLeading)
                 .accessibilityElement(children: .contain)
@@ -432,6 +433,17 @@ struct MightyStructureView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-structure-board-\(board.id)")
+    }
+
+    /// A column's state (`MightyStructure.Tone.column`): its tone's soft tint at the column's
+    /// opacity, lighter than a card's, behind its cards; nothing for a step still to come.
+    @ViewBuilder private func columnTint(_ tone: DesignTone?) -> some View {
+        if let tone {
+            RoundedRectangle(cornerRadius: Self.cardCorner, style: .continuous)
+                .fill(Palette.soft(tone).opacity(DesignMetrics.Pipeline.columnTintOpacity))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 
     /// A column's cards in a scroll view of their own, under its header. Every report of
@@ -446,7 +458,7 @@ struct MightyStructureView: View {
                     // One board holds one request's or one pipeline's cards: drawn whole,
                     // so a follow finds every card laid out.
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-                        ForEach(column.cards) { card($0, width: width).id($0.id) }
+                        ForEach(column.cards) { card($0, column: column, width: width).id($0.id) }
                     }
                     // The column's last card is its newest.
                     .background(GeometryReader { cards in
@@ -564,23 +576,24 @@ struct MightyStructureView: View {
         .accessibilityHidden(true)
     }
 
-    @ViewBuilder private func card(_ card: MightyStructure.Card, width: CGFloat) -> some View {
+    @ViewBuilder private func card(_ card: MightyStructure.Card, column: MightyStructure.BoardColumn, width: CGFloat) -> some View {
+        let tone = MightyStructure.Tone.card(card, in: column)
         switch card {
-        case .request(let item): requestCard(item, width: width)
+        case .request(let item): requestCard(item, width: width, tone: tone)
         case .execution(let item):
             // The column says 실행 and the bar says which request: the card needs no title.
-            execution(item, width: width, titled: false)
+            execution(item, width: width, titled: false, tone: tone)
                 .accessibilityLabel(L("graph.block.executionOf", ["n": "\(item.ordinal)"]))
-        case .result(let item): resultCard(item)
-        case .summary(let item): summaryCard(item, width: width)
-        case .agent(let node, _, let parent): nodeCard(node, column: width, parent: parent)
+        case .result(let item): resultCard(item, tone: tone)
+        case .summary(let item): summaryCard(item, width: width, tone: tone)
+        case .agent(let node, _, let parent): nodeCard(node, column: width, parent: parent, tone: tone)
         }
     }
 
     // MARK: Cards
 
     /// A free board's 요청: "Request N · Claude" and what was asked.
-    private func requestCard(_ item: MightyStructure.Item, width: CGFloat) -> some View {
+    private func requestCard(_ item: MightyStructure.Item, width: CGFloat, tone: DesignTone?) -> some View {
         // The column says 요청 and the bar above says which one: the card is what was asked.
         HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
             if let request = item.request {
@@ -593,14 +606,14 @@ struct MightyStructureView: View {
             Spacer(minLength: 0)
             revealButton(item.nodeID)
         }
-        .cardSurface()
+        .cardSurface(tone: tone)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("graph.structure.contentAccessibility", ["name": heading(item), "text": item.input]))
         .accessibilityIdentifier("mighty-structure-request-\(item.runID)")
     }
 
     /// A free board's 결과: the answer, how the request ended, or that it is still to come.
-    private func resultCard(_ item: MightyStructure.Item) -> some View {
+    private func resultCard(_ item: MightyStructure.Item, tone: DesignTone?) -> some View {
         let reveal = revealButton(item.finished ? MightyGraphBlockSize.nodeID(runID: item.runID, suffix: "result") : item.executionNodeID)
         return Group {
             // The column already says 결과: only an error or a stop gets a title, in its colour.
@@ -614,14 +627,14 @@ struct MightyStructureView: View {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) { outcome(item); Spacer(minLength: 0); reveal }
             }
         }
-        .cardSurface()
+        .cardSurface(tone: tone)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-structure-result-\(item.runID)")
     }
 
     /// A styled board's request: what was asked, its 실행 part (status, tally, latest
     /// reply, tool calls) and how it ended, on one line.
-    private func summaryCard(_ item: MightyStructure.Item, width: CGFloat) -> some View {
+    private func summaryCard(_ item: MightyStructure.Item, width: CGFloat, tone: DesignTone?) -> some View {
         let line = MightyStructure.Fold.resultLine(item)
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -656,7 +669,7 @@ struct MightyStructureView: View {
                 }
             }
         }
-        .cardSurface()
+        .cardSurface(tone: tone)
         // Running, the card wears the diagram's marching border, so the board shows what moves.
         .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: item.status), cornerRadius: Self.cardCorner).allowsHitTesting(false) }
         .accessibilityElement(children: .contain)
@@ -666,7 +679,7 @@ struct MightyStructureView: View {
 
     /// The 실행 part: the main agent's status, tally, latest reply and tool calls, as the
     /// diagram's 실행 block holds them. `titled` names it.
-    private func execution(_ item: MightyStructure.Item, width: CGFloat, titled: Bool) -> some View {
+    private func execution(_ item: MightyStructure.Item, width: CGFloat, titled: Bool, tone: DesignTone?) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 if titled {
@@ -681,7 +694,7 @@ struct MightyStructureView: View {
             }
             progress(item, width: Self.cardTextWidth(width))
         }
-        .cardSurface()
+        .cardSurface(tone: tone)
         .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: item.status), cornerRadius: Self.cardCorner).allowsHitTesting(false) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-structure-execution-\(item.runID)")
@@ -735,12 +748,13 @@ struct MightyStructureView: View {
         }
     }
 
-    /// A sub-agent or task as a small card: its status as a bar in its colour, its kind's
+    /// A sub-agent or task as a small card: its status as a tint and a bar in its colour
+    /// (`MightyStructureCardTint`, the same bar every card wears), its kind's
     /// glyph and ink as the diagram gives them (`MightyGraphView.agentPresentation`), its
     /// title, kind and model; the block it runs under, when it is nested (indented by its
     /// depth too); then what it was asked, its latest output and its last tool call.
     /// Opened, it shows them whole and its last few tool calls.
-    private func nodeCard(_ node: MightyStructure.Node, column: CGFloat, parent: String?) -> some View {
+    private func nodeCard(_ node: MightyStructure.Node, column: CGFloat, parent: String?, tone: DesignTone?) -> some View {
         let task = node.kind == "task"
         // A task notice (the only steer the structure keeps) wears the steer's glyph and ink.
         let steer = node.kind == "steer"
@@ -792,10 +806,9 @@ struct MightyStructureView: View {
         // `MightyStructure.nodeTextWidth` takes this padding and the indent off.
         .padding(.leading, DesignMetrics.Spacing.md).padding(.trailing, DesignMetrics.Spacing.xs)
         .padding(.vertical, DesignMetrics.Spacing.xs)
+        // One bar for every card: the sub-agent card's own is the pipeline's (no second bar).
+        .background(alignment: .leading) { MightyStructureCardTint(tone: tone) }
         .background(Palette.panel, in: shape)
-        .overlay(alignment: .leading) {
-            Rectangle().fill(Palette.mark(node.status)).frame(width: Self.statusBarWidth).allowsHitTesting(false).accessibilityHidden(true)
-        }
         .clipShape(shape)
         .overlay { shape.strokeBorder(Palette.border, lineWidth: 1).allowsHitTesting(false) }
         .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: node.status), cornerRadius: Self.nodeCorner).allowsHitTesting(false) }
@@ -896,10 +909,12 @@ struct MightyStructureView: View {
 }
 
 private extension View {
-    /// A card of the structure: the diagram's white block card around its padded content.
-    func cardSurface() -> some View {
+    /// A card of the structure: the diagram's white block card around its padded content,
+    /// with its state's tint and bar under the content (`MightyStructureCardTint`).
+    func cardSurface(tone: DesignTone?) -> some View {
         padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(alignment: .leading) { MightyStructureCardTint(tone: tone) }
             .mightyBlockCard(cornerRadius: MightyStructureView.cardCorner)
     }
 
@@ -911,6 +926,26 @@ private extension View {
             .textSelection(.enabled)
             .accessibilityLabel(name)
             .accessibilityValue(value)
+    }
+}
+
+/// A 파이프라인 card's state (`MightyStructure.Tone.card`): its tone's soft tint at the card's
+/// opacity over the card, and a `DesignMetrics.Pipeline.cardBarWidth` bar in the tone's mark
+/// down its leading edge, both under the content and clipped by the card; nothing for a step
+/// still to come. The running outline, the wait outline and the pills stay as they are, so
+/// colour is never the only sign.
+private struct MightyStructureCardTint: View {
+    let tone: DesignTone?
+
+    var body: some View {
+        if let tone {
+            ZStack(alignment: .leading) {
+                Palette.soft(tone).opacity(DesignMetrics.Pipeline.cardTintOpacity)
+                Rectangle().fill(Palette.mark(tone)).frame(width: DesignMetrics.Pipeline.cardBarWidth)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 }
 

@@ -95,6 +95,18 @@ struct DesignTokenParityTests {
         #expect(DesignMetrics.Layout.toolbar >= 24 && DesignMetrics.Layout.tab >= 22 && DesignMetrics.Layout.paneHeader >= 24)
     }
 
+    /// `pipeline`: the 파이프라인 view's tints and status bar, the same numbers as `DesignMetrics.Pipeline`.
+    @Test func pipelineTintsMatchTheFixture() throws {
+        let table = try #require(try Self.load()["pipeline"] as? [String: Double], "pipeline")
+        #expect(Set(table.keys) == Set(DesignMetrics.Pipeline.all.keys), "pipeline: Mac-only \(Set(DesignMetrics.Pipeline.all.keys).subtracting(table.keys).sorted()), fixture-only \(Set(table.keys).subtracting(DesignMetrics.Pipeline.all.keys).sorted())")
+        for (name, value) in table {
+            #expect(DesignMetrics.Pipeline.all[name] == value, "pipeline.\(name): fixture \(value), Mac \(DesignMetrics.Pipeline.all[name].map { "\($0)" } ?? "missing")")
+        }
+        // A card stands out in a column of its own tone.
+        #expect(DesignMetrics.Pipeline.cardTintOpacity > DesignMetrics.Pipeline.columnTintOpacity)
+        #expect(DesignMetrics.Pipeline.cardBarWidth == 3)
+    }
+
     @Test func providerColoursMatchTheFixture() throws {
         let windowsOnly = try #require(try Self.load()["windowsOnly"] as? [String: Any])
         let providers = try #require(windowsOnly["provider"] as? [String: Any])

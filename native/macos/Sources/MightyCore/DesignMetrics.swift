@@ -154,4 +154,20 @@ public enum DesignMetrics {
             "toolbar": toolbar, "paneMinWidth": paneMinWidth, "paneMinHeight": paneMinHeight, "splitDivider": splitDivider, "hitTarget": hitTarget,
         ]
     }
+
+    /// The 파이프라인 view's state colours (fixture `pipeline`): a column's cards sit on its tone's
+    /// soft tint at `columnTintOpacity`, every card on the same tint at the stronger
+    /// `cardTintOpacity`, with a `cardBarWidth` bar in the tone's mark down its leading edge
+    /// (`MightyStructure.Tone`). Windows reads the same group as `DesignMetrics.Pipeline` in
+    /// MightyClaude.Core and the phone as `pipeline` in mobile/src/theme.
+    public enum Pipeline {
+        public static let columnTintOpacity: Double = 0.45
+        public static let cardTintOpacity: Double = 0.85
+        public static let cardBarWidth: CGFloat = 3
+
+        /// Every value by its fixture name.
+        public static let all: [String: Double] = [
+            "columnTintOpacity": columnTintOpacity, "cardTintOpacity": cardTintOpacity, "cardBarWidth": Double(cardBarWidth),
+        ]
+    }
 }

@@ -378,6 +378,11 @@
       "source": "M/FilePaneView.swift:119-120"
     }
   ],
+  "pipeline": {
+    "columnTintOpacity": 0.45,
+    "cardTintOpacity": 0.85,
+    "cardBarWidth": 3
+  },
   "metrics": {
     "note": "Checked on both platforms: macOS DesignTokenParityTests reads spacing, inset and layout (MightyCore DesignMetrics); Windows Core.Tests reads every section (DesignMetrics.cs). radius, stroke, type and font still live in Mac SwiftUI views.",
     "radius": {
