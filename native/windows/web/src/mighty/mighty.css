@@ -105,10 +105,12 @@
 .mighty-block.kind-result .mighty-head .mighty-icon { display: inline-flex; align-items: center; gap: 3px; width: auto; padding: 0 4px; font-size: 11px; font-weight: 700; }
 .mighty-images { padding: var(--space-md); }
 .mighty-tiles { display: grid; grid-template-columns: repeat(3, 88px); gap: 8px; }
-.mighty-tile { position: relative; width: 88px; height: 88px; border-radius: var(--radius-tile); overflow: hidden; background: var(--card-raised); }
-.mighty-tile img { width: 100%; height: 100%; object-fit: cover; }
+.mighty-tile { position: relative; display: block; width: 88px; height: 88px; padding: 0; border: var(--stroke-line) solid var(--line); border-radius: var(--radius-tile); overflow: hidden; background: var(--card-raised); cursor: zoom-in; }
+.mighty-tile:disabled { cursor: default; }
+.mighty-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mighty-tile img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .mighty-tile-missing { display: block; padding: 4px; font-size: var(--type-small); color: var(--ink2); }
-.mighty-tile-more { position: absolute; inset: 0; border: 0; background: color-mix(in srgb, var(--ink) 55%, transparent); color: var(--card); font-weight: 700; cursor: pointer; }
+.mighty-tile-more { position: absolute; inset: 0; display: grid; place-items: center; border: 0; background: color-mix(in srgb, var(--ink) 55%, transparent); color: var(--card); font-weight: 700; cursor: pointer; }
 .mighty-execution { padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); font-size: var(--type-block); }
 .mighty-execution-counts { display: flex; flex-wrap: wrap; gap: 4px; }
 .mighty-execution-counts span { font-size: var(--type-small); padding: 2px 6px; border-radius: 9px; background: var(--card-raised); }

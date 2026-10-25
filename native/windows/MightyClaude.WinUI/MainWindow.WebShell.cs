@@ -58,7 +58,7 @@ public sealed partial class MainWindow
     /// does (ReferencePreview.Resolve, inside the workspace, a remote pane's never) and reads it as the files pane does
     /// (<see cref="WebFilePreview"/>); <c>referenceOpen</c> (Windows' launcher, which refuses programs) and <c>referenceReveal</c>
     /// take the resolved path; <c>referenceSize</c> saves the bubble's size app-wide. <c>imageData</c> is a pane's picture by its hash, as a data URL the page's
-    /// policy allows, or null.
+    /// policy allows (an SVG drawn to PNG), or null; <c>imageAction</c> runs one of the picture viewer's buttons on it.
     /// </summary>
     private void RegisterConversationMethods(WebBridge bridge)
     {
@@ -104,10 +104,45 @@ public sealed partial class MainWindow
             var hash = args.Text("hash");
             if (hash is null || service.Snapshot.Sessions.FirstOrDefault(s => s.Id == args.Text("paneId")) is not { } pane) return null;
             var image = pane.Logs.SelectMany(entry => entry.Images ?? []).FirstOrDefault(i => i.Hash == hash);
-            if (image is null || image.MediaType is not ("image/png" or "image/jpeg" or "image/gif" or "image/webp")) return null;
-            var bytes = await Task.Run(() => service.Images.Data(image));
-            return bytes is null ? null : "data:" + image.MediaType + ";base64," + Convert.ToBase64String(bytes);
+            return image is null ? null : await WebImageUrl(await Task.Run(() => service.Images.Data(image)), image.MediaType);
         });
+        // The picture viewer's buttons (src/pictures/PictureViewer.tsx): the picture named as its thumbnail or tile was fetched,
+        // a pane's log picture by its hash or a diagram step's by run, step and item id, read and checked again and handed to
+        // the WinUI viewer's own actions (PaneView.TranscriptImageAction). Answers null when done, else the failure's words.
+        bridge.Register("imageAction", async args =>
+        {
+            if (args.Text("action") is not ("copy" or "save" or "reveal" or "openDefault") || args.Text("paneId") is not { } paneId) return null;
+            try
+            {
+                var view = WebPane(paneId);
+                TranscriptAction? action = args.Text("hash") is { } hash
+                    ? service.Snapshot.Sessions.First(s => s.Id == paneId).Logs.SelectMany(entry => entry.Images ?? []).FirstOrDefault(i => i.Hash == hash) is { } image ? new("image", image.Source, image) : null
+                    : view.WebGalleryImage(args.Text("runId") ?? "", args.Text("step") ?? "", args.Text("id") ?? "");
+                if (action is null) return Locale.Get("images.missing");
+                await view.TranscriptImageAction(action, await view.LoadTranscriptImage(action), args.Text("action")!);
+                return null;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { return ex.Message; }
+        });
+    }
+
+    /// <summary>Most a picture handed to the page may weigh, and the longest edge an SVG is drawn at for it.</summary>
+    private const int WebPictureBytes = 8 * 1024 * 1024, WebSvgEdge = 2048;
+
+    /// <summary>
+    /// A picture's bytes as a data URL the page's policy allows: PNG, JPEG, GIF and WebP as they are, an SVG drawn to PNG no
+    /// longer than <see cref="WebSvgEdge"/> (NativeSvgRaster, as the WinUI tile and viewer draw it); null for any other kind,
+    /// more than <see cref="WebPictureBytes"/>, or an SVG that does not draw.
+    /// </summary>
+    private static async Task<string?> WebImageUrl(byte[]? data, string? type)
+    {
+        if (data is null || data.Length > WebPictureBytes) return null;
+        if (type == "image/svg+xml" || AgentImageSupport.SvgDocument(data))
+        {
+            try { data = (await NativeSvgRaster.Render(data, WebSvgEdge)).Png; type = "image/png"; }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { return null; }
+        }
+        return data.Length > WebPictureBytes || type is not ("image/png" or "image/jpeg" or "image/gif" or "image/webp") ? null : "data:" + type + ";base64," + Convert.ToBase64String(data);
     }
 
     /// <summary>
@@ -136,6 +171,41 @@ public sealed partial class MainWindow
         var closed = opened && await True("(() => { " + Bubble + "?.querySelector('[data-testid=reference-close]')?.click(); return true; })()") && await Until(() => True("!" + Bubble));
         result["referenceChecks"] = new { clicked, opened, closed };
         return opened && closed;
+    }
+
+    /// <summary>
+    /// The picture viewer's web smoke (src/pictures/PictureViewer.tsx): an image entry holding a stored PNG and a stored SVG goes
+    /// into the pane's log; both thumbnails must come as PNG data URLs (the SVG drawn by NativeSvgRaster), a click on the first
+    /// must open the viewer as a dialog with focus inside it and the picture as a data URL, and Esc must close it and give focus
+    /// back to the thumbnail. None of the viewer's buttons is pressed (copy would touch the clipboard). The entry goes again after.
+    /// </summary>
+    private async Task<bool> RunWebPictureSmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, string paneId, Dictionary<string, object?> result)
+    {
+        async Task<bool> True(string script) => await core.ExecuteScriptAsync(script) == "true";
+        async Task<bool> Until(Func<Task<bool>> done)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(15);
+            while (DateTime.UtcNow < deadline) { if (await done()) return true; await Task.Delay(50); }
+            return false;
+        }
+        var png = service.Images.Store(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGPQqDgBRww4OQBBxhDhzXmo9QAAAABJRU5ErkJggg=="), "image/png", "smoke-picture.png");
+        var svg = service.Images.Store(System.Text.Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" height=\"30\"><rect width=\"40\" height=\"30\" fill=\"#c33\"/></svg>"), "image/svg+xml", "smoke-picture.svg");
+        var entryId = Wire.Id();
+        await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { Logs = [.. s.Logs, new(entryId, "image", "Read · smoke-picture", Wire.Now(), Images: [png, svg])] }).ToList() });
+        try
+        {
+            const string Room = "(document.querySelector('.pane-slot.active:not(.hidden)') ?? document)";
+            const string Thumbs = "[..." + Room + ".querySelectorAll('[data-testid=thumbnail] img')]";
+            const string Viewer = "document.querySelector('[data-testid=picture-viewer]')";
+            var thumbnails = await Until(() => True("(() => { const t = " + Thumbs + "; return t.length === 2 && t.every(i => i.src.startsWith('data:image/png;base64,')); })()"));
+            var clicked = thumbnails && await True("(() => { const b = " + Room + ".querySelector('[data-testid=thumbnail]'); if (!b) return false; b.scrollIntoView({ block: 'center' }); b.focus(); b.click(); return true; })()");
+            var opened = clicked && await Until(() => True("(() => { const v = " + Viewer + "; const i = v?.querySelector('[data-testid=picture-viewer-image]'); return !!i && i.src.startsWith('data:image/') && !!v.querySelector('[role=dialog][aria-modal=true]') && v.contains(document.activeElement) && i.style.visibility !== 'hidden'; })()"));
+            var closed = opened && await True("(() => { (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); return true; })()")
+                && await Until(() => True("!" + Viewer + " && document.activeElement?.dataset.testid === 'thumbnail'"));
+            result["pictureChecks"] = new { thumbnails, clicked, opened, closed };
+            return opened && closed;
+        }
+        finally { await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { Logs = s.Logs.Where(e => e.Id != entryId).ToList() }).ToList() }); }
     }
 
     /// <summary>The folder of the pane a reference names a file in; null for a remote pane (its files are on its host) or an unknown one.</summary>
@@ -215,6 +285,9 @@ public sealed partial class MainWindow
             // The reference bubble: the reply's `src/a.ts:3` clicked opens the fixture file in the pane, at its line.
             var referenced = await RunWebReferenceSmoke(core, project, result); result["reference"] = referenced; Save();
             shown = shown && referenced;
+            // The picture viewer: a PNG and an SVG picture in the conversation, the SVG drawn as PNG, the first opened and closed with Esc.
+            var pictured = await RunWebPictureSmoke(core, sessions[0].Id, result); result["pictures"] = pictured; Save();
+            shown = shown && pictured;
             // The composer: a typed draft reaches the service, and Enter answers with what the send did (MainWindow.WebShell.Composer.cs).
             var composed = await RunWebComposerSmoke(core, sessions[0].Id, result); result["composer"] = composed; Save();
             shown = shown && composed;

@@ -81,6 +81,16 @@ describe('reduce', () => {
     expect(state.snapshot!.sessions.map((s) => s.id)).toEqual(['s1']);
     expect(state.activities).toEqual({});
   });
+
+  it('opens and closes the picture viewer, and closes it with its pane', () => {
+    const picture = { url: 'data:image/png;base64,AA==', alt: 'shot.png', source: { paneId: 's2', hash: 'h' } };
+    const open = reduce(loaded(), { kind: 'picture', picture });
+    expect(open.picture).toBe(picture);
+    expect(reduce(open, { kind: 'picture', picture })).toBe(open);
+    expect(reduce(open, { kind: 'picture' }).picture).toBeUndefined();
+    expect(reduce(open, { kind: 'delta', sessions: [], removed: ['s1'] }).picture).toBe(picture);
+    expect(reduce(open, { kind: 'delta', sessions: [], removed: ['s2'] }).picture).toBeUndefined();
+  });
 });
 
 describe('applyPermission', () => {

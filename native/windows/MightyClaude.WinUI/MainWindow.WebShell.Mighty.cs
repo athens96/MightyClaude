@@ -454,28 +454,40 @@ public sealed partial class MainWindow
 
         internal void WebTimelineFlip(string runId) { if (!webTimelineFlipped.Remove(runId)) webTimelineFlipped.Add(runId); }
 
-        /// <summary>A step's pictures as the page's tiles show them: the visible ones as data URLs (the page's policy allows them), the rest counted.</summary>
-        internal async Task<object?> WebGalleryImages(string runId, string step, bool expanded)
+        /// <summary>A step's pictures (MightyGraphImages.Items) in a run kept in the pane or its record; null for a run neither holds.</summary>
+        private List<AgentImageItem>? WebGalleryItems(string runId, string step)
         {
             var pane = Session;
             var retained = (IReadOnlyList<MightyGraphRun>)(pane.GraphRuns ?? []);
             var runs = (IReadOnlyList<MightyGraphRun>)[.. GraphHistoryRuns(pane, retained), .. retained];
-            if (runs.FirstOrDefault(r => r.Id == runId) is not { } run) return null;
-            var items = MightyGraphImages.Items(run, step, LocalPath(Workspace));
+            return runs.FirstOrDefault(r => r.Id == runId) is { } run ? MightyGraphImages.Items(run, step, LocalPath(Workspace)) : null;
+        }
+
+        /// <summary>
+        /// A step's pictures as the page's tiles show them: the visible ones as data URLs (the page's policy allows them; an SVG
+        /// drawn to PNG, <see cref="WebImageUrl"/>), the rest counted.
+        /// </summary>
+        internal async Task<object?> WebGalleryImages(string runId, string step, bool expanded)
+        {
+            if (WebGalleryItems(runId, step) is not { } items) return null;
             var shown = items.Take(MightyGraphLayout.VisibleImages(items.Count, expanded)).ToList();
-            var tiles = await Task.Run(() => shown.Select(item =>
+            var tiles = new List<object>();
+            foreach (var item in shown)
             {
-                var data = item.Stored is { } stored ? owner.service.Images.Data(stored) : item.Located switch
+                var data = await Task.Run(() => item.Stored is { } stored ? owner.service.Images.Data(stored) : item.Located switch
                 {
                     AgentImageLocation.File file => AgentImagePaths.Read(file.Path, file.Root),
                     AgentImageLocation.Inline inline => AgentImageSupport.DecodeBase64(inline.Base64),
                     _ => null,
-                };
-                var type = item.Stored?.MediaType ?? (item.Located as AgentImageLocation.Inline)?.MediaType ?? "image/png";
-                var url = data is null || data.Length > 8 * 1024 * 1024 || type is not ("image/png" or "image/jpeg" or "image/gif" or "image/webp") ? null : "data:" + type + ";base64," + Convert.ToBase64String(data);
-                return new { id = item.Id, alt = item.Alt, url };
-            }).ToList());
+                });
+                var type = item.Stored?.MediaType ?? item.Located switch { AgentImageLocation.Inline inline => inline.MediaType, AgentImageLocation.File file => AgentImageSupport.MediaTypeForFileName(file.Path), _ => null } ?? "image/png";
+                tiles.Add(new { id = item.Id, alt = item.Alt, url = await WebImageUrl(data, type) });
+            }
             return new { count = items.Count, tiles };
         }
+
+        /// <summary>The picture viewer's view of a diagram tile (MainWindow.GraphImages.cs BuildImageTile's Open): its item named by id, or null.</summary>
+        internal TranscriptAction? WebGalleryImage(string runId, string step, string id) =>
+            WebGalleryItems(runId, step)?.FirstOrDefault(i => i.Id == id) is { } item ? new("image", item.Source, item.Stored) : null;
     }
 }

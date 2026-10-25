@@ -133,9 +133,12 @@ function Pictures({ entry, paneId }: { entry: LogEntry; paneId: string }) {
 const thumbnails = new Map<string, string | null>();
 const maximumThumbnails = 64;
 
-/** A thumbnail at most 480 × 640, never larger than the picture; `images.loading` until it came, `images.missing` if it did not. */
+/**
+ * A thumbnail at most 480 × 640, never larger than the picture; `images.loading` until it came, `images.missing` if it did not.
+ * A click, Enter or Space opens it in the picture viewer (MainWindow.TranscriptImages.cs OpenTranscriptImage).
+ */
 function Thumbnail({ image, paneId }: { image: AgentImageRef; paneId: string }) {
-  const { bridge, t } = useServices();
+  const { bridge, store, t } = useServices();
   const [data, setData] = useState<string | null | undefined>(() => thumbnails.get(image.hash));
   useEffect(() => {
     if (data !== undefined) return;
@@ -155,5 +158,10 @@ function Thumbnail({ image, paneId }: { image: AgentImageRef; paneId: string }) 
   if (data === null) return <div className="image-note">{t('images.missing')}</div>;
   const scale = Math.min(1, 480 / Math.max(1, image.width), 640 / Math.max(1, image.height));
   const size = image.width > 0 && image.height > 0 ? { width: Math.round(image.width * scale), height: Math.round(image.height * scale) } : undefined;
-  return <img className="thumbnail" src={data} alt={image.source} style={size} draggable={false} />;
+  const open = () => store.dispatch({ kind: 'picture', picture: { url: data, alt: image.source, source: { paneId, hash: image.hash } } });
+  return (
+    <button type="button" className="thumbnail-button" data-testid="thumbnail" title={image.source} aria-label={t('images.entry.one', { source: image.source })} onClick={open}>
+      <img className="thumbnail" src={data} alt={image.source} style={size} draggable={false} />
+    </button>
+  );
 }

@@ -1,0 +1,23 @@
+/* The picture viewer (PictureViewer.tsx): the WinUI viewer's dialog (MainWindow.TranscriptImages.cs, 850 x 650 at most there)
+   as a sheet over the window, larger since the page can give it the room; the picture on the page colour, the zoom on the left
+   of the foot and the host's actions on its right. Colours are the design tokens. */
+.picture-backdrop { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; background: rgba(0, 0, 0, .28); }
+.picture-card {
+  display: flex; flex-direction: column; gap: var(--space-sm); width: min(calc(100vw - 80px), 1200px); height: min(calc(100vh - 80px), 900px);
+  min-width: 280px; min-height: 260px; padding: var(--inset-sheet); border-radius: var(--radius-pane); background: var(--card); color: var(--ink);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .3);
+}
+.picture-head { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
+.picture-title { font-size: var(--type-title); font-weight: 700; white-space: nowrap; }
+.picture-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-small); color: var(--ink2); }
+.picture-stage {
+  position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden;
+  border: var(--stroke-line) solid var(--line); border-radius: var(--radius-block); background: var(--page); touch-action: none;
+}
+.picture-stage.pannable { cursor: grab; }
+.picture-stage.pannable:active { cursor: grabbing; }
+.picture-stage img { max-width: none; max-height: none; user-select: none; }
+.picture-foot { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
+.picture-zoom { min-width: 40px; font-size: var(--type-small); color: var(--ink2); font-variant-numeric: tabular-nums; }
+.picture-action { display: inline-flex; align-items: center; gap: var(--space-xs); }
+.picture-failure { font-size: var(--type-small); }

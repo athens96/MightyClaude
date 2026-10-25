@@ -7,6 +7,7 @@ import { Dashboard, EmptyPanes, Welcome } from '../dashboard/Dashboard';
 import { Dialogs } from '../dialogs/Dialogs';
 import { Surfaces } from '../native/Surfaces';
 import { Layout } from '../layout/Layout';
+import { PictureViewer } from '../pictures/PictureViewer';
 import { layoutMetrics } from '../layout/geometry';
 import { Banners, StatusBar, WorkspaceHeader } from './Chrome';
 import { MenuHost } from './parts';
@@ -110,7 +111,7 @@ export function Shell({ snapshot }: { snapshot: AppSnapshot | null }) {
     if (!selected) return;
     document.querySelector('.sidebar [data-session-id="' + selected.paneId + '"]')?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
-  useShortcuts(snapshot, state.dialogs.length > 0 || state.natives.length > 0 || (shell?.dialogOpen ?? false));
+  useShortcuts(snapshot, state.dialogs.length > 0 || state.natives.length > 0 || state.picture !== undefined || (shell?.dialogOpen ?? false));
   if (!snapshot || !shell) return <div className="shell-loading" data-testid="loading">{t('launch.preparing')}</div>;
   const collapsed = snapshot.sidebarCollapsed;
   const width = live ?? snapshot.sidebarWidth;
@@ -136,6 +137,7 @@ export function Shell({ snapshot }: { snapshot: AppSnapshot | null }) {
       </div>
       <Surfaces />
       <Dialogs />
+      <PictureViewer />
     </MenuHost>
   );
 }

@@ -56,7 +56,9 @@
 .status-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 
 .entry-image .thumbnails { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
-.thumbnail { max-width: 100%; height: auto; border-radius: var(--radius-row); border: var(--stroke-line) solid var(--line); }
+.thumbnail-button { display: block; max-width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: var(--radius-row); }
+.thumbnail-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.thumbnail { display: block; max-width: 100%; height: auto; border-radius: var(--radius-row); border: var(--stroke-line) solid var(--line); }
 .image-note { font-size: 11px; color: var(--ink2); }
 .image-caption { font-size: 10px; color: var(--ink2); white-space: pre-wrap; overflow-wrap: anywhere; }
 

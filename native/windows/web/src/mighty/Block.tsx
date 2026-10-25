@@ -11,6 +11,7 @@ import { dashForCard, dashOffset } from './camera';
 import { isResizable, visibleImages } from './layout';
 import type { MightyBlockCopy, MightyExecutionCard, MightyFile } from './types';
 import { BottomRight, type Edges } from './resize';
+import { useMenu } from '../shell/parts';
 
 /** What a block's buttons and grips ask of the diagram; one stable object for every block. */
 export interface BlockActions {
@@ -183,8 +184,13 @@ function Outline({ outline, w, h }: { outline: string; w: number; h: number }) {
   );
 }
 
+/**
+ * A step's picture tiles (M/MightyGraphImagesView.swift, MainWindow.GraphImages.cs BuildImageTile): each a button that opens
+ * the picture viewer, with "크게 보기" in its context menu; the last one carrying "+k" hidden pictures unfolds the block instead.
+ */
 function Images({ paneId, images }: { paneId: string; images: { runId: string; step: string; count: number } }) {
-  const { bridge, t } = useServices();
+  const { bridge, store, t } = useServices();
+  const menu = useMenu();
   const [open, setOpen] = useState(false);
   const [tiles, setTiles] = useState<{ id: string; alt: string; url?: string | null }[] | null>(null);
   useEffect(() => {
@@ -198,12 +204,20 @@ function Images({ paneId, images }: { paneId: string; images: { runId: string; s
   return (
     <div className="mighty-images">
       <div className="mighty-tiles">
-        {(tiles ?? []).slice(0, visible).map((tile, i) => (
-          <div key={tile.id} className="mighty-tile" title={tile.alt}>
-            {tile.url ? <img src={tile.url} alt={tile.alt} draggable={false} /> : <span className="mighty-tile-missing">{t('images.missing')}</span>}
-            {i === visible - 1 && rest > 0 && <button className="mighty-tile-more" onClick={() => setOpen(true)}>{t('graph.images.more', { count: rest })}</button>}
-          </div>
-        ))}
+        {(tiles ?? []).slice(0, visible).map((tile, i) => {
+          const more = i === visible - 1 && rest > 0;
+          const url = tile.url;
+          const view = url ? () => store.dispatch({ kind: 'picture', picture: { url, alt: tile.alt, source: { paneId, runId: images.runId, step: images.step, id: tile.id } } }) : undefined;
+          return (
+            <button key={tile.id} type="button" className="mighty-tile" title={tile.alt} data-testid="mighty-image-tile" disabled={!more && !view}
+              aria-label={more ? t('graph.images.more', { count: rest }) : t('images.entry.one', { source: tile.alt || t('images.source.agent') })}
+              onClick={() => (more ? setOpen(true) : view?.())}
+              onContextMenu={view ? (event) => menu.atPointer(event, [{ label: t('images.menu.open'), icon: <Icon name="maximize-2" size={13} />, action: view, testId: 'mighty-image-open' }]) : undefined}>
+              {url ? <img src={url} alt={tile.alt} draggable={false} /> : <span className="mighty-tile-missing">{t('images.missing')}</span>}
+              {more && <span className="mighty-tile-more">{t('graph.images.more', { count: rest })}</span>}
+            </button>
+          );
+        })}
       </div>
       {images.count > 6 && <button className="mighty-link" onClick={() => setOpen((o) => !o)}>{t(open ? 'graph.images.collapse' : 'graph.images.expand')}</button>}
     </div>

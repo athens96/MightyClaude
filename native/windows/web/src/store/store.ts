@@ -9,6 +9,7 @@ import { applySessionDelta, type SessionDelta } from './delta';
 import type { AgentActivity, AppSnapshot, RunEvent, RunSession, ToolPermissionRequest } from './models';
 import type { OpenDialog, ShellModel } from '../shell/types';
 import { applyNative, type NativeOpen, type TextSetting } from '../native/types';
+import type { OpenPicture } from '../pictures/viewer';
 
 export interface StoreState {
   snapshot: AppSnapshot | null;
@@ -41,6 +42,8 @@ export interface StoreState {
    * `data-page-overlay`. A browser pane hides its native control while one of them overlaps its slot.
    */
   overlays: number;
+  /** The picture the viewer shows over the window (src/pictures/PictureViewer.tsx); undefined while it is closed. */
+  picture?: OpenPicture;
 }
 
 /** The page's own message: a card fills the pane's composer, which listens for it. */
@@ -62,7 +65,13 @@ export interface OverlayMessage {
   open: boolean;
 }
 
-export type StoreMessage = PushMessage | FillMessage | ChooseMessage | OverlayMessage;
+/** The page's own message: a thumbnail or a diagram tile opens the picture viewer (undefined: close it). */
+export interface PictureMessage {
+  kind: 'picture';
+  picture?: OpenPicture;
+}
+
+export type StoreMessage = PushMessage | FillMessage | ChooseMessage | OverlayMessage | PictureMessage;
 
 export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {}, mighty: {}, shell: null, dialogs: [], natives: [], overlays: 0 };
 
@@ -138,7 +147,9 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       const cards = Object.fromEntries(Object.entries(state.cards).filter(([id]) => !gone.has(id)));
       const fills = Object.fromEntries(Object.entries(state.fills).filter(([id]) => !gone.has(id)));
       const mighty = Object.fromEntries(Object.entries(state.mighty).filter(([id]) => !gone.has(id)));
-      return settle(gone.size === 0 ? { ...state, snapshot } : { ...state, snapshot, activities, permissions, composers, cards, fills, mighty });
+      // A picture whose pane closed closes with it.
+      const picture = state.picture && gone.has(state.picture.source.paneId) ? undefined : state.picture;
+      return settle(gone.size === 0 ? { ...state, snapshot } : { ...state, snapshot, activities, permissions, composers, cards, fills, mighty, picture });
     }
     case 'event':
       return applyEvent(state, message.event);
@@ -174,6 +185,8 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       return state;
     case 'overlay':
       return { ...state, overlays: Math.max(0, state.overlays + (message.open ? 1 : -1)) };
+    case 'picture':
+      return message.picture === state.picture ? state : { ...state, picture: message.picture };
     case 'fill':
       return { ...state, fills: { ...state.fills, [message.paneId]: { text: message.text, seq: (state.fills[message.paneId]?.seq ?? 0) + 1 } } };
   }
