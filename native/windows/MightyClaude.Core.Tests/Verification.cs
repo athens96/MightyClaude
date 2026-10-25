@@ -288,6 +288,7 @@ internal static class Verification
         await Test("Mighty structure tone: a free board tints its columns and cards", MightyStructureToneVerification.AFreeBoardTintsItsColumnsAndCards);
         await Test("Mighty structure tone: a pipeline tints its phases and each card by its own status", MightyStructureToneVerification.APipelineTintsItsPhasesAndEachCardByItsOwnStatus);
         await Test("Mighty structure tone: a current column takes its newest request's status", MightyStructureToneVerification.ACurrentColumnTakesItsNewestRequestsStatus);
+        await Test("Mighty structure tone: the host's tone words are the page's tint classes", MightyStructureToneVerification.TheHostsToneWordsAreThePagesClasses);
         await Test("WorkDashboardVerification CountsAndAttentionMatchMac", WorkDashboardVerification.CountsAndAttentionMatchMac);
         await Test("WorkDashboardVerification CardsRespectUsageIdentityAndStablePriority", WorkDashboardVerification.CardsRespectUsageIdentityAndStablePriority);
         await Test("WorkDashboardVerification ActivityAndAgeRemainBoundedAndTruthful", WorkDashboardVerification.ActivityAndAgeRemainBoundedAndTruthful);

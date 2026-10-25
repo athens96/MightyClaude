@@ -404,7 +404,9 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
               <span className="structure-count">{column.count}</span>
               {at < board.columns.length - 1 && <span className={'structure-link' + (column.step === 'done' ? ' done' : '')} aria-hidden="true" />}
             </header>
-            <div className="structure-column-body">{column.cards.map((card) => <Card key={card.id} card={card} onFold={onFold} onReveal={onReveal} />)}</div>
+            <div className="structure-column-frame">
+              <div className="structure-column-body">{column.cards.map((card) => <Card key={card.id} card={card} onFold={onFold} onReveal={onReveal} />)}</div>
+            </div>
           </div>
         ))}
       </div>

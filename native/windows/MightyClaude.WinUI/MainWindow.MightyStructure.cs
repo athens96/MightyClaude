@@ -288,7 +288,7 @@ public sealed partial class MainWindow
                     var headerKey = (StructureStepTitle(column.Step), column.Step.Step, column.Count, language, last, tone);
                     if (!Equals(place.HeaderKey, headerKey))
                     {
-                        place.Header.Child = StructureColumnHeader(column, last); place.HeaderKey = headerKey;
+                        place.Header.Child = StructureColumnHeader(column, last, tone); place.HeaderKey = headerKey;
                         // The step's state as a wash under its cards (M/MightyStructureView.swift columnTint); none while it is to come.
                         place.Wash.Background = tone is { } wash ? owner.brushes.Brush(DesignPalette.SoftToken(wash), DesignMetrics.Pipeline.ColumnTintOpacity) : owner.brushes.Transparent;
                         AutomationProperties.SetName(place.Scroll, StructureStepTitle(column.Step));
@@ -606,11 +606,11 @@ public sealed partial class MainWindow
         /// <c>track</c> capsule) and, but for the last column, a 2pt line on across the gap to the next column's chip, <c>done</c> once
         /// this step is done and <c>track</c> until then, so the chips read as one pipeline from column to column.
         /// </summary>
-        private PaneHeaderLine StructureColumnHeader(MightyStructure.BoardColumn column, bool last)
+        private PaneHeaderLine StructureColumnHeader(MightyStructure.BoardColumn column, bool last, DesignTone? tone)
         {
             var b = owner.brushes;
             var head = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm, Height = StructureChipHeight };
-            head.Add(StructureChip(StructureStepTitle(column.Step), column.Step.Step, MightyStructure.Tone.OfColumn(column)), PaneHeaderLine.Role.Shrink);
+            head.Add(StructureChip(StructureStepTitle(column.Step), column.Step.Step, tone), PaneHeaderLine.Role.Shrink);
             head.Add(new Border
             {
                 Child = StructureWords(column.Count.ToString(CultureInfo.InvariantCulture), DesignMetrics.Type.Small, b.Brush(DesignToken.Ink2), FontWeights.SemiBold), Background = b.Brush(DesignToken.Track),
@@ -998,7 +998,7 @@ public sealed partial class MainWindow
         /// The run part's header line: the gears and "Run · Request N" (11 bold), the diagram's activity mark while the main agent
         /// runs (M/MightyStructureView.swift:583, 619), its status pill and its tally (11 semibold <c>ink2</c>), and its reveal button.
         /// </summary>
-        private Grid StructureExecutionHeader(MightyStructure.Item item, string marks, bool titled)
+        private Grid StructureExecutionHeader(MightyStructure.Item item, string marks, bool titled, DesignTone? tint)
         {
             var b = owner.brushes;
             var lead = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
@@ -1016,7 +1016,15 @@ public sealed partial class MainWindow
                 Lead(label, GridLength.Auto);
             }
             if (StructureIndicator(item.Status, marks) is { } running) Lead(running, GridLength.Auto);
-            Lead(StatusPill(MightyGraphBlockModel.StateLabel(item.Status), StatusGlyph.Tone(item.Status), 18), GridLength.Auto);
+            var pill = StatusPill(MightyGraphBlockModel.StateLabel(item.Status), StatusGlyph.Tone(item.Status), 18);
+            if (tint is { } edge)
+            {
+                // On a tinted card the pill gets a hairline in the card's mark, so its own soft fill still reads against the tint
+                // (M/MightyStructureView.swift tintedCardEdge); the padding gives the line back, so the pill keeps its size.
+                pill.BorderBrush = b.Brush(StructureMark(edge)); pill.BorderThickness = new Thickness(BlockEdge);
+                pill.Padding = new Thickness(DesignMetrics.Spacing.Sm - BlockEdge, 0, DesignMetrics.Spacing.Sm - BlockEdge, 0);
+            }
+            Lead(pill, GridLength.Auto);
             Lead(StructureTally(item), new GridLength(1, GridUnitType.Star));
             return StructureHeader(lead, StructureRevealButton(item.ExecutionNodeId, item.NodeId));
         }
@@ -1040,7 +1048,7 @@ public sealed partial class MainWindow
         private FrameworkElement StructureExecution(MightyStructure.Item item, bool folds, string marks, DesignTone? tint)
         {
             var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            body.Children.Add(StructureExecutionHeader(item, marks, titled: false));
+            body.Children.Add(StructureExecutionHeader(item, marks, titled: false, tint));
             StructureProgress(body, item, folds);
             var card = StructureSurface(body, tint);
             AutomationProperties.SetAutomationId(card, "mighty-structure-execution-" + item.RunId);
@@ -1109,7 +1117,7 @@ public sealed partial class MainWindow
             var rule = new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line) };
             AutomationProperties.SetAccessibilityView(rule, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
             body.Children.Add(rule);
-            body.Children.Add(StructureExecutionHeader(item, marks, titled: true));
+            body.Children.Add(StructureExecutionHeader(item, marks, titled: true, tint));
             StructureProgress(body, item, messageFolds);
             if (item.Finished)
             {
@@ -1208,8 +1216,8 @@ public sealed partial class MainWindow
             foreach (var line in open ? node.Activity : node.Activity.TakeLast(1)) body.Children.Add(StructureActivityRow(line));
             if (folds) body.Children.Add(StructureMoreButton(key, open));
             // The sub-agent card's own bar is the pipeline's bar (StructureTinted): one bar, with the card's tint under it; a sub-agent
-            // still to come keeps its quiet idle bar without a tint, as the web shell's does.
-            var face = StructureTinted(body, tint ?? DesignTone.Idle, StructureNodeCorner);
+            // still to come has neither, as on the Mac.
+            var face = StructureTinted(body, tint, StructureNodeCorner);
             var card = new Border
             {
                 Child = face, CornerRadius = new CornerRadius(StructureNodeCorner), Background = b.Brush(DesignToken.Card), BorderThickness = new Thickness(BlockEdge), BorderBrush = b.Brush(DesignToken.Line),
@@ -1278,24 +1286,18 @@ public sealed partial class MainWindow
         /// A 파이프라인 card's state (M/MightyStructureView.swift MightyStructureCardTint): the tone's soft tint at
         /// <see cref="DesignMetrics.Pipeline.CardTintOpacity"/> under the content and a <see cref="DesignMetrics.Pipeline.CardBarWidth"/>
         /// bar in its mark (<see cref="StructureMark"/>) down the leading edge, inside the card's edge with corners following the
-        /// card's own; the content alone for a step still to come, and the idle bar without a tint for <see cref="DesignTone.Idle"/>
-        /// (a sub-agent still to come). The outline and the pills stay as they are.
+        /// card's own; the content alone for a step still to come. The outline stays as it is; the 실행 pill gets a hairline
+        /// (<see cref="StructureExecutionHeader"/>).
         /// </summary>
         private UIElement StructureTinted(UIElement content, DesignTone? tint, double corner)
         {
             if (tint is not { } tone) return content;
             var b = owner.brushes; var inner = corner - BlockEdge;
-            var face = new Grid();
-            // DesignPalette.SoftToken has no idle tint (it would read as the stop's), so an idle card gets the bar alone.
-            if (tone != DesignTone.Idle)
-            {
-                var wash = new Border { Background = b.Brush(DesignPalette.SoftToken(tone), DesignMetrics.Pipeline.CardTintOpacity), CornerRadius = new CornerRadius(inner), IsHitTestVisible = false };
-                AutomationProperties.SetAccessibilityView(wash, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-                face.Children.Add(wash);
-            }
+            var wash = new Border { Background = b.Brush(DesignPalette.SoftToken(tone), DesignMetrics.Pipeline.CardTintOpacity), CornerRadius = new CornerRadius(inner), IsHitTestVisible = false };
             var bar = new Border { Width = DesignMetrics.Pipeline.CardBarWidth, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(inner, 0, 0, inner), Background = b.Brush(StructureMark(tone)), IsHitTestVisible = false };
+            AutomationProperties.SetAccessibilityView(wash, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
             AutomationProperties.SetAccessibilityView(bar, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-            face.Children.Add(bar); face.Children.Add(content);
+            var face = new Grid(); face.Children.Add(wash); face.Children.Add(bar); face.Children.Add(content);
             return face;
         }
 

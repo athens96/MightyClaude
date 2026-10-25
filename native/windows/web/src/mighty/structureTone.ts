@@ -1,6 +1,7 @@
 // The 파이프라인 view's state colours on the page: the host's tone words (Core MightyStructure.Tone, M/MightyStructureView.swift) as
 // classes, and each card's moving edge. The rule itself is the host's; the page only draws it (mighty.css "pipeline").
 
+// The host's tone words: Core DesignTone but idle, lowercased (Core.Tests MightyStructureToneVerification reads this line).
 const tones = new Set(['run', 'wait', 'done', 'err', 'stop']);
 
 /** ` tinted tint-<tone>` for a tone the host sent; nothing for a step still to come or a word this page does not know. */

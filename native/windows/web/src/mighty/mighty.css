@@ -288,7 +288,6 @@
 .structure-activity-text.mono { font-family: var(--font-mono); }
 .structure-node { position: relative; flex: none; display: flex; flex-direction: column; gap: var(--space-xxs); border-radius: 8px; border: var(--stroke-line) solid var(--line); background: var(--card); overflow: hidden;
   padding: var(--space-xs) var(--space-xs) var(--space-xs) var(--space-md); }
-.structure-node::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--pipeline-card-bar); background: var(--idle); }
 .structure-node-glyph { display: inline-grid; flex: none; color: var(--agent-text); }
 .structure-node-glyph.task { color: var(--task-text); }
 .structure-node-glyph.steer { color: var(--steer-text); }
@@ -300,17 +299,25 @@
 
 /* ── pipeline state colours (fixture `pipeline`, Core MightyStructure.Tone, M/MightyStructureView.swift) ── */
 /* A column's cards sit on its tone's soft tint; each card on a lighter one, so it stands out, with a bar in the tone's mark down its leading edge.
-   A step still to come has none. The sub-agent card's own bar is the same bar. */
+   A step still to come has none, and neither has a sub-agent card without a tone (as on the Mac). Both the tint and the bar are background
+   layers, so the card's own corners clip them and nothing in the card is cut off. */
 .tint-run { --tint-soft: var(--run-soft); --tint-mark: var(--run); }
 .tint-wait { --tint-soft: var(--wait-soft); --tint-mark: var(--wait-text); }
 .tint-done { --tint-soft: var(--done-soft); --tint-mark: var(--done); }
 .tint-err { --tint-soft: var(--err-soft); --tint-mark: var(--err); }
 .tint-stop { --tint-soft: var(--stop-soft); --tint-mark: var(--stop); }
-.structure-column.tinted > .structure-column-body { background: color-mix(in srgb, var(--tint-soft) var(--pipeline-column-tint), transparent); border-radius: 10px; }
-.structure-card.tinted, .structure-node.tinted { background-image: linear-gradient(color-mix(in srgb, var(--tint-soft) var(--pipeline-card-tint), transparent), color-mix(in srgb, var(--tint-soft) var(--pipeline-card-tint), transparent)); }
-.structure-card.tinted { position: relative; overflow: hidden; }
-.structure-card.tinted::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--pipeline-card-bar); background: var(--tint-mark); }
-.structure-node.tinted::before { background: var(--tint-mark); }
+/* The column's wash sits on the frame around its scrolling body, so the cards and the scroll bar scroll over it unclipped. */
+.structure-column-frame { flex: 1; min-height: 0; display: flex; flex-direction: column; border-radius: 10px; }
+.structure-column.tinted > .structure-column-frame { background: color-mix(in srgb, var(--tint-soft) var(--pipeline-column-tint), transparent); }
+.structure-card.tinted, .structure-node.tinted {
+  --tint-card: color-mix(in srgb, var(--tint-soft) var(--pipeline-card-tint), transparent);
+  background-image: linear-gradient(var(--tint-mark), var(--tint-mark)), linear-gradient(var(--tint-card), var(--tint-card));
+  background-size: var(--pipeline-card-bar) 100%, 100% 100%; background-position: left top; background-repeat: no-repeat; background-origin: padding-box; background-clip: padding-box;
+}
+/* The 실행 pill on a tinted card: a hairline in the card's mark, so its own soft fill still reads against the tint (M/MightyStructureView.swift tintedCardEdge). */
+.structure-card.tinted.kind-execution .mighty-pill, .structure-card.tinted.kind-summary .mighty-pill { box-shadow: inset 0 0 0 var(--stroke-line) var(--tint-mark); }
 /* A waiting card wears the wait line, as the diagram's waiting block does; only a running one the run line (.live). */
 .structure-card.waiting, .structure-node.waiting { border: 2px solid var(--wait); }
 .structure-card.waiting { padding: calc(var(--space-sm) - 1px) calc(var(--inset-graph-block-body-h) - 1px); }
+/* A sub-agent card in the 2px line gives the extra pixel back, so it keeps its size as it starts, waits and ends. */
+.structure-node.live, .structure-node.waiting { padding: calc(var(--space-xs) - 1px) calc(var(--space-xs) - 1px) calc(var(--space-xs) - 1px) calc(var(--space-md) - 1px); }

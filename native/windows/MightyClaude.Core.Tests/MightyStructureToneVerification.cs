@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using MightyClaude.Core;
 using static MightyStructureVerification;
 using Board = MightyClaude.Core.MightyStructure.Board;
@@ -50,6 +52,24 @@ internal static class MightyStructureToneVerification
         Check(Cards(waiting.Columns[1]) == "done,done,err", "each card its own status's: " + Cards(waiting.Columns[1]));
         var running = Boards([Run("r1", "ooo interview 시작"), Run("r2", "ooo seed", status: "running")], style)[0];
         Check(Columns(running) == "done,done,run,-,-,-", "the running request's phase runs: " + Columns(running));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>native/windows/web, beside this project.</summary>
+    private static string WebFolder([CallerFilePath] string here = "") => Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(here)!)!, "web");
+
+    /// <summary>
+    /// The words the host sends (MainWindow.WebShell.Mighty.cs ToneWord: a tone lowercased; <see cref="Tone"/> never gives idle) are
+    /// the ones the page turns into classes (web/src/mighty/structureTone.ts <c>tones</c>), so no state is dropped on the way.
+    /// </summary>
+    internal static Task TheHostsToneWordsAreThePagesClasses()
+    {
+        var host = Enum.GetValues<DesignTone>().Where(tone => tone != DesignTone.Idle).Select(tone => tone.ToString().ToLowerInvariant()).Order().ToList();
+        var source = File.ReadAllText(Path.Combine(WebFolder(), "src", "mighty", "structureTone.ts"));
+        var set = Regex.Match(source, @"const tones = new Set\(\[([^\]]*)\]\)");
+        Check(set.Success, "structureTone.ts names its tones in `const tones = new Set([...])`");
+        var page = Regex.Matches(set.Groups[1].Value, "'([a-z]+)'").Select(m => m.Groups[1].Value).Order().ToList();
+        Check(host.SequenceEqual(page), $"host [{string.Join(",", host)}] vs page [{string.Join(",", page)}]");
         return Task.CompletedTask;
     }
 
