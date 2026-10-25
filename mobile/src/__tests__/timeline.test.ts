@@ -13,6 +13,10 @@ describe('toneOf', () => {
     expect(toneOf('completed')).toBe('done');
     expect(toneOf('error')).toBe('err');
     expect(toneOf('stopped')).toBe('stop');
+    // The Mac's `DesignTone(status:)` buckets: failed is an error, cancelled and interrupted are stops.
+    expect(toneOf('failed')).toBe('err');
+    expect(toneOf('cancelled')).toBe('stop');
+    expect(toneOf('interrupted')).toBe('stop');
     expect(toneOf('idle')).toBe('idle');
     expect(toneOf('something-new')).toBe('idle');
     expect(toneOf('constructor')).toBe('idle');

@@ -9,6 +9,7 @@ import type {
 import { t } from '@/lib/i18n';
 import { blockKindLabel } from '@/lib/mighty';
 import { stepStateWord } from '@/lib/structure';
+import { pipelineTone, stepTone, type Tone } from '@/lib/status-tone';
 
 /**
  * The 파이프라인 view's boards: one request of a pane without a style, or one pipeline of a
@@ -188,6 +189,33 @@ export function boardCurrentStep(board: Board): number {
     if (board.steps[index]?.step !== 'pending') return index;
   }
   return 0;
+}
+
+/**
+ * A column's colour (the Mac's `MightyStructure.Tone.column`): its step's, the current one
+ * waiting while the column's newest request waits.
+ */
+export function columnTone(column: BoardColumn): Tone | undefined {
+  let newest: StructureItem | undefined;
+  for (const card of column.cards) if (card.kind !== 'agent') newest = card.item;
+  return stepTone(column.step.step, newest?.status === 'waiting');
+}
+
+/**
+ * A card's colour (`MightyStructure.Tone.card`): a free board's 요청 and 결과 stand for their
+ * step and take their column's; the 실행 card, a pipeline's request and every sub-agent, task
+ * and 작업 알림 card take their own status's.
+ */
+export function cardTone(card: BoardCard, column: BoardColumn): Tone | undefined {
+  switch (card.kind) {
+    case 'request':
+    case 'result':
+      return columnTone(column);
+    case 'agent':
+      return pipelineTone(card.node.status);
+    default:
+      return pipelineTone(card.item.status);
+  }
 }
 
 /** A free step's localized name, or the phase's title. */

@@ -396,6 +396,44 @@ export function toneColors(palette: Palette, tone: Tone): ToneColors {
   }
 }
 
+/**
+ * The 파이프라인 view's state colours, from `native/contracts/fixtures/design-tokens.json`
+ * (`pipeline`): a column's cards sit on its tone's soft tint at `columnTintOpacity`, each card
+ * on the same tint at the stronger `cardTintOpacity`, with a `cardBarWidth` bar in the tone's
+ * mark down its leading edge. `pipeline-tone.test.ts` holds them to the contract.
+ */
+export const pipeline = {
+  columnTintOpacity: 0.45,
+  cardTintOpacity: 0.85,
+  cardBarWidth: 3,
+} as const;
+
+/**
+ * A tone's mark, the bar down a 파이프라인 card's edge (the Mac's `DesignPalette.mark`): the
+ * fill where it holds 3:1 on a card, the amber's ink for wait, the quiet ink for idle.
+ */
+export function toneMark(palette: Palette, tone: Tone): string {
+  switch (tone) {
+    case 'wait':
+      return palette.warning;
+    case 'idle':
+      return palette.textFaint;
+    default:
+      return toneColors(palette, tone).fill;
+  }
+}
+
+/** `over` laid on `base` at `opacity`, as one solid `#RRGGBB`: a tint on a surface. */
+export function tintOver(base: string, over: string, opacity: number): string {
+  const channel = (hex: string, at: number) => parseInt(hex.slice(1 + 2 * at, 3 + 2 * at), 16);
+  let out = '#';
+  for (let at = 0; at < 3; at += 1) {
+    const value = Math.round(channel(base, at) * (1 - opacity) + channel(over, at) * opacity);
+    out += value.toString(16).padStart(2, '0').toUpperCase();
+  }
+  return out;
+}
+
 export function kindLabel(kind: string): string {
   return labelFor(kindLabelKeys, kind, t);
 }

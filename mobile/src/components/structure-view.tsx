@@ -42,8 +42,10 @@ import {
   boardStepName,
   boardStepsSummary,
   boardTitle,
+  cardTone,
   chosenColumnAfterMove,
   chosenColumnAfterUpdate,
+  columnTone,
   hasUnseenBoard,
   selectBoard,
   stepBoard,
@@ -54,7 +56,7 @@ import {
   type BoardColumn,
   type BoardNavigation,
 } from '@/lib/pipeline-board';
-import { toneOf } from '@/lib/status-tone';
+import { toneOf, type Tone } from '@/lib/status-tone';
 import {
   FOLD_LINES,
   foldText,
@@ -74,10 +76,13 @@ import {
 import {
   cardShadow,
   monoText,
+  pipeline,
   radius,
   spacing,
   statusLabel,
+  tintOver,
   toneColors,
+  toneMark,
   typeScale,
   usePalette,
   useStyles,
@@ -108,6 +113,19 @@ function stepColors(palette: Palette, look: StepLook): { fill: string; ink: stri
     default:
       return { fill: palette.track, ink: palette.textMuted };
   }
+}
+
+/**
+ * A 파이프라인 card's state (`cardTone`): its tone's soft tint laid on the card's own surface and
+ * a bar in the tone's mark down its leading edge; nothing for a step still to come.
+ */
+function cardTint(palette: Palette, tone: Tone | undefined): ViewStyle | undefined {
+  if (!tone) return undefined;
+  return {
+    backgroundColor: tintOver(palette.surfaceRaised, toneColors(palette, tone).soft, pipeline.cardTintOpacity),
+    borderLeftColor: toneMark(palette, tone),
+    borderLeftWidth: pipeline.cardBarWidth,
+  };
 }
 
 /**
@@ -249,10 +267,11 @@ function Outcome({ item }: { item: StructureItem }) {
 }
 
 /** A free board's 요청: the column and the bar already say which, so the card is what was asked. */
-const RequestCard = memo(function RequestCard({ item }: { item: StructureItem }) {
+const RequestCard = memo(function RequestCard({ item, tone }: { item: StructureItem; tone?: Tone }) {
+  const palette = usePalette();
   const styles = useStyles(makeStyles);
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, cardTint(palette, tone)]}>
       {item.request ? (
         <FoldableText text={item.request} lines={FOLD_LINES.request} label={t('graph.structure.column.request')} />
       ) : (
@@ -263,10 +282,11 @@ const RequestCard = memo(function RequestCard({ item }: { item: StructureItem })
 });
 
 /** A free board's 실행: it starts with its status, then the latest reply and tool calls. */
-const ExecutionCard = memo(function ExecutionCard({ item }: { item: StructureItem }) {
+const ExecutionCard = memo(function ExecutionCard({ item, tone }: { item: StructureItem; tone?: Tone }) {
+  const palette = usePalette();
   const styles = useStyles(makeStyles);
   return (
-    <View accessibilityLabel={t('graph.block.executionOf', { n: item.ordinal })} style={styles.card}>
+    <View accessibilityLabel={t('graph.block.executionOf', { n: item.ordinal })} style={[styles.card, cardTint(palette, tone)]}>
       <View style={styles.partHead}>
         <StatusChip status={item.status} />
         <Tally item={item} />
@@ -279,12 +299,12 @@ const ExecutionCard = memo(function ExecutionCard({ item }: { item: StructureIte
 });
 
 /** A free board's 결과: titled only when the request failed or stopped. */
-const ResultCard = memo(function ResultCard({ item }: { item: StructureItem }) {
+const ResultCard = memo(function ResultCard({ item, tone }: { item: StructureItem; tone?: Tone }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const ended = item.status === 'error' || item.status === 'stopped';
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, cardTint(palette, tone)]}>
       {ended ? (
         <Text style={[styles.partLabel, { color: toneColors(palette, toneOf(item.status)).ink }]}>{resultHeading(item)}</Text>
       ) : null}
@@ -307,7 +327,7 @@ const FoldContext = createContext<Folds>({ unfolded: new Set(), onToggle: () => 
  * A finished request of a pipeline folded to one compact card: its heading, status and
  * tally, what was asked and how it ended, a line each. Tapping it opens the request.
  */
-function FoldedCard({ item, onOpen }: { item: StructureItem; onOpen: () => void }) {
+function FoldedCard({ item, onOpen, tone }: { item: StructureItem; onOpen: () => void; tone?: Tone }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const answer = foldedResultLine(item);
@@ -318,7 +338,7 @@ function FoldedCard({ item, onOpen }: { item: StructureItem; onOpen: () => void 
       accessibilityHint={t('graph.structure.unfoldCard')}
       accessibilityState={{ expanded: false }}
       onPress={onOpen}
-      style={({ pressed }) => [styles.card, styles.folded, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.card, cardTint(palette, tone), styles.folded, pressed && styles.pressed]}
     >
       <View style={styles.foldedHead}>
         <Text numberOfLines={1} style={[styles.heading, styles.foldedHeading]}>
@@ -350,16 +370,18 @@ const SummaryCard = memo(function SummaryCard({
   item,
   folded,
   onToggle,
+  tone,
 }: {
   item: StructureItem;
   folded: boolean;
   onToggle: (item: StructureItem) => void;
+  tone?: Tone;
 }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
-  if (folded) return <FoldedCard item={item} onOpen={() => onToggle(item)} />;
+  if (folded) return <FoldedCard item={item} tone={tone} onOpen={() => onToggle(item)} />;
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, cardTint(palette, tone)]}>
       <View style={styles.headingRow}>
         <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, styles.headingText]}>
           {itemHeading(item)}
@@ -407,7 +429,7 @@ const SummaryCard = memo(function SummaryCard({
  * A sub-agent or task: its status as a bar, its title, kind and model, the block it runs
  * under when nested (indented by its depth too), what it was asked and said.
  */
-const AgentCard = memo(function AgentCard({ node, parent }: { node: StructureNode; parent?: string }) {
+const AgentCard = memo(function AgentCard({ node, parent, tone }: { node: StructureNode; parent?: string; tone?: Tone }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const [open, setOpen] = useState(false);
@@ -416,8 +438,15 @@ const AgentCard = memo(function AgentCard({ node, parent }: { node: StructureNod
   const prompt = node.prompt ? (open ? node.prompt : foldText(node.prompt, FOLD_LINES.prompt).preview) : undefined;
   const output = node.output ? (open ? node.output : foldText(node.output, FOLD_LINES.output).preview) : undefined;
   return (
-    <View style={[styles.node, { marginLeft: node.depth * spacing.lg }]}>
-      <View style={[styles.nodeBar, { backgroundColor: toneColors(palette, toneOf(node.status)).fill }]} />
+    <View
+      style={[
+        styles.node,
+        { marginLeft: node.depth * spacing.lg },
+        tone && { backgroundColor: tintOver(palette.surface, toneColors(palette, tone).soft, pipeline.cardTintOpacity) },
+      ]}
+    >
+      {/* The sub-agent card's own bar is the pipeline's bar: one bar, in the tone's mark. */}
+      <View style={[styles.nodeBar, { backgroundColor: toneMark(palette, tone ?? toneOf(node.status)) }]} />
       <View style={styles.nodeBody}>
         <Text
           accessibilityLabel={t('graph.structure.nodeAccessibility', { title, status: statusLabel(node.status) })}
@@ -452,31 +481,27 @@ const AgentCard = memo(function AgentCard({ node, parent }: { node: StructureNod
   );
 });
 
-function CardCell({ card }: { card: BoardCard }) {
+function CardCell({ card, tone }: { card: BoardCard; tone: Tone | undefined }) {
   const styles = useStyles(makeStyles);
   const { unfolded, onToggle } = useContext(FoldContext);
   let body: ReactElement;
   switch (card.kind) {
     case 'request':
-      body = <RequestCard item={card.item} />;
+      body = <RequestCard item={card.item} tone={tone} />;
       break;
     case 'execution':
-      body = <ExecutionCard item={card.item} />;
+      body = <ExecutionCard item={card.item} tone={tone} />;
       break;
     case 'result':
-      body = <ResultCard item={card.item} />;
+      body = <ResultCard item={card.item} tone={tone} />;
       break;
     case 'summary':
-      body = <SummaryCard item={card.item} folded={isCardFolded(card.item, unfolded)} onToggle={onToggle} />;
+      body = <SummaryCard item={card.item} folded={isCardFolded(card.item, unfolded)} onToggle={onToggle} tone={tone} />;
       break;
     default:
-      body = <AgentCard node={card.node} parent={card.parent} />;
+      body = <AgentCard node={card.node} parent={card.parent} tone={tone} />;
   }
   return <View style={styles.listItem}>{body}</View>;
-}
-
-function renderCard({ item }: { item: BoardCard }) {
-  return <CardCell card={item} />;
 }
 
 function cardKey(card: BoardCard): string {
@@ -620,14 +645,26 @@ const ColumnPage = memo(function ColumnPage({
   follow?: FollowBottomProps;
 }) {
   const styles = useStyles(makeStyles);
+  const palette = usePalette();
+  // The step's state as a wash behind its cards; none while it is still to come (`columnTone`).
+  const tone = columnTone(column);
+  const renderItem = useCallback(
+    ({ item }: { item: BoardCard }) => <CardCell card={item} tone={cardTone(item, column)} />,
+    [column],
+  );
   return (
-    <View style={{ width }}>
+    <View
+      style={[
+        { width },
+        tone && { backgroundColor: tintOver(palette.background, toneColors(palette, tone).soft, pipeline.columnTintOpacity) },
+      ]}
+    >
       <FlatList
         {...(visible ? follow : undefined)}
         ref={visible ? attachAs(`column:${board}:${column.step.id}`) : undefined}
         data={column.cards}
         keyExtractor={cardKey}
-        renderItem={renderCard}
+        renderItem={renderItem}
         contentContainerStyle={contentContainerStyle}
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled
@@ -1074,7 +1111,7 @@ const makeStyles = (palette: Palette) =>
       flexDirection: 'row',
       overflow: 'hidden',
     },
-    nodeBar: { width: 3 },
+    nodeBar: { width: pipeline.cardBarWidth },
     nodeBody: { flex: 1, gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
     nodeTitle: { color: palette.text, fontSize: 12.5, fontWeight: '700' },
     nodeMeta: { color: palette.textMuted, fontSize: 11 },
