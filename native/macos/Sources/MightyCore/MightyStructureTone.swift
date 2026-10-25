@@ -31,12 +31,16 @@ extension MightyStructure {
             }
         }
 
-        /// A column's: a done, error, stopped or pending step's own; the current step's is its
-        /// newest request's status's (running, waiting, done once it finished, an error or a
-        /// stop), and runs while the column holds no request yet.
+        /// A column's: a done, error, stopped or pending step's own; the current step's follows
+        /// its newest request: once that request finished (`Item.finished`: it and every
+        /// sub-agent and task ended) its status's (done, an error or a stop), until then
+        /// running, or waiting while its status waits; it runs while the column holds no
+        /// request yet.
         public static func column(_ column: BoardColumn) -> DesignTone? {
             guard column.step.step == .current else { return step(column.step.step) }
-            return newestRequest(column).flatMap { status($0.status) } ?? .run
+            guard let newest = newestRequest(column) else { return .run }
+            if newest.finished { return status(newest.status) ?? .run }
+            return status(newest.status) == .wait ? .wait : .run
         }
 
         /// A card's: a free board's 요청 and 결과 stand for their step and take their column's;

@@ -96,7 +96,7 @@ The review found cards blending into a column of the same tone. These values and
   - `MightyStructureBoardTests.boards(_:style:phase:startingNew:planHistory:)`
   - `MightyStructureTests.run(_:input:status:agents:final:source:)`, `.agent(_:parent:status:kind:)`, `.style(_:)`
 - Produces:
-  - fixture `pipeline`: `{ "columnTintOpacity": 0.45, "cardTintOpacity": 0.85, "cardBarWidth": 3 }`
+  - fixture `pipeline`: `{ "columnTintOpacity": 0.6, "cardTintOpacity": 0.35, "cardBarWidth": 3 }`
   - `public enum DesignMetrics.Pipeline { static let columnTintOpacity: Double; static let cardTintOpacity: Double; static let cardBarWidth: CGFloat; static let all: [String: Double] }`
   - `public enum MightyStructure.Tone`:
     - `static func status(_ status: String) -> DesignTone?`
@@ -109,8 +109,8 @@ The review found cards blending into a column of the same tone. These values and
 
 ```json
   "pipeline": {
-    "columnTintOpacity": 0.45,
-    "cardTintOpacity": 0.85,
+    "columnTintOpacity": 0.6,
+    "cardTintOpacity": 0.35,
     "cardBarWidth": 3
   },
 ```
@@ -120,13 +120,13 @@ The review found cards blending into a column of the same tone. These values and
 ```swift
 
     /// The 파이프라인 view's state colours (fixture `pipeline`): a column's cards sit on its tone's
-    /// soft tint at `columnTintOpacity`, every card on the same tint at the stronger
+    /// soft tint at `columnTintOpacity`, every card on the same tint at the lighter
     /// `cardTintOpacity`, with a `cardBarWidth` bar in the tone's mark down its leading edge
     /// (`MightyStructure.Tone`). Windows reads the same group as `DesignMetrics.Pipeline` in
     /// MightyClaude.Core and the phone as `pipeline` in mobile/src/theme.
     public enum Pipeline {
-        public static let columnTintOpacity: Double = 0.45
-        public static let cardTintOpacity: Double = 0.85
+        public static let columnTintOpacity: Double = 0.6
+        public static let cardTintOpacity: Double = 0.35
         public static let cardBarWidth: CGFloat = 3
 
         /// Every value by its fixture name.
@@ -274,8 +274,8 @@ extension MightyStructure {
         for (name, value) in table {
             #expect(DesignMetrics.Pipeline.all[name] == value, "pipeline.\(name): fixture \(value), Mac \(DesignMetrics.Pipeline.all[name].map { "\($0)" } ?? "missing")")
         }
-        // A card stands out in a column of its own tone.
-        #expect(DesignMetrics.Pipeline.cardTintOpacity > DesignMetrics.Pipeline.columnTintOpacity)
+        // A card stands out in a column of its own tone: lighter than its column.
+        #expect(DesignMetrics.Pipeline.columnTintOpacity == 0.6 && DesignMetrics.Pipeline.cardTintOpacity == 0.35)
         #expect(DesignMetrics.Pipeline.cardBarWidth == 3)
     }
 ```

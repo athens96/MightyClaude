@@ -193,14 +193,19 @@ export function boardCurrentStep(board: Board): number {
 
 /**
  * A column's colour (the Mac's `MightyStructure.Tone.column`): a done, error, stopped or
- * pending step's own; the current step's is its newest request's status's (running, waiting,
- * done once it finished, an error or a stop), and runs while the column holds no request yet.
+ * pending step's own; the current step's follows its newest request: once that request
+ * finished (`finished`, sent by the Mac: it and every sub-agent and task ended) its status's
+ * (done, an error or a stop), until then running, or waiting while its status waits; it runs
+ * while the column holds no request yet.
  */
 export function columnTone(column: BoardColumn): Tone | undefined {
   if (column.step.step !== 'current') return stepTone(column.step.step);
   let newest: StructureItem | undefined;
   for (const card of column.cards) if (card.kind !== 'agent') newest = card.item;
-  return (newest && pipelineTone(newest.status)) ?? 'run';
+  if (!newest) return 'run';
+  const tone = pipelineTone(newest.status) ?? 'run';
+  if (newest.finished) return tone;
+  return tone === 'wait' ? 'wait' : 'run';
 }
 
 /**

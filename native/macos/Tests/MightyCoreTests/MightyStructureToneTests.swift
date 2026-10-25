@@ -4,7 +4,7 @@ import Testing
 
 /// The 파이프라인 view's state colours (spec 2026-10-25): a status, a step, a column and a card
 /// take one of concept D's tones, a current step takes its newest request's (amber while it
-/// waits, green once it finished), and a step still to come takes none. Windows (`MightyStructureToneVerification`) and the phone
+/// waits, green only once it and its sub-agents finished), and a step still to come takes none. Windows (`MightyStructureToneVerification`) and the phone
 /// (`pipeline-tone.test.ts`) check the same cases.
 struct MightyStructureToneTests {
     typealias T = MightyStructureTests
@@ -71,5 +71,16 @@ struct MightyStructureToneTests {
                                                                   phase: "run", startingNew: true).first)
         #expect(moved.columns[3].step.step == .current && moved.columns[3].cards.isEmpty)
         #expect(Tone.column(moved.columns[3]) == .run)
+    }
+
+    @Test func aCurrentColumnRunsUntilItsNewestRequestReallyFinished() throws {
+        // The request reports completed, but a sub-agent still runs: not finished, so the step runs.
+        let style = try T.style("ouroboros")
+        let seed = try #require(MightyStructureBoardTests.boards([T.run("r1", input: "ooo interview 시작"),
+                                                                  T.run("r2", input: "ooo seed", agents: [T.agent("a", status: "running")])], style: style).first)
+        #expect(seed.columns[2].step.step == .current)
+        #expect(Tone.column(seed.columns[2]) == .run)
+        let free = try #require(MightyStructureBoardTests.boards([T.run("r1", agents: [T.agent("bg", status: "running", kind: "task")])]).first)
+        #expect(free.columns.map(Tone.column) == [.done, .run, nil])
     }
 }

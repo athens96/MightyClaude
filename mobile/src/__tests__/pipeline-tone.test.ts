@@ -121,6 +121,16 @@ describe('pipeline tones', () => {
     expect(moved.columns[3]!.cards).toEqual([]);
     expect(columnTone(moved.columns[3]!)).toBe('run');
   });
+
+  it('runs a current column until its newest request really finished', () => {
+    // The request reports completed, but a sub-agent still runs: the Mac sends it unfinished, so the step runs.
+    const busy = item(2, { status: 'completed', finished: false, clusters: [{ nodes: [node('a', 'running')] }] });
+    const seed = structureBoards(phases({ interview: [item(1)], seed: [busy] }))[0]!;
+    expect(seed.columns[2]!.step.step).toBe('current');
+    expect(columnTone(seed.columns[2]!)).toBe('run');
+    const request = structureBoards(free([row(busy, 'done', 'current', 'pending')]))[0]!;
+    expect(columnTones(request)).toEqual(['done', 'run', undefined]);
+  });
 });
 
 describe('pipeline colours', () => {

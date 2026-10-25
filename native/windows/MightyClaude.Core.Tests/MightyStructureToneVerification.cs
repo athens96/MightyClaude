@@ -90,4 +90,16 @@ internal static class MightyStructureToneVerification
         Check(Tone.OfColumn(moved.Columns[3]) == DesignTone.Run, "an empty current step runs: " + Tone.OfColumn(moved.Columns[3]));
         return Task.CompletedTask;
     }
+
+    internal static Task ACurrentColumnRunsUntilItsNewestRequestReallyFinished()
+    {
+        // The request reports completed, but a sub-agent still runs: not finished, so the step runs.
+        var style = Style("ouroboros");
+        var seed = Boards([Run("r1", "ooo interview 시작"), Run("r2", "ooo seed", agents: [Agent("a", status: "running")])], style)[0];
+        Check(seed.Columns[2].Step.Step == Step.Current, "the pipeline stands at 시드");
+        Check(Tone.OfColumn(seed.Columns[2]) == DesignTone.Run, "a completed request whose sub-agent still runs keeps its step running: " + Tone.OfColumn(seed.Columns[2]));
+        var free = Boards([Run("r1", agents: [Agent("bg", status: "running", kind: "task")])])[0];
+        Check(Columns(free) == "done,run,-", "a completed free request whose task still runs: 실행 runs: " + Columns(free));
+        return Task.CompletedTask;
+    }
 }

@@ -30,14 +30,20 @@ public static partial class MightyStructure
 
         /// <summary>
         /// A column's: a done, error, stopped or pending step's own; the current step's follows the column's newest request (its last
-        /// card that is not a sub-agent's): running runs, waiting waits, completed is done, failed an error, cancelled or interrupted a
-        /// stop, and anything else, or no request at all, runs.
+        /// card that is not a sub-agent's): once that request finished (<see cref="Item.Finished"/>: it and every sub-agent and task
+        /// ended) its status's, completed done, failed an error, cancelled or interrupted a stop; until then it runs, or waits while its
+        /// status waits; no request at all runs.
         /// </summary>
         public static DesignTone? OfColumn(BoardColumn column) =>
-            column.Step.Step == Step.Current ? Current(column.Cards.LastOrDefault(card => card.Kind != CardKind.Agent)?.Item.Status) : OfStep(column.Step.Step);
+            column.Step.Step == Step.Current ? Current(column.Cards.LastOrDefault(card => card.Kind != CardKind.Agent)?.Item) : OfStep(column.Step.Step);
 
-        /// <summary>The current step's tone for its newest request's status, in the block buckets; <c>done</c> is done.</summary>
-        private static DesignTone Current(string? status) => status == "done" ? DesignTone.Done : StatusGlyph.Tone(MightyTimeline.Status(status ?? "running"));
+        /// <summary>The current step's tone for its newest request: its status's once it finished, else running or waiting.</summary>
+        private static DesignTone Current(Item? newest)
+        {
+            if (newest is null) return DesignTone.Run;
+            var tone = OfStatus(newest.Status) ?? DesignTone.Run;
+            return newest.Finished ? tone : tone == DesignTone.Wait ? DesignTone.Wait : DesignTone.Run;
+        }
 
         /// <summary>A card's: a free board's 요청 and 결과 stand for their step and take their column's; the 실행 card, a styled board's request and every sub-agent, task and 작업 알림 card their own status's.</summary>
         public static DesignTone? OfCard(Card card, BoardColumn column) => card.Kind switch

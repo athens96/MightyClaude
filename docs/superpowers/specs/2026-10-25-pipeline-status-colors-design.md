@@ -21,7 +21,7 @@
 | stopped, cancelled, interrupted | stop |
 | pending (아직 안 한 단계) | 없음 (바탕 그대로) |
 
-- 열(단계) 상태: `done→done`, `error→err`, `stopped→stop`, `pending→없음`. `current`는 그 열의 가장 최근 요청의 상태를 위 표대로 따른다(실행 중 `run`, 대기 `wait`, 끝났으면 `done`, 오류 `err`, 중지 `stop`, 모르는 값 `run`). 요청이 아직 없는 current 열은 `run`.
+- 열(단계) 상태: `done→done`, `error→err`, `stopped→stop`, `pending→없음`. `current`는 그 열의 가장 최근 요청(하위 에이전트가 아닌 마지막 카드)을 따른다. 그 요청이 정말 끝났으면(요청과 모든 하위 에이전트·작업이 끝남, 결과 단계에 닿는 것과 같은 기준) 그 상태를 위 표대로 따르고(완료 `done`, 오류 `err`, 중지 `stop`, 모르는 값 `run`), 끝나지 않았으면 실행 중 `run`(대기면 `wait`). 상태가 완료여도 하위 에이전트가 아직 돌면 `run`. 요청이 아직 없는 current 열은 `run`.
 - 폰 `toneOf`가 failed·cancelled를 놓치던 것을 맥(`MobileMightySupport.status`)과 같게 고친다.
 
 ## 열 배경
@@ -49,7 +49,7 @@
 - 다크 모드는 각 테마 토큰.
 
 ## 테스트
-- 상태 문자열 → 톤, 단계 → 톤(waiting 포함), current 열 → 최근 요청의 톤(완료 → done, 중지 → stop) 순수 함수 테스트: 맥(MightyCore), 윈도우 Core, 폰 jest, 웹 unit.
+- 상태 문자열 → 톤, 단계 → 톤(waiting 포함), current 열 → 최근 요청의 톤(끝난 완료 → done, 중지 → stop, 완료지만 하위 에이전트가 도는 중 → run) 순수 함수 테스트: 맥(MightyCore), 윈도우 Core, 폰 jest, 웹 unit.
 - 토큰 동등성 검사에 `pipeline` 값.
 - 빌드·테스트 실행은 사용자가 요청할 때만(2026-10-23 규칙). 텍스트 검사(locales, design-tokens, help, style-freeze)는 돌린다.
 
