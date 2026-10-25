@@ -3,8 +3,8 @@ import Testing
 @testable import MightyCore
 
 /// The 파이프라인 view's state colours (spec 2026-10-25): a status, a step, a column and a card
-/// take one of concept D's tones, a waiting request turns its current step amber, and a step
-/// still to come takes none. Windows (`MightyStructureToneVerification`) and the phone
+/// take one of concept D's tones, a current step takes its newest request's (amber while it
+/// waits, green once it finished), and a step still to come takes none. Windows (`MightyStructureToneVerification`) and the phone
 /// (`pipeline-tone.test.ts`) check the same cases.
 struct MightyStructureToneTests {
     typealias T = MightyStructureTests
@@ -52,5 +52,24 @@ struct MightyStructureToneTests {
         #expect(interview.cards.map { Tone.card($0, in: interview) } == [.done, .done, .err])
         let running = try #require(MightyStructureBoardTests.boards([T.run("r1", input: "ooo interview 시작"), T.run("r2", input: "ooo seed", status: "running")], style: style).first)
         #expect(running.columns.map(Tone.column) == [.done, .done, .run, nil, nil, nil])
+    }
+
+    @Test func aCurrentColumnTakesItsNewestRequestsStatus() throws {
+        let style = try T.style("ouroboros")
+        func seedColumn(_ status: String) throws -> DesignTone? {
+            let board = try #require(MightyStructureBoardTests.boards([T.run("r1", input: "ooo interview 시작"), T.run("r2", input: "ooo seed", status: status)], style: style).first)
+            #expect(board.columns[2].step.step == .current)
+            return Tone.column(board.columns[2])
+        }
+        // The pipeline stands at 시드 with its request over: the step reads as that request ended.
+        #expect(try seedColumn("completed") == .done)
+        #expect(try seedColumn("stopped") == .stop)
+        #expect(try seedColumn("cancelled") == .stop)
+        #expect(try seedColumn("failed") == .err)
+        // The pane stands at 실행 for the next request, which no request reached yet: the current step runs.
+        let moved = try #require(MightyStructureBoardTests.boards([T.run("r1", input: "ooo interview 시작"), T.run("r2", input: "ooo seed")], style: style,
+                                                                  phase: "run", startingNew: true).first)
+        #expect(moved.columns[3].step.step == .current && moved.columns[3].cards.isEmpty)
+        #expect(Tone.column(moved.columns[3]) == .run)
     }
 }

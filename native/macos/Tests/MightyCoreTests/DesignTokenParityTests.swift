@@ -102,8 +102,9 @@ struct DesignTokenParityTests {
         for (name, value) in table {
             #expect(DesignMetrics.Pipeline.all[name] == value, "pipeline.\(name): fixture \(value), Mac \(DesignMetrics.Pipeline.all[name].map { "\($0)" } ?? "missing")")
         }
-        // A card stands out in a column of its own tone.
-        #expect(DesignMetrics.Pipeline.cardTintOpacity > DesignMetrics.Pipeline.columnTintOpacity)
+        // The card is lighter than its column, so it stands out in a column of its own tone.
+        #expect(DesignMetrics.Pipeline.columnTintOpacity == 0.6)
+        #expect(DesignMetrics.Pipeline.cardTintOpacity == 0.35)
         #expect(DesignMetrics.Pipeline.cardBarWidth == 3)
     }
 

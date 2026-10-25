@@ -4,7 +4,7 @@
 
 **Goal:** In the Mighty view's 파이프라인 (structure / kanban), running, waiting, done, error and stopped look different at a glance on the Mac, on Windows (web shell and WinUI fallback) and on the phone:
 - every step column gets its tone's `soft` colour under its cards, at the column opacity;
-- every card gets its tone's `soft` colour at the stronger card opacity, plus a 3pt bar in its tone's `mark` colour down its leading edge;
+- every card gets its tone's `soft` colour at the lighter card opacity (so it stands out in a column of its own tone), plus a 3pt bar in its tone's `mark` colour down its leading edge;
 - a step that hasn't happened yet stays on the plain background.
 
 Spec: `docs/superpowers/specs/2026-10-25-pipeline-status-colors-design.md`.
@@ -14,12 +14,12 @@ Spec: `docs/superpowers/specs/2026-10-25-pipeline-status-colors-design.md`.
 - **Mac rule.** One pure rule in MightyCore, `MightyStructure.Tone`:
   - `status`: a status word → `DesignTone?`, reusing `DesignTone(blockStatus:)` (the `MobileMightySupport.status` buckets), plus `done` → done and `pending` → none.
   - `step`: a step → tone; the current step is `wait` while its request waits.
-  - `column`: a board column → tone.
+  - `column`: a board column → tone; a current step takes its newest request's status tone (run while it holds no request).
   - `card`: a card in its column → tone.
 - **Windows rule.** Core mirrors it as `MightyStructure.Tone` (`OfStatus`, `OfStep`, `OfColumn`, `OfCard`). The WinUI fallback calls it directly. The web shell gets the tone words from the host (`WebStructureCard.Tint`, `WebStructureColumn.Tone`) and only turns them into classes.
 - **Phone rule.** `pipelineTone` and `stepTone` go in `mobile/src/lib/status-tone.ts`; `columnTone` and `cardTone` go in `mobile/src/lib/pipeline-board.ts`. `toneOf` is fixed to read `failed` as err and `cancelled`/`interrupted` as stop, like the Mac's `DesignTone(status:)`.
 - **No new colours.** Only `soft` and `mark` of the existing tones, each theme's own, so dark mode follows.
-- **What stays as it is:** the running marching outline, the wait outline, status pills and the step chips. The Windows web shell's waiting cards switch from the blue `.live` border to the wait border.
+- **What stays as it is:** the running marching outline, the wait outline, status pills and the done, pending, error and stopped step chips (the current chip takes its column's tone, see the revision below). The Windows web shell's waiting cards switch from the blue `.live` border to the wait border.
 
 **Tech Stack:**
 - Swift 6 / SwiftUI with Swift Testing (MightyCore, the MightyClaude app)
@@ -54,6 +54,14 @@ Spec: `docs/superpowers/specs/2026-10-25-pipeline-status-colors-design.md`.
   - Phone: no new `padding*`/`margin*`/`gap` numbers.
   - Use the tokens and constants above. A count that goes down fails too (stale budget), so don't delete counted literals either.
 - **No locale keys added or removed** (the help text uses no new `{{ui:…}}`).
+
+### Revision after the Task 1 review (2026-10-25)
+
+The review found cards blending into a column of the same tone. These values and rules replace the ones in the task code below wherever they differ:
+- **Values.** `pipeline.columnTintOpacity` = **0.6**, `pipeline.cardTintOpacity` = **0.35**, `cardBarWidth` = 3. The card is lighter than its column so it stands out. The parity checks assert the exact values instead of "card > column".
+- **Current column.** A `current` step's column takes the tone of its newest request's status, through the same status buckets (running → run, waiting → wait, completed/done → done, error/failed → err, stopped/cancelled/interrupted → stop, unknown → run). A current column with no request runs. done, error, stopped and pending steps are unchanged. The Mac's `MightyStructure.Tone.column` holds this rule; `step(_:waiting:)` stays as it is.
+- **Head chip.** A current step's chip uses its column's tone (`heroFill`/`heroInk` of that tone) instead of the accent, keeping the `circle.fill` glyph.
+- **Pills on a tinted card.** Inside the pipeline view only, a status pill on a tinted card gets a 1pt hairline in the card tone's `mark`.
 
 ---
 

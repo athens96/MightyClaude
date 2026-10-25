@@ -319,8 +319,8 @@ struct MightyStructureView: View {
         }
     }
 
-    private func chip(_ title: String, step: MightyStructure.Step) -> some View {
-        let look = Self.look(step)
+    private func chip(_ title: String, step: MightyStructure.Step, tone: DesignTone?) -> some View {
+        let look = Self.look(step, tone: tone)
         return HStack(spacing: DesignMetrics.Spacing.xs) {
             Image(systemName: look.icon).font(.ui(size: 8, weight: .bold))
             Text(verbatim: title).font(.ui(size: 11, weight: step == .current ? .bold : .semibold))
@@ -336,11 +336,12 @@ struct MightyStructureView: View {
         .accessibilityLabel(stepAccessibility(title, step))
     }
 
-    /// done is green, current the accent, pending grey; an error or a stop in its own colour.
-    private static func look(_ step: MightyStructure.Step) -> (fill: Color, ink: Color, icon: String) {
+    /// done is green, current in its column's colour (`MightyStructure.Tone.column`: running,
+    /// waiting, or how its newest request ended), pending grey; an error or a stop in its own colour.
+    private static func look(_ step: MightyStructure.Step, tone: DesignTone?) -> (fill: Color, ink: Color, icon: String) {
         switch step {
         case .done: (Palette.heroFill(.done), Palette.heroInk(.done), "checkmark")
-        case .current: (Palette.accent, Palette.onAccent, "circle.fill")
+        case .current: (Palette.heroFill(tone ?? .run), Palette.heroInk(tone ?? .run), "circle.fill")
         case .pending: (Palette.track, Palette.ink2, "circle")
         case .error: (Palette.heroFill(.err), Palette.heroInk(.err), "xmark")
         case .stopped: (Palette.heroFill(.stop), Palette.heroInk(.stop), "stop.fill")
@@ -562,7 +563,7 @@ struct MightyStructureView: View {
     /// cards it holds; a line runs on to the next column, green once this step is done.
     private func columnHeader(_ column: MightyStructure.BoardColumn, last: Bool) -> some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
-            chip(stepName(column.step), step: column.step.step)
+            chip(stepName(column.step), step: column.step.step, tone: MightyStructure.Tone.column(column))
             Text("\(column.count)").font(.ui(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink2)
                 .padding(.horizontal, DesignMetrics.Spacing.sm).background(Palette.track, in: Capsule())
             if last { Spacer(minLength: 0) }
@@ -652,6 +653,7 @@ struct MightyStructureView: View {
                     .font(.ui(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 MightyGraphActivityIndicator(status: item.status, tint: Palette.run)
                 MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
+                    .tintedCardEdge(tone)
                 tally(item)
                 Spacer(minLength: 0)
                 revealButton(item.executionNodeID)
@@ -688,6 +690,7 @@ struct MightyStructureView: View {
                 }
                 MightyGraphActivityIndicator(status: item.status, tint: Palette.run)
                 MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
+                    .tintedCardEdge(tone)
                 tally(item)
                 Spacer(minLength: 0)
                 revealButton(item.executionNodeID)
@@ -916,6 +919,16 @@ private extension View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .background(alignment: .leading) { MightyStructureCardTint(tone: tone) }
             .mightyBlockCard(cornerRadius: MightyStructureView.cardCorner)
+    }
+
+    /// A status pill on a tinted card: a hairline in the card's mark, so the pill's own soft
+    /// fill still reads against the tint; nothing on an untinted card.
+    @ViewBuilder func tintedCardEdge(_ tone: DesignTone?) -> some View {
+        if let tone {
+            overlay { Capsule().strokeBorder(Palette.mark(tone), lineWidth: 1).allowsHitTesting(false) }
+        } else {
+            self
+        }
     }
 
     /// A text shown in place: wrapped to its column, selectable, and read out as what it is.

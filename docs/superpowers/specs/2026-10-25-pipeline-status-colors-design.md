@@ -21,22 +21,24 @@
 | stopped, cancelled, interrupted | stop |
 | pending (아직 안 한 단계) | 없음 (바탕 그대로) |
 
-- 열(단계) 상태: `done→done`, `current→run`(그 요청이 waiting이면 `wait`), `error→err`, `stopped→stop`, `pending→없음`.
+- 열(단계) 상태: `done→done`, `error→err`, `stopped→stop`, `pending→없음`. `current`는 그 열의 가장 최근 요청의 상태를 위 표대로 따른다(실행 중 `run`, 대기 `wait`, 끝났으면 `done`, 오류 `err`, 중지 `stop`, 모르는 값 `run`). 요청이 아직 없는 current 열은 `run`.
 - 폰 `toneOf`가 failed·cancelled를 놓치던 것을 맥(`MobileMightySupport.status`)과 같게 고친다.
 
 ## 열 배경
 - 각 단계 열 전체(머리 칩 아래 카드 영역)에 그 톤의 `soft` 색을 **열 투명도**로 깐다.
 - pending 열은 지금처럼 바탕색.
+- 열 머리의 current 단계 칩은 늘 강조색이던 것을 그 열의 톤 색(톤의 채움·글자 색)으로 바꾼다. 기호(●)는 그대로.
 
 ## 카드
 - 모든 카드(실행·결과·하위 에이전트·작업 알림 카드 등 파이프라인 보기의 카드) 왼쪽에 **3pt 상태 막대**(톤의 `mark` 색).
-- 카드 배경에 톤의 `soft` 색을 **카드 투명도**로 깐다. 카드 투명도 > 열 투명도라서 같은 톤 열 안에서도 카드가 구분된다.
+- 카드 배경에 톤의 `soft` 색을 **카드 투명도**로 깐다. 카드 투명도 < 열 투명도라서 카드가 열보다 옅고, 같은 톤 열 안에서도 카드가 구분된다(처음 값 0.85 > 0.45는 같은 톤 열에서 카드가 묻혀 리뷰 후 바꿨다).
 - 실행 중 움직이는 테두리, 대기 노란 테두리, 상태 알약 글자·기호(✓ ✕ ■)는 그대로 둔다(색만으로 구분하지 않게).
 - 이미 3pt 왼쪽 막대가 있는 하위 에이전트 카드는 같은 막대를 쓴다(중복 막대 없음).
+- 색을 깐 카드 위의 상태 알약에는 카드 톤의 `mark` 색 가는 테두리(1pt)를 두른다. 파이프라인 보기 안에서만 그렇고, 다른 곳의 알약은 그대로.
 
 ## 공유 값
 `native/contracts/fixtures/design-tokens.json`에 `pipeline` 묶음을 더한다:
-- `columnTintOpacity` (예: 0.45), `cardTintOpacity` (예: 0.85), `cardBarWidth` 3.
+- `columnTintOpacity` 0.6, `cardTintOpacity` 0.35, `cardBarWidth` 3.
 맥·윈도우(Core·웹)·폰이 이 값을 그대로 읽거나 같은 상수를 두고, 기존 토큰 동등성 검사(맥 `DesignTokenParityTests`, 윈도우 `DesignTokenVerification`, 폰 jest, 웹 tokens)에 포함한다.
 
 ## 플랫폼
@@ -47,7 +49,7 @@
 - 다크 모드는 각 테마 토큰.
 
 ## 테스트
-- 상태 문자열 → 톤, 단계 → 톤(waiting 포함) 순수 함수 테스트: 맥(MightyCore), 윈도우 Core, 폰 jest, 웹 unit.
+- 상태 문자열 → 톤, 단계 → 톤(waiting 포함), current 열 → 최근 요청의 톤(완료 → done, 중지 → stop) 순수 함수 테스트: 맥(MightyCore), 윈도우 Core, 폰 jest, 웹 unit.
 - 토큰 동등성 검사에 `pipeline` 값.
 - 빌드·테스트 실행은 사용자가 요청할 때만(2026-10-23 규칙). 텍스트 검사(locales, design-tokens, help, style-freeze)는 돌린다.
 

@@ -379,8 +379,8 @@
     }
   ],
   "pipeline": {
-    "columnTintOpacity": 0.45,
-    "cardTintOpacity": 0.85,
+    "columnTintOpacity": 0.6,
+    "cardTintOpacity": 0.35,
     "cardBarWidth": 3
   },
   "metrics": {
