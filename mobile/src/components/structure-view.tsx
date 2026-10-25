@@ -99,13 +99,18 @@ import {
  * (`MobileMighty.structure`), so the two screens always agree.
  */
 
-/** The colours one step takes: done green, current the accent, pending grey. */
-function stepColors(palette: Palette, look: StepLook): { fill: string; ink: string } {
+/**
+ * The colours one step takes: done green, current in its column's colour (`columnTone`:
+ * running, waiting, or how its newest request ended), pending grey; an error or a stop in its own.
+ */
+function stepColors(palette: Palette, look: StepLook, tone: Tone | undefined): { fill: string; ink: string } {
   switch (look.tone) {
     case 'done':
       return { fill: toneColors(palette, 'done').fill, ink: toneColors(palette, 'done').onFill };
-    case 'current':
-      return { fill: palette.accent, ink: palette.onAccent };
+    case 'current': {
+      const colors = toneColors(palette, tone ?? 'run');
+      return { fill: colors.fill, ink: colors.onFill };
+    }
     case 'err':
       return { fill: toneColors(palette, 'err').fill, ink: toneColors(palette, 'err').onFill };
     case 'stop':
@@ -116,16 +121,43 @@ function stepColors(palette: Palette, look: StepLook): { fill: string; ink: stri
 }
 
 /**
- * A 파이프라인 card's state (`cardTone`): its tone's soft tint laid on the card's own surface and
- * a bar in the tone's mark down its leading edge; nothing for a step still to come.
+ * A 파이프라인 card's state (`cardTone`): its tone's soft tint laid on the card's own surface;
+ * nothing for a step still to come. `CardBar` draws the bar down its leading edge.
  */
 function cardTint(palette: Palette, tone: Tone | undefined): ViewStyle | undefined {
   if (!tone) return undefined;
-  return {
-    backgroundColor: tintOver(palette.surfaceRaised, toneColors(palette, tone).soft, pipeline.cardTintOpacity),
-    borderLeftColor: toneMark(palette, tone),
-    borderLeftWidth: pipeline.cardBarWidth,
-  };
+  return { backgroundColor: tintOver(palette.surfaceRaised, toneColors(palette, tone).soft, pipeline.cardTintOpacity) };
+}
+
+/**
+ * A tinted card's bar in its tone's mark: a straight bar down the leading edge, clipped to the
+ * card's corners by a layer of its own, so the card keeps its shadow, its content does not move
+ * and the running outline still goes round the whole card. Nothing on an untinted card.
+ */
+function CardBar({ tone }: { tone: Tone | undefined }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  if (!tone) return null;
+  return (
+    <View pointerEvents="none" style={styles.cardClip}>
+      <View style={[styles.cardBar, { backgroundColor: toneMark(palette, tone) }]} />
+    </View>
+  );
+}
+
+/**
+ * A status pill on a pipeline card: on a tinted card, a hairline in the card's mark round it, so
+ * the pill's own soft fill still reads against the tint (the Mac's `tintedCardEdge`).
+ */
+function CardPill({ status, tone }: { status: string; tone: Tone | undefined }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  return (
+    <View>
+      <StatusChip status={status} />
+      {tone ? <View pointerEvents="none" style={[styles.pillEdge, { borderColor: toneMark(palette, tone) }]} /> : null}
+    </View>
+  );
 }
 
 /**
@@ -272,6 +304,7 @@ const RequestCard = memo(function RequestCard({ item, tone }: { item: StructureI
   const styles = useStyles(makeStyles);
   return (
     <View style={[styles.card, cardTint(palette, tone)]}>
+      <CardBar tone={tone} />
       {item.request ? (
         <FoldableText text={item.request} lines={FOLD_LINES.request} label={t('graph.structure.column.request')} />
       ) : (
@@ -287,8 +320,9 @@ const ExecutionCard = memo(function ExecutionCard({ item, tone }: { item: Struct
   const styles = useStyles(makeStyles);
   return (
     <View accessibilityLabel={t('graph.block.executionOf', { n: item.ordinal })} style={[styles.card, cardTint(palette, tone)]}>
+      <CardBar tone={tone} />
       <View style={styles.partHead}>
-        <StatusChip status={item.status} />
+        <CardPill status={item.status} tone={tone} />
         <Tally item={item} />
       </View>
       <Progress item={item} />
@@ -305,6 +339,7 @@ const ResultCard = memo(function ResultCard({ item, tone }: { item: StructureIte
   const ended = item.status === 'error' || item.status === 'stopped';
   return (
     <View style={[styles.card, cardTint(palette, tone)]}>
+      <CardBar tone={tone} />
       {ended ? (
         <Text style={[styles.partLabel, { color: toneColors(palette, toneOf(item.status)).ink }]}>{resultHeading(item)}</Text>
       ) : null}
@@ -340,11 +375,12 @@ function FoldedCard({ item, onOpen, tone }: { item: StructureItem; onOpen: () =>
       onPress={onOpen}
       style={({ pressed }) => [styles.card, cardTint(palette, tone), styles.folded, pressed && styles.pressed]}
     >
+      <CardBar tone={tone} />
       <View style={styles.foldedHead}>
         <Text numberOfLines={1} style={[styles.heading, styles.foldedHeading]}>
           {itemHeading(item)}
         </Text>
-        <StatusChip status={item.status} />
+        <CardPill status={item.status} tone={tone} />
         <Tally item={item} />
         <Text style={styles.foldMark}>▾</Text>
       </View>
@@ -382,6 +418,7 @@ const SummaryCard = memo(function SummaryCard({
   if (folded) return <FoldedCard item={item} tone={tone} onOpen={() => onToggle(item)} />;
   return (
     <View style={[styles.card, cardTint(palette, tone)]}>
+      <CardBar tone={tone} />
       <View style={styles.headingRow}>
         <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, styles.headingText]}>
           {itemHeading(item)}
@@ -407,7 +444,7 @@ const SummaryCard = memo(function SummaryCard({
         <Text numberOfLines={1} style={styles.partLabel}>
           {t('graph.block.executionOf', { n: item.ordinal })}
         </Text>
-        <StatusChip status={item.status} />
+        <CardPill status={item.status} tone={tone} />
         <Tally item={item} />
       </View>
       <Progress item={item} />
@@ -445,8 +482,8 @@ const AgentCard = memo(function AgentCard({ node, parent, tone }: { node: Struct
         tone && { backgroundColor: tintOver(palette.surface, toneColors(palette, tone).soft, pipeline.cardTintOpacity) },
       ]}
     >
-      {/* The sub-agent card's own bar is the pipeline's bar: one bar, in the tone's mark. */}
-      <View style={[styles.nodeBar, { backgroundColor: toneMark(palette, tone ?? toneOf(node.status)) }]} />
+      {/* The sub-agent card's own bar is the pipeline's bar: one bar, in the tone's mark; none untinted. */}
+      {tone ? <View style={[styles.nodeBar, { backgroundColor: toneMark(palette, tone) }]} /> : null}
       <View style={styles.nodeBody}>
         <Text
           accessibilityLabel={t('graph.structure.nodeAccessibility', { title, status: statusLabel(node.status) })}
@@ -512,7 +549,7 @@ function cardKey(card: BoardCard): string {
 function ColumnChip({ column, selected, onPress }: { column: BoardColumn; selected: boolean; onPress: () => void }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
-  const colors = stepColors(palette, stepLook(column.step.step));
+  const colors = stepColors(palette, stepLook(column.step.step), columnTone(column));
   return (
     <Pressable
       accessibilityRole="tab"
@@ -1089,6 +1126,9 @@ const makeStyles = (palette: Palette) =>
     heading: { ...typeScale.heading, color: palette.text, fontSize: 15, lineHeight: 20 },
     headingRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.md },
     headingText: { flex: 1 },
+    cardClip: { ...StyleSheet.absoluteFillObject, borderRadius: radius.card, overflow: 'hidden' },
+    cardBar: { bottom: 0, left: 0, position: 'absolute', top: 0, width: pipeline.cardBarWidth },
+    pillEdge: { ...StyleSheet.absoluteFillObject, borderRadius: radius.round, borderWidth: 1 },
     folded: { gap: spacing.xs },
     foldedHead: { alignItems: 'center', flexDirection: 'row', gap: spacing.md },
     foldedHeading: { flexShrink: 1 },

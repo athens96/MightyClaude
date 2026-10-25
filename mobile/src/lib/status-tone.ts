@@ -74,7 +74,8 @@ export function stepTone(step: StructureStep, waiting = false): Tone | undefined
   }
 }
 
-/** True once a block or run has finished one way or another. */
+/** True once a block or run has finished one way or another, in `toneOf`'s words. */
 export function isSettled(status: string): boolean {
-  return status === 'completed' || status === 'error' || status === 'stopped';
+  const tone = toneOf(status);
+  return tone === 'done' || tone === 'err' || tone === 'stop';
 }

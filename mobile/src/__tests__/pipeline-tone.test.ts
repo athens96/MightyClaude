@@ -8,7 +8,7 @@ import { darkPalette, lightPalette, pipeline, tintOver, toneColors, toneMark } f
 
 /**
  * The 파이프라인 view's state colours, held to the Mac's `MightyStructureToneTests`: the same
- * tone for a status, a step, a column and a card, and the same tints, bar and tone colours as
+ * tone for a status, a step, a column (a current one takes its newest request's) and a card, and the same tints, bar and tone colours as
  * the contract (`native/contracts/fixtures/design-tokens.json` `pipeline` and `derived`).
  */
 const fixturePath = resolve(__dirname, '../../../native/contracts/fixtures/design-tokens.json');
@@ -40,13 +40,13 @@ function columnTones(board: Board): (Tone | undefined)[] {
   return board.columns.map((column) => columnTone(column));
 }
 
-/** Six phases, the first two done and the third current, holding `held` by phase id. */
-function phases(held: Record<string, StructureItem[]>): MobileStructure {
+/** Six phases, the pane at `current` (the third, 시드, unless given), holding `held` by phase id. */
+function phases(held: Record<string, StructureItem[]>, current = 2): MobileStructure {
   const ids = ['goal', 'interview', 'seed', 'run', 'evaluate', 'evolve'];
   const columns: StructureColumn[] = ids.map((id, index) => ({
     id,
     title: id,
-    step: index < 2 ? 'done' : index === 2 ? 'current' : 'pending',
+    step: index < current ? 'done' : index === current ? 'current' : 'pending',
     items: held[id] ?? [],
   }));
   return { v: 1, shape: 'phases', columns };
@@ -106,13 +106,29 @@ describe('pipeline tones', () => {
     const running = structureBoards(phases({ interview: [item(1)], seed: [item(2, { status: 'running', finished: false })] }))[0]!;
     expect(columnTones(running)).toEqual(['done', 'done', 'run', undefined, undefined, undefined]);
   });
+
+  it("gives a current column its newest request's status, and runs while it holds none", () => {
+    const seedColumn = (status: string) => {
+      const board = structureBoards(phases({ interview: [item(1)], seed: [item(2, { status })] }))[0]!;
+      expect(board.columns[2]!.step.step).toBe('current');
+      return columnTone(board.columns[2]!);
+    };
+    // The pipeline stands at 시드 with its request over: the step reads as that request ended.
+    expect(['completed', 'stopped', 'cancelled', 'failed'].map(seedColumn)).toEqual(['done', 'stop', 'stop', 'err']);
+    // The pane stands at 실행 for the next request, which no request reached yet: the current step runs.
+    const moved = structureBoards(phases({ interview: [item(1)], seed: [item(2)] }, 3))[0]!;
+    expect(moved.columns[3]!.step.step).toBe('current');
+    expect(moved.columns[3]!.cards).toEqual([]);
+    expect(columnTone(moved.columns[3]!)).toBe('run');
+  });
 });
 
 describe('pipeline colours', () => {
   it('keeps the contract tints and bar (pipeline)', () => {
     expect(Object.keys(contract.pipeline).sort()).toEqual(Object.keys(pipeline).sort());
     for (const [name, value] of Object.entries(contract.pipeline)) expect(pipeline[name as keyof typeof pipeline]).toBe(value);
-    expect(pipeline.cardTintOpacity).toBeGreaterThan(pipeline.columnTintOpacity);
+    // The card is lighter than its column, so it stands out from a column of its own tone.
+    expect(pipeline).toEqual({ columnTintOpacity: 0.6, cardTintOpacity: 0.35, cardBarWidth: 3 });
   });
 
   it.each([

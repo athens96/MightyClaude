@@ -399,12 +399,13 @@ export function toneColors(palette: Palette, tone: Tone): ToneColors {
 /**
  * The 파이프라인 view's state colours, from `native/contracts/fixtures/design-tokens.json`
  * (`pipeline`): a column's cards sit on its tone's soft tint at `columnTintOpacity`, each card
- * on the same tint at the stronger `cardTintOpacity`, with a `cardBarWidth` bar in the tone's
- * mark down its leading edge. `pipeline-tone.test.ts` holds them to the contract.
+ * on the same tint at the lighter `cardTintOpacity` so it stands out from a column of its own
+ * tone, with a `cardBarWidth` bar in the tone's mark down its leading edge.
+ * `pipeline-tone.test.ts` holds them to the contract.
  */
 export const pipeline = {
-  columnTintOpacity: 0.45,
-  cardTintOpacity: 0.85,
+  columnTintOpacity: 0.6,
+  cardTintOpacity: 0.35,
   cardBarWidth: 3,
 } as const;
 

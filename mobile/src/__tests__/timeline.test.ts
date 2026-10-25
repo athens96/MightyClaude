@@ -24,6 +24,8 @@ describe('toneOf', () => {
 
   it('calls completed, error and stopped settled', () => {
     expect(['completed', 'error', 'stopped'].every(isSettled)).toBe(true);
+    // As `toneOf` reads them: failed is an error, cancelled and interrupted are stops.
+    expect(['failed', 'cancelled', 'interrupted'].every(isSettled)).toBe(true);
     expect(['running', 'waiting', 'idle', ''].some(isSettled)).toBe(false);
   });
 });
