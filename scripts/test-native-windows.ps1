@@ -3,8 +3,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Executable,
     [string]$ProfileDirectory = (Join-Path ([IO.Path]::GetTempPath()) "mighty-windows-smoke-$([Guid]::NewGuid().ToString('N'))"),
     [ValidateRange(15, 600)][int]$TimeoutSeconds = 300,
-    # The web shell's smoke (MIGHTY_SMOKE_WEB=1, MainWindow.WebShell.cs) instead of the WinUI screens' smoke: only its
-    # smoke-result.json's passed is checked, since the WinUI checks below read keys only the WinUI smoke writes.
+    # The web shell's smoke (MIGHTY_SMOKE_WEB=1, MainWindow.WebShell.cs, the full check) instead of the WinUI fallback's
+    # minimal smoke (MainWindow.Smoke.cs: starts, shows a Claude and a shell pane, opens and closes Settings).
     [switch]$Web
 )
 $ErrorActionPreference = 'Stop'
@@ -63,308 +63,62 @@ try {
         Write-SmokeAnnotation "ExitCode=$($process.ExitCode)`nphase: $($result.phase) [$($result.stepState)]`nerror: $($result.error)`ntype: $($result.exceptionType)`npassed before it: $reached`n$trace"
         throw "GUI 검증 실패: ExitCode=$($process.ExitCode), 결과: $resultPath"
     }
+    function Fail([string]$Message) { Write-SmokeAnnotation $Message; throw $Message }
+    function Require-Keys($Value, [string]$Name, [string[]]$Keys) {
+        foreach ($key in $Keys) { if ($Value.$key -ne $true) { Fail "Windows smoke failed: $Name.$key" } }
+    }
     if ($Web) {
         if ($result.webShell -ne $true) { Write-SmokeAnnotation 'The web smoke ran without the web shell (no WebView2 runtime?)'; throw "웹 셸 검증이 웹 셸 없이 실행됐습니다: $resultPath" }
+        # The page's browser pane goes back through its own button and refuses window.open() (MainWindow.WebShell.Panes.cs).
+        Require-Keys $result.panes 'panes' @('browserNavigated', 'browserBack', 'browserPopupBlocked')
+        # The live steps beside the page (MainWindow.WebShell.LiveSmoke.cs): every one ran and passed.
+        foreach ($key in @('settingsSections', 'phaseModelsSection', 'phaseModelsActions', 'componentsSection', 'setupTools', 'mobileDirect', 'accountUsage', 'appUpdateSection', 'claudePluginList', 'codexPluginList', 'pluginMarketplace', 'automaticUpdates', 'remoteWorkspaces', 'companion', 'screenCapture', 'screenTransport', 'screenTapMarkerNoFocus', 'completionNotification', 'pictureDecode', 'delegation', 'localeKeyLeakScan')) {
+            if ($result.live.$key -ne $true) { Fail "Windows web smoke live step failed: $key $($result."${key}Error")" }
+        }
+        Require-Keys $result.pictureDecode 'pictureDecode' @('exifOrientation', 'tiffRaster')
+        Require-Keys $result.automaticUpdates 'automaticUpdates' @('defaultAndPersistedPreference', 'sameProviderLocalAndMobileHeld', 'releasedQueuePreservesOrder', 'stopCancelsHeldRequests', 'manualUpdateRefusesWithoutConsumingDrafts', 'manualPluginMutationBlocksBothProviders')
+        Require-Keys $result.companion 'companion' @('bundledAtlasDecoded', 'allAnimationRowsRendered', 'nonActivatingWindow', 'pointerActionBoundToCard', 'selectedPetPreview', 'contextMenuNonActivating', 'contentDrivenHeightAndEdgeResize', 'planBubbleAndWindow', 'renderedOverlaySnapshots')
+        Require-Keys $result.screenCapture 'screenCapture' @('syntheticGpuCropEncoded', 'displayBoundsEnumerated')
+        if ($result.screenTapMarkerNoFocus -ne $true) { Fail 'Windows screen tap marker stole focus or intercepted input.' }
+        Require-Keys $result.screenTransport 'screenTransport' @('packagedWebViewBridge', 'h264Negotiated', 'screenAndOverviewTracksDecoded', 'perPeerResolutionLimit', 'unicodeControlRoundTrip', 'hostDataRoundTrip', 'haltClosedChannel')
+        # 필요한 도구 over fixed probes (MainWindow.SetupSmoke.cs), opened in the page: rows, picks, plan order, the confirmation read with no terminal opened.
+        foreach ($key in @('firstRunDecision', 'welcomeButton', 'rows', 'actions', 'cancelledWithoutTerminal', 'blockedPaneInstall', 'passed')) {
+            if ($result.setupTools.$key -ne $true) { Fail "Windows setup screen smoke failed: setupTools.$key" }
+        }
+        # Remote workspaces' settings half (MainWindow.RemoteWorkspacesSmoke.cs): a host and a client in this one process over loopback.
+        Require-Keys $result.remoteWorkspaces 'remoteWorkspaces' @('settingsPage', 'sharing', 'connected', 'passed')
+        # The direct path's rows in Mobile remote over fixed endpoints and a recording firewall runner (MainWindow.MobileDirectSmoke.cs): no netsh runs.
+        foreach ($key in @('rows', 'status', 'firewallRow', 'addCommand', 'removeCommand', 'outcomes', 'passed')) {
+            if ($result.mobileDirect.$key -ne $true) { Fail "Windows mobile direct smoke failed: mobileDirect.$key" }
+        }
+        # Parent -> child delegation's close paths, driven with the app's scripted Claude (MainWindow.DelegationSmoke.cs).
+        Require-Keys $result.delegation 'delegation' @('childrenListed', 'sidebarTree', 'heldRowPinned', 'windowCloseMergedChild', 'phoneCloseMergedChild', 'phoneSendReleasedHeldNotice', 'windowParentCloseAsks', 'phoneParentCloseKeepsChild', 'removeRefusedKeptWorktree', 'removedAfterDiscard')
+        if ($result.delegation.removeRefusedOpenChild -ne 'workspace_has_children') { Fail "Windows delegation smoke failed: delegation.removeRefusedOpenChild=$($result.delegation.removeRefusedOpenChild)" }
+        # A child of another agent (step 9): the worktree menu's pick of Claude on a read-only Codex pane starts a Claude child in plan mode.
+        $cross = $result.delegation.otherAgentChildStarted
+        if ($null -eq $cross -or $cross.parent -ne 'codex' -or $cross.child -ne 'claude' -or $cross.mode -ne 'plan' -or $cross.state -eq 'failed' -or $cross.state -eq 'creating') { Fail "Windows delegation smoke failed: delegation.otherAgentChildStarted=$($cross | ConvertTo-Json -Compress)" }
+        $scan = $result.localeKeyLeakScan
+        if ($null -eq $scan -or [int]$scan.scanned -lt 50) { Fail "로케일 키 누수 검사가 실행되지 않았거나 검사 수가 너무 적습니다: localeKeyLeakScan.scanned=$($scan.scanned)" }
+        if (@($scan.leaks).Count -gt 0) { Fail "로케일 키가 화면에 그대로 노출됩니다: $($scan.leaks -join ', ')" }
+        # Outcomes that are neither pass nor fail (a check that had to be skipped on
+        # this runner) are published as a notice so they can be read without the log.
+        $outcomes = @($result.PSObject.Properties | Where-Object { $_.Value -is [pscustomobject] -and $_.Value.status -is [string] } |
+            ForEach-Object { "$($_.Name)=$($_.Value.status)$(if ($_.Value.reason) { " ($($_.Value.reason))" })" }) -join '; '
+        if ($outcomes -and $env:GITHUB_ACTIONS) {
+            $text = if ($outcomes.Length -gt 800) { $outcomes.Substring(0, 800) } else { $outcomes }
+            Write-Output "::notice title=Windows GUI smoke outcomes::$($text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))"
+        }
         Write-Output "Windows web shell PASS: $resultPath"
         return
     }
-    foreach ($key in @('exifOrientation', 'svgRaster', 'tiffRaster')) {
-        if ($result.agentImages.$key -ne $true) { throw "Windows native image smoke failed: agentImages.$key" }
-    }
-    $transcriptActions = $result.transcriptActions
-    foreach ($key in @('exactCodeCopy', 'nativeToolToggle', 'unknownActionRefused')) {
-        if ($transcriptActions.$key -ne $true) { throw "Windows transcript action smoke failed: transcriptActions.$key" }
-    }
-    $styles = $result.styles
-    # The app bundles every manifest in this folder, so the count follows it.
-    $bundledManifests = @(Get-ChildItem -Path (Join-Path $PSScriptRoot '../native/macos/Sources/MightyCore/Resources/Styles') -Filter '*.json' -File).Count
-    if ($bundledManifests -lt 1) { throw 'Windows style smoke found no bundled style manifests in the repository.' }
-    if ($null -eq $styles -or [int]$styles.bundledCount -ne $bundledManifests -or [int]$styles.guidedActions -lt 1) {
-        throw 'Windows style smoke did not load the bundled registry and guided actions.'
-    }
-    foreach ($key in @('picker', 'fullApprovalContents', 'localRunPermissionSnapshot')) {
-        if ($styles.$key -ne $true) { throw "Windows style smoke failed: styles.$key" }
-    }
-    foreach ($key in @('liveSessionPopover', 'contextRingAndIdentifiers', 'attachmentMenu', 'imageExternalVerifiedSnapshot', 'agentUrlCardsNonmodalAndBounded', 'conversationResetPreservesDraftAndHistory')) {
-        if ($result.smallParity.$key -ne $true) { throw "Windows pane parity smoke failed: smallParity.$key" }
-    }
-    foreach ($key in @('sharedActionsRendered', 'nativeDraftPreserved', 'neverAutoSends', 'runningAndStaleRepliesHidden')) {
-        if ($result.nextActions.$key -ne $true) { throw "Windows next-action smoke failed: nextActions.$key" }
-    }
-    foreach ($key in @('defaultAndPersistedPreference', 'sameProviderLocalAndMobileHeld', 'releasedQueuePreservesOrder', 'stopCancelsHeldRequests', 'manualUpdateRefusesWithoutConsumingDrafts', 'manualPluginMutationBlocksBothProviders')) {
-        if ($result.automaticUpdates.$key -ne $true) { throw "Windows automatic-update smoke failed: automaticUpdates.$key" }
-    }
-    $companion = $result.companion
-    foreach ($key in @('bundledAtlasDecoded', 'allAnimationRowsRendered', 'nonActivatingWindow', 'pointerActionBoundToCard', 'selectedPetPreview', 'contextMenuNonActivating', 'contentDrivenHeightAndEdgeResize', 'keyboardAccessibleAgentStatus', 'renderedOverlaySnapshots')) {
-        if ($companion.$key -ne $true) { throw "Windows companion smoke failed: companion.$key" }
-    }
-    foreach ($key in @('syntheticGpuCropEncoded', 'displayBoundsEnumerated')) {
-        if ($result.screenCapture.$key -ne $true) { throw "Windows screen capture smoke failed: screenCapture.$key" }
-    }
-    if ($result.screenTapMarkerNoFocus -ne $true) { throw 'Windows screen tap marker stole focus or intercepted input.' }
-    foreach ($key in @('packagedWebViewBridge', 'h264Negotiated', 'screenAndOverviewTracksDecoded', 'perPeerResolutionLimit', 'unicodeControlRoundTrip', 'hostDataRoundTrip', 'haltClosedChannel')) {
-        if ($result.screenTransport.$key -ne $true) { throw "Windows screen transport smoke failed: screenTransport.$key" }
-    }
-    foreach ($key in @('trustedRendererLoaded', 'conptyUtf8RoundTrip', 'resizeBridge', 'externalNavigationBlocked', 'processClosed', 'restartPreservesRenderer', 'footerMetadata')) {
-        if ($result.nativeTerminal.$key -ne $true) { throw "Windows native terminal smoke failed: nativeTerminal.$key" }
-    }
-    foreach ($key in @('nativeSidebarChrome', 'phaseModelsControlsPersist', 'dashboardRetainsPane', 'clockPreservesDashboardControls', 'dashboardWorkspaceActions', 'dashboardProviderMarks', 'settingsLoadedBeforeCapture', 'allSettingsCategories', 'bothThemes')) {
-        if ($result.desktopSurfaces.$key -ne $true) { throw "Windows desktop design smoke failed: desktopSurfaces.$key" }
-    }
-    foreach ($key in @('independentDisclosure', 'selectionReopensOnlyTarget', 'inactiveWorkspacePaneSelection', 'workspaceBoundAddMenu', 'collapsedStatePersists', 'draftAndPaneIdentity', 'keyboardAccessible', 'quickTheme')) {
-        if ($result.workspaceSidebar.$key -ne $true) { throw "Windows workspace sidebar smoke failed: workspaceSidebar.$key" }
-    }
-    foreach ($key in @('shortcutBound', 'toggleCollapses', 'contentTakesSpace', 'toggleRestoresWidth', 'statePersists', 'automationNameFollows', 'focusLeavesFoldedSidebar')) {
-        if ($result.sidebarToggle.$key -ne $true) { throw "Windows sidebar fold smoke failed: sidebarToggle.$key" }
-    }
-    # The text setting (MainWindow.TextAppearanceSmoke.cs): exact at 100%, live at 120%, each font in its place, reset exact.
-    foreach ($key in @('shortcutsBound', 'standardExact', 'sizeFollows', 'followsAfterCollection', 'catchesUpWhenShown', 'interfaceFontFollows', 'conversationFontFollows', 'codeFontFollows', 'resetRestoresExact')) {
-        if ($result.textAppearance.$key -ne $true) { throw "Windows text setting smoke failed: textAppearance.$key" }
-    }
-    # Parent -> child delegation's close paths, driven through the window with the app's scripted Claude (MainWindow.DelegationSmoke.cs).
-    foreach ($key in @('childrenListed', 'sidebarTree', 'heldRowPinned', 'windowCloseMergedChild', 'phoneCloseMergedChild', 'phoneSendReleasedHeldNotice', 'windowParentCloseAsks', 'phoneParentCloseKeepsChild', 'removeRefusedKeptWorktree', 'removedAfterDiscard')) {
-        if ($result.delegation.$key -ne $true) { throw "Windows delegation smoke failed: delegation.$key" }
-    }
-    if ($result.delegation.removeRefusedOpenChild -ne 'workspace_has_children') { throw "Windows delegation smoke failed: delegation.removeRefusedOpenChild=$($result.delegation.removeRefusedOpenChild)" }
-    # A child of another agent (MainWindow.DelegationSmoke.cs step 9): the worktree menu's pick of Claude on a read-only Codex pane starts a Claude child in plan mode.
-    $cross = $result.delegation.otherAgentChildStarted
-    if ($null -eq $cross -or $cross.parent -ne 'codex' -or $cross.child -ne 'claude' -or $cross.mode -ne 'plan' -or $cross.state -eq 'failed' -or $cross.state -eq 'creating') { throw "Windows delegation smoke failed: delegation.otherAgentChildStarted=$($cross | ConvertTo-Json -Compress)" }
-    if ($result.mightyGraph.retainedNativeDocuments -ne $true) { throw 'Graph redraw replaced a retained native document or its parent.' }
+    # The WinUI fallback's smoke (MainWindow.Smoke.cs): the window starts on the WinUI screens, a Claude pane and a shell pane
+    # show, Settings opens and closes, and nothing throws.
+    if ($result.winuiFallback -ne $true) { Fail "The WinUI smoke did not run on the WinUI screens: $resultPath" }
+    Require-Keys $result.panes 'panes' @('claude', 'shell')
+    Require-Keys $result.settings 'settings' @('opened', 'closed')
     $screenshot = Join-Path $ProfileDirectory 'smoke-window.png'
     if (-not (Test-Path $screenshot -PathType Leaf) -or (Get-Item $screenshot).Length -eq 0) { throw 'GUI 스크린샷이 없습니다.' }
-    $scanned = $result.localeKeyLeakScanned
-    if ($null -eq $scanned -or ($scanned -isnot [int] -and $scanned -isnot [long]) -or [int]$scanned -lt 50) {
-        $msg = "로케일 키 누수 검사가 실행되지 않았거나 검사 수가 너무 적습니다: localeKeyLeakScanned=$scanned"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # Design tokens, stage 1: the window background is the shared page brush with the fixture's
-    # hex in both themes, recoloured in place on the toggle (MainWindow.DesignSmoke.cs).
-    if ($result.designTokens -ne $true) {
-        $msg = "designTokens 스모크가 실행되지 않았거나 통과하지 못했습니다: designTokens=$($result.designTokens)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # Design stage 2, the app shell: sidebar surface, workspace header, dock inset, pane card
-    # borders (line / accent x 0.58), status bar and title bar, in both themes (MainWindow.DesignSmoke.cs).
-    if ($result.appShellDesign -ne $true) {
-        $msg = "appShellDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: appShellDesign=$($result.appShellDesign)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # Design stage 3, the sidebar: search (with and without results), work-status entry, section
-    # header, workspace and pane rows (selected, hover, meta ink, waiting words), counts, beta
-    # capsules, add row, layout picker and footer, in both themes (MainWindow.DesignSmoke.cs).
-    if ($result.sidebarDesign -ne $true) {
-        $msg = "sidebarDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: sidebarDesign=$($result.sidebarDesign)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # Design stage 4, the tab strip, pane header and composer: strip and tabs, the 34pt header and its
-    # state word per tone, the ... menu holding Copy, the Default|Mighty switch, the composer card with its
-    # focus ring and shadow, pills, send/stop, context ring and the permission card, in both themes on the
-    # same reused pane (MainWindow.DesignSmoke.cs).
-    if ($result.paneChromeDesign -ne $true) {
-        $msg = "paneChromeDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: paneChromeDesign=$($result.paneChromeDesign)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # Design stage 5, the Mighty diagram, timeline and result card: page surface and Win2D dot grid, Mighty bar,
-    # block cards and headers, status pills, usage capsules, four activity capsules, running / waiting / draft
-    # outlines in stroke units, edges, the result strip, and the timeline list, headers (heading font), rows,
-    # nodes and result card, in both themes on the same views (MainWindow.MightyDesignSmoke.cs).
-    if ($result.mightyDesign -ne $true) {
-        $msg = "mightyDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: mightyDesign=$($result.mightyDesign)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # Design stage 6, the dashboard (tiles, usage bars, rows, capsules, the selected entry's shadow), the files pane
-    # (filter row, chosen row, preview head, syntax colours), the settings sheet (800x700, heading, list, section
-    # cards), the start-new-or-resume sheet shown for real, and the usage and session popovers, light then dark on
-    # the same views (MainWindow.PanelsDesignSmoke.cs).
-    if ($result.panelsDesign -ne $true) {
-        $msg = "panelsDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: panelsDesign=$($result.panelsDesign)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # 필요한 도구 over fixed probes (MainWindow.SetupSmoke.cs): rows, picks, plan order, the confirmation cancelled with no terminal opened.
-    foreach ($key in @('firstRunDecision', 'welcomeButton', 'rows', 'actions', 'cancelledWithoutTerminal', 'blockedPaneInstall', 'passed')) {
-        if ($result.setupTools.$key -ne $true) {
-            $msg = "Windows setup screen smoke failed: setupTools.$key"
-            Write-SmokeAnnotation $msg; throw $msg
-        }
-    }
-    # Remote workspaces (MainWindow.RemoteWorkspacesSmoke.cs): a host and a client in this one process over loopback (injected, never a
-    # setting), the settings page, a remote command pane run through the composer, local-only features off, the phone not told.
-    foreach ($key in @('settingsPage', 'sharing', 'connected', 'workspaceOpened', 'sidebarBadge', 'commandPaneComposer', 'commandRan', 'localOnlyOff', 'phoneHidden', 'keyCopyOptions', 'stopEndsRuns', 'passed')) {
-        if ($result.remoteWorkspaces.$key -ne $true) {
-            $msg = "Windows remote workspaces smoke failed: remoteWorkspaces.$key"
-            Write-SmokeAnnotation $msg; throw $msg
-        }
-    }
-    # The direct path's rows in Mobile remote over fixed endpoints and a recording firewall runner (MainWindow.MobileDirectSmoke.cs): no netsh runs.
-    foreach ($key in @('rows', 'status', 'firewallRow', 'addCommand', 'removeCommand', 'outcomes', 'passed')) {
-        if ($result.mobileDirect.$key -ne $true) {
-            $msg = "Windows mobile direct smoke failed: mobileDirect.$key"
-            Write-SmokeAnnotation $msg; throw $msg
-        }
-    }
-    if ($result.componentsSection -ne $true) {
-        $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    $bp = $result.browserPane
-    if ($null -eq $bp) {
-        $msg = "browserPane 스모크가 실행되지 않았습니다: browserPane 키가 없습니다"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    foreach ($key in @('runtimeVersion', 'navigated', 'backWorked', 'profileUnderTemp', 'popupBlocked')) {
-        $val = $bp.$key
-        if (-not $val) {
-            $msg = "browserPane.$key 값이 없거나 false입니다: $val"
-            Write-SmokeAnnotation $msg; throw $msg
-        }
-    }
-    # Pane auto-titles: 자동 in the rename dialog hands the title back to the latest request.
-    if ($result.rename.automaticFollowsLatestRequest -ne $true) {
-        $msg = "rename.automaticFollowsLatestRequest 값이 없거나 false입니다: $($result.rename.automaticFollowsLatestRequest)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # Inline agent pictures: a cached picture and a Markdown picture drawn into the transcript.
-    $ai = $result.agentImages
-    if ($null -eq $ai) {
-        $msg = "agentImages 스모크가 실행되지 않았습니다: agentImages 키가 없습니다"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    foreach ($key in @('loadingPlaceholderFirst', 'inlinePicture', 'markdownPicture', 'sourceCaption', 'remoteLinkOnly', 'outsideRefused', 'referencesOnlySaved')) {
-        if ($ai.$key -ne $true) {
-            $msg = "agentImages.$key 값이 없거나 false입니다: $($ai.$key)"
-            Write-SmokeAnnotation $msg; throw $msg
-        }
-    }
-    $fp = $result.filesPane
-    if ($null -eq $fp) {
-        $msg = "filesPane 스모크가 실행되지 않았습니다: filesPane 키가 없습니다"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    foreach ($key in @('paneOpened', 'placedLeft', 'noiseCollapsed', 'folderOpened', 'markdown', 'swift', 'png', 'reopenFocusesSamePane', 'neverSaved')) {
-        if ($fp.$key -ne $true) {
-            $msg = "filesPane.$key 값이 없거나 false입니다: $($fp.$key)"
-            Write-SmokeAnnotation $msg; throw $msg
-        }
-    }
-    if ($fp.shortcut -ne 'Ctrl+Shift+E') {
-        $msg = "filesPane.shortcut 값이 Ctrl+Shift+E가 아닙니다: $($fp.shortcut)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # The composer model button and picker read family plus version (macOS ModelLabel).
-    $ml = $result.modelLabel
-    if ($null -eq $ml -or $ml.valuesUnchanged -ne $true -or $ml.reportedAlias -ne 'Opus 5.5') {
-        $msg = "modelLabel 스모크 값이 없거나 false입니다: $($ml | ConvertTo-Json -Compress)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # Codex and Gemini agent rows and tabs carry the 베타 capsule after their titles.
-    $bb = $result.betaBadge
-    if ($null -eq $bb -or $bb.betaRowsCarryBadge -ne $true -or @($bb.providers).Count -ne 2) {
-        $msg = "betaBadge 스모크 값이 없거나 false입니다: $($bb | ConvertTo-Json -Compress)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    $sh = $result.sessionHistory
-    if ($null -eq $sh) {
-        $msg = "sessionHistory 스모크가 실행되지 않았습니다: sessionHistory 키가 없습니다"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    foreach ($key in @('choiceOffered', 'nestedRunHidden', 'resumedInNewPane', 'latestLoadedOnOpen', 'olderLoadedAboveWithoutMoving', 'openSessionNotOffered')) {
-        if ($sh.$key -ne $true) {
-            $msg = "sessionHistory.$key 값이 없거나 false입니다: $($sh.$key)"
-            Write-SmokeAnnotation $msg; throw $msg
-        }
-    }
-    # The 창 추가 menu ends with 프로젝트 폴더 열기…; the sidebar open-folder button shows only
-    # when no workspace is listed; Gemini and Ctrl+N start without asking (macOS WorkspaceView).
-    $ap = $result.addPaneMenu
-    if ($null -eq $ap) {
-        $msg = "addPaneMenu 스모크가 실행되지 않았습니다: addPaneMenu 키가 없습니다"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    foreach ($key in @('openProjectLast', 'openFolderButtonOnlyWhenNoneListed', 'geminiStartsAtOnce', 'ctrlNStartsAtOnce')) {
-        if ($ap.$key -ne $true) {
-            $msg = "addPaneMenu.$key 값이 없거나 false입니다: $($ap.$key)"
-            Write-SmokeAnnotation $msg; throw $msg
-        }
-    }
-    if ($ap.shortcuts -ne 'Ctrl+O, Ctrl+N') {
-        $msg = "addPaneMenu.shortcuts 값이 'Ctrl+O, Ctrl+N'이 아닙니다: $($ap.shortcuts)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    foreach ($key in @("modePersists", "groupAndRowExpansion", "sameTranscriptActions", "resultFilesOpenSharedPreview", "unchangedRefreshKeepsControls", "diagramAndDraftPreserved", "structureBoardAndReveal", "historyAffordance", "narrowToolbar")) {
-        if ($result.mightyTimeline.$key -ne $true) { throw "Mighty timeline smoke failed: mightyTimeline.$key" }
-    }
-    $mg = $result.mightyGraph
-    if ($null -eq $mg) {
-        $msg = "mighty 그래프 스모크가 실행되지 않았습니다: mightyGraph 키가 없습니다"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    if ([int]$mg.blocks -lt 3) {
-        $msg = "mighty 그래프 블록이 3개 미만입니다: blocks=$($mg.blocks)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    if ([int]$mg.edges -lt 2) {
-        $msg = "mighty 그래프 엣지가 2개 미만입니다: edges=$($mg.edges)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    $zoom = @($mg.zoom)
-    if ($zoom.Count -lt 3 -or [int]$zoom[0] -ne 50 -or [int]$zoom[1] -ne 100 -or [int]$zoom[2] -ne 150) {
-        $msg = "mighty 그래프 줌이 [50,100,150]이 아닙니다: zoom=$($mg.zoom)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    if ($mg.modeRestored -ne $true) {
-        $msg = "mighty 그래프 모드 복원이 실패했습니다: modeRestored=$($mg.modeRestored)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # The Mighty result box shrinks with the pane and grows back to its saved size.
-    $rf = $mg.resultFit
-    if ($null -eq $rf) {
-        $msg = "결과 박스 스모크가 실행되지 않았습니다: mightyGraph.resultFit 키가 없습니다"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    foreach ($key in 'fitButton', 'grewToSaved', 'shrank', 'grewBack', 'zoomedInside', 'fitCleared') {
-        if ($rf.$key -ne $true) {
-            $msg = "mightyGraph.resultFit.$key 값이 없거나 false입니다: $($rf.$key)"
-            Write-SmokeAnnotation $msg; throw $msg
-        }
-    }
-    # A new result shows right above the composer at its content height under the saved size.
-    $rr = $mg.resultReveal
-    if ($null -eq $rr) {
-        $msg = "새 결과 위치 스모크가 실행되지 않았습니다: mightyGraph.resultReveal 키가 없습니다"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    foreach ($key in 'revealed', 'contentFit', 'savedKept', 'followsResize', 'userPanStops') {
-        if ($rr.$key -ne $true) {
-            $msg = "mightyGraph.resultReveal.$key 값이 없거나 false입니다: $($rr.$key)"
-            Write-SmokeAnnotation $msg; throw $msg
-        }
-    }
-    # Request block headers carry the pane's agent mark before its name; other headers none.
-    $rm = $mg.requestMarks
-    if ($null -eq $rm -or [int]$rm.requestHeaders -lt 1 -or [string]::IsNullOrEmpty([string]$rm.provider)) {
-        $msg = "요청 블록 마크 스모크가 실행되지 않았습니다: mightyGraph.requestMarks=$($rm | ConvertTo-Json -Compress)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # Running blocks march a dashed outline (solid with animations off); waiting blocks stay amber.
-    $ol = $mg.outlines
-    if ($null -eq $ol -or $ol.running -ne 'marching' -or $ol.reducedMotion -ne 'solid' -or $ol.waiting -ne 'waiting') {
-        $msg = "실행 표시 테두리 스모크가 실패했습니다: mightyGraph.outlines=$($ol | ConvertTo-Json -Compress)"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    $leaks = $result.localeKeyLeaks
-    if ($leaks -and @($leaks).Count -gt 0) {
-        $msg = "로케일 키가 화면에 그대로 노출됩니다: $($leaks -join ', ')"
-        Write-SmokeAnnotation $msg; throw $msg
-    }
-    # Outcomes that are neither pass nor fail (a check that had to be skipped on
-    # this runner) are published as a notice so they can be read without the log.
-    $outcomes = @($result.PSObject.Properties | Where-Object { $_.Value -is [pscustomobject] -and $_.Value.status -is [string] } |
-        ForEach-Object { "$($_.Name)=$($_.Value.status)$(if ($_.Value.reason) { " ($($_.Value.reason))" })" }) -join '; '
-    if ($outcomes -and $env:GITHUB_ACTIONS) {
-        $text = if ($outcomes.Length -gt 800) { $outcomes.Substring(0, 800) } else { $outcomes }
-        Write-Output "::notice title=Windows GUI smoke outcomes::$($text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))"
-    }
-    Write-Output "Windows GUI PASS: $resultPath"
+    Write-Output "Windows WinUI fallback PASS: $resultPath"
 } finally {
     if ($started -and $process.HasExited -and $process.ExitCode -ne 0) {
         # Native WinUI fail-fast can bypass managed exception handlers. Read only

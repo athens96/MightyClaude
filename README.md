@@ -141,7 +141,7 @@ Windows 10 버전 2004(빌드 19041) 이상 또는 Windows 11, **.NET 10 SDK**, 
 pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 pwsh ./scripts/build-windows.ps1 -Architecture arm64 -Configuration Release
 
-# 격리된 프로필로 앱 실행 검사: WinUI 화면, 그다음 웹 화면
+# 격리된 프로필로 앱 실행 검사: WinUI 비상구가 뜨는지 짧게, 그다음 웹 화면과 그 곁의 동작 전부
 pwsh ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-x64/MightyClaude.exe
 pwsh ./scripts/test-native-windows.ps1 -Web -Executable ./release/native-windows-x64/MightyClaude.exe
 

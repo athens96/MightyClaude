@@ -68,9 +68,11 @@ jobs:
           MIGHTY_UPDATE_URL: https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/latest.json
           MIGHTY_UPDATE_PUBLIC_KEY: ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=
         run: ./scripts/build-windows.ps1 -Architecture ${{ matrix.architecture }} -Configuration Release -Installer
-      - name: Launch native WinUI with an isolated profile and capture GUI evidence
+      # The WinUI screens are the ui-winui escape hatch and the window without WebView2: a short smoke that they start,
+      # show a Claude and a shell pane and open Settings. Everything else is the web smoke's.
+      - name: Launch the WinUI fallback with an isolated profile and check its smoke
         shell: pwsh
-        timeout-minutes: 6
+        timeout-minutes: 3
         run: ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-${{ matrix.architecture }}/MightyClaude.exe -ProfileDirectory "$env:RUNNER_TEMP/mighty-windows-smoke-${{ matrix.architecture }}"
       - name: Launch the web shell with an isolated profile and check its smoke
         shell: pwsh
@@ -90,7 +92,7 @@ jobs:
             release/MightyClaude-windows-${{ matrix.architecture }}-setup.exe
             release/MightyClaude-windows-${{ matrix.architecture }}-setup.exe.sha256
           if-no-files-found: error
-      - name: Upload isolated GUI result and screenshot
+      - name: Upload the WinUI fallback smoke result and screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -98,7 +100,7 @@ jobs:
           # WebView2 can still retire cache files after a failed app exits.
           # Publish the durable evidence only, not its mutable browser profile.
           path: |
-            ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/smoke*.png
+            ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/smoke-window.png
             ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/smoke-result.json
             ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/*.log
             ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/native-crash-events*.json
@@ -113,7 +115,10 @@ jobs:
           name: MightyClaude-windows-${{ matrix.architecture }}-web-smoke
           path: |
             ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/smoke-result.json
+            ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/smoke*.png
             ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/*.log
             ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/native-crash-events*.json
+            ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/native-crash-events-error.txt
             ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/native-process.json
+            ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/published-files.json
           if-no-files-found: warn

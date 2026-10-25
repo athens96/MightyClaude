@@ -432,7 +432,7 @@
 
 ## 2026-10-04 전체 기능 이식 후 Windows 실기 확인
 
-아래 항목은 코드 구현이나 macOS의 Core 테스트 통과만으로 체크하지 않는다. `scripts/test-native-windows.ps1`의 임시 프로필에 생성되는 `smoke-result.json`, `smoke-window.png`, `smoke-window-light.png`, `smoke-files.png`와 해당 기기의 실행 기록을 함께 보관한다. 실행하지 않은 항목은 계속 빈 체크 상태로 둔다.
+아래 항목은 코드 구현이나 macOS의 Core 테스트 통과만으로 체크하지 않는다. `scripts/test-native-windows.ps1`의 임시 프로필에 생성되는 `smoke-result.json`(2026-10-26부터 `-Web` 웹 스모크의 것), `smoke-window.png`(WinUI 비상구 스모크)와 해당 기기의 실행 기록을 함께 보관한다. 실행하지 않은 항목은 계속 빈 체크 상태로 둔다.
 
 ### 시작·설정·전체 디자인
 
@@ -445,7 +445,7 @@
 
 ### 디자인 시스템 (테마 토글·시각 비교)
 
-기준 화면은 `artifacts/design-system/screens/`(라이트·다크)다. 스모크 `paletteDesign`은 두 테마에서 주 창·작업 현황·설정 창의 모든 브러시가 팔레트 안에 있는지만 증명하고, 실제 색 표현·글꼴·그림자는 아래처럼 눈으로 확인한다.
+기준 화면은 `artifacts/design-system/screens/`(라이트·다크)다. WinUI 스모크 `paletteDesign`(2026-10-26 삭제)은 두 테마에서 주 창·작업 현황·설정 창의 모든 브러시가 팔레트 안에 있는지만 증명했다. 실제 색 표현·글꼴·그림자는 아래처럼 눈으로 확인한다.
 
 - [ ] 라이트·다크 각각에서 사이드바, 작업 현황, Default 창, Mighty 다이어그램·타임라인, 파일 창, 터미널 창, 설정 창을 기준 화면과 나란히 놓고 바탕(`page`·`sidebar`·`card`·`cardRaised`), 선(`line`), 강조(`accent`) 색이 같다.
 - [ ] 테마를 바꾸면 열린 팝오버(사용량·세션 정보), 열린 설정 창, 열린 대화상자, 컴패니언 말풍선, 대화 기록과 파일 창 Markdown 미리보기가 한 번에 바뀌고 이전 테마 색이 남지 않는다.

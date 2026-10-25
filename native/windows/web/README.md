@@ -32,16 +32,18 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
 - Smoke: `MIGHTY_SMOKE_WEB=1 MightyClaude.exe --smoke-test --smoke-exit --profile <empty dir>` checks the page's DOM
   (`MainWindow.WebShell*.cs`: conversation and the reference bubble opened from a reply's `src/a.ts:3`, composer, cards, Mighty
   views and a structure card revealed in the diagram, frame, panes with the browser stepping aside under a tab menu opened over
-  it, Settings and dialogs). Without the
-  variable a smoke run writes `ui-winui` into its profile and checks the WinUI screens as before.
-  `scripts/test-native-windows.ps1 -Web` runs it and fails unless `passed` is true and the web shell ran.
+  it, Settings and dialogs), then the live steps beside the page (`MainWindow.WebShell.LiveSmoke.cs`, each under its key and in
+  `live`: settings forms, setup, plugins, remote workspaces' settings half, updates, delegation, the companion overlay, screen
+  sharing, the notifier, picture decoding, a locale-key leak scan). Without the variable a smoke run writes `ui-winui` into its
+  profile and runs the WinUI fallback's short smoke (`MainWindow.Smoke.cs`: it starts, shows a Claude and a shell pane, opens
+  and closes Settings). `scripts/test-native-windows.ps1 -Web` runs the web smoke and checks each step's keys.
 - Perf: `powershell -File scripts/perf-scenario.ps1 -Executable <exe> [-State <folder>] [-Runs N]` measures the page: each
   op (tab clicks, the Default | Mighty switch, the add-pane menu and tab close, typing into the composer during a streamed
   answer) is timed in the page with `performance.now()` until the animation frame after the DOM shows the result; each phase
   keeps the host's stall probe and GC figures and adds `pageLongTasks` (PerformanceObserver 'longtask': count, sum, max,
-  over 100/250 ms). `-WinUI` measures the WinUI screens (`-WinUI -Web` with the web transcript). Results go to `release/perf/`.
+  over 100/250 ms). Results go to `release/perf/`.
 - CI (`.github/workflows/native-windows.yml`): `npm ci`, `npm run typecheck` and `npm test` here before the .NET build;
-  the web smoke after the WinUI smoke, its `smoke-result.json` uploaded as `MightyClaude-windows-<arch>-web-smoke`. The
+  the web smoke after the WinUI fallback's, its `smoke-result.json` and pictures uploaded as `MightyClaude-windows-<arch>-web-smoke`. The
   publish (`scripts/build-windows.ps1`) and the installer check require `Assets/Web/index.html`.
 
 ## Develop

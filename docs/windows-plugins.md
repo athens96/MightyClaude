@@ -331,13 +331,13 @@ the help of `plugin add` is still only reading.
 `ClaudePluginSupport.NamesAChange` gained `upgrade`, the word the Codex
 marketplace feature will use (`codex plugin marketplace upgrade`).
 
-The GUI smoke run also records `codexPluginList`: it drives the same real dialog
+The web smoke's live steps (`MIGHTY_SMOKE_WEB=1`) also record `codexPluginList`: it drives the same real dialog
 under the Codex title with a Codex fixture through the tabs, the marketplace
 filter, the search box and two reloads, reads back the sentence an empty
 registry shows and the sentence a CLI without the JSON plugin commands produces,
 and puts back the two hooks it set.
 
-The GUI smoke run records `claudePluginList`: it drives the real dialog with a
+The web smoke's live steps record `claudePluginList`: it drives the real dialog with a
 fixture snapshot through the tabs, the marketplace filter, the search box and a
 reload, reads back the sentence a missing CLI produces, and puts back the two
 hooks it set.
