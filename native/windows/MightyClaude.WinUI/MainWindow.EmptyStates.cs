@@ -115,8 +115,6 @@ public sealed partial class MainWindow
         /// <summary>Gives the empty state's title the width the pane has for it, so it wraps instead of running out of the pane.</summary>
         private Action? fitEmptyTitle;
 
-        /// <summary>The empty state the design smoke reads (null on a pane that is not an agent's).</summary>
-        internal StackPanel? EmptyOutputForSmoke => emptyOutput;
         /// <summary>The empty state's padding (M/SessionPaneView.swift:543 <c>.padding(Spacing.xl)</c>).</summary>
         internal const double EmptyOutputPadding = DesignMetrics.Spacing.Xl;
 

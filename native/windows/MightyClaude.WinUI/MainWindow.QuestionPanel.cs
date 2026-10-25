@@ -8,8 +8,6 @@ namespace MightyClaude.WinUI;
 
 public sealed partial class MainWindow
 {
-    /// <summary>A GUI smoke's stand-in for <see cref="DesktopService.AnswerQuestionnaire"/> from a style's panel; null answers through the service.</summary>
-    internal Action<string, string, IReadOnlyDictionary<string, UserQuestionAnswer>>? smokeQuestionAnswerer;
 
     private sealed partial class PaneView
     {
@@ -167,8 +165,7 @@ public sealed partial class MainWindow
             try
             {
                 questionnaire.ValidateAnswers(answers);
-                if (owner.smokeQuestionAnswerer is { } fake) fake(id, request.Id, answers);
-                else owner.service.AnswerQuestionnaire(id, request.Id, answers);
+                owner.service.AnswerQuestionnaire(id, request.Id, answers);
                 guidedProgress = null; guidedQuestionInput = null;
                 // The channel's own settled request removes it as well; this is the same removal, once.
                 ReceiveToolPermission(request with { State = "answered" });

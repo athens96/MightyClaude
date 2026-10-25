@@ -327,10 +327,6 @@ internal static class RemoteDesktopVerification
             ("MainWindow.WebShell.Shell.cs", "path = workspace.Path });"), ("MainWindow.WebShell.Shell.cs", "name = workspace.Name, path = workspace.Path,"), ("MainWindow.WebShell.Shell.cs", "name = w.Name, path = w.Path,"), ("MainWindow.Shell.cs", "workspaceHeaderFullPath = workspace.Path"),
             ("MainWindow.Sidebar.cs", "SetToolTip(select, workspace.Path)"), ("MainWindow.UpdateAdmission.cs", "w.Path == workspace.Path"),
             ("MainWindow.DashboardWorkspaces.cs", "c.Path != w.Path"), ("MainWindow.ModelRefresh.cs", "w.Path == key.Path"),
-            // A reference preview target's own Path, in the transcript's self-check.
-            ("AgentTranscript.Actions.cs", "TextTargetAt(plain, pathAt + 24) is { Path: path"),
-            // The pictures smoke writes its fixture into the smoke's own local workspace.
-            ("MainWindow.AgentImages.cs", "workspace.Path, \"shots\""),
         ];
         var unexpected = new List<string>(); var used = new HashSet<(string, string)>(); var usedGuards = new HashSet<(string, string)>(); var scanned = 0;
         foreach (var file in Directory.EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories))

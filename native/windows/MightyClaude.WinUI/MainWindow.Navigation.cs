@@ -441,10 +441,7 @@ public sealed partial class MainWindow
         dialogOpen = true;
         try
         {
-            // A smoke driver answers in the buttons' place.
-            var result = smokeAskName is { } driver
-                ? await driver(dialog, field, errors)
-                : await ShowDialogAsync(dialog);
+            var result = await ShowDialogAsync(dialog);
             if (result == ContentDialogResult.None) result = picked;
             if (offerAutomatic && result == ContentDialogResult.Secondary) return (true, null);
             return (false, result == ContentDialogResult.Primary ? RenameSupport.DisplayName(field.Text) : null);

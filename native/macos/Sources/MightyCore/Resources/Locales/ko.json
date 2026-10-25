@@ -1713,7 +1713,6 @@
   "transcript.editorAccessibility": "실행 기록 · 드래그하여 여러 문단 선택",
   "transcript.question.multiple": "복수 선택",
   "transcript.question.single": "하나 선택",
-  "transcript.requestHeading": "↑ 요청",
   "transcript.runningIndicator": "에이전트 실행 중",
   "transcript.sentMessage": "보낸 메시지",
   "layout.empty.addPane": "실행 창을 추가하세요",

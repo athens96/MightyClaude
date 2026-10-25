@@ -147,13 +147,6 @@ public sealed partial class MainWindow
     /// <summary>The tiles, the usage card and the first group's parts the design smoke reads.</summary>
     private DashboardParts? dashboardParts;
     internal sealed record DashboardParts(Border Running, Border Waiting, Border Done, IReadOnlyList<Grid> TileHosts, Border? Usage, IReadOnlyList<Grid> UsageBars, Border? Rows, Button? FirstRow, Button? Files, Button? Add, TextBlock Title);
-    /// <summary>
-    /// Set by the design smoke while it reads the dashboard in both themes: the drawn dashboard is kept
-    /// (its clocks, marks and colours still refresh) even if a pane's status or logs change meanwhile,
-    /// so the dark pass reads the very views the light pass read.
-    /// </summary>
-    private bool dashboardHeldForSmoke;
-
     private void RenderDashboard()
     {
         if (dashboard is null || closing || !showsDashboard) return;
@@ -169,7 +162,7 @@ public sealed partial class MainWindow
                 clockLabel.Text = DashboardMeta(WorkDashboard.MakeCard(session, DashboardAttention(session.Id)));
         // The theme is not part of the key: every colour is a shared brush the toggle recolours in place.
         var key = System.Text.Json.JsonSerializer.Serialize(new { Locale.LanguagePreference, state.ActiveSessionId, state.Workspaces, Usage = usageCards, Sessions = state.Sessions.Select(s => new { s.Id, s.Status, s.Title, s.Model, s.Kind, s.Provider, s.CurrentActivity, Log = s.Logs.LastOrDefault(), s.SessionUsage, Attention = DashboardAttention(s.Id) }) }, Wire.Json);
-        if (key == dashboardFingerprint || (dashboardHeldForSmoke && dashboardParts is not null)) return; dashboardFingerprint = key;
+        if (key == dashboardFingerprint) return; dashboardFingerprint = key;
         dashboardClocks.Clear(); dashboardGitLabels.Clear(); dashboardMarks.Clear();
         // M/DashboardView.swift:94-118: padding h28 t20 b24; the title, the tiles 16 below, each group 22 below.
         var content = new StackPanel { Padding = new(DesignMetrics.Inset.DashboardPageH, DesignMetrics.Inset.DashboardPageT, DesignMetrics.Inset.DashboardPageH, DesignMetrics.Inset.DashboardPageB) };

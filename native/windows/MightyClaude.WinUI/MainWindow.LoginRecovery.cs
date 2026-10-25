@@ -23,8 +23,6 @@ public sealed partial class MainWindow
     // An automatic start held back only because another run of the provider was still going, per provider;
     // it is tried again once the provider is idle (ResumeDeferredAutoLogin).
     private readonly Dictionary<string, (CliLoginRetry Retry, CliAccountStatus Status)> deferredAutoLogins = [];
-    // The smoke never runs a CLI: when set, this stands in for the sign-in process (MainWindow.SmallParitySmoke.cs).
-    private Func<string, Task>? smokeLoginStarter;
     // The console window Antigravity's last sign-in opened; while it is still open a new start waits on it instead of opening another.
     private AntigravityLoginWindow? antigravityLoginWindow;
     private sealed class AntigravityLoginWindow
@@ -142,12 +140,8 @@ public sealed partial class MainWindow
     private Task StartBackgroundLogin(string provider, bool automatic = false, string? session = null)
     {
         if (closing || loginJobs.ContainsKey(provider) || !CliAuthFailure.Providers.Contains(provider)) return Task.CompletedTask;
-        if (options.SmokeTest)
-        {
-            if (smokeLoginStarter is null) return Task.CompletedTask;
-            loginJobs[provider] = new LoginJob { Phase = "waiting", Automatic = automatic, Terminal = provider == "gemini" }; loginFailures.Remove(provider); RefreshLoginCards();
-            return smokeLoginStarter(provider);
-        }
+        // The smoke never runs a CLI.
+        if (options.SmokeTest) return Task.CompletedTask;
         // A sign-in waited on in a terminal holds the account as the Mac's cliLoginPending does.
         if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || accountLoginWaits.ContainsKey(provider) || AnyCliUpdateRunning || service.HasActiveProvider(provider))
         {

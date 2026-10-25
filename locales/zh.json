@@ -1713,7 +1713,6 @@
   "transcript.editorAccessibility": "运行日志 · 拖动以选择多个段落",
   "transcript.question.multiple": "多选",
   "transcript.question.single": "单选",
-  "transcript.requestHeading": "↑ 请求",
   "transcript.runningIndicator": "智能体运行中",
   "transcript.sentMessage": "已发送的消息",
   "layout.empty.addPane": "添加窗格",

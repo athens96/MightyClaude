@@ -12,24 +12,6 @@ public sealed partial class MainWindow
 {
     private readonly HashSet<Task> terminalClosures = [];
     private bool smokeTerminalEnabled;
-    private async Task<Dictionary<string, object?>> RunTerminalSmoke()
-    {
-        var saved = service.Snapshot; var id = Wire.Id(); PaneView? pane = null;
-        try
-        {
-            smokeTerminalEnabled = true;
-            await AddPane("shell", shape: session => session with { Id = id, Title = "Windows terminal smoke" });
-            await WaitUI(() => views.TryGetValue(id, out var current) && current.Container.ActualWidth > 0);
-            pane = views[id];
-            return await pane.RunTerminalBridgeSmoke();
-        }
-        finally
-        {
-            smokeTerminalEnabled = false;
-            if (pane is not null) await pane.DisposeTerminalAsync().WaitAsync(TimeSpan.FromSeconds(20));
-            await service.UpdateAsync(_ => saved); Render();
-        }
-    }
     /// <summary>
     /// Opens a terminal pane and puts <paramref name="command"/> at its prompt for the user. A command with a line break is
     /// not put in at all and Enter follows only where <paramref name="autoRun"/> says so (TerminalInputPolicy). A pane
@@ -411,46 +393,6 @@ public sealed partial class MainWindow
                 : Locale.Get("terminal.failed") + "\n" + failure.Message;
             terminalNotice.Visibility = Visibility.Visible;
             terminalRestart!.Visibility = Visibility.Visible; terminalRestart.IsEnabled = true;
-        }
-        internal async Task<Dictionary<string, object?>> RunTerminalBridgeSmoke()
-        {
-            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-            while (terminal is null && DateTimeOffset.UtcNow < deadline) await Task.Delay(50);
-            Require(terminal is not null && terminalReady && terminalView?.CoreWebView2 is not null, "Trusted xterm/ConPTY did not become ready: " + terminalNotice?.Text);
-            var process = terminal!; var core = terminalView!.CoreWebView2;
-            Require(IsTerminalAddress(core.Source), "Terminal renderer did not load from the packaged trusted origin.");
-            // i18n-exempt-begin: RunTerminalBridgeSmoke (--smoke-test) marker: Korean output the terminal must render back through ConPTY.
-            var marker = "MIGHTY_" + Guid.NewGuid().ToString("N") + "_\uD55C\uAE00";
-            // i18n-exempt-end
-            var powershell = Path.GetFileNameWithoutExtension(PseudoTerminal.DefaultShell).Equals("powershell", StringComparison.OrdinalIgnoreCase);
-            var command = powershell ? "[Console]::WriteLine(('" + marker[..16] + "'+'" + marker[16..] + "'))\r"
-                : "chcp 65001\rset MIGHTY_SMOKE=" + marker[..16] + "\rset MIGHTY_SMOKE=%MIGHTY_SMOKE%" + marker[16..] + "\recho %MIGHTY_SMOKE%\r";
-            await core.ExecuteScriptAsync("send(" + JsonSerializer.Serialize(new { type = "input", text = command }, Wire.Json) + ")");
-            var query = "Array.from({length:terminal.buffer.active.length},(_,i)=>terminal.buffer.active.getLine(i)?.translateToString()||'').join('\\n').includes(" + JsonSerializer.Serialize(marker, Wire.Json) + ")";
-            var rendered = false; deadline = DateTimeOffset.UtcNow.AddSeconds(20);
-            while (DateTimeOffset.UtcNow < deadline)
-            {
-                rendered = await core.ExecuteScriptAsync(query) == "true"; if (rendered) break; await Task.Delay(50);
-            }
-            Require(rendered, "ConPTY UTF-8 output did not reach the xterm buffer.");
-            await core.ExecuteScriptAsync("terminal.resize(92,24)");
-            Require(await core.ExecuteScriptAsync("terminal.cols===92 && terminal.rows===24") == "true", "Terminal resize bridge failed.");
-            core.Navigate("https://not-authorized.invalid/"); await Task.Delay(100);
-            Require(IsTerminalAddress(core.Source), "Terminal allowed navigation away from the trusted packaged origin.");
-            Require(process.TryWrite("exit\r"), "Terminal did not accept a shell exit.");
-            await process.Completion.WaitAsync(TimeSpan.FromSeconds(15));
-            await WaitUI(() => terminalRestart?.IsEnabled == true && terminalRestart.Visibility == Visibility.Visible);
-            Require(owner.service.SessionStatus(id) == "completed", "A shell that exited must leave its pane completed; got " + owner.service.SessionStatus(id));
-            await RestartTerminalAsync();
-            Require(owner.service.SessionStatus(id) is "idle" or "running", "A restarted shell must take its pane out of completed; got " + owner.service.SessionStatus(id));
-            var restarted = terminal;
-            Require(restarted is not null && restarted.ProcessId != process.ProcessId && ReferenceEquals(core, terminalView?.CoreWebView2), "Restart must replace only the owned shell and retain its renderer.");
-            Require(terminalTitle?.Text.Length > 0 && terminalDirectory?.Text.Length > 0 && terminalGrid?.Text.Contains('×') == true, "Terminal footer metadata is missing.");
-            await DisposeTerminalAsync().WaitAsync(TimeSpan.FromSeconds(20));
-            await restarted!.Completion.WaitAsync(TimeSpan.FromSeconds(5));
-            Require(!restarted.TryWrite("after-close"), "Closed ConPTY accepted input.");
-            return new() { ["trustedRendererLoaded"] = true, ["conptyUtf8RoundTrip"] = true, ["resizeBridge"] = true,
-                ["externalNavigationBlocked"] = true, ["processClosed"] = true, ["restartPreservesRenderer"] = true, ["footerMetadata"] = true, ["physicalIMEAndClipboardTested"] = false };
         }
         internal Task DisposeTerminalAsync() => terminalDisposal ??= DisposeTerminalCoreAsync();
         private async Task DisposeTerminalCoreAsync()

@@ -242,13 +242,13 @@ public sealed partial class MainWindow
             var pane = Session;
             if (pane.Kind == "shell") return new { builtins = Array.Empty<object>(), scanned = Array.Empty<object>(), choices = new Dictionary<string, object[]>() };
             var path = SlashWorkspacePath;
-            if (owner.smokeSlashCommands is null && owner.slashCatalogs.IsStale(pane.Provider, path))
+            if (owner.slashCatalogs.IsStale(pane.Provider, path))
             {
                 try { owner.slashCatalogs.Set(pane.Provider, path, await Task.Run(() => SlashCommandCatalog.Commands(pane.Provider, path))); }
                 catch (Exception ex) when (ex is not OutOfMemoryException) { /* A pane with no catalogue still shows its built-ins. */ }
             }
             var builtins = SlashPalette.Builtins(pane.Provider);
-            var scanned = owner.smokeSlashCommands ?? owner.slashCatalogs.Get(pane.Provider, path) ?? [];
+            var scanned = owner.slashCatalogs.Get(pane.Provider, path) ?? [];
             var choices = builtins.Where(b => b.Argument is not null).ToDictionary(b => b.Invocation, b => ArgumentChoices(b.Argument!.Value, b.Invocation).Select(WebSlashRow).ToArray());
             return new { builtins = builtins.Select(WebSlashRow), scanned = scanned.Select(WebSlashRow), choices };
         }

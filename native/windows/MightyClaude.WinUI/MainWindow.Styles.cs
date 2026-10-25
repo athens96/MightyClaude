@@ -150,15 +150,13 @@ public sealed partial class MainWindow
     /// </summary>
     private readonly Dictionary<string, StyleChangeWatcher> styleWatchers = new(StringComparer.OrdinalIgnoreCase);
     private bool styleWatchHooked;
-    /// <summary>Set by the GUI smoke for its own check of the watch; otherwise a smoke run reads styles only when it says so.</summary>
-    private bool smokeStyleWatch;
     /// <summary>How long a workspace's changes are gathered: a workspace an agent is busy in makes its panes read no more often than the 2 s timer this replaces did.</summary>
     private static readonly TimeSpan StyleWorkspaceLatency = TimeSpan.FromSeconds(2);
     private string[] ProfileStyleFolders => [Path.Combine(StateDirectory, "styles"), Path.Combine(StateDirectory, "style-trust")];
     private bool WatchesProfileStyles(string folder) => ProfileStyleFolders.Any(known => StyleTrustStore.SamePath(known, folder));
     private void WatchStyles(string workspace)
     {
-        if (closing || options.SmokeTest && !smokeStyleWatch) return;
+        if (closing || options.SmokeTest) return;
         if (!styleWatchHooked) { styleWatchHooked = true; Closed += (_, _) => StopWatchingStyles(); }
         foreach (var folder in ProfileStyleFolders.Append(workspace))
         {
@@ -567,75 +565,6 @@ public sealed partial class MainWindow
                 {input.Text=original;await Change(p=>p with{Draft=original});}
             }
         });
-        internal async Task<Dictionary<string,object?>> RunStylesSmoke()
-        {
-            var original=Session;var draft=input.Text;
-            try
-            {
-                await Change(p=>p with{Provider="claude",AgentViewMode="mighty",MightyStyle="ouroboros",MightyStyleHash=null,MightyStyleSince=null});
-                Refresh();
-                await WaitUI(()=>!styleLoading);
-                await LoadStyles();
-                Require(activeStyle is {Id:"ouroboros"},"bundled style did not resolve");
-                stylePrerequisites=new(true,[],null,null);RenderGuidedStyle();
-                var phase=GuidedPhase(activeStyle!);var actions=activeStyle!.Evaluator.VisibleActions(phase,activeStyle.Manifest.Groups.FirstOrDefault(),false);
-                Require(ReferenceEquals(stylePicker.Content,stylePickerFace)&&stylePickerLabel.Text.Contains("Ouroboros",StringComparison.Ordinal),"style picker label missing: '"+stylePickerLabel.Text+"'");
-                Require(styleHint.Text==activeStyle!.Manifest.Subtitle,"the style row must say what the style is for ('"+activeStyle.Manifest.Subtitle+"'); got '"+styleHint.Text+"'");
-                Require(styleActionButtons.Count>0,"style actions not drawn");
-                await SettleDesktopCapture(owner.root);await CaptureElement(Container,Path.Combine(owner.options.ProfileDirectory!,"smoke-composer-style.png"));
-                var content=StyleContents(activeStyle!);guidedBody.Children.Add(content);await WaitUI(()=>content.IsLoaded&&content.ActualHeight>0);
-                Require(content.IsReadOnly&&content.AcceptsReturn&&content.Text.Contains("autoAllow",StringComparison.Ordinal),"approval omits manifest permissions (readOnly="+content.IsReadOnly+", multiline="+content.AcceptsReturn+", textLength="+content.Text.Length+", sourceBytes="+activeStyle!.Bytes.Length+")");
-                Require(content.Text.Replace("\r\n","\n",StringComparison.Ordinal).Replace('\r','\n')==Encoding.UTF8.GetString(activeStyle!.Bytes.Span).Replace("\r\n","\n",StringComparison.Ordinal).Replace('\r','\n'),"Approval text differs from the immutable reviewed bytes.");
-                guidedBody.Children.Remove(content);
-                // Under a style a waiting question is answered in the style's panel, one question at a time (M/GuidedPanel.swift:113-114,
-                // M/AgentQuestionPanel.swift:28-59): no question card over the composer, a single-choice tile sends at a tap, Enter sends
-                // what was typed, and 답하지 않기 denies it.
-                var answered=new List<(string Request,IReadOnlyDictionary<string,UserQuestionAnswer> Answers)>();
-                owner.smokeQuestionAnswerer=(_,asked,answers)=>answered.Add((asked,answers));owner.smokePermissionResponses=[];
-                try
-                {
-                    ToolPermissionRequest Ask(string requestId,bool multiple)=>new(requestId,id,"toolu_"+requestId,"AskUserQuestion","{\"questions\":[{\"header\":\"Scope\",\"question\":\"How far?\",\"multiSelect\":"+(multiple?"true":"false")+",\"options\":[{\"label\":\"Narrow\",\"description\":\"\"},{\"label\":\"Wide\",\"description\":\"All of it\"}]}]}","ask",CanAllow:false,CanAnswerQuestions:true);
-                    bool Panel()=>FindById<Border>(guidedBody,"agent-question-panel-"+id) is not null;
-                    ReceiveToolPermission(Ask("smoke-style-question-1",false));
-                    await WaitUI(()=>FindById<Button>(guidedBody,"agent-question-option-1-"+id) is {IsLoaded:true});
-                    Require(Panel()&&questionnaireCard is null&&toolPermissionHost.Visibility==Visibility.Collapsed&&styleActionButtons.Count==0,"a question under a style must wait in the style's panel, not on the question card over the composer");
-                    await SettleDesktopCapture(owner.root);await CaptureElement(Container,Path.Combine(owner.options.ProfileDirectory!,"smoke-composer-style-question.png"));
-                    Press(FindById<Button>(guidedBody,"agent-question-option-1-"+id)!);
-                    await WaitUI(()=>answered.Count==1&&!Panel());
-                    Require(answered[0].Request=="smoke-style-question-1"&&answered[0].Answers["How far?"].SelectedOptions.SequenceEqual(["Wide"]),"a single-choice tile in the style's panel must answer at a tap");
-                    ReceiveToolPermission(Ask("smoke-style-question-2",true));
-                    await WaitUI(Panel);
-                    input.Text="By hand";
-                    Require(await AnswerGuidedQuestion()&&answered.Count==2&&answered[1].Answers["How far?"] is {CustomText:"By hand",SelectedOptions.Count:0}&&input.Text.Length==0&&!Panel(),"Enter must send the typed answer and clear the draft");
-                    ReceiveToolPermission(Ask("smoke-style-question-3",true));
-                    await WaitUI(()=>FindById<Button>(guidedBody,"agent-question-skip-"+id) is {IsLoaded:true});
-                    Press(FindById<Button>(guidedBody,"agent-question-skip-"+id)!);
-                    await WaitUI(()=>!Panel());
-                    Require(owner.smokePermissionResponses.TryGetValue("smoke-style-question-3",out var skipped)&&!skipped&&answered.Count==2,"the skip button must deny the question and answer nothing");
-                }
-                finally{owner.smokeQuestionAnswerer=null;owner.smokePermissionResponses=null;ClearToolPermissions();input.Text=draft;}
-                // The style rows are read again when a watched file changes, with no timer behind them (M/StyleStateWatcher.swift:4-8):
-                // a file written into the profile's styles folder, made here if it was not there yet.
-                var watched=Path.Combine(owner.StateDirectory,"styles");var probe=Path.Combine(watched,"smoke-style-watch.txt");var read=styleRegistry;
-                owner.smokeStyleWatch=true;
-                try
-                {
-                    owner.WatchStyles(styleWatched??LocalFolder(Workspace));
-                    Directory.CreateDirectory(watched);await File.WriteAllTextAsync(probe,"changed");
-                    await WaitUI(()=>!styleLoading&&!ReferenceEquals(styleRegistry,read),seconds:20);
-                    Require(activeStyle is {Id:"ouroboros"},"the style must still resolve after its files were read again");
-                }
-                finally{owner.smokeStyleWatch=false;owner.StopWatchingStyles();if(File.Exists(probe))File.Delete(probe);}
-                var request=await PrepareStyleRunRequest(new StartRunRequest(id,Session.WorkspaceId,"claude","fixture",[]));
-                Require(request.StyleAutoAllow is {Count:>0},"run does not snapshot selected style tools");
-                return new(){["bundledCount"]=styleRegistry!.Styles.Count(s=>s.Source=="bundled"),["picker"]=true,["guidedActions"]=actions.Length,["fullApprovalContents"]=true,["localRunPermissionSnapshot"]=true,["questionAnsweredInStylePanel"]=true,["stylesReadAgainOnFileChange"]=true,["userFilesRead"]=false};
-            }
-            finally
-            {
-                await Change(p=>p with{Provider=original.Provider,AgentViewMode=original.AgentViewMode,MightyStyle=original.MightyStyle,MightyStyleHash=original.MightyStyleHash,MightyStyleSince=original.MightyStyleSince});
-                input.Text=draft;activeStyle=null;loadedStyleKey=null;Refresh();
-            }
-        }
         private async Task<StartRunRequest> PrepareStyleRunRequest(StartRunRequest request)
         {
             // agy refuses a model its live list lacks, so the run starts on its default instead (M/AppStore.swift:981-988).

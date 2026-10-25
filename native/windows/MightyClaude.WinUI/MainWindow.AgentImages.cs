@@ -52,23 +52,8 @@ public sealed partial class MainWindow
         return [.. jpeg.AsSpan(0, 2).ToArray(), .. orientation, .. jpeg.AsSpan(2).ToArray()];
     }
 
-    private static async Task<byte[]> SmokePng(uint width, uint height)
-    {
-        var pixels = new byte[width * height * 4];
-        for (var i = 0; i < pixels.Length; i += 4) { pixels[i] = 40; pixels[i + 1] = 120; pixels[i + 2] = 200; pixels[i + 3] = 255; }
-        using var output = new InMemoryRandomAccessStream();
-        var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
-        encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Straight, width, height, 96, 96, pixels);
-        await encoder.FlushAsync();
-        var bytes = new byte[output.Size];
-        using var reader = new DataReader(output.GetInputStreamAt(0));
-        await reader.LoadAsync((uint)output.Size);
-        reader.ReadBytes(bytes);
-        return bytes;
-    }
 
     private sealed partial class PaneView
     {
-        internal AgentTranscript Transcript => output;
     }
 }

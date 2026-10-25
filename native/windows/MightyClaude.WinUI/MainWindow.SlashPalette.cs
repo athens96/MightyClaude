@@ -13,8 +13,6 @@ public sealed partial class MainWindow
     // disk, so it never happens on the UI thread and never starts a CLI.
     private readonly SlashCatalogCache slashCatalogs = new();
     private readonly HashSet<string> slashScansInFlight = [];
-    // Smoke mode hands the palette a fixture list instead of scanning the disk.
-    private SlashCommand[]? smokeSlashCommands;
 
     private sealed partial class PaneView
     {
@@ -88,7 +86,7 @@ public sealed partial class MainWindow
         internal void RefreshPalette(string draft)
         {
             var pane = Session;
-            SlashCommand[] scanned = owner.smokeSlashCommands ?? owner.slashCatalogs.Get(pane.Provider, SlashWorkspacePath) ?? [];
+            SlashCommand[] scanned = owner.slashCatalogs.Get(pane.Provider, SlashWorkspacePath) ?? [];
             var next = SlashPalette.State(pane.Provider, pane.Kind, draft, slashDismissedFor, scanned, ArgumentChoices);
             // A new row set restarts the highlight at the top, as macOS does.
             if (!next.Commands.Select(c => c.Id).SequenceEqual(paletteState.Commands.Select(c => c.Id)))
@@ -321,7 +319,7 @@ public sealed partial class MainWindow
         private void ScanSlashCommands()
         {
             var pane = Session;
-            if (pane.Kind == "shell" || owner.smokeSlashCommands is not null) return;
+            if (pane.Kind == "shell") return;
             var provider = pane.Provider; var path = SlashWorkspacePath;
             if (!owner.slashCatalogs.IsStale(provider, path)) return;
             var key = provider + "|" + (path ?? "");

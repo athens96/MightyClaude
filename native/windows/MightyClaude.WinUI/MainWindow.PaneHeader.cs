@@ -365,9 +365,6 @@ public sealed partial class MainWindow
             line.Add(slimStatusPill, PaneHeaderLine.Role.Fixed); line.Add(paneHeaderControls, PaneHeaderLine.Role.Fixed);
         }
 
-        /// <summary>The slim bar's parts the design smoke reads (all null on an agent pane).</summary>
-        internal (Grid? Header, TextBlock? Subtitle, Border? Pill, TextBlock Word)? SlimHeaderForSmoke =>
-            slimHeader ? (paneHeader, slimSubtitle, slimStatusPill, label) : null;
 
         /// <summary>
         /// The header's buttons after the switch, each 22×24 in the header's ink (M/SessionPaneView.swift:258-302):
@@ -453,56 +450,7 @@ public sealed partial class MainWindow
         /// <summary>Asks the header line to lay itself out again after a part changed outside it (the switch joining the controls).</summary>
         private void QueuePaneHeaderLayout() => headerLine?.InvalidateMeasure();
 
-        /// <summary>
-        /// The header is still one Layout.PaneHeader row and every visible control (the … menu, both sides of the
-        /// switch, the status-line toggle) lies inside it. The switch shows its words at every width, as
-        /// on the Mac, so <paramref name="narrow"/> asks nothing more of a narrow pane than of a wide one.
-        /// </summary>
-        private bool HeaderFitsSmoke(bool narrow)
-        {
-            narrow = false;
-            if (paneHeader is not { ActualWidth: > 0 } header || modeSwitch is null || Math.Abs(header.ActualHeight - DesignMetrics.Layout.PaneHeader) > .5) return false;
-            if (ModeWordsShown != !narrow) return false;
-            return new FrameworkElement[] { paneMenuButton!, modeDefaultButton!, modeMightyButton! }.Where(control => control.Visibility == Visibility.Visible).All(control =>
-            {
-                if (!control.IsLoaded || control.ActualWidth <= 0 || control.ActualHeight <= 0) return false;
-                var start = control.TransformToVisual(header).TransformPoint(new Point());
-                var end = control.TransformToVisual(header).TransformPoint(new Point(control.ActualWidth, control.ActualHeight));
-                return start.X >= -1 && end.X <= header.ActualWidth + 1 && start.Y >= -1 && end.Y <= header.ActualHeight + 1;
-            });
-        }
 
-        /// <summary>
-        /// The agent header at the width it has now, for the design smoke: null when all is well, else what
-        /// is wrong. Its parts stand in the Mac's order without overlapping; the controls are whole and
-        /// against the trailing padding, the plugin and terminal buttons too when they show; and the parts
-        /// gave way in the Mac's order (M/SessionPaneView.swift:239-242) — the figures before the state word,
-        /// the controls never.
-        /// </summary>
-        internal string? HeaderGivesWaySmoke()
-        {
-            if (paneHeader is not { ActualWidth: > 0 } header || headerLine is not { } line || figuresHost is not { } figures || slimHeader) return "the pane shows no agent header";
-            (double Left, double Right) Span(FrameworkElement part)
-            {
-                var left = part.TransformToVisual(header).TransformPoint(new Point()).X;
-                return (left, left + part.ActualWidth);
-            }
-            var parts = new (string Name, FrameworkElement View)[] { ("state word", label), ("figures", figures), ("controls", paneHeaderControls) };
-            var spans = parts.Select(part => Span(part.View)).ToArray();
-            for (var i = 1; i < spans.Length; i++)
-                if (spans[i].Left < spans[i - 1].Right - .5) return $"the {parts[i].Name} starts at {spans[i].Left:F1}, before the {parts[i - 1].Name} ends at {spans[i - 1].Right:F1}";
-            var edge = header.ActualWidth - header.Padding.Right;
-            if (Math.Abs(spans[^1].Right - edge) > .5) return $"the controls end at {spans[^1].Right:F1}, not against the trailing padding at {edge:F1}";
-            if (paneHeaderControls.ActualWidth + paneHeaderControls.Margin.Left < line.Ideal(paneHeaderControls) - .5) return $"the controls were squeezed to {paneHeaderControls.ActualWidth:F1} of {line.Ideal(paneHeaderControls):F1}";
-            foreach (var button in new[] { pluginButton, terminalButton, paneMenuButton }.OfType<Button>().Where(button => button.Visibility == Visibility.Visible))
-            {
-                var (left, right) = Span(button);
-                if (left < -.5 || right > header.ActualWidth + .5 || button.ActualWidth < button.Width - .5) return $"the header button {AutomationProperties.GetAutomationId(button)} is cut: {left:F1}..{right:F1} of {header.ActualWidth:F1}";
-            }
-            // A text's own width is fractional while the width it asks for is rounded up to a whole point, so a point of slack is not a cut.
-            if (label.ActualWidth < line.Ideal(label) - 1.01 && figures.ActualWidth > .5) return $"the state word was cut to {label.ActualWidth:F1} of {line.Ideal(label):F1} while the figures still hold {figures.ActualWidth:F1}";
-            return null;
-        }
     }
 }
 
@@ -530,9 +478,6 @@ internal sealed partial class PaneHeaderLine : Panel
 
     /// <summary>Adds the next part of the line; <paramref name="least"/> is the width a Fill part never goes under.</summary>
     internal void Add(UIElement part, Role role, double least = 0) { parts.Add((part, role, least)); Children.Add(part); }
-
-    /// <summary>The width a part asked for at the last measure, before the line gave it less (read by the design smoke).</summary>
-    internal double Ideal(UIElement part) => ideals.GetValueOrDefault(part);
 
     private List<(UIElement Part, Role Role, double Least)> Shown() => parts.Where(part => part.Part.Visibility == Visibility.Visible).ToList();
 

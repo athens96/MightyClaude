@@ -51,10 +51,7 @@ public sealed partial class MainWindow : Window
     // after a sign-in terminal closes; the section's buttons call it.
     internal readonly CliAccountsCoordinator accountsCoordinator = new(new CliRunner());
     internal Func<string, CancellationToken, Task<CliUpdateResult>>? smokeCliUpdater;
-    internal Func<StatusLineDiscovery>? smokeStatusLineDiscovery;
-    internal Func<StatusLineConfig, StatusLineContext, CancellationToken, Task<StatusLineResult>>? smokeStatusLineRunner;
     private bool dialogOpen;
-    private Func<ContentDialog, TextBox, StackPanel, Task<ContentDialogResult>>? smokeAskName;
     public MainWindow(StartupOptions options)
     {
         this.options = options;
@@ -240,6 +237,13 @@ public sealed partial class MainWindow : Window
         RefreshStatusBar();
     }
     private ProviderRuntime? Runtime(string provider) => runtime?.Providers.FirstOrDefault(p => p.Id == provider);
+    /// <summary>The element and everything under it in the visual tree, depth first.</summary>
+    private static IEnumerable<DependencyObject> VisualChildren(DependencyObject root)
+    {
+        yield return root;
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+            foreach (var child in VisualChildren(VisualTreeHelper.GetChild(root, index))) yield return child;
+    }
     private void RenderSidebar()
     {
         RenderWorkspaceSidebar();

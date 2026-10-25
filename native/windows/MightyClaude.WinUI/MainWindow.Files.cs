@@ -133,10 +133,6 @@ public sealed partial class MainWindow
         internal FrameworkElement? FilesHost => filesHost;
         internal FilePreviewData? FilesShown => shown?.Data;
         internal int FilesTreeItemCount => filesList?.Items.Count ?? 0;
-        /// <summary>The parts the design smoke reads: the filter row, the tree, the preview head and its content.</summary>
-        internal (Grid? Filter, ListView? Tree, Grid? Head, Border? Content) FilesDesignParts => (filesFilterRow, filesList, previewHeader, previewContent);
-        /// <summary>The bitmap size the image preview last decoded, for the GUI smoke.</summary>
-        internal (long Width, long Height)? FilesPreviewPixels { get; private set; }
 
         /// <summary>
         /// Replaces the transcript and the composer with the tree and the preview. A files pane
@@ -455,8 +451,6 @@ public sealed partial class MainWindow
             if (filesList?.Items.OfType<ListViewItem>().FirstOrDefault(i => i.Tag as string == path) is { } item) { filesList.SelectedItem = item; filesList.ScrollIntoView(item); }
         }
 
-        internal Task FilesSmokeOpenFolder(string path) => filesRows.TryGetValue(path, out var row) && !row.IsExpanded ? ToggleFolder(row.Entry) : Task.CompletedTask;
-        internal Task FilesSmokePreview(string path) { Tree.SelectedPath = path; return ShowPreview(path, debounce: false); }
 
         private void RenderTree()
         {
@@ -1036,7 +1030,6 @@ public sealed partial class MainWindow
             // A newer choice owns the header and banners: a late decode writes nothing there.
             var stale = new Border();
             var bytes = data.ImageBytes ?? [];
-            FilesPreviewPixels = null;
             var extension = FilePreviewClassifier.FileExtension(data.Name);
             try
             {
@@ -1100,7 +1093,6 @@ public sealed partial class MainWindow
                 var fullAllowed = pixels <= FilePreviewClassifier.MaximumFullPixels;
                 if (!fullAllowed) Banner(Locale.Get("files.image.fitOnly", new Dictionary<string, string> { ["count"] = (FilePreviewClassifier.MaximumFullPixels / 1_000_000).ToString(CultureInfo.CurrentCulture) }));
                 var label = PixelsLabel(width, height);
-                FilesPreviewPixels = (width, height);
                 BitmapImage? full = null;
                 return ZoomableImage(fit, width / screen, height / screen, fullAllowed, label, async _ =>
                 {

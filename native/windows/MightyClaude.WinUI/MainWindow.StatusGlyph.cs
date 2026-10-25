@@ -18,8 +18,7 @@ namespace MightyClaude.WinUI;
 /// </summary>
 internal sealed class StatusMark
 {
-    internal static bool? AnimationsEnabledOverride;
-    private static bool AnimationsEnabled => AnimationsEnabledOverride ?? new Windows.UI.ViewManagement.UISettings().AnimationsEnabled;
+    private static bool AnimationsEnabled => new Windows.UI.ViewManagement.UISettings().AnimationsEnabled;
 
     private readonly double size;
     private readonly Canvas canvas;
@@ -139,60 +138,6 @@ internal sealed class StatusMark
 
 public sealed partial class MainWindow
 {
-    /// <summary>
-    /// Smoke key <c>statusGlyph</c>: the sidebar rows and the tabs draw design A's glyph (no spinning
-    /// ring; the pane header has none, M/SessionPaneView.swift:239-242), each state reaches its own
-    /// glyph, a pending request turns a running pane amber, and the spark turns only while Windows
-    /// animations are on.
-    /// </summary>
-    private async Task<Dictionary<string, object?>> RunStatusGlyphSmoke()
-    {
-        var checks = new Dictionary<string, object?>();
-        var id = service.Snapshot.Sessions[0].Id; var original = service.Snapshot.Sessions[0].Status;
-        try
-        {
-            // Read the rows through their panels' own children: FrameworkElement.Parent is not set on
-            // rows just built in code (the same reason MainWindow.Layout.cs owns paneHosts explicitly).
-            var sidebarRowMarks = RowMarks(workspaces);
-            Require(sessionIndicators.Count > 0 && sessionIndicators.Values.All(v => sidebarRowMarks.Contains(v.Mark.View)), "sidebar rows have no status glyph");
-            Require(sidebarSessionButtons.Values.All(b => b.Content is Grid row && !row.Children.OfType<ProgressRing>().Any() && row.Children[0] is Canvas), "a sidebar row still has the spinning ring");
-            var tabRowMarks = RowMarks(panes);
-            Require(tabIndicators.Count > 0 && tabIndicators.Values.All(v => tabRowMarks.Contains(v.View)), "tabs have no status glyph");
-            checks["sidebarAndTabsDrawGlyphs"] = true;
-            StatusMark.AnimationsEnabledOverride = false;
-            var seen = new Dictionary<string, string>();
-            foreach (var (status, expected) in new[] { ("running", StatusGlyphKind.Spark), ("completed", StatusGlyphKind.Check), ("stopped", StatusGlyphKind.SlashedRing), ("error", StatusGlyphKind.Exclamation), ("idle", StatusGlyphKind.Ring) })
-            {
-                await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Status = status } : p).ToList() });
-                RefreshRunningIndicators(); views[id].Refresh();
-                Require(sessionIndicators[id].Mark.Glyph == expected, $"sidebar row glyph for {status} is not {expected}");
-                Require(tabIndicators[id].Glyph == expected, $"tab glyph for {status} is not {expected}");
-                seen[status] = expected.ToString();
-            }
-            checks["eachStateReachesItsGlyph"] = seen;
-            // A running pane is the one whose spark would turn: with animations off it must stand still.
-            await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Status = "running" } : p).ToList() });
-            RefreshRunningIndicators(); views[id].Refresh();
-            Require(sessionIndicators[id].Mark.Glyph == StatusGlyphKind.Spark && !sessionIndicators[id].Mark.Spinning, "the running sidebar glyph turns with animations off");
-            Require(tabIndicators[id].Glyph == StatusGlyphKind.Spark && !tabIndicators[id].Spinning, "the running tab glyph turns with animations off");
-            checks["sparkStillWithAnimationsOff"] = true;
-            StatusMark.AnimationsEnabledOverride = true;
-            var turning = new StatusMark(); turning.Update("running", "claude", 0, true);
-            Require(turning.Glyph == StatusGlyphKind.Spark && turning.Spinning, "the running glyph does not turn");
-            var waiting = new StatusMark(); waiting.Update("running", "claude", 1, false);
-            Require(waiting.Glyph == StatusGlyphKind.Question && !waiting.Spinning, "a running pane with a pending request is not the amber ?");
-            var shell = new StatusMark(); shell.Update("idle", "shell", 0, false);
-            Require(shell.Glyph == StatusGlyphKind.Pane, "an idle shell pane does not show its own symbol");
-            checks["sparkTurnsPendingTurnsAmberShellShowsSymbol"] = true;
-        }
-        finally
-        {
-            StatusMark.AnimationsEnabledOverride = null;
-            await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Status = original } : p).ToList() });
-            RefreshRunningIndicators(); if (views.TryGetValue(id, out var pane)) pane.Refresh();
-        }
-        return checks;
-    }
 
     /// <summary>
     /// The status marks drawn in the button rows under <paramref name="element"/>: the canvas

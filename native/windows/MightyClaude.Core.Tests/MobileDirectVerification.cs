@@ -783,7 +783,7 @@ internal static class MobileDirectVerification
             .Where(file => !file.Contains(sep + "obj" + sep, StringComparison.Ordinal) && !file.Contains(sep + "bin" + sep, StringComparison.Ordinal))
             .Where(file => File.ReadAllText(file).Contains("\"runas\"", StringComparison.Ordinal)).Select(Path.GetFileName).ToArray();
         Check(elevating.SequenceEqual(["WindowsFirewallRule.cs"]), "only the firewall rule elevates: " + string.Join(", ", elevating));
-        Check(Source("MainWindow.Smoke.cs").Contains("result[\"mobileDirect\"] = await RunMobileDirectSmoke();", StringComparison.Ordinal), "the GUI smoke drives the rows");
+        Check(Source("MainWindow.WebShell.LiveSmoke.cs").Contains("Step(\"mobileDirect\", async () => await RunMobileDirectSmoke());", StringComparison.Ordinal), "the web smoke drives the rows");
         var script = File.ReadAllText(Path.Combine(Root(), "scripts", "test-native-windows.ps1"));
         Check(script.Contains("$result.mobileDirect.$key", StringComparison.Ordinal) && script.Contains("'removeCommand'", StringComparison.Ordinal), "CI reads the smoke's result");
         return Task.CompletedTask;

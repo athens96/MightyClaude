@@ -288,7 +288,7 @@ internal static class SetupVerification
         Check(setup.Contains("if (options.SmokeTest || closing || SetupFirstRun.NeverShow()) return;", StringComparison.Ordinal), "never-show skips the launch probes");
         Check(setup.Contains("if (options.SmokeTest && setupFixedResults is null) { RedrawSetup(); return; }", StringComparison.Ordinal), "a smoke run's 다시 확인 probes nothing of the machine");
         Check(Locale.Get("setup.windows.error.elevated") is { Length: > 0 } elevated && !elevated.StartsWith("setup.", StringComparison.Ordinal), "the elevated refusal is said in words");
-        Check(Source("MainWindow.Smoke.cs").Contains("result[\"setupTools\"] = await RunSetupSmoke();", StringComparison.Ordinal), "the GUI smoke drives the screen");
+        Check(Source("MainWindow.WebShell.LiveSmoke.cs").Contains("Step(\"setupTools\", async () => await RunSetupSmoke());", StringComparison.Ordinal), "the web smoke drives the screen");
         var script = File.ReadAllText(Path.Combine(Root(), "scripts", "test-native-windows.ps1"));
         Check(script.Contains("$result.setupTools.$key", StringComparison.Ordinal) && script.Contains("'cancelledWithoutTerminal'", StringComparison.Ordinal), "CI reads the setup smoke's result");
         return Task.CompletedTask;

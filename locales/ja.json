@@ -1713,7 +1713,6 @@
   "transcript.editorAccessibility": "実行ログ · ドラッグして複数の段落を選択",
   "transcript.question.multiple": "複数選択",
   "transcript.question.single": "1つ選択",
-  "transcript.requestHeading": "↑ リクエスト",
   "transcript.runningIndicator": "エージェント実行中",
   "transcript.sentMessage": "送信したメッセージ",
   "layout.empty.addPane": "ペインを追加",

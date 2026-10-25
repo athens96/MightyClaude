@@ -639,7 +639,7 @@ internal static class PluginMarketplaceVerification
         // The smoke run records pluginMarketplace, drives the same window and
         // never starts a real CLI: a fake reader replaces both readers.
         Check(PluginMarketplaceSmokeOutcome.ResultKey == "pluginMarketplace", "the smoke key is pluginMarketplace");
-        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.Smoke.cs"));
+        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.WebShell.LiveSmoke.cs"));
         Check(smoke.Contains("PluginMarketplaceSmokeOutcome.ResultKey") && smoke.Contains("RunPluginMarketplaceSmoke()"),
             "the smoke run must record its result under pluginMarketplace");
         Check(source.Contains("internal async Task<PluginMarketplaceSmokeOutcome> RunPluginMarketplaceSmoke()"),

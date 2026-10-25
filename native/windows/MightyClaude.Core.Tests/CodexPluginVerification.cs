@@ -395,7 +395,7 @@ internal static class CodexPluginVerification
         Check(Directory.Exists(winui), "WinUI folder not found: " + winui);
 
         // Smoke key recorded and drive method exist.
-        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.Smoke.cs"));
+        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.WebShell.LiveSmoke.cs"));
         Check(smoke.Contains("CodexPluginSmokeOutcome.ResultKey") && smoke.Contains("RunCodexPluginSmoke()"),
             "the smoke run must record the codex plugin result under codexPluginList");
 

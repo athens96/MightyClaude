@@ -485,8 +485,8 @@ internal static class ClaudePluginVerification
         Check(File.ReadAllText(Path.Combine(winui, "MainWindow.cs")).Contains("OpenPluginBrowser("),
             "the run pane menu must open the plugin window");
 
-        // The smoke run records claudePluginList and drives that same window.
-        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.Smoke.cs"));
+        // The web smoke's live steps record claudePluginList and drive that same window.
+        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.WebShell.LiveSmoke.cs"));
         Check(smoke.Contains("ClaudePluginSmokeOutcome.ResultKey") && smoke.Contains("RunClaudePluginSmoke()"),
             "the smoke run must record the plugin result under claudePluginList");
         Check(source.Contains("await ShowPluginBrowser(\"claude\", workspace"),

@@ -104,15 +104,6 @@ public sealed partial class MainWindow
         // Each card's header title as drawn, so the smoke can read which carry an agent mark.
         private readonly Dictionary<string, FrameworkElement> graphTitles = [];
         private bool graphDragging, graphDrawing, graphRefreshQueued;
-        internal bool GraphDiagnosticsForSmoke;
-        private int graphSmokeTraceCount;
-        private void TraceGraphSmoke(string step)
-        {
-            // Fixture-only geometry/lifecycle events; never record transcript,
-            // path, provider output, credentials or environment contents.
-            if (owner.options.SmokeTest && GraphDiagnosticsForSmoke && graphSmokeTraceCount++ < 160)
-                owner.options.TraceStartup("smoke:mightyGraph:event:" + step);
-        }
         private Windows.Foundation.Point graphDragOrigin;
         private double graphDragPanX, graphDragPanY;
         /// <summary>
@@ -165,11 +156,8 @@ public sealed partial class MainWindow
         // measured as drawn; the layout fits the card to it under its cap.
         private readonly Dictionary<string, double> graphResultHeights = [];
 
-        /// Windows animation setting; the smoke overrides it to prove the static
-        /// indicator. Null means "ask the system".
-        internal static bool? AnimationsEnabledOverride;
-        private static bool AnimationsEnabled =>
-            AnimationsEnabledOverride ?? new Windows.UI.ViewManagement.UISettings().AnimationsEnabled;
+        /// Windows animation setting.
+        private static bool AnimationsEnabled => new Windows.UI.ViewManagement.UISettings().AnimationsEnabled;
 
         // ── construction ──────────────────────────────────────────────────────
 
@@ -230,7 +218,6 @@ public sealed partial class MainWindow
             // paints over the composer or the neighbouring pane.
             graphViewport.SizeChanged += (_, args) =>
             {
-                TraceGraphSmoke($"viewport-size:{args.NewSize.Width:F2}x{args.NewSize.Height:F2}");
                 graphViewport.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, args.NewSize.Width, args.NewSize.Height) };
                 dots.Fit(args.NewSize.Width, args.NewSize.Height);
                 QueueGraphRefresh();
@@ -318,7 +305,7 @@ public sealed partial class MainWindow
             zoom.Children.Add(zoomOutButton); zoom.Children.Add(zoomResetButton); zoom.Children.Add(zoomInButton);
             graphZoomControls = zoom;
             Grid.SetColumn(zoom, 2); bar.Children.Add(zoom);
-            bar.SizeChanged += (_, args) => { TraceGraphSmoke($"toolbar-fit:{args.NewSize.Width:F2}"); FitGraphToolbar(); };
+            bar.SizeChanged += (_, args) => FitGraphToolbar();
             graphToolbar = bar;
             return bar;
         }
@@ -392,8 +379,6 @@ public sealed partial class MainWindow
                 if (part is TextBlock words) words.Foreground = ink; else if (part is Microsoft.UI.Xaml.Shapes.Shape symbol) symbol.Fill = ink;
         }
 
-        /// <summary>Whether the switch shows its words; it does at every width, as on the Mac (the design smoke holds it to that).</summary>
-        private bool ModeWordsShown => modeDefaultButton?.Content is Panel { Children: [_, TextBlock { Visibility: Visibility.Visible }] };
 
         /// Saves the pane's view mode. The run keeps running and the composer
         /// draft is never touched — only AgentViewMode changes, for this pane.
@@ -447,12 +432,11 @@ public sealed partial class MainWindow
         /// edge list, every string and the indicator choice all come from Core.
         private void DrawGraph(RunSession pane)
         {
-            TraceGraphSmoke($"draw-enter:reentrant={graphDrawing}:cards={graphCards.Count}");
             // Drawing resizes the canvas, which can raise SizeChanged again.
             if (graphDrawing) return;
             if (graphTranscripts.Values.Any(transcript => transcript.IsSelecting)) { graphDeferredDraw = true; return; }
             graphDrawing = true;
-            try { using var perf = PerfLog.Measure("diagram draw"); DrawGraphCore(pane); } finally { graphDrawing = false; TraceGraphSmoke("draw-exit"); }
+            try { using var perf = PerfLog.Measure("diagram draw"); DrawGraphCore(pane); } finally { graphDrawing = false; }
         }
 
         /// <summary>The fewest milliseconds between two queued diagram draws: a streamed run asks for one per event.</summary>
@@ -483,7 +467,6 @@ public sealed partial class MainWindow
         private void GraphRefreshDue(Microsoft.UI.Dispatching.DispatcherQueueTimer? sender, object? args)
         {
             graphRefreshQueued = false; graphRefreshedAt = System.Diagnostics.Stopwatch.GetTimestamp();
-            TraceGraphSmoke("queued-refresh");
             if (QueuePaneAlive && graphHost?.Visibility == Visibility.Visible &&
                 owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is { } current)
                 RefreshMightyView(current);
@@ -512,7 +495,6 @@ public sealed partial class MainWindow
             graphDrawnRuns = runs;
             graphPlanNodeId = planRunId is null ? null : MightyGraphBlockSize.NodeId(planRunId, MightyGraphLayout.PlanSuffix);
             graphLayout = layout; graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
-            TraceGraphSmoke($"layout:nodes={layout.Nodes.Count}:size={layout.Size.W:F2}x{layout.Size.H:F2}");
             var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
             // "Request N · Claude": the short name, as macOS ProviderOptions.label, so its mark can go before it.
             var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog);
@@ -598,7 +580,6 @@ public sealed partial class MainWindow
                 Canvas.SetZIndex(desired[i], i);
                 if (!attached.Contains(desired[i])) graphCanvas.Children.Add(desired[i]);
             }
-            TraceGraphSmoke($"canvas-reconciled:retained={attached.Count}:desired={desired.Count}");
             if (graphLatestResultId is { } latestId && graphCardViews.TryGetValue(latestId, out var latestView)) QueueGraphCardMeasure(latestId, latestView);
             // The total counts the retained requests; loaded ones are named apart.
             graphTotal.Text = MightyGraphBlockModel.ToolbarSummary(retained)
@@ -661,7 +642,6 @@ public sealed partial class MainWindow
         /// it, and a following camera keeps its bottom where it was.
         private void ResultMeasured(string nodeId, double height)
         {
-            TraceGraphSmoke($"result-measured:{height:F2}:previous={graphResultHeights.GetValueOrDefault(nodeId, -1):F2}");
             if (graphResizing || graphLiveResultSize is not null || !double.IsFinite(height)) return;
             if (graphResultHeights.TryGetValue(nodeId, out var known) && Math.Abs(known - height) <= 0.5) return;
             graphResultHeights.Clear(); graphResultHeights[nodeId] = height;
@@ -952,8 +932,6 @@ public sealed partial class MainWindow
                 var transcript = new AgentTranscript { OpenReference = OpenReferencePreview, OpenImage = OpenTranscriptImage, WritesOnlyOnScreen = true };
                 if (owner.options.SmokeTest)
                 {
-                    transcript.View.Loaded += (_, _) => TraceGraphSmoke("transcript-loaded");
-                    transcript.View.Unloaded += (_, _) => TraceGraphSmoke("transcript-unloaded");
                 }
                 transcript.SelectionEnded = () =>
                 {
@@ -1092,12 +1070,10 @@ public sealed partial class MainWindow
         private void QueueGraphCardMeasure(string nodeId, GraphCardView view)
         {
             if (nodeId != graphLatestResultId || view.Content is null || view.Header is null || view.MeasureQueued) return;
-            TraceGraphSmoke($"result-measure-queued:header={view.Header.ActualHeight:F2}:content={view.Content.ActualHeight:F2}");
             view.MeasureQueued = true;
             if (!Container.DispatcherQueue.TryEnqueue(() =>
             {
                 view.MeasureQueued = false;
-                TraceGraphSmoke($"result-measure-callback:loaded={view.Card.IsLoaded}:latest={nodeId == graphLatestResultId}");
                 if (!QueuePaneAlive || nodeId != graphLatestResultId || !view.Card.IsLoaded || graphViewport?.Visibility != Visibility.Visible ||
                     !ReferenceEquals(graphCards.GetValueOrDefault(nodeId), view.Card) || view.Header.ActualHeight <= 0 ||
                     view.Content.Children.Any(child => child.Visibility == Visibility.Visible) && view.Content.ActualHeight <= 0) return;
@@ -1958,74 +1934,6 @@ public sealed partial class MainWindow
                 if (!graphCanvas.Children.Contains(outline)) graphCanvas.Children.Add(outline);
             }
             else if (graphSelectionOutline is { } stale) graphCanvas.Children.Remove(stale);
-        }
-
-        // ── smoke accessors ───────────────────────────────────────────────────
-
-        internal IReadOnlyList<string> GraphBlockIds => graphCards.Keys.ToList();
-        /// Each drawn activity outline: its kind, its dash in stroke widths and whether it moves.
-        internal IReadOnlyDictionary<string, (string Kind, double[] Dash)> GraphOutlinesForSmoke =>
-            graphOutlines.ToDictionary(p => p.Key, p => (p.Value.Kind, p.Value.Line.StrokeDashArray?.ToArray() ?? Array.Empty<double>()));
-        internal Canvas GraphCanvas => graphCanvas;
-        internal string GraphTotalText => graphTotal.Text;
-        internal (double X, double Y) GraphPan => (graphPan.X, graphPan.Y);
-        internal string? GraphResultFilesRunId => graphResultFilesRunId;
-        internal RunSession SessionForSmoke => Session;
-        internal Dictionary<string, (object Card, object? Document, object? Parent)> GraphNativeViewsForSmoke() =>
-            graphCardViews.ToDictionary(pair => pair.Key, pair => ((object)pair.Value.Card, (object?)pair.Value.Transcript?.View, (object?)pair.Value.Transcript?.View.Parent));
-
-        /// The result box smoke: the viewport pinned to a size (NaN lets the pane
-        /// decide again), the saved size set or cleared, and what was drawn.
-        internal void SetGraphViewportSizeForSmoke(double width, double height)
-        {
-            if (graphViewport is null) return;
-            graphViewport.Width = width; graphViewport.Height = height;
-            graphViewport.HorizontalAlignment = double.IsNaN(width) ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
-            graphViewport.VerticalAlignment = double.IsNaN(height) ? VerticalAlignment.Stretch : VerticalAlignment.Top;
-        }
-        internal (double W, double H) GraphViewportSizeForSmoke => graphViewport is null ? (0, 0) : (graphViewport.ActualWidth, graphViewport.ActualHeight);
-        internal Task SetGraphResultSizeForSmoke(GraphBlockSize? size) =>
-            owner.Act(async () => { await Change(p => p with { GraphResultSize = size }); RefreshMightyView(Session); });
-        internal (double W, double H)? GraphCardSizeForSmoke(string nodeId) =>
-            graphCards.TryGetValue(nodeId, out var card) ? (card.Width, card.Height) : null;
-        internal bool GraphFitResultButtonShownForSmoke => graphFitResultButton is not null;
-        /// The result reveal smoke: the newest result's measured content height,
-        /// the card's frame on the canvas, the held card, the pane's running state
-        /// as a real request sets it, and the user's own pan.
-        internal double? GraphResultContentHeightForSmoke(string nodeId) => graphResultHeights.TryGetValue(nodeId, out var height) ? height : null;
-        internal GraphRect? GraphCardFrameForSmoke(string nodeId) =>
-            graphCards.TryGetValue(nodeId, out var card) ? new GraphRect(Canvas.GetLeft(card), Canvas.GetTop(card), card.Width, card.Height) : null;
-        internal bool GraphFollowingForSmoke => graphFollow.Following;
-        internal Task SetPaneStatusForSmoke(string status) =>
-            owner.Act(async () => { await Change(p => p with { Status = status }); RefreshMightyView(Session); });
-        internal void PanGraphForSmoke(double dy) => UserPan(0, dy);
-        internal Task FitResultToWindowForSmoke() => FitResultToWindow();
-
-        internal Task SetGraphRunsForSmoke(List<MightyGraphRun> runs) =>
-            owner.Act(async () => { await Change(p => p with { GraphRuns = runs }); Refresh(); });
-
-        /// What the canvas actually drew: the blocks and edges on screen, their
-        /// distinct kinds, and the files the open result-files panel lists.
-        internal (int Blocks, int Edges, List<string> Kinds, int ResultFiles) ReadGraphForSmoke()
-        {
-            var edges = graphEdgeRoutes.Count;
-            var kinds = graphBlockKinds.Values.Distinct().OrderBy(k => k, StringComparer.Ordinal).ToList();
-            var latest = MightyGraphBlockModel.LatestCompletedRun(Session.GraphRuns ?? []);
-            var files = latest is null ? 0 : MightyGraphBlockModel.FilesFor(latest, LocalPath(Workspace)).Count;
-            return (graphCards.Count, edges, kinds, files);
-        }
-
-        /// Each drawn card's kind and the provider whose mark its header carries (null for none).
-        internal List<(string Id, string Kind, string? Mark)> GraphTitleMarksForSmoke() =>
-            graphTitles.Select(pair => (pair.Key, graphBlockKinds.GetValueOrDefault(pair.Key) ?? "", ProviderMarkView.LabelledProvider(pair.Value))).ToList();
-
-        /// Header strings of every card; they are not reachable from the canvas
-        /// tree walk once a card body scrolls, so the leak scan gets them directly.
-        internal List<string> GraphHeaderTextsForSmoke()
-        {
-            var texts = new List<string>();
-            foreach (var card in graphCards.Values) CollectVisibleStrings(card, texts);
-            return texts;
         }
     }
 }

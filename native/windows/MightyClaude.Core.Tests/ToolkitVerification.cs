@@ -763,13 +763,13 @@ internal static class ToolkitVerification
 
         // The smoke leak scan builds every registered section, so it now covers
         // this one without a second registration.
-        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.Smoke.cs"));
-        Check(smoke.Contains("var settingsSectionsForLeak = GetSettingsSections();"),
+        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.WebShell.LiveSmoke.cs"));
+        Check(smoke.Contains("var sections = GetSettingsSections();"),
             "the leak scan must build the sections the app registers");
-        Check(smoke.Contains("settingsPanelForLeak.Children.Add(BuildSectionContainer(sec.Title, sec.Build()));"),
+        Check(smoke.Contains("panel.Children.Add(BuildSectionContainer(section.Title, section.Build()));"),
             "the leak scan must build each registered section's controls");
-        Check(smoke.Contains("result[\"localeKeyLeaks\"] = keyLeaks;"),
-            "the leak scan must report under localeKeyLeaks");
+        Check(smoke.Contains("Step(\"localeKeyLeakScan\"") && smoke.Contains("[\"leaks\"] = keyLeaks"),
+            "the leak scan must report its leaks under localeKeyLeakScan");
 
         return Task.CompletedTask;
     }

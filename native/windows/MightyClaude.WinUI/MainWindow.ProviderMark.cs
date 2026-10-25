@@ -126,27 +126,4 @@ public sealed partial class MainWindow
     private string SidebarMeta(RunSession session) =>
         WorkDashboard.SidebarDetail(WorkDashboard.MakeCard(session, DashboardAttention(session.Id)), DateTimeOffset.UtcNow) is { Length: > 0 } detail ? "· " + detail : "";
 
-    /// <summary>
-    /// Smoke key <c>agentMark</c>: every agent row in the sidebar carries its own provider's mark
-    /// before the provider's name, rows that are not an agent's carry none, and tabs carry none.
-    /// </summary>
-    private Dictionary<string, object?> RunAgentMarkSmoke()
-    {
-        var checks = new Dictionary<string, object?>();
-        RenderSidebar();
-        var state = service.Snapshot;
-        var rows = state.Sessions.Where(s => s.WorkspaceId == state.ActiveWorkspaceId).ToList();
-        var agents = rows.Where(s => ProviderMark.SidebarProvider(s) is not null).ToList();
-        Require(agents.Count > 0, "agent mark smoke has no agent row");
-        foreach (var session in rows)
-        {
-            var expected = ProviderMark.SidebarProvider(session);
-            Require(sidebarMarks.GetValueOrDefault(session.Id) == expected, $"sidebar row {session.Id} mark is {sidebarMarks.GetValueOrDefault(session.Id) ?? "none"}, not {expected ?? "none"}");
-        }
-        Require(sidebarSessionButtons.Values.Select(b => b.Content).OfType<Grid>().All(g => g.Children[0] is Canvas && (g.Children[1] is TextBlock || g.Children[1] is Grid line && line.Children.Count == 2 && line.Children[0] is TextBlock && line.Children[1] is Border)), "the mark line moved the status glyph or the title");
-        checks["providers"] = agents.Select(s => s.Provider).Distinct().OrderBy(p => p).ToList();
-        checks["agentRowsCarryTheirMark"] = true;
-        checks["otherRowsCarryNone"] = rows.Count - agents.Count;
-        return checks;
-    }
 }

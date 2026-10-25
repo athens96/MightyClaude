@@ -27,20 +27,14 @@
     "native/macos/Sources/MightyClaude/AppStore+*Smoke.swift": "The GUI smoke steps (--smoke-test), one file per area. Their fixtures and failure messages go to smoke-result.json, not to the UI.",
     "native/macos/Sources/MightyCore/Styles/*.swift": "frozen style engine v7; localizing needs v8",
     "native/macos/Sources/MightyCore/HangulComposer.swift": "The 2-set Hangul composer's jamo tables: single consonants and vowels it composes into syllables. They are input data, not copy, and must stay Korean.",
-    "native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs": "The Windows GUI smoke (--smoke-test): its Korean is fixture input (IME text, Markdown, session history, rename and draft samples the smoke types and then finds again) and failure messages written to smoke-result.json, not UI. The one guard outside RunUISmoke (StartAdmitted) throws only under --smoke-test. UI text it compares goes through Locale.Get or the Core strings classes.",
-    "native/windows/MightyClaude.WinUI/MainWindow.PaletteDesignSmoke.cs": "The palette design smoke (--smoke-test): its Hangul is Markdown fixture text whose drawn ink and type sizes it measures; nothing here reaches the UI outside the smoke.",
-    "native/windows/MightyClaude.WinUI/MainWindow.SmallParitySmoke.cs": "The small-parity smoke (--smoke-test): its Hangul is a draft fixture that a conversation reset must keep; nothing here reaches the UI outside the smoke.",
-    "native/windows/MightyClaude.WinUI/MainWindow.TimelineSmoke.cs": "The timeline smoke (--smoke-test): its Hangul is the requests, answers and agent titles of the fixture runs it draws; nothing here reaches the UI outside the smoke.",
+    "native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs": "The WinUI fallback smoke and the components section fixture the web smoke runs (--smoke-test): its Korean is failure messages written to smoke-result.json, not UI.",
     "native/windows/MightyClaude.WinUI/WindowsScreenTransportSmoke.cs": "The screen-share transport smoke (--smoke-test): its Hangul is the Unicode text fixture sent over the data channel and checked on arrival.",
     "mobile/src/lib/styles.ts": "frozen style engine v7 (the phone renderer, scripts/check-style-freeze.sh); localizing needs v8"
   },
   "exemptRegions": {
     "native/macos/Sources/MightyClaude/AppStore.swift": "The GUI smoke (runSmokeTest and its composer and attachment checks): fixtures and failure messages for smoke-result.json, not UI.",
     "native/macos/Sources/MightyClaude/AgentMarkdownView.swift": "AgentMarkdownDiagnostics, the GUI smoke's Markdown fixture, not UI.",
-    "native/windows/MightyClaude.WinUI/MainWindow.AccountUsage.cs": "RunAccountUsageSmoke (--smoke-test): failure messages for smoke-result.json, not UI.",
-    "native/windows/MightyClaude.WinUI/AgentTranscript.Actions.cs": "RunActionsSmoke (--smoke-test): the Korean code-copy fixture.",
-    "native/windows/MightyClaude.WinUI/MainWindow.NextActions.cs": "RunNextActionsSmoke (--smoke-test): the Korean draft fixture.",
-    "native/windows/MightyClaude.WinUI/MainWindow.Terminal.cs": "RunTerminalBridgeSmoke (--smoke-test): the Korean marker echoed through ConPTY."
+    "native/windows/MightyClaude.WinUI/MainWindow.AccountUsage.cs": "RunAccountUsageSmoke (--smoke-test): failure messages for smoke-result.json, not UI."
   },
   "allow": [
     {

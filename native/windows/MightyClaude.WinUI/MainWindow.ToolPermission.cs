@@ -303,58 +303,5 @@ public sealed partial class MainWindow
             try { owner.service.RespondToToolPermission(id, current.Id, false); } catch (Exception ex) { owner.error.Text = ex.Message; }
         }
 
-        internal async Task<Dictionary<string, object?>> RunToolPermissionSmoke()
-        {
-            var checks = new Dictionary<string, object?>();
-            var savedDraft = input.Text;
-            var savedFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(toolPermissionHost.XamlRoot);
-            try
-            {
-                owner.smokePermissionResponses = [];
-
-                var req1 = new ToolPermissionRequest("smoke-perm-1", "smoke-run", "smoke-tuid-1", "Read",
-                    "{\"file_path\":\"/tmp/test.txt\"}", "Read file", BlockedPath: "/tmp/test.txt");
-                var req2 = new ToolPermissionRequest("smoke-perm-2", "smoke-run", "smoke-tuid-2", "Bash",
-                    "{\"command\":\"ls /tmp\"}", "Run command");
-
-                ReceiveToolPermission(req1); ReceiveToolPermission(req2);
-                await WaitUI(() => toolPermissionHost.Visibility == Visibility.Visible);
-
-                var pres1 = ToolPermissionPresentation.Make(req1.ToolName, req1.InputJson);
-                var expectedTitle = ToolPermissionStrings.BarTitleTemplate.Replace("{title}", pres1.Title);
-                Require(permTitleBlock.Text == expectedTitle, "Unexpected permission bar title: " + permTitleBlock.Text);
-                Require(permPathBlock.Visibility == Visibility.Visible && permPathBlock.Text.Contains("/tmp/test.txt"),
-                    "Blocked path was not displayed.");
-                Require(permCountBlock.Visibility == Visibility.Visible && permCountBlock.Text.Contains("2"),
-                    "Pending count was not displayed.");
-                // The request's fields stand in the card, and its raw JSON stays folded until asked for (M/ToolPermissionBar.swift:61-83).
-                Require(permToolBlock.Text == req1.ToolName && permFields.Children.Count == pres1.Fields.Count && pres1.Fields.Count > 0 && permInputBlock.Text == req1.InputJson && permInputBlock.Visibility == Visibility.Collapsed,
-                    "The permission card must show the tool's name and fields with the raw JSON folded away.");
-                checks["barShownWithTitlePathCount"] = true;
-
-                OnPermissionAllow();
-                Require(owner.smokePermissionResponses.TryGetValue("smoke-perm-1", out var r1) && r1,
-                    "One-time permission was not recorded.");
-                checks["allowRecorded"] = true;
-
-                Require(toolPermissions.Any(p => p.Id == "smoke-perm-2" && p.State == "pending"),
-                    "Second request was not displayed.");
-                OnPermissionDeny();
-                Require(owner.smokePermissionResponses.TryGetValue("smoke-perm-2", out var r2) && !r2,
-                    "Deny response was not recorded.");
-                checks["denyRecorded"] = true;
-
-                await WaitUI(() => toolPermissionHost.Visibility == Visibility.Collapsed);
-                checks["barHiddenAfterAllAnswered"] = true;
-            }
-            finally
-            {
-                owner.smokePermissionResponses = null;
-                toolPermissions.Clear(); RenderToolPermissions();
-                updating = true; try { input.Text = savedDraft; } finally { updating = false; }
-                ((FrameworkElement?)savedFocus)?.Focus(FocusState.Programmatic);
-            }
-            return checks;
-        }
     }
 }

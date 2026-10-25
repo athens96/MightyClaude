@@ -34,10 +34,6 @@ public sealed partial class MainWindow
         private Border? sessionInfoContextBlock;
         private StackPanel? sessionInfoIdentifiers;
         private ComposerGlyph? sessionInfoFolded, sessionInfoUnfolded;
-        /// <summary>The session popover's parts the design smoke reads, once it was built.</summary>
-        internal (Flyout? Flyout, TextBlock? Status, Border? Context) SessionInfoDesignParts => (sessionInfoFlyout, sessionInfoStatus, sessionInfoContextBlock);
-        /// <summary>The open session popover's contents, for the smoke's picture.</summary>
-        internal FrameworkElement? SessionInfoSurface => sessionInfoOpen ? sessionInfoFlyout?.Content as FrameworkElement : null;
         private readonly Dictionary<string, (FrameworkElement Host, TextBlock Value)> sessionInfoRows = [];
 
         private void RefreshContextIndicator()

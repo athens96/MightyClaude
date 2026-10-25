@@ -184,22 +184,5 @@ public sealed partial class MainWindow
             card.PointerPressed += (_, args) => args.Handled = true;
             return card;
         }
-
-        // ── smoke accessors ───────────────────────────────────────────────────
-
-        internal SessionHistoryState GraphHistoryForSmoke => graphHistory;
-        /// <summary>The history block drawn at the top of the diagram (null when the pane has none).</summary>
-        internal Grid? GraphHistoryCardForSmoke() =>
-            graphCanvas.Children.OfType<Grid>().FirstOrDefault(g => AutomationProperties.GetAutomationId(g).StartsWith("mighty-node-" + MightyGraphLayout.HistoryNodeID, StringComparison.Ordinal));
-        internal string? GraphHistoryTextForSmoke() => GraphHistoryCardForSmoke() is { } card ? AutomationProperties.GetName(card) : null;
-        /// <summary>The history block as it would be drawn now, built again for a capture (the one on the diagram is usually scrolled out of sight).</summary>
-        internal FrameworkElement? HistoryCardForCapture() => owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is { } pane
-            ? BuildHistoryCard(pane, pane.GraphRuns ?? [], graphHistory.Runs.Count, new GraphRect(0, 0, MightyGraphLayout.HistoryWidth, MightyGraphLayout.HistoryHeight))
-            : null;
-        internal double GraphOriginYForSmoke => graphLayout?.OriginY ?? 0;
-        /// <summary>The newest result's measured height, once no redraw is waiting; null until then. While it changes, the blocks above it still move.</summary>
-        internal double? GraphSettledResultHeightForSmoke => graphRefreshQueued || graphDrawing ? null : graphLatestResultId is { } latest ? graphResultHeights.TryGetValue(latest, out var height) ? height : null : 0;
-        internal (double X, double Y)? GraphCardPositionForSmoke(string nodeId) =>
-            graphCards.TryGetValue(nodeId, out var card) ? (Canvas.GetLeft(card) * graphZoom + graphPan.X, Canvas.GetTop(card) * graphZoom + graphPan.Y) : null;
     }
 }

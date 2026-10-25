@@ -12,8 +12,6 @@ public sealed partial class MainWindow
 
     /// One look-up at a time: picking Claude or Codex again while it runs does nothing.
     private bool resumeLookup;
-    /// The smoke answers the choice and the list instead of a person.
-    private Func<ContentDialog, Task<ContentDialogResult>>? smokeResumeDialog;
 
     private ResumableSessionQuery ResumeQuery(Workspace workspace)
     {
@@ -33,7 +31,7 @@ public sealed partial class MainWindow
         dialogOpen = true;
         try
         {
-            var shown = smokeResumeDialog is { } driver ? await driver(dialog) : await dialog.ShowAsync();
+            var shown = await dialog.ShowAsync();
             // The choice sheet draws its own buttons, which leave what was picked on the sheet before they close it.
             return dialog.Tag is ContentDialogResult picked ? picked : shown;
         }
@@ -263,7 +261,7 @@ public sealed partial class MainWindow
         search.TextChanged += (_, _) => { if (!reading) Fill(); };
         showAll.Checked += async (_, _) => await Act(Load);
         showAll.Unchecked += async (_, _) => await Act(Load);
-        void Choose(ResumableSession item) { chosen = item; if (smokeResumeDialog is null) dialog.Hide(); }
+        void Choose(ResumableSession item) { chosen = item; dialog.Hide(); }
         // The smoke picks a row the way a click does.
         dialog.Tag = new ResumeSheetParts(list, hidden, search, showAll, showAllWords, Choose);
         list.ItemClick += (_, args) => { if ((args.ClickedItem as FrameworkElement)?.Tag is ResumableSession item) Choose(item); };

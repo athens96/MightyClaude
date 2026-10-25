@@ -537,7 +537,7 @@ public sealed partial class MainWindow
         var browser = created ? webBrowsers[browserId] : null;
         if (browser is not null) await browser.Ready.WaitAsync(TimeSpan.FromSeconds(30));
         checks["browserStatus"] = browser?.Status;
-        bool placed = false, browsed = false, hidden = false, overlaid = false;
+        bool placed = false, browsed = false, hidden = false, overlaid = false, wentBack = false, popupBlocked = false;
         var pages = Path.Combine(Path.GetTempPath(), "MightyWebBrowserSmoke_" + Wire.Id());
         try
         {
@@ -546,11 +546,29 @@ public sealed partial class MainWindow
                 const string Host = "mighty-smoke.invalid";
                 Directory.CreateDirectory(pages);
                 await File.WriteAllTextAsync(Path.Combine(pages, "one.html"), "<!doctype html><html><head><meta charset=\"utf-8\"><title>MightyWebSmoke</title></head><body><p>MightyWebSmoke</p></body></html>");
+                await File.WriteAllTextAsync(Path.Combine(pages, "two.html"), "<!doctype html><html><head><meta charset=\"utf-8\"><title>MightyWebSmokeTwo</title></head><body><p>MightyWebSmokeTwo</p></body></html>");
                 engine.SetVirtualHostNameToFolderMapping(Host, pages, CoreWebView2HostResourceAccessKind.Deny);
                 var page = "https://" + Host + "/one.html";
                 engine.Navigate(page);
                 // The address the page shows came back from the host's history as a push.
                 browsed = await Until(() => True("(" + Slot(browserId) + "?.querySelector('[data-testid=browser-address]')?.value ?? '') === " + Js(page)));
+                // A second page, then the page's back button: the host's history and the engine go back to the first.
+                var second = "https://" + Host + "/two.html";
+                engine.Navigate(second);
+                var onSecond = browsed && await Until(() => True("(" + Slot(browserId) + "?.querySelector('[data-testid=browser-address]')?.value ?? '') === " + Js(second)));
+                wentBack = onSecond && await Until(() => True("(() => { const b = " + Slot(browserId) + "?.querySelector('button.browser-nav'); if (!b || b.disabled) return false; b.click(); return true; })()"))
+                    && await Until(async () => browser.History.Current?.AbsoluteUri == page && engine.Source == page && await True("(" + Slot(browserId) + "?.querySelector('[data-testid=browser-address]')?.value ?? '') === " + Js(page)));
+                // window.open() from the page: the request arrives and the app ends it Handled, so no window opens and the page stays.
+                var popups = new List<bool>();
+                void Popup(CoreWebView2 _, CoreWebView2NewWindowRequestedEventArgs args) => popups.Add(args.Handled);
+                engine.NewWindowRequested += Popup;
+                try
+                {
+                    var popupOpened = await engine.ExecuteScriptAsync("(() => { window.open('two.html'); return 'opened'; })()") == "\"opened\"";
+                    popupBlocked = popupOpened && await Until(() => Task.FromResult(popups.Count > 0)) && popups.All(handled => handled) && browser.History.Current?.AbsoluteUri == page;
+                }
+                finally { engine.NewWindowRequested -= Popup; }
+                checks["browserBackAndPopup"] = new { onSecond, wentBack, popupBlocked, popups = popups.Count };
                 // Over the slot: the control's place in device pixels within 2 of the slot's.
                 var slot = Slot(browserId) + "?.querySelector('[data-testid=browser-slot]')";
                 placed = await Until(async () =>
@@ -583,7 +601,8 @@ public sealed partial class MainWindow
         }
         var released = !webBrowsers.ContainsKey(browserId) && (browser?.View is null);
         checks["browserNavigated"] = browsed; checks["browserPlaced"] = placed; checks["browserHiddenUnderMenu"] = overlaid; checks["browserHiddenOnTabSwitch"] = hidden; checks["browserClosed"] = released;
-        return listed && opened && previewed && started && echoed && browsed && placed && overlaid && hidden && released;
+        checks["browserBack"] = wentBack; checks["browserPopupBlocked"] = popupBlocked;
+        return listed && opened && previewed && started && echoed && browsed && wentBack && popupBlocked && placed && overlaid && hidden && released;
     }
 
     private sealed partial class PaneView

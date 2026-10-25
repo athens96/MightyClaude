@@ -511,25 +511,15 @@ internal static class AccountUsageVerification
     private static string NativeFolder([System.Runtime.CompilerServices.CallerFilePath] string here = "") =>
         Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(here)!)!)!;
 
-    /// The smoke exists on both platforms and is reachable from each app's own
-    /// smoke run: this is the source-level half of the evidence, the half a CI
-    /// smoke artifact confirms by actually running it. A second MightyClaude
+    /// The macOS smoke is reachable from the app's own smoke run: this is the
+    /// source-level half of the evidence, the half a CI smoke artifact confirms
+    /// by actually running it. On Windows the same Core entry point is run here
+    /// (UsageResetSmokeRendersAvailableAndUnknown). A second MightyClaude
     /// instance is never launched on the developer's Mac, so these greps are
     /// what this machine can check.
     internal static Task UsageResetSmokeIsWiredIntoBothPlatforms()
     {
         var native = NativeFolder();
-        var smoke = File.ReadAllText(Path.Combine(native, "windows", "MightyClaude.WinUI", "MainWindow.Smoke.cs"));
-        Check(smoke.Contains("RunUsageResetSmoke()"), "the WinUI smoke run must carry the 리셋권 check");
-        Check(smoke.Contains("result[\"usageReset\"] = await RunUsageResetSmoke()"),
-            "the WinUI smoke result must record the check under usageReset");
-        Check(smoke.Contains("fakeTransportPostCount"), "the WinUI smoke must record fakeTransportPostCount");
-        Check(smoke.Contains("usageReset.cedar_ember") && smoke.Contains("usageReset.juniper_tide"),
-            "the WinUI smoke result must record the two usageReset state keys");
-        Check(smoke.Contains("ClaudeResetSmoke.RunAsync()"), "the WinUI smoke must drive the shared Core entry point");
-        Check(smoke.Contains("RenderAccountUsageReset(panel, result.Rows)"),
-            "the WinUI smoke must draw the rows with the window's own builder");
-
         var swift = File.ReadAllText(Path.Combine(native, "macos", "Sources", "MightyClaude", "StatusBarUsage.swift"));
         Check(swift.Contains("init(service:"), "the macOS controller must accept an injected service");
         Check(swift.Contains("fakeTransportPostCount"), "the macOS smoke must record fakeTransportPostCount");
@@ -539,7 +529,7 @@ internal static class AccountUsageVerification
         var appStore = File.ReadAllText(Path.Combine(native, "macos", "Sources", "MightyClaude", "AppStore.swift"));
         Check(appStore.Contains("--usage-reset-smoke-test"), "the macOS app must dispatch the 리셋권 smoke argument");
         Check(appStore.Contains("result[\"usageReset\"] = usageReset"),
-            "the macOS smoke result must record the 리셋권 run under the same usageReset key Windows uses");
+            "the macOS smoke result must record the 리셋권 run under the usageReset key");
 
         // No POST exists anywhere on the account usage surface, on either platform.
         foreach (var file in Directory.GetFiles(Path.Combine(native, "windows", "MightyClaude.Core"), "AccountUsage*.cs")

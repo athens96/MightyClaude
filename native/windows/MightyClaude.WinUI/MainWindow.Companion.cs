@@ -579,14 +579,6 @@ public sealed partial class MainWindow
         companionLoadGeneration++;
         companionTimer?.Stop(); companionTimer = null; companionQuestionWindow?.Close(); companionOverlay?.Dispose(); companionOverlay = null; companionPermissions.Clear(); companionQuestions.Clear();
     }
-    private async Task PrepareCompanionSettingsSmoke()
-    {
-        if (!options.SmokeTest) throw new InvalidOperationException("Companion fixtures require an isolated smoke profile.");
-        companionPets = await Task.Run(() => CompanionPet.Catalog(Path.Combine(AppContext.BaseDirectory, "Assets", "pets"), StateDirectory, Path.Combine(StateDirectory, "smoke-no-codex")));
-        Require(companionPets.Count > 0, "The packaged companion catalog is empty.");
-        companionPreferences = companionPreferences with { SelectedPet = companionPets[0].Id };
-        companionLoadedPet = companionPets[0].Id;
-    }
     private async Task<Dictionary<string, object?>> RunCompanionSmoke()
     {
         var pet = CompanionPet.Load(Path.Combine(AppContext.BaseDirectory, "Assets", "pets", "mighty-raccoon"), "mighty-raccoon");
@@ -879,7 +871,6 @@ public sealed partial class MainWindow
                     Require(page.RequestedTheme == root.RequestedTheme && ReferenceEquals(page.Background, WindowBackground()) && page.Children[0] is Border { BorderThickness.Left: DesignMetrics.Stroke.Active } waitCard
                         && ReferenceEquals(waitCard.BorderBrush, brushes.Brush(DesignToken.Wait)) && ReferenceEquals(waitCard.Background, brushes.Brush(DesignToken.Card)) && waitCard.CornerRadius == new CornerRadius(DesignMetrics.Radius.Composer),
                         "The pet's " + name + " window must be the wait card on the app's page, in the app's theme.");
-                    await CaptureElement(page, Path.Combine(options.ProfileDirectory!, "smoke-companion-" + name + ".png"));
                     if (name == "plan") await CheckCompanionPlanWindow(opened, page, plan, agent);
                 }
                 finally { if (companionQuestionWindow == opened) opened.Close(); }

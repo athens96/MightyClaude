@@ -57,32 +57,4 @@ public sealed partial class MainWindow
         companionGlyph.Foreground = brushes.Brush(enabled ? DesignToken.Accent : DesignToken.Ink2);
     }
 
-    private void CheckSidebarChromeForSmoke()
-    {
-        Require(ReferenceEquals(companionGlyph.Foreground, brushes.Brush(companionPreferences.Enabled ? DesignToken.Accent : DesignToken.Ink2)),
-            "Pet icon must be accent while the pet shows and ink2 otherwise (M/AgentCompanionViews.swift:11).");
-        Require(ReferenceEquals(companionGlyph.Data, companionPreferences.Enabled ? companionGlyphOn : companionGlyphOff), "Pet icon must reflect its enabled state.");
-        var footer = VisualChildren(root).OfType<Grid>().Single(g => AutomationProperties.GetAutomationId(g) == "sidebar-footer");
-        var themeButton = sidebarThemeButton!;
-        Require(settingsButton.IsLoaded && themeButton.IsLoaded && settingsButton.ActualWidth == SidebarFooterButton && themeButton.ActualWidth == SidebarFooterButton,
-            "Sidebar global actions must remain loaded native controls.");
-        var settingsPoint = settingsButton.TransformToVisual(footer).TransformPoint(new Point());
-        var themePoint = themeButton.TransformToVisual(footer).TransformPoint(new Point());
-        Require(Math.Abs(settingsPoint.Y - themePoint.Y) < 1 && settingsPoint.X > themePoint.X && settingsPoint.X + settingsButton.ActualWidth <= footer.ActualWidth + 1,
-            "Sidebar theme and settings must fit beside the footer brand.");
-        // The help symbol stands before the theme symbol and opens the guide in the chosen language (never launched here).
-        var help = sidebarHelpButton!;
-        Require(help.IsLoaded && help.ActualWidth == SidebarFooterButton && AutomationProperties.GetAutomationId(help) == "sidebar-help" && VisualChildren(footer).Contains(help),
-            "Sidebar help must be a loaded footer control with AutomationId sidebar-help; got " + AutomationProperties.GetAutomationId(help));
-        var helpPoint = help.TransformToVisual(footer).TransformPoint(new Point());
-        Require(Math.Abs(helpPoint.Y - themePoint.Y) < 1 && helpPoint.X < themePoint.X, "Sidebar help must stand before the theme symbol on the footer row.");
-        Require(AutomationProperties.GetName(help) == Locale.Get("menu.help") && ToolTipService.GetToolTip(help) as string == Locale.Get("menu.help"),
-            "Sidebar help must be named and tooltipped " + Locale.Get("menu.help") + "; got " + AutomationProperties.GetName(help));
-        var language = Locale.ChosenLanguage();
-        Require(Locale.Languages.Contains(language) && HelpAddress() == HelpSite.Base + "/" + language + "/",
-            $"Sidebar help must open {HelpSite.Base}/{language}/ for the chosen language {language}; got {HelpAddress()}");
-        Require(HasHelpShortcut, "F1 must be bound to the help guide on the window root; no such accelerator was found");
-        Require(search.TransformToVisual(root).TransformPoint(new Point()).Y < footer.TransformToVisual(root).TransformPoint(new Point()).Y,
-            "Sidebar search must stay above the bottom brand and settings group.");
-    }
 }
