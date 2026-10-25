@@ -309,7 +309,9 @@ public sealed partial class MainWindow
             await core.ExecuteScriptAsync($"document.querySelector('[data-session-id=\"{sessions[1].Id}\"]')?.click()");
             var selected = await WaitFor(page => page.Text("selected") == titles[1]);
             result["afterClick"] = selected.Clone(); result["hostActiveSession"] = service.Snapshot.ActiveSessionId == sessions[1].Id;
-            passed = shown && selected.Text("selected") == titles[1] && service.Snapshot.ActiveSessionId == sessions[1].Id;
+            // The live steps beside the page: settings forms, setup, plugins, remote, updates, delegation, companion, screen sharing (MainWindow.WebShell.LiveSmoke.cs).
+            var lived = await RunWebLiveSmoke(workspace, result, Save);
+            passed = shown && selected.Text("selected") == titles[1] && service.Snapshot.ActiveSessionId == sessions[1].Id && lived;
             result["passed"] = passed;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { result["error"] = ex.GetType().Name + ": " + ex.Message; }

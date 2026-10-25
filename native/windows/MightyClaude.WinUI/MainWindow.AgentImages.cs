@@ -9,64 +9,17 @@ namespace MightyClaude.WinUI;
 public sealed partial class MainWindow
 {
     /// <summary>
-    /// Inline agent pictures in a real transcript: a picture the agent returned (from the
-    /// cache, by reference) and a Markdown picture inside the workspace are drawn into the
-    /// RichEdit document as pictures after a loading placeholder; an http picture stays a
-    /// link and a picture outside the allowed folders is named, not drawn; the saved state
-    /// holds the reference, never the bytes.
+    /// The pictures' decoding with Windows' own codecs, as the conversation's thumbnails use it: a portrait EXIF JPEG keeps its
+    /// orientation (40×30 pixels shown 30×40), and a TIFF goes through the WIC decoder. The SVG raster is the web smoke's pictures
+    /// step; the conversation itself is the page's.
     /// </summary>
-    private async Task<Dictionary<string, object?>> RunAgentImagesSmoke(Workspace workspace)
+    private static async Task<Dictionary<string, object?>> RunPictureDecodeSmoke()
     {
-        var checks = new Dictionary<string, object?>();
-        var id = service.Snapshot.Sessions[0].Id;
-        var original = service.Snapshot.Sessions[0].Logs;
-        var png = await SmokePng(40, 30);
         var oriented = await AgentPictures.Thumbnail(await SmokeExifJpeg());
         Require(oriented.Width == 30 && oriented.Height == 40, "a portrait EXIF JPEG lost its orientation in the transcript thumbnail");
-        checks["exifOrientation"] = true;
-        var svg = await NativeSvgRaster.Render("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 40'><rect width='80' height='40' fill='red'/></svg>"u8.ToArray(), 20);
-        Require(svg.Width == 20 && svg.Height == 10 && AgentImageSupport.Inspect(svg.Png, "image/png") == ("image/png", 20, 10), "bounded native SVG raster has incorrect dimensions");
-        checks["svgRaster"] = true;
         var tiff = await AgentPictures.Thumbnail(await SmokeTiff());
         Require(tiff.Width == 40 && tiff.Height == 30, "Windows TIFF raster decoder was not used");
-        checks["tiffRaster"] = true;
-        var stored = service.Images.Store(png, "image/png", "Read · smoke.png");
-        Directory.CreateDirectory(Path.Combine(workspace.Path, "shots"));
-        await File.WriteAllBytesAsync(Path.Combine(workspace.Path, "shots", "smoke.png"), await SmokePng(24, 18));
-        const string markdown = "![shot](shots/smoke.png)\n\n![web](https://example.com/x.png)\n\n![secret](../outside.png)";
-        var image = new LogEntry(Wire.Id(), "image", AgentImageSupport.EntryText([stored], stored.Source), Wire.Now(), "claude", null, [stored]);
-        try
-        {
-            await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Logs = [.. p.Logs, image, new(Wire.Id(), "assistant", markdown, Wire.Now(), "claude")] } : p).ToList() });
-            var pane = views[id];
-            pane.Refresh();
-            Require(pane.Transcript.Text.Contains(Locale.Get("images.loading"), StringComparison.Ordinal), "a picture shows the loading placeholder before its thumbnail");
-            checks["loadingPlaceholderFirst"] = true;
-            // Markdown picture paths are located off the UI thread (AgentPictures.Locate), so the
-            // refused note arrives with that answer, not on the first render.
-            await WaitUI(() => pane.Transcript.Text.Count(c => c == '￼') == 2 && pane.Transcript.Text.Contains(Locale.Get("images.refused"), StringComparison.Ordinal));
-            pane.Transcript.View.Document.GetText(TextGetOptions.FormatRtf, out var rtf);
-            Require(rtf.Contains(@"\pict", StringComparison.Ordinal), "the document holds no picture");
-            checks["inlinePicture"] = true;
-            checks["markdownPicture"] = true;
-            var text = pane.Transcript.Text;
-            Require(!text.Contains(Locale.Get("images.loading"), StringComparison.Ordinal), "a placeholder is left after the thumbnails loaded");
-            Require(text.Contains(image.Text, StringComparison.Ordinal), "the picture's source is not shown under it");
-            checks["sourceCaption"] = true;
-            Require(text.Contains(Locale.Get("images.remote"), StringComparison.Ordinal) && text.Contains("https://example.com/x.png", StringComparison.Ordinal), "an http picture is not a plain link");
-            checks["remoteLinkOnly"] = true;
-            Require(text.Contains(Locale.Get("images.refused"), StringComparison.Ordinal), "a picture outside the workspace is not named as refused");
-            checks["outsideRefused"] = true;
-            var saved = JsonSerializer.Serialize(service.Snapshot, Wire.Json);
-            Require(saved.Contains(stored.Hash, StringComparison.Ordinal) && !saved.Contains(Convert.ToBase64String(png)[..32], StringComparison.Ordinal), "the saved state carries picture bytes");
-            checks["referencesOnlySaved"] = true;
-        }
-        finally
-        {
-            await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Logs = original } : p).ToList() });
-            views[id].Refresh();
-        }
-        return checks;
+        return new() { ["exifOrientation"] = true, ["tiffRaster"] = true };
     }
 
     private static async Task<byte[]> SmokeTiff()

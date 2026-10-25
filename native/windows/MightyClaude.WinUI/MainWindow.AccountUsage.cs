@@ -303,7 +303,9 @@ public sealed partial class MainWindow
                             RateLimitsUpdatedAt = now.AddMinutes(-1).ToString("O"),
                         }
                     }
-                    : pane).ToList(),
+                    : pane)
+                    // An Antigravity pane, so its card (no figures of its own) is among the popover's.
+                    .Concat(s.Sessions.Any(pane => pane.Kind != "shell" && pane.Provider == "gemini") || s.ActiveWorkspaceId is not { } front ? [] : [new RunSession { WorkspaceId = front, Kind = "claude", Provider = "gemini", Title = ProviderCatalog.Name("gemini"), Status = "completed" }]).ToList(),
             });
             Render();
             // i18n-exempt-begin: RunAccountUsageSmoke (--smoke-test) failure messages, written to smoke-result.json, not UI.

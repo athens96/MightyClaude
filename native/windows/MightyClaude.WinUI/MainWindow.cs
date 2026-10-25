@@ -70,9 +70,10 @@ public sealed partial class MainWindow : Window
         var savedTheme = StateStore.SavedTheme(profile);
         brushes.Apply(DesignTokens.Palette(savedTheme)); root.RequestedTheme = savedTheme == "light" ? ElementTheme.Light : ElementTheme.Dark; brushes.ApplyTitleBar(AppWindow);
         // A smoke run's delegation switch is its own, off until a smoke step turns it on, and its children's worktrees go under
-        // its disposable profile: never the registry, never %USERPROFILE%\.mightyclaude (M/AppStore+Delegation.swift:56-59).
+        // its disposable profile: never the registry, never %USERPROFILE%\.mightyclaude (M/AppStore+Delegation.swift:56-59). Its
+        // fixture repositories are a few files, so the PC's free space does not decide whether they get a worktree.
         service = options.SmokeTest
-            ? new(profile, null, Path.Combine(AppContext.BaseDirectory, "claude-mods"), delegationEnabled: () => smokeDelegationOn, worktrees: new ChildWorktreeMaker(Path.Combine(profile, "worktrees")))
+            ? new(profile, null, Path.Combine(AppContext.BaseDirectory, "claude-mods"), delegationEnabled: () => smokeDelegationOn, worktrees: new ChildWorktreeMaker(Path.Combine(profile, "worktrees"), _ => long.MaxValue))
             : new(profile, options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
         pictures = new(service.Images, DispatcherQueue);
         cliUpdateService = new(new CliRunner());

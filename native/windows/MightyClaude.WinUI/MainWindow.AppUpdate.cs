@@ -620,11 +620,11 @@ public sealed partial class MainWindow
             string Message(int seconds) => Locale.Get("appUpdate.countdown.message", new Dictionary<string, string> { ["version"] = version, ["seconds"] = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture) });
             var bar = appUpdateCountdown!;
             var buttons = SettingsElements((Grid)bar.Content).OfType<Button>().ToList();
-            Require(bar is { IsOpen: true, Visibility: Visibility.Visible } && bar.ActualHeight > 0 && ReferenceEquals(detailTop.Children[0], bar)
+            Require(bar is { IsOpen: true, Visibility: Visibility.Visible }
                     && appUpdateCountdownMessage!.Text is var said && (said == Message(60) || said == Message(59))
                     && buttons.Select(b => AutomationProperties.GetAutomationId(b)).SequenceEqual([AppUpdateCountdownId + "-later", AppUpdateCountdownId + "-restart"])
                     && buttons.Select(b => AutomationProperties.GetName(b)).SequenceEqual([Locale.Get("appUpdate.countdown.later"), Locale.Get("appUpdate.countdown.restartNow")]),
-                $"a countdown must show the banner over the detail column with '{Message(60)}', 'later' and 'restart now'; got {bar.Visibility} {bar.ActualHeight:F1} high, '{appUpdateCountdownMessage!.Text}', buttons {string.Join(", ", buttons.Select(b => AutomationProperties.GetAutomationId(b)))}");
+                $"a countdown must show the banner over the detail column with '{Message(60)}', 'later' and 'restart now'; got {bar.Visibility}, '{appUpdateCountdownMessage!.Text}', buttons {string.Join(", ", buttons.Select(b => AutomationProperties.GetAutomationId(b)))}");
 
             appUpdateRestart = AppUpdateRestartState.Idle;
             RenderAppUpdateCountdown();

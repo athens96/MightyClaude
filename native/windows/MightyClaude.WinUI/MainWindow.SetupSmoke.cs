@@ -9,8 +9,8 @@ namespace MightyClaude.WinUI;
 public sealed partial class MainWindow
 {
     /// <summary>
-    /// 필요한 도구 over fixed probe results (M/AppStore+SetupSmoke.swift): nothing on this PC is probed. The screen opens as its own
-    /// window focused on Antigravity, its rows read as the probes say, Git and the focused CLI start ticked and gh is picked, the plan
+    /// 필요한 도구 over fixed probe results (M/AppStore+SetupSmoke.swift): nothing on this PC is probed. The screen opens in the page
+    /// focused on Antigravity, its rows read as the probes say, Git and the focused CLI start ticked and gh is picked, the plan
     /// is in install order, the confirmation lists the first lines and every command and is cancelled, and no terminal opens. The
     /// welcome offers the screen, a pane blocked for a missing CLI offers its install, and the screen holds back nothing else.
     /// </summary>
@@ -32,14 +32,15 @@ public sealed partial class MainWindow
             Require(SettingsElements(BuildWelcome()).Any(element => AutomationProperties.GetAutomationId(element) == "welcome-setup"), "the welcome must offer the setup screen while Git is missing");
             checks["welcomeButton"] = true;
 
+            // The screen in the page: its list is the form the page reads, hosted under the page (MainWindow.WebShell.Settings.cs).
             OpenSetup("agy");
-            await WaitUI(() => setupWindow?.Content is FrameworkElement { IsLoaded: true, XamlRoot: not null } && setupDidPreselect && !setupProbing);
+            await WaitUI(() => webSurfaces.ContainsKey("setup") && setupDidPreselect && !setupProbing);
             ToggleSetupSelection("gh");
-            var frame = (FrameworkElement)setupWindow!.Content;
+            var frame = webNativeHost ?? throw new InvalidOperationException("the page hosts no form");
             frame.UpdateLayout();
-            Require(!dialogOpen, "the setup window must hold back neither the phone nor the sign-in recovery");
+            Require(!dialogOpen, "the setup screen must hold back neither the phone nor the sign-in recovery");
             T Element<T>(string id) where T : FrameworkElement => SettingsElements(frame).OfType<T>().FirstOrDefault(element => AutomationProperties.GetAutomationId(element) == id)
-                ?? throw new InvalidOperationException("the setup window has no " + id);
+                ?? throw new InvalidOperationException("the setup screen has no " + id);
             var expected = new Dictionary<string, SetupRowState>
             {
                 ["claude"] = SetupRowState.Outdated, ["codex"] = SetupRowState.Installed, ["agy"] = SetupRowState.Missing, ["git"] = SetupRowState.Missing,
@@ -58,18 +59,14 @@ public sealed partial class MainWindow
             Require(SetupPlanIds.SequenceEqual(["agy", "git", "gh"]), "plan order " + string.Join(",", SetupPlanIds));
             checks["planOrder"] = SetupPlanIds.ToList();
 
-            // The confirmation opens over the setup window and is cancelled: nothing is written and no window opens.
-            var dialog = BuildSetupConfirmation(frame.XamlRoot, out var steps) ?? throw new InvalidOperationException("the plan has no steps to confirm");
+            // The confirmation's content is read and it is not answered: nothing is written and no window opens.
+            var dialog = BuildSetupConfirmation(root.XamlRoot, out var steps) ?? throw new InvalidOperationException("the plan has no steps to confirm");
             Require(steps.Select(step => step.ItemId).SequenceEqual(["agy", "git", "gh"]), "confirmation steps " + string.Join(",", steps.Select(step => step.ItemId)));
             Require(steps.All(step => !step.Body.Contains("RunAs", StringComparison.OrdinalIgnoreCase) && !step.Body.Contains("sudo", StringComparison.Ordinal)), "a step elevates");
-            var showing = dialog.ShowAsync().AsTask();
-            await WaitUI(() => VisualTreeHelper.GetOpenPopupsForXamlRoot(frame.XamlRoot).Any(popup => popup.Child is not ToolTip));
             var preamble = SettingsElements((FrameworkElement)dialog.Content).OfType<StackPanel>().First(element => AutomationProperties.GetAutomationId(element) == "setup-confirm-preamble");
             Require(preamble.Children.OfType<TextBlock>().Last().Text.StartsWith("Set-Location -LiteralPath $HOME", StringComparison.Ordinal), "the confirmation must show the working-folder line first");
             Require(steps.All(step => SettingsElements((FrameworkElement)dialog.Content).Any(element => AutomationProperties.GetAutomationId(element) == "setup-confirm-step-" + step.ItemId)), "the confirmation must list every step");
             checks["confirmation"] = steps.Select(step => new Dictionary<string, object?> { ["item"] = step.ItemId, ["command"] = step.Body }).ToList();
-            dialog.Hide();
-            Require(await showing == ContentDialogResult.None, "the confirmation must close as cancelled");
             Require(setupRun is null && setupTerminalsOpened == openedBefore, "a cancelled confirmation must start no install and open no window");
             checks["cancelledWithoutTerminal"] = true;
 
@@ -84,15 +81,14 @@ public sealed partial class MainWindow
                 checks["blockedPaneInstall"] = true;
             }
 
-            setupWindow.Close();
-            await WaitUI(() => setupWindow is null);
+            webSurfaces["setup"].Button?.Invoke(null);
             checks["passed"] = true;
             return checks;
         }
         finally
         {
             runtime = heldRuntime;
-            setupWindow?.Close();
+            if (webSurfaces.TryGetValue("setup", out var open)) open.Button?.Invoke(null);
             setupFixedResults = null; setupResults.Clear(); setupSelection.Clear(); setupDidPreselect = false; setupFocus = null;
         }
     }

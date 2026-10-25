@@ -19,8 +19,8 @@ public sealed partial class MainWindow
             Require(toggle.IsChecked == true, "Plugin automatic updates must default on independently of CLI updates.");
             toggle.IsChecked = false; await WaitUI(() => service.Snapshot.AutoUpdatePlugins == false);
             var id = saved.Sessions.First(p => p.Provider == "claude" && p.Kind == "claude" && p.WorkspaceId == workspace.Id).Id;
-            await SelectLayoutSession(id); Render(); var pane = views[id];
-            await WaitUI(() => pane.Container.IsLoaded);
+            // The pane's never-shown view: the composer the page writes in (MainWindow.WebShell.Composer.cs).
+            await SelectLayoutSession(id); Render(); var pane = WebPane(id);
             var checks = await pane.SmokeAutomaticUpdateHolds();
             await pane.SmokeManualUpdateAdmission();
             checks["defaultAndPersistedPreference"] = true;

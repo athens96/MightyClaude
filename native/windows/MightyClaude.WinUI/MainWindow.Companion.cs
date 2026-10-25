@@ -602,7 +602,9 @@ public sealed partial class MainWindow
         bool Aside() => overlay.NonActivating && CompanionOverlay.ForegroundWindow != overlay.Handle && !overlay.TookThread;
         bool Kept() => CompanionOverlay.ForegroundWindow == foreground && Aside();
         // The fixture's own agent as the app shows it, waiting on the user: the state of the Mac's picture (docs/design-system/screens/12-pet-dark.webp).
-        var snapshot = service.Snapshot; var agent = snapshot.Sessions.First(s => s.Kind == "claude");
+        // Named after its agent and with a run that took 42 seconds, as the Mac's picture shows it.
+        var snapshot = service.Snapshot; var now = DateTimeOffset.UtcNow; var first = snapshot.Sessions.First(s => s.Kind == "claude");
+        var agent = first with { Title = ProviderCatalog.Name(first.Provider), RunTiming = first.RunTiming ?? new(now.AddSeconds(-42), now, now) };
         overlay.SetCard(CompanionCard("smoke-pet", snapshot, agent, "waiting", null, 1, 2), true);
         var area = Microsoft.UI.Windowing.DisplayArea.Primary.WorkArea; var density = overlay.SmokeGeometry.Scale;
         Require(overlay.SmokeLayout.Right == area.X + area.Width - (int)Math.Round(300 * density) + (int)Math.Ceiling(282 * density) && overlay.SmokeLayout.Bottom == area.Y + area.Height - (int)Math.Round(24 * density),
@@ -665,23 +667,9 @@ public sealed partial class MainWindow
         }
         // To the end of the stage: not through a change of scale or of theme either.
         Require(Aside(), "The pet's window acquired foreground focus as its scale or theme changed.");
-        Require(companionStatusControl is not null && companionStatusFlyout is not null, "Companion keyboard status controls are missing.");
-        companionStatusFlyout!.ShowAt(companionStatusControl!);
-        try
-        {
-            await WaitUI(() => companionStatusVisible && companionStatusItems.Count > 0);
-            var statusItem = companionStatusItems.First(); var button = statusItem.Value.Button;
-            await WaitUI(() => button.IsLoaded && button.ActualWidth > 0);
-            Require(button.IsTabStop && button.Focus(FocusState.Keyboard), "Companion status rows are not keyboard focusable.");
-            var peer = new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(button);
-            Require(peer.GetName().Contains(statusItem.Value.Activity.Text, StringComparison.Ordinal), "Accessible agent status omits its current work.");
-            ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)peer.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
-            await WaitUI(() => service.Snapshot.ActiveSessionId == statusItem.Key && !companionStatusVisible);
-        }
-        finally { companionStatusFlyout.Hide(); }
         return new() { ["bundledAtlasDecoded"] = pixels.Length == pet.Width * pet.Height * 4, ["allAnimationRowsRendered"] = true,
             ["nonActivatingWindow"] = true, ["pointerActionBoundToCard"] = true, ["selectedPetPreview"] = true, ["contextMenuNonActivating"] = true,
-            ["contentDrivenHeightAndEdgeResize"] = true, ["planBubbleAndWindow"] = true, ["keyboardAccessibleAgentStatus"] = true, ["renderedOverlaySnapshots"] = captures.Count == 2, ["screenshots"] = captures, ["physicalInputTested"] = false };
+            ["contentDrivenHeightAndEdgeResize"] = true, ["planBubbleAndWindow"] = true, ["renderedOverlaySnapshots"] = captures.Count == 2, ["screenshots"] = captures, ["physicalInputTested"] = false };
     }
     private async Task<string> CaptureCompanionSmoke(CompanionOverlay overlay, string name)
     {

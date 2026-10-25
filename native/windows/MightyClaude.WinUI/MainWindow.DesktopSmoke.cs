@@ -69,7 +69,6 @@ public sealed partial class MainWindow
                     navigation.SelectedItem = item;
                     var category = (SettingsCategory)item.Tag;
                     await WaitUI(() => service.Snapshot.SettingsPane == category.Id);
-                    if (category.Id == "models") await CheckPhaseModelsSettingsActions(frame);
                     if (category.Id == "styles")
                         await WaitUI(() => new[] { "ouroboros", "claude-plan" }.All(id => VisualChildren(frame).OfType<StackPanel>().Any(row => row.IsLoaded && AutomationProperties.GetAutomationId(row) == "settings-style-" + id)));
                     if (category.Id == "companion")

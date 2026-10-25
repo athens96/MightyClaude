@@ -632,31 +632,6 @@ public sealed partial class MainWindow
             Require(outcome.ReloadedFromStatus == PluginStrings.DetailMissingCli, "the missing-CLI sentence differs from macOS");
             Require(outcome.Reads == 2, "wrong number of list reads: " + outcome.Reads);
 
-            // The same sheet once more, shown for real with the fixture's rows: its size and heading are the
-            // Mac's (M/ClaudePluginView.swift:186-212), and both tabs are captured to be read next to that file.
-            smokePluginRead = _ => Task.FromResult(PluginSmokeSnapshot);
-            smokePluginDialog = async surface =>
-            {
-                var dialog = surface.Dialog; var theme = SmokeTheme;
-                // The Mac's size, or what a smaller window leaves it (a display scaled past 125% makes this window that small).
-                var fits = root.XamlRoot.Size;
-                Require(OwnResource(dialog, "ContentDialogMinWidth") is double width && width == SheetFit(PluginSheetWidth, fits.Width) && OwnResource(dialog, "ContentDialogMaxHeight") is double height && height == SheetFit(PluginSheetHeight, fits.Height),
-                    $"the plugin sheet must be {PluginSheetWidth}×{PluginSheetHeight}, or as much of that as the {fits.Width}×{fits.Height} window leaves; got {OwnResource(dialog, "ContentDialogMinWidth")}×{OwnResource(dialog, "ContentDialogMaxHeight")}");
-                var heading = PluginControl<TextBlock>(dialog, "claude", "title");
-                Require(heading.FontSize == 18 && heading.FontWeight.Weight == Microsoft.UI.Text.FontWeights.SemiBold.Weight, $"the plugin sheet's title must be 18pt semibold; got {heading.FontSize} at {heading.FontWeight.Weight}");
-                var showing = dialog.ShowAsync();
-                try
-                {
-                    await WaitUI(() => dialog.IsLoaded && surface.Browser.IsReady && !surface.Browser.Loading && PluginRowCount(dialog, "claude") == 2, () => "the plugin sheet never showed the fixture's installed rows");
-                    await SettleDesktopCapture(dialog);
-                    await CaptureElement(dialog, Path.Combine(options.ProfileDirectory!, "smoke-plugins-installed-" + theme + ".png"));
-                    await surface.SelectTab(ClaudePluginBrowser.MarketplaceTab);
-                    await SettleDesktopCapture(dialog);
-                    await CaptureElement(dialog, Path.Combine(options.ProfileDirectory!, "smoke-plugins-marketplace-" + theme + ".png"));
-                }
-                finally { dialog.Hide(); await showing; }
-            };
-            await ShowPluginBrowser("claude", workspace);
             return outcome;
         }
         finally

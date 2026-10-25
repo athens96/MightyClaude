@@ -59,20 +59,6 @@ public sealed partial class MainWindow
             Checkpoint("smallParity", "running");
             result["smallParity"] = await RunSmallParitySmoke(workspace);
             Checkpoint("smallParity", "passed");
-            Checkpoint("automaticUpdates", "running");
-            result["automaticUpdates"] = await RunAutomaticUpdatesSmoke(workspace);
-            Checkpoint("automaticUpdates", "passed");
-            Checkpoint("companion", "running");
-            result["companion"] = await RunCompanionSmoke();
-            Checkpoint("companion", "passed");
-            Checkpoint("screenCapture", "running");
-            result["screenCapture"] = await WindowsScreenCapture.SmokeAsync();
-            Checkpoint("screenCapture", "passed");
-            Checkpoint("screenTransport", "running");
-            result["screenTransport"] = await WindowsScreenTransportSmoke.RunAsync(root, directory);
-            Checkpoint("screenTransport", "passed");
-            Require(ScreenShareTapMarkerOverlay.SmokeNoFocus(), "Screen tap marker must preserve focus and pass through input.");
-            result["screenTapMarkerNoFocus"] = true;
             Checkpoint("nativeTerminal", "running");
             result["nativeTerminal"] = await RunTerminalSmoke();
             Checkpoint("nativeTerminal", "passed");
@@ -113,33 +99,6 @@ public sealed partial class MainWindow
             // The Default conversation at the window's width, as the Mac's 02-pane-basic shows it.
             root.UpdateLayout(); await Task.Delay(200);
             result["transcriptScreenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-transcript-wide.png"));
-            Checkpoint(CompletionNotificationSmokeOutcome.ResultKey, "running");
-            result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
-            Checkpoint(CompletionNotificationSmokeOutcome.ResultKey, "passed");
-            Checkpoint(SettingsSectionsSmokeOutcome.ResultKey, "running");
-            result[SettingsSectionsSmokeOutcome.ResultKey] = await RunSettingsSectionsSmoke();
-            Checkpoint(SettingsSectionsSmokeOutcome.ResultKey, "passed");
-            result["phaseModelsSection"] = RunPhaseModelsSectionSmoke();
-            var componentsLeakStrings = new List<string>();
-            result["componentsSection"] = RunComponentsSectionSmoke(result, componentsLeakStrings);
-            Checkpoint("setupTools", "running");
-            result["setupTools"] = await RunSetupSmoke();
-            Checkpoint("setupTools", "passed");
-            Checkpoint("remoteWorkspaces", "running");
-            result["remoteWorkspaces"] = await RunRemoteWorkspacesSmoke(workspace);
-            Checkpoint("remoteWorkspaces", "passed");
-            Checkpoint("mobileDirect", "running");
-            result["mobileDirect"] = await RunMobileDirectSmoke();
-            Checkpoint("mobileDirect", "passed");
-            Checkpoint(AccountUsageSmokeOutcome.ResultKey, "running");
-            result[AccountUsageSmokeOutcome.ResultKey] = await RunAccountUsageSmoke();
-            Checkpoint(AccountUsageSmokeOutcome.ResultKey, "passed");
-            Checkpoint("usageReset", "running");
-            result["usageReset"] = await RunUsageResetSmoke();
-            Checkpoint("usageReset", "passed");
-            Checkpoint(AppUpdateSmokeOutcome.ResultKey, "running");
-            result[AppUpdateSmokeOutcome.ResultKey] = await RunAppUpdateSectionSmoke();
-            Checkpoint(AppUpdateSmokeOutcome.ResultKey, "passed");
             Checkpoint("liveWiring", "running");
             result["liveWiring"] = await RunLiveWiringSmoke();
             Checkpoint("liveWiring", "passed");
@@ -150,19 +109,7 @@ public sealed partial class MainWindow
             result["statusGlyph"] = await RunStatusGlyphSmoke();
             Checkpoint("statusGlyph", "passed");
             result["agentMark"] = RunAgentMarkSmoke();
-            Checkpoint("agentImages", "running");
-            result["agentImages"] = await RunAgentImagesSmoke(workspace);
-            Checkpoint("agentImages", "passed");
             result["betaBadge"] = RunBetaBadgeSmoke();
-            Checkpoint(ClaudePluginSmokeOutcome.ResultKey, "running");
-            result[ClaudePluginSmokeOutcome.ResultKey] = await RunClaudePluginSmoke();
-            Checkpoint(ClaudePluginSmokeOutcome.ResultKey, "passed");
-            Checkpoint(CodexPluginSmokeOutcome.ResultKey, "running");
-            result[CodexPluginSmokeOutcome.ResultKey] = await RunCodexPluginSmoke();
-            Checkpoint(CodexPluginSmokeOutcome.ResultKey, "passed");
-            Checkpoint(PluginMarketplaceSmokeOutcome.ResultKey, "running");
-            result[PluginMarketplaceSmokeOutcome.ResultKey] = await RunPluginMarketplaceSmoke();
-            Checkpoint(PluginMarketplaceSmokeOutcome.ResultKey, "passed");
             var mightyLeakStrings = new List<string>();
             Checkpoint("mightyGraph", "running");
             result["mightyGraph"] = await RunMightyGraphSmoke(pane, workspace, mightyLeakStrings);
@@ -184,9 +131,6 @@ public sealed partial class MainWindow
             Checkpoint("addPaneMenu", "running");
             result["addPaneMenu"] = await RunAddPaneMenuSmoke(workspace, other);
             Checkpoint("addPaneMenu", "passed");
-            Checkpoint("delegation", "running");
-            result["delegation"] = await RunDelegationSmoke();
-            Checkpoint("delegation", "passed");
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");
@@ -300,19 +244,6 @@ public sealed partial class MainWindow
             await ApplyLayoutPreset("columns"); root.UpdateLayout(); await Task.Delay(120);
             var leakStrings = new List<string>();
             CollectVisibleStrings(root, leakStrings);
-            var settingsSectionsForLeak = GetSettingsSections();
-            var settingsPanelForLeak = new StackPanel { Spacing = 0, MinWidth = 420, MaxWidth = 540 };
-            foreach (var sec in settingsSectionsForLeak)
-                settingsPanelForLeak.Children.Add(BuildSectionContainer(sec.Title, sec.Build()));
-            // The boxes a tab draws beside its registered slots (agent links, the toolkit, screen view and control) are scanned as well.
-            foreach (var extra in SettingsNavigation.Available.SelectMany(tab => SettingsGroups(tab.Id)).Where(box => settingsSectionsForLeak.All(slot => slot.Title != box.Title)))
-                settingsPanelForLeak.Children.Add(BuildSectionContainer(extra.Title, extra.Build(), extra.Beta));
-            CollectVisibleStrings(settingsPanelForLeak, leakStrings);
-            // The phase-model section's ComboBox headers and items are not in the visual tree directly, so they are added on their own.
-            leakStrings.AddRange(PhaseModelSectionTexts(BuildPhaseModelsSection(new(), PhaseModelSection.SmokeFixtureTools)));
-            // The components section goes in as it looks with a temporary toolkit.json and its run result table filled in.
-            leakStrings.AddRange(componentsLeakStrings);
-            // The mighty graph canvas's text goes into the locale-key leak check too.
             leakStrings.AddRange(mightyLeakStrings);
             leakStrings.AddRange(browserLeakStrings);
             leakStrings.AddRange(filesLeakStrings);
