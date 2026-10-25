@@ -85,7 +85,7 @@ public sealed partial class MainWindow : Window
                 if (!closing) TrackLoginTask(ManualUpdateFinished());
             }
         });
-        PerfLog.Configure(StateDirectory); WebTranscript.Configure(StateDirectory); WebShell.Configure(StateDirectory, new WebView2RuntimeLocator().GetRuntimeVersion() is not null);
+        PerfLog.Configure(StateDirectory); WebShell.Configure(StateDirectory, new WebView2RuntimeLocator().GetRuntimeVersion() is not null);
         InitializeLoginRecovery(); InitializeDelegation();
         service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; using var perf = PerfLog.Measure("run event " + value.Type); RecordProviderActivity(value); ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane) && (value.Type == "status" ? pane.Refresh() : pane.QueueRefresh())) { pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
@@ -411,8 +411,6 @@ public sealed partial class MainWindow : Window
         /// </summary>
         private string? RunBlockReason(ProviderRuntime? runtime) => owner.service.RemoteReference(id) is { } remote
             ? RemoteWorkspaceFeatures.BlockedReason(Session, remote, owner.service.Remote?.Connection(remote.ConnectionId)) : RunBlock.Reason(Session, runtime);
-        /// <summary>Prototype: the conversation drawn by a web page instead of <see cref="output"/>'s RichEdit, only while <see cref="WebTranscript.Enabled"/>.</summary>
-        private WebTranscript? webOutput;
         internal PaneView(MainWindow owner, string id)
         {
             this.owner = owner; this.id = id; FitComposerToText(); AppText.Follow(input, FitComposerToText);
@@ -426,15 +424,6 @@ public sealed partial class MainWindow : Window
             AddPaneMenu();
             Grid.SetRow(output.View, 1); grid.Children.Add(output.View);
             PaintTranscriptSurface(grid);
-            if (WebTranscript.Enabled && Session.Kind == "claude")
-            {
-                // The RichEditBox stays in its place, empty and unseen, so whatever shows or hides the conversation
-                // (the Mighty view, the empty state) still reads and sets its visibility; the page follows it.
-                var web = webOutput = new WebTranscript(owner.StateDirectory) { OpenReference = OpenReferencePreview, SideInset = TranscriptGutter + TranscriptRtf.Inset };
-                web.View.Margin = output.View.Margin; output.View.Opacity = 0; output.View.IsHitTestVisible = false;
-                Grid.SetRow(web.View, 1); grid.Children.Add(web.View);
-                output.View.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => web.View.Visibility = output.View.Visibility);
-            }
             InitializeEmptyOutput(grid);
             // The composer and what hangs off it (MainWindow.Composer.cs).
             var composerScroll = BuildComposer(grid); var card = composerCard;
@@ -936,7 +925,7 @@ public sealed partial class MainWindow : Window
             if (FilePaneKind.IsFilePane(pane.Kind)) { EnsureFilesView(); RethemeFilesMarkdown(); return true; }
             RefreshTerminalTheme(); RethemeMightyTranscripts(owner.service.Snapshot.Theme == "light"); RethemePlanViews(); RethemeStructureAnswers(); FitReferencePreview();
             updating = true; var runtime = PaneRuntime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
-            var state = owner.service.Snapshot; RefreshHeaderStatus(pane); if (owner.webShell is not null) { /* The page draws the conversation; a never-shown view keeps only its composer. */ } else if (webOutput is not null) webOutput.Update(pane, state.Theme == "light"); else output.Update(pane, state.Theme == "light", owner.pictures, LocalPath(state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId))); RefreshEmptyOutput(pane); RefreshElapsed(pane); RefreshPlanHistory(pane); RefreshBackgroundWork(pane); RedecidePlanPlace();
+            var state = owner.service.Snapshot; RefreshHeaderStatus(pane); if (owner.webShell is not null) { /* The page draws the conversation; a never-shown view keeps only its composer. */ } else output.Update(pane, state.Theme == "light", owner.pictures, LocalPath(state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId))); RefreshEmptyOutput(pane); RefreshElapsed(pane); RefreshPlanHistory(pane); RefreshBackgroundWork(pane); RedecidePlanPlace();
             // Do not rewrite or recreate the editor during output/metadata refreshes.
             if (!draftLoaded) { input.Text = pane.Draft; draftLoaded = true; RefreshPalette(input.Text); }
             RefreshMenus(pane, catalog);

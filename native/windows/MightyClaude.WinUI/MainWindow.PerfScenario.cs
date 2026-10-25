@@ -14,8 +14,7 @@ namespace MightyClaude.WinUI;
 /// providers, a few long conversations (copied from <c>MIGHTY_PERF_STATE</c>'s workspace-state.json, or made up), and the
 /// operations people find slow, each timed until the UI has drawn the result, while a 16 ms timer records how late the UI thread
 /// answers. The result is perf-result.json in the profile. Nothing is sent to an AI and no CLI is started.
-/// While the web shell is the front end (the default; <c>MIGHTY_PERF_WINUI=1</c> measures the WinUI screens) the phases drive the
-/// page instead: each operation is a DOM click or typed text through ExecuteScriptAsync, timed in the page with performance.now()
+/// The phases drive the page: each operation is a DOM click or typed text through ExecuteScriptAsync, timed in the page with performance.now()
 /// from the action until the animation frame after the DOM shows its result (<see cref="PerfPageHelper"/>), and each phase adds
 /// the page's long tasks (PerformanceObserver 'longtask') as <c>pageLongTasks</c>. The stall probe and the GC figures stay the host's.
 /// </summary>
@@ -58,7 +57,7 @@ public sealed partial class MainWindow
     {
         var directory = options.ProfileDirectory ?? throw new InvalidOperationException("The perf scenario needs a profile.");
         var resultPath = Path.Combine(directory, "perf-result.json");
-        var result = new Dictionary<string, object?> { ["completed"] = false, ["startedAt"] = DateTimeOffset.Now.ToString("O"), ["uiMode"] = webShell is null ? "winui" : "web", ["transcriptMode"] = webShell is not null ? "page" : WebTranscript.Enabled ? "web" : "richedit", ["aiRequestSent"] = false };
+        var result = new Dictionary<string, object?> { ["completed"] = false, ["startedAt"] = DateTimeOffset.Now.ToString("O"), ["uiMode"] = "web", ["aiRequestSent"] = false };
         var phases = new Dictionary<string, object?>(); var errors = new List<string>(); result["phases"] = phases; result["errors"] = errors;
         void Write() => File.WriteAllText(resultPath, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         // The smoke's fixture providers: no CLI is read for a model list or a sign-in.
@@ -68,19 +67,16 @@ public sealed partial class MainWindow
         await ApplyLayoutPreset("tabs");
         var state = service.Snapshot;
         var active = state.ActiveSessionId!;
-        var core = webShell is null ? null : await webShell.Started ?? throw new InvalidOperationException("WebView2 did not start");
-        await WaitUI(() => root.XamlRoot is not null && root.ActualWidth > 0 && (core is not null || views.TryGetValue(active, out var p) && p.Container.ActualWidth > 0), seconds: 30);
+        var core = await (webShell ?? throw new InvalidOperationException("The perf scenario needs the web shell.")).Started ?? throw new InvalidOperationException("WebView2 did not start");
+        await WaitUI(() => root.XamlRoot is not null && root.ActualWidth > 0, seconds: 30);
         var tabs = PaneLayout.Groups(EffectiveLayout(state, workspaceId)).First(g => g.SessionIds.Contains(active)).SessionIds.ToList();
-        async Task<string> Js(string script) => await core!.ExecuteScriptAsync(script);
+        async Task<string> Js(string script) => await core.ExecuteScriptAsync(script);
         static string Literal(string text) => JsonSerializer.Serialize(text);
-        if (core is not null)
-        {
-            // The page is ready when every tab of the group is drawn and the active pane shows.
-            var ready = "(() => " + JsonSerializer.Serialize(tabs) + ".every(id => !!document.querySelector('[data-tab-id=\"' + id + '\"]')) && !!document.querySelector('.pane-slot.active:not(.hidden) .pane'))()";
-            var deadline = Stopwatch.StartNew();
-            while (await Js(ready) != "true") { if (deadline.Elapsed.TotalSeconds > 30) throw new TimeoutException("The page did not draw the scenario's tabs."); await Task.Delay(100); }
-            await Js(PerfPageHelper);
-        }
+        // The page is ready when every tab of the group is drawn and the active pane shows.
+        var ready = "(() => " + JsonSerializer.Serialize(tabs) + ".every(id => !!document.querySelector('[data-tab-id=\"' + id + '\"]')) && !!document.querySelector('.pane-slot.active:not(.hidden) .pane'))()";
+        var deadline = Stopwatch.StartNew();
+        while (await Js(ready) != "true") { if (deadline.Elapsed.TotalSeconds > 30) throw new TimeoutException("The page did not draw the scenario's tabs."); await Task.Delay(100); }
+        await Js(PerfPageHelper);
         var agents = state.Sessions.Where(s => s.WorkspaceId == workspaceId && s.Kind == "claude").Select(s => s.Id).ToList();
         result["paneCount"] = agents.Count; result["tabCount"] = tabs.Count;
         result["totalLogEntries"] = state.Sessions.Sum(s => s.Logs.Count); result["activePaneLogEntries"] = state.Sessions.First(s => s.Id == active).Logs.Count;
@@ -104,10 +100,10 @@ public sealed partial class MainWindow
             // The managed side's share: bytes allocated (boxing included), collections, and the time the GC held the threads.
             var (allocated, gen0, gen1, gen2, paused) = (GC.GetTotalAllocatedBytes(), GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2), GC.GetTotalPauseDuration());
             PerfLog.Mark("perf phase " + name);
-            if (core is not null) await Js("window.__perf.longTasks.length = 0");
+            await Js("window.__perf.longTasks.length = 0");
             try { await body(ops, extra); }
             finally { stalls = null; PerfLog.Mark("perf idle"); }
-            if (core is not null) extra["pageLongTasks"] = JsonDocument.Parse(JsonSerializer.Deserialize<string>(await Js(PerfPageLongTasks)) ?? "{}").RootElement.Clone();
+            extra["pageLongTasks"] = JsonDocument.Parse(JsonSerializer.Deserialize<string>(await Js(PerfPageLongTasks)) ?? "{}").RootElement.Clone();
             // Which paths the phase took: full layout rebuilds against the in-place tab switches and pane adds.
             extra["fullRenders"] = perfRenders - renders; extra["tabSwitchesInPlace"] = perfTabFast - tabFast; extra["paneAddsInPlace"] = perfAddFast - addFast;
             extra["capped"] = ops.Count(ms => ms >= PerfSettleCapMs - 50);
@@ -117,15 +113,6 @@ public sealed partial class MainWindow
             var phase = new Dictionary<string, object?> { ["ops"] = ops, ["opMedian"] = Rank(.5), ["opP95"] = Rank(.95), ["opMax"] = sorted.LastOrDefault(), ["wallMs"] = Math.Round(watch.Elapsed.TotalMilliseconds), ["stall"] = measured.Json() };
             foreach (var (key, value) in extra) phase[key] = value;
             phases[name] = phase; Write();
-        }
-        // One operation: from its start until the UI thread has run everything queued before a low-priority callback and drawn a frame.
-        async Task<double> Op(List<double> ops, Func<Task> action)
-        {
-            error.Text = ""; var start = Stopwatch.GetTimestamp();
-            await action(); await SettledAsync();
-            var ms = Math.Round(Stopwatch.GetElapsedTime(start).TotalMilliseconds, 1); ops.Add(ms);
-            if (error.Text.Length > 0) errors.Add(error.Text);
-            return ms;
         }
         // One operation in the page: the body acts on the DOM and awaits __perf.until(...) for its result; the page's time is the op's.
         async Task<double> PageOp(List<double> ops, string body)
@@ -153,20 +140,13 @@ public sealed partial class MainWindow
         {
             var set = ids.ToHashSet();
             await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => set.Contains(p.Id) ? MightyGraphViewModel.ApplyViewMode(p, mode) : p).ToList() });
-            foreach (var id in set) if (views.TryGetValue(id, out var view)) view.PerfShowView();
             await SettledAsync();
         }
         async Task SwitchTabs(List<double> ops)
         {
             var at = tabs.IndexOf(service.Snapshot.ActiveSessionId ?? active);
-            if (core is not null)
-            {
-                for (var round = 0; round < PerfRounds; round++) await PageOp(ops, ClickTab(tabs[(at + 1 + round) % tabs.Count]));
-                await PageOp([], ClickTab(active)); await SettledAsync();
-                return;
-            }
-            for (var round = 0; round < PerfRounds; round++) { var next = tabs[(at + 1 + round) % tabs.Count]; await Op(ops, () => SelectLayoutSession(next)); }
-            await SelectLayoutSession(active); await SettledAsync();
+            for (var round = 0; round < PerfRounds; round++) await PageOp(ops, ClickTab(tabs[(at + 1 + round) % tabs.Count]));
+            await PageOp([], ClickTab(active)); await SettledAsync();
         }
 
         await SetViews(agents, "default");
@@ -179,8 +159,7 @@ public sealed partial class MainWindow
             const string Toggle = "const s = __perf.slot(); const next = s?.querySelector('[data-testid=mighty-mode-switch] button.on')?.dataset.mode === 'mighty' ? 'default' : 'mighty'; "
                 + "const b = s?.querySelector('[data-testid=mighty-mode-switch] button[data-mode=' + next + ']'); if (!b) throw new Error('no view switch'); b.click(); "
                 + "await __perf.until(() => { const c = __perf.slot(); return next === 'mighty' ? !!c?.querySelector('[data-testid=mighty]') : !!c?.querySelector('[data-testid=conversation]') && !c.querySelector('[data-testid=mighty]'); }, t0);";
-            if (core is not null) { for (var turn = 0; turn < PerfToggles; turn++) await PageOp(ops, Toggle); return; }
-            for (var turn = 0; turn < PerfToggles; turn++) { var mode = views[active].PerfViewMode == "mighty" ? "default" : "mighty"; await Op(ops, () => views[active].SetAgentViewMode(mode)); }
+            for (var turn = 0; turn < PerfToggles; turn++) await PageOp(ops, Toggle);
         });
         await Phase("addPane", async (ops, extra) =>
         {
@@ -189,21 +168,21 @@ public sealed partial class MainWindow
             const string Add = "const known = new Set([...document.querySelectorAll('[data-testid=tab]')].map(e => e.dataset.tabId)); const entry = () => document.querySelector('[data-testid=\"add-entry-agent:claude\"]'); "
                 + "const plus = document.querySelector('[data-testid=sidebar-add]'); if (!plus) throw new Error('no add button'); plus.click(); await __perf.until(() => !!entry(), t0); entry().click(); "
                 + "await __perf.until(() => { const s = __perf.slot(); return !!s && !known.has(s.dataset.paneId) && !!s.querySelector('.pane'); }, t0);";
-            for (var count = 0; count < PerfAddedPanes; count++) { if (core is not null) await PageOp(ops, Add); else await Op(ops, () => AddPane("claude")); }
+            for (var count = 0; count < PerfAddedPanes; count++) await PageOp(ops, Add);
             var added = service.Snapshot.Sessions.Where(s => !before.Contains(s.Id)).Select(s => s.Id).ToList();
             var closes = new List<double>();
             static string Close(string id) => "const id = " + Literal(id) + "; const b = document.querySelector('[data-tab-id=\"' + id + '\"] .tab-close'); if (!b) throw new Error('no close for ' + id); b.click(); "
                 + "await __perf.until(() => !document.querySelector('[data-tab-id=\"' + id + '\"]'), t0);";
-            foreach (var id in added) { if (core is not null) await PageOp(closes, Close(id)); else await Op(closes, () => CloseSession(id)); }
+            foreach (var id in added) await PageOp(closes, Close(id));
             extra["closeOps"] = closes; extra["added"] = added.Count;
-            if (core is not null) await PageOp([], ClickTab(active)); else await SelectLayoutSession(active);
+            await PageOp([], ClickTab(active));
             await SettledAsync();
         });
         foreach (var (name, mode) in new[] { ("streamBasic", "default"), ("streamMighty", "mighty") })
         {
             await SetViews([active], mode);
-            await Phase(name, (ops, extra) => StreamPerfAnswer(active, name, ops, extra, Op, core is null ? null : text => PageOp(ops, TypeDraft(text))));
-            if (core is not null) await PageOp([], TypeDraft(""));
+            await Phase(name, (ops, extra) => StreamPerfAnswer(active, name, extra, text => PageOp(ops, TypeDraft(text))));
+            await PageOp([], TypeDraft(""));
         }
         probe.Stop();
         result["perfLog"] = Path.Combine(directory, "perf.log");
@@ -216,11 +195,10 @@ public sealed partial class MainWindow
     /// A streamed answer on <paramref name="sessionId"/>, through the service's own run-event path (its private <c>Receive</c>, from
     /// a pool thread as a run's reader calls it): the state applies each event, a save is scheduled, and every RunEventReceived
     /// handler — the window's batched pane refresh, the diagram's — runs as for a real run. A running request is put on the pane
-    /// first so the diagram has a live block that follows the answer. Every <see cref="PerfTypingEveryMs"/> the composer's text
-    /// changes, and the time until the UI has settled is the phase's operation; with <paramref name="pageType"/> (the web shell)
-    /// the page's composer is typed into instead, and that call times it.
+    /// first so the diagram has a live block that follows the answer. Every <see cref="PerfTypingEveryMs"/> the page's composer is
+    /// typed into through <paramref name="pageType"/>, which times it as the phase's operation.
     /// </summary>
-    private async Task StreamPerfAnswer(string sessionId, string name, List<double> ops, Dictionary<string, object?> extra, Func<List<double>, Func<Task>, Task<double>> op, Func<string, Task<double>>? pageType = null)
+    private async Task StreamPerfAnswer(string sessionId, string name, Dictionary<string, object?> extra, Func<string, Task<double>> pageType)
     {
         var receive = typeof(DesktopService).GetMethod("Receive", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(RunEvent)]) ?? throw new MissingMethodException(nameof(DesktopService), "Receive");
         Task Send(RunEvent value) => Task.Run(() => receive.Invoke(service, [value]));
@@ -246,8 +224,7 @@ public sealed partial class MainWindow
             {
                 var wait = turn * PerfTypingEveryMs - clock.Elapsed.TotalMilliseconds;
                 if (wait > 1) await Task.Delay(TimeSpan.FromMilliseconds(wait));
-                if (pageType is not null) await pageType("perf draft " + turn);
-                else if (views.TryGetValue(sessionId, out var view)) await op(ops, () => { view.PerfType("perf draft " + turn); return Task.CompletedTask; });
+                await pageType("perf draft " + turn);
             }
         }
         await Task.WhenAll(Stream(), Type());
@@ -257,7 +234,6 @@ public sealed partial class MainWindow
         // The request is put down as finished, so the next phase's diagram has nothing running.
         var final = text.ToString();
         await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == sessionId && p.GraphRuns is { Count: > 0 } runs ? p with { GraphRuns = [.. runs.Select(r => r.Id == run.Id ? new MightyGraphRun { Id = r.Id, Input = r.Input, Status = "completed", Provider = "claude", RootEntries = r.RootEntries, FinalOutput = final } : r)] } : p).ToList() });
-        if (views.TryGetValue(sessionId, out var pane)) { pane.PerfType(""); pane.PerfShowView(); }
     }
 
     /// <summary>The scenario's workspace and panes: the copied state's local agent panes, then made-up ones until the busiest workspace has four Claude panes.</summary>
@@ -356,14 +332,5 @@ public sealed partial class MainWindow
             }
         }
         return totals.ToDictionary(p => p.Key, p => p.Value.OrderByDescending(s => s.Value.Total).ToDictionary(s => s.Key, s => (object)new { count = s.Value.Count, totalMs = Math.Round(s.Value.Total, 1), maxMs = Math.Round(s.Value.Max, 1) }));
-    }
-
-    private sealed partial class PaneView
-    {
-        /// <summary>The pane drawn again in the view mode it is saved in, as <see cref="SetAgentViewMode"/> does after saving it.</summary>
-        internal void PerfShowView() { Refresh(); RefreshMightyView(Session); }
-        /// <summary>A composer change as typing makes it: TextChanged saves the draft and, on the diagram, queues its draft block.</summary>
-        internal void PerfType(string text) => input.Text = text;
-        internal string PerfViewMode => Session.AgentViewMode ?? "default";
     }
 }
