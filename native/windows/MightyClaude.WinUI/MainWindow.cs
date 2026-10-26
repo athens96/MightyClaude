@@ -129,7 +129,7 @@ public sealed partial class MainWindow : Window
     private async Task QuitAsync()
     {
         if (canClose || closing) return;
-        closing = true; ShutdownCompanion(); settingsWindow?.Close(); setupWatch?.Cancel(); setupWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } CloseWebBrowsers(null); clock.Stop(); modelRefreshes?.Shutdown(); StopWorkspaceGit(); root.IsHitTestVisible = false;
+        closing = true; CancelWorkspaceCreateJobs(); ShutdownCompanion(); settingsWindow?.Close(); setupWatch?.Cancel(); setupWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } CloseWebBrowsers(null); clock.Stop(); modelRefreshes?.Shutdown(); StopWorkspaceGit(); root.IsHitTestVisible = false;
         try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await InstallAppUpdateOnQuitAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await ShutdownRemoteWorkspacesAsync(); await service.DisposeAsync(); canClose = true; Close(); }
         catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; modelRefreshes = null; }
     }
@@ -184,7 +184,7 @@ public sealed partial class MainWindow : Window
             item.Content = Locale.Get((string)item.Tag switch { "grid" => "layout.mode.grid", "columns" => "layout.mode.columns", "focus" => "layout.mode.focus", "tabs" => "layout.mode.tabs", _ => "layout.mode.custom" });
         addFolderLabel.Text = Locale.Get("sidebar.openFolder"); AutomationProperties.SetName(addFolderButton, addFolderLabel.Text);
         sessionsHeader.Text = Locale.Get("sidebar.workspacesHeader");
-        if (sidebarAddWorkspaceButton is { } addWorkspace) { AutomationProperties.SetName(addWorkspace, Locale.Get(AddPaneMenu.OpenProjectKey)); ToolTipService.SetToolTip(addWorkspace, Locale.Get(AddPaneMenu.OpenProjectKey)); }
+        if (sidebarAddWorkspaceButton is { } addWorkspace) { AutomationProperties.SetName(addWorkspace, Locale.Get("workspace.add.menu")); ToolTipService.SetToolTip(addWorkspace, Locale.Get("workspace.add.menu")); }
         if (sidebarConnectRemoteButton is { } connectRemote) { AutomationProperties.SetName(connectRemote, Locale.Get("remote.menu.connect")); ToolTipService.SetToolTip(connectRemote, Locale.Get("remote.menu.connect")); }
         RefreshSidebarThemeButton(); RefreshSidebarHelpButton(); RefreshSidebarToggles();
         AutomationProperties.SetName(settingsButton, Locale.Get("settings.settingsWindowTitle"));

@@ -140,4 +140,13 @@ describe('the frame', () => {
     state = reduce(state, { kind: 'dialogClose', id: 2 });
     expect(state.dialogs.map((d) => d.id)).toEqual([1]);
   });
+  it('keeps the latest clone progress per dialog until that dialog closes', () => {
+    let state = reduce(loaded(), { kind: 'gitProgress', id: 3, phase: 'receiving', percent: 10, fraction: 0.05, text: 'r 10' });
+    state = reduce(state, { kind: 'gitProgress', id: 3, phase: 'resolving', percent: 50, fraction: 0.85, text: 'd 50' });
+    state = reduce(state, { kind: 'gitProgress', id: 4, phase: 'starting', percent: 0, fraction: 0, text: 's' });
+    expect(state.gitProgress?.[3]).toEqual({ phase: 'resolving', percent: 50, fraction: 0.85, text: 'd 50' });
+    state = reduce(state, { kind: 'dialogClose', id: 3 });
+    expect(state.gitProgress?.[3]).toBeUndefined();
+    expect(state.gitProgress?.[4]?.text).toBe('s');
+  });
 });

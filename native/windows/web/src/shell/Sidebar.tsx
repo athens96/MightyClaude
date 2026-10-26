@@ -5,7 +5,7 @@ import { memo, useState } from 'react';
 import { useServices, useStoreState } from '../app/context';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { activeSessionId } from '../store/store';
-import { useAddMenu } from './addMenu';
+import { useAddMenu, useWorkspaceAddChoices } from './addMenu';
 import { filterWorkspaces } from './filter';
 import { BetaBadge, StatusCounts, StatusGlyph, useCall, useMenu, usePaneInfo, useShell, type MenuItem } from './parts';
 import type { CardAction, ChildCard, PaneInfo, SidebarItem, SidebarWorkspace } from './types';
@@ -160,6 +160,8 @@ export function Sidebar() {
   const shell = useShell();
   const panes = usePaneInfo();
   const call = useCall();
+  const menu = useMenu();
+  const addChoices = useWorkspaceAddChoices();
   const [search, setSearch] = useState('');
   const snapshot = state.snapshot;
   if (!snapshot || !shell) return <nav className="sidebar" />;
@@ -184,7 +186,9 @@ export function Sidebar() {
         <span className="sidebar-section-title">{t('sidebar.workspacesHeader')}</span>
         <span className="sidebar-section-count">{shell.workspaces.length}</span>
         <span className="spacer" />
-        <button type="button" className="icon-button" title={t('menu.openProject')} aria-label={t('menu.openProject')} onClick={() => call('pickFolder')}>
+        {/* The three ways to add a workspace, as the Mac's sidebar menu offers them (M/WorkspaceView.swift:132). */}
+        <button type="button" className="icon-button" title={t('workspace.add.menu')} aria-label={t('workspace.add.menu')} data-testid="sidebar-add-workspace"
+          onClick={(event) => menu.under(event.currentTarget, addChoices.map((choice) => ({ label: choice.label, icon: <Icon name={choice.icon} size={12} />, action: choice.run, testId: 'workspace-add-' + choice.key })))}>
           <Icon name="folder-plus" size={13} />
         </button>
         <button type="button" className="icon-button" title={t('remote.menu.connect')} aria-label={t('remote.menu.connect')} onClick={() => call('connectRemote')}>
@@ -200,11 +204,15 @@ export function Sidebar() {
             selected={!dashboard && snapshot.activeWorkspaceId === workspace.id} />
         ))}
       </div>
-      {/* With no workspace listed (none yet, or none matching the search) this is the sidebar's way in (M/WorkspaceView.swift:161-166). */}
+      {/* With no workspace listed (none yet, or none matching the search) these are the sidebar's ways in (M/WorkspaceView.swift:164-171). */}
       {listed.length === 0 && (
-        <button type="button" className="sidebar-open-folder" data-testid="sidebar-open-folder" onClick={() => call('pickFolder')}>
-          <Icon name="folder-plus" size={14} />{t('sidebar.openFolder')}
-        </button>
+        <div className="sidebar-add-choices">
+          {addChoices.map((choice) => (
+            <button key={choice.key} type="button" className="sidebar-open-folder" data-testid={choice.key === 'existing' ? 'sidebar-open-folder' : 'sidebar-empty-add-' + choice.key} onClick={choice.run}>
+              <Icon name={choice.icon} size={14} />{choice.label}
+            </button>
+          ))}
+        </div>
       )}
       <footer className="sidebar-footer">
         <img className="sidebar-app-icon" src={appIcon} width={20} height={20} alt="" />

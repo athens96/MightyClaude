@@ -2,7 +2,7 @@
 // MainWindow.EmptyStates.cs). The counts, the order of the rows and their words are the host's (WorkDashboard).
 import { useServices, useStoreState } from '../app/context';
 import { ProviderMark } from '../conversation/ProviderMark';
-import { useAddMenu } from '../shell/addMenu';
+import { useAddMenu, useWorkspaceAddChoices } from '../shell/addMenu';
 import { BetaBadge, GitCapsule, MiddlePath, StatusGlyph, useCall, usePaneInfo } from '../shell/parts';
 import type { DashboardModel } from '../shell/types';
 import { Icon } from '../icons/Icon';
@@ -101,10 +101,11 @@ export function Dashboard({ model, onUsage }: { model: DashboardModel; onUsage: 
   );
 }
 
-/** No project yet (BuildWelcome; M/WorkspaceView.swift welcome): the split mark, the title, the two lines, the open and connect buttons, the shortcuts, and the platform line at the foot. */
+/** No project yet (BuildWelcome; M/WorkspaceView.swift welcome): the split mark, the title, the two lines, the three add buttons and the connect one, the shortcuts, and the platform line at the foot. */
 export function Welcome({ setupNeeded }: { setupNeeded: boolean }) {
   const { t } = useServices();
   const call = useCall();
+  const addChoices = useWorkspaceAddChoices();
   return (
     <div className="welcome" data-testid="welcome">
       <div className="welcome-toggle"><SidebarToggle /></div>
@@ -112,10 +113,17 @@ export function Welcome({ setupNeeded }: { setupNeeded: boolean }) {
       <Icon name="columns-2" size={58} weight={0.9} className="welcome-mark" />
       <h1 className="welcome-title">{t('layout.welcome.title')}</h1>
       <p className="welcome-body">{t('layout.welcome.body')}</p>
-      <div className="welcome-buttons">
-        <button type="button" className="accent-button with-icon" onClick={() => call('pickFolder')}><Icon name="folder-plus" size={15} />{t('layout.welcome.openProject')}</button>
-        <button type="button" className="plain-button with-icon" onClick={() => call('connectRemote')}><Icon name="globe" size={14} />{t('remote.menu.connect')}</button>
-        {setupNeeded && <button type="button" className="plain-button" onClick={() => call('openSetup')}>{t('setup.title')}</button>}
+      {/* The three ways to add a workspace (the existing folder first), then the other ways in (M/WorkspaceView.swift:587-608). */}
+      <div className="welcome-choices">
+        <div className="welcome-buttons">
+          {addChoices.map((choice) => choice.key === 'existing'
+            ? <button key={choice.key} type="button" className="accent-button with-icon" data-testid="welcome-open-folder" onClick={choice.run}><Icon name="folder-plus" size={15} />{t('layout.welcome.openProject')}</button>
+            : <button key={choice.key} type="button" className="plain-button with-icon" data-testid={'welcome-' + choice.key} onClick={choice.run}><Icon name={choice.icon} size={14} />{choice.label}</button>)}
+        </div>
+        <div className="welcome-buttons">
+          <button type="button" className="plain-button with-icon" onClick={() => call('connectRemote')}><Icon name="globe" size={14} />{t('remote.menu.connect')}</button>
+          {setupNeeded && <button type="button" className="plain-button" onClick={() => call('openSetup')}>{t('setup.title')}</button>}
+        </div>
       </div>
       <div className="welcome-note welcome-shortcuts">{t('layout.welcome.shortcuts')}</div>
       <span className="welcome-spacer" />

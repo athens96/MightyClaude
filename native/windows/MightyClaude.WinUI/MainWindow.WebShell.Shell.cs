@@ -67,6 +67,7 @@ public sealed partial class MainWindow
             var text = args.Text("text") ?? "";
             return Task.FromResult<object?>(new { valid = RenameSupport.IsValid(text), messages = RenameSupport.Messages(text) });
         });
+        RegisterWorkspaceCreateMethods(bridge);
         bridge.Register("removeWorkspace", async args => { if (args.Text("id") is { } id) await ConfirmRemoveWorkspace(id); return null; });
         bridge.Register("showInExplorer", async args => { if (args.Text("id") is { } id) await ShowWorkspaceInExplorer(id); return null; });
         bridge.Register("openFiles", async args => { if (!dialogOpen) { HideDashboard(); await OpenFilePane(args.Text("workspaceId")); } return null; });
@@ -97,6 +98,7 @@ public sealed partial class MainWindow
             var group = args.Text("groupId"); var workspace = args.Text("workspaceId");
             if (entry == "connect") await OpenRemoteSettings();
             else if (entry == AddPaneMenu.OpenProject) { if (!dialogOpen) await PickFolder(); }
+            else if (entry is AddPaneMenu.NewFolder or AddPaneMenu.FromGit) await ShowWorkspaceCreateAsync(entry);
             else if (workspace is not null && workspace != service.Snapshot.ActiveWorkspaceId) await DashboardAddPane(workspace, entry);
             else if (entry == AddPaneMenu.Shell) await AddPane("shell", groupId: group);
             else if (entry == AddPaneMenu.Browser) await AddBrowserPane(group);
@@ -315,7 +317,7 @@ public sealed partial class MainWindow
 
     // ── The model ──
 
-    /// <summary>The add-pane menu's entries for a workspace (the active one when none is named): NewSessionMenu's order and words, then Connect.</summary>
+    /// <summary>The add-pane menu's entries for a workspace (the active one when none is named): NewSessionMenu's order and words (the three ways to add a workspace last), then Connect.</summary>
     private object WebAddMenu(string? workspaceId)
     {
         var state = service.Snapshot;
@@ -326,7 +328,14 @@ public sealed partial class MainWindow
             : new
             {
                 entry,
-                label = AddPaneTitle(entry, remote) ?? (entry == AddPaneMenu.Files ? Locale.Get("menu.showFiles") : entry == AddPaneMenu.OpenProject ? Locale.Get(AddPaneMenu.OpenProjectKey) : entry),
+                label = AddPaneTitle(entry, remote) ?? entry switch
+                {
+                    AddPaneMenu.Files => Locale.Get("menu.showFiles"),
+                    AddPaneMenu.OpenProject => Locale.Get(AddPaneMenu.OpenProjectKey),
+                    AddPaneMenu.NewFolder => Locale.Get(AddPaneMenu.NewFolderKey),
+                    AddPaneMenu.FromGit => Locale.Get(AddPaneMenu.FromGitKey),
+                    _ => entry,
+                },
                 provider = AddPaneMenu.AgentProvider(entry),
                 shortcut = entry == AddPaneMenu.OpenProject ? AddPaneMenu.OpenFolderShortcut : entry == AddPaneMenu.Files ? FilePaneKind.Shortcut : null,
             }).ToList();

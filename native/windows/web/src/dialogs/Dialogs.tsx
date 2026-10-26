@@ -1,14 +1,16 @@
 // The dialogs the window's flows ask the page to draw (MainWindow.WebShell.Shell.cs OpenWebDialog): a confirmation (remove
-// workspace, delegation, parent close), the rename sheet (spec section 9) and the resume sheets (section 3). Each answers
-// with `dialogAnswer`; what the answer does stays the host's flow.
+// workspace, delegation, parent close), the rename sheet (spec section 9), the resume sheets (section 3) and the two create
+// sheets (WorkspaceCreate.tsx). Each answers with `dialogAnswer`; what the answer does stays the host's flow.
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useServices, useStoreState } from '../app/context';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { BetaBadge, MiddlePath } from '../shell/parts';
 import { Icon } from '../icons/Icon';
 import type { DialogRequest, OpenDialog, ResumeRows } from '../shell/types';
+import { GitCreate, NewFolder } from './WorkspaceCreate';
 
-function Sheet({ id, width, label, children, onCancel }: { id: number; width: number; label: string; children: ReactNode; onCancel: () => void }) {
+/** A sheet over the window: focuses its `data-autofocus` control (else its first), and Esc is its cancel. */
+export function Sheet({ id, width, label, children, onCancel }: { id: number; width: number; label: string; children: ReactNode; onCancel: () => void }) {
   const element = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const focusable = element.current?.querySelector<HTMLElement>('[data-autofocus]') ?? element.current?.querySelector<HTMLElement>('button, input');
@@ -149,6 +151,8 @@ function DialogView({ open }: { open: OpenDialog }) {
     case 'rename': return <Rename id={open.id} dialog={dialog} answer={answer} />;
     case 'resumeChoice': return <ResumeChoice id={open.id} dialog={dialog} answer={answer} />;
     case 'resumeList': return <ResumeList id={open.id} dialog={dialog} answer={answer} />;
+    case 'newFolder': return <NewFolder id={open.id} dialog={dialog} answer={answer} />;
+    case 'gitCreate': return <GitCreate id={open.id} dialog={dialog} answer={answer} />;
   }
 }
 

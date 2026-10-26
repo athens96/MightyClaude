@@ -188,6 +188,8 @@ public sealed partial class MainWindow
         {
             if (entry == AddPaneMenu.Separator) { menu.Items.Add(new MenuFlyoutSeparator()); continue; }
             if (entry == AddPaneMenu.OpenProject) { menu.Items.Add(OpenProjectMenuItem()); continue; }
+            if (entry == AddPaneMenu.NewFolder) { menu.Items.Add(NewFolderMenuItem()); continue; }
+            if (entry == AddPaneMenu.FromGit) { menu.Items.Add(FromGitMenuItem()); continue; }
             var title = entry switch { AddPaneMenu.Shell => Locale.Get("session.newTab.shell"), AddPaneMenu.Browser => Locale.Get("browser.newTab"), AddPaneMenu.Files => Locale.Get("menu.showFiles"), _ => ProviderCatalog.BetaLabel(AddPaneMenu.AgentProvider(entry)!, ProviderCatalog.Name(AddPaneMenu.AgentProvider(entry)!)) };
             var item = MenuItem(title, () => DashboardAddPane(workspaceId, entry));
             AutomationProperties.SetAutomationId(item, "dashboard-add-" + entry + "-" + workspaceId); menu.Items.Add(item);

@@ -29,6 +29,8 @@ export interface StoreState {
   shell: ShellModel | null;
   /** The dialogs the host's flows asked the page to draw, oldest first. */
   dialogs: readonly OpenDialog[];
+  /** A 'Git으로 생성' sheet's clone progress as the host last pushed it, by dialog id; dropped as the dialog closes. */
+  gitProgress?: Readonly<Record<number, GitProgress>>;
   /** The host's WinUI views drawn by the page (Settings, setup, sheets, dialogs, the companion popover), oldest first. */
   natives: readonly NativeOpen[];
   /** The text setting the page's sizes and families follow; undefined until the host says. */
@@ -44,6 +46,14 @@ export interface StoreState {
   overlays: number;
   /** The picture the viewer shows over the window (src/pictures/PictureViewer.tsx); undefined while it is closed. */
   picture?: OpenPicture;
+}
+
+/** One push of a running clone's progress (MainWindow.WorkspaceCreate.cs): its phase, percent and 0–1 fraction, and the words for them. */
+export interface GitProgress {
+  phase: string;
+  percent: number;
+  fraction: number;
+  text: string;
 }
 
 /** The page's own message: a card fills the pane's composer, which listens for it. */
@@ -165,8 +175,15 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       return { ...state, shell: message.shell };
     case 'dialog':
       return { ...state, dialogs: [...state.dialogs.filter((open) => open.id !== message.id), { id: message.id, dialog: message.dialog }] };
-    case 'dialogClose':
-      return { ...state, dialogs: state.dialogs.filter((open) => open.id !== message.id) };
+    case 'dialogClose': {
+      const dialogs = state.dialogs.filter((open) => open.id !== message.id);
+      if (!state.gitProgress || !(message.id in state.gitProgress)) return { ...state, dialogs };
+      const gitProgress = { ...state.gitProgress };
+      delete gitProgress[message.id];
+      return { ...state, dialogs, gitProgress };
+    }
+    case 'gitProgress':
+      return { ...state, gitProgress: { ...state.gitProgress, [message.id]: { phase: message.phase, percent: message.percent, fraction: message.fraction, text: message.text } } };
     case 'dialogUpdate':
       return {
         ...state,

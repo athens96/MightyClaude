@@ -208,7 +208,7 @@ public sealed partial class MainWindow
     private MenuFlyout NewSessionMenu(string? groupId = null)
     {
         // The macOS add-pane order (AddPaneMenu.Entries): agents, terminal, browser and files,
-        // then the open-project-folder item and Connect to Another Computer… at the bottom. A remote workspace's
+        // then the three ways to add a workspace and Connect to Another Computer… at the bottom. A remote workspace's
         // offers agents and a remote command only (RemoteWorkspaceFeatures.AddPaneEntries).
         var state = service.Snapshot;
         var workspace = state.Workspaces.FirstOrDefault(w => w.Id == state.ActiveWorkspaceId);
@@ -222,6 +222,8 @@ public sealed partial class MainWindow
                 AddPaneMenu.Browser => MenuItem(AddPaneTitle(entry)!, () => AddBrowserPane(groupId)),
                 AddPaneMenu.Files => OpenFilesMenuItem(),
                 AddPaneMenu.OpenProject => OpenProjectMenuItem(),
+                AddPaneMenu.NewFolder => NewFolderMenuItem(),
+                AddPaneMenu.FromGit => FromGitMenuItem(),
                 _ => AddPaneMenu.AgentProvider(entry) is { } provider
                     ? MenuItem(AddPaneTitle(entry)!, () => AddAgentPane(provider, groupId))
                     : throw new InvalidOperationException("unknown add-pane menu entry " + entry),

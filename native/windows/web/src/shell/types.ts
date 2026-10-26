@@ -182,7 +182,30 @@ export type DialogRequest =
   | { type: 'confirm'; title: string; message: string; primary?: string; close: string; defaultPrimary: boolean }
   | { type: 'rename'; title: string; hint: string; current: string; field: string; save: string; cancel: string; automatic?: string }
   | { type: 'resumeChoice'; provider: string; title: string; message: string; checking: boolean }
-  | { type: 'resumeList'; provider: string; title: string; path: string };
+  | { type: 'resumeList'; provider: string; title: string; path: string }
+  | { type: 'newFolder'; title: string; subtitle: string; labels: CreateLabels; location: string }
+  | { type: 'gitCreate'; title: string; subtitle: string; labels: CreateLabels; location: string };
+
+/**
+ * The create sheets' words (MainWindow.WorkspaceCreate.cs WorkspaceCreateLabels), each from its locale key: `path` keeps its
+ * `{path}`. The name, location and Git errors and the clone's progress come worded from the host's calls and pushes.
+ */
+export interface CreateLabels {
+  name: string;
+  location: string;
+  choose: string;
+  path: string;
+  gitInit: string;
+  create: string;
+  cancel: string;
+  url: string;
+  urlPlaceholder: string;
+  test: string;
+  checking: string;
+  reachable: string;
+  openSetup: string;
+  starting: string;
+}
 
 export interface OpenDialog {
   id: number;
@@ -213,4 +236,6 @@ export type ShellPush =
   | { kind: 'dialog'; id: number; dialog: DialogRequest }
   | { kind: 'dialogClose'; id: number }
   | { kind: 'dialogUpdate'; id: number; checking: boolean }
-  | { kind: 'select'; paneId: string };
+  | { kind: 'select'; paneId: string }
+  /** A running clone's progress in a 'Git으로 생성' sheet (`id` is the dialog's), worded by the host in `text`. */
+  | { kind: 'gitProgress'; id: number; phase: string; percent: number; fraction: number; text: string };

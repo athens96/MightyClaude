@@ -71,7 +71,7 @@ public sealed partial class MainWindow
     /// <summary>
     /// The section header "워크스페이스 6" (M/WorkspaceView.swift:112-125): 10pt semibold words and a 10pt mono count,
     /// both <c>sidebarInk2</c>, padding h20 t20 b11; at its trailing edge the plain folder-plus button, an 11pt
-    /// symbol in the same ink, which opens an existing folder as a workspace the way Open Existing Folder… does.
+    /// symbol in the same ink, whose menu offers the three ways to add a workspace (an existing folder, a new folder, from Git).
     /// </summary>
     private FrameworkElement BuildSidebarSectionHeader()
     {
@@ -80,7 +80,8 @@ public sealed partial class MainWindow
         sessionsHeader.Margin = sessionsCount.Margin = MacLine();
         foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) sessionsHeaderRow.ColumnDefinitions.Add(new() { Width = width });
         sessionsCount.HorizontalAlignment = HorizontalAlignment.Left;
-        var add = sidebarAddWorkspaceButton = Button("", () => dialogOpen ? Task.CompletedTask : PickFolder());
+        // The three ways to add a workspace, as the Mac's sidebar menu offers them (M/WorkspaceView.swift:132).
+        var add = sidebarAddWorkspaceButton = new Button { Flyout = WorkspaceAddMenu() };
         add.Content = MightySymbols.Create("folder.badge.plus", 11, null);
         add.Width = SidebarAddWorkspaceWidth; add.Height = SidebarAddWorkspaceHeight; add.MinWidth = add.MinHeight = 0; add.Padding = new Thickness(0);
         add.Foreground = brushes.Brush(DesignToken.SidebarInk2); add.VerticalAlignment = VerticalAlignment.Center;

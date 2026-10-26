@@ -14,7 +14,7 @@ public sealed partial class MainWindow
     /// <summary>
     /// The welcome while no project is open (M/WorkspaceView.swift:351-366): a 50pt split-window symbol
     /// in <c>accent</c>, the 27pt semibold line, the 14pt <c>ink2</c> explanation, the accent "open a
-    /// project folder" button, the shortcut line and, at the foot, what the app is, both 11pt in the tertiary ink (:361, :363).
+    /// project folder" button with the new-folder and Git ones beside it, the shortcut line and, at the foot, what the app is, both 11pt in the tertiary ink (:361, :363).
     /// </summary>
     private Grid BuildWelcome()
     {
@@ -48,10 +48,15 @@ public sealed partial class MainWindow
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         label.Children.Add(new FontIcon { Glyph = "", TextSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
         label.Children.Add(new TextBlock { Text = Locale.Get("layout.welcome.openProject"), TextSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
-        var open = new Button { Content = label, Style = (Style)Application.Current.Resources["AccentButtonStyle"], Height = WelcomeButtonHeight, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Sm, 0, 0) };
+        var open = new Button { Content = label, Style = (Style)Application.Current.Resources["AccentButtonStyle"], Height = WelcomeButtonHeight, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment) };
         open.Click += async (_, _) => await PickFolder();
         AutomationProperties.SetName(open, Locale.Get("layout.welcome.openProject")); AutomationProperties.SetAutomationId(open, "welcome-open-folder");
-        stack.Children.Add(open);
+        // The three ways to add a workspace in one row, the existing folder first (M/WorkspaceView.swift:587-597).
+        var choices = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Sm, 0, 0) };
+        choices.Children.Add(open);
+        choices.Children.Add(WelcomeCreateButton(AddPaneMenu.NewFolder, NewFolderGlyph, Locale.Get(AddPaneMenu.NewFolderKey), "welcome-new-folder"));
+        choices.Children.Add(WelcomeCreateButton(AddPaneMenu.FromGit, FromGitGlyph, Locale.Get(AddPaneMenu.FromGitKey), "welcome-from-git"));
+        stack.Children.Add(choices);
         // 필요한 도구 while no agent CLI can run or Git is missing (M/WorkspaceView.swift:584-588): the plain button beside it.
         setupNeedsAttentionShown = SetupNeedsAttention;
         if (setupNeedsAttentionShown)
@@ -75,6 +80,18 @@ public sealed partial class MainWindow
         page.Children.Add(toggle);
         AutomationProperties.SetAutomationId(page, "welcome");
         return page;
+    }
+
+    /// <summary>The welcome's plain button for one of the two new ways to add a workspace, as tall as the open-folder one beside it.</summary>
+    private Button WelcomeCreateButton(string kind, string glyph, string words, string id)
+    {
+        var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        label.Children.Add(new FontIcon { Glyph = glyph, TextSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
+        label.Children.Add(new TextBlock { Text = words, TextSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
+        var button = new Button { Content = label, Height = WelcomeButtonHeight, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment) };
+        button.Click += async (_, _) => await ShowWorkspaceCreateAsync(kind);
+        AutomationProperties.SetName(button, words); AutomationProperties.SetAutomationId(button, id);
+        return button;
     }
 
     /// <summary>The welcome symbol as the Mac's 50pt ultraLight rectangle.split.2x1 draws: about 62×47 with a 1.5pt line.</summary>

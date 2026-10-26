@@ -103,6 +103,8 @@ button { font: inherit; color: inherit; }
   border: 0; border-radius: var(--radius-search); background: var(--subtle); color: var(--ink); font-size: var(--type-row); text-align: left; cursor: default;
 }
 .sidebar-open-folder:hover { background: var(--card-raised); }
+.sidebar-add-choices { display: flex; flex-direction: column; gap: var(--space-xs); margin: 0 var(--space-md) var(--space-md); }
+.sidebar-add-choices > .sidebar-open-folder { margin: 0; }
 .sidebar-workspace { display: flex; flex-direction: column; gap: var(--inset-list-gap); }
 .sidebar-workspace.selected { margin-bottom: var(--space-sm); }
 .sidebar-workspace-row { display: flex; align-items: center; border-radius: var(--radius-search); min-height: 24px; }
@@ -311,7 +313,8 @@ button { font: inherit; color: inherit; }
 .welcome-title { margin: 0; font-family: var(--font-heading); font-size: var(--type-welcome); font-weight: 600; }
 .welcome-body, .empty-panes p { margin: 0; color: var(--ink2); max-width: 520px; }
 .welcome-body { font-size: 14px; line-height: 1.55; white-space: pre-line; }
-.welcome-buttons { display: flex; gap: 10px; margin-top: var(--space-md); }
+.welcome-choices { display: flex; flex-direction: column; align-items: center; gap: var(--space-md); margin-top: var(--space-md); }
+.welcome-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-md); }
 .welcome-buttons .accent-button, .welcome-buttons .plain-button { padding: 5px var(--space-lg); font-size: var(--type-body); }
 .welcome-note { color: var(--ink3); font-size: var(--type-pill); white-space: pre; }
 .welcome-shortcuts { margin-top: 10px; }
@@ -336,6 +339,18 @@ button { font: inherit; color: inherit; }
 .sheet-field { height: 28px; padding: 0 var(--space-sm); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-segment); background: var(--page); color: var(--ink); font: inherit; }
 .sheet-caption { font-size: 10px; color: var(--ink2); }
 .sheet-buttons { display: flex; gap: var(--space-sm); align-items: center; }
+/* The create sheets (dialogs/WorkspaceCreate.tsx; M/WorkspaceCreateViews.swift): the labels trailing in their column, the fields after. */
+.create-heading { display: flex; flex-direction: column; gap: var(--space-xxs); }
+.create-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-md); align-items: center; min-width: 0; margin: 0; padding: 0; border: 0; }
+.create-label { justify-self: end; font-size: var(--type-row); }
+.create-location { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; font-size: var(--type-row); }
+.create-location-path { flex: 1; color: var(--ink); }
+.create-check { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--type-row); }
+.create-probe { display: flex; align-items: center; gap: var(--space-md); min-width: 0; font-size: var(--type-pill); }
+.create-error { display: flex; align-items: center; gap: var(--space-md); min-width: 0; font-size: var(--type-pill); }
+.create-error > span { overflow-wrap: anywhere; }
+.create-progress { display: flex; flex-direction: column; gap: var(--space-xs); }
+.create-progress progress { width: 100%; accent-color: var(--accent); }
 .resume-choice-top { display: flex; gap: var(--space-md); align-items: flex-start; }
 .resume-list { display: flex; flex-direction: column; gap: var(--space-md); min-height: 0; }
 .resume-title { display: flex; gap: var(--space-sm); align-items: center; }
