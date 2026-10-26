@@ -6,18 +6,21 @@ public enum GitTool {
         DelegationGit.executable ?? ToolkitProcess.resolveExecutable("git", environment: ProcessInfo.processInfo.environment)
     }
 
-    /// No prompt can appear: a credential helper or ssh-agent answers, or git fails at once.
+    /// No prompt can appear: a credential helper or ssh-agent answers, or git fails at once. An empty
+    /// GIT_ASKPASS switches git's askpass off (it would otherwise fall back to core.askPass and SSH_ASKPASS
+    /// and could open a window); git then fails with "terminal prompts disabled".
     public static func environment(base: [String: String] = ProcessInfo.processInfo.environment) async -> [String: String] {
         var environment = base.filter { $0.key != "GIT_DIR" && $0.key != "GIT_WORK_TREE" && $0.key != "GIT_INDEX_FILE" }
         environment["GIT_TERMINAL_PROMPT"] = "0"; environment["GCM_INTERACTIVE"] = "never"; environment["LC_ALL"] = "C"
-        environment["SSH_ASKPASS_REQUIRE"] = "never"
-        if environment["GIT_SSH_COMMAND"] == nil, await globalSSHCommand() == nil { environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes" }
+        environment["GIT_ASKPASS"] = ""; environment["SSH_ASKPASS_REQUIRE"] = "never"
+        if environment["GIT_SSH_COMMAND"] == nil, environment["GIT_SSH"] == nil, await configuredSSHCommand() == nil { environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes" }
         return environment
     }
 
-    private static func globalSSHCommand() async -> String? {
+    /// The user's own core.sshCommand (system or global configuration; run from home, so no repository is read).
+    private static func configuredSSHCommand() async -> String? {
         guard let executable else { return nil }
-        let result = try? await ProcessCapture.run(executable: executable, arguments: ["config", "--global", "--get", "core.sshCommand"], environment: nil, cwd: FileManager.default.homeDirectoryForCurrentUser, input: nil, timeout: 5, maximumBytes: 4096)
+        let result = try? await ProcessCapture.run(executable: executable, arguments: ["config", "--get", "core.sshCommand"], environment: nil, cwd: FileManager.default.homeDirectoryForCurrentUser, input: nil, timeout: 5, maximumBytes: 4096)
         let value = result.map { DelegationGit.line($0.stdout) } ?? ""
         return result?.exitCode == 0 && !value.isEmpty ? value : nil
     }
@@ -30,9 +33,12 @@ public enum GitTool {
         guard gitInit else { return .made }
         guard let executable else { return .madeButGitInitFailed(L("workspace.git.error.gitMissing")) }
         let gitEnvironment = await environment()
-        let result = try? await ProcessCapture.run(executable: executable, arguments: ["init", "-q"], environment: gitEnvironment, cwd: URL(fileURLWithPath: path), input: nil, timeout: 20, maximumBytes: 65_536)
-        guard let result else { return .madeButGitInitFailed(L("workspace.git.error.gitMissing")) }
-        return result.exitCode == 0 ? .made : .madeButGitInitFailed(DelegationGit.message(result))
+        do {
+            let result = try await ProcessCapture.run(executable: executable, arguments: ["init", "-q"], environment: gitEnvironment, cwd: URL(fileURLWithPath: path), input: nil, timeout: 20, maximumBytes: 65_536)
+            return result.exitCode == 0 ? .made : .madeButGitInitFailed(DelegationGit.message(result))
+        } catch {
+            return .madeButGitInitFailed(error.localizedDescription)
+        }
     }
 
     public enum ProbeResult: Equatable, Sendable { case reachable, failed(WorkspaceCreate.GitErrorKind, String) }
@@ -65,6 +71,7 @@ public final class GitCloneJob: @unchecked Sendable {
     private var cancelled = false
     private var spawnError: String?
 
+    /// `progress` is called on the child process's reader queue, not the main actor: a UI must hop to the main actor itself.
     public init(url: String, target: String, progress: @escaping @Sendable (WorkspaceCreate.CloneProgress) -> Void) {
         self.url = url.trimmingCharacters(in: .whitespacesAndNewlines); self.target = target; self.onProgress = progress
     }
