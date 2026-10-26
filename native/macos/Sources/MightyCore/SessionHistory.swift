@@ -695,6 +695,16 @@ final class HistoryReplay {
         guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty, !text.hasPrefix("<") else { return nil }
         return (object["uuid"] as? String, text)
     }
+    /// A sub-agent's final report taken into a running turn, recorded as a
+    /// queued command: the live stream shows it to the tracker as a user message.
+    static func handback(_ object: [String: Any]) -> [String: Any]? {
+        guard let attachment = object["attachment"] as? [String: Any], attachment["type"] as? String == "queued_command",
+              let origin = attachment["origin"] as? [String: Any], origin["kind"] as? String == "peer" else { return nil }
+        let text = (attachment["prompt"] as? String)
+            ?? (attachment["prompt"] as? [[String: Any]])?.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
+        guard let text, text.contains(AgentHandback.opening) else { return nil }
+        return ["type": "user", "origin": origin, "message": ["role": "user", "content": text]]
+    }
 
     /// A Claude record line is the stream-json event it was printed as, minus
     /// the `result`s, which are rebuilt from the answers: the request's own before
@@ -717,15 +727,18 @@ final class HistoryReplay {
             switch type {
             case "attachment":
                 if let steer = Self.steer(object) { parser.steer(id: steer.id ?? "line-\(index)", text: steer.text) }
+                else if let handback = Self.handback(object) { parser.receive(object: handback) }
                 continue
             case "system":
                 guard object["subtype"] as? String == "compact_boundary" else { continue }
                 if object["compact_metadata"] == nil, let metadata = object["compactMetadata"] { object["compact_metadata"] = metadata }
             case "user":
-                guard object["isMeta"] as? Bool != true, object["isCompactSummary"] as? Bool != true,
-                      let message = object["message"] as? [String: Any] else { continue }
+                guard object["isCompactSummary"] as? Bool != true, let message = object["message"] as? [String: Any] else { continue }
                 let text = (message["content"] as? String)
                     ?? (message["content"] as? [[String: Any]])?.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
+                // A sub-agent's final report is a meta line, and like a task notification it opens a turn of its own.
+                let handback = (object["origin"] as? [String: Any])?["kind"] as? String == "peer" && text?.contains(AgentHandback.opening) == true
+                guard object["isMeta"] as? Bool != true || handback else { continue }
                 if text?.hasPrefix("[Request interrupted by user") == true { interrupted = true; continue }
                 // A local command's printed output is that command's result.
                 if let output = text.flatMap(HistoryScan.localCommandOutput) {
@@ -733,7 +746,7 @@ final class HistoryReplay {
                     continue
                 }
                 // A task notification opens a turn of its own: the turn before it ended with its answer.
-                if text?.contains("<task-notification>") == true { result() }
+                if handback || text?.contains("<task-notification>") == true { result() }
             default:
                 if let blocks = (object["message"] as? [String: Any])?["content"] as? [[String: Any]] {
                     let text = blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined(separator: "\n")

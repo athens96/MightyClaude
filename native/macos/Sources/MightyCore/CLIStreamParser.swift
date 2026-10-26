@@ -651,9 +651,59 @@ public enum ClaudeStream {
     /// `result` of its own (`origin.kind == "task-notification"`) before it even
     /// reads the new request. It is not the request's result: treating it as one
     /// closes Claude's stdin early, and every approval or question in the real
-    /// turn then fails with "Stream closed".
+    /// turn then fails with "Stream closed". A turn a sub-agent's final report
+    /// opened (`AgentHandback`) is the same: its `result` carries that message's
+    /// origin, `origin.kind == "peer"`.
     public static func isNotificationResult(_ event: [String: Any]) -> Bool {
         guard event["type"] as? String == "result", let origin = event["origin"] as? [String: Any] else { return false }
-        return origin["kind"] as? String == "task-notification"
+        return notificationOrigins.contains(origin["kind"] as? String ?? "")
+    }
+    static let notificationOrigins: Set<String> = ["task-notification", "task_notification", "peer"]
+}
+
+/// A background sub-agent's final report as Claude Code hands it to the
+/// session that started it: `<agent-message from="<agent ID or name>">`, a
+/// preamble ending `The report follows:`, then the report with every line
+/// indented by two spaces, then `</agent-message>`. It arrives alone or inside
+/// a `<system-reminder>` with other text.
+public enum AgentHandback {
+    static let opening = "<agent-message"
+    static let closing = "</agent-message>"
+    static let marker = "The report follows:"
+
+    /// Every message in `text`, in order: who sent it and the report, its
+    /// indentation removed. Without the marker the whole text inside the tag is the body.
+    public static func parse(_ text: String) -> [(from: String, body: String)] {
+        let text = text.replacingOccurrences(of: "\r\n", with: "\n")
+        var found: [(from: String, body: String)] = []
+        var remaining = text[...]
+        while found.count < 64, let start = remaining.range(of: opening) {
+            let rest = remaining[start.upperBound...]
+            guard let first = rest.first else { break }
+            guard first == ">" || first.isWhitespace else { remaining = rest; continue }
+            guard let tagEnd = rest.firstIndex(of: ">") else { break }
+            let content = rest[rest.index(after: tagEnd)...]
+            // The frame closes at the start of a line, before any next message; report lines are indented.
+            let next = content.range(of: "\n" + opening)?.lowerBound ?? content.endIndex
+            guard let end = content.range(of: "\n" + closing, range: content.startIndex..<next) ?? content.range(of: closing) else { break }
+            found.append((from: sender(rest[..<tagEnd]), body: body(content[..<end.lowerBound])))
+            remaining = content[end.upperBound...]
+        }
+        return found
+    }
+    static func sender(_ attributes: Substring) -> String {
+        guard let start = attributes.range(of: "from=\""), let end = attributes[start.upperBound...].firstIndex(of: "\"") else { return "" }
+        return String(attributes[start.upperBound..<end])
+    }
+    static func body(_ inner: Substring) -> String {
+        guard let found = inner.range(of: marker) else { return inner.trimmingCharacters(in: .whitespacesAndNewlines) }
+        var report = inner[found.upperBound...]
+        // The marker ends the preamble's line.
+        let lineEnd = report.firstIndex(of: "\n") ?? report.endIndex
+        if report[..<lineEnd].allSatisfy(\.isWhitespace) { report = lineEnd == report.endIndex ? report[lineEnd...] : report[report.index(after: lineEnd)...] }
+        return report.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.hasPrefix("  ") ? $0.dropFirst(2) : $0 }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

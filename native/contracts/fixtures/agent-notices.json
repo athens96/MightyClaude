@@ -1,0 +1,757 @@
+{
+  "version": 1,
+  "_comment": "Background sub-agent notices and hand-backs (docs/superpowers/specs/2026-10-26-agent-notices-design.md). Read by the Mac MightyCore AgentNoticeTests and the Windows Core checks. Shapes follow Claude Code records; IDs and text are made up.",
+  "streams": [
+    {
+      "name": "background agent: hand-back by agent ID, then its notification",
+      "agentToolUseId": "toolu_FAKEagent0001",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0001",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0001",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0001",
+                "name": "Agent",
+                "input": {
+                  "description": "Survey the docs",
+                  "prompt": "List the help pages that mention the board view.",
+                  "subagent_type": "general-purpose",
+                  "name": "docs-surveyor",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0001",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: a1b2c3d4e5f6a7b8c (internal ID - do not mention to user. Use SendMessage with to: 'a1b2c3d4e5f6a7b8c' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-2",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Started the survey."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Started the survey."
+        },
+        {
+          "type": "user",
+          "isMeta": true,
+          "origin": {
+            "kind": "peer",
+            "from": "a1b2c3d4e5f6a7b8c",
+            "senderTaskId": "a1b2c3d4e5f6a7b8c",
+            "body": "<agent-message from=\"a1b2c3d4e5f6a7b8c\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  ## Docs survey\n  \n  - help/board.md mentions the board view.\n  - help/flow.md does not.\n</agent-message>"
+          },
+          "message": {
+            "role": "user",
+            "content": "Another Claude session sent a message:\n<agent-message from=\"a1b2c3d4e5f6a7b8c\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  ## Docs survey\n  \n  - help/board.md mentions the board view.\n  - help/flow.md does not.\n</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session, so this was not typed by your user."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-3",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-3",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "The survey found one page."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "The survey found one page.",
+          "origin": {
+            "kind": "peer"
+          }
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a1b2c3d4e5f6a7b8c</task-id>\n<tool-use-id>toolu_FAKEagent0001</tool-use-id>\n<output-file>/tmp/example/tasks/a1b2c3d4e5f6a7b8c.output</output-file>\n<status>completed</status>\n<summary>Agent \"Survey the docs\" finished</summary>\n<result>This agent's report was delivered to you as a message from \"docs-surveyor\" (its SubagentHandback call). Read it there; it is not repeated here.\n</result>\n</task-notification>"
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-4",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-4",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Already handled."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Already handled.",
+          "origin": {
+            "kind": "task-notification"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "completed",
+        "agentOutput": "## Docs survey\n\n- help/board.md mentions the board view.\n- help/flow.md does not.",
+        "noticeBlocks": 1,
+        "mainOutputContains": [
+          "Started the survey.",
+          "The survey found one page."
+        ]
+      }
+    },
+    {
+      "name": "background agent: hand-back by the call's name inside a system reminder, before the request's result",
+      "agentToolUseId": "toolu_FAKEagent0002",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0002",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0002",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0002",
+                "name": "Agent",
+                "input": {
+                  "description": "Check the labels",
+                  "prompt": "Find pages that use the old label.",
+                  "subagent_type": "general-purpose",
+                  "name": "label-checker",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0002",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: a2b3c4d5e6f7a8b9c (internal ID - do not mention to user. Use SendMessage with to: 'a2b3c4d5e6f7a8b9c' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "<system-reminder>\nThe user sent a new message while you were working:\nAlso check the README.\n\nAnother Claude session sent a message:\n<agent-message from=\"label-checker\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  Two pages use the old label.\n  \n    - the nested line keeps its own indent\n</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session, so this was not typed by your user.\n</system-reminder>"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-5",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-5",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "The labels are checked."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "The labels are checked."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a2b3c4d5e6f7a8b9c</task-id>\n<tool-use-id>toolu_FAKEagent0002</tool-use-id>\n<output-file>/tmp/example/tasks/a2b3c4d5e6f7a8b9c.output</output-file>\n<status>completed</status>\n<summary>Agent \"Check the labels\" finished</summary>\n</task-notification>"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "completed",
+        "agentOutput": "Two pages use the old label.\n\n  - the nested line keeps its own indent",
+        "noticeBlocks": 1
+      }
+    },
+    {
+      "name": "background agent without a name: only a failed notification",
+      "agentToolUseId": "toolu_FAKEagent0003",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0003",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0003",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0003",
+                "name": "Agent",
+                "input": {
+                  "description": "Rename the labels",
+                  "prompt": "Rename the old label everywhere.",
+                  "subagent_type": "general-purpose",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0003",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: a3b4c5d6e7f8a9b0c (internal ID - do not mention to user. Use SendMessage with to: 'a3b4c5d6e7f8a9b0c' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-6",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-6",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Renaming in the background."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Renaming in the background."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a3b4c5d6e7f8a9b0c</task-id>\n<tool-use-id>toolu_FAKEagent0003</tool-use-id>\n<output-file>/tmp/example/tasks/a3b4c5d6e7f8a9b0c.output</output-file>\n<status>failed</status>\n<summary>Agent \"Rename the labels\" failed: the tool limit was reached</summary>\n</task-notification>"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "error",
+        "agentOutput": "Agent \"Rename the labels\" failed: the tool limit was reached",
+        "noticeBlocks": 1
+      }
+    },
+    {
+      "name": "background agent stopped by a restart: notification matched by task-id only",
+      "agentToolUseId": "toolu_FAKEagent0004",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0004",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0004",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0004",
+                "name": "Agent",
+                "input": {
+                  "description": "Watch the build",
+                  "prompt": "Watch the build and report.",
+                  "subagent_type": "general-purpose",
+                  "name": "build-watcher",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0004",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: a4b5c6d7e8f9a0b1c (internal ID - do not mention to user. Use SendMessage with to: 'a4b5c6d7e8f9a0b1c' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a4b5c6d7e8f9a0b1c</task-id>\n<output-file>/tmp/example/tasks/a4b5c6d7e8f9a0b1c.output</output-file>\n<status>stopped</status>\n<summary>Agent \"Watch the build\" didn't finish before the previous session ended</summary>\n</task-notification>"
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "",
+          "origin": {
+            "kind": "task-notification"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "stopped",
+        "agentOutput": "Agent \"Watch the build\" didn't finish before the previous session ended",
+        "noticeBlocks": 1
+      }
+    },
+    {
+      "name": "background agent killed",
+      "agentToolUseId": "toolu_FAKEagent0007",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0007",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0007",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0007",
+                "name": "Agent",
+                "input": {
+                  "description": "Tidy the notes",
+                  "prompt": "Tidy the notes folder.",
+                  "subagent_type": "general-purpose",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0007",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: a7b8c9d0e1f2a3b4c (internal ID - do not mention to user. Use SendMessage with to: 'a7b8c9d0e1f2a3b4c' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a7b8c9d0e1f2a3b4c</task-id>\n<tool-use-id>toolu_FAKEagent0007</tool-use-id>\n<output-file>/tmp/example/tasks/a7b8c9d0e1f2a3b4c.output</output-file>\n<status>killed</status>\n<summary>Agent \"Tidy the notes\" was stopped</summary>\n</task-notification>"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "stopped",
+        "agentOutput": "Agent \"Tidy the notes\" was stopped",
+        "noticeBlocks": 1
+      }
+    },
+    {
+      "name": "foreground agent: its tool result settles it, no notice",
+      "agentToolUseId": "toolu_FAKEagent0005",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0005",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0005",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0005",
+                "name": "Agent",
+                "input": {
+                  "description": "Count the pages",
+                  "prompt": "Count the help pages.",
+                  "subagent_type": "general-purpose",
+                  "name": "page-counter"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0005",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "There are eleven help pages."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-7",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-7",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Eleven pages."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Eleven pages."
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "completed",
+        "agentOutput": "There are eleven help pages.",
+        "noticeBlocks": 0
+      }
+    },
+    {
+      "name": "background shell command (kind task): unchanged",
+      "agentToolUseId": "toolu_FAKEcommand0006",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-8",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-8",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0006",
+                "name": "Bash",
+                "input": {
+                  "command": "npm run build",
+                  "description": "Build the app",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcommand0006",
+                "type": "tool_result",
+                "content": "Command running in background with ID: b1c2d3e4f. Output is being written to: /tmp/example/tasks/b1c2d3e4f.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-9",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-9",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Building."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Building."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>b1c2d3e4f</task-id>\n<output-file>/tmp/example/tasks/b1c2d3e4f.output</output-file>\n<status>completed</status>\n<summary>Background command \"Build the app\" completed (exit code 0)</summary>\n</task-notification>"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "task",
+        "agentState": "completed",
+        "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
+        "noticeBlocks": 1
+      }
+    }
+  ],
+  "handbacks": [
+    {
+      "name": "one message with its preamble",
+      "text": "Another Claude session sent a message:\n<agent-message from=\"a1b2c3d4e5f6a7b8c\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  ## Docs survey\n  \n  - help/board.md mentions the board view.\n  - help/flow.md does not.\n</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session, so this was not typed by your user.",
+      "expect": [
+        {
+          "from": "a1b2c3d4e5f6a7b8c",
+          "body": "## Docs survey\n\n- help/board.md mentions the board view.\n- help/flow.md does not."
+        }
+      ]
+    },
+    {
+      "name": "two messages inside a system reminder",
+      "text": "<system-reminder>\nAnother Claude session sent a message:\n<agent-message from=\"a1b2c3d4e5f6a7b8c\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  First report.\n</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session, so this was not typed by your user.\n\nAnother Claude session sent a message:\n<agent-message from=\"label-checker\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  Second report,\n    indented once more.\n</agent-message>\n</system-reminder>",
+      "expect": [
+        {
+          "from": "a1b2c3d4e5f6a7b8c",
+          "body": "First report."
+        },
+        {
+          "from": "label-checker",
+          "body": "Second report,\n  indented once more."
+        }
+      ]
+    },
+    {
+      "name": "no 'The report follows:' marker: the whole text inside the tag",
+      "text": "Another Claude session sent a message:\n<agent-message from=\"helper\">\n  A plain note without the frame.\n</agent-message>",
+      "expect": [
+        {
+          "from": "helper",
+          "body": "A plain note without the frame."
+        }
+      ]
+    },
+    {
+      "name": "CRLF line ends",
+      "text": "Another Claude session sent a message:\r\n<agent-message from=\"a2b3c4d5e6f7a8b9c\">\r\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\r\n  Line one\r\n  \r\n  Line two\r\n</agent-message>",
+      "expect": [
+        {
+          "from": "a2b3c4d5e6f7a8b9c",
+          "body": "Line one\n\nLine two"
+        }
+      ]
+    },
+    {
+      "name": "a closing tag quoted inside the indented report",
+      "text": "Another Claude session sent a message:\n<agent-message from=\"a3b4c5d6e7f8a9b0c\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  It printed:\n  </agent-message>\n  and went on.\n</agent-message>",
+      "expect": [
+        {
+          "from": "a3b4c5d6e7f8a9b0c",
+          "body": "It printed:\n</agent-message>\nand went on."
+        }
+      ]
+    },
+    {
+      "name": "no message",
+      "text": "<task-notification>\n<task-id>x</task-id>\n</task-notification>",
+      "expect": []
+    }
+  ],
+  "results": [
+    {
+      "name": "task-notification",
+      "event": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "result": "noted",
+        "origin": {
+          "kind": "task-notification"
+        }
+      },
+      "expect": true
+    },
+    {
+      "name": "task_notification",
+      "event": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "result": "noted",
+        "origin": {
+          "kind": "task_notification"
+        }
+      },
+      "expect": true
+    },
+    {
+      "name": "peer (a hand-back's turn)",
+      "event": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "result": "noted",
+        "origin": {
+          "kind": "peer"
+        }
+      },
+      "expect": true
+    },
+    {
+      "name": "human",
+      "event": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "result": "done",
+        "origin": {
+          "kind": "human"
+        }
+      },
+      "expect": false
+    },
+    {
+      "name": "no origin",
+      "event": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "result": "done"
+      },
+      "expect": false
+    },
+    {
+      "name": "not a result",
+      "event": {
+        "type": "assistant",
+        "origin": {
+          "kind": "peer"
+        },
+        "message": {
+          "content": []
+        }
+      },
+      "expect": false
+    }
+  ]
+}

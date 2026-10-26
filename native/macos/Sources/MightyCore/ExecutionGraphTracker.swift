@@ -46,7 +46,12 @@ final class ExecutionGraphTracker {
     private var activityOwners: [String: Owner] = [:]
     private var activityOrder: [String] = []
     private var backgroundTools = Set<String>()
+    /// Engine task IDs and background agent IDs → block: a notification or hand-back without a tool-use ID finds its block by them.
     private var taskAliases: [String: String] = [:]
+    /// Agent calls' `name` inputs → block: a hand-back may name its agent by that instead of its ID.
+    private var agentNames: [String: String] = [:]
+    /// The notification summary an agent block's result holds until its hand-back's report replaces it.
+    private var agentSummaries: [String: String] = [:]
     private var messageUsage: [String: GraphTokenUsage] = [:]
     private var messageModel: [String: String] = [:]
     private var messageActivityIds: [String: [String]] = [:]
@@ -251,6 +256,7 @@ final class ExecutionGraphTracker {
                     guard let child = ensureAgent(toolID: toolID) else { continue }
                     setParent(child, owner: owner)
                     if background { backgroundTools.insert(toolID) }
+                    if let name = input?["name"] as? String, !name.isEmpty, name.utf8.count <= 512, agentNames[name] != nil || agentNames.count < 512 { agentNames[name] = child }
                     update(child) { node in
                         if let prompt = input?["prompt"] as? String { node.input = prompt }
                         if let title = (input?["name"] ?? input?["description"] ?? input?["subagent_type"]) as? String, !title.isEmpty { node.title = title }
@@ -292,16 +298,19 @@ final class ExecutionGraphTracker {
                     continue
                 }
                 // Background Agent tool results acknowledge launch; they are
-                // not the agent's answer. Its turn.complete is authoritative.
-                guard !backgroundTools.contains(toolID) else { continue }
+                // not the agent's answer. Its turn.complete, notification or hand-back is.
+                guard !backgroundTools.contains(toolID) else { rememberAgentID(child, block: block); continue }
                 update(child) { node in
                     guard !ExecutionGraphSupport.terminal(node.state) else { return }
                     node.state = block["is_error"] as? Bool == true ? "error" : "completed"
                     node.output = Self.text(block["content"])
                 }
             }
-            // Task completion arrives as an injected user message, not a tool event.
-            if let text = Self.text(message["content"]), text.contains("<task-notification>") { settleTasks(in: text) }
+            // Task completion arrives as an injected user message, not a tool event; so does a sub-agent's final report.
+            if let text = Self.text(message["content"]) {
+                if text.contains("<task-notification>") { settleTasks(in: text) }
+                if text.contains("<agent-message") { settleHandbacks(in: text, sender: Self.key((value["origin"] as? [String: Any])?["senderTaskId"])) }
+            }
         } else if type == "result", ClaudeStream.isNotificationResult(value) {
             // A notice turn's answer follows the request's in the result, headed by the notices it answered.
             guard parentTool == nil else { return }
@@ -634,6 +643,13 @@ final class ExecutionGraphTracker {
         }
         if !text.isEmpty { append(LogEntry(id: ExecutionGraphSupport.identifier(runID, id + ":launch"), kind: "system", text: text, provider: provider), to: id) }
     }
+    /// A background Agent's launch result names its agent ID, which its
+    /// notification's `task-id` and its hand-back's `from` carry.
+    private func rememberAgentID(_ id: String, block: [String: Any]) {
+        guard let text = Self.text(block["content"]), let match = text.firstMatch(of: #/agentId: (?<agent>[A-Za-z0-9_-]+)/#) else { return }
+        let agent = String(match.agent)
+        if taskAliases[agent] != nil || taskAliases.count < 512 { taskAliases[agent] = id }
+    }
     private static func tag(_ body: Substring, _ name: String) -> String? {
         guard let start = body.range(of: "<\(name)>"), let end = body.range(of: "</\(name)>", range: start.upperBound..<body.endIndex) else { return nil }
         let value = body[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -645,14 +661,24 @@ final class ExecutionGraphTracker {
             let body = remaining[start.upperBound..<end.lowerBound]
             remaining = remaining[end.upperBound...]
             let byTool = Self.tag(body, "tool-use-id").map { ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: $0) }.flatMap { nodes[$0] != nil ? $0 : nil }
-            guard let id = byTool ?? Self.tag(body, "task-id").flatMap({ taskAliases[$0] }), nodes[id]?.kind == "task" else { continue }
+            guard let id = byTool ?? Self.tag(body, "task-id").flatMap({ taskAliases[$0] }), let kind = nodes[id]?.kind, ["task", "agent"].contains(kind) else { continue }
             let status = Self.tag(body, "status")?.lowercased() ?? "completed"
             let state = status == "completed" ? "completed" : ["failed", "error"].contains(status) ? "error" : "stopped"
             let summary = Self.tag(body, "summary")
-            update(id) { node in
-                guard !ExecutionGraphSupport.terminal(node.state) else { return }
-                node.state = state
-                if let summary { node.output = summary }
+            if kind == "agent" {
+                // An agent's result is its report (`settleHandbacks`); the summary only fills an empty one until the report comes.
+                let empty = nodes[id]?.output?.isEmpty ?? true
+                update(id) { node in
+                    if !ExecutionGraphSupport.terminal(node.state) { node.state = state }
+                    if empty, let summary { node.output = summary }
+                }
+                if empty, summary != nil, let output = nodes[id]?.output { agentSummaries[id] = output }
+            } else {
+                update(id) { node in
+                    guard !ExecutionGraphSupport.terminal(node.state) else { return }
+                    node.state = state
+                    if let summary { node.output = summary }
+                }
             }
             // The notice entered the turn like a steer: a 작업 알림 under main, once per task, whose reply is the next root-level answer.
             guard let notified = nodes[id] else { continue }
@@ -660,6 +686,30 @@ final class ExecutionGraphTracker {
             if !noticedTasks.contains(named), noticedTasks.count < 16 { noticedTasks.append(named) }
             let line = named + " · " + L(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
             addSteer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + line + (summary.map { "\n" + $0 } ?? ""))
+        }
+    }
+    /// A background sub-agent's final report entered the turn (`AgentHandback`).
+    /// It is the agent's result and ends it; with the agent's notification it
+    /// makes one 작업 알림, whichever of the two comes first. `sender` is the
+    /// message's `origin.senderTaskId`, the agent ID of a lone message.
+    private func settleHandbacks(in text: String, sender: String?) {
+        let messages = AgentHandback.parse(text)
+        for message in messages {
+            let byID = taskAliases[message.from] ?? (messages.count == 1 ? sender.flatMap { taskAliases[$0] } : nil)
+            guard let id = byID ?? agentNames[message.from], let node = nodes[id], node.kind == "agent" else { continue }
+            let terminal = ExecutionGraphSupport.terminal(node.state)
+            // A block that already ended keeps its state; its result takes the report only when empty or the notification's summary.
+            let replaceable = !terminal || (node.output?.isEmpty ?? true) || node.output == agentSummaries[id]
+            update(id) { node in
+                if !terminal { node.state = "completed" }
+                if replaceable, !message.body.isEmpty { node.output = message.body }
+            }
+            if replaceable, !message.body.isEmpty { agentSummaries.removeValue(forKey: id) }
+            guard let settled = nodes[id] else { continue }
+            let named = settled.title.isEmpty ? settled.input ?? "" : settled.title
+            if !noticedTasks.contains(named), noticedTasks.count < 16 { noticedTasks.append(named) }
+            let label = settled.state == "error" ? "graph.block.taskNotice.failed" : settled.state == "stopped" ? "graph.block.taskNotice.stopped" : "graph.block.taskNotice.completed"
+            addSteer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + named + " · " + L(label))
         }
     }
 
