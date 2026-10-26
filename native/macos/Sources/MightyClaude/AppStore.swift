@@ -245,6 +245,8 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var draggedPane: PaneDragPayload?
     @Published var showSettings = false
     @Published var renameTarget: RenameTarget?
+    /// The new-folder or create-from-Git sheet that is open (AppStore+WorkspaceCreate.swift).
+    @Published var workspaceCreate: WorkspaceCreateSheet?
     @Published var settingsSession: RunSession?
     @Published var sessionInfoSessionID: String?
     @Published var pendingRemoval: Workspace?
@@ -435,7 +437,7 @@ final class AppStore: ObservableObject, DelegationHost {
     var hasModal: Bool { setupSheet != nil || hasBlockingModal }
     /// What the phone and automatic sign-in recovery wait for: every modal but the
     /// setup screen, which they can work under.
-    var hasBlockingModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || pendingMergedDiscard != nil || pendingParentClose != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
+    var hasBlockingModal: Bool { showSettings || renameTarget != nil || workspaceCreate != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || pendingMergedDiscard != nil || pendingParentClose != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
 
     func canEditAttachments(_ id: String) -> Bool {
         !ending && !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }
@@ -609,12 +611,19 @@ final class AppStore: ObservableObject, DelegationHost {
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in
                 guard let self else { return }
-                do {
-                    let workspace = try await self.repository.approveWorkspace(Workspace(name: url.lastPathComponent, path: url.path))
-                    self.addWorkspace(workspace)
-                } catch { self.error = error.localizedDescription }
+                do { try await self.addLocalWorkspace(path: url.path) } catch { self.error = error.localizedDescription }
             }
         }
+    }
+
+    /// Approves a folder on this Mac, then adds, selects and opens a Claude pane in it: what
+    /// ⌘O does after its panel, and what the create sheets do once their folder is there. A
+    /// create sheet closes first, since a pane does not open under a modal.
+    func addLocalWorkspace(path: String) async throws {
+        let url = URL(fileURLWithPath: path)
+        let workspace = try await repository.approveWorkspace(Workspace(name: url.lastPathComponent, path: url.path))
+        if workspaceCreate != nil { workspaceCreate = nil }
+        addWorkspace(workspace)
     }
 
     func addWorkspace(_ workspace: Workspace) {

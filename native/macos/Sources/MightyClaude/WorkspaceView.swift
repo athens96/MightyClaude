@@ -39,6 +39,12 @@ struct WorkspaceView: View {
         .sheet(isPresented: $store.showSettings) { AppSettingsView().environmentObject(store) }
         .sheet(item: $store.setupSheet) { SetupSheetView(request: $0).environmentObject(store) }
         .sheet(item: $store.renameTarget) { RenameSheet(target: $0).environmentObject(store) }
+        .sheet(item: $store.workspaceCreate) { kind in
+            switch kind {
+            case .newFolder: NewFolderSheet().environmentObject(store)
+            case .fromGit: GitCreateSheet().environmentObject(store)
+            }
+        }
         .sheet(item: $store.terminalHistorySession) { LegacyTerminalHistory(session: $0) }
         .sheet(item: $store.resumePicker) { request in
             Group {
@@ -123,14 +129,14 @@ struct WorkspaceView: View {
                 Text(L("sidebar.workspacesHeader")).font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
                 Text("\(store.snapshot.workspaces.count)").font(.ui(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
                 Spacer()
-                // Adds a workspace from the sidebar too, as File › Open Project Folder… does.
-                Button { store.openWorkspace() } label: {
+                // Adds a workspace from the sidebar too, the three ways the File menu offers.
+                Menu { WorkspaceAddChoices(store: store) } label: {
                     Image(systemName: "folder.badge.plus").font(.ui(size: 11)).foregroundStyle(Palette.sidebarInk2)
                         .frame(width: 18, height: 14).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help(L("menu.openProject"))
-                .accessibilityLabel(L("menu.openProject"))
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                .help(L("workspace.add.menu"))
+                .accessibilityLabel(L("workspace.add.menu"))
                 .accessibilityIdentifier("sidebar-add-workspace")
                 // Another computer's shared workspaces open from Settings → 원격 연결.
                 Button { store.openRemoteSettings() } label: {
@@ -156,13 +162,12 @@ struct WorkspaceView: View {
             }
 
             // While a workspace is listed, a folder opens from its "Add Pane" menu or ⌘O;
-            // with none listed (none yet, or none matching the search) this is the
+            // with none listed (none yet, or none matching the search) these are the
             // sidebar's way in.
             if store.filteredWorkspaces.isEmpty {
-                Button { store.openWorkspace() } label: {
-                    Label(L("sidebar.openFolder"), systemImage: "folder.badge.plus").font(.ui(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.sm)
-                }
-                .buttonStyle(.plain).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, DesignMetrics.Spacing.md).padding(.bottom, DesignMetrics.Spacing.md)
+                VStack(spacing: DesignMetrics.Spacing.xs) { WorkspaceAddChoices(store: store, idPrefix: "sidebar-empty-add") }
+                    .buttonStyle(SidebarAddChoiceStyle())
+                    .padding(.horizontal, DesignMetrics.Spacing.md).padding(.bottom, DesignMetrics.Spacing.md)
             }
             Divider()
             HStack(spacing: DesignMetrics.Spacing.md) {
@@ -579,15 +584,26 @@ struct WorkspaceView: View {
             Text(L("layout.welcome.title")).font(.ui(size: 27, weight: .semibold))
             Text(L("layout.welcome.bodyMac"))
                 .font(.ui(size: 14)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(5)
-            HStack(spacing: 10) {
-                Button { store.openWorkspace() } label: { Label(L("layout.welcome.openProject"), systemImage: "folder.badge.plus").padding(.horizontal, 10).padding(.vertical, 5) }.buttonStyle(.borderedProminent)
-                Button { store.openRemoteSettings() } label: {
-                    Label(L("remote.menu.connect"), systemImage: "network").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
-                }.buttonStyle(.bordered).accessibilityIdentifier("welcome-connect-remote")
-                if store.setupNeedsAttention {
-                    Button { store.openSetup() } label: {
-                        Label(L("setup.title"), systemImage: "shippingbox").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
-                    }.buttonStyle(.bordered).accessibilityIdentifier("welcome-setup")
+            // The three ways to add a workspace (the existing folder first), then the other ways in.
+            VStack(spacing: DesignMetrics.Spacing.md) {
+                HStack(spacing: DesignMetrics.Spacing.md) {
+                    Button { store.openWorkspace() } label: { Label(L("layout.welcome.openProject"), systemImage: "folder.badge.plus").padding(.horizontal, 10).padding(.vertical, 5) }.buttonStyle(.borderedProminent)
+                    Button { store.showWorkspaceCreate(.newFolder) } label: {
+                        Label(L("workspace.add.newFolder"), systemImage: "plus.rectangle.on.folder").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
+                    }.buttonStyle(.bordered).accessibilityIdentifier("welcome-new-folder")
+                    Button { store.showWorkspaceCreate(.fromGit) } label: {
+                        Label(L("workspace.add.fromGit"), systemImage: "arrow.down.circle").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
+                    }.buttonStyle(.bordered).accessibilityIdentifier("welcome-from-git")
+                }
+                HStack(spacing: DesignMetrics.Spacing.md) {
+                    Button { store.openRemoteSettings() } label: {
+                        Label(L("remote.menu.connect"), systemImage: "network").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
+                    }.buttonStyle(.bordered).accessibilityIdentifier("welcome-connect-remote")
+                    if store.setupNeedsAttention {
+                        Button { store.openSetup() } label: {
+                            Label(L("setup.title"), systemImage: "shippingbox").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
+                        }.buttonStyle(.bordered).accessibilityIdentifier("welcome-setup")
+                    }
                 }
             }.padding(.top, 8)
             Text(L("layout.welcome.shortcutsMac")).font(.ui(size: 11)).foregroundStyle(.tertiary).padding(.top, 10)
@@ -834,7 +850,7 @@ private struct SidebarResizeHandle: View {
 /// The "Add Pane" menu's items, shared by the sidebar's last row and the dashboard's
 /// workspace header: new agent panes (Claude and Codex then ask whether to continue
 /// an earlier session, `AppStore.addAgentPane`), a terminal, a browser tab, and
-/// another project folder.
+/// another workspace (an existing folder, a new folder, or from a Git address).
 struct WorkspaceAddMenuItems: View {
     let store: AppStore
     let workspace: Workspace
@@ -867,6 +883,14 @@ struct WorkspaceAddMenuItems: View {
             Label(L("menu.openProject"), systemImage: "folder.badge.plus")
         }
         .accessibilityIdentifier("workspace-open-folder-\(workspace.id)")
+        Button { store.showWorkspaceCreate(.newFolder) } label: {
+            Label(L("workspace.add.newFolder"), systemImage: "plus.rectangle.on.folder")
+        }
+        .accessibilityIdentifier("workspace-new-folder-\(workspace.id)")
+        Button { store.showWorkspaceCreate(.fromGit) } label: {
+            Label(L("workspace.add.fromGit"), systemImage: "arrow.down.circle")
+        }
+        .accessibilityIdentifier("workspace-from-git-\(workspace.id)")
         Button { store.openRemoteSettings() } label: {
             Label(L("remote.menu.connect"), systemImage: "network")
         }

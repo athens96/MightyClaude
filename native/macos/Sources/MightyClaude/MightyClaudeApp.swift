@@ -64,6 +64,10 @@ struct MightyClaudeApp: App {
                 Button(L("menu.openProject")) { store.openWorkspace() }
                     .keyboardShortcut("o", modifiers: .command)
                     .disabled(!store.isLoaded || store.hasModal)
+                Button(L("workspace.add.newFolder")) { store.showWorkspaceCreate(.newFolder) }
+                    .disabled(!store.isLoaded || store.hasModal)
+                Button(L("workspace.add.fromGit")) { store.showWorkspaceCreate(.fromGit) }
+                    .disabled(!store.isLoaded || store.hasModal)
                 Button(L("menu.newClaudePane")) { store.addSession(kind: "claude") }
                     .keyboardShortcut("n", modifiers: .command)
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
