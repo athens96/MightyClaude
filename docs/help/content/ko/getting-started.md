@@ -77,11 +77,15 @@ Git(Xcode Command Line Tools)은 시스템 설치 창이 열리고 그 창에서
 ## 워크스페이스 열기 {#open-workspace}
 워크스페이스는 프로젝트 폴더 하나입니다. 실행 창, 탭 배치, 대화 기록이 워크스페이스마다 따로 저장됩니다.
 
-1. {{ui:layout.welcome.openProject}} 단추를 누르거나 {{kbd:⌘O}}를 누릅니다.
-2. 작업할 폴더를 고릅니다.
-3. 사이드바에 워크스페이스가 생기고, 실행 창이 없는 폴더이면 Claude 실행 창이 하나 바로 열립니다. 창을 더 열려면 {{ui:menu.newClaudePane}}({{kbd:⌘N}}) 항목을 씁니다.
+추가하는 방법은 세 가지입니다. 사이드바 {{ui:sidebar.workspacesHeader}} 머리글 오른쪽의 폴더 단추(누르면 세 항목이 있는 메뉴가 열립니다), 파일 메뉴, 창 추가 메뉴, 사이드바가 비었을 때와 처음 화면의 세 단추 어디서나 고를 수 있습니다.
 
-다른 폴더를 더 열려면 사이드바의 {{ui:sidebar.workspacesHeader}} 머리글 오른쪽에 있는 폴더 단추를 누르거나, 메뉴 막대의 {{ui:menu.openProject}}나 {{kbd:⌘O}}를 씁니다. 사이드바에서 워크스페이스를 오른쪽 클릭하면 {{ui:menu.rename}}, {{ui:menu.showInFinder}}, {{ui:workspace.menu.remove}} 항목이 있습니다. 목록에서 제거해도 디스크의 프로젝트 파일은 그대로 남습니다.
+- **{{ui:workspace.add.existing}}** ({{kbd:⌘O}}): 이미 있는 폴더를 고릅니다.
+- **{{ui:workspace.add.newFolder}}**: {{ui:workspace.create.name}}과 {{ui:workspace.create.location}}를 정해 새 폴더를 만듭니다. {{ui:workspace.newFolder.gitInit}}을 켜면 빈 Git 저장소로 시작합니다. git init이 실패해도 폴더는 워크스페이스로 추가되고 알림이 그 사실을 알려 줍니다.
+- **{{ui:workspace.add.fromGit}}**: Git 저장소 주소를 넣으면 입력을 멈춘 뒤 자동으로(또는 {{ui:workspace.git.test}}으로) 이 컴퓨터의 자격 증명(Mac 키체인·Windows 자격 증명 관리자, git credential helper, ssh-agent)으로 접근되는지 확인합니다. 앱이 비밀번호를 묻는 일은 없습니다. ✓가 보이면 {{ui:workspace.git.create}}을 눌러 내려받습니다({{ui:workspace.git.create}}은 ✓일 때만 켜집니다). {{ui:workspace.create.name}}은 주소에서 채워지고 고칠 수 있습니다. 받는 동안 진행 상황이 보이고, {{ui:workspace.create.cancel}}로 멈추면 만들던 폴더는 지워집니다. 실패하면 창이 열린 채로 이유가 보입니다. Git이 없으면 {{ui:workspace.git.openSetup}} 단추가 설정 화면을 엽니다.
+
+{{ui:workspace.create.location}}는 마지막에 쓴 곳을 기억합니다. 처음에는 현재 워크스페이스 옆(그 상위 폴더)이고, 없으면 홈 폴더입니다. 만든 폴더나 내려받은 폴더는 바로 워크스페이스로 추가되고 Claude 실행 창이 열립니다. 새 항목 두 개에는 단축키가 없고, 원격(Tailscale) 워크스페이스에서는 기존 폴더 열기만 쓸 수 있습니다.
+
+사이드바에서 워크스페이스를 오른쪽 클릭하면 {{ui:menu.rename}}, {{ui:menu.showInFinder}}, {{ui:workspace.menu.remove}} 항목이 있습니다. 목록에서 제거해도 디스크의 프로젝트 파일은 그대로 남습니다. 새 실행 창은 {{ui:menu.newClaudePane}}({{kbd:⌘N}})으로 엽니다.
 
 ## 언어 바꾸기 {#language}
 1. {{ui:menu.settings}} → {{ui:settings.nav.general}}을 엽니다.

@@ -77,11 +77,15 @@ Git（Xcode Command Line Tools）会打开系统安装窗口，请在该窗口�
 ## 打开工作区 {#open-workspace}
 一个工作区就是一个项目文件夹。窗格、标签页布局和对话记录按工作区分别保存。
 
-1. 点击{{ui:layout.welcome.openProject}}按钮，或按{{kbd:⌘O}}。
-2. 选择要处理的文件夹。
-3. 侧边栏中会出现该工作区；如果该文件夹还没有窗格，会立即打开一个 Claude 窗格。要打开更多窗格，请使用{{ui:menu.newClaudePane}}（{{kbd:⌘N}}）。
+添加工作区有三种方式。可以在侧边栏{{ui:sidebar.workspacesHeader}}标题右侧的文件夹按钮（点击后会打开包含这三项的菜单）、文件菜单、添加窗格菜单，以及侧边栏为空时和首次启动欢迎界面上的三个按钮中任选一处。
 
-要再打开其他文件夹，可以点击侧边栏{{ui:sidebar.workspacesHeader}}标题右侧的文件夹按钮，或使用菜单栏中的{{ui:menu.openProject}}或{{kbd:⌘O}}。在侧边栏中右键点击工作区，可以看到{{ui:menu.rename}}、{{ui:menu.showInFinder}}和{{ui:workspace.menu.remove}}。从列表中移除后，磁盘上的项目文件仍会原样保留。
+- **{{ui:workspace.add.existing}}**（{{kbd:⌘O}}）：选择一个已有的文件夹。
+- **{{ui:workspace.add.newFolder}}**：设定{{ui:workspace.create.name}}和{{ui:workspace.create.location}}来创建新文件夹。开启{{ui:workspace.newFolder.gitInit}}后，会从一个空的 Git 仓库开始。即使 git init 失败，该文件夹仍会作为工作区添加，并有通知告诉你这一点。
+- **{{ui:workspace.add.fromGit}}**：输入 Git 仓库地址。停止输入后会自动（或点击{{ui:workspace.git.test}}时）检查这台电脑自己的凭据能否访问它：Mac 钥匙串或 Windows 凭据管理器、git credential helper、ssh-agent。应用不会向你索要密码。看到 ✓ 后，点击{{ui:workspace.git.create}}开始下载（只有此时{{ui:workspace.git.create}}才可用）。{{ui:workspace.create.name}}会根据地址自动填入，也可以修改。下载时会显示进度，点击{{ui:workspace.create.cancel}}会停止并删除已创建一半的文件夹。失败时窗口保持打开并显示原因。如果没有安装 Git，{{ui:workspace.git.openSetup}}按钮会打开设置界面。
+
+{{ui:workspace.create.location}}会记住上次使用的位置。第一次使用时是当前工作区旁边的文件夹（即它的上级文件夹），没有的话则是主文件夹。新建或下载的文件夹会立即添加为工作区，并打开一个 Claude 窗格。这两个新项目没有快捷键，远程（Tailscale）工作区只提供打开已有文件夹。
+
+在侧边栏中右键点击工作区，可以看到{{ui:menu.rename}}、{{ui:menu.showInFinder}}和{{ui:workspace.menu.remove}}。从列表中移除后，磁盘上的项目文件仍会原样保留。要打开更多窗格，请使用{{ui:menu.newClaudePane}}（{{kbd:⌘N}}）。
 
 ## 更改语言 {#language}
 1. 打开{{ui:menu.settings}} → {{ui:settings.nav.general}}。

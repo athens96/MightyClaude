@@ -44,7 +44,7 @@ section: layout
 ペインは、AIエージェント(Claude、Codex、Antigravity)、ターミナル、ブラウザ、ファイルのいずれかです。
 
 1. サイドバーの{{ui:workspace.addPane}}ボタンをクリックします。
-2. 作成するペインを選びます: Claude/Codex/Antigravityのペイン、{{ui:workspace.newTerminal}}、{{ui:browser.newTab}}。ほかのフォルダは、同じメニューの{{ui:menu.openProject}}で開きます。
+2. 作成するペインを選びます: Claude/Codex/Antigravityのペイン、{{ui:workspace.newTerminal}}、{{ui:browser.newTab}}。メニューの一番下のまとまりには、ワークスペースを追加する3つの方法、{{ui:workspace.add.existing}}、{{ui:workspace.add.newFolder}}、{{ui:workspace.add.fromGit}}があります([ワークスペースを開く](getting-started.md#open-workspace))。
 3. 新しいAIペインは、同じエージェントで最後に使ったペインのモデル、思考レベル、権限、表示方法を引き継ぎます。会話は新しく始まります。
 
 ショートカット: {{ui:menu.newClaudePane}}は{{kbd:⌘N}}、{{ui:menu.addTerminalPane}}は{{kbd:⌘T}}、{{ui:menu.showFiles}}は{{kbd:⇧⌘E}}です。

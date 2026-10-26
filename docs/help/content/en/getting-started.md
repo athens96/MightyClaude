@@ -77,11 +77,15 @@ Git (Xcode Command Line Tools) opens a system install window, where you finish i
 ## Open a workspace {#open-workspace}
 A workspace is one project folder. Panes, the tab layout and conversation history are saved per workspace.
 
-1. Click {{ui:layout.welcome.openProject}} or press {{kbd:⌘O}}.
-2. Choose the folder you want to work in.
-3. The workspace appears in the sidebar, and a folder with no panes gets a Claude pane right away. Open more panes with {{ui:menu.newClaudePane}} ({{kbd:⌘N}}).
+There are three ways to add one. Pick any of them from the folder button at the right of the {{ui:sidebar.workspacesHeader}} heading in the sidebar (it opens a menu with the three), the File menu, the add-pane menu, or the three buttons shown when the sidebar is empty and on the first-run welcome screen.
 
-To open more folders, click the folder button at the right of the {{ui:sidebar.workspacesHeader}} heading in the sidebar, or use {{ui:menu.openProject}} in the menu bar or {{kbd:⌘O}}. Right-click a workspace in the sidebar for {{ui:menu.rename}}, {{ui:menu.showInFinder}} and {{ui:workspace.menu.remove}}. Removing it from the list leaves the project files on disk untouched.
+- **{{ui:workspace.add.existing}}** ({{kbd:⌘O}}): choose a folder that already exists.
+- **{{ui:workspace.add.newFolder}}**: set the {{ui:workspace.create.name}} and {{ui:workspace.create.location}} to make a new folder. Turn on {{ui:workspace.newFolder.gitInit}} to start with an empty Git repository. If git init fails, the folder is still added as a workspace and a notice tells you so.
+- **{{ui:workspace.add.fromGit}}**: enter a Git repository address. Once you stop typing (or press {{ui:workspace.git.test}}), the app checks that this computer's own credentials reach it: the Mac Keychain or Windows Credential Manager, a git credential helper, or ssh-agent. The app never asks you for a password. When you see ✓, press {{ui:workspace.git.create}} to download it ({{ui:workspace.git.create}} is enabled only then). The {{ui:workspace.create.name}} is filled in from the address and you can edit it. Progress shows while it downloads, and {{ui:workspace.create.cancel}} stops it and removes the half-made folder. If it fails, the window stays open with the reason. If Git is missing, the {{ui:workspace.git.openSetup}} button opens the setup screen.
+
+The {{ui:workspace.create.location}} remembers the last place you used. The first time it is the folder next to the current workspace (its parent folder), or the home folder if there is none. The new or downloaded folder is added as a workspace at once and a Claude pane opens. The two new items have no shortcuts, and a remote (Tailscale) workspace offers only opening an existing folder.
+
+Right-click a workspace in the sidebar for {{ui:menu.rename}}, {{ui:menu.showInFinder}} and {{ui:workspace.menu.remove}}. Removing it from the list leaves the project files on disk untouched. Open more panes with {{ui:menu.newClaudePane}} ({{kbd:⌘N}}).
 
 ## Change the language {#language}
 1. Open {{ui:menu.settings}} → {{ui:settings.nav.general}}.

@@ -25,7 +25,7 @@ Windows 10(버전 2004) 이상 또는 Windows 11에서 동작합니다. 필요�
 업데이트도 Mac과 같습니다. 새 버전을 알아서 받아 두었다가 앱을 닫아 종료할 때 설치하고, 앱이 쉬고 있으면 1분 알림 뒤 다시 시작하며 설치합니다([업데이트](getting-started.md#update)). 직접 하려면 {{ui:menu.settings}} → {{ui:settings.nav.about}}에서 합니다. 설치 프로그램으로 설치한 앱은 같은 폴더에서 새 버전으로 바뀌고, 설치된 앱 목록에 보이는 버전도 따라 바뀝니다. 새 설치 프로그램을 받아 그 위에 설치해도 됩니다.
 
 ## 단축키 {#shortcuts}
-{{kbd:⌘}} 대신 {{kbd:Ctrl}}를 씁니다. 사이드바 접기와 원격 화면 멈추기만 키가 다릅니다.
+{{kbd:⌘}} 대신 {{kbd:Ctrl}}를 씁니다. 사이드바 접기와 원격 화면 멈추기만 키가 다릅니다. {{kbd:Ctrl+O}}는 기존 폴더를 엽니다. {{ui:workspace.add.newFolder}}와 {{ui:workspace.add.fromGit}}은 Mac과 같이 사이드바의 폴더 단추 메뉴, 비어 있는 사이드바와 처음 화면의 단추, 창 추가 메뉴에서 고르며 단축키는 없습니다([워크스페이스 열기](getting-started.md#open-workspace)).
 
 | Mac | Windows | 동작 |
 |---|---|---|

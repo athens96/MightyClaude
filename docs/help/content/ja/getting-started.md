@@ -77,11 +77,15 @@ Git(Xcode Command Line Tools)はシステムのインストール画面が開く
 ## ワークスペースを開く {#open-workspace}
 ワークスペースは1つのプロジェクトフォルダです。ペイン、タブの配置、会話の履歴はワークスペースごとに保存されます。
 
-1. {{ui:layout.welcome.openProject}}ボタンをクリックするか、{{kbd:⌘O}}を押します。
-2. 作業するフォルダを選びます。
-3. サイドバーにワークスペースが追加され、ペインがまだないフォルダならClaudeのペインがすぐに1つ開きます。ペインをさらに開くには{{ui:menu.newClaudePane}}({{kbd:⌘N}})を使います。
+追加する方法は3つあります。サイドバーの{{ui:sidebar.workspacesHeader}}見出しの右にあるフォルダボタン(押すと3つの項目のメニューが開きます)、ファイルメニュー、ペインを追加するメニュー、サイドバーが空のときと初回の画面に出る3つのボタンのどこからでも選べます。
 
-ほかのフォルダを開くときは、サイドバーの{{ui:sidebar.workspacesHeader}}見出しの右にあるフォルダボタンを押すか、メニューバーの{{ui:menu.openProject}}か{{kbd:⌘O}}を使います。サイドバーでワークスペースを右クリックすると、{{ui:menu.rename}}、{{ui:menu.showInFinder}}、{{ui:workspace.menu.remove}}の項目があります。一覧から削除しても、ディスク上のプロジェクトファイルはそのまま残ります。
+- **{{ui:workspace.add.existing}}**({{kbd:⌘O}}): すでにあるフォルダを選びます。
+- **{{ui:workspace.add.newFolder}}**: {{ui:workspace.create.name}}と{{ui:workspace.create.location}}を決めて、新しいフォルダを作ります。{{ui:workspace.newFolder.gitInit}}をオンにすると、空のGitリポジトリで始まります。git initに失敗してもフォルダはワークスペースとして追加され、通知でそのことをお知らせします。
+- **{{ui:workspace.add.fromGit}}**: Gitリポジトリのアドレスを入力します。入力が止まったあとに自動で(または{{ui:workspace.git.test}}で)、このコンピュータ自身の認証情報(Macのキーチェーン、Windowsの資格情報マネージャー、git credential helper、ssh-agent)で到達できるかを確認します。アプリがパスワードを尋ねることはありません。✓が表示されたら{{ui:workspace.git.create}}を押してダウンロードします({{ui:workspace.git.create}}は✓のときだけ有効になります)。{{ui:workspace.create.name}}はアドレスから自動で入力され、編集もできます。ダウンロード中は進行状況が表示され、{{ui:workspace.create.cancel}}で止めると作りかけのフォルダは削除されます。失敗するとウィンドウは開いたままで理由が表示されます。Gitがない場合は、{{ui:workspace.git.openSetup}}ボタンでセットアップ画面が開きます。
+
+{{ui:workspace.create.location}}は最後に使った場所を覚えています。初回は現在のワークスペースの隣のフォルダ(その親フォルダ)、なければホームフォルダです。作成またはダウンロードしたフォルダはすぐにワークスペースとして追加され、Claudeのペインが開きます。新しい2つの項目にはショートカットがなく、リモート(Tailscale)のワークスペースでは既存のフォルダを開くことだけができます。
+
+サイドバーでワークスペースを右クリックすると、{{ui:menu.rename}}、{{ui:menu.showInFinder}}、{{ui:workspace.menu.remove}}の項目があります。一覧から削除しても、ディスク上のプロジェクトファイルはそのまま残ります。ペインをさらに開くには{{ui:menu.newClaudePane}}({{kbd:⌘N}})を使います。
 
 ## 言語を変更する {#language}
 1. {{ui:menu.settings}} → {{ui:settings.nav.general}}を開きます。

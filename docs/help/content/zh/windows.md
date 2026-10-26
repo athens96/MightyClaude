@@ -25,7 +25,7 @@ section: windows
 更新方式与 Mac 相同：应用会自行下载新版本，在你关闭应用时安装；应用空闲时，会在一分钟提示后重新启动并安装（[更新](getting-started.md#update)）。要手动更新，请在{{ui:menu.settings}} → {{ui:settings.nav.about}}中操作。用安装程序安装的应用会在同一文件夹中替换为新版本，已安装的应用列表中显示的版本也会随之更新。也可以直接运行新的安装程序覆盖安装。
 
 ## 快捷键 {#shortcuts}
-用{{kbd:Ctrl}}代替{{kbd:⌘}}。只有收起侧边栏和停止远程屏幕的按键不同。
+用{{kbd:Ctrl}}代替{{kbd:⌘}}。只有收起侧边栏和停止远程屏幕的按键不同。{{kbd:Ctrl+O}}用于打开已有文件夹。与 Mac 一样，{{ui:workspace.add.newFolder}}和{{ui:workspace.add.fromGit}}可以在侧边栏文件夹按钮的菜单、侧边栏为空时和欢迎界面上的按钮，以及添加窗格菜单中选择，它们没有快捷键（[打开工作区](getting-started.md#open-workspace)）。
 
 | Mac | Windows | 操作 |
 |---|---|---|

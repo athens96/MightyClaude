@@ -25,7 +25,7 @@ It runs on Windows 10 (version 2004) or later, or Windows 11. The .NET runtime i
 Updates work as on the Mac: a new version is downloaded by itself and installed when you close the app, or after a one-minute notice that restarts the app while it sits idle ([Updates](getting-started.md#update)). To update by hand, use {{ui:menu.settings}} → {{ui:settings.nav.about}}. An installed app is replaced by the new version in the same folder, and the version shown in Installed apps follows. Running a newer setup program over it works too.
 
 ## Keyboard shortcuts {#shortcuts}
-Use {{kbd:Ctrl}} instead of {{kbd:⌘}}. Only collapsing the sidebar and stopping remote screen sessions use different keys.
+Use {{kbd:Ctrl}} instead of {{kbd:⌘}}. Only collapsing the sidebar and stopping remote screen sessions use different keys. {{kbd:Ctrl+O}} opens an existing folder. As on the Mac, {{ui:workspace.add.newFolder}} and {{ui:workspace.add.fromGit}} are chosen from the sidebar folder button menu, the buttons on an empty sidebar and the welcome screen, and the add-pane menu; they have no shortcuts ([Open a workspace](getting-started.md#open-workspace)).
 
 | Mac | Windows | Action |
 |---|---|---|
