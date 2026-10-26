@@ -44,7 +44,7 @@ struct AgentNoticeTests {
 
     @Test func streamsSettleTheBlockWithOneNoticePerAgent() throws {
         let cases = try #require(try Self.load()["streams"] as? [[String: Any]])
-        #expect(cases.count >= 10)
+        #expect(cases.count >= 13)
         for item in cases {
             let name = item["name"] as? String ?? ""
             let runID = "agent-notices"
@@ -63,10 +63,20 @@ struct AgentNoticeTests {
             for text in expect["agentLog"] as? [String] ?? [] {
                 #expect(block.entries.contains { $0.kind == "assistant" && $0.text == text }, "\(name): \(text)")
             }
+            // A message that settles the block, or that nobody here sent, is not in its log.
+            for text in expect["agentLogLacks"] as? [String] ?? [] {
+                #expect(!block.entries.contains { $0.text == text }, "\(name): \(text)")
+            }
             let notices = latest.values.filter { $0.kind == "steer" && ($0.input ?? "").hasPrefix(MightyGraphSupport.taskNoticePrefix) }
             #expect(notices.count == expect["noticeBlocks"] as? Int, "\(name)")
             let main = try #require(latest[ExecutionGraphSupport.mainNodeID(runId: runID)], "\(name)")
             for part in expect["mainOutputContains"] as? [String] ?? [] {
+                #expect(main.output?.contains(part) == true, "\(name): \(part)")
+            }
+            // A notice turn's answer follows in the result under the line its notices earned (a locale key, with the titles).
+            for section in expect["mainNoticeSections"] as? [[String: Any]] ?? [] {
+                let header = L(section["header"] as? String ?? "", (section["title"] as? String).map { ["title": $0] } ?? [:])
+                let part = MightyGraphSupport.noticeSectionMark + header + "**\n\n" + (section["answer"] as? String ?? "")
                 #expect(main.output?.contains(part) == true, "\(name): \(part)")
             }
         }

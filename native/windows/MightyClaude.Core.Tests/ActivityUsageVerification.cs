@@ -90,7 +90,7 @@ internal static class ActivityUsageVerification
         parser.Parse("""{"type":"result","session_id":"claude-session","subtype":"success","is_error":false,"num_turns":1,"result":"pong","total_cost_usd":0.01}""");
         Check(activity.Count(a => a.Kind == "turn") == 1, "Exactly one turn may finish: the leftover notification's result does not count as one");
         Check(usage.Last().InputTokens == 100 && usage.Last().CostUSD == 0.01 && usage.Last().TokenScope == "run", "The real result must still finalize usage");
-        Check(!ClaudeStream.IsNotificationResult(Json("""{"type":"result","origin":{"kind":"user"}}""")) && !ClaudeStream.IsNotificationResult(Json("""{"type":"assistant","origin":{"kind":"task-notification"}}""")), "Only a result whose origin is a task notification qualifies");
+        Check(!ClaudeStream.IsNotificationResult(Json("""{"type":"result","origin":{"kind":"user"}}""")) && !ClaudeStream.IsNotificationResult(Json("""{"type":"assistant","origin":{"kind":"task-notification"}}""")), "Only a result whose origin is a task notification or a peer message qualifies");
         return Task.CompletedTask;
     }
     internal static async Task Persistence()

@@ -61,7 +61,7 @@ internal static class AgentNoticeVerification
     private static void StreamsSettleTheBlockWithOneNoticePerAgent()
     {
         var cases = Items(Fixture.Value, "streams");
-        Check(cases.Count >= 10, "the fixture has every stream case; got " + cases.Count);
+        Check(cases.Count >= 13, "the fixture has every stream case; got " + cases.Count);
         foreach (var item in cases)
         {
             var name = item.Text("name") ?? "";
@@ -80,11 +80,21 @@ internal static class AgentNoticeVerification
             // A message the agent sent while running is in its log, not its result.
             foreach (var text in Items(expect, "agentLog").Select(e => e.GetString()))
                 Check(block.Entries.Any(e => e.Kind == "assistant" && e.Text == text), name + ": the log holds '" + text + "'");
+            // A message that settles the block, or that nobody here sent, is not in its log.
+            foreach (var text in Items(expect, "agentLogLacks").Select(e => e.GetString()))
+                Check(!block.Entries.Any(e => e.Text == text), name + ": the log lacks '" + text + "'");
             var notices = latest.Values.Count(n => n.Kind == "steer" && (n.Input ?? "").StartsWith(MightyGraphSupport.TaskNoticePrefix, StringComparison.Ordinal));
             Same(notices, MetadataJson.Property(expect, "noticeBlocks").GetInt32(), name + ": 작업 알림 blocks");
             var main = latest[ExecutionGraphSupport.MainNodeID(runID)];
             foreach (var part in Items(expect, "mainOutputContains").Select(e => e.GetString() ?? ""))
                 Check(main.Output?.Contains(part, StringComparison.Ordinal) == true, name + ": the result holds '" + part + "'; got '" + main.Output + "'");
+            // A notice turn's answer follows in the result under the line its notices earned (a locale key, with the titles).
+            foreach (var section in Items(expect, "mainNoticeSections"))
+            {
+                var header = Locale.Get(section.Text("header") ?? "", section.Text("title") is { } title ? new Dictionary<string, string> { ["title"] = title } : null);
+                var part = MightyGraphSupport.NoticeSectionMark + header + "**\n\n" + (section.Text("answer") ?? "");
+                Check(main.Output?.Contains(part, StringComparison.Ordinal) == true, name + ": the result holds '" + part + "'; got '" + main.Output + "'");
+            }
         }
     }
 
