@@ -83,7 +83,7 @@ Git(Xcode Command Line Tools)はシステムのインストール画面が開く
 - **{{ui:workspace.add.newFolder}}**: {{ui:workspace.create.name}}と{{ui:workspace.create.location}}を決めて、新しいフォルダを作ります。{{ui:workspace.newFolder.gitInit}}をオンにすると、空のGitリポジトリで始まります。git initに失敗してもフォルダはワークスペースとして追加され、通知でそのことをお知らせします。
 - **{{ui:workspace.add.fromGit}}**: Gitリポジトリのアドレスを入力します。入力が止まったあとに自動で(または{{ui:workspace.git.test}}で)、このコンピュータ自身の認証情報(Macのキーチェーン、Windowsの資格情報マネージャー、git credential helper、ssh-agent)で到達できるかを確認します。アプリがパスワードを尋ねることはありません。✓が表示されたら{{ui:workspace.git.create}}を押してダウンロードします({{ui:workspace.git.create}}は✓のときだけ有効になります)。{{ui:workspace.create.name}}はアドレスから自動で入力され、編集もできます。ダウンロード中は進行状況が表示され、{{ui:workspace.create.cancel}}で止めると作りかけのフォルダは削除されます。失敗するとウィンドウは開いたままで理由が表示されます。Gitがない場合は、{{ui:workspace.git.openSetup}}ボタンでセットアップ画面が開きます。
 
-{{ui:workspace.create.location}}は最後に使った場所を覚えています。初回は現在のワークスペースの隣のフォルダ(その親フォルダ)、なければホームフォルダです。作成またはダウンロードしたフォルダはすぐにワークスペースとして追加され、Claudeのペインが開きます。新しい2つの項目にはショートカットがなく、リモート(Tailscale)のワークスペースでは既存のフォルダを開くことだけができます。
+{{ui:workspace.create.location}}は最後に使った場所を覚えています。初回は現在のワークスペースの隣のフォルダ(その親フォルダ)、なければホームフォルダです。作成またはダウンロードしたフォルダはすぐにワークスペースとして追加され、Claudeのペインが開きます。新しい2つの項目にはショートカットがありません。
 
 サイドバーでワークスペースを右クリックすると、{{ui:menu.rename}}、{{ui:menu.showInFinder}}、{{ui:workspace.menu.remove}}の項目があります。一覧から削除しても、ディスク上のプロジェクトファイルはそのまま残ります。ペインをさらに開くには{{ui:menu.newClaudePane}}({{kbd:⌘N}})を使います。
 
