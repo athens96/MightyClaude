@@ -70,6 +70,7 @@ Claude 有时会在后台运行耗时较长的命令或子智能体。这时即�
 - 输入框上方会显示一行提示，说明本轮已结束，但后台任务仍在运行。点击{{ui:plan.background.show}}可以查看每个任务的类型、状态和用时。
 - 运行中的任务标有{{ui:plan.background.awaitingNotice}}。任务结束时会通知 Claude，Claude 收到结果后继续回答。结束的任务变为{{ui:plan.background.noticeDelivered}}，并一直留在这一行，直到发送下一个请求。
 - 在 Mighty 视图中显示为{{ui:graph.block.task}}块。命令的通知送达 Claude 后，橙色的{{ui:graph.block.taskNotice}}块会显示该命令、结束状态和摘要，以及 Claude 收到通知后的回答。
+- 在后台启动的子代理也一样。它结束后，Mighty 视图中它的块会变为已完成、失败或已停止（应用在它结束前重启的也算已停止），它交回的最终报告会成为该块的结果。它在运行途中发来的消息只会追加到块的记录里，不会让块结束。Claude 对其结束的回答会显示在一个{{ui:graph.block.taskNotice}}块之下。
 - 此时发送的请求会进入队列，在后台任务结束后开始。要立即开始，请点击停止：队列会保留，其中的第一个请求接着开始。在开启了[Mighty 编排](delegation.md#worktree)、位于 git 仓库中的窗格里，也可以按{{kbd:⌘Enter}}立即在新的 worktree 中运行。
 - 如果这一行碍事，点击它右侧的眼睛按钮（{{ui:plan.background.hideStrip}}）。所有窗格中都会隐藏这一行，后台任务照常运行。
 - 要重新显示，请点击输入框右侧的{{ui:composer.backgroundWork.name}}按钮。也可以在“{{ui:menu.settings}} → {{ui:settings.nav.general}} → {{ui:settings.display.sectionTitle}}”中打开{{ui:settings.display.backgroundWorkToggle}}，或在窗格的“…”菜单中选择{{ui:pane.menu.backgroundWork}}。这一行是否展开也会被记住。

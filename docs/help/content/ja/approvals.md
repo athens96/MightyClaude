@@ -70,6 +70,7 @@ Claudeは、時間のかかるコマンドやサブエージェントをバッ�
 - 入力欄の上に、ターンは終わったもののバックグラウンドタスクが実行中であることを示す行が表示されます。{{ui:plan.background.show}}をクリックすると、タスクごとの種類、状態、経過時間を確認できます。
 - 実行中のタスクには{{ui:plan.background.awaitingNotice}}と表示されます。タスクが終わると Claude に通知が届き、Claude はその結果を受けて続けて答えます。終わったタスクは{{ui:plan.background.noticeDelivered}}に変わり、次のリクエストを送るまでこの行に残ります。
 - Mighty表示では{{ui:graph.block.task}}ブロックとして表示されます。コマンドの通知がClaudeに届くと、オレンジ色の{{ui:graph.block.taskNotice}}ブロックに、そのコマンドと終わり方、要約、通知を受けたClaudeの応答が表示されます。
+- バックグラウンドで始めたサブエージェントも同じです。終わるとMighty表示のブロックが完了、失敗、停止に変わり（終わる前にアプリが再起動した場合も停止）、エージェントが返した最終報告がブロックの結果になります。実行中に送ってきたメッセージはブロックの記録に追加されるだけで、ブロックは終わりません。終了の通知に対するClaudeの応答は、1つの{{ui:graph.block.taskNotice}}ブロックの下に表示されます。
 - この間に送信したリクエストはキューに入り、バックグラウンドタスクが終わってから始まります。今すぐ始めるには停止をクリックします。キューはそのまま残り、最初のリクエストが続けて始まります。[Mightyオーケストレーション](delegation.md#worktree)がオンで、gitリポジトリにあるペインでは、{{kbd:⌘Enter}}で新しいworktreeですぐ実行することもできます。
 - この行が邪魔なときは、右側の目のボタン（{{ui:plan.background.hideStrip}}）をクリックします。すべてのペインで行が消え、バックグラウンドタスクはそのまま実行されます。
 - もう一度表示するには、入力欄の右にある{{ui:composer.backgroundWork.name}}のボタンを押します。「{{ui:menu.settings}} → {{ui:settings.nav.general}} → {{ui:settings.display.sectionTitle}}」で{{ui:settings.display.backgroundWorkToggle}}をオンにするか、ペインの「…」メニューで{{ui:pane.menu.backgroundWork}}を選んでも表示できます。行を開いたままにしたかどうかも記憶されます。
