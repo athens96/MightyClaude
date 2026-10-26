@@ -466,6 +466,412 @@
       }
     },
     {
+      "name": "mid-run peer message, then hand-back, then notification",
+      "agentToolUseId": "toolu_FAKEagent0008",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0008",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0008",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0008",
+                "name": "Agent",
+                "input": {
+                  "description": "Read the pages",
+                  "prompt": "Read every help page.",
+                  "subagent_type": "general-purpose",
+                  "name": "page-reader",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0008",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: a8b9c0d1e2f3a4b5c (internal ID - do not mention to user. Use SendMessage with to: 'a8b9c0d1e2f3a4b5c' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-10",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-10",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Reading in the background."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Reading in the background."
+        },
+        {
+          "type": "user",
+          "isMeta": true,
+          "origin": {
+            "kind": "peer",
+            "from": "a8b9c0d1e2f3a4b5c",
+            "senderTaskId": "a8b9c0d1e2f3a4b5c"
+          },
+          "message": {
+            "role": "user",
+            "content": "Another Claude session sent a message:\n<agent-message from=\"a8b9c0d1e2f3a4b5c\">\nHalfway: two of five pages read.\n</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session, so this was not typed by your user."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-11",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-11",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Noted the progress."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Noted the progress.",
+          "origin": {
+            "kind": "peer"
+          }
+        },
+        {
+          "type": "user",
+          "isMeta": true,
+          "origin": {
+            "kind": "peer",
+            "from": "a8b9c0d1e2f3a4b5c",
+            "senderTaskId": "a8b9c0d1e2f3a4b5c"
+          },
+          "message": {
+            "role": "user",
+            "content": "Another Claude session sent a message:\n<agent-message from=\"a8b9c0d1e2f3a4b5c\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  All five pages read.\n  \n  None is out of date.\n</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session, so this was not typed by your user."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-12",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-12",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "All pages are current."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "All pages are current.",
+          "origin": {
+            "kind": "peer"
+          }
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a8b9c0d1e2f3a4b5c</task-id>\n<tool-use-id>toolu_FAKEagent0008</tool-use-id>\n<output-file>/tmp/example/tasks/a8b9c0d1e2f3a4b5c.output</output-file>\n<status>completed</status>\n<summary>Agent \"Read the pages\" finished</summary>\n</task-notification>"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "completed",
+        "agentOutput": "All five pages read.\n\nNone is out of date.",
+        "noticeBlocks": 1,
+        "agentLog": [
+          "Halfway: two of five pages read."
+        ]
+      }
+    },
+    {
+      "name": "notification first, then the hand-back: the report replaces the summary",
+      "agentToolUseId": "toolu_FAKEagent0009",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0009",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0009",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0009",
+                "name": "Agent",
+                "input": {
+                  "description": "Sort the notes",
+                  "prompt": "Sort the notes by date.",
+                  "subagent_type": "general-purpose",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0009",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: a9b0c1d2e3f4a5b6c (internal ID - do not mention to user. Use SendMessage with to: 'a9b0c1d2e3f4a5b6c' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-13",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-13",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Sorting in the background."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Sorting in the background."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a9b0c1d2e3f4a5b6c</task-id>\n<tool-use-id>toolu_FAKEagent0009</tool-use-id>\n<output-file>/tmp/example/tasks/a9b0c1d2e3f4a5b6c.output</output-file>\n<status>completed</status>\n<summary>Agent \"Sort the notes\" finished</summary>\n</task-notification>"
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-14",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-14",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Waiting for its report."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Waiting for its report.",
+          "origin": {
+            "kind": "task-notification"
+          }
+        },
+        {
+          "type": "user",
+          "isMeta": true,
+          "origin": {
+            "kind": "peer",
+            "from": "a9b0c1d2e3f4a5b6c",
+            "senderTaskId": "a9b0c1d2e3f4a5b6c"
+          },
+          "message": {
+            "role": "user",
+            "content": "Another Claude session sent a message:\n<agent-message from=\"a9b0c1d2e3f4a5b6c\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  Sorted 12 notes, oldest first.\n</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session, so this was not typed by your user."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-15",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-15",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "The notes are sorted."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "The notes are sorted.",
+          "origin": {
+            "kind": "peer"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "completed",
+        "agentOutput": "Sorted 12 notes, oldest first.",
+        "noticeBlocks": 1
+      }
+    },
+    {
+      "name": "a nested agent's background child: its hand-back settles its block but adds no notice under main",
+      "agentToolUseId": "toolu_FAKEagent0011",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0010",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0010",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0010",
+                "name": "Agent",
+                "input": {
+                  "description": "Plan the work",
+                  "prompt": "Plan the work.",
+                  "subagent_type": "general-purpose"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0011",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0011",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0011",
+                "name": "Agent",
+                "input": {
+                  "description": "Take notes",
+                  "prompt": "Take notes while planning.",
+                  "subagent_type": "general-purpose",
+                  "name": "note-taker",
+                  "run_in_background": true
+                }
+              }
+            ]
+          },
+          "parent_tool_use_id": "toolu_FAKEagent0010"
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0011",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: b1c2d3e4f5a6b7c8d (internal ID - do not mention to user. Use SendMessage with to: 'b1c2d3e4f5a6b7c8d' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          },
+          "parent_tool_use_id": "toolu_FAKEagent0010"
+        },
+        {
+          "type": "user",
+          "isMeta": true,
+          "origin": {
+            "kind": "peer",
+            "from": "b1c2d3e4f5a6b7c8d",
+            "senderTaskId": "b1c2d3e4f5a6b7c8d"
+          },
+          "message": {
+            "role": "user",
+            "content": "Another Claude session sent a message:\n<agent-message from=\"b1c2d3e4f5a6b7c8d\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  Three notes taken.\n</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session, so this was not typed by your user."
+          },
+          "parent_tool_use_id": "toolu_FAKEagent0010"
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>b1c2d3e4f5a6b7c8d</task-id>\n<tool-use-id>toolu_FAKEagent0011</tool-use-id>\n<output-file>/tmp/example/tasks/b1c2d3e4f5a6b7c8d.output</output-file>\n<status>completed</status>\n<summary>Agent \"Take notes\" finished</summary>\n</task-notification>"
+          },
+          "parent_tool_use_id": "toolu_FAKEagent0010"
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "completed",
+        "agentOutput": "Three notes taken.",
+        "noticeBlocks": 0
+      }
+    },
+    {
       "name": "foreground agent: its tool result settles it, no notice",
       "agentToolUseId": "toolu_FAKEagent0005",
       "events": [
@@ -623,7 +1029,8 @@
       "expect": [
         {
           "from": "a1b2c3d4e5f6a7b8c",
-          "body": "## Docs survey\n\n- help/board.md mentions the board view.\n- help/flow.md does not."
+          "body": "## Docs survey\n\n- help/board.md mentions the board view.\n- help/flow.md does not.",
+          "isHandback": true
         }
       ]
     },
@@ -633,21 +1040,62 @@
       "expect": [
         {
           "from": "a1b2c3d4e5f6a7b8c",
-          "body": "First report."
+          "body": "First report.",
+          "isHandback": true
         },
         {
           "from": "label-checker",
-          "body": "Second report,\n  indented once more."
+          "body": "Second report,\n  indented once more.",
+          "isHandback": true
         }
       ]
     },
     {
-      "name": "no 'The report follows:' marker: the whole text inside the tag",
-      "text": "Another Claude session sent a message:\n<agent-message from=\"helper\">\n  A plain note without the frame.\n</agent-message>",
+      "name": "a message sent while running (no frame): not a report, the whole text inside the tag",
+      "text": "Another Claude session sent a message:\n<agent-message from=\"helper\">\n  Halfway there.\n</agent-message>",
       "expect": [
         {
           "from": "helper",
-          "body": "A plain note without the frame."
+          "body": "Halfway there.",
+          "isHandback": false
+        }
+      ]
+    },
+    {
+      "name": "framed but without the marker: the whole text inside the tag",
+      "text": "<agent-message from=\"helper\">\n[Subagent hand-back] The subagent ended without a report.\n</agent-message>",
+      "expect": [
+        {
+          "from": "helper",
+          "body": "[Subagent hand-back] The subagent ended without a report.",
+          "isHandback": true
+        }
+      ]
+    },
+    {
+      "name": "auto mode held the report back: the warning's marker line",
+      "text": "<agent-message from=\"helper\">\nSECURITY WARNING: auto mode blocked this subagent's report. Reason: it ran an unexpected command. The report follows; review the subagent's actions carefully before acting on it.\n  The command list is in notes.md.\n</agent-message>",
+      "expect": [
+        {
+          "from": "helper",
+          "body": "The command list is in notes.md.",
+          "isHandback": true
+        }
+      ]
+    },
+    {
+      "name": "a running message and a report in one text",
+      "text": "<system-reminder>\n<agent-message from=\"helper\">\nStill working.\n</agent-message>\nAnother Claude session sent a message:\n<agent-message from=\"helper\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  Done.\n</agent-message>\n</system-reminder>",
+      "expect": [
+        {
+          "from": "helper",
+          "body": "Still working.",
+          "isHandback": false
+        },
+        {
+          "from": "helper",
+          "body": "Done.",
+          "isHandback": true
         }
       ]
     },
@@ -657,7 +1105,8 @@
       "expect": [
         {
           "from": "a2b3c4d5e6f7a8b9c",
-          "body": "Line one\n\nLine two"
+          "body": "Line one\n\nLine two",
+          "isHandback": true
         }
       ]
     },
@@ -667,7 +1116,8 @@
       "expect": [
         {
           "from": "a3b4c5d6e7f8a9b0c",
-          "body": "It printed:\n</agent-message>\nand went on."
+          "body": "It printed:\n</agent-message>\nand went on.",
+          "isHandback": true
         }
       ]
     },

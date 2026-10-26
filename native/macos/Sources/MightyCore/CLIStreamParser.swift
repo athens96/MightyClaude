@@ -661,21 +661,27 @@ public enum ClaudeStream {
     static let notificationOrigins: Set<String> = ["task-notification", "task_notification", "peer"]
 }
 
-/// A background sub-agent's final report as Claude Code hands it to the
-/// session that started it: `<agent-message from="<agent ID or name>">`, a
-/// preamble ending `The report follows:`, then the report with every line
-/// indented by two spaces, then `</agent-message>`. It arrives alone or inside
-/// a `<system-reminder>` with other text.
+/// A message a sub-agent sends the session that started it, as Claude Code
+/// hands it over: `<agent-message from="<agent ID or name>">` … `</agent-message>`,
+/// alone or inside a `<system-reminder>` with other text. Its final report (its
+/// hand-back) is framed: a preamble opening `[Subagent hand-back]` and ending
+/// `The report follows:` (or, when auto mode held the report back, a
+/// `SECURITY WARNING … The report follows; …` line), then the report with every
+/// line indented by two spaces. A message it sends while still running
+/// (SendMessage) has the same wrapper and no frame.
 public enum AgentHandback {
     static let opening = "<agent-message"
     static let closing = "</agent-message>"
-    static let marker = "The report follows:"
+    static let frame = "[Subagent hand-back]"
+    static let marker = "The report follows"
 
-    /// Every message in `text`, in order: who sent it and the report, its
-    /// indentation removed. Without the marker the whole text inside the tag is the body.
-    public static func parse(_ text: String) -> [(from: String, body: String)] {
+    /// Every message in `text`, in order: who sent it, its body, and whether it
+    /// is a framed final report. A report's body is the indented text after the
+    /// marker with its indentation removed; a framed message without the marker,
+    /// or an unframed one, is the whole text inside the tag.
+    public static func parse(_ text: String) -> [(from: String, body: String, isHandback: Bool)] {
         let text = text.replacingOccurrences(of: "\r\n", with: "\n")
-        var found: [(from: String, body: String)] = []
+        var found: [(from: String, body: String, isHandback: Bool)] = []
         var remaining = text[...]
         while found.count < 64, let start = remaining.range(of: opening) {
             let rest = remaining[start.upperBound...]
@@ -686,7 +692,9 @@ public enum AgentHandback {
             // The frame closes at the start of a line, before any next message; report lines are indented.
             let next = content.range(of: "\n" + opening)?.lowerBound ?? content.endIndex
             guard let end = content.range(of: "\n" + closing, range: content.startIndex..<next) ?? content.range(of: closing) else { break }
-            found.append((from: sender(rest[..<tagEnd]), body: body(content[..<end.lowerBound])))
+            let inner = content[..<end.lowerBound]
+            let framed = inner.contains(frame) || inner.contains(marker)
+            found.append((from: sender(rest[..<tagEnd]), body: framed ? body(inner) : inner.trimmingCharacters(in: .whitespacesAndNewlines), isHandback: framed))
             remaining = content[end.upperBound...]
         }
         return found
@@ -696,11 +704,11 @@ public enum AgentHandback {
         return String(attributes[start.upperBound..<end])
     }
     static func body(_ inner: Substring) -> String {
-        guard let found = inner.range(of: marker) else { return inner.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let found = inner.range(of: marker + ":") ?? inner.range(of: marker) else { return inner.trimmingCharacters(in: .whitespacesAndNewlines) }
         var report = inner[found.upperBound...]
-        // The marker ends the preamble's line.
+        // The marker ends the preamble's line: what follows it there (the warning's advice) is not the report.
         let lineEnd = report.firstIndex(of: "\n") ?? report.endIndex
-        if report[..<lineEnd].allSatisfy(\.isWhitespace) { report = lineEnd == report.endIndex ? report[lineEnd...] : report[report.index(after: lineEnd)...] }
+        report = lineEnd == report.endIndex ? report[lineEnd...] : report[report.index(after: lineEnd)...]
         return report.split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.hasPrefix("  ") ? $0.dropFirst(2) : $0 }
             .joined(separator: "\n")

@@ -307,9 +307,10 @@ final class ExecutionGraphTracker {
                 }
             }
             // Task completion arrives as an injected user message, not a tool event; so does a sub-agent's final report.
+            // Only the request's own turn shows them as 작업 알림; a nested agent's still settle their blocks.
             if let text = Self.text(message["content"]) {
-                if text.contains("<task-notification>") { settleTasks(in: text) }
-                if text.contains("<agent-message") { settleHandbacks(in: text, sender: Self.key((value["origin"] as? [String: Any])?["senderTaskId"])) }
+                if text.contains("<task-notification>") { settleTasks(in: text, notice: parentTool == nil) }
+                if text.contains(AgentHandback.opening) { settleHandbacks(in: text, origin: value["origin"] as? [String: Any], notice: parentTool == nil) }
             }
         } else if type == "result", ClaudeStream.isNotificationResult(value) {
             // A notice turn's answer follows the request's in the result, headed by the notices it answered.
@@ -655,7 +656,7 @@ final class ExecutionGraphTracker {
         let value = body[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
-    private func settleTasks(in text: String) {
+    private func settleTasks(in text: String, notice: Bool) {
         var remaining = text[...]
         while let start = remaining.range(of: "<task-notification>"), let end = remaining.range(of: "</task-notification>", range: start.upperBound..<remaining.endIndex) {
             let body = remaining[start.upperBound..<end.lowerBound]
@@ -680,23 +681,39 @@ final class ExecutionGraphTracker {
                     if let summary { node.output = summary }
                 }
             }
-            // The notice entered the turn like a steer: a 작업 알림 under main, once per task, whose reply is the next root-level answer.
-            guard let notified = nodes[id] else { continue }
-            let named = notified.title.isEmpty ? notified.input ?? "" : notified.title
-            if !noticedTasks.contains(named), noticedTasks.count < 16 { noticedTasks.append(named) }
-            let line = named + " · " + L(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
-            addSteer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + line + (summary.map { "\n" + $0 } ?? ""))
+            if notice { addNotice(for: id, state: state, detail: summary) }
         }
     }
-    /// A background sub-agent's final report entered the turn (`AgentHandback`).
-    /// It is the agent's result and ends it; with the agent's notification it
-    /// makes one 작업 알림, whichever of the two comes first. `sender` is the
-    /// message's `origin.senderTaskId`, the agent ID of a lone message.
-    private func settleHandbacks(in text: String, sender: String?) {
+    /// The notice entered the turn like a steer: a 작업 알림 under main, once per
+    /// block, whose reply is the next root-level answer. A block's later notice
+    /// (an agent's notification after its hand-back) adds nothing, nor its title
+    /// to the heading of the next notice turn's answer.
+    private func addNotice(for id: String, state: String, detail: String?) {
+        guard let notified = nodes[id], nodes[ExecutionGraphSupport.identifier(runID, "steer:notice:" + id)] == nil else { return }
+        let named = notified.title.isEmpty ? notified.input ?? "" : notified.title
+        if !noticedTasks.contains(named), noticedTasks.count < 16 { noticedTasks.append(named) }
+        let line = named + " · " + L(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
+        addSteer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + line + (detail.map { "\n" + $0 } ?? ""))
+    }
+    /// Messages a background sub-agent sent this session (`AgentHandback`). Its
+    /// framed final report is its result and ends it; with the agent's
+    /// notification it makes one 작업 알림, whichever of the two comes first. A
+    /// message it sent while still running joins its block's log and changes
+    /// nothing else. `origin` is the event's: its `senderTaskId` is the agent ID
+    /// of a lone message, and `handback: true` marks a lone one as the report.
+    private func settleHandbacks(in text: String, origin: [String: Any]?, notice: Bool) {
         let messages = AgentHandback.parse(text)
+        let lone = messages.count == 1
+        let sender = lone ? Self.key(origin?["senderTaskId"]) : nil
         for message in messages {
-            let byID = taskAliases[message.from] ?? (messages.count == 1 ? sender.flatMap { taskAliases[$0] } : nil)
-            guard let id = byID ?? agentNames[message.from], let node = nodes[id], node.kind == "agent" else { continue }
+            guard let id = taskAliases[message.from] ?? sender.flatMap({ taskAliases[$0] }) ?? agentNames[message.from],
+                  let node = nodes[id], node.kind == "agent" else { continue }
+            guard message.isHandback || (lone && origin?["handback"] as? Bool == true) else {
+                if !message.body.isEmpty {
+                    append(LogEntry(id: ExecutionGraphSupport.identifier(runID, id + ":peer:" + message.body), kind: "assistant", text: message.body, provider: provider), to: id)
+                }
+                continue
+            }
             let terminal = ExecutionGraphSupport.terminal(node.state)
             // A block that already ended keeps its state; its result takes the report only when empty or the notification's summary.
             let replaceable = !terminal || (node.output?.isEmpty ?? true) || node.output == agentSummaries[id]
@@ -705,11 +722,7 @@ final class ExecutionGraphTracker {
                 if replaceable, !message.body.isEmpty { node.output = message.body }
             }
             if replaceable, !message.body.isEmpty { agentSummaries.removeValue(forKey: id) }
-            guard let settled = nodes[id] else { continue }
-            let named = settled.title.isEmpty ? settled.input ?? "" : settled.title
-            if !noticedTasks.contains(named), noticedTasks.count < 16 { noticedTasks.append(named) }
-            let label = settled.state == "error" ? "graph.block.taskNotice.failed" : settled.state == "stopped" ? "graph.block.taskNotice.stopped" : "graph.block.taskNotice.completed"
-            addSteer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + named + " · " + L(label))
+            if notice, let settled = nodes[id] { addNotice(for: id, state: settled.state, detail: nil) }
         }
     }
 

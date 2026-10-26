@@ -5,7 +5,8 @@ import Testing
 /// The file the Windows Core checks read too: a background sub-agent's
 /// `<task-notification>` and final report (its hand-back) settle its block the
 /// way a background command's notification does, with one 작업 알림 per agent,
-/// and the turn a hand-back opens is a notice turn, not the request's.
+/// and the turn a hand-back opens is a notice turn, not the request's. A
+/// message the agent sends while still running only joins its block's log.
 struct AgentNoticeTests {
     static let url: URL = {
         var url = URL(fileURLWithPath: #filePath)
@@ -23,10 +24,11 @@ struct AgentNoticeTests {
         for item in cases {
             let name = item["name"] as? String ?? ""
             let text = try #require(item["text"] as? String, "\(name)")
-            let expected = try #require(item["expect"] as? [[String: String]], "\(name)")
+            let expected = try #require(item["expect"] as? [[String: Any]], "\(name)")
             let parsed = AgentHandback.parse(text)
-            #expect(parsed.map { $0.from } == expected.map { $0["from"] ?? "" }, "\(name)")
-            #expect(parsed.map { $0.body } == expected.map { $0["body"] ?? "" }, "\(name)")
+            #expect(parsed.map { $0.from } == expected.map { $0["from"] as? String ?? "" }, "\(name)")
+            #expect(parsed.map { $0.body } == expected.map { $0["body"] as? String ?? "" }, "\(name)")
+            #expect(parsed.map { $0.isHandback } == expected.map { $0["isHandback"] as? Bool ?? false }, "\(name)")
         }
     }
 
@@ -42,7 +44,7 @@ struct AgentNoticeTests {
 
     @Test func streamsSettleTheBlockWithOneNoticePerAgent() throws {
         let cases = try #require(try Self.load()["streams"] as? [[String: Any]])
-        #expect(cases.count >= 6)
+        #expect(cases.count >= 10)
         for item in cases {
             let name = item["name"] as? String ?? ""
             let runID = "agent-notices"
@@ -57,6 +59,10 @@ struct AgentNoticeTests {
             #expect(block.kind == expect["agentKind"] as? String, "\(name)")
             #expect(block.state == expect["agentState"] as? String, "\(name)")
             #expect(block.output == expect["agentOutput"] as? String, "\(name)")
+            // A message the agent sent while running is in its log, not its result.
+            for text in expect["agentLog"] as? [String] ?? [] {
+                #expect(block.entries.contains { $0.kind == "assistant" && $0.text == text }, "\(name): \(text)")
+            }
             let notices = latest.values.filter { $0.kind == "steer" && ($0.input ?? "").hasPrefix(MightyGraphSupport.taskNoticePrefix) }
             #expect(notices.count == expect["noticeBlocks"] as? Int, "\(name)")
             let main = try #require(latest[ExecutionGraphSupport.mainNodeID(runId: runID)], "\(name)")
