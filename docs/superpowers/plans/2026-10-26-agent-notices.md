@@ -18,7 +18,8 @@ Spec: `docs/superpowers/specs/2026-10-26-agent-notices-design.md`.
   - `failed` / `error` → error
   - anything else (`killed`, `stopped`, …) → stopped
 - A terminal block keeps its state; a hand-back still fills an empty or summary-only result.
-- The hand-back body is the indented report after the preamble line ending `The report follows:`, with each line's leading two spaces removed and trimmed. If that marker is missing, the whole text inside the tag is used.
+- Only a framed hand-back is a final report: its text has `[Subagent hand-back]` or `The report follows` (or its origin has `handback: true`). Its body is the indented report after the preamble line ending `The report follows:`, with each line's leading two spaces removed and trimmed (the whole text inside the tag when that marker is absent but the frame is there). Any other `<agent-message>` from a known agent (a mid-run message) changes no state, output or notice; it is appended to that agent's log. Unknown senders are ignored.
+- Notice steers come only from main-level user messages; a nested agent's notification or report settles its block without a 작업 알림 under main. Once an agent or task has its notice block, a later notice adds nothing (not even its title to the notice-answer header).
 - An agent is matched to its block in this order:
   1. `tool-use-id`
   2. `task-id` / `from` / `origin.senderTaskId` equal to the agent id, read from the launch result `agentId: <id>`
