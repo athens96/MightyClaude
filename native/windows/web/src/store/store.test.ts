@@ -141,12 +141,18 @@ describe('the frame', () => {
     expect(state.dialogs.map((d) => d.id)).toEqual([1]);
   });
   it('keeps the latest clone progress per dialog until that dialog closes', () => {
-    let state = reduce(loaded(), { kind: 'gitProgress', id: 3, phase: 'receiving', percent: 10, fraction: 0.05, text: 'r 10' });
+    const sheet = { type: 'gitCreate' as const, title: 't', subtitle: 's', location: 'C:\\', labels: { name: '', location: '', choose: '', path: '', gitInit: '', create: '', cancel: '', url: '', urlPlaceholder: '', test: '', checking: '', reachable: '', openSetup: '', starting: '' } };
+    let state = reduce(loaded(), { kind: 'dialog', id: 3, dialog: sheet });
+    state = reduce(state, { kind: 'dialog', id: 4, dialog: sheet });
+    state = reduce(state, { kind: 'gitProgress', id: 3, phase: 'receiving', percent: 10, fraction: 0.05, text: 'r 10' });
     state = reduce(state, { kind: 'gitProgress', id: 3, phase: 'resolving', percent: 50, fraction: 0.85, text: 'd 50' });
     state = reduce(state, { kind: 'gitProgress', id: 4, phase: 'starting', percent: 0, fraction: 0, text: 's' });
     expect(state.gitProgress?.[3]).toEqual({ phase: 'resolving', percent: 50, fraction: 0.85, text: 'd 50' });
     state = reduce(state, { kind: 'dialogClose', id: 3 });
     expect(state.gitProgress?.[3]).toBeUndefined();
     expect(state.gitProgress?.[4]?.text).toBe('s');
+    // A late push for the closed sheet is dropped.
+    state = reduce(state, { kind: 'gitProgress', id: 3, phase: 'checkout', percent: 90, fraction: 0.99, text: 'late' });
+    expect(state.gitProgress?.[3]).toBeUndefined();
   });
 });

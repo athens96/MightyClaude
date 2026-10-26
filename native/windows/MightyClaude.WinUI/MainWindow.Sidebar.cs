@@ -32,8 +32,13 @@ public sealed partial class MainWindow
     private readonly Grid sessionsHeaderRow = new() { ColumnSpacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionT, DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionB) };
     /// <summary>What the list says when it lists no workspace: none match the search, or none yet (M/WorkspaceView.swift:89-93).</summary>
     private readonly TextBlock sidebarEmpty = new() { TextSize = 12, TextWrapping = TextWrapping.Wrap, Padding = new Thickness(DesignMetrics.Spacing.Lg), Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), Visibility = Visibility.Collapsed };
-    /// <summary>The open-folder button's words, set again when the language changes.</summary>
-    private readonly TextBlock addFolderLabel = new() { TextSize = 12, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center };
+    /// <summary>The empty list's three add buttons' words (open, new folder, from Git), set again when the language changes.</summary>
+    private readonly TextBlock addFolderLabel = new() { TextSize = 12, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center },
+        sidebarNewFolderLabel = new() { TextSize = 12, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center },
+        sidebarFromGitLabel = new() { TextSize = 12, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center };
+    /// <summary>The three ways to add a workspace, under the list while it lists none (M/WorkspaceView.swift:167-171).</summary>
+    private readonly StackPanel sidebarAddChoices = new() { Spacing = DesignMetrics.Spacing.Xs };
+    private Button? sidebarNewFolderButton, sidebarFromGitButton;
     private Border? sidebarFooterBeta;
     private Grid? sidebarFooter;
 
@@ -102,19 +107,32 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// "폴더 열기" while no workspace is listed (M/WorkspaceView.swift:99-105): the folder-plus
-    /// symbol and 12pt words, padding 10 on the <c>subtle</c> wash at radius 7, h14 b12 outside,
-    /// under the scrolling list.
+    /// The three ways in while no workspace is listed (M/WorkspaceView.swift:167-171, WorkspaceAddChoices): open an existing
+    /// folder, make a new folder, create from Git, stacked <c>Spacing.Xs</c> apart; each a symbol and 12pt words, padding 10 on
+    /// the <c>subtle</c> wash at radius 7, the stack h14 b12 outside, under the scrolling list.
     /// </summary>
     private void StyleSidebarOpenFolder()
     {
-        var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-        label.Children.Add(new FontIcon { Glyph = "\uE8F4", TextSize = 12, VerticalAlignment = VerticalAlignment.Center });
-        label.Children.Add(addFolderLabel); addFolderButton.Content = label;
-        addFolderButton.Foreground = brushes.Brush(DesignToken.Ink);
-        addFolderButton.HorizontalAlignment = HorizontalAlignment.Stretch; addFolderButton.HorizontalContentAlignment = HorizontalAlignment.Left;
-        addFolderButton.TextSize = 12; addFolderButton.Padding = new Thickness(DesignMetrics.Spacing.Sm); addFolderButton.Margin = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md);
-        PlainSidebarButton(addFolderButton, brushes.Subtle, brushes.Subtle, radius: DesignMetrics.Radius.Search);
+        void Style(Button button, string glyph, TextBlock words)
+        {
+            var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+            label.Children.Add(new FontIcon { Glyph = glyph, TextSize = 12, VerticalAlignment = VerticalAlignment.Center });
+            label.Children.Add(words); button.Content = label;
+            button.Foreground = brushes.Brush(DesignToken.Ink);
+            button.HorizontalAlignment = HorizontalAlignment.Stretch; button.HorizontalContentAlignment = HorizontalAlignment.Left;
+            button.TextSize = 12; button.Padding = new Thickness(DesignMetrics.Spacing.Sm);
+            PlainSidebarButton(button, brushes.Subtle, brushes.Subtle, radius: DesignMetrics.Radius.Search);
+            sidebarAddChoices.Children.Add(button);
+        }
+        Style(addFolderButton, "\uE8F4", addFolderLabel);
+        AutomationProperties.SetAutomationId(addFolderButton, "sidebar-open-folder");
+        var newFolder = sidebarNewFolderButton = Button("", () => ShowWorkspaceCreateAsync(AddPaneMenu.NewFolder));
+        Style(newFolder, NewFolderGlyph, sidebarNewFolderLabel);
+        AutomationProperties.SetAutomationId(newFolder, "sidebar-empty-add-new-folder");
+        var fromGit = sidebarFromGitButton = Button("", () => ShowWorkspaceCreateAsync(AddPaneMenu.FromGit));
+        Style(fromGit, FromGitGlyph, sidebarFromGitLabel);
+        AutomationProperties.SetAutomationId(fromGit, "sidebar-empty-add-from-git");
+        sidebarAddChoices.Margin = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md);
     }
 
     /// <summary>
@@ -265,7 +283,7 @@ public sealed partial class MainWindow
             workspaces.Children.Clear(); workspaceStatusCounts.Clear(); sidebarSessionButtons.Clear(); workspaceDisclosureButtons.Clear();
             sessionIndicators.Clear(); sidebarDetails.Clear(); sidebarMarks.Clear(); sidebarBetas.Clear(); sidebarTitles.Clear(); sidebarKindLines.Clear(); sidebarRowEdges.Clear(); sidebarChildStates.Clear();
             sessionsCount.Text = state.Workspaces.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            addFolderButton.Visibility = listed.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            sidebarAddChoices.Visibility = listed.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             sidebarEmpty.Text = listed.Count == 0 ? Locale.Get(search.Text.Trim().Length > 0 ? "sidebar.noSearchResults" : "dashboard.empty") : "";
             sidebarEmpty.Visibility = listed.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             RefreshSidebarThemeButton(); RefreshDashboardEntry();

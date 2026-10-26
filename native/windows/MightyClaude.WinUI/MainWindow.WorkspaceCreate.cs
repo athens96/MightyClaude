@@ -170,9 +170,10 @@ public sealed partial class MainWindow
         });
         bridge.Register("gitCreate", async args =>
         {
-            // Only for a Git sheet that is open, one clone at a time in it.
-            if (ArgNumber(args, "dialogId") is not { } number || !webDialogs.ContainsKey((int)number) || gitJobs.ContainsKey((int)number)) return null;
+            // Only for a Git sheet that is open, one clone at a time in it: a second press answers `busy` and the first clone runs on.
+            if (ArgNumber(args, "dialogId") is not { } number || !webDialogs.ContainsKey((int)number)) return null;
             var dialogId = (int)number;
+            if (gitJobs.ContainsKey(dialogId)) return new { outcome = "busy", kind = (string?)null, message = (string?)null, path = (string?)null };
             var check = CheckCreate(args.Text("location") ?? "", args.Text("name") ?? "");
             if (!CanCreate(check)) return new { outcome = "failed", kind = (string?)null, message = check.Message, path = (string?)null };
             void Progress(CloneProgress step) =>
@@ -402,7 +403,7 @@ public sealed partial class MainWindow
         var progress = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Visibility = Visibility.Collapsed, Children = { bar, progressText } };
         AutomationProperties.SetAutomationId(progress, "workspace-git-progress");
 
-        var probe = "idle"; var nameEdited = false; var settingName = false; var openSetupAfter = false;
+        var probe = "idle"; string? probeKind = null; var nameEdited = false; var settingName = false; var openSetupAfter = false;
         (string Kind, string Message)? cloneFailure = null;
         GitCloneJob? job = null; (string Location, string Path)? cloned = null;
         CancellationTokenSource? probeCancel = null;
@@ -410,7 +411,7 @@ public sealed partial class MainWindow
         bool Running() => job is not null;
         void ShowProbe(string state, string? kind = null, string? message = null)
         {
-            probe = state;
+            probe = state; probeKind = kind;
             probeText.Text = state switch
             {
                 "checking" => Locale.Get("workspace.git.checking"),
@@ -419,7 +420,6 @@ public sealed partial class MainWindow
                 _ => "",
             };
             probeText.Foreground = brushes.Brush(state switch { "reachable" => DesignToken.DoneText, "failed" => DesignToken.ErrText, _ => DesignToken.Ink2 });
-            openSetupButton.Visibility = state == "failed" && kind == "gitMissing" ? Visibility.Visible : Visibility.Collapsed;
         }
         void Validate()
         {
@@ -429,7 +429,8 @@ public sealed partial class MainWindow
             // git makes the target at once: no "already exists" line while the clone runs.
             ShowCaption(problem, Running() || name.Text.Length == 0 ? null : check.Message);
             ShowCaption(cloneError, cloneFailure is { } failed ? "✕ " + failed.Message : null);
-            if (cloneFailure is not null && probe != "failed") openSetupButton.Visibility = cloneFailure.Value.Kind == "gitMissing" ? Visibility.Visible : Visibility.Collapsed;
+            // The way to 필요한 도구 shows only while a check or a clone says Git is missing; it goes with the line that said so.
+            openSetupButton.Visibility = probe == "failed" && probeKind == "gitMissing" || cloneFailure?.Kind == "gitMissing" ? Visibility.Visible : Visibility.Collapsed;
             test.IsEnabled = !Running() && url.Text.Trim().Length > 0;
             sheet.IsPrimaryButtonEnabled = !Running() && probe == "reachable" && CanCreate(check);
         }

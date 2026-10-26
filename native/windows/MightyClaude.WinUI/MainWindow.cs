@@ -102,8 +102,8 @@ public sealed partial class MainWindow : Window
         var sideHost = new Grid(); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto }); sideHost.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto });
         sideHost.Children.Add(sidebarTop);
         var list = new ScrollViewer { Content = sidebar, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled }; Grid.SetRow(list, 1); sideHost.Children.Add(list);
-        // Under the list, the open-folder button (only while none is listed), the layout picker, then the footer.
-        var navigation = new StackPanel(); navigation.Children.Add(addFolderButton); navigation.Children.Add(BuildSidebarTools());
+        // Under the list, the three add buttons (only while none is listed), the layout picker, then the footer.
+        var navigation = new StackPanel(); navigation.Children.Add(sidebarAddChoices); navigation.Children.Add(BuildSidebarTools());
         settingsButton = Button("", OpenSettings); navigation.Children.Add(BuildSidebarFooter()); Grid.SetRow(navigation, 2); sideHost.Children.Add(navigation);
         search.TextChanged += (_, _) => RenderSidebar();
         sidebarSurface.Child = sideHost; Grid.SetRowSpan(sidebarSurface, 3); root.Children.Add(sidebarSurface);
@@ -183,6 +183,9 @@ public sealed partial class MainWindow : Window
         foreach (var item in layout.Items.OfType<ComboBoxItem>())
             item.Content = Locale.Get((string)item.Tag switch { "grid" => "layout.mode.grid", "columns" => "layout.mode.columns", "focus" => "layout.mode.focus", "tabs" => "layout.mode.tabs", _ => "layout.mode.custom" });
         addFolderLabel.Text = Locale.Get("sidebar.openFolder"); AutomationProperties.SetName(addFolderButton, addFolderLabel.Text);
+        sidebarNewFolderLabel.Text = Locale.Get(AddPaneMenu.NewFolderKey); sidebarFromGitLabel.Text = Locale.Get(AddPaneMenu.FromGitKey);
+        if (sidebarNewFolderButton is { } newFolder) AutomationProperties.SetName(newFolder, sidebarNewFolderLabel.Text);
+        if (sidebarFromGitButton is { } fromGit) AutomationProperties.SetName(fromGit, sidebarFromGitLabel.Text);
         sessionsHeader.Text = Locale.Get("sidebar.workspacesHeader");
         if (sidebarAddWorkspaceButton is { } addWorkspace) { AutomationProperties.SetName(addWorkspace, Locale.Get("workspace.add.menu")); ToolTipService.SetToolTip(addWorkspace, Locale.Get("workspace.add.menu")); }
         if (sidebarConnectRemoteButton is { } connectRemote) { AutomationProperties.SetName(connectRemote, Locale.Get("remote.menu.connect")); ToolTipService.SetToolTip(connectRemote, Locale.Get("remote.menu.connect")); }

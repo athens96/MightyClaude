@@ -117,7 +117,7 @@ export function Welcome({ setupNeeded }: { setupNeeded: boolean }) {
       <div className="welcome-choices">
         <div className="welcome-buttons">
           {addChoices.map((choice) => choice.key === 'existing'
-            ? <button key={choice.key} type="button" className="accent-button with-icon" data-testid="welcome-open-folder" onClick={choice.run}><Icon name="folder-plus" size={15} />{t('layout.welcome.openProject')}</button>
+            ? <button key={choice.key} type="button" className="accent-button with-icon" data-testid="welcome-open-folder" onClick={choice.run}><Icon name={choice.icon} size={15} />{t('layout.welcome.openProject')}</button>
             : <button key={choice.key} type="button" className="plain-button with-icon" data-testid={'welcome-' + choice.key} onClick={choice.run}><Icon name={choice.icon} size={14} />{choice.label}</button>)}
         </div>
         <div className="welcome-buttons">

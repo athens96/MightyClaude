@@ -14,7 +14,8 @@ type Answer = (value: unknown) => void;
 
 interface MakeFolderAnswer { outcome: 'made' | 'madeButGitInitFailed' | 'failed'; message: string | null; notice: string | null; path: string }
 interface ProbeAnswer { reachable: boolean; kind: string | null; message: string | null }
-interface CloneAnswer { outcome: 'done' | 'cancelled' | 'failed'; kind: string | null; message: string | null; path: string | null }
+/** `busy`: a clone already runs in this sheet (a second 생성 press); that one's answer counts. */
+interface CloneAnswer { outcome: 'done' | 'cancelled' | 'failed' | 'busy'; kind: string | null; message: string | null; path: string | null }
 
 const reason = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -74,7 +75,11 @@ export function NewFolder({ id, dialog, answer }: { id: number; dialog: Extract<
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const { current, last } = useCreateCheck(location, name);
+  const nameField = useRef<HTMLInputElement>(null);
   useEffect(() => { setFailure(null); }, [name, location]);
+  // The disabled fieldset drops focus while the folder is made: it comes back to the name, so Enter and Esc work again.
+  const wasBusy = useRef(false);
+  useEffect(() => { if (wasBusy.current && !busy) nameField.current?.focus(); wasBusy.current = busy; }, [busy]);
   const ready = canMakeFolder(current, busy);
   const create = async () => {
     if (!ready) return;
@@ -83,7 +88,8 @@ export function NewFolder({ id, dialog, answer }: { id: number; dialog: Extract<
     try {
       const made = await bridge.call<MakeFolderAnswer>('makeFolder', { location, name, gitInit });
       if (made.outcome !== 'failed') { answer({ choice: 'done', path: made.path, location, notice: made.notice ?? undefined }); return; }
-      setFailure(made.message ?? '');
+      // Core always words a failure; the check's own line stands in should it ever not.
+      setFailure(made.message || last?.message || made.outcome);
     } catch (error) {
       setFailure(reason(error));
     }
@@ -96,7 +102,7 @@ export function NewFolder({ id, dialog, answer }: { id: number; dialog: Extract<
       <Heading title={dialog.title} subtitle={dialog.subtitle} />
       <fieldset className="create-grid" disabled={busy}>
         <label className="create-label" htmlFor={fieldId}>{labels.name}</label>
-        <input id={fieldId} className="sheet-field" data-autofocus placeholder={labels.name} value={name} data-testid="workspace-new-folder-name"
+        <input ref={nameField} id={fieldId} className="sheet-field" data-autofocus placeholder={labels.name} value={name} data-testid="workspace-new-folder-name"
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void create(); } }} />
         <span className="create-label">{labels.location}</span>
@@ -146,6 +152,9 @@ export function GitCreate({ id, dialog, answer }: { id: number; dialog: Extract<
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ kind: string | null; message: string } | null>(null);
   const { current, last } = useCreateCheck(location, name);
+  // The disabled fieldset drops focus as the clone starts: Cancel takes it, so Esc (Sheet's key) still stops the clone.
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (busy) cancelButton.current?.focus(); }, [busy]);
 
   // The name follows the address until it is typed in.
   useEffect(() => {
@@ -182,9 +191,12 @@ export function GitCreate({ id, dialog, answer }: { id: number; dialog: Extract<
     setBusy(true);
     setFailure(null);
     try {
-      const cloned = await bridge.call<CloneAnswer>('gitCreate', { dialogId: id, url, location, name });
-      if (cloned.outcome === 'done' && cloned.path) { answer({ choice: 'done', path: cloned.path, location }); return; }
-      if (cloned.outcome === 'failed') setFailure({ kind: cloned.kind, message: cloned.message ?? '' });
+      const cloned = await bridge.call<CloneAnswer | null>('gitCreate', { dialogId: id, url, location, name });
+      // A clone already runs in this sheet: its own answer ends the busy state, not this press.
+      if (cloned?.outcome === 'busy') return;
+      if (cloned?.outcome === 'done' && cloned.path) { answer({ choice: 'done', path: cloned.path, location }); return; }
+      // No answer means the host no longer holds this sheet open: back to rest, with nothing to show.
+      if (cloned?.outcome === 'failed') setFailure({ kind: cloned.kind, message: cloned.message || last?.message || cloned.outcome });
     } catch (error) {
       setFailure({ kind: null, message: reason(error) });
     }
@@ -232,7 +244,7 @@ export function GitCreate({ id, dialog, answer }: { id: number; dialog: Extract<
       )}
       <div className="sheet-buttons">
         <span className="spacer" />
-        <button type="button" className="plain-button" onClick={cancel} data-testid="workspace-git-cancel">{labels.cancel}</button>
+        <button ref={cancelButton} type="button" className="plain-button" onClick={cancel} data-testid="workspace-git-cancel">{labels.cancel}</button>
         <button type="button" className="accent-button" disabled={!ready} onClick={() => void create()} data-testid="workspace-git-create">{labels.create}</button>
       </div>
     </Sheet>

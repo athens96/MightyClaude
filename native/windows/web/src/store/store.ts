@@ -183,6 +183,8 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       return { ...state, dialogs, gitProgress };
     }
     case 'gitProgress':
+      // A push queued before its sheet closed arrives after dialogClose: it is dropped, not kept for good.
+      if (!state.dialogs.some((open) => open.id === message.id)) return state;
       return { ...state, gitProgress: { ...state.gitProgress, [message.id]: { phase: message.phase, percent: message.percent, fraction: message.fraction, text: message.text } } };
     case 'dialogUpdate':
       return {
