@@ -8,7 +8,7 @@ import { Icon } from '../icons/Icon';
 import { MiddlePath } from '../shell/parts';
 import type { CreateLabels, DialogRequest } from '../shell/types';
 import { Sheet } from './Dialogs';
-import { canCreateFromGit, canMakeFolder, fill, nextName, shownProblem, type CreateCheck, type ProbeState } from './workspaceCreate';
+import { canCreateFromGit, canMakeFolder, fill, nextName, shownProblem, type CreateCheck, type ProbeState } from './workspaceCreateRules';
 
 type Answer = (value: unknown) => void;
 

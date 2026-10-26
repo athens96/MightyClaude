@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canCreateFromGit, canMakeFolder, fill, nextName, shownProblem } from './workspaceCreate';
+import { canCreateFromGit, canMakeFolder, fill, nextName, shownProblem } from './workspaceCreateRules';
 
 const ok = { problem: null, exists: false, locationMissing: false };
 
