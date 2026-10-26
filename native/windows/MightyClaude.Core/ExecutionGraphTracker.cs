@@ -91,6 +91,7 @@ public sealed partial class ExecutionGraphTracker
         public List<AgentActivity> Activities = [];
     }
     private static readonly Regex TaskLaunch = new(@"background with ID: (?<task>[A-Za-z0-9_-]+)");
+    private static readonly Regex AgentLaunch = new(@"agentId: (?<agent>[A-Za-z0-9_-]+)");
     private readonly object sync = new();
     public string RunID => runID;
     public string? CodexRootThread { get { lock (sync) return codexRootThread; } }
@@ -116,7 +117,12 @@ public sealed partial class ExecutionGraphTracker
     private readonly Dictionary<string, Owner> activityOwners = [];
     private readonly List<string> activityOrder = [];
     private readonly HashSet<string> backgroundTools = [];
+    /// Engine task IDs and background agent IDs → block: a notification or hand-back without a tool-use ID finds its block by them.
     private readonly Dictionary<string, string> taskAliases = [];
+    /// Agent calls' <c>name</c> inputs → block: a hand-back may name its agent by that instead of its ID.
+    private readonly Dictionary<string, string> agentNames = [];
+    /// The notification summary an agent block's result holds until its hand-back's report replaces it.
+    private readonly Dictionary<string, string> agentSummaries = [];
     private readonly Dictionary<string, GraphTokenUsage> messageUsage = [];
     private readonly Dictionary<string, string> messageModel = [];
     private readonly Dictionary<string, IReadOnlyList<string>> messageActivityIds = [];
@@ -344,6 +350,7 @@ public sealed partial class ExecutionGraphTracker
                     if (EnsureAgent(toolID) is not { } child) continue;
                     SetParent(child, owner);
                     if (background) backgroundTools.Add(toolID);
+                    if (input.Text("name") is { Length: > 0 } agentName && Encoding.UTF8.GetByteCount(agentName) <= 512 && (agentNames.ContainsKey(agentName) || agentNames.Count < 512)) agentNames[agentName] = child;
                     Update(child, node =>
                     {
                         if (input.Text("prompt") is { } prompt) node = node with { Input = prompt };
@@ -393,12 +400,17 @@ public sealed partial class ExecutionGraphTracker
                     continue;
                 }
                 // Background Agent tool results acknowledge launch; they are
-                // not the agent's answer. Its turn.complete is authoritative.
-                if (backgroundTools.Contains(toolID)) continue;
+                // not the agent's answer. Its turn.complete, notification or hand-back is.
+                if (backgroundTools.Contains(toolID)) { RememberAgentID(child, block); continue; }
                 Update(child, n => ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = IsTrue(block, "is_error") ? "error" : "completed", Output = output });
             }
-            // Task completion arrives as an injected user message, not a tool event.
-            if (Text(MetadataJson.Property(message, "content")) is { } text && text.Contains("<task-notification>", StringComparison.Ordinal)) SettleTasks(text);
+            // Task completion arrives as an injected user message, not a tool event; so does a sub-agent's final report.
+            // Only the request's own turn shows them as 작업 알림; a nested agent's still settle their blocks (macOS).
+            if (Text(MetadataJson.Property(message, "content")) is { } text)
+            {
+                if (text.Contains("<task-notification>", StringComparison.Ordinal)) SettleTasks(text, parentTool is null);
+                if (text.Contains(AgentHandback.Opening, StringComparison.Ordinal)) SettleHandbacks(text, MetadataJson.Property(value, "origin"), parentTool is null);
+            }
         }
         else if (type == "result" && ClaudeStream.IsNotificationResult(value))
         {
@@ -592,6 +604,14 @@ public sealed partial class ExecutionGraphTracker
         if (TaskLaunch.Match(text) is { Success: true } match && taskAliases.Count < 512) taskAliases[match.Groups["task"].Value] = id;
         if (text.Length > 0) Append(Entry(ExecutionGraphSupport.Identifier(runID, id + ":launch"), "system", text), id);
     }
+    /// A background Agent's launch result names its agent ID, which its
+    /// notification's <c>task-id</c> and its hand-back's <c>from</c> carry.
+    private void RememberAgentID(string id, JsonElement block)
+    {
+        if (Text(MetadataJson.Property(block, "content")) is not { } text || AgentLaunch.Match(text) is not { Success: true } match) return;
+        var agent = match.Groups["agent"].Value;
+        if (taskAliases.ContainsKey(agent) || taskAliases.Count < 512) taskAliases[agent] = id;
+    }
     private static string? Tag(string body, string name)
     {
         var open = "<" + name + ">"; var start = body.IndexOf(open, StringComparison.Ordinal);
@@ -601,7 +621,7 @@ public sealed partial class ExecutionGraphTracker
         var value = body[(start + open.Length)..end].Trim();
         return value.Length == 0 ? null : value;
     }
-    private void SettleTasks(string text)
+    private void SettleTasks(string text, bool notice)
     {
         const string open = "<task-notification>", close = "</task-notification>";
         var remaining = text;
@@ -611,17 +631,60 @@ public sealed partial class ExecutionGraphTracker
             remaining = remaining[(end + close.Length)..];
             var byTool = Tag(body, "tool-use-id") is { } tool && ExecutionGraphSupport.AgentNodeID(runID, tool) is var toolNode && nodes.ContainsKey(toolNode) ? toolNode : null;
             var id = byTool ?? (Tag(body, "task-id") is { } task ? taskAliases.GetValueOrDefault(task) : null);
-            if (id is null || nodes.GetValueOrDefault(id)?.Kind != "task") continue;
+            if (id is null || nodes.GetValueOrDefault(id)?.Kind is not { } kind || kind is not ("task" or "agent")) continue;
             var status = Tag(body, "status")?.ToLowerInvariant() ?? "completed";
             var state = status == "completed" ? "completed" : status is "failed" or "error" ? "error" : "stopped";
             var summary = Tag(body, "summary");
-            Update(id, n => ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = state, Output = summary ?? n.Output });
-            // The notice entered the turn like a steer: a 작업 알림 under main, once per task, whose reply is the next root-level answer.
-            var notified = nodes[id];
-            var named = notified.Title is { Length: > 0 } title ? title : notified.Input ?? "";
-            if (!noticedTasks.Contains(named) && noticedTasks.Count < 16) noticedTasks.Add(named);
-            var line = named + " · " + Locale.Get(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped");
-            SteerLocked("notice:" + id, MightyGraphSupport.TaskNoticePrefix + line + (summary is null ? "" : "\n" + summary));
+            if (kind == "agent")
+            {
+                // An agent's result is its report (SettleHandbacks); the summary only fills an empty one until the report comes.
+                var empty = string.IsNullOrEmpty(nodes[id].Output);
+                Update(id, n => n with { State = ExecutionGraphSupport.Terminal(n.State) ? n.State : state, Output = empty && summary is not null ? summary : n.Output });
+                if (empty && summary is not null && nodes[id].Output is { } output) agentSummaries[id] = output;
+            }
+            else Update(id, n => ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = state, Output = summary ?? n.Output });
+            if (notice) AddNotice(id, state, summary);
+        }
+    }
+    /// The notice entered the turn like a steer: a 작업 알림 under main, once per
+    /// block, whose reply is the next root-level answer. A block's later notice
+    /// (an agent's notification after its hand-back) adds nothing, nor its title
+    /// to the heading of the next notice turn's answer (macOS addNotice).
+    private void AddNotice(string id, string state, string? detail)
+    {
+        if (!nodes.TryGetValue(id, out var notified) || nodes.ContainsKey(ExecutionGraphSupport.Identifier(runID, "steer:notice:" + id))) return;
+        var named = notified.Title is { Length: > 0 } title ? title : notified.Input ?? "";
+        if (!noticedTasks.Contains(named) && noticedTasks.Count < 16) noticedTasks.Add(named);
+        var line = named + " · " + Locale.Get(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped");
+        SteerLocked("notice:" + id, MightyGraphSupport.TaskNoticePrefix + line + (detail is null ? "" : "\n" + detail));
+    }
+    /// Messages a background sub-agent sent this session (AgentHandback). Its
+    /// framed final report is its result and ends it; with the agent's
+    /// notification it makes one 작업 알림, whichever of the two comes first. A
+    /// message it sent while still running joins its block's log and changes
+    /// nothing else. <paramref name="origin"/> is the event's: its <c>senderTaskId</c> is the agent ID
+    /// of a lone message, and <c>handback: true</c> marks a lone one as the report (macOS settleHandbacks).
+    private void SettleHandbacks(string text, JsonElement origin, bool notice)
+    {
+        var messages = AgentHandback.Parse(text);
+        var lone = messages.Count == 1;
+        var sender = lone ? Key(MetadataJson.Property(origin, "senderTaskId")) : null;
+        foreach (var message in messages)
+        {
+            var id = taskAliases.GetValueOrDefault(message.From) ?? (sender is null ? null : taskAliases.GetValueOrDefault(sender)) ?? agentNames.GetValueOrDefault(message.From);
+            if (id is null || nodes.GetValueOrDefault(id) is not { Kind: "agent" } node) continue;
+            if (!message.IsHandback && !(lone && MetadataJson.Flag(origin, "handback")))
+            {
+                if (message.Body.Length > 0) Append(Entry(ExecutionGraphSupport.Identifier(runID, id + ":peer:" + message.Body), "assistant", message.Body), id);
+                continue;
+            }
+            var terminal = ExecutionGraphSupport.Terminal(node.State);
+            // A block that already ended keeps its state; its result takes the report only when empty or the notification's summary.
+            var replaceable = !terminal || string.IsNullOrEmpty(node.Output) || node.Output == agentSummaries.GetValueOrDefault(id);
+            var report = replaceable && message.Body.Length > 0;
+            Update(id, n => n with { State = terminal ? n.State : "completed", Output = report ? message.Body : n.Output });
+            if (report) agentSummaries.Remove(id);
+            if (notice && nodes.GetValueOrDefault(id) is { } settled) AddNotice(id, settled.State, null);
         }
     }
 

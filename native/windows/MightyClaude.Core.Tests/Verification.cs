@@ -207,6 +207,9 @@ internal static class Verification
         await Test("GraphPreviewVerification LocalHtmlReadsOnlyItsOwnBoundedDirectory", GraphPreviewVerification.LocalHtmlReadsOnlyItsOwnBoundedDirectory);
         await Test("MightyTimelineVerification RecordedOrderAndResultsMatchDiagram", MightyTimelineVerification.RecordedOrderAndResultsMatchDiagram);
         await Test("MightyTimelineVerification ATaskNotificationIsATaskNoticeSteer", MightyTimelineVerification.ATaskNotificationIsATaskNoticeSteer);
+        await Test("agent notices: hand-backs, notice results and background sub-agent streams follow native/contracts/fixtures/agent-notices.json", AgentNoticeVerification.TheSharedCasesHold);
+        await Test("agent notices: a recorded hand-back turn settles the agent as live", AgentNoticeVerification.ARecordedHandBackTurnSettlesTheAgentAsLive);
+        await Test("agent notices: a queued hand-back settles the agent by its name", AgentNoticeVerification.AQueuedHandBackSettlesTheAgentByItsName);
         await Test("MightyTimelineVerification TheRequestRowHoldsTheInputAndTheExecutionRowTheWork", MightyTimelineVerification.TheRequestRowHoldsTheInputAndTheExecutionRowTheWork);
         await Test("MightyTimelineVerification StatusRailsCountsAndDurationStayHonest", MightyTimelineVerification.StatusRailsCountsAndDurationStayHonest);
         await Test("mighty execution block: a stable node id", MightyGraphExecutionBlockVerification.TheExecutionBlockHasAStableNodeID);

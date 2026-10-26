@@ -771,6 +771,21 @@ public static class HistoryReplay
         return text is { Length: > 0 } && !text.StartsWith('<') ? (value.Text("uuid"), text) : null;
     }
 
+    /// A sub-agent's message (its final report, or one it sent while running) taken
+    /// into a running turn, recorded as a queued command: the live stream shows it to
+    /// the tracker as a user message (macOS HistoryReplay.agentMessage).
+    public static JsonElement? AgentMessage(JsonElement value)
+    {
+        var attachment = MetadataJson.Property(value, "attachment");
+        var origin = MetadataJson.Property(attachment, "origin");
+        if (attachment.Text("type") != "queued_command" || origin.Text("kind") != "peer") return null;
+        var prompt = MetadataJson.Property(attachment, "prompt");
+        var text = prompt.ValueKind == JsonValueKind.String ? prompt.GetString()
+            : prompt.ValueKind == JsonValueKind.Array ? string.Join("\n", prompt.EnumerateArray().Where(b => b.Text("type") == "text").Select(b => b.Text("text")).OfType<string>()) : null;
+        if (text is null || !text.Contains(AgentHandback.Opening, StringComparison.Ordinal)) return null;
+        return Element(new Dictionary<string, object> { ["type"] = "user", ["origin"] = origin, ["message"] = new Dictionary<string, object> { ["role"] = "user", ["content"] = text } });
+    }
+
     /// A Claude record line is the stream-json event it was printed as, minus the
     /// <c>result</c>s, which are rebuilt from the answers: the request's own before the
     /// first task notification that opened a turn, then each notice turn's, as live.
@@ -794,6 +809,7 @@ public static class HistoryReplay
             {
                 case "attachment":
                     if (Steer(value) is { } steer) tracker.Steer(steer.Id ?? "line-" + index, steer.Text);
+                    else if (AgentMessage(value) is { } agentMessage) tracker.Consume(agentMessage);
                     continue;
                 case "system":
                     if (value.Text("subtype") != "compact_boundary") continue;
@@ -805,17 +821,21 @@ public static class HistoryReplay
                     }
                     break;
                 case "user":
-                    if (MetadataJson.Flag(value, "isMeta") || MetadataJson.Flag(value, "isCompactSummary")) continue;
+                    if (MetadataJson.Flag(value, "isCompactSummary")) continue;
                     var message = MetadataJson.Property(value, "message");
                     if (message.ValueKind != JsonValueKind.Object) continue;
                     var content = MetadataJson.Property(message, "content");
                     var text = content.ValueKind == JsonValueKind.String ? content.GetString()
                         : content.ValueKind == JsonValueKind.Array ? string.Join("\n", content.EnumerateArray().Where(b => b.Text("type") == "text").Select(b => b.Text("text")).OfType<string>()) : null;
+                    // A sub-agent's message (its final report, or one it sent while running) is a meta line, and like a task
+                    // notification it opens a turn of its own (macOS).
+                    var peerMessage = MetadataJson.Property(value, "origin").Text("kind") == "peer" && text?.Contains(AgentHandback.Opening, StringComparison.Ordinal) == true;
+                    if (MetadataJson.Flag(value, "isMeta") && !peerMessage) continue;
                     if (text?.StartsWith("[Request interrupted by user", StringComparison.Ordinal) == true) { interrupted = true; continue; }
                     // A local command's printed output is that command's result.
                     if (text is not null && HistoryScan.LocalCommandOutput(text) is { } output) { if (output.Length > 0) answer = output; continue; }
                     // A task notification opens a turn of its own: the turn before it ended with its answer.
-                    if (text?.Contains("<task-notification>", StringComparison.Ordinal) == true) Result();
+                    if (peerMessage || text?.Contains("<task-notification>", StringComparison.Ordinal) == true) Result();
                     break;
                 default:
                     if (MetadataJson.Flag(value, "isApiErrorMessage")) failed = true;

@@ -449,8 +449,11 @@ public static class ClaudeStream
     // A resumed session whose earlier process left a background task behind first reports that task as
     // stopped, and closes that report with a `result` of its own (`origin.kind == "task-notification"`)
     // before it even reads the new request. It is not the request's result: OutputParser and
-    // SessionUsageTracker must not treat it as the turn ending.
-    public static bool IsNotificationResult(JsonElement value) => value.Text("type") == "result" && MetadataJson.Property(value, "origin").Text("kind") == "task-notification";
+    // SessionUsageTracker must not treat it as the turn ending. A turn a sub-agent's final report opened (AgentHandback) is the
+    // same: its `result` carries that message's origin, `origin.kind == "peer"` (macOS ClaudeStream.isNotificationResult).
+    public static bool IsNotificationResult(JsonElement value) =>
+        value.Text("type") == "result" && MetadataJson.Property(value, "origin").Text("kind") is { } kind && NotificationOrigins.Contains(kind);
+    private static readonly HashSet<string> NotificationOrigins = ["task-notification", "task_notification", "peer"];
     /// <summary>
     /// A frame whose confirmed failure is a Bedrock policy denial, written again with those words replaced by guidance
     /// (M/MightyCore/CLIStreamParser.swift:137-156, BedrockSettings.RuntimeFailureGuidance): a failed result's errors and
