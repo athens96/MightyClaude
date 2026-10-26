@@ -55,7 +55,7 @@ public enum WorkspaceCreate {
     public static func errorKind(stderr: String) -> GitErrorKind {
         let text = stderr.lowercased()
         let table: [(GitErrorKind, [String])] = [
-            (.auth, ["authentication failed", "could not read username", "could not read password", "permission denied", "access denied", "error: 401", "error: 403"]),
+            (.auth, ["authentication failed", "could not read username", "could not read password", "permission denied (publickey", "access denied", "error: 401", "error: 403"]),
             (.notFound, ["not found", "error: 404", "does not appear to be a git repository"]),
             (.network, ["could not resolve host", "could not resolve hostname", "connection refused", "timed out", "network is unreachable", "failed to connect", "connection reset"]),
             (.invalidURL, ["is not supported", "not a valid", "invalid url"]),

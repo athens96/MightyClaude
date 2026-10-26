@@ -61,7 +61,8 @@
     { "stderr": "ssh: connect to host host port 22: Operation timed out", "kind": "network" },
     { "stderr": "ssh: connect to host host port 22: Network is unreachable", "kind": "network" },
     { "stderr": "fatal: protocol 'ftp' is not supported", "kind": "invalidURL" },
-    { "stderr": "fatal: destination path 'x' already exists and is not an empty directory.", "kind": "other" }
+    { "stderr": "fatal: destination path 'x' already exists and is not an empty directory.", "kind": "other" },
+    { "stderr": "fatal: could not create work tree dir 'x': Permission denied", "kind": "other" }
   ],
   "progress": [
     { "line": "Cloning into 'demo'...", "phase": "starting", "percent": 0, "fraction": 0 },

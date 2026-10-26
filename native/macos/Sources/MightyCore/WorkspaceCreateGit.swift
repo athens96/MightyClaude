@@ -2,25 +2,38 @@ import Foundation
 
 /// Git for making workspaces: the user's own git, configuration and credentials, never a prompt.
 public enum GitTool {
-    public static var executable: URL? {
-        DelegationGit.executable ?? ToolkitProcess.resolveExecutable("git", environment: ProcessInfo.processInfo.environment)
+    /// Git on the app's own PATH; `resolveExecutable(environment:)` with `loginEnvironment()` also finds it on the login shell's.
+    public static var executable: URL? { resolveExecutable(environment: ProcessInfo.processInfo.environment) }
+
+    /// The fixed install paths first (as delegation uses), then `environment`'s PATH.
+    public static func resolveExecutable(environment: [String: String]) -> URL? {
+        DelegationGit.executable ?? ToolkitProcess.resolveExecutable("git", environment: environment)
+    }
+
+    /// The login shell's environment: an app opened from Finder or the Dock has only launchd's PATH, so a credential helper
+    /// named without a path (`!gh auth git-credential`, `!glab auth git-credential`) would not be found. Falls back to the
+    /// app's own environment (CLIEnvironmentResolver, cached for a few seconds).
+    public static func loginEnvironment() async -> [String: String] {
+        await CLIEnvironmentResolver.shared.resolve().values
     }
 
     /// No prompt can appear: a credential helper or ssh-agent answers, or git fails at once. An empty
     /// GIT_ASKPASS switches git's askpass off (it would otherwise fall back to core.askPass and SSH_ASKPASS
-    /// and could open a window); git then fails with "terminal prompts disabled".
-    public static func environment(base: [String: String] = ProcessInfo.processInfo.environment) async -> [String: String] {
-        var environment = base.filter { $0.key != "GIT_DIR" && $0.key != "GIT_WORK_TREE" && $0.key != "GIT_INDEX_FILE" }
+    /// and could open a window); git then fails with "terminal prompts disabled". `base` nil is `loginEnvironment()`.
+    public static func environment(base: [String: String]? = nil) async -> [String: String] {
+        let start: [String: String]
+        if let base { start = base } else { start = await loginEnvironment() }
+        var environment = start.filter { $0.key != "GIT_DIR" && $0.key != "GIT_WORK_TREE" && $0.key != "GIT_INDEX_FILE" }
         environment["GIT_TERMINAL_PROMPT"] = "0"; environment["GCM_INTERACTIVE"] = "never"; environment["LC_ALL"] = "C"
         environment["GIT_ASKPASS"] = ""; environment["SSH_ASKPASS_REQUIRE"] = "never"
-        if environment["GIT_SSH_COMMAND"] == nil, environment["GIT_SSH"] == nil, await configuredSSHCommand() == nil { environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes" }
+        if environment["GIT_SSH_COMMAND"] == nil, environment["GIT_SSH"] == nil, await configuredSSHCommand(environment: environment) == nil { environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes" }
         return environment
     }
 
-    /// The user's own core.sshCommand (system or global configuration; run from home, so no repository is read).
-    private static func configuredSSHCommand() async -> String? {
-        guard let executable else { return nil }
-        let result = try? await ProcessCapture.run(executable: executable, arguments: ["config", "--get", "core.sshCommand"], environment: nil, cwd: FileManager.default.homeDirectoryForCurrentUser, input: nil, timeout: 5, maximumBytes: 4096)
+    /// The user's own core.sshCommand (system or global configuration; run from home, so no repository is read), looked up every time.
+    private static func configuredSSHCommand(environment: [String: String]) async -> String? {
+        guard let executable = GitTool.resolveExecutable(environment: environment) else { return nil }
+        let result = try? await ProcessCapture.run(executable: executable, arguments: ["config", "--get", "core.sshCommand"], environment: environment, cwd: FileManager.default.homeDirectoryForCurrentUser, input: nil, timeout: 5, maximumBytes: 4096)
         let value = result.map { DelegationGit.line($0.stdout) } ?? ""
         return result?.exitCode == 0 && !value.isEmpty ? value : nil
     }
@@ -31,8 +44,8 @@ public enum GitTool {
         do { try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: false) }
         catch { return .failed(error.localizedDescription) }
         guard gitInit else { return .made }
-        guard let executable else { return .madeButGitInitFailed(L("workspace.git.error.gitMissing")) }
         let gitEnvironment = await environment()
+        guard let executable = GitTool.resolveExecutable(environment: gitEnvironment) else { return .madeButGitInitFailed(L("workspace.git.error.gitMissing")) }
         do {
             let result = try await ProcessCapture.run(executable: executable, arguments: ["init", "-q"], environment: gitEnvironment, cwd: URL(fileURLWithPath: path), input: nil, timeout: 20, maximumBytes: 65_536)
             return result.exitCode == 0 ? .made : .madeButGitInitFailed(DelegationGit.message(result))
@@ -46,10 +59,11 @@ public enum GitTool {
     public static func probe(_ raw: String) async -> ProbeResult {
         let url = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard WorkspaceCreate.looksLikeGitURL(url) else { return .failed(.invalidURL, "") }
-        guard let executable else { return .failed(.gitMissing, "") }
         let gitEnvironment = await environment()
+        guard let executable = GitTool.resolveExecutable(environment: gitEnvironment) else { return .failed(.gitMissing, "") }
         do {
-            let result = try await ProcessCapture.run(executable: executable, arguments: ["ls-remote", "--heads", "--", url], environment: gitEnvironment, cwd: FileManager.default.temporaryDirectory, input: nil, timeout: 20, maximumBytes: 1_048_576)
+            // Only HEAD (one line): a list of every branch could be megabytes on a large repository.
+            let result = try await ProcessCapture.run(executable: executable, arguments: ["ls-remote", "--", url, "HEAD"], environment: gitEnvironment, cwd: FileManager.default.temporaryDirectory, input: nil, timeout: 20, maximumBytes: 65_536)
             if result.exitCode == 0 { return .reachable }
             let text = String(decoding: result.stderr, as: UTF8.self)
             return .failed(WorkspaceCreate.errorKind(stderr: text), DelegationGit.message(result))
@@ -98,12 +112,12 @@ public final class GitCloneJob: @unchecked Sendable {
     public func run() async -> CloneResult {
         if isCancelled { return .cancelled }
         guard WorkspaceCreate.looksLikeGitURL(url) else { return .failed(.invalidURL, "") }
-        guard let executable = GitTool.executable else { return .failed(.gitMissing, "") }
+        let environment = await GitTool.environment()
+        guard let executable = GitTool.resolveExecutable(environment: environment) else { return .failed(.gitMissing, "") }
         if FileManager.default.fileExists(atPath: target) { return .failed(.other, L("workspace.name.error.exists")) }
         let parent = (target as NSString).deletingLastPathComponent
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: parent, isDirectory: &isFolder), isFolder.boolValue else { return .failed(.other, L("workspace.location.error.missing")) }
-        let environment = await GitTool.environment()
         let errors = StderrLines()
         let code: Int32 = await withCheckedContinuation { continuation in
             do {

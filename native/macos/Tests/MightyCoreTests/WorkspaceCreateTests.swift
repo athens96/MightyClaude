@@ -117,4 +117,16 @@ struct WorkspaceCreateTests {
         if case .failed = await again.run() {} else { Issue.record("an existing target must fail") }
         #expect(FileManager.default.fileExists(atPath: target + "/README.md"), "a refused clone must not delete what was there")
     }
+
+    @Test func cloneOfAMissingRepositoryFailsAndLeavesNoFolder() async {
+        let root = scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        // As a file:// address, so git answers through its transport (and makes the folder first) as for a server; a plain
+        // missing path is refused before any folder ("does not exist"), and the probe already names that one notFound.
+        let missing = "file://" + root.appendingPathComponent("none.git").path
+        let target = root.appendingPathComponent("failed").path
+        let job = GitCloneJob(url: missing, target: target) { _ in }
+        let result = await job.run()
+        if case .failed(let kind, _) = result { #expect(kind == .notFound, "\(result)") } else { Issue.record("a clone of a missing repository must fail: \(result)") }
+        #expect(!FileManager.default.fileExists(atPath: target), "a failed clone leaves no folder")
+    }
 }

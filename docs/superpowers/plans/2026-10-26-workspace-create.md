@@ -19,7 +19,7 @@ Spec: `docs/superpowers/specs/2026-10-26-workspace-create-design.md`.
   - If `git init` fails, the folder stays and the workspace is still added, with a notice.
 - **Git sheet:**
   - Fields: URL, 연결 확인 link, location, folder name (filled from the URL and editable; once the user edits it, a URL change no longer overwrites it), path preview, Cancel / 생성.
-  - Probing is automatic 0.6 s after typing stops: `git ls-remote --heads <url>` with a 20 s limit.
+  - Probing is automatic 0.6 s after typing stops: `git ls-remote -- <url> HEAD` (one line) with a 20 s limit.
   - 생성 is enabled only when the probe succeeded, the target does not exist and the name passes.
 - **Cloning:** `git clone --progress <url> <target>`.
   - While it runs, a progress bar and phase text show. Cancel stops git and deletes the target.
@@ -204,7 +204,7 @@ The rules this fixture fixes (both platforms):
 
   | Kind | Substrings |
   |---|---|
-  | `auth` | `authentication failed`, `could not read username`, `could not read password`, `permission denied`, `access denied`, `error: 401`, `error: 403` |
+  | `auth` | `authentication failed`, `could not read username`, `could not read password`, `permission denied (publickey`, `access denied`, `error: 401`, `error: 403` |
   | `notFound` | `not found`, `error: 404`, `does not appear to be a git repository` |
   | `network` | `could not resolve host`, `could not resolve hostname`, `connection refused`, `timed out`, `network is unreachable`, `failed to connect`, `connection reset` |
   | `invalidURL` | `is not supported`, `not a valid`, `invalid url` |
@@ -409,7 +409,7 @@ public enum WorkspaceCreate {
     public static func errorKind(stderr: String) -> GitErrorKind {
         let text = stderr.lowercased()
         let table: [(GitErrorKind, [String])] = [
-            (.auth, ["authentication failed", "could not read username", "could not read password", "permission denied", "access denied", "error: 401", "error: 403"]),
+            (.auth, ["authentication failed", "could not read username", "could not read password", "permission denied (publickey", "access denied", "error: 401", "error: 403"]),
             (.notFound, ["not found", "error: 404", "does not appear to be a git repository"]),
             (.network, ["could not resolve host", "could not resolve hostname", "connection refused", "timed out", "network is unreachable", "failed to connect", "connection reset"]),
             (.invalidURL, ["is not supported", "not a valid", "invalid url"]),
@@ -500,7 +500,7 @@ public enum GitTool {
         guard WorkspaceCreate.looksLikeGitURL(url) else { return .failed(.invalidURL, "") }
         guard let executable else { return .failed(.gitMissing, "") }
         do {
-            let result = try await ProcessCapture.run(executable: executable, arguments: ["ls-remote", "--heads", "--", url], environment: await environment(), cwd: FileManager.default.temporaryDirectory, input: nil, timeout: 20, maximumBytes: 1_048_576)
+            let result = try await ProcessCapture.run(executable: executable, arguments: ["ls-remote", "--", url, "HEAD"], environment: await environment(), cwd: FileManager.default.temporaryDirectory, input: nil, timeout: 20, maximumBytes: 65_536)
             if result.exitCode == 0 { return .reachable }
             let text = String(decoding: result.stderr, as: UTF8.self)
             return .failed(WorkspaceCreate.errorKind(stderr: text), DelegationGit.message(result))
@@ -946,7 +946,7 @@ Port Task 1's Swift rules line for line. The same order of checks and the same t
 - `ProbeAsync`:
   - `!LooksLikeGitUrl` → `(false, "invalidURL", null)`.
   - No executable → `(false, "gitMissing", null)`.
-  - Run `ls-remote --heads -- <url>` in `Path.GetTempPath()` with a 20 s deadline, killing the process on timeout. A timeout gives `network`.
+  - Run `ls-remote -- <url> HEAD` in `Path.GetTempPath()` with a 20 s deadline, killing the process on timeout. A timeout gives `network`.
   - Exit 0 → reachable. Otherwise `ErrorKind(stderr)` and the last stderr line.
   - Read stdout and stderr concurrently (as `DelegationGit.RunDetailed` does), so a large ref list cannot block.
 
