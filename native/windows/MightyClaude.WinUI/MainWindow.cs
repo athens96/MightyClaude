@@ -182,7 +182,7 @@ public sealed partial class MainWindow : Window
         search.PlaceholderText = Locale.Get("sidebar.searchPlaceholder");
         foreach (var item in layout.Items.OfType<ComboBoxItem>())
             item.Content = Locale.Get((string)item.Tag switch { "grid" => "layout.mode.grid", "columns" => "layout.mode.columns", "focus" => "layout.mode.focus", "tabs" => "layout.mode.tabs", _ => "layout.mode.custom" });
-        addFolderLabel.Text = Locale.Get("sidebar.openFolder"); AutomationProperties.SetName(addFolderButton, addFolderLabel.Text);
+        addFolderLabel.Text = Locale.Get("workspace.add.existing"); AutomationProperties.SetName(addFolderButton, addFolderLabel.Text);
         sidebarNewFolderLabel.Text = Locale.Get(AddPaneMenu.NewFolderKey); sidebarFromGitLabel.Text = Locale.Get(AddPaneMenu.FromGitKey);
         if (sidebarNewFolderButton is { } newFolder) AutomationProperties.SetName(newFolder, sidebarNewFolderLabel.Text);
         if (sidebarFromGitButton is { } fromGit) AutomationProperties.SetName(fromGit, sidebarFromGitLabel.Text);

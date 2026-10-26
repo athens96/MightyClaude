@@ -115,6 +115,13 @@ internal static class WorkspaceCreateVerification
             var again = await new GitCloneJob(bare, copy, _ => { }).RunAsync();
             Check(again.Outcome == "failed" && File.Exists(readme), $"a clone into an existing folder fails and leaves it: {again}");
 
+            // As a file:// address, so git answers through its transport (and makes the folder first) as for a server; a plain
+            // missing path is refused before any folder ("does not exist"), and the probe already names that one notFound.
+            var failedTarget = Path.Combine(root, "failed");
+            var missingUrl = "file:///" + Path.Combine(root, "none.git").Replace('\\', '/').TrimStart('/');
+            var failed = await new GitCloneJob(missingUrl, failedTarget, _ => { }).RunAsync();
+            Check(failed.Outcome == "failed" && failed.Kind == "notFound" && !Directory.Exists(failedTarget), $"a clone of a missing repository fails as notFound and leaves no folder: {failed}");
+
             var repo = Path.Combine(root, "repo");
             var made = await GitTool.MakeFolderAsync(repo, gitInit: true);
             Check(made.Outcome == "made" && Directory.Exists(Path.Combine(repo, ".git")), $"the new folder is a Git repository: {made}");

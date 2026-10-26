@@ -73,7 +73,7 @@ public static partial class WorkspaceCreate
 
     private static readonly (string Kind, string[] Needles)[] ErrorTable =
     [
-        ("auth", ["authentication failed", "could not read username", "could not read password", "permission denied", "access denied", "error: 401", "error: 403"]),
+        ("auth", ["authentication failed", "could not read username", "could not read password", "permission denied (publickey", "access denied", "error: 401", "error: 403"]),
         ("notFound", ["not found", "error: 404", "does not appear to be a git repository"]),
         ("network", ["could not resolve host", "could not resolve hostname", "connection refused", "timed out", "network is unreachable", "failed to connect", "connection reset"]),
         ("invalidURL", ["is not supported", "not a valid", "invalid url"]),
@@ -164,7 +164,8 @@ public static class GitTool
     public static string? Executable => DelegationGit.Executable;
 
     private const int KeptErrorChars = 65_536;
-    private static readonly Lazy<Task<string?>> SshCommand = new(ReadSshCommandAsync);
+    private static readonly object SshCommandGate = new();
+    private static (bool Known, string? Value) sshCommand;
 
     /// <summary>
     /// No prompt can appear: a credential helper or ssh-agent answers, or git fails at once. An empty GIT_ASKPASS switches git's
@@ -178,14 +179,29 @@ public static class GitTool
         foreach (var key in new[] { "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE" }) info.Environment.Remove(key);
         info.Environment["GIT_TERMINAL_PROMPT"] = "0"; info.Environment["GCM_INTERACTIVE"] = "never"; info.Environment["LC_ALL"] = "C";
         info.Environment["GIT_ASKPASS"] = ""; info.Environment["SSH_ASKPASS_REQUIRE"] = "never";
-        if (!info.Environment.ContainsKey("GIT_SSH_COMMAND") && !info.Environment.ContainsKey("GIT_SSH") && await SshCommand.Value.ConfigureAwait(false) is null)
+        if (!info.Environment.ContainsKey("GIT_SSH_COMMAND") && !info.Environment.ContainsKey("GIT_SSH") && await SshCommandAsync().ConfigureAwait(false) is null)
             info.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes";
     }
 
-    /// <summary>The user's own core.sshCommand (system or global configuration; run from home, so no workspace's repository is read), looked up once.</summary>
-    private static async Task<string?> ReadSshCommandAsync()
+    /// <summary>
+    /// The user's own core.sshCommand. Only a lookup that finished (set, or exit 1: not set) is kept for the app's run; one that
+    /// timed out or failed is tried again on the next probe or clone, so a slow first start of git never overrides the user's ssh.
+    /// </summary>
+    private static async Task<string?> SshCommandAsync()
     {
-        if (Executable is not { } executable) return null;
+        lock (SshCommandGate) { if (sshCommand.Known) return sshCommand.Value; }
+        var (finished, value) = await ReadSshCommandAsync().ConfigureAwait(false);
+        if (finished) { lock (SshCommandGate) { sshCommand = (true, value); } }
+        return value;
+    }
+
+    /// <summary>
+    /// Reads core.sshCommand (system or global configuration; run from home, so no workspace's repository is read):
+    /// <c>Finished</c> is false when git could not run, timed out or gave an answer that is neither a value nor "not set".
+    /// </summary>
+    private static async Task<(bool Finished, string? Value)> ReadSshCommandAsync()
+    {
+        if (Executable is not { } executable) return (false, null);
         try
         {
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -199,11 +215,12 @@ public static class GitTool
                 var output = process.Output.ReadToEndAsync(); _ = Drain(process.Error);
                 var exit = await process.Completion.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
                 var value = DelegationGit.Line(await output.WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false));
-                return exit == 0 && value.Length > 0 ? value : null;
+                if (exit == 0 && value.Length > 0) return (true, value);
+                return (exit == 1, null);
             }
             finally { await DisposeQuietly(process).ConfigureAwait(false); }
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { return null; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { return (false, null); }
     }
 
     /// <summary>
@@ -227,7 +244,8 @@ public static class GitTool
     }
 
     /// <summary>
-    /// Whether this computer's own credentials reach <paramref name="raw"/>: <c>git ls-remote --heads</c>, at most 20 seconds.
+    /// Whether this computer's own credentials reach <paramref name="raw"/>: <c>git ls-remote -- &lt;url&gt; HEAD</c> (one line, so a
+    /// repository with many branches is no slower), at most 20 seconds.
     /// Throws <see cref="OperationCanceledException"/> when <paramref name="token"/> is cancelled; git is stopped then.
     /// </summary>
     public static async Task<ProbeResult> ProbeAsync(string raw, CancellationToken token = default)
@@ -237,7 +255,7 @@ public static class GitTool
         if (Executable is not { } executable) return new(false, "gitMissing", null);
         try
         {
-            var result = await RunAsync(executable, ["ls-remote", "--heads", "--", url], Path.GetTempPath(), 20, token).ConfigureAwait(false);
+            var result = await RunAsync(executable, ["ls-remote", "--", url, "HEAD"], Path.GetTempPath(), 20, token).ConfigureAwait(false);
             return result.ExitCode == 0 ? new(true, null, null) : new(false, WorkspaceCreate.ErrorKind(result.Stderr), DelegationGit.Message(result));
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }

@@ -1385,7 +1385,6 @@
   "sidebar.searchPlaceholder": "Search workspaces",
   "sidebar.noSearchResults": "No matching workspaces.",
   "sidebar.workspacesHeader": "Workspaces",
-  "sidebar.openFolder": "Open Folder",
   "delegation.child.state.creating": "Creating",
   "delegation.child.state.running": "Running",
   "delegation.child.state.waiting": "Needs you",

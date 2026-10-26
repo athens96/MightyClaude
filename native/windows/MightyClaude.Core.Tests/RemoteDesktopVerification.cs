@@ -562,6 +562,7 @@ internal static class RemoteDesktopVerification
         Check(RemoteWorkspaceFeatures.AddPaneEntries(local).SequenceEqual(AddPaneMenu.Entries()), "a local workspace keeps its menu");
         var entries = RemoteWorkspaceFeatures.AddPaneEntries(remote);
         Check(entries.Contains(AddPaneMenu.Shell) && !entries.Contains(AddPaneMenu.Browser) && !entries.Contains(AddPaneMenu.Files) && Wire.Providers.All(p => entries.Contains(AddPaneMenu.AgentPrefix + p)), "a remote workspace offers agents and commands, never files or a browser");
+        Check(entries.TakeLast(4).SequenceEqual([AddPaneMenu.Separator, AddPaneMenu.OpenProject, AddPaneMenu.NewFolder, AddPaneMenu.FromGit]), "a remote workspace's menu ends with the three ways to add a (local) workspace, as on the Mac");
         Check(RemoteWorkspaceFeatures.AllowsLocalOnly(local) && !RemoteWorkspaceFeatures.AllowsLocalOnly(remote), "local-only features stay local");
         Check(RemoteWorkspaceFeatures.UsesLocalTerminal(new RunSession { Kind = "shell" }, local) && !RemoteWorkspaceFeatures.UsesLocalTerminal(new RunSession { Kind = "shell" }, remote), "a remote command pane is never a local ConPTY terminal");
         var unknown = RemoteWorkspaceFeatures.ProviderRuntime("codex", remote.Remote!, null);

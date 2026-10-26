@@ -7,9 +7,12 @@ namespace MightyClaude.Core;
 /// </summary>
 public static class RemoteWorkspaceFeatures
 {
-    /// <summary>The add-pane menu: agents and a remote command for a remote workspace, never a browser or files pane.</summary>
+    /// <summary>
+    /// The add-pane menu: agents and a remote command for a remote workspace, never a browser or files pane, then the three ways to
+    /// add a workspace as in a local one (macOS <c>WorkspaceAddMenuItems</c>). Each adds a workspace on this PC, never on the host.
+    /// </summary>
     public static IReadOnlyList<string> AddPaneEntries(Workspace? workspace) => workspace?.Remote is null ? AddPaneMenu.Entries()
-        : [.. Wire.Providers.Select(p => AddPaneMenu.AgentPrefix + p), AddPaneMenu.Separator, AddPaneMenu.Shell, AddPaneMenu.Separator, AddPaneMenu.OpenProject];
+        : [.. Wire.Providers.Select(p => AddPaneMenu.AgentPrefix + p), AddPaneMenu.Separator, AddPaneMenu.Shell, AddPaneMenu.Separator, AddPaneMenu.OpenProject, AddPaneMenu.NewFolder, AddPaneMenu.FromGit];
 
     /// <summary>
     /// The workspace's folder on this PC, or null for a remote workspace, whose path is its host's (a UNC path among them): the one way

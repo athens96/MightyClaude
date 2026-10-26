@@ -180,7 +180,7 @@ public sealed partial class MainWindow
 
     private MenuFlyout DashboardAddMenu(Workspace workspace)
     {
-        // A remote workspace's menu offers agents and a remote command only (RemoteWorkspaceFeatures.AddPaneEntries); every menu ends with Connect to Another Computer….
+        // A remote workspace's menu offers agents, a remote command and the three ways to add a workspace (RemoteWorkspaceFeatures.AddPaneEntries); every menu ends with Connect to Another Computer….
         var workspaceId = workspace.Id;
         var entries = RemoteWorkspaceFeatures.AddPaneEntries(workspace);
         var menu = new MenuFlyout();

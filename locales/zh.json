@@ -1385,7 +1385,6 @@
   "sidebar.searchPlaceholder": "搜索工作区",
   "sidebar.noSearchResults": "没有匹配的工作区。",
   "sidebar.workspacesHeader": "工作区",
-  "sidebar.openFolder": "打开文件夹",
   "delegation.child.state.creating": "创建中",
   "delegation.child.state.running": "运行中",
   "delegation.child.state.waiting": "待你处理",

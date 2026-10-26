@@ -1385,7 +1385,6 @@
   "sidebar.searchPlaceholder": "ワークスペースを検索",
   "sidebar.noSearchResults": "一致するワークスペースはありません。",
   "sidebar.workspacesHeader": "ワークスペース",
-  "sidebar.openFolder": "フォルダを開く",
   "delegation.child.state.creating": "作成中",
   "delegation.child.state.running": "実行中",
   "delegation.child.state.waiting": "対応待ち",

@@ -1385,7 +1385,6 @@
   "sidebar.searchPlaceholder": "워크스페이스 검색",
   "sidebar.noSearchResults": "검색 결과가 없습니다.",
   "sidebar.workspacesHeader": "워크스페이스",
-  "sidebar.openFolder": "폴더 열기",
   "delegation.child.state.creating": "만드는 중",
   "delegation.child.state.running": "실행 중",
   "delegation.child.state.waiting": "응답 대기",

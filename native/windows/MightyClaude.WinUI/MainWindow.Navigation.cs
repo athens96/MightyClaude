@@ -209,7 +209,7 @@ public sealed partial class MainWindow
     {
         // The macOS add-pane order (AddPaneMenu.Entries): agents, terminal, browser and files,
         // then the three ways to add a workspace and Connect to Another Computer… at the bottom. A remote workspace's
-        // offers agents and a remote command only (RemoteWorkspaceFeatures.AddPaneEntries).
+        // offers agents, a remote command and the three ways to add a workspace (RemoteWorkspaceFeatures.AddPaneEntries).
         var state = service.Snapshot;
         var workspace = state.Workspaces.FirstOrDefault(w => w.Id == state.ActiveWorkspaceId);
         var entries = RemoteWorkspaceFeatures.AddPaneEntries(workspace); var remote = workspace?.Remote is not null;
