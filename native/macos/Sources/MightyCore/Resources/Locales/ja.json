@@ -583,6 +583,7 @@
   "phone.files.up": "親フォルダ",
   "phone.guided.phaseProgress": "{title}段階 · 全{count}段階中{current}段階目",
   "phone.hosts.addHost": "+ ホストを追加",
+  "phone.hosts.appVersion": "このアプリ v{version}",
   "phone.hosts.guide": "接続ガイド",
   "phone.hosts.help": "ヘルプ",
   "phone.push.channel.attention": "対応が必要",

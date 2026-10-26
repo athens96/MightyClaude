@@ -583,6 +583,7 @@
   "phone.files.up": "Parent folder",
   "phone.guided.phaseProgress": "{title} phase · step {current} of {count}",
   "phone.hosts.addHost": "+ Add Host",
+  "phone.hosts.appVersion": "This app v{version}",
   "phone.hosts.guide": "Connection Guide",
   "phone.hosts.help": "Help",
   "phone.push.channel.attention": "Needs you",

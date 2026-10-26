@@ -583,6 +583,7 @@
   "phone.files.up": "上级文件夹",
   "phone.guided.phaseProgress": "{title} 阶段 · 第 {current} 步，共 {count} 步",
   "phone.hosts.addHost": "+ 添加主机",
+  "phone.hosts.appVersion": "本应用 v{version}",
   "phone.hosts.guide": "连接指南",
   "phone.hosts.help": "帮助",
   "phone.push.channel.attention": "需要你处理",

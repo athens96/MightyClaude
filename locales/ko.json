@@ -583,6 +583,7 @@
   "phone.files.up": "상위 폴더",
   "phone.guided.phaseProgress": "{title} 단계 · 전체 {count}단계 중 {current}번째",
   "phone.hosts.addHost": "+ 호스트 추가",
+  "phone.hosts.appVersion": "이 앱 v{version}",
   "phone.hosts.guide": "연결 안내 보기",
   "phone.hosts.help": "도움말",
   "phone.push.channel.attention": "답이 필요한 일",

@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Alert, FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LiveDot, RouteBadge, reachabilityColor, reachabilityKeys } from '@/components/host-status';
 import { Badge, Button, EmptyState, ScreenTitle } from '@/components/ui';
@@ -137,6 +138,11 @@ export default function HostsTab() {
               tone="ghost"
               onPress={() => router.push('/settings')}
             />
+            {Constants.expoConfig?.version ? (
+              <Text style={styles.appVersion} testID="phone-app-version">
+                {t('phone.hosts.appVersion', { version: Constants.expoConfig.version })}
+              </Text>
+            ) : null}
           </View>
         }
       />
@@ -172,4 +178,5 @@ const makeStyles = (palette: Palette) =>
     status: { fontSize: 12, fontWeight: '700' },
     meta: { color: palette.textFaint, fontSize: 12 },
     footer: { gap: spacing.xs, paddingTop: spacing.lg },
+    appVersion: { color: palette.textFaint, fontFamily: monoFontFamily, fontSize: 12, paddingTop: spacing.sm, textAlign: 'center' },
   });
