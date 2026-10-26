@@ -48,7 +48,7 @@ Spec: `docs/superpowers/specs/2026-10-26-agent-notices-design.md`.
 - Create: `native/macos/Tests/MightyCoreTests/AgentNoticeTests.swift`
 
 **Interfaces (produced):**
-- `public enum AgentHandback { public static func parse(_ text: String) -> [(from: String, body: String)] }`, in MightyCore. Pure: it finds every `<agent-message from="…">…</agent-message>` in a text (also inside `<system-reminder>`) and returns the sender and the body, de-indented per the constraint.
+- `public enum AgentHandback { public static func parse(_ text: String) -> [(from: String, body: String, isHandback: Bool)] }`, in MightyCore. Pure: it finds every `<agent-message from="…">…</agent-message>` in a text (also inside `<system-reminder>`) and returns the sender, the body (de-indented per the constraint) and whether the message is a framed final report.
 - `ClaudeStream.isNotificationResult` returns true for `origin.kind` in `task-notification`, `task_notification` and `peer`. Before changing it, confirm the real origin value of a hand-back turn's `result` event in the installed CLI. The CLI is at `~/.local/share/claude/versions/<latest>`; grep it for `"peer"` near `origin` / `result`. Record the evidence in the report.
 
 - [ ] **Step 1: Fixture.** Build `agent-notices.json` from real shapes. Look at a local record (`~/.claude/projects/*/*.jsonl`), but copy only the structure and use made-up IDs such as `a1b2c3d4e5f6a7b8c` and `toolu_FAKE…` and neutral text. It holds these cases:
@@ -75,7 +75,7 @@ Spec: `docs/superpowers/specs/2026-10-26-agent-notices-design.md`.
     - Set `output` to the summary only when output is empty.
     - Add the same notice steer (`addSteer(id: "notice:" + id, …)`), which `addSteer` already de-duplicates per id.
     - Append the agent's title to `noticedTasks` (capped at 16).
-  - A user message containing `<agent-message` (text content, any origin) calls a new `settleHandbacks(in:)`. For each parsed `(from, body)`:
+  - A user message containing `<agent-message` (text content, any origin) calls a new `settleHandbacks(in:)`. For each parsed `(from, body, isHandback)`:
     1. Find the node by alias id, then by name.
     2. If it is not terminal, set it to completed.
     3. Set `output = body`, replacing an empty or summary-only output.
@@ -105,7 +105,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: the fixture and the Mac behaviour from Task 1 (read the Mac diff, `git show <Task 1 commit>`).
-- Produces: `public static class AgentHandback { public static IReadOnlyList<(string From, string Body)> Parse(string text) }`, and the same tracker behaviour.
+- Produces: `public static class AgentHandback { public static IReadOnlyList<(string From, string Body, bool IsHandback)> Parse(string text) }`, and the same tracker behaviour.
 
 - [ ] **Step 1:** Write `AgentNoticeVerification` with the same three groups as the Mac tests (handbacks, results, streams). Construct and feed the tracker the way the existing Windows tracker checks do. Register:
 
