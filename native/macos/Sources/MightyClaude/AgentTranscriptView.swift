@@ -42,6 +42,7 @@ struct AgentTranscriptView: NSViewRepresentable {
     }
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         (scrollView as? AgentTranscriptScrollView)?.passesScrollAtEdges = passesScrollAtEdges
+        (scrollView as? AgentTranscriptScrollView)?.followsContentHeight = onContentHeight != nil
         context.coordinator.textView?.onFocus = onFocus
         context.coordinator.textView?.onContentHeight = onContentHeight
         context.coordinator.onReference = onReference
@@ -280,6 +281,19 @@ private final class AgentTranscriptScrollView: NSScrollView {
     private var keepingViewport = false
     /// See `AgentTranscriptView.passesScrollAtEdges`.
     var passesScrollAtEdges = false
+    /// The view's height follows its measured text (`onContentHeight`, the newest Mighty
+    /// result card). Its scroller is then always the overlay kind: a legacy scroller
+    /// (a mouse attached, "Show scroll bars: Automatically") narrows the text when it
+    /// appears, the text wraps taller, the card grows, the scroller hides, the text wraps
+    /// shorter and the card shrinks — every main-queue turn, so the card shook up and down.
+    var followsContentHeight = false {
+        didSet { if followsContentHeight != oldValue { scrollerStyle = NSScroller.preferredScrollerStyle } }
+    }
+    override var scrollerStyle: NSScroller.Style {
+        get { super.scrollerStyle }
+        // The system re-applies its preferred style when the preference or the pointing device changes.
+        set { super.scrollerStyle = followsContentHeight ? .overlay : newValue }
+    }
     /// Whether the current wheel gesture goes to the outer scroll view; decided when
     /// it begins, so one gesture never switches views halfway.
     private var forwardingGesture = false
