@@ -1723,7 +1723,7 @@
   "layout.welcome.shortcuts": "Ctrl+O  폴더 열기   ·   Ctrl+N  실행 창 추가",
   "layout.welcome.footer": "로컬 CLI와 직접 연결되는 Windows 앱",
   "layout.welcome.footerMac": "로컬 CLI와 직접 연결되는 macOS 앱",
-  "layout.welcome.openProject": "프로젝트 폴더 열기",
+  "layout.welcome.openProject": "기존 폴더 열기",
   "layout.welcome.shortcutsMac": "⌘O  폴더 열기   ·   ⌘N  실행 창 추가",
   "pane.empty.agentTitle": "{provider}와 작업을 시작하세요",
   "pane.empty.agentBody": "프로젝트를 설명하거나, 수정할 내용을 입력하세요. 이 창의 대화는 다음 실행에서도 이어집니다.",

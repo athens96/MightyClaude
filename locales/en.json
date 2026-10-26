@@ -1723,7 +1723,7 @@
   "layout.welcome.shortcuts": "Ctrl+O  Open folder   ·   Ctrl+N  Add pane",
   "layout.welcome.footer": "A Windows app that connects straight to your local CLIs",
   "layout.welcome.footerMac": "A macOS app that connects straight to your local CLIs",
-  "layout.welcome.openProject": "Open Project Folder",
+  "layout.welcome.openProject": "Open Existing Folder",
   "layout.welcome.shortcutsMac": "⌘O  Open folder   ·   ⌘N  Add pane",
   "pane.empty.agentTitle": "Start working with {provider}",
   "pane.empty.agentBody": "Describe the project or what to change. This pane's conversation carries on into the next run.",

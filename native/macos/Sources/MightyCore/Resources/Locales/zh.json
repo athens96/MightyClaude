@@ -1723,7 +1723,7 @@
   "layout.welcome.shortcuts": "Ctrl+O  打开文件夹   ·   Ctrl+N  添加窗格",
   "layout.welcome.footer": "直接连接本地 CLI 的 Windows 应用",
   "layout.welcome.footerMac": "直接连接本地 CLI 的 macOS 应用",
-  "layout.welcome.openProject": "打开项目文件夹",
+  "layout.welcome.openProject": "打开现有文件夹",
   "layout.welcome.shortcutsMac": "⌘O  打开文件夹   ·   ⌘N  添加窗格",
   "pane.empty.agentTitle": "开始与 {provider} 一起工作",
   "pane.empty.agentBody": "描述项目或要更改的内容。此窗格的对话会延续到下一次运行。",

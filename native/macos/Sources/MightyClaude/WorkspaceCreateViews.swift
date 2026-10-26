@@ -119,7 +119,8 @@ struct NewFolderSheet: View {
                     .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
                     .accessibilityIdentifier("workspace-create-path")
             }
-            if let problem = createError ?? CreateCheck.shownProblem(name: name, location: location) {
+            // While the folder is being made it exists already: no "already exists" line then.
+            if let problem = createError ?? (busy ? nil : CreateCheck.shownProblem(name: name, location: location)) {
                 Text(problem).font(.ui(size: 10)).foregroundStyle(Palette.errText)
                     .accessibilityIdentifier("workspace-create-problem")
             }
@@ -248,7 +249,8 @@ struct GitCreateSheet: View {
                     .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
                     .accessibilityIdentifier("workspace-create-path")
             }
-            if let problem = CreateCheck.shownProblem(name: name, location: location) {
+            // git makes the target at once: no "already exists" line while the clone runs.
+            if !running, let problem = CreateCheck.shownProblem(name: name, location: location) {
                 Text(problem).font(.ui(size: 10)).foregroundStyle(Palette.errText)
                     .accessibilityIdentifier("workspace-create-problem")
             }
@@ -281,6 +283,8 @@ struct GitCreateSheet: View {
             urlFocused = true
         }
         .onChange(of: url) { _, value in
+            // Off at once: Enter must not clone an address the restarted check has not seen.
+            probe = .idle
             failure = nil
             if !nameEdited { name = WorkspaceCreate.repoName(value) ?? "" }
         }
@@ -376,15 +380,5 @@ struct GitCreateSheet: View {
                 }
             }
         }
-    }
-}
-
-/// The sidebar's empty-list choices, drawn as its single "open folder" button was.
-struct SidebarAddChoiceStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.ui(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.sm)
-            .background(Palette.subtle.opacity(configuration.isPressed ? 0.6 : 1), in: RoundedRectangle(cornerRadius: 7))
-            .contentShape(Rectangle())
     }
 }

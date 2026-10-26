@@ -702,6 +702,16 @@ struct WorkspaceView: View {
     }
 }
 
+/// The sidebar's empty-list choices, drawn as its single "open folder" button was.
+struct SidebarAddChoiceStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.ui(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.sm)
+            .background(Palette.subtle.opacity(configuration.isPressed ? 0.6 : 1), in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(Rectangle())
+    }
+}
+
 /// Folds the left sidebar away or brings it back (⌃⌘S). It sits at the content's
 /// top-leading edge in every header, so it stays in reach with the sidebar gone.
 struct SidebarToggleButton: View {

@@ -1723,7 +1723,7 @@
   "layout.welcome.shortcuts": "Ctrl+O  フォルダを開く   ·   Ctrl+N  ペインを追加",
   "layout.welcome.footer": "ローカルのCLIに直接つながるWindowsアプリ",
   "layout.welcome.footerMac": "ローカルのCLIに直接つながるmacOSアプリ",
-  "layout.welcome.openProject": "プロジェクトフォルダを開く",
+  "layout.welcome.openProject": "既存のフォルダを開く",
   "layout.welcome.shortcutsMac": "⌘O  フォルダを開く   ·   ⌘N  ペインを追加",
   "pane.empty.agentTitle": "{provider}で作業を始めましょう",
   "pane.empty.agentBody": "プロジェクトや変更したい内容を説明してください。このペインの会話は次の実行にも引き継がれます。",
