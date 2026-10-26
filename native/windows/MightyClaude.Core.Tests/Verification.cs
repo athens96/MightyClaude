@@ -534,6 +534,8 @@ internal static class Verification
         await Test("delegation: the human's menu says why another agent cannot run the text", DelegationCrossAgentVerification.TheHumansMenuSaysWhy);
         await Test("delegation: the human's child of the pane's own agent never asks about its CLI", DelegationCrossAgentVerification.ThePanesOwnAgentIsNeverAskedAbout);
         await Test("delegation: the service offers the worktree menu and starts another agent's child", DelegationCrossAgentVerification.TheServiceOffersTheMenuAndStartsAnotherAgentsChild);
+        await Test("workspace create: repo names, folder names, git errors and clone progress follow native/contracts/fixtures/workspace-create.json", WorkspaceCreateVerification.TheSharedRulesHold);
+        await Test("workspace create: a new folder, a probe and a clone against a local bare repository", WorkspaceCreateVerification.MakeFolderAndCloneWorkOnALocalBareRepository);
         await Test("delegation scenario S1: two children, a human's approval, a fast-forward and a discard", DelegationScenarioVerification.S1);
         await Test("delegation scenario S2: held notices released together by a send or run next after a relaunch", DelegationScenarioVerification.S2);
         await Test("delegation scenario S3: a diverged child's held follow-ups reach it once after a relaunch", DelegationScenarioVerification.S3);
@@ -1030,7 +1032,7 @@ internal static class Verification
         await Test("agent marks: only an agent's sidebar row names its provider, so only it carries the mark", ProviderMarkVerification.OnlyAnAgentRowNamesItsProviderSoOnlyItCarriesTheMark);
         await Test("agent marks: marks are the macOS outlines in their brand colours", ProviderMarkVerification.MarksAreTheMacOutlinesInTheirBrandColours);
         await Test("agent marks: right-side cards put the mark before the agent name their title ends with", ProviderMarkVerification.RightSideCardsMarkTheAgentNameTheirTitleEndsWith);
-        await Test("add pane menu: 프로젝트 폴더 열기… comes last, after a separator", AddPaneMenuVerification.TheMenuEndsWithOpenProjectAfterASeparator);
+        await Test("add pane menu: 기존 폴더 열기…, 새 폴더 만들기… and Git으로 생성… come last, after a separator", AddPaneMenuVerification.TheMenuEndsWithTheThreeWaysToAddAWorkspace);
         await Test("add pane menu: the sidebar open-folder button shows only when no workspace is listed", AddPaneMenuVerification.TheOpenFolderButtonShowsOnlyWhenNoWorkspaceIsListed);
         await Test("add pane menu: only Claude and Codex picked from the menu may ask 새로 시작 / 이어가기", AddPaneMenuVerification.OnlyClaudeAndCodexFromTheMenuMayAskToResume);
         await Test("agent images: Claude Read and MCP screenshot results become inline image entries without base64", AgentImageVerification.ClaudeReadAndMcpScreenshotResultsBecomeImageEntriesWithoutBase64);

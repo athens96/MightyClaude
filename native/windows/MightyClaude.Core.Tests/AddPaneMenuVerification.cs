@@ -10,17 +10,20 @@ internal static class AddPaneMenuVerification
 {
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 
-    internal static Task TheMenuEndsWithOpenProjectAfterASeparator()
+    internal static Task TheMenuEndsWithTheThreeWaysToAddAWorkspace()
     {
         var entries = AddPaneMenu.Entries();
         Check(entries.Take(Wire.Providers.Length).Select(AddPaneMenu.AgentProvider).SequenceEqual(Wire.Providers), "agents come first, in provider order");
-        Check(entries[^1] == AddPaneMenu.OpenProject && entries[^2] == AddPaneMenu.Separator, "프로젝트 폴더 열기… is last, after a separator");
-        Check(entries.Count(e => e == AddPaneMenu.OpenProject) == 1, "one open-folder entry");
+        Check(entries.TakeLast(4).SequenceEqual([AddPaneMenu.Separator, AddPaneMenu.OpenProject, AddPaneMenu.NewFolder, AddPaneMenu.FromGit]), "기존 폴더 열기…, 새 폴더 만들기… and Git으로 생성… are last, after a separator");
+        Check(entries.Count(e => e == AddPaneMenu.OpenProject) == 1 && entries.Count(e => e == AddPaneMenu.NewFolder) == 1 && entries.Count(e => e == AddPaneMenu.FromGit) == 1, "one entry of each way to add a workspace");
         Check(entries.Contains(AddPaneMenu.Shell) && entries.Contains(AddPaneMenu.Browser) && entries.Contains(AddPaneMenu.Files), "terminal, browser and files entries stay");
         Check(entries.Zip(entries.Skip(1)).All(pair => !(pair.First == AddPaneMenu.Separator && pair.Second == AddPaneMenu.Separator)) && entries[0] != AddPaneMenu.Separator, "no empty sections");
-        Check(AddPaneMenu.AgentProvider(AddPaneMenu.OpenProject) is null && AddPaneMenu.AgentProvider(AddPaneMenu.Shell) is null, "only agent entries name a provider");
+        Check(new[] { AddPaneMenu.OpenProject, AddPaneMenu.NewFolder, AddPaneMenu.FromGit, AddPaneMenu.Shell }.All(e => AddPaneMenu.AgentProvider(e) is null), "only agent entries name a provider");
         var text = Locale.Get(AddPaneMenu.OpenProjectKey);
-        Check(text is "프로젝트 폴더 열기…" or "Open Project Folder…", "shared menu.openProject text " + text);
+        Check(text is "기존 폴더 열기…" or "Open Existing Folder…", "shared menu.openProject text " + text);
+        var newFolder = Locale.Get(AddPaneMenu.NewFolderKey); var fromGit = Locale.Get(AddPaneMenu.FromGitKey);
+        Check(newFolder is "새 폴더 만들기…" or "New Folder…", "shared workspace.add.newFolder text " + newFolder);
+        Check(fromGit is "Git으로 생성…" or "Create from Git…", "shared workspace.add.fromGit text " + fromGit);
         Check(AddPaneMenu.OpenFolderShortcut == "Ctrl+O", "⌘O maps to Ctrl+O");
         return Task.CompletedTask;
     }

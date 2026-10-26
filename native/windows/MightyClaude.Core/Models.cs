@@ -330,6 +330,10 @@ public sealed record AppSnapshot
     // That line was left open on its task rows. Null (older state) means folded, matching the Mac's backgroundWorkOpen.
     [JsonConverter(typeof(LenientNullableBoolConverter))]
     public bool? BackgroundWorkOpen { get; init; }
+    // Where the last new folder or Git clone was made, the create sheets' starting location (WorkspaceCreate.DefaultLocation).
+    // Null (older state) starts at the active workspace's parent folder, matching the Mac's lastCreateLocation.
+    [JsonConverter(typeof(LenientJsonConverter<string>))]
+    public string? LastCreateLocation { get; init; }
     // The profile's Antigravity panes were moved off what Gemini CLI saved (AntigravityMigration). Null (older state) means
     // not yet, matching the Mac's antigravityMigrated.
     [JsonConverter(typeof(LenientNullableBoolConverter))]

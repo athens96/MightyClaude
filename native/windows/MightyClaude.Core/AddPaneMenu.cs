@@ -4,9 +4,11 @@ namespace MightyClaude.Core;
 /// The "창 추가" menu and the sidebar's way into a folder, as on macOS
 /// (WorkspaceView.swift <c>WorkspaceAddMenuItems</c> and the sidebar's 폴더 열기 button;
 /// docs/session-resume.md): the agents, a terminal, a browser tab (and on Windows the
-/// files pane), then 프로젝트 폴더 열기… at the bottom. While a workspace is listed a
-/// folder opens from that menu or Ctrl+O (macOS ⌘O); the sidebar button shows only
-/// when no workspace is listed — none yet, or none matching the search.
+/// files pane), then at the bottom the three ways to add a workspace: open an existing
+/// folder (기존 폴더 열기…), make a new folder (새 폴더 만들기…) and create one from a Git
+/// address (Git으로 생성…). While a workspace is listed a folder opens from that menu or
+/// Ctrl+O (macOS ⌘O); the sidebar button shows only when no workspace is listed — none
+/// yet, or none matching the search.
 /// </summary>
 public static class AddPaneMenu
 {
@@ -16,15 +18,21 @@ public static class AddPaneMenu
     public const string Browser = "browser";
     public const string Files = FilePaneKind.Kind;
     public const string OpenProject = "openProject";
-    /// The shared locale key of the bottom entry (macOS <c>L("menu.openProject")</c>).
+    /// The shared locale key of the open-folder entry (macOS <c>L("menu.openProject")</c>).
     public const string OpenProjectKey = "menu.openProject";
+    /// Make a new folder (optionally a Git repository) and add it (macOS <c>WorkspaceCreateKind.newFolder</c>).
+    public const string NewFolder = "newFolder";
+    /// Create a workspace from a Git address this computer's credentials reach (macOS <c>WorkspaceCreateKind.fromGit</c>).
+    public const string FromGit = "fromGit";
+    public const string NewFolderKey = "workspace.add.newFolder";
+    public const string FromGitKey = "workspace.add.fromGit";
     public const string OpenFolderShortcut = "Ctrl+O";
     /// Ctrl+N (macOS ⌘N, <c>menu.newClaudePane</c>) adds a Claude pane at once.
     public const string NewPaneShortcutProvider = "claude";
 
     /// The menu's entries in order: <c>agent:&lt;provider&gt;</c> for each agent, then the others.
     public static IReadOnlyList<string> Entries() =>
-        [.. Wire.Providers.Select(p => AgentPrefix + p), Separator, Shell, Separator, Browser, Files, Separator, OpenProject];
+        [.. Wire.Providers.Select(p => AgentPrefix + p), Separator, Shell, Separator, Browser, Files, Separator, OpenProject, NewFolder, FromGit];
 
     /// The provider an <c>agent:</c> entry adds, or null for any other entry.
     public static string? AgentProvider(string entry) => entry.StartsWith(AgentPrefix, StringComparison.Ordinal) ? entry[AgentPrefix.Length..] : null;

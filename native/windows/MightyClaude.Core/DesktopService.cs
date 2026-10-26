@@ -141,6 +141,8 @@ public sealed partial class DesktopService : IAsyncDisposable
         var workspace = store.ApproveLocal(path);
         await UpdateAsync(s => WorkspaceDisclosure.Open(s with { Workspaces = s.Workspaces.Any(w => w.Id == workspace.Id) ? s.Workspaces : s.Workspaces.Append(workspace).ToList() }, workspace.Id) with { ActiveWorkspaceId = workspace.Id }); return workspace;
     }
+    /// <summary>The folder the create sheets made a workspace in, where they start next time (M/AppStore+WorkspaceCreate.swift rememberCreateLocation).</summary>
+    public Task RememberCreateLocationAsync(string path) => Snapshot.LastCreateLocation == path ? Task.CompletedTask : UpdateAsync(s => s with { LastCreateLocation = path });
     public async Task RemoveWorkspaceAsync(string id)
     {
         // Refused, changing nothing, while delegation has open children or child worktrees not cleaned up there (M/AppStore.swift:627-642).

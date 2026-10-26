@@ -71,7 +71,7 @@ public sealed partial class MainWindow
     /// <summary>
     /// The section header "워크스페이스 6" (M/WorkspaceView.swift:112-125): 10pt semibold words and a 10pt mono count,
     /// both <c>sidebarInk2</c>, padding h20 t20 b11; at its trailing edge the plain folder-plus button, an 11pt
-    /// symbol in the same ink, which opens a project folder as a workspace the way Open Project Folder… does.
+    /// symbol in the same ink, which opens an existing folder as a workspace the way Open Existing Folder… does.
     /// </summary>
     private FrameworkElement BuildSidebarSectionHeader()
     {
