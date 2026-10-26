@@ -128,4 +128,4 @@ await Test("agent notices: hand-backs, notice results and background sub-agent s
 ## Verification when the user asks
 - Mac: `DEVELOPER_DIR=/Library/Developer/CommandLineTools bash scripts/test-native-macos.sh --scratch-path /tmp/mc-an --filter '\.(AgentNoticeTests|ExecutionGraphTracker[A-Za-z]*Tests)/'`.
 - Windows: `bash ~/Work/.mc-tools/windows-core-checks/core-checks.sh`.
-- A device check: start a background sub-agent in a Claude pane and watch the Mighty view.
+- A device check: start a background sub-agent in a Claude pane and watch the Mighty view. It confirms two live-stream assumptions code reading cannot: (1) the injected peer hand-back is echoed on stdout as a `user` event (the app does not pass `--replay-user-messages`; the task-notification path relies on the same), and (2) a peer-opened turn ends with its own `result` before the next request is read, so the request's own result never carries origin `peer`.
