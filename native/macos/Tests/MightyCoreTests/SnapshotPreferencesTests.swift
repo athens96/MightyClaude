@@ -135,6 +135,24 @@ struct SnapshotPreferencesTests {
         }
     }
 
+    @Test func lastCreateLocationPersistsAndOlderStateReadsNil() async throws {
+        let legacy = Data(#"{"version":1,"workspaces":[],"sessions":[],"layout":"grid","theme":"dark","sidebarWidth":300}"#.utf8)
+        #expect(StateRepository.decodeSnapshot(legacy).lastCreateLocation == nil)
+        #expect(AppSnapshot().lastCreateLocation == nil)
+        #expect(StateRepository.normalize(AppSnapshot(lastCreateLocation: "/tmp/projects"), restoring: true).lastCreateLocation == "/tmp/projects")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-create-location-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await StateRepository(directory: directory, legacyStateURL: nil).save(AppSnapshot(lastCreateLocation: "/tmp/projects"))
+        let restored = try await StateRepository(directory: directory, legacyStateURL: nil).load()
+        #expect(restored.lastCreateLocation == "/tmp/projects")
+        // Only a JSON string counts.
+        var object = try #require(JSONSerialization.jsonObject(with: legacy) as? [String: Any])
+        for invalid: Any in [1, true, NSNull()] {
+            object["lastCreateLocation"] = invalid
+            #expect(StateRepository.decodeSnapshot(try JSONSerialization.data(withJSONObject: object)).lastCreateLocation == nil)
+        }
+    }
+
     @Test func sidebarWidthNormalizesIntoTheContractBounds() throws {
         func normalized(_ width: Double) -> Double { StateRepository.normalize(AppSnapshot(sidebarWidth: width), restoring: false).sidebarWidth }
         #expect(normalized(205) == 210)

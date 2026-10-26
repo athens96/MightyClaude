@@ -443,14 +443,17 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     public var showsBackgroundWork: Bool?
     /// That line was left open on its task rows. nil (older state) means folded.
     public var backgroundWorkOpen: Bool?
+    /// The folder the last workspace made from a new folder or a Git address was put in
+    /// (the create sheets' Location). nil (older state) means the default location.
+    public var lastCreateLocation: String?
     /// The profile's Antigravity panes were moved off what Gemini CLI saved
     /// (`AntigravityMigration`). nil (older state) means not yet; Mac only.
     public var antigravityMigrated: Bool? = nil
-    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = SidebarFold.defaultWidth, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil, autoUpdatePlugins: Bool? = nil, sidebarCollapsed: Bool? = nil, autoLoginCLIs: Bool? = nil, showsBackgroundWork: Bool? = nil, backgroundWorkOpen: Bool? = nil) {
+    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = SidebarFold.defaultWidth, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil, autoUpdatePlugins: Bool? = nil, sidebarCollapsed: Bool? = nil, autoLoginCLIs: Bool? = nil, showsBackgroundWork: Bool? = nil, backgroundWorkOpen: Bool? = nil, lastCreateLocation: String? = nil) {
         self.autoUpdatePlugins = autoUpdatePlugins
         self.sidebarCollapsed = sidebarCollapsed
         self.autoLoginCLIs = autoLoginCLIs
-        self.showsBackgroundWork = showsBackgroundWork; self.backgroundWorkOpen = backgroundWorkOpen
+        self.showsBackgroundWork = showsBackgroundWork; self.backgroundWorkOpen = backgroundWorkOpen; self.lastCreateLocation = lastCreateLocation
         self.version = version; self.workspaces = workspaces; self.sessions = sessions; self.activeWorkspaceId = activeWorkspaceId; self.activeSessionId = activeSessionId; self.layout = layout; self.theme = theme; self.sidebarWidth = sidebarWidth
         self.paneLayouts = paneLayouts
         self.paneLayoutModes = paneLayoutModes; self.paneLayoutActiveSessionIds = paneLayoutActiveSessionIds
