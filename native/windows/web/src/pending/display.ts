@@ -81,7 +81,8 @@ const id = (value: unknown): string | null => (typeof value === 'string' && valu
 /**
  * A host's answer (the `send` bridge, the phone submit), old and new: the body's `outcome` when it is one of the three words,
  * else its `accepted` word (old hosts); accepted when there is an outcome or `accepted` is the boolean true. Ids count only as
- * non-empty strings; anything else in the body is ignored.
+ * non-empty strings; anything else in the body is ignored. Kept for contract parity (pending.json `submitResponses`): no page code
+ * calls it, the store reads the send bridge's answer word by word.
  */
 export function parseSubmitResponse(raw: unknown): SubmitResponse {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { accepted: false, entryId: null, runId: null, outcome: null };

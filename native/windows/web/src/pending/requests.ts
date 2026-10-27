@@ -2,7 +2,8 @@
 // one with the sent words, every view draws it at once with 전송 중, and it gives way to the host's own block as the delta
 // brings it. Pure; the store keeps them per pane (store.ts `pending`).
 import type { LogEntry, MightyGraphRun, RunSession } from '../store/models';
-import type { PendingState } from './display';
+import { pendingVisible, type PendingState } from './display';
+import { Motion } from '../theme/tokens';
 
 /** One sent request on its way. */
 export interface PendingRequest {
@@ -27,6 +28,14 @@ export interface PendingRequest {
   /** When its entry and run were in the pane (phase arrived), and that run's ids. */
   arrivedAt?: number;
   arrivedRunIds?: readonly string[];
+  /** The host's user entry it arrived as (the conversation draws the stand-in in its place while it holds, `doneAt`). */
+  arrivedEntryId?: string;
+  /**
+   * When the shown view's own data had it and the stand-in would have gone, had its 전송 중 not shown yet: once shown it stays
+   * its shortest time (pending.json `displayRule`, pendingVisible(at, doneAt, now)), drawn in place of the host's own block,
+   * which the view holds back meanwhile (the diagram keeps 전송 중 on the host's request block), so nothing shows twice.
+   */
+  doneAt?: number;
   /** The host's user entry and graph run for it, when the answer named them. */
   entryId?: string;
   runId?: string;
@@ -106,11 +115,18 @@ export const StartedGrace = 15_000;
  */
 export const ArrivedGrace = 2_000;
 
-/** The next moment a request may go by time alone (StartedGrace, ArrivedGrace), so a quiet pane is settled then too; null: none. */
+/** The moment a holding request's stand-in may go: just after its shortest showing (the hold is inclusive). */
+export const holdEnd = (request: PendingRequest) => request.at + Motion.pendingShowAfter + Motion.pendingMinVisible + 1;
+
+/**
+ * The next moment a request may go by time alone (StartedGrace, ArrivedGrace, the end of a hold), so a quiet pane is settled then
+ * too; null: none.
+ */
 export function nextDeadline(requests: readonly PendingRequest[]): number | null {
   let next: number | null = null;
   for (const request of requests) {
     const at = request.phase === 'started' && request.answeredAt !== undefined ? request.answeredAt + StartedGrace + 1
+      : request.phase === 'arrived' && request.doneAt !== undefined ? holdEnd(request)
       : request.phase === 'arrived' && request.arrivedAt !== undefined ? request.arrivedAt + ArrivedGrace + 1 : null;
     if (at !== null && (next === null || at < next)) next = at;
   }
@@ -118,10 +134,28 @@ export function nextDeadline(requests: readonly PendingRequest[]): number | null
 }
 
 /**
+ * A request whose shown view's data has it: it goes, unless its 전송 중 has shown and must stay its shortest time (pendingVisible
+ * from the moment it would have gone, `doneAt`); then it stays, in place of the host's block, until `holdEnd`.
+ */
+function release(request: PendingRequest, now: number): PendingRequest | null {
+  const doneAt = request.doneAt ?? now;
+  if (!pendingVisible(request.at, doneAt, now)) return null;
+  return request.doneAt === undefined ? { ...request, doneAt } : request;
+}
+
+/** The host's user entry `request` arrived as: the one the answer named, else the first new one with its words, else (a start answered without ids) the first new one. */
+function arrivedEntry(request: PendingRequest, session: RunSession): string | undefined {
+  if (request.entryId !== undefined) return request.entryId;
+  const fresh = userEntriesSince(request, session.logs);
+  return (fresh.find((entry) => sameWords(entry.text, request.text)) ?? (request.phase === 'started' ? fresh[0] : undefined))?.id;
+}
+
+/**
  * The requests still waiting once the pane is `session` at `now`. A failed one stays (it shows its message in place) until the
  * next send. One goes once its entry is in the pane and, on a pane that draws the diagram, its run too (the ids the answer named,
  * else a new one with its words). On a diagram pane it first turns `arrived` and goes when `holds` says the shown Mighty view's
- * own data has its run (always, when no Mighty view shows). StartedGrace and ArrivedGrace end a wait whose blocks never come.
+ * own data has its run (always, when no Mighty view shows). One whose 전송 중 has shown stays its shortest time first (`release`).
+ * StartedGrace and ArrivedGrace end a wait whose blocks never come.
  */
 export function reconcile(requests: readonly PendingRequest[], session: RunSession | undefined, now: number, holds: (request: PendingRequest) => boolean = () => true): readonly PendingRequest[] {
   if (!session) return [];
@@ -130,15 +164,16 @@ export function reconcile(requests: readonly PendingRequest[], session: RunSessi
   for (const request of requests) {
     let next: PendingRequest | null = request;
     if (request.phase === 'arrived') {
-      if (now - (request.arrivedAt ?? now) > ArrivedGrace || holds(request)) next = null;
+      if (request.doneAt !== undefined || now - (request.arrivedAt ?? now) > ArrivedGrace || holds(request)) next = release(request, now);
     } else if (request.phase === 'started' && request.answeredAt !== undefined && now - request.answeredAt > StartedGrace) {
       next = null;
     } else if (request.phase !== 'failed') {
       const diagram = drawsDiagram(session);
       const runs = diagram ? runsFor(request, session) : [];
       if (entryArrived(request, session) && (!diagram || runs.length > 0)) {
-        const arrived: PendingRequest = { ...request, phase: 'arrived', arrivedAt: now, arrivedRunIds: runs };
-        next = !diagram || holds(arrived) ? null : arrived;
+        const arrivedEntryId = arrivedEntry(request, session);
+        const arrived: PendingRequest = { ...request, phase: 'arrived', arrivedAt: now, arrivedRunIds: runs, ...(arrivedEntryId !== undefined ? { arrivedEntryId } : {}) };
+        next = !diagram || holds(arrived) ? release(arrived, now) : arrived;
       }
     }
     if (next !== request) changed = true;
@@ -190,6 +225,21 @@ export function failRequest(requests: readonly PendingRequest[], clientId: strin
 export function requestState(request: PendingRequest): PendingState {
   return request.phase === 'failed' ? { kind: 'failed', message: request.message ?? '', since: request.at, at: request.endedAt } : { kind: 'pending', since: request.at };
 }
+
+/**
+ * The holding requests the conversation draws in place of the host's own entry (by that entry's id) until their shortest showing
+ * is over (`doneAt`); the entry itself is not drawn meanwhile.
+ */
+export function heldInConversation(requests: readonly PendingRequest[] | undefined): ReadonlyMap<string, PendingRequest> {
+  const held = new Map<string, PendingRequest>();
+  for (const request of requests ?? []) {
+    if (request.phase === 'arrived' && request.doneAt !== undefined && request.arrivedEntryId !== undefined) held.set(request.arrivedEntryId, request);
+  }
+  return held;
+}
+
+/** Whether `request` holds in place of the host's own block (its 전송 중 keeps its shortest time): the view holds that block back. */
+export const holding = (request: PendingRequest | undefined) => request?.phase === 'arrived' && request.doneAt !== undefined;
 
 /** The requests the conversation draws: not yet there as the host's user entry. */
 export function shownInConversation(requests: readonly PendingRequest[] | undefined, session: RunSession): readonly PendingRequest[] {

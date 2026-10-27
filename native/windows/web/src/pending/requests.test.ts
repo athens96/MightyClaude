@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { LogEntry, MightyGraphRun, RunSession } from '../store/models';
 import {
-  ArrivedGrace, StartedGrace, applyAnswer, drawsDiagram, failRequest, newPendingRequest, nextDeadline, pendingRun, pendingRunId, reconcile, requestState, runsFor,
-  shownInConversation, shownInMighty, type PendingRequest,
+  ArrivedGrace, StartedGrace, applyAnswer, drawsDiagram, failRequest, heldInConversation, holding, newPendingRequest, nextDeadline, pendingRun, pendingRunId,
+  reconcile, requestState, runsFor, shownInConversation, shownInMighty, type PendingRequest,
 } from './requests';
 
 const at = Date.parse('2026-10-27T10:00:00Z');
@@ -88,7 +88,8 @@ describe('pending requests', () => {
     expect(shownInConversation(waiting, both)).toEqual([]);
     expect(runsFor(waiting[0]!, both)).toEqual(['r2']);
     expect(reconcile(waiting, both, at + 200, () => false)).toBe(waiting);
-    expect(reconcile(waiting, both, at + 200, (request) => request.arrivedRunIds?.includes('r2') === true)).toEqual([]);
+    // Before 전송 중 showed (at + 150) it goes at once.
+    expect(reconcile(waiting, both, at + 140, (request) => request.arrivedRunIds?.includes('r2') === true)).toEqual([]);
     expect(reconcile(waiting, both, at + 100 + ArrivedGrace, () => false)).toBe(waiting);
     expect(reconcile(waiting, both, at + 101 + ArrivedGrace, () => false)).toEqual([]);
   });
@@ -153,6 +154,45 @@ describe('pending requests', () => {
     // A request still waiting for its answer is not timed out here: the send itself ends it.
     const waiting = [sent()];
     expect(reconcile(waiting, before, at + 10 * StartedGrace)).toBe(waiting);
+  });
+
+  it('goes at once when the host brought it before 전송 중 showed', () => {
+    const started = applyAnswer([sent()], 'c1', 'started', { entryId: 'u2', runId: 'r2' }, '', at + 50);
+    const shell = pane([...before.logs, entry('u2', 'user', 'second request', at)]);
+    expect(reconcile(started, { ...shell, kind: 'shell' }, at + 150)).toEqual([]);
+  });
+
+  it('once 전송 중 showed, stays in place of the host entry until 150 + 300 ms, then goes', () => {
+    const started = applyAnswer([sent()], 'c1', 'started', { entryId: 'u2', runId: 'r2' }, '', at + 50);
+    const shell = { ...pane([...before.logs, entry('u2', 'user', 'second request', at)]), kind: 'shell' };
+    const kept = reconcile(started, shell, at + 200);
+    expect(kept[0]).toMatchObject({ phase: 'arrived', doneAt: at + 200, arrivedEntryId: 'u2' });
+    expect(holding(kept[0])).toBe(true);
+    // Drawn once: in the entry's place, not under the list.
+    expect(heldInConversation(kept).get('u2')).toBe(kept[0]);
+    expect(shownInConversation(kept, shell)).toEqual([]);
+    expect(nextDeadline(kept)).toBe(at + 150 + 300 + 1);
+    expect(reconcile(kept, shell, at + 450)).toBe(kept);
+    expect(reconcile(kept, shell, at + 451)).toEqual([]);
+  });
+
+  it('on a Mighty view counts the hold from when its own data had the run, and keeps it even if the view switches away', () => {
+    const started = applyAnswer([sent()], 'c1', 'started', { entryId: 'u2', runId: 'r2' }, '', at + 50);
+    const both = pane([...before.logs, entry('u2', 'user', 'second request', at)], [...before.graphRuns!, run('r2', 'second request')]);
+    const waiting = reconcile(started, both, at + 100, () => false);
+    expect(holding(waiting[0])).toBe(false);
+    const kept = reconcile(waiting, both, at + 300, () => true);
+    expect(kept[0]).toMatchObject({ phase: 'arrived', doneAt: at + 300 });
+    expect(shownInMighty(kept)).toBe(kept[0]);
+    expect(nextDeadline(kept)).toBe(at + 451);
+    expect(reconcile(kept, both, at + 400, () => false)).toBe(kept);
+    expect(reconcile(kept, both, at + 451, () => false)).toEqual([]);
+  });
+
+  it('matches the held entry by its words when the answer named none', () => {
+    const shell = { ...pane([...before.logs, entry('u9', 'user', 'second request', at)]), kind: 'shell' };
+    expect(heldInConversation(reconcile([sent()], shell, at + 300)).get('u9')?.clientId).toBe('c1');
+    expect(heldInConversation(undefined).size).toBe(0);
   });
 
   it('forgets every request of a pane that is gone', () => {

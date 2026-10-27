@@ -17,7 +17,7 @@ import { setBlockSize } from './prefs';
 import { shareRuns } from './share';
 import type { MightyBlockCopy, MightyPane, MightyFile } from './types';
 import { ReferenceContext, useReferenceClick } from '../conversation/referenceClick';
-import { pendingRun, pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
+import { holding, pendingRun, pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
 import { submitScroll } from '../pending/submitScroll';
 import { Motion, reducesMotion } from '../theme/tokens';
 import type { Translate } from '../i18n/locale';
@@ -449,8 +449,9 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     if (!request || !pendingState || !pendingRunIdOf) return extras;
     const id = nodeId(pendingRunIdOf, 'request');
     const extra = extras.get(id);
-    // The host's own copy came: its block shows the run's state from now on.
-    if (!extra || mighty.blocks[id] !== undefined) return extras;
+    // The host's own copy came: its block shows the run's state from now on, once a 전송 중 that has shown had its shortest
+    // time (`holding`), which it keeps on that block meanwhile.
+    if (!extra || (mighty.blocks[id] !== undefined && !holding(request))) return extras;
     const next = new Map(extras);
     next.set(id, { ...extra, pending: pendingState });
     return next;

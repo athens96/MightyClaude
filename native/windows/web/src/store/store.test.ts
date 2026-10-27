@@ -203,7 +203,6 @@ describe('sent requests and view choices (natural submit)', () => {
     const id = selectedSession(state.snapshot)!.id;
     const started = reduce(state, { kind: 'pending', action: 'answer', paneId: id, clientId: 'unknown', outcome: 'started', message: '', at });
     expect(started.ownSubmits[id]).toBe(1);
-    expect(reduce(state, { kind: 'pending', action: 'own', paneId: id }).ownSubmits[id]).toBe(1);
     const steered = reduce(state, { kind: 'pending', action: 'answer', paneId: id, clientId: 'unknown', outcome: 'steered', runId: 'run-1', message: '', at });
     expect(steered.steered).toEqual({ paneId: id, runId: 'run-1', seq: 1 });
   });

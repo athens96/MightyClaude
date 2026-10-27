@@ -94,7 +94,7 @@ public sealed record SubmitResponse(bool Accepted, string? EntryId = null, strin
     /// Reads a body; one that is missing or not an object reads as not accepted. The outcome is the body's <c>outcome</c> when it is
     /// started, queued or steered (any other word is ignored), else its <c>accepted</c> when that is one of those words (old hosts);
     /// accepted when there is an outcome or <c>accepted</c> is the JSON <c>true</c>. Ids count only as non-empty strings; everything
-    /// else in the body is ignored.
+    /// else in the body is ignored. Kept for contract parity (pending.json <c>submitResponses</c>): no Windows code calls it.
     /// </summary>
     public static SubmitResponse Parse(JsonElement? json)
     {

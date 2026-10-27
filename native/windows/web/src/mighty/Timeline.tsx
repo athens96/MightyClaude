@@ -10,7 +10,7 @@ import { ProviderMark } from '../conversation/ProviderMark';
 import { providerLabel } from '../conversation/format';
 import { Pending } from '../pending/Pending';
 import type { PendingState } from '../pending/display';
-import { pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
+import { holding, pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
 import { animateScrollTop, isNearBottom, submitScroll } from '../pending/submitScroll';
 import { Motion, reducesMotion } from '../theme/tokens';
 
@@ -174,18 +174,21 @@ export function Timeline({ session, groups: hostGroups, older, history, onOpenRo
   // The stand-in group stays until the host's groups hold the request's run (they come a moment after the run itself).
   const arrived = sent && sent.phase !== 'failed' ? runsFor(sent, session) : [];
   const held = arrived.length > 0 && (hostGroups ?? []).some((group) => arrived.includes(group.runId));
-  const pending = sent && !held ? sent : undefined;
+  // One whose 전송 중 has shown keeps its shortest time in place of the host's group, which waits meanwhile.
+  const pending = sent && (!held || holding(sent)) ? sent : undefined;
+  const heldBack = pending && held ? arrived.join('\n') : '';
   const pendingId = pending ? pendingRunId(pending) : null;
   const pendingState = useMemo(() => (pending ? requestState(pending) : undefined), [pending]);
   const groups = useMemo(() => {
     if (!pending) return hostGroups;
+    const shownGroups = heldBack ? (hostGroups ?? []).filter((group) => !heldBack.split('\n').includes(group.runId)) : hostGroups;
     const failed = pending.phase === 'failed';
     const group: TimelineGroup = {
-      runId: pendingRunId(pending), ordinal: (hostGroups?.length ?? 0) + 1, title: t('graph.block.nextRequest'), status: failed ? 'error' : 'starting',
+      runId: pendingRunId(pending), ordinal: (shownGroups?.length ?? 0) + 1, title: t('graph.block.nextRequest'), status: failed ? 'error' : 'starting',
       statusWord: '', tone: failed ? 'err' : 'run', input: pending.text, tally: '', open: false, older: false, rows: [], resultFolds: false,
     };
-    return [...(hostGroups ?? []), group];
-  }, [hostGroups, pending, t]);
+    return [...(shownGroups ?? []), group];
+  }, [hostGroups, pending, heldBack, t]);
   const count = groups?.length ?? 0;
   /** The view stood at its newest end before this draw (32 px), as the not-own follow rule reads it. */
   const atEnd = useRef(true);

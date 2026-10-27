@@ -8,7 +8,7 @@ import { ReferenceContext, clickedAt, linkAt, type Clicked } from './referenceCl
 import { HeightCache, estimateHeight, layout, nearBottom, visibleRange } from './virtual';
 import { usePageOverlay } from '../shell/overlay';
 import { Pending, PendingBars } from '../pending/Pending';
-import { requestState, shownInConversation, type PendingRequest } from '../pending/requests';
+import { heldInConversation, requestState, shownInConversation, type PendingRequest } from '../pending/requests';
 import { submitScroll } from '../pending/submitScroll';
 
 interface MenuState {
@@ -67,7 +67,9 @@ export function Conversation({ session }: { session: RunSession }) {
   const stored = useStoreState();
   const logs = session.logs;
   const requests = shownInConversation(stored.pending[session.id], session);
-  const running = awaitsFirstOutput(session) && requests.length === 0;
+  // A request whose 전송 중 has shown keeps its shortest time in place of the host's entry (natural submit A1).
+  const held = useMemo(() => heldInConversation(stored.pending[session.id]), [stored.pending, session.id]);
+  const running = awaitsFirstOutput(session) && requests.length === 0 && held.size === 0;
   const activity = stored.activities[session.id];
   const own = stored.ownSubmits[session.id] ?? 0;
   const scroller = useRef<HTMLDivElement>(null);
@@ -228,7 +230,11 @@ export function Conversation({ session }: { session: RunSession }) {
       onContextMenu={onContextMenu}
     >
       <div className="conversation-body" style={{ paddingTop: offsets[start], paddingBottom: total - (offsets[end] ?? total) }}>
-        {logs.slice(start, end).map((entry) => (
+        {logs.slice(start, end).map((entry) => held.has(entry.id) ? (
+          <div key={entry.id} className="entry-row" data-entry-id={entry.id} ref={observe}>
+            <PendingBubble request={held.get(entry.id)!} />
+          </div>
+        ) : (
           <Row
             key={entry.id}
             observe={observe}

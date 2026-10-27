@@ -113,8 +113,6 @@ export type PendingMessage =
   | { kind: 'pending'; action: 'add'; paneId: string; request: PendingRequest }
   | { kind: 'pending'; action: 'answer'; paneId: string; clientId: string; outcome: SendOutcome | string | null; entryId?: string | null; runId?: string | null; message: string; at: number }
   | { kind: 'pending'; action: 'fail'; paneId: string; clientId: string; message: string; at: number }
-  /** A send the page drew no block for (a queued item, a slash command) that started: the views move to it all the same. */
-  | { kind: 'pending'; action: 'own'; paneId: string }
   /** A moment a request may go by time alone (StartedGrace, ArrivedGrace) came: every pane is settled again. */
   | { kind: 'pending'; action: 'settle' };
 
@@ -269,8 +267,6 @@ export function applyPending(state: StoreState, message: PendingMessage): StoreS
     }
     case 'fail':
       return withPending(state, message.paneId, failRequest(requests, message.clientId, message.message, message.at));
-    case 'own':
-      return bumpOwn(state, message.paneId);
   }
 }
 
