@@ -88,20 +88,21 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
     }
 
     /// Turns what the store started into the word the phone is told, with the
-    /// request's user entry and graph run when it started one. `call` pairs the
-    /// outcome with the pane's newest started request, read in the same main-actor
-    /// turn, so a request started at once is exactly the one sent.
+    /// request's user entry and graph run when it started one at once. `call`
+    /// pairs the outcome with the pane's newest started request, read in the same
+    /// main-actor turn, so those ids are exactly the request sent.
     private func settle(_ sessionId: String, _ call: (outcome: MobileSubmitOutcome, started: AppStore.StartedRequest?)) async throws -> MobileSubmitReceipt {
         let effect: SubmitOutcome
         var started = call.started
         switch call.outcome {
         case .immediate(let value): effect = value
         // Held items released with the text: started, queued behind a run
-        // that began meanwhile, or dropped. Its run began after the call, so
-        // its request is read now.
+        // that began meanwhile, or dropped. Its run began after the call and
+        // another may have begun since, so it answers without ids: a wrong id
+        // is worse than none (the phone matches by text and time instead).
         case .pending(let task):
             effect = await task.value
-            started = await MainActor.run { store?.startedRequests[sessionId] }
+            started = nil
         }
         // Dropped: the text reached neither the turn nor the queue, so the phone
         // is told it failed instead of being shown an item that does not exist.

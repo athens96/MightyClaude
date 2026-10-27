@@ -157,10 +157,13 @@ struct PendingTests {
     }
 
     @Test func aPanesViewModeIsItsScrollView() {
-        #expect(SubmitScroll.View(nil) == .basic)
-        #expect(SubmitScroll.View(.diagram) == .diagram)
-        #expect(SubmitScroll.View(.timeline) == .timeline)
-        #expect(SubmitScroll.View(.structure) == .pipeline)
+        // Not showing the Mighty view is the default transcript, whatever mode it saved.
+        for mode in MightyGraphViewMode.allCases {
+            #expect(SubmitScroll.View(showsMighty: false, mightyViewMode: mode) == .basic)
+        }
+        #expect(SubmitScroll.View(showsMighty: true, mightyViewMode: .diagram) == .diagram)
+        #expect(SubmitScroll.View(showsMighty: true, mightyViewMode: .timeline) == .timeline)
+        #expect(SubmitScroll.View(showsMighty: true, mightyViewMode: .structure) == .pipeline)
         // An older board means nothing outside the 파이프라인.
         #expect(SubmitScroll.target(view: .basic, own: false, chosenBoardIsNewest: false, nearBottom: true) == SubmitScroll.Decision(scroll: .follow, resetBoard: false))
         #expect(SubmitScroll.target(view: .timeline, own: true, chosenBoardIsNewest: false, nearBottom: false) == SubmitScroll.Decision(scroll: .toRequest, resetBoard: false))

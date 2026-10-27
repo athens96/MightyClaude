@@ -138,11 +138,14 @@ public enum SubmitScroll {
     public enum View: String, Sendable, CaseIterable {
         case basic, diagram, timeline, pipeline
 
-        /// The Mighty view a pane draws in (`RunSession.graphViewMode`); nil is the default
-        /// transcript.
-        public init(_ mode: MightyGraphViewMode?) {
-            switch mode {
-            case nil: self = .basic
+        /// The view a pane shows now. `showsMighty` is whether it draws the Mighty view at all
+        /// (the caller's own rule, e.g. `SessionPaneView.showsMightyGraph`: `agentViewMode`
+        /// "mighty" on a provider that has it); false is the default transcript, whatever
+        /// `mightyViewMode` says. `mightyViewMode` is `RunSession.mightyViewMode` (a saved nil
+        /// `graphViewMode` already reads as the diagram there).
+        public init(showsMighty: Bool, mightyViewMode: MightyGraphViewMode) {
+            guard showsMighty else { self = .basic; return }
+            switch mightyViewMode {
             case .diagram: self = .diagram
             case .timeline: self = .timeline
             case .structure: self = .pipeline
