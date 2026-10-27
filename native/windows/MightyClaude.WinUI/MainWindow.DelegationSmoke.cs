@@ -93,7 +93,7 @@ public sealed partial class MainWindow
 
             // 3. A phone send to the idle parent releases C's held notice ahead of its text, in one run.
             const string text = "Carry on with what the third child reported.";
-            Require(await MobileAction(new(parent, "submit", JsonSerializer.SerializeToElement(new { text })), CancellationToken.None) as string == "started", "The phone send did not start a run.");
+            Require((await MobileAction(new(parent, "submit", JsonSerializer.SerializeToElement(new { text })), CancellationToken.None) as SubmitReceipt)?.Outcome == "started", "The phone send did not start a run.");
             var delivered = await DelegationSmokeWait("C's notice delivered", 60, () => delegation.File.Notices.FirstOrDefault(n => n.Id == notice.Id && n.Lane == DeliveryLane.Delivered && !string.IsNullOrEmpty(n.Receipt?.RunId)));
             await DelegationSmokeUntil("the parent's run to end", 60, () => !service.IsSessionRunning(parent) && service.Snapshot.Sessions.First(s => s.Id == parent).Status != "running");
             var sent = service.Snapshot.Sessions.First(s => s.Id == parent).Logs.LastOrDefault(entry => entry.Kind == "user")?.Text ?? "";
