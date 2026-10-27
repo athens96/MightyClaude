@@ -651,9 +651,9 @@ final class ExecutionGraphTracker {
         if let match = text.firstMatch(of: #/background with ID: (?<task>[A-Za-z0-9_-]+)/#), taskAliases.count < 512 {
             taskAliases[String(match.task)] = id
         }
-        // Where the run writes its output; a notification's <output-file> may move it.
-        if let match = text.firstMatch(of: #/Output is being written to: (?<path>\S+)/#) {
-            var path = String(match.path)
+        // Where the run writes its output (the rest of the line: a path may hold spaces); a notification's <output-file> may move it.
+        if let match = text.firstMatch(of: #/Output is being written to: (?<path>[^\r\n]+)/#) {
+            var path = match.path.trimmingCharacters(in: .whitespaces)
             if path.hasSuffix(".") { path.removeLast() }
             if !path.isEmpty { update(id) { $0.outputFile = path } }
         }

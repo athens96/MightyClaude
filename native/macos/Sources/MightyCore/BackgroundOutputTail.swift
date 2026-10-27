@@ -17,7 +17,10 @@ public enum BackgroundOutputTail {
         }
         if truncated, !rows.isEmpty { rows.removeFirst() }
         while let last = rows.last, last.isEmpty { rows.removeLast() }
-        return rows.suffix(maxLines).map { $0.count > maxLineChars ? String($0.prefix(maxLineChars)) + "…" : $0 }
+        // The cut counts Unicode scalars, as Windows and the phone do (not grapheme clusters, not UTF-16 units).
+        return rows.suffix(maxLines).map { row in
+            row.unicodeScalars.count > maxLineChars ? String(String.UnicodeScalarView(row.unicodeScalars.prefix(maxLineChars))) + "…" : row
+        }
     }
 
     /// nil when the file cannot be read (missing, or on another computer).

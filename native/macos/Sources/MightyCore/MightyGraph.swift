@@ -224,7 +224,9 @@ public enum MightyGraphSupport {
                 agent.title = bounded(agent.title, maximum: 240, budget: &budget)
                 agent.input = bounded(agent.input, maximum: 16_384, budget: &budget)
                 agent.noticeReply = agent.noticeReply.map { bounded($0, maximum: 32_768, budget: &budget) }.flatMap { $0.isEmpty ? nil : $0 }
+                agent.background = agent.background == true ? true : nil
                 if let file = agent.outputFile, file.utf8.count > 4096 || file.contains(where: \.isNewline) { agent.outputFile = nil }
+                budget -= agent.outputFile?.utf8.count ?? 0
                 agent.status = states.contains(agent.status) ? agent.status : "stopped"
                 if !["task", "steer", "compact", "question"].contains(agent.kind ?? "") { agent.kind = nil }
                 agent.usage = agent.usage?.normalized

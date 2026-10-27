@@ -200,9 +200,6 @@ struct ExecutionGraphTests {
         }
     }
 
-    /// A request handed into the run after its turn ended (run next while only background work is left) is a 중간 요청
-    /// whose reply is the next root answer, and that turn's answer follows the request's in the result under "중간 요청 이후"
-    /// (Windows SessionHistoryVerification.ASteerAfterTheTurnFollowsInTheResult).
     /// A background sub-agent still running after the request's own turn ended: the run reads completed and waits on
     /// it, as on a background command. A foreground sub-agent never counts.
     @Test func theRequestWaitsOnItsStillRunningBackgroundAgent() throws {
@@ -223,6 +220,9 @@ struct ExecutionGraphTests {
         #expect(foreground.backgroundWaiting == 0)
     }
 
+    /// A request handed into the run after its turn ended (run next while only background work is left) is a 중간 요청
+    /// whose reply is the next root answer, and that turn's answer follows the request's in the result under "중간 요청 이후"
+    /// (Windows SessionHistoryVerification.ASteerAfterTheTurnFollowsInTheResult).
     @Test func aSteerAfterTheTurnFollowsInTheResult() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             var nodes: [ExecutionGraphNode] = []
