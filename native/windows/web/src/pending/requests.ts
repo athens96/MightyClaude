@@ -12,14 +12,21 @@ export interface PendingRequest {
   text: string;
   /** When Enter was pressed (Date.now()). */
   at: number;
-  /** sending: no answer yet; started: the host started it and its block comes with a delta; failed: it did not start. */
-  phase: 'sending' | 'started' | 'failed';
+  /**
+   * sending: no answer yet; started: the host started it and its blocks come with a delta; arrived: its entry and run are in the
+   * pane, and the shown Mighty view waits for its own data (the host's copy, groups or boards) to replace the stand-in; failed: it
+   * did not start.
+   */
+  phase: 'sending' | 'started' | 'arrived' | 'failed';
   /** The failure's message (phase failed). */
   message?: string;
   /** When the failure came. */
   endedAt?: number;
   /** When the host answered that it started. */
   answeredAt?: number;
+  /** When its entry and run were in the pane (phase arrived), and that run's ids. */
+  arrivedAt?: number;
+  arrivedRunIds?: readonly string[];
   /** The host's user entry and graph run for it, when the answer named them. */
   entryId?: string;
   runId?: string;
@@ -52,7 +59,10 @@ export function userEntriesSince(request: PendingRequest, logs: readonly LogEntr
 /** The host and the page share the PC's clock; an entry's time is rounded and written a moment before the page reads it. */
 const ClockSlack = 2000;
 
-const sameWords = (a: string, b: string) => a.trim() === b.trim() || (b.trim().length > 0 && a.trim().startsWith(b.trim()));
+const sameWords = (a: string, b: string) => a.trim() === b.trim();
+
+/** A pane that draws the Mighty diagram (MightyGraphViewModel.ShowsModeSwitch): its request also comes as a graph run. */
+export const drawsDiagram = (session: RunSession) => session.kind === 'claude' && ['claude', 'codex', 'gemini'].includes(session.provider);
 
 /** The graph runs that came after the request's Enter. */
 export function runsSince(request: PendingRequest, runs: readonly MightyGraphRun[]): MightyGraphRun[] {
@@ -68,13 +78,21 @@ export function entryArrived(request: PendingRequest, session: RunSession): bool
   return fresh.some((entry) => sameWords(entry.text, request.text)) || (request.phase === 'started' && fresh.length > 0);
 }
 
-/** Whether the host's graph run for `request` is in the pane: the one the answer named, or a new one with its words. */
-export function runArrived(request: PendingRequest, session: RunSession): boolean {
+/**
+ * The host's graph runs for `request` in the pane: the ones it arrived with, the one the answer named, or the new ones with its
+ * words (any new one for a start answered without ids).
+ */
+export function runsFor(request: PendingRequest, session: RunSession): readonly string[] {
+  if (request.arrivedRunIds) return request.arrivedRunIds;
   const runs = session.graphRuns ?? [];
-  if (request.runId !== undefined) return runs.some((run) => run.id === request.runId);
+  if (request.runId !== undefined) return runs.some((run) => run.id === request.runId) ? [request.runId] : [];
   const fresh = runsSince(request, runs);
-  return fresh.some((run) => sameWords(run.input, request.text)) || (request.phase === 'started' && fresh.length > 0);
+  const same = fresh.filter((run) => sameWords(run.input, request.text));
+  return (same.length > 0 ? same : request.phase === 'started' ? fresh : []).map((run) => run.id);
 }
+
+/** Whether the host's graph run for `request` is in the pane. */
+export const runArrived = (request: PendingRequest, session: RunSession) => runsFor(request, session).length > 0;
 
 /**
  * How long a started request waits for its blocks after the answer. The host adds them before it answers, so they come with the
@@ -83,23 +101,50 @@ export function runArrived(request: PendingRequest, session: RunSession): boolea
 export const StartedGrace = 15_000;
 
 /**
- * The requests still waiting once the pane is `session` at `now`: a failed one stays (it shows its message in place) until the
- * next send; one whose blocks the host brought goes. When the answer named both ids, both must have come; a pane that draws no
- * diagram (a shell, a remote workspace) has no run id and waits for its entry alone.
+ * How long an arrived request waits for the shown Mighty view's own data (the host pushes it at most every 120 ms or so while the
+ * view shows; a view that stopped showing pushes nothing).
  */
-export function reconcile(requests: readonly PendingRequest[], session: RunSession | undefined, now: number): readonly PendingRequest[] {
+export const ArrivedGrace = 2_000;
+
+/** The next moment a request may go by time alone (StartedGrace, ArrivedGrace), so a quiet pane is settled then too; null: none. */
+export function nextDeadline(requests: readonly PendingRequest[]): number | null {
+  let next: number | null = null;
+  for (const request of requests) {
+    const at = request.phase === 'started' && request.answeredAt !== undefined ? request.answeredAt + StartedGrace + 1
+      : request.phase === 'arrived' && request.arrivedAt !== undefined ? request.arrivedAt + ArrivedGrace + 1 : null;
+    if (at !== null && (next === null || at < next)) next = at;
+  }
+  return next;
+}
+
+/**
+ * The requests still waiting once the pane is `session` at `now`. A failed one stays (it shows its message in place) until the
+ * next send. One goes once its entry is in the pane and, on a pane that draws the diagram, its run too (the ids the answer named,
+ * else a new one with its words). On a diagram pane it first turns `arrived` and goes when `holds` says the shown Mighty view's
+ * own data has its run (always, when no Mighty view shows). StartedGrace and ArrivedGrace end a wait whose blocks never come.
+ */
+export function reconcile(requests: readonly PendingRequest[], session: RunSession | undefined, now: number, holds: (request: PendingRequest) => boolean = () => true): readonly PendingRequest[] {
   if (!session) return [];
-  const kept = requests.filter((request) => {
-    if (request.phase === 'failed') return true;
-    if (request.phase === 'started' && request.answeredAt !== undefined && now - request.answeredAt > StartedGrace) return false;
-    if (request.entryId !== undefined || request.runId !== undefined) {
-      const entry = request.entryId === undefined || session.logs.some((e) => e.id === request.entryId);
-      const run = request.runId === undefined || (session.graphRuns ?? []).some((r) => r.id === request.runId);
-      return !(entry && run);
+  let changed = false;
+  const kept: PendingRequest[] = [];
+  for (const request of requests) {
+    let next: PendingRequest | null = request;
+    if (request.phase === 'arrived') {
+      if (now - (request.arrivedAt ?? now) > ArrivedGrace || holds(request)) next = null;
+    } else if (request.phase === 'started' && request.answeredAt !== undefined && now - request.answeredAt > StartedGrace) {
+      next = null;
+    } else if (request.phase !== 'failed') {
+      const diagram = drawsDiagram(session);
+      const runs = diagram ? runsFor(request, session) : [];
+      if (entryArrived(request, session) && (!diagram || runs.length > 0)) {
+        const arrived: PendingRequest = { ...request, phase: 'arrived', arrivedAt: now, arrivedRunIds: runs };
+        next = !diagram || holds(arrived) ? null : arrived;
+      }
     }
-    return !entryArrived(request, session) && !runArrived(request, session);
-  });
-  return kept.length === requests.length ? requests : kept;
+    if (next !== request) changed = true;
+    if (next) kept.push(next);
+  }
+  return changed ? kept : requests;
 }
 
 /** What the send's answer does to its request; `message` is the failure's words (the caller's, from the host's state). */
@@ -144,15 +189,17 @@ export function requestState(request: PendingRequest): PendingState {
 /** The requests the conversation draws: not yet there as the host's user entry. */
 export function shownInConversation(requests: readonly PendingRequest[] | undefined, session: RunSession): readonly PendingRequest[] {
   if (!requests || requests.length === 0) return none;
-  const shown = requests.filter((request) => request.phase === 'failed' || !entryArrived(request, session));
+  const shown = requests.filter((request) => request.phase === 'failed' || (request.phase !== 'arrived' && !entryArrived(request, session)));
   return shown.length === requests.length ? requests : shown;
 }
 
-/** The request the Mighty views draw (the newest): not yet there as the host's graph run. */
-export function shownInMighty(requests: readonly PendingRequest[] | undefined, session: RunSession): PendingRequest | undefined {
-  const last = requests?.[requests.length - 1];
-  if (!last) return undefined;
-  return last.phase === 'failed' || !runArrived(last, session) ? last : undefined;
+/**
+ * The request the Mighty views draw (the newest), whatever its phase: each view stands it in until its own data holds the run
+ * (`runsFor`), the diagram on the run's blocks until their copy is pushed, the timeline and the pipeline until a group or a board
+ * has it.
+ */
+export function shownInMighty(requests: readonly PendingRequest[] | undefined): PendingRequest | undefined {
+  return requests?.[requests.length - 1];
 }
 
 const none: readonly PendingRequest[] = [];

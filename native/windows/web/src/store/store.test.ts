@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { devSnapshot } from '../bridge/devHost';
 import type { AppState, RunSession, ToolPermissionRequest } from './models';
 import type { ComposerState } from '../composer/types';
-import { Store, activeSessionId, applyPermission, emptyState, mergeSessions, reduce, selectedSession } from './store';
-import { newPendingRequest } from '../pending/requests';
+import { Store, activeSessionId, applyPermission, emptyState, mergeSessions, reduce, selectedSession, settlePending } from './store';
+import { StartedGrace, newPendingRequest } from '../pending/requests';
 
 const loaded = () => reduce(emptyState, { kind: 'snapshot', snapshot: devSnapshot() });
 const pane = (id: string, title = id): RunSession => ({ ...devSnapshot().sessions[0]!, id, title });
@@ -175,12 +175,16 @@ describe('sent requests and view choices (natural submit)', () => {
   it('drops it on queued and keeps a started one until its entry comes with a delta', () => {
     const { session, state } = add();
     expect(reduce(state, { kind: 'pending', action: 'answer', paneId: session.id, clientId: 'c1', outcome: 'queued', message: '', at }).pending[session.id]).toBeUndefined();
-    let started = reduce(state, { kind: 'pending', action: 'answer', paneId: session.id, clientId: 'c1', outcome: 'started', entryId: 'new-entry', message: '', at });
+    let started = reduce(state, { kind: 'pending', action: 'answer', paneId: session.id, clientId: 'c1', outcome: 'started', entryId: 'new-entry', runId: 'new-run', message: '', at });
     expect(started.pending[session.id]?.[0]?.phase).toBe('started');
     // The answer named a request the page drew: no second own count.
     expect(started.ownSubmits[session.id]).toBe(1);
-    const logs = [...session.logs, { id: 'new-entry', kind: 'user' as const, text: 'store request words', timestamp: new Date(at).toISOString() }];
-    started = reduce(started, { kind: 'delta', sessions: [{ id: session.id, logs: { added: [logs[logs.length - 1]!] } }], removed: [] });
+    const added = { id: 'new-entry', kind: 'user' as const, text: 'store request words', timestamp: new Date(at).toISOString() };
+    started = reduce(started, { kind: 'delta', sessions: [{ id: session.id, logs: { added: [added] } }], removed: [] });
+    // A diagram pane waits for its run as well.
+    expect(started.pending[session.id]?.[0]?.phase).toBe('started');
+    const graphRun = { id: 'new-run', input: 'store request words', status: 'running', rootEntries: [], agents: [], resultEntries: [] };
+    started = reduce(started, { kind: 'delta', sessions: [{ id: session.id, graphRuns: { added: [graphRun] } }], removed: [] });
     expect(started.pending[session.id]).toBeUndefined();
   });
 
@@ -241,6 +245,63 @@ describe('sent requests and view choices (natural submit)', () => {
     // An item still in the queue that starts (the entry before the composer push) counts too.
     const still = { id: 'se', kind: 'user' as const, text: 'later', timestamp: new Date().toISOString() };
     expect(reduce(next, { kind: 'delta', sessions: [{ id: session.id, logs: { added: [still] } }], removed: [] }).ownSubmits[session.id]).toBe(2);
+  });
+
+  it('keeps the stand-in until the shown Mighty view has its own data for the run', () => {
+    const { session, state } = add();
+    let next = reduce(state, { kind: 'delta', sessions: [{ id: session.id, set: { agentViewMode: 'mighty', graphViewMode: 'timeline' } }], removed: [] });
+    next = reduce(next, { kind: 'mighty', paneId: session.id, timeline: [] });
+    next = reduce(next, { kind: 'pending', action: 'answer', paneId: session.id, clientId: 'c1', outcome: 'started', entryId: 'e2', runId: 'r2', message: '', at });
+    const added = { id: 'e2', kind: 'user' as const, text: 'store request words', timestamp: new Date(at).toISOString() };
+    const graphRun = { id: 'r2', input: 'store request words', status: 'running', rootEntries: [], agents: [], resultEntries: [] };
+    next = reduce(next, { kind: 'delta', sessions: [{ id: session.id, logs: { added: [added] }, graphRuns: { added: [graphRun] } }], removed: [] });
+    expect(next.pending[session.id]?.[0]).toMatchObject({ phase: 'arrived', arrivedRunIds: ['r2'] });
+    const group = { runId: 'r2', ordinal: 1, title: 'Request 1', status: 'running', statusWord: 'Running', tone: 'run', input: 'store request words', tally: '', open: true, older: false, rows: [], resultFolds: false };
+    next = reduce(next, { kind: 'mighty', paneId: session.id, timeline: [group] });
+    expect(next.pending[session.id]).toBeUndefined();
+  });
+
+  it('settles a quiet pane once a started request is long overdue', () => {
+    const { session, state } = add();
+    const started = reduce(state, { kind: 'pending', action: 'answer', paneId: session.id, clientId: 'c1', outcome: 'started', entryId: 'never', message: '', at: Date.now() });
+    expect(started.pending[session.id]).toHaveLength(1);
+    expect(settlePending(started, Date.now() + StartedGrace + 100).pending[session.id]).toBeUndefined();
+  });
+
+  it('wakes itself at the deadline, with nothing pushed meanwhile', () => {
+    vi.useFakeTimers();
+    try {
+      const store = new Store(loaded());
+      const session = selectedSession(store.getState().snapshot)!;
+      store.dispatch({ kind: 'pending', action: 'add', paneId: session.id, request: newPendingRequest(session, 'c1', 'quiet words', Date.now()) });
+      store.dispatch({ kind: 'pending', action: 'answer', paneId: session.id, clientId: 'c1', outcome: 'started', entryId: 'never', message: '', at: Date.now() });
+      vi.advanceTimersByTime(StartedGrace - 100);
+      expect(store.getState().pending[session.id]).toHaveLength(1);
+      vi.advanceTimersByTime(200);
+      expect(store.getState().pending[session.id]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('takes back a view choice the host answered for but did not take, at the next delta', () => {
+    const state = loaded();
+    const session = selectedSession(state.snapshot)!;
+    let next = reduce(state, { kind: 'view', paneId: session.id, choice: { presentation: 'structure' } });
+    next = reduce(next, { kind: 'view', paneId: session.id, choice: { presentation: 'structure' }, saved: true });
+    // Answered, but no delta yet: still shown.
+    expect(next.views[session.id]).toEqual({ presentation: 'structure', presentationSaved: true });
+    next = reduce(next, { kind: 'delta', sessions: [{ id: session.id, set: { title: 'other change' } }], removed: [] });
+    expect(next.views[session.id]).toBeUndefined();
+  });
+
+  it('does not count the past requests of a pane record sent whole again', () => {
+    const state = loaded();
+    const session = selectedSession(state.snapshot)!;
+    const past = session.logs.find((entry) => entry.kind === 'user')!;
+    const composer = { paneId: session.id, queue: { held: [], items: [{ id: 'q', text: past.text, attachments: [] }], runNext: false, waitsOnBackground: null } } as unknown as ComposerState;
+    const next = reduce(reduce(state, { kind: 'composer', state: composer }), { kind: 'delta', sessions: [{ id: session.id, session: { ...session, title: 'again' } }], removed: [] });
+    expect(next.ownSubmits[session.id]).toBeUndefined();
   });
 });
 

@@ -17,7 +17,7 @@ import { setBlockSize } from './prefs';
 import { shareRuns } from './share';
 import type { MightyBlockCopy, MightyPane, MightyFile } from './types';
 import { ReferenceContext, useReferenceClick } from '../conversation/referenceClick';
-import { pendingRun, pendingRunId, requestState, type PendingRequest } from '../pending/requests';
+import { pendingRun, pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
 import { submitScroll } from '../pending/submitScroll';
 import { Motion, reducesMotion } from '../theme/tokens';
 import type { Translate } from '../i18n/locale';
@@ -51,8 +51,7 @@ function edgePaths(layout: Layout, running: ReadonlySet<string>): { quiet: strin
  * (its 전송 중 is the block's pending mark), 실행 waiting for its answer, and for a request that did not start, 실행 stopped and
  * a failed result carrying the host's message.
  */
-function pendingCopies(request: PendingRequest, provider: string, t: Translate): Map<string, MightyBlockCopy> {
-  const id = pendingRunId(request);
+function pendingCopies(request: PendingRequest, id: string, provider: string, t: Translate): Map<string, MightyBlockCopy> {
   const failed = request.phase === 'failed';
   const copy = (kind: string, title: string, status: string, tone: string): MightyBlockCopy =>
     ({ kind, title, state: '', status, tone, help: '', indicator: 'none', outline: 'none', fromRecord: false, provider: kind === 'request' ? provider : undefined });
@@ -116,9 +115,14 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     shared.current = next;
     return next;
   }, [mighty.older, session.graphRuns]);
-  // A sent request stands in as the newest run until the host's comes (natural submit B1).
-  const runs = useMemo(() => (request ? [...hostRuns, pendingRun(request, session.provider)] : hostRuns), [hostRuns, request, session.provider]);
-  const copies = useMemo(() => (request ? pendingCopies(request, session.provider, t) : null), [request, session.provider, t]);
+  // A sent request stands in as the newest run until the host's comes (natural submit B1); once the host's run is there, its
+  // blocks wear the request's copy and 전송 중 until the host pushes their own copy (that comes up to ~120 ms after the run).
+  const arrivedKey = request && request.phase !== 'failed' ? runsFor(request, session).join('\n') : '';
+  const standIn = request !== undefined && arrivedKey === '';
+  /** The run whose blocks carry the request's copy and pending mark: the stand-in, else the host's newest run for it. */
+  const pendingRunIdOf = !request ? null : standIn ? pendingRunId(request) : arrivedKey.split('\n').pop() ?? null;
+  const runs = useMemo(() => (request && standIn ? [...hostRuns, pendingRun(request, session.provider)] : hostRuns), [hostRuns, request, standIn, session.provider]);
+  const copies = useMemo(() => (request && pendingRunIdOf ? pendingCopies(request, pendingRunIdOf, session.provider, t) : null), [request, pendingRunIdOf, session.provider, t]);
   const pendingState = useMemo(() => (request ? requestState(request) : null), [request]);
 
   // A released drag shows its size at once; the saved sizes coming back from the host take over.
@@ -441,14 +445,15 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
 
   // The sent request's block carries its pending mark (전송 중, or its failure) in place of a pill.
   const drawnExtras = useMemo(() => {
-    if (!request || !pendingState) return extras;
-    const id = nodeId(pendingRunId(request), 'request');
+    if (!request || !pendingState || !pendingRunIdOf) return extras;
+    const id = nodeId(pendingRunIdOf, 'request');
     const extra = extras.get(id);
-    if (!extra) return extras;
+    // The host's own copy came: its block shows the run's state from now on.
+    if (!extra || mighty.blocks[id] !== undefined) return extras;
     const next = new Map(extras);
     next.set(id, { ...extra, pending: pendingState });
     return next;
-  }, [extras, request, pendingState]);
+  }, [extras, request, pendingState, pendingRunIdOf, mighty.blocks]);
 
   const visible = useMemo(() => new Set(visibleKey.split('\n')), [visibleKey]);
   const unfinished = useMemo(() => new Set(runs.filter((r) => !finished(r)).map((r) => r.id)), [runs]);

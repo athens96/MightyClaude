@@ -10,7 +10,8 @@ import type { AgentActivity, AppSnapshot, RunEvent, RunSession, ToolPermissionRe
 import type { OpenDialog, ShellModel } from '../shell/types';
 import { applyNative, type NativeOpen, type TextSetting } from '../native/types';
 import type { OpenPicture } from '../pictures/viewer';
-import { applyAnswer, failRequest, reconcile, type PendingRequest, type SendOutcome } from '../pending/requests';
+import { applyAnswer, drawsDiagram, failRequest, nextDeadline, reconcile, type PendingRequest, type SendOutcome } from '../pending/requests';
+import { nodeId, RequestStep } from '../mighty/layout';
 
 export interface StoreState {
   snapshot: AppSnapshot | null;
@@ -66,6 +67,9 @@ export interface StoreState {
 export interface ViewChoice {
   mode?: 'default' | 'mighty';
   presentation?: string;
+  /** The host's call for that part answered: the next delta decides, and a choice it does not hold goes back to the host's. */
+  modeSaved?: boolean;
+  presentationSaved?: boolean;
 }
 
 /** One push of a running clone's progress (MainWindow.WorkspaceCreate.cs): its phase, percent and 0–1 fraction, and the words for them. */
@@ -110,14 +114,20 @@ export type PendingMessage =
   | { kind: 'pending'; action: 'answer'; paneId: string; clientId: string; outcome: SendOutcome | string | null; entryId?: string | null; runId?: string | null; message: string; at: number }
   | { kind: 'pending'; action: 'fail'; paneId: string; clientId: string; message: string; at: number }
   /** A send the page drew no block for (a queued item, a slash command) that started: the views move to it all the same. */
-  | { kind: 'pending'; action: 'own'; paneId: string };
+  | { kind: 'pending'; action: 'own'; paneId: string }
+  /** A moment a request may go by time alone (StartedGrace, ArrivedGrace) came: every pane is settled again. */
+  | { kind: 'pending'; action: 'settle' };
 
-/** The page's own message: a view switch clicked (shown at once), or taken back because the host's call failed. */
+/**
+ * The page's own message: a view switch clicked (shown at once), taken back because the host's call failed (`revert`), or its
+ * call answered (`saved`: the next delta that still differs takes it back to the host's state).
+ */
 export interface ViewMessage {
   kind: 'view';
   paneId: string;
   choice: ViewChoice;
   revert?: boolean;
+  saved?: boolean;
 }
 
 export type StoreMessage = PushMessage | FillMessage | ChooseMessage | OverlayMessage | PictureMessage | PendingMessage | ViewMessage;
@@ -127,23 +137,45 @@ export const emptyState: StoreState = {
   pending: {}, ownSubmits: {}, views: {},
 };
 
+/**
+ * Whether the pane's shown Mighty view has its own data for a request's run, so its stand-in may go: the diagram the run's request
+ * block copy, the timeline a group, the pipeline a board. A pane outside the Mighty view, or one whose Mighty model is not pushed,
+ * has nothing to wait for.
+ */
+export function mightyHolds(state: StoreState, session: RunSession): (request: PendingRequest) => boolean {
+  const choice = state.views[session.id];
+  const pane = state.mighty[session.id];
+  if ((choice?.mode ?? session.agentViewMode) !== 'mighty' || !drawsDiagram(session) || !pane) return () => true;
+  const presentation = choice?.presentation ?? session.graphViewMode;
+  return (request) => {
+    const runs = request.arrivedRunIds ?? (request.runId ? [request.runId] : []);
+    if (presentation === 'timeline') return pane.timeline?.some((group) => runs.includes(group.runId)) ?? false;
+    if (presentation === 'structure') return pane.structure?.some((board) => board.runIds.some((id) => runs.includes(id))) ?? false;
+    return runs.some((id) => pane.blocks[nodeId(id, RequestStep)] !== undefined);
+  };
+}
+
 /** Each pane's sent requests against its state now: the ones the host's blocks replaced go, as do a closed pane's. */
-export function settlePending(state: StoreState): StoreState {
+export function settlePending(state: StoreState, now = Date.now()): StoreState {
   const panes = Object.keys(state.pending);
   if (panes.length === 0 || !state.snapshot) return state;
   let changed = false;
   const next: Record<string, readonly PendingRequest[]> = {};
   for (const id of panes) {
     const before = state.pending[id]!;
-    const after = reconcile(before, state.snapshot.sessions.find((session) => session.id === id), Date.now());
+    const session = state.snapshot.sessions.find((pane) => pane.id === id);
+    const after = reconcile(before, session, now, session ? mightyHolds(state, session) : undefined);
     if (after !== before) changed = true;
     if (after.length > 0) next[id] = after;
   }
   return changed ? { ...state, pending: next } : state;
 }
 
-/** View choices the host's state now holds are forgotten; a pane that is gone forgets its choice. */
-export function settleViews(state: StoreState): StoreState {
+/**
+ * View choices the host's state now holds are forgotten; a pane that is gone forgets its choice. After a delta (`fromHost`), a
+ * part whose call has answered and that the host still does not hold goes back to the host's view.
+ */
+export function settleViews(state: StoreState, fromHost = false): StoreState {
   const panes = Object.keys(state.views);
   if (panes.length === 0 || !state.snapshot) return state;
   let changed = false;
@@ -153,8 +185,14 @@ export function settleViews(state: StoreState): StoreState {
     const session = state.snapshot.sessions.find((pane) => pane.id === id);
     if (!session) { changed = true; continue; }
     const kept: ViewChoice = {};
-    if (choice.mode !== undefined && choice.mode !== (session.agentViewMode ?? 'default')) kept.mode = choice.mode;
-    if (choice.presentation !== undefined && choice.presentation !== session.graphViewMode) kept.presentation = choice.presentation;
+    if (choice.mode !== undefined && choice.mode !== (session.agentViewMode ?? 'default') && !(fromHost && choice.modeSaved)) {
+      kept.mode = choice.mode;
+      if (choice.modeSaved) kept.modeSaved = true;
+    }
+    if (choice.presentation !== undefined && choice.presentation !== session.graphViewMode && !(fromHost && choice.presentationSaved)) {
+      kept.presentation = choice.presentation;
+      if (choice.presentationSaved) kept.presentationSaved = true;
+    }
     if (kept.mode !== choice.mode || kept.presentation !== choice.presentation) changed = true;
     if (kept.mode !== undefined || kept.presentation !== undefined) next[id] = kept;
   }
@@ -190,10 +228,13 @@ export function rememberDequeued(state: StoreState, next: ComposerState, now: nu
  * A delta's new request entries that carry the words of a queue item (still queued, or let go of lately): a queued send that
  * now runs, or 다음 실행. Each is an own send, so every view moves to it (scrollRule `own`).
  */
-export function queuedStarts(state: StoreState, sessions: readonly SessionDelta[], now: number): StoreState {
+export function queuedStarts(state: StoreState, sessions: readonly SessionDelta[], now: number, previous: readonly RunSession[] = []): StoreState {
   let next = state;
   for (const delta of sessions) {
-    const added = [...(delta.logs?.added ?? []), ...(delta.session?.logs ?? [])].filter((entry) => entry.kind === 'user').map((entry) => entry.text.trim());
+    // Only entries the pane did not have before this delta: a whole record sent again carries every past request too.
+    const known = new Set(previous.find((session) => session.id === delta.id)?.logs.map((entry) => entry.id) ?? []);
+    const added = [...(delta.logs?.added ?? []), ...(delta.logs?.replaced ?? []), ...(delta.session?.logs ?? [])]
+      .filter((entry) => entry.kind === 'user' && !known.has(entry.id)).map((entry) => entry.text.trim());
     if (added.length === 0) continue;
     const recent = (state.dequeued?.[delta.id] ?? []).filter((item) => now - item.at <= DequeuedMemory);
     const words = new Set([...queueTexts(state.composers[delta.id]), ...recent.map((item) => item.text)]);
@@ -212,6 +253,7 @@ const bumpOwn = (state: StoreState, paneId: string): StoreState => ({ ...state, 
 
 /** A sent request's change (PendingMessage). */
 export function applyPending(state: StoreState, message: PendingMessage): StoreState {
+  if (message.action === 'settle') return settlePending(state);
   const requests = state.pending[message.paneId] ?? [];
   switch (message.action) {
     case 'add':
@@ -236,11 +278,23 @@ export function applyPending(state: StoreState, message: PendingMessage): StoreS
 export function applyView(state: StoreState, message: ViewMessage): StoreState {
   const current = state.views[message.paneId] ?? {};
   let next: ViewChoice;
-  if (message.revert) {
+  if (message.revert || message.saved) {
     next = { ...current };
-    if (message.choice.mode !== undefined && current.mode === message.choice.mode) delete next.mode;
-    if (message.choice.presentation !== undefined && current.presentation === message.choice.presentation) delete next.presentation;
-  } else next = { ...current, ...message.choice };
+    const mode = message.choice.mode !== undefined && current.mode === message.choice.mode;
+    const presentation = message.choice.presentation !== undefined && current.presentation === message.choice.presentation;
+    if (message.revert) {
+      if (mode) { delete next.mode; delete next.modeSaved; }
+      if (presentation) { delete next.presentation; delete next.presentationSaved; }
+    } else {
+      if (mode) next.modeSaved = true;
+      if (presentation) next.presentationSaved = true;
+    }
+  } else {
+    // A new click waits for its own call again.
+    next = { ...current, ...message.choice };
+    if (message.choice.mode !== undefined) delete next.modeSaved;
+    if (message.choice.presentation !== undefined) delete next.presentationSaved;
+  }
   const views = { ...state.views };
   if (next.mode !== undefined || next.presentation !== undefined) views[message.paneId] = next; else delete views[message.paneId];
   return settleViews({ ...state, views });
@@ -304,7 +358,7 @@ export function applyPermission(state: StoreState, request: ToolPermissionReques
 export function reduce(state: StoreState, message: StoreMessage): StoreState {
   switch (message.kind) {
     case 'snapshot':
-      return settleViews(settlePending(settle({ ...state, snapshot: message.snapshot })));
+      return settleViews(settlePending(settle({ ...state, snapshot: message.snapshot })), true);
     case 'delta': {
       const current = state.snapshot;
       if (!current) return state;
@@ -320,8 +374,8 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       const mighty = Object.fromEntries(Object.entries(state.mighty).filter(([id]) => !gone.has(id)));
       // A picture whose pane closed closes with it.
       const picture = state.picture && gone.has(state.picture.source.paneId) ? undefined : state.picture;
-      const moved = settleViews(settlePending(settle(gone.size === 0 ? { ...state, snapshot } : { ...state, snapshot, activities, permissions, composers, cards, fills, mighty, picture })));
-      return queuedStarts(moved, message.sessions, Date.now());
+      const moved = settleViews(settlePending(settle(gone.size === 0 ? { ...state, snapshot } : { ...state, snapshot, activities, permissions, composers, cards, fills, mighty, picture })), true);
+      return queuedStarts(moved, message.sessions, Date.now(), current.sessions);
     }
     case 'event':
       return applyEvent(state, message.event);
@@ -334,7 +388,8 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
     case 'cards':
       return { ...state, cards: { ...state.cards, [message.paneId]: message.cards } };
     case 'mighty':
-      return { ...state, mighty: { ...state.mighty, [message.paneId]: applyMighty(state.mighty[message.paneId], message) } };
+      // The Mighty view's own data came: a request's stand-in it now holds goes.
+      return settlePending({ ...state, mighty: { ...state.mighty, [message.paneId]: applyMighty(state.mighty[message.paneId], message) } });
     case 'shell':
       return { ...state, shell: message.shell };
     case 'dialog':
@@ -398,8 +453,25 @@ export class Store {
   dispatch(message: StoreMessage): void {
     const next = reduce(this.state, message);
     if (next === this.state) return;
+    const pendingChanged = next.pending !== this.state.pending;
     this.state = next;
+    if (pendingChanged) this.scheduleSettle();
     for (const listener of this.listeners) listener();
+  }
+
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** A request that may only go by time (StartedGrace, ArrivedGrace) is settled then, even on a pane nothing is pushed for. */
+  private scheduleSettle(): void {
+    if (this.settleTimer !== null) clearTimeout(this.settleTimer);
+    this.settleTimer = null;
+    let next: number | null = null;
+    for (const requests of Object.values(this.state.pending)) {
+      const at = nextDeadline(requests);
+      if (at !== null && (next === null || at < next)) next = at;
+    }
+    if (next === null) return;
+    this.settleTimer = setTimeout(() => { this.settleTimer = null; this.dispatch({ kind: 'pending', action: 'settle' }); }, Math.max(0, next - Date.now()));
   }
 }
 

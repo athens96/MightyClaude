@@ -186,8 +186,8 @@ public sealed partial class MainWindow
         }
         // Natural submit B1: Enter in the composer until the page draws the sent request (the conversation's bubble, the diagram's
         // request block), before the host has answered; the target is one frame, 50 ms or less. The start goes to the smoke's
-        // stand-in, which puts the request's user entry on the pane as a start does, so the page's block gives way to it before the
-        // next send. Nothing reaches a CLI.
+        // stand-in, which puts the request's graph run and user entry on the pane as a start does (a diagram pane's stand-in waits
+        // for both), so the page's block gives way to them before the next send. Nothing reaches a CLI.
         static string SendAndSee() => "const e = __perf.slot()?.querySelector('[data-testid=composer-input]'); if (!e) throw new Error('no composer'); "
             + "const drawn = () => [...(__perf.slot() ?? document).querySelectorAll('[data-pending-request]')].map(x => x.dataset.pendingRequest); const before = new Set(drawn()); "
             + "e.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true })); "
@@ -196,7 +196,12 @@ public sealed partial class MainWindow
         {
             await SetViews([active], mode);
             var standIn = smokeStart;
-            smokeStart = request => PerfReceive(new RunEvent(request.SessionId, "log", new LogEntry(Wire.Id(), "user", request.Input, Wire.Now(), request.Provider)));
+            smokeStart = async request =>
+            {
+                var graph = new MightyGraphRun { Id = Wire.Id(), Input = request.Input, Status = "completed", Provider = request.Provider };
+                await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == request.SessionId ? p with { GraphRuns = [.. p.GraphRuns ?? [], graph] } : p).ToList() });
+                await PerfReceive(new RunEvent(request.SessionId, "log", new LogEntry(Wire.Id(), "user", request.Input, Wire.Now(), request.Provider)));
+            };
             try
             {
                 await Phase(name, async (ops, extra) =>

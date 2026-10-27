@@ -10,7 +10,7 @@ import { ProviderMark } from '../conversation/ProviderMark';
 import { providerLabel } from '../conversation/format';
 import { Pending } from '../pending/Pending';
 import type { PendingState } from '../pending/display';
-import { pendingRunId, requestState, type PendingRequest } from '../pending/requests';
+import { pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
 import { animateScrollTop, isNearBottom, submitScroll } from '../pending/submitScroll';
 import { Motion, reducesMotion } from '../theme/tokens';
 
@@ -161,7 +161,7 @@ const terminalStatus = new Set(['completed', 'error', 'stopped']);
  * it first draws, when a new request arrives and when a request finishes; any other change (a row opened, older requests read
  * in at the top, a streamed line) keeps the first group in view where it was (anchor restore). The top reads older requests.
  */
-export function Timeline({ session, groups: hostGroups, older, history, onOpenRow, pending, own = 0 }: {
+export function Timeline({ session, groups: hostGroups, older, history, onOpenRow, pending: sent, own = 0 }: {
   session: RunSession; groups: readonly TimelineGroup[] | null; older: readonly MightyGraphRun[]; history?: { text: string; acts: boolean } | undefined; onOpenRow?: (nodeId: string) => void;
   /** The request the composer sent that the host's group has not replaced yet: drawn as the newest group. */
   pending?: PendingRequest;
@@ -171,6 +171,10 @@ export function Timeline({ session, groups: hostGroups, older, history, onOpenRo
   const { bridge, t } = useServices();
   const scroller = useRef<HTMLDivElement>(null);
   const runs = useMemo(() => new Map([...older, ...(session.graphRuns ?? [])].map((r) => [r.id, r])), [older, session.graphRuns]);
+  // The stand-in group stays until the host's groups hold the request's run (they come a moment after the run itself).
+  const arrived = sent && sent.phase !== 'failed' ? runsFor(sent, session) : [];
+  const held = arrived.length > 0 && (hostGroups ?? []).some((group) => arrived.includes(group.runId));
+  const pending = sent && !held ? sent : undefined;
   const pendingId = pending ? pendingRunId(pending) : null;
   const pendingState = useMemo(() => (pending ? requestState(pending) : undefined), [pending]);
   const groups = useMemo(() => {
@@ -188,6 +192,8 @@ export function Timeline({ session, groups: hostGroups, older, history, onOpenRo
   const ownSeen = useRef(own);
   const moving = useRef<(() => void) | null>(null);
   useEffect(() => () => moving.current?.(), []);
+  /** The reader's own wheel or drag stops a move to the last group (submitScroll.ts animateScrollTop). */
+  const stopMoving = () => { moving.current?.(); moving.current = null; };
   const progress = useRef<{ last: string | null; finished: ReadonlyMap<string, boolean> } | null>(null);
   const anchor = useRef<{ runId: string; offset: number } | null>(null);
   const restoring = useRef(false);
@@ -243,7 +249,7 @@ export function Timeline({ session, groups: hostGroups, older, history, onOpenRo
     else if (armed.current) { armed.current = false; void bridge.call('mightyLoadOlder', { paneId: session.id }); }
   };
   return (
-    <div className="mighty-timeline" ref={scroller} data-testid="mighty-timeline" onScroll={onScroll}>
+    <div className="mighty-timeline" ref={scroller} data-testid="mighty-timeline" onScroll={onScroll} onWheel={stopMoving} onPointerDown={stopMoving}>
       {/* The history card the diagram has at its top (M/MightyGraphView.swift historyCard), centred. */}
       {history && (
         <div className="timeline-history">

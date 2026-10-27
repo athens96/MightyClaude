@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { LogEntry, MightyGraphRun, RunSession } from '../store/models';
 import {
-  StartedGrace, applyAnswer, failRequest, newPendingRequest, pendingRun, pendingRunId, reconcile, requestState, shownInConversation, shownInMighty, type PendingRequest,
+  ArrivedGrace, StartedGrace, applyAnswer, drawsDiagram, failRequest, newPendingRequest, nextDeadline, pendingRun, pendingRunId, reconcile, requestState, runsFor,
+  shownInConversation, shownInMighty, type PendingRequest,
 } from './requests';
 
 const at = Date.parse('2026-10-27T10:00:00Z');
@@ -30,40 +31,74 @@ describe('pending requests', () => {
 
   it('is replaced once the host brings the entry and run the answer named', () => {
     const started = applyAnswer([sent()], 'c1', 'started', { entryId: 'u2', runId: 'r2' }, '', at + 50);
-    expect(started[0]).toMatchObject({ phase: 'started', entryId: 'u2', runId: 'r2' });
+    expect(started[0]).toMatchObject({ phase: 'started', entryId: 'u2', runId: 'r2', answeredAt: at + 50 });
     // Only the entry so far: the diagram still waits for the run, so the request stays; the conversation draws the entry.
     const entryOnly = pane([...before.logs, entry('u2', 'user', 'second request', at)], before.graphRuns);
     expect(settle(started, entryOnly)).toBe(started);
     expect(shownInConversation(started, entryOnly)).toEqual([]);
-    expect(shownInMighty(started, entryOnly)).toBe(started[0]);
+    expect(shownInMighty(started)).toBe(started[0]);
+    expect(runsFor(started[0]!, entryOnly)).toEqual([]);
     const both = pane(entryOnly.logs, [...before.graphRuns!, run('r2', 'second request')]);
+    expect(runsFor(started[0]!, both)).toEqual(['r2']);
     expect(settle(started, both)).toEqual([]);
-    expect(shownInMighty(started, both)).toBeUndefined();
   });
 
-  it('waits for the entry alone when the answer named no run (a shell, a remote workspace)', () => {
+  it('on a diagram pane waits for the run even when the answer named none; a shell waits for its entry alone', () => {
     const started = applyAnswer([sent()], 'c1', 'started', { entryId: 'u2', runId: null }, '', at + 50);
-    expect(settle(started, pane([...before.logs, entry('u2', 'user', 'other words', at)]))).toEqual([]);
+    const entryOnly = pane([...before.logs, entry('u2', 'user', 'other words', at)]);
+    expect(settle(started, entryOnly)).toBe(started);
+    expect(settle(started, { ...entryOnly, graphRuns: [run('host-named', 'host words')] })).toEqual([]);
+    expect(settle(started, { ...entryOnly, kind: 'shell' })).toEqual([]);
+    expect(drawsDiagram({ ...entryOnly, kind: 'shell' })).toBe(false);
+    expect(drawsDiagram(entryOnly)).toBe(true);
   });
 
-  it('matches a delta that came before the answer by its words, and a start without ids by any new request', () => {
+  it('matches a delta that came before the answer by its exact words, and a start without ids by any new request', () => {
     const waiting = [sent()];
     expect(settle(waiting, before)).toBe(waiting);
-    // Someone else's request (another words) does not take its place while no answer has come.
-    expect(settle(waiting, pane([...before.logs, entry('u9', 'user', 'unrelated', at)]))).toBe(waiting);
-    expect(settle(waiting, pane([...before.logs, entry('u2', 'user', 'second request', at)]))).toEqual([]);
-    expect(settle(waiting, pane(before.logs, [...before.graphRuns!, run('r2', 'second request')]))).toEqual([]);
-    // Started with held items: no ids, so any new request entry is it.
+    const entryOnly = pane([...before.logs, entry('u2', 'user', 'second request', at)], before.graphRuns);
+    const runOnly = pane(before.logs, [...before.graphRuns!, run('r2', 'second request')]);
+    // One of the two is not enough: the diagram would lose its block while the conversation drew the entry.
+    expect(settle(waiting, entryOnly)).toBe(waiting);
+    expect(settle(waiting, runOnly)).toBe(waiting);
+    expect(settle(waiting, pane(entryOnly.logs, runOnly.graphRuns))).toEqual([]);
+    // Someone else's request, and words that only begin the same, do not take its place while no answer has come.
+    expect(settle(waiting, pane([...before.logs, entry('u9', 'user', 'unrelated', at)], [...before.graphRuns!, run('r9', 'unrelated')]))).toBe(waiting);
+    expect(settle(waiting, pane([...before.logs, entry('u8', 'user', 'second request and more', at)], [...before.graphRuns!, run('r8', 'second request and more')]))).toBe(waiting);
+    // Started with held items: no ids, so any new request entry and run are it.
     const started = applyAnswer(waiting, 'c1', 'started', {}, '', at + 50);
-    expect(settle(started, pane([...before.logs, entry('u3', 'user', 'held item first', at)]))).toEqual([]);
+    expect(settle(started, pane([...before.logs, entry('u3', 'user', 'held item first', at)], [...before.graphRuns!, run('r3', 'held item first')]))).toEqual([]);
   });
 
   it('reads new entries by time when the last one it knew was trimmed away', () => {
     const request = sent();
-    const trimmed = pane([entry('a1', 'assistant', 'answer'), entry('u2', 'user', 'second request', at + 10)]);
+    const runs = [run('r2', 'second request')];
+    const trimmed = pane([entry('a1', 'assistant', 'answer'), entry('u2', 'user', 'second request', at + 10)], runs);
     expect(settle([request], trimmed)).toEqual([]);
-    const old = pane([entry('a1', 'assistant', 'answer'), entry('u0', 'user', 'second request', at - 60_000)]);
+    const old = pane([entry('a1', 'assistant', 'answer'), entry('u0', 'user', 'second request', at - 60_000)], runs);
     expect(settle([request], old)).toHaveLength(1);
+  });
+
+  it('turns arrived while the shown Mighty view waits for its own data, then goes when it holds the run or after ArrivedGrace', () => {
+    const started = applyAnswer([sent()], 'c1', 'started', { entryId: 'u2', runId: 'r2' }, '', at + 50);
+    const both = pane([...before.logs, entry('u2', 'user', 'second request', at)], [...before.graphRuns!, run('r2', 'second request')]);
+    const waiting = reconcile(started, both, at + 100, () => false);
+    expect(waiting[0]).toMatchObject({ phase: 'arrived', arrivedAt: at + 100, arrivedRunIds: ['r2'] });
+    // The conversation has its entry; the Mighty views keep the stand-in on the run.
+    expect(shownInConversation(waiting, both)).toEqual([]);
+    expect(runsFor(waiting[0]!, both)).toEqual(['r2']);
+    expect(reconcile(waiting, both, at + 200, () => false)).toBe(waiting);
+    expect(reconcile(waiting, both, at + 200, (request) => request.arrivedRunIds?.includes('r2') === true)).toEqual([]);
+    expect(reconcile(waiting, both, at + 100 + ArrivedGrace, () => false)).toBe(waiting);
+    expect(reconcile(waiting, both, at + 101 + ArrivedGrace, () => false)).toEqual([]);
+  });
+
+  it('names the next moment a request may go by time, so a quiet pane is settled then', () => {
+    expect(nextDeadline([sent()])).toBeNull();
+    const started = applyAnswer([sent()], 'c1', 'started', {}, '', at + 50);
+    expect(nextDeadline(started)).toBe(at + 50 + StartedGrace + 1);
+    const arrived: PendingRequest = { ...started[0]!, phase: 'arrived', arrivedAt: at + 300 };
+    expect(nextDeadline([...started, arrived])).toBe(at + 300 + ArrivedGrace + 1);
   });
 
   it('drops the block for queued, worktree, answered, builtin, steered and nothing sent', () => {
@@ -79,6 +114,7 @@ describe('pending requests', () => {
       expect(requestState(failed[0]!)).toEqual({ kind: 'failed', message: 'no CLI', since: at, at: at + 40 });
       expect(settle(failed, pane([...before.logs, entry('u2', 'user', 'second request', at)]))).toBe(failed);
       expect(shownInConversation(failed, before)).toBe(failed);
+      expect(shownInMighty(failed)).toBe(failed[0]);
     }
     expect(failRequest([sent()], 'c1', 'bridge gone', at + 5)[0]).toMatchObject({ phase: 'failed', message: 'bridge gone' });
   });

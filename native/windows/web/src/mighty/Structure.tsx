@@ -11,9 +11,10 @@ import { chipClass, edgeClass, tintClass } from './structureTone';
 import { usePageOverlay } from '../shell/overlay';
 import { Icon, type IconName } from '../icons/Icon';
 import { Pending } from '../pending/Pending';
-import { pendingRunId, requestState, type PendingRequest } from '../pending/requests';
+import { pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
 import { submitScroll } from '../pending/submitScroll';
 import type { Translate } from '../i18n/locale';
+import type { RunSession } from '../store/models';
 
 /** Shows a block in the diagram: the block, or its request when the diagram does not draw it. */
 export type Reveal = (nodeId: string, fallbackNodeId: string) => void;
@@ -230,14 +231,20 @@ export function pendingBoard(request: PendingRequest, ordinal: number, t: Transl
  * down (MightyStructurePan); a short press is a click. The newest board's columns follow their newest card (ColumnWatch) unless
  * the reader moved away; a card's reveal button shows its block in the diagram.
  */
-export function Structure({ boards, onReveal, pending, own = 0 }: {
+export function Structure({ boards, onReveal, pending: sent, session, own = 0 }: {
   boards: readonly StructureBoard[] | null; onReveal: Reveal;
+  /** The pane, for the host's run of the sent request. */
+  session?: RunSession;
   /** The request the composer sent that the host's board has not replaced yet: drawn as the newest board. */
   pending?: PendingRequest;
   /** Counts the pane's own sends: each goes back to the newest board and its columns' ends (natural submit B2). */
   own?: number;
 }) {
   const { t } = useServices();
+  // The stand-in board stays until the host's boards hold the request's run (they come a moment after the run itself).
+  const arrived = sent && session && sent.phase !== 'failed' ? runsFor(sent, session) : [];
+  const held = arrived.length > 0 && (boards ?? []).some((board) => board.runIds.some((id) => arrived.includes(id)));
+  const pending = sent && !held ? sent : undefined;
   const list = useMemo(() => (pending ? [...(boards ?? []), pendingBoard(pending, (boards?.length ?? 0) + 1, t)] : boards ?? []), [boards, pending, t]);
   const pendingState = useMemo(() => (pending ? requestState(pending) : null), [pending]);
   const [navigation] = useState(() => new StructureNavigation());

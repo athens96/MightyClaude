@@ -134,7 +134,8 @@ export function Composer({ session }: { session: RunSession }) {
     // pane), a slash command (the host may answer it itself) or a blocked composer.
     const clientId = newClientId();
     const words = sent.trim().length > 0 ? sent.trim() : attachments.map((a) => a.name).join(', ');
-    if (!second && state?.primary === 'send' && !state.blocked && words.length > 0 && !sent.trimStart().startsWith('/')) {
+    const drawn = !second && state?.primary === 'send' && !state.blocked && words.length > 0 && !sent.trimStart().startsWith('/');
+    if (drawn) {
       store.dispatch({ kind: 'pending', action: 'add', paneId, request: newPendingRequest(session, clientId, words, Date.now()) });
     }
     /** A send that did not go gives its words back, only to an editor still empty and not typed in since. */
@@ -153,13 +154,14 @@ export function Composer({ session }: { session: RunSession }) {
       restore(result.draft);
       if (result.outcome === 'queued') flashQueue();
       setOutcome(result.outcome);
-      if (result.outcome === 'notStarted') setError(t('remote.error.startFailed'));
+      // A failure says itself once: in the request's block when one was drawn, else in the composer's error row.
+      if (result.outcome === 'notStarted' && !drawn) setError(t('remote.error.startFailed'));
     } catch (failure) {
       const message = failure instanceof Error ? failure.message : String(failure);
       store.dispatch({ kind: 'pending', action: 'fail', paneId, clientId, message, at: Date.now() });
       restore(sent);
       setOutcome('error');
-      setError(message);
+      if (!drawn) setError(message);
     } finally {
       sending.current = false;
     }

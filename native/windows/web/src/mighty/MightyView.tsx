@@ -30,13 +30,14 @@ export function useShownSession(session: RunSession): RunSession {
   }, [session, choice]);
 }
 
-/** A view switch: drawn at once, saved by the host (SetAgentViewMode, the Mighty view's mode), taken back if the call fails. */
+/** A view switch: drawn at once, saved by the host (SetAgentViewMode, the Mighty view's mode), taken back if the call fails or the host did not take it. */
 export function useViewSwitch(paneId: string): (choice: ViewChoice) => void {
   const { bridge, store } = useServices();
   return useCallback((choice: ViewChoice) => {
     store.dispatch({ kind: 'view', paneId, choice });
     const saved = choice.mode !== undefined ? bridge.call('mightySetMode', { paneId, mode: choice.mode }) : bridge.call('mightySetPresentation', { paneId, mode: choice.presentation });
-    saved.catch(() => store.dispatch({ kind: 'view', paneId, choice, revert: true }));
+    // Answered: the next delta decides (a choice the host did not take goes back to its view); failed: back at once.
+    saved.then(() => store.dispatch({ kind: 'view', paneId, choice, saved: true }), () => store.dispatch({ kind: 'view', paneId, choice, revert: true }));
   }, [bridge, store, paneId]);
 }
 
@@ -69,7 +70,7 @@ export function MightyView({ session }: { session: RunSession }) {
   const choose = useViewSwitch(session.id);
   // The request the composer just sent, drawn in every view until the host's block replaces it (natural submit B1), and the
   // count of own sends every view moves on (B2).
-  const pending = shownInMighty(stored.pending[session.id], session);
+  const pending = shownInMighty(stored.pending[session.id]);
   const own = stored.ownSubmits[session.id] ?? 0;
   // A block the diagram opens on next (a timeline row opened, a structure card revealed): selected, the camera on it.
   const [aim, setAim] = useState<Aim | null>(null);
@@ -114,7 +115,7 @@ export function MightyView({ session }: { session: RunSession }) {
       </div>
       {presentation === 'diagram' ? <Diagram session={session} mighty={mighty} aim={aim} onAimed={aimed} pending={pending} own={own} />
         : presentation === 'timeline' ? <Timeline session={session} groups={mighty.timeline} older={mighty.older} history={mighty.inputs?.history} onOpenRow={aimAt} pending={pending} own={own} />
-          : <Structure boards={mighty.structure} onReveal={reveal} pending={pending} own={own} />}
+          : <Structure boards={mighty.structure} onReveal={reveal} pending={pending} session={session} own={own} />}
     </div>
   );
 }
