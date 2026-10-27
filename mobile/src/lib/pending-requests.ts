@@ -2,9 +2,9 @@
 // session screen adds one with the sent words, the shown view draws it at once with 전송 중, and it gives way to the host's own
 // entry, run or board as the long poll brings them. The rules are the Windows page's (native/windows/web/src/pending/requests.ts),
 // adapted to a polled detail: entries, the Mighty runs and the 파이프라인 structure come in one answer. Pure; the screen keeps them.
-import type { LogEntry } from '@/api/types';
-import type { ParsedSubmit } from '@/lib/pending';
-import type { PendingState } from '@/lib/pending';
+import type { LogEntry, MobileStructure } from '@/api/types';
+import { pendingVisible, type ParsedSubmit, type PendingState } from '@/lib/pending';
+import { motion } from '@/theme';
 
 /** One sent request on its way. */
 export interface PendingRequest {
@@ -15,10 +15,12 @@ export interface PendingRequest {
   /** When send was pressed (Date.now()). */
   at: number;
   /**
-   * sending: no answer yet; started: the host started it and its entry comes with a poll; arrived: its entry and run are in the
-   * pane and the 파이프라인 waits for its board; failed: it did not start (the message shows in place until the next send).
+   * sending: no answer yet; started: the host started it and its entry comes with a poll; queued: the host queued it, and it is
+   * only watched (nothing is drawn) until its entry comes, matched by its words, so the views move to it when it runs (B2);
+   * arrived: its entry and run are in the pane and the 파이프라인 waits for its board; failed: it did not start (the message shows
+   * in place until the next send).
    */
-  phase: 'sending' | 'started' | 'arrived' | 'failed';
+  phase: 'sending' | 'started' | 'queued' | 'arrived' | 'failed';
   /**
    * Drawn as a bubble or block. A request with no stand-in (a slash command, 다음 실행) is still watched, so the views move to
    * its entry when it lands, but nothing is drawn for it.
@@ -29,6 +31,16 @@ export interface PendingRequest {
   answeredAt?: number;
   arrivedAt?: number;
   arrivedRunIds?: readonly string[];
+  /** The host's user entry it arrived as (the transcript draws the stand-in in its place while it holds, `doneAt`). */
+  arrivedEntryId?: string;
+  /**
+   * When the shown view's own data had it and the stand-in would have gone, had its 전송 중 not shown yet: once shown it stays
+   * its shortest time (pending.json `displayRule`, pendingVisible(at, doneAt, now)), drawn in place of the host's own row, which
+   * the view holds back meanwhile, so nothing shows twice.
+   */
+  doneAt?: number;
+  /** A queued one: when its words were first missing from the pane's queue without its entry having come. */
+  leftQueueAt?: number;
   /** The host's user entry and graph run for it, when the answer named them (only a request that started at once). */
   entryId?: string;
   runId?: string;
@@ -42,6 +54,8 @@ export interface PaneSnapshot {
   entries: readonly LogEntry[];
   /** Absent outside the Mighty view (no runs are sent), so a request then waits for its entry alone. */
   runs?: readonly { id: string; input: string }[];
+  /** The words of the pane's queued requests, when the host sent its queue. */
+  queued?: readonly string[];
 }
 
 let sequence = 0;
@@ -125,6 +139,17 @@ export const STARTED_GRACE = 15_000;
 /** How long an arrived request waits for the 파이프라인's board (it comes in the same answer when the view asks for it). */
 export const ARRIVED_GRACE = 2_000;
 
+/**
+ * How long a queued request is still watched once its words left the pane's queue (it ran, 다음 실행 took it, or it was removed)
+ * and its entry has not come.
+ */
+export const QUEUE_LEFT_GRACE = 15_000;
+
+/** The moment a holding request's stand-in may go: just after its shortest showing (the hold is inclusive). */
+export function holdEnd(request: PendingRequest): number {
+  return request.at + motion.pendingShowAfter + motion.pendingMinVisible + 1;
+}
+
 /** The next moment a request may go by time alone, so a quiet pane is settled then too; null: none. */
 export function nextDeadline(requests: readonly PendingRequest[]): number | null {
   let next: number | null = null;
@@ -132,20 +157,44 @@ export function nextDeadline(requests: readonly PendingRequest[]): number | null
     const at =
       request.phase === 'started' && request.answeredAt !== undefined
         ? request.answeredAt + STARTED_GRACE + 1
-        : request.phase === 'arrived' && request.arrivedAt !== undefined
-          ? request.arrivedAt + ARRIVED_GRACE + 1
-          : null;
+        : request.phase === 'arrived' && request.doneAt !== undefined
+          ? holdEnd(request)
+          : request.phase === 'arrived' && request.arrivedAt !== undefined
+            ? request.arrivedAt + ARRIVED_GRACE + 1
+            : request.phase === 'queued' && request.leftQueueAt !== undefined
+              ? request.leftQueueAt + QUEUE_LEFT_GRACE + 1
+              : null;
     if (at !== null && (next === null || at < next)) next = at;
   }
   return next;
 }
 
 /**
+ * An arrived request whose shown view's data has it: it goes, unless its 전송 중 has shown and must stay its shortest time
+ * (pendingVisible from the moment it would have gone, `doneAt`); then it stays, in place of the host's row, until `holdEnd`.
+ * One drawn nowhere goes at once.
+ */
+function release(request: PendingRequest, now: number): PendingRequest | null {
+  if (!request.drawn) return null;
+  const doneAt = request.doneAt ?? now;
+  if (!pendingVisible(request.at, doneAt, now)) return null;
+  return request.doneAt === undefined ? { ...request, doneAt } : request;
+}
+
+/** The host's user entry `request` arrived as: the one the answer named, else the first new one with its words, else (a start answered without ids) the first new one. */
+function arrivedEntry(request: PendingRequest, entries: readonly LogEntry[]): string | undefined {
+  if (request.entryId !== undefined) return request.entryId;
+  const fresh = userEntriesSince(request, entries);
+  return (fresh.find((entry) => sameWords(entry.text, request.text)) ?? (request.phase === 'started' ? fresh[0] : undefined))?.id;
+}
+
+/**
  * The requests still waiting once the pane is `snapshot` at `now`, and whether one of them landed: its entry (and in the Mighty
  * view its run) came, so the views move to it again (B2: follow the stand-in at once and again when the real one lands). A
  * failed one stays until the next send. One that landed first turns `arrived` and goes when `holds` says the shown view's own
- * data has it (the 파이프라인 waits for its board). STARTED_GRACE and ARRIVED_GRACE end a wait whose data never comes; that
- * is not a landing.
+ * data has it (the 파이프라인 waits for its board), or once its 전송 중 has had its shortest showing (`release`). A queued one
+ * lands when an entry with its words comes (it now runs: an own request), and is forgotten QUEUE_LEFT_GRACE after its words left
+ * the queue without one. STARTED_GRACE and ARRIVED_GRACE end a wait whose data never comes; that is not a landing.
  */
 export function settle(
   requests: readonly PendingRequest[],
@@ -159,15 +208,27 @@ export function settle(
   for (const request of requests) {
     let next: PendingRequest | null = request;
     if (request.phase === 'arrived') {
-      if (now - (request.arrivedAt ?? now) > ARRIVED_GRACE || holds(request)) next = null;
+      if (request.doneAt !== undefined || now - (request.arrivedAt ?? now) > ARRIVED_GRACE || holds(request)) next = release(request, now);
     } else if (request.phase === 'started' && request.answeredAt !== undefined && now - request.answeredAt > STARTED_GRACE) {
       next = null;
     } else if (request.phase !== 'failed') {
       const runs = snapshot.runs ? runsFor(request, snapshot.runs) : [];
       if (entryArrived(request, snapshot.entries) && (!snapshot.runs || runs.length > 0)) {
         landed = true;
-        const arrived: PendingRequest = { ...request, phase: 'arrived', arrivedAt: now, arrivedRunIds: runs };
-        next = holds(arrived) ? null : arrived;
+        const arrivedEntryId = arrivedEntry(request, snapshot.entries);
+        const arrived: PendingRequest = {
+          ...request,
+          phase: 'arrived',
+          arrivedAt: now,
+          arrivedRunIds: runs,
+          ...(arrivedEntryId !== undefined ? { arrivedEntryId } : {}),
+        };
+        next = holds(arrived) ? release(arrived, now) : arrived;
+      } else if (request.phase === 'queued' && snapshot.queued) {
+        const queued = snapshot.queued.some((text) => sameWords(text, request.text));
+        if (queued) next = request.leftQueueAt === undefined ? request : { ...request, leftQueueAt: undefined };
+        else if (request.leftQueueAt === undefined) next = { ...request, leftQueueAt: now };
+        else if (now - request.leftQueueAt > QUEUE_LEFT_GRACE) next = null;
       }
     }
     if (next !== request) changed = true;
@@ -188,7 +249,8 @@ export function reconcile(
 
 /**
  * What the host's answer does to its request. started: kept until its entry comes (an answer naming a run wins over one
- * matched by words); queued, steered or anything else: dropped (a queued one gets no block until it runs, the queue flashes).
+ * matched by words); queued: no block (the queue flashes), only watched by its words until it runs, which counts as own then
+ * (pending.json `scrollRule`); steered or anything else: dropped.
  */
 export function applyAnswer(requests: readonly PendingRequest[], clientId: string, answer: ParsedSubmit, now: number): readonly PendingRequest[] {
   const at = requests.findIndex((request) => request.clientId === clientId);
@@ -208,6 +270,20 @@ export function applyAnswer(requests: readonly PendingRequest[], clientId: strin
             arrivedAt: undefined,
             arrivedRunIds: undefined,
           };
+  }
+  if (answer.outcome === 'queued') {
+    next = {
+      ...request,
+      phase: 'queued',
+      drawn: false,
+      entryId: undefined,
+      runId: undefined,
+      answeredAt: now,
+      arrivedAt: undefined,
+      arrivedRunIds: undefined,
+      arrivedEntryId: undefined,
+      doneAt: undefined,
+    };
   }
   const copy = requests.slice();
   if (next) copy[at] = next;
@@ -250,11 +326,40 @@ export function shownInLog(requests: readonly PendingRequest[], entries: readonl
   );
 }
 
-/** The request the block list draws (the newest drawn one) while its run is not among the host's. */
+/**
+ * The holding requests the transcript draws in place of the host's own entry (by that entry's id) until their shortest showing
+ * is over (`doneAt`); the entry itself is not drawn meanwhile.
+ */
+export function heldInLog(requests: readonly PendingRequest[]): ReadonlyMap<string, PendingRequest> {
+  const held = new Map<string, PendingRequest>();
+  for (const request of requests) {
+    if (request.phase === 'arrived' && request.doneAt !== undefined && request.arrivedEntryId !== undefined) held.set(request.arrivedEntryId, request);
+  }
+  return held;
+}
+
+/** The host's runs a view holds back while `shown` (its stand-in) holds in their place; none otherwise. */
+export function heldRuns(shown: PendingRequest | undefined): readonly string[] {
+  return shown?.phase === 'arrived' && shown.doneAt !== undefined ? (shown.arrivedRunIds ?? []) : [];
+}
+
+/**
+ * The request the block list draws (the newest drawn one) while its run is not among the host's, or while it holds in its
+ * run's place (`heldRuns`).
+ */
 export function shownInBlocks(requests: readonly PendingRequest[], runs: readonly { id: string; input: string }[]): PendingRequest | undefined {
   const request = newestDrawn(requests);
   if (!request) return undefined;
-  return request.phase === 'failed' || runsFor(request, runs).length === 0 ? request : undefined;
+  return request.phase === 'failed' || request.doneAt !== undefined || runsFor(request, runs).length === 0 ? request : undefined;
+}
+
+/** `structure` without the requests of `runIds` (a holding stand-in's, `heldRuns`); the same object when there are none. */
+export function structureWithout(structure: MobileStructure, runIds: readonly string[]): MobileStructure {
+  if (runIds.length === 0) return structure;
+  const held = new Set(runIds);
+  return structure.shape === 'free'
+    ? { ...structure, rows: structure.rows.filter((row) => !held.has(row.item.runId)) }
+    : { ...structure, columns: structure.columns.map((column) => ({ ...column, items: column.items.filter((item) => !held.has(item.runId)) })) };
 }
 
 /**
@@ -264,7 +369,7 @@ export function shownInBlocks(requests: readonly PendingRequest[], runs: readonl
 export function shownInStructure(requests: readonly PendingRequest[], boardRuns: ReadonlySet<string> | undefined): PendingRequest | undefined {
   const request = newestDrawn(requests);
   if (!request) return undefined;
-  if (request.phase === 'failed' || !boardRuns) return request;
+  if (request.phase === 'failed' || request.doneAt !== undefined || !boardRuns) return request;
   // The board may come before the entry does: a run the answer named, or the run it arrived
   // with, already on a board is shown there.
   const runs = request.phase === 'arrived' ? (request.arrivedRunIds ?? []) : request.runId !== undefined ? [request.runId] : [];

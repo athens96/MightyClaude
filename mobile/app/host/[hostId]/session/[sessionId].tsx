@@ -100,6 +100,8 @@ import {
   drawsStandIn,
   dropRequest,
   failRequest,
+  heldInLog,
+  heldRuns,
   newClientId,
   newPendingRequest,
   nextDeadline,
@@ -107,6 +109,7 @@ import {
   shownInBlocks,
   shownInLog,
   shownInStructure,
+  structureWithout,
   type PaneSnapshot,
   type PendingRequest,
 } from '@/lib/pending-requests';
@@ -567,8 +570,9 @@ export default function SessionScreen() {
    * Natural submit on the phone (B1): the composer empties at once and, unless the pane is
    * busy (it queues) or the words are a slash command, the shown view draws the request
    * with 전송 중 and moves to it. The host's answer then either keeps it until its entry
-   * lands (started), drops it (queued: the queue list flashes; steered), or turns it failed
-   * with the message in place, and the draft comes back if the box is still untouched.
+   * lands (started), only watches it by its words (queued: the queue list flashes, and the
+   * views move to it when it runs), drops it (steered), or turns it failed with the message
+   * in place, and the draft comes back if the box is still untouched.
    */
   const send = useCallback(
     (value: string, mode?: SubmitMode) => {
@@ -626,7 +630,8 @@ export default function SessionScreen() {
           if (answer.outcome === 'queued') setQueueFlash((count) => count + 1);
           // The bubble says a started request was sent; anything else gets the host's word.
           if (!(drawn && answer.outcome === 'started')) showToast(acceptedMessage(result.accepted), 'success');
-          setOwnMove((count) => count + 1);
+          // A queued request is no move yet: it is own when it runs (its entry lands, the settle below).
+          if (answer.outcome === 'started' || answer.outcome === 'steered') setOwnMove((count) => count + 1);
           clearAttachments();
           poll.refresh();
         } finally {
@@ -1044,9 +1049,14 @@ export default function SessionScreen() {
   const pull = blocksShown ? blockFollow.pull : structureShown ? structureFollow.pull : logFollow.pull;
 
   // ---- natural submit: reconcile the stand-ins with what the poll brought, and move to them.
+  const queuedTexts = detail?.queued;
   const snapshot = useMemo<PaneSnapshot>(
-    () => ({ entries, ...(mighty ? { runs: mighty.runs } : {}) }),
-    [entries, mighty],
+    () => ({
+      entries,
+      ...(mighty ? { runs: mighty.runs } : {}),
+      ...(queuedTexts ? { queued: queuedTexts.map((item) => item.text) } : {}),
+    }),
+    [entries, mighty, queuedTexts],
   );
   snapshotRef.current = snapshot;
   /** The run ids the 파이프라인's boards hold; undefined while it has none to show. */
@@ -1094,13 +1104,32 @@ export default function SessionScreen() {
     if (decision.scroll === 'toRequest') followNewestRef.current();
     // Only a new own move counts: the view it applies to is read at that moment.
   }, [ownMove]);
+  // A stand-in whose 전송 중 has shown stays its shortest time in place of the host's own
+  // row, entry or board (pending.json displayRule), which is held back meanwhile.
+  const blockStandIn = blocksShown && mighty ? shownInBlocks(pendingRequests, mighty.runs) : undefined;
+  const structureStandIn = structureShown ? shownInStructure(pendingRequests, boardRuns) : undefined;
+  const logStandIns = useMemo(() => heldInLog(pendingRequests), [pendingRequests]);
+  // Keyed by the held ids, which change only with the request that holds.
+  const blockHeld = heldRuns(blockStandIn).join('\n');
+  const shownRuns = useMemo(() => {
+    const held = blockHeld ? blockHeld.split('\n') : [];
+    return mighty && held.length > 0 ? mighty.runs.filter((run) => !held.includes(run.id)) : (mighty?.runs ?? []);
+  }, [mighty, blockHeld]);
+  const structureHeld = heldRuns(structureStandIn).join('\n');
+  const shownStructureState = useMemo<StructureState>(
+    () =>
+      structureState.kind === 'ok' && structureHeld
+        ? { kind: 'ok', structure: structureWithout(structureState.structure, structureHeld.split('\n')) }
+        : structureState,
+    [structureState, structureHeld],
+  );
   const pendingNode = (() => {
     if (blocksShown && mighty) {
-      const request = shownInBlocks(pendingRequests, mighty.runs);
+      const request = blockStandIn;
       return request ? <PendingRequestView key={request.clientId} request={request} look="card" /> : null;
     }
     if (structureShown) {
-      const request = shownInStructure(pendingRequests, boardRuns);
+      const request = structureStandIn;
       return request ? <PendingRequestView key={request.clientId} request={request} look="card" /> : null;
     }
     const requests = shownInLog(pendingRequests, entries);
@@ -1133,7 +1162,7 @@ export default function SessionScreen() {
     [entries, running, terminalPane],
   );
   // The rows redraw when the next actions move or the host's name for `gemini` arrives.
-  const entriesExtra = useMemo(() => ({ nextActions, antigravity }), [nextActions, antigravity]);
+  const entriesExtra = useMemo(() => ({ nextActions, antigravity, logStandIns }), [nextActions, antigravity, logStandIns]);
   /** A fresh object per fill, so filling the same text twice still moves the caret. */
   const [filled, setFilled] = useState<{ end: number } | undefined>(undefined);
   const fillComposer = useCallback(
@@ -1316,7 +1345,7 @@ export default function SessionScreen() {
         <View collapsable={false} style={styles.body}>
           {view === 'structure' && mighty ? (
             <MightyStructureView
-              state={structureState}
+              state={shownStructureState}
               hasRuns={mighty.runs.length > 0}
               unfolded={unfoldedCards}
               onToggleFold={toggleCardFolded}
@@ -1330,7 +1359,7 @@ export default function SessionScreen() {
             />
           ) : view === 'blocks' && mighty ? (
             <MightyRunList
-              runs={mighty.runs}
+              runs={shownRuns}
               contentContainerStyle={styles.list}
               headerStyle={styles.listHeader}
               header={headerNode}
@@ -1346,7 +1375,9 @@ export default function SessionScreen() {
               keyExtractor={(entry) => entry.id}
               extraData={entriesExtra}
               renderItem={({ item }) =>
-                nextActions?.entryId === item.id ? (
+                logStandIns.has(item.id) ? (
+                  <PendingRequestView request={logStandIns.get(item.id)!} look="bubble" />
+                ) : nextActions?.entryId === item.id ? (
                   <View>
                     <LogEntryView entry={item} antigravity={antigravity} />
                     <NextActionChips actions={nextActions.actions} onFill={fillComposer} />

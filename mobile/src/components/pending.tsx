@@ -4,20 +4,26 @@ import { useBusyState, usePending } from '@/hooks/use-pending';
 import { useReduceMotion } from '@/hooks/use-reduce-motion';
 import { t } from '@/lib/i18n';
 import type { PendingState } from '@/lib/pending';
-import { motion, spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { spacing, useStyles, usePalette, type Palette } from '@/theme';
 
-const BARS = [0, 1, 2] as const;
-const LOOP_STOPS = [0, 1 / 3, 2 / 3, 1];
-/** Bar 0 peaks at a third of the loop, bar 1 at two thirds, bar 2 at its end (= its start). */
-const BAR_CURVES: Record<(typeof BARS)[number], number[]> = {
-  0: [0.4, 1, 0.4, 0.4],
-  1: [0.4, 0.4, 1, 0.4],
-  2: [1, 0.4, 0.4, 1],
-};
+const BARS = [0, 1, 2, 3] as const;
+/** One cycle of the bars, the Mac's `MightyGraphActivityStyle.period` (the Windows page's 1.6 s). */
+const PERIOD = 1600;
+const SAMPLES = 16;
+const LOOP_STOPS = Array.from({ length: SAMPLES + 1 }, (_, index) => index / SAMPLES);
+/**
+ * Each bar's height over one cycle as a share of its full height: the Mac's `barHeight` (4 to 12 pt, a sine a fifth of a cycle
+ * after the bar before it). A sine ends where it starts, so the loop never jumps.
+ */
+export function barCurve(bar: number): number[] {
+  return LOOP_STOPS.map((stop) => (4 + 8 * ((Math.sin((stop + bar / 5) * 2 * Math.PI) + 1) / 2)) / 12);
+}
+const BAR_CURVES = BARS.map(barCurve);
 
 /**
- * The shared loading mark (natural submit A3), the Mac's activity bars: three short bars that rise in turn. Under Reduce Motion
- * they stand still; when they show and hide is the caller's (`<Pending>`), never this.
+ * The shared loading mark (natural submit A3), the Mac's activity bars: four short bars in the run tint that rise in turn, as
+ * on the Mac and the Windows page. Under Reduce Motion they stand still; when they show and hide is the caller's (`<Pending>`),
+ * never this.
  */
 export function PendingBars({ color, height = 12 }: { color?: string; height?: number }) {
   const palette = usePalette();
@@ -31,7 +37,7 @@ export function PendingBars({ color, height = 12 }: { color?: string; height?: n
     const animation = Animated.loop(
       Animated.timing(phase, {
         toValue: 1,
-        duration: motion.standard * 4,
+        duration: PERIOD,
         easing: Easing.linear,
         useNativeDriver: true,
       }),
@@ -39,17 +45,16 @@ export function PendingBars({ color, height = 12 }: { color?: string; height?: n
     animation.start();
     return () => animation.stop();
   }, [phase, reduce]);
-  const ink = color ?? palette.accent;
+  const ink = color ?? palette.run;
   return (
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[barStyles.row, { height }]}>
       {BARS.map((bar) => {
-        // Each bar peaks a third of the loop after the one before it, rising and falling
-        // over a third each; the curve ends where it starts, so the loop never snaps.
+        // Each bar's sine runs a fifth of the loop after the one before it.
         const scaleY = reduce
           ? 0.6
           : phase.interpolate({
               inputRange: LOOP_STOPS,
-              outputRange: BAR_CURVES[bar],
+              outputRange: BAR_CURVES[bar]!,
               extrapolate: 'clamp',
             });
         return (
@@ -64,6 +69,7 @@ export function PendingBars({ color, height = 12 }: { color?: string; height?: n
 }
 
 const barStyles = StyleSheet.create({
+  // The Mac's gap, Spacing.xxs (2 pt), which is the phone's `xs`.
   row: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
   bar: { borderRadius: 1.5, width: 3 },
 });
