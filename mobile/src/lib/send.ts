@@ -1,5 +1,6 @@
 import { describeError } from '@/api/client';
 import type { SubmitMode, SubmitOptions, SubmitResponse } from '@/api/types';
+import { parseSubmitResponse, type ParsedSubmit } from '@/lib/pending';
 import type { UploadOutcome } from '@/lib/uploads';
 
 /**
@@ -25,8 +26,13 @@ export interface SendRequest {
   upload?: () => Promise<UploadOutcome>;
 }
 
+/**
+ * `accepted` is the host's word as it came (the toast reads it); `answer` is the same body
+ * read by the shared rule (pending.json `submitRule`): the outcome and, from a new host,
+ * the ids the session screen matches its stand-in by.
+ */
 export type SendResult =
-  | { ok: true; accepted: string }
+  | { ok: true; accepted: string; answer: ParsedSubmit }
   | { ok: false; error: string; cancelled: boolean };
 
 export async function sendWithAttachments(request: SendRequest): Promise<SendResult> {
@@ -44,7 +50,7 @@ export async function sendWithAttachments(request: SendRequest): Promise<SendRes
 
   try {
     const result = await request.client.submit(request.sessionId, request.text, options);
-    return { ok: true, accepted: result.accepted };
+    return { ok: true, accepted: typeof result?.accepted === 'string' ? result.accepted : '', answer: parseSubmitResponse(result) };
   } catch (error) {
     // Best effort: an upload the host already forgot answers 404, which changes nothing.
     await Promise.all(

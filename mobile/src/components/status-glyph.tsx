@@ -1,42 +1,9 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { AccessibilityInfo, Animated, Easing, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, Easing, View } from 'react-native';
 import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
+import { useReduceMotion } from '@/hooks/use-reduce-motion';
 import { statusGlyphFor, statusWord, type GlyphShape } from '@/lib/status-glyph';
 import { usePalette, type Palette } from '@/theme';
-
-/**
- * The system "reduce motion" switch, held once for every glyph on screen: one
- * AccessibilityInfo listener while any spark is mounted, none once the last one goes.
- */
-let reduceMotion = false;
-const reduceMotionListeners = new Set<() => void>();
-let reduceMotionSubscription: { remove: () => void } | undefined;
-
-function setReduceMotion(value: boolean): void {
-  if (value === reduceMotion) return;
-  reduceMotion = value;
-  reduceMotionListeners.forEach((listener) => listener());
-}
-
-function subscribeReduceMotion(listener: () => void): () => void {
-  reduceMotionListeners.add(listener);
-  if (!reduceMotionSubscription) {
-    reduceMotionSubscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    // Read afresh on every first subscriber: the switch may have moved while none listened.
-    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
-  }
-  return () => {
-    reduceMotionListeners.delete(listener);
-    if (reduceMotionListeners.size === 0) {
-      reduceMotionSubscription?.remove();
-      reduceMotionSubscription = undefined;
-    }
-  };
-}
-
-function useReduceMotion(): boolean {
-  return useSyncExternalStore(subscribeReduceMotion, () => reduceMotion);
-}
 
 /** The eight-armed spark, turning once every 3.2 s; still when motion is reduced. */
 function Spark({ color, size }: { color: string; size: number }) {

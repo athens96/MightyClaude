@@ -47,6 +47,7 @@ import {
   chosenColumnAfterUpdate,
   columnTone,
   hasUnseenBoard,
+  onNewestBoard,
   selectBoard,
   stepBoard,
   structureBoards,
@@ -57,6 +58,7 @@ import {
   type BoardNavigation,
 } from '@/lib/pipeline-board';
 import { toneOf, type Tone } from '@/lib/status-tone';
+import { submitScroll } from '@/lib/submit-scroll';
 import {
   FOLD_LINES,
   foldText,
@@ -633,6 +635,11 @@ interface ListProps {
   /** Attaches the vertical list on screen, under its own key (`useFollowBottom().attachAs`). */
   attachAs: (key: string) => (list: EndScrollable | null) => void;
   follow?: FollowBottomProps;
+  /**
+   * Bumped on each own send (natural submit B2): an older board the user chose goes back to
+   * the newest, and the newest board's pager to its current step, the new request's column.
+   */
+  ownSend?: number;
 }
 
 /**
@@ -744,6 +751,14 @@ function ColumnPager({ board, ...list }: ListProps & { board: Board }) {
     },
     [board.columns.length, width],
   );
+
+  // An own send drops the column the user picked, so the pager follows the current step.
+  const ownSend = useRef(list.ownSend);
+  useEffect(() => {
+    if (ownSend.current === list.ownSend) return;
+    ownSend.current = list.ownSend;
+    setChosen(undefined);
+  }, [list.ownSend]);
 
   // While the user has not moved, a step that moves on brings its column along; once the
   // current step reaches the column the user picked, the pick is dropped and following resumes.
@@ -932,6 +947,13 @@ function BoardView({
   const [listOpen, setListOpen] = useState(false);
   const index = boardIndex(navigation, boards);
   const board = index === undefined ? undefined : boards[index];
+  // An own send goes back to the newest board from an older one (pending.json scrollTargets).
+  const ownSend = useRef(list.ownSend);
+  useEffect(() => {
+    if (ownSend.current === list.ownSend) return;
+    ownSend.current = list.ownSend;
+    if (submitScroll('pipeline', true, onNewestBoard(navigation, boards), false).resetBoard) setNavigation(NEWEST_BOARD);
+  }, [boards, list.ownSend, navigation]);
   if (index === undefined || !board) {
     return (
       <FlatList

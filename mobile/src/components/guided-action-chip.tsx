@@ -1,4 +1,6 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
+import { PendingBars, usePendingShown } from '@/components/pending';
+import { useBusyState } from '@/hooks/use-pending';
 import type { StyleAction } from '@/api/types';
 import { radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
@@ -44,6 +46,8 @@ export function GuidedActionChip({
     .map((flag) => FLAG_MARKS.get(flag))
     .filter((mark): mark is string => mark !== undefined);
   const label = action.help ? `${action.title} · ${action.help}` : action.title;
+  // Locked at once while busy; the bars replace the title only by the pending rule (A1).
+  const showsBars = usePendingShown(useBusyState(busy));
 
   return (
     <Pressable
@@ -64,8 +68,8 @@ export function GuidedActionChip({
         pressed && styles.pressed,
       ]}
     >
-      {busy ? (
-        <ActivityIndicator color={prominent ? palette.onAccent : tint} size="small" />
+      {showsBars ? (
+        <PendingBars color={prominent ? palette.onAccent : tint} />
       ) : (
         <>
           {action.glyph ? <Text style={styles.glyph}>{action.glyph}</Text> : null}

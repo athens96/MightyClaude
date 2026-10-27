@@ -1,17 +1,22 @@
 import { useCallback, useMemo, useState, type Ref } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Icon, type IconName } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { CommandList } from '@/components/command-list';
+import { Pending, PendingBars, usePendingShown } from '@/components/pending';
 import { Sheet } from '@/components/sheets';
 import { byteLength } from '@/api/client';
 import { MAX_TEXT_BYTES, type MobileCommand, type SubmitMode } from '@/api/types';
 import { commandInsertion, commandQuery, filterCommands } from '@/lib/commands';
 import { t } from '@/lib/i18n';
+import { useBusyState } from '@/hooks/use-pending';
+import type { PendingState } from '@/lib/pending';
 import { busySendChoices } from '@/lib/send';
 import { formatBytes, type PickedFile, type UploadProgress } from '@/lib/uploads';
 import { cardShadow, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
+
+const IDLE_STATE: PendingState = { kind: 'idle' };
 
 export interface ComposerAttachments {
   files: PickedFile[];
@@ -33,6 +38,8 @@ export function Composer({
   submitModes,
   commands,
   attachments,
+  stopping,
+  command,
   onSend,
   onStop,
   onCommand,
@@ -51,8 +58,16 @@ export function Composer({
   commands: MobileCommand[];
   /** "attachments": absent when the host or the pane cannot take files. */
   attachments?: ComposerAttachments;
-  /** Answers whether the host took the message; a refusal leaves the text in place. */
-  onSend: (text: string, mode?: SubmitMode) => Promise<boolean>;
+  /**
+   * Hands the trimmed draft over. The screen empties the box at once and draws the request
+   * (natural submit B1); a send that fails gives the words back if the box is still empty
+   * and untouched. Further sends wait while `sending`.
+   */
+  onSend: (text: string, mode?: SubmitMode) => void;
+  /** The stop call on its way: stop locks and shows the pending mark (A3). */
+  stopping?: PendingState;
+  /** A slash command the phone runs (`/usage`, `/help`…) on its way, with its name. */
+  command?: { name: string; state: PendingState };
   onStop: () => void;
   /** A command the host wants the phone to handle (rename, settings, /usage…). */
   onCommand: (command: MobileCommand) => void;
@@ -65,6 +80,11 @@ export function Composer({
   // Which round button sent last, so only that one spins while the host answers.
   const [pressedMode, setPressedMode] = useState<SubmitMode | undefined>(undefined);
   const tooLong = byteLength(text) > MAX_TEXT_BYTES;
+  // The pressed round button locks at once and shows the bars by the pending rule (A1).
+  const sendBars = usePendingShown(useBusyState(sending));
+  const stopState: PendingState = stopping ?? IDLE_STATE;
+  const stopBars = usePendingShown(stopState);
+  const stopLocked = stopState.kind === 'pending';
 
   const matches = useMemo(() => {
     if (commands.length === 0) return [];
@@ -105,12 +125,10 @@ export function Composer({
   // and stop shrinks beside them, as on the Mac and Windows.
   const offersDraft = running && !empty;
 
-  const submit = async (mode?: SubmitMode) => {
+  const submit = (mode?: SubmitMode) => {
     const value = text.trim();
     if (tooLong || (value.length === 0 && picked.length === 0)) return;
-    // Only a send the host accepted empties the box: after a failure the user still has
-    // what they typed — and the files they picked — and can try again.
-    if (await onSend(value, mode)) onChangeText('');
+    onSend(value, mode);
   };
 
   // Send and queue are one look: the round run-blue button, faded while it cannot go.
@@ -125,7 +143,7 @@ export function Composer({
       onPress={() => {
         void Haptics.selectionAsync();
         setPressedMode(mode);
-        void submit(mode);
+        submit(mode);
       }}
       style={({ pressed }) => [
         styles.send,
@@ -133,8 +151,8 @@ export function Composer({
         pressed && styles.pressed,
       ]}
     >
-      {sending && pressedMode === mode ? (
-        <ActivityIndicator color={palette.onStatus} size="small" />
+      {sendBars && pressedMode === mode ? (
+        <PendingBars color={palette.onStatus} />
       ) : (
         <Icon name={icon} color={palette.onStatus} size={17} strokeWidth={2.8} />
       )}
@@ -144,6 +162,14 @@ export function Composer({
   return (
     <View style={styles.bar}>
       <CommandList commands={matches} onSelect={pickCommand} />
+      {command ? (
+        <Pending
+          state={command.state}
+          label={`${t('graph.state.sending')} · /${command.name}`}
+          showsFailure={false}
+          style={styles.commandRow}
+        />
+      ) : null}
       {tooLong ? <Text style={styles.warning}>{t('phone.composer.tooLong')}</Text> : null}
 
       {attachments && picked.length > 0 ? (
@@ -219,6 +245,8 @@ export function Composer({
             <Pressable
               accessibilityLabel={t('phone.composer.stop')}
               accessibilityRole="button"
+              accessibilityState={{ busy: stopLocked, disabled: stopLocked }}
+              disabled={stopLocked}
               hitSlop={6}
               onPress={() => {
                 void Haptics.selectionAsync();
@@ -230,7 +258,11 @@ export function Composer({
                 pressed && styles.pressed,
               ]}
             >
-              <Icon name="stop" color={palette.onStatus} size={offersDraft ? 16 : 18} />
+              {stopBars ? (
+                <PendingBars color={palette.onStatus} />
+              ) : (
+                <Icon name="stop" color={palette.onStatus} size={offersDraft ? 16 : 18} />
+              )}
             </Pressable>
           ) : null}
           {/* Stop, then queue at the far right where send sits when idle. */}
@@ -360,5 +392,6 @@ const makeStyles = (palette: Palette) =>
       textAlign: 'center',
     },
     warning: { color: palette.danger, fontSize: 12 },
+    commandRow: { paddingHorizontal: spacing.sm },
     pressed: { opacity: 0.6 },
   });

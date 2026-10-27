@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -10,6 +9,8 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Icon, type IconName } from '@/components/icons';
+import { PendingBars, usePendingShown } from '@/components/pending';
+import { useBusyState } from '@/hooks/use-pending';
 import { t } from '@/lib/i18n';
 import {
   cardShadow,
@@ -83,12 +84,15 @@ export function Button({
 }: ButtonProps) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
+  // The button locks the moment it is busy (no second tap); the bars take the label's place
+  // only by the pending rule (natural submit A1), so a quick answer never flickers them.
   const inactive = disabled || busy;
+  const showsBars = usePendingShown(useBusyState(busy));
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      accessibilityState={{ disabled: inactive }}
+      accessibilityState={{ disabled: inactive, busy }}
       disabled={inactive}
       hitSlop={compact ? 4 : undefined}
       onPress={() => {
@@ -105,8 +109,10 @@ export function Button({
         style,
       ]}
     >
-      {busy ? (
-        <ActivityIndicator color={toneText(palette, tone)} size="small" />
+      {showsBars ? (
+        <View accessibilityLabel={t('graph.state.sending')} style={styles.buttonBars}>
+          <PendingBars color={toneText(palette, tone)} />
+        </View>
       ) : (
         <Text
           style={[
@@ -304,6 +310,8 @@ const makeStyles = (palette: Palette) =>
     buttonPressed: { opacity: 0.75, transform: [{ scale: 0.98 }] },
     buttonLabel: { fontSize: 15, fontWeight: '700' },
     buttonLabelCompact: { fontSize: 13 },
+    // As tall as a label line, so the button keeps its size while the bars show.
+    buttonBars: { alignItems: 'center', justifyContent: 'center', minHeight: 20 },
     // A white card lifting off the grey page.
     card: {
       ...cardShadow,

@@ -716,9 +716,19 @@ export interface SubmitOptions {
   attachments?: string[];
 }
 
+/**
+ * `/m1/sessions/{id}/submit` and `guided`. Every host sends `accepted` as the outcome word;
+ * a host with natural submit adds `outcome` and, only for a request that started at once,
+ * the ids of its user entry and Mighty run (on the Mac the two are the same id). Read it
+ * through `parseSubmitResponse` (lib/pending.ts): an old answer without the new fields, an
+ * unknown word or a stray type is still accepted the way the shared rule says.
+ */
 export interface SubmitResponse {
   protocol: number;
   accepted: SubmitAccepted;
+  outcome?: SubmitAccepted;
+  entryId?: string;
+  runId?: string;
 }
 
 export interface StopResponse {

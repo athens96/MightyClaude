@@ -37,6 +37,7 @@ import { Composer } from '@/components/composer';
 import { LogEntryView } from '@/components/log-entry-view';
 import { GuidedPanel } from '@/components/guided-panel';
 import { MightyRunList } from '@/components/mighty-blocks';
+import { PendingRequestView } from '@/components/pending-request';
 import { MightyStructureView } from '@/components/structure-view';
 import { NextActionChips } from '@/components/next-action-chips';
 import { AntigravityPermissionCard } from '@/components/antigravity-permission-card';
@@ -66,6 +67,7 @@ import {
   type AntigravityDecision,
 } from '@/lib/antigravity-permission';
 import { useLongPoll } from '@/hooks/use-long-poll';
+import { usePendingAction } from '@/hooks/use-pending';
 import { usePanelExpanded } from '@/hooks/use-panel-expanded';
 import { hasCapability } from '@/lib/capabilities';
 import { commandActionOf, isMessageAction } from '@/lib/commands';
@@ -91,7 +93,27 @@ import {
 import { fillDraft, latestNextActions } from '@/lib/next-actions';
 import { composerRunning, stopVerdict, type StopVerdict } from '@/lib/resync';
 import { guidedRequestFor, panelOf } from '@/lib/styles';
+import {
+  applyAnswer,
+  beforeSend,
+  draftToRestore,
+  drawsStandIn,
+  dropRequest,
+  failRequest,
+  newClientId,
+  newPendingRequest,
+  nextDeadline,
+  settle as settleRequests,
+  shownInBlocks,
+  shownInLog,
+  shownInStructure,
+  type PaneSnapshot,
+  type PendingRequest,
+} from '@/lib/pending-requests';
+import type { PendingState } from '@/lib/pending';
+import { structureBoards } from '@/lib/pipeline-board';
 import { sendWithAttachments, type SendRequest } from '@/lib/send';
+import { submitScroll, submitViewFor } from '@/lib/submit-scroll';
 import { panelContent, panelShownExpanded, settingsSummary, toggledPanel } from '@/lib/session-panel';
 import { useForgetRefusedSecret } from '@/store/hosts';
 import {
@@ -199,6 +221,45 @@ export default function SessionScreen() {
   const [closing, setClosing] = useState(false);
   const [picker, setPicker] = useState<SettingField | undefined>(undefined);
   const [text, setText] = useState('');
+  const textRef = useRef(text);
+  textRef.current = text;
+  /**
+   * The send whose words a failure may give back, and whether the box was touched since
+   * (natural submit: only an empty, untouched composer gets the draft back).
+   */
+  const sentDraft = useRef<{ clientId: string; edited: boolean } | undefined>(undefined);
+  const changeText = useCallback((value: string) => {
+    if (sentDraft.current) sentDraft.current.edited = true;
+    setText(value);
+  }, []);
+  /** A send on its way; a second one waits (the round buttons are locked meanwhile too). */
+  const sendingRef = useRef(false);
+  /**
+   * Sent requests the host has not shown yet (`lib/pending-requests.ts`). The ref is the
+   * truth, so a change and what it means (a request landed) are read in one place.
+   */
+  const [pendingRequests, setPendingRequests] = useState<readonly PendingRequest[]>([]);
+  const pendingRef = useRef<readonly PendingRequest[]>([]);
+  /** Bumped when the views move to an own request: at send, at the answer, and when it lands. */
+  const [ownMove, setOwnMove] = useState(0);
+  /** Bumped when a send was queued: the queue list flashes (B3). */
+  const [queueFlash, setQueueFlash] = useState(0);
+  /** Re-runs the reconcile when a grace ends on a pane the poll has gone quiet on. */
+  const [settleTick, setSettleTick] = useState(0);
+  const updatePending = useCallback(
+    (change: (previous: readonly PendingRequest[]) => readonly PendingRequest[]) => {
+      const previous = pendingRef.current;
+      const next = change(previous);
+      if (next === previous) return;
+      pendingRef.current = next;
+      setPendingRequests(next);
+    },
+    [],
+  );
+  const stopAction = usePendingAction();
+  const runStop = stopAction.run;
+  /** A slash command the phone runs, on its way: the composer shows the pending mark. */
+  const [commandRun, setCommandRun] = useState<{ name: string; state: PendingState } | undefined>(undefined);
   const composerInput = useRef<TextInput>(null);
   /** Set once the user picks a body themselves; until then the pane's own view decides. */
   const [chosenView, setChosenView] = useState<BodyView | undefined>(undefined);
@@ -361,6 +422,10 @@ export default function SessionScreen() {
     heldStructureRef.current = undefined;
     setHeldStructure(undefined);
     setText('');
+    sentDraft.current = undefined;
+    pendingRef.current = [];
+    setPendingRequests([]);
+    setCommandRun(undefined);
   }, [sessionId]);
 
   // The host sends only the newest entries and replaces that window wholesale, so what
@@ -489,34 +554,71 @@ export default function SessionScreen() {
     return cancelAttachments;
   }, [cancelAttachments, clearAttachments, sessionId]);
 
+  // What the pane holds now, read by the send that starts a request and by the reconcile.
+  const snapshotRef = useRef<PaneSnapshot>({ entries: NO_ENTRIES });
+  const runningRef = useRef(false);
+
+  /**
+   * Natural submit on the phone (B1): the composer empties at once and, unless the pane is
+   * busy (it queues) or the words are a slash command, the shown view draws the request
+   * with 전송 중 and moves to it. The host's answer then either keeps it until its entry
+   * lands (started), drops it (queued: the queue list flashes; steered), or turns it failed
+   * with the message in place, and the draft comes back if the box is still untouched.
+   */
   const send = useCallback(
-    async (value: string, mode?: SubmitMode): Promise<boolean> => {
-      if (!client || !sessionId) return false;
+    (value: string, mode?: SubmitMode) => {
+      if (!client || !sessionId || sendingRef.current) return;
+      sendingRef.current = true;
+      const clientId = newClientId();
+      const at = Date.now();
+      const drawn = drawsStandIn(value, { running: runningRef.current, ...(mode ? { mode } : {}) });
+      setText('');
+      sentDraft.current = { clientId, edited: false };
+      // A request with no stand-in is still watched, so the views move to it when it lands.
+      updatePending((previous) => [...beforeSend(previous), newPendingRequest(snapshotRef.current, clientId, value, at, drawn)]);
+      if (drawn) setOwnMove((count) => count + 1);
       setSending(true);
-      try {
-        // Uploads go first, and a `submit` that fails afterwards gives them back: the
-        // host keeps 16 open uploads per pane, so leaking a few would make the next
-        // attempt fail before it started.
-        const request: SendRequest = { client, sessionId, text: value };
-        if (mode) request.mode = mode;
-        if (attachFiles.length > 0) {
-          request.upload = () => uploadAttachments(client, sessionId);
+      void (async () => {
+        try {
+          // Uploads go first, and a `submit` that fails afterwards gives them back: the
+          // host keeps 16 open uploads per pane, so leaking a few would make the next
+          // attempt fail before it started.
+          const request: SendRequest = { client, sessionId, text: value };
+          if (mode) request.mode = mode;
+          if (attachFiles.length > 0) {
+            request.upload = () => uploadAttachments(client, sessionId);
+          }
+          const result = await sendWithAttachments(request);
+          if (!result.ok) {
+            if (drawn && !result.cancelled) updatePending((previous) => failRequest(previous, clientId, result.error, Date.now()));
+            else updatePending((previous) => dropRequest(previous, clientId));
+            // A failure shows once: in its block when one shows it, else as a toast.
+            const inBlock = pendingRef.current.some(
+              (pending) => pending.clientId === clientId && pending.drawn && pending.phase === 'failed',
+            );
+            if (!inBlock) showToast(result.error, 'error');
+            const draft = sentDraft.current;
+            if (draft?.clientId === clientId) {
+              const back = draftToRestore(value, textRef.current, draft.edited);
+              if (back !== undefined) setText(back);
+            }
+            return;
+          }
+          const answer = result.answer;
+          updatePending((previous) => applyAnswer(previous, clientId, answer, Date.now()));
+          if (answer.outcome === 'queued') setQueueFlash((count) => count + 1);
+          // The bubble says a started request was sent; anything else gets the host's word.
+          if (!(drawn && answer.outcome === 'started')) showToast(acceptedMessage(result.accepted), 'success');
+          if (answer.accepted) setOwnMove((count) => count + 1);
+          clearAttachments();
+          poll.refresh();
+        } finally {
+          sendingRef.current = false;
+          setSending(false);
         }
-        const result = await sendWithAttachments(request);
-        if (!result.ok) {
-          showToast(result.error, 'error');
-          return false;
-        }
-        showToast(acceptedMessage(result.accepted), 'success');
-        clearAttachments();
-        followNewest();
-        poll.refresh();
-        return true;
-      } finally {
-        setSending(false);
-      }
+      })();
     },
-    [attachFiles.length, clearAttachments, client, followNewest, poll, sessionId, uploadAttachments],
+    [attachFiles.length, clearAttachments, client, poll, sessionId, updatePending, uploadAttachments],
   );
 
   // Stop can be pressed on a picture of the pane that is out of date — the run ended
@@ -526,7 +628,9 @@ export default function SessionScreen() {
   const stop = useCallback(() => {
     if (!client || !sessionId) return;
     const drawnFrom = detailRevision;
-    void (async () => {
+    // The stop button locks and shows the pending mark while the call is out (A3); a second
+    // tap meanwhile does nothing. Its outcome is the toast, as before.
+    void runStop(async () => {
       let verdict: StopVerdict;
       try {
         verdict = stopVerdict(await client.stop(sessionId));
@@ -539,8 +643,9 @@ export default function SessionScreen() {
         showToast(t('phone.session.stopNotRunning'));
       } else showToast(verdict.message, 'error');
       poll.refresh();
-    })();
-  }, [client, detailRevision, poll, sessionId]);
+      return { ok: true };
+    });
+  }, [client, detailRevision, poll, runStop, sessionId]);
 
   const settle = useCallback((key: string) => {
     setSettledRequests((prev) => new Set(prev).add(key));
@@ -659,6 +764,7 @@ export default function SessionScreen() {
     [client, poll, sessionId],
   );
 
+  const firstQueued = detail?.queued[0]?.text;
   const runNext = useCallback(() => {
     if (!client || !sessionId) return;
     void (async () => {
@@ -666,6 +772,13 @@ export default function SessionScreen() {
       try {
         await client.runNext(sessionId);
         showToast(t('phone.session.toast.nextStarted'), 'success');
+        // 다음 실행 is an own request (B2): nothing is drawn for it, but the views move to
+        // its entry when it lands. Started with no ids: any new request entry is it.
+        if (firstQueued !== undefined) {
+          const now = Date.now();
+          const watched = newPendingRequest(snapshotRef.current, newClientId(now), firstQueued, now, false);
+          updatePending((previous) => [...previous, { ...watched, phase: 'started', answeredAt: now }]);
+        }
         poll.refresh();
       } catch (error) {
         showToast(describeError(error), 'error');
@@ -673,7 +786,7 @@ export default function SessionScreen() {
         setQueueBusy(false);
       }
     })();
-  }, [client, poll, sessionId]);
+  }, [client, firstQueued, poll, sessionId, updatePending]);
 
   const rename = useCallback(
     (title: string) => {
@@ -788,6 +901,8 @@ export default function SessionScreen() {
     (action: MessageCommandAction, name: string) => {
       if (!client || !sessionId || commandRunning.current) return;
       commandRunning.current = true;
+      const since = Date.now();
+      setCommandRun({ name, state: { kind: 'pending', since } });
       void (async () => {
         try {
           const result = await client.runCommand(sessionId, action);
@@ -798,6 +913,8 @@ export default function SessionScreen() {
           showToast(describeError(error), 'error');
         } finally {
           commandRunning.current = false;
+          // The message or toast says how it went; the mark only ends by the pending rule.
+          setCommandRun({ name, state: { kind: 'done', since, at: Date.now() } });
         }
       })();
     },
@@ -826,6 +943,7 @@ export default function SessionScreen() {
   );
 
   const running = composerRunning(session?.status, detail?.revision, settledRevision);
+  runningRef.current = running;
   // The override covers one stale detail only. Once another revision arrives it has
   // spoken for itself, and a later detail that happens to reuse the number (the Mac
   // restarted and counts again) must not hide Stop for a run that is really going.
@@ -902,6 +1020,72 @@ export default function SessionScreen() {
         : (heldStructure?.state ?? { kind: 'loading' });
   const pull = blocksShown ? blockFollow.pull : structureShown ? structureFollow.pull : logFollow.pull;
 
+  // ---- natural submit: reconcile the stand-ins with what the poll brought, and move to them.
+  const snapshot = useMemo<PaneSnapshot>(
+    () => ({ entries, ...(mighty ? { runs: mighty.runs } : {}) }),
+    [entries, mighty],
+  );
+  snapshotRef.current = snapshot;
+  /** The run ids the 파이프라인's boards hold; undefined while it has none to show. */
+  const boardRuns = useMemo(
+    () =>
+      structureState.kind === 'ok'
+        ? new Set(structureBoards(structureState.structure).flatMap((board) => board.items.map((item) => item.runId)))
+        : undefined,
+    [structureState],
+  );
+  // Each view keeps its stand-in until its own data has the request: the transcript and 흐름
+  // get it in the same answer as the entry; the 파이프라인 waits for a board with its run.
+  const holdsRef = useRef<(request: PendingRequest) => boolean>(() => true);
+  holdsRef.current = (request) => {
+    if (!structureShown) return true;
+    if (structureState.kind === 'unsupported' || structureState.kind === 'unreadable') return true;
+    return boardRuns !== undefined && (request.arrivedRunIds ?? []).some((id) => boardRuns.has(id));
+  };
+  useEffect(() => {
+    let landedNow = false;
+    updatePending((previous) => {
+      if (previous.length === 0) return previous;
+      const result = settleRequests(previous, snapshot, Date.now(), holdsRef.current);
+      landedNow = result.landed;
+      return result.requests;
+    });
+    if (landedNow) setOwnMove((count) => count + 1);
+  }, [boardRuns, settleTick, snapshot, structureShown, updatePending]);
+  // A grace that ends while the poll is quiet settles on its own time, not the next answer.
+  useEffect(() => {
+    const at = nextDeadline(pendingRequests);
+    if (at === null) return undefined;
+    const timer = setTimeout(() => setSettleTick((count) => count + 1), Math.max(0, at - Date.now()));
+    return () => clearTimeout(timer);
+  }, [pendingRequests]);
+  // An own request moves the shown view to it, wherever it was (pending.json scrollTargets):
+  // at send, onto the stand-in at once, and again when the host's entry lands, since the
+  // first move ran before the entry existed. The 파이프라인 also goes back to its newest
+  // board (`ownSend` on MightyStructureView).
+  const followNewestRef = useRef(followNewest);
+  followNewestRef.current = followNewest;
+  useEffect(() => {
+    if (ownMove === 0) return;
+    const decision = submitScroll(submitViewFor(blocksShown ? 'blocks' : structureShown ? 'structure' : 'log'), true, true, false);
+    if (decision.scroll === 'toRequest') followNewestRef.current();
+    // Only a new own move counts: the view it applies to is read at that moment.
+  }, [ownMove]);
+  const pendingNode = (() => {
+    if (blocksShown && mighty) {
+      const request = shownInBlocks(pendingRequests, mighty.runs);
+      return request ? <PendingRequestView key={request.clientId} request={request} look="card" /> : null;
+    }
+    if (structureShown) {
+      const request = shownInStructure(pendingRequests, boardRuns);
+      return request ? <PendingRequestView key={request.clientId} request={request} look="card" /> : null;
+    }
+    const requests = shownInLog(pendingRequests, entries);
+    return requests.length === 0
+      ? null
+      : requests.map((request) => <PendingRequestView key={request.clientId} request={request} look="bubble" />);
+  })();
+
   // New work pulls the shown list back to its newest content, even from further up,
   // unless the user is dragging it.
   const blocksProgress = useMemo(() => blocksProgressKey(mighty?.runs ?? []), [mighty]);
@@ -932,10 +1116,10 @@ export default function SessionScreen() {
   const fillComposer = useCallback(
     (value: string) => {
       const next = fillDraft(text, value);
-      setText(next);
+      changeText(next);
       setFilled({ end: next.length });
     },
-    [text],
+    [changeText, text],
   );
   // Once the filled text is on screen: focus and put the caret after it, one time only,
   // so the box stays uncontrolled for selection and typing behaves normally.
@@ -1026,6 +1210,7 @@ export default function SessionScreen() {
 
   const footerNode = detail ? (
     <View style={styles.footer}>
+      {pendingNode}
       {detail.permissions
         .filter((permission) => permission.questionnaire === undefined && !isPlanRequest(permission))
         .map((permission) => {
@@ -1054,6 +1239,7 @@ export default function SessionScreen() {
         manageable={canQueue}
         canRunNext={!running}
         busy={queueBusy}
+        flash={queueFlash}
         onRemove={removeQueued}
         onRunNext={runNext}
       />
@@ -1117,6 +1303,7 @@ export default function SessionScreen() {
               footer={footerNode}
               attachAs={structureFollow.attachAs}
               follow={structureFollow.props}
+              ownSend={ownMove}
             />
           ) : view === 'blocks' && mighty ? (
             <MightyRunList
@@ -1248,8 +1435,8 @@ export default function SessionScreen() {
         ) : null}
         <Composer
           text={text}
-          onChangeText={setText}
-          disabled={!client || session === undefined || sending}
+          onChangeText={changeText}
+          disabled={!client || session === undefined}
           terminal={session?.terminal ?? false}
           running={running}
           sending={sending}
@@ -1257,6 +1444,8 @@ export default function SessionScreen() {
           commands={canCommands ? commands : []}
           attachments={canAttach && session?.kind === 'claude' ? attachments : undefined}
           onSend={send}
+          stopping={stopAction.state}
+          {...(commandRun ? { command: commandRun } : {})}
           onStop={stop}
           onCommand={onCommand}
           inputRef={composerInput}

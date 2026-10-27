@@ -276,6 +276,24 @@ export const typeScale = {
   caption: { fontSize: 12, lineHeight: 16, fontWeight: '400' },
 } as const satisfies Record<string, TextStyle>;
 
+/**
+ * The motion tokens of `native/contracts/fixtures/design-tokens.json` (`motion`), the same
+ * names and values as the Mac's and Windows' DesignMetrics.Motion and the Windows page's
+ * theme/tokens; `pending.test.ts` holds them together. Durations are whole milliseconds;
+ * `easing` is the standard curve as cubic-bezier control points. `pendingShowAfter` and
+ * `pendingMinVisible` are the pending rule's (`lib/pending.ts`), `highlight` how long the
+ * queue list's flash lasts.
+ */
+export const motion = {
+  quick: 150,
+  standard: 220,
+  scroll: 280,
+  easing: [0.2, 0, 0, 1] as readonly [number, number, number, number],
+  pendingShowAfter: 150,
+  pendingMinVisible: 300,
+  highlight: 1200,
+} as const;
+
 /** A card lifting off the page: a whisper of shadow by day, none needed by night. */
 export const cardShadow = {
   shadowColor: '#0F1428',

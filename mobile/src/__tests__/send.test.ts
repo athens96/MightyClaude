@@ -44,7 +44,11 @@ describe('sendWithAttachments', () => {
       mode: 'queue',
     });
 
-    expect(result).toEqual({ ok: true, accepted: 'queued' });
+    expect(result).toEqual({
+      ok: true,
+      accepted: 'queued',
+      answer: { accepted: true, entryId: null, runId: null, outcome: 'queued' },
+    });
     expect(log).toEqual([{ call: 'submit', text: '안녕', options: { mode: 'queue' } }]);
   });
 
@@ -57,10 +61,29 @@ describe('sendWithAttachments', () => {
       upload: () => Promise.resolve(uploaded),
     });
 
-    expect(result).toEqual({ ok: true, accepted: 'started' });
+    expect(result).toEqual({
+      ok: true,
+      accepted: 'started',
+      answer: { accepted: true, entryId: null, runId: null, outcome: 'started' },
+    });
     expect(log).toEqual([
       { call: 'submit', text: '이거 봐 줘', options: { attachments: ['att-1', 'att-2'] } },
     ]);
+  });
+
+  it("reads a new host's outcome and ids by the shared rule", async () => {
+    const client: SendClient = {
+      submit: () =>
+        Promise.resolve({ protocol: 1, accepted: 'started', outcome: 'started', entryId: 'e-9', runId: 'r-9' }),
+      cancelUpload: () => Promise.resolve(undefined),
+    };
+    const result = await sendWithAttachments({ client, sessionId: 's1', text: '안녕' });
+
+    expect(result).toEqual({
+      ok: true,
+      accepted: 'started',
+      answer: { accepted: true, entryId: 'e-9', runId: 'r-9', outcome: 'started' },
+    });
   });
 
   it('gives every upload of the attempt back when submit fails', async () => {
