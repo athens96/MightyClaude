@@ -328,6 +328,7 @@
   "graph.state.draftTyping": "작성 중",
   "graph.state.error": "실패",
   "graph.state.running": "실행 중",
+  "graph.state.sending": "전송 중",
   "graph.state.starting": "준비 중",
   "graph.state.stopped": "중단",
   "graph.state.waiting": "대기 중",

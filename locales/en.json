@@ -328,6 +328,7 @@
   "graph.state.draftTyping": "Drafting",
   "graph.state.error": "Failed",
   "graph.state.running": "Running",
+  "graph.state.sending": "Sending",
   "graph.state.starting": "Preparing",
   "graph.state.stopped": "Stopped",
   "graph.state.waiting": "Waiting",

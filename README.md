@@ -199,6 +199,8 @@ CI(GitHub Actions)는 빌드·테스트와 함께 다음 검사를 돌립니다.
 
 도움말 원문을 고쳤다면 `node scripts/help/build.mjs --check`로 페이지·언어 구조, UI 키, 내부 링크를 확인하세요. 화면 문구는 [docs/i18n.md](docs/i18n.md), 색상·간격 규칙은 [docs/design-system/](docs/design-system/)을 따릅니다.
 
+기다림이 생기는 사용자 동작(단추·카드·단축키 등)을 새로 넣으면 [docs/interaction.md](docs/interaction.md) 표에 한 줄을 더하고, 처리 중 표시는 그 플랫폼의 공통 부품(맥 `PendingIndicator`, 윈도우 웹 화면·폰 `<Pending>`)을 씁니다.
+
 ## 라이선스
 
 이 프로젝트는 MIT 라이선스입니다([LICENSE](LICENSE)). 릴레이 방식의 휴대폰 원격은 Apache License 2.0으로 배포되는 Paseo의 설계를 참고했으며, 고지는 [NOTICE.md](NOTICE.md)와 [licenses/](licenses/)에 있습니다. 앱에 포함한 타사 구성 요소의 라이선스는 [native/licenses/](native/licenses/)에, 아이콘 생성 안내는 [assets/icons/generation.md](assets/icons/generation.md)에 있습니다.

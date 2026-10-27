@@ -62,6 +62,9 @@
 //    under its budget is stale: lower it with --write.
 //
 // Comments are not counted by any ratchet.
+//
+// 4. Not a ratchet: the motion tokens' shape (design-tokens.json `motion`) and the pending display
+//    cases (fixtures/pending.json) checked against them; see section 4 below.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -390,6 +393,64 @@ if (!fontBudget) {
     }
     console.log(`font literals (WinUI): ${total} in ${Object.keys(counts).length} files (budget ${budgetTotal}, exempt ${exemptGlobs.length} globs).`);
   }
+}
+
+// ── 4. Motion tokens (macOS, Windows, web, phone) ────────────────────────────
+// Not a ratchet: the shape of design-tokens.json `motion`, which DesignMetrics (Swift, C#), the
+// web theme/tokens and the phone theme mirror key for key. Durations are whole milliseconds;
+// `easing` is a cubic-bezier [x1, y1, x2, y2] whose x values lie in [0, 1]. The display cases of
+// native/contracts/fixtures/pending.json are computed with pendingShowAfter and pendingMinVisible,
+// so they are checked against them here (docs/interaction.md).
+const TOKENS_FILE = 'native/contracts/fixtures/design-tokens.json';
+const PENDING_FILE = 'native/contracts/fixtures/pending.json';
+const MOTION_DURATIONS = ['quick', 'standard', 'scroll', 'pendingShowAfter', 'pendingMinVisible', 'highlight'];
+const MOTION_KEYS = [...MOTION_DURATIONS, 'easing'];
+
+/// The pending display rule (docs/interaction.md): shown once pending has lasted showAfter, kept at
+/// least minVisible once shown, never shown when it ended by showAfter, and `failed` shows at once.
+function pendingVisible({ startedAt, endedAt, now, failed }, showAfter, minVisible) {
+  if (failed) return now >= (endedAt ?? startedAt);
+  const shownAt = startedAt + showAfter;
+  if (now < shownAt) return false;
+  if (endedAt === null) return true;
+  if (endedAt <= shownAt) return false;
+  return now < endedAt || now <= shownAt + minVisible;
+}
+
+const tokensPresent = fs.existsSync(path.join(ROOT, TOKENS_FILE));
+if (!tokensPresent && rootIndex < 0) fail(`${TOKENS_FILE} is missing.`);
+if (tokensPresent) {
+  const motion = readBudget(TOKENS_FILE).motion;
+  const before = failures.length;
+  if (typeof motion !== 'object' || motion === null || Array.isArray(motion)) {
+    fail(`${TOKENS_FILE}: no motion object.`);
+  } else {
+    const keys = Object.keys(motion);
+    for (const key of MOTION_KEYS) if (!keys.includes(key)) fail(`${TOKENS_FILE}: motion.${key} is missing.`);
+    for (const key of keys) if (!MOTION_KEYS.includes(key)) fail(`${TOKENS_FILE}: motion.${key} is not a motion token (${MOTION_KEYS.join(', ')}).`);
+    for (const key of MOTION_DURATIONS) {
+      if (key in motion && !(Number.isInteger(motion[key]) && motion[key] >= 0)) fail(`${TOKENS_FILE}: motion.${key} must be whole milliseconds, not ${JSON.stringify(motion[key])}.`);
+    }
+    const easing = motion.easing;
+    if ('easing' in motion) {
+      if (!Array.isArray(easing) || easing.length !== 4 || !easing.every((value) => typeof value === 'number' && Number.isFinite(value))) {
+        fail(`${TOKENS_FILE}: motion.easing must be four numbers [x1, y1, x2, y2], not ${JSON.stringify(easing)}.`);
+      } else if (![easing[0], easing[2]].every((x) => x >= 0 && x <= 1)) {
+        fail(`${TOKENS_FILE}: motion.easing x1 and x2 must lie in [0, 1], not ${JSON.stringify(easing)}.`);
+      }
+    }
+  }
+  if (failures.length === before && fs.existsSync(path.join(ROOT, PENDING_FILE))) {
+    const display = readBudget(PENDING_FILE).display ?? [];
+    if (!Array.isArray(display) || display.length === 0) fail(`${PENDING_FILE}: no display cases.`);
+    for (const [index, entry] of (Array.isArray(display) ? display : []).entries()) {
+      const got = pendingVisible({ ...entry, endedAt: entry.endedAt ?? null }, motion.pendingShowAfter, motion.pendingMinVisible);
+      if (got !== entry.expectVisible) fail(`${PENDING_FILE}: display[${index}] (${entry.name ?? 'unnamed'}) expects ${entry.expectVisible}, the rule with the motion tokens gives ${got}.`);
+    }
+  } else if (failures.length === before && rootIndex < 0) {
+    fail(`${PENDING_FILE} is missing.`);
+  }
+  if (failures.length === before) console.log(`motion tokens: ${MOTION_KEYS.length} keys hold; pending display cases agree with them.`);
 }
 
 if (failures.length > 0) {

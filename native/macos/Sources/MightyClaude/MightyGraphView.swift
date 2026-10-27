@@ -760,7 +760,9 @@ struct MightyGraphView: View {
         case "error", "failed": L("graph.state.error")
         case "stopped", "cancelled", "interrupted": L("graph.state.stopped")
         case "waiting": L("graph.state.waiting")
-        case "starting", "queued": L("graph.state.starting")
+        // "starting" is a request sent but not yet answered by its first run event (docs/interaction.md).
+        case "starting": L("graph.state.sending")
+        case "queued": L("graph.state.starting")
         default: L("graph.state.running")
         }
     }

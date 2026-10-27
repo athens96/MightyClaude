@@ -519,5 +519,14 @@
         "width": 1.5
       }
     }
+  },
+  "motion": {
+    "quick": 150,
+    "standard": 220,
+    "scroll": 280,
+    "easing": [0.2, 0, 0, 1],
+    "pendingShowAfter": 150,
+    "pendingMinVisible": 300,
+    "highlight": 1200
   }
 }

@@ -328,6 +328,7 @@
   "graph.state.draftTyping": "正在编写",
   "graph.state.error": "失败",
   "graph.state.running": "运行中",
+  "graph.state.sending": "发送中",
   "graph.state.starting": "准备中",
   "graph.state.stopped": "已停止",
   "graph.state.waiting": "等待中",
