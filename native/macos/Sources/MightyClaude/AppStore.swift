@@ -319,6 +319,37 @@ final class AppStore: ObservableObject, DelegationHost {
         let runId: String?
     }
     private(set) var startedRequests: [String: StartedRequest] = [:]
+    /// The request a pane's newest run start sent and where it is (natural submit B1): its
+    /// user entry (the graph run's id too) and its `PendingState`, pending from the send
+    /// until the run's first event, then done, or failed with the start's error. The
+    /// views show it by `PendingDisplay`: 전송 중 on the request's block and under the
+    /// user's bubble.
+    struct SubmitPending: Equatable {
+        let entryId: String
+        var state: PendingState
+    }
+    @Published private(set) var submitPending: [String: SubmitPending] = [:]
+    /// A request the user sent themselves, by pane (natural submit B2): every view of the
+    /// pane moves to it once (`SubmitScroll`). Each view remembers the last `serial` it
+    /// handled; one shown later never acts on an older one.
+    struct OwnSubmit: Equatable {
+        enum Target: Equatable {
+            /// A new request: its graph run, the user entry's id.
+            case run(String)
+            /// 다음 실행 handed this text into the running turn: its 중간 요청 block.
+            case steer(String)
+        }
+        let serial: Int
+        let target: Target
+    }
+    @Published private(set) var ownSubmits: [String: OwnSubmit] = [:]
+    private var ownSubmitSerial = 0
+    /// When a request last joined a pane's queue (natural submit B3): the queue row
+    /// above the composer flashes for `Motion.highlight` from then.
+    @Published private(set) var queueAddedAt: [String: Date] = [:]
+    /// Panes whose stop button was pressed, since when, until the stop is over. Kept
+    /// here, not in the pane's view, so a redrawn pane still shows the stop going.
+    @Published private(set) var stoppingSince: [String: Date] = [:]
     /// Queued rows starting with the items delegation holds for their pane,
     /// until that release is over.
     private var releasingRows: Set<String> = []
@@ -719,6 +750,7 @@ final class AppStore: ObservableObject, DelegationHost {
             queuedInputs.removeValue(forKey: id)
             antigravityBoard.remove(sessionId: id); antigravityPermissionErrors.removeValue(forKey: id)
             draftRevisions.removeValue(forKey: id); startedRequests.removeValue(forKey: id)
+            submitPending.removeValue(forKey: id); ownSubmits.removeValue(forKey: id); queueAddedAt.removeValue(forKey: id); stoppingSince.removeValue(forKey: id)
             forgetGraphHistory(id)
             forgetStyleState(id); pruneStyleStateWatchers()
             if snapshot.activeSessionId == id {
@@ -954,6 +986,7 @@ final class AppStore: ObservableObject, DelegationHost {
             attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
         }
         queuedInputs[id, default: []].append(item)
+        queueAddedAt[id] = Date()
         return .queued
     }
 
@@ -999,6 +1032,8 @@ final class AppStore: ObservableObject, DelegationHost {
         guard steersRunNext(id), let next = queuedInputs[id]?.first, await runner.steer(sessionId: id, text: next.text) else { return false }
         queuedInputs[id]?.removeAll { $0.id == next.id }
         if queuedInputs[id]?.isEmpty == true { queuedInputs.removeValue(forKey: id) }
+        // The user's own 다음 실행: the pane's views move to its 중간 요청 (natural submit B2).
+        noteOwnSubmit(id, target: .steer(next.text))
         return true
     }
 
@@ -1069,7 +1104,10 @@ final class AppStore: ObservableObject, DelegationHost {
     /// `titleFrom` is what an automatic title follows when it is not `input`:
     /// a run delegation starts on its own sets none (""), and an Antigravity
     /// card's continuation (`queued.antigravityGrant`) keeps the title too.
-    func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil, titleFrom: String? = nil) -> Bool {
+    /// `own`: the user's own request on this Mac (the composer, a queued one, a card they
+    /// allowed, a ⌘Enter child shown in its tab), which every view of the pane moves to
+    /// (natural submit B2); false for the phone's and delegation's.
+    func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil, titleFrom: String? = nil, own: Bool = true) -> Bool {
         guard !ending, !closingSessions.contains(id), !pendingRuns.contains(id), session.status != "running" else { return false }
         if let refusal = startRefusal(session, in: workspace, input: input, attachments: attachments) { error = refusal; return false }
         pendingRuns.insert(id)
@@ -1092,12 +1130,15 @@ final class AppStore: ObservableObject, DelegationHost {
         let startsStyle = guidedStyle(session) != nil && session.mightyStyleSince == nil
         updateSession(id) {
             if startsStyle { $0.mightyStyleSince = inputEntry.timestamp }
-            $0.beginGraphRun(input: logText, id: inputEntry.id, configuredModel: session.model)
+            // 전송 중 until the run's first event (natural submit B1).
+            $0.beginGraphRun(input: logText, id: inputEntry.id, configuredModel: session.model, status: "starting")
             $0.logs.append(inputEntry); $0.logs = TranscriptRetention.trimmed($0.logs)
             if let shortened = autoTitle { $0.title = shortened }
         }
         let graphRun = snapshot.sessions.first { $0.id == id }?.graphRuns?.contains { $0.id == inputEntry.id } == true
         startedRequests[id] = StartedRequest(entryId: inputEntry.id, runId: graphRun ? inputEntry.id : nil)
+        submitPending[id] = SubmitPending(entryId: inputEntry.id, state: .pending(since: Date()))
+        if own { noteOwnSubmit(id, target: .run(inputEntry.id)) }
         startTasks[id] = Task {
             var reachedRunner = false
             do {
@@ -1166,6 +1207,8 @@ final class AppStore: ObservableObject, DelegationHost {
                 }
                 reachedRunner = true
             } catch {
+                // The request's block fails in place with the start's error (natural submit B1).
+                submitEnded(id, entryId: inputEntry.id, failure: Task.isCancelled || error is CancellationError ? nil : error.localizedDescription)
                 if let restoringDraft, draftRevisions[id, default: 0] == submittedRevision, (drafts[id] ?? "").isEmpty, canEditAttachments(id) {
                     drafts[id] = restoringDraft
                 }
@@ -1236,10 +1279,49 @@ final class AppStore: ObservableObject, DelegationHost {
         _ = await starting?.value
     }
 
+    /// The composer's stop button: the pane shows its stop going from now until the stop
+    /// is over (`stoppingSince`), however often the pane is drawn again meanwhile.
+    func requestStop(_ id: String) {
+        guard stoppingSince[id] == nil else { return }
+        stoppingSince[id] = Date()
+        Task {
+            await stop(id)
+            stoppingSince.removeValue(forKey: id)
+        }
+    }
+
+    /// The user's own request in pane `id` (natural submit B2): its views move to `target` once.
+    func noteOwnSubmit(_ id: String, target: OwnSubmit.Target) {
+        ownSubmitSerial += 1
+        ownSubmits[id] = OwnSubmit(serial: ownSubmitSerial, target: target)
+    }
+
+    /// The sent request `entryId` of pane `id` ran (`failure` nil) or failed to start with
+    /// `failure`. A cancelled start (`failure` nil from the catch) ends like a run: the
+    /// block reads stopped.
+    func submitEnded(_ id: String, entryId: String, failure: String?, at date: Date = Date()) {
+        guard let sent = submitPending[id], sent.entryId == entryId, case .pending(let since) = sent.state else { return }
+        submitPending[id]?.state = failure.map { .failed($0, since: since, at: date) } ?? .done(since: since, at: date)
+    }
+
+    /// Whether pane `id` is the one its tab group shows (or the active pane when the
+    /// workspace has no saved layout): a ⌘Enter child shown there is moved to like the
+    /// user's own request (natural submit B2).
+    func paneTabShown(_ id: String) -> Bool {
+        guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return false }
+        guard let group = snapshot.paneLayouts?[session.workspaceId]?.group(containing: id) else { return snapshot.activeSessionId == id }
+        return (group.selectedSessionId ?? group.sessionIds.first) == id
+    }
+
     func apply(_ event: RunEvent) {
         receivePermissionEvent(event)
         receiveAntigravityEvent(event)
         let receivedAt = Date()
+        // The run's first event: the sent request runs now (natural submit B1).
+        if let sent = submitPending[event.sessionId], case .pending = sent.state,
+           event.type == "status" || MightyGraphSupport.startedBy(event, status: "starting") {
+            submitEnded(event.sessionId, entryId: sent.entryId, failure: nil, at: receivedAt)
+        }
         updateSession(event.sessionId) { session in
             session.recordRunTiming(event, at: receivedAt)
             session.recordSessionUsage(event)

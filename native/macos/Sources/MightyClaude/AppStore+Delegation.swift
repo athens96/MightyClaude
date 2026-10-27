@@ -137,6 +137,8 @@ extension AppStore {
 
         var draft: String? { if case .composer(let draft) = self { draft } else { nil } }
         var queued: QueuedInput? { if case .queue(let item) = self { item } else { nil } }
+        /// The user's own send on this Mac, which the pane's views move to (natural submit B2).
+        var isOwn: Bool { if case .phone = self { false } else { true } }
     }
 
     /// The human's send of `input` in the idle pane `id` while items are held
@@ -155,7 +157,7 @@ extension AppStore {
             defer { if case .phone = origin { error = macError } }
             guard let delegation else { return sendUnheld(id, input: input, attachments: attachments, from: origin) }
             let release = await delegation.send(input, in: id) { [weak self] whole in
-                await self?.startDelivered(id, input: whole, attachments: attachments, restoringDraft: origin.draft, queued: origin.queued, titleFrom: input)
+                await self?.startDelivered(id, input: whole, attachments: attachments, restoringDraft: origin.draft, queued: origin.queued, titleFrom: input, own: origin.isOwn)
             }
             switch release {
             case .released: return .started
@@ -172,11 +174,12 @@ extension AppStore {
     /// process has it, or nil when the pane cannot run now or its start
     /// failed or was stopped, so what it carried is not lost. A draft typed
     /// meanwhile is never cleared.
-    private func startDelivered(_ id: String, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil, titleFrom: String) async -> String? {
+    /// `own`: the user's own request (`start`).
+    private func startDelivered(_ id: String, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil, titleFrom: String, own: Bool) async -> String? {
         guard !ending, let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
               start(id, session: session, workspace: workspace, input: input, attachments: attachments,
-                    restoringDraft: (drafts[id] ?? "").isEmpty ? restoringDraft : nil, queued: queued, titleFrom: titleFrom) else { return nil }
+                    restoringDraft: (drafts[id] ?? "").isEmpty ? restoringDraft : nil, queued: queued, titleFrom: titleFrom, own: own) else { return nil }
         let runId = delegationRuns.runId(id)
         guard await startReachedRunner(id) else { return nil }
         return runId
@@ -197,7 +200,7 @@ extension AppStore {
             }
         }
         if start(id, session: session, workspace: workspace, input: input, attachments: attachments,
-                 restoringDraft: (drafts[id] ?? "").isEmpty ? origin.draft : nil, queued: origin.queued) { return .started }
+                 restoringDraft: (drafts[id] ?? "").isEmpty ? origin.draft : nil, queued: origin.queued, own: origin.isOwn) { return .started }
         giveBack(id, attachments: attachments, from: origin)
         return .dropped
     }
@@ -327,7 +330,9 @@ extension AppStore {
     /// attachments: its id, or nil when it did not start. A slash command's
     /// note follows as the child's next request.
     private func startHumanChildRun(_ childId: String, run: HumanChildFirstRun, attachments: [RunAttachment]) async -> String? {
-        guard let runId = await startDelivered(childId, input: run.input, attachments: attachments, restoringDraft: nil, titleFrom: "") else { return nil }
+        // A ⌘Enter child shown in its tab is moved to like the user's own request;
+        // one in the background shows its 전송 중 on its sidebar row (natural submit B2).
+        guard let runId = await startDelivered(childId, input: run.input, attachments: attachments, restoringDraft: nil, titleFrom: "", own: paneTabShown(childId)) else { return nil }
         if let note = run.followingNote, !ending, !closingSessions.contains(childId), snapshot.sessions.contains(where: { $0.id == childId }) {
             queuedInputs[childId, default: []].append(QueuedInput(text: note, attachments: []))
             // The command's run already ended: the note runs now.
@@ -606,7 +611,7 @@ extension AppStore {
     /// nil when the pane cannot run now (a child without its worktree among them).
     /// Its words are delegation's, so they never title the pane.
     func startRun(sessionId: String, input: String) async -> String? {
-        await startDelivered(sessionId, input: input, attachments: [], restoringDraft: nil, titleFrom: "")
+        await startDelivered(sessionId, input: input, attachments: [], restoringDraft: nil, titleFrom: "", own: false)
     }
 
     /// A delegation notice or follow-up: steered into the pane's running

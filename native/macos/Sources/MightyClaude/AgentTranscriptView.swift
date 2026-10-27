@@ -29,6 +29,13 @@ struct AgentTranscriptView: NSViewRepresentable {
     /// Told the laid-out text's own height, insets included, whenever it
     /// changes: what the transcript needs to show without scrolling.
     var onContentHeight: ((CGFloat) -> Void)? = nil
+    /// The request the pane sent last and where it is: a small 전송 중 row under its
+    /// bubble while `PendingDisplay` shows it (natural submit B1).
+    var pending: AgentTranscriptPending? = nil
+    /// The serial of the pane's newest own request (`AppStore.OwnSubmit`): a new one moves
+    /// the transcript to its end on the next update, even when the user had scrolled up,
+    /// keeping any selection (natural submit B2).
+    var ownSubmitSerial: Int? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     /// The corner handle's 22pt glyph plus its 2pt padding, and a little air.
@@ -46,7 +53,8 @@ struct AgentTranscriptView: NSViewRepresentable {
         context.coordinator.textView?.onFocus = onFocus
         context.coordinator.textView?.onContentHeight = onContentHeight
         context.coordinator.onReference = onReference
-        context.coordinator.update(entries: entries, provider: provider, running: running, dark: colorScheme == .dark, references: onReference != nil, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards)
+        context.coordinator.update(entries: entries, provider: provider, running: running, dark: colorScheme == .dark, references: onReference != nil, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards,
+                                   pending: pending, ownSubmitSerial: ownSubmitSerial)
     }
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: AgentTranscriptCoordinator) {
         coordinator.onReference = nil
@@ -55,6 +63,12 @@ struct AgentTranscriptView: NSViewRepresentable {
         coordinator.textView?.onContentHeight = nil
         coordinator.textView?.delegate = nil
     }
+}
+
+/// The user entry a pane's sent request made, and where the request is (`AppStore.SubmitPending`).
+struct AgentTranscriptPending: Equatable {
+    let entryId: String
+    let state: PendingState
 }
 
 struct AgentTranscriptDocument {
@@ -129,6 +143,8 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         var imageRoot: URL?
         var cards: Bool
         var text: TextAppearance
+        var pending: AgentTranscriptPending?
+        var ownSubmitSerial: Int?
     }
     private struct Cached {
         let entry: LogEntry
@@ -152,6 +168,11 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
     private var expanded = Set<String>()
     private(set) weak var textView: AgentTranscriptTextView?
     private weak var scrollView: NSScrollView?
+    /// The own request (`ownSubmitSerial`) this transcript last moved to; the first update
+    /// only takes note, so one sent before the transcript was shown is not moved to again.
+    private var handledOwnSubmit: Int??
+    /// Redraws the pending row when `PendingDisplay` next changes what it shows.
+    private var pendingTick: DispatchWorkItem?
 
     func makeScrollView(sessionId: String) -> NSScrollView {
         let storage = NSTextStorage()
@@ -208,8 +229,11 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
     }
 
     func update(entries: [LogEntry], provider: String, running: Bool, dark: Bool, references: Bool = false,
-                records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:], catalog: [ModelOption] = [], imageRoot: URL? = nil, cards: Bool = false) {
-        latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards, text: TextSettings.shared.current)
+                records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:], catalog: [ModelOption] = [], imageRoot: URL? = nil, cards: Bool = false,
+                pending: AgentTranscriptPending? = nil, ownSubmitSerial: Int? = nil) {
+        if handledOwnSubmit == nil { handledOwnSubmit = .some(ownSubmitSerial) }
+        latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards, text: TextSettings.shared.current,
+                       pending: pending, ownSubmitSerial: ownSubmitSerial)
         applyLatest()
     }
 
@@ -234,10 +258,35 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
             }
             segments.append(.init(id: entry.id, range: NSRange(location: output.length, length: value.length), value: value))
             output.append(value)
+            if entry.id == input.pending?.entryId, showsPending {
+                let row = AgentTranscriptFormat.pendingRow(cards: input.cards)
+                segments.append(.init(id: "pending:" + entry.id, range: NSRange(location: output.length, length: row.length), value: row))
+                output.append(row)
+            }
         }
         let document = AgentTranscriptDocument(value: output, segments: segments)
-        editor.replaceDocument(document)
+        // The user's own new request: to the end, wherever they were reading.
+        let ownSubmit = handledOwnSubmit.map { $0 != input.ownSubmitSerial } ?? false
+        editor.replaceDocument(document, forceFollow: ownSubmit)
+        if ownSubmit { handledOwnSubmit = .some(input.ownSubmitSerial) }
         applied = input
+        schedulePendingTick(input.pending)
+    }
+
+    /// Whether the pending row shows now (`PendingDisplay`): only the loading. A failed start
+    /// says why in the error line the run adds right under the bubble.
+    private var showsPending: Bool {
+        guard let pending = latest?.pending else { return false }
+        return PendingDisplay.indicator(pending.state, now: Date()) == .loading
+    }
+
+    /// One redraw at the next moment the pending row may appear or go.
+    private func schedulePendingTick(_ pending: AgentTranscriptPending?) {
+        pendingTick?.cancel(); pendingTick = nil
+        guard let pending, let next = PendingSchedule(pending.state).dates.first(where: { $0 > Date() }) else { return }
+        let tick = DispatchWorkItem { [weak self] in self?.applyLatest(force: true) }
+        pendingTick = tick
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, next.timeIntervalSinceNow), execute: tick)
     }
 
     /// A picture opens larger; its context menu has the other actions.
@@ -440,6 +489,24 @@ final class AgentTranscriptTextView: SelectableTextView {
         return true
     }
 
+    /// When the glide to the end an own request started is over.
+    private var glideUntil: Date?
+
+    /// Glides to the very end over `duration`, on the shared easing (`Motion.easing`).
+    private func glideToBottom(duration: Double) {
+        guard let scroll = enclosingScrollView else { return }
+        let clip = scroll.contentView
+        let target = NSPoint(x: clip.bounds.minX, y: TranscriptViewport.bottomOriginY(visibleHeight: clip.bounds.height, documentHeight: bounds.height))
+        let easing = DesignMetrics.Motion.easing.map(Float.init)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(controlPoints: easing[0], easing[1], easing[2], easing[3])
+            clip.animator().setBoundsOrigin(target)
+        } completionHandler: { [weak scroll] in
+            MainActor.assumeIsolated { if let scroll { scroll.reflectScrolledClipView(scroll.contentView) } }
+        }
+    }
+
     /// Shows the very end of the document, bottom inset included.
     func scrollToBottom() {
         guard let scroll = enclosingScrollView else { return }
@@ -492,7 +559,10 @@ final class AgentTranscriptTextView: SelectableTextView {
         super.keyDown(with: event)
     }
 
-    func replaceDocument(_ next: AgentTranscriptDocument) {
+    /// `forceFollow`: the user's own new request (natural submit B2): the end is shown even
+    /// when they had scrolled up, gliding over `Motion.scroll` (at once under Reduce
+    /// Motion), and a selection stays as it was.
+    func replaceDocument(_ next: AgentTranscriptDocument, forceFollow: Bool = false) {
         guard let storage = textStorage else { return }
         let previous = document
         let ranges = selectedRanges.map(\.rangeValue)
@@ -500,7 +570,9 @@ final class AgentTranscriptTextView: SelectableTextView {
         let clip = enclosingScrollView?.contentView
         let origin = clip?.bounds.origin ?? .zero
         let visibleHeight = clip?.bounds.height ?? 0
-        let follow = previous.value.length == 0 || (ranges.allSatisfy { $0.length == 0 }
+        // A glide still going owns the viewport: an update meanwhile glides on to the new end.
+        let gliding = glideUntil.map { $0 > Date() } ?? false
+        let follow = forceFollow || gliding || previous.value.length == 0 || (ranges.allSatisfy { $0.length == 0 }
             && TranscriptViewport.isFollowing(originY: origin.y, visibleHeight: visibleHeight, documentHeight: bounds.height))
         let topIndex = layoutIndex(at: NSPoint(x: textContainerInset.width + 2, y: origin.y + 2))
         let top = previous.anchor(at: topIndex)
@@ -538,7 +610,12 @@ final class AgentTranscriptTextView: SelectableTextView {
         }
         setSelectedRanges(restored.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : restored, affinity: selectionAffinity, stillSelecting: false)
         if let container = textContainer { layoutManager?.ensureLayout(for: container) }
-        if follow { scrollToBottom() }
+        if forceFollow, !PendingMotion.systemReducesMotion {
+            glideUntil = Date() + DesignMetrics.Motion.seconds(DesignMetrics.Motion.scroll)
+            glideToBottom(duration: DesignMetrics.Motion.seconds(DesignMetrics.Motion.scroll))
+        } else if gliding, let until = glideUntil {
+            glideToBottom(duration: max(0.05, until.timeIntervalSinceNow))
+        } else if follow { scrollToBottom() }
         else if let clip {
             let index = next.position(of: top, from: previous)
             let y = min(max(0, lineY(at: index) + offset), max(0, bounds.height - clip.bounds.height))

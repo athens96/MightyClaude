@@ -670,7 +670,7 @@ extension AppStore {
         }
         // Items held for the pane go first, in this one run.
         if !(delegationHeld[id] ?? []).isEmpty { return .pending(releaseHeld(id, input: text, attachments: attachments, from: .phone)) }
-        let started = mobileCapturingError { start(id, session: session, workspace: workspace, input: text, attachments: attachments, restoringDraft: nil) }
+        let started = mobileCapturingError { start(id, session: session, workspace: workspace, input: text, attachments: attachments, restoringDraft: nil, own: false) }
         guard started.value else { throw MightyError(started.failure ?? L("remote.error.startFailed")) }
         return .immediate(.started)
     }

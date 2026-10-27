@@ -84,6 +84,38 @@ enum AgentTranscriptFormat {
         return NSAttributedString(attributedString: builder.result)
     }
 
+    /// The small row under the user's bubble while the request is sent and its run has not
+    /// answered (natural submit B1): the activity bars, still (a text attachment does not
+    /// move), and 전송 중, on the right under the bubble. Shown only while `PendingDisplay`
+    /// shows the request's loading.
+    static func pendingRow(cards: Bool) -> NSAttributedString {
+        let ink = cards ? Palette.nsToken(\.ink2) : NSColor.secondaryLabelColor
+        let run = Palette.nsToken(\.run)
+        let size = NSSize(width: 18, height: 14)
+        let image = NSImage(size: size, flipped: false) { rect in
+            run.setFill()
+            let gap = DesignMetrics.Spacing.xxs, width: CGFloat = 3
+            let total = 4 * width + 3 * gap
+            for index in 0..<4 {
+                let height = MightyGraphActivityStyle.barHeight(index, phase: 0)
+                let bar = NSRect(x: (rect.width - total) / 2 + CGFloat(index) * (width + gap), y: (rect.height - height) / 2, width: width, height: height)
+                NSBezierPath(roundedRect: bar, xRadius: width / 2, yRadius: width / 2).fill()
+            }
+            return true
+        }
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(x: 0, y: -3, width: size.width, height: size.height)
+        let style = NSMutableParagraphStyle()
+        style.alignment = .right
+        style.paragraphSpacing = 6
+        let line = NSMutableAttributedString(attributedString: NSAttributedString(attachment: attachment))
+        line.append(NSAttributedString(string: " " + L("graph.state.sending") + "\n"))
+        let range = NSRange(location: 0, length: line.length)
+        line.addAttributes([.font: NSFont.ui(ofSize: 10.5, weight: .medium), .foregroundColor: ink, .paragraphStyle: style], range: range)
+        return line
+    }
+
     /// "오후 3:12" for an entry's ISO timestamp, empty when it does not parse.
     private static func time(_ timestamp: String) -> String {
         AgentRunTiming.parseTimestamp(timestamp)?.formatted(date: .omitted, time: .shortened) ?? ""

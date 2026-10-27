@@ -198,4 +198,42 @@ struct MightyGraphTests {
         #expect(bounded[0].resultEntries.isEmpty)
         #expect(try JSONEncoder().encode(bounded).count < 2 * 1024 * 1024)
     }
+
+    /// Natural submit B1: a request the Mac sent reads "starting" (전송 중) until its run's
+    /// first event, then runs; a failed start ends it in error, a stopped one stopped.
+    @Test func aSentRequestStartsUntilItsRunAnswers() throws {
+        var session = RunSession(workspaceId: "workspace", title: "Graph")
+        session.beginGraphRun(input: "Build it", id: "request-one", configuredModel: "default", status: "starting")
+        #expect(session.mightyGraphRuns.last?.status == "starting")
+        session.recordGraph(RunEvent(sessionId: session.id, type: "status", status: "running"))
+        #expect(session.mightyGraphRuns.last?.status == "running")
+
+        session.beginGraphRun(input: "Again", id: "request-two", configuredModel: "default", status: "starting")
+        session.recordGraph(RunEvent(sessionId: session.id, type: "log", entry: LogEntry(kind: "system", text: "CLI started")))
+        #expect(session.mightyGraphRuns.last?.status == "running")
+
+        // The first graph observation binds to the starting request, which then runs.
+        session.beginGraphRun(input: "Third", id: "request-three", configuredModel: "default", status: "starting")
+        receive(node("process-three"), &session)
+        #expect(session.mightyGraphRuns.last?.status == "running")
+        #expect(session.mightyGraphRuns.last?.sourceRunID == "process-three")
+
+        session.beginGraphRun(input: "Fails", id: "request-four", configuredModel: "default", status: "starting")
+        session.recordGraph(RunEvent(sessionId: session.id, type: "log", entry: LogEntry(kind: "error", text: "no CLI")))
+        session.recordGraph(RunEvent(sessionId: session.id, type: "status", status: "error"))
+        #expect(session.mightyGraphRuns.last?.status == "error")
+
+        session.beginGraphRun(input: "Stopped", id: "request-five", configuredModel: "default", status: "starting")
+        session.recordGraph(RunEvent(sessionId: session.id, type: "status", status: "stopped"))
+        #expect(session.mightyGraphRuns.last?.status == "stopped")
+
+        // Saved while starting it stays starting; restored after a quit it was stopped.
+        session.beginGraphRun(input: "Saved", id: "request-six", configuredModel: "default", status: "starting")
+        var budget = 1 << 20
+        #expect(MightyGraphSupport.normalized(session.graphRuns ?? [], restoring: false, budget: &budget).last?.status == "starting")
+        budget = 1 << 20
+        #expect(MightyGraphSupport.normalized(session.graphRuns ?? [], restoring: true, budget: &budget).last?.status == "stopped")
+        #expect(!MightyGraphSupport.startedBy(RunEvent(sessionId: session.id, type: "usage"), status: "starting"))
+        #expect(!MightyGraphSupport.startedBy(RunEvent(sessionId: session.id, type: "log"), status: "running"))
+    }
 }

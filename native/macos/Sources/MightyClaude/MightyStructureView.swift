@@ -89,6 +89,9 @@ struct MightyStructureView: View {
     var catalog: [ModelOption] = []
     /// The pane's board, open texts and follow state, kept across view switches.
     @ObservedObject var memory: MightyStructureMemory
+    /// The request the pane sent last and where it is: its cards and its board read 전송 중
+    /// by it (natural submit B1).
+    var pending: AppStore.SubmitPending? = nil
     /// Shows a diagram node (`MightyGraphLayout.Node.id`) in the diagram.
     let onReveal: (String) -> Void
 
@@ -296,8 +299,8 @@ struct MightyStructureView: View {
     private func header(_ board: MightyStructure.Board) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                MightyGraphActivityIndicator(status: board.status, tint: Palette.run)
-                MightyStatusPill(text: MightyGraphView.statusLabel(board.status), tone: DesignTone(status: board.status))
+                MightyStatusMark(status: board.status, text: MightyGraphView.statusLabel(board.status), tone: DesignTone(status: board.status),
+                                 pending: board.items.last.flatMap { pendingState($0.runID) })
                 // A request's first line is its 요청 card right below; a pipeline's name is not on any card.
                 if board.kind == .pipeline {
                     Text(verbatim: title(board)).font(Palette.heading(13)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
@@ -407,6 +410,12 @@ struct MightyStructureView: View {
                 }
             }
         }
+    }
+
+    /// The sent request's pending state, for the request `runID` only.
+    private func pendingState(_ runID: String) -> PendingState? {
+        guard let pending, pending.entryId == runID else { return nil }
+        return pending.state
     }
 
     /// The page back at its first column, after the current update.
@@ -651,9 +660,8 @@ struct MightyStructureView: View {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Label(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), systemImage: MightyGraphView.executionIcon)
                     .font(.ui(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
-                MightyGraphActivityIndicator(status: item.status, tint: Palette.run)
-                MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
-                    .tintedCardEdge(tone)
+                MightyStatusMark(status: item.status, text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status),
+                                 pending: pendingState(item.runID), edge: tone)
                 tally(item)
                 Spacer(minLength: 0)
                 revealButton(item.executionNodeID)
@@ -688,9 +696,8 @@ struct MightyStructureView: View {
                     Label(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), systemImage: MightyGraphView.executionIcon)
                         .font(.ui(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 }
-                MightyGraphActivityIndicator(status: item.status, tint: Palette.run)
-                MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
-                    .tintedCardEdge(tone)
+                MightyStatusMark(status: item.status, text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status),
+                                 pending: pendingState(item.runID), edge: tone)
                 tally(item)
                 Spacer(minLength: 0)
                 revealButton(item.executionNodeID)
@@ -911,6 +918,19 @@ struct MightyStructureView: View {
     }
 }
 
+extension View {
+    /// A status pill on a tinted card: a hairline in the card's mark, so the pill's own soft
+    /// fill still reads against the tint; nothing on an untinted card. `MightyStatusMark`
+    /// draws its pill with it too.
+    @ViewBuilder func tintedCardEdge(_ tone: DesignTone?) -> some View {
+        if let tone {
+            overlay { Capsule().strokeBorder(Palette.mark(tone), lineWidth: 1).allowsHitTesting(false) }
+        } else {
+            self
+        }
+    }
+}
+
 private extension View {
     /// A card of the structure: the diagram's white block card around its padded content,
     /// with its state's tint and bar under the content (`MightyStructureCardTint`).
@@ -919,16 +939,6 @@ private extension View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .background(alignment: .leading) { MightyStructureCardTint(tone: tone) }
             .mightyBlockCard(cornerRadius: MightyStructureView.cardCorner)
-    }
-
-    /// A status pill on a tinted card: a hairline in the card's mark, so the pill's own soft
-    /// fill still reads against the tint; nothing on an untinted card.
-    @ViewBuilder func tintedCardEdge(_ tone: DesignTone?) -> some View {
-        if let tone {
-            overlay { Capsule().strokeBorder(Palette.mark(tone), lineWidth: 1).allowsHitTesting(false) }
-        } else {
-            self
-        }
     }
 
     /// A text shown in place: wrapped to its column, selectable, and read out as what it is.

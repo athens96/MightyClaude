@@ -17,8 +17,35 @@ struct QueuedInputsView: View {
     var notice: String? = nil
     /// Run next can hand the first request into the run that only waits on background work.
     var steersRunNext = false
+    /// When a request last joined the queue (`AppStore.queueAddedAt`): the queue flashes the
+    /// accent wash for `Motion.highlight` from then (natural submit B3).
+    var addedAt: Date? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        // Drawn again only when the flash starts and ends, never frame by frame.
+        TimelineView(QueueFlashSchedule(addedAt: addedAt)) { context in
+            let flashing = addedAt.map { context.date >= $0 && context.date < $0 + DesignMetrics.Motion.seconds(DesignMetrics.Motion.highlight) } ?? false
+            rows
+                .background {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Palette.accent.opacity(flashing ? 0.14 : 0))
+                        .padding(-DesignMetrics.Spacing.xs)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .animation(PendingMotion.animation(DesignMetrics.Motion.quick, reduceMotion: false), value: flashing)
+        }
+        // A new row comes in over `Motion.standard`; under Reduce Motion it fades in without moving.
+        .animation(PendingMotion.animation(DesignMetrics.Motion.standard, reduceMotion: false), value: items.map(\.id))
+        .accessibilityIdentifier("queue-\(sessionID)")
+    }
+
+    private var rowTransition: AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity)
+    }
+
+    private var rows: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "clock.arrow.circlepath").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.accent)
@@ -62,8 +89,17 @@ struct QueuedInputsView: View {
                 .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
                 .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
                 .accessibilityElement(children: .combine).accessibilityIdentifier("queue-item-\(item.id)")
+                .transition(rowTransition)
             }
         }
-        .accessibilityIdentifier("queue-\(sessionID)")
+    }
+}
+
+/// The queue's flash (`QueuedInputsView.addedAt`): drawn when it starts and when it is over.
+private struct QueueFlashSchedule: TimelineSchedule {
+    let addedAt: Date?
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> [Date] {
+        guard let addedAt else { return [startDate] }
+        return [startDate] + [addedAt, addedAt + DesignMetrics.Motion.seconds(DesignMetrics.Motion.highlight)].filter { $0 > startDate }
     }
 }

@@ -10,7 +10,6 @@ struct SessionPaneView: View {
     @ViewState private var composerInput = ComposerInputController()
     @ViewState private var editorHeight: CGFloat = 22
     @ViewState private var attachmentDropTargeted = false
-    @ViewState private var stopping = false
     @ViewState private var guidedSelection = GuidedSelection()
     @ViewState private var styleCandidate: StyleApprovalCandidate?
     @ViewState private var paletteIndex = 0
@@ -18,6 +17,8 @@ struct SessionPaneView: View {
     @ViewState private var nextActionsMemo = NextActionsMemo()
 
     private var running: Bool { session.status == "running" || store.pendingRuns.contains(session.id) }
+    /// The stop button was pressed and the stop is still going (`AppStore.stoppingSince`).
+    private var stopping: Bool { store.stoppingSince[session.id] != nil }
     private var active: Bool { store.snapshot.activeSessionId == session.id }
     private var localTerminal: Bool { store.usesLocalTerminal(session) }
     private var runtime: ProviderRuntime { store.providerRuntime(session.provider, workspaceId: session.workspaceId) }
@@ -558,7 +559,8 @@ struct SessionPaneView: View {
                     },
                     planRecordCard: { [store] record, expanded, toggle in
                         AnyView(PlanRecordView(record: record, expanded: expanded, onToggle: toggle, inDiagram: true).environmentObject(store))
-                    }) {
+                    },
+                    ownSubmit: store.ownSubmits[session.id], pending: store.submitPending[session.id]) {
                         store.selectSession(session.id)
                     }
             } else if session.logs.isEmpty {
@@ -567,7 +569,9 @@ struct SessionPaneView: View {
                 AgentTranscriptView(sessionId: session.id, provider: session.provider, running: running, entries: session.logs,
                                     onFocus: { store.selectSession(session.id) },
                                     imageRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
-                                    cards: true)
+                                    cards: true,
+                                    pending: store.submitPending[session.id].map { AgentTranscriptPending(entryId: $0.entryId, state: $0.state) },
+                                    ownSubmitSerial: store.ownSubmits[session.id]?.serial)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -638,7 +642,8 @@ struct SessionPaneView: View {
                                  onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) },
                                  notice: BackgroundQueuePolicy.waitsOnBackground(work: session.backgroundWork, queued: queued.count)
                                      ? L(secondSend == .worktree ? "queue.waitingOnBackground.macWorktree" : "queue.waitingOnBackground.mac") : nil,
-                                 steersRunNext: !stopping && store.steersRunNext(session.id))
+                                 steersRunNext: !stopping && store.steersRunNext(session.id),
+                                 addedAt: store.queueAddedAt[session.id])
                     .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, attachments.isEmpty ? DesignMetrics.Spacing.sm : 0)
             }
             if paletteVisible {
@@ -836,7 +841,10 @@ struct SessionPaneView: View {
                         let compact = canSend
                         // Concept D: stop is the red square, send the round run blue.
                         Button(action: stopRun) {
-                            Image(systemName: "stop.fill").font(.ui(size: compact ? 9 : 11, weight: .semibold)).frame(width: compact ? Self.compactStop : ComposerToolbarMetrics.height, height: compact ? Self.compactStop : ComposerToolbarMetrics.height)
+                            Image(systemName: "stop.fill").font(.ui(size: compact ? 9 : 11, weight: .semibold))
+                                // The stop going on: the shared pending bars in the square's place (natural submit A3).
+                                .pendingOverlay(store.stoppingSince[session.id].map { PendingState.pending(since: $0) } ?? .idle, tint: Palette.onStatus)
+                                .frame(width: compact ? Self.compactStop : ComposerToolbarMetrics.height, height: compact ? Self.compactStop : ComposerToolbarMetrics.height)
                                 .foregroundStyle(Palette.onStatus)
                                 .background(Palette.err, in: RoundedRectangle(cornerRadius: compact ? 7 : 8, style: .continuous))
                                 .contentShape(RoundedRectangle(cornerRadius: compact ? 7 : 8, style: .continuous))
@@ -990,11 +998,7 @@ struct SessionPaneView: View {
 
     private func stopRun() {
         guard !stopping, running else { return }
-        stopping = true
-        Task {
-            defer { stopping = false }
-            await store.stop(session.id)
-        }
+        store.requestStop(session.id)
     }
 
     /// A built-in typed out in full never reaches the CLI, where it would

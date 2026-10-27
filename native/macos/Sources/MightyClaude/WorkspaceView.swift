@@ -317,6 +317,8 @@ struct WorkspaceView: View {
                 }
                 Spacer(minLength: 0)
                 if let childState {
+                    // A ⌘Enter child's request on its way, while its tab is elsewhere (natural submit B2).
+                    if let sent = store.submitPending[session.id], !sent.state.isFailed { PendingIndicatorView(state: sent.state, showsLabel: false).frame(minHeight: 17) }
                     childStateWord(childState)
                 } else if card.attention.total > 0 {
                     Text(status).font(.ui(size: 10.5, weight: .bold)).foregroundStyle(Palette.waitText).lineLimit(1).fixedSize()

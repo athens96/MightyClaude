@@ -139,13 +139,20 @@ public enum MightyGraphSupport {
         (result.map { $0.isEmpty ? "**" : $0 + noticeSectionMark } ?? "**") + header + "**\n\n" + answer
     }
     public static func isTaskNotice(_ input: String) -> Bool { input.hasPrefix(taskNoticePrefix) }
+    /// Whether `event` is the first sign of the run a "starting" request (`status`) waits
+    /// for that is not itself a status: a log line or a graph observation.
+    public static func startedBy(_ event: RunEvent, status: String) -> Bool {
+        status == "starting" && ["log", "graph"].contains(event.type)
+    }
+
     static func nextState(_ previous: String, _ incoming: String) -> String {
         if ["error", "stopped"].contains(previous) { return previous }
         if ["error", "stopped"].contains(incoming) { return incoming }
         if previous == "completed" { return previous }
         return incoming
     }
-    private static let states = ["idle", "running", "waiting", "completed", "error", "stopped"]
+    /// "starting": a request the Mac sent whose run has not answered yet (natural submit B1).
+    private static let states = ["idle", "starting", "running", "waiting", "completed", "error", "stopped"]
 
     /// Old profiles have only a bounded transcript. Reconstruct request groups,
     /// without inventing subagent identities or unseen child prompts.
@@ -313,10 +320,12 @@ extension RunSession {
     /// `configuredModel` is the model the request resolved to before it started
     /// (explicit choice, mode default, or "default" when the CLI decides). It has no
     /// default value on purpose: every production caller must pass the resolution.
-    public mutating func beginGraphRun(input: String, id: String = UUID().uuidString, configuredModel: String) {
+    /// `status` "starting" is a request this app sent that reads 전송 중 until its run's
+    /// first event (natural submit B1; `recordGraph` moves it on).
+    public mutating func beginGraphRun(input: String, id: String = UUID().uuidString, configuredModel: String, status: String = "running") {
         guard kind == "claude", MightyGraphSupport.providers.contains(provider) else { return }
         if graphRuns == nil { graphRuns = MightyGraphSupport.legacyRuns(self) }
-        graphRuns?.append(MightyGraphRun(id: id, input: input, provider: provider,
+        graphRuns?.append(MightyGraphRun(id: id, input: input, status: status, provider: provider,
                                          nodeModelLabel: GraphModelLabel.nodeModelLabel(cliReportedModel: nil, configuredModel: configuredModel),
                                          configuredModel: configuredModel))
         graphRuns = graphRuns.map { MightyGraphSupport.boundedLiveHistory(Array($0.suffix(128))) }
@@ -329,6 +338,11 @@ extension RunSession {
             return
         }
         guard var runs = graphRuns, !runs.isEmpty else { return }
+        // A sent request reads "starting" until its run answers: a status moves it on as
+        // any status does (to running, or to the error or stop of a failed start); a log
+        // or a graph observation of the run means it runs.
+        let newest = runs.count - 1
+        if MightyGraphSupport.startedBy(event, status: runs[newest].status) { runs[newest].status = "running" }
         if event.type == "usage" {
             // The CLI reported the model it actually used: it outranks the configured name.
             guard let reported = event.usage?.model, !reported.isEmpty else { return }

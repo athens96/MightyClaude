@@ -55,6 +55,12 @@ struct MightyGraphView: View {
     var planHistory: [PlanRecord] = []
     var planCard: (ToolPermissionRequest, (() -> Void)?) -> AnyView = { _, _ in AnyView(EmptyView()) }
     var planRecordCard: (PlanRecord, Bool, @escaping () -> Void) -> AnyView = { _, _, _ in AnyView(EmptyView()) }
+    /// The pane's newest own request (`AppStore.OwnSubmit`): every view moves to it once
+    /// (natural submit B2, `SubmitScroll`).
+    var ownSubmit: AppStore.OwnSubmit? = nil
+    /// The request the pane sent last and where it is (`AppStore.SubmitPending`): its
+    /// 실행 block, its 파이프라인 cards and its 기록 header read 전송 중 by it.
+    var pending: AppStore.SubmitPending? = nil
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     /// The structure view's model and what it was built from. A reference, so
@@ -107,6 +113,12 @@ struct MightyGraphView: View {
     /// The timeline's first visible item, which is how scrolling to its top is seen.
     @ViewState private var timelineTop: String?
     private static let timelineHistoryID = "timeline-history"
+    /// The serial of the own request this view last moved to (`ownSubmit`).
+    @ViewState private var handledOwnSubmit: Int?
+    /// The 기록 group an own request asks the timeline to show.
+    @ViewState private var timelineReveal: TimelineReveal?
+    private struct TimelineReveal: Equatable { let serial: Int; let id: String }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Kept out of the view body: long concatenations of conditionals are
     /// slow for older type checkers.
@@ -243,7 +255,8 @@ struct MightyGraphView: View {
             } else if viewMode == .structure {
                 MightyStructureView(sessionID: sessionID, provider: provider,
                                     boards: structureBoards(), styleName: styleName,
-                                    styleTitles: styleTitles, newestRunID: runs.last?.id, catalog: catalog, memory: structureCache.memory) { nodeID in
+                                    styleTitles: styleTitles, newestRunID: runs.last?.id, catalog: catalog, memory: structureCache.memory,
+                                    pending: pending) { nodeID in
                     // The diagram opens with its camera on the request or block whose button was clicked.
                     onFocus()
                     publish(.reaim(nodeID: nodeID, alignTop: false))
@@ -298,16 +311,20 @@ struct MightyGraphView: View {
             if let id = planNodeID {
                 scrollTarget = MightyGraphScrollTarget(token: "plan:" + id + ":" + (planRequest?.id ?? ""), nodeID: id, alignTop: true)
             }
+            // An own request from before this view was shown is not moved to again.
+            handledOwnSubmit = ownSubmit?.serial
         }
         // The whole id list, not just the last one: dropping the oldest
         // runs moves every surviving card up without touching the last
         // id, and nothing else would re-aim the camera. Watched in every view,
         // so a send from the 구조 view or the timeline is followed in the diagram.
         .onChange(of: runs.map(\.id)) { previous, current in
-            // A new request is the user's own send: follow it, its 실행 block and
-            // everything after it right above the composer.
+            // A new request: the user's own is moved to in every view (`handleOwnSubmit`);
+            // anyone else's is followed only by a camera that follows (`SubmitScroll`).
             if let last = current.last, previous.last != last {
-                publishFollow()
+                if ownSubmit?.target == .run(last) { handleOwnSubmit(); return }
+                let decision = SubmitScroll.target(view: .diagram, own: false, chosenBoardIsNewest: true, nearBottom: follow.watch.following)
+                if decision.scroll == .follow { publishFollow() }
                 return
             }
             // A following camera keeps its block in place through a trim itself.
@@ -321,6 +338,56 @@ struct MightyGraphView: View {
         }
         // Cancelled when the graph leaves the screen or the pane closes.
         .task(id: ouroborosRequest) { await ouroboros.run(ouroborosRequest) }
+        // The user's own request (natural submit B2): moved to once its block is there;
+        // a 다음 실행 once its 중간 요청 block arrives.
+        .onChange(of: ownSubmit) { _, _ in handleOwnSubmit() }
+        .onChange(of: runs.last?.agents.filter(\.isSteer).map(\.id) ?? []) { _, _ in handleOwnSubmit() }
+    }
+
+    /// Moves the views to the pane's newest own request, once (`SubmitScroll`, own): the
+    /// diagram's camera follows it (animated in the diagram, so the diagram shows it when the
+    /// user goes back), the 파이프라인 goes back to its newest board, the 기록 shows its
+    /// group. A 다음 실행 aims at its 중간 요청 block. Waits while the block is not there yet.
+    private func handleOwnSubmit() {
+        guard let own = ownSubmit, own.serial != handledOwnSubmit else { return }
+        let view = SubmitScroll.View(showsMighty: true, mightyViewMode: viewMode)
+        switch own.target {
+        case .run(let id):
+            guard runs.contains(where: { $0.id == id }) else { return }
+            handledOwnSubmit = own.serial
+            let boards = viewMode == .structure ? structureBoards() : []
+            let decision = SubmitScroll.target(view: view, own: true, chosenBoardIsNewest: structureCache.memory.navigation.onNewest(in: boards),
+                                               nearBottom: follow.watch.following)
+            if decision.resetBoard { structureCache.memory.navigation.showNewest(in: boards) }
+            publishFollow(animated: viewMode == .diagram)
+            if viewMode == .timeline { timelineReveal = TimelineReveal(serial: own.serial, id: id) }
+        case .steer(let text):
+            let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let run = runs.last,
+                  let steer = run.agents.last(where: { $0.isSteer && $0.input.trimmingCharacters(in: .whitespacesAndNewlines) == words }) else { return }
+            handledOwnSubmit = own.serial
+            publish(.reaim(nodeID: MightyGraphBlockSize.nodeID(runID: run.id, suffix: "agent:" + steer.id), alignTop: false), animated: viewMode == .diagram)
+            if viewMode == .timeline { timelineReveal = TimelineReveal(serial: own.serial, id: run.id) }
+        }
+    }
+
+    /// The sent request's pending state, for the run `runID` only.
+    private func pendingState(_ runID: String) -> PendingState? {
+        guard let pending, pending.entryId == runID else { return nil }
+        return pending.state
+    }
+
+    /// The 기록 moves to group `id`: after the update that lays it out, over `Motion.scroll`
+    /// (at once under Reduce Motion), and once more when that is over, since a `LazyVStack`
+    /// lands short of a group it had only estimated.
+    private func revealTimeline(_ id: String, _ proxy: ScrollViewProxy) {
+        let animation = PendingMotion.animation(DesignMetrics.Motion.scroll, reduceMotion: reduceMotion)
+        DispatchQueue.main.async {
+            withAnimation(animation) { proxy.scrollTo(id, anchor: .bottom) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + DesignMetrics.Motion.seconds(DesignMetrics.Motion.scroll) + 0.05) {
+                proxy.scrollTo(id, anchor: .bottom)
+            }
+        }
     }
 
     /// The structure view's boards, rebuilt only when something they draw changed, and
@@ -341,19 +408,21 @@ struct MightyGraphView: View {
 
     /// Every camera re-aim goes through one token sequence, so a second one
     /// lands even when it picks the block the first one did.
-    private func publish(_ anchor: MightyGraphCamera.Anchor) {
+    /// `animated`: the camera glides there over `Motion.scroll` (an own request).
+    private func publish(_ anchor: MightyGraphCamera.Anchor, animated: Bool = false) {
         guard case .reaim(let nodeID, let alignTop) = anchor else { return }
         // Where it lands decides whether the camera follows from there.
         follow.watch.stop()
         trimSequence += 1
-        scrollTarget = MightyGraphScrollTarget(token: MightyGraphCamera.trimToken(sequence: trimSequence, nodeID: nodeID), nodeID: nodeID, alignTop: alignTop)
+        scrollTarget = MightyGraphScrollTarget(token: MightyGraphCamera.trimToken(sequence: trimSequence, nodeID: nodeID), nodeID: nodeID, alignTop: alignTop, animated: animated)
     }
 
-    /// Follow from now on, the newest block right above the composer.
-    private func publishFollow() {
+    /// Follow from now on, the newest block right above the composer. `animated`: the
+    /// camera glides there over `Motion.scroll` (an own request), at once under Reduce Motion.
+    private func publishFollow(animated: Bool = false) {
         follow.watch.start()
         trimSequence += 1
-        scrollTarget = MightyGraphScrollTarget(token: "follow:\(trimSequence)", nodeID: followTarget(layout), alignTop: false, follows: true)
+        scrollTarget = MightyGraphScrollTarget(token: "follow:\(trimSequence)", nodeID: followTarget(layout), alignTop: false, follows: true, animated: animated)
     }
 
     /// A result card's answer measured a new height.
@@ -516,7 +585,7 @@ struct MightyGraphView: View {
             transcriptCard(node, title: L("graph.block.executionOf", ["n": "\(index + 1)"]), icon: Self.executionIcon, status: run.status, statusText: Self.runStatusLabel(run),
                            input: "", entries: run.rootEntries, tint: Palette.agentText, usage: run.usage,
                            records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks,
-                           fromRecord: index < olderCount)
+                           fromRecord: index < olderCount, pending: pendingState(run.id))
         case .agent(let runIndex, let agentIndex):
             let run = runs[runIndex]
             let agent = run.agents[agentIndex]
@@ -587,7 +656,7 @@ struct MightyGraphView: View {
                                 usage: GraphTokenUsage? = nil, usageLabel: String = L("graph.block.blockUsageLabel"), resultFilesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
                                 childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil,
-                                inputOnly: Bool = false, onContentHeight: ((CGFloat) -> Void)? = nil) -> some View {
+                                inputOnly: Bool = false, onContentHeight: ((CGFloat) -> Void)? = nil, pending: PendingState? = nil) -> some View {
         let content = entries.filter { $0.kind != "user" }
         let onStrip = headerFill != nil
         let quiet = onStrip ? Palette.onStatus : Palette.ink2
@@ -608,8 +677,7 @@ struct MightyGraphView: View {
                 Spacer(minLength: 3)
                 if selectedNodeID == node.id { blockScrollLabel(node.id, ink: onStrip ? Palette.onStatus : Palette.accent) }
                 if !onStrip && !inputOnly {
-                    MightyGraphActivityIndicator(status: status, tint: Palette.run)
-                    MightyStatusPill(text: statusText ?? Self.statusLabel(status), tone: DesignTone(blockStatus: status))
+                    MightyStatusMark(status: status, text: statusText ?? Self.statusLabel(status), tone: DesignTone(blockStatus: status), pending: pending)
                 }
                 if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog, versioned: true) {
                     let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records, catalog: catalog, versioned: true)
@@ -803,8 +871,13 @@ struct MightyGraphView: View {
                 onLoadOlder()
             }
             .onChange(of: runs.last?.id) { _, last in
-                guard let last else { return }
+                // The user's own request is moved to by `revealTimeline`, gliding and reliably.
+                guard let last, ownSubmit?.target != .run(last) else { return }
                 proxy.scrollTo(last, anchor: .bottom)
+            }
+            .onChange(of: timelineReveal) { _, reveal in
+                guard let reveal else { return }
+                revealTimeline(reveal.id, proxy)
             }
             // Once, when a request of this pane finishes: its result card, the
             // last thing in its group, goes to the bottom, above the composer.
@@ -865,7 +938,8 @@ struct MightyGraphView: View {
                             .help(L("graph.history.tag")).accessibilityLabel(L("graph.history.tag"))
                     }
                     Spacer(minLength: DesignMetrics.Spacing.sm)
-                    MightyStatusPill(text: Self.runStatusLabel(run), tone: DesignTone(status: group.status), height: 20)
+                    MightyStatusMark(status: group.status, text: Self.runStatusLabel(run), tone: DesignTone(status: group.status),
+                                     pending: pendingState(run.id), showsActivity: false, pillHeight: 20)
                 }
                 Group {
                     if !prompt.isEmpty {
@@ -1031,7 +1105,12 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     var onReachTop: () -> Void = {}
     let card: (MightyGraphLayout.Node) -> Card
     @ViewState private var cameraOffset: CGPoint?
+    /// The token of the animated target whose landing glides, once.
+    @ViewState private var glidedToken: String?
+    /// Where a gliding camera set out from, while it glides: the cards along the way are drawn.
+    @ViewState private var glideFrom: CGPoint?
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { viewport in
@@ -1045,11 +1124,21 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             let follows = requested == nil || (scrollTarget?.follows ?? false)
             let initialOffset = targetFrame.map { MightyGraphFollow.cameraOffset(for: $0, viewport: viewport.size, zoom: zoom, alignTop: alignTop, alignBottom: alignBottom, follows: follows) } ?? .zero
             let displayedOffset = cameraOffset ?? initialOffset
-            let panBinding = Binding<CGPoint>(get: { cameraOffset ?? initialOffset }, set: { cameraOffset = $0 })
-            let visible = CGRect(x: floor(-displayedOffset.x / zoom / 64) * 64 - 192,
-                                 y: floor(-displayedOffset.y / zoom / 64) * 64 - 192,
-                                 width: viewport.size.width / zoom + 448,
-                                 height: viewport.size.height / zoom + 448)
+            let panBinding = Binding<CGPoint>(get: { cameraOffset ?? initialOffset }, set: { new in
+                // An own request's target lands gliding (natural submit B2): the first camera
+                // commit after its token is that landing. Reduce Motion lands at once.
+                if let target = scrollTarget, target.animated, glidedToken != target.token, !reduceMotion, new != (cameraOffset ?? initialOffset) {
+                    glidedToken = target.token
+                    glideFrom = cameraOffset ?? initialOffset
+                    DispatchQueue.main.asyncAfter(deadline: .now() + DesignMetrics.Motion.seconds(DesignMetrics.Motion.scroll) + 0.05) { glideFrom = nil }
+                }
+                cameraOffset = new
+            })
+            let culled: (CGPoint) -> CGRect = { offset in
+                CGRect(x: floor(-offset.x / zoom / 64) * 64 - 192, y: floor(-offset.y / zoom / 64) * 64 - 192,
+                       width: viewport.size.width / zoom + 448, height: viewport.size.height / zoom + 448)
+            }
+            let visible = glideFrom.map { culled(displayedOffset).union(culled($0)) } ?? culled(displayedOffset)
             let diagram = ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
                     edges(visible)
@@ -1094,6 +1183,8 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                 .scaleEffect(zoom, anchor: .topLeading)
                 .offset(x: MightyGraphCamera.drawnOffsetX(cameraX: displayedOffset.x, originX: graph.originX, zoom: zoom),
                         y: displayedOffset.y + graph.originY * zoom)
+                // Inside the hosted diagram, so its own graph animates the move.
+                .animation(glideFrom == nil ? nil : PendingMotion.animation(DesignMetrics.Motion.scroll, reduceMotion: reduceMotion), value: displayedOffset)
             }
             .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
             .clipped()
@@ -1217,4 +1308,7 @@ private struct MightyGraphScrollTarget {
     /// The followed block's bottom right above the composer, on the centreline,
     /// and the camera follows from there (`MightyGraphFollow`).
     var follows = false
+    /// The camera glides to it over `Motion.scroll` (an own request, natural submit B2),
+    /// at once under Reduce Motion.
+    var animated = false
 }
