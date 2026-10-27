@@ -16,7 +16,8 @@
         "NSCameraUsageDescription": "호스트 페어링 QR 코드를 스캔하기 위해 카메라를 사용합니다.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
