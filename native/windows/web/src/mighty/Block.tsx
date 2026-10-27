@@ -7,8 +7,9 @@ import { HeightCache, estimateHeight, layout, nearBottom, visibleRange } from '.
 import { Markdown } from '../conversation/MarkdownView';
 import { ProviderMark } from '../conversation/ProviderMark';
 import type { LogEntry } from '../store/models';
+import { backgroundLabel, shownTail } from './background';
 import { dashForCard, dashOffset } from './camera';
-import { isResizable, visibleImages } from './layout';
+import { isResizable, terminal, visibleImages } from './layout';
 import type { MightyBlockCopy, MightyExecutionCard, MightyFile } from './types';
 import { BottomRight, type Edges } from './resize';
 import { useMenu } from '../shell/parts';
@@ -310,14 +311,34 @@ function Body(props: BlockProps) {
     default: {
       const entries = extra.entries ?? [];
       const any = entries.some((e) => e.kind !== 'user');
+      const status = copy?.status ?? '';
+      const label = backgroundLabel(t, { kind: copy?.kind, background: copy?.background, status });
+      // A background run (a task block) shows its command and live output lines in place of the request band, and its live lines in place of the wait for a reply.
+      const run = copy?.kind === 'task';
+      const tail = run ? shownTail(copy?.outputTail, status, props.expanded) : [];
+      const command = (extra.input ?? '').split(/\r?\n/).join(' ');
+      const reply = run ? copy?.noticeReply : undefined;
       return (
         <div className="mighty-body">
+          {label && <div className="mighty-background-kind" data-testid="mighty-background-kind">{label}</div>}
           <div ref={content}>
-            {extra.input && kind !== 'result' && kind !== 'work' && <div className="mighty-band">{extra.input}</div>}
+            {run ? (command !== '' || tail.length > 0) && (
+              <div className="mighty-run-head">
+                {command !== '' && <div className="mighty-run-command" title={extra.input} data-testid="mighty-run-command">{command}</div>}
+                {tail.length > 0 && <div className="mighty-run-tail" data-testid="mighty-run-output">{tail.map((line, index) => <div key={index}>{line === '' ? ' ' : line}</div>)}</div>}
+              </div>
+            ) : extra.input && kind !== 'result' && kind !== 'work' && <div className="mighty-band">{extra.input}</div>}
             {any ? <Transcript entries={entries} paneId={paneId} provider={provider} running={running} />
               : kind === 'result' && extra.finalOutput ? <div className="mighty-pad"><Markdown text={extra.finalOutput} /></div>
-                : <div className="mighty-muted mighty-pad">{t(copy && copy.status !== '' && !['completed', 'error', 'stopped'].includes(copy.status) ? 'graph.block.waitingResponse' : 'graph.block.noResponse')}</div>}
+                : run && tail.length > 0 && !terminal(status) ? null
+                  : <div className="mighty-muted mighty-pad">{t(copy && copy.status !== '' && !['completed', 'error', 'stopped'].includes(copy.status) ? 'graph.block.waitingResponse' : 'graph.block.noResponse')}</div>}
           </div>
+          {reply && (
+            <div className="mighty-run-reply" data-testid="mighty-background-reply">
+              <div className="mighty-run-reply-title">{t('graph.background.reply')}</div>
+              <div className={'mighty-run-reply-text' + (props.expanded ? '' : ' folded')} title={reply}>{reply}</div>
+            </div>
+          )}
         </div>
       );
     }

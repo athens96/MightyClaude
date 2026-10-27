@@ -58,6 +58,21 @@
 .mighty-capsule { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--type-small); color: var(--ink2); padding: 2px 6px; border-radius: 8px; background: var(--card-raised); }
 .mighty-body { position: relative; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .mighty-band { padding: var(--space-sm) var(--space-md); background: color-mix(in srgb, var(--accent) 5.5%, transparent); font-size: var(--type-body); white-space: pre-wrap; word-break: break-word; user-select: text; }
+/* A background sub-agent's or run's kind line, a run's command and output lines, and Claude's reply to its notice (macOS backgroundKindLine, backgroundRunHead, backgroundReply). */
+.mighty-background-kind { padding: var(--space-xxs) var(--space-md); font-size: var(--type-small); font-weight: 600; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mighty-block.tone-run .mighty-background-kind { color: var(--accent); }
+.mighty-block.tone-wait .mighty-background-kind { color: var(--wait-text); }
+.mighty-block.tone-done .mighty-background-kind { color: var(--done-text); }
+.mighty-block.tone-err .mighty-background-kind { color: var(--err-text); }
+.mighty-block.tone-stop .mighty-background-kind { color: var(--stop-text); }
+.mighty-run-head { display: flex; flex-direction: column; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); background: color-mix(in srgb, var(--accent) 5.5%, transparent); border-bottom: var(--stroke-line) solid var(--line); }
+.mighty-run-command { font-family: var(--font-mono); font-size: var(--type-small); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; }
+.mighty-run-tail { padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-file-row); background: var(--subtle); font-family: var(--font-mono); font-size: var(--type-small); color: var(--ink2); user-select: text; }
+.mighty-run-tail > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mighty-run-reply { display: flex; flex-direction: column; gap: var(--space-xxs); padding: var(--space-sm) var(--space-md); border-top: var(--stroke-line) solid var(--line); }
+.mighty-run-reply-title { font-size: var(--type-small); font-weight: 700; color: var(--ink2); }
+.mighty-run-reply-text { font-family: var(--font-transcript); font-size: var(--type-pill); color: var(--ink); white-space: pre-wrap; word-break: break-word; user-select: text; }
+.mighty-run-reply-text.folded { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* A block's transcript (non-card format): replies and tool lines straight on the card, no chip or card borders. */
 .mighty-transcript { padding: var(--inset-graph-block-body-v) var(--inset-graph-block-body-h); }
 .mighty-transcript .reply-card, .mighty-transcript .tool-chip { border: 0; background: transparent; padding-left: 0; padding-right: 0; }
@@ -298,6 +313,11 @@
 .structure-parent { display: flex; align-items: center; gap: var(--space-xs); font-size: 10px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .structure-prompt { font-family: var(--font-transcript); font-size: 10.5px; color: var(--ink2); white-space: pre-wrap; word-break: break-word; }
 .structure-output { font-family: var(--font-transcript); font-size: 11px; color: var(--ink); white-space: pre-wrap; word-break: break-word; }
+/* A background run's output lines on a pipeline card, and Claude's reply to its notice. */
+.structure-tail { padding: var(--space-xxs) var(--space-sm); border-radius: var(--radius-file-row); background: var(--subtle); font-family: var(--font-mono); font-size: 10.5px; color: var(--ink2); user-select: text; }
+.structure-tail > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.structure-reply { display: flex; flex-direction: column; gap: var(--space-xxs); }
+.structure-reply-title { font-size: 10px; font-weight: 700; color: var(--ink2); }
 
 /* ── pipeline state colours (fixture `pipeline`, Core MightyStructure.Tone, M/MightyStructureView.swift) ── */
 /* A column's cards sit on its tone's soft tint; each card on a lighter one, so it stands out, with a bar in the tone's mark down its leading edge.

@@ -116,13 +116,15 @@
 .plan-record-time { font-size: 10px; color: var(--ink2); }
 .plan-feedback { font-size: 10.5px; color: var(--wait-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plan-feedback.open { white-space: pre-wrap; user-select: text; }
-.background-task { display: flex; align-items: center; gap: var(--space-sm); font-size: 11px; }
+.background-task { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xxs) var(--space-sm); font-size: 11px; }
 .background-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--ink2); flex: none; }
 .background-dot.status-running { background: var(--accent); }
 .background-dot.status-completed { background: var(--done); }
 .background-dot.status-failed { background: var(--err); }
 .background-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .background-detail { font-size: 10px; color: var(--ink2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* A run's last output line, dim and monospace on a line of its own under the row. */
+.background-tail { flex: 1 0 100%; min-width: 0; padding-left: calc(6px + var(--space-sm)); font-family: var(--font-mono); font-size: 10px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; }
 
 /* Next actions (NextActions.cs): a heading, then each option as a card row with an accent arrow. */
 .next-actions { display: flex; flex-direction: column; gap: var(--space-xs); }

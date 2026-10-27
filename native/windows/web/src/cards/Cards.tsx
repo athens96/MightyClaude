@@ -250,6 +250,7 @@ function Background({ card, call }: { card: BackgroundCard; call: Call }) {
               <span className={'background-dot status-' + task.status} aria-hidden="true" />
               <span className="background-text">{task.text}</span>
               <span className="background-detail">{task.detail}</span>
+              {task.tail && <span className="background-tail" data-testid="background-tail">{task.tail}</span>}
             </div>
           ))}
         </div>

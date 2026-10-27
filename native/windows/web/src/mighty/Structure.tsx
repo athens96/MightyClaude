@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useServices } from '../app/context';
 import { Markdown } from '../conversation/MarkdownView';
-import { nodeId, RequestStep } from './layout';
+import { backgroundLabel } from './background';
+import { nodeId, RequestStep, terminal } from './layout';
 import {
   ColumnWatch, StructureNavigation, WheelTracker, confined, isDrag, mayPan, panOrigin, scrollable, stepsSummary, userMoving,
   type Page, type PanTarget, type Scroll, type XY,
@@ -79,6 +80,8 @@ const Bolt = ({ status }: { status: string }) => status === 'running' ? <span cl
  */
 const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCard; onFold: (element: HTMLElement) => void; onReveal: Reveal }) {
   const { t } = useServices();
+  // An ended background run opens to its output lines and Claude's reply.
+  const [open, setOpen] = useState(false);
   const request = nodeId(card.runId, RequestStep);
   const base = 'structure-card tone-' + card.tone + ' kind-' + card.kind + edgeClass(card.status) + tintClass(card.tint);
   const progress = (
@@ -143,19 +146,30 @@ const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCar
       // A task notice (the only steer the structure keeps) wears the steer's glyph and ink, as its timeline row does.
       const steer = card.nodeKind === 'steer';
       const last = card.activity[card.activity.length - 1];
+      // A background sub-agent or run is named as the diagram's block names it, in place of its plain kind.
+      const label = backgroundLabel(t, { kind: card.nodeKind, background: card.background, status: card.status });
+      const meta = label ? [label, ...(card.meta ?? '').split(' · ').slice(1)].join(' · ') : card.meta;
+      // Running, a run's last two lines; ended, its lines and Claude's reply once opened.
+      const ended = terminal(card.status);
+      const tail = task ? ended ? (open ? card.outputTail ?? [] : []) : (card.outputTail ?? []).slice(-2) : [];
+      const reply = task && open ? card.noticeReply : undefined;
+      const opens = task && ended && ((card.outputTail?.length ?? 0) > 0 || !!card.noticeReply);
       return (
         <div className={'structure-node tone-' + card.tone + edgeClass(card.status) + tintClass(card.tint)} data-card-id={card.id} data-node-id={card.nodeId}
           style={{ marginLeft: Math.min(card.depth ?? 0, 3) * 16 }}>
           <div className="structure-card-row">
             <span className={'structure-node-glyph' + (task ? ' task' : steer ? ' steer' : '')}><Icon name={task ? 'square-terminal' : steer ? 'message-square-text' : 'square-user-round'} size={11} weight={2} /></span>
             <span className="structure-node-title">{card.title}</span>
-            {card.meta && <span className="structure-node-meta">{card.meta}</span>}
+            {meta && <span className="structure-node-meta">{meta}</span>}
             <span className="spacer" /><Bolt status={card.status} /><RevealButton id={card.nodeId} fallback={request} onReveal={onReveal} />
           </div>
           {card.parent && <div className="structure-parent"><Icon name="corner-down-right" size={10} weight={2} />{card.parent}</div>}
           {card.prompt && <Fold text={card.prompt} lines={PromptLines} className="structure-prompt" onFold={onFold} />}
           {card.text && <Fold text={card.text} lines={OutputLines} className="structure-output" onFold={onFold} />}
+          {tail.length > 0 && <div className="structure-tail" data-testid="structure-node-output">{tail.map((line, index) => <div key={index}>{line === '' ? ' ' : line}</div>)}</div>}
+          {reply && <div className="structure-reply" data-testid="structure-node-reply"><span className="structure-reply-title">{t('graph.background.reply')}</span><div className="structure-output">{reply}</div></div>}
           {last && <ActivityRow line={last} />}
+          {opens && <button type="button" className="structure-more" onClick={(event) => { onFold(event.currentTarget); setOpen((o) => !o); }}>{t(open ? 'graph.structure.less' : 'graph.structure.more')}</button>}
         </div>
       );
     }
