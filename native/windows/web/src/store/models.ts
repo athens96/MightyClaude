@@ -142,6 +142,12 @@ export interface MightyGraphAgent {
   usage?: GraphTokenUsage;
   activityGeneration?: number;
   responseRecords?: GraphResponseRecord[];
+  /** Started in the background: a background sub-agent, and every task block. */
+  background?: boolean;
+  /** A task block's output file: the host reads it; never shown. */
+  outputFile?: string;
+  /** Claude's reply in the turn this block's notice alone opened. */
+  noticeReply?: string;
 }
 
 export interface MightyGraphRun {

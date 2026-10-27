@@ -84,6 +84,7 @@ internal static class WebDelta
     private static bool SameAgent(MightyGraphAgent a, MightyGraphAgent b) => ReferenceEquals(a, b)
         || a.Id == b.Id && a.ParentID == b.ParentID && a.Title == b.Title && a.Input == b.Input && a.Status == b.Status && a.Kind == b.Kind
             && Equals(a.Usage, b.Usage) && a.ActivityGeneration == b.ActivityGeneration
+            && a.Background == b.Background && a.OutputFile == b.OutputFile && a.NoticeReply == b.NoticeReply
             && SameList(a.Entries, b.Entries, SameEntry) && SameList(a.ResponseRecords, b.ResponseRecords, (x, y) => Equals(x, y));
 
     /// <summary>A pane's fields but its two lists, as the page's <c>RunSession</c> holds them.</summary>

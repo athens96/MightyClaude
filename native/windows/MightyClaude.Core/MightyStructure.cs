@@ -30,11 +30,14 @@ public static partial class MightyStructure
     public sealed record ActivityLine(string Id, string Kind, string State, string Text);
 
     /// <summary>One block of a cluster, flattened depth-first; <see cref="NodeId"/> is the diagram node it stands for.</summary>
+    /// <param name="Background">A background sub-agent or a task (<see cref="MightyGraphAgent.Background"/>).</param>
+    /// <param name="NoticeReply">Claude's reply to a task's notice (<see cref="MightyGraphAgent.NoticeReply"/>).</param>
     public sealed record Node(string AgentId, int AgentIndex, string NodeId, int Depth, string Title, string Status, string Kind,
-        Excerpt? Prompt, Excerpt? Output, IReadOnlyList<ActivityLine> Activity, string? Model)
+        Excerpt? Prompt, Excerpt? Output, IReadOnlyList<ActivityLine> Activity, string? Model, bool Background = false, Excerpt? NoticeReply = null)
     {
         public bool Equals(Node? other) => other is not null && AgentId == other.AgentId && AgentIndex == other.AgentIndex && NodeId == other.NodeId && Depth == other.Depth
-            && Title == other.Title && Status == other.Status && Kind == other.Kind && Prompt == other.Prompt && Output == other.Output && Model == other.Model && Activity.SequenceEqual(other.Activity);
+            && Title == other.Title && Status == other.Status && Kind == other.Kind && Prompt == other.Prompt && Output == other.Output && Model == other.Model && Activity.SequenceEqual(other.Activity)
+            && Background == other.Background && NoticeReply == other.NoticeReply;
         public override int GetHashCode() => HashCode.Combine(NodeId, Depth, Status, Activity.Count);
     }
 
@@ -94,7 +97,8 @@ public static partial class MightyStructure
     /// </summary>
     public sealed record Signature
     {
-        internal readonly record struct Block(string Id, string Title, string Status, string? ParentId, string? Kind, int Input, int Entries, int Tail, int Records);
+        /// <summary><c>Notice</c>: Claude's reply to a task's notice, which can land with no new record.</summary>
+        internal readonly record struct Block(string Id, string Title, string Status, string? ParentId, string? Kind, int Input, int Entries, int Tail, int Records, int Notice);
         /// <summary>One request's part, which is all its card reads (<see cref="ItemCache"/> keys on it).</summary>
         internal sealed record Request(string Id, string Status, string? SourceRunId, int Input, int RootEntries, int RootTail, int ResultEntries, int Result, int? FinalOutput, Block[] Blocks)
         {
@@ -113,7 +117,7 @@ public static partial class MightyStructure
         {
             Requests = runs.Select(run => new Request(run.Id, run.Status, run.SourceRunID, Bytes(run.Input), run.RootEntries.Count, Tail(run.RootEntries), run.ResultEntries.Count,
                 Bytes(run.ResultEntries.LastOrDefault()?.Text), run.FinalOutput is { } final ? Bytes(final) : null,
-                run.Agents.Select(a => new Block(a.Id, a.Title, a.Status, a.ParentID, a.Kind, Bytes(a.Input), a.Entries.Count, Tail(a.Entries), a.ResponseRecords?.Count ?? 0)).ToArray())).ToArray();
+                run.Agents.Select(a => new Block(a.Id, a.Title, a.Status, a.ParentID, a.Kind, Bytes(a.Input), a.Entries.Count, Tail(a.Entries), a.ResponseRecords?.Count ?? 0, Bytes(a.NoticeReply))).ToArray())).ToArray();
             phases = style is null ? [] : Ordered(style.Manifest).Select(p => p.Id).ToArray();
             recognition = style?.Manifest.Id; this.currentPhase = currentPhase?.Id; this.startingNew = startingNew;
             plans = (planHistory ?? []).Select(r => string.Join('\u001F', r.Id, r.Outcome, r.GraphRunId ?? "", r.RunId)).ToArray();
@@ -360,7 +364,8 @@ public static partial class MightyStructure
             var agent = run.Agents[index];
             nodes.Add(new(agent.Id, index, MightyGraphLayout.NodeID(run, "agent:" + agent.Id), depth, MightyGraphSupport.BlockTitle(agent), MightyTimeline.Status(agent.Status),
                 MightyGraphSupport.BlockKind(agent), ExcerptOf(MightyGraphSupport.ShownInput(agent), PromptBytes, PromptLines), Reply(agent.Entries) is { } reply ? ExcerptOf(reply, OutputBytes, OutputLines) : null,
-                Activity(agent.Entries, NodeActivity), agent.ResponseRecords?.Select(record => record.Model).FirstOrDefault(model => !string.IsNullOrEmpty(model))));
+                Activity(agent.Entries, NodeActivity), agent.ResponseRecords?.Select(record => record.Model).FirstOrDefault(model => !string.IsNullOrEmpty(model)),
+                agent.Background == true, agent.NoticeReply is { } notice ? ExcerptOf(notice, OutputBytes, OutputLines) : null));
             foreach (var child in children.GetValueOrDefault(agent.Id) ?? []) if (child != index) Walk(child, depth + 1, nodes);
         }
         void Start(int index)

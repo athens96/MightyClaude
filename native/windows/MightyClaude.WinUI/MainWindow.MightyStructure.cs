@@ -1486,7 +1486,7 @@ public sealed partial class MainWindow
             var key = string.Join('\n', new[] { Locale.LanguagePreference, activeStyle?.Id, activeStyle?.Hash }.Concat((styles ?? []).Where(s => s.Runnable).SelectMany(s => new[] { s.Id, s.Hash }))
                 .Concat((catalog ?? []).SelectMany(model => new[] { model.Value, model.DisplayName, model.ResolvedModel })));
             return owner.mobileStructures.Structure(pane.Id, runs, style, phase, pane.PlanHistory, pending, key,
-                styles is null ? null : input => StylePresentation.RequestPrefix(styles, input), model => ModelUsageFormat.ShortName(model, catalog, versioned: true));
+                styles is null ? null : input => StylePresentation.RequestPrefix(styles, input), model => ModelUsageFormat.ShortName(model, catalog, versioned: true), owner.BackgroundOutputFor(pane.Id));
         }
     }
 }

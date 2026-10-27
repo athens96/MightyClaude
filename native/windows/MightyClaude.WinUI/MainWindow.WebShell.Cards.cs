@@ -15,8 +15,12 @@ internal sealed record WebNextActionsCard(string EntryId, IReadOnlyList<string> 
 internal sealed record WebPlanRecord(string Id, string OutcomeTitle, string Tone, string Time, string Headline, string Plan, bool Truncated, string? Feedback);
 internal sealed record WebPlanHistoryCard(IReadOnlyList<WebPlanRecord> Records) { public string Kind => "planHistory"; }
 
-/// <summary>One background task row: kind · status · elapsed · notice, already joined (MainWindow.BackgroundWork.cs TaskDetail).</summary>
-internal sealed record WebBackgroundTask(string Text, string Status, string Detail);
+/// <summary>
+/// One background task row: kind · status · elapsed · notice, already joined (PlanCardSupport.BackgroundStripRow.Detail), its kind
+/// words the diagram block's (하위 에이전트 · 응답 대기, 백그라운드 실행 · 알림으로 확인) when the row meets one; <c>Tail</c> is a background
+/// run's last output line, absent otherwise.
+/// </summary>
+internal sealed record WebBackgroundTask(string Text, string Status, string Detail, string? Tail = null);
 internal sealed record WebBackgroundCard(int Count, string Summary, bool Open, IReadOnlyList<WebBackgroundTask> Tasks) { public string Kind => "background"; }
 
 /// <summary>The generic tool permission card (MainWindow.ToolPermission.cs RenderToolPermissionCards), its words the host's.</summary>
@@ -384,7 +388,8 @@ public sealed partial class MainWindow
             var work = pane.BackgroundWork;
             if (pane.Kind != "claude" || !PlanCardSupport.ShowsBackgroundStrip(work, mighty, drawsTasks, owner.ShowsBackgroundWork)) return null;
             var open = owner.BackgroundWorkOpen; var now = DateTimeOffset.UtcNow;
-            var tasks = open ? PlanCardSupport.BackgroundTasks(work).Select(t => new WebBackgroundTask(t.Text, t.Status, TaskDetail(t, now))).ToArray() : [];
+            var tasks = open ? PlanCardSupport.BackgroundStripRows(work, pane.GraphRuns?.LastOrDefault(), owner.BackgroundOutputFor(pane.Id))
+                .Select(row => new WebBackgroundTask(row.Task.Text, row.Task.Status, row.Detail(now), row.Tail)).ToArray() : [];
             return new(work!.Tasks.Count, PlanCardSupport.BackgroundStripSummary(work), open, tasks);
         }
 

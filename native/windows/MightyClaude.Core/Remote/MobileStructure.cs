@@ -38,7 +38,11 @@ public sealed record MobileStructure(int V, string Shape, IReadOnlyList<MobileSt
     public sealed record Cluster(IReadOnlyList<Node> Nodes);
     /// <param name="Depth">0 for the cluster's root, never past <see cref="MaximumDepth"/>.</param>
     /// <param name="Activity">Its last tool call.</param>
-    public sealed record Node(string Id, int Depth, string Title, string Status, string Kind, string? Model, string? Prompt, string? Output, Activity? Activity);
+    /// <param name="Background"><c>true</c> for a background sub-agent and every task; absent otherwise.</param>
+    /// <param name="OutputTail">A task's last output lines (at most 6), read on the host; never its output file.</param>
+    /// <param name="NoticeReply">Claude's reply to the task's notice, bounded like <paramref name="Output"/>.</param>
+    public sealed record Node(string Id, int Depth, string Title, string Status, string Kind, string? Model, string? Prompt, string? Output, Activity? Activity,
+        bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null);
 
     // ── bounds ────────────────────────────────────────────────────────────────
 
@@ -54,16 +58,19 @@ public sealed record MobileStructure(int V, string Shape, IReadOnlyList<MobileSt
 
     // ── projection ────────────────────────────────────────────────────────────
 
-    /// <summary>One request in its wire form with its JSON size, kept between builds so a rebuild encodes only the requests that moved.</summary>
-    public sealed record Wired(MightyStructure.Item Source, string? Title, Item Item, int Size);
+    /// <summary>One request in its wire form with its JSON size, kept between builds so a rebuild encodes only the requests that moved.
+    /// <c>Tails</c> is the output lines of the request's tasks it was built with, as one key (<see cref="TailsKey"/>).</summary>
+    public sealed record Wired(MightyStructure.Item Source, string? Title, Item Item, int Size, string Tails = "");
 
     /// <summary>
     /// The pane's structure for the phone (M/MightyCore/Remote/MobileStructure.swift:148-212). Null when there is nothing to
     /// draw: no request yet and no style phase to show. <paramref name="title"/> is the style's name for the request with this
-    /// run id, <paramref name="model"/> a block's model id as the phone shows it, and <paramref name="wired"/> the requests of
-    /// the last build, by run id, replaced by this build's.
+    /// run id, <paramref name="model"/> a block's model id as the phone shows it, <paramref name="tails"/> a background run's last
+    /// output lines by block id (host memory only), and <paramref name="wired"/> the requests of the last build, by run id,
+    /// replaced by this build's.
     /// </summary>
-    public static MobileStructure? Make(MightyStructure.Shape shape, int runCount, Func<string, string?>? title = null, Func<string, string>? model = null, Dictionary<string, Wired>? wired = null)
+    public static MobileStructure? Make(MightyStructure.Shape shape, int runCount, Func<string, string?>? title = null, Func<string, string>? model = null, Dictionary<string, Wired>? wired = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? tails = null)
     {
         if (shape.Columns is { } columns ? runCount == 0 && columns.Count == 0 : shape.Rows is not { Count: > 0 }) return null;
         var all = shape.Items.ToList();
@@ -74,10 +81,11 @@ public sealed record MobileStructure(int V, string Shape, IReadOnlyList<MobileSt
         var requests = all.Where(item => newest[item.RunId] == item.RunIndex).OrderByDescending(item => item.RunIndex).Take(MaximumItems).Select(source =>
         {
             var name = title?.Invoke(source.RunId);
-            if (wired is null || !wired.TryGetValue(source.RunId, out var made) || made.Source != source || made.Title != name)
+            var held = tails is { Count: > 0 } ? TailsKey(source, tails) : "";
+            if (wired is null || !wired.TryGetValue(source.RunId, out var made) || made.Source != source || made.Title != name || made.Tails != held)
             {
-                var item = ItemFor(source, name, model);
-                made = new(source, name, item, EncodedSize(item));
+                var item = ItemFor(source, name, model, tails);
+                made = new(source, name, item, EncodedSize(item), held);
             }
             return next[source.RunId] = made;
         }).ToList();
@@ -129,8 +137,18 @@ public sealed record MobileStructure(int V, string Shape, IReadOnlyList<MobileSt
                 ? new Row(item, MightyStructure.Word(row.Request), MightyStructure.Word(row.Execution), MightyStructure.Word(row.Result)) : null).OfType<Row>().ToList(), Omitted: left);
     }
 
+    /// <summary>The lines of <paramref name="tails"/> that belong to the request's tasks, as one comparable key.</summary>
+    private static string TailsKey(MightyStructure.Item item, IReadOnlyDictionary<string, IReadOnlyList<string>> tails)
+    {
+        var key = new StringBuilder();
+        foreach (var cluster in item.Clusters)
+            foreach (var node in cluster.Nodes)
+                if (node.Kind == "task" && tails.TryGetValue(node.AgentId, out var lines)) key.Append(node.AgentId).Append('\u001E').AppendJoin('\u001F', lines).Append('\u001D');
+        return key.ToString();
+    }
+
     /// <summary>One request in its wire form: its texts under the phone's caps and its first <see cref="MaximumNodes"/> nodes, the rest counted as left out.</summary>
-    public static Item ItemFor(MightyStructure.Item item, string? title, Func<string, string>? model = null)
+    public static Item ItemFor(MightyStructure.Item item, string? title, Func<string, string>? model = null, IReadOnlyDictionary<string, IReadOnlyList<string>>? tails = null)
     {
         var nodes = 0; var clusters = new List<Cluster>();
         foreach (var cluster in item.Clusters)
@@ -138,7 +156,9 @@ public sealed record MobileStructure(int V, string Shape, IReadOnlyList<MobileSt
             if (nodes >= MaximumNodes) break;
             var taken = cluster.Nodes.Take(MaximumNodes - nodes).Select(node => new Node(node.AgentId, Math.Clamp(node.Depth, 0, MaximumDepth), Capped(node.Title, TitleBytes, singleLine: true),
                 node.Status, node.Kind, node.Model is { } id ? Capped(model?.Invoke(id) ?? id, ModelBytes, singleLine: true) : null, node.Prompt is { } prompt ? Capped(prompt.Text, PromptBytes) : null,
-                node.Output is { } output ? Capped(output.Text, OutputBytes) : null, node.Activity.Count > 0 ? ActivityFor(node.Activity[^1]) : null)).ToList();
+                node.Output is { } output ? Capped(output.Text, OutputBytes) : null, node.Activity.Count > 0 ? ActivityFor(node.Activity[^1]) : null,
+                node.Background ? true : (bool?)null, node.Kind == "task" ? MobileMightySupport.OutputTail(tails?.GetValueOrDefault(node.AgentId)) : null,
+                node.NoticeReply is { } reply ? Capped(reply.Text, OutputBytes) : null)).ToList();
             nodes += taken.Count; clusters.Add(new(taken));
         }
         var total = item.Clusters.Sum(cluster => cluster.Nodes.Count);
@@ -223,6 +243,7 @@ public sealed class MobileStructureCache
     {
         internal MightyStructure.Signature? Signature;
         internal string Key = "";
+        internal IReadOnlyDictionary<string, IReadOnlyList<string>>? Tails;
         internal readonly MightyStructure.ItemCache Items = new();
         internal readonly Dictionary<string, MobileStructure.Wired> Wired = [];
         internal Built Built = new(null, 0);
@@ -234,21 +255,23 @@ public sealed class MobileStructureCache
     /// <summary>
     /// <see cref="MightyStructure.Make"/> with the inputs the desktop view passes, turned into the wire shape.
     /// <paramref name="key"/> names whatever else the value reads: the styles whose request titles it carries and the model
-    /// names it shows. <paramref name="title"/> reads a request's input.
+    /// names it shows. <paramref name="title"/> reads a request's input. <paramref name="tails"/>: the pane's background runs' last
+    /// output lines by block id, which only the host holds; a new map (the host replaces it on every change) builds again.
     /// </summary>
     public Built Structure(string pane, IReadOnlyList<MightyGraphRun> runs, StyleEvaluator? style, StylePhase? currentPhase, IReadOnlyList<PlanRecord>? planHistory = null,
-        string? pendingPlanRunID = null, string key = "", Func<string, string?>? title = null, Func<string, string>? model = null)
+        string? pendingPlanRunID = null, string key = "", Func<string, string?>? title = null, Func<string, string>? model = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? tails = null)
     {
         var signature = new MightyStructure.Signature(runs, style, currentPhase, planHistory: planHistory, pendingPlanRunID: pendingPlanRunID);
         if (!entries.TryGetValue(pane, out var entry)) entries[pane] = entry = new();
-        if (entry.Signature == signature && entry.Key == key) return entry.Built;
+        if (entry.Signature == signature && entry.Key == key && ReferenceEquals(entry.Tails, tails)) return entry.Built;
         // Another key can name each request differently: nothing kept is reused.
         if (entry.Key != key) entry.Wired.Clear();
         var shape = MightyStructure.Make(runs, style, currentPhase, planHistory: planHistory, pendingPlanRunID: pendingPlanRunID, items: entry.Items.Items(runs, signature));
         var inputs = new Dictionary<string, string>();
         foreach (var run in runs) inputs[run.Id] = run.Input;
-        var value = MobileStructure.Make(shape, runs.Count, title is null ? null : id => inputs.TryGetValue(id, out var input) ? title(input) : null, model, entry.Wired);
-        entry.Built = new(value, MobileStructure.Tag(value)); entry.Signature = signature; entry.Key = key;
+        var value = MobileStructure.Make(shape, runs.Count, title is null ? null : id => inputs.TryGetValue(id, out var input) ? title(input) : null, model, entry.Wired, tails);
+        entry.Built = new(value, MobileStructure.Tag(value)); entry.Signature = signature; entry.Key = key; entry.Tails = tails;
         Builds++;
         return entry.Built;
     }

@@ -15,6 +15,16 @@ public sealed class MightyGraphAgent
     [JsonPropertyName("usage")] public GraphTokenUsage? Usage { get; set; }
     [JsonPropertyName("activityGeneration")] public int? ActivityGeneration { get; set; }
     [JsonPropertyName("responseRecords")] public List<GraphResponseRecord>? ResponseRecords { get; set; }
+    /// <summary>Started in the background (a background sub-agent; every task block). See <see cref="ExecutionGraphNode.Background"/>.</summary>
+    [JsonPropertyName("background")] public bool? Background { get; set; }
+    /// <summary>A task block's output file: read for its last lines, never shown or sent to the phone.</summary>
+    [JsonPropertyName("outputFile")] public string? OutputFile { get; set; }
+    /// <summary>Claude's answer in the turn this block's notice opened alone.</summary>
+    [JsonPropertyName("noticeReply")] public string? NoticeReply { get; set; }
+
+    [JsonIgnore] public bool IsTask => Kind == "task";
+    /// <summary>A sub-agent started with <c>run_in_background</c> (macOS MightyGraphAgent.isBackgroundAgent).</summary>
+    [JsonIgnore] public bool IsBackgroundAgent => Kind is null && Background == true;
 
     /// A private copy: the runs of one session snapshot must never be mutated
     /// through another snapshot that still refers to them.
@@ -23,6 +33,7 @@ public sealed class MightyGraphAgent
         Id = Id, ParentID = ParentID, Title = Title, Input = Input, Status = Status, Entries = [.. Entries],
         Kind = Kind, Usage = Usage, ActivityGeneration = ActivityGeneration,
         ResponseRecords = ResponseRecords is null ? null : [.. ResponseRecords],
+        Background = Background, OutputFile = OutputFile, NoticeReply = NoticeReply,
     };
 }
 
@@ -103,8 +114,27 @@ public static class MightyGraphSupport
     /// <summary>The result with a notice turn's answer after it, under a bold line naming the notice; the request's own answer stays first.</summary>
     public static string WithNoticeSection(string? result, string header, string answer) =>
         (string.IsNullOrEmpty(result) ? "**" : result + NoticeSectionMark) + header + "**\n\n" + answer;
-    /// <summary>Background tasks still running after the request's own turn ended: it reads completed and waits on them (macOS MightyGraphRun.backgroundWaiting).</summary>
-    public static int BackgroundWaiting(MightyGraphRun run) => run.Status == "completed" ? run.Agents.Count(a => BlockKind(a) == "task" && !Terminal(a.Status)) : 0;
+    /// <summary>Background tasks and sub-agents still running after the request's own turn ended: it reads completed and waits on them (macOS MightyGraphRun.backgroundWaiting).</summary>
+    public static int BackgroundWaiting(MightyGraphRun run) => run.Status == "completed" ? run.Agents.Count(a => (a.IsTask || a.IsBackgroundAgent) && !Terminal(a.Status)) : 0;
+
+    /// <summary>The kind line under a background block's head: a background sub-agent or a background run, waiting or ended. Null for any other block (macOS MightyGraphSupport.backgroundLabel).</summary>
+    public static string? BackgroundLabel(MightyGraphAgent agent) =>
+        agent.IsTask || agent.IsBackgroundAgent ? BackgroundLabel(agent.IsTask, agent.Status) : null;
+
+    /// <summary><paramref name="run"/>: a background run (a task block, a <c>shell</c> task), else a background sub-agent. <paramref name="status"/> is a block's or a background task's; one still in motion reads waiting.</summary>
+    public static string BackgroundLabel(bool run, string status)
+    {
+        var word = status switch
+        {
+            "completed" => Locale.Get("graph.block.taskNotice.completed"),
+            "error" or "failed" => Locale.Get("graph.block.taskNotice.failed"),
+            "stopped" or "cancelled" or "interrupted" => Locale.Get("graph.block.taskNotice.stopped"),
+            "unknown" => Locale.Get("styles.state.taskStatus.unknown"),
+            _ => null,
+        };
+        if (word is null) return Locale.Get(run ? "graph.background.runWaiting" : "graph.background.agentWaiting");
+        return Locale.Get(run ? "graph.background.runEnded" : "graph.background.agentEnded", new Dictionary<string, string> { ["status"] = word });
+    }
 
     public static string AgentNodeId(string runId, string agentId) =>
         MightyGraphBlockSize.NodeId(runId, "agent:" + agentId);
@@ -215,7 +245,11 @@ public static class MightyGraphSupport
                     Usage = agent.Usage?.Normalized,
                     ActivityGeneration = ExecutionGraphSupport.NormalizedGeneration(agent.ActivityGeneration),
                     ResponseRecords = agent.ResponseRecords,
+                    Background = agent.Background == true ? true : null,
                 };
+                a.NoticeReply = agent.NoticeReply is { } reply && Bounded(reply, 32_768, ref budget) is { Length: > 0 } bounded ? bounded : null;
+                a.OutputFile = agent.OutputFile is { } file && Bytes(file) <= 4096 && file.IndexOfAny(MightyStructure.Newlines) < 0 ? file : null;
+                budget -= Bytes(a.OutputFile);
                 if (restoring && !Terminal(a.Status)) a.Status = "stopped";
                 a.Entries = LimitedEntries(agent.Entries, 65_536, restoring, ref budget);
                 builtAgents.Add(a);

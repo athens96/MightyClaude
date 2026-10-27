@@ -92,6 +92,8 @@ public sealed partial class ExecutionGraphTracker
     }
     private static readonly Regex TaskLaunch = new(@"background with ID: (?<task>[A-Za-z0-9_-]+)");
     private static readonly Regex AgentLaunch = new(@"agentId: (?<agent>[A-Za-z0-9_-]+)");
+    /// <summary>Where a background run writes its output: the rest of the line, as a path may hold spaces.</summary>
+    private static readonly Regex OutputLaunch = new(@"Output is being written to: (?<path>[^\r\n]+)");
     private readonly object sync = new();
     public string RunID => runID;
     public string? CodexRootThread { get { lock (sync) return codexRootThread; } }
@@ -135,6 +137,10 @@ public sealed partial class ExecutionGraphTracker
     private bool turnEnded;
     /// <summary>What the steer that opened such a turn is called (중간 요청 or 위임 알림): its answer's section is headed by it.</summary>
     private string? steeredTurn;
+    /// <summary>The task block whose notice alone opened the coming notice turn: that turn's answer is its <c>NoticeReply</c>.</summary>
+    private string? replyTarget;
+    /// <summary>작업 알림 added since the last root result; a reply target needs exactly one.</summary>
+    private int turnNotices;
     private readonly List<string> messageOrder = [];
     private int unnamedUsage;
     private int compactions;
@@ -353,6 +359,7 @@ public sealed partial class ExecutionGraphTracker
                     if (input.Text("name") is { Length: > 0 } agentName && Encoding.UTF8.GetByteCount(agentName) <= 512 && (agentNames.ContainsKey(agentName) || agentNames.Count < 512)) agentNames[agentName] = child;
                     Update(child, node =>
                     {
+                        if (background) node = node with { Background = true };
                         if (input.Text("prompt") is { } prompt) node = node with { Input = prompt };
                         // The first key present wins, as in the macOS `??` chain.
                         var named = new[] { "name", "description", "subagent_type" }.Select(k => MetadataJson.Property(input, k)).FirstOrDefault(p => p.ValueKind != JsonValueKind.Undefined);
@@ -375,6 +382,7 @@ public sealed partial class ExecutionGraphTracker
                     backgroundTools.Add(toolID);
                     Update(task, node =>
                     {
+                        node = node with { Background = true };
                         var command = input.Text("command");
                         if (command is not null) node = node with { Input = command };
                         if (input.Text("description") is { Length: > 0 } title) node = node with { Title = title };
@@ -416,10 +424,13 @@ public sealed partial class ExecutionGraphTracker
         {
             // A notice turn's answer follows the request's in the result, headed by the notices it answered (macOS).
             if (parentTool is not null) return;
-            var titles = noticedTasks.ToList(); noticedTasks.Clear(); steeredTurn = null;
+            var titles = noticedTasks.ToList(); var target = replyTarget;
+            ClearNoticeTurn();
             if (value.Text("result")?.Trim() is not { Length: > 0 } answer) return;
             var header = titles.Count > 0 ? Locale.Get("graph.result.afterTaskNotice", new Dictionary<string, string> { ["title"] = string.Join(", ", titles) }) : Locale.Get("graph.result.afterNotice");
             Update(mainID, n => n with { Output = MightyGraphSupport.WithNoticeSection(n.Output, header, answer) });
+            // The block whose notice alone opened this turn keeps the answer too; the result's section stays.
+            if (target is not null) Update(target, n => n with { NoticeReply = answer });
         }
         else if (type == "result")
         {
@@ -427,13 +438,13 @@ public sealed partial class ExecutionGraphTracker
             if (parentTool is null && steeredTurn is { } steered)
             {
                 // A turn a steer opened after the request's result: its answer follows in the result, as a notice turn's does.
-                noticedTasks.Clear(); steeredTurn = null;
+                ClearNoticeTurn();
                 if (value.Text("result")?.Trim() is { Length: > 0 } answer)
                     Update(mainID, n => n with { Output = MightyGraphSupport.WithNoticeSection(n.Output, Locale.Get("graph.result.afterSteer", new Dictionary<string, string> { ["block"] = steered }), answer) });
             }
             else if (parentTool is null)
             {
-                noticedTasks.Clear(); turnEnded = true;
+                noticedTasks.Clear(); replyTarget = null; turnNotices = 0; turnEnded = true;
                 Update(mainID, n => n with { Output = value.Text("result"), State = IsTrue(value, "is_error") || (value.Text("subtype") ?? "").StartsWith("error", StringComparison.Ordinal) ? n.State : "completed" });
             }
             else if (current != mainID)
@@ -602,6 +613,13 @@ public sealed partial class ExecutionGraphTracker
             return;
         }
         if (TaskLaunch.Match(text) is { Success: true } match && taskAliases.Count < 512) taskAliases[match.Groups["task"].Value] = id;
+        // Where the run writes its output; a notification's <output-file> may move it.
+        if (OutputLaunch.Match(text) is { Success: true } output)
+        {
+            var path = output.Groups["path"].Value.Trim();
+            if (path.EndsWith('.')) path = path[..^1];
+            if (path.Length > 0) Update(id, n => n with { OutputFile = path });
+        }
         if (text.Length > 0) Append(Entry(ExecutionGraphSupport.Identifier(runID, id + ":launch"), "system", text), id);
     }
     /// A background Agent's launch result names its agent ID, which its
@@ -625,10 +643,13 @@ public sealed partial class ExecutionGraphTracker
     {
         const string open = "<task-notification>", close = "</task-notification>";
         var remaining = text;
+        var notifications = 0;
+        string? settledTask = null;
         while (remaining.IndexOf(open, StringComparison.Ordinal) is var start and >= 0 && remaining.IndexOf(close, start + open.Length, StringComparison.Ordinal) is var end and >= 0)
         {
             var body = remaining[(start + open.Length)..end];
             remaining = remaining[(end + close.Length)..];
+            notifications += 1;
             var byTool = Tag(body, "tool-use-id") is { } tool && ExecutionGraphSupport.AgentNodeID(runID, tool) is var toolNode && nodes.ContainsKey(toolNode) ? toolNode : null;
             var id = byTool ?? (Tag(body, "task-id") is { } task ? taskAliases.GetValueOrDefault(task) : null);
             if (id is null || nodes.GetValueOrDefault(id)?.Kind is not { } kind || kind is not ("task" or "agent")) continue;
@@ -641,22 +662,43 @@ public sealed partial class ExecutionGraphTracker
                 var empty = string.IsNullOrEmpty(nodes[id].Output);
                 Update(id, n => n with { State = ExecutionGraphSupport.Terminal(n.State) ? n.State : state, Output = empty && summary is not null ? summary : n.Output });
                 if (empty && summary is not null && nodes[id].Output is { } output) agentSummaries[id] = output;
+                if (notice) AddNotice(id, state, summary);
             }
-            else Update(id, n => ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = state, Output = summary ?? n.Output });
-            if (notice) AddNotice(id, state, summary);
+            else
+            {
+                var file = Tag(body, "output-file");
+                Update(id, n =>
+                {
+                    if (file is not null) n = n with { OutputFile = file };
+                    return ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = state, Output = summary ?? n.Output };
+                });
+                if (notice && AddNotice(id, state, summary)) settledTask = id;
+            }
         }
+        // Only a message with one notification, for a task block whose notice it added, opens a turn that block alone answers.
+        if (notice && notifications > 1) replyTarget = null;
+        else if (notice && settledTask is not null && turnNotices == 1) replyTarget = settledTask;
     }
     /// The notice entered the turn like a steer: a 작업 알림 under main, once per
     /// block, whose reply is the next root-level answer. A block's later notice
     /// (an agent's notification after its hand-back) adds nothing, nor its title
     /// to the heading of the next notice turn's answer (macOS addNotice).
-    private void AddNotice(string id, string state, string? detail)
+    private bool AddNotice(string id, string state, string? detail)
     {
-        if (!nodes.TryGetValue(id, out var notified) || nodes.ContainsKey(ExecutionGraphSupport.Identifier(runID, "steer:notice:" + id))) return;
+        if (!nodes.TryGetValue(id, out var notified) || nodes.ContainsKey(ExecutionGraphSupport.Identifier(runID, "steer:notice:" + id))) return false;
+        turnNotices += 1;
+        // A second notice in the same turn: its answer belongs to both, so to neither block alone.
+        if (turnNotices > 1) replyTarget = null;
         var named = notified.Title is { Length: > 0 } title ? title : notified.Input ?? "";
         if (!noticedTasks.Contains(named) && noticedTasks.Count < 16) noticedTasks.Add(named);
         var line = named + " · " + Locale.Get(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped");
         SteerLocked("notice:" + id, MightyGraphSupport.TaskNoticePrefix + line + (detail is null ? "" : "\n" + detail));
+        return true;
+    }
+    /// <summary>A notice turn or a steered turn ended: the next one starts with no notices.</summary>
+    private void ClearNoticeTurn()
+    {
+        noticedTasks.Clear(); steeredTurn = null; replyTarget = null; turnNotices = 0;
     }
     /// Messages a background sub-agent sent this session (AgentHandback). Its
     /// framed final report is its result and ends it; with the agent's
@@ -858,6 +900,9 @@ public sealed partial class ExecutionGraphTracker
                 Usage = node.Usage,
                 ActivityGeneration = node.ActivityGeneration,
                 ResponseRecords = node.ResponseRecords,
+                Background = node.Background,
+                OutputFile = node.OutputFile,
+                NoticeReply = node.NoticeReply,
             };
             if (node.Output is { Length: > 0 } output)
             {

@@ -113,7 +113,7 @@ public sealed partial class MainWindow : Window
         statusBar.Child = BuildStatusBar(); ApplyChromeText(); Grid.SetRow(statusBar, 2); Grid.SetColumn(statusBar, 1); root.Children.Add(statusBar); Content = root;
         // A person's close (the title bar, Alt+F4, the taskbar) arrives here and is held until QuitAsync has shut everything down.
         AppWindow.Closing += (sender, args) => { if (canClose) return; args.Cancel = true; _ = QuitAsync(); };
-        clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
+        clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start(); InitBackgroundOutput();
         InitFilePane(); InitAddPaneShortcuts(); InitHelpShortcut(); InitTextAppearance();
         ShowLaunchSplash(); InitParityShortcuts(); InitWorkspaceGit(); InitDashboard();
         _ = Initialize();

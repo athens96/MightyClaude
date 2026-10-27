@@ -605,6 +605,8 @@ public sealed partial class MainWindow
             foreach (var item in offered.Styles) { options.Add(item.Id); options.Add(item.Source); }
             foreach (var item in offered.Efforts ?? []) options.Add(item.Id);
             var mighty = new HashCode(); mighty.Add(MobileMightySupport.Digest(pane)); mighty.Add(pane.PlanHistory?.Count); mighty.Add(pane.PlanHistory?.LastOrDefault()?.Outcome);
+            // A background run's output lines live in the host's memory, not in the runs: they move the pane too.
+            foreach (var (block, lines) in owner.BackgroundOutputFor(pane.Id).OrderBy(pair => pair.Key, StringComparer.Ordinal)) { mighty.Add(block); foreach (var line in lines) mighty.Add(line); }
             if (MobileActiveStyle is { } style)
             {
                 mighty.Add(style.Id); mighty.Add(style.Hash); mighty.Add(GuidedPhase(style)?.Id); mighty.Add(pane.Status == "running"); mighty.Add(stylePrerequisites?.Ready);
@@ -621,7 +623,7 @@ public sealed partial class MainWindow
             // style's own names on its requests (M/MightyClaude/AppStore+MobileRemote.swift:410-439).
             var styles = style is null ? null : styleRegistry?.Styles;
             var legacy = style is null ? null : MobileLegacyStyleAdapter.Payload(style, GuidedPhase(style), stylePrerequisites?.Ready ?? false);
-            var mighty = new { style = MobileRemoteSupport.Style(styleId), styleId, runs = MobileMightySupport.Runs(MobileMightySupport.SavedRuns(pane), styles is null ? null : input => StylePresentation.RequestPrefix(styles, input)), panel = MobileStylePanel(style), ouroboros = legacy };
+            var mighty = new { style = MobileRemoteSupport.Style(styleId), styleId, runs = MobileMightySupport.Runs(MobileMightySupport.SavedRuns(pane), styles is null ? null : input => StylePresentation.RequestPrefix(styles, input), owner.BackgroundOutputFor(pane.Id)), panel = MobileStylePanel(style), ouroboros = legacy };
             var statusLine = Refresher?.Result is { } statusResult ? new { lines = statusResult.Lines.Select(line => line.Select(s => new { s.Text, fg = Terminal(s.Foreground) is { } color ? $"#{color.R:X2}{color.G:X2}{color.B:X2}" : null, bold = s.Bold })) } : null;
             // The rows delegation holds for the pane come first, as on the desktop (M/AppStore+MobileRemote.swift:398).
             return new(DelegationQueueRows.MobileItems(owner.service.HeldItems(id), queuedInputs.Items), settings, mighty, statusLine);

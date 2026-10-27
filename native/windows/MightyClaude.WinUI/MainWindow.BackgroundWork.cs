@@ -48,7 +48,7 @@ public sealed partial class MainWindow
         private StackPanel? backgroundHost;
         private string? backgroundKey;
         /// <summary>The elapsed texts on screen: the strip's and the guided panel's task list, ticked once a second.</summary>
-        private readonly List<(TextBlock Text, StylePresentation.TaskRow Task)> stripElapsed = [], guidedElapsed = [];
+        private readonly List<(TextBlock Text, PlanCardSupport.BackgroundStripRow Row)> stripElapsed = [], guidedElapsed = [];
         private DispatcherTimer? backgroundTicker;
 
         /// <summary>
@@ -110,7 +110,10 @@ public sealed partial class MainWindow
             var work = pane.BackgroundWork;
             var shows = pane.Kind == "claude" && PlanCardSupport.ShowsBackgroundStrip(work, mighty, drawsTasks, owner.ShowsBackgroundWork);
             var backgroundOpen = owner.BackgroundWorkOpen;
-            var key = shows ? string.Join("|", work!.Tasks.Select(t => t.Id + ":" + t.Status + ":" + t.Description)) + "|" + work.TurnEnded + "|" + backgroundOpen + "|" + Locale.LanguagePreference + "|" + owner.service.Snapshot.Theme : "";
+            // The rows meet the latest request's blocks by tool use id: their kind words and a run's last output line.
+            var rows = shows && backgroundOpen ? PlanCardSupport.BackgroundStripRows(work, pane.GraphRuns?.LastOrDefault(), owner.BackgroundOutputFor(pane.Id)) : [];
+            var key = shows ? string.Join("|", work!.Tasks.Select(t => t.Id + ":" + t.Status + ":" + t.Description)) + "|" + string.Join("|", rows.Select(r => r.KindText + ":" + r.Tail))
+                + "|" + work.TurnEnded + "|" + backgroundOpen + "|" + Locale.LanguagePreference + "|" + owner.service.Snapshot.Theme : "";
             if (key == backgroundKey) return;
             backgroundKey = key;
             backgroundHost.Children.Clear(); ForgetElapsed(stripElapsed);
@@ -148,7 +151,7 @@ public sealed partial class MainWindow
             Grid.SetColumn(hide, 1); line.Children.Add(hide);
             var strip = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
             strip.Children.Add(line);
-            if (backgroundOpen) strip.Children.Add(BackgroundRows(PlanCardSupport.BackgroundTasks(work), stripElapsed));
+            if (backgroundOpen) strip.Children.Add(BackgroundRows(rows, stripElapsed));
             backgroundHost.Children.Add(new Border
             {
                 Child = strip, Padding = new Thickness(DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Sm - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Sm - DesignMetrics.Stroke.Line),
@@ -169,26 +172,43 @@ public sealed partial class MainWindow
         /// Background tasks, one row each (M/BackgroundWorkViews.swift BackgroundTaskRows): a status dot, what the task is
         /// doing, and its kind · status · elapsed time. The elapsed text is kept in <paramref name="elapsed"/> and ticks.
         /// </summary>
-        private StackPanel BackgroundRows(IReadOnlyList<StylePresentation.TaskRow> tasks, List<(TextBlock Text, StylePresentation.TaskRow Task)> elapsed)
+        private StackPanel BackgroundRows(IReadOnlyList<StylePresentation.TaskRow> tasks, List<(TextBlock Text, PlanCardSupport.BackgroundStripRow Row)> elapsed) =>
+            BackgroundRows(tasks.Select(task => new PlanCardSupport.BackgroundStripRow(task)).ToList(), elapsed);
+
+        /// <summary>The strip's rows carry the diagram's kind words and a background run's last output line under its text (M/BackgroundWorkViews.swift BackgroundTaskRows(strip:)).</summary>
+        private StackPanel BackgroundRows(IReadOnlyList<PlanCardSupport.BackgroundStripRow> items, List<(TextBlock Text, PlanCardSupport.BackgroundStripRow Row)> elapsed)
         {
             var b = owner.brushes; var rows = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
             AutomationProperties.SetAutomationId(rows, "background-tasks-" + id);
-            foreach (var task in tasks)
+            foreach (var item in items)
             {
+                var task = item.Task;
                 var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) row.ColumnDefinitions.Add(new() { Width = width });
                 var tone = task.Status switch { "running" => DesignToken.Accent, "completed" => DesignToken.Done, "failed" => DesignToken.Err, _ => DesignToken.Ink2 };
                 row.Children.Add(new Ellipse { Width = 6, Height = 6, Fill = b.Brush(tone), VerticalAlignment = VerticalAlignment.Center });
                 var text = new TextBlock { Text = task.Text, TextSize = 11, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(text, 1); row.Children.Add(text);
-                var detail = new TextBlock { Text = TaskDetail(task, DateTimeOffset.UtcNow), TextSize = 10, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+                var detail = new TextBlock { Text = item.Detail(DateTimeOffset.UtcNow), TextSize = 10, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(detail, Microsoft.UI.Xaml.FontNumeralAlignment.Tabular);
                 Grid.SetColumn(detail, 2); row.Children.Add(detail);
                 AutomationProperties.SetName(row, task.Text + " · " + detail.Text);
+                if (item.Tail is { } tail)
+                {
+                    // Under the text, past the dot and its gap: one dim monospace line, cut at its end.
+                    var line = new TextBlock
+                    {
+                        Text = tail, TextSize = 10, Foreground = b.Brush(DesignToken.Ink2), Opacity = 0.8, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis,
+                        TextFont = TextArea.Code,
+                    };
+                    Grid.SetColumn(line, 1); Grid.SetColumnSpan(line, 2); Grid.SetRow(line, 1);
+                    row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowDefinitions.Add(new() { Height = GridLength.Auto });
+                    row.Children.Add(line);
+                }
                 rows.Children.Add(row);
-                elapsed.Add((detail, task));
+                elapsed.Add((detail, item));
             }
-            if (tasks.Any(t => t.Running))
+            if (items.Any(t => t.Task.Running))
             {
                 StartBackgroundTicker();
                 // Rows that load again (a view switched back) restart the clock the last tick stopped.
@@ -199,11 +219,7 @@ public sealed partial class MainWindow
 
 
 
-        /// <summary>Kind · status · elapsed, then whether the agent hears of it when it ends or has heard (PlanCardSupport.BackgroundNotice).</summary>
-        private static string TaskDetail(StylePresentation.TaskRow task, DateTimeOffset now) =>
-            string.Join(" · ", new[] { task.KindTitle, task.StatusTitle, task.Elapsed(now), PlanCardSupport.BackgroundNotice(task.Status) ?? "" }.Where(s => s.Length > 0));
-
-        private void ForgetElapsed(List<(TextBlock Text, StylePresentation.TaskRow Task)> elapsed) => elapsed.Clear();
+        private void ForgetElapsed(List<(TextBlock Text, PlanCardSupport.BackgroundStripRow Row)> elapsed) => elapsed.Clear();
 
         /// <summary>One timer per pane, stopping itself once nothing on screen still runs or the pane has gone.</summary>
         private void StartBackgroundTicker()
@@ -218,10 +234,10 @@ public sealed partial class MainWindow
         {
             if (owner.closing || !owner.service.Snapshot.Sessions.Any(p => p.Id == id)) { backgroundTicker?.Stop(); return; }
             var now = DateTimeOffset.UtcNow; var live = false;
-            foreach (var (text, task) in stripElapsed.Concat(guidedElapsed))
+            foreach (var (text, item) in stripElapsed.Concat(guidedElapsed))
             {
-                if (!task.Running || !text.IsLoaded) continue;
-                live = true; text.Text = TaskDetail(task, now);
+                if (!item.Task.Running || !text.IsLoaded) continue;
+                live = true; text.Text = item.Detail(now);
             }
             if (!live) backgroundTicker?.Stop();
         }

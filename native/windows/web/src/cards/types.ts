@@ -28,8 +28,10 @@ export interface PlanHistoryCard {
 export interface BackgroundTask {
   text: string;
   status: string;
-  /** Kind · status · elapsed · notice, as the WinUI row says it. */
+  /** Kind · status · elapsed · notice, as the WinUI row says it: a background sub-agent's or run's kind words when the row meets its block. */
   detail: string;
+  /** A background run's last output line, for a dim monospace line under the row; absent otherwise. */
+  tail?: string;
 }
 
 export interface BackgroundCard {

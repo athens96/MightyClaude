@@ -120,6 +120,12 @@ public sealed record ExecutionGraphNode
     [JsonPropertyName("activityGeneration")] public int? ActivityGeneration { get; init; }
     /// <summary>Per-response attribution; absent in older graph events and graph saves.</summary>
     [JsonPropertyName("responseRecords")] public List<GraphResponseRecord>? ResponseRecords { get; init; }
+    /// <summary>Started with <c>run_in_background</c> (a background Agent; every task block); absent otherwise and in older saves.</summary>
+    [JsonPropertyName("background")] public bool? Background { get; init; }
+    /// <summary>Where a task block's run writes its output. Never shown and never sent to the phone.</summary>
+    [JsonPropertyName("outputFile")] public string? OutputFile { get; init; }
+    /// <summary>Claude's answer in the turn this block's notice opened, when it was that turn's only notice.</summary>
+    [JsonPropertyName("noticeReply")] public string? NoticeReply { get; init; }
 
     /// Structural equality (macOS ExecutionGraphNode: Equatable) — the synthesized
     /// record comparison would compare the lists by reference.
@@ -127,6 +133,7 @@ public sealed record ExecutionGraphNode
         other is not null && Id == other.Id && RunId == other.RunId && ParentId == other.ParentId && Kind == other.Kind
         && State == other.State && Title == other.Title && Input == other.Input && Output == other.Output
         && Equals(Usage, other.Usage) && ActivityGeneration == other.ActivityGeneration
+        && Background == other.Background && OutputFile == other.OutputFile && NoticeReply == other.NoticeReply
         && GraphEquality.Records(ResponseRecords, other.ResponseRecords)
         && GraphEquality.Entries(Entries, other.Entries);
     public override int GetHashCode() => HashCode.Combine(Id, RunId, ParentId, Kind, State, Title, Entries.Count);
@@ -190,11 +197,15 @@ public static class ExecutionGraphSupport
             Usage = node.Usage?.Normalized,
             ActivityGeneration = NormalizedGeneration(node.ActivityGeneration),
             ResponseRecords = node.ResponseRecords,
+            Background = node.Background == true ? true : null,
+            OutputFile = node.OutputFile is { } file && Bytes(file) <= 4096 && file.IndexOfAny(MightyStructure.Newlines) < 0 ? file : null,
+            NoticeReply = node.NoticeReply is null ? null : ActivitySupport.Clean(node.NoticeReply, MaximumOutputBytes),
         };
         if (restoring && !Terminal(result.State)) result = result with { State = "stopped" };
         if (node.Kind == "main") return result with { Entries = [] };
 
-        var remaining = MaximumNodeBytes - Bytes(result.Title) - Bytes(result.Input) - Bytes(result.Output);
+        var remaining = MaximumNodeBytes - Bytes(result.Title) - Bytes(result.Input) - Bytes(result.Output)
+            - Bytes(result.OutputFile) - Bytes(result.NoticeReply);
         var seen = new HashSet<string>();
         var entries = new List<LogEntry>();
         foreach (var original in node.Entries.TakeLast(MaximumEntries).Reverse())

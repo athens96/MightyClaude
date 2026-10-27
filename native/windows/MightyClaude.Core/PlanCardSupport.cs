@@ -100,6 +100,52 @@ public static class PlanCardSupport
         work is { Tasks.Count: > 0 } ? StylePresentation.Tasks(StyleStateEngine.RunState("background", "taskList", "planning", null, work)) : [];
 
     /// <summary>
+    /// One row of the background strip (M/PlanCardSupport.swift BackgroundStripRow): the task list's row, and the kind words
+    /// the diagram's block uses (null: the row keeps the task list's own words) with, for a background run, its last output line.
+    /// </summary>
+    public sealed record BackgroundStripRow(StylePresentation.TaskRow Task, string? KindText = null, string? Tail = null)
+    {
+        /// <summary>Kind · status · elapsed · notice. Kind words already say waiting or how it ended, so only a delivered notice is added to them.</summary>
+        public string Detail(DateTimeOffset now) => string.Join(" · ", (KindText is { } kind
+            ? new[] { kind, Task.Elapsed(now), NoticeDelivered(Task.Status) ? Locale.Get("plan.background.noticeDelivered") : "" }
+            : new[] { Task.KindTitle, Task.StatusTitle, Task.Elapsed(now), BackgroundNotice(Task.Status) ?? "" }).Where(s => s.Length > 0));
+    }
+
+    /// <summary>
+    /// The strip's rows, in <see cref="BackgroundTasks"/>' order (M/PlanCardSupport.swift backgroundStripRows). Each task meets
+    /// its graph block in <paramref name="run"/> (the pane's latest request) by tool use id: a background sub-agent or a
+    /// background run takes its kind from the block, and a run its last line of <paramref name="output"/> (the host's
+    /// background output, by block id). Without a block the CLI's kind decides and there is no output line; an <c>other</c>
+    /// task keeps its words.
+    /// </summary>
+    public static IReadOnlyList<BackgroundStripRow> BackgroundStripRows(BackgroundWork? work, MightyGraphRun? run, IReadOnlyDictionary<string, IReadOnlyList<string>>? output = null)
+    {
+        if (work is null) return [];
+        var tasks = BackgroundTasks(work);
+        // The task list's order (StyleStateEngine): running work first, each group in the order it started.
+        var sources = work.Tasks.Where(t => t.Status == "running").Concat(work.Tasks.Where(t => t.Status != "running")).ToList();
+        // Should the task list ever order or cut its rows another way, the rows keep its own words rather than wear another task's.
+        var matches = tasks.Count == Math.Min(sources.Count, StyleStateEngine.MaximumTaskListItems)
+            && tasks.Select((task, index) => (task, source: sources[index])).All(pair =>
+                (pair.source.Kind is "agent" or "shell" ? pair.source.Kind : "other") == pair.task.Kind && (pair.source.Status == "running") == pair.task.Running);
+        if (!matches) return tasks.Select(task => new BackgroundStripRow(task)).ToList();
+        var runId = run is null ? null : run.SourceRunID ?? run.Id;
+        var blocks = new Dictionary<string, MightyGraphAgent>(StringComparer.Ordinal);
+        foreach (var agent in run?.Agents ?? []) blocks.TryAdd(agent.Id, agent);
+        return tasks.Select((task, index) =>
+        {
+            var source = sources[index];
+            var block = source.ToolUseId is { } tool && runId is not null ? blocks.GetValueOrDefault(ExecutionGraphSupport.AgentNodeID(runId, tool)) : null;
+            bool isRun;
+            if (block is not null && (block.IsTask || block.IsBackgroundAgent)) isRun = block.IsTask;
+            else if (task.Kind is "agent" or "shell") isRun = task.Kind == "shell";
+            else return new BackgroundStripRow(task);
+            var tail = isRun && block is not null && output?.GetValueOrDefault(block.Id) is { Count: > 0 } lines ? lines[^1] : null;
+            return new BackgroundStripRow(task, MightyGraphSupport.BackgroundLabel(isRun, task.Status), tail);
+        }).ToList();
+    }
+
+    /// <summary>
     /// The expandable background list outside a style (M/PlanCardSupport.swift showsBackgroundStrip): in any view once
     /// the turn is over, and in the Mighty view all along, while background work runs or after it ended and the agent was
     /// told — unless the style draws its own, or the user hid the line (<see cref="AppSnapshot.ShowsBackgroundWork"/>).

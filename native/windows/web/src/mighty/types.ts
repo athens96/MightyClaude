@@ -17,6 +17,12 @@ export interface MightyBlockCopy {
   recordId?: string;
   fromRecord: boolean;
   provider?: string;
+  /** A background sub-agent's or a task's block. */
+  background?: boolean;
+  /** A task block's last output lines (at most 6), read on the host. */
+  outputTail?: string[];
+  /** Claude's reply to a task's notice, when that notice alone opened its turn. */
+  noticeReply?: string;
 }
 
 export interface MightyFile { path: string; line?: number }
@@ -125,6 +131,10 @@ export interface StructureCard {
   resultNodeId?: string;
   /** The card's state colour (Core MightyStructure.Tone.OfCard): run, wait, done, err or stop; none for a step still to come. */
   tint?: string | null;
+  /** An agent card that is a background sub-agent or a task; its last output lines and Claude's reply to its notice, as on a block. */
+  background?: boolean;
+  outputTail?: string[];
+  noticeReply?: string;
 }
 
 /** One tool call on a card: its kind (command, read, edit, search, web, agent, turn, tool), its state and its words. */

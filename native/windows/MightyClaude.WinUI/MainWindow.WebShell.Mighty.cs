@@ -10,9 +10,14 @@ namespace MightyClaude.WinUI;
 // the open result-file list, the history read from the session record), the timeline's groups and the structure's boards.
 // Only while the page shows a pane's Mighty view (`mightyVisible`), at most once per 120 ms, and only what changed: blocks by id.
 
-/// <summary>One diagram block's copy (MightyGraphBlockModel.Blocks), without its frame (the page lays out) or its transcript (the page holds the runs).</summary>
+/// <summary>
+/// One diagram block's copy (MightyGraphBlockModel.Blocks), without its frame (the page lays out) or its transcript (the page holds the runs).
+/// A background sub-agent's or a task's block says so (<c>Background</c>); a task's block carries its run's last output lines
+/// (<c>OutputTail</c>, from the host's memory, at most <see cref="BackgroundOutputTail.MaxLines"/>) and Claude's reply to its notice
+/// (<c>NoticeReply</c>). Its output file never reaches the page's copy. Each is absent otherwise.
+/// </summary>
 internal sealed record WebMightyBlock(string Kind, string Title, string State, string? Capsule, string Help, string Indicator, string Outline, string Status, string Tone,
-    string? FilesRunId, string? RecordId, bool FromRecord, string? Provider);
+    string? FilesRunId, string? RecordId, bool FromRecord, string? Provider, bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null);
 
 internal sealed record WebMightyFile(string Path, int? Line);
 internal sealed record WebMightyExecution(string Status, string StatusWord, string? Goal, string? Progress, IReadOnlyList<string> Counts, string? Line, string? Note, string Footer, string? Dashboard,
@@ -32,10 +37,12 @@ internal sealed record WebTimelineGroup(string RunId, int Ordinal, string Title,
     IReadOnlyList<WebTimelineRow> Rows, string? ResultNodeId, string? ResultTone, string? Result, bool ResultFolds, string? ResultCaption);
 
 internal sealed record WebStructureActivity(string Kind, string State, string Text);
-/// <summary>A structure card for the page; an agent card adds its kind, "kind · model", its depth and its prompt apart from its output; <c>RevealId</c> is the block its reveal shows.</summary>
+/// <summary>A structure card for the page; an agent card adds its kind, "kind · model", its depth and its prompt apart from its output; <c>RevealId</c> is the block its reveal shows.
+/// <c>Background</c>, <c>OutputTail</c> and <c>NoticeReply</c> are an agent card's as on <see cref="WebMightyBlock"/>.</summary>
 internal sealed record WebStructureCard(string Id, string Kind, string RunId, string NodeId, string Title, string Status, string StatusWord, string Tone, string? Parent,
     string? Text, string? Message, string? Answer, IReadOnlyList<WebStructureActivity> Activity, string? Tally, bool Finished, string? ResultLine,
-    string? NodeKind = null, string? Meta = null, int Depth = 0, string? Prompt = null, string? ExecutionNodeId = null, string? ResultNodeId = null, string? Tint = null);
+    string? NodeKind = null, string? Meta = null, int Depth = 0, string? Prompt = null, string? ExecutionNodeId = null, string? ResultNodeId = null, string? Tint = null,
+    bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null);
 internal sealed record WebStructureColumn(string Id, string Title, string Step, string StepWord, int Count, IReadOnlyList<WebStructureCard> Cards, string? Tone);
 internal sealed record WebStructureBoard(string Id, string Kind, int Ordinal, string? Headline, string Status, string StatusWord, string Tone, IReadOnlyList<string> RunIds, IReadOnlyList<WebStructureColumn> Columns, string? StyleName);
 
@@ -271,6 +278,12 @@ public sealed partial class MainWindow
             graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
             var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
             var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog);
+            // The background sub-agents and tasks by their diagram node, for their kind, output lines and notice reply.
+            var tails = owner.BackgroundOutputFor(pane.Id);
+            var background = new Dictionary<string, MightyGraphAgent>(StringComparer.Ordinal);
+            foreach (var run in runs)
+                foreach (var agent in run.Agents)
+                    if (agent.IsTask || agent.IsBackgroundAgent) background.TryAdd(MightyGraphLayout.NodeID(run, "agent:" + agent.Id), agent);
             var copy = new Dictionary<string, WebMightyBlock>(StringComparer.Ordinal);
             var cards = new Dictionary<string, WebMightyExecution>(StringComparer.Ordinal);
             foreach (var raw in blocks)
@@ -285,8 +298,11 @@ public sealed partial class MainWindow
                     if (block.RecordId is { } key && executions.FirstOrDefault(link => link.Key == key) is { } link) cards[block.Id] = WebExecutionCard(key, link, graphExpanded.Contains(block.Id));
                 }
                 var fromRecord = LoadedFromRecord(block.Id, older) && block.Kind is "request" or MightyGraphLayout.WorkKind;
+                var held = background.GetValueOrDefault(block.Id);
                 copy[block.Id] = new(block.Kind, block.Title, block.State, block.Capsule, block.CapsuleHelp, block.Indicator, block.Outline, block.Status,
-                    MightyGraphBlockModel.Tone(block).ToString().ToLowerInvariant(), block.ResultFilesRunId, block.RecordId, fromRecord, MightyGraphBlockModel.TitleProvider(block, pane.Provider));
+                    MightyGraphBlockModel.Tone(block).ToString().ToLowerInvariant(), block.ResultFilesRunId, block.RecordId, fromRecord, MightyGraphBlockModel.TitleProvider(block, pane.Provider),
+                    held is null ? (bool?)null : true, held is { IsTask: true } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(held.Id)) : null,
+                    held?.NoticeReply is { Length: > 0 } reply ? reply : null);
             }
             WebMightyHistory? history = null;
             if (ShowsHistoryBlock(pane, retained))
@@ -387,6 +403,7 @@ public sealed partial class MainWindow
             // The 파이프라인 view's state colours (Core MightyStructure.Tone), null for a step still to come.
             static string? ToneWord(DesignTone? tone) => tone?.ToString().ToLowerInvariant();
             var (style, phase, pending) = StructureInputs(runs, styleStartingNew);
+            var tails = owner.BackgroundOutputFor(pane.Id);
             var signature = new MightyStructure.Signature(runs, style, phase, styleStartingNew, pane.PlanHistory, pending);
             var boards = MightyStructure.Boards(MightyStructure.Make(runs, style, phase, styleStartingNew, pane.PlanHistory, pending, structureItems.Items(runs, signature)));
             string StepWord(MightyStructure.Step step) => Locale.Get("graph.structure.step." + step switch
@@ -414,7 +431,8 @@ public sealed partial class MainWindow
                     item.Finished, MightyStructure.Fold.ResultLine(item),
                     // A task notice's title already names its kind (MightyStructure.Kept keeps no other steer).
                     node?.Kind, node is null ? null : string.Join(" · ", new[] { node.Kind == "steer" ? null : MightyTimeline.KindLabel(node.Kind, null), model }.Where(p => !string.IsNullOrEmpty(p))),
-                    node?.Depth ?? 0, node?.Prompt?.Preview, item.ExecutionNodeId, MightyGraphLayout.NodeID(runs[item.RunIndex], "result"), ToneWord(MightyStructure.Tone.OfCard(card, column)));
+                    node?.Depth ?? 0, node?.Prompt?.Preview, item.ExecutionNodeId, MightyGraphLayout.NodeID(runs[item.RunIndex], "result"), ToneWord(MightyStructure.Tone.OfCard(card, column)),
+                    node is { Background: true } ? true : (bool?)null, node is { Kind: "task" } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(node.AgentId)) : null, node?.NoticeReply?.Text);
             }
             var styleName = activeStyle?.Manifest.Name;
             return boards.Select(board => new WebStructureBoard(board.Id, board.Kind.ToString().ToLowerInvariant(), board.Ordinal, board.Headline, board.Status, MightyGraphBlockModel.StateLabel(board.Status), Tone(board.Status), board.RunIds,

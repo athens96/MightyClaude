@@ -1031,6 +1031,12 @@ internal static class Verification
         await Test("pending: every shared scroll target holds, and the view follows the pane's mode", PendingVerification.EveryScrollTargetHolds);
         await Test("pending: a start names its user entry and graph run, and the diagram block is published before the workspace is read", PendingVerification.AStartNamesItsEntryAndPublishesItsBlockAtOnce);
         await Test("pending: the phone's submit route answers with the receipt's outcome and ids, and an old answer as before", PendingVerification.ThePhoneSubmitRouteAnswersWithTheReceipt);
+        // native/contracts/fixtures/background-output.json, which the Mac (BackgroundOutputTailTests) and the phone read too (background work kinds).
+        await Test("background output: the rule's numbers are the fixture's", BackgroundOutputVerification.TheConstantsAreTheFixtures);
+        await Test("background output: every shared case reads the lines the fixture gives", BackgroundOutputVerification.EveryCaseHolds);
+        await Test("background output: a file reads its end, a missing one none, one still being written as it stands", BackgroundOutputVerification.ReadTakesTheEndOfAFileAnotherProcessWrites);
+        await Test("background output: the phone's blocks and nodes carry the lines and the notice reply, never the output file", BackgroundOutputVerification.ThePhoneGetsTheLinesAndTheReplyButNeverTheFile);
+        await Test("background output: the kind words, backgroundWaiting and the strip's rows follow the block", BackgroundOutputVerification.TheKindWordsAndTheStripFollowTheBlock);
         await Test("design tokens: only the light theme setting picks the light palette", DesignTokenVerification.ThemeSettingPicksThePalette);
         await Test("design tokens: inks, fills and marks clear the macOS contrast rules", DesignTokenVerification.InksFillsAndMarksClearTheirContrast);
         // The text setting (M/MightyCore/TextAppearance.swift): at the standard values every size is today's.

@@ -27,7 +27,11 @@ public static class MobileWire
 }
 
 /// <summary>One block of the Mighty graph as a phone draws it: the request itself (<c>main</c>) or one of its children.</summary>
-public sealed record MobileBlock(string Id, string Kind, string Title, string Status, string? Summary = null, string? Output = null, double? DurationMs = null, string? NodeModelLabel = null, IReadOnlyList<string>? Activity = null);
+/// <param name="Background"><c>true</c> for a background sub-agent and every task block; absent otherwise.</param>
+/// <param name="OutputTail">A task block's last output lines (at most <see cref="BackgroundOutputTail.MaxLines"/>), read on the host; absent when none were read. The output file itself is never sent.</param>
+/// <param name="NoticeReply">Claude's reply to the task's notice, bounded like <c>Output</c>.</param>
+public sealed record MobileBlock(string Id, string Kind, string Title, string Status, string? Summary = null, string? Output = null, double? DurationMs = null, string? NodeModelLabel = null, IReadOnlyList<string>? Activity = null,
+    bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null);
 /// <summary>One request of the pane. <c>Result</c> is carried only by the newest run once it has settled.</summary>
 public sealed record MobileMightyRun(string Id, string Input, string? Title, string Status, IReadOnlyList<MobileBlock> Blocks, string? Result = null);
 
@@ -85,8 +89,12 @@ public static class MobileMightySupport
     }
     private static string? Answer(IReadOnlyList<LogEntry> entries) => entries.LastOrDefault(e => e.Kind == "assistant" && e.Text.Length > 0)?.Text;
 
-    /// <summary>The blocks of one run: the request itself, then its children in the order the graph recorded them.</summary>
-    public static IReadOnlyList<MobileBlock> Blocks(MightyGraphRun run, int ordinal)
+    /// <summary>
+    /// The blocks of one run: the request itself, then its children in the order the graph recorded them.
+    /// <paramref name="outputTails"/>: a background run's last output lines by block id, held in host memory only; the output
+    /// file's path never reaches the wire.
+    /// </summary>
+    public static IReadOnlyList<MobileBlock> Blocks(MightyGraphRun run, int ordinal, IReadOnlyDictionary<string, IReadOnlyList<string>>? outputTails = null)
     {
         var main = Status(run.Status);
         var result = new List<MobileBlock>
@@ -97,22 +105,29 @@ public static class MobileMightySupport
         foreach (var agent in run.Agents)
         {
             var state = Status(agent.Status);
-            result.Add(new(agent.Id, MightyGraphSupport.BlockKind(agent), MightyGraphSupport.BlockTitle(agent), state, Summary(agent.Input), Output(Answer(agent.Entries)), Duration(agent.Entries, state), Activity: Activity(agent.Entries, state)));
+            result.Add(new(agent.Id, MightyGraphSupport.BlockKind(agent), MightyGraphSupport.BlockTitle(agent), state, Summary(agent.Input), Output(Answer(agent.Entries)), Duration(agent.Entries, state), Activity: Activity(agent.Entries, state),
+                Background: agent.Background == true ? true : (bool?)null,
+                OutputTail: agent.IsTask ? OutputTail(outputTails?.GetValueOrDefault(agent.Id)) : null,
+                NoticeReply: Output(agent.NoticeReply)));
         }
         return result;
     }
+
+    /// <summary>A background run's last output lines as the wire carries them: at most <see cref="BackgroundOutputTail.MaxLines"/>, absent when there are none.</summary>
+    public static IReadOnlyList<string>? OutputTail(IReadOnlyList<string>? lines) =>
+        lines is { Count: > 0 } ? lines.TakeLast(BackgroundOutputTail.MaxLines).ToArray() : null;
 
     /// <summary>
     /// The pane's newest runs, oldest first. <paramref name="title"/> is the guided style's own name for a request; only the
     /// newest run carries its full result, and only once it has settled.
     /// </summary>
-    public static IReadOnlyList<MobileMightyRun> Runs(IReadOnlyList<MightyGraphRun> values, Func<string, string?>? title = null)
+    public static IReadOnlyList<MobileMightyRun> Runs(IReadOnlyList<MightyGraphRun> values, Func<string, string?>? title = null, IReadOnlyDictionary<string, IReadOnlyList<string>>? outputTails = null)
     {
         var offset = Math.Max(0, values.Count - MobileWire.MightyRuns); var result = new List<MobileMightyRun>();
         for (var index = offset; index < values.Count; index++)
         {
             var run = values[index]; var state = Status(run.Status); var newest = index == values.Count - 1 && Settled(state);
-            result.Add(new(run.Id, ActivitySupport.Clean(run.Input, MobileWire.MaximumText), title?.Invoke(run.Input), state, Blocks(run, index + 1), newest ? Output(run.FinalOutput, MobileWire.MaximumRunResult) : null));
+            result.Add(new(run.Id, ActivitySupport.Clean(run.Input, MobileWire.MaximumText), title?.Invoke(run.Input), state, Blocks(run, index + 1, outputTails), newest ? Output(run.FinalOutput, MobileWire.MaximumRunResult) : null));
         }
         return result;
     }
@@ -156,13 +171,15 @@ public static class MobileMightySupport
     /// </summary>
     public static int Digest(IReadOnlyList<MightyGraphRun> values)
     {
+        // The output lines of a background run are hashed beside this by the host (they live in its memory, not in the runs).
         var hash = new HashCode(); var offset = Math.Max(0, values.Count - MobileWire.MightyRuns);
         if (values.Count > 0 && Settled(Status(values[^1].Status))) hash.Add(values[^1].FinalOutput?.Length);
         for (var index = offset; index < values.Count; index++)
         {
             var run = values[index];
             hash.Add(run.Id); hash.Add(run.Status); hash.Add(run.Agents.Count); hash.Add(run.RootEntries.Count); hash.Add(run.RootEntries.Count > 0 ? run.RootEntries[^1].Id : null);
-            foreach (var agent in run.Agents) { hash.Add(agent.Id); hash.Add(agent.Status); hash.Add(agent.Kind); hash.Add(agent.Entries.Count); hash.Add(agent.Entries.Count > 0 ? agent.Entries[^1].Id : null); }
+            // Claude's reply to a task's notice can land with no new record on the block.
+            foreach (var agent in run.Agents) { hash.Add(agent.Id); hash.Add(agent.Status); hash.Add(agent.Kind); hash.Add(agent.Entries.Count); hash.Add(agent.Entries.Count > 0 ? agent.Entries[^1].Id : null); hash.Add(agent.NoticeReply?.Length); }
         }
         return hash.ToHashCode();
     }

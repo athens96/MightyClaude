@@ -77,6 +77,15 @@ internal static class AgentNoticeVerification
             Same(block.Kind, expect.Text("agentKind"), name + ": kind");
             Same(block.State, expect.Text("agentState"), name + ": state");
             Same(block.Output, expect.Text("agentOutput"), name + ": result");
+            // Started in the background, where its run writes, Claude's answer to its notice: checked when the case names them (null = absent).
+            if (expect.TryGetProperty("agentBackground", out var background))
+                Same(block.Background, background.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => (bool?)null }, name + ": background");
+            if (expect.TryGetProperty("agentOutputFile", out var outputFile))
+                Same(block.OutputFile, outputFile.ValueKind == JsonValueKind.String ? outputFile.GetString() : null, name + ": output file");
+            if (expect.TryGetProperty("agentNoticeReply", out var noticeReply))
+                Same(block.NoticeReply, noticeReply.ValueKind == JsonValueKind.String ? noticeReply.GetString() : null, name + ": notice reply");
+            if (expect.TryGetProperty("noticeReplyBlocks", out var replyBlocks) && replyBlocks.ValueKind == JsonValueKind.Number)
+                Same(latest.Values.Count(n => n.NoticeReply is not null), replyBlocks.GetInt32(), name + ": blocks with a notice reply");
             // A message the agent sent while running is in its log, not its result.
             foreach (var text in Items(expect, "agentLog").Select(e => e.GetString()))
                 Check(block.Entries.Any(e => e.Kind == "assistant" && e.Text == text), name + ": the log holds '" + text + "'");
