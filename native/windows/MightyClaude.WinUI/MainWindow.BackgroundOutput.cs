@@ -160,6 +160,8 @@ public sealed partial class MainWindow
         {
             if (!LocalFilePath(path)) return null;
             var file = new FileInfo(path);
+            // FileInfo turns a legacy device name (C:\x\CON) into \\.\CON: checked again before the file system is touched.
+            if (!LocalFilePath(file.FullName)) return null;
             if (file.ResolveLinkTarget(returnFinalTarget: true) is FileInfo target) file = target;
             if (!LocalFilePath(file.FullName) || !file.Exists || file.Attributes.HasFlag(FileAttributes.Device)) return null;
             return BackgroundOutputTail.Read(file.FullName);

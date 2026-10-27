@@ -147,7 +147,9 @@ internal sealed class WebBridge : IDisposable
             {
                 if (!sentSessions.TryGetValue(session.Id, out var previous))
                 {
-                    writer.WriteStartObject(); writer.WriteString("id", session.Id); writer.WritePropertyName("session"); JsonSerializer.Serialize(writer, session, Wire.Json); writer.WriteEndObject();
+                    writer.WriteStartObject(); writer.WriteString("id", session.Id); writer.WritePropertyName("session");
+                    // A task block's output file stays on this side (WebDelta.PageRuns).
+                    JsonSerializer.Serialize(writer, session with { GraphRuns = WebDelta.PageRuns(session.GraphRuns) }, Wire.Json); writer.WriteEndObject();
                     panes++; continue;
                 }
                 var before = sentFields.TryGetValue(session.Id, out var known) && ReferenceEquals(known.Session, previous) ? known.Fields : WebDelta.Fields(previous);
