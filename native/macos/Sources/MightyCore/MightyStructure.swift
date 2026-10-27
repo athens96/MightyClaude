@@ -39,6 +39,10 @@ public enum MightyStructure {
         public var activity: [ActivityLine]
         /// The model its first response reported (an id, shortened by the view), if any.
         public var model: String?
+        /// A background sub-agent or a task (`MightyGraphAgent.background`).
+        public var background = false
+        /// Claude's reply to a task's notice (`MightyGraphAgent.noticeReply`).
+        public var noticeReply: Excerpt? = nil
         public var id: String { nodeID }
     }
 
@@ -156,6 +160,8 @@ public enum MightyStructure {
             var id, title, status: String
             var parentID, kind: String?
             var input, entries, tail, records: Int
+            /// Claude's reply to a task's notice, which can land with no new record.
+            var notice = 0
         }
         /// One request's part, which is all its card reads (`ItemCache` keys on it).
         struct Request: Equatable, Sendable {
@@ -181,7 +187,8 @@ public enum MightyStructure {
                         result: run.resultEntries.last?.text.utf8.count ?? 0, finalOutput: run.finalOutput?.utf8.count,
                         blocks: run.agents.map {
                             Block(id: $0.id, title: $0.title, status: $0.status, parentID: $0.parentID, kind: $0.kind, input: $0.input.utf8.count,
-                                  entries: $0.entries.count, tail: MightyStructure.tail($0.entries), records: $0.responseRecords?.count ?? 0)
+                                  entries: $0.entries.count, tail: MightyStructure.tail($0.entries), records: $0.responseRecords?.count ?? 0,
+                                  notice: $0.noticeReply?.utf8.count ?? 0)
                         })
             }
             phases = style?.manifest.orderedPhases.map(\.id) ?? []
@@ -450,7 +457,9 @@ public enum MightyStructure {
                               prompt: excerpt(agent.shownInput, maximumBytes: promptBytes, lines: promptLines),
                               output: reply(agent.entries).flatMap { excerpt($0, maximumBytes: outputBytes, lines: outputLines) },
                               activity: activity(agent.entries, limit: nodeActivity),
-                              model: agent.responseRecords?.lazy.compactMap(\.model).first { !$0.isEmpty }))
+                              model: agent.responseRecords?.lazy.compactMap(\.model).first { !$0.isEmpty },
+                              background: agent.background == true,
+                              noticeReply: agent.noticeReply.flatMap { excerpt($0, maximumBytes: outputBytes, lines: outputLines) }))
             for child in children[agent.id] ?? [] where child != index { walk(child, depth: depth + 1, into: &nodes) }
         }
         var result: [Cluster] = []

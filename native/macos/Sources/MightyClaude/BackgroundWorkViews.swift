@@ -6,12 +6,17 @@ import MightyCore
 /// ends or has heard (`PlanCardSupport.backgroundNotice`). The plan style's task-list widget and
 /// the pane's own background strip both draw this, so they read the same.
 struct BackgroundTaskRows: View {
-    let tasks: [StyleWidgetPresentation.Task]
+    /// The background strip's rows carry the diagram's kind words and a run's last
+    /// output line (`PlanCardSupport.backgroundStripRows`); the style's task list has neither.
+    let rows: [PlanCardSupport.BackgroundStripRow]
+
+    init(tasks: [StyleWidgetPresentation.Task]) { rows = tasks.map { PlanCardSupport.BackgroundStripRow(task: $0) } }
+    init(strip: [PlanCardSupport.BackgroundStripRow]) { rows = strip }
 
     var body: some View {
         // The elapsed time ticks once a second while anything still runs; rows
         // that all ended show fixed times and need no clock.
-        if tasks.contains(where: \.running) {
+        if rows.contains(where: \.task.running) {
             TimelineView(.periodic(from: .now, by: 1)) { context in rows(now: context.date) }
         } else {
             rows(now: Date())
@@ -20,17 +25,29 @@ struct BackgroundTaskRows: View {
 
     private func rows(now: Date) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-            ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in row(task, now: now) }
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, item in row(item, now: now) }
         }
     }
 
-    private func row(_ task: StyleWidgetPresentation.Task, now: Date) -> some View {
-        let detail = [task.kindTitle, task.statusTitle, task.elapsed(now: now), PlanCardSupport.backgroundNotice(task.status) ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
-        return HStack(spacing: DesignMetrics.Spacing.sm) {
-            Circle().fill(color(task.status)).frame(width: 6, height: 6)
-            Text(verbatim: task.text).font(.ui(size: 11)).foregroundStyle(Palette.ink).lineLimit(1)
-            Spacer(minLength: 4)
-            Text(verbatim: detail).font(.ui(size: 10).monospacedDigit()).foregroundStyle(Palette.ink2).lineLimit(1)
+    private func row(_ item: PlanCardSupport.BackgroundStripRow, now: Date) -> some View {
+        let task = item.task
+        // The kind words already say waiting or how it ended: only a delivered notice is added.
+        let parts = item.kindText.map { [$0, task.elapsed(now: now), PlanCardSupport.noticeDelivered(task.status) ? L("plan.background.noticeDelivered") : ""] }
+            ?? [task.kindTitle, task.statusTitle, task.elapsed(now: now), PlanCardSupport.backgroundNotice(task.status) ?? ""]
+        let detail = parts.filter { !$0.isEmpty }.joined(separator: " · ")
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Circle().fill(color(task.status)).frame(width: 6, height: 6)
+                Text(verbatim: task.text).font(.ui(size: 11)).foregroundStyle(Palette.ink).lineLimit(1)
+                Spacer(minLength: 4)
+                Text(verbatim: detail).font(.ui(size: 10).monospacedDigit()).foregroundStyle(Palette.ink2).lineLimit(1)
+            }
+            if let tail = item.tail {
+                // Under the text, past the dot (6) and its gap.
+                Text(verbatim: tail).font(.code(size: 10)).foregroundStyle(Palette.ink2.opacity(0.8))
+                    .lineLimit(1).truncationMode(.middle)
+                    .padding(.leading, DesignMetrics.Spacing.lg)
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -53,9 +70,11 @@ struct BackgroundWorkStrip: View {
     @EnvironmentObject private var store: AppStore
     let sessionId: String
     let work: BackgroundWork
+    /// The pane's latest request, whose blocks the rows meet by `toolUseId`.
+    var run: MightyGraphRun? = nil
 
     var body: some View {
-        let tasks = PlanCardSupport.backgroundTasks(work)
+        let rows = PlanCardSupport.backgroundStripRows(work, run: run, output: store.backgroundOutput)
         let open = store.backgroundWorkOpen
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -81,7 +100,7 @@ struct BackgroundWorkStrip: View {
                 .accessibilityLabel(L("plan.background.hideStrip"))
                 .accessibilityIdentifier("background-work-hide-\(sessionId)")
             }
-            if open { BackgroundTaskRows(tasks: tasks) }
+            if open { BackgroundTaskRows(strip: rows) }
         }
         .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))

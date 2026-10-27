@@ -131,6 +131,25 @@ public enum MightyGraphSupport {
         default: return agent.title.isEmpty ? L("graph.block.agent") : agent.title
         }
     }
+    /// The kind line under a background block's head: a background sub-agent or a
+    /// background run, waiting or ended. Nil for any other block.
+    public static func backgroundLabel(_ agent: MightyGraphAgent) -> String? {
+        guard agent.isTask || agent.isBackgroundAgent else { return nil }
+        return backgroundLabel(run: agent.isTask, status: agent.status)
+    }
+    /// `run`: a background run (a task block, a `shell` task), else a background sub-agent.
+    /// `status` is a block's or a `BackgroundTask`'s; one still in motion reads waiting.
+    public static func backgroundLabel(run: Bool, status: String) -> String {
+        let word: String? = switch status {
+        case "completed": L("graph.block.taskNotice.completed")
+        case "error", "failed": L("graph.block.taskNotice.failed")
+        case "stopped", "cancelled", "interrupted": L("graph.block.taskNotice.stopped")
+        case "unknown": L("styles.state.taskStatus.unknown")
+        default: nil
+        }
+        guard let word else { return run ? L("graph.background.runWaiting") : L("graph.background.agentWaiting") }
+        return run ? L("graph.background.runEnded", ["status": word]) : L("graph.background.agentEnded", ["status": word])
+    }
     /// Delegation hands a child's notice, or a follow-up to a running child,
     /// into a running Claude turn as a steer (`DelegationDelivery`); its text
     /// opens with one of these. Such a block is a 위임 알림, not a 중간 요청.

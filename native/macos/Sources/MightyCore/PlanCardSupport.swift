@@ -97,6 +97,41 @@ public enum PlanCardSupport {
         return items
     }
 
+    /// One row of the background strip: the task list's row, and the kind words the
+    /// diagram's block uses (nil: the row keeps the task list's own words) with, for a
+    /// background run, its last output line.
+    public struct BackgroundStripRow: Sendable, Equatable {
+        public var task: StyleWidgetPresentation.Task
+        public var kindText: String?
+        public var tail: String?
+        public init(task: StyleWidgetPresentation.Task, kindText: String? = nil, tail: String? = nil) {
+            self.task = task; self.kindText = kindText; self.tail = tail
+        }
+    }
+
+    /// The strip's rows, in `backgroundTasks`' order. Each task meets its graph block in
+    /// `run` (the pane's latest request) by `toolUseId`: a background sub-agent or a
+    /// background run takes its kind from the block, and a run its last line of
+    /// `output` (`AppStore.backgroundOutput`, by block id). Without a block the CLI's
+    /// kind decides and there is no output line; an `other` task keeps its words.
+    public static func backgroundStripRows(_ work: BackgroundWork?, run: MightyGraphRun?, output: [String: [String]] = [:]) -> [BackgroundStripRow] {
+        guard let work else { return [] }
+        let tasks = backgroundTasks(work)
+        // The task list's order (`StyleStateEngine`): running work first, each group in the order it started.
+        let sources = work.tasks.filter { $0.status == "running" } + work.tasks.filter { $0.status != "running" }
+        let runID = run.map { $0.sourceRunID ?? $0.id }
+        let blocks = Dictionary((run?.agents ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return zip(sources, tasks).map { source, task in
+            let block = source.toolUseId.flatMap { tool in runID.flatMap { blocks[ExecutionGraphSupport.agentNodeID(runId: $0, toolUseId: tool)] } }
+            let isRun: Bool
+            if let block, block.isTask || block.isBackgroundAgent { isRun = block.isTask }
+            else if task.kind == "agent" || task.kind == "shell" { isRun = task.kind == "shell" }
+            else { return BackgroundStripRow(task: task) }
+            let tail = isRun ? block.flatMap { output[$0.id]?.last } : nil
+            return BackgroundStripRow(task: task, kindText: MightyGraphSupport.backgroundLabel(run: isRun, status: task.status), tail: tail)
+        }
+    }
+
     /// The expandable background list outside a style: in any view once the
     /// turn is over, and in the Mighty view all along, while background work
     /// runs or after it ended and the agent was told. A style that draws its own

@@ -280,25 +280,38 @@ public enum MobileMightySupport {
 
     /// The blocks of one run: the request itself, then its children in the
     /// order the graph recorded them.
-    public static func blocks(_ run: MightyGraphRun, ordinal: Int) -> [MobileBlock] {
+    /// `outputTails`: a background run's last output lines by block id (`AppStore.backgroundOutput`),
+    /// held in host memory only; the output file's path never reaches the wire.
+    public static func blocks(_ run: MightyGraphRun, ordinal: Int, outputTails: [String: [String]] = [:]) -> [MobileBlock] {
         let mainStatus = status(run.status)
         var result = [MobileBlock(id: run.id + ":main", kind: "main", title: L("remote.block.request", ["ordinal": String(ordinal)]), status: mainStatus,
                                   summary: summary(run.input), output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus),
                                   nodeModelLabel: run.nodeModelLabel, activity: activity(run.rootEntries, status: mainStatus))]
         for agent in run.agents {
             let state = status(agent.status)
-            result.append(MobileBlock(id: agent.id, kind: MightyGraphSupport.blockKind(agent), title: MightyGraphSupport.blockTitle(agent),
-                                      status: state, summary: summary(agent.input), output: output(answer(agent.entries)),
-                                      durationMs: duration(agent.entries, status: state), activity: activity(agent.entries, status: state)))
+            var block = MobileBlock(id: agent.id, kind: MightyGraphSupport.blockKind(agent), title: MightyGraphSupport.blockTitle(agent),
+                                    status: state, summary: summary(agent.input), output: output(answer(agent.entries)),
+                                    durationMs: duration(agent.entries, status: state), activity: activity(agent.entries, status: state))
+            block.background = agent.background == true ? true : nil
+            block.outputTail = agent.isTask ? outputTail(outputTails[agent.id]) : nil
+            block.noticeReply = output(agent.noticeReply)
+            result.append(block)
         }
         return result
+    }
+
+    /// A background run's last output lines as the wire carries them: at most
+    /// `BackgroundOutputTail.maxLines`, absent when there are none.
+    static func outputTail(_ lines: [String]?) -> [String]? {
+        guard let lines, !lines.isEmpty else { return nil }
+        return Array(lines.suffix(BackgroundOutputTail.maxLines))
     }
 
     /// The pane's newest runs, oldest first, as the phone lists them. `title`
     /// is the registry's prefix rule: a pane keeps blocks it made under an
     /// earlier style, so every runnable style is asked, not just this one
     /// (§1.10). The phone adds its own number and provider.
-    public static func runs(_ values: [MightyGraphRun], title: (String) -> String? = { _ in nil }) -> [MobileMightyRun] {
+    public static func runs(_ values: [MightyGraphRun], outputTails: [String: [String]] = [:], title: (String) -> String? = { _ in nil }) -> [MobileMightyRun] {
         let window = values.suffix(MobileWire.mightyRuns)
         let offset = values.count - window.count
         return window.enumerated().map { index, run in
@@ -307,7 +320,7 @@ public enum MobileMightySupport {
             let newest = index == window.count - 1 && settled(state)
             return MobileMightyRun(id: run.id, input: ActivitySupport.clean(run.input, maximumBytes: MobileWire.maximumText),
                                    title: title(run.input),
-                                   status: state, blocks: blocks(run, ordinal: offset + index + 1),
+                                   status: state, blocks: blocks(run, ordinal: offset + index + 1, outputTails: outputTails),
                                    result: newest ? output(run.finalOutput, maximum: MobileWire.maximumRunResult) : nil)
         }
     }
@@ -332,6 +345,8 @@ public enum MobileMightySupport {
             for agent in run.agents {
                 hasher.combine(agent.id); hasher.combine(agent.status); hasher.combine(agent.kind)
                 hasher.combine(agent.entries.count); hasher.combine(agent.entries.last?.id)
+                // Claude's reply to a task's notice can land with no new record on the block.
+                hasher.combine(agent.noticeReply?.utf8.count)
             }
         }
         return hasher.finalize()

@@ -92,6 +92,8 @@ struct MightyStructureView: View {
     /// The request the pane sent last and where it is: its cards and its board read 전송 중
     /// by it (natural submit B1).
     var pending: AppStore.SubmitPending? = nil
+    /// Background runs' last output lines by block id (`AppStore.backgroundOutput`).
+    var backgroundOutput: [String: [String]] = [:]
     /// Shows a diagram node (`MightyGraphLayout.Node.id`) in the diagram.
     let onReveal: (String) -> Void
 
@@ -770,16 +772,25 @@ struct MightyStructureView: View {
         let steer = node.kind == "steer"
         let key = Self.foldKey("node", node.nodeID)
         let open = memory.expanded.contains(key)
+        // An ended background run opens to its output lines and Claude's reply.
+        let hasTail = task && backgroundOutput[node.agentID]?.isEmpty == false
+        let opensMore = MightyGraphSupport.terminal(node.status) && (hasTail || node.noticeReply != nil)
         // Folds are judged at the width the card's text really has at its depth.
         let textWidth = MightyStructure.nodeTextWidth(column: column, depth: node.depth)
         let folds = node.prompt?.folds(lines: MightyStructure.promptLines,
                                        charactersPerLine: MightyStructure.charactersPerLine(width: textWidth, fontSize: CGFloat(TextSettings.current.size(Double(Self.promptSize))))) == true
             || node.output?.folds(lines: MightyStructure.outputLines,
                                   charactersPerLine: MightyStructure.charactersPerLine(width: textWidth, fontSize: CGFloat(TextSettings.current.size(Double(Self.outputSize))))) == true
-            || node.activity.count > 1
+            || node.activity.count > 1 || opensMore
         let model = node.model.map { ModelUsageFormat.shortName($0, catalog: catalog, versioned: true) }
+        // A background sub-agent or run is named as the diagram's block names it.
+        let kindWords = task || node.background ? MightyGraphSupport.backgroundLabel(run: task, status: node.status) : MightyTimelineText.kind(node.kind)
         // A task notice's title already names its kind.
-        let meta = ((steer ? [] : [MightyTimelineText.kind(node.kind)]) + [model].compactMap { $0 }).joined(separator: " · ")
+        let meta = ((steer ? [] : [kindWords]) + [model].compactMap { $0 }).joined(separator: " · ")
+        let ended = MightyGraphSupport.terminal(node.status)
+        let tail = task ? backgroundOutput[node.agentID] ?? [] : []
+        // Running, the last two lines; ended, the lines and Claude's reply once opened.
+        let shownTail = ended ? (open ? tail : []) : Array(tail.suffix(2))
         let shape = RoundedRectangle(cornerRadius: Self.nodeCorner, style: .continuous)
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -810,6 +821,8 @@ struct MightyStructureView: View {
                     .lineLimit(open ? nil : MightyStructure.outputLines)
                     .contentText(name: L("graph.structure.output"), value: shown)
             }
+            if !shownTail.isEmpty { outputLines(shownTail) }
+            if open, let reply = node.noticeReply { noticeReply(reply) }
             ForEach(open ? node.activity : Array(node.activity.suffix(1))) { activityRow($0) }
             if folds { foldToggle(key, open: open) }
         }
@@ -827,6 +840,30 @@ struct MightyStructureView: View {
         .accessibilityLabel(L("graph.structure.nodeAccessibility", ["title": node.title, "status": MightyGraphView.statusLabel(node.status)]))
         .accessibilityValue(node.output?.preview ?? node.prompt?.preview ?? "")
         .accessibilityIdentifier("mighty-structure-node-\(node.nodeID)")
+    }
+
+    /// A background run's last output lines, as the diagram's block shows them.
+    private func outputLines(_ lines: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                Text(verbatim: line.isEmpty ? " " : line).font(.code(size: Self.promptSize)).foregroundStyle(Palette.ink2)
+                    .lineLimit(1).truncationMode(.tail)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
+        .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 4))
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Claude's answer in the turn the run's notice opened alone.
+    private func noticeReply(_ reply: MightyStructure.Excerpt) -> some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+            Text(L("graph.background.reply")).font(.ui(size: 10, weight: .bold)).foregroundStyle(Palette.ink2)
+            Text(verbatim: reply.text).font(.transcript(size: Self.outputSize)).foregroundStyle(Palette.ink)
+                .contentText(name: L("graph.background.reply"), value: reply.text)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// One tool call with its kind's glyph, as a diagram block's activity row draws it.

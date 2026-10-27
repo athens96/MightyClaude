@@ -256,6 +256,70 @@ struct MobileRemoteExtensionTests {
         #expect(MobileWire.blockStatuses.allSatisfy { MobileMightySupport.status($0) == $0 })
     }
 
+    @Test func backgroundBlocksCarryTheirKindOutputAndReplyButNeverTheirFile() throws {
+        let run = MightyGraphAgent(id: "t1", title: "npm test", input: "npm test", status: "running", kind: "task",
+                                   background: true, outputFile: "/tmp/example/tasks/t1.output", noticeReply: "테스트가 모두 통과했습니다.")
+        let sub = MightyGraphAgent(id: "a1", title: "조사", status: "running", background: true)
+        let plain = MightyGraphAgent(id: "a2", title: "검토", status: "running")
+        let graph = MightyGraphRun(id: "r", agents: [run, sub, plain])
+        let lines = (1...8).map { "line \($0)" }
+        let blocks = MobileMightySupport.blocks(graph, ordinal: 1, outputTails: ["t1": lines, "a1": ["not a run"]])
+        let task = try #require(blocks.first { $0.id == "t1" })
+        #expect(task.background == true)
+        // At most six lines, the newest.
+        #expect(task.outputTail == Array(lines.suffix(6)))
+        #expect(task.noticeReply == "테스트가 모두 통과했습니다.")
+        let agent = try #require(blocks.first { $0.id == "a1" })
+        #expect(agent.background == true && agent.outputTail == nil && agent.noticeReply == nil)
+        let foreground = try #require(blocks.first { $0.id == "a2" })
+        #expect(foreground.background == nil && foreground.outputTail == nil)
+        // The output file is never on the wire, and a plain block carries none of the new keys.
+        let data = try JSONEncoder().encode(MobileMightySupport.runs([graph], outputTails: ["t1": lines]))
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(!text.contains("outputFile") && !text.contains("/tmp/example"))
+        let json = try encoded(foreground)
+        #expect(json["background"] == nil && json["outputTail"] == nil && json["noticeReply"] == nil)
+        // A notice reply is bounded like `output`.
+        var long = run; long.noticeReply = String(repeating: "가", count: 3_000)
+        #expect(MobileMightySupport.blocks(MightyGraphRun(id: "r", agents: [long]), ordinal: 1).last?.noticeReply?.count == 2_000)
+    }
+
+    @Test func backgroundLabelsNameTheKindAndHowItEnded() {
+        LocaleOverride.$language.withValue(.ko) {
+            let task = MightyGraphAgent(id: "t", status: "running", kind: "task", background: true)
+            let sub = MightyGraphAgent(id: "a", status: "completed", background: true)
+            #expect(MightyGraphSupport.backgroundLabel(task) == "백그라운드 실행 · 알림으로 확인")
+            #expect(MightyGraphSupport.backgroundLabel(sub) == "하위 에이전트 · 완료")
+            #expect(MightyGraphSupport.backgroundLabel(MightyGraphAgent(id: "f", status: "running")) == nil)
+            #expect(MightyGraphSupport.backgroundLabel(run: false, status: "running") == "하위 에이전트 · 응답 대기")
+            #expect(MightyGraphSupport.backgroundLabel(run: true, status: "failed") == "백그라운드 실행 · 실패")
+            #expect(MightyGraphSupport.backgroundLabel(run: true, status: "error") == "백그라운드 실행 · 실패")
+        }
+    }
+
+    @Test func theStripMeetsItsBlocksByToolUse() {
+        LocaleOverride.$language.withValue(.ko) {
+            let started = "2026-10-27T00:00:00.000Z"
+            let work = BackgroundWork(tasks: [BackgroundTask(id: "b1", toolUseId: "tool-shell", kind: "shell", description: "npm test", startedAt: started),
+                                              BackgroundTask(id: "b2", toolUseId: "tool-agent", kind: "agent", description: "조사", startedAt: started, status: "completed"),
+                                              BackgroundTask(id: "b3", kind: "other", description: "기타", startedAt: started),
+                                              BackgroundTask(id: "b4", toolUseId: "tool-none", kind: "shell", description: "make", startedAt: started)])
+            let shellID = ExecutionGraphSupport.agentNodeID(runId: "exec", toolUseId: "tool-shell")
+            let agentID = ExecutionGraphSupport.agentNodeID(runId: "exec", toolUseId: "tool-agent")
+            let run = MightyGraphRun(id: "r", agents: [MightyGraphAgent(id: shellID, status: "running", kind: "task", background: true),
+                                                       MightyGraphAgent(id: agentID, status: "completed", background: true)],
+                                     sourceRunID: "exec")
+            let rows = PlanCardSupport.backgroundStripRows(work, run: run, output: [shellID: ["a", "b"], agentID: ["x"]])
+            // Running work first, as the task list orders it.
+            #expect(rows.map(\.task.text) == ["npm test", "기타", "make", "조사"])
+            #expect(rows[0].kindText == "백그라운드 실행 · 알림으로 확인" && rows[0].tail == "b")
+            #expect(rows[1].kindText == nil && rows[1].tail == nil)
+            // No block: the CLI's kind decides, with no output line.
+            #expect(rows[2].kindText == "백그라운드 실행 · 알림으로 확인" && rows[2].tail == nil)
+            #expect(rows[3].kindText == "하위 에이전트 · 완료" && rows[3].tail == nil)
+        }
+    }
+
     @Test func blockOutputIsCutOnACharacterBoundary() {
         let long = String(repeating: "가", count: 3_000)
         let cut = MobileMightySupport.output(long)

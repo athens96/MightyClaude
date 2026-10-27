@@ -374,4 +374,26 @@ private final class StructureHost: MobileHostDelegate, @unchecked Sendable {
     func mobileApplySettings(sessionId: String, request: MobileSettingsRequest) async throws {}
     func mobileCommands(sessionId: String) async throws -> [MobileCommand] { [] }
     func mobilePerformCommand(sessionId: String, action: String) async throws -> String? { nil }
+
+    @Test func aBackgroundRunsCardCarriesItsTailAndReplyButNeverItsFile() throws {
+        let task = MightyGraphAgent(id: "t1", title: "npm test", input: "npm test", status: "running", kind: "task",
+                                    background: true, outputFile: "/tmp/example/tasks/t1.output", noticeReply: "통과")
+        let runs = [Fixture.run("r1", status: "running", agents: [task, Fixture.agent("a1", status: "running")])]
+        let shape = MightyStructure.make(runs: runs, style: nil, currentPhase: nil)
+        let lines = (1...8).map { "line \($0)" }
+        let wire = try #require(MobileStructure.make(shape, runCount: 1, tails: ["t1": lines, "a1": ["no"]]))
+        let nodes = try #require(wire.rows?.first?.item.clusters.flatMap(\.nodes))
+        let card = try #require(nodes.first { $0.id == "t1" })
+        #expect(card.background == true && card.outputTail == Array(lines.suffix(6)) && card.noticeReply == "통과")
+        let agent = try #require(nodes.first { $0.id == "a1" })
+        #expect(agent.background == nil && agent.outputTail == nil && agent.noticeReply == nil)
+        let text = String(decoding: try JSONEncoder().encode(wire), as: UTF8.self)
+        #expect(!text.contains("outputFile") && !text.contains("/tmp/example"))
+        // A new line rebuilds the cached card.
+        let cache = MobileStructureCache()
+        let first = cache.structure(pane: "p", runs: runs, style: nil, currentPhase: nil, tails: ["t1": ["a"]])
+        let second = cache.structure(pane: "p", runs: runs, style: nil, currentPhase: nil, tails: ["t1": ["a", "b"]])
+        #expect(first.tag != second.tag)
+        #expect(second.value?.rows?.first?.item.clusters.first?.nodes.first?.outputTail == ["a", "b"])
+    }
 }

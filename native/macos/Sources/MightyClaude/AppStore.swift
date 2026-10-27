@@ -44,6 +44,15 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var graphHistory: [String: SessionHistoryState] = [:]
     /// Session record reads in flight per pane, cancelled when it closes.
     var graphHistoryLoads: [String: Task<Result<SessionHistoryChunk, Error>, Never>] = [:]
+    /// A background run's last output lines by graph block id (AppStore+BackgroundOutput.swift):
+    /// in memory only, never in the snapshot or its save.
+    @Published var backgroundOutput: [String: [String]] = [:]
+    /// The blocks read every tick (running, with an output file), the ones already read
+    /// once after they ended, whether a batch of reads is out, and the loop that ticks.
+    var backgroundOutputPolling = Set<String>()
+    var backgroundOutputRead = Set<String>()
+    var backgroundOutputReading = false
+    var backgroundOutputLoop: Task<Void, Never>?
     /// Phone access (docs/mobile-remote.md): listener, revision tracking, UI status.
     @Published var mobileStatus = MobileHostStatus()
     @Published var mobileBusy = false
@@ -533,6 +542,7 @@ final class AppStore: ObservableObject, DelegationHost {
                 }
             }
         }
+        startBackgroundOutputPolling()
         if helpCapturing { Task { await HelpCapture.run(store: self) } }
         else if arguments.contains("--plugin-smoke-test") { Task { await runPluginSmokeTest() } }
         else if arguments.contains("--browser-smoke-test") { Task { await runBrowserSmokeTest() } }
@@ -1582,6 +1592,7 @@ final class AppStore: ObservableObject, DelegationHost {
         importingAttachments.removeAll()
         attachmentDrafts.removeAll()
         pollTask?.cancel(); setupWatchTask?.cancel(); closeSetupTerminals()
+        backgroundOutputLoop?.cancel(); backgroundOutputLoop = nil
         runtimeTask?.cancel()
         localModels.shutdown()
         saveTask?.cancel()

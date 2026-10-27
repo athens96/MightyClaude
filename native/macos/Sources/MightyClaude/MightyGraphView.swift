@@ -61,6 +61,8 @@ struct MightyGraphView: View {
     /// The request the pane sent last and where it is (`AppStore.SubmitPending`): its
     /// 실행 block, its 파이프라인 cards and its 기록 header read 전송 중 by it.
     var pending: AppStore.SubmitPending? = nil
+    /// Background runs' last output lines by block id (`AppStore.backgroundOutput`).
+    var backgroundOutput: [String: [String]] = [:]
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     /// The structure view's model and what it was built from. A reference, so
@@ -260,7 +262,7 @@ struct MightyGraphView: View {
                 MightyStructureView(sessionID: sessionID, provider: provider,
                                     boards: structureBoards(), styleName: styleName,
                                     styleTitles: styleTitles, newestRunID: runs.last?.id, catalog: catalog, memory: structureCache.memory,
-                                    pending: pending) { nodeID in
+                                    pending: pending, backgroundOutput: backgroundOutput) { nodeID in
                     // The diagram opens with its camera on the request or block whose button was clicked.
                     onFocus()
                     publish(.reaim(nodeID: nodeID, alignTop: false))
@@ -597,7 +599,9 @@ struct MightyGraphView: View {
             let runID = run.sourceRunID ?? run.id
             let agentChildBlocks = GraphChildBlocks.map(responseRecords: agent.responseRecords, agents: run.agents, runId: runID)
             transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.shownInput, entries: agent.entries, tint: look.tint, usage: agent.usage,
-                           records: agent.responseRecords ?? [], childBlocks: agentChildBlocks)
+                           records: agent.responseRecords ?? [], childBlocks: agentChildBlocks,
+                           kindLine: MightyGraphSupport.backgroundLabel(agent),
+                           backgroundRun: agent.isTask ? BackgroundRunBody(command: agent.shownInput, tail: backgroundOutput[agent.id] ?? [], reply: agent.noticeReply) : nil)
         case .result(let index):
             let run = runs[index]
             let failed = ["error", "failed"].contains(run.status)
@@ -660,8 +664,11 @@ struct MightyGraphView: View {
                                 usage: GraphTokenUsage? = nil, usageLabel: String = L("graph.block.blockUsageLabel"), resultFilesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
                                 childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil,
-                                inputOnly: Bool = false, onContentHeight: ((CGFloat) -> Void)? = nil, pending: PendingState? = nil) -> some View {
+                                inputOnly: Bool = false, onContentHeight: ((CGFloat) -> Void)? = nil, pending: PendingState? = nil,
+                                kindLine: String? = nil, backgroundRun: BackgroundRunBody? = nil) -> some View {
         let content = entries.filter { $0.kind != "user" }
+        // A background run shows its live lines in place of the wait for a reply.
+        let showsTail = backgroundRun.map { !$0.tail.isEmpty && !MightyGraphLayout.terminal(status) } ?? false
         let onStrip = headerFill != nil
         let quiet = onStrip ? Palette.onStatus : Palette.ink2
         return VStack(spacing: 0) {
@@ -727,7 +734,11 @@ struct MightyGraphView: View {
             }.padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).frame(height: Self.blockHeaderHeight)
             .background(headerFill ?? Color.clear)
             if !onStrip { Divider().overlay(Palette.border) }
-            if inputOnly {
+            if let kindLine { backgroundKindLine(kindLine, tint: tint, nodeID: node.id) }
+            if let backgroundRun {
+                backgroundRunHead(backgroundRun, tint: tint, nodeID: node.id)
+                Divider().overlay(Palette.border)
+            } else if inputOnly {
                 // The whole body is the request; a long one scrolls in place.
                 let room = node.frame.height - Self.blockHeaderHeight - 1 - 2 * DesignMetrics.Inset.graphBlockBodyV
                 VStack(spacing: 0) {
@@ -748,6 +759,8 @@ struct MightyGraphView: View {
             }
             if inputOnly {
                 EmptyView()
+            } else if content.isEmpty && showsTail {
+                Spacer(minLength: 0)
             } else if content.isEmpty {
                 Text(MightyGraphLayout.terminal(status) ? L("graph.block.noResponse") : L("graph.block.waitingResponse"))
                     .font(.ui(size: 12)).foregroundStyle(Palette.ink2)
@@ -756,10 +769,66 @@ struct MightyGraphView: View {
                 blockTranscript(id: "graph-\(sessionID)-\(node.id)", status: status, entries: content, records: records, childBlocks: childBlocks,
                                 onContentHeight: onContentHeight)
             }
+            if let reply = backgroundRun?.reply, !reply.isEmpty { backgroundReply(reply, nodeID: node.id) }
         }
         .mightyBlockCard()
         .overlay { if !inputOnly { MightyGraphActivityOutline(tone: DesignTone(blockStatus: status)) } }
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
+    }
+
+    /// A background block's kind under its head: a sub-agent or a background run,
+    /// waiting or ended (`MightyGraphSupport.backgroundLabel`).
+    private func backgroundKindLine(_ text: String, tint: Color, nodeID: String) -> some View {
+        Text(verbatim: text).font(.ui(size: 10, weight: .semibold)).foregroundStyle(tint).lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.xxs)
+            .accessibilityIdentifier("mighty-background-kind-\(nodeID)")
+    }
+
+    /// A background run's command on one line, then its last output lines on a quiet
+    /// ground (kept once it ended).
+    private func backgroundRunHead(_ run: BackgroundRunBody, tint: Color, nodeID: String) -> some View {
+        let command = run.command.split(whereSeparator: \.isNewline).joined(separator: " ")
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+            if !command.isEmpty {
+                Text(verbatim: command).font(.code(size: 11)).foregroundStyle(Palette.ink)
+                    .lineLimit(1).truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(run.command)
+                    .accessibilityLabel(L("graph.block.promptAccessibility")).accessibilityValue(run.command)
+                    .accessibilityIdentifier("mighty-command-\(nodeID)")
+            }
+            if !run.tail.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(run.tail.suffix(BackgroundOutputTail.maxLines).enumerated()), id: \.offset) { _, line in
+                        Text(verbatim: line.isEmpty ? " " : line).font(.code(size: 10)).foregroundStyle(Palette.ink2)
+                            .lineLimit(1).truncationMode(.tail)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
+                .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("mighty-output-\(nodeID)")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
+        .background(tint.opacity(0.055))
+    }
+
+    /// Claude's answer in the turn the run's notice opened alone.
+    private func backgroundReply(_ reply: String, nodeID: String) -> some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+            Divider().overlay(Palette.border)
+            Text(L("graph.background.reply")).font(.ui(size: 10, weight: .bold)).foregroundStyle(Palette.ink2)
+            Text(verbatim: reply).font(.transcript(size: 11)).foregroundStyle(Palette.ink)
+                .lineLimit(expanded.contains(nodeID) ? 12 : 4).help(reply)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.bottom, DesignMetrics.Inset.graphBlockBodyV)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("mighty-background-reply-\(nodeID)")
     }
 
     /// A block's own records as the diagram's card shows them; the timeline opens the
@@ -1292,6 +1361,14 @@ private struct MightyGraphInputPreview: View {
         })
         .frame(width: width, height: min(maximumHeight, max(14, measuredHeight)))
     }
+}
+
+/// A task block's body beside its records: the command it ran, its last output lines
+/// (host memory, `AppStore.backgroundOutput`) and Claude's reply to its notice.
+struct BackgroundRunBody {
+    let command: String
+    let tail: [String]
+    let reply: String?
 }
 
 /// The next-request draft. Four lines at most, but four lines of *this* text:

@@ -97,6 +97,12 @@ public struct MobileStructure: Codable, Sendable, Equatable {
         public var output: String?
         /// Its last tool call.
         public var activity: Activity?
+        /// `true` for a background sub-agent and every task; absent otherwise.
+        public var background: Bool?
+        /// A task's last output lines (at most 6), read on the host; never its output file.
+        public var outputTail: [String]?
+        /// Claude's reply to the task's notice, bounded like `output`.
+        public var noticeReply: String?
     }
 
     // MARK: Bounds
@@ -129,6 +135,8 @@ public struct MobileStructure: Codable, Sendable, Equatable {
     public struct Wired: Sendable {
         var source: MightyStructure.Item
         var title: String?
+        /// The output lines of the request's tasks it was built with, by block id.
+        var tails: [String: [String]] = [:]
         var item: Item
         var size: Int
     }
@@ -138,15 +146,16 @@ public struct MobileStructure: Codable, Sendable, Equatable {
     ///
     /// - `title`: the style's name for the request with this run id (`StyleRequestTitles.prefix` of its input).
     /// - `model`: a block's model id as the phone shows it.
+    /// - `tails`: a background run's last output lines by block id (`AppStore.backgroundOutput`).
     /// - `wired`: the requests of the last build, by run id; replaced by this build's.
     public static func make(_ shape: MightyStructure.Shape, runCount: Int, title: (String) -> String? = { _ in nil },
-                            model: (String) -> String = { $0 }) -> MobileStructure? {
+                            model: (String) -> String = { $0 }, tails: [String: [String]] = [:]) -> MobileStructure? {
         var wired: [String: Wired] = [:]
-        return make(shape, runCount: runCount, title: title, model: model, wired: &wired)
+        return make(shape, runCount: runCount, title: title, model: model, tails: tails, wired: &wired)
     }
 
     public static func make(_ shape: MightyStructure.Shape, runCount: Int, title: (String) -> String? = { _ in nil },
-                            model: (String) -> String = { $0 }, wired cache: inout [String: Wired]) -> MobileStructure? {
+                            model: (String) -> String = { $0 }, tails: [String: [String]] = [:], wired cache: inout [String: Wired]) -> MobileStructure? {
         let all: [MightyStructure.Item]
         switch shape {
         case .phases(let columns):
@@ -163,12 +172,13 @@ public struct MobileStructure: Codable, Sendable, Equatable {
         var next: [String: Wired] = [:]
         let wired = candidates.map { source -> Wired in
             let name = title(source.runID)
-            if let kept = cache[source.runID], kept.source == source, kept.title == name {
+            let held = tails.isEmpty ? [:] : itemTails(source, tails)
+            if let kept = cache[source.runID], kept.source == source, kept.title == name, kept.tails == held {
                 next[source.runID] = kept
                 return kept
             }
-            let item = wire(source, title: name, model: model)
-            let made = Wired(source: source, title: name, item: item, size: encodedSize(item))
+            let item = wire(source, title: name, model: model, tails: held)
+            let made = Wired(source: source, title: name, tails: held, item: item, size: encodedSize(item))
             next[source.runID] = made
             return made
         }
@@ -227,7 +237,16 @@ public struct MobileStructure: Codable, Sendable, Equatable {
         }
     }
 
-    static func wire(_ item: MightyStructure.Item, title: String?, model: (String) -> String) -> Item {
+    /// The lines of `tails` that belong to the request's tasks.
+    static func itemTails(_ item: MightyStructure.Item, _ tails: [String: [String]]) -> [String: [String]] {
+        var held: [String: [String]] = [:]
+        for cluster in item.clusters {
+            for node in cluster.nodes where node.kind == "task" { if let lines = tails[node.agentID] { held[node.agentID] = lines } }
+        }
+        return held
+    }
+
+    static func wire(_ item: MightyStructure.Item, title: String?, model: (String) -> String, tails: [String: [String]] = [:]) -> Item {
         var nodes = 0
         var clusters: [Cluster] = []
         for cluster in item.clusters {
@@ -238,7 +257,10 @@ public struct MobileStructure: Codable, Sendable, Equatable {
                 Node(id: node.agentID, depth: min(max(0, node.depth), maximumDepth), title: capped(node.title, titleBytes, singleLine: true),
                      status: node.status, kind: node.kind, model: node.model.map { capped(model($0), modelBytes, singleLine: true) },
                      prompt: node.prompt.map { capped($0.text, promptBytes) }, output: node.output.map { capped($0.text, outputBytes) },
-                     activity: node.activity.last.map(activity))
+                     activity: node.activity.last.map(activity),
+                     background: node.background ? true : nil,
+                     outputTail: node.kind == "task" ? MobileMightySupport.outputTail(tails[node.agentID]) : nil,
+                     noticeReply: node.noticeReply.map { capped($0.text, outputBytes) })
             }))
         }
         let total = item.clusters.reduce(0) { $0 + $1.nodes.count }
@@ -337,6 +359,7 @@ public final class MobileStructureCache {
     private struct Entry {
         var signature: MightyStructure.Signature?
         var key = ""
+        var tails: [String: [String]] = [:]
         var items = MightyStructure.ItemCache()
         var wired: [String: MobileStructure.Wired] = [:]
         var built = Built(value: nil, tag: 0)
@@ -349,24 +372,27 @@ public final class MobileStructureCache {
 
     /// `MightyStructure.make` with the inputs the Mac view passes, turned into the wire
     /// shape. `key` names whatever else the value reads: the styles whose request titles
-    /// it carries and the model names it shows. `title` reads a request's input.
+    /// it carries and the model names it shows. `title` reads a request's input. `tails`: the
+    /// pane's background runs' last output lines by block id, which only the host holds.
     public func structure(pane: String, runs: [MightyGraphRun], style: StyleEvaluator?, currentPhase: StylePhase?,
                           planHistory: [PlanRecord] = [], pendingPlanRunID: String? = nil, key: String = "",
+                          tails: [String: [String]] = [:],
                           title: (String) -> String? = { _ in nil }, model: (String) -> String = { $0 }) -> Built {
         let signature = MightyStructure.Signature(runs: runs, style: style, currentPhase: currentPhase,
                                                   planHistory: planHistory, pendingPlanRunID: pendingPlanRunID)
         var entry = entries[pane] ?? Entry()
-        if entry.signature == signature, entry.key == key { return entry.built }
+        if entry.signature == signature, entry.key == key, entry.tails == tails { return entry.built }
         // Another key can name each request differently: nothing kept is reused.
         if entry.key != key { entry.wired = [:] }
         let items = entry.items.items(runs, signature: signature)
         let shape = MightyStructure.make(runs: runs, style: style, currentPhase: currentPhase, planHistory: planHistory,
                                          pendingPlanRunID: pendingPlanRunID, items: items)
         let inputs = Dictionary(runs.map { ($0.id, $0.input) }, uniquingKeysWith: { _, last in last })
-        let value = MobileStructure.make(shape, runCount: runs.count, title: { inputs[$0].flatMap(title) }, model: model, wired: &entry.wired)
+        let value = MobileStructure.make(shape, runCount: runs.count, title: { inputs[$0].flatMap(title) }, model: model, tails: tails, wired: &entry.wired)
         entry.built = Built(value: value, tag: MobileStructure.tag(value))
         entry.signature = signature
         entry.key = key
+        entry.tails = tails
         entries[pane] = entry
         builds += 1
         return entry.built

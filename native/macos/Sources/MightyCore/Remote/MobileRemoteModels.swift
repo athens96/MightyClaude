@@ -388,10 +388,19 @@ public struct MobileBlock: Codable, Sendable, Equatable, Identifiable {
     public var nodeModelLabel: String?
     /// What a block still in motion has been doing, oldest first; absent once it settles.
     public var activity: [String]?
-    public init(id: String, kind: String, title: String, status: String, summary: String? = nil, output: String? = nil, durationMs: Double? = nil, nodeModelLabel: String? = nil, activity: [String]? = nil) {
+    /// `true` for a background sub-agent and every task block; absent otherwise.
+    public var background: Bool?
+    /// A task block's last output lines (at most 6), read on the host; absent when none were read.
+    /// The output file itself is never sent.
+    public var outputTail: [String]?
+    /// Claude's reply to the task's notice, bounded like `output`.
+    public var noticeReply: String?
+    public init(id: String, kind: String, title: String, status: String, summary: String? = nil, output: String? = nil, durationMs: Double? = nil, nodeModelLabel: String? = nil, activity: [String]? = nil,
+                background: Bool? = nil, outputTail: [String]? = nil, noticeReply: String? = nil) {
         self.id = id; self.kind = kind; self.title = title; self.status = status
         self.summary = summary; self.output = output; self.durationMs = durationMs
         self.nodeModelLabel = nodeModelLabel; self.activity = activity
+        self.background = background; self.outputTail = outputTail; self.noticeReply = noticeReply
     }
 }
 
