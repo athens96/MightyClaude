@@ -8,15 +8,15 @@ import MightyCore
 struct BackgroundTaskRows: View {
     /// The background strip's rows carry the diagram's kind words and a run's last
     /// output line (`PlanCardSupport.backgroundStripRows`); the style's task list has neither.
-    let rows: [PlanCardSupport.BackgroundStripRow]
+    let items: [PlanCardSupport.BackgroundStripRow]
 
-    init(tasks: [StyleWidgetPresentation.Task]) { rows = tasks.map { PlanCardSupport.BackgroundStripRow(task: $0) } }
-    init(strip: [PlanCardSupport.BackgroundStripRow]) { rows = strip }
+    init(tasks: [StyleWidgetPresentation.Task]) { items = tasks.map { PlanCardSupport.BackgroundStripRow(task: $0) } }
+    init(strip: [PlanCardSupport.BackgroundStripRow]) { items = strip }
 
     var body: some View {
         // The elapsed time ticks once a second while anything still runs; rows
         // that all ended show fixed times and need no clock.
-        if rows.contains(where: \.task.running) {
+        if items.contains(where: \.task.running) {
             TimelineView(.periodic(from: .now, by: 1)) { context in rows(now: context.date) }
         } else {
             rows(now: Date())
@@ -25,7 +25,7 @@ struct BackgroundTaskRows: View {
 
     private func rows(now: Date) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, item in row(item, now: now) }
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in row(item, now: now) }
         }
     }
 

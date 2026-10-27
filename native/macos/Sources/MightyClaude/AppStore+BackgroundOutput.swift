@@ -5,10 +5,47 @@ import MightyCore
 /// `AppStore`'s published state: a line that changes every second must redraw the one
 /// pane showing it (its `BackgroundPaneOutput`), never the whole window.
 final class BackgroundOutputModel {
+    /// The phone hears of a pane's new lines at most this often; lines that move in between
+    /// go out together with the next.
+    static let phoneInterval: Duration = .seconds(3)
+
     private(set) var byPane: [String: [String: [String]]] = [:]
     private var panes: [String: BackgroundPaneOutput] = [:]
+    /// Each pane's revision, moved whenever its lines change or are pruned; the one the
+    /// phone's digest reads, which follows it at most once per `phoneInterval`; and when
+    /// that one last moved. A single counter feeds them all, so a revision is never reused.
+    private var revisions: [String: Int] = [:]
+    private var phoneRevisions: [String: Int] = [:]
+    private var phoneMoved: [String: ContinuousClock.Instant] = [:]
+    private var counter = 0
 
     var isEmpty: Bool { byPane.isEmpty }
+
+    /// What `mobileMightyDigest` hashes instead of the lines themselves.
+    func phoneRevision(forPane id: String) -> Int { phoneRevisions[id] ?? 0 }
+
+    /// Moves the phone's revision of every pane whose lines changed and whose last move is
+    /// `phoneInterval` old; true when one moved. `next` is when a pane held back may move.
+    func releaseToPhone(now: ContinuousClock.Instant) -> (moved: Bool, next: ContinuousClock.Instant?) {
+        var moved = false
+        var next: ContinuousClock.Instant?
+        for (pane, revision) in revisions where phoneRevisions[pane] != revision {
+            if let last = phoneMoved[pane], now - last < Self.phoneInterval {
+                let due = last + Self.phoneInterval
+                next = min(next ?? due, due)
+                continue
+            }
+            phoneRevisions[pane] = revision
+            phoneMoved[pane] = now
+            moved = true
+        }
+        return (moved, next)
+    }
+
+    private func bump(_ pane: String) {
+        counter &+= 1
+        revisions[pane] = counter
+    }
 
     /// The lines of one pane's blocks, by block id.
     func lines(forPane id: String) -> [String: [String]] { byPane[id] ?? [:] }
@@ -30,6 +67,7 @@ final class BackgroundOutputModel {
         slice[block] = lines
         byPane[pane] = slice.isEmpty ? nil : slice
         panes[pane]?.lines = slice
+        bump(pane)
         return true
     }
 
@@ -42,9 +80,14 @@ final class BackgroundOutputModel {
             guard kept.count != slice.count else { continue }
             byPane[pane] = kept.isEmpty ? nil : kept
             panes[pane]?.lines = kept
+            bump(pane)
             changed = true
         }
         panes = panes.filter { live.contains($0.key) }
+        // A closed pane's revisions go with it; its lines went above.
+        revisions = revisions.filter { live.contains($0.key) }
+        phoneRevisions = phoneRevisions.filter { live.contains($0.key) }
+        phoneMoved = phoneMoved.filter { live.contains($0.key) }
         return changed
     }
 }
@@ -98,7 +141,7 @@ extension AppStore {
     /// The panes whose files this Mac can read: Claude panes in local workspaces.
     private func backgroundOutputSessions() -> [RunSession] {
         let local = Set(snapshot.workspaces.filter { !$0.isRemote }.map(\.id))
-        return snapshot.sessions.filter { $0.kind == "claude" && local.contains($0.workspaceId) }
+        return snapshot.sessions.filter { $0.kind == "claude" && $0.provider == "claude" && local.contains($0.workspaceId) }
     }
 
     func backgroundOutputTick() {
@@ -194,7 +237,7 @@ extension AppStore {
             backgroundOutputHung = backgroundOutputHung.filter { present.contains($0.value) }
         }
         // Every pane's object, Codex and Antigravity panes' too, goes with its pane.
-        if backgroundOutput.retain(blocks: present, panes: Set(snapshot.sessions.map(\.id))) { mobileObserve() }
+        if backgroundOutput.retain(blocks: present, panes: Set(snapshot.sessions.map(\.id))) { backgroundOutputToPhone() }
     }
 
     /// The file's last lines, or nil. Only a regular file is opened: a FIFO or a device
@@ -225,7 +268,22 @@ extension AppStore {
             guard owed || backgroundOutputPolling.contains(result.id), let lines = result.lines, !lines.isEmpty else { continue }
             if backgroundOutput.set(lines, block: result.id, pane: result.pane) { changed = true }
         }
-        // The phone hears of it as of a graph change: `mobileMightyDigest` hashes the pane's lines.
-        if changed { mobileObserve() }
+        if changed { backgroundOutputToPhone() }
+    }
+
+    /// The phone hears of it as of a graph change (`mobileMightyDigest` hashes the pane's
+    /// phone revision), at most once per `BackgroundOutputModel.phoneInterval` a pane: a pane
+    /// held back is sent when its interval is up, with whatever its lines are by then.
+    func backgroundOutputToPhone() {
+        guard !ending else { return }
+        let release = backgroundOutput.releaseToPhone(now: .now)
+        if release.moved { mobileObserve() }
+        guard let next = release.next, backgroundOutputPhoneTimer == nil else { return }
+        backgroundOutputPhoneTimer = Task { [weak self] in
+            try? await Task.sleep(until: next, clock: .continuous)
+            guard let self else { return }
+            self.backgroundOutputPhoneTimer = nil
+            self.backgroundOutputToPhone()
+        }
     }
 }

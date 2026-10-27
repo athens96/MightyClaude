@@ -394,6 +394,9 @@ public actor RemoteHostService {
     private func receive(_ event: RunEvent, generation revision: UUID) {
         guard revision == generation, var job = jobs[event.sessionId], !job.done else { return }
         job.cursor += 1
+        var event = event
+        // A task's output file is a path on this computer: it stays here.
+        event.graph?.outputFile = nil
         let wire = RemoteWireEvent(cursor: job.cursor, event: event)
         let size = (try? JSONEncoder().encode(wire).count) ?? Int.max
         // One event too large for any poll is never sent; its cursor shows as a gap.

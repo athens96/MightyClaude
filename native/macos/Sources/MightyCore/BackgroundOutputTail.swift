@@ -29,7 +29,8 @@ public enum BackgroundOutputTail {
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd() else { return nil }
         let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
-        guard (try? handle.seek(toOffset: start)) != nil, let data = try? handle.readToEnd() ?? Data() else { return nil }
+        // At most maxBytes, even when the file grows while it is read.
+        guard (try? handle.seek(toOffset: start)) != nil, let data = try? handle.read(upToCount: maxBytes) ?? Data() else { return nil }
         return lines(data, truncated: start > 0)
     }
 }

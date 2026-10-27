@@ -552,9 +552,8 @@ extension AppStore {
         // snapshot publish — during a stream, every token.
         hasher.combine(MobileMightySupport.digest(session: session))
         // A background run's last output lines live on this Mac alone, beside the graph:
-        // the very slice the blocks and the structure are sent.
-        let tails = backgroundOutput.lines(forPane: session.id)
-        if !tails.isEmpty { hasher.combine(tails) }
+        // their revision, not the lines, which moves at most once per 3 s a pane.
+        hasher.combine(backgroundOutput.phoneRevision(forPane: session.id))
         // An answered plan moves a request's phase in the structure view.
         hasher.combine(session.planHistory?.count); hasher.combine(session.planHistory?.last?.outcome.rawValue)
         guard let style = guidedStyle(session) else { return hasher.finalize() }

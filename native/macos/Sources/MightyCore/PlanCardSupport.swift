@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// What the plan card and the plan history read: which request is the plan,
 /// where the Mighty view draws it, what its outcome says. The Mac views and
@@ -127,7 +128,8 @@ public enum PlanCardSupport {
                     && (source.status == "running") == task.running
             }
         guard matches else {
-            assertionFailure("background strip rows no longer line up with the task list")
+            // Logged, never a trap: the rows still show, in the task list's own words.
+            Logger(subsystem: "dev.mightyclaude.native", category: "background-work").error("background strip rows no longer line up with the task list")
             return tasks.map { BackgroundStripRow(task: $0) }
         }
         let runID = run.map { $0.sourceRunID ?? $0.id }

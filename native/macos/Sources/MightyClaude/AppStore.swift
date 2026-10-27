@@ -64,6 +64,8 @@ final class AppStore: ObservableObject, DelegationHost {
     var backgroundOutputProgress: BackgroundOutputProgress?
     var backgroundOutputQueue = AppStore.makeBackgroundOutputQueue()
     var backgroundOutputLoop: Task<Void, Never>?
+    /// The wait before a pane's lines held back from the phone are sent.
+    var backgroundOutputPhoneTimer: Task<Void, Never>?
     /// Phone access (docs/mobile-remote.md): listener, revision tracking, UI status.
     @Published var mobileStatus = MobileHostStatus()
     @Published var mobileBusy = false
@@ -1604,6 +1606,7 @@ final class AppStore: ObservableObject, DelegationHost {
         attachmentDrafts.removeAll()
         pollTask?.cancel(); setupWatchTask?.cancel(); closeSetupTerminals()
         backgroundOutputLoop?.cancel(); backgroundOutputLoop = nil
+        backgroundOutputPhoneTimer?.cancel(); backgroundOutputPhoneTimer = nil
         runtimeTask?.cancel()
         localModels.shutdown()
         saveTask?.cancel()
