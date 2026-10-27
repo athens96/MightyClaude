@@ -148,7 +148,7 @@ public sealed partial class MainWindow
             if (set.Count > 0) message["blocks"] = set;
             if (removed.Count > 0) message["removed"] = removed;
             if (inputs != sent.Inputs) { message["inputs"] = model.Inputs; sent.Inputs = inputs; }
-            if (older != sent.Older) { message["older"] = model.OlderRuns; sent.Older = older; }
+            if (older != sent.Older) { message["older"] = model.OlderRuns.Select(WebDelta.PageRun).ToList(); sent.Older = older; }
             if (timeline != sent.Timeline) { message["timeline"] = model.Timeline; sent.Timeline = timeline; }
             if (structure != sent.Structure) { message["structure"] = model.Structure; sent.Structure = structure; }
             WebMightyLastSet.Clear(); WebMightyLastSet.AddRange(set.Keys);

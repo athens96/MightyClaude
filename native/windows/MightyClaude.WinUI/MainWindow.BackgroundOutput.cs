@@ -65,7 +65,7 @@ public sealed partial class MainWindow
         var snapshot = service.Snapshot;
         // The panes whose files this PC can read: Claude panes in local workspaces.
         var remote = snapshot.Workspaces.Where(w => w.Remote is not null).Select(w => w.Id).ToHashSet(StringComparer.Ordinal);
-        var sessions = snapshot.Sessions.Where(s => s.Kind == "claude" && !remote.Contains(s.WorkspaceId)).ToList();
+        var sessions = snapshot.Sessions.Where(s => s.Kind == "claude" && s.Provider == "claude" && !remote.Contains(s.WorkspaceId)).ToList();
         var hung = backgroundOutputHung.Values.ToHashSet(StringComparer.Ordinal);
         // The graphs' shape: a pane, a request or a block that came or went.
         var shape = new HashCode();
@@ -158,16 +158,28 @@ public sealed partial class MainWindow
     {
         try
         {
-            if (path.StartsWith(@"\\.\", StringComparison.Ordinal)) return null;
+            if (!LocalFilePath(path)) return null;
             var file = new FileInfo(path);
             if (file.ResolveLinkTarget(returnFinalTarget: true) is FileInfo target) file = target;
-            if (!file.Exists || file.Attributes.HasFlag(FileAttributes.Device) || file.FullName.StartsWith(@"\\.\", StringComparison.Ordinal)) return null;
+            if (!LocalFilePath(file.FullName) || !file.Exists || file.Attributes.HasFlag(FileAttributes.Device)) return null;
             return BackgroundOutputTail.Read(file.FullName);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or System.Security.SecurityException)
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// A path on a local drive: a drive letter (<c>C:\…</c>), or the same behind <c>\\?\</c> (<c>\\?\C:\…</c>). The device namespaces
+    /// (<c>\\.\…</c>, <c>\\?\GLOBALROOT\…</c>, <c>\\?\pipe\…</c>), UNC shares (<c>\\server\share</c>, <c>\\?\UNC\…</c>) and relative paths
+    /// are not read: a pipe or a device may never answer, and a share is another computer's file.
+    /// </summary>
+    private static bool LocalFilePath(string path)
+    {
+        var rest = path.StartsWith(@"\\?\", StringComparison.Ordinal) ? path[4..] : path;
+        if (rest.StartsWith(@"\\", StringComparison.Ordinal) || rest.StartsWith("//", StringComparison.Ordinal)) return false;
+        return rest.Length >= 3 && char.IsAsciiLetter(rest[0]) && rest[1] == ':' && rest[2] is '\\' or '/';
     }
 
     /// <summary>
@@ -238,10 +250,16 @@ public sealed partial class MainWindow
                     try { action(); }
                     catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceWarning("background output: " + ex.GetType().Name); }
                 }
+                // Completed and drained: nothing reads it any more.
+                work.Dispose();
             }) { IsBackground = true, Name = "MightyClaude background output" }.Start();
         }
-        internal void Post(Action action) { try { work.Add(action); } catch (InvalidOperationException) { } }
-        internal void Complete() => work.CompleteAdding();
+        internal void Post(Action action) { try { work.Add(action); } catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException) { } }
+        /// <summary>No more reads: the thread ends once the one it runs (if any) answers, and the collection goes with it.</summary>
+        internal void Complete()
+        {
+            try { work.CompleteAdding(); } catch (ObjectDisposedException) { }
+        }
     }
 
     private sealed partial class PaneView

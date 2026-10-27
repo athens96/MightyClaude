@@ -84,8 +84,25 @@ internal static class WebDelta
     private static bool SameAgent(MightyGraphAgent a, MightyGraphAgent b) => ReferenceEquals(a, b)
         || a.Id == b.Id && a.ParentID == b.ParentID && a.Title == b.Title && a.Input == b.Input && a.Status == b.Status && a.Kind == b.Kind
             && Equals(a.Usage, b.Usage) && a.ActivityGeneration == b.ActivityGeneration
-            && a.Background == b.Background && a.OutputFile == b.OutputFile && a.NoticeReply == b.NoticeReply
+            && a.Background == b.Background && a.NoticeReply == b.NoticeReply
             && SameList(a.Entries, b.Entries, SameEntry) && SameList(a.ResponseRecords, b.ResponseRecords, (x, y) => Equals(x, y));
+
+    /// <summary>A run as the page holds it: a task block's output file stays on this side (never shown, never on the page).</summary>
+    internal static MightyGraphRun PageRun(MightyGraphRun run)
+    {
+        if (!run.Agents.Any(agent => agent.OutputFile is not null)) return run;
+        var copy = run.Copy();
+        foreach (var agent in copy.Agents) agent.OutputFile = null;
+        return copy;
+    }
+
+    /// <summary><see cref="PageRun"/> over a pane's runs; the same list when none holds an output file.</summary>
+    internal static List<MightyGraphRun>? PageRuns(List<MightyGraphRun>? runs) =>
+        runs is null || !runs.Any(run => run.Agents.Any(agent => agent.OutputFile is not null)) ? runs : runs.Select(PageRun).ToList();
+
+    /// <summary>The state as the page is sent it whole: every pane's runs without their output files.</summary>
+    internal static AppSnapshot PageSnapshot(AppSnapshot snapshot) =>
+        snapshot with { Sessions = snapshot.Sessions.Select(session => PageRuns(session.GraphRuns) is var runs && ReferenceEquals(runs, session.GraphRuns) ? session : session with { GraphRuns = runs }).ToList() };
 
     /// <summary>A pane's fields but its two lists, as the page's <c>RunSession</c> holds them.</summary>
     internal static JsonObject Fields(RunSession session)
@@ -115,7 +132,12 @@ internal static class WebDelta
         }
         if (unset.Count > 0) { writer.WritePropertyName("unset"); JsonSerializer.Serialize(writer, unset, Wire.Json); }
         if (!logs.Empty) WriteList(writer, "logs", logs);
-        if (!runs.Empty) WriteList(writer, "graphRuns", runs);
+        if (!runs.Empty)
+        {
+            for (var index = 0; index < runs.Replaced.Count; index++) runs.Replaced[index] = PageRun(runs.Replaced[index]);
+            for (var index = 0; index < runs.Added.Count; index++) runs.Added[index] = PageRun(runs.Added[index]);
+            WriteList(writer, "graphRuns", runs);
+        }
         writer.WriteEndObject();
         return true;
     }

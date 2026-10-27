@@ -110,7 +110,7 @@ internal sealed class WebBridge : IDisposable
     private void SendSnapshot()
     {
         var current = service.Snapshot;
-        using (PerfLog.Measure("web snapshot")) Post(JsonSerializer.Serialize(new { kind = "snapshot", snapshot = current }, Wire.Json));
+        using (PerfLog.Measure("web snapshot")) Post(JsonSerializer.Serialize(new { kind = "snapshot", snapshot = WebDelta.PageSnapshot(current) }, Wire.Json));
         Remember(current, current.Sessions.Select(s => s.Id).ToList(), StateJson(current));
         ready = true; poll.Start();
     }
