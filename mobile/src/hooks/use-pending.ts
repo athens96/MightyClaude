@@ -47,9 +47,12 @@ export function usePendingAction(): {
   state: PendingState;
   running: boolean;
   run: (work: () => Promise<ActionResult>) => Promise<boolean>;
+  /** Back to idle at once (the screen now shows something else); a call still out no longer sets the state. */
+  reset: () => void;
 } {
   const [state, setState] = useState<PendingState>(IDLE);
   const busy = useRef(false);
+  const generation = useRef(0);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -60,6 +63,7 @@ export function usePendingAction(): {
   const run = useCallback(async (work: () => Promise<ActionResult>) => {
     if (busy.current) return false;
     busy.current = true;
+    const mine = generation.current;
     const since = Date.now();
     setState({ kind: 'pending', since });
     let result: ActionResult;
@@ -68,6 +72,7 @@ export function usePendingAction(): {
     } catch (failure) {
       result = { ok: false, message: failure instanceof Error ? failure.message : String(failure) };
     }
+    if (mine !== generation.current) return result.ok;
     busy.current = false;
     if (mounted.current) {
       setState(
@@ -78,5 +83,10 @@ export function usePendingAction(): {
     }
     return result.ok;
   }, []);
-  return { state, running: state.kind === 'pending', run };
+  const reset = useCallback(() => {
+    generation.current += 1;
+    busy.current = false;
+    setState(IDLE);
+  }, []);
+  return { state, running: state.kind === 'pending', run, reset };
 }

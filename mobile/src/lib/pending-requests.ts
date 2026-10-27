@@ -257,13 +257,18 @@ export function shownInBlocks(requests: readonly PendingRequest[], runs: readonl
   return request.phase === 'failed' || runsFor(request, runs).length === 0 ? request : undefined;
 }
 
-/** The request the 파이프라인 draws (the newest drawn one) while no board holds its run. */
+/**
+ * The request the 파이프라인 draws (the newest drawn one) while no board holds its run: the run it arrived with, or for a
+ * started one the run the answer named.
+ */
 export function shownInStructure(requests: readonly PendingRequest[], boardRuns: ReadonlySet<string> | undefined): PendingRequest | undefined {
   const request = newestDrawn(requests);
   if (!request) return undefined;
-  if (request.phase === 'failed') return request;
-  if (request.phase !== 'arrived') return request;
-  return boardRuns && (request.arrivedRunIds ?? []).some((id) => boardRuns.has(id)) ? undefined : request;
+  if (request.phase === 'failed' || !boardRuns) return request;
+  // The board may come before the entry does: a run the answer named, or the run it arrived
+  // with, already on a board is shown there.
+  const runs = request.phase === 'arrived' ? (request.arrivedRunIds ?? []) : request.runId !== undefined ? [request.runId] : [];
+  return runs.some((id) => boardRuns.has(id)) ? undefined : request;
 }
 
 function newestDrawn(requests: readonly PendingRequest[]): PendingRequest | undefined {

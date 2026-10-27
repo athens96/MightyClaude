@@ -7,6 +7,13 @@ import type { PendingState } from '@/lib/pending';
 import { motion, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 const BARS = [0, 1, 2] as const;
+const LOOP_STOPS = [0, 1 / 3, 2 / 3, 1];
+/** Bar 0 peaks at a third of the loop, bar 1 at two thirds, bar 2 at its end (= its start). */
+const BAR_CURVES: Record<(typeof BARS)[number], number[]> = {
+  0: [0.4, 1, 0.4, 0.4],
+  1: [0.4, 0.4, 1, 0.4],
+  2: [1, 0.4, 0.4, 1],
+};
 
 /**
  * The shared loading mark (natural submit A3), the Mac's activity bars: three short bars that rise in turn. Under Reduce Motion
@@ -36,13 +43,13 @@ export function PendingBars({ color, height = 12 }: { color?: string; height?: n
   return (
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[barStyles.row, { height }]}>
       {BARS.map((bar) => {
-        // Each bar peaks a third of the loop after the one before it.
-        const start = bar / 3;
+        // Each bar peaks a third of the loop after the one before it, rising and falling
+        // over a third each; the curve ends where it starts, so the loop never snaps.
         const scaleY = reduce
           ? 0.6
           : phase.interpolate({
-              inputRange: [0, start, Math.min(1, start + 1 / 3), 1],
-              outputRange: [0.4, 0.4, 1, 0.4],
+              inputRange: LOOP_STOPS,
+              outputRange: BAR_CURVES[bar],
               extrapolate: 'clamp',
             });
         return (

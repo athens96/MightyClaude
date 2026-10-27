@@ -171,6 +171,19 @@ describe('sent requests on the phone', () => {
     expect(reconcile(arrived, snapshot, 1200, holds)).toHaveLength(0);
   });
 
+  it('hides a started request in the 파이프라인 once its named run is on a board, before the entry lands', () => {
+    const sending = [newPendingRequest(before, 'c1', 'go', 1000)];
+    expect(shownInStructure(sending, new Set(['r2']))).toBe(sending[0]);
+    const named = applyAnswer(sending, 'c1', started('u2', 'r2'), 1100);
+    expect(shownInStructure(named, new Set(['r1']))).toBe(named[0]);
+    expect(shownInStructure(named, new Set(['r2']))).toBeUndefined();
+    expect(shownInStructure(named, undefined)).toBe(named[0]);
+    const unnamed = applyAnswer(sending, 'c1', started('u2'), 1100);
+    expect(shownInStructure(unnamed, new Set(['r2']))).toBe(unnamed[0]);
+    const failed = failRequest(named, 'c1', 'no', 1200);
+    expect(shownInStructure(failed, new Set(['r2']))?.phase).toBe('failed');
+  });
+
   it('drops a started request whose entry never comes after STARTED_GRACE, and that is no landing', () => {
     const requests = applyAnswer([newPendingRequest(before, 'c1', 'go', 1000)], 'c1', started('u2'), 2000);
     expect(nextDeadline(requests)).toBe(2000 + STARTED_GRACE + 1);

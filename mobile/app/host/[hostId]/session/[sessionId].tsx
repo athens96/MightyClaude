@@ -258,6 +258,10 @@ export default function SessionScreen() {
   );
   const stopAction = usePendingAction();
   const runStop = stopAction.run;
+  const resetStop = stopAction.reset;
+  /** The pane on screen: an answer that comes back for another one changes nothing here. */
+  const shownSession = useRef(sessionId);
+  shownSession.current = sessionId;
   /** A slash command the phone runs, on its way: the composer shows the pending mark. */
   const [commandRun, setCommandRun] = useState<{ name: string; state: PendingState } | undefined>(undefined);
   const composerInput = useRef<TextInput>(null);
@@ -426,7 +430,8 @@ export default function SessionScreen() {
     pendingRef.current = [];
     setPendingRequests([]);
     setCommandRun(undefined);
-  }, [sessionId]);
+    resetStop();
+  }, [resetStop, sessionId]);
 
   // The host sends only the newest entries and replaces that window wholesale, so what
   // slides off its front is caught here: no `before=` page could ever bring it back.
@@ -589,27 +594,39 @@ export default function SessionScreen() {
             request.upload = () => uploadAttachments(client, sessionId);
           }
           const result = await sendWithAttachments(request);
-          if (!result.ok) {
-            if (drawn && !result.cancelled) updatePending((previous) => failRequest(previous, clientId, result.error, Date.now()));
+          // The user went to another pane meanwhile: nothing of this answer belongs there.
+          if (shownSession.current !== sessionId) return;
+          const fail = (message: string, cancelled: boolean) => {
+            if (drawn && !cancelled) updatePending((previous) => failRequest(previous, clientId, message, Date.now()));
             else updatePending((previous) => dropRequest(previous, clientId));
             // A failure shows once: in its block when one shows it, else as a toast.
             const inBlock = pendingRef.current.some(
               (pending) => pending.clientId === clientId && pending.drawn && pending.phase === 'failed',
             );
-            if (!inBlock) showToast(result.error, 'error');
+            if (!inBlock) showToast(message, 'error');
             const draft = sentDraft.current;
             if (draft?.clientId === clientId) {
               const back = draftToRestore(value, textRef.current, draft.edited);
               if (back !== undefined) setText(back);
             }
+          };
+          if (!result.ok) {
+            fail(result.error, result.cancelled);
             return;
           }
           const answer = result.answer;
+          // A word the shared rule does not accept: the host did not take it.
+          if (!answer.accepted) {
+            fail(t('remote.error.startFailed'), false);
+            return;
+          }
           updatePending((previous) => applyAnswer(previous, clientId, answer, Date.now()));
+          // The poll may already have brought its entry or board: reconcile now, not at the next one.
+          setSettleTick((count) => count + 1);
           if (answer.outcome === 'queued') setQueueFlash((count) => count + 1);
           // The bubble says a started request was sent; anything else gets the host's word.
           if (!(drawn && answer.outcome === 'started')) showToast(acceptedMessage(result.accepted), 'success');
-          if (answer.accepted) setOwnMove((count) => count + 1);
+          setOwnMove((count) => count + 1);
           clearAttachments();
           poll.refresh();
         } finally {
@@ -637,6 +654,7 @@ export default function SessionScreen() {
       } catch (error) {
         verdict = stopVerdict({ failure: describeError(error) });
       }
+      if (shownSession.current !== sessionId) return { ok: true };
       if (verdict.kind === 'requested') showToast(t('phone.session.toast.stopRequested'));
       else if (verdict.kind === 'notRunning') {
         setSettledRevision(drawnFrom);
@@ -767,17 +785,21 @@ export default function SessionScreen() {
   const firstQueued = detail?.queued[0]?.text;
   const runNext = useCallback(() => {
     if (!client || !sessionId) return;
+    // The baseline is the pane before the call: its entry may come with a poll while the
+    // call is still out.
+    const asked = Date.now();
+    const watched = firstQueued === undefined ? undefined : newPendingRequest(snapshotRef.current, newClientId(asked), firstQueued, asked, false);
     void (async () => {
       setQueueBusy(true);
       try {
         await client.runNext(sessionId);
+        if (shownSession.current !== sessionId) return;
         showToast(t('phone.session.toast.nextStarted'), 'success');
         // 다음 실행 is an own request (B2): nothing is drawn for it, but the views move to
         // its entry when it lands. Started with no ids: any new request entry is it.
-        if (firstQueued !== undefined) {
-          const now = Date.now();
-          const watched = newPendingRequest(snapshotRef.current, newClientId(now), firstQueued, now, false);
-          updatePending((previous) => [...previous, { ...watched, phase: 'started', answeredAt: now }]);
+        if (watched) {
+          updatePending((previous) => [...previous, { ...watched, phase: 'started', answeredAt: Date.now() }]);
+          setSettleTick((count) => count + 1);
         }
         poll.refresh();
       } catch (error) {
@@ -906,6 +928,7 @@ export default function SessionScreen() {
       void (async () => {
         try {
           const result = await client.runCommand(sessionId, action);
+          if (shownSession.current !== sessionId) return;
           if (result.message) setMessage({ title: `/${name}`, body: result.message });
           else showToast(t('phone.session.toast.commandRan', { name }), 'success');
           poll.refresh();
@@ -914,7 +937,7 @@ export default function SessionScreen() {
         } finally {
           commandRunning.current = false;
           // The message or toast says how it went; the mark only ends by the pending rule.
-          setCommandRun({ name, state: { kind: 'done', since, at: Date.now() } });
+          if (shownSession.current === sessionId) setCommandRun({ name, state: { kind: 'done', since, at: Date.now() } });
         }
       })();
     },

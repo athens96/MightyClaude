@@ -194,7 +194,7 @@ export function Composer({
                   <Pressable
                     accessibilityLabel={t('phone.composer.removeAttachment', { name: file.name })}
                     accessibilityRole="button"
-                    disabled={attachments.uploading}
+                    disabled={attachments.uploading || sending}
                     hitSlop={8}
                     onPress={() => attachments.remove(file.uri)}
                   >
@@ -219,11 +219,12 @@ export function Composer({
           <Pressable
             accessibilityLabel={t('phone.composer.attach')}
             accessibilityRole="button"
-            disabled={disabled || attachments.uploading}
+            // The files on screen are the ones a send in flight took: none come or go meanwhile.
+            disabled={disabled || attachments.uploading || sending}
             onPress={() => setPickerOpen(true)}
             style={({ pressed }) => [
               styles.attach,
-              (disabled || attachments.uploading) && styles.attachDisabled,
+              (disabled || attachments.uploading || sending) && styles.attachDisabled,
               pressed && styles.pressed,
             ]}
           >
