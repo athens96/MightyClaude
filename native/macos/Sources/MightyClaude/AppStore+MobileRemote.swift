@@ -69,25 +69,46 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         await MainActor.run { store?.mobileSessionDetail(id, structure: structure) }
     }
     func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String {
-        try await settle(MainActor.run { try store.orClosing().mobileSubmit(sessionId, text: text, mode: mode, attachments: attachments) })
+        try await mobileSubmitReceipt(sessionId: sessionId, text: text, mode: mode, attachments: attachments).outcome
     }
     func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String {
-        try await settle(MainActor.run { try store.orClosing().mobileGuided(sessionId, style: style, skill: skill, text: text) })
+        try await mobileGuidedReceipt(sessionId: sessionId, style: style, skill: skill, text: text).outcome
+    }
+    func mobileSubmitReceipt(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> MobileSubmitReceipt {
+        try await settle(sessionId, MainActor.run { () -> (outcome: MobileSubmitOutcome, started: AppStore.StartedRequest?) in
+            let store = try self.store.orClosing()
+            return try (store.mobileSubmit(sessionId, text: text, mode: mode, attachments: attachments), store.startedRequests[sessionId])
+        })
+    }
+    func mobileGuidedReceipt(sessionId: String, style: String, skill: String, text: String) async throws -> MobileSubmitReceipt {
+        try await settle(sessionId, MainActor.run { () -> (outcome: MobileSubmitOutcome, started: AppStore.StartedRequest?) in
+            let store = try self.store.orClosing()
+            return try (store.mobileGuided(sessionId, style: style, skill: skill, text: text), store.startedRequests[sessionId])
+        })
     }
 
-    /// Turns what the store started into the word the phone is told.
-    private func settle(_ outcome: MobileSubmitOutcome) async throws -> String {
+    /// Turns what the store started into the word the phone is told, with the
+    /// request's user entry and graph run when it started one. `call` pairs the
+    /// outcome with the pane's newest started request, read in the same main-actor
+    /// turn, so a request started at once is exactly the one sent.
+    private func settle(_ sessionId: String, _ call: (outcome: MobileSubmitOutcome, started: AppStore.StartedRequest?)) async throws -> MobileSubmitReceipt {
         let effect: SubmitOutcome
-        switch outcome {
+        var started = call.started
+        switch call.outcome {
         case .immediate(let value): effect = value
         // Held items released with the text: started, queued behind a run
-        // that began meanwhile, or dropped.
-        case .pending(let task): effect = await task.value
+        // that began meanwhile, or dropped. Its run began after the call, so
+        // its request is read now.
+        case .pending(let task):
+            effect = await task.value
+            started = await MainActor.run { store?.startedRequests[sessionId] }
         }
         // Dropped: the text reached neither the turn nor the queue, so the phone
         // is told it failed instead of being shown an item that does not exist.
         guard let accepted = effect.accepted else { throw MobileHostError.conflict(MobileRemoteSupport.droppedMessage) }
-        return accepted
+        // Only a started request has a block of its own yet.
+        guard effect == .started, let started else { return MobileSubmitReceipt(outcome: accepted) }
+        return MobileSubmitReceipt(outcome: accepted, entryId: started.entryId, runId: started.runId)
     }
     func mobileStop(sessionId: String) async throws -> Bool {
         let (store, running) = try await MainActor.run { () -> (AppStore, Bool) in

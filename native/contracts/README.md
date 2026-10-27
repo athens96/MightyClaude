@@ -77,7 +77,7 @@ Requests travel as `{id, method, path, body?}` → `{id, status, body}`; the hos
 | GET | `/m1/info` | `{protocol, hostId, hostName, appVersion, platform}` |
 | GET | `/m1/state?since=<rev>&wait=<0..10>` | Long-poll until the state revision passes `since`; `MobileState` |
 | GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>` | Long-poll per session; `MobileSessionDetail` (last 80 entries, pending permissions as structured cards, queue, usage) |
-| POST | `/m1/sessions/{id}/submit` | `{text}` → 202 `{accepted: started\|steered\|queued}`, 409 when blocked |
+| POST | `/m1/sessions/{id}/submit` | `{text}` → 202 `{protocol, accepted: started\|steered\|queued, outcome?, entryId?, runId?}`, 409 when blocked. `accepted` keeps the word for older phones; newer hosts add `outcome` (the same word) and, for a request that started, its user entry `entryId` and graph run `runId` (the same id on the Mac). Read by `fixtures/pending.json` `submitRule` (Mac `SubmitResponse.parse`) |
 | POST | `/m1/sessions/{id}/stop` | `{protocol, stopped: true}` |
 | POST | `/m1/sessions/{id}/permission` | `{requestId, runId, allow}` → `{protocol, ok: true}` |
 | POST | `/m1/sessions/{id}/answers` | `{requestId, runId, answers: {question: {selectedOptions, customText?}}}` |

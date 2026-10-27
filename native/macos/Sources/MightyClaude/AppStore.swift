@@ -311,6 +311,14 @@ final class AppStore: ObservableObject, DelegationHost {
     })
     /// Each pane's run start, which answers whether the run's process got its input.
     private var startTasks: [String: Task<Bool, Never>] = [:]
+    /// The request a pane's newest run start sent: its user entry, and the graph run
+    /// begun with it (the same id) when the pane draws one. A phone's submit answers
+    /// with them (natural submit B5) so its optimistic block finds the real one.
+    struct StartedRequest: Equatable, Sendable {
+        let entryId: String
+        let runId: String?
+    }
+    private(set) var startedRequests: [String: StartedRequest] = [:]
     /// Queued rows starting with the items delegation holds for their pane,
     /// until that release is over.
     private var releasingRows: Set<String> = []
@@ -710,7 +718,7 @@ final class AppStore: ObservableObject, DelegationHost {
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id)
             antigravityBoard.remove(sessionId: id); antigravityPermissionErrors.removeValue(forKey: id)
-            draftRevisions.removeValue(forKey: id)
+            draftRevisions.removeValue(forKey: id); startedRequests.removeValue(forKey: id)
             forgetGraphHistory(id)
             forgetStyleState(id); pruneStyleStateWatchers()
             if snapshot.activeSessionId == id {
@@ -1088,6 +1096,8 @@ final class AppStore: ObservableObject, DelegationHost {
             $0.logs.append(inputEntry); $0.logs = TranscriptRetention.trimmed($0.logs)
             if let shortened = autoTitle { $0.title = shortened }
         }
+        let graphRun = snapshot.sessions.first { $0.id == id }?.graphRuns?.contains { $0.id == inputEntry.id } == true
+        startedRequests[id] = StartedRequest(entryId: inputEntry.id, runId: graphRun ? inputEntry.id : nil)
         startTasks[id] = Task {
             var reachedRunner = false
             do {

@@ -155,6 +155,34 @@ public enum DesignMetrics {
         ]
     }
 
+    /// The motion tokens (fixture `motion`), in whole milliseconds but the easing curve:
+    /// `quick` a small state change (a pill, an icon), `standard` a block appearing or
+    /// leaving, `scroll` a scroll or camera move, `easing` their cubic-bezier,
+    /// `pendingShowAfter` and `pendingMinVisible` the pending rule (`PendingDisplay`),
+    /// `highlight` how long a highlight stays (the queue row's flash). Reduce Motion drops
+    /// the movement only; the pending rule's timing stays. Windows reads the same group as
+    /// `DesignMetrics.Motion` in MightyClaude.Core, the Windows page in theme/tokens and the
+    /// phone in mobile/src/theme.
+    public enum Motion {
+        public static let quick = 150
+        public static let standard = 220
+        public static let scroll = 280
+        /// cubic-bezier(x1, y1, x2, y2).
+        public static let easing: [Double] = [0.2, 0, 0, 1]
+        public static let pendingShowAfter = 150
+        public static let pendingMinVisible = 300
+        public static let highlight = 1200
+
+        /// Every duration by its fixture name (`easing` is not one).
+        public static let durations: [String: Int] = [
+            "quick": quick, "standard": standard, "scroll": scroll,
+            "pendingShowAfter": pendingShowAfter, "pendingMinVisible": pendingMinVisible, "highlight": highlight,
+        ]
+
+        /// A token's milliseconds as seconds, for an animation's duration or a timer.
+        public static func seconds(_ milliseconds: Int) -> Double { Double(milliseconds) / 1000 }
+    }
+
     /// The 파이프라인 view's state colours (fixture `pipeline`): a column's cards sit on its tone's
     /// soft tint at `columnTintOpacity`, every card on its own tone's tint at the lighter
     /// `cardTintOpacity`, so a card stands out even in a column of its own tone, with a

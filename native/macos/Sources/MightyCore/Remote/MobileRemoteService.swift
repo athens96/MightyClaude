@@ -19,6 +19,12 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     /// Sends a guided style's prompt through the very same path, so `accepted`
     /// means the same thing it does for `submit`.
     func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String
+    /// `mobileSubmit` with the user entry and graph run the request went into, so the
+    /// phone matches its optimistic block to them (natural submit B5). A queued
+    /// request has none yet.
+    func mobileSubmitReceipt(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> MobileSubmitReceipt
+    /// `mobileGuided` with the same ids.
+    func mobileGuidedReceipt(sessionId: String, style: String, skill: String, text: String) async throws -> MobileSubmitReceipt
     /// Stops the pane's run and answers whether one was in motion at all: a
     /// phone that slept through the end of a run still shows Stop, and must be
     /// told there was nothing left to stop rather than "stop requested".
@@ -47,6 +53,13 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
 }
 
 public extension MobileHostDelegate {
+    /// A host that knows no ids answers the outcome word alone, as before.
+    func mobileSubmitReceipt(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> MobileSubmitReceipt {
+        MobileSubmitReceipt(outcome: try await mobileSubmit(sessionId: sessionId, text: text, mode: mode, attachments: attachments))
+    }
+    func mobileGuidedReceipt(sessionId: String, style: String, skill: String, text: String) async throws -> MobileSubmitReceipt {
+        MobileSubmitReceipt(outcome: try await mobileGuided(sessionId: sessionId, style: style, skill: skill, text: text))
+    }
     /// A host without a structure view answers the plain detail.
     func mobileSession(id: String, structure: Bool) async -> MobileSessionDetail? { await mobileSession(id: id) }
     /// No drawing: an svg preview is `unsupported` ("undecodable").
@@ -1155,8 +1168,8 @@ public actor MobileRemoteService {
                     let text = try Self.requestText(request.text, allowEmpty: !ids.isEmpty)
                     if let mode = request.mode, !MobileWire.submitModes.contains(mode) { throw Failure(400, L("remote.error.badMode")) }
                     guard !ids.isEmpty else {
-                        let accepted = try await perform { try await delegate.mobileSubmit(sessionId: id, text: text, mode: request.mode, attachments: []) }
-                        return reply(202, MobileSubmitResult(accepted: accepted))
+                        let receipt = try await perform { try await delegate.mobileSubmitReceipt(sessionId: id, text: text, mode: request.mode, attachments: []) }
+                        return reply(202, MobileSubmitResult(receipt))
                     }
                     // Reading the files back and holding them as base64 is the
                     // one place a phone can make the host allocate megabytes,
@@ -1165,11 +1178,11 @@ public actor MobileRemoteService {
                     defer { releaseSubmitSlot() }
                     let claimed = try await perform { try await uploads.attachments(ids: ids, sessionId: id, deviceId: deviceId) }
                     do {
-                        let accepted = try await perform { try await delegate.mobileSubmit(sessionId: id, text: text, mode: request.mode, attachments: claimed.attachments) }
+                        let receipt = try await perform { try await delegate.mobileSubmitReceipt(sessionId: id, text: text, mode: request.mode, attachments: claimed.attachments) }
                         // Spent only now: a pane that refused the request leaves
                         // the phone's uploads intact so it can simply send again.
                         await uploads.spend(claimed.claim)
-                        return reply(202, MobileSubmitResult(accepted: accepted))
+                        return reply(202, MobileSubmitResult(receipt))
                     } catch {
                         await uploads.release(claimed.claim)
                         throw error
@@ -1186,8 +1199,8 @@ public actor MobileRemoteService {
                         throw Failure(400, L("remote.error.badSkillName"))
                     }
                     let text = try Self.requestText(request.text ?? "", allowEmpty: true)
-                    let done = try await perform { try await delegate.mobileGuided(sessionId: id, style: style, skill: action, text: text) }
-                    return reply(202, MobileSubmitResult(accepted: done))
+                    let receipt = try await perform { try await delegate.mobileGuidedReceipt(sessionId: id, style: style, skill: action, text: text) }
+                    return reply(202, MobileSubmitResult(receipt))
                 case "uploads":
                     let request = try decode(body, as: MobileUploadRequest.self)
                     // An upload belongs to the pane that asked for it; an

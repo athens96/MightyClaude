@@ -108,6 +108,20 @@ struct DesignTokenParityTests {
         #expect(DesignMetrics.Pipeline.cardBarWidth == 3)
     }
 
+    /// `motion`: the durations and the easing curve, the same numbers as `DesignMetrics.Motion`.
+    @Test func motionMatchesTheFixture() throws {
+        let motion = try #require(try Self.load()["motion"] as? [String: Any], "motion")
+        let durations = DesignMetrics.Motion.durations
+        #expect(Set(motion.keys) == Set(durations.keys).union(["easing"]), "motion: Mac-only \(Set(durations.keys).union(["easing"]).subtracting(motion.keys).sorted()), fixture-only \(Set(motion.keys).subtracting(durations.keys).subtracting(["easing"]).sorted())")
+        for (name, value) in durations {
+            #expect(motion[name] as? Int == value, "motion.\(name): fixture \(motion[name].map { "\($0)" } ?? "missing"), Mac \(value)")
+        }
+        #expect(motion["easing"] as? [Double] == DesignMetrics.Motion.easing, "motion.easing")
+        // The named constants are the table's, and a token reads as seconds for an animation.
+        #expect(durations.count == 6 && durations["scroll"] == DesignMetrics.Motion.scroll && durations["highlight"] == DesignMetrics.Motion.highlight)
+        #expect(DesignMetrics.Motion.seconds(DesignMetrics.Motion.scroll) == 0.28)
+    }
+
     @Test func providerColoursMatchTheFixture() throws {
         let windowsOnly = try #require(try Self.load()["windowsOnly"] as? [String: Any])
         let providers = try #require(windowsOnly["provider"] as? [String: Any])

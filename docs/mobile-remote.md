@@ -37,7 +37,7 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 | GET | `/m1/info` | | `{ protocol, hostId, hostName, appVersion, platform }` |
 | GET | `/m1/state?since=<rev>&wait=<0..10>` | | `MobileState` — `revision`이 `since`보다 커질 때까지 최대 `wait`초 기다렸다가 응답. 시간 안에 변화가 없으면 같은 `revision`으로 현재 상태를 돌려준다 |
 | GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>[&structure=<tag>]` | | `MobileSessionDetail` — 세션 단위 `revision`으로 같은 방식. `structure`는 `"structure"` 기능이 있는 호스트(Mac·Windows)에만(아래 "구조 보기" 절) |
-| POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "queued" }`(`"steered"`는 구버전 호스트만) · 실행할 수 없으면 409 |
+| POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "queued", outcome?, entryId?, runId? }`(`"steered"`는 구버전 호스트만, 새 필드는 아래 "라우트" 표) · 실행할 수 없으면 409 |
 | POST | `/m1/sessions/{id}/stop` | | `{ protocol, stopped }` — 실행 중인 요청이 없어 멈출 것이 없었으면 `stopped: false` |
 | POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow, always? }` | `{ protocol, ok: true }` — `always`는 Antigravity 권한 카드에만(아래 "Antigravity 권한 카드" 절) |
 | POST | `/m1/sessions/{id}/answers` | `{ requestId, runId, answers: { "<질문 문장>": { selectedOptions, customText? } } }` | `{ protocol, ok: true }` |
@@ -138,7 +138,7 @@ MobilePermission {
 
 | 메서드 | 경로 | 요청 | 응답 |
 |---|---|---|---|
-| POST | `/m1/sessions/{id}/submit` | `{ text, mode?, attachments?: [uploadId] }` | 202 `{ protocol, accepted }` — `accepted`는 **실제로 일어난 일**이다. 실행 중이면 `mode`와 상관없이(`"queue"`, `"steer"`, 생략 모두) 대기열에 넣고 `queued`를 돌려준다. `mode: "steer"`도 400이 아니라 대기열이다(구버전 휴대폰 호환). 실행 중인 턴에는 넣지 않는다. 실행 중이 아니면 `mode`와 상관없이 바로 시작하고 `started`를 돌려준다. 대기열이 가득 차면 409 |
+| POST | `/m1/sessions/{id}/submit` | `{ text, mode?, attachments?: [uploadId] }` | 202 `{ protocol, accepted }` — `accepted`는 **실제로 일어난 일**이다. 실행 중이면 `mode`와 상관없이(`"queue"`, `"steer"`, 생략 모두) 대기열에 넣고 `queued`를 돌려준다. `mode: "steer"`도 400이 아니라 대기열이다(구버전 휴대폰 호환). 실행 중인 턴에는 넣지 않는다. 실행 중이 아니면 `mode`와 상관없이 바로 시작하고 `started`를 돌려준다. 대기열이 가득 차면 409. 새 호스트는 `{ protocol, accepted, outcome, entryId?, runId? }`를 돌려준다: `outcome`은 `accepted`와 같은 낱말이고(`accepted`는 옛 휴대폰을 위해 그대로 둔다), 바로 시작한 요청에는 그 요청의 사용자 항목 id `entryId`와 그래프 실행 id `runId`가 붙는다(Mac은 둘이 같은 id이고, 그래프가 없는 창이면 `runId`가 없다). 대기열에 들어간 요청은 아직 블록이 없으므로 id가 없다. 휴대폰은 `entryId`로 먼저 그려 둔 요청 블록을 실제 항목에 맞추고, id가 없는 옛 응답이면 글과 시각으로 맞춘다. 읽는 규칙과 사례는 [interaction.md](interaction.md) "보내기 응답"과 `native/contracts/fixtures/pending.json` `submitResponses`. `guided`의 202도 같은 모양이다 |
 | POST | `/m1/sessions/{id}/queue/{itemId}/remove` | | `{ protocol, ok }` · 없는 항목 404 |
 | POST | `/m1/sessions/{id}/queue/run-next` | | `{ protocol, ok }` · 실행 중이거나 대기열이 비면 409 |
 | POST | `/m1/sessions/{id}/rename` | `{ title }` (앞뒤 공백 제거 후 1~80자) 또는 `{ title: "", titleMode: "auto" }` | `{ protocol, ok }` — `titleMode: "auto"`이면 `title`을 무시하고 제목을 자동 모드로 되돌린다; 오래된 폰이 `title`만 보내면 고정 이름으로 처리 |

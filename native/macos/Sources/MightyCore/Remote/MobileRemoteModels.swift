@@ -589,10 +589,30 @@ public struct MobileSettingsRequest: Codable, Sendable, Equatable {
         self.mightyStyle = mightyStyle; self.styleId = styleId
     }
 }
+/// What a submit did, as the host's delegate reports it: the outcome word, and for a
+/// request that has a block the user entry and graph run it went into (natural submit B5).
+public struct MobileSubmitReceipt: Sendable, Equatable {
+    /// "started", "queued" or "steered".
+    public var outcome: String
+    public var entryId: String?
+    public var runId: String?
+    public init(outcome: String, entryId: String? = nil, runId: String? = nil) {
+        self.outcome = outcome; self.entryId = entryId; self.runId = runId
+    }
+}
+
+/// A submit's 202 body. `accepted` keeps the outcome word older phones read; `outcome`,
+/// `entryId` and `runId` are left out when absent (fixture `pending.json` `submitResponses`).
 public struct MobileSubmitResult: Codable, Sendable, Equatable {
     public var `protocol`: Int = 1
     public var accepted: String
+    public var outcome: String?
+    public var entryId: String?
+    public var runId: String?
     public init(accepted: String) { self.accepted = accepted }
+    public init(_ receipt: MobileSubmitReceipt) {
+        accepted = receipt.outcome; outcome = receipt.outcome; entryId = receipt.entryId; runId = receipt.runId
+    }
 }
 public struct MobileOK: Codable, Sendable, Equatable {
     public var `protocol`: Int = 1
