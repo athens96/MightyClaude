@@ -349,7 +349,8 @@ struct MobileRemoteStructureTests {
         let shape = MightyStructure.make(runs: runs, style: nil, currentPhase: nil)
         let lines = (1...8).map { "line \($0)" }
         let wire = try #require(MobileStructure.make(shape, runCount: 1, tails: ["t1": lines, "a1": ["no"]]))
-        let nodes = try #require(wire.rows?.first?.item.clusters.flatMap(\.nodes))
+        let clusters = try #require(wire.rows?.first?.item.clusters)
+        let nodes = clusters.flatMap(\.nodes)
         let card = try #require(nodes.first { $0.id == "t1" })
         #expect(card.background == true && card.outputTail == Array(lines.suffix(6)) && card.noticeReply == "통과")
         let agent = try #require(nodes.first { $0.id == "a1" })
