@@ -37,7 +37,7 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 | GET | `/m1/info` | | `{ protocol, hostId, hostName, appVersion, platform }` |
 | GET | `/m1/state?since=<rev>&wait=<0..10>` | | `MobileState` — `revision`이 `since`보다 커질 때까지 최대 `wait`초 기다렸다가 응답. 시간 안에 변화가 없으면 같은 `revision`으로 현재 상태를 돌려준다 |
 | GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>[&structure=<tag>]` | | `MobileSessionDetail` — 세션 단위 `revision`으로 같은 방식. `structure`는 `"structure"` 기능이 있는 호스트(Mac·Windows)에만(아래 "구조 보기" 절) |
-| POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "queued", outcome?, entryId?, runId? }`(`"steered"`는 구버전 호스트만, 새 필드는 아래 "라우트" 표) · 실행할 수 없으면 409 |
+| POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "queued", outcome?, entryId?, runId? }`(`/submit`과 `/guided`에서 `"steered"`는 구버전 호스트만 보낸다. 새 호스트는 다음 실행(`/queue/run-next`, 답은 따로)으로만 실행 중인 턴에 넣는다. 새 필드는 아래 "라우트" 표) · 실행할 수 없으면 409 |
 | POST | `/m1/sessions/{id}/stop` | | `{ protocol, stopped }` — 실행 중인 요청이 없어 멈출 것이 없었으면 `stopped: false` |
 | POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow, always? }` | `{ protocol, ok: true }` — `always`는 Antigravity 권한 카드에만(아래 "Antigravity 권한 카드" 절) |
 | POST | `/m1/sessions/{id}/answers` | `{ requestId, runId, answers: { "<질문 문장>": { selectedOptions, customText? } } }` | `{ protocol, ok: true }` |
@@ -129,7 +129,7 @@ MobilePermission {
 | `mightyStyle` | `cli` `ouroboros` — 둘 고정(v6까지는 `paperthin`도 있었고 v7에서 그 스타일과 함께 뺐다). `ouroboros`가 아닌 스타일(번들 클러드 플랜 포함)에는 언제나 `cli`가 실린다(진짜 값은 `styleId`, 아래 "스타일" 절) |
 | 블록 `kind` | `main` `agent` `task` `steer` `compact` `question` |
 | 블록 `status` | `running` `waiting` `completed` `error` `stopped` |
-| `accepted` | `started` `queued`(`steered`는 구버전 호스트만 보낸다) |
+| `accepted` | `started` `queued`(`/submit`·`/guided`에서 `steered`는 구버전 호스트만 보낸다. 새 호스트는 다음 실행으로만 넣고, 그 답은 `/queue/run-next`의 `{ protocol, ok }`다) |
 | `mode` | `steer` `queue`(둘 다 받지만 실행 중이면 둘 다 대기열) |
 | 명령 `source` | `app` `builtin` `project` `user` `plugin` |
 | 명령 `action` | `model` `permission` `clear` `usage` `help` `rename` |
