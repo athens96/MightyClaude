@@ -13,10 +13,20 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     public var activityGeneration: Int?
     /// Per-response attribution; absent in older graph events.
     public var responseRecords: [GraphResponseRecord]?
-    public init(id: String, parentID: String? = nil, title: String = L("graph.agent.defaultTitle"), input: String = "", status: String = "running", entries: [LogEntry] = [], kind: String? = nil, usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil) {
+    /// Started in the background (a background sub-agent; every task block). See `ExecutionGraphNode`.
+    public var background: Bool?
+    /// A task block's output file: read for its last lines, never shown or sent to the phone.
+    public var outputFile: String?
+    /// Claude's answer in the turn this block's notice opened alone.
+    public var noticeReply: String?
+    public init(id: String, parentID: String? = nil, title: String = L("graph.agent.defaultTitle"), input: String = "", status: String = "running", entries: [LogEntry] = [], kind: String? = nil, usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil,
+                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil) {
         self.id = id; self.parentID = parentID; self.title = title; self.input = input; self.status = status; self.entries = entries; self.kind = kind; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
+        self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply
     }
     public var isTask: Bool { kind == "task" }
+    /// A sub-agent started with `run_in_background`.
+    public var isBackgroundAgent: Bool { kind == nil && background == true }
     /// A mid-turn message the user sent to a running Claude request.
     public var isSteer: Bool { kind == "steer" }
     /// A steer that delegation sent, not the user (see `MightyGraphSupport.isDelegationNotice`).
@@ -62,8 +72,8 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
         return sum.isEmpty ? nil : sum
     }
     public var settled: Bool { MightyGraphSupport.terminal(status) && agents.allSatisfy { MightyGraphSupport.terminal($0.status) } }
-    /// Background tasks still running after the request's own turn ended: it reads completed and waits on them.
-    public var backgroundWaiting: Int { status == "completed" ? agents.filter { $0.isTask && !MightyGraphSupport.terminal($0.status) }.count : 0 }
+    /// Background tasks and sub-agents still running after the request's own turn ended: it reads completed and waits on them.
+    public var backgroundWaiting: Int { status == "completed" ? agents.filter { ($0.isTask || $0.isBackgroundAgent) && !MightyGraphSupport.terminal($0.status) }.count : 0 }
 
     /// The owning session is authoritative, including pre-provider graph saves.
     mutating func applyProvider(_ value: String) {
@@ -213,6 +223,8 @@ public enum MightyGraphSupport {
                 var agent = original
                 agent.title = bounded(agent.title, maximum: 240, budget: &budget)
                 agent.input = bounded(agent.input, maximum: 16_384, budget: &budget)
+                agent.noticeReply = agent.noticeReply.map { bounded($0, maximum: 32_768, budget: &budget) }.flatMap { $0.isEmpty ? nil : $0 }
+                if let file = agent.outputFile, file.utf8.count > 4096 || file.contains(where: \.isNewline) { agent.outputFile = nil }
                 agent.status = states.contains(agent.status) ? agent.status : "stopped"
                 if !["task", "steer", "compact", "question"].contains(agent.kind ?? "") { agent.kind = nil }
                 agent.usage = agent.usage?.normalized
@@ -375,7 +387,8 @@ extension RunSession {
                 if let output = node.output, !output.isEmpty { runs[index].finalOutput = output }
             } else {
                 let parent = node.parentId == ExecutionGraphSupport.mainNodeID(runId: node.runId) ? nil : node.parentId
-                var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact", "question"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration, responseRecords: node.responseRecords)
+                var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact", "question"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration, responseRecords: node.responseRecords,
+                                              background: node.background, outputFile: node.outputFile, noticeReply: node.noticeReply)
                 if let output = node.output, !output.isEmpty {
                     // Codex and Antigravity children take new assignments: one answer per generation.
                     let answerID = ["codex", "gemini"].contains(provider)
@@ -404,6 +417,9 @@ extension RunSession {
                     if agent.kind == nil { agent.kind = previous.kind }
                     if agent.usage == nil { agent.usage = previous.usage }
                     if agent.responseRecords == nil { agent.responseRecords = previous.responseRecords }
+                    if agent.background == nil { agent.background = previous.background }
+                    if agent.outputFile == nil { agent.outputFile = previous.outputFile }
+                    if agent.noticeReply == nil { agent.noticeReply = previous.noticeReply }
                     if !previous.input.isEmpty { agent.input = previous.input }
                     var mergedEntries = previous.entries
                     for entry in agent.entries {

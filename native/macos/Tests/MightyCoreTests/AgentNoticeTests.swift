@@ -59,6 +59,13 @@ struct AgentNoticeTests {
             #expect(block.kind == expect["agentKind"] as? String, "\(name)")
             #expect(block.state == expect["agentState"] as? String, "\(name)")
             #expect(block.output == expect["agentOutput"] as? String, "\(name)")
+            // Started in the background, where its run writes, Claude's answer to its notice: checked when the case names them (null = absent).
+            if expect.keys.contains("agentBackground") { #expect(block.background == expect["agentBackground"] as? Bool, "\(name): background") }
+            if expect.keys.contains("agentOutputFile") { #expect(block.outputFile == expect["agentOutputFile"] as? String, "\(name): output file") }
+            if expect.keys.contains("agentNoticeReply") { #expect(block.noticeReply == expect["agentNoticeReply"] as? String, "\(name): notice reply") }
+            if let count = expect["noticeReplyBlocks"] as? Int {
+                #expect(latest.values.filter { $0.noticeReply != nil }.count == count, "\(name): blocks with a notice reply")
+            }
             // A message the agent sent while running is in its log, not its result.
             for text in expect["agentLog"] as? [String] ?? [] {
                 #expect(block.entries.contains { $0.kind == "assistant" && $0.text == text }, "\(name): \(text)")

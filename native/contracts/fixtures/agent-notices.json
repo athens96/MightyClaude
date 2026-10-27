@@ -149,7 +149,8 @@
         "mainOutputContains": [
           "Started the survey.",
           "The survey found one page."
-        ]
+        ],
+        "agentBackground": true
       }
     },
     {
@@ -952,7 +953,8 @@
         "agentKind": "agent",
         "agentState": "completed",
         "agentOutput": "There are eleven help pages.",
-        "noticeBlocks": 0
+        "noticeBlocks": 0,
+        "agentBackground": null
       }
     },
     {
@@ -1029,7 +1031,9 @@
         "agentKind": "task",
         "agentState": "completed",
         "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
-        "noticeBlocks": 1
+        "noticeBlocks": 1,
+        "agentBackground": true,
+        "agentOutputFile": "/tmp/example/tasks/b1c2d3e4f.output"
       }
     },
     {
@@ -1410,6 +1414,395 @@
           {
             "header": "graph.result.afterNotice",
             "answer": "Already reported."
+          }
+        ],
+        "agentNoticeReply": "The checks passed.",
+        "noticeReplyBlocks": 1
+      }
+    },
+    {
+      "name": "a background command's launch names its output file",
+      "agentToolUseId": "toolu_FAKEcommand0015",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-28",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-28",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0015",
+                "name": "Bash",
+                "input": {
+                  "command": "npm run build",
+                  "description": "Build the app",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcommand0015",
+                "type": "tool_result",
+                "content": "Command running in background with ID: d4e5f6a7b. Output is being written to: /tmp/example/tasks/d4e5f6a7b.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-29",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-29",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Building."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Building."
+        }
+      ],
+      "expect": {
+        "agentKind": "task",
+        "agentState": "running",
+        "noticeBlocks": 0,
+        "agentBackground": true,
+        "agentOutputFile": "/tmp/example/tasks/d4e5f6a7b.output",
+        "agentNoticeReply": null
+      }
+    },
+    {
+      "name": "a notification's output file replaces the launch's",
+      "agentToolUseId": "toolu_FAKEcommand0016",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-30",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-30",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0016",
+                "name": "Bash",
+                "input": {
+                  "command": "npm run build",
+                  "description": "Build the app",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcommand0016",
+                "type": "tool_result",
+                "content": "Command running in background with ID: e5f6a7b8c. Output is being written to: /tmp/example/tasks/e5f6a7b8c.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-31",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-31",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Building."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Building."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>e5f6a7b8c</task-id>\n<output-file>/tmp/example/tasks/e5f6a7b8c-moved.output</output-file>\n<status>completed</status>\n<summary>Background command \"Build the app\" completed (exit code 0)</summary>\n</task-notification>"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "task",
+        "agentState": "completed",
+        "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
+        "noticeBlocks": 1,
+        "agentBackground": true,
+        "agentOutputFile": "/tmp/example/tasks/e5f6a7b8c-moved.output",
+        "agentNoticeReply": null
+      }
+    },
+    {
+      "name": "the turn one notification opened: its answer is the command's reply and still follows in the result",
+      "agentToolUseId": "toolu_FAKEcommand0017",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-32",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-32",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0017",
+                "name": "Bash",
+                "input": {
+                  "command": "npm run build",
+                  "description": "Build the app",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcommand0017",
+                "type": "tool_result",
+                "content": "Command running in background with ID: f6a7b8c9d. Output is being written to: /tmp/example/tasks/f6a7b8c9d.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-33",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-33",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Building."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Building."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>f6a7b8c9d</task-id>\n<output-file>/tmp/example/tasks/f6a7b8c9d.output</output-file>\n<status>completed</status>\n<summary>Background command \"Build the app\" completed (exit code 0)</summary>\n</task-notification>"
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-34",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-34",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Build finished fine."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Build finished fine.",
+          "origin": {
+            "kind": "task-notification"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "task",
+        "agentState": "completed",
+        "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
+        "noticeBlocks": 1,
+        "agentBackground": true,
+        "agentOutputFile": "/tmp/example/tasks/f6a7b8c9d.output",
+        "agentNoticeReply": "Build finished fine.",
+        "noticeReplyBlocks": 1,
+        "mainNoticeSections": [
+          {
+            "header": "graph.result.afterTaskNotice",
+            "title": "Build the app",
+            "answer": "Build finished fine."
+          }
+        ]
+      }
+    },
+    {
+      "name": "two notifications in one message: the turn's answer is only in the result",
+      "agentToolUseId": "toolu_FAKEcommand0018",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-35",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-35",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0018",
+                "name": "Bash",
+                "input": {
+                  "command": "npm run build",
+                  "description": "Build the app",
+                  "run_in_background": true
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0019",
+                "name": "Bash",
+                "input": {
+                  "command": "npm test",
+                  "description": "Run the checks",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcommand0018",
+                "type": "tool_result",
+                "content": "Command running in background with ID: a7b8c9d0e. Output is being written to: /tmp/example/tasks/a7b8c9d0e.output"
+              },
+              {
+                "tool_use_id": "toolu_FAKEcommand0019",
+                "type": "tool_result",
+                "content": "Command running in background with ID: b8c9d0e1f. Output is being written to: /tmp/example/tasks/b8c9d0e1f.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-36",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-36",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Started both."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Started both."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a7b8c9d0e</task-id>\n<output-file>/tmp/example/tasks/a7b8c9d0e.output</output-file>\n<status>completed</status>\n<summary>Background command \"Build the app\" completed (exit code 0)</summary>\n</task-notification>\n<task-notification>\n<task-id>b8c9d0e1f</task-id>\n<output-file>/tmp/example/tasks/b8c9d0e1f.output</output-file>\n<status>completed</status>\n<summary>Background command \"Run the checks\" completed (exit code 0)</summary>\n</task-notification>"
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-37",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-37",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Both finished."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Both finished.",
+          "origin": {
+            "kind": "task-notification"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "task",
+        "agentState": "completed",
+        "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
+        "noticeBlocks": 2,
+        "agentBackground": true,
+        "agentNoticeReply": null,
+        "noticeReplyBlocks": 0,
+        "mainNoticeSections": [
+          {
+            "header": "graph.result.afterTaskNotice",
+            "title": "Build the app, Run the checks",
+            "answer": "Both finished."
           }
         ]
       }

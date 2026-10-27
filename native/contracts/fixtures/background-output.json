@@ -1,0 +1,86 @@
+{
+  "about": "How a host turns the end of a background run's output file into the lines it shows. Mac BackgroundOutputTail, Windows Core BackgroundOutputTail, phone lib/background-output.ts read this file.",
+  "maxBytes": 8192,
+  "maxLines": 6,
+  "maxLineChars": 200,
+  "cases": [
+    {
+      "name": "short file",
+      "base64": "b25lCnR3bwp0aHJlZQo=",
+      "truncated": false,
+      "lines": [
+        "one",
+        "two",
+        "three"
+      ]
+    },
+    {
+      "name": "keeps the last six",
+      "base64": "MQoyCjMKNAo1CjYKNwo4Cg==",
+      "truncated": false,
+      "lines": [
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ]
+    },
+    {
+      "name": "cut first line dropped when truncated",
+      "base64": "dGlhbCBsaW5lCmZ1bGwK",
+      "truncated": true,
+      "lines": [
+        "full"
+      ]
+    },
+    {
+      "name": "ansi colours stripped",
+      "base64": "G1szMm1vaxtbMG0gZG9uZQo=",
+      "truncated": false,
+      "lines": [
+        "ok done"
+      ]
+    },
+    {
+      "name": "carriage return keeps the last segment",
+      "base64": "MTAlDTUwJQ0xMDAlCm5leHQK",
+      "truncated": false,
+      "lines": [
+        "100%",
+        "next"
+      ]
+    },
+    {
+      "name": "trailing empty lines dropped",
+      "base64": "YQoKCg==",
+      "truncated": false,
+      "lines": [
+        "a"
+      ]
+    },
+    {
+      "name": "long line cut",
+      "base64": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eAo=",
+      "truncated": false,
+      "lines": [
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+      ]
+    },
+    {
+      "name": "invalid utf-8 replaced",
+      "base64": "Yf9iCg==",
+      "truncated": false,
+      "lines": [
+        "a�b"
+      ]
+    },
+    {
+      "name": "empty file",
+      "base64": "",
+      "truncated": false,
+      "lines": []
+    }
+  ]
+}

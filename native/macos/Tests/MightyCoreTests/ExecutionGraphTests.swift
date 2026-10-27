@@ -141,6 +141,8 @@ struct ExecutionGraphTests {
         try send(toolResult("sync", text: "Command running in background with ID: task-s1. Output is being written to: /tmp/task-s1.output."), to: parser)
         #expect(try latest(nodes, buildID).state == "running"); #expect(try latest(nodes, buildID).output == nil)
         #expect(try latest(nodes, buildID).entries.last?.text.hasPrefix("Command running in background") == true)
+        // The block is background work and remembers where its run writes, without the sentence's full stop.
+        #expect(try latest(nodes, buildID).background == true); #expect(try latest(nodes, buildID).outputFile == "/tmp/task-b1.output")
         // Main transcript rows still complete on the acknowledgement, as before.
         #expect(activities.contains { $0.toolName == "Bash" && $0.state == "completed" })
         try send(notification(task: "task-b1", tool: "build", status: "completed", summary: "Background command \"Build the app\" completed (exit code 0)"), to: parser)
@@ -201,6 +203,26 @@ struct ExecutionGraphTests {
     /// A request handed into the run after its turn ended (run next while only background work is left) is a 중간 요청
     /// whose reply is the next root answer, and that turn's answer follows the request's in the result under "중간 요청 이후"
     /// (Windows SessionHistoryVerification.ASteerAfterTheTurnFollowsInTheResult).
+    /// A background sub-agent still running after the request's own turn ended: the run reads completed and waits on
+    /// it, as on a background command. A foreground sub-agent never counts.
+    @Test func theRequestWaitsOnItsStillRunningBackgroundAgent() throws {
+        var session = RunSession(id: "pane", workspaceId: "space", title: "Claude", provider: "claude")
+        session.recordGraph(RunEvent(sessionId: "pane", type: "log", entry: LogEntry(id: "request-one", kind: "user", text: "survey the docs", provider: "claude")))
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "agent-wait",
+                                     graph: { session.recordGraph(RunEvent(sessionId: "pane", type: "graph", graph: $0)) }, graphInput: "survey the docs")
+        try send(assistant([spawn("docs-agent", prompt: "Survey the docs.", background: true)], id: "main-1"), to: parser)
+        try send(toolResult("docs-agent", text: "Async agent launched successfully.\nagentId: a1b2c3d4 (internal ID)"), to: parser)
+        try send(assistant([["type": "text", "text": "Started the survey."]], id: "main-2"), to: parser)
+        try send(["type": "result", "subtype": "success", "is_error": false, "result": "Started the survey."], to: parser)
+        let run = try #require(session.mightyGraphRuns.last)
+        #expect(run.status == "completed")
+        let agent = try #require(run.agents.first)
+        #expect(agent.background == true); #expect(agent.isBackgroundAgent); #expect(agent.status == "running")
+        #expect(run.backgroundWaiting == 1); #expect(!run.settled)
+        let foreground = MightyGraphRun(id: "r", status: "completed", agents: [MightyGraphAgent(id: "a", status: "running")])
+        #expect(foreground.backgroundWaiting == 0)
+    }
+
     @Test func aSteerAfterTheTurnFollowsInTheResult() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             var nodes: [ExecutionGraphNode] = []

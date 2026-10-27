@@ -96,11 +96,19 @@ public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
     public var activityGeneration: Int?
     /// Per-response attribution; absent in older graph events and graph saves.
     public var responseRecords: [GraphResponseRecord]?
+    /// Started with `run_in_background` (a background Agent; every task block); absent otherwise and in older saves.
+    public var background: Bool?
+    /// Where a task block's run writes its output. Never shown and never sent to the phone.
+    public var outputFile: String?
+    /// Claude's answer in the turn this block's notice opened, when it was that turn's only notice.
+    public var noticeReply: String?
 
     public init(id: String, runId: String, parentId: String? = nil, kind: String, state: String, title: String,
-                input: String? = nil, output: String? = nil, entries: [LogEntry] = [], updatedAt: String = mightyTimestamp(), usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil) {
+                input: String? = nil, output: String? = nil, entries: [LogEntry] = [], updatedAt: String = mightyTimestamp(), usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil,
+                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil) {
         self.id = id; self.runId = runId; self.parentId = parentId; self.kind = kind; self.state = state
         self.title = title; self.input = input; self.output = output; self.entries = entries; self.updatedAt = updatedAt; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
+        self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply
     }
 }
 
@@ -138,10 +146,14 @@ public enum ExecutionGraphSupport {
         result.usage = node.usage?.normalized
         result.activityGeneration = normalizedGeneration(node.activityGeneration)
         result.responseRecords = node.responseRecords
+        result.background = node.background == true ? true : nil
+        result.outputFile = node.outputFile.flatMap { $0.utf8.count <= 4096 && !$0.contains(where: \.isNewline) ? $0 : nil }
+        result.noticeReply = node.noticeReply.map { ActivitySupport.clean($0, maximumBytes: maximumOutputBytes) }
         if restoring && !terminal(result.state) { result.state = "stopped" }
         if node.kind == "main" { result.entries = []; return result }
 
         var remaining = maximumNodeBytes - result.title.utf8.count - (result.input?.utf8.count ?? 0) - (result.output?.utf8.count ?? 0)
+            - (result.outputFile?.utf8.count ?? 0) - (result.noticeReply?.utf8.count ?? 0)
         var seen = Set<String>()
         var entries: [LogEntry] = []
         for var entry in node.entries.suffix(maximumEntries).reversed() {

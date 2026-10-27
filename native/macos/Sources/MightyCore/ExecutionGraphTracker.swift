@@ -64,6 +64,10 @@ final class ExecutionGraphTracker {
     private var turnEnded = false
     /// What the steer that opened such a turn is called (중간 요청 or 위임 알림): its answer's section is headed by it.
     private var steeredTurn: String?
+    /// The task block whose notice alone opened the coming notice turn: that turn's answer is its `noticeReply`.
+    private var replyTarget: String?
+    /// 작업 알림 added since the last root result; a reply target needs exactly one.
+    private var turnNotices = 0
     private var messageOrder: [String] = []
     private var unnamedUsage = 0
     private var compactions = 0
@@ -258,6 +262,7 @@ final class ExecutionGraphTracker {
                     if background { backgroundTools.insert(toolID) }
                     if let name = input?["name"] as? String, !name.isEmpty, name.utf8.count <= 512, agentNames[name] != nil || agentNames.count < 512 { agentNames[name] = child }
                     update(child) { node in
+                        if background { node.background = true }
                         if let prompt = input?["prompt"] as? String { node.input = prompt }
                         if let title = (input?["name"] ?? input?["description"] ?? input?["subagent_type"]) as? String, !title.isEmpty { node.title = title }
                     }
@@ -276,6 +281,7 @@ final class ExecutionGraphTracker {
                     setParent(task, owner: owner)
                     backgroundTools.insert(toolID)
                     update(task) { node in
+                        node.background = true
                         let command = input?["command"] as? String
                         if let command { node.input = command }
                         if let title = input?["description"] as? String, !title.isEmpty { node.title = title }
@@ -315,14 +321,17 @@ final class ExecutionGraphTracker {
         } else if type == "result", ClaudeStream.isNotificationResult(value) {
             // A notice turn's answer follows the request's in the result, headed by the notices it answered.
             guard parentTool == nil else { return }
-            let titles = noticedTasks; noticedTasks.removeAll(); steeredTurn = nil
+            let titles = noticedTasks, target = replyTarget
+            clearNoticeTurn()
             guard let answer = (value["result"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty else { return }
             let header = titles.isEmpty ? L("graph.result.afterNotice") : L("graph.result.afterTaskNotice", ["title": titles.joined(separator: ", ")])
             update(mainID) { $0.output = MightyGraphSupport.withNoticeSection($0.output, header: header, answer: answer) }
+            // The block whose notice alone opened this turn keeps the answer too; the result's section stays.
+            if let target { update(target) { $0.noticeReply = answer } }
         } else if type == "result" {
             if parentTool == nil, let steered = steeredTurn {
                 // A turn a steer opened after the request's result: its answer follows in the result, as a notice turn's does.
-                noticedTasks.removeAll(); steeredTurn = nil
+                clearNoticeTurn()
                 if let answer = (value["result"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty {
                     update(mainID) { $0.output = MightyGraphSupport.withNoticeSection($0.output, header: L("graph.result.afterSteer", ["block": steered]), answer: answer) }
                 }
@@ -330,7 +339,7 @@ final class ExecutionGraphTracker {
                 turnEnded = true
                 // Main output comes only from the CLI's actual root result. The request's own turn ended: it reads
                 // completed while background tasks it started still run; the process's end settles the rest.
-                noticedTasks.removeAll()
+                noticedTasks.removeAll(); replyTarget = nil; turnNotices = 0
                 let failed = value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error")
                 update(mainID) { node in
                     node.output = value["result"] as? String
@@ -642,6 +651,12 @@ final class ExecutionGraphTracker {
         if let match = text.firstMatch(of: #/background with ID: (?<task>[A-Za-z0-9_-]+)/#), taskAliases.count < 512 {
             taskAliases[String(match.task)] = id
         }
+        // Where the run writes its output; a notification's <output-file> may move it.
+        if let match = text.firstMatch(of: #/Output is being written to: (?<path>\S+)/#) {
+            var path = String(match.path)
+            if path.hasSuffix(".") { path.removeLast() }
+            if !path.isEmpty { update(id) { $0.outputFile = path } }
+        }
         if !text.isEmpty { append(LogEntry(id: ExecutionGraphSupport.identifier(runID, id + ":launch"), kind: "system", text: text, provider: provider), to: id) }
     }
     /// A background Agent's launch result names its agent ID, which its
@@ -658,9 +673,17 @@ final class ExecutionGraphTracker {
     }
     private func settleTasks(in text: String, notice: Bool) {
         var remaining = text[...]
+        var notifications = 0
+        var settledTask: String?
+        defer {
+            // Only a message with one notification, for a task block whose notice it added, opens a turn that block alone answers.
+            if notice, notifications > 1 { replyTarget = nil }
+            else if notice, let settledTask, turnNotices == 1 { replyTarget = settledTask }
+        }
         while let start = remaining.range(of: "<task-notification>"), let end = remaining.range(of: "</task-notification>", range: start.upperBound..<remaining.endIndex) {
             let body = remaining[start.upperBound..<end.lowerBound]
             remaining = remaining[end.upperBound...]
+            notifications += 1
             let byTool = Self.tag(body, "tool-use-id").map { ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: $0) }.flatMap { nodes[$0] != nil ? $0 : nil }
             guard let id = byTool ?? Self.tag(body, "task-id").flatMap({ taskAliases[$0] }), let kind = nodes[id]?.kind, ["task", "agent"].contains(kind) else { continue }
             let status = Self.tag(body, "status")?.lowercased() ?? "completed"
@@ -674,26 +697,38 @@ final class ExecutionGraphTracker {
                     if empty, let summary { node.output = summary }
                 }
                 if empty, summary != nil, let output = nodes[id]?.output { agentSummaries[id] = output }
+                if notice { addNotice(for: id, state: state, detail: summary) }
             } else {
+                let file = Self.tag(body, "output-file")
                 update(id) { node in
+                    if let file { node.outputFile = file }
                     guard !ExecutionGraphSupport.terminal(node.state) else { return }
                     node.state = state
                     if let summary { node.output = summary }
                 }
+                if notice, addNotice(for: id, state: state, detail: summary) { settledTask = id }
             }
-            if notice { addNotice(for: id, state: state, detail: summary) }
         }
     }
     /// The notice entered the turn like a steer: a 작업 알림 under main, once per
     /// block, whose reply is the next root-level answer. A block's later notice
     /// (an agent's notification after its hand-back) adds nothing, nor its title
     /// to the heading of the next notice turn's answer.
-    private func addNotice(for id: String, state: String, detail: String?) {
-        guard let notified = nodes[id], nodes[ExecutionGraphSupport.identifier(runID, "steer:notice:" + id)] == nil else { return }
+    @discardableResult
+    private func addNotice(for id: String, state: String, detail: String?) -> Bool {
+        guard let notified = nodes[id], nodes[ExecutionGraphSupport.identifier(runID, "steer:notice:" + id)] == nil else { return false }
+        turnNotices += 1
+        // A second notice in the same turn: its answer belongs to both, so to neither block alone.
+        if turnNotices > 1 { replyTarget = nil }
         let named = notified.title.isEmpty ? notified.input ?? "" : notified.title
         if !noticedTasks.contains(named), noticedTasks.count < 16 { noticedTasks.append(named) }
         let line = named + " · " + L(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
         addSteer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + line + (detail.map { "\n" + $0 } ?? ""))
+        return true
+    }
+    /// A notice turn or a steered turn ended: the next one starts with no notices.
+    private func clearNoticeTurn() {
+        noticedTasks.removeAll(); steeredTurn = nil; replyTarget = nil; turnNotices = 0
     }
     /// Messages a background sub-agent sent this session (`AgentHandback`). Its
     /// framed final report is its result and ends it; with the agent's
