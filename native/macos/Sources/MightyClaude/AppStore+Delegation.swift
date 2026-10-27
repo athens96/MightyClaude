@@ -610,8 +610,9 @@ extension AppStore {
     /// A run with `input` in the pane, the way a send starts one: its id, or
     /// nil when the pane cannot run now (a child without its worktree among them).
     /// Its words are delegation's, so they never title the pane.
+    /// It is the user's own only while their 다음 실행 releases the pane's held items (`ownHeldReleases`).
     func startRun(sessionId: String, input: String) async -> String? {
-        await startDelivered(sessionId, input: input, attachments: [], restoringDraft: nil, titleFrom: "", own: false)
+        await startDelivered(sessionId, input: input, attachments: [], restoringDraft: nil, titleFrom: "", own: ownHeldReleases.contains(sessionId))
     }
 
     /// A delegation notice or follow-up: steered into the pane's running

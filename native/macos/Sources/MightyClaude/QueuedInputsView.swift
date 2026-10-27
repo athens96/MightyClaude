@@ -29,7 +29,7 @@ struct QueuedInputsView: View {
             rows
                 .background {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Palette.accent.opacity(flashing ? 0.14 : 0))
+                        .fill(flashing ? Palette.accentSoft : Color.clear)
                         .padding(-DesignMetrics.Spacing.xs)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)

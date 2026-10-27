@@ -17,8 +17,8 @@ struct SessionPaneView: View {
     @ViewState private var nextActionsMemo = NextActionsMemo()
 
     private var running: Bool { session.status == "running" || store.pendingRuns.contains(session.id) }
-    /// The stop button was pressed and the stop is still going (`AppStore.stoppingSince`).
-    private var stopping: Bool { store.stoppingSince[session.id] != nil }
+    /// The stop button was pressed and the stop is still going (`AppStore.stopPending`).
+    private var stopping: Bool { store.stopPending[session.id]?.isPending == true }
     private var active: Bool { store.snapshot.activeSessionId == session.id }
     private var localTerminal: Bool { store.usesLocalTerminal(session) }
     private var runtime: ProviderRuntime { store.providerRuntime(session.provider, workspaceId: session.workspaceId) }
@@ -843,7 +843,7 @@ struct SessionPaneView: View {
                         Button(action: stopRun) {
                             Image(systemName: "stop.fill").font(.ui(size: compact ? 9 : 11, weight: .semibold))
                                 // The stop going on: the shared pending bars in the square's place (natural submit A3).
-                                .pendingOverlay(store.stoppingSince[session.id].map { PendingState.pending(since: $0) } ?? .idle, tint: Palette.onStatus)
+                                .pendingOverlay(store.stopPending[session.id] ?? .idle, tint: Palette.onStatus)
                                 .frame(width: compact ? Self.compactStop : ComposerToolbarMetrics.height, height: compact ? Self.compactStop : ComposerToolbarMetrics.height)
                                 .foregroundStyle(Palette.onStatus)
                                 .background(Palette.err, in: RoundedRectangle(cornerRadius: compact ? 7 : 8, style: .continuous))

@@ -74,7 +74,7 @@ struct MightyGraphActivityIndicator: View {
 /// Four capsules rising and falling as `MightyGraphActivityStyle.barHeight` says, in
 /// step with the wall clock; each bar's height is a keyframe animation sampled over
 /// one period.
-struct MightyGraphActivityBars: NSViewRepresentable {
+private struct MightyGraphActivityBars: NSViewRepresentable {
     let tint: Color
 
     func makeNSView(context: Context) -> MightyGraphActivityBarsView { MightyGraphActivityBarsView(frame: .zero) }

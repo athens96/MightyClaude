@@ -349,7 +349,8 @@ extension AppStore {
         }
         if let reason = runBlockedReason(session) { keep(reason); return false }
         let previous = error
-        guard start(session.id, session: session, workspace: workspace, input: request.input, attachments: request.attachments, restoringDraft: nil) else {
+        // Sent again in the background, not by the user's hand: no view is moved to it.
+        guard start(session.id, session: session, workspace: workspace, input: request.input, attachments: request.attachments, restoringDraft: nil, own: false) else {
             // The card shows why; the window-wide alert stays as it was.
             let reason = error ?? L("loginRecovery.resendFailed")
             error = previous

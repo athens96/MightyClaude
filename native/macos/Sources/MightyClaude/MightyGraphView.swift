@@ -118,6 +118,10 @@ struct MightyGraphView: View {
     /// The 기록 group an own request asks the timeline to show.
     @ViewState private var timelineReveal: TimelineReveal?
     private struct TimelineReveal: Equatable { let serial: Int; let id: String }
+    /// The 기록's end is in view (its end mark is laid out): someone else's new request is
+    /// followed only then (`SubmitScroll`, not own).
+    @ViewState private var timelineAtEnd = true
+    private static let timelineEndID = "timeline-end"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Kept out of the view body: long concatenations of conditionals are
@@ -858,6 +862,10 @@ struct MightyGraphView: View {
                     ForEach(groups) { group in
                         timelineGroup(group).id(group.id)
                     }
+                    // The newest end: a lazy stack lays it out only near the viewport.
+                    Color.clear.frame(height: 1).id(Self.timelineEndID)
+                        .onAppear { timelineAtEnd = true }
+                        .onDisappear { timelineAtEnd = false }
                 }
                 .scrollTargetLayout()
                 .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.md)
@@ -871,8 +879,10 @@ struct MightyGraphView: View {
                 onLoadOlder()
             }
             .onChange(of: runs.last?.id) { _, last in
-                // The user's own request is moved to by `revealTimeline`, gliding and reliably.
-                guard let last, ownSubmit?.target != .run(last) else { return }
+                // The user's own request is moved to by `revealTimeline`, gliding and reliably;
+                // anyone else's is followed only from the newest end.
+                guard let last, ownSubmit?.target != .run(last),
+                      SubmitScroll.target(view: .timeline, own: false, chosenBoardIsNewest: true, nearBottom: timelineAtEnd).scroll == .follow else { return }
                 proxy.scrollTo(last, anchor: .bottom)
             }
             .onChange(of: timelineReveal) { _, reveal in
@@ -1188,7 +1198,9 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             }
             .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
             .clipped()
-            .background(MightyGraphDotGrid(offset: displayedOffset, zoom: zoom, dark: colorScheme == .dark))
+            // The dots glide with the cards (`glideFrom`).
+            .background(MightyGraphDotGrid(offset: displayedOffset, zoom: zoom, dark: colorScheme == .dark)
+                .animation(glideFrom == nil ? nil : PendingMotion.animation(DesignMetrics.Motion.scroll, reduceMotion: reduceMotion), value: displayedOffset))
 
             MightyGraphInteraction(sessionID: sessionID, nodes: graph.nodes, zoom: zoom,
                 viewportSize: viewport.size, targetToken: scrollTarget?.token,
@@ -1222,10 +1234,16 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
 /// diagram. The dots are laid from the camera's offset, so they travel with a pan.
 /// One dot is drawn into a step-sized tile and the page is filled with it as a tiled
 /// pattern, so a pan or zoom frame costs the same however many dots show.
-private struct MightyGraphDotGrid: View {
-    let offset: CGPoint
+private struct MightyGraphDotGrid: View, Animatable {
+    var offset: CGPoint
     let zoom: CGFloat
     let dark: Bool
+
+    /// The offset animates, so the dots move with a gliding camera instead of jumping.
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(offset.x, offset.y) }
+        set { offset = CGPoint(x: newValue.first, y: newValue.second) }
+    }
 
     var body: some View {
         let palette = dark ? DesignTokens.dark : DesignTokens.light

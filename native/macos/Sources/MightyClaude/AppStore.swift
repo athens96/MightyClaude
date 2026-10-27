@@ -347,9 +347,13 @@ final class AppStore: ObservableObject, DelegationHost {
     /// When a request last joined a pane's queue (natural submit B3): the queue row
     /// above the composer flashes for `Motion.highlight` from then.
     @Published private(set) var queueAddedAt: [String: Date] = [:]
-    /// Panes whose stop button was pressed, since when, until the stop is over. Kept
-    /// here, not in the pane's view, so a redrawn pane still shows the stop going.
-    @Published private(set) var stoppingSince: [String: Date] = [:]
+    /// Panes whose stop button was pressed: pending until the stop is over, then done, so
+    /// its mark keeps `pendingMinVisible`. Kept here, not in the pane's view, so a redrawn
+    /// pane still shows the stop going.
+    @Published private(set) var stopPending: [String: PendingState] = [:]
+    /// Panes whose held items the user's 다음 실행 is releasing: the run that takes them is
+    /// the user's own (natural submit B2).
+    var ownHeldReleases = Set<String>()
     /// Queued rows starting with the items delegation holds for their pane,
     /// until that release is over.
     private var releasingRows: Set<String> = []
@@ -750,7 +754,7 @@ final class AppStore: ObservableObject, DelegationHost {
             queuedInputs.removeValue(forKey: id)
             antigravityBoard.remove(sessionId: id); antigravityPermissionErrors.removeValue(forKey: id)
             draftRevisions.removeValue(forKey: id); startedRequests.removeValue(forKey: id)
-            submitPending.removeValue(forKey: id); ownSubmits.removeValue(forKey: id); queueAddedAt.removeValue(forKey: id); stoppingSince.removeValue(forKey: id)
+            submitPending.removeValue(forKey: id); ownSubmits.removeValue(forKey: id); queueAddedAt.removeValue(forKey: id); stopPending.removeValue(forKey: id)
             forgetGraphHistory(id)
             forgetStyleState(id); pruneStyleStateWatchers()
             if snapshot.activeSessionId == id {
@@ -1011,7 +1015,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// rows follow in later runs; otherwise the first queued row runs now,
     /// as after an error left the queue paused.
     func runNextQueuedInput(_ id: String) {
-        if !(delegationHeld[id] ?? []).isEmpty { Task { await runNextHeld(id) }; return }
+        if !(delegationHeld[id] ?? []).isEmpty { Task { await runNextHeld(id, own: true) }; return }
         // A run that only waits on background work takes the first row as a new turn; refused, it stays queued.
         if steersRunNext(id) { Task { if !(await steerQueuedRow(id)) { runNextQueuedRow(id) } }; return }
         runNextQueuedRow(id)
@@ -1039,9 +1043,12 @@ final class AppStore: ObservableObject, DelegationHost {
 
     /// Run next with items held for the pane: delegation releases them. False
     /// when no run took them; they stay held.
+    /// `own`: the user's 다음 실행 on this Mac, whose run every view moves to.
     @discardableResult
-    func runNextHeld(_ id: String) async -> Bool {
+    func runNextHeld(_ id: String, own: Bool = false) async -> Bool {
         guard let delegation else { return false }
+        if own { ownHeldReleases.insert(id) }
+        defer { if own { ownHeldReleases.remove(id) } }
         switch await delegation.runNext(in: id) {
         case .released: return true
         // Released meanwhile by another send: the queued rows as before.
@@ -1280,13 +1287,14 @@ final class AppStore: ObservableObject, DelegationHost {
     }
 
     /// The composer's stop button: the pane shows its stop going from now until the stop
-    /// is over (`stoppingSince`), however often the pane is drawn again meanwhile.
+    /// is over (`stopPending`), however often the pane is drawn again meanwhile.
     func requestStop(_ id: String) {
-        guard stoppingSince[id] == nil else { return }
-        stoppingSince[id] = Date()
+        guard stopPending[id]?.isPending != true else { return }
+        let since = Date()
+        stopPending[id] = .pending(since: since)
         Task {
             await stop(id)
-            stoppingSince.removeValue(forKey: id)
+            stopPending[id] = .done(since: since, at: Date())
         }
     }
 

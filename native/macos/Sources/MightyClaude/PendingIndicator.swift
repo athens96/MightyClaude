@@ -45,27 +45,13 @@ enum PendingMotion {
     @MainActor static var systemReducesMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 }
 
-/// The diagram's activity bars (`MightyGraphActivityBars`), standing still at their resting
-/// heights under Reduce Motion: it takes the movement away, not the mark.
+/// The diagram's activity mark for a request on its way: `MightyGraphActivityIndicator`'s
+/// bars, and its own still mark under Reduce Motion, which takes the movement away.
 struct PendingBars: View {
     var tint: Color = Palette.run
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Group {
-            if reduceMotion {
-                HStack(spacing: DesignMetrics.Spacing.xxs) {
-                    ForEach(0..<4, id: \.self) { index in
-                        Capsule().fill(tint).frame(width: 3, height: MightyGraphActivityStyle.barHeight(index, phase: 0))
-                    }
-                }
-            } else {
-                MightyGraphActivityBars(tint: tint)
-            }
-        }
-        .frame(width: 18, height: 14)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        MightyGraphActivityIndicator(status: "starting", tint: tint)
     }
 }
 

@@ -235,5 +235,12 @@ struct MightyGraphTests {
         #expect(MightyGraphSupport.normalized(session.graphRuns ?? [], restoring: true, budget: &budget).last?.status == "stopped")
         #expect(!MightyGraphSupport.startedBy(RunEvent(sessionId: session.id, type: "usage"), status: "starting"))
         #expect(!MightyGraphSupport.startedBy(RunEvent(sessionId: session.id, type: "log"), status: "running"))
+        #expect(!MightyGraphSupport.startedBy(RunEvent(sessionId: session.id, type: "log", entry: LogEntry(kind: "user", text: "next")), status: "starting"))
+
+        // A graph observation that does not normalize still moves the request on, as the
+        // app's submit state does for the same event.
+        session.beginGraphRun(input: "Odd", id: "request-seven", configuredModel: "default", status: "starting")
+        session.recordGraph(RunEvent(sessionId: session.id, type: "graph"))
+        #expect(session.mightyGraphRuns.last?.status == "running")
     }
 }

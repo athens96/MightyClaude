@@ -140,9 +140,12 @@ public enum MightyGraphSupport {
     }
     public static func isTaskNotice(_ input: String) -> Bool { input.hasPrefix(taskNoticePrefix) }
     /// Whether `event` is the first sign of the run a "starting" request (`status`) waits
-    /// for that is not itself a status: a log line or a graph observation.
+    /// for that is not itself a status: a log line of the run or a graph observation. A
+    /// user's line begins a request of its own (`recordGraph`), so it is not one.
     public static func startedBy(_ event: RunEvent, status: String) -> Bool {
-        status == "starting" && ["log", "graph"].contains(event.type)
+        guard status == "starting" else { return false }
+        if event.type == "graph" { return true }
+        return event.type == "log" && event.entry?.kind != "user"
     }
 
     static func nextState(_ previous: String, _ incoming: String) -> String {
@@ -341,8 +344,14 @@ extension RunSession {
         // A sent request reads "starting" until its run answers: a status moves it on as
         // any status does (to running, or to the error or stop of a failed start); a log
         // or a graph observation of the run means it runs.
+        // Written back at once: a path below that returns early (a graph observation that
+        // does not normalize, a stale generation) never leaves 전송 중 after the app's own
+        // submit state (`AppStore.apply`, the same `startedBy`) moved on.
         let newest = runs.count - 1
-        if MightyGraphSupport.startedBy(event, status: runs[newest].status) { runs[newest].status = "running" }
+        if MightyGraphSupport.startedBy(event, status: runs[newest].status) {
+            runs[newest].status = "running"
+            graphRuns = runs
+        }
         if event.type == "usage" {
             // The CLI reported the model it actually used: it outranks the configured name.
             guard let reported = event.usage?.model, !reported.isEmpty else { return }
