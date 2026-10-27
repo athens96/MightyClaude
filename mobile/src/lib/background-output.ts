@@ -33,7 +33,7 @@ function statusWord(status: string): string | null {
   }
 }
 
-/** Whether a status is one the work ended in (unknown included, as on the other hosts' `terminal`). */
+/** Whether a status is one the work ended in; unknown is not one, as on the other hosts' `terminal`. */
 export function backgroundEnded(status: string): boolean {
   return statusWord(status) !== null && status !== 'unknown';
 }

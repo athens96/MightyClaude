@@ -58,7 +58,7 @@ import {
   type BoardNavigation,
 } from '@/lib/pipeline-board';
 import { NoticeReply, RunHead } from '@/components/background-run';
-import { FOLDED_REPLY_LINES, backgroundEnded, backgroundLabel } from '@/lib/background-output';
+import { backgroundEnded, backgroundLabel } from '@/lib/background-output';
 import { toneOf, type Tone } from '@/lib/status-tone';
 import { submitScroll } from '@/lib/submit-scroll';
 import {
@@ -525,7 +525,7 @@ const AgentCard = memo(function AgentCard({ node, parent, tone }: { node: Struct
         ) : null}
         {tail.length > 0 ? <RunHead command="" tail={tail} open={open} /> : null}
         {reply && open ? (
-          <NoticeReply text={reply} lines={open ? undefined : FOLDED_REPLY_LINES} />
+          <NoticeReply text={reply} lines={undefined} />
         ) : null}
         {node.activity ? <ActivityLine line={node.activity} /> : null}
         {folds || opens ? <FoldToggle open={open} onToggle={() => setOpen((value) => !value)} /> : null}
