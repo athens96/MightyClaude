@@ -1014,11 +1014,12 @@ final class AppStore: ObservableObject, DelegationHost {
     /// (steered into its running Claude run when it has one), and the queued
     /// rows follow in later runs; otherwise the first queued row runs now,
     /// as after an error left the queue paused.
-    func runNextQueuedInput(_ id: String) {
-        if !(delegationHeld[id] ?? []).isEmpty { Task { await runNextHeld(id, own: true) }; return }
+    /// `own`: this Mac's 다음 실행 moves every view to the run, whoever queued the row; the phone's only follows.
+    func runNextQueuedInput(_ id: String, own: Bool = true) {
+        if !(delegationHeld[id] ?? []).isEmpty { Task { await runNextHeld(id, own: own) }; return }
         // A run that only waits on background work takes the first row as a new turn; refused, it stays queued.
-        if steersRunNext(id) { Task { if !(await steerQueuedRow(id)) { runNextQueuedRow(id) } }; return }
-        runNextQueuedRow(id)
+        if steersRunNext(id) { Task { if !(await steerQueuedRow(id, own: own)) { runNextQueuedRow(id, own: own) } }; return }
+        runNextQueuedRow(id, own: own)
     }
 
     /// The pane's first queued request can go into its running Claude process now (`BackgroundQueuePolicy.steersRunNext`).
@@ -1032,12 +1033,12 @@ final class AppStore: ObservableObject, DelegationHost {
     /// Hands the first queued request into the run that only waits on background work, as a new turn in the same process
     /// (Windows `SteerFirstQueuedInput`); the tracker shows it as a 중간 요청 under the request. False when it may not or the
     /// run refused it: it stays queued.
-    func steerQueuedRow(_ id: String) async -> Bool {
+    func steerQueuedRow(_ id: String, own: Bool = true) async -> Bool {
         guard steersRunNext(id), let next = queuedInputs[id]?.first, await runner.steer(sessionId: id, text: next.text) else { return false }
         queuedInputs[id]?.removeAll { $0.id == next.id }
         if queuedInputs[id]?.isEmpty == true { queuedInputs.removeValue(forKey: id) }
         // The user's own 다음 실행: the pane's views move to its 중간 요청 (natural submit B2).
-        noteOwnSubmit(id, target: .steer(next.text))
+        if own { noteOwnSubmit(id, target: .steer(next.text)) }
         return true
     }
 
@@ -1052,7 +1053,7 @@ final class AppStore: ObservableObject, DelegationHost {
         switch await delegation.runNext(in: id) {
         case .released: return true
         // Released meanwhile by another send: the queued rows as before.
-        case .nothingHeld: runNextQueuedRow(id); return true
+        case .nothingHeld: runNextQueuedRow(id, own: own); return true
         case .notStarted: return false
         }
     }
@@ -1060,14 +1061,15 @@ final class AppStore: ObservableObject, DelegationHost {
     /// Runs the first queued row now, as a run that ended would: items held
     /// for the pane go ahead of it in its run. A background update's end
     /// drains its queues this way.
-    func runNextQueuedRow(_ id: String) {
+    /// `own`: set by a 다음 실행, overriding the row's own flag.
+    func runNextQueuedRow(_ id: String, own: Bool? = nil) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id) else { return }
-        settleQueue(id, status: "completed")
+        settleQueue(id, status: "completed", own: own)
     }
 
     /// A child whose run end is still being recorded runs nothing yet; its
     /// record settles the queue again (``childRunEndRecorded(_:)``).
-    func settleQueue(_ id: String, status: String) {
+    func settleQueue(_ id: String, status: String, own: Bool? = nil) {
         guard let queue = queuedInputs[id], !queue.isEmpty, !ending, !closingSessions.contains(id), delegation?.endingRuns.contains(id) != true else { return }
         switch status {
         case "completed", "idle":
@@ -1090,7 +1092,7 @@ final class AppStore: ObservableObject, DelegationHost {
                 return
             }
             // A queued request now runs: own when it was this Mac's (B2), the phone's only followed.
-            if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil, queued: next, own: next.own) {
+            if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil, queued: next, own: own ?? next.own) {
                 // Validation refused it; keep the item so nothing typed is lost.
                 queuedInputs[id, default: []].insert(next, at: 0)
                 updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.keptAfterFailure", ["error": error ?? ""]))) }

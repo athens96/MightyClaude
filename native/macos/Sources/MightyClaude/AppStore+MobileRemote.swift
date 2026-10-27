@@ -744,12 +744,13 @@ extension AppStore {
             return
         }
         // A run that only waits on background work takes the first request as a new turn, as the desktop's run next does.
-        if await steerQueuedRow(id) { return }
+        if await steerQueuedRow(id, own: false) { return }
         guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict(L("remote.error.nextAfterRun")) }
         // Settling a blocked pane throws the whole queue away with only a log
         // line; the phone would be told "ok" and watch its requests vanish.
         if let reason = runBlockedReason(session, checkRuntime: false) { throw MobileHostError.conflict(reason) }
-        runNextQueuedInput(id)
+        // The phone's 다음 실행: the Mac's views only follow it.
+        runNextQueuedInput(id, own: false)
     }
 
     func mobileRename(_ id: String, title: String, titleMode: String?) throws {

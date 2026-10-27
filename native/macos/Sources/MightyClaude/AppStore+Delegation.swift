@@ -199,7 +199,8 @@ extension AppStore {
             if let item = origin.queued { queuedInputs[id, default: []].insert(item, at: 0); return .queued }
             let item = QueuedInput(text: input, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: styleLaunchesInPlanMode(session)),
                                    own: origin.isOwn)
-            switch deferInput(id, session: session, workspace: workspace, item: item) {
+            // releaseHeld already took the composer draft; a draft typed meanwhile, or the Mac's own for a phone send, stays.
+            switch deferInput(id, session: session, workspace: workspace, item: item, takingDraft: false) {
             case .queued: return .queued
             case .refused:
                 giveBack(id, attachments: attachments, from: origin)
