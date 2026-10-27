@@ -660,7 +660,8 @@ extension AppStore {
             guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { throw MightyError(L("remote.error.queueFull")) }
             // The composer's rule: a plan-mode style's queued request plans fresh (§1.17.4).
             let plans = styleLaunchesInPlanMode(session)
-            let item = QueuedInput(text: text, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: plans))
+            // The phone's send is not this Mac's own: when it starts, the Mac's views only follow.
+            let item = QueuedInput(text: text, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: plans), own: false)
             if held { heldForUpdate.insert(id) }
             let deferred = mobileCapturingError { deferInput(id, session: session, workspace: workspace, item: item, takingDraft: false) }
             switch deferred.value {

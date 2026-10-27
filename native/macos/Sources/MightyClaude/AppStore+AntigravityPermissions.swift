@@ -56,7 +56,7 @@ extension AppStore {
               let session = snapshot.sessions.first(where: { $0.id == sessionId }), session.kind == "claude", session.provider == "gemini",
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return L("remote.error.notPendingPermission") }
         if let reason = runBlockedReason(session) { return refuse(reason) }
-        let item = QueuedInput(text: continuation.prompt, antigravityGrant: continuation.grant, antigravityCard: card)
+        let item = QueuedInput(text: continuation.prompt, antigravityGrant: continuation.grant, antigravityCard: card, own: fromThisMac)
         let held = backgroundUpdateHolds(session)
         if session.status == "running" || pendingRuns.contains(sessionId) || held {
             // The composer's rule for a busy pane: it waits in the queue.
@@ -68,7 +68,7 @@ extension AppStore {
             return nil
         }
         antigravityBoard.remove(sessionId: sessionId)
-        guard start(sessionId, session: session, workspace: workspace, input: item.text, attachments: [], restoringDraft: nil, queued: item, own: fromThisMac) else {
+        guard start(sessionId, session: session, workspace: workspace, input: item.text, attachments: [], restoringDraft: nil, queued: item, own: item.own) else {
             antigravityBoard.restore(card, sessionId: sessionId)
             return refuse(error ?? L("remote.error.notPendingPermission"))
         }

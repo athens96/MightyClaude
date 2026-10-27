@@ -138,7 +138,13 @@ extension AppStore {
         var draft: String? { if case .composer(let draft) = self { draft } else { nil } }
         var queued: QueuedInput? { if case .queue(let item) = self { item } else { nil } }
         /// The user's own send on this Mac, which the pane's views move to (natural submit B2).
-        var isOwn: Bool { if case .phone = self { false } else { true } }
+        var isOwn: Bool {
+            switch self {
+            case .composer: true
+            case .phone: false
+            case .queue(let item): item.own
+            }
+        }
     }
 
     /// The human's send of `input` in the idle pane `id` while items are held
@@ -191,7 +197,8 @@ extension AppStore {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return .dropped }
         if session.status == "running" || pendingRuns.contains(id) {
             if let item = origin.queued { queuedInputs[id, default: []].insert(item, at: 0); return .queued }
-            let item = QueuedInput(text: input, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: styleLaunchesInPlanMode(session)))
+            let item = QueuedInput(text: input, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: styleLaunchesInPlanMode(session)),
+                                   own: origin.isOwn)
             switch deferInput(id, session: session, workspace: workspace, item: item) {
             case .queued: return .queued
             case .refused:

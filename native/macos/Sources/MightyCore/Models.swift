@@ -229,11 +229,15 @@ public struct QueuedInput: Sendable, Equatable, Identifiable {
     /// back with the reason when they cannot be. Not saved.
     public var antigravityGrant: AntigravityAllowGrant?
     public var antigravityCard: AntigravityPermissionRequest?
+    /// The user's own request on this Mac (its composer, a card allowed here): when it
+    /// starts, every view of the pane moves to it (natural submit B2). False for one the
+    /// phone sent or allowed. Not saved.
+    public var own: Bool
     public static let maximumItems = 16
     public init(id: String = UUID().uuidString, text: String, attachments: [RunAttachment] = [], createdAt: String = mightyTimestamp(), permissionModeOverride: String? = nil, antigravityGrant: AntigravityAllowGrant? = nil,
-                antigravityCard: AntigravityPermissionRequest? = nil) {
+                antigravityCard: AntigravityPermissionRequest? = nil, own: Bool = true) {
         self.id = id; self.text = text; self.attachments = attachments; self.createdAt = createdAt; self.permissionModeOverride = permissionModeOverride
-        self.antigravityGrant = antigravityGrant; self.antigravityCard = antigravityCard
+        self.antigravityGrant = antigravityGrant; self.antigravityCard = antigravityCard; self.own = own
     }
     public var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty }
 }

@@ -168,4 +168,15 @@ struct PendingTests {
         #expect(SubmitScroll.target(view: .basic, own: false, chosenBoardIsNewest: false, nearBottom: true) == SubmitScroll.Decision(scroll: .follow, resetBoard: false))
         #expect(SubmitScroll.target(view: .timeline, own: true, chosenBoardIsNewest: false, nearBottom: false) == SubmitScroll.Decision(scroll: .toRequest, resetBoard: false))
     }
+
+    @Test func aQueuedRequestRemembersWhetherItIsThisMacsOwn() {
+        // Every existing caller queues the Mac's own request; the phone's says so, and keeps it when copied.
+        #expect(QueuedInput(text: "next").own)
+        let phone = QueuedInput(text: "from the phone", own: false)
+        #expect(!phone.own)
+        var moved = phone
+        moved.text = "edited"
+        #expect(!moved.own)
+        #expect(QueuedInput(id: "a", text: "x", createdAt: "t") != QueuedInput(id: "a", text: "x", createdAt: "t", own: false))
+    }
 }

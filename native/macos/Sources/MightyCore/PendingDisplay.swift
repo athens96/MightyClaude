@@ -98,7 +98,8 @@ public struct SubmitResponse: Equatable, Sendable {
     /// accepted. `outcome` is the body's `outcome` when it is started, queued or steered (any
     /// other word is ignored), else its `accepted` when that is one of those words (old
     /// hosts); accepted when there is an outcome or `accepted` is the boolean true. Ids count
-    /// only as non-empty strings; everything else in the body is ignored.
+    /// only as non-empty strings; everything else in the body is ignored. Kept for contract
+    /// parity (pending.json `submitResponses`): no Mac code calls it, the Mac only answers.
     public static func parse(_ json: Any?) -> SubmitResponse {
         guard let body = json as? [String: Any] else { return SubmitResponse(accepted: false) }
         let outcome = word(body["outcome"]) ?? word(body["accepted"])

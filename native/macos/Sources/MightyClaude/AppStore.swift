@@ -1089,7 +1089,8 @@ final class AppStore: ObservableObject, DelegationHost {
                 Task { _ = await release.value; releasingRows.remove(next.id) }
                 return
             }
-            if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil, queued: next) {
+            // A queued request now runs: own when it was this Mac's (B2), the phone's only followed.
+            if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil, queued: next, own: next.own) {
                 // Validation refused it; keep the item so nothing typed is lost.
                 queuedInputs[id, default: []].insert(next, at: 0)
                 updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.keptAfterFailure", ["error": error ?? ""]))) }
