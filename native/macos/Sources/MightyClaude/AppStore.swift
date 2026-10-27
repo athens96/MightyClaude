@@ -57,6 +57,13 @@ final class AppStore: ObservableObject, DelegationHost {
     var backgroundOutputReadingSince: ContinuousClock.Instant?
     var backgroundOutputBatch = 0
     var backgroundOutputShape: Int?
+    /// Blocks that owe one read (their last once ended, or their one when redrawn) until a
+    /// read of them is applied; the block each batch given up on is stuck on, by batch;
+    /// the running batch's progress; and the queue reads run on, replaced when one hangs.
+    var backgroundOutputFinal = Set<String>()
+    var backgroundOutputHung: [Int: String] = [:]
+    var backgroundOutputProgress: BackgroundOutputProgress?
+    var backgroundOutputQueue = AppStore.makeBackgroundOutputQueue()
     var backgroundOutputLoop: Task<Void, Never>?
     /// Phone access (docs/mobile-remote.md): listener, revision tracking, UI status.
     @Published var mobileStatus = MobileHostStatus()
