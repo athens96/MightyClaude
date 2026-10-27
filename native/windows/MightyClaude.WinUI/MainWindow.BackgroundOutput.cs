@@ -38,7 +38,9 @@ public sealed partial class MainWindow
     /// </summary>
     private readonly Dictionary<string, long> backgroundOutputRevision = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, long> backgroundOutputPhoneRevision = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, DateTime> backgroundOutputPhoneMoved = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TimeSpan> backgroundOutputPhoneMoved = new(StringComparer.Ordinal);
+    /// <summary>A monotonic clock, as the Mac's ContinuousClock: a wall-clock jump never holds a read or the phone.</summary>
+    private static TimeSpan BackgroundOutputClock() => TimeSpan.FromMilliseconds(Environment.TickCount64);
     private long backgroundOutputCounter;
     /// <summary>The wait before a pane's lines held back from the phone are sent.</summary>
     private DispatcherQueueTimer? backgroundOutputPhoneTimer;
@@ -71,7 +73,7 @@ public sealed partial class MainWindow
         if (backgroundOutputReading)
         {
             // Only one file read for the whole timeout is given up on; a batch that is merely slow, moving from file to file, is waited for.
-            if (backgroundOutputProgress?.Current is not { } stuck || DateTime.UtcNow - stuck.Since <= BackgroundOutputReadTimeout) return;
+            if (backgroundOutputProgress?.Current is not { } stuck || BackgroundOutputClock() - stuck.Since <= BackgroundOutputReadTimeout) return;
             // That block is skipped until its batch answers, under that batch's id; the batch id moves on so the answer reads as
             // stale, and later batches read on a thread of their own rather than wait behind it.
             backgroundOutputHung[backgroundOutputBatch] = stuck.Id;
@@ -256,9 +258,9 @@ public sealed partial class MainWindow
     private void BackgroundOutputToPhone()
     {
         if (closing) return;
-        var now = DateTime.UtcNow;
+        var now = BackgroundOutputClock();
         var moved = false;
-        DateTime? next = null;
+        TimeSpan? next = null;
         foreach (var (pane, revision) in backgroundOutputRevision)
         {
             if (BackgroundOutputPhoneRevisionFor(pane) == revision) continue;
@@ -292,9 +294,9 @@ public sealed partial class MainWindow
     private sealed class BackgroundOutputProgress
     {
         private readonly object gate = new();
-        private (string Id, DateTime Since)? value;
-        internal (string Id, DateTime Since)? Current { get { lock (gate) return value; } }
-        internal void Start(string id) { lock (gate) value = (id, DateTime.UtcNow); }
+        private (string Id, TimeSpan Since)? value;
+        internal (string Id, TimeSpan Since)? Current { get { lock (gate) return value; } }
+        internal void Start(string id) { lock (gate) value = (id, BackgroundOutputClock()); }
         internal void Finish() { lock (gate) value = null; }
     }
 
