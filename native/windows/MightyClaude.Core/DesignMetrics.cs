@@ -230,6 +230,35 @@ public static class DesignMetrics
     }
 
     /// <summary>
+    /// How long things move and wait, in milliseconds (fixture <c>motion</c>, M/MightyCore/DesignMetrics.swift Motion): small state
+    /// changes take <see cref="Quick"/>, a block appearing or leaving <see cref="Standard"/>, a scroll or camera move
+    /// <see cref="Scroll"/>, all on the <see cref="Easing"/> curve; the pending rule (<see cref="PendingDisplay"/>) waits
+    /// <see cref="PendingShowAfter"/> before it shows its loading and keeps it at least <see cref="PendingMinVisible"/>; an
+    /// emphasis (the queue row's flash) lasts <see cref="Highlight"/>. Reduce Motion drops the movement, never these waits.
+    /// </summary>
+    public static class Motion
+    {
+        public const int Quick = 150;
+        public const int Standard = 220;
+        public const int Scroll = 280;
+        /// <summary>cubic-bezier(x1, y1, x2, y2).</summary>
+        public static readonly IReadOnlyList<double> Easing = [0.2, 0, 0, 1];
+        public const int PendingShowAfter = 150;
+        public const int PendingMinVisible = 300;
+        public const int Highlight = 1200;
+
+        /// <summary>Every duration by its fixture name (<c>easing</c> is not one).</summary>
+        public static readonly IReadOnlyDictionary<string, int> Durations = new Dictionary<string, int>
+        {
+            ["quick"] = Quick, ["standard"] = Standard, ["scroll"] = Scroll,
+            ["pendingShowAfter"] = PendingShowAfter, ["pendingMinVisible"] = PendingMinVisible, ["highlight"] = Highlight,
+        };
+
+        /// <summary>A token's milliseconds as seconds, for an animation's duration or a timer.</summary>
+        public static double Seconds(int milliseconds) => milliseconds / 1000.0;
+    }
+
+    /// <summary>
     /// The 파이프라인 view's state colours (fixture <c>pipeline</c>, M/MightyCore/DesignMetrics.swift Pipeline): a column's cards sit
     /// on its tone's soft tint at <see cref="ColumnTintOpacity"/>, each card on the same tint at the lighter
     /// <see cref="CardTintOpacity"/>, so it stands out from its column, with a <see cref="CardBarWidth"/> bar in the tone's mark

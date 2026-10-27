@@ -524,16 +524,17 @@ public sealed partial class MainWindow : Window
         /// <summary>
         /// The composer's send, shared by the WinUI editor and the web page's (MainWindow.WebShell.Composer.cs): the editor's text and
         /// attachments go the way the spec orders it (a mutation block, a guided question, a typed built-in, a busy pane's queue or
-        /// worktree, then a start). What happened: started, notStarted, queued, worktree, answered, builtin, blocked or none.
+        /// worktree, then a start). What happened: started, notStarted, queued, worktree, answered, builtin, blocked or none, with the
+        /// request's user entry and graph run when it started at once (natural submit B5; <see cref="SubmitReceipt"/>).
         /// </summary>
-        internal async Task<string> Submit(bool secondSend = false)
+        internal async Task<SubmitReceipt> Submit(bool secondSend = false)
         {
-            if (owner.ManualMutationBlockReason(Session) is not null) { RefreshComposerState(); return "blocked"; }
-            if (await AnswerGuidedQuestion()) return "answered";
-            if (await SubmitTypedBuiltin()) return "builtin";
+            if (owner.ManualMutationBlockReason(Session) is not null) { RefreshComposerState(); return new("blocked"); }
+            if (await AnswerGuidedQuestion()) return new("answered");
+            if (await SubmitTypedBuiltin()) return new("builtin");
             var queuedBefore = queuedInputs.Items.Count; var draftBefore = input.Text;
-            if (await DeferBusyComposer(secondSend)) return queuedInputs.Items.Count > queuedBefore ? "queued" : input.Text != draftBefore ? "worktree" : "none";
-            RefreshComposerState(); if (!canSend || starting || composingInput) return "blocked";
+            if (await DeferBusyComposer(secondSend)) return new(queuedInputs.Items.Count > queuedBefore ? "queued" : input.Text != draftBefore ? "worktree" : "none");
+            RefreshComposerState(); if (!canSend || starting || composingInput) return new("blocked");
             starting = true; var submissionVersion = ++composerSubmissionVersion;
             // The draft and its attachments are taken and cleared at submit, before the model list is read (M/AppStore.swift:946-951):
             // what is typed or pasted meanwhile is the next draft, and the editor shows that the models are being checked.
@@ -545,22 +546,26 @@ public sealed partial class MainWindow : Window
             {
             // The model list as the CLI has it now comes first: the request takes the pane's model and effort after it.
             await PrepareModels();
-            if (!QueuePaneAlive || submissionVersion != composerSubmissionVersion) return "none";
+            if (!QueuePaneAlive || submissionVersion != composerSubmissionVersion) return new("none");
             var pane = Session;
             var styledSubmission = await PrepareStyleSubmission(submitted, files.Length > 0);
             var request = await PrepareStyleRunRequest(new StartRunRequest(
                 pane.Id, pane.WorkspaceId, pane.Kind, styledSubmission,
                 RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot),
                 pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files));
-            if (!QueuePaneAlive || submissionVersion != composerSubmissionVersion) return "none";
+            if (!QueuePaneAlive || submissionVersion != composerSubmissionVersion) return new("none");
             // A send no run took (the items held for the pane stay held) puts the draft back, as a refused start does.
             PerfLog.Mark("request sent " + pane.Id);
-            started = await owner.StartFromComposer(request) is not DelegationRelease.NotStarted;
-            if (!started) { owner.error.Text = Locale.Get("remote.error.startFailed"); return "notStarted"; }
-            if (!owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return "started";
+            var receipt = new RunStartReceipt();
+            var release = await owner.StartFromComposer(request with { Receipt = receipt });
+            started = release is not DelegationRelease.NotStarted;
+            if (!started) { owner.error.Text = Locale.Get("remote.error.startFailed"); return new("notStarted"); }
+            // A send that went out with the items delegation held answers without ids, as the Mac's does: a wrong id is worse than none.
+            SubmitReceipt answer = release is DelegationRelease.Released ? new("started") : new("started", receipt.EntryId, receipt.GraphRunId);
+            if (!owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return answer;
             // Only the submitted draft is consumed: a newer draft typed while start was awaiting remains untouched.
             if (input.Text.Length == 0) await Change(p => p with { Draft = "" });
-            Refresh(); return "started";
+            Refresh(); return answer;
             }
             finally
             {

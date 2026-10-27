@@ -105,7 +105,7 @@ public sealed partial class MainWindow
                 Require(queuedInputs.Items.Count == 1 && input.Text.Length == 0 && calls.Count == 0, "Local send must preserve input in the queue while plugins update.");
                 // A phone send to a held pane is queued whatever mode it asked for, and the desktop composer's draft is left as it is.
                 updating = true; input.Text = "desktop draft"; updating = false;
-                Require(await MobileSubmit("mobile held instruction", [], CancellationToken.None) == "queued" && queuedInputs.Items.Count == 2 && input.Text == "desktop draft",
+                Require((await MobileSubmit("mobile held instruction", [], CancellationToken.None)).Outcome == "queued" && queuedInputs.Items.Count == 2 && input.Text == "desktop draft",
                     "Mobile send must use the same provider hold and queue and leave the desktop draft alone.");
                 updating = true; input.Text = ""; updating = false;
                 await StartNextQueuedInput();

@@ -45,6 +45,7 @@
 - `outcome`은 `started`, `queued`, `steered` 중 하나다. 없으면 `accepted`가 그 낱말일 때 그것을 쓴다(옛 호스트는 `{ protocol, accepted: "started" }`처럼 보낸다). `outcome`에 다른 값(예: `blocked`)이 오면 무시하고 `accepted`로 정한다. `accepted`가 불리언 `true`이면 받아들인 것이고 `outcome`은 비어 있을(null) 수 있다. 셋 다 아니면 받아들이지 않은 것이다.
 - 새 호스트도 `accepted`에 같은 낱말을 넣어 옛 폰이 그대로 읽게 한다.
 - `entryId`·`runId`는 비어 있지 않은 문자열일 때만 쓴다. 클라이언트는 이 id로 먼저 그려 둔 요청 블록과 호스트의 실제 항목을 맞춘다. id가 없는 옛 응답이면 보낸 글과 시각으로 맞춘다.
+- 윈도우 웹 화면의 `send` 브리지는 `{ accepted, outcome, entryId?, runId?, clientId?, draft, state }`로 답한다. `accepted`는 불리언이고(시작, 대기열, 새 작업 트리, 질문 답, 내장 명령이면 `true`), `outcome`은 입력창이 한 일의 낱말(`started`, `queued`, `worktree`, `answered`, `builtin`, `notStarted`, `blocked`, `none`)이다. 페이지가 보낸 `clientId`는 식별자일 때 그대로 돌려준다. id는 바로 시작한 요청에만 붙는다(`runId`는 이 PC에서 그래프를 그리는 창만). 위임으로 잡아 둔 항목과 함께 풀려 시작한 요청은 맥처럼 id 없이 답한다.
 - `steered`는 요청이 실행 중인 Claude 프로세스에 새 턴으로 들어갔다는 뜻이다. 실행이 백그라운드 작업만 기다리고 있을 때 **다음 실행**이 대기열 첫 요청을 그렇게 넣고(맥 `AppStore.steersRunNext`, 윈도우 `SteerFirstQueuedInput`), 다이어그램에는 그 요청 아래 중간 요청으로 보인다. 옛 호스트와 새 호스트 모두 돌려줄 수 있다. 사용자가 실행 중인 턴에 직접 끼워 넣는 중간 요청은 없고, 실행 중에 보내면 대기열로 간다.
 
 사례는 `pending.json`의 `submitResponses`에 있다.

@@ -280,7 +280,12 @@ public sealed partial class DesktopService : IAsyncDisposable
             runId = DelegationRunBegan(pane);
             snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId ? PaneTitle.Requested(s, request.AntigravityGrant is not null ? "" : titleFrom ?? request.Input) with { SessionUsage = request.ResumeId is null || s.Provider != request.Provider ? null : s.SessionUsage, Provider = request.Provider, CurrentActivity = null, RunTiming = request.Kind == "shell" ? null : AgentRunTiming.Begin() } : s).ToList() };
             var history = request.Input + (request.Attachments is { Count: > 0 } ? "\n\n" + AttachmentSupport.Summary(request.Attachments) : "");
-            snapshot = snapshot.Apply(RunEvent.State(request.SessionId, "running")).Apply(RunEvent.Log(request.SessionId, "user", history, request.Kind == "claude" ? request.Provider : null)); _ = QueueSave();
+            var asked = RunEvent.Log(request.SessionId, "user", history, request.Kind == "claude" ? request.Provider : null);
+            // The run's diagram block is named here, so the send can answer with it before the runner's first event (natural submit B5);
+            // a remote pane's block is its host's, under the host's own id.
+            request = request with { GraphRunId = !remote && request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider) ? Wire.Id() : null };
+            snapshot = snapshot.Apply(RunEvent.State(request.SessionId, "running")).Apply(asked); _ = QueueSave();
+            if (request.Receipt is { } receipt) { receipt.EntryId = asked.Entry!.Id; receipt.GraphRunId = request.GraphRunId; }
         }
         try
         {

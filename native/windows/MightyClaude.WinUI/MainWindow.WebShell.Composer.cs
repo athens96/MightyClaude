@@ -74,8 +74,10 @@ public sealed partial class MainWindow
             view.WebSetDraft(args.Text("text") ?? "", save: false);
             if (args.ValueKind == JsonValueKind.Object && args.TryGetProperty("attachments", out var ids) && ids.ValueKind == JsonValueKind.Array)
                 view.WebKeepAttachments(ids.EnumerateArray().Select(i => i.GetString() ?? "").ToHashSet(StringComparer.Ordinal));
-            var outcome = await view.Submit(Flag(args, "second"));
-            return new { outcome, draft = view.WebDraft, state = view.WebComposerState() };
+            // What the send did, its user entry and graph run when it started at once, and the page's own clientId back, so the
+            // page matches its waiting request block to what the host delta brings (natural submit B5, SubmitReceipt.SendAnswer).
+            var receipt = await view.Submit(Flag(args, "second"));
+            return receipt.SendAnswer(args.Text("clientId"), view.WebDraft, view.WebComposerState());
         });
         bridge.Register("stop", async args => { await WebPane(args.Text("paneId")).WebStop(); return null; });
         bridge.Register("queueRemove", args => { WebPane(args.Text("paneId")).WebQueueRemove(args.Text("itemId") ?? ""); return Task.FromResult<object?>(null); });

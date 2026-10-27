@@ -111,6 +111,11 @@ public sealed class MobileDesktopRouter : IDisposable
     private static MobileReply Reply(object body, int status = 200)
         => JsonSerializer.SerializeToUtf8Bytes(body, Wire.Json).Length <= MaximumReplyBytes ? new(status, body) : new(413, Error(413, "Response exceeds the mobile display limit."));
     private static object OK() => new { protocol = 1, ok = true };
+    /// <summary>
+    /// A submit's or guided action's reply (natural submit B5): a <see cref="SubmitReceipt"/> answers with the outcome word in
+    /// <c>accepted</c> (older phones read it), <c>outcome</c>, and the request's ids when it started at once; any other answer as before.
+    /// </summary>
+    private static object SubmitReply(object? result) => result is SubmitReceipt receipt ? receipt.MobileReply() : new { protocol = 1, accepted = result };
     private static JsonElement Object(JsonElement? value, int maximum = 65536)
     {
         if (value is not { ValueKind: JsonValueKind.Object } body || Encoding.UTF8.GetByteCount(body.GetRawText()) > maximum) throw new MobileRequestException(400, "Invalid request body.");
@@ -300,7 +305,7 @@ public sealed class MobileDesktopRouter : IDisposable
                         try
                         {
                             token.ThrowIfCancellationRequested(); claim = uploads.Claim(ids, pane.Id, device);
-                            var result = await action(new(pane.Id, operation, value, claim.Attachments), token); accepted = true; Changed(); return Reply(new { protocol = 1, accepted = result }, 202);
+                            var result = await action(new(pane.Id, operation, value, claim.Attachments), token); accepted = true; Changed(); return Reply(SubmitReply(result), 202);
                         }
                         finally { if (claim is not null) uploads.Finish(claim, accepted); submitSlots.Release(); }
                     }
@@ -312,7 +317,7 @@ public sealed class MobileDesktopRouter : IDisposable
                         if (operation == "guided") _ = MobileRemoteSupport.GuidedRequest(value);
                         var result = await action(new(pane.Id, operation, value), token); Changed();
                         if (operation == "close") uploads.DiscardSession(pane.Id);
-                        return operation switch { "stop" => Reply(new { protocol = 1, stopped = result }), "guided" => Reply(new { protocol = 1, accepted = result }, 202), "command" => Reply(new { protocol = 1, ok = true, message = result }), _ => Reply(OK()) };
+                        return operation switch { "stop" => Reply(new { protocol = 1, stopped = result }), "guided" => Reply(SubmitReply(result), 202), "command" => Reply(new { protocol = 1, ok = true, message = result }), _ => Reply(OK()) };
                     }
                 }
                 if (method == "POST" && route.Length == 5 && route[3] == "queue" && route[4] == "run-next")

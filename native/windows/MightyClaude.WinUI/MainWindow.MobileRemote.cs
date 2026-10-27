@@ -508,7 +508,7 @@ public sealed partial class MainWindow
             if (!queueKeptOnStop) { CancelQueueOnStop(); MobileCancelQueue(); } else { composerSubmissionVersion++; queueDrainTimer.Stop(); }
         }
         internal void MobileCancelQueue() { composerSubmissionVersion++; queueDrainTimer.Stop(); queuedInputs.Clear(); RenderQueuedInputs(); RefreshComposerState(); }
-        internal async Task<string> MobileSubmit(string text, IReadOnlyList<RunAttachment> files, CancellationToken token, bool prepared = false, string? queueId = null)
+        internal async Task<SubmitReceipt> MobileSubmit(string text, IReadOnlyList<RunAttachment> files, CancellationToken token, bool prepared = false, string? queueId = null)
         {
             token.ThrowIfCancellationRequested(); var pane = Session;
             if (owner.ManualMutationBlockReason(pane) is { } block) throw new MobileRequestException(409, block);
@@ -520,7 +520,7 @@ public sealed partial class MainWindow
                 // The desktop composer's draft is left as it is. A full queue refuses before anything is taken
                 // (M/AppStore+MobileRemote.swift). A plan-mode style's queued request plans fresh (§1.17.4).
                 if (queuedInputs.Items.Count >= QueuedInputBuffer.MaximumItems) throw new MobileRequestException(409, Locale.Get("remote.error.queueFull"));
-                token.ThrowIfCancellationRequested(); queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(LaunchesInPlanMode), prepared); RenderQueuedInputs(); RefreshComposerState(); if (!MobileBusy) queueDrainTimer.Start(); return "queued";
+                token.ThrowIfCancellationRequested(); queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(LaunchesInPlanMode), prepared); RenderQueuedInputs(); RefreshComposerState(); if (!MobileBusy) queueDrainTimer.Start(); return new("queued");
             }
             var submission = ++composerSubmissionVersion; starting = true; RefreshComposerState();
             try
@@ -534,7 +534,12 @@ public sealed partial class MainWindow
                 if (queueId is not null && queuedInputs.Items.FirstOrDefault(q => q.Id == queueId) is { } queuedItem) request = request with { PermissionModeOverride = queuedItem.PermissionModeOverride, AntigravityGrant = queuedItem.AntigravityGrant };
                 token.ThrowIfCancellationRequested(); if (!QueuePaneAlive || submission != composerSubmissionVersion || queueId is not null && !queuedInputs.Items.Any(q => q.Id == queueId)) throw new OperationCanceledException();
                 // A phone send no run took is dropped, and never put in the composer (M/AppStore+Delegation.swift:196-198).
-                return await owner.StartFromComposer(request) is DelegationRelease.NotStarted ? throw new MobileRequestException(409, Locale.Get("remote.error.dropped")) : "started";
+                var receipt = new RunStartReceipt();
+                var release = await owner.StartFromComposer(request with { Receipt = receipt });
+                if (release is DelegationRelease.NotStarted) throw new MobileRequestException(409, Locale.Get("remote.error.dropped"));
+                // Only a request that started at once carries its ids (natural submit B5): one that went out with the items delegation
+                // held answers without them, as the Mac's does, since a wrong id is worse than none.
+                return release is DelegationRelease.Released ? new("started") : new("started", receipt.EntryId, receipt.GraphRunId);
             }
             finally { starting = false; if (QueuePaneAlive) Refresh(); }
         }
@@ -652,7 +657,7 @@ public sealed partial class MainWindow
         /// style's own action and then travels the ordinary send path, so into a running pane it queues, and
         /// <c>accepted</c> means what it does there. An unregistered style and an unapproved one answer alike.
         /// </summary>
-        internal async Task<string> MobileGuided(JsonElement body, CancellationToken token)
+        internal async Task<SubmitReceipt> MobileGuided(JsonElement body, CancellationToken token)
         {
             var pane = Session; var request = MobileRemoteSupport.GuidedRequest(body);
             var folder = LocalFolder(Workspace); var registry = await Task.Run(() => StyleRegistry.Load(owner.StateDirectory, folder), token);

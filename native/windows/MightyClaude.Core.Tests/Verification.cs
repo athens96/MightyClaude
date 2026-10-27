@@ -1022,6 +1022,15 @@ internal static class Verification
         await Test("design tokens: dashes convert to WinUI stroke units ([9,7] at 2pt is [4.5,3.5])", DesignTokenVerification.DashesConvertToStrokeUnits);
         await Test("design tokens: metrics and opacities match the fixture", DesignTokenVerification.MetricsAndOpacitiesMatchTheFixture);
         await Test("design tokens: the pipeline view's tints and status bar match the fixture", DesignTokenVerification.PipelineTintsMatchTheFixture);
+        await Test("design tokens: the motion durations and easing match the fixture", DesignTokenVerification.MotionMatchesTheFixture);
+        // native/contracts/fixtures/pending.json, which the Mac (PendingTests), the Windows page and the phone read too (natural submit).
+        await Test("pending: every display case of the shared rule holds, in milliseconds and as a pending state", PendingVerification.EveryDisplayCaseHolds);
+        await Test("pending: idle hides, and a failure without an end shows its message now", PendingVerification.IdleAndAnOpenFailure);
+        await Test("pending: every shared submit response parses as the fixture says", PendingVerification.EverySubmitResponseParses);
+        await Test("pending: the host's phone reply and the page's send answer parse back with their ids", PendingVerification.TheHostAnswersParseBack);
+        await Test("pending: every shared scroll target holds, and the view follows the pane's mode", PendingVerification.EveryScrollTargetHolds);
+        await Test("pending: a start names its user entry and graph run, and the diagram block is published before the workspace is read", PendingVerification.AStartNamesItsEntryAndPublishesItsBlockAtOnce);
+        await Test("pending: the phone's submit route answers with the receipt's outcome and ids, and an old answer as before", PendingVerification.ThePhoneSubmitRouteAnswersWithTheReceipt);
         await Test("design tokens: only the light theme setting picks the light palette", DesignTokenVerification.ThemeSettingPicksThePalette);
         await Test("design tokens: inks, fills and marks clear the macOS contrast rules", DesignTokenVerification.InksFillsAndMarksClearTheirContrast);
         // The text setting (M/MightyCore/TextAppearance.swift): at the standard values every size is today's.

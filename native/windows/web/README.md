@@ -71,6 +71,8 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
   `updateDraft`, `send`, `stop`, `queueRemove`, `queueRunNext`, `installCli`, `pickAttachments`, `addAttachments`,
   `removeAttachment`, `dismissAttachmentError`, `attachmentPreview`, `slashCommands`, `slashAction`, `composerMenu`,
   `composerMenuChoose`, `toggleFast`, `runSettings`, `applyRunSettings`, `sessionInfo`, `newConversation`.
+  `send` takes `{paneId, text, second, attachments, clientId?}` and answers `{accepted, outcome, entryId?, runId?, clientId?, draft,
+  state}` (Core `SubmitReceipt.SendAnswer`, docs/interaction.md "보내기 응답").
 - `src/cards/` — the cards over the composer (spec §4) and the status line in it (§5): next actions, plan history, background
   work, the waiting tool permission / question / plan (Markdown by `src/conversation`), the Antigravity card, web-open prompts
   and the sign-in card. The host reads them from the same never-shown WinUI pane view (`MainWindow.WebShell.Cards.cs`) and

@@ -154,7 +154,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             // The card goes out before the run's last status (M/ProcessRunner.swift antigravityPermission).
             antigravityPermission: card => { if (!run.Finished && request.Kind == "claude") emit(new(request.SessionId, "antigravityPermission", AntigravityPermission: card)); });
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
-            tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), node => { Interlocked.Exchange(ref graphDirty, 1); HandOver(run, node); });
+            tracker = new ExecutionGraphTracker(Wire.Identifier(request.GraphRunId) ? request.GraphRunId! : Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), node => { Interlocked.Exchange(ref graphDirty, 1); HandOver(run, node); });
         run.Tracker = tracker;
         // Claude's execution checklist and background tasks (ClaudePlanMode.cs).
         var planGate = new object();
@@ -220,6 +220,17 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 lock (run.NodeGate) { run.Finished = true; emit(RunEvent.State(request.SessionId, state, state == "error" && run.AuthenticationFailure ? "authentication" : null)); }
             }
         }
+        // The live graph as it is now, when it changed since the last one sent; false once the run is ending (Finish sends the last).
+        bool PublishGraph(bool readChildren)
+        {
+            lock (graphGate)
+            {
+                if (run.Finalizing || run.Finished) return false;
+                if (readChildren) ReadChildren(false);
+                if (Interlocked.Exchange(ref graphDirty, 0) != 0 && tracker?.BuildRun(includeRunning: true) is { } live) emit(new(request.SessionId, "graph_run", GraphRun: live));
+                return true;
+            }
+        }
         async Task PublishGraphs()
         {
             try
@@ -227,18 +238,16 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 while (!graphCancel.IsCancellationRequested)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(1), graphCancel.Token);
-                    lock (graphGate)
-                    {
-                        if (run.Finalizing || run.Finished) return;
-                        ReadChildren(false);
-                        if (Interlocked.Exchange(ref graphDirty, 0) != 0 && tracker?.BuildRun(includeRunning: true) is { } live) emit(new(request.SessionId, "graph_run", GraphRun: live));
-                    }
+                    if (!PublishGraph(true)) return;
                 }
             }
             catch (OperationCanceledException) when (graphCancel.IsCancellationRequested) { }
         }
         try
         {
+            // The request's diagram block appears the moment the run starts (natural submit A3), not a second later with the loop's
+            // first pass: before the workspace, the CLI or the environment is looked up.
+            if (tracker is not null) PublishGraph(false);
             var workspace = await resolveWorkspace(request.WorkspaceId); token.ThrowIfCancellationRequested();
             // A remote workspace's path is the host's: it never becomes a local working folder (M/ProcessRunner.start).
             if (workspace.Remote is not null) throw new InvalidOperationException(Locale.Get("run.error.approvedWorkspaceOnly"));
@@ -369,6 +378,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             }
             emit(RunEvent.State(request.SessionId, "running"));
             if (request.Kind != "shell") Activity(run, new(run.ActivityId, request.Provider, "turn", "running", Locale.Get("run.activity.running", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(request.Provider) })));
+            // The process is up: what the start changed in the diagram goes with it, not with the loop's next pass.
+            if (tracker is not null) PublishGraph(false);
             // An agent's stream-json line may carry a whole picture in base64.
             var output = PumpAsync(child.Output, request.Kind == "shell" ? 1024 * 1024 : codexApprovals ? CodexApprovalChannel.MaximumFrameBytes : OutputParser.MaximumLineBytes(request.Provider), line =>
             {

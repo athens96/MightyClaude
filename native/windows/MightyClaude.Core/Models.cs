@@ -398,6 +398,12 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     // The card that continuation answers: it comes back with the reason when the run cannot start (its rules refused, a host said no).
     // Not persisted and never sent.
     [JsonIgnore] public AntigravityPermissionRequest? AntigravityCard { get; init; }
+    // The id this run's diagram block (its graph_run) carries, given by DesktopService.Launch so a send can answer with it before the
+    // run's first event; null lets the runner pick one. Never persisted, never read from remote JSON.
+    [JsonIgnore] public string? GraphRunId { get; init; }
+    // Where the start writes the ids of the user entry and graph run it made (natural submit B5): the composer's and the phone's
+    // sends answer with them. Not persisted and never sent.
+    [JsonIgnore] public RunStartReceipt? Receipt { get; init; }
     private readonly IReadOnlyList<RunAttachment>? attachments = Attachments;
     public IReadOnlyList<RunAttachment>? Attachments { get => attachments is { Count: > 0 } ? attachments : null; init => attachments = value; }
     public IReadOnlyList<RegisteredModelEntry> RegisteredModels { get; init; } = RegisteredModels ?? [];
@@ -419,6 +425,17 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
             throw new ArgumentException("Invalid local style tool permissions.");
         return this with { Settings = settings, Attachments = files, StyleAutoAllow = StyleAutoAllow is { Count: > 0 } validGrants ? Array.AsReadOnly(validGrants.ToArray()) : null };
     }
+}
+/// <summary>
+/// The ids a start made, written by <see cref="DesktopService"/> as it records the request (natural submit B5): the user entry the
+/// transcript shows, and the graph run whose diagram block appears at once (null for a shell, a provider without the diagram, or a
+/// remote workspace, whose host names its own). Both stay null when the start never got that far.
+/// </summary>
+public sealed class RunStartReceipt
+{
+    private volatile string? entryId, graphRunId;
+    public string? EntryId { get => entryId; internal set => entryId = value; }
+    public string? GraphRunId { get => graphRunId; internal set => graphRunId = value; }
 }
 /// <param name="Plan">"plan": an answered (or withdrawn) ExitPlanMode request.</param>
 /// <param name="Todos">"todos": the main agent's checklist after a change.</param>

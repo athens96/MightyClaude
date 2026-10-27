@@ -187,6 +187,22 @@ internal static class DesignTokenVerification
         return Task.CompletedTask;
     }
 
+    // design-tokens.json `motion` (M/MightyCore/DesignMetrics.swift Motion, DesignTokenParityTests.motionMatchesTheFixture): every
+    // duration by name, nothing more or less, and the easing curve.
+    internal static Task MotionMatchesTheFixture()
+    {
+        var motion = Fixture.Value.GetProperty("motion");
+        var durations = motion.EnumerateObject().Where(p => p.Name != "easing").ToDictionary(p => p.Name, p => p.Value.GetInt32());
+        Check(DesignMetrics.Motion.Durations.Keys.ToHashSet().SetEquals(durations.Keys), $"motion: C# [{string.Join(", ", DesignMetrics.Motion.Durations.Keys.Order())}] vs fixture [{string.Join(", ", durations.Keys.Order())}]");
+        foreach (var (name, value) in durations) Check(DesignMetrics.Motion.Durations[name] == value, $"motion.{name}: expected {value}, got {DesignMetrics.Motion.Durations[name]}");
+        var constants = typeof(DesignMetrics.Motion).GetFields(BindingFlags.Public | BindingFlags.Static).Where(f => f.IsLiteral).ToDictionary(f => Camel(f.Name), f => (int)f.GetRawConstantValue()!);
+        Check(constants.Count == durations.Count && constants.All(c => durations.TryGetValue(c.Key, out var v) && v == c.Value), "every Motion constant is in Durations under its fixture name");
+        var easing = motion.GetProperty("easing").EnumerateArray().Select(v => v.GetDouble()).ToArray();
+        Check(easing.Length == 4 && easing.Zip(DesignMetrics.Motion.Easing).All(pair => Near(pair.First, pair.Second)), "motion.easing: expected [" + string.Join(", ", easing) + "], got [" + string.Join(", ", DesignMetrics.Motion.Easing) + "]");
+        Check(Near(DesignMetrics.Motion.Seconds(DesignMetrics.Motion.Scroll), 0.28) && DesignMetrics.Motion.PendingShowAfter == 150 && DesignMetrics.Motion.PendingMinVisible == 300, "the pending rule's tokens: 150 then at least 300");
+        return Task.CompletedTask;
+    }
+
     internal static Task ThemeSettingPicksThePalette()
     {
         Check(DesignTokens.Palette("light") == DesignTokens.Light, "light");
