@@ -185,6 +185,7 @@ internal static class GraphVectorVerification
         Kind = value.Text("kind"), Usage = UsageIn(Field(value, "usage")),
         ActivityGeneration = Field(value, "activityGeneration").ValueKind == JsonValueKind.Number ? Field(value, "activityGeneration").GetInt32() : null,
         ResponseRecords = Field(value, "responseRecords").ValueKind == JsonValueKind.Array ? Items(Field(value, "responseRecords")).Select(RecordIn).ToList() : null,
+        NoticeReply = value.Text("noticeReply"),
     };
     private static MightyGraphRun RunIn(JsonElement value) => new()
     {

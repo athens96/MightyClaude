@@ -31,6 +31,20 @@ public sealed partial class MainWindow
     private BackgroundOutputProgress? backgroundOutputProgress;
     private BackgroundOutputReader backgroundOutputReader = new();
     private DispatcherQueueTimer? backgroundOutputTimer;
+    /// <summary>
+    /// Each pane's revision, moved whenever its lines change or are pruned (window thread); the one the phone's digest reads (any
+    /// thread), which follows it at most once per <see cref="BackgroundOutputPhoneInterval"/>; and when that one last moved. One
+    /// counter feeds them all, so a revision is never reused.
+    /// </summary>
+    private readonly Dictionary<string, long> backgroundOutputRevision = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> backgroundOutputPhoneRevision = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTime> backgroundOutputPhoneMoved = new(StringComparer.Ordinal);
+    private long backgroundOutputCounter;
+    /// <summary>The wait before a pane's lines held back from the phone are sent.</summary>
+    private DispatcherQueueTimer? backgroundOutputPhoneTimer;
+
+    /// <summary>The phone hears of a pane's new lines at most this often; lines that move in between go out together with the next.</summary>
+    private static readonly TimeSpan BackgroundOutputPhoneInterval = TimeSpan.FromSeconds(3);
 
     /// <summary>A batch of reads still out after this on one file is given up on, so one hung read (a stalled network share) never stops the polling.</summary>
     private static readonly TimeSpan BackgroundOutputReadTimeout = TimeSpan.FromSeconds(10);
@@ -38,6 +52,9 @@ public sealed partial class MainWindow
     /// <summary>One pane's lines by block id; empty when it has none.</summary>
     internal IReadOnlyDictionary<string, IReadOnlyList<string>> BackgroundOutputFor(string paneId) =>
         backgroundOutput.TryGetValue(paneId, out var lines) ? lines : NoBackgroundOutput;
+
+    /// <summary>What the phone's digest hashes instead of the pane's lines.</summary>
+    internal long BackgroundOutputPhoneRevisionFor(string paneId) => backgroundOutputPhoneRevision.TryGetValue(paneId, out var revision) ? revision : 0;
 
     /// <summary>Its own 1 s timer: a tick with no background run costs one walk over the graphs.</summary>
     private void InitBackgroundOutput()
@@ -50,7 +67,7 @@ public sealed partial class MainWindow
 
     private void BackgroundOutputTick()
     {
-        if (closing) { backgroundOutputTimer?.Stop(); backgroundOutputReader.Complete(); return; }
+        if (closing) { backgroundOutputTimer?.Stop(); backgroundOutputPhoneTimer?.Stop(); backgroundOutputReader.Complete(); return; }
         if (backgroundOutputReading)
         {
             // Only one file read for the whole timeout is given up on; a batch that is merely slow, moving from file to file, is waited for.
@@ -148,6 +165,11 @@ public sealed partial class MainWindow
             changed.Add(pane);
         }
         foreach (var pane in changed) BackgroundOutputChanged(pane);
+        // A closed pane's revisions go with it; its lines went above.
+        foreach (var pane in backgroundOutputRevision.Keys.Where(pane => !live.Contains(pane)).ToList())
+        {
+            backgroundOutputRevision.Remove(pane); backgroundOutputPhoneRevision.TryRemove(pane, out _); backgroundOutputPhoneMoved.Remove(pane);
+        }
     }
 
     /// <summary>
@@ -217,13 +239,53 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// One pane's lines moved: only that pane is drawn again — its strip (WinUI and the page's card), its Mighty view on the page
-    /// when shown — and the phone hears of it as of a graph change (the pane's digest hashes its lines).
+    /// when shown — and the phone hears of it as of a graph change (the pane's digest hashes its phone revision).
     /// </summary>
     private void BackgroundOutputChanged(string paneId)
     {
+        backgroundOutputRevision[paneId] = ++backgroundOutputCounter;
         MightyDirty(paneId);
         if (views.TryGetValue(paneId, out var view) && service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId) is { } session) view.RefreshBackgroundWork(session);
-        mobileRouter?.Changed();
+        BackgroundOutputToPhone();
+    }
+
+    /// <summary>
+    /// Moves the phone's revision of every pane whose lines changed, at most once per <see cref="BackgroundOutputPhoneInterval"/>
+    /// a pane: a pane held back is sent when its interval is up, with whatever its lines are by then.
+    /// </summary>
+    private void BackgroundOutputToPhone()
+    {
+        if (closing) return;
+        var now = DateTime.UtcNow;
+        var moved = false;
+        DateTime? next = null;
+        foreach (var (pane, revision) in backgroundOutputRevision)
+        {
+            if (BackgroundOutputPhoneRevisionFor(pane) == revision) continue;
+            if (backgroundOutputPhoneMoved.TryGetValue(pane, out var last) && now - last < BackgroundOutputPhoneInterval)
+            {
+                var due = last + BackgroundOutputPhoneInterval;
+                if (next is null || due < next) next = due;
+                continue;
+            }
+            backgroundOutputPhoneRevision[pane] = revision;
+            backgroundOutputPhoneMoved[pane] = now;
+            moved = true;
+        }
+        if (moved) mobileRouter?.Changed();
+        if (next is not { } at || backgroundOutputPhoneTimer?.IsRunning == true) return;
+        backgroundOutputPhoneTimer ??= CreateBackgroundOutputPhoneTimer();
+        var wait = at - now;
+        backgroundOutputPhoneTimer.Interval = wait > TimeSpan.Zero ? wait : TimeSpan.FromMilliseconds(1);
+        backgroundOutputPhoneTimer.Start();
+    }
+
+    private DispatcherQueueTimer CreateBackgroundOutputPhoneTimer()
+    {
+        var timer = DispatcherQueue.CreateTimer();
+        timer.IsRepeating = false;
+        timer.Tick += (_, _) => { timer.Stop(); BackgroundOutputToPhone(); };
+        return timer;
     }
 
     /// <summary>The block a batch of reads is on and since when, so a batch given up on names the one it is stuck on, and a merely slow batch is not.</summary>

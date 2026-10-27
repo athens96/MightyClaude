@@ -329,7 +329,7 @@ public sealed class MightyGraphLayout
                 if (depth >= 64 || !visited.Add(index)) return null;
                 var agent = run.Agents[index];
                 var id = NodeID(run, "agent:" + agent.Id);
-                var cardSize = Size(id, 360, expanded.Contains(id) ? 480 : 240);
+                var cardSize = Size(id, 360, expanded.Contains(id) ? 480 : agent.IsTask && agent.NoticeReply is not null ? 320 : 240);
                 var height = cardSize.H;
                 var children = new List<Tree>();
                 for (var ci = 0; ci < run.Agents.Count; ci++)

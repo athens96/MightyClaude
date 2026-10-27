@@ -41,7 +41,12 @@ public static class RemoteWireEvents
         // A lost sign-in is the Mac's "auth"; no other reason is one the Mac reads.
         if (value.Type == "status" && value.Reason == "authentication") node["reason"] = "auth";
         if (node["entry"] is JsonObject entry) Pictures(entry, reading: false);
-        if (node["graphRun"] is JsonObject run) GraphRunPictures(run, reading: false);
+        if (node["graphRun"] is JsonObject run)
+        {
+            GraphRunPictures(run, reading: false);
+            // A task's output file is a path on this computer: it stays here.
+            foreach (var agent in (run["agents"] as JsonArray ?? new JsonArray()).OfType<JsonObject>()) agent.Remove("outputFile");
+        }
         Normalize(node);
         return Readable(node, jobId, graphRuns);
     }
@@ -64,6 +69,8 @@ public static class RemoteWireEvents
         // The Mac's client normalizes every node it reads (ExecutionGraphSupport.normalized) and leaves out one that does not normalize.
         if (ExecutionGraphSupport.Normalized(value) is not { } clean || Written(clean) is not { } graph) return null;
         if (graph["entries"] is JsonArray entries) foreach (var entry in entries.OfType<JsonObject>()) Pictures(entry, reading: false);
+        // A task's output file is a path on this computer: it stays here.
+        graph.Remove("outputFile");
         var node = new JsonObject { ["sessionId"] = jobId, ["type"] = "graph", ["graph"] = graph };
         Normalize(node);
         return node;

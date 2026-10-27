@@ -44,9 +44,12 @@ public static class BackgroundOutputTail
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             var start = Math.Max(0L, stream.Length - MaxBytes);
             stream.Seek(start, SeekOrigin.Begin);
-            using var buffer = new MemoryStream();
-            stream.CopyTo(buffer);
-            return Lines(buffer.ToArray(), start > 0);
+            // At most MaxBytes, even when the file grows while it is read.
+            var buffer = new byte[MaxBytes];
+            var count = 0;
+            int read;
+            while (count < MaxBytes && (read = stream.Read(buffer, count, MaxBytes - count)) > 0) count += read;
+            return Lines(buffer[..count], start > 0);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or System.Security.SecurityException)
         {

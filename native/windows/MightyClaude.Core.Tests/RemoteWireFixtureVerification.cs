@@ -334,6 +334,13 @@ internal static class RemoteWireFixtureVerification
         Check(RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "log", new LogEntry("log-9", "output", null!, "2026-10-17T01:02:03Z")), "job-9", false) is null, "a log the wire cannot carry is null, never a throw");
         Check(RemoteWireEvents.FromPermission(new ToolPermissionRequest("r1", "pane-9", "t1", "Bash", null!, "ls"), "job-9") is null, "a request the wire cannot carry is null, never a throw");
         Check(RemoteWireEvents.FromGraphNode(new ExecutionGraphNode("node-9", "bad run!", null, "main", "running", "Request"), "job-9") is null, "a graph node the Mac's client would not normalize does not travel");
+        // A task's output file is a path on the host: neither a tracker node nor a graph_run carries it to the client's computer.
+        Check(RemoteWireEvents.FromGraphNode(new ExecutionGraphNode("node-9", "act-9", "node-1", "task", "running", "Task") { OutputFile = "/tmp/example/task.output" }, "job-9") is { } taskNode
+            && taskNode["graph"] is JsonObject taskGraph && !taskGraph.ContainsKey("outputFile") && (string?)taskGraph["kind"] == "task", "a task node's output file stays home");
+        var taskRun = new MightyGraphRun { Id = "gr-9", Input = "Request", Agents = [new MightyGraphAgent { Id = "t1", Title = "Task", Kind = "task", Background = true, OutputFile = "/tmp/example/task.output" }] };
+        Check(RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "graph_run", GraphRun: taskRun), "job-9", graphRuns: true) is { } taskRunEvent
+            && taskRunEvent["graphRun"]?["agents"]?[0] is JsonObject taskAgent && !taskAgent.ContainsKey("outputFile") && (string?)taskAgent["id"] == "t1"
+            && taskRun.Agents[0].OutputFile == "/tmp/example/task.output", "a graph_run's task output file stays home, and the host's run keeps it");
         Check(RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "plan", Plan: new PlanRecord("plan-9", "job-9", "# Plan", null!, "2026-10-17T01:02:03.000Z", PlanOutcome.ApprovedAuto)), "job-9", false) is null
             && RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "status", Status: "paused"), "job-9", false) is null, "an event a client would refuse does not travel");
         Check(RemoteWireEvents.FromRunEvent(RunEvent.State("pane-9", "error", "quota"), "job-9", false) is { } quota && !quota.ContainsKey("reason") && (string?)quota["sessionId"] == "job-9", "only auth travels as a reason");

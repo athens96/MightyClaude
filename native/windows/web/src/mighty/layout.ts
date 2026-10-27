@@ -270,7 +270,8 @@ export function makeLayout(runs: readonly MightyGraphRun[], draft: string, runni
       visited.add(index);
       const agent = run.agents[index]!;
       const id = runNodeId(run, 'agent:' + agent.id);
-      const card = sizeOf(id, 360, expanded.has(id) ? 480 : 240);
+      // A task card with Claude's reply to its notice is taller (M/MightyCore/MightyGraphLayout.swift).
+      const card = sizeOf(id, 360, expanded.has(id) ? 480 : agent.kind === 'task' && agent.noticeReply != null ? 320 : 240);
       const height = card.h;
       const children: Tree[] = [];
       for (let ci = 0; ci < run.agents.length; ci++) {

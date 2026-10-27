@@ -86,7 +86,8 @@ enum GraphVectors {
                          entries: (value["entries"] as? [[String: Any]] ?? []).map(entryIn),
                          kind: str(value["kind"]), usage: usageIn(value["usage"]),
                          activityGeneration: value["activityGeneration"] as? Int,
-                         responseRecords: (value["responseRecords"] as? [[String: Any]]).map { $0.map(recordIn) })
+                         responseRecords: (value["responseRecords"] as? [[String: Any]]).map { $0.map(recordIn) },
+                         noticeReply: str(value["noticeReply"]))
     }
     static func runJSON(_ run: MightyGraphRun) -> [String: Any] {
         ["id": run.id, "input": run.input, "status": run.status, "provider": opt(run.provider),

@@ -605,8 +605,9 @@ public sealed partial class MainWindow
             foreach (var item in offered.Styles) { options.Add(item.Id); options.Add(item.Source); }
             foreach (var item in offered.Efforts ?? []) options.Add(item.Id);
             var mighty = new HashCode(); mighty.Add(MobileMightySupport.Digest(pane)); mighty.Add(pane.PlanHistory?.Count); mighty.Add(pane.PlanHistory?.LastOrDefault()?.Outcome);
-            // A background run's output lines live in the host's memory, not in the runs: they move the pane too.
-            foreach (var (block, lines) in owner.BackgroundOutputFor(pane.Id).OrderBy(pair => pair.Key, StringComparer.Ordinal)) { mighty.Add(block); foreach (var line in lines) mighty.Add(line); }
+            // A background run's output lines live in the host's memory, not in the runs: they move the pane too, through their
+            // revision, which moves at most once per 3 s a pane.
+            mighty.Add(owner.BackgroundOutputPhoneRevisionFor(pane.Id));
             if (MobileActiveStyle is { } style)
             {
                 mighty.Add(style.Id); mighty.Add(style.Hash); mighty.Add(GuidedPhase(style)?.Id); mighty.Add(pane.Status == "running"); mighty.Add(stylePrerequisites?.Ready);

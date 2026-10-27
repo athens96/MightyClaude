@@ -12787,6 +12787,152 @@
         "edges" : [
           {
             "joins" : false,
+            "source" : "3:r12:request",
+            "target" : "3:r12:agent:tk1"
+          },
+          {
+            "joins" : false,
+            "source" : "3:r12:request",
+            "target" : "3:r12:agent:tk2"
+          },
+          {
+            "joins" : true,
+            "source" : "3:r12:agent:tk1",
+            "target" : "3:r12:result"
+          },
+          {
+            "joins" : true,
+            "source" : "3:r12:agent:tk2",
+            "target" : "3:r12:result"
+          },
+          {
+            "joins" : true,
+            "source" : "3:r12:result",
+            "target" : "pending-input"
+          }
+        ],
+        "fittedResultID" : null,
+        "nodes" : [
+          {
+            "frame" : {
+              "h" : 280,
+              "w" : 500,
+              "x" : 24,
+              "y" : 24
+            },
+            "id" : "3:r12:request",
+            "kind" : "request"
+          },
+          {
+            "frame" : {
+              "h" : 320,
+              "w" : 360,
+              "x" : -96,
+              "y" : 336
+            },
+            "id" : "3:r12:agent:tk1",
+            "kind" : "agent"
+          },
+          {
+            "frame" : {
+              "h" : 240,
+              "w" : 360,
+              "x" : 284,
+              "y" : 336
+            },
+            "id" : "3:r12:agent:tk2",
+            "kind" : "agent"
+          },
+          {
+            "frame" : {
+              "h" : 200,
+              "w" : 500,
+              "x" : 24,
+              "y" : 688
+            },
+            "id" : "3:r12:result",
+            "kind" : "result"
+          },
+          {
+            "frame" : {
+              "h" : 140,
+              "w" : 500,
+              "x" : 24,
+              "y" : 920
+            },
+            "id" : "pending-input",
+            "kind" : "draft"
+          }
+        ],
+        "originX" : -120,
+        "size" : {
+          "h" : 1084,
+          "w" : 788
+        }
+      },
+      "name" : "task-with-notice-reply-is-taller",
+      "running" : false,
+      "runs" : [
+        {
+          "agents" : [
+            {
+              "activityGeneration" : null,
+              "entries" : [
+
+              ],
+              "id" : "tk1",
+              "input" : "Work",
+              "kind" : "task",
+              "noticeReply" : "Reply",
+              "parentID" : null,
+              "responseRecords" : null,
+              "status" : "completed",
+              "title" : "Task tk1",
+              "usage" : null
+            },
+            {
+              "activityGeneration" : null,
+              "entries" : [
+
+              ],
+              "id" : "tk2",
+              "input" : "Work",
+              "kind" : "task",
+              "parentID" : null,
+              "responseRecords" : null,
+              "status" : "completed",
+              "title" : "Task tk2",
+              "usage" : null
+            }
+          ],
+          "configuredModel" : null,
+          "finalOutput" : "Done",
+          "id" : "r12",
+          "input" : "Request",
+          "nodeModelLabel" : null,
+          "provider" : null,
+          "responseRecords" : null,
+          "resultEntries" : [
+
+          ],
+          "rootEntries" : [
+
+          ],
+          "sourceRunID" : null,
+          "status" : "completed",
+          "usage" : null
+        }
+      ]
+    },
+    {
+      "draft" : "",
+      "expanded" : [
+
+      ],
+      "expected" : {
+        "edges" : [
+          {
+            "joins" : false,
             "source" : "2:r6:request",
             "target" : "2:r6:agent:parent"
           },
