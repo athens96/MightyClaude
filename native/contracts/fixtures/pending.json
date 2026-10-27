@@ -1,7 +1,7 @@
 {
   "version": 1,
   "_comment": "Natural submit rules shared by the Mac (MightyCore), Windows Core, the Windows page (vitest) and the phone (jest); docs/superpowers/specs/2026-10-27-natural-submit-design.md, docs/interaction.md. Times are in ms; the rule's numbers are design-tokens.json motion.pendingShowAfter (150) and motion.pendingMinVisible (300), and scripts/check-design-tokens.js checks every display case against them.",
-  "displayRule": "Visible once pending has lasted pendingShowAfter (now >= startedAt + showAfter). A pending that ended by then (endedAt <= startedAt + showAfter) is never shown. Once shown it stays while pending and at least until startedAt + showAfter + minVisible (inclusive), then hides at once: visible while now < endedAt or now <= startedAt + showAfter + minVisible. `failed: true` (absent means false) is visible from endedAt (the failure) on, at once, and stays. Reduce Motion changes no timing, only the movement.",
+  "displayRule": "expectVisible means the pending/failed indicator area is shown. Pending: visible once it has lasted pendingShowAfter (now >= startedAt + showAfter); a pending that ended by then (endedAt <= startedAt + showAfter) is never shown; once shown it stays while pending and at least until startedAt + showAfter + minVisible (inclusive), then hides at once: visible while now < endedAt or now <= startedAt + showAfter + minVisible. Failed (`failed: true`; absent means false): before endedAt the action was still pending and follows the pending rule; from endedAt on the error shows at once and replaces any loading immediately, with no minVisible hold, and stays. A failed case always has endedAt (the failure); a failed state with endedAt null is invalid input, which readers treat as endedAt = now. Reduce Motion changes no timing, only the movement.",
   "display": [
     {"name": "still pending at 0 ms: not shown", "startedAt": 0, "endedAt": null, "now": 0, "expectVisible": false},
     {"name": "still pending at 149 ms: not shown yet", "startedAt": 0, "endedAt": null, "now": 149, "expectVisible": false},
@@ -13,7 +13,6 @@
     {"name": "ended at 100 ms, now 150 ms: never shown", "startedAt": 0, "endedAt": 100, "now": 150, "expectVisible": false},
     {"name": "ended at 100 ms, now 300 ms: never shown", "startedAt": 0, "endedAt": 100, "now": 300, "expectVisible": false},
     {"name": "ended right at 150 ms: never shown", "startedAt": 0, "endedAt": 150, "now": 150, "expectVisible": false},
-    {"name": "ended right at 150 ms, now 300 ms: never shown", "startedAt": 0, "endedAt": 150, "now": 300, "expectVisible": false},
     {"name": "ended at 200 ms, now 199 ms: shown, still pending", "startedAt": 0, "endedAt": 200, "now": 199, "expectVisible": true},
     {"name": "ended at 200 ms, now 200 ms: kept, shown for 50 ms only", "startedAt": 0, "endedAt": 200, "now": 200, "expectVisible": true},
     {"name": "ended at 200 ms, now 450 ms: kept until 150 + 300", "startedAt": 0, "endedAt": 200, "now": 450, "expectVisible": true},
@@ -24,10 +23,14 @@
     {"name": "ended at 900 ms, now 900 ms: hidden at once, shown for more than 300 ms", "startedAt": 0, "endedAt": 900, "now": 900, "expectVisible": false},
     {"name": "start time is not 0: ended 200 ms after it, kept until 450 ms after it", "startedAt": 10000, "endedAt": 10200, "now": 10450, "expectVisible": true},
     {"name": "start time is not 0: ended 200 ms after it, hidden 451 ms after it", "startedAt": 10000, "endedAt": 10200, "now": 10451, "expectVisible": false},
-    {"name": "failed at 40 ms: shown at once", "startedAt": 0, "endedAt": 40, "now": 40, "failed": true, "expectVisible": true},
-    {"name": "failed at 40 ms, now 5 s: the error stays", "startedAt": 0, "endedAt": 40, "now": 5000, "failed": true, "expectVisible": true}
+    {"name": "failed at 40 ms: the error shows at once", "startedAt": 0, "endedAt": 40, "now": 40, "failed": true, "expectVisible": true},
+    {"name": "failed at 40 ms, now 5 s: the error stays", "startedAt": 0, "endedAt": 40, "now": 5000, "failed": true, "expectVisible": true},
+    {"name": "fails at 100 ms, now 50 ms: still pending, not shown yet", "startedAt": 0, "endedAt": 100, "now": 50, "failed": true, "expectVisible": false},
+    {"name": "failed at 100 ms, now 100 ms: the error shows at once, before the 150 ms delay", "startedAt": 0, "endedAt": 100, "now": 100, "failed": true, "expectVisible": true},
+    {"name": "fails at 400 ms, now 300 ms: still pending, loading shown since 150 ms", "startedAt": 0, "endedAt": 400, "now": 300, "failed": true, "expectVisible": true},
+    {"name": "failed at 400 ms, now 400 ms: the error replaces the loading at once", "startedAt": 0, "endedAt": 400, "now": 400, "failed": true, "expectVisible": true}
   ],
-  "submitRule": "outcome: the body's `outcome` when it is started, queued or steered; else its `accepted` when that is one of those words (old hosts); else null. accepted: outcome is not null. entryId, runId: the body's value when it is a non-empty string, else null. Other fields (protocol, draft, state) are ignored. New hosts keep sending `accepted` as the outcome word so older phones still read it.",
+  "submitRule": "outcome: the body's `outcome` when it is started, queued or steered (any other value is ignored); else its `accepted` when that is one of those words (old hosts); else null. accepted: true when outcome is not null or the body's `accepted` is the boolean true (then outcome may stay null). entryId, runId: the body's value when it is a non-empty string, else null. Other fields (protocol, draft, state) are ignored. New hosts keep sending `accepted` as the outcome word so older phones still read it. steered: the request went into the pane's running Claude process as a new turn (다음 실행 while the run only waits on background work, or a submit that lands that way); old and new hosts may both return it.",
   "submitResponses": [
     {"name": "old host: started", "raw": {"protocol": 1, "accepted": "started"}, "parsed": {"accepted": true, "entryId": null, "runId": null, "outcome": "started"}},
     {"name": "old host: queued", "raw": {"protocol": 1, "accepted": "queued"}, "parsed": {"accepted": true, "entryId": null, "runId": null, "outcome": "queued"}},
@@ -40,11 +43,14 @@
     {"name": "Windows page send bridge: started", "raw": {"outcome": "started", "entryId": "entry-7", "runId": "run-7", "draft": "", "state": {"busy": true}}, "parsed": {"accepted": true, "entryId": "entry-7", "runId": "run-7", "outcome": "started"}},
     {"name": "Windows page send bridge: no request was made", "raw": {"outcome": "blocked", "draft": "hello", "state": {"busy": false}}, "parsed": {"accepted": false, "entryId": null, "runId": null, "outcome": null}},
     {"name": "ids that are not non-empty strings are dropped", "raw": {"protocol": 1, "accepted": "started", "outcome": "started", "entryId": 42, "runId": ""}, "parsed": {"accepted": true, "entryId": null, "runId": null, "outcome": "started"}},
+    {"name": "accepted as a boolean with no outcome", "raw": {"accepted": true}, "parsed": {"accepted": true, "entryId": null, "runId": null, "outcome": null}},
+    {"name": "an unknown outcome is ignored: the accepted word decides", "raw": {"protocol": 1, "accepted": "queued", "outcome": "blocked"}, "parsed": {"accepted": true, "entryId": null, "runId": null, "outcome": "queued"}},
+    {"name": "an unknown outcome is ignored: the accepted boolean decides", "raw": {"accepted": true, "outcome": "blocked", "entryId": "entry-9"}, "parsed": {"accepted": true, "entryId": "entry-9", "runId": null, "outcome": null}},
     {"name": "an unknown word is not accepted", "raw": {"protocol": 1, "accepted": "later"}, "parsed": {"accepted": false, "entryId": null, "runId": null, "outcome": null}},
     {"name": "an empty body is not accepted", "raw": {}, "parsed": {"accepted": false, "entryId": null, "runId": null, "outcome": null}},
     {"name": "no body is not accepted", "raw": null, "parsed": {"accepted": false, "entryId": null, "runId": null, "outcome": null}}
   ],
-  "scrollRule": "own (this composer's Enter, a queued request that now runs, 다음 실행, a selected ⌘Enter child): scroll toRequest in every view whatever the position, with resetBoard when the 파이프라인 shows an older board. Not own: today's follow rule, follow when nearBottom (at the newest end, or the follow camera is on) else none; on an older 파이프라인 board always none (the badge says there is more). resetBoard is only ever true for own submits. chosenBoard is newest outside the 파이프라인.",
+  "scrollRule": "own (this composer's Enter, a queued request that now runs, 다음 실행, a selected ⌘Enter child): scroll toRequest in every view whatever the position, with resetBoard when the 파이프라인 shows an older board. Not own: today's follow rule, follow when nearBottom else none; on an older 파이프라인 board a not-own update is always none, on purpose (today's badge only, the user chose that board). resetBoard is only ever true for own submits. chosenBoard is newest outside the 파이프라인. The caller computes nearBottom with its own threshold (Mac 36 pt, Windows 32 px from the bottom; in 흐름 the follow camera being on; in 기록 and 파이프라인 being at the newest end); the fixture covers only the decision.",
   "scrollTargets": [
     {"name": "basic, own, at the bottom", "input": {"view": "basic", "own": true, "chosenBoard": "newest", "nearBottom": true}, "expect": {"scroll": "toRequest", "resetBoard": false}},
     {"name": "basic, own, reading above", "input": {"view": "basic", "own": true, "chosenBoard": "newest", "nearBottom": false}, "expect": {"scroll": "toRequest", "resetBoard": false}},

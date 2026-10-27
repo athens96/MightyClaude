@@ -407,10 +407,12 @@ const MOTION_DURATIONS = ['quick', 'standard', 'scroll', 'pendingShowAfter', 'pe
 const MOTION_KEYS = [...MOTION_DURATIONS, 'easing'];
 
 /// The pending display rule (docs/interaction.md): shown once pending has lasted showAfter, kept at
-/// least minVisible once shown, never shown when it ended by showAfter, and `failed` shows at once.
+/// least minVisible once shown, never shown when it ended by showAfter. A failed action is pending
+/// before endedAt; from endedAt on its error shows at once, with no minVisible hold (endedAt null
+/// is invalid for a failure and reads as now).
 function pendingVisible({ startedAt, endedAt, now, failed }, showAfter, minVisible) {
-  if (failed) return now >= (endedAt ?? startedAt);
   const shownAt = startedAt + showAfter;
+  if (failed) return now >= (endedAt ?? now) || now >= shownAt;
   if (now < shownAt) return false;
   if (endedAt === null) return true;
   if (endedAt <= shownAt) return false;
