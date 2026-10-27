@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#0d0d0f",
     "ios": {
-      "bundleIdentifier": "dev.mightyclaude.mobile",
+      "bundleIdentifier": "xyz.woorizip.mightyclaude",
       "buildNumber": "2",
       "supportsTablet": true,
       "infoPlist": {
@@ -85,6 +85,9 @@
         {
           "android": {
             "usesCleartextTraffic": true
+          },
+          "ios": {
+            "useFrameworks": "static"
           }
         }
       ],

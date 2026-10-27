@@ -5,6 +5,7 @@ import { join } from 'node:path';
 const appJson = require('../../app.json') as { expo: { android: { permissions: string[]; blockedPermissions: string[] }; plugins: unknown[] } };
 const makeConfig = require('../../app.config.js') as (input: { config: typeof appJson.expo }) => typeof appJson.expo & {
   android: { googleServicesFile?: string };
+  ios?: { googleServicesFile?: string };
 };
 
 const saved = { ...process.env };
@@ -35,6 +36,7 @@ describe('push build config', () => {
 
   it('leaves the config alone without a google-services file outside a build', () => {
     delete process.env['GOOGLE_SERVICES_JSON'];
+    delete process.env['GOOGLE_SERVICE_INFO_PLIST'];
     delete process.env['EAS_BUILD'];
     const config = makeConfig({ config: appJson.expo });
     expect(config.android.googleServicesFile).toBeUndefined();
@@ -47,7 +49,7 @@ describe('push build config', () => {
     process.env['GOOGLE_SERVICES_JSON'] = file;
     const config = makeConfig({ config: appJson.expo });
     expect(config.android.googleServicesFile).toBe(file);
-    expect(config.plugins).toEqual([...appJson.expo.plugins, '@react-native-firebase/app', '@react-native-firebase/crashlytics']);
+    expect(config.plugins).toEqual([...appJson.expo.plugins, ['@react-native-firebase/app', { ios: { disableSPM: true } }], '@react-native-firebase/crashlytics']);
   });
 
   it('stops an EAS build that has no google-services file', () => {
@@ -59,5 +61,33 @@ describe('push build config', () => {
   it('stops when the variable points at nothing', () => {
     process.env['GOOGLE_SERVICES_JSON'] = join(tmpdir(), 'missing-google-services.json');
     expect(() => makeConfig({ config: appJson.expo })).toThrow(/missing file/);
+  });
+
+  it('adds the iOS file and the Firebase plugins from GOOGLE_SERVICE_INFO_PLIST alone', () => {
+    delete process.env['GOOGLE_SERVICES_JSON'];
+    const file = join(mkdtempSync(join(tmpdir(), 'gs-')), 'GoogleService-Info.plist');
+    writeFileSync(file, '<plist/>');
+    process.env['GOOGLE_SERVICE_INFO_PLIST'] = file;
+    const config = makeConfig({ config: appJson.expo });
+    expect(config.ios?.googleServicesFile).toBe(file);
+    expect(config.android.googleServicesFile).toBeUndefined();
+    expect(config.plugins).toEqual([...appJson.expo.plugins, ['@react-native-firebase/app', { ios: { disableSPM: true } }], '@react-native-firebase/crashlytics']);
+  });
+
+  it('stops an iOS EAS build without the iOS file, and lets it through without the Android one', () => {
+    delete process.env['GOOGLE_SERVICES_JSON'];
+    delete process.env['GOOGLE_SERVICE_INFO_PLIST'];
+    process.env['EAS_BUILD'] = 'true';
+    process.env['EAS_BUILD_PLATFORM'] = 'ios';
+    expect(() => makeConfig({ config: appJson.expo })).toThrow(/GOOGLE_SERVICE_INFO_PLIST/);
+    const file = join(mkdtempSync(join(tmpdir(), 'gs-')), 'GoogleService-Info.plist');
+    writeFileSync(file, '<plist/>');
+    process.env['GOOGLE_SERVICE_INFO_PLIST'] = file;
+    expect(makeConfig({ config: appJson.expo }).ios?.googleServicesFile).toBe(file);
+  });
+
+  it('builds iOS with static frameworks, as React Native Firebase needs', () => {
+    const entry = appJson.expo.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === 'expo-build-properties') as [string, { ios?: { useFrameworks?: string } }];
+    expect(entry[1].ios?.useFrameworks).toBe('static');
   });
 });

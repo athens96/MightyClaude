@@ -402,16 +402,20 @@ modules/                 로컬 네이티브 모듈: device-lock(휴대폰 잠�
 
 ## 8. iOS 빌드
 
-- `app.json`: `ios.bundleIdentifier`는 `dev.mightyclaude.mobile`입니다(Android `package`는 Firebase 앱에 맞춘
-  `xyz.woorizip.mightyclaude`). iOS로 Firebase를 쓰려면 같은 프로젝트에 iOS 앱을 따로 등록합니다.
+- `app.json`: `ios.bundleIdentifier`는 Android `package`와 같은 `xyz.woorizip.mightyclaude`입니다. Firebase
+  프로젝트에 이 번들 ID로 iOS 앱이 등록되어 있고, 그 `GoogleService-Info.plist`는 저장소 밖에 두고
+  `GOOGLE_SERVICE_INFO_PLIST`로 가리킵니다(Android의 `GOOGLE_SERVICES_JSON`과 같은 방식). React Native
+  Firebase 때문에 iOS는 정적 프레임워크로 빌드합니다(`expo-build-properties`의 `ios.useFrameworks: "static"`).
   그 밖에 `ios.supportsTablet: true`, 사용 설명은 카메라(QR) 하나뿐입니다. 사진은 시스템 선택기로만
   고르므로 `NSPhotoLibraryUsageDescription`은 넣지 않습니다(`expo-image-picker` 플러그인의
   `photosPermission: false`).
-- `eas.json`에 `development` / `preview` / `production` 프로필이 있습니다.
+- `eas.json`에 `development` / `preview` / `production` / `simulator` 프로필이 있습니다. `simulator`는
+  Apple 계정 없이 이 맥의 iOS 시뮬레이터용으로 빌드합니다.
 
 ```bash
 npx expo config --type public   # ios.bundleIdentifier 확인
-npx eas build --profile development --platform ios
+GOOGLE_SERVICE_INFO_PLIST=<저장소 밖의 GoogleService-Info.plist> \
+  npx eas build --profile simulator --platform ios --local --output <출력.tar.gz>
 ```
 
 > **자격 증명은 넣지 않았습니다.** Apple Team ID, 인증서·프로비저닝 프로파일, App Store Connect
