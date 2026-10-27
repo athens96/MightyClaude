@@ -57,6 +57,8 @@ import {
   type BoardColumn,
   type BoardNavigation,
 } from '@/lib/pipeline-board';
+import { NoticeReply, RunHead } from '@/components/background-run';
+import { FOLDED_REPLY_LINES, backgroundEnded, backgroundLabel } from '@/lib/background-output';
 import { toneOf, type Tone } from '@/lib/status-tone';
 import { submitScroll } from '@/lib/submit-scroll';
 import {
@@ -476,6 +478,15 @@ const AgentCard = memo(function AgentCard({ node, parent, tone }: { node: Struct
   const title = node.title || blockKindLabel(node.kind);
   const prompt = node.prompt ? (open ? node.prompt : foldText(node.prompt, FOLD_LINES.prompt).preview) : undefined;
   const output = node.output ? (open ? node.output : foldText(node.output, FOLD_LINES.output).preview) : undefined;
+  // A background run: running, its last two lines; ended, its lines and Claude's reply once opened.
+  const task = node.kind === 'task';
+  const label = backgroundLabel(node);
+  const ended = backgroundEnded(node.status);
+  const lines = node.outputTail ?? [];
+  const tail = task ? (ended ? (open ? lines : []) : lines.slice(-2)) : [];
+  const reply = task ? node.noticeReply : undefined;
+  const meta = nodeMeta(node, blockKindLabel);
+  const opens = task && ended && (lines.length > 0 || !!reply);
   return (
     <View
       style={[
@@ -495,7 +506,7 @@ const AgentCard = memo(function AgentCard({ node, parent, tone }: { node: Struct
           {title}
         </Text>
         <Text numberOfLines={1} style={styles.nodeMeta}>
-          {`${nodeMeta(node, blockKindLabel)} · ${statusLabel(node.status)}`}
+          {`${label ? [label, ...meta.split(' · ').slice(1)].join(' · ') : meta} · ${statusLabel(node.status)}`}
         </Text>
         {parent !== undefined ? (
           <Text numberOfLines={1} style={styles.nodeMeta}>
@@ -512,8 +523,12 @@ const AgentCard = memo(function AgentCard({ node, parent, tone }: { node: Struct
             {output}
           </Text>
         ) : null}
+        {tail.length > 0 ? <RunHead command="" tail={tail} open={open} /> : null}
+        {reply && open ? (
+          <NoticeReply text={reply} lines={open ? undefined : FOLDED_REPLY_LINES} />
+        ) : null}
         {node.activity ? <ActivityLine line={node.activity} /> : null}
-        {folds ? <FoldToggle open={open} onToggle={() => setOpen((value) => !value)} /> : null}
+        {folds || opens ? <FoldToggle open={open} onToggle={() => setOpen((value) => !value)} /> : null}
       </View>
       <RunningOutline status={node.status} corner={radius.sm} />
     </View>

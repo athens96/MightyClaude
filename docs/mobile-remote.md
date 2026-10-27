@@ -197,13 +197,21 @@ MobileMighty {
   structure?: MobileStructure,                                           // 아래 "구조 보기" 절 — ?structure=로 물었을 때만, 바뀌었을 때만
   structureTag?: number                                                  // ?structure=로 물었을 때만. 0은 그릴 것이 없음
 }
-MobileBlock { id, kind, title, status, summary?, output?, durationMs?, nodeModelLabel?, activity?: [string] }
+MobileBlock { id, kind, title, status, summary?, output?, durationMs?, nodeModelLabel?, activity?: [string],
+              background?: true, outputTail?: [string], noticeReply?: string }
                                              // output은 2 000자까지. durationMs는 끝난 블록만(첫 기록~마지막 기록)
                                              // summary는 그 블록이 받은 지시를 한 줄로 편 것(1 000바이트까지): 하위 블록은 프롬프트, main 블록은 요청 자체
                                              // activity(선택, 추가 필드)는 running·waiting 블록에만 실리는 최근 단계 최대 8줄, 오래된 것부터.
                                              //   Mac 대화 기록과 같은 문구: 도구 호출은 그 요약(없으면 도구 이름), 답변·오류는 첫 줄. 실행 자체의
                                              //   "turn" 행과 질문의 원문(JSON)은 빠진다. 줄마다 summary처럼 한 줄로 펴고 1 000바이트에서 자른다.
                                              //   끝난 블록에는 없다. 이 필드를 모르는 구버전 휴대폰은 무시한다.
+                                             // background(선택, 추가 필드)는 백그라운드 하위 에이전트와 모든 task 블록에만 실리는 `true`.
+                                             //   휴대폰은 이것으로 "하위 에이전트 · …" / "백그라운드 실행 · …" 종류 줄을 그린다(steer 블록은 제외).
+                                             // outputTail(선택, 추가 필드)은 task 블록에만: 백그라운드 실행의 출력 파일 끝 줄 최대 6줄(줄당 200 글자, 넘으면 "…"),
+                                             //   오래된 것부터. 한도와 자르는 규칙은 공유 픽스처 native/contracts/fixtures/background-output.json이 정한다
+                                             //   (휴대폰 테스트가 maxLines를 거기서 읽는다). 출력 파일의 경로·내용 전체는 보내지 않는다: `outputFile`은 어떤 필드로도 실리지 않는다.
+                                             // noticeReply(선택, 추가 필드)는 그 작업 알림 하나에 Claude가 한 답. 블록 output과 같은 규칙으로 2 000자에서 자른다.
+                                             //   세 필드 모두 없으면(구버전 호스트) 휴대폰은 지금까지처럼 그리고, 이 필드를 모르는 구버전 휴대폰은 무시한다.
                                              // 롱 폴을 깨우는 mighty 요약값은 블록 id·상태와 함께 run.rootEntries·agent.entries의 개수와
                                              // 마지막 기록 id를 해시한다 — 새 단계가 휴대폰을 깨운다. 스트리밍 중인 글자는 여전히 해시하지 않는다.
                                              // 호스트는 요청당 블록 수를 제한하지 않는다. 휴대폰은 최근 200개만 그리고 나머지는 "이전 블록 N개 생략"으로 표시한다.
@@ -240,8 +248,11 @@ Item {
   omittedNodes?: number
 }
 Activity { kind, state, text }                // kind는 AgentActivity.kind, text는 한 줄
-Node { id, depth, title, status, kind: "agent" | "task", model?, prompt?, output?, activity?: Activity }
+Node { id, depth, title, status, kind: "agent" | "task", model?, prompt?, output?, activity?: Activity,
+       background?: true, outputTail?: [string], noticeReply?: string }
                                               // depth는 0부터 6까지(더 깊으면 6), model은 버전 붙은 짧은 이름, activity는 마지막 도구 호출
+                                              // background·outputTail·noticeReply는 MobileBlock의 같은 이름 필드와 뜻이 같다(outputTail은 task 노드만, 최대 6줄).
+                                              //   없으면 휴대폰은 무시하고, `outputFile`은 보내지 않는다. noticeReply는 노드 output과 같은 1 KB 한도에서 자른다.
 ```
 
 **한도.** 글은 글자 경계(결합 이모지도 한 글자)에서 UTF-8 바이트로 자르고 잘린 글 끝에 "…"를 붙인다: `request`·`message` 1 KB, `answer` 4 KB(열린 코드 펜스는 한도 안에서 닫는다), 노드 `prompt` 300 B·`output` 1 KB, 활동 한 줄 200 B, 제목 160 B, 모델 80 B. 최근 요청 20개까지, 요청마다 노드 60개까지(`omittedNodes`). 값 전체의 JSON(열·줄 껍데기, 단계 이름, `omitted`까지 실제로 인코딩한 크기)은 192 KiB 이하로 맞추고, 넘치면 오래된 요청부터 뺀다. 가장 최근 요청 하나는 언제나 실리고, 그것만으로 넘치면 앞쪽 노드를 들어갈 만큼만(이분 탐색) 남긴다. 같은 run id가 두 번 있으면(손상된 저장) 가장 최근 것 하나만 싣는다. 단계가 있는 스타일은 요청이 하나도 없어도 단계 막대를 위해 `columns`를 보내고, 스타일이 없는 창에 요청이 없으면 필드 자체가 없다.

@@ -8,6 +8,7 @@ import type {
   StructureRow,
   StructureStep,
 } from '@/api/types';
+import { parseBackground } from '@/lib/background-output';
 import { t } from '@/lib/i18n';
 import { blockText, inlineText } from '@/lib/styles';
 
@@ -117,6 +118,7 @@ function parseNode(raw: unknown): StructureNode | undefined {
   if (output) node.output = output;
   const activity = parseActivity(raw.activity);
   if (activity) node.activity = activity;
+  Object.assign(node, parseBackground(raw, MAX_STRUCTURE_OUTPUT));
   return node;
 }
 

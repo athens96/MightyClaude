@@ -100,6 +100,9 @@ Claude、Codex 和 Antigravity 窗格的标题栏中有{{ui:graph.view.default}}
 
 ### Mighty 流程 {#diagram}
 每个请求生成一个请求块，其正下方是{{ui:graph.block.execution}}块。请求块只包含发出的请求；智能体因该请求所做的事（消息、工具调用、进度）显示在{{ui:graph.block.execution}}块中。子智能体和后台任务从{{ui:graph.block.execution}}块下方分支出来。请求结束后，会附上{{ui:graph.block.result}}卡片。
+
+在后台启动的子智能体块带有{{ui:graph.background.agentWaiting}}一行，后台命令（任务）块带有{{ui:graph.background.runWaiting}}一行，两者由此区分；工作结束后，这一行末尾会变为已完成、失败或已中断。后台命令块会显示所运行的命令和输出的最后几行（折叠时显示几行，展开后最多 6 行）；如果 Claude 已回应任务通知，这段回答会显示在{{ui:graph.background.reply}}之下。输入框上方的后台任务条显示最后一行。手机上的 Mighty 视图和流水线也会显示同样的内容。
+
 - 拖动空白处或滚动即可移动流程。用缩放按钮可以在 50% 到 150% 之间调整。
 - 点击某个块后，只在该块内部滚动。点击空白处或按{{kbd:Esc}}即可取消选择。
 - 拖动块的右下角可以调整大小。右键点击可以选择{{ui:graph.block.resetSize}}。大小按会话保存。

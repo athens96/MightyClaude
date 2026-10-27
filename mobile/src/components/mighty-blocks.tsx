@@ -12,10 +12,12 @@ import {
 } from 'react-native';
 import type { MobileBlock, MobileMightyRun } from '@/api/types';
 import { AssistantMarkdown } from '@/components/assistant-markdown';
+import { NoticeReply, RunHead } from '@/components/background-run';
 import { StatusChip } from '@/components/status-chip';
 import { EmptyState } from '@/components/ui';
 import { formatDuration } from '@/components/log-entry-view';
 import type { EndScrollable, FollowBottomProps } from '@/hooks/use-follow-bottom';
+import { FOLDED_REPLY_LINES, backgroundLabel, shownTail } from '@/lib/background-output';
 import { t } from '@/lib/i18n';
 import { toneOf } from '@/lib/status-tone';
 import { runTally, timelineNode, type TimelineNode } from '@/lib/timeline';
@@ -187,6 +189,12 @@ function BlockRow({
   const gist = blockGist(block, runInput);
   const tone = toneOf(block.status);
   const ringed = tone === 'run' || tone === 'wait';
+  // A background run (a task block) shows its command and live lines in place of the gist.
+  const run = block.kind === 'task';
+  const label = backgroundLabel(block);
+  const tail = run ? shownTail(block.outputTail, block.status, open) : [];
+  const command = run ? (block.summary ?? '') : '';
+  const runHead = command.trim().length > 0 || tail.length > 0;
 
   return (
     <View style={styles.timelineRow}>
@@ -212,10 +220,15 @@ function BlockRow({
               {blockKindLabel(block.kind, block.summary)}
               {duration ? ` · ${duration}` : ''}
             </Text>
-            {gist ? (
+            {label ? <Text style={styles.blockMeta}>{label}</Text> : null}
+            {run && runHead ? <RunHead command={command} tail={tail} open={open} /> : null}
+            {gist && !(run && runHead) ? (
               <Text numberOfLines={2} style={styles.blockSummary}>
                 {gist}
               </Text>
+            ) : null}
+            {run && block.noticeReply ? (
+              <NoticeReply text={block.noticeReply} lines={open ? undefined : FOLDED_REPLY_LINES} />
             ) : null}
             <Text style={styles.toggle}>
               {open ? t('phone.blocks.collapse') : t('phone.blocks.expand')}
@@ -223,15 +236,16 @@ function BlockRow({
           </View>
           <StatusChip status={block.status} />
         </Pressable>
-        {open ? <BlockDetails block={block} runInput={runInput} /> : null}
+        {open ? <BlockDetails block={block} runInput={runInput} runHead={run && (runHead || !!block.noticeReply)} /> : null}
       </View>
     </View>
   );
 }
 
-function BlockDetails({ block, runInput }: { block: MobileBlock; runInput: string }) {
+function BlockDetails({ block, runInput, runHead }: { block: MobileBlock; runInput: string; runHead: boolean }) {
   const styles = useStyles(makeStyles);
-  const prompt = blockPrompt(block, runInput);
+  // A background run's command is already shown above, in its head.
+  const prompt = block.kind === 'task' ? '' : blockPrompt(block, runInput);
   const activity = blockActivity(block);
 
   return (
@@ -258,7 +272,7 @@ function BlockDetails({ block, runInput }: { block: MobileBlock; runInput: strin
           <AssistantMarkdown compact text={block.output} />
         </View>
       ) : null}
-      {!prompt && activity.length === 0 && !block.output ? (
+      {!prompt && !runHead && activity.length === 0 && !block.output ? (
         <Text style={styles.sectionLabel}>{t('phone.blocks.nothing')}</Text>
       ) : null}
     </View>

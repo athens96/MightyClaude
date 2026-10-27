@@ -100,6 +100,9 @@ Claude, Codex and Antigravity panes have a {{ui:graph.view.default}} | {{ui:grap
 
 ### The Mighty flow {#diagram}
 Each request gets a request block with a {{ui:graph.block.execution}} block right below it. The request block holds only what you sent; what the agent did because of it (messages, tool calls, progress) shows in the {{ui:graph.block.execution}} block. Sub-agents and background tasks branch out below the {{ui:graph.block.execution}} block. When the request ends, a {{ui:graph.block.result}} card is attached.
+
+A sub-agent started in the background carries a {{ui:graph.background.agentWaiting}} line and a background command (task) block carries a {{ui:graph.background.runWaiting}} line, so the two are told apart; once the work ends, the line ends in completed, failed or stopped. A background command block shows the command it ran and the last lines of its output (a few lines folded, up to 6 opened), and when Claude answered its notice, that answer appears under {{ui:graph.background.reply}}. The background work strip above the composer shows the last line. The phone's Mighty view and pipeline show the same lines.
+
 - Drag the empty background or scroll to move around. The zoom buttons go from 50% to 150%.
 - Click a block to scroll inside it. Click the background or press {{kbd:Esc}} to deselect.
 - Drag a block's bottom-right corner to resize it. Right-click for {{ui:graph.block.resetSize}}. Sizes are saved per session.

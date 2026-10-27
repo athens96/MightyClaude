@@ -100,6 +100,9 @@ Claude, Codex, Antigravity 창 머리에는 {{ui:graph.view.default}} | {{ui:gra
 
 ### 마이티 흐름 {#diagram}
 요청마다 요청 블록이 생기고, 바로 아래 {{ui:graph.block.execution}} 블록이 붙습니다. 요청 블록에는 보낸 요청만 담기고, 에이전트가 그 요청으로 한 일(메시지, 도구 호출, 진행 상태)은 {{ui:graph.block.execution}} 블록에 나옵니다. 하위 에이전트와 백그라운드 작업은 {{ui:graph.block.execution}} 블록 아래로 갈라져 나옵니다. 끝나면 {{ui:graph.block.result}} 카드가 붙습니다.
+
+백그라운드로 시작한 하위 에이전트 블록에는 {{ui:graph.background.agentWaiting}} 줄이, 백그라운드 명령(작업) 블록에는 {{ui:graph.background.runWaiting}} 줄이 붙어 둘을 가르고, 끝나면 줄 끝이 완료·실패·중단됨으로 바뀝니다. 백그라운드 명령 블록은 실행한 명령과 출력의 마지막 줄들을 보여 주고(접어 두면 몇 줄, 펼치면 최대 6줄), 작업 알림에 Claude가 답했으면 {{ui:graph.background.reply}} 아래에 그 답이 나옵니다. 입력창 위의 백그라운드 작업 줄에는 마지막 한 줄이 나옵니다. 휴대폰의 마이티 보기와 파이프라인도 같은 줄을 보여 줍니다.
+
 - 빈 곳을 끌거나 스크롤해서 흐름을 움직입니다. 확대·축소 단추로 50~150%로 볼 수 있습니다.
 - 블록을 누르면 그 블록 안만 스크롤합니다. 빈 곳을 누르거나 {{kbd:Esc}}를 누르면 선택이 풀립니다.
 - 블록 오른쪽 아래 모서리를 끌면 크기가 바뀝니다. 오른쪽 클릭하면 {{ui:graph.block.resetSize}}가 있습니다. 크기는 세션마다 저장됩니다.

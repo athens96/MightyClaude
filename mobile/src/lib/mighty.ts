@@ -7,6 +7,7 @@ import {
   type MobileMighty,
   type MobileMightyRun,
 } from '@/api/types';
+import { parseBackground } from '@/lib/background-output';
 import { t } from '@/lib/i18n';
 import {
   blockText,
@@ -230,6 +231,7 @@ function parseBlock(raw: unknown): MobileBlock | undefined {
   }
   const nodeModelLabel = inlineText(raw.nodeModelLabel, 240);
   if (nodeModelLabel.length > 0) block.nodeModelLabel = nodeModelLabel;
+  Object.assign(block, parseBackground(raw, MAX_BLOCK_OUTPUT));
   return block;
 }
 

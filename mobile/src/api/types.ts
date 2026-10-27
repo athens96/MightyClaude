@@ -378,6 +378,12 @@ export interface MobileBlock {
    * absent once it settles and on a host that predates the field.
    */
   activity?: string[];
+  /** `true` for a background sub-agent and every task block; a host that predates the field omits it. */
+  background?: true;
+  /** A task block's last output lines (at most `BACKGROUND_OUTPUT.maxLines`); the output file itself is never sent. */
+  outputTail?: string[];
+  /** Claude's reply to the task's notice, clipped like `output`. */
+  noticeReply?: string;
 }
 
 export interface MobileMightyRun {
@@ -559,6 +565,10 @@ export interface StructureNode {
   prompt?: string;
   output?: string;
   activity?: StructureActivity;
+  /** As on `MobileBlock`. */
+  background?: true;
+  outputTail?: string[];
+  noticeReply?: string;
 }
 
 export interface StructureCluster {
