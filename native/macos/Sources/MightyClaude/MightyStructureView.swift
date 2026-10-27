@@ -774,7 +774,7 @@ struct MightyStructureView: View {
         let open = memory.expanded.contains(key)
         // An ended background run opens to its output lines and Claude's reply.
         let hasTail = task && backgroundOutput[node.agentID]?.isEmpty == false
-        let opensMore = MightyGraphSupport.terminal(node.status) && (hasTail || node.noticeReply != nil)
+        let opensMore = MightyGraphLayout.terminal(node.status) && (hasTail || node.noticeReply != nil)
         // Folds are judged at the width the card's text really has at its depth.
         let textWidth = MightyStructure.nodeTextWidth(column: column, depth: node.depth)
         let folds = node.prompt?.folds(lines: MightyStructure.promptLines,
@@ -787,7 +787,7 @@ struct MightyStructureView: View {
         let kindWords = task || node.background ? MightyGraphSupport.backgroundLabel(run: task, status: node.status) : MightyTimelineText.kind(node.kind)
         // A task notice's title already names its kind.
         let meta = ((steer ? [] : [kindWords]) + [model].compactMap { $0 }).joined(separator: " · ")
-        let ended = MightyGraphSupport.terminal(node.status)
+        let ended = MightyGraphLayout.terminal(node.status)
         let tail = task ? backgroundOutput[node.agentID] ?? [] : []
         // Running, the last two lines; ended, the lines and Claude's reply once opened.
         let shownTail = ended ? (open ? tail : []) : Array(tail.suffix(2))

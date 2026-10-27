@@ -475,12 +475,12 @@ extension AppStore {
         // the registry sweep is behind the same gate (§1.10).
         guard let registered = guidedStyle(session) else {
             let built = structure ? mobileStructure(session, runs: saved, style: nil) : nil
-            return MobileMighty(style: style, runs: MobileMightySupport.runs(saved, outputTails: backgroundOutput) { _ in nil },
+            return MobileMighty(style: style, runs: MobileMightySupport.runs(saved, outputTails: backgroundOutput.lines(forPane: session.id)) { _ in nil },
                                 structure: built?.value, structureTag: built?.tag)
         }
         let runnable = styleRegistry.runnableInPrecedence(workspace: styleWorkspaceRef(session))
         let titles = StyleRequestTitles(styles: runnable)
-        let runs = MobileMightySupport.runs(saved, outputTails: backgroundOutput) { titles.prefix($0) }
+        let runs = MobileMightySupport.runs(saved, outputTails: backgroundOutput.lines(forPane: session.id)) { titles.prefix($0) }
         // The Mac reads these when the style is chosen; a pane only ever
         // watched from a phone has never triggered that read.
         if stylePrerequisite(registered, for: session) == nil { refreshStylePrerequisites(registered, for: session) }
@@ -509,7 +509,7 @@ extension AppStore {
                                           planHistory: session.planHistory ?? [],
                                           pendingPlanRunID: PlanCardSupport.pendingPlan(toolPermissions[session.id])?.runId,
                                           key: mobileStructureKey(style: style, runnable: runnable, catalog: catalog),
-                                          tails: backgroundOutput(for: runs),
+                                          tails: backgroundOutput.lines(forPane: session.id),
                                           title: { titles?.prefix($0) },
                                           model: { ModelUsageFormat.shortName($0, catalog: catalog, versioned: true) })
     }
@@ -551,12 +551,10 @@ extension AppStore {
         // by identity alone rather than rebuilding them: this runs on every
         // snapshot publish — during a stream, every token.
         hasher.combine(MobileMightySupport.digest(session: session))
-        // A background run's last output lines live on this Mac alone, beside the graph.
-        if !backgroundOutput.isEmpty, let saved = session.graphRuns {
-            for run in saved.suffix(MobileWire.mightyRuns) {
-                for agent in run.agents where agent.isTask { hasher.combine(backgroundOutput[agent.id]) }
-            }
-        }
+        // A background run's last output lines live on this Mac alone, beside the graph:
+        // the very slice the blocks and the structure are sent.
+        let tails = backgroundOutput.lines(forPane: session.id)
+        if !tails.isEmpty { hasher.combine(tails) }
         // An answered plan moves a request's phase in the structure view.
         hasher.combine(session.planHistory?.count); hasher.combine(session.planHistory?.last?.outcome.rawValue)
         guard let style = guidedStyle(session) else { return hasher.finalize() }

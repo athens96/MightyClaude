@@ -383,7 +383,9 @@ public struct MightyGraphLayout {
                 guard depth < 64, visited.insert(index).inserted else { return nil }
                 let agent = run.agents[index]
                 let id = nodeID(run, suffix: "agent:\(agent.id)")
-                let cardSize = size(id, width: 360, height: expanded.contains(id) ? 480 : 240)
+                // A background run with Claude's reply to its notice holds its command, output
+                // lines and that reply above its summary, so it opens taller.
+                let cardSize = size(id, width: 360, height: expanded.contains(id) ? 480 : agent.isTask && agent.noticeReply != nil ? 320 : 240)
                 let height = cardSize.height
                 let children = run.agents.indices.filter { $0 != index && run.agents[$0].parentID == agent.id }
                     .compactMap { branch($0, depth: depth + 1) }

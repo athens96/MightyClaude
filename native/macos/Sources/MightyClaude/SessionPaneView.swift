@@ -212,7 +212,7 @@ struct SessionPaneView: View {
                 // list or the user hid the line.
                 if session.kind == "claude", let work = session.backgroundWork,
                    PlanCardSupport.showsBackgroundStrip(work, mighty: showsMightyGraph, styleDrawsTasks: PlanCardSupport.styleDrawsTasks(style?.manifest), enabled: store.showsBackgroundWork) {
-                    BackgroundWorkStrip(sessionId: session.id, work: work, run: session.graphRuns?.last)
+                    BackgroundWorkStrip(sessionId: session.id, work: work, run: session.graphRuns?.last, output: store.backgroundOutput.pane(session.id))
                 }
                 ToolPermissionBar(sessionId: session.id)
                 if let request = store.webOpenRequests.first(where: { $0.agentPaneId == session.id }) {
@@ -561,7 +561,7 @@ struct SessionPaneView: View {
                         AnyView(PlanRecordView(record: record, expanded: expanded, onToggle: toggle, inDiagram: true).environmentObject(store))
                     },
                     ownSubmit: store.ownSubmits[session.id], pending: store.submitPending[session.id],
-                    backgroundOutput: store.backgroundOutput) {
+                    backgroundOutput: store.backgroundOutput.pane(session.id)) {
                         store.selectSession(session.id)
                     }
             } else if session.logs.isEmpty {

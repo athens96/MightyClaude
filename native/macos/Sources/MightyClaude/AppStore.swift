@@ -44,14 +44,19 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var graphHistory: [String: SessionHistoryState] = [:]
     /// Session record reads in flight per pane, cancelled when it closes.
     var graphHistoryLoads: [String: Task<Result<SessionHistoryChunk, Error>, Never>] = [:]
-    /// A background run's last output lines by graph block id (AppStore+BackgroundOutput.swift):
-    /// in memory only, never in the snapshot or its save.
-    @Published var backgroundOutput: [String: [String]] = [:]
+    /// A background run's last output lines by pane and graph block id
+    /// (AppStore+BackgroundOutput.swift): in memory only, never in the snapshot or its
+    /// save, and not published here, so a new line redraws only the pane showing it.
+    let backgroundOutput = BackgroundOutputModel()
     /// The blocks read every tick (running, with an output file), the ones already read
-    /// once after they ended, whether a batch of reads is out, and the loop that ticks.
+    /// once after they ended, the batch of reads out and since when, the graphs' shape
+    /// at the last prune, and the loop that ticks.
     var backgroundOutputPolling = Set<String>()
     var backgroundOutputRead = Set<String>()
     var backgroundOutputReading = false
+    var backgroundOutputReadingSince: ContinuousClock.Instant?
+    var backgroundOutputBatch = 0
+    var backgroundOutputShape: Int?
     var backgroundOutputLoop: Task<Void, Never>?
     /// Phone access (docs/mobile-remote.md): listener, revision tracking, UI status.
     @Published var mobileStatus = MobileHostStatus()

@@ -119,6 +119,17 @@ public enum PlanCardSupport {
         let tasks = backgroundTasks(work)
         // The task list's order (`StyleStateEngine`): running work first, each group in the order it started.
         let sources = work.tasks.filter { $0.status == "running" } + work.tasks.filter { $0.status != "running" }
+        // Should the task list ever order or cut its rows another way, the rows keep its own
+        // words rather than wear another task's.
+        let matches = tasks.count == min(sources.count, StyleLimits.maximumTaskListItems)
+            && zip(sources, tasks).allSatisfy { source, task in
+                (["agent", "shell"].contains(source.kind) ? source.kind : "other") == task.kind
+                    && (source.status == "running") == task.running
+            }
+        guard matches else {
+            assertionFailure("background strip rows no longer line up with the task list")
+            return tasks.map { BackgroundStripRow(task: $0) }
+        }
         let runID = run.map { $0.sourceRunID ?? $0.id }
         let blocks = Dictionary((run?.agents ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return zip(sources, tasks).map { source, task in

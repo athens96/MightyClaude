@@ -72,9 +72,11 @@ struct BackgroundWorkStrip: View {
     let work: BackgroundWork
     /// The pane's latest request, whose blocks the rows meet by `toolUseId`.
     var run: MightyGraphRun? = nil
+    /// The pane's background output lines; only this pane redraws when they change.
+    @ObservedObject var output: BackgroundPaneOutput
 
     var body: some View {
-        let rows = PlanCardSupport.backgroundStripRows(work, run: run, output: store.backgroundOutput)
+        let rows = PlanCardSupport.backgroundStripRows(work, run: run, output: output.lines)
         let open = store.backgroundWorkOpen
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
