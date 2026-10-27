@@ -9,6 +9,7 @@ import { BetaBadge, GitCapsule, MiddlePath, StatusCounts, useCall, useMenu, type
 import type { HeaderModel, ShellModel, UsageDetails } from './types';
 import { usePageOverlay } from './overlay';
 import { Icon } from '../icons/Icon';
+import { Pending } from '../pending/Pending';
 
 export function Banners({ shell }: { shell: ShellModel }) {
   const { t } = useServices();
@@ -93,7 +94,7 @@ function UsagePopover({ usage, onClose }: { usage: UsageDetails; onClose: () => 
       <div className="usage-head">
         <strong>{usage.title}</strong>
         <button type="button" className="icon-button" disabled={usage.refreshing} aria-label={usage.refreshLabel} title={usage.refreshTooltip} onClick={() => call('usageRefresh', { force: true })}>
-          {usage.refreshing ? <span className="spinner" /> : '↻'}
+          {usage.refreshing ? <Pending busy showsLabel={false} /> : '↻'}
         </button>
       </div>
       {usage.cards.map((card) => (

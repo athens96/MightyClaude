@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { MightyGraphRun } from '../store/models';
 import { PendingNodeID, imagesHeight, makeLayout, nodeId, resultCap, resultDrag, resultFitSize, resultSize, resultViewportLimit, runOf, suffixOf } from './layout';
 import {
-  FollowWatch, activityPhase, barHeight, dashFitting, dashForCard, dotFirst, dotRadius, dotsShown, followTargetID, isAtNewest, outlineOf,
+  FollowWatch, activityPhase, barHeight, cameraTween, dashFitting, dashForCard, dotFirst, dotRadius, dotsShown, followTargetID, isAtNewest, outlineOf,
   perimeter, runsChanged, wheelPan, wheelScrollTarget, zoomAnchored, zoomIn, zoomLabel, zoomOut,
 } from './camera';
 import { normalizeForRuns, setBlockSize, splittingExecution } from './prefs';
@@ -159,3 +159,19 @@ describe('saved sizes (GraphBlockPreferences)', () => {
     expect(normalizeForRuns({ ...set, [nodeId('gone', 'request')]: { width: 400, height: 400 } }, [run('p', 'running')])).toEqual(set);
   });
 });
+
+describe('own-send camera move (natural submit B2)', () => {
+  it('starts where the camera was and ends on the request, easing out', () => {
+    const from = { x: 10, y: -400 }, to = { x: 10, y: -1200 };
+    expect(cameraTween(from, to, 0)).toEqual(from);
+    expect(cameraTween(from, to, 1)).toEqual(to);
+    expect(cameraTween(from, to, 2)).toEqual(to);
+    expect(cameraTween(from, to, -1)).toEqual(from);
+    const half = cameraTween(from, to, 0.5);
+    expect(half.x).toBe(10);
+    // Past halfway by half the time: the standard easing decelerates.
+    expect(half.y).toBeLessThan(-800);
+    expect(half.y).toBeGreaterThan(-1200);
+  });
+});
+

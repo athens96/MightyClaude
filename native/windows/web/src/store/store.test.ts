@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { devSnapshot } from '../bridge/devHost';
 import type { AppState, RunSession, ToolPermissionRequest } from './models';
+import type { ComposerState } from '../composer/types';
 import { Store, activeSessionId, applyPermission, emptyState, mergeSessions, reduce, selectedSession } from './store';
+import { newPendingRequest } from '../pending/requests';
 
 const loaded = () => reduce(emptyState, { kind: 'snapshot', snapshot: devSnapshot() });
 const pane = (id: string, title = id): RunSession => ({ ...devSnapshot().sessions[0]!, id, title });
@@ -156,3 +158,89 @@ describe('the frame', () => {
     expect(state.gitProgress?.[3]).toBeUndefined();
   });
 });
+
+describe('sent requests and view choices (natural submit)', () => {
+  const at = Date.now();
+  const add = (state = loaded()) => {
+    const session = selectedSession(state.snapshot)!;
+    return { session, state: reduce(state, { kind: 'pending', action: 'add', paneId: session.id, request: newPendingRequest(session, 'c1', 'store request words', at) }) };
+  };
+
+  it('adds a request on Enter and counts it as an own send', () => {
+    const { session, state } = add();
+    expect(state.pending[session.id]?.map((r) => r.clientId)).toEqual(['c1']);
+    expect(state.ownSubmits[session.id]).toBe(1);
+  });
+
+  it('drops it on queued and keeps a started one until its entry comes with a delta', () => {
+    const { session, state } = add();
+    expect(reduce(state, { kind: 'pending', action: 'answer', paneId: session.id, clientId: 'c1', outcome: 'queued', message: '', at }).pending[session.id]).toBeUndefined();
+    let started = reduce(state, { kind: 'pending', action: 'answer', paneId: session.id, clientId: 'c1', outcome: 'started', entryId: 'new-entry', message: '', at });
+    expect(started.pending[session.id]?.[0]?.phase).toBe('started');
+    // The answer named a request the page drew: no second own count.
+    expect(started.ownSubmits[session.id]).toBe(1);
+    const logs = [...session.logs, { id: 'new-entry', kind: 'user' as const, text: 'store request words', timestamp: new Date(at).toISOString() }];
+    started = reduce(started, { kind: 'delta', sessions: [{ id: session.id, logs: { added: [logs[logs.length - 1]!] } }], removed: [] });
+    expect(started.pending[session.id]).toBeUndefined();
+  });
+
+  it('turns it failed with the message, and a new send takes its place', () => {
+    const { session, state } = add();
+    const failed = reduce(state, { kind: 'pending', action: 'answer', paneId: session.id, clientId: 'c1', outcome: 'blocked', message: 'no CLI', at: at + 5 });
+    expect(failed.pending[session.id]?.[0]).toMatchObject({ phase: 'failed', message: 'no CLI' });
+    const thrown = reduce(state, { kind: 'pending', action: 'fail', paneId: session.id, clientId: 'c1', message: 'gone', at: at + 5 });
+    expect(thrown.pending[session.id]?.[0]).toMatchObject({ phase: 'failed', message: 'gone' });
+    const next = reduce(failed, { kind: 'pending', action: 'add', paneId: session.id, request: newPendingRequest(session, 'c2', 'again', at + 10) });
+    expect(next.pending[session.id]?.map((r) => r.clientId)).toEqual(['c2']);
+  });
+
+  it('moves the views to a start it drew no block for, and remembers a steer', () => {
+    const state = loaded();
+    const id = selectedSession(state.snapshot)!.id;
+    const started = reduce(state, { kind: 'pending', action: 'answer', paneId: id, clientId: 'unknown', outcome: 'started', message: '', at });
+    expect(started.ownSubmits[id]).toBe(1);
+    expect(reduce(state, { kind: 'pending', action: 'own', paneId: id }).ownSubmits[id]).toBe(1);
+    const steered = reduce(state, { kind: 'pending', action: 'answer', paneId: id, clientId: 'unknown', outcome: 'steered', runId: 'run-1', message: '', at });
+    expect(steered.steered).toEqual({ paneId: id, runId: 'run-1', seq: 1 });
+  });
+
+  it('forgets the requests of a pane that closed', () => {
+    const { session, state } = add();
+    expect(reduce(state, { kind: 'delta', sessions: [], removed: [session.id] }).pending[session.id]).toBeUndefined();
+  });
+
+  it('shows a view choice at once, keeps it until the host holds it, and takes it back on failure', () => {
+    const state = loaded();
+    const session = selectedSession(state.snapshot)!;
+    const other = session.agentViewMode === 'mighty' ? 'default' : 'mighty';
+    const chosen = reduce(state, { kind: 'view', paneId: session.id, choice: { mode: other } });
+    expect(chosen.views[session.id]).toEqual({ mode: other });
+    expect(reduce(chosen, { kind: 'view', paneId: session.id, choice: { mode: other }, revert: true }).views[session.id]).toBeUndefined();
+    const saved = reduce(chosen, { kind: 'delta', sessions: [{ id: session.id, set: { agentViewMode: other } }], removed: [] });
+    expect(saved.views[session.id]).toBeUndefined();
+    // A choice the host already holds is never kept.
+    expect(reduce(state, { kind: 'view', paneId: session.id, choice: { presentation: session.graphViewMode ?? 'never-saved' } }).views[session.id]).toEqual(
+      session.graphViewMode === undefined ? { presentation: 'never-saved' } : undefined);
+  });
+
+  it('counts a queued request that now runs (or 다음 실행) as an own send, by its words', () => {
+    const state = loaded();
+    const session = selectedSession(state.snapshot)!;
+    const composer = (texts: string[]) => ({ paneId: session.id, queue: { held: [], items: texts.map((text, i) => ({ id: 'q' + i, text, attachments: [] })), runNext: false, waitsOnBackground: null } }) as unknown as ComposerState;
+    let next = reduce(state, { kind: 'composer', state: composer(['queued words', 'later']) });
+    // The host lets go of the first item, then its request entry comes.
+    next = reduce(next, { kind: 'composer', state: composer(['later']) });
+    expect(next.dequeued?.[session.id]?.map((item) => item.text)).toEqual(['queued words']);
+    const entry = { id: 'qe', kind: 'user' as const, text: 'queued words', timestamp: new Date().toISOString() };
+    next = reduce(next, { kind: 'delta', sessions: [{ id: session.id, logs: { added: [entry] } }], removed: [] });
+    expect(next.ownSubmits[session.id]).toBe(1);
+    expect(next.dequeued?.[session.id]).toBeUndefined();
+    // Anyone else's request is not own.
+    const other = { id: 'oe', kind: 'user' as const, text: 'from the phone', timestamp: new Date().toISOString() };
+    expect(reduce(next, { kind: 'delta', sessions: [{ id: session.id, logs: { added: [other] } }], removed: [] }).ownSubmits[session.id]).toBe(1);
+    // An item still in the queue that starts (the entry before the composer push) counts too.
+    const still = { id: 'se', kind: 'user' as const, text: 'later', timestamp: new Date().toISOString() };
+    expect(reduce(next, { kind: 'delta', sessions: [{ id: session.id, logs: { added: [still] } }], removed: [] }).ownSubmits[session.id]).toBe(2);
+  });
+});
+

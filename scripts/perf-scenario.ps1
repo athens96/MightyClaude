@@ -2,6 +2,8 @@
 # perf-result.json and perf.log under release/perf/<timestamp>-page-<n>/. Windows PowerShell 5.1.
 # The run measures the web shell: the page drives every op, and each phase adds pageLongTasks.
 # The app opens its window for the run: leave the PC alone while it runs, as input and other programs change the numbers.
+# sendBlockBasic / sendBlockMighty time Enter in the composer until the page draws the sent request (natural submit B1);
+# their target is one frame, 50 ms or less, and the table's Target column says whether the run's p95 met it.
 param(
     [Parameter(Mandatory = $true)][string]$Executable,
     [string]$State,
@@ -48,6 +50,7 @@ for ($n = 1; $n -le $Runs; $n++) {
             InPlace     = [int]$phase.Value.tabSwitchesInPlace + [int]$phase.Value.paneAddsInPlace
             LongTasks   = if ($phase.Value.pageLongTasks) { $phase.Value.pageLongTasks.count } else { '' }
             LongTaskMax = if ($phase.Value.pageLongTasks) { $phase.Value.pageLongTasks.maxMs } else { '' }
+            Target      = if ($phase.Value.targetMs) { if ($phase.Value.opP95 -le $phase.Value.targetMs) { "<= $($phase.Value.targetMs) ok" } else { "> $($phase.Value.targetMs) MISSED" } } else { '' }
         }
     }
     Write-Host ("  {0} panes, {1} log entries, {2} graph runs, UI {3} -> {4}" -f $result.paneCount, $result.totalLogEntries, $result.graphRuns, $result.uiMode, $out)

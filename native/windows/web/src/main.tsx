@@ -20,6 +20,7 @@ import './panes/panes.css';
 import './pane/reference.css';
 import './native/native.css';
 import './pictures/pictures.css';
+import './pending/pending.css';
 
 async function start(bridge: Bridge): Promise<void> {
   installTokens(document);

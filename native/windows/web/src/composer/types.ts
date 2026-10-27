@@ -57,9 +57,18 @@ export interface ComposerState {
   style?: { label: string; badge: string | null; hint: string; enabled: boolean } | null;
 }
 
-/** What `send` answers: what the host did with the draft, the editor's text after it, and the composer then. */
+/**
+ * What `send` answers (SubmitReceipt.SendAnswer): whether the host took it, what it did with the draft, the user entry and graph
+ * run of a request that started at once (two ids on Windows; none for a start that went out with held items, and no run for a
+ * pane that draws no diagram here), the page's own clientId back, the editor's text after it, and the composer then. An older
+ * host sends only outcome, draft and state.
+ */
 export interface SendResult {
+  accepted?: boolean;
   outcome: 'started' | 'notStarted' | 'queued' | 'worktree' | 'answered' | 'builtin' | 'blocked' | 'none';
+  entryId?: string;
+  runId?: string;
+  clientId?: string;
   draft: string;
   state: ComposerState;
 }

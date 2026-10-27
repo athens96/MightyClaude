@@ -5,7 +5,7 @@ import { Conversation } from '../conversation/Conversation';
 import { Composer } from '../composer/Composer';
 import { Cards } from '../cards/Cards';
 import { clockLabel } from '../composer/clock';
-import { MightyView, ModeSwitch, showsModeSwitch } from '../mighty/MightyView';
+import { MightyView, ModeSwitch, showsModeSwitch, useShownSession } from '../mighty/MightyView';
 import { SlimPane, slimKinds } from '../panes/Panes';
 import { TerminalView } from '../panes/terminal/TerminalView';
 import { ReferenceContext } from '../conversation/referenceClick';
@@ -52,8 +52,10 @@ function PaneMenu({ session }: { session: RunSession }) {
  * The selected pane: its header (title, state word and figures, spec section 1) over its conversation and, for an agent or a
  * shell, the composer. The word and the figures after the clock are the host's (MainWindow.WebShell.Composer.cs WebHeader).
  */
-export const PaneView = memo(function PaneView({ session }: { session: RunSession }) {
+export const PaneView = memo(function PaneView({ session: saved }: { session: RunSession }) {
   const { t, bridge } = useServices();
+  // A view switch clicked a moment ago shows at once (natural submit B4); the same object while none waits for the host.
+  const session = useShownSession(saved);
   const store = useStoreState();
   const header = store.composers[session.id]?.header;
   const agent = session.kind === 'claude' || session.kind === 'shell';

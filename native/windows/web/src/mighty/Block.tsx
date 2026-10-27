@@ -12,6 +12,8 @@ import { isResizable, visibleImages } from './layout';
 import type { MightyBlockCopy, MightyExecutionCard, MightyFile } from './types';
 import { BottomRight, type Edges } from './resize';
 import { useMenu } from '../shell/parts';
+import { Pending } from '../pending/Pending';
+import type { PendingState } from '../pending/display';
 
 /** What a block's buttons and grips ask of the diagram; one stable object for every block. */
 export interface BlockActions {
@@ -40,6 +42,8 @@ export interface BlockExtra {
   draft?: string;
   fitted?: boolean;
   measure?: boolean;
+  /** A sent request's block before the host's run replaces it: its 전송 중, or its failure (natural submit B1). */
+  pending?: PendingState;
 }
 
 export interface BlockProps {
@@ -348,6 +352,7 @@ export const Block = memo(function Block(props: BlockProps) {
   return (
     <div className={`mighty-block kind-${kind} tone-${tone}${selected ? ' selected' : ''}${copy?.outline === 'marching' || copy?.outline === 'solid' ? ' halo' : ''}`}
       data-block-id={id} data-kind={kind} data-renders={renders.current} data-changed={changed} data-visible={props.visible ? '1' : '0'}
+      data-pending-request={extra.pending ? id : undefined}
       style={{ left: x, top: y, width: w, height: h }} title={copy?.fromRecord ? t('graph.history.tag') : undefined}>
       <div className="mighty-head">
         <span className={'mighty-symbol kind-' + kind} aria-hidden="true"><Icon name={blockSymbol(kind, tone)} size={14} weight={1.75} /></span>
@@ -359,9 +364,10 @@ export const Block = memo(function Block(props: BlockProps) {
           {kind === 'resultFiles' && (extra.files?.length ?? 0) > 0 && <span className="mighty-title-count">{extra.files?.length}</span>}
         </span>
         <span className="mighty-controls">
-          <Indicator kind={copy?.indicator ?? 'none'} />
+          {/* A sent request: nothing while it is new, then 전송 중 by the pending rule, its failure at once (MightyStatusMark). */}
+          {extra.pending ? <Pending state={extra.pending} /> : <Indicator kind={copy?.indicator ?? 'none'} />}
           {/* A result's strip says its outcome by its colour; it carries no pill (M/MightyGraphView.swift result header). */}
-          {copy?.state && status !== '' && kind !== 'result' && <span className={'mighty-pill tone-' + tone}>{copy.state}</span>}
+          {!extra.pending && copy?.state && status !== '' && kind !== 'result' && <span className={'mighty-pill tone-' + tone}>{copy.state}</span>}
           {copy?.capsule && <span className="mighty-capsule" title={copy.help}>{copy.capsule}</span>}
           {kind === 'result' && copy?.filesRunId && (extra.files?.length ?? 0) > 0 && (
             <button className={'mighty-icon' + (extra.filesOpen ? ' on' : '')} title={t(extra.filesOpen ? 'graph.resultFiles.closeButton' : 'graph.resultFiles.openButton')}

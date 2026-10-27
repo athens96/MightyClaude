@@ -6,15 +6,19 @@ import { Markdown } from '../conversation/MarkdownView';
 import { cardKey, forwardIndex, restoreIndex } from './keys';
 import * as draftOf from './questionnaire';
 import { usePageOverlay } from '../shell/overlay';
+import { Pending } from '../pending/Pending';
+import { usePendingAction, type ActionResult } from '../pending/usePending';
 import type {
   AntigravityCard, BackgroundCard, Card, LoginCard, NextActionsCard, PermissionCard, PlanCard, PlanHistoryCard, QuestionnaireCard,
   StatusLineCard, WebOpenCard,
 } from './types';
 
 type Call = (method: string, args?: Record<string, unknown>) => Promise<unknown>;
+/** An answer's bridge call: what it returned, or the failure (already on the cards' error line). */
+type Reply = (method: string, args?: Record<string, unknown>) => Promise<{ ok: true; value: unknown } | { ok: false; message: string }>;
 
 /** A pane's cards and the way to answer them: every answer is a host method (MainWindow.WebShell.Cards.cs). */
-function usePaneCards(paneId: string, load = false): { cards: readonly Card[]; call: Call; error: string | null; setError(value: string | null): void } {
+function usePaneCards(paneId: string, load = false): { cards: readonly Card[]; call: Call; reply: Reply; error: string | null; setError(value: string | null): void } {
   const { bridge, store } = useServices();
   const cards = useStoreState().cards[paneId] ?? none;
   const [error, setError] = useState<string | null>(null);
@@ -27,11 +31,21 @@ function usePaneCards(paneId: string, load = false): { cards: readonly Card[]; c
       return undefined;
     }
   }, [bridge, paneId]);
+  const reply = useCallback<Reply>(async (method, args = {}) => {
+    setError(null);
+    try {
+      return { ok: true, value: await bridge.call(method, { paneId, ...args }) };
+    } catch (failure) {
+      const message = failure instanceof Error ? failure.message : String(failure);
+      setError(message);
+      return { ok: false, message };
+    }
+  }, [bridge, paneId]);
   useEffect(() => {
     if (!load) return;
     bridge.call<Card[]>('cards', { paneId }).then((value) => { if (value) store.dispatch({ kind: 'cards', paneId, cards: value }); }, () => {});
   }, [bridge, store, paneId, load]);
-  return { cards, call, error, setError };
+  return { cards, call, reply, error, setError };
 }
 
 const none: readonly Card[] = [];
@@ -41,7 +55,7 @@ const none: readonly Card[] = [];
  * the permission host (a plan, a question, a tool permission or the Antigravity card) and the web-open prompts.
  */
 export function Cards({ paneId }: { paneId: string }) {
-  const { cards, call, error } = usePaneCards(paneId, true);
+  const { cards, call, reply, error } = usePaneCards(paneId, true);
   const request = cards.find((card) => card.kind === 'permission' || card.kind === 'questionnaire' || card.kind === 'plan' || card.kind === 'antigravity');
   const shown = cards.filter((card) => card.kind !== 'login' && card.kind !== 'statusLine');
   if (shown.length === 0 && !error) return null;
@@ -52,16 +66,16 @@ export function Cards({ paneId }: { paneId: string }) {
           case 'nextActions': return <NextActions key="next" paneId={paneId} card={card} call={call} />;
           case 'planHistory': return <PlanHistory key="history" card={card} />;
           case 'background': return <Background key="background" card={card} call={call} />;
-          case 'webOpen': return <WebOpen key={'web-' + card.requestId} card={card} call={call} />;
+          case 'webOpen': return <WebOpen key={'web-' + card.requestId} card={card} reply={reply} />;
           default: return null;
         }
       })}
       {request && (
         <KeyboardCard>
-          {request.kind === 'permission' && <Permission key={request.requestId} card={request} call={call} />}
-          {request.kind === 'questionnaire' && <Questionnaire key={request.requestId} card={request} call={call} />}
-          {request.kind === 'plan' && <Plan key={request.requestId} card={request} call={call} />}
-          {request.kind === 'antigravity' && <Antigravity key={request.cardId} card={request} call={call} />}
+          {request.kind === 'permission' && <Permission key={request.requestId} card={request} reply={reply} />}
+          {request.kind === 'questionnaire' && <Questionnaire key={request.requestId} card={request} reply={reply} />}
+          {request.kind === 'plan' && <Plan key={request.requestId} card={request} reply={reply} />}
+          {request.kind === 'antigravity' && <Antigravity key={request.cardId} card={request} reply={reply} />}
         </KeyboardCard>
       )}
       {error && <div className="card-error" role="alert">{error}</div>}
@@ -244,9 +258,18 @@ function Background({ card, call }: { card: BackgroundCard; call: Call }) {
   );
 }
 
-function Permission({ card, call }: { card: PermissionCard; call: Call }) {
+/** A refusal the host answers with in words (a questionnaire or an Antigravity answer it did not take) is a failure too. */
+function refused(result: Awaited<ReturnType<Reply>>, refusal: (words: string) => void): ActionResult {
+  if (!result.ok) return result;
+  if (typeof result.value === 'string') { refusal(result.value); return { ok: false, message: result.value }; }
+  return { ok: true };
+}
+
+function Permission({ card, reply }: { card: PermissionCard; reply: Reply }) {
   const [json, setJson] = useState(false);
-  const answer = (allow: boolean) => void call('permissionAnswer', { requestId: card.requestId, allow });
+  // The answer locks the card while its call runs (natural submit A3); the card goes when the host has it.
+  const { state, running, run } = usePendingAction();
+  const answer = (allow: boolean) => void run(() => reply('permissionAnswer', { requestId: card.requestId, allow }));
   return (
     <div className="wait-card" data-card="permission" data-request-id={card.requestId}>
       <div className="wait-card-title">
@@ -274,17 +297,18 @@ function Permission({ card, call }: { card: PermissionCard; call: Call }) {
       {card.cannotAllow && <div className="card-note">{card.cannotAllow}</div>}
       <div className="wait-card-footer">
         <span className="card-hint">{card.onceOnly}</span>
-        <button type="button" className="card-button" data-answer="deny" onClick={() => answer(false)}>{card.deny}</button>
-        <button type="button" className="card-button prominent" data-answer="allow" disabled={!card.canAllow} onClick={() => answer(true)}>{card.allowOnce}</button>
+        <Pending state={state} showsFailure={false} />
+        <button type="button" className="card-button" data-answer="deny" disabled={running} onClick={() => answer(false)}>{card.deny}</button>
+        <button type="button" className="card-button prominent" data-answer="allow" disabled={running || !card.canAllow} onClick={() => answer(true)}>{card.allowOnce}</button>
       </div>
     </div>
   );
 }
 
-function Questionnaire({ card, call }: { card: QuestionnaireCard; call: Call }) {
+function Questionnaire({ card, reply }: { card: QuestionnaireCard; reply: Reply }) {
   const { t } = useServices();
   const [draft, setDraft] = useState<draftOf.QuestionDraft>(draftOf.emptyDraft);
-  const [sending, setSending] = useState(false);
+  const { state, running: sending, run } = usePendingAction();
   const [error, setError] = useState<string | null>(null);
   const total = card.questions.length;
   const step = Math.min(draft.step, total - 1);
@@ -294,13 +318,7 @@ function Questionnaire({ card, call }: { card: QuestionnaireCard; call: Call }) 
   const picks = draft.picks[step] ?? [];
   const custom = draft.custom[step] === true;
   const change = (next: draftOf.QuestionDraft) => { setError(null); setDraft(next); };
-  const submit = async () => {
-    if (sending) return;
-    setSending(true);
-    const refusal = await call('questionnaireAnswer', { requestId: card.requestId, answers: draftOf.answers(draft, card.questions) });
-    if (typeof refusal === 'string') setError(refusal);
-    setSending(false);
-  };
+  const submit = () => run(async () => refused(await reply('questionnaireAnswer', { requestId: card.requestId, answers: draftOf.answers(draft, card.questions) }), setError));
   const forward = () => (last ? void submit() : change(draftOf.next(draft, total)));
   const enabled = !sending && (last ? draftOf.canSubmit(draft, total) : draftOf.answered(draft, step));
   return (
@@ -383,8 +401,8 @@ function Questionnaire({ card, call }: { card: QuestionnaireCard; call: Call }) 
       {error && <div className="card-error" role="alert">{error}</div>}
       <div className="wait-card-footer">
         <span className="card-hint">{t(last ? 'phone.questionnaire.hintSubmit' : 'phone.questionnaire.hintNext')}</span>
-        {sending && <span className="card-spinner" aria-hidden="true" />}
-        <button type="button" className="card-button" data-answer="cancel" onClick={() => void call('permissionAnswer', { requestId: card.requestId, allow: false })}>{t('phone.questionnaire.cancel')}</button>
+        <Pending state={state} showsFailure={false} />
+        <button type="button" className="card-button" data-answer="cancel" disabled={sending} onClick={() => void run(() => reply('permissionAnswer', { requestId: card.requestId, allow: false }))}>{t('phone.questionnaire.cancel')}</button>
         {step > 0 && <button type="button" className="card-button" data-answer="back" disabled={sending} onClick={() => change(draftOf.back(draft))}>{t('phone.questionnaire.back')}</button>}
         <button type="button" className="card-button prominent" data-answer={last ? 'submit' : 'next'} disabled={!enabled} onClick={forward}>
           {t(last ? 'phone.questionnaire.submit' : 'phone.questionnaire.next')}
@@ -394,8 +412,11 @@ function Questionnaire({ card, call }: { card: QuestionnaireCard; call: Call }) 
   );
 }
 
-function Plan({ card, call }: { card: PlanCard; call: Call }) {
+function Plan({ card, reply }: { card: PlanCard; reply: Reply }) {
   const { t } = useServices();
+  const { running, run } = usePendingAction();
+  // The host's own flag (the decision on its way) and this card's call, one wait.
+  const sending = card.sending || running;
   const [revising, setRevising] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [full, setFull] = useState(false);
@@ -412,14 +433,14 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
     return () => observer.disconnect();
   }, []);
   usePageOverlay(full);
-  const answer = (decision: string) => void call('planAnswer', { requestId: card.requestId, decision, feedback: decision === 'revise' ? feedback : undefined });
+  const answer = (decision: string) => void run(() => reply('planAnswer', { requestId: card.requestId, decision, feedback: decision === 'revise' ? feedback : undefined }));
   const tile = (key: string, decision: string | null, accent = false) => (
     <button
       type="button"
       key={key}
       className={'card-button' + (accent ? ' accent' : '')}
       data-answer={'plan-' + (decision ?? 'revise-open')}
-      disabled={card.sending || (decision === null && revising)}
+      disabled={sending || (decision === null && revising)}
       onClick={() => (decision ? answer(decision) : setRevising(true))}
     >{t(key)}</button>
   );
@@ -436,10 +457,10 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
       {!card.actionsOnly && <div className="plan-document" data-testid="plan-text"><Markdown text={card.plan} /></div>}
       {revising && (
         <div className="plan-revise">
-          <textarea className="card-text" value={feedback} placeholder={t('plan.card.revisePlaceholder')} aria-label={t('plan.card.revisePlaceholder')} disabled={card.sending} autoFocus onChange={(event) => setFeedback(event.target.value)} />
+          <textarea className="card-text" value={feedback} placeholder={t('plan.card.revisePlaceholder')} aria-label={t('plan.card.revisePlaceholder')} disabled={sending} autoFocus onChange={(event) => setFeedback(event.target.value)} />
           <div className="plan-revise-actions">
-            <button type="button" className="card-button" data-answer="plan-revise-close" disabled={card.sending} onClick={() => setRevising(false)}>{t('plan.card.reviseClose')}</button>
-            <button type="button" className="card-button prominent" data-answer="plan-revise-send" disabled={card.sending || feedback.trim().length === 0} onClick={() => answer('revise')}>{t('plan.card.reviseSend')}</button>
+            <button type="button" className="card-button" data-answer="plan-revise-close" disabled={sending} onClick={() => setRevising(false)}>{t('plan.card.reviseClose')}</button>
+            <button type="button" className="card-button prominent" data-answer="plan-revise-send" disabled={sending || feedback.trim().length === 0} onClick={() => answer('revise')}>{t('plan.card.reviseSend')}</button>
           </div>
         </div>
       )}
@@ -451,9 +472,9 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
           <span className="card-hint">{t('plan.card.hint')}</span>
           {['plan.card.cancel', 'plan.card.revise', 'plan.card.approveConfirm', 'plan.card.approveAuto'].map((key) => <span key={key} className="card-button">{t(key)}</span>)}
         </div>
-        {oneLine && <span className="card-hint-row">{card.sending && <span className="card-spinner" aria-hidden="true" />}<span className="card-hint">{t('plan.card.hint')}</span></span>}
+        {oneLine && <span className="card-hint-row"><Pending busy={sending} /><span className="card-hint">{t('plan.card.hint')}</span></span>}
         <span className="plan-answers-row">
-          {!oneLine && card.sending && <span className="card-spinner" aria-hidden="true" />}
+          {!oneLine && <Pending busy={sending} />}
           {tile('plan.card.cancel', 'cancel')}
           {tile('plan.card.revise', null)}
         </span>
@@ -479,13 +500,15 @@ function Plan({ card, call }: { card: PlanCard; call: Call }) {
   );
 }
 
-function Antigravity({ card, call }: { card: AntigravityCard; call: Call }) {
+function Antigravity({ card, reply }: { card: AntigravityCard; reply: Reply }) {
   const { t } = useServices();
   const [reason, setReason] = useState<string | null>(null);
-  const answer = async (decision: string) => {
-    const refusal = await call('antigravityAnswer', { cardId: card.cardId, decision });
-    setReason(typeof refusal === 'string' ? refusal : null);
-  };
+  const { running, run } = usePendingAction();
+  const busy = card.busy || running;
+  const answer = (decision: string) => run(async () => {
+    setReason(null);
+    return refused(await reply('antigravityAnswer', { cardId: card.cardId, decision }), setReason);
+  });
   const shown = reason ?? card.reason;
   return (
     <div className="wait-card" data-card="antigravity">
@@ -504,19 +527,20 @@ function Antigravity({ card, call }: { card: AntigravityCard; call: Call }) {
       {shown && <div className="card-error" role="alert">{shown}</div>}
       <div className="wait-card-footer">
         <span className="card-hint">{t('antigravity.permission.scopeNote')}</span>
-        {card.busy && <span className="card-spinner" aria-hidden="true" />}
-        <button type="button" className="card-button" data-answer="deny" disabled={card.busy} onClick={() => void answer('Deny')}>{t('antigravity.permission.deny')}</button>
-        <button type="button" className="card-button" data-answer="always" title={card.alwaysTip} disabled={card.busy || !card.canAllowAlways} onClick={() => void answer('Always')}>{t('antigravity.permission.allowAlways')}</button>
-        <button type="button" className="card-button prominent" data-answer="once" disabled={card.busy || !card.canAllow} onClick={() => void answer('Once')}>{t('permission.allowOnce')}</button>
+        <Pending busy={busy} />
+        <button type="button" className="card-button" data-answer="deny" disabled={busy} onClick={() => void answer('Deny')}>{t('antigravity.permission.deny')}</button>
+        <button type="button" className="card-button" data-answer="always" title={card.alwaysTip} disabled={busy || !card.canAllowAlways} onClick={() => void answer('Always')}>{t('antigravity.permission.allowAlways')}</button>
+        <button type="button" className="card-button prominent" data-answer="once" disabled={busy || !card.canAllow} onClick={() => void answer('Once')}>{t('permission.allowOnce')}</button>
       </div>
     </div>
   );
 }
 
-function WebOpen({ card, call }: { card: WebOpenCard; call: Call }) {
+function WebOpen({ card, reply }: { card: WebOpenCard; reply: Reply }) {
   const { t } = useServices();
   const [remember, setRemember] = useState(false);
-  const choose = (destination: string) => void call('webOpenChoose', { requestId: card.requestId, destination, remember });
+  const { state, running, run } = usePendingAction();
+  const choose = (destination: string) => void run(() => reply('webOpenChoose', { requestId: card.requestId, destination, remember }));
   return (
     <div className="web-open" data-card="webOpen">
       <div className="web-open-title"><span className="web-open-mark" aria-hidden="true">◍</span><strong>{t('agentTerminal.urlOpen.dialogTitle')}</strong></div>
@@ -525,8 +549,9 @@ function WebOpen({ card, call }: { card: WebOpenCard; call: Call }) {
       <label className="web-open-remember"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />{t('agentTerminal.urlOpen.rememberToggle')}</label>
       <div className="wait-card-footer">
         <span className="card-hint">{t('agentTerminal.urlOpen.fallbackHint', { seconds: 30 })}</span>
-        <button type="button" className="card-button small" onClick={() => choose('external')}>{t('agentTerminal.urlOpen.externalButton')}</button>
-        <button type="button" className="card-button small accent" onClick={() => choose('inApp')}>{t('agentTerminal.urlOpen.inAppButton')}</button>
+        <Pending state={state} showsFailure={false} />
+        <button type="button" className="card-button small" disabled={running} onClick={() => choose('external')}>{t('agentTerminal.urlOpen.externalButton')}</button>
+        <button type="button" className="card-button small accent" disabled={running} onClick={() => choose('inApp')}>{t('agentTerminal.urlOpen.inAppButton')}</button>
       </div>
     </div>
   );
@@ -544,7 +569,7 @@ function Login({ card, call }: { card: LoginCard; call: Call }) {
       <div className="login-words">
         <div className="login-title">{card.title}</div>
         {card.lines.map((line, index) => (
-          <div key={index} className={'login-line tone-' + line.tone}>{line.busy && <span className="card-spinner" aria-hidden="true" />}{line.text}</div>
+          <div key={index} className={'login-line tone-' + line.tone}><Pending busy={line.busy} showsLabel={false} />{line.text}</div>
         ))}
         {card.url && <button type="button" className="card-button small" title={card.url} onClick={() => void call('loginAction', { action: 'openLink' })}>{t('loginRecovery.openLink')}</button>}
         {card.asksForCode && (

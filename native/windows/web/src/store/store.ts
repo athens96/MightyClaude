@@ -10,6 +10,7 @@ import type { AgentActivity, AppSnapshot, RunEvent, RunSession, ToolPermissionRe
 import type { OpenDialog, ShellModel } from '../shell/types';
 import { applyNative, type NativeOpen, type TextSetting } from '../native/types';
 import type { OpenPicture } from '../pictures/viewer';
+import { applyAnswer, failRequest, reconcile, type PendingRequest, type SendOutcome } from '../pending/requests';
 
 export interface StoreState {
   snapshot: AppSnapshot | null;
@@ -46,6 +47,25 @@ export interface StoreState {
   overlays: number;
   /** The picture the viewer shows over the window (src/pictures/PictureViewer.tsx); undefined while it is closed. */
   picture?: OpenPicture;
+  /** The requests each pane's composer sent that the host's blocks have not replaced yet (src/pending/requests.ts), oldest first. */
+  pending: Readonly<Record<string, readonly PendingRequest[]>>;
+  /** Counts each pane's own sends (natural submit B2): every view moves to the new request when it changes. */
+  ownSubmits: Readonly<Record<string, number>>;
+  /** A pane's view chosen by a click before the host has saved it (Default | Mighty, and the Mighty view); dropped once it has. */
+  views: Readonly<Record<string, ViewChoice>>;
+  /** A send that went into the running run as a new turn: the diagram shows its steer block (`seq` counts them). */
+  steered?: { paneId: string; runId?: string; seq: number };
+  /**
+   * The queue items each pane's composer let go of lately (they ran, 다음 실행 took them, or they were removed), with when: a
+   * request entry with their words that comes soon after is an own send that now runs (B2), and the views move to it.
+   */
+  dequeued?: Readonly<Record<string, readonly { text: string; at: number }[]>>;
+}
+
+/** A view the page shows before the host's state says so. */
+export interface ViewChoice {
+  mode?: 'default' | 'mighty';
+  presentation?: string;
 }
 
 /** One push of a running clone's progress (MainWindow.WorkspaceCreate.cs): its phase, percent and 0–1 fraction, and the words for them. */
@@ -81,9 +101,150 @@ export interface PictureMessage {
   picture?: OpenPicture;
 }
 
-export type StoreMessage = PushMessage | FillMessage | ChooseMessage | OverlayMessage | PictureMessage;
+/**
+ * The page's own message about a sent request (natural submit B1): Enter added it, the send's answer came, or the send threw.
+ * `message` is the failure's words for a start that did not happen.
+ */
+export type PendingMessage =
+  | { kind: 'pending'; action: 'add'; paneId: string; request: PendingRequest }
+  | { kind: 'pending'; action: 'answer'; paneId: string; clientId: string; outcome: SendOutcome | string | null; entryId?: string | null; runId?: string | null; message: string; at: number }
+  | { kind: 'pending'; action: 'fail'; paneId: string; clientId: string; message: string; at: number }
+  /** A send the page drew no block for (a queued item, a slash command) that started: the views move to it all the same. */
+  | { kind: 'pending'; action: 'own'; paneId: string };
 
-export const emptyState: StoreState = { snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {}, mighty: {}, shell: null, dialogs: [], natives: [], overlays: 0 };
+/** The page's own message: a view switch clicked (shown at once), or taken back because the host's call failed. */
+export interface ViewMessage {
+  kind: 'view';
+  paneId: string;
+  choice: ViewChoice;
+  revert?: boolean;
+}
+
+export type StoreMessage = PushMessage | FillMessage | ChooseMessage | OverlayMessage | PictureMessage | PendingMessage | ViewMessage;
+
+export const emptyState: StoreState = {
+  snapshot: null, activities: {}, permissions: {}, composers: {}, cards: {}, fills: {}, mighty: {}, shell: null, dialogs: [], natives: [], overlays: 0,
+  pending: {}, ownSubmits: {}, views: {},
+};
+
+/** Each pane's sent requests against its state now: the ones the host's blocks replaced go, as do a closed pane's. */
+export function settlePending(state: StoreState): StoreState {
+  const panes = Object.keys(state.pending);
+  if (panes.length === 0 || !state.snapshot) return state;
+  let changed = false;
+  const next: Record<string, readonly PendingRequest[]> = {};
+  for (const id of panes) {
+    const before = state.pending[id]!;
+    const after = reconcile(before, state.snapshot.sessions.find((session) => session.id === id), Date.now());
+    if (after !== before) changed = true;
+    if (after.length > 0) next[id] = after;
+  }
+  return changed ? { ...state, pending: next } : state;
+}
+
+/** View choices the host's state now holds are forgotten; a pane that is gone forgets its choice. */
+export function settleViews(state: StoreState): StoreState {
+  const panes = Object.keys(state.views);
+  if (panes.length === 0 || !state.snapshot) return state;
+  let changed = false;
+  const next: Record<string, ViewChoice> = {};
+  for (const id of panes) {
+    const choice = state.views[id]!;
+    const session = state.snapshot.sessions.find((pane) => pane.id === id);
+    if (!session) { changed = true; continue; }
+    const kept: ViewChoice = {};
+    if (choice.mode !== undefined && choice.mode !== (session.agentViewMode ?? 'default')) kept.mode = choice.mode;
+    if (choice.presentation !== undefined && choice.presentation !== session.graphViewMode) kept.presentation = choice.presentation;
+    if (kept.mode !== choice.mode || kept.presentation !== choice.presentation) changed = true;
+    if (kept.mode !== undefined || kept.presentation !== undefined) next[id] = kept;
+  }
+  return changed ? { ...state, views: next } : state;
+}
+
+function withPending(state: StoreState, paneId: string, requests: readonly PendingRequest[]): StoreState {
+  if (requests === state.pending[paneId]) return state;
+  const pending = { ...state.pending };
+  if (requests.length > 0) pending[paneId] = requests; else delete pending[paneId];
+  return { ...state, pending };
+}
+
+/** How long a queue item that left the queue may still be matched to the request entry it starts. */
+export const DequeuedMemory = 10_000;
+
+const queueTexts = (composer: ComposerState | undefined) =>
+  composer ? [...composer.queue.held.map((item) => item.text.trim()), ...composer.queue.items.map((item) => item.text.trim())] : [];
+
+/** The composer state pushed for a pane: the queue items it no longer holds are remembered for a while (`dequeued`). */
+export function rememberDequeued(state: StoreState, next: ComposerState, now: number): StoreState['dequeued'] {
+  const kept = new Set(queueTexts(next));
+  const gone = queueTexts(state.composers[next.paneId]).filter((text) => text.length > 0 && !kept.has(text));
+  const recent = (state.dequeued?.[next.paneId] ?? []).filter((item) => now - item.at <= DequeuedMemory);
+  if (gone.length === 0 && recent.length === (state.dequeued?.[next.paneId]?.length ?? 0)) return state.dequeued;
+  const list = [...recent, ...gone.map((text) => ({ text, at: now }))];
+  const dequeued = { ...state.dequeued };
+  if (list.length > 0) dequeued[next.paneId] = list; else delete dequeued[next.paneId];
+  return dequeued;
+}
+
+/**
+ * A delta's new request entries that carry the words of a queue item (still queued, or let go of lately): a queued send that
+ * now runs, or 다음 실행. Each is an own send, so every view moves to it (scrollRule `own`).
+ */
+export function queuedStarts(state: StoreState, sessions: readonly SessionDelta[], now: number): StoreState {
+  let next = state;
+  for (const delta of sessions) {
+    const added = [...(delta.logs?.added ?? []), ...(delta.session?.logs ?? [])].filter((entry) => entry.kind === 'user').map((entry) => entry.text.trim());
+    if (added.length === 0) continue;
+    const recent = (state.dequeued?.[delta.id] ?? []).filter((item) => now - item.at <= DequeuedMemory);
+    const words = new Set([...queueTexts(state.composers[delta.id]), ...recent.map((item) => item.text)]);
+    const matched = added.filter((text) => text.length > 0 && words.has(text));
+    if (matched.length === 0) continue;
+    next = bumpOwn(next, delta.id);
+    const left = recent.filter((item) => !matched.includes(item.text));
+    const dequeued = { ...next.dequeued };
+    if (left.length > 0) dequeued[delta.id] = left; else delete dequeued[delta.id];
+    next = { ...next, dequeued };
+  }
+  return next;
+}
+
+const bumpOwn = (state: StoreState, paneId: string): StoreState => ({ ...state, ownSubmits: { ...state.ownSubmits, [paneId]: (state.ownSubmits[paneId] ?? 0) + 1 } });
+
+/** A sent request's change (PendingMessage). */
+export function applyPending(state: StoreState, message: PendingMessage): StoreState {
+  const requests = state.pending[message.paneId] ?? [];
+  switch (message.action) {
+    case 'add':
+      // A new send takes the place of a failed one: its message has been read.
+      return settlePending(bumpOwn(withPending(state, message.paneId, [...requests.filter((request) => request.phase !== 'failed'), message.request]), message.paneId));
+    case 'answer': {
+      const known = requests.some((request) => request.clientId === message.clientId);
+      let next = withPending(state, message.paneId, applyAnswer(requests, message.clientId, message.outcome, { entryId: message.entryId, runId: message.runId }, message.message, message.at));
+      if (message.outcome === 'steered') next = { ...next, steered: { paneId: message.paneId, runId: message.runId ?? undefined, seq: (state.steered?.seq ?? 0) + 1 } };
+      // A start whose block the page did not draw (its delta may come first) still moves the views to it.
+      else if (message.outcome === 'started' && !known) next = bumpOwn(next, message.paneId);
+      return settlePending(next);
+    }
+    case 'fail':
+      return withPending(state, message.paneId, failRequest(requests, message.clientId, message.message, message.at));
+    case 'own':
+      return bumpOwn(state, message.paneId);
+  }
+}
+
+/** A view switch (ViewMessage): shown at once, or taken back. */
+export function applyView(state: StoreState, message: ViewMessage): StoreState {
+  const current = state.views[message.paneId] ?? {};
+  let next: ViewChoice;
+  if (message.revert) {
+    next = { ...current };
+    if (message.choice.mode !== undefined && current.mode === message.choice.mode) delete next.mode;
+    if (message.choice.presentation !== undefined && current.presentation === message.choice.presentation) delete next.presentation;
+  } else next = { ...current, ...message.choice };
+  const views = { ...state.views };
+  if (next.mode !== undefined || next.presentation !== undefined) views[message.paneId] = next; else delete views[message.paneId];
+  return settleViews({ ...state, views });
+}
 
 /** A choice the host's state has caught up with is forgotten. */
 function settle(state: StoreState): StoreState {
@@ -143,7 +304,7 @@ export function applyPermission(state: StoreState, request: ToolPermissionReques
 export function reduce(state: StoreState, message: StoreMessage): StoreState {
   switch (message.kind) {
     case 'snapshot':
-      return settle({ ...state, snapshot: message.snapshot });
+      return settleViews(settlePending(settle({ ...state, snapshot: message.snapshot })));
     case 'delta': {
       const current = state.snapshot;
       if (!current) return state;
@@ -159,14 +320,17 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       const mighty = Object.fromEntries(Object.entries(state.mighty).filter(([id]) => !gone.has(id)));
       // A picture whose pane closed closes with it.
       const picture = state.picture && gone.has(state.picture.source.paneId) ? undefined : state.picture;
-      return settle(gone.size === 0 ? { ...state, snapshot } : { ...state, snapshot, activities, permissions, composers, cards, fills, mighty, picture });
+      const moved = settleViews(settlePending(settle(gone.size === 0 ? { ...state, snapshot } : { ...state, snapshot, activities, permissions, composers, cards, fills, mighty, picture })));
+      return queuedStarts(moved, message.sessions, Date.now());
     }
     case 'event':
       return applyEvent(state, message.event);
     case 'permission':
       return applyPermission(state, message.request);
-    case 'composer':
-      return { ...state, composers: { ...state.composers, [message.state.paneId]: message.state } };
+    case 'composer': {
+      const dequeued = rememberDequeued(state, message.state, Date.now());
+      return { ...state, composers: { ...state.composers, [message.state.paneId]: message.state }, ...(dequeued !== state.dequeued ? { dequeued } : {}) };
+    }
     case 'cards':
       return { ...state, cards: { ...state.cards, [message.paneId]: message.cards } };
     case 'mighty':
@@ -208,6 +372,10 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       return message.picture === state.picture ? state : { ...state, picture: message.picture };
     case 'fill':
       return { ...state, fills: { ...state.fills, [message.paneId]: { text: message.text, seq: (state.fills[message.paneId]?.seq ?? 0) + 1 } } };
+    case 'pending':
+      return applyPending(state, message);
+    case 'view':
+      return applyView(state, message);
   }
 }
 

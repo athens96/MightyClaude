@@ -8,6 +8,7 @@ import { BetaBadge, MiddlePath } from '../shell/parts';
 import { Icon } from '../icons/Icon';
 import type { DialogRequest, OpenDialog, ResumeRows } from '../shell/types';
 import { GitCreate, NewFolder } from './WorkspaceCreate';
+import { Pending } from '../pending/Pending';
 
 /** A sheet over the window: focuses its `data-autofocus` control (else its first), and Esc is its cancel. */
 export function Sheet({ id, width, label, children, onCancel }: { id: number; width: number; label: string; children: ReactNode; onCancel: () => void }) {
@@ -76,7 +77,7 @@ function ResumeChoice({ id, dialog, answer }: { id: number; dialog: Extract<Dial
         <ProviderMark provider={dialog.provider} size={20} />
         <div>
           <h2 className="sheet-title">{dialog.title}</h2>
-          {dialog.checking ? <div className="quiet"><span className="spinner" /> {t('resume.loading')}</div> : <p className="sheet-message quiet">{dialog.message}</p>}
+          {dialog.checking ? <div className="quiet"><Pending busy showsLabel={false} /> {t('resume.loading')}</div> : <p className="sheet-message quiet">{dialog.message}</p>}
         </div>
       </div>
       <div className="sheet-buttons">
@@ -112,7 +113,7 @@ function ResumeList({ id, dialog, answer }: { id: number; dialog: Extract<Dialog
           <input className="sheet-field" type="search" data-autofocus placeholder={t('resume.search')} aria-label={t('resume.search')} value={search} onChange={(event) => setSearch(event.target.value)} />
         </label>
         <div className="resume-rows" data-testid="resume-rows">
-          {rows === null ? <div className="resume-empty"><span className="spinner" />{t('resume.loading')}</div>
+          {rows === null ? <div className="resume-empty"><Pending busy showsLabel={false} />{t('resume.loading')}</div>
             : rows.rows.length === 0 ? <div className="resume-empty"><strong>{rows.empty}</strong>{rows.reason && <span className="quiet">{rows.reason}</span>}</div>
             : rows.rows.map((row) => (
               <button key={row.id} type="button" className="resume-row" title={row.help} onClick={() => answer(row.id)}>

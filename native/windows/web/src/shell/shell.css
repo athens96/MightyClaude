@@ -43,7 +43,6 @@ button { font: inherit; color: inherit; }
   display: inline-block; padding: 1px var(--space-xs); border-radius: 8px; background: var(--stop-soft); color: var(--stop-text);
   font-size: var(--type-badge); font-weight: 500; line-height: 12px; flex: none;
 }
-.spinner { display: inline-block; width: 10px; height: 10px; border: 1.5px solid var(--line); border-top-color: var(--ink2); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .status-glyph { flex: none; display: inline-grid; place-items: center; }
 .status-glyph.tone-run { color: var(--glyph-run); }
@@ -53,7 +52,7 @@ button { font: inherit; color: inherit; }
 .status-glyph.tone-err { color: var(--glyph-err); }
 .status-glyph.tone-stop { color: var(--glyph-stop); }
 .status-glyph.tone-idle { color: var(--glyph-idle); }
-@media (prefers-reduced-motion: reduce) { .status-glyph .glyph-spark, .spinner { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .status-glyph .glyph-spark { animation: none; } }
 
 .status-counts { display: inline-flex; align-items: center; gap: var(--space-sm); flex: none; }
 .status-count { display: inline-flex; align-items: center; gap: 3px; font-size: var(--type-pill); }

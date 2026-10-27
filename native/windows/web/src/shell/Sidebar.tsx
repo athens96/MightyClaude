@@ -11,6 +11,7 @@ import { BetaBadge, StatusCounts, StatusGlyph, useCall, useMenu, usePaneInfo, us
 import type { CardAction, ChildCard, PaneInfo, SidebarItem, SidebarWorkspace } from './types';
 import { Icon } from '../icons/Icon';
 import appIcon from '../assets/app-icon.png';
+import { Pending } from '../pending/Pending';
 
 export const sidebarSearchId = 'sidebar-search';
 
@@ -33,7 +34,7 @@ function ChildCardLine({ id, card }: { id: string; card: ChildCard }) {
   const call = useCall();
   return (
     <div className="child-card" data-testid={'child-card-' + id}>
-      {card.busy ? <div className="child-card-busy"><span className="spinner" />{t('delegation.card.working')}</div> : card.actions.length > 0 && (
+      {card.busy ? <div className="child-card-busy"><Pending busy showsLabel={false} />{t('delegation.card.working')}</div> : card.actions.length > 0 && (
         <div className="child-card-actions">
           {card.actions.map((a) => (
             <button key={a.action} type="button" className={'child-card-action' + (a.action === 'discard' ? ' quiet' : '')} title={a.help} aria-label={a.help}

@@ -1,6 +1,7 @@
 // Draws a WinUI form's node tree (types.ts) and sends every input back to the control it was read from.
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { boxStyle, edges, ink, nodeText, type MenuItem, type NativeNode as Node } from './types';
+import { Pending } from '../pending/Pending';
 
 /** What a node's input does: `nativeAction` on the view it belongs to. */
 export type Act = (id: number, op: 'invoke' | 'toggle' | 'select' | 'text' | 'value', value?: unknown) => void;
@@ -102,7 +103,7 @@ function Inner({ node }: { node: Node }) {
     case 'dot':
       return <span className="native-dot" style={{ width: node.size, height: node.size, background: ink(node.fill) }} />;
     case 'spinner':
-      return <span className="spinner" />;
+      return <Pending busy showsLabel={false} />;
     case 'progress':
       return node.indeterminate ? <progress className="native-progress" /> : <progress className="native-progress" value={node.value} max={node.max || 1} />;
     case 'rule':

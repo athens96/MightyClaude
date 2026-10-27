@@ -1,18 +1,52 @@
 import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { useServices } from '../app/context';
-import type { LogEntry, RunSession } from '../store/models';
+import { useServices, useStoreState } from '../app/context';
+import type { AgentActivity, LogEntry, RunSession } from '../store/models';
 import { Entry, type EntryProps } from './Entry';
 import { providerLabel } from './format';
 import { ProviderMark } from './ProviderMark';
 import { ReferenceContext, clickedAt, linkAt, type Clicked } from './referenceClick';
 import { HeightCache, estimateHeight, layout, nearBottom, visibleRange } from './virtual';
 import { usePageOverlay } from '../shell/overlay';
+import { Pending, PendingBars } from '../pending/Pending';
+import { requestState, shownInConversation, type PendingRequest } from '../pending/requests';
+import { submitScroll } from '../pending/submitScroll';
 
 interface MenuState {
   x: number;
   y: number;
   selection: string;
   code: string | null;
+}
+
+/** A request the composer sent that the host has not brought yet (natural submit B1): its words, then 전송 중 or its failure. */
+const PendingBubble = memo(function PendingBubble({ request }: { request: PendingRequest }) {
+  const state = useMemo(() => requestState(request), [request]);
+  return (
+    <div className={'entry entry-user entry-pending' + (request.phase === 'failed' ? ' failed' : '')} data-testid="pending-request" data-pending-request={request.clientId}>
+      <div className="user-bubble"><div className="user-text" data-text="">{request.text}</div></div>
+      <div className="entry-pending-mark"><Pending state={state} /></div>
+    </div>
+  );
+});
+
+/** "실행 중" from the run's start until its first output, with what the agent does when the host said (its latest activity). */
+function RunningRow({ activity }: { activity: AgentActivity | undefined }) {
+  const { t } = useServices();
+  const doing = activity ? [activity.toolName, activity.summary].filter((part) => part && part.trim().length > 0).join(' · ') : '';
+  return (
+    <div className="entry entry-running" data-testid="running-row" role="status">
+      <PendingBars />
+      <span className="entry-running-word">{t('graph.state.running')}</span>
+      {doing && <span className="entry-running-activity" title={doing}>{doing}</span>}
+    </div>
+  );
+}
+
+/** The pane runs and nothing has come since its request: no reply, no tool call, no line. */
+export function awaitsFirstOutput(session: RunSession): boolean {
+  if (session.status !== 'running') return false;
+  const last = session.logs[session.logs.length - 1];
+  return last !== undefined && last.kind === 'user';
 }
 
 const Row = memo(function Row({ observe, ...props }: EntryProps & { observe: (element: HTMLDivElement | null) => (() => void) | undefined }) {
@@ -30,7 +64,12 @@ const Row = memo(function Row({ observe, ...props }: EntryProps & { observe: (el
  */
 export function Conversation({ session }: { session: RunSession }) {
   const { bridge, t } = useServices();
+  const stored = useStoreState();
   const logs = session.logs;
+  const requests = shownInConversation(stored.pending[session.id], session);
+  const running = awaitsFirstOutput(session) && requests.length === 0;
+  const activity = stored.activities[session.id];
+  const own = stored.ownSubmits[session.id] ?? 0;
   const scroller = useRef<HTMLDivElement>(null);
   const [heights] = useState(() => new HeightCache());
   const following = useRef(true);
@@ -73,7 +112,7 @@ export function Conversation({ session }: { session: RunSession }) {
     return () => rows.unobserve(element);
   }, [rows]);
 
-  const empty = logs.length === 0;
+  const empty = logs.length === 0 && requests.length === 0;
   useLayoutEffect(() => {
     const element = scroller.current;
     if (!element) return undefined;
@@ -94,8 +133,24 @@ export function Conversation({ session }: { session: RunSession }) {
     // The scroller comes and goes with the empty state.
   }, [stickToBottom, empty, heights]);
 
+  // An own send (natural submit B2): the view goes to the bottom, where its request is, whatever the position.
+  const ownSeen = useRef(own);
+  useLayoutEffect(() => {
+    if (own === ownSeen.current) return;
+    ownSeen.current = own;
+    if (submitScroll('basic', true, true, following.current).scroll === 'toRequest') following.current = true;
+  }, [own]);
+
   // After every drawing: a view at the bottom stays there as entries come and grow.
   useLayoutEffect(stickToBottom);
+
+  // The requests and the running row under the entries grow without a draw here (전송 중 shows after its delay): kept in view.
+  const [tail] = useState(() => new ResizeObserver(() => stickToBottom()));
+  useEffect(() => () => tail.disconnect(), [tail]);
+  const observeTail = useCallback((element: HTMLDivElement | null) => {
+    tail.disconnect();
+    if (element) tail.observe(element);
+  }, [tail]);
 
   const offsets = useMemo(
     () => layout(logs, (entry: LogEntry) => heights.get(entry.id, view.width) ?? estimateHeight(entry)),
@@ -159,7 +214,7 @@ export function Conversation({ session }: { session: RunSession }) {
   }, [menu]);
 
   if (empty) return <EmptyPane session={session} />;
-  const running = session.status === 'running';
+  const live = session.status === 'running';
   const shell = session.kind === 'shell';
   return (
     <div
@@ -181,12 +236,18 @@ export function Conversation({ session }: { session: RunSession }) {
             paneId={session.id}
             provider={session.provider}
             shell={shell}
-            live={running && !!entry.activity && (entry.activity.state === 'running' || entry.activity.state === 'waiting')}
+            live={live && !!entry.activity && (entry.activity.state === 'running' || entry.activity.state === 'waiting')}
             expanded={expanded.has(entry.id)}
             onToggle={onToggle}
           />
         ))}
       </div>
+      {(requests.length > 0 || running) && (
+        <div className="conversation-tail" ref={observeTail}>
+          {running && <RunningRow activity={activity} />}
+          {requests.map((request) => <PendingBubble key={request.clientId} request={request} />)}
+        </div>
+      )}
       {menu && (
         <div className="context-menu" role="menu" data-page-overlay="" style={{ left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()}>
           <button type="button" role="menuitem" disabled={menu.selection.length === 0} onClick={() => { void navigator.clipboard.writeText(menu.selection).catch(() => {}); setMenu(null); }}>

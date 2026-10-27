@@ -10,6 +10,10 @@ import type { StructureActivity, StructureBoard, StructureCard } from './types';
 import { chipClass, edgeClass, tintClass } from './structureTone';
 import { usePageOverlay } from '../shell/overlay';
 import { Icon, type IconName } from '../icons/Icon';
+import { Pending } from '../pending/Pending';
+import { pendingRunId, requestState, type PendingRequest } from '../pending/requests';
+import { submitScroll } from '../pending/submitScroll';
+import type { Translate } from '../i18n/locale';
 
 /** Shows a block in the diagram: the block, or its request when the diagram does not draw it. */
 export type Reveal = (nodeId: string, fallbackNodeId: string) => void;
@@ -201,15 +205,41 @@ function scrollTo(body: HTMLElement, scroll: Scroll) {
 }
 
 /**
+ * A sent request's board before the host's comes (natural submit B1): its words as the 요청 card, 실행 and 결과 still to come.
+ * The header shows its 전송 중 (or its failure) in place of the status pill.
+ */
+export function pendingBoard(request: PendingRequest, ordinal: number, t: Translate): StructureBoard {
+  const id = pendingRunId(request);
+  const failed = request.phase === 'failed';
+  const column = (step: string, key: string, cards: StructureCard[]) =>
+    ({ id: id + ':' + key, title: t('graph.structure.column.' + key), step, stepWord: t('graph.structure.step.' + step), count: cards.length, cards });
+  const card: StructureCard = {
+    id: id + ':request', kind: 'request', runId: id, nodeId: nodeId(id, RequestStep), title: t('graph.block.nextRequest'), status: '', statusWord: '', tone: 'idle',
+    text: request.text, activity: [], finished: false,
+  };
+  return {
+    id, kind: 'request', ordinal, status: failed ? 'error' : 'starting', statusWord: '', tone: failed ? 'err' : 'run', runIds: [id],
+    columns: [column('done', 'request', [card]), column('pending', 'execution', []), column('pending', 'result', [])],
+  };
+}
+
+/**
  * The 파이프라인 view (UI/MightyStructure.cs): one board at a time, newest by default; ◀, the board's place over the list of
  * boards, ▶, and the badge of a newer board unseen; a column per step, each scrolling up and down on its own under a page that
  * scrolls sideways. Dragging the page's empty space (or a card's header) pans the page sideways and the pressed column up and
  * down (MightyStructurePan); a short press is a click. The newest board's columns follow their newest card (ColumnWatch) unless
  * the reader moved away; a card's reveal button shows its block in the diagram.
  */
-export function Structure({ boards, onReveal }: { boards: readonly StructureBoard[] | null; onReveal: Reveal }) {
+export function Structure({ boards, onReveal, pending, own = 0 }: {
+  boards: readonly StructureBoard[] | null; onReveal: Reveal;
+  /** The request the composer sent that the host's board has not replaced yet: drawn as the newest board. */
+  pending?: PendingRequest;
+  /** Counts the pane's own sends: each goes back to the newest board and its columns' ends (natural submit B2). */
+  own?: number;
+}) {
   const { t } = useServices();
-  const list = boards ?? [];
+  const list = useMemo(() => (pending ? [...(boards ?? []), pendingBoard(pending, (boards?.length ?? 0) + 1, t)] : boards ?? []), [boards, pending, t]);
+  const pendingState = useMemo(() => (pending ? requestState(pending) : null), [pending]);
   const [navigation] = useState(() => new StructureNavigation());
   const [, setVersion] = useState(0);
   const redraw = () => setVersion((v) => v + 1);
@@ -223,6 +253,16 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
   const panned = useRef(false);
   const releasedAt = useRef(Number.NEGATIVE_INFINITY);
   const seenRuns = useRef<{ board: string; count: number } | null>(null);
+  // An own send: back to the newest board when an older one is chosen, and every column of it starts over at its end. Read
+  // before the board is picked, so the draw that shows the request already shows its board.
+  const ownSeen = useRef(own);
+  const ownColumns = useRef(false);
+  if (own !== ownSeen.current) {
+    ownSeen.current = own;
+    const decision = submitScroll('pipeline', true, navigation.onNewest(list), false);
+    if (decision.resetBoard) navigation.showNewest(list);
+    if (decision.scroll === 'toRequest') ownColumns.current = true;
+  }
 
   const index = navigation.index(list);
   const board = index === null ? undefined : list[index];
@@ -238,7 +278,8 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
     if (!board) return;
     const runs = board.runIds.length;
     const again = seenRuns.current?.board === board.id;
-    const grew = again && newest && runs > (seenRuns.current?.count ?? runs);
+    const grew = (again && newest && runs > (seenRuns.current?.count ?? runs)) || (newest && ownColumns.current);
+    ownColumns.current = false;
     seenRuns.current = { board: board.id, count: runs };
     if (again && !grew) return;
     for (const body of bodies()) {
@@ -247,7 +288,7 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
       if (scroll) scrollTo(body, scroll);
       else if (!again) body.scrollTop = 0;
     }
-  }, [board, newest, bodies]);
+  }, [board, newest, bodies, own]);
 
   // After every draw, each column reports where it stands; a following column is taken to its end.
   useLayoutEffect(() => {
@@ -359,7 +400,8 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
   const move = (change: () => void) => { if (panned.current) return; change(); redraw(); };
   const unseen = navigation.hasUnseen(list);
   return (
-    <div className="mighty-structure" data-testid="mighty-structure" data-board-count={list.length} data-board-id={board.id} ref={root}>
+    <div className="mighty-structure" data-testid="mighty-structure" data-board-count={list.length} data-board-id={board.id} ref={root}
+      data-pending-request={pending && board.id === pendingRunId(pending) ? board.id : undefined}>
       <nav className="structure-nav">
         <button className="structure-step" title={t('graph.structure.board.previous')} aria-label={t('graph.structure.board.previous')} disabled={index <= 0} onClick={() => move(() => navigation.step(-1, list))}><Icon name="chevron-left" size={13} weight={2.4} /></button>
         <span className="structure-place">
@@ -391,8 +433,8 @@ export function Structure({ boards, onReveal }: { boards: readonly StructureBoar
       </nav>
       {/* The board's status, and a pipeline's name; a request's words are its 요청 card right below (M/MightyStructureView.swift header). */}
       <div className="structure-header">
-        <Bolt status={board.status} />
-        <span className={'mighty-pill tone-' + board.tone}>{board.statusWord}</span>
+        {board.id === (pending ? pendingRunId(pending) : null) && pendingState ? <Pending state={pendingState} />
+          : <><Bolt status={board.status} /><span className={'mighty-pill tone-' + board.tone}>{board.statusWord}</span></>}
         {board.kind === 'pipeline' && <span className="structure-headline">{title(board, index)}</span>}
       </div>
       <div className="structure-columns" ref={page} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPress} onPointerCancel={endPress}

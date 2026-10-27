@@ -9,6 +9,7 @@ import { MiddlePath } from '../shell/parts';
 import type { CreateLabels, DialogRequest } from '../shell/types';
 import { Sheet } from './Dialogs';
 import { canCreateFromGit, canMakeFolder, fill, nextName, shownProblem, type CreateCheck, type ProbeState } from './workspaceCreateRules';
+import { Pending } from '../pending/Pending';
 
 type Answer = (value: unknown) => void;
 
@@ -113,7 +114,7 @@ export function NewFolder({ id, dialog, answer }: { id: number; dialog: Extract<
       <PathPreview labels={labels} name={name} check={last} />
       {problem && <div className="sheet-caption tone-text-err" data-testid="workspace-create-problem">{problem}</div>}
       <div className="sheet-buttons">
-        {busy && <span className="spinner" />}
+        <Pending busy={busy} showsLabel={false} />
         <span className="spacer" />
         <button type="button" className="plain-button" disabled={busy} onClick={() => answer({ choice: 'cancel' })}>{labels.cancel}</button>
         <button type="button" className="accent-button" disabled={!ready} onClick={() => void create()} data-testid="workspace-new-folder-create">{labels.create}</button>
@@ -219,7 +220,7 @@ export function GitCreate({ id, dialog, answer }: { id: number; dialog: Extract<
           onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void create(); } }} />
         <span />
         <div className="create-probe">
-          {probe.state === 'checking' && <span className="quiet" data-testid="workspace-git-probe"><span className="spinner" /> {labels.checking}</span>}
+          {probe.state === 'checking' && <span className="quiet" data-testid="workspace-git-probe"><Pending busy showsLabel={false} /> {labels.checking}</span>}
           {probe.state === 'reachable' && <span className="tone-text-done" data-testid="workspace-git-probe">{'✓ ' + labels.reachable}</span>}
           {probe.state === 'failed' && <GitError kind={probe.kind ?? null} message={probe.message ?? ''} labels={labels} onOpenSetup={openSetup} testId="workspace-git-probe" />}
           <span className="spacer" />

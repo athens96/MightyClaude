@@ -4,19 +4,23 @@ import { useServices, useStoreState } from '../app/context';
 import type { GraphBlockSize, MightyGraphRun, RunSession } from '../store/models';
 import { Block, type BlockActions, type BlockExtra } from './Block';
 import {
-  FollowWatch, cameraOffset, centredX, dotFirst, dotRadius, dotStep, dotsShown, followTargetID, runsChanged, showsTop, trimAnchor,
+  FollowWatch, cameraOffset, cameraTween, centredX, dotFirst, dotRadius, dotStep, dotsShown, followTargetID, runsChanged, showsTop, trimAnchor,
   wheelScrollTarget, zoomAnchored, zoomIn, zoomLabel, zoomOut, ZoomDefault, ZoomMax, ZoomMin, type Point,
 } from './camera';
 import {
   finished, isAuxiliaryKind, isResizable, latestResultID, makeLayout, MaximumHeight, MaximumWidth, minimumBlockSize, normalizedSizeFor,
-  resultDrag, resultDragSides, runOf, type Layout, type Size,
+  nodeId, resultDrag, resultDragSides, runOf, WorkSuffix, type Layout, type Size,
 } from './layout';
 import { blockExtras } from './extras';
 import { edgesCursor, pinnedAnchor, pinnedCamera, pinnedUnit, resizedSize, resizeTarget, type Edges } from './resize';
 import { setBlockSize } from './prefs';
 import { shareRuns } from './share';
-import type { MightyPane, MightyFile } from './types';
+import type { MightyBlockCopy, MightyPane, MightyFile } from './types';
 import { ReferenceContext, useReferenceClick } from '../conversation/referenceClick';
+import { pendingRun, pendingRunId, requestState, type PendingRequest } from '../pending/requests';
+import { submitScroll } from '../pending/submitScroll';
+import { Motion, reducesMotion } from '../theme/tokens';
+import type { Translate } from '../i18n/locale';
 
 const Overscan = 300;
 
@@ -43,12 +47,35 @@ function edgePaths(layout: Layout, running: ReadonlySet<string>): { quiet: strin
 }
 
 /**
+ * The copy of a sent request's blocks until the host's come (natural submit B1): "다음 요청" with the pane's agent and no pill
+ * (its 전송 중 is the block's pending mark), 실행 waiting for its answer, and for a request that did not start, 실행 stopped and
+ * a failed result carrying the host's message.
+ */
+function pendingCopies(request: PendingRequest, provider: string, t: Translate): Map<string, MightyBlockCopy> {
+  const id = pendingRunId(request);
+  const failed = request.phase === 'failed';
+  const copy = (kind: string, title: string, status: string, tone: string): MightyBlockCopy =>
+    ({ kind, title, state: '', status, tone, help: '', indicator: 'none', outline: 'none', fromRecord: false, provider: kind === 'request' ? provider : undefined });
+  return new Map([
+    [nodeId(id, 'request'), copy('request', t('graph.block.nextRequest'), '', 'run')],
+    [nodeId(id, WorkSuffix), copy('work', t('graph.block.execution'), failed ? 'stopped' : 'starting', failed ? 'stop' : 'idle')],
+    [nodeId(id, 'result'), copy('result', t('graph.block.resultError'), 'error', 'err')],
+  ]);
+}
+
+/**
  * The Mighty diagram (UI/MightyGraph.cs): the page's own layout of the pane's runs, its blocks as positioned cards in one
  * transformed layer, and one SVG under them for the dot grid and the edges. Pan, zoom and the follow camera move that layer
  * and the SVG's transforms directly, so moving the view draws no block; blocks draw only when their props change, and a
  * block off screen draws its header alone.
  */
-export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession; mighty: MightyPane; aim?: Aim | null; onAimed?: () => void }) {
+export function Diagram({ session, mighty, aim, onAimed, pending: request, own = 0 }: {
+  session: RunSession; mighty: MightyPane; aim?: Aim | null; onAimed?: () => void;
+  /** The request the composer sent that the host's run has not replaced yet: drawn as the newest run. */
+  pending?: PendingRequest;
+  /** Counts the pane's own sends: each moves the camera to the new request over motion.scroll. */
+  own?: number;
+}) {
   const { bridge, t } = useServices();
   const state = useStoreState();
   const paneId = session.id;
@@ -60,6 +87,9 @@ export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession
   const dotRef = useRef<SVGCircleElement>(null);
   const dotsRect = useRef<SVGRectElement>(null);
   const camera = useRef<Point>({ x: 0, y: 0 });
+  /** The camera's move to an own send's request: from where it was to where the follow puts it, over motion.scroll. */
+  const tween = useRef<{ from: Point; to: Point; start: number; frame: number } | null>(null);
+  const ownSeen = useRef(own);
   const watch = useRef(new FollowWatch());
   const runIds = useRef<string[] | null>(null);
   const shared = useRef<readonly MightyGraphRun[]>([]);
@@ -81,11 +111,15 @@ export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession
   const onReferenceClick = useReferenceClick();
   const loadingOlder = useRef<unknown>(null);
 
-  const runs = useMemo(() => {
+  const hostRuns = useMemo(() => {
     const next = shareRuns(shared.current, [...mighty.older, ...(session.graphRuns ?? [])]);
     shared.current = next;
     return next;
   }, [mighty.older, session.graphRuns]);
+  // A sent request stands in as the newest run until the host's comes (natural submit B1).
+  const runs = useMemo(() => (request ? [...hostRuns, pendingRun(request, session.provider)] : hostRuns), [hostRuns, request, session.provider]);
+  const copies = useMemo(() => (request ? pendingCopies(request, session.provider, t) : null), [request, session.provider, t]);
+  const pendingState = useMemo(() => (request ? requestState(request) : null), [request]);
 
   // A released drag shows its size at once; the saved sizes coming back from the host take over.
   const savedSizes = pending && pending.base === session.graphBlockSizes ? pending.sizes : session.graphBlockSizes ?? null;
@@ -142,6 +176,28 @@ export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession
   }, [updateVisible]);
   useEffect(() => () => { if (frame.current) cancelAnimationFrame(frame.current); }, []);
 
+  const stopTween = useCallback(() => {
+    if (tween.current) cancelAnimationFrame(tween.current.frame);
+    tween.current = null;
+  }, []);
+  /** Moves the camera from `from` to `to` along the standard easing; each frame sets it and moves the layer. */
+  const startTween = useCallback((from: Point, to: Point) => {
+    stopTween();
+    const move = { from, to, start: performance.now(), frame: 0 };
+    tween.current = move;
+    const step = () => {
+      if (tween.current !== move) return;
+      const progress = (performance.now() - move.start) / Motion.scroll;
+      camera.current = cameraTween(move.from, move.to, progress);
+      applyCamera();
+      if (progress < 1) move.frame = requestAnimationFrame(step);
+      else tween.current = null;
+    };
+    camera.current = from;
+    move.frame = requestAnimationFrame(step);
+  }, [applyCamera, stopTween]);
+  useEffect(() => stopTween, [stopTween]);
+
   useLayoutEffect(() => {
     const element = viewportRef.current;
     if (!element) return;
@@ -155,6 +211,11 @@ export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession
   // ── follow and the run-id rules after every layout pass (MightyGraphFollow, AimGraphCamera) ──
   useLayoutEffect(() => {
     if (viewport.w <= 0 || viewport.h <= 0) return;
+    // Where the camera stands before this pass: an own send moves from here (a move under way, from where it is now).
+    const before = { ...camera.current };
+    const ownSend = own !== ownSeen.current;
+    ownSeen.current = own;
+    if (ownSend && submitScroll('diagram', true, true, watch.current.following).scroll === 'toRequest') watch.current.start();
     const ids = runs.map((r) => r.id);
     const previous = runIds.current;
     const change = runsChanged(previous, ids, watch.current.following);
@@ -187,8 +248,18 @@ export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession
     const pinnedFrame = pinned ? frameOf(pinned.id) : null;
     if (pinned && pinnedFrame) camera.current = pinnedCamera(pinned.anchor, pinned.unit, pinnedFrame, zoom);
     else pin.current = null;
+    // An own send glides to its request (motion.scroll); Reduce Motion moves at once. A move under way keeps going to where
+    // this pass put the camera.
+    const moving = tween.current;
+    if (ownSend && !aim && !reducesMotion()) startTween(before, camera.current);
+    else if (moving && !aim && !ownSend) {
+      // This pass moved the camera (the request grew, the follow went on): the move heads there instead.
+      if (Math.abs(camera.current.x - before.x) > 0.5 || Math.abs(camera.current.y - before.y) > 0.5) moving.to = camera.current;
+      camera.current = cameraTween(moving.from, moving.to, (performance.now() - moving.start) / Motion.scroll);
+    }
+    else if (moving) stopTween();
     applyCamera();
-  }, [layout, viewport, zoom, aim]);
+  }, [layout, viewport, zoom, aim, own]);
 
   const userMoved = useCallback(() => {
     pin.current = null;
@@ -206,9 +277,10 @@ export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession
   inputsRef.current = inputs;
 
   const pan = useCallback((dx: number, dy: number) => {
+    stopTween();
     camera.current = { x: camera.current.x + dx, y: camera.current.y + dy };
     applyCamera();
-  }, [applyCamera]);
+  }, [applyCamera, stopTween]);
 
   // ── wheel: a selected or attached block under the pointer scrolls its body, anything else pans ──
   const selectedRef = useRef(selected);
@@ -352,6 +424,7 @@ export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession
   const setZoomTo = (next: number) => {
     const vp = { w: viewportRef.current?.clientWidth ?? 0, h: viewportRef.current?.clientHeight ?? 0 };
     pin.current = null;
+    stopTween();
     camera.current = zoomAnchored(camera.current, vp, zoom, next);
     watch.current.stop();
     setZoom(next);
@@ -365,6 +438,17 @@ export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession
     extrasCache.current = next;
     return next;
   }, [layout, runs, inputs, session.draft, session.planHistory, session.graphResultSize, planText, latest]);
+
+  // The sent request's block carries its pending mark (전송 중, or its failure) in place of a pill.
+  const drawnExtras = useMemo(() => {
+    if (!request || !pendingState) return extras;
+    const id = nodeId(pendingRunId(request), 'request');
+    const extra = extras.get(id);
+    if (!extra) return extras;
+    const next = new Map(extras);
+    next.set(id, { ...extra, pending: pendingState });
+    return next;
+  }, [extras, request, pendingState]);
 
   const visible = useMemo(() => new Set(visibleKey.split('\n')), [visibleKey]);
   const unfinished = useMemo(() => new Set(runs.filter((r) => !finished(r)).map((r) => r.id)), [runs]);
@@ -398,7 +482,7 @@ export function Diagram({ session, mighty, aim, onAimed }: { session: RunSession
           {layout.nodes.map((node) => (
             <Block key={node.id} paneId={paneId} provider={session.provider} id={node.id} kind={node.kind}
               x={node.frame.x} y={node.frame.y} w={node.frame.w} h={node.frame.h}
-              copy={mighty.blocks[node.id]} extra={extras.get(node.id) ?? {}} visible={visible.has(node.id)}
+              copy={mighty.blocks[node.id] ?? copies?.get(node.id)} extra={drawnExtras.get(node.id) ?? {}} visible={visible.has(node.id)}
               selected={selected === node.id} expanded={expanded.has(node.id)}
               running={unfinished.has(runOf(node.id) ?? '')}
               actions={actions} />

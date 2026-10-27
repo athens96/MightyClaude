@@ -9,15 +9,20 @@ import { StyleRow, Toolbar } from './Toolbar';
 import { Icon } from '../icons/Icon';
 import type { AttachmentPreview, ComposerState, SendResult } from './types';
 import { usePageOverlay } from '../shell/overlay';
+import { newClientId, newPendingRequest } from '../pending/requests';
+import { Motion } from '../theme/tokens';
 
 /** The editor grows to six lines, then scrolls (MainWindow.cs: ComposerLine + 5 × ComposerLineStep). */
 const maxLines = 6;
 /** The scanned catalogue is read again after this long (SlashCatalogCache, 30 s). */
 const catalogLifetime = 30_000;
+/** Typing is mirrored to the host once it rests this long (natural submit B4); a send, a pane switch or closing writes at once. */
+const draftRest = 300;
 
 /**
- * The agent pane's composer (spec §3). The draft lives here and is mirrored to the host on every keystroke (`updateDraft`);
- * what may happen to it (send, queue, stop, a block) is the host's composer state, pushed when it changes.
+ * The agent pane's composer (spec §3). The draft lives here and is mirrored to the host once typing rests (`updateDraft`);
+ * what may happen to it (send, queue, stop, a block) is the host's composer state, pushed when it changes. Enter empties the
+ * editor at once and the views draw the request with 전송 중 before the host answers (natural submit B1, src/pending).
  */
 export function Composer({ session }: { session: RunSession }) {
   const { bridge, store, t } = useServices();
@@ -32,6 +37,14 @@ export function Composer({ session }: { session: RunSession }) {
   const [outcome, setOutcome] = useState<string | null>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
   const sending = useRef(false);
+  /** The draft not yet written to the host, and its timer. */
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unsaved = useRef<string | null>(null);
+  /** The editor was typed in since the last send (a failed send gives its words back only to an editor left alone). */
+  const edited = useRef(false);
+  /** The queue row flashes when a request joins it (B3). */
+  const [flashing, setFlashing] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [catalog, setCatalog] = useState<{ value: SlashCatalog; read: number } | null>(null);
   const [dismissedFor, setDismissedFor] = useState<string | null>(null);
   const [palette, setPalette] = useState<PaletteState>(closed);
@@ -64,11 +77,38 @@ export function Composer({ session }: { session: RunSession }) {
     setPalette((previous) => (catalog ? paletteState(catalog.value, session.kind, text, dismissedFor, previous) : closed));
   }, [catalog, session.kind, text, dismissedFor]);
 
+  const writeDraft = useCallback((draft: string) => {
+    void bridge.call('updateDraft', { paneId, text: draft }).catch(() => {});
+  }, [bridge, paneId]);
+  /** Drops the draft write still waiting: a send sets the host's draft itself, and a late write would put the sent words back. */
+  const cancelDraft = useCallback(() => {
+    if (draftTimer.current !== null) clearTimeout(draftTimer.current);
+    draftTimer.current = null;
+    unsaved.current = null;
+  }, []);
+  const flushDraft = useCallback(() => {
+    const draft = unsaved.current;
+    cancelDraft();
+    if (draft !== null) writeDraft(draft);
+  }, [cancelDraft, writeDraft]);
+  // A pane closed or switched away writes what was typed.
+  useEffect(() => () => flushDraft(), [flushDraft]);
+  useEffect(() => () => { if (flashTimer.current !== null) clearTimeout(flashTimer.current); }, []);
+
   const change = useCallback((value: string) => {
     const draft = value.slice(0, maximumDraft);
     setText(draft);
-    void bridge.call('updateDraft', { paneId, text: draft }).catch(() => {});
-  }, [bridge, paneId]);
+    edited.current = true;
+    unsaved.current = draft;
+    if (draftTimer.current !== null) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(flushDraft, draftRest);
+  }, [flushDraft]);
+
+  const flashQueue = useCallback(() => {
+    setFlashing(true);
+    if (flashTimer.current !== null) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashing(false), Motion.highlight);
+  }, []);
 
   // A card filled the draft (a next action, MainWindow.WebShell.Cards.cs): its words replace the editor's, and it takes the keyboard.
   const filled = useRef(fill?.seq ?? 0);
@@ -85,19 +125,45 @@ export function Composer({ session }: { session: RunSession }) {
     sending.current = true;
     setError(null);
     const sent = editor.current?.value ?? text;
+    const attachments = state?.attachments ?? [];
+    // The words go with the send, which sets the host's draft itself: the write still waiting is dropped, then the editor empties.
+    cancelDraft();
+    setText('');
+    edited.current = false;
+    // The request is drawn at once when it will start now: not for a queue (the queue row says it), a Ctrl+Enter child (its own
+    // pane), a slash command (the host may answer it itself) or a blocked composer.
+    const clientId = newClientId();
+    const words = sent.trim().length > 0 ? sent.trim() : attachments.map((a) => a.name).join(', ');
+    if (!second && state?.primary === 'send' && !state.blocked && words.length > 0 && !sent.trimStart().startsWith('/')) {
+      store.dispatch({ kind: 'pending', action: 'add', paneId, request: newPendingRequest(session, clientId, words, Date.now()) });
+    }
+    /** A send that did not go gives its words back, only to an editor still empty and not typed in since. */
+    const restore = (draft: string) => {
+      if ((editor.current?.value ?? '') !== '' || edited.current || draft.length === 0) return;
+      setText(draft);
+      writeDraft(draft);
+    };
     try {
-      const result = await bridge.call<SendResult>('send', { paneId, text: sent, second, attachments: state?.attachments.map((a) => a.id) ?? [] });
+      const result = await bridge.call<SendResult>('send', { paneId, text: sent, second, attachments: attachments.map((a) => a.id), clientId });
       store.dispatch({ kind: 'composer', state: result.state });
-      if ((editor.current?.value ?? '') === sent) setText(result.draft);
+      const message = result.outcome === 'notStarted' ? t('remote.error.startFailed') : result.state.blocked ?? t('composer.blocked.title');
+      store.dispatch({ kind: 'pending', action: 'answer', paneId, clientId, outcome: result.outcome, entryId: result.entryId, runId: result.runId, message, at: Date.now() });
+      // The host's editor after the send: empty when it went, the words back when it did not (notStarted, blocked, none), or
+      // what a built-in command left there.
+      restore(result.draft);
+      if (result.outcome === 'queued') flashQueue();
       setOutcome(result.outcome);
       if (result.outcome === 'notStarted') setError(t('remote.error.startFailed'));
     } catch (failure) {
+      const message = failure instanceof Error ? failure.message : String(failure);
+      store.dispatch({ kind: 'pending', action: 'fail', paneId, clientId, message, at: Date.now() });
+      restore(sent);
       setOutcome('error');
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(message);
     } finally {
       sending.current = false;
     }
-  }, [bridge, store, t, paneId, text, state]);
+  }, [bridge, store, t, paneId, text, state, session, cancelDraft, writeDraft, flashQueue]);
 
   const call = useCallback((method: string, args: Record<string, unknown> = {}) => {
     setError(null);
@@ -245,7 +311,7 @@ export function Composer({ session }: { session: RunSession }) {
           </div>
         )}
         {queue && queued > 0 && (
-          <div className="composer-queue" data-testid="composer-queue">
+          <div className={'composer-queue' + (flashing ? ' flash' : '')} data-testid="composer-queue">
             <div className="composer-queue-header">
               <Icon name="rotate-ccw-clock" size={11} weight={2.4} className="composer-queue-clock" />
               <span>{t(state.busy ? 'queue.waitingBusy' : 'queue.waiting', { count: queued })}</span>

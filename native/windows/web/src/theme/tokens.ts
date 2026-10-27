@@ -39,6 +39,66 @@ export function percent(opacity: number): string {
   return `${Math.round(opacity * 1000) / 10}%`;
 }
 
+/**
+ * The shared motion (design-tokens.json `motion`, natural submit A2), as Mac and Windows Core DesignMetrics.Motion hold it:
+ * durations in ms, the standard easing as cubic-bezier control points, the pending display's delay and shortest showing, and
+ * how long a highlight stays (the queue row's flash).
+ */
+export const Motion = {
+  quick: tokens.motion.quick,
+  standard: tokens.motion.standard,
+  scroll: tokens.motion.scroll,
+  easing: tokens.motion.easing as readonly number[],
+  pendingShowAfter: tokens.motion.pendingShowAfter,
+  pendingMinVisible: tokens.motion.pendingMinVisible,
+  highlight: tokens.motion.highlight,
+} as const;
+
+/**
+ * A CSS cubic-bezier as a function of time 0–1 (x) to progress (y): x is solved by Newton's method, with bisection where the
+ * slope is too flat, so a page animation driven by requestAnimationFrame follows the same curve as `transition-timing-function`.
+ */
+export function cubicBezier(points: readonly number[]): (t: number) => number {
+  const [x1 = 0, y1 = 0, x2 = 1, y2 = 1] = points;
+  const curve = (a: number, b: number, s: number) => 3 * a * s * (1 - s) * (1 - s) + 3 * b * s * s * (1 - s) + s * s * s;
+  const slope = (a: number, b: number, s: number) => 3 * a * (1 - s) * (1 - s) + 6 * (b - a) * s * (1 - s) + 3 * (1 - b) * s * s;
+  return (t: number) => {
+    if (!(t > 0)) return 0;
+    if (t >= 1) return 1;
+    let s = t;
+    for (let i = 0; i < 8; i++) {
+      const error = curve(x1, x2, s) - t;
+      if (Math.abs(error) < 1e-6) return curve(y1, y2, s);
+      const d = slope(x1, x2, s);
+      if (Math.abs(d) < 1e-6) break;
+      s -= error / d;
+    }
+    let low = 0, high = 1;
+    s = t;
+    for (let i = 0; i < 40; i++) {
+      const x = curve(x1, x2, s);
+      if (Math.abs(x - t) < 1e-6) break;
+      if (x < t) low = s; else high = s;
+      s = (low + high) / 2;
+    }
+    return curve(y1, y2, s);
+  };
+}
+
+/** The standard easing (Motion.easing) as a function. */
+export const ease = cubicBezier(Motion.easing);
+
+/** `--motion-<name>: <n>ms;` for each duration, and the easing as `--motion-easing`. */
+export function motionVariables(): string {
+  const durations = Object.entries(tokens.motion).filter((entry): entry is [string, number] => typeof entry[1] === 'number');
+  return durations.map(([name, value]) => `--motion-${kebab(name)}:${value}ms;`).join('') + `--motion-easing:cubic-bezier(${Motion.easing.join(', ')});`;
+}
+
+/** Whether the system asks for less motion: movement is dropped, every show and hide keeps its timing (A1). */
+export function reducesMotion(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 /** The whole style sheet of variables: metrics and fonts for both themes, then each theme's palette. */
 export function tokenStyleSheet(): string {
   const metrics = tokens.metrics;
@@ -49,6 +109,7 @@ export function tokenStyleSheet(): string {
     metricVariables('space', metrics.spacing) +
     metricVariables('inset', metrics.inset) +
     metricVariables('layout', metrics.layout) +
+    motionVariables() +
     `--font-body:${quoteFamilies(metrics.font.body)}, sans-serif;` +
     `--font-heading:${quoteFamilies(metrics.font.heading)}, sans-serif;` +
     `--font-mono:${quoteFamilies(metrics.font.mono)}, monospace;` +

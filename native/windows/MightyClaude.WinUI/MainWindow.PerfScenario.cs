@@ -36,7 +36,7 @@ public sealed partial class MainWindow
 
     /// <summary>The longest an operation is waited for; one that reaches it is listed in the phase's <c>capped</c> count, not taken as its time.</summary>
     private const int PerfSettleCapMs = 30000;
-    private const int PerfIdleMs = 2000, PerfRounds = 20, PerfToggles = 10, PerfAddedPanes = 5, PerfStreamSeconds = 8, PerfEventsPerSecond = 25, PerfTypingEveryMs = 500;
+    private const int PerfIdleMs = 2000, PerfRounds = 20, PerfToggles = 10, PerfAddedPanes = 5, PerfStreamSeconds = 8, PerfEventsPerSecond = 25, PerfTypingEveryMs = 500, PerfSends = 10;
 
     /// <summary>
     /// The page's half of the web scenario, installed once: <c>__perf.start(body)</c> runs an operation's async body with its start
@@ -184,6 +184,34 @@ public sealed partial class MainWindow
             await Phase(name, (ops, extra) => StreamPerfAnswer(active, name, extra, text => PageOp(ops, TypeDraft(text))));
             await PageOp([], TypeDraft(""));
         }
+        // Natural submit B1: Enter in the composer until the page draws the sent request (the conversation's bubble, the diagram's
+        // request block), before the host has answered; the target is one frame, 50 ms or less. The start goes to the smoke's
+        // stand-in, which puts the request's user entry on the pane as a start does, so the page's block gives way to it before the
+        // next send. Nothing reaches a CLI.
+        static string SendAndSee() => "const e = __perf.slot()?.querySelector('[data-testid=composer-input]'); if (!e) throw new Error('no composer'); "
+            + "const drawn = () => [...(__perf.slot() ?? document).querySelectorAll('[data-pending-request]')].map(x => x.dataset.pendingRequest); const before = new Set(drawn()); "
+            + "e.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true })); "
+            + "await __perf.until(() => drawn().some(id => !before.has(id)), t0);";
+        foreach (var (name, mode) in new[] { ("sendBlockBasic", "default"), ("sendBlockMighty", "mighty") })
+        {
+            await SetViews([active], mode);
+            var standIn = smokeStart;
+            smokeStart = request => PerfReceive(new RunEvent(request.SessionId, "log", new LogEntry(Wire.Id(), "user", request.Input, Wire.Now(), request.Provider)));
+            try
+            {
+                await Phase(name, async (ops, extra) =>
+                {
+                    for (var turn = 1; turn <= PerfSends; turn++)
+                    {
+                        await PageOp([], TypeDraft("perf send " + name + " " + turn));
+                        await PageOp(ops, SendAndSee());
+                        await SettledAsync();
+                    }
+                    extra["sends"] = PerfSends; extra["targetMs"] = 50;
+                });
+            }
+            finally { smokeStart = standIn; }
+        }
         probe.Stop();
         result["perfLog"] = Path.Combine(directory, "perf.log");
         result["perfLogSteps"] = PerfLogSteps(Path.Combine(directory, "perf.log"));
@@ -200,8 +228,7 @@ public sealed partial class MainWindow
     /// </summary>
     private async Task StreamPerfAnswer(string sessionId, string name, Dictionary<string, object?> extra, Func<string, Task<double>> pageType)
     {
-        var receive = typeof(DesktopService).GetMethod("Receive", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(RunEvent)]) ?? throw new MissingMethodException(nameof(DesktopService), "Receive");
-        Task Send(RunEvent value) => Task.Run(() => receive.Invoke(service, [value]));
+        Task Send(RunEvent value) => PerfReceive(value);
         var run = new MightyGraphRun { Id = "perf-" + name, Input = "Perf: " + name, Status = "running", Provider = "claude" };
         await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == sessionId ? p with { GraphRuns = [.. p.GraphRuns ?? [], run] } : p).ToList() });
         await Send(new RunEvent(sessionId, "log", new LogEntry(Wire.Id(), "user", "Perf: " + name, Wire.Now(), "claude")));
@@ -234,6 +261,13 @@ public sealed partial class MainWindow
         // The request is put down as finished, so the next phase's diagram has nothing running.
         var final = text.ToString();
         await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == sessionId && p.GraphRuns is { Count: > 0 } runs ? p with { GraphRuns = [.. runs.Select(r => r.Id == run.Id ? new MightyGraphRun { Id = r.Id, Input = r.Input, Status = "completed", Provider = "claude", RootEntries = r.RootEntries, FinalOutput = final } : r)] } : p).ToList() });
+    }
+
+    /// <summary>One run event through the service's own path (its private <c>Receive</c>, from a pool thread as a run's reader calls it).</summary>
+    private Task PerfReceive(RunEvent value)
+    {
+        var receive = typeof(DesktopService).GetMethod("Receive", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(RunEvent)]) ?? throw new MissingMethodException(nameof(DesktopService), "Receive");
+        return Task.Run(() => receive.Invoke(service, [value]));
     }
 
     /// <summary>The scenario's workspace and panes: the copied state's local agent panes, then made-up ones until the busiest workspace has four Claude panes.</summary>

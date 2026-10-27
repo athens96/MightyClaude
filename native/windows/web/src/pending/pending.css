@@ -1,0 +1,39 @@
+/* The one pending mark (natural submit A3, src/pending/Pending.tsx): the activity bars and a 전송 중 pill, or a failure's
+   message in place. It replaces the two spinners the page had (.spinner, .card-spinner). Reduce Motion stops the bars
+   moving; when they show and hide stays the same (A1). */
+.pending { display: inline-flex; align-items: center; gap: var(--space-xs); vertical-align: middle; animation: pending-in var(--motion-quick) var(--motion-easing); }
+.pending-bars { display: inline-flex; align-items: center; gap: 2px; width: 18px; height: 14px; flex: none; }
+.pending-bars span { width: 3px; height: 12px; border-radius: 1.5px; background: var(--run); transform: scaleY(0.33); animation: pending-bar 1.6s ease-in-out infinite; }
+.pending-pill { height: 18px; line-height: 18px; padding: 0 var(--space-sm); border-radius: 9px; font-size: var(--type-small); font-weight: 700; background: var(--run-soft); color: var(--accent); white-space: nowrap; }
+.pending-failed { font-size: 10.5px; color: var(--err-text); user-select: text; overflow: hidden; display: -webkit-inline-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pending-failed .icon { flex: none; vertical-align: -2px; margin-right: var(--space-xs); }
+@keyframes pending-bar { 0%, 100% { transform: scaleY(0.33); } 50% { transform: scaleY(1); } }
+@keyframes pending-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .pending { animation: none; }
+  .pending-bars span { animation: none; transform: scaleY(0.66); }
+}
+
+/* A request the page drew before the host had it (natural submit B1): the sent words in the request's own bubble, with the
+   pending mark under them; a failed one keeps its words and shows the host's message instead. */
+.entry-pending { flex-direction: column; align-items: flex-end; }
+.entry-pending .user-bubble { opacity: 0.86; }
+.entry-pending-mark { display: flex; justify-content: flex-end; margin-top: var(--space-xs); min-height: 0; }
+.entry-pending.failed .user-bubble { opacity: 0.7; }
+
+/* "실행 중" from the run's start until its first output, with what the agent is doing when the host said. */
+.entry-running { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--type-small); color: var(--ink2); padding: var(--space-xs) 0; }
+.entry-running-word { font-weight: 700; color: var(--accent); }
+.entry-running-activity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* The queue row over the composer flashes for motion.highlight when a request joins it (B3). */
+.composer-queue.flash { animation: queue-flash var(--motion-highlight) var(--motion-easing); }
+@keyframes queue-flash { 0% { background: var(--run-soft); box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) {
+  /* No movement: the highlight is there for its time, then gone. */
+  .composer-queue.flash { animation: none; background: var(--run-soft); box-shadow: 0 0 0 2px var(--accent); }
+}
+
+/* Under the conversation's entries, at the same insets (conversation.css .conversation-body). */
+.conversation-tail { padding: 0 var(--inset-transcript) var(--inset-transcript); margin-top: calc(-1 * var(--inset-transcript)); }
+.conversation-tail > .entry { padding: var(--space-xs) 0; }

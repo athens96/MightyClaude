@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useServices } from '../app/context';
 import { Entry } from '../conversation/Entry';
 import { Markdown } from '../conversation/MarkdownView';
@@ -8,6 +8,11 @@ import { useReferenceClick } from '../conversation/referenceClick';
 import { Icon, type IconName } from '../icons/Icon';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { providerLabel } from '../conversation/format';
+import { Pending } from '../pending/Pending';
+import type { PendingState } from '../pending/display';
+import { pendingRunId, requestState, type PendingRequest } from '../pending/requests';
+import { animateScrollTop, isNearBottom, submitScroll } from '../pending/submitScroll';
+import { Motion, reducesMotion } from '../theme/tokens';
 
 /** A row's glyph, as the diagram gives its block (M/MightyGraphView.swift timelineLook): the request's arrow, 실행's gears, a task's terminal… */
 function rowSymbol(kind: string): IconName {
@@ -90,7 +95,11 @@ const Row = memo(function Row({ row, run, paneId, provider, open, onToggle, firs
   );
 });
 
-const Group = memo(function Group({ group, run, paneId, provider, onOpenRow }: { group: TimelineGroup; run: MightyGraphRun | undefined; paneId: string; provider: string; onOpenRow?: (nodeId: string) => void }) {
+const Group = memo(function Group({ group, run, paneId, provider, onOpenRow, pending }: {
+  group: TimelineGroup; run: MightyGraphRun | undefined; paneId: string; provider: string; onOpenRow?: (nodeId: string) => void;
+  /** A sent request's group before the host's: its 전송 중 (or failure) in place of the pill, and nothing to open yet. */
+  pending?: PendingState;
+}) {
   const { bridge, t } = useServices();
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const [full, setFull] = useState(false);
@@ -104,14 +113,15 @@ const Group = memo(function Group({ group, run, paneId, provider, onOpenRow }: {
   const resultTone = group.resultTone ?? 'done';
   // M/MightyGraphView.swift timelineGroup: the header, the rows while the request is open, and its result card either way.
   return (
-    <section className="timeline-group" data-run-id={group.runId} data-testid="timeline-group">
-      <button type="button" className="timeline-head" aria-expanded={group.open} onClick={() => void bridge.call('mightyTimelineFlip', { paneId, runId: group.runId })}>
+    <section className="timeline-group" data-run-id={group.runId} data-testid="timeline-group" data-pending-request={pending ? group.runId : undefined}>
+      <button type="button" className="timeline-head" aria-expanded={group.open} disabled={pending !== undefined}
+        onClick={() => void bridge.call('mightyTimelineFlip', { paneId, runId: group.runId })}>
         <span className="timeline-head-line">
           <span className="timeline-chevron"><Icon name={group.open ? 'chevron-down' : 'chevron-right'} size={10} weight={3} /></span>
           <span className="timeline-group-title"><RequestTitle title={group.title} provider={provider} /></span>
           {group.older && <span className="timeline-older" title={t('graph.history.tag')}><Icon name="clock-fading" size={11} weight={2} /></span>}
           <span className="spacer" />
-          <span className={'mighty-pill tall tone-' + group.tone}>{group.statusWord}</span>
+          {pending ? <Pending state={pending} /> : <span className={'mighty-pill tall tone-' + group.tone}>{group.statusWord}</span>}
         </span>
         {prompt && <span className="timeline-prompt">{prompt}</span>}
         <span className="timeline-tally">{group.tally}</span>
@@ -151,13 +161,33 @@ const terminalStatus = new Set(['completed', 'error', 'stopped']);
  * it first draws, when a new request arrives and when a request finishes; any other change (a row opened, older requests read
  * in at the top, a streamed line) keeps the first group in view where it was (anchor restore). The top reads older requests.
  */
-export function Timeline({ session, groups, older, history, onOpenRow }: {
+export function Timeline({ session, groups: hostGroups, older, history, onOpenRow, pending, own = 0 }: {
   session: RunSession; groups: readonly TimelineGroup[] | null; older: readonly MightyGraphRun[]; history?: { text: string; acts: boolean } | undefined; onOpenRow?: (nodeId: string) => void;
+  /** The request the composer sent that the host's group has not replaced yet: drawn as the newest group. */
+  pending?: PendingRequest;
+  /** Counts the pane's own sends: each scrolls to the last group whatever the position (natural submit B2). */
+  own?: number;
 }) {
   const { bridge, t } = useServices();
   const scroller = useRef<HTMLDivElement>(null);
   const runs = useMemo(() => new Map([...older, ...(session.graphRuns ?? [])].map((r) => [r.id, r])), [older, session.graphRuns]);
+  const pendingId = pending ? pendingRunId(pending) : null;
+  const pendingState = useMemo(() => (pending ? requestState(pending) : undefined), [pending]);
+  const groups = useMemo(() => {
+    if (!pending) return hostGroups;
+    const failed = pending.phase === 'failed';
+    const group: TimelineGroup = {
+      runId: pendingRunId(pending), ordinal: (hostGroups?.length ?? 0) + 1, title: t('graph.block.nextRequest'), status: failed ? 'error' : 'starting',
+      statusWord: '', tone: failed ? 'err' : 'run', input: pending.text, tally: '', open: false, older: false, rows: [], resultFolds: false,
+    };
+    return [...(hostGroups ?? []), group];
+  }, [hostGroups, pending, t]);
   const count = groups?.length ?? 0;
+  /** The view stood at its newest end before this draw (32 px), as the not-own follow rule reads it. */
+  const atEnd = useRef(true);
+  const ownSeen = useRef(own);
+  const moving = useRef<(() => void) | null>(null);
+  useEffect(() => () => moving.current?.(), []);
   const progress = useRef<{ last: string | null; finished: ReadonlyMap<string, boolean> } | null>(null);
   const anchor = useRef<{ runId: string; offset: number } | null>(null);
   const restoring = useRef(false);
@@ -180,10 +210,20 @@ export function Timeline({ session, groups, older, history, onOpenRow }: {
     const last = list[list.length - 1]?.runId ?? null;
     const before = progress.current;
     const newlyFinished = !!before && list.some((g) => finished.get(g.runId) && before.finished.get(g.runId) === false);
-    const follow = before === null || last !== before.last || newlyFinished;
+    // An own send (this composer's Enter, or its group taking the place of the one the page drew) goes to the last group
+    // whatever the position, gliding over motion.scroll; anyone else's new request is followed only from the newest end.
+    const newRequest = before !== null && last !== before.last;
+    const ownSend = own !== ownSeen.current || (newRequest && (last === pendingId || before?.last?.startsWith('pending-') === true));
+    ownSeen.current = own;
+    const decision = submitScroll('timeline', ownSend, true, atEnd.current);
+    const follow = before === null || newlyFinished || (newRequest && decision.scroll === 'follow') || decision.scroll === 'toRequest';
     progress.current = { last, finished };
     restoring.current = true;
-    if (follow) element.scrollTop = element.scrollHeight;
+    if (decision.scroll === 'toRequest' && before !== null) {
+      moving.current?.();
+      moving.current = animateScrollTop(element, () => element.scrollHeight - element.clientHeight, Motion.scroll, reducesMotion());
+      atEnd.current = true;
+    } else if (follow) { element.scrollTop = element.scrollHeight; atEnd.current = true; }
     else if (anchor.current) {
       const target = element.querySelector<HTMLElement>(`[data-run-id="${CSS.escape(anchor.current.runId)}"]`);
       if (target) element.scrollTop += target.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.current.offset;
@@ -191,11 +231,13 @@ export function Timeline({ session, groups, older, history, onOpenRow }: {
     armed.current = element.scrollTop > 2;
     remember();
     requestAnimationFrame(() => { restoring.current = false; });
-  }, [groups]);
+  }, [groups, own, pendingId]);
 
   const onScroll = () => {
     const element = scroller.current;
-    if (!element || restoring.current) return;
+    if (!element) return;
+    atEnd.current = isNearBottom(element.scrollHeight, element.scrollTop, element.clientHeight);
+    if (restoring.current) return;
     remember();
     if (element.scrollTop > 2) armed.current = true;
     else if (armed.current) { armed.current = false; void bridge.call('mightyLoadOlder', { paneId: session.id }); }
@@ -210,7 +252,8 @@ export function Timeline({ session, groups, older, history, onOpenRow }: {
         </div>
       )}
       {count === 0 ? <div className="mighty-muted mighty-pad">{t('graph.timeline.empty')}</div>
-        : groups!.map((group) => <Group key={group.runId} group={group} run={runs.get(group.runId)} paneId={session.id} provider={session.provider} onOpenRow={onOpenRow} />)}
+        : groups!.map((group) => <Group key={group.runId} group={group} run={runs.get(group.runId)} paneId={session.id} provider={session.provider} onOpenRow={onOpenRow}
+          pending={group.runId === pendingId ? pendingState : undefined} />)}
     </div>
   );
 }

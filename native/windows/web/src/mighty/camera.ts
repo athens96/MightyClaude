@@ -3,6 +3,7 @@
 // screen = node × zoom + camera.
 import type { MightyGraphRun } from '../store/models';
 import { CentreX, HistoryNodeID, ExecutionSuffix, ImagesSuffix, PlanRecordSuffix, PendingNodeID, WorkKind, maxY, nodeId, type Layout, type Rect, type Size } from './layout';
+import { ease } from '../theme/tokens';
 
 export interface Point { x: number; y: number }
 
@@ -80,6 +81,15 @@ export function admittedCamera(targetToken: string | null, consumedToken: string
   if (targetToken === null || targetToken === consumedToken) return requested;
   if (!targetCamera) return null;
   return { x: targetCamera.x + requested.x - current.x, y: targetCamera.y + requested.y - current.y };
+}
+
+/**
+ * The camera `progress` (0–1 of motion.scroll) of the way from `from` to `to` along the standard easing: an own send moves the
+ * diagram to its request this way (natural submit B2); under Reduce Motion the caller sets `to` at once.
+ */
+export function cameraTween(from: Point, to: Point, progress: number): Point {
+  const p = ease(Math.min(1, Math.max(0, progress)));
+  return { x: from.x + (to.x - from.x) * p, y: from.y + (to.y - from.y) * p };
 }
 
 // ── MightyGraphFollow ──

@@ -72,7 +72,13 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
   `removeAttachment`, `dismissAttachmentError`, `attachmentPreview`, `slashCommands`, `slashAction`, `composerMenu`,
   `composerMenuChoose`, `toggleFast`, `runSettings`, `applyRunSettings`, `sessionInfo`, `newConversation`.
   `send` takes `{paneId, text, second, attachments, clientId?}` and answers `{accepted, outcome, entryId?, runId?, clientId?, draft,
-  state}` (Core `SubmitReceipt.SendAnswer`, docs/interaction.md "보내기 응답").
+  state}` (Core `SubmitReceipt.SendAnswer`, docs/interaction.md "보내기 응답"). The draft is written with `updateDraft` once
+  typing rests 300 ms; Enter drops that write, empties the editor and adds the request to the store's `pending` before calling
+  `send` (natural submit B1, `src/pending/`).
+- `src/pending/` — natural submit on the page: the pending display rule and the submit answer (`display.ts`, checked against
+  `native/contracts/fixtures/pending.json`), `usePending` / `<Pending>` (the one loading mark every wait shows; it replaced
+  `.spinner` and `.card-spinner`), the sent requests the conversation and the three Mighty views draw with 전송 중 until the
+  host's blocks replace them (`requests.ts`), and where each view moves on an own send (`submitScroll.ts`, `scrollTargets`).
 - `src/cards/` — the cards over the composer (spec §4) and the status line in it (§5): next actions, plan history, background
   work, the waiting tool permission / question / plan (Markdown by `src/conversation`), the Antigravity card, web-open prompts
   and the sign-in card. The host reads them from the same never-shown WinUI pane view (`MainWindow.WebShell.Cards.cs`) and
