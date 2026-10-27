@@ -145,7 +145,7 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
             return
         }
         let decision = MobilePermissionAnswer(requestId: requestId, runId: runId, allow: allow, always: always).antigravityDecision
-        if let failure = await store.answerAntigravityPermission(sessionId: sessionId, request: card, decision: decision) { throw MightyError(failure) }
+        if let failure = await store.answerAntigravityPermission(sessionId: sessionId, request: card, decision: decision, fromThisMac: false) { throw MightyError(failure) }
     }
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {
         let (store, request) = try await MainActor.run { () -> (AppStore, ToolPermissionRequest) in

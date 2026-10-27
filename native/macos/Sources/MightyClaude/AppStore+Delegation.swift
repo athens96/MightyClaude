@@ -626,6 +626,9 @@ extension AppStore {
                   session.status == "running", canSteer(session), let runId = delegationRuns.runId(sessionId) else { return nil }
             guard await steerRunningTurn(sessionId, text: input) else { return nil }
             updateSession(sessionId) { $0.logs.append(LogEntry(kind: "user", text: input)); $0.logs = TranscriptRetention.trimmed($0.logs) }
+            // The user's 다음 실행 steering the held items in: the views move to that 중간 요청
+            // (natural submit B2), as for a queued row (`steerQueuedRow`).
+            if ownHeldReleases.contains(sessionId) { noteOwnSubmit(sessionId, target: .steer(input)) }
             return runId
         }
     }

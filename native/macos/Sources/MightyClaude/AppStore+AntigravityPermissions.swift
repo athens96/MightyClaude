@@ -31,9 +31,11 @@ extension AppStore {
     /// allow sends the continuation on the pane's conversation now, or queues
     /// it behind a busy pane, with the card's rules: put in place while that
     /// run goes (`once`) or for good (`always`). Returns why nothing happened,
-    /// which the card shows too; nil when it went through.
+    /// which the card shows too; nil when it went through. `fromThisMac`: the card's own
+    /// buttons here, whose continuation the pane's views move to (natural submit B2);
+    /// false for the phone's answer.
     @discardableResult
-    func answerAntigravityPermission(sessionId: String, request: AntigravityPermissionRequest, decision: AntigravityPermissionDecision) async -> String? {
+    func answerAntigravityPermission(sessionId: String, request: AntigravityPermissionRequest, decision: AntigravityPermissionDecision, fromThisMac: Bool = true) async -> String? {
         let key = antigravityResponseKey(sessionId: sessionId, card: request)
         guard !ending, !closingSessions.contains(sessionId), !antigravityResponses.contains(key),
               let card = antigravityBoard.pending(sessionId: sessionId, requestId: request.id, runId: request.runId) else { return L("remote.error.notPendingPermission") }
@@ -66,7 +68,7 @@ extension AppStore {
             return nil
         }
         antigravityBoard.remove(sessionId: sessionId)
-        guard start(sessionId, session: session, workspace: workspace, input: item.text, attachments: [], restoringDraft: nil, queued: item) else {
+        guard start(sessionId, session: session, workspace: workspace, input: item.text, attachments: [], restoringDraft: nil, queued: item, own: fromThisMac) else {
             antigravityBoard.restore(card, sessionId: sessionId)
             return refuse(error ?? L("remote.error.notPendingPermission"))
         }
