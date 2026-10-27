@@ -49,12 +49,11 @@ final class AppStore: ObservableObject, DelegationHost {
     /// save, and not published here, so a new line redraws only the pane showing it.
     let backgroundOutput = BackgroundOutputModel()
     /// The blocks read every tick (running, with an output file), the ones already read
-    /// once after they ended, the batch of reads out and since when, the graphs' shape
+    /// once after they ended, whether a batch of reads is out and its serial, the graphs' shape
     /// at the last prune, and the loop that ticks.
     var backgroundOutputPolling = Set<String>()
     var backgroundOutputRead = Set<String>()
     var backgroundOutputReading = false
-    var backgroundOutputReadingSince: ContinuousClock.Instant?
     var backgroundOutputBatch = 0
     var backgroundOutputShape: Int?
     /// Blocks that owe one read (their last once ended, or their one when redrawn) until a

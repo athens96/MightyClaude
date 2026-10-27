@@ -49,14 +49,16 @@ final class BackgroundOutputModel {
     }
 }
 
-/// The block a batch of reads is on, so a batch given up on names the one it is stuck on.
+/// The block a batch of reads is on and since when, so a batch given up on names the
+/// one it is stuck on, and a batch that is only slow is not given up on.
 final class BackgroundOutputProgress: @unchecked Sendable {
     private let lock = NSLock()
-    private var value: String?
-    var current: String? {
-        get { lock.lock(); defer { lock.unlock() }; return value }
-        set { lock.lock(); value = newValue; lock.unlock() }
+    private var value: (id: String, since: ContinuousClock.Instant)?
+    var current: (id: String, since: ContinuousClock.Instant)? {
+        lock.lock(); defer { lock.unlock() }; return value
     }
+    func start(_ id: String) { lock.lock(); value = (id, ContinuousClock.now); lock.unlock() }
+    func finish() { lock.lock(); value = nil; lock.unlock() }
 }
 
 /// One pane's background output lines, by block id: what its 흐름 blocks, 파이프라인
@@ -102,12 +104,17 @@ extension AppStore {
     func backgroundOutputTick() {
         guard !ending else { return }
         if backgroundOutputReading {
-            guard let since = backgroundOutputReadingSince, ContinuousClock.now - since > Self.backgroundOutputReadTimeout else { return }
-            // Given up on: the block it is stuck on is skipped until it answers, and later
-            // batches read on a fresh queue rather than wait behind it.
-            if let stuck = backgroundOutputProgress?.current { backgroundOutputHung[backgroundOutputBatch] = stuck }
+            // Only one file read for the whole timeout is given up on; a batch that is merely
+            // slow, moving from file to file, is waited for.
+            guard let stuck = backgroundOutputProgress?.current, ContinuousClock.now - stuck.since > Self.backgroundOutputReadTimeout else { return }
+            // That block is skipped until its batch answers, under that batch's id; the batch
+            // id moves on so the answer reads as stale, and later batches read on a fresh
+            // queue rather than wait behind it.
+            backgroundOutputHung[backgroundOutputBatch] = stuck.id
+            backgroundOutputBatch &+= 1
             backgroundOutputQueue = Self.makeBackgroundOutputQueue()
             backgroundOutputReading = false
+            backgroundOutputProgress = nil
         }
         let sessions = backgroundOutputSessions()
         let hung = Set(backgroundOutputHung.values)
@@ -151,17 +158,17 @@ extension AppStore {
         let progress = BackgroundOutputProgress()
         backgroundOutputProgress = progress
         backgroundOutputReading = true
-        backgroundOutputReadingSince = .now
         let batch = reads
         // A queue of its own, never Swift's shared pool: a read stalled on a dead mount
         // holds one thread of this queue, not one the app's tasks need.
-        backgroundOutputQueue.async {
+        backgroundOutputQueue.async { [weak self] in
             let results = batch.map { read -> (id: String, pane: String, lines: [String]?) in
-                progress.current = read.id
+                progress.start(read.id)
                 return (id: read.id, pane: read.pane, lines: AppStore.readBackgroundOutput(read.path))
             }
-            progress.current = nil
-            Task { @MainActor [weak self] in self?.applyBackgroundOutput(results, batch: batchID) }
+            progress.finish()
+            let store = self
+            Task { @MainActor in store?.applyBackgroundOutput(results, batch: batchID) }
         }
     }
 
@@ -174,7 +181,8 @@ extension AppStore {
     /// shape moved.
     private func pruneBackgroundOutput(_ sessions: [RunSession]) {
         var present = Set<String>()
-        if !backgroundOutput.isEmpty || !backgroundOutputPolling.isEmpty || !backgroundOutputRead.isEmpty || !backgroundOutputFinal.isEmpty {
+        if !backgroundOutput.isEmpty || !backgroundOutputPolling.isEmpty || !backgroundOutputRead.isEmpty || !backgroundOutputFinal.isEmpty
+            || !backgroundOutputHung.isEmpty {
             for session in sessions {
                 for runs in [graphHistory[session.id]?.runs ?? [], session.graphRuns ?? []] {
                     for run in runs { for agent in run.agents where agent.isTask { present.insert(agent.id) } }
@@ -183,6 +191,7 @@ extension AppStore {
             backgroundOutputPolling.formIntersection(present)
             backgroundOutputRead.formIntersection(present)
             backgroundOutputFinal.formIntersection(present)
+            backgroundOutputHung = backgroundOutputHung.filter { present.contains($0.value) }
         }
         // Every pane's object, Codex and Antigravity panes' too, goes with its pane.
         if backgroundOutput.retain(blocks: present, panes: Set(snapshot.sessions.map(\.id))) { mobileObserve() }
@@ -201,10 +210,11 @@ extension AppStore {
     /// it: the last lines stay once a run ended, and a missing file shows none. A batch
     /// given up on (`backgroundOutputReadTimeout`) is dropped when it finally answers.
     func applyBackgroundOutput(_ results: [(id: String, pane: String, lines: [String]?)], batch: Int) {
-        // A batch given up on: what it was stuck on may be read again; its lines are stale.
-        guard batch == backgroundOutputBatch else { backgroundOutputHung.removeValue(forKey: batch); return }
+        // Whatever this batch was stuck on may be read again, and a batch given up on
+        // brings stale lines.
+        backgroundOutputHung.removeValue(forKey: batch)
+        guard batch == backgroundOutputBatch else { return }
         backgroundOutputReading = false
-        backgroundOutputReadingSince = nil
         backgroundOutputProgress = nil
         guard !ending else { return }
         var changed = false
