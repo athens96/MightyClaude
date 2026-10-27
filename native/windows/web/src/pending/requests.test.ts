@@ -93,6 +93,19 @@ describe('pending requests', () => {
     expect(reconcile(waiting, both, at + 101 + ArrivedGrace, () => false)).toEqual([]);
   });
 
+  it('lets the run the answer names win over the one a request arrived with by its words', () => {
+    const both = pane([...before.logs, entry('u2', 'user', 'second request', at)], [...before.graphRuns!, run('r2', 'second request'), run('r3', 'second request')]);
+    const arrived = reconcile([sent()], both, at + 20, () => false);
+    expect(arrived[0]).toMatchObject({ phase: 'arrived', arrivedRunIds: ['r2', 'r3'] });
+    const named = applyAnswer(arrived, 'c1', 'started', { entryId: 'u2', runId: 'r3' }, '', at + 30)[0]!;
+    expect(named).toMatchObject({ phase: 'started', runId: 'r3' });
+    expect(named.arrivedRunIds).toBeUndefined();
+    expect(runsFor(named, both)).toEqual(['r3']);
+    // An answer naming no run leaves the arrived one as it was.
+    const unnamed = applyAnswer(arrived, 'c1', 'started', {}, '', at + 30)[0]!;
+    expect(unnamed).toMatchObject({ phase: 'arrived', arrivedRunIds: ['r2', 'r3'], answeredAt: at + 30 });
+  });
+
   it('names the next moment a request may go by time, so a quiet pane is settled then', () => {
     expect(nextDeadline([sent()])).toBeNull();
     const started = applyAnswer([sent()], 'c1', 'started', {}, '', at + 50);

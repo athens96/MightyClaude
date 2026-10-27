@@ -11,6 +11,8 @@ import { pendingBoard } from '../mighty/Structure';
 import { StructureNavigation } from '../mighty/structureMotion';
 import { submitScroll } from './submitScroll';
 import { applyAnswer, newPendingRequest } from './requests';
+import { pendingCopies } from '../mighty/Diagram';
+import { nodeId, WorkSuffix } from '../mighty/layout';
 
 const services = {
   bridge: { call: () => Promise.resolve(null) },
@@ -88,6 +90,22 @@ describe('the pipeline while a request is on its way', () => {
     expect(decision).toEqual({ scroll: 'toRequest', resetBoard: true });
     navigation.showNewest(boards);
     expect(navigation.index(boards)).toBe(2);
+  });
+});
+
+describe("the diagram's copy for a sent request", () => {
+  const session = { id: 'p', logs: [], graphRuns: [] } as unknown as RunSession;
+  const request = newPendingRequest(session, 'c7', 'words', 1000);
+  const t = translator([]);
+
+  it('covers the stand-in run whole, and on the host run only its request block', () => {
+    const stand = pendingCopies(request, 'pending-c7', true, 'claude', t);
+    expect([...stand.keys()]).toEqual([nodeId('pending-c7', 'request'), nodeId('pending-c7', WorkSuffix)]);
+    const host = pendingCopies(request, 'r1', false, 'claude', t);
+    // No 요청 실패 on a run that finished before its own copy came.
+    expect([...host.keys()]).toEqual([nodeId('r1', 'request')]);
+    const failed = applyAnswer([request], 'c7', 'blocked', {}, 'why', 2000)[0]!;
+    expect(pendingCopies(failed, 'pending-c7', true, 'claude', t).get(nodeId('pending-c7', 'result'))).toMatchObject({ kind: 'result', tone: 'err' });
   });
 });
 

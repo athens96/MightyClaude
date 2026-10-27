@@ -138,6 +138,8 @@ export function Composer({ session }: { session: RunSession }) {
     if (drawn) {
       store.dispatch({ kind: 'pending', action: 'add', paneId, request: newPendingRequest(session, clientId, words, Date.now()) });
     }
+    /** Whether the request's block now shows its failure (it may have been replaced by the host's already, or never drawn). */
+    const blockShowsFailure = (id: string) => (store.getState().pending[paneId] ?? []).some((request) => request.clientId === id && request.phase === 'failed');
     /** A send that did not go gives its words back, only to an editor still empty and not typed in since. */
     const restore = (draft: string) => {
       if ((editor.current?.value ?? '') !== '' || edited.current || draft.length === 0) return;
@@ -154,14 +156,14 @@ export function Composer({ session }: { session: RunSession }) {
       restore(result.draft);
       if (result.outcome === 'queued') flashQueue();
       setOutcome(result.outcome);
-      // A failure says itself once: in the request's block when one was drawn, else in the composer's error row.
-      if (result.outcome === 'notStarted' && !drawn) setError(t('remote.error.startFailed'));
+      // A failure says itself once: in the request's block when one shows it, else in the composer's error row.
+      if (result.outcome === 'notStarted' && !blockShowsFailure(clientId)) setError(t('remote.error.startFailed'));
     } catch (failure) {
       const message = failure instanceof Error ? failure.message : String(failure);
       store.dispatch({ kind: 'pending', action: 'fail', paneId, clientId, message, at: Date.now() });
       restore(sent);
       setOutcome('error');
-      if (!drawn) setError(message);
+      if (!blockShowsFailure(clientId)) setError(message);
     } finally {
       sending.current = false;
     }

@@ -155,8 +155,13 @@ export function applyAnswer(requests: readonly PendingRequest[], clientId: strin
   let next: PendingRequest | null;
   switch (outcome) {
     case 'started':
-      // Kept until the host's entry or run comes (a delta may have brought it already: the store reconciles at once).
-      next = { ...request, phase: 'started', entryId: ids.entryId ?? undefined, runId: ids.runId ?? undefined, answeredAt: now };
+      // Kept until the host's entry or run comes (a delta may have brought it already: the store reconciles at once). One that
+      // arrived by its words before the answer keeps its run unless the answer names one: then the answer's run wins.
+      if (request.phase === 'arrived' && !ids.runId) {
+        next = { ...request, entryId: ids.entryId ?? request.entryId, answeredAt: now };
+        break;
+      }
+      next = { ...request, phase: 'started', entryId: ids.entryId ?? undefined, runId: ids.runId ?? undefined, answeredAt: now, arrivedAt: undefined, arrivedRunIds: undefined };
       break;
     case 'notStarted':
     case 'blocked':

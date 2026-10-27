@@ -51,15 +51,16 @@ function edgePaths(layout: Layout, running: ReadonlySet<string>): { quiet: strin
  * (its 전송 중 is the block's pending mark), 실행 waiting for its answer, and for a request that did not start, 실행 stopped and
  * a failed result carrying the host's message.
  */
-function pendingCopies(request: PendingRequest, id: string, provider: string, t: Translate): Map<string, MightyBlockCopy> {
+export function pendingCopies(request: PendingRequest, id: string, standIn: boolean, provider: string, t: Translate): Map<string, MightyBlockCopy> {
   const failed = request.phase === 'failed';
   const copy = (kind: string, title: string, status: string, tone: string): MightyBlockCopy =>
     ({ kind, title, state: '', status, tone, help: '', indicator: 'none', outline: 'none', fromRecord: false, provider: kind === 'request' ? provider : undefined });
-  return new Map([
-    [nodeId(id, 'request'), copy('request', t('graph.block.nextRequest'), '', 'run')],
-    [nodeId(id, WorkSuffix), copy('work', t('graph.block.execution'), failed ? 'stopped' : 'starting', failed ? 'stop' : 'idle')],
-    [nodeId(id, 'result'), copy('result', t('graph.block.resultError'), 'error', 'err')],
-  ]);
+  const copies = new Map([[nodeId(id, 'request'), copy('request', t('graph.block.nextRequest'), '', 'run')]]);
+  // On the host's own run (it has arrived, its copy is on its way) only the request block is covered: its 실행 and result
+  // wait for their own copy, so a run that finished at once never shows 요청 실패 meanwhile.
+  if (standIn) copies.set(nodeId(id, WorkSuffix), copy('work', t('graph.block.execution'), failed ? 'stopped' : 'starting', failed ? 'stop' : 'idle'));
+  if (failed) copies.set(nodeId(id, 'result'), copy('result', t('graph.block.resultError'), 'error', 'err'));
+  return copies;
 }
 
 /**
@@ -122,7 +123,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
   /** The run whose blocks carry the request's copy and pending mark: the stand-in, else the host's newest run for it. */
   const pendingRunIdOf = !request ? null : standIn ? pendingRunId(request) : arrivedKey.split('\n').pop() ?? null;
   const runs = useMemo(() => (request && standIn ? [...hostRuns, pendingRun(request, session.provider)] : hostRuns), [hostRuns, request, standIn, session.provider]);
-  const copies = useMemo(() => (request && pendingRunIdOf ? pendingCopies(request, pendingRunIdOf, session.provider, t) : null), [request, pendingRunIdOf, session.provider, t]);
+  const copies = useMemo(() => (request && pendingRunIdOf ? pendingCopies(request, pendingRunIdOf, standIn, session.provider, t) : null), [request, pendingRunIdOf, standIn, session.provider, t]);
   const pendingState = useMemo(() => (request ? requestState(request) : null), [request]);
 
   // A released drag shows its size at once; the saved sizes coming back from the host take over.
