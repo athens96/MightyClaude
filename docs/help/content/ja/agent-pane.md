@@ -75,7 +75,8 @@ GoogleのエージェントはAntigravity CLI(`agy`)で動きます。Antigravit
 ### 送り先 {#ask-target}
 oh-my-claudecodeがインストールされたClaudeペインでは、入力欄に{{ui:composer.ask.menuLabel}}スイッチが表示されます。インストール済みの他のCLI(Codex、Antigravityなど)が一覧に並び、1つ選ぶと、以降のリクエストはoh-my-claudecodeの`ask`を通ってそのCLIに送られます。答えはClaudeの返信の中に戻ってきます。{{ui:composer.ask.claude}}を選ぶと、これまでどおりClaudeに送ります。Mac、Windows、スマートフォンのいずれでも使えます。
 - 他のCLIに尋ねている間は、添付を送れません。
-- 尋ねたCLIは、oh-my-claudecodeが起動するとおりに動きます。Mighty Claudeの権限モードや承認カードは適用されません。
+- oh-my-claudecodeは、選んだCLIを承認の確認とサンドボックスをオフにして起動します。そのためそのCLIは、確認なしにこのフォルダのファイルを変更したり、コマンドを実行したりできます。Mighty Claudeの権限モードと承認カードが及ぶのは、それを起動するClaudeの手順だけです。
+- Windowsでは、oh-my-claudecodeはAntigravityに尋ねられないため、一覧に表示されません。代わりにGemini CLIを選んでください。
 - `/`で始まる文章は、そのままClaudeに送られます。
 
 ### スラッシュコマンド {#slash}
