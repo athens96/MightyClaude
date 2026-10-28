@@ -516,7 +516,7 @@ extension AppStore {
     private func mobileStructure(_ session: RunSession, runs: [MightyGraphRun], style: RegisteredStyle?,
                                  titles: StyleRequestTitles? = nil, runnable: [RegisteredStyle] = []) -> MobileStructureCache.Built {
         let phase = style.flatMap {
-            $0.evaluator.currentPhase(session: session, fileSourceStates: styleFileStates($0, for: session), planStage: stylePlanStage($0, for: session))
+            $0.evaluator.currentPhase(session: session.withoutNoticeRuns, fileSourceStates: styleFileStates($0, for: session), planStage: stylePlanStage($0, for: session))
         }
         let catalog = providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models
         return mobileStructures.structure(pane: session.id, runs: runs, style: style?.evaluator, currentPhase: phase,
@@ -577,7 +577,7 @@ extension AppStore {
         // a legacy pane's runs: their inputs are its user entries, and that is
         // the fallback the phase itself uses.
         var prompts: [String] = []
-        if let saved = session.graphRuns { prompts = saved.map(\.input) }
+        if let saved = session.graphRuns { prompts = MightyGraphSupport.requestRuns(saved).map(\.input) }
         else { prompts = session.logs.filter { $0.kind == "user" }.map(\.text) }
         // §1.16: what the state sources read moves the phase and the widgets.
         let state = styleState(style, for: session)

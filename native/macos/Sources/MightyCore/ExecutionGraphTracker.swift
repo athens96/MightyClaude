@@ -68,8 +68,12 @@ final class ExecutionGraphTracker {
     private var noticeTurn: String?
     /// The notice run, complete at once and without a result, that notices taken into a running turn share until its result.
     private var absorbedRun: String?
+    /// The earlier notice run a notice turn answers in again while it concerns only blocks copied before.
+    private var mergeTurn: String?
     /// Each notice run's copies of finished blocks, oldest first.
     private var noticeCopies: [String: [String]] = [:]
+    /// Each copied block's latest notice run.
+    private var copiedIn: [String: String] = [:]
     private var messageOrder: [String] = []
     private var unnamedUsage = 0
     private var compactions = 0
@@ -320,18 +324,28 @@ final class ExecutionGraphTracker {
                 if text.contains("<task-notification>") { settleTasks(in: text, notice: parentTool == nil) }
                 if text.contains(AgentHandback.opening) { settleHandbacks(in: text, origin: value["origin"] as? [String: Any], notice: parentTool == nil) }
             }
-        } else if type == "result", ClaudeStream.isNotificationResult(value) || (parentTool == nil && noticeTurn != nil) {
+        } else if type == "result", ClaudeStream.isNotificationResult(value) || (parentTool == nil && (noticeTurn != nil || mergeTurn != nil)) {
             guard parentTool == nil else { return }
-            let run = noticeTurn
+            let run = noticeTurn, merged = mergeTurn
             clearNoticeTurn()
             let answer = (value["result"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let failed = value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error")
             if let run {
                 // A notice turn's answer is its own run's result; the request's result stays as it was.
-                let failed = value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error")
                 update(ExecutionGraphSupport.mainNodeID(runId: run)) { node in
                     if !answer.isEmpty { node.output = answer }
                     node.state = failed ? "error" : "completed"
                 }
+                return
+            }
+            if let merged {
+                // A turn about blocks an earlier notice run already holds goes on in that run's result, as a new paragraph.
+                if !answer.isEmpty {
+                    update(ExecutionGraphSupport.mainNodeID(runId: merged)) { node in
+                        node.output = (node.output?.isEmpty ?? true) ? answer : node.output! + "\n\n" + answer
+                    }
+                }
+                setNoticeState(merged, failed ? "error" : "completed")
                 return
             }
             // Any other notice turn (a delegation notice, a sub-agent's message) follows the request's answer in the result.
@@ -712,22 +726,39 @@ final class ExecutionGraphTracker {
         }
     }
     /// A finished background block goes into a notice run (`BackgroundNoticeRuns`) as a copy. A root-level notice
-    /// after the request's own turn opens the notice turn's run, which every notice until that turn's result joins
-    /// and whose result is Claude's answer. A notice taken into a running turn (a nested agent's, or one in the
+    /// after the request's own turn opens the notice turn's run, which every new block until that turn's result
+    /// joins and whose result is Claude's answer. A notice taken into a running turn (a nested agent's, or one in the
     /// request's or a steer's own turn) joins a run that is complete at once and has no result; the running turn's
-    /// answer stays its own. A block notified again in the same run updates its copy.
+    /// answer stays its own. A block copied before only updates its latest copy: a notice turn about such blocks
+    /// alone answers in that earlier run again (`mergeTurn`), and one that also brings a new block opens a run for
+    /// the new blocks and adds nothing to the earlier one.
     private func addNotice(for id: String, root: Bool) {
-        guard provider == "claude", let block = nodes[id] else { return }
+        guard provider == "claude", nodes[id] != nil else { return }
+        let opensTurn = root && turnEnded && steeredTurn == nil
+        if let earlier = copiedIn[id] {
+            copy(id, into: earlier)
+            if noticeTurn == nil, mergeTurn == nil, opensTurn {
+                mergeTurn = earlier; setNoticeState(earlier, "running")
+            }
+            return
+        }
         let run: String
         if let open = noticeTurn { run = open }
-        else if root, turnEnded, steeredTurn == nil {
+        else if opensTurn || mergeTurn != nil {
             guard let opened = openNoticeRun(running: true) else { return }
+            // The turn brought new work after all: the earlier run gets nothing of it.
+            if let merged = mergeTurn { setNoticeState(merged, "completed"); mergeTurn = nil }
             noticeTurn = opened; run = opened
         } else if let open = absorbedRun { run = open }
         else {
             guard let opened = openNoticeRun(running: false) else { return }
             absorbedRun = opened; run = opened
         }
+        copy(id, into: run)
+    }
+    /// Creates or updates block `id`'s copy in notice run `run`, and the run's request lines.
+    private func copy(_ id: String, into run: String) {
+        guard let block = nodes[id] else { return }
         let main = ExecutionGraphSupport.mainNodeID(runId: run)
         let joined = run + ":" + id
         let copyID = CoreValidation.identifier(joined) ? joined : ExecutionGraphSupport.identifier(run, "copy:" + id)
@@ -738,6 +769,7 @@ final class ExecutionGraphTracker {
             guard let normalized = ExecutionGraphSupport.normalized(copy) else { return }
             nodes[copyID] = normalized; order.append(copyID); emit(normalized)
             noticeCopies[run, default: []].append(copyID)
+            if copiedIn[id] != nil || copiedIn.count < 512 { copiedIn[id] = run }
         } else {
             update(copyID) { copy in
                 copy.title = block.title; copy.input = block.input; copy.state = block.state
@@ -750,6 +782,14 @@ final class ExecutionGraphTracker {
                 + L(copy.state == "completed" ? "graph.block.taskNotice.completed" : copy.state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
         }
         update(main) { $0.input = lines.joined(separator: "\n") }
+    }
+    /// A notice run's main block running again for a turn that answers in it, or ended. Unlike `update`, an ended
+    /// main may run again: the turn after it is new work in the same run.
+    private func setNoticeState(_ run: String, _ state: String) {
+        let main = ExecutionGraphSupport.mainNodeID(runId: run)
+        guard !finished, var node = nodes[main], node.state != state else { return }
+        node.state = state; node.updatedAt = mightyTimestamp()
+        nodes[main] = node; emit(node)
     }
     /// The next notice run's main block: running until a notice turn's result, or complete at once for absorbed notices.
     private func openNoticeRun(running: Bool) -> String? {
@@ -764,7 +804,7 @@ final class ExecutionGraphTracker {
     }
     /// A notice turn or a steered turn ended: the next one starts with no notices.
     private func clearNoticeTurn() {
-        steeredTurn = nil; noticeTurn = nil; absorbedRun = nil
+        steeredTurn = nil; noticeTurn = nil; absorbedRun = nil; mergeTurn = nil
     }
     /// Messages a background sub-agent sent this session (`AgentHandback`). Its
     /// framed final report is its result and ends it; like the agent's

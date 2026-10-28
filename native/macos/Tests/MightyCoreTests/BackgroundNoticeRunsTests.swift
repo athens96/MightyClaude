@@ -104,6 +104,52 @@ struct BackgroundNoticeRunsTests {
         #expect(runs.last?.sourceRunID == "proc-2")
     }
 
+    /// A notification taken into the request's own turn: its finished notice run comes last while the request still
+    /// runs, yet the request stays the newest request, and its later lines, status and usage are still its own.
+    @Test func anAbsorbedNoticeRunAfterARunningRequestLeavesItTheNewestRequest() throws {
+        let box = SessionBox(RunSession(id: "pane", workspaceId: "space", title: "Claude", provider: "claude"))
+        func record(_ event: RunEvent) { box.session.recordGraph(event) }
+        record(RunEvent(sessionId: "pane", type: "log", entry: LogEntry(id: "request-one", kind: "user", text: "build it", provider: "claude")))
+        let tracker = ExecutionGraphTracker(runID: "proc-1", input: "build it", emit: { record(RunEvent(sessionId: "pane", type: "graph", graph: $0)) })
+        for event in [command("build", "npm run build", description: "Build the app"), launched("build", task: "b1"), notification("b1", summary: "Build done")] {
+            tracker.consume(event)
+        }
+        var runs = box.session.mightyGraphRuns
+        #expect(runs.map(\.id) == ["request-one", "proc-1:notice:1"]); #expect(runs.last?.status == "completed")
+        #expect(MightyGraphSupport.newestRequestRun(runs)?.id == "request-one"); #expect(MightyGraphSupport.requestRuns(runs).map(\.id) == ["request-one"])
+        #expect(box.session.withoutNoticeRuns.graphRuns?.map(\.id) == ["request-one"])
+        record(RunEvent(sessionId: "pane", type: "log", entry: LogEntry(id: "line-1", kind: "assistant", text: "Built and done.", provider: "claude")))
+        record(RunEvent(sessionId: "pane", type: "usage", usage: SessionUsage(provider: "claude", source: "stream", model: "claude-opus-4-5")))
+        tracker.consume(result("Built and done."))
+        record(RunEvent(sessionId: "pane", type: "status", status: "completed"))
+        runs = box.session.mightyGraphRuns
+        let request = try #require(runs.first), notice = try #require(runs.last)
+        #expect(request.rootEntries.contains { $0.text == "Built and done." }); #expect(notice.rootEntries.isEmpty)
+        #expect(request.status == "completed"); #expect(request.finalOutput == "Built and done.")
+        #expect(notice.finalOutput == nil)
+        #expect(request.nodeModelLabel == GraphModelLabel.nodeModelLabel(cliReportedModel: "claude-opus-4-5", configuredModel: request.configuredModel ?? "default"))
+    }
+
+    /// A notice turn's lines and status never reach a request still waiting for its own run.
+    @Test func aRunningNoticeTurnKeepsItsLinesFromAWaitingRequest() throws {
+        let box = SessionBox(RunSession(id: "pane", workspaceId: "space", title: "Claude", provider: "claude"))
+        func record(_ event: RunEvent) { box.session.recordGraph(event) }
+        record(RunEvent(sessionId: "pane", type: "log", entry: LogEntry(id: "request-one", kind: "user", text: "build it", provider: "claude")))
+        let tracker = ExecutionGraphTracker(runID: "proc-1", input: "build it", emit: { record(RunEvent(sessionId: "pane", type: "graph", graph: $0)) })
+        for event in [command("build", "npm run build", description: "Build the app"), launched("build", task: "b1"), result("Building.")] { tracker.consume(event) }
+        box.session.beginGraphRun(input: "and lint", id: "request-two", configuredModel: "default", status: "starting")
+        tracker.consume(notification("b1", summary: "Build done"))
+        record(RunEvent(sessionId: "pane", type: "log", entry: LogEntry(id: "line-1", kind: "assistant", text: "The build passed.", provider: "claude")))
+        var runs = box.session.mightyGraphRuns
+        #expect(runs.map(\.id) == ["request-one", "proc-1:notice:1", "request-two"])
+        #expect(runs[1].status == "running"); #expect(runs[1].rootEntries.contains { $0.text == "The build passed." })
+        #expect(runs[2].status == "starting"); #expect(runs[2].rootEntries.isEmpty)
+        record(RunEvent(sessionId: "pane", type: "status", status: "completed"))
+        runs = box.session.mightyGraphRuns
+        #expect(runs[2].status == "starting"); #expect(runs[2].finalOutput == nil)
+        #expect(MightyGraphSupport.newestRequestRun(runs)?.id == "request-two")
+    }
+
     @Test func theFlagsSurviveCodingAndOldSavesReadAsAbsent() throws {
         let run = MightyGraphRun(id: "r:notice:1", agents: [MightyGraphAgent(id: "c", kind: "task", background: true, sourceBlockId: "graph-source")], noticeRun: true)
         let decoded = try JSONDecoder().decode(MightyGraphRun.self, from: JSONEncoder().encode(run))

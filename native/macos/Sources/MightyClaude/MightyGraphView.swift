@@ -261,7 +261,7 @@ struct MightyGraphView: View {
             } else if viewMode == .structure {
                 MightyStructureView(sessionID: sessionID, provider: provider,
                                     boards: structureBoards(), styleName: styleName,
-                                    styleTitles: styleTitles, newestRunID: runs.last?.id, catalog: catalog, memory: structureCache.memory,
+                                    styleTitles: styleTitles, newestRunID: MightyGraphSupport.newestRequestRun(runs)?.id, catalog: catalog, memory: structureCache.memory,
                                     pending: pending, backgroundOutput: backgroundOutput.lines) { nodeID in
                     // The diagram opens with its camera on the request or block whose button was clicked.
                     onFocus()
@@ -282,7 +282,7 @@ struct MightyGraphView: View {
                                   else { bubbleWidth = Double(size.width); bubbleHeight = Double(size.height) }
                               },
                               onResize: { resize(graph, $0, $1, $2, $3) }, onResetSize: resetSize,
-                              onStranded: { reaim(graph, after: $0) }, newestRunID: runs.last?.id,
+                              onStranded: { reaim(graph, after: $0) }, newestRunID: MightyGraphSupport.newestRequestRun(runs)?.id,
                               onReachTop: { if history?.phase == .idle { onLoadOlder() } },
                               card: { card($0, executions: linksByKey) })
                 // The canvas changing height — the composer growing as a draft is typed,
@@ -347,7 +347,7 @@ struct MightyGraphView: View {
         // The user's own request (natural submit B2): moved to once its block is there;
         // a 다음 실행 once its 중간 요청 block arrives.
         .onChange(of: ownSubmit) { _, _ in handleOwnSubmit() }
-        .onChange(of: runs.last?.agents.filter(\.isSteer).map(\.id) ?? []) { _, _ in handleOwnSubmit() }
+        .onChange(of: MightyGraphSupport.newestRequestRun(runs)?.agents.filter(\.isSteer).map(\.id) ?? []) { _, _ in handleOwnSubmit() }
     }
 
     /// Moves the views to the pane's newest own request, once (`SubmitScroll`, own): the
@@ -369,7 +369,7 @@ struct MightyGraphView: View {
             if viewMode == .timeline { timelineReveal = TimelineReveal(serial: own.serial, id: id) }
         case .steer(let text):
             let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let run = runs.last,
+            guard let run = MightyGraphSupport.newestRequestRun(runs),
                   let steer = run.agents.last(where: { $0.isSteer && $0.input.trimmingCharacters(in: .whitespacesAndNewlines) == words }) else { return }
             handledOwnSubmit = own.serial
             publish(.reaim(nodeID: MightyGraphBlockSize.nodeID(runID: run.id, suffix: "agent:" + steer.id), alignTop: false), animated: viewMode == .diagram)
@@ -445,7 +445,7 @@ struct MightyGraphView: View {
     private func reaim(_ graph: MightyGraphLayout, after loss: MightyGraphCamera.StrandedWatch.Loss) {
         // A request that arrived since the detection aims the camera itself, and a
         // following camera keeps its own block on screen.
-        guard runs.last?.id == loss.newestRunID, !follow.watch.following else { return }
+        guard MightyGraphSupport.newestRequestRun(runs)?.id == loss.newestRunID, !follow.watch.following else { return }
         let nodeIDs = Set(graph.nodes.map(\.id))
         // Back to the card they were reading, not somewhere they never were.
         if nodeIDs.contains(loss.lookedAtNodeID) { publish(.reaim(nodeID: loss.lookedAtNodeID, alignTop: false)); return }
@@ -952,7 +952,7 @@ struct MightyGraphView: View {
                 guard new == Self.timelineHistoryID, let old, old != new, history?.phase == .idle else { return }
                 onLoadOlder()
             }
-            .onChange(of: runs.last?.id) { _, last in
+            .onChange(of: MightyGraphSupport.newestRequestRun(runs)?.id) { _, last in
                 // The user's own request is moved to by `revealTimeline`, gliding and reliably;
                 // anyone else's is followed only from the newest end.
                 guard let last, ownSubmit?.target != .run(last),

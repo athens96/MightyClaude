@@ -347,8 +347,10 @@ public enum MightyStructure {
         let initial = style.currentPhase(prompts: [])?.id ?? first.id
         let pane = currentPhase.flatMap { manifest.phase($0.id)?.id }
         var result: [String] = []
+        // The pane's phase is its newest request's; a notice run after it is not one.
+        let newestRequest = runs.lastIndex { $0.noticeRun != true }
         for (index, run) in runs.enumerated() {
-            let newest = index == runs.count - 1 ? pane : nil
+            let newest = index == newestRequest ? pane : nil
             result.append(newest ?? recognisedPhase(run.input, style: style) ?? result.last ?? initial)
         }
         return result

@@ -80,7 +80,7 @@ struct SessionPaneView: View {
         guard let style else { return nil }
         if guidedSelection.startingNew, case .actions(let start, _, _) = style.manifest.rules.start { return style.manifest.phase(start) }
         // §1.16: history plus the pane's state sources, as the phone panel reads them.
-        return style.evaluator.currentPhase(session: session, fileSourceStates: store.styleFileStates(style, for: session),
+        return style.evaluator.currentPhase(session: session.withoutNoticeRuns, fileSourceStates: store.styleFileStates(style, for: session),
                                             planStage: store.stylePlanStage(style, for: session))
     }
     /// The precedence sweep of §1.10, built once per render rather than three
@@ -217,7 +217,7 @@ struct SessionPaneView: View {
                 // list or the user hid the line.
                 if session.kind == "claude", let work = session.backgroundWork,
                    PlanCardSupport.showsBackgroundStrip(work, mighty: showsMightyGraph, styleDrawsTasks: PlanCardSupport.styleDrawsTasks(style?.manifest), enabled: store.showsBackgroundWork) {
-                    BackgroundWorkStrip(sessionId: session.id, work: work, run: session.graphRuns?.last, output: store.backgroundOutput.pane(session.id))
+                    BackgroundWorkStrip(sessionId: session.id, work: work, run: MightyGraphSupport.newestRequestRun(session.graphRuns ?? []), output: store.backgroundOutput.pane(session.id))
                 }
                 ToolPermissionBar(sessionId: session.id)
                 if let request = store.webOpenRequests.first(where: { $0.agentPaneId == session.id }) {

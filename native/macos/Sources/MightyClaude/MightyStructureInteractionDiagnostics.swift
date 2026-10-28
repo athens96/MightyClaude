@@ -41,7 +41,7 @@ enum MightyStructureInteractionDiagnostics {
             func boards() -> [MightyStructure.Board] { MightyStructure.boards(MightyStructure.make(runs: runs, style: nil, currentPhase: nil)) }
             func view() -> MightyStructureView {
                 MightyStructureView(sessionID: sessionID, provider: "claude", boards: boards(),
-                                    styleTitles: StyleRequestTitles(), newestRunID: runs.last?.id, memory: memory, onReveal: { _ in })
+                                    styleTitles: StyleRequestTitles(), newestRunID: MightyGraphSupport.newestRequestRun(runs)?.id, memory: memory, onReveal: { _ in })
             }
             let host = NSHostingView(rootView: DockFixture(page: view()))
             window.contentView = host

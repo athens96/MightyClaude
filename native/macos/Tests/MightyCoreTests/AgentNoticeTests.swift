@@ -56,7 +56,7 @@ struct AgentNoticeTests {
     @Test func streamsSettleTheBlockAndOpenNoticeRuns() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             let cases = try #require(try Self.load()["streams"] as? [[String: Any]])
-            #expect(cases.count >= 24)
+            #expect(cases.count >= 25)
             for item in cases {
                 let name = item["name"] as? String ?? ""
                 let runID = "agent-notices"
@@ -109,9 +109,10 @@ struct AgentNoticeTests {
                 for run in runs {
                     let notice = try #require(run.main, "\(name): \(run.id) main")
                     #expect(notice.title == L("graph.background.noticeRun") && notice.parentId == nil, "\(name): \(run.id) main")
-                    // A run with Claude's answer is complete; the request's result never holds that answer.
+                    // A run with Claude's answer is complete, or runs again for a later turn that answers in it; the
+                    // request's result never holds that answer.
                     if let output = notice.output {
-                        #expect(notice.state == "completed", "\(name): \(run.id) state")
+                        #expect(["completed", "running"].contains(notice.state), "\(name): \(run.id) state")
                         #expect(main.output?.contains(output) != true, "\(name): \(run.id) answer in the request's result")
                     }
                     for copy in run.copies {
@@ -174,7 +175,7 @@ struct AgentNoticeTests {
     }
 
     /// A hand-back recorded as a meta line opens a notice turn, as live: the block takes the report, and that turn's
-    /// answer is the result of a notice run of its own; the notification after it opens the next one.
+    /// answer is the result of a notice run of its own; the notification after it answers in the same run.
     @Test func aRecordedHandBackTurnSettlesTheAgentAsLive() throws {
         let agent = "a1b2c3d4e5f6a7b8c"
         let notice = "<task-notification>\n<task-id>\(agent)</task-id>\n<tool-use-id>toolu_FAKEagent0001</tool-use-id>\n<status>completed</status>\n<summary>Agent \"Survey the docs\" finished</summary>\n</task-notification>"
@@ -188,13 +189,13 @@ struct AgentNoticeTests {
             ["type": "user", "uuid": "n1", "timestamp": stamp(32), "origin": ["kind": "task-notification"], "message": ["role": "user", "content": notice]],
             answer("a4", "Already handled.", at: 33),
         ])
-        #expect(runs.count == 3)
+        #expect(runs.count == 2)
         let run = try #require(runs.first)
         try check(run)
         #expect(run.finalOutput == "Started the survey."); #expect(run.noticeRun == nil)
         let notices = Array(runs.dropFirst())
-        #expect(notices.map(\.noticeRun) == [true, true])
-        #expect(notices.map(\.finalOutput) == ["The survey found one page.", "Already handled."])
+        #expect(notices.map(\.noticeRun) == [true])
+        #expect(notices.map(\.finalOutput) == ["The survey found one page.\n\nAlready handled."]); #expect(notices.first?.status == "completed")
         let copy = try #require(notices.first?.agents.first)
         #expect(copy.sourceBlockId == run.agents.first(where: { $0.kind == nil })?.id); #expect(copy.background == true)
         #expect(copy.entries.last(where: { $0.id.hasSuffix("-answer") })?.text == Self.report)

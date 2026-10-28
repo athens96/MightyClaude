@@ -240,7 +240,7 @@ extension AppStore {
 
     /// §1.17: what a plan-state style reads of the pane.
     func styleRunState(for session: RunSession) -> StyleRunStateInput {
-        StyleRunStateInput.of(session, pendingPlan: PlanCardSupport.pendingPlan(toolPermissions[session.id]) != nil)
+        StyleRunStateInput.of(session.withoutNoticeRuns, pendingPlan: PlanCardSupport.pendingPlan(toolPermissions[session.id]) != nil)
     }
 
     /// §1.17: the plan stage the pane's phase bar reads, nil for a style that

@@ -681,7 +681,7 @@ enum HelpCapture {
         let waiting = store.toolPermissions[id]?.first
         switch screen {
         case .agentMighty, .agentTimeline, .agentStructure, .resultCard:
-            guard session.agentViewMode == "mighty", let finished = session.graphRuns?.last(where: { $0.status == "completed" && !$0.resultEntries.isEmpty }) else { throw MightyError("the Mighty pane has no finished request") }
+            guard session.agentViewMode == "mighty", let finished = session.graphRuns?.last(where: { $0.noticeRun != true && $0.status == "completed" && !$0.resultEntries.isEmpty }) else { throw MightyError("the Mighty pane has no finished request") }
             let root = store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) }
             if screen == .resultCard, ReferenceLinkSupport.resultFiles(in: finished.resultEntries.map(\.text), root: root).isEmpty { throw MightyError("the result names no file in its workspace") }
         case .backgroundWork:

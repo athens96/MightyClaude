@@ -293,9 +293,10 @@ public struct MightyGraphLayout {
     }
 
     /// The block the camera stands on for the newest request: its 실행 block while
-    /// it runs, where its work shows, else the request; nil without a request.
+    /// it runs, where its work shows, else the request; nil without a request. A
+    /// notice run after it is not a request (`MightyGraphSupport.newestRequestRun`).
     public func newestRequestTargetID(_ runs: [MightyGraphRun]) -> String? {
-        guard let last = runs.last else { return nil }
+        guard let last = MightyGraphSupport.newestRequestRun(runs) else { return nil }
         let work = Self.nodeID(last, suffix: Self.workSuffix)
         if !Self.finished(last), nodes.contains(where: { $0.id == work }) { return work }
         return Self.nodeID(last, suffix: "request")

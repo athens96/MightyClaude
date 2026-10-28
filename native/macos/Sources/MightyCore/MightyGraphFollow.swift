@@ -29,7 +29,8 @@ public enum MightyGraphFollow {
     /// the draft block is the only block there is.
     public static func targetID(_ layout: MightyGraphLayout, runs: [MightyGraphRun]) -> String? {
         guard !runs.isEmpty else { return layout.nodes.first { $0.content == .draft }?.id }
-        let newest = runs.count - 1
+        // A notice run after the newest request is not one (`MightyGraphSupport.newestRequestRun`).
+        let newest = runs.lastIndex { $0.noticeRun != true } ?? runs.count - 1
         var best: MightyGraphLayout.Node?
         for node in layout.nodes where run(of: node.content) == newest {
             if node.frame.maxY >= (best?.frame.maxY ?? -.infinity) { best = node }

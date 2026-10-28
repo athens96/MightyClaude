@@ -354,7 +354,22 @@ public enum MightyGraphSupport {
     }
 }
 
+extension MightyGraphSupport {
+    /// The runs the user asked for: every run but the notice runs (`BackgroundNoticeRuns`).
+    public static func requestRuns(_ runs: [MightyGraphRun]) -> [MightyGraphRun] { runs.filter { $0.noticeRun != true } }
+    /// The user's newest request. A notice run may come after it, even while it still runs.
+    public static func newestRequestRun(_ runs: [MightyGraphRun]) -> MightyGraphRun? { runs.last { $0.noticeRun != true } }
+}
+
 extension RunSession {
+    /// The pane as readers of "the user's requests" see it (a style's phase and plan stage): without notice runs.
+    public var withoutNoticeRuns: RunSession {
+        guard graphRuns?.contains(where: { $0.noticeRun == true }) == true else { return self }
+        var session = self
+        session.graphRuns = graphRuns.map(MightyGraphSupport.requestRuns)
+        return session
+    }
+
     public var mightyGraphRuns: [MightyGraphRun] {
         (graphRuns ?? MightyGraphSupport.legacyRuns(self)).map { original in
             var run = original; run.applyProvider(provider); return run
@@ -388,21 +403,28 @@ extension RunSession {
         // Written back at once: a path below that returns early (a graph observation that
         // does not normalize, a stale generation) never leaves 전송 중 after the app's own
         // submit state (`AppStore.apply`, the same `startedBy`) moved on.
+        // The run the process's lines, statuses and usage belong to: a notice run that ended takes none
+        // (they are the request's before it), and a running notice turn's never reach a request still
+        // waiting for its own run.
+        var index = runs.lastIndex { $0.noticeRun != true || !MightyGraphSupport.terminal($0.status) } ?? runs.count - 1
+        if runs[index].sourceRunID == nil, runs[index].noticeRun != true,
+           let notice = runs.lastIndex(where: { $0.noticeRun == true && !MightyGraphSupport.terminal($0.status) }) { index = notice }
+        // Only the request's own run starts it: never a notice turn's lines or an earlier run's blocks.
         let newest = runs.count - 1
-        if MightyGraphSupport.startedBy(event, status: runs[newest].status) {
+        let ownEvent = event.type == "graph"
+            ? event.graph.map { node in !BackgroundNoticeRuns.isNoticeRun(node.runId) && !runs[..<newest].contains { $0.sourceRunID == node.runId } } ?? true
+            : index == newest
+        if ownEvent, MightyGraphSupport.startedBy(event, status: runs[newest].status) {
             runs[newest].status = "running"
             graphRuns = runs
         }
         if event.type == "usage" {
             // The CLI reported the model it actually used: it outranks the configured name.
             guard let reported = event.usage?.model, !reported.isEmpty else { return }
-            let last = runs.count - 1
-            runs[last].nodeModelLabel = GraphModelLabel.nodeModelLabel(cliReportedModel: reported, configuredModel: runs[last].configuredModel ?? "default")
+            runs[index].nodeModelLabel = GraphModelLabel.nodeModelLabel(cliReportedModel: reported, configuredModel: runs[index].configuredModel ?? "default")
             graphRuns = runs
             return
         }
-        // A notice run that ended takes none of the process's later lines: they are the request's before it.
-        var index = runs.lastIndex { $0.noticeRun != true || !MightyGraphSupport.terminal($0.status) } ?? runs.count - 1
         if event.type == "graph", let node = event.graph.flatMap({ ExecutionGraphSupport.normalized($0) }) {
             if let existing = runs.firstIndex(where: { $0.sourceRunID == node.runId }) { index = existing }
             else if BackgroundNoticeRuns.isNoticeRun(node.runId) {
@@ -423,8 +445,13 @@ extension RunSession {
             }
             if node.kind == "main" {
                 // A notice run's request is the finished work its main block names.
-                if runs[index].noticeRun == true, let input = node.input { runs[index].input = input }
-                runs[index].status = MightyGraphSupport.nextState(runs[index].status, node.state)
+                // Its state is its main block's: a later notice turn may answer in it again (`ExecutionGraphTracker`).
+                if runs[index].noticeRun == true {
+                    if let input = node.input { runs[index].input = input }
+                    runs[index].status = node.state
+                } else {
+                    runs[index].status = MightyGraphSupport.nextState(runs[index].status, node.state)
+                }
                 if let usage = node.usage { runs[index].usage = usage }
                 if let records = node.responseRecords { runs[index].responseRecords = records }
                 if let output = node.output, !output.isEmpty { runs[index].finalOutput = output }
