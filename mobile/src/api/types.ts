@@ -675,6 +675,15 @@ export interface MobileSessionDetail {
   mighty?: MobileMighty;
   statusLine?: StatusLine;
   rateLimits?: RateLimit[];
+  /** The composer's "send to" targets; only on a Claude pane that offers any (docs/mobile-remote.md). */
+  askTargets?: AskTargetOption[];
+  /** The target this pane's sends go to now; absent for Claude. */
+  askTarget?: string;
+}
+
+export interface AskTargetOption {
+  id: string;
+  label: string;
 }
 
 export interface EntriesPage {

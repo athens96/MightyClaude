@@ -38,6 +38,7 @@ export function Composer({
   submitModes,
   commands,
   attachments,
+  ask,
   stopping,
   command,
   onSend,
@@ -58,6 +59,11 @@ export function Composer({
   commands: MobileCommand[];
   /** "attachments": absent when the host or the pane cannot take files. */
   attachments?: ComposerAttachments;
+  /**
+   * The "send to" switch, present only on a pane whose host offers targets. `name` is the chosen CLI's label, absent
+   * for Claude; the pill opens the choice, and while a CLI is chosen the box asks it and files cannot go along.
+   */
+  ask?: { name?: string; busy: boolean; onOpen: () => void };
   /**
    * Hands the trimmed draft over. The screen empties the box at once and draws the request
    * (natural submit B1); a send that fails gives the words back if the box is still empty
@@ -117,6 +123,7 @@ export function Composer({
   }
 
   const picked = attachments?.files ?? [];
+  const asking = ask?.name !== undefined;
   const empty = text.trim().length === 0 && picked.length === 0;
   const blocked = disabled || tooLong || empty;
   // A draft on a running pane always queues as the next request, files or not.
@@ -214,17 +221,36 @@ export function Composer({
         </View>
       ) : null}
 
+      {ask ? (
+        <View style={styles.askRow}>
+          <Pressable
+            accessibilityLabel={t('composer.ask.menuLabel')}
+            accessibilityRole="button"
+            accessibilityState={{ busy: ask.busy, disabled: disabled || ask.busy }}
+            disabled={disabled || ask.busy}
+            hitSlop={6}
+            onPress={ask.onOpen}
+            style={({ pressed }) => [styles.askPill, asking && styles.askPillOn, pressed && styles.pressed]}
+          >
+            <Text style={[styles.askText, asking && styles.askTextOn]} numberOfLines={1}>
+              {`${t('composer.ask.menuLabel')} · ${ask.name ?? t('composer.ask.claude')}`}
+            </Text>
+          </Pressable>
+          {asking && attachments ? <Text style={styles.hint}>{t('composer.ask.attachmentsOff')}</Text> : null}
+        </View>
+      ) : null}
+
       <View style={styles.row}>
         {attachments ? (
           <Pressable
             accessibilityLabel={t('phone.composer.attach')}
             accessibilityRole="button"
             // The files on screen are the ones a send in flight took: none come or go meanwhile.
-            disabled={disabled || attachments.uploading || sending}
+            disabled={disabled || attachments.uploading || sending || asking}
             onPress={() => setPickerOpen(true)}
             style={({ pressed }) => [
               styles.attach,
-              (disabled || attachments.uploading || sending) && styles.attachDisabled,
+              (disabled || attachments.uploading || sending || asking) && styles.attachDisabled,
               pressed && styles.pressed,
             ]}
           >
@@ -236,7 +262,7 @@ export function Composer({
             ref={inputRef}
             value={text}
             onChangeText={onChangeText}
-            placeholder={t('phone.composer.placeholder')}
+            placeholder={asking ? t('composer.ask.placeholder', { name: ask?.name ?? '' }) : t('phone.composer.placeholder')}
             placeholderTextColor={palette.textFaint}
             style={styles.input}
             multiline
@@ -382,6 +408,17 @@ const makeStyles = (palette: Palette) =>
     chipName: { color: palette.text, flexShrink: 1, fontSize: 12, fontWeight: '600' },
     chipSize: { color: palette.textFaint, fontSize: 11 },
     chipRemove: { color: palette.textMuted, fontSize: 12 },
+    askRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+    askPill: {
+      backgroundColor: palette.surface,
+      borderRadius: radius.round,
+      maxWidth: 220,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+    },
+    askPillOn: { backgroundColor: palette.accentMuted },
+    askText: { color: palette.textMuted, fontSize: 12, fontWeight: '600' },
+    askTextOn: { color: palette.accent },
     uploadRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     hint: { color: palette.textFaint, flex: 1, fontSize: 11 },
     sheetTitle: { ...typeScale.title, color: palette.text },

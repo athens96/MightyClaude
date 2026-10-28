@@ -72,6 +72,12 @@ Google 的智能体通过 Antigravity CLI（`agy`）运行，它也可以运行 
 - 发送前可以预览，并逐个移除。也可以只发送附件。
 - 终端窗格不能添加附件。
 
+### 发送对象 {#ask-target}
+安装了 oh-my-claudecode 的 Claude 窗格，输入框里会出现{{ui:composer.ask.menuLabel}}开关。它列出已安装的其他 CLI（Codex、Antigravity 等）；选定后，之后的请求会通过 oh-my-claudecode 的 `ask` 发给它，答案会出现在 Claude 的回复中。选择{{ui:composer.ask.claude}}则像以前一样发给 Claude。Mac、Windows 和手机上都能使用。
+- 向其他 CLI 提问时无法发送附件。
+- 被询问的 CLI 按 oh-my-claudecode 启动它的方式运行，不受 Mighty Claude 的权限模式和审批卡片约束。
+- 以 `/` 开头的文字仍原样发给 Claude。
+
 ### 斜杠命令 {#slash}
 在输入框中输入 `/` 会显示命令列表。用{{kbd:↑}}{{kbd:↓}}选择，按{{kbd:Enter}}或{{kbd:Tab}}插入，按{{kbd:Esc}}关闭。
 

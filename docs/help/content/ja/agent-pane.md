@@ -72,6 +72,12 @@ GoogleのエージェントはAntigravity CLI(`agy`)で動きます。Antigravit
 - 送信前にプレビューして、1つずつ外せます。添付だけを送信することもできます。
 - ターミナルペインには添付できません。
 
+### 送り先 {#ask-target}
+oh-my-claudecodeがインストールされたClaudeペインでは、入力欄に{{ui:composer.ask.menuLabel}}スイッチが表示されます。インストール済みの他のCLI(Codex、Antigravityなど)が一覧に並び、1つ選ぶと、以降のリクエストはoh-my-claudecodeの`ask`を通ってそのCLIに送られます。答えはClaudeの返信の中に戻ってきます。{{ui:composer.ask.claude}}を選ぶと、これまでどおりClaudeに送ります。Mac、Windows、スマートフォンのいずれでも使えます。
+- 他のCLIに尋ねている間は、添付を送れません。
+- 尋ねたCLIは、oh-my-claudecodeが起動するとおりに動きます。Mighty Claudeの権限モードや承認カードは適用されません。
+- `/`で始まる文章は、そのままClaudeに送られます。
+
 ### スラッシュコマンド {#slash}
 入力欄に`/`を入力すると、コマンドの一覧が表示されます。{{kbd:↑}}{{kbd:↓}}で選び、{{kbd:Enter}}か{{kbd:Tab}}で入力し、{{kbd:Esc}}で閉じます。
 

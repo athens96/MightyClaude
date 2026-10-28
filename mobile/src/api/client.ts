@@ -249,6 +249,8 @@ export interface MobileClient {
     patch: SettingsPatch,
     signal?: AbortSignal,
   ): Promise<OkResponse>;
+  /** Chooses where this pane's sends go: a target id its detail lists, or null for Claude. */
+  setAskTarget(sessionId: string, target: string | null, signal?: AbortSignal): Promise<OkResponse>;
   /** Slash commands offered for this pane ("commands"). */
   commands(sessionId: string, signal?: AbortSignal): Promise<CommandsResponse>;
   /** Runs one of the host-side commands ("commands"). */
@@ -506,6 +508,14 @@ export function createClient(channel: RelayChannel): MobileClient {
         signal,
       );
     },
+
+    setAskTarget: (sessionId, target, signal) =>
+      request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/setAskTarget`,
+        { target },
+        signal,
+      ),
 
     commands: (sessionId, signal) =>
       request<CommandsResponse>(

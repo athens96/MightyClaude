@@ -127,6 +127,7 @@ import {
   useSessionDetail,
 } from '@/store/live';
 import { showToast } from '@/store/toast';
+import { CLAUDE_ASK, parseAskTargets, shownAskTarget } from '@/lib/ask-targets';
 import { spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 /**
@@ -746,6 +747,45 @@ export default function SessionScreen() {
       }
     },
     [client, poll, sessionId, settle],
+  );
+
+  // The "send to" switch: the host's list and word, with the choice just made held until the next detail.
+  const askView = useMemo(() => parseAskTargets(detail), [detail]);
+  const [askChoice, setAskChoice] = useState<{ target: string | null; revision: number | undefined } | undefined>(undefined);
+  const [askOpen, setAskOpen] = useState(false);
+  const [askSaving, setAskSaving] = useState(false);
+  useEffect(() => {
+    setAskChoice(undefined);
+    setAskOpen(false);
+  }, [sessionId]);
+  const askTarget = shownAskTarget(askView, askChoice, detail?.revision);
+  const askOptions = useMemo(
+    () => [{ id: CLAUDE_ASK, label: t('composer.ask.claude') }, ...askView.targets],
+    [askView.targets],
+  );
+  const chooseAskTarget = useCallback(
+    (id: string) => {
+      if (!client || !sessionId) return;
+      const target = id === CLAUDE_ASK ? null : id;
+      const before = askChoice;
+      setAskChoice({ target, revision: detail?.revision });
+      setAskOpen(false);
+      // Files cannot go to another CLI, so the ones already picked are put back.
+      if (target !== null) clearAttachments();
+      void (async () => {
+        setAskSaving(true);
+        try {
+          await client.setAskTarget(sessionId, target);
+          poll.refresh();
+        } catch (error) {
+          setAskChoice(before);
+          showToast(describeError(error), 'error');
+        } finally {
+          setAskSaving(false);
+        }
+      })();
+    },
+    [askChoice, clearAttachments, client, detail?.revision, poll, sessionId],
   );
 
   const answer = useCallback(
@@ -1497,6 +1537,17 @@ export default function SessionScreen() {
           submitModes={hasCapability(capabilities, 'submit-mode')}
           commands={canCommands ? commands : []}
           attachments={canAttach && session?.kind === 'claude' ? attachments : undefined}
+          {...(askView.targets.length > 0
+            ? {
+                ask: {
+                  ...(askTarget !== null
+                    ? { name: askView.targets.find((target) => target.id === askTarget)?.label ?? askTarget }
+                    : {}),
+                  busy: askSaving,
+                  onOpen: () => setAskOpen(true),
+                },
+              }
+            : {})}
           onSend={send}
           stopping={stopAction.state}
           {...(commandRun ? { command: commandRun } : {})}
@@ -1575,6 +1626,17 @@ export default function SessionScreen() {
         locked={settings ? !settings.editable : true}
         onSelect={applySetting}
         onClose={closePicker}
+      />
+
+      <PickerSheet
+        visible={askOpen}
+        title={t('composer.ask.menuLabel')}
+        options={askOptions}
+        selectedId={askTarget ?? CLAUDE_ASK}
+        busy={askSaving}
+        locked={false}
+        onSelect={chooseAskTarget}
+        onClose={() => setAskOpen(false)}
       />
 
       <MessageSheet

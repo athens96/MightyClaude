@@ -72,6 +72,12 @@ Click the paperclip, drag files onto the composer, or paste a picture with {{kbd
 - You can preview them and remove them one by one before sending. You can send attachments alone.
 - Terminal panes can't take attachments.
 
+### Send to {#ask-target}
+A Claude pane with oh-my-claudecode installed shows a {{ui:composer.ask.menuLabel}} switch in the composer. It lists the other CLIs that are installed (Codex, Antigravity and so on); once you pick one, your requests go to it through oh-my-claudecode's `ask`. The answer comes back inside Claude's reply. Pick {{ui:composer.ask.claude}} to send to Claude as before. It works on the Mac, on Windows and on the phone.
+- Attachments can't be sent while you are asking another CLI.
+- The CLI you ask runs the way oh-my-claudecode starts it, outside Mighty Claude's permission mode and approval cards.
+- Text that starts with `/` still goes to Claude as it is.
+
 ### Slash commands {#slash}
 Type `/` in the composer to see the command list. Move with {{kbd:↑}}{{kbd:↓}}, insert with {{kbd:Enter}} or {{kbd:Tab}}, and close with {{kbd:Esc}}.
 
