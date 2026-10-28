@@ -135,9 +135,31 @@ internal static class BackgroundNoticeRunsVerification
         var reopened = new MightyGraphRun { Id = "r:notice:1", Status = "running", FinalOutput = "The build passed.", NoticeRun = true };
         MightyGraphSupport.RefreshResult(reopened);
         Check(reopened.ReopenedWithReply && MightyGraphLayout.HasResult(reopened) && reopened.ResultEntries.FirstOrDefault()?.Text == "The build passed.", "a reopened notice run keeps its reply");
+        // The reopened turn failed or was stopped: the card keeps the earlier reply; a request's error result still shows none.
+        foreach (var status in new[] { "error", "stopped" })
+        {
+            reopened.Status = status;
+            MightyGraphSupport.RefreshResult(reopened);
+            Check(MightyGraphLayout.HasResult(reopened) && reopened.ResultEntries.FirstOrDefault()?.Text == "The build passed.", $"a notice run whose reopened turn ended {status} keeps its reply");
+        }
+        var failedRequest = new MightyGraphRun { Id = "r", Status = "error", FinalOutput = "Started." };
+        MightyGraphSupport.RefreshResult(failedRequest);
+        Check(failedRequest.ResultEntries.Count == 0, "a request's error result shows none");
         var opening = new MightyGraphRun { Id = "r:notice:2", Status = "running", NoticeRun = true };
         MightyGraphSupport.RefreshResult(opening);
         Check(!MightyGraphLayout.HasResult(opening) && opening.ResultEntries.Count == 0, "a first notice turn still waiting has no card");
+        // The phone draws no background block in the request that started it: its steps wake no long poll there, the notice run's do.
+        var digested = Runs()[0];
+        var before = MobileMightySupport.Digest([digested]);
+        digested.Agents[1].Entries.Add(new LogEntry("b1", "assistant", "compiling", "2026-10-28T00:00:00Z", "claude"));
+        digested.Agents[1].Status = "completed";
+        Same(MobileMightySupport.Digest([digested]), before, "a request's hidden background block does not move the digest");
+        digested.Agents.Add(new() { Id = "fg2", Title = "Grep", Status = "running" });
+        Check(MobileMightySupport.Digest([digested]) != before, "a new block the request draws moves the digest");
+        var noticeRun = Runs()[2];
+        var noticeBefore = MobileMightySupport.Digest([noticeRun]);
+        noticeRun.Agents[0].Entries.Add(new LogEntry("c1", "assistant", "done", "2026-10-28T00:00:00Z", "claude"));
+        Check(MobileMightySupport.Digest([noticeRun]) != noticeBefore, "a notice run's background block moves the digest");
         return Task.CompletedTask;
     }
 

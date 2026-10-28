@@ -346,7 +346,8 @@ public enum MobileMightySupport {
     /// final answer length: that run carries `result`, and an answer landing
     /// after its status has already moved must still wake the phone.
     /// Hashed rather than joined: this runs on every snapshot publish, which
-    /// during a stream is every token, so it must allocate nothing.
+    /// during a stream is every token, so it allocates nothing but the shown
+    /// blocks of a run that holds background work.
     public static func digest(_ values: [MightyGraphRun]) -> Int {
         var hasher = Hasher()
         let window = values.suffix(MobileWire.mightyRuns)
@@ -356,7 +357,8 @@ public enum MobileMightySupport {
         for run in window {
             hasher.combine(run.id); hasher.combine(run.status); hasher.combine(run.agents.count)
             hasher.combine(run.rootEntries.count); hasher.combine(run.rootEntries.last?.id)
-            for agent in run.agents {
+            // The blocks the phone draws: a request's background blocks wait for their notice run (the strip shows them meanwhile).
+            for agent in BackgroundNoticeRuns.shownAgents(run) {
                 hasher.combine(agent.id); hasher.combine(agent.status); hasher.combine(agent.kind)
                 hasher.combine(agent.entries.count); hasher.combine(agent.entries.last?.id)
                 // Claude's reply to a task's notice can land with no new record on the block.

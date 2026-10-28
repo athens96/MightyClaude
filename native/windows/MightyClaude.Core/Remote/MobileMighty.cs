@@ -209,8 +209,9 @@ public static class MobileMightySupport
         {
             var run = values[index];
             hash.Add(run.Id); hash.Add(run.Status); hash.Add(run.Agents.Count); hash.Add(run.RootEntries.Count); hash.Add(run.RootEntries.Count > 0 ? run.RootEntries[^1].Id : null);
+            // The blocks the phone draws: a request's background blocks wait for their notice run (the strip shows them meanwhile).
             // Claude's reply to a task's notice can land with no new record on the block.
-            foreach (var agent in run.Agents) { hash.Add(agent.Id); hash.Add(agent.Status); hash.Add(agent.Kind); hash.Add(agent.Entries.Count); hash.Add(agent.Entries.Count > 0 ? agent.Entries[^1].Id : null); hash.Add(agent.NoticeReply?.Length); }
+            foreach (var agent in BackgroundNoticeRuns.ShownAgents(run)) { hash.Add(agent.Id); hash.Add(agent.Status); hash.Add(agent.Kind); hash.Add(agent.Entries.Count); hash.Add(agent.Entries.Count > 0 ? agent.Entries[^1].Id : null); hash.Add(agent.NoticeReply?.Length); }
         }
         return hash.ToHashCode();
     }

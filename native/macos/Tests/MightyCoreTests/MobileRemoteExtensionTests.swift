@@ -491,6 +491,24 @@ struct MobileRemoteExtensionTests {
         #expect(MobileMightySupport.digest([run]) != withAgent)
     }
 
+    /// The phone draws no background block in the request that started it: its steps wake no long poll there,
+    /// while the same block in a notice run does, and a new block in the request still counts.
+    @Test func theMightyDigestIgnoresARequestsHiddenBackgroundBlocks() {
+        var background = agent("bg", kind: "task", status: "running")
+        background.background = true
+        var request = MightyGraphRun(id: "r", status: "completed", agents: [agent("fg", kind: nil, status: "completed"), background])
+        let first = MobileMightySupport.digest([request])
+        request.agents[1].entries.append(LogEntry(id: "b1", kind: "assistant", text: "compiling"))
+        request.agents[1].status = "completed"
+        #expect(MobileMightySupport.digest([request]) == first)
+        request.agents.append(agent("fg2", kind: nil, status: "running"))
+        #expect(MobileMightySupport.digest([request]) != first)
+        var notice = MightyGraphRun(id: "r:notice:1", status: "running", agents: [background], noticeRun: true)
+        let noticeFirst = MobileMightySupport.digest([notice])
+        notice.agents[0].status = "completed"
+        #expect(MobileMightySupport.digest([notice]) != noticeFirst)
+    }
+
     @Test func theMightyDigestMovesOnANewStepInEitherBlock() {
         var run = MightyGraphRun(id: "run-1", input: "안녕", status: "running",
                                  rootEntries: [LogEntry(id: "e1", kind: "assistant", text: "부")],
