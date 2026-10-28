@@ -99,6 +99,21 @@ public struct MobilePushRequest: Codable, Sendable, Equatable {
             kind = .permission; buttons = permission.canAllow ? .claude : .none
         }
     }
+    /// A pending request as a push: a question reads as its questions and a plan as its first line,
+    /// not as the tool's name (its activity summary); either is empty when it cannot be read, so the
+    /// phone shows its own sentence for that kind.
+    public init(request: ToolPermissionRequest) {
+        self.init(MobilePermission(request: request))
+        switch kind {
+        case .question: summary = request.questionnaire.map { $0.questions.map(\.question).joined(separator: " · ") } ?? ""
+        case .plan: summary = request.plan.map(Self.planLine) ?? ""
+        default: break
+        }
+    }
+    /// The plan's first line with text, without its Markdown heading marks.
+    static func planLine(_ plan: String) -> String {
+        plan.split(whereSeparator: \.isNewline).lazy.map { String($0.drop { $0 == "#" || $0.isWhitespace }) }.first { !$0.isEmpty } ?? ""
+    }
 }
 
 /// One pane as the push planner sees it.
@@ -133,7 +148,7 @@ extension MobilePushPane {
         return FilePaneKind.phoneVisible(RemoteWorkspacePhone.sessions(sessions, workspaces: workspaces)).map { session in
             var requests = (permissions[session.id] ?? [])
                 .filter { $0.state == "pending" && !autoAllowed(session.id, $0) }
-                .map { MobilePushRequest(MobilePermission(request: $0)) }
+                .map { MobilePushRequest(request: $0) }
             if let card = antigravity[session.id] { requests.append(MobilePushRequest(MobilePermission(antigravity: card))) }
             return MobilePushPane(sessionId: session.id, workspace: names[session.workspaceId] ?? "", title: session.title, status: session.status,
                                   preview: MobileRemoteSupport.previewLine(session).map { String($0.text.prefix(previewLimit)) },

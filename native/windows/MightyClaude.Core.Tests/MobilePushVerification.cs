@@ -100,6 +100,16 @@ internal static class MobilePushVerification
         Check(MobilePushRequest.From(Card(MobileAntigravityCard.ToolName, agy: always)).Buttons == MobilePushButtonKinds.Antigravity, "once or always");
         Check(MobilePushRequest.From(Card(MobileAntigravityCard.ToolName, false, agy: ruleless)).Buttons == MobilePushButtonKinds.None, "no rule, no buttons");
         Check(MobilePushRequest.From(Card(MobileAntigravityCard.ToolName, agy: once)).Kind == MobilePushKinds.Permission, "an Antigravity card is a permission");
+        ToolPermissionRequest Request(string tool, string input, bool canAnswer = true) => new("r", "u", "t", tool, input, tool,
+            CanAnswerQuestions: canAnswer && tool == "AskUserQuestion", CanAnswerPlan: canAnswer && tool == ClaudePlanMode.ToolName);
+        const string options = """[{"label":"A","description":""},{"label":"B","description":""}]""";
+        var two = $$"""{"questions":[{"header":"h","question":"어느 쪽?","multiSelect":false,"options":{{options}}},{"header":"g","question":"언제?","multiSelect":false,"options":{{options}}}]}""";
+        Check(MobilePushRequest.From(Request("AskUserQuestion", two)).Summary == "어느 쪽? · 언제?", "a question reads as its questions");
+        Check(MobilePushRequest.From(Request("AskUserQuestion", two, false)).Summary == "어느 쪽? · 언제?", "even one the phone cannot answer");
+        Check(MobilePushRequest.From(Request("AskUserQuestion", "{}")).Summary == "", "an unreadable question leaves the phone's sentence");
+        Check(MobilePushRequest.From(Request(ClaudePlanMode.ToolName, """{"plan":"\n## 로그인 고치기\n- 1단계"}""")).Summary == "로그인 고치기", "a plan reads as its first line");
+        Check(MobilePushRequest.From(Request(ClaudePlanMode.ToolName, "{}")).Summary == "", "an unreadable plan leaves the phone's sentence");
+        Check(MobilePushRequest.From(Request("Bash", """{"command":"ls"}""")).Summary == "Bash", "a tool permission keeps its summary");
         return Task.CompletedTask;
     }
 
