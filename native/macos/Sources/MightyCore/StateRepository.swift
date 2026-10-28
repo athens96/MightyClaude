@@ -413,6 +413,8 @@ public actor StateRepository {
             if let parent = session.parentSessionId, !CoreValidation.identifier(parent) || parent == session.id { session.parentSessionId = nil }
             if let folder = session.workingFolder, !absolutePath(folder) { session.workingFolder = nil }
         } else { session.parentSessionId = nil; session.workingFolder = nil }
+        // Only a Claude agent pane asks other CLIs; a saved id that is no longer available is kept and reads as Claude.
+        if !(session.kind == SessionKind.claude && session.provider == "claude") { session.askTarget = nil }
         // Migration: retitle automatic agent panes from their most recent user request.
         // A nil titleMode (saved before this feature) is treated as "auto".
         if restoring && session.kind == SessionKind.claude {

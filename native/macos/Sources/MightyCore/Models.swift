@@ -347,10 +347,13 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     /// Present only on a delegated child pane (macOS): the absolute path of its worktree,
     /// where its runs work instead of the workspace folder.
     public var workingFolder: String?
-    public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil) {
-        self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage
+    /// The composer's "send to" choice on a Claude agent pane: the id of an `AskTargets` entry.
+    /// nil (older saves) sends to Claude; an id that is no longer available reads as Claude too.
+    public var askTarget: String?
+    public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil, askTarget: String? = nil) {
+        self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage; self.askTarget = askTarget
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphSizesLayout, graphResultSize, graphPlanSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork, parentSessionId, workingFolder }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphSizesLayout, graphResultSize, graphPlanSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork, parentSessionId, workingFolder, askTarget }
     /// How the pane's Mighty view draws its requests; the diagram unless the timeline was chosen.
     public var mightyViewMode: MightyGraphViewMode { graphViewMode ?? .diagram }
     /// Full text of the most recent user log entry that would update the automatic title,
@@ -407,6 +410,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         // Optional delegation links; damage must not discard the conversation.
         parentSessionId = try? c.decodeIfPresent(String.self, forKey: .parentSessionId)
         workingFolder = try? c.decodeIfPresent(String.self, forKey: .workingFolder)
+        askTarget = try? c.decodeIfPresent(String.self, forKey: .askTarget)
     }
 }
 

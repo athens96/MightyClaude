@@ -1,0 +1,31 @@
+{
+  "about": "Composer 'send to' targets that ask another CLI through oh-my-claudecode's ask skill. Mac AskTargets, Windows Core AskTargets and the phone read this file.",
+  "skill": "oh-my-claudecode:ask",
+  "targets": [
+    { "id": "codex", "label": "Codex", "executable": "codex" },
+    { "id": "antigravity", "label": "Antigravity", "executable": "agy" },
+    { "id": "gemini", "label": "Gemini CLI", "executable": "gemini" },
+    { "id": "grok", "label": "Grok", "executable": "grok" },
+    { "id": "cursor", "label": "Cursor", "executable": "cursor-agent" }
+  ],
+  "available": [
+    { "name": "claude pane with omc and two CLIs", "isClaudeAgent": true, "slash": ["oh-my-claudecode:ask", "clear"], "installed": ["agy", "codex"], "expect": ["codex", "antigravity"] },
+    { "name": "no omc", "isClaudeAgent": true, "slash": ["clear"], "installed": ["codex"], "expect": [] },
+    { "name": "no other CLI", "isClaudeAgent": true, "slash": ["oh-my-claudecode:ask"], "installed": ["claude"], "expect": [] },
+    { "name": "not a claude agent pane", "isClaudeAgent": false, "slash": ["oh-my-claudecode:ask"], "installed": ["codex"], "expect": [] }
+  ],
+  "effective": [
+    { "name": "saved and available", "saved": "codex", "available": ["codex", "antigravity"], "expect": "codex" },
+    { "name": "saved but gone falls back to claude", "saved": "grok", "available": ["codex"], "expect": null },
+    { "name": "nothing saved", "saved": null, "available": ["codex"], "expect": null },
+    { "name": "saved claude", "saved": "claude", "available": ["codex"], "expect": null }
+  ],
+  "wrap": [
+    { "name": "claude sends as is", "target": null, "text": "hello", "expect": "hello" },
+    { "name": "codex wraps", "target": "codex", "text": "review this", "expect": "/oh-my-claudecode:ask codex review this" },
+    { "name": "trims around", "target": "antigravity", "text": "  look at it \n", "expect": "/oh-my-claudecode:ask antigravity look at it" },
+    { "name": "empty sends nothing", "target": "codex", "text": "   ", "expect": null },
+    { "name": "slash command passes through", "target": "codex", "text": "  /clear", "expect": "  /clear" },
+    { "name": "multi-line kept", "target": "codex", "text": "a\nb", "expect": "/oh-my-claudecode:ask codex a\nb" }
+  ]
+}
