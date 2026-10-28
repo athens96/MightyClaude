@@ -169,7 +169,7 @@ struct MightyGraphView: View {
     /// The newest result card's content — its header strip and its measured
     /// answer — once known. A drag in progress shows exactly the dragged size.
     private var latestResultContentHeight: CGFloat? {
-        guard liveResultSize == nil, let index = runs.indices.last(where: { MightyGraphLayout.finished(runs[$0]) }) else { return nil }
+        guard liveResultSize == nil, let index = runs.indices.last(where: { MightyGraphLayout.hasResult(runs[$0]) }) else { return nil }
         // The card's placeholder line when it has no answer (`transcriptCard`).
         if !runs[index].resultEntries.contains(where: { $0.kind != "user" }) { return 0 }
         return resultHeights[MightyGraphLayout.nodeID(runs[index], suffix: "result")].map { Self.blockHeaderHeight + $0 }
@@ -181,8 +181,15 @@ struct MightyGraphView: View {
     private static let timelineRequestIndent = timelineChevronWidth + DesignMetrics.Spacing.md
     /// The pane's own requests as the reveal rule sees them.
     private var ownRunProgress: [MightyGraphCamera.ResultReveal.RunProgress] {
-        ownRuns.map { .init(id: $0.id, finished: MightyGraphLayout.finished($0)) }
+        // A notice run is followed by the not-own rule instead (`followedRun`).
+        MightyGraphSupport.requestRuns(Array(ownRuns)).map { .init(id: $0.id, finished: MightyGraphLayout.finished($0)) }
     }
+    /// The run the views follow as the newest work and whether it holds its reply (`MightyGraphSupport.followRunIndex`):
+    /// a notice run appearing or answering after the newest request moves a view only while it shows the newest end.
+    private var followedRun: FollowedRun? {
+        MightyGraphSupport.followRunIndex(runs).map { FollowedRun(id: runs[$0].id, answered: MightyGraphLayout.hasResult(runs[$0])) }
+    }
+    private struct FollowedRun: Equatable { let id: String; let answered: Bool }
     /// The run that keeps its place while loaded history grows above it and
     /// trimmed runs move into it.
     private var pinnedStart: Int { history?.pinnedRunID.flatMap { id in runs.firstIndex { $0.id == id } } ?? olderCount }
@@ -218,7 +225,8 @@ struct MightyGraphView: View {
         let steerCount = own.reduce(0) { $0 + $1.agents.filter { $0.isSteer && !$0.isNotice }.count }
         let compactCount = own.reduce(0) { $0 + $1.agents.filter(\.isCompact).count }
         let tokens = own.reduce(GraphTokenUsage()) { $0 + ($1.totalUsage ?? GraphTokenUsage()) }
-        let summary = Self.headerSummary(runs: own.count, agents: agentCount, tasks: taskCount, steers: steerCount, compactions: compactCount, questions: questionCount, tokens: tokens)
+        // A notice run is no request: it adds nothing to the count.
+        let summary = Self.headerSummary(runs: MightyGraphSupport.requestRuns(Array(own)).count, agents: agentCount, tasks: taskCount, steers: steerCount, compactions: compactCount, questions: questionCount, tokens: tokens)
             + (olderCount > 0 ? " · " + L("graph.history.headerLoaded", ["count": "\(olderCount)"]) : "")
         // Hoisted out of the canvas call: older type checkers spend a long time
         // on optional maps and conditionals written inline in an argument list.
@@ -229,6 +237,7 @@ struct MightyGraphView: View {
         // Before anything aimed it, the camera follows: the newest block right above the composer.
         let target = scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: fallbackNodeID, alignTop: false, follows: true)
         let live = MightyGraphLayout.liveNodeIDs(runs)
+        let ordinals = MightyGraphSupport.requestOrdinals(runs)
         VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.md) {
                 MightyViewSwitch(sessionID: sessionID, mode: viewMode) { mode in
@@ -284,7 +293,7 @@ struct MightyGraphView: View {
                               onResize: { resize(graph, $0, $1, $2, $3) }, onResetSize: resetSize,
                               onStranded: { reaim(graph, after: $0) }, newestRunID: MightyGraphSupport.newestRequestRun(runs)?.id,
                               onReachTop: { if history?.phase == .idle { onLoadOlder() } },
-                              card: { card($0, executions: linksByKey) })
+                              card: { card($0, executions: linksByKey, ordinals: ordinals) })
                 // The canvas changing height — the composer growing as a draft is typed,
                 // shrinking after a send, the pane resizing — never re-aims the camera: a
                 // following camera keeps its block above the composer, any other stays.
@@ -555,7 +564,8 @@ struct MightyGraphView: View {
 
     /// `executions` is this render's execution links by key, found once
     /// rather than for every card.
-    @ViewBuilder private func card(_ node: MightyGraphLayout.Node, executions: [String: OuroborosExecutionLink]) -> some View {
+    /// `ordinals`: each run's request number (`MightyGraphSupport.requestOrdinals`), found once per render.
+    @ViewBuilder private func card(_ node: MightyGraphLayout.Node, executions: [String: OuroborosExecutionLink], ordinals: [Int]) -> some View {
         switch node.content {
         case .draft:
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
@@ -576,19 +586,21 @@ struct MightyGraphView: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
         case .request(let index):
             // The request alone: what was asked. What the agent did is the 실행 block below.
+            // A notice run's request is the finished work it names, under its own title and the task block's symbol.
             let run = runs[index]
-            let title = StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: index + 1,
-                                                 providerLabel: ProviderOptions.label(provider))
-            let icon = styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue
+            let notice = run.noticeRun == true
+            let title = notice ? BackgroundNoticeRuns.title
+                : StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: ordinals[index], providerLabel: ProviderOptions.label(provider))
+            let icon = notice ? BackgroundNoticeRuns.icon : styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue
             transcriptCard(node, title: title, titleProvider: provider, icon: icon, status: run.status,
-                           input: run.input, entries: [], tint: Palette.tint(styleTitles.tint(run.input)),
+                           input: run.input, entries: [], tint: notice ? Palette.taskText : Palette.tint(styleTitles.tint(run.input)),
                            fromRecord: index < olderCount, inputOnly: true)
         case .work(let index):
             // The main agent's own work for the request: its replies, tool calls, status and tokens.
             let run = runs[index]
             let runID = run.sourceRunID ?? run.id
             let runChildBlocks = GraphChildBlocks.map(responseRecords: run.responseRecords, agents: run.agents, runId: runID)
-            transcriptCard(node, title: L("graph.block.executionOf", ["n": "\(index + 1)"]), icon: Self.executionIcon, status: run.status, statusText: Self.runStatusLabel(run),
+            transcriptCard(node, title: BackgroundNoticeRuns.executionTitle(notice: run.noticeRun == true, ordinal: ordinals[index]), icon: Self.executionIcon, status: run.status, statusText: Self.runStatusLabel(run),
                            input: "", entries: run.rootEntries, tint: Palette.agentText, usage: run.usage,
                            records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks,
                            fromRecord: index < olderCount, pending: pendingState(run.id))
@@ -952,10 +964,10 @@ struct MightyGraphView: View {
                 guard new == Self.timelineHistoryID, let old, old != new, history?.phase == .idle else { return }
                 onLoadOlder()
             }
-            .onChange(of: MightyGraphSupport.newestRequestRun(runs)?.id) { _, last in
+            .onChange(of: followedRun) { _, followed in
                 // The user's own request is moved to by `revealTimeline`, gliding and reliably;
-                // anyone else's is followed only from the newest end.
-                guard let last, ownSubmit?.target != .run(last),
+                // anyone else's, and a notice run appearing or answering, is followed only from the newest end.
+                guard let last = followed?.id, ownSubmit?.target != .run(last),
                       SubmitScroll.target(view: .timeline, own: false, chosenBoardIsNewest: true, nearBottom: timelineAtEnd).scroll == .follow else { return }
                 proxy.scrollTo(last, anchor: .bottom)
             }
@@ -987,7 +999,7 @@ struct MightyGraphView: View {
 
     private func timelineGroup(_ group: MightyTimeline.Group) -> some View {
         let run = runs[group.runIndex]
-        let open = (group.runIndex == runs.count - 1) != timelineFlipped.contains(group.id)
+        let open = timelineOpensByDefault(group.runIndex) != timelineFlipped.contains(group.id)
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             timelineHeader(group, run: run, open: open)
             if open {
@@ -1003,10 +1015,16 @@ struct MightyGraphView: View {
         }
     }
 
+    /// Open until the user folds it: the newest request, and a notice run after it holding Claude's reply.
+    private func timelineOpensByDefault(_ index: Int) -> Bool {
+        guard let newest = MightyGraphSupport.newestRequestIndex(runs) else { return index == runs.count - 1 }
+        return index == newest || (index > newest && runs[index].noticeRun == true && MightyGraphLayout.hasResult(runs[index]))
+    }
+
     /// "Request N · Claude", its status, the request itself and the block and finished counts.
     private func timelineHeader(_ group: MightyTimeline.Group, run: MightyGraphRun, open: Bool) -> some View {
-        let title = StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: group.ordinal,
-                                             providerLabel: ProviderOptions.label(provider))
+        let title = group.noticeRun ? BackgroundNoticeRuns.title
+            : StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: group.ordinal, providerLabel: ProviderOptions.label(provider))
         let prompt = group.input.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
         return Button {
             if !timelineFlipped.insert(group.id).inserted { timelineFlipped.remove(group.id) }
@@ -1051,7 +1069,7 @@ struct MightyGraphView: View {
         // The request's own block is titled by the Mac's locale; the phone payload's
         // title (`MobileMightySupport.blocks`) stays as the phone is sent it.
         let request = row.agentIndex == nil && !row.isExecution
-        let title = request ? L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"]) : row.block.title
+        let title = request ? Self.timelineRequestName(group) : row.block.title
         // The request has no status of its own: its 실행 row runs and settles.
         return MightyTimelineRowCard(row: row, title: title, icon: look.icon, tint: look.tint, meta: timelineMeta(row, run: run),
                                      status: request ? nil : Self.statusLabel(row.block.status), open: open, onToggle: {
@@ -1072,9 +1090,15 @@ struct MightyGraphView: View {
         }
     }
 
+    /// "요청 n", or a notice run's own title.
+    private static func timelineRequestName(_ group: MightyTimeline.Group) -> String {
+        group.noticeRun ? BackgroundNoticeRuns.title : L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"])
+    }
+
     /// The glyph and ink the diagram gives the block.
     private func timelineLook(_ row: MightyTimeline.Row, run: MightyGraphRun) -> (icon: String, tint: Color) {
         if row.isExecution { return (Self.executionIcon, Palette.agentText) }
+        if row.agentIndex == nil, run.noticeRun == true { return (BackgroundNoticeRuns.icon, Palette.taskText) }
         guard let agentIndex = row.agentIndex else {
             return (styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue, Palette.tint(styleTitles.tint(run.input)))
         }
@@ -1135,7 +1159,7 @@ struct MightyGraphView: View {
         default: L("graph.block.result")
         }
         let tokens = run.totalUsage.map { GraphTokenUsage.compact($0.total) }
-        let caption = ([L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"])] + [tokens].compactMap { $0 }).joined(separator: " · ")
+        let caption = ([Self.timelineRequestName(group)] + [tokens].compactMap { $0 }).joined(separator: " · ")
         let files = run.status == "completed" ? resultFiles.files(for: run.id) : []
         return MightyTimelineResultCard(result: result, title: title, caption: caption, full: timelineFull.contains(result.nodeID), onToggleFull: {
             if !timelineFull.insert(result.nodeID).inserted { timelineFull.remove(result.nodeID) }

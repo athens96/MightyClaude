@@ -12,6 +12,14 @@ public enum BackgroundNoticeRuns {
     /// The run id of the original run's `index`th notice run (from 1).
     public static func runID(original: String, index: Int) -> String { original + marker + String(index) }
     public static func isNoticeRun(_ runID: String) -> Bool { runID.contains(marker) }
+    /// A notice run's heading, where a request has "요청 n".
+    public static var title: String { L("graph.background.noticeRun") }
+    /// The symbol in front of a notice run's heading: the task block's (`MightyGraphView.agentPresentation`).
+    public static let icon = "terminal"
+    /// The 실행 block's title: "실행 · 요청 n", or plain "실행" in a notice run, which is no request.
+    public static func executionTitle(notice: Bool, ordinal: Int) -> String {
+        notice ? L("graph.block.execution") : L("graph.block.executionOf", ["n": "\(ordinal)"])
+    }
     /// Agents a view draws for a run: background blocks only inside a notice run.
     /// Blocks under a hidden background block are hidden with it.
     public static func shownAgents(_ run: MightyGraphRun) -> [MightyGraphAgent] {

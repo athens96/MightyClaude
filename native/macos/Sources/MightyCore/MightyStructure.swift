@@ -92,9 +92,10 @@ public enum MightyStructure {
 
     /// One request as a card.
     public struct Item: Equatable, Sendable, Identifiable {
-        /// Index into the runs the diagram draws, so `ordinal == runIndex + 1`.
+        /// Index into the runs the diagram draws.
         public var runIndex: Int
         public var runID: String
+        /// The request's number (`MightyGraphSupport.requestOrdinals`): a notice run adds none and carries the one before it.
         public var ordinal: Int
         /// The request's own diagram node, which holds its input alone.
         public var nodeID: String
@@ -119,6 +120,10 @@ public enum MightyStructure {
         public var answer: Excerpt?
         public var tally: Tally
         public var clusters: [Cluster]
+        /// Claude's reply to finished background work (`MightyGraphRun.noticeRun`), titled as such, not a request.
+        public var noticeRun = false
+        /// A notice run taken into a running turn, without a reply (`MightyGraphRun.quietNotice`): never followed.
+        public var quiet = false
         public var id: String { runID }
     }
 
@@ -211,6 +216,7 @@ public enum MightyStructure {
         public mutating func items(_ runs: [MightyGraphRun], signature: Signature) -> [Item] {
             var next: [String: (request: Signature.Request, item: Item)] = [:]
             next.reserveCapacity(runs.count)
+            let ordinals = MightyGraphSupport.requestOrdinals(runs)
             let items = runs.enumerated().map { index, run in
                 let request = index < signature.requests.count ? signature.requests[index] : nil
                 var item: Item
@@ -218,9 +224,9 @@ public enum MightyStructure {
                     // A trim of older requests moves a kept card's number, nothing else.
                     item = kept.item
                     item.runIndex = index
-                    item.ordinal = index + 1
+                    item.ordinal = ordinals[index]
                 } else {
-                    item = MightyStructure.item(run, index: index)
+                    item = MightyStructure.item(run, index: index, ordinal: ordinals[index])
                 }
                 if let request { next[run.id] = (request, item) }
                 return item
@@ -293,7 +299,10 @@ public enum MightyStructure {
     /// one and pending after it.
     public static func make(runs: [MightyGraphRun], style: StyleEvaluator?, currentPhase: StylePhase?, startingNew: Bool = false,
                             planHistory: [PlanRecord] = [], pendingPlanRunID: String? = nil, items built: [Item]? = nil) -> Shape {
-        let items = built.flatMap { $0.count == runs.count ? $0 : nil } ?? runs.enumerated().map { item($1, index: $0) }
+        let items = built.flatMap { $0.count == runs.count ? $0 : nil } ?? {
+            let ordinals = MightyGraphSupport.requestOrdinals(runs)
+            return runs.enumerated().map { item($1, index: $0, ordinal: ordinals[$0]) }
+        }()
         guard let style, !style.manifest.phases.isEmpty else { return .free(items.map(row)) }
         let ordered = style.manifest.orderedPhases
         let pane = currentPhase.flatMap { phase in ordered.contains { $0.id == phase.id } ? phase : nil }
@@ -335,21 +344,27 @@ public enum MightyStructure {
             func phase(_ stage: StylePlanStage) -> String { style.currentPhase(planStage: stage)?.id ?? first.id }
             // The diagram's own match for the pending plan's request (`PlanCardSupport.graphRunID`).
             let waiting = pendingPlanRunID.flatMap { id in runs.lastIndex { $0.sourceRunID == id || $0.id == id } }
-            return runs.enumerated().map { index, run in
-                if index == waiting { return phase(.awaitingApproval) }
+            var stages: [String] = []
+            for (index, run) in runs.enumerated() {
+                // A notice run is no request of its own: it stays in the phase of the run before it.
+                if run.noticeRun == true { stages.append(stages.last ?? phase(.planning)); continue }
+                if index == waiting { stages.append(phase(.awaitingApproval)); continue }
                 switch planHistory.last(where: { planRecord($0, belongsTo: run) })?.outcome {
-                case .approvedAuto?, .approvedConfirm?: return phase(.executing)
-                case .revised?, .cancelled?, nil: return phase(.planning)
+                case .approvedAuto?, .approvedConfirm?: stages.append(phase(.executing))
+                case .revised?, .cancelled?, nil: stages.append(phase(.planning))
                 }
             }
+            return stages
         }
         // An empty history reads as the style's `default` phase.
         let initial = style.currentPhase(prompts: [])?.id ?? first.id
         let pane = currentPhase.flatMap { manifest.phase($0.id)?.id }
         var result: [String] = []
         // The pane's phase is its newest request's; a notice run after it is not one.
-        let newestRequest = runs.lastIndex { $0.noticeRun != true }
+        let newestRequest = MightyGraphSupport.newestRequestIndex(runs)
         for (index, run) in runs.enumerated() {
+            // A notice run is no request of its own: it stays in the phase of the run before it.
+            if run.noticeRun == true { result.append(result.last ?? initial); continue }
             let newest = index == newestRequest ? pane : nil
             result.append(newest ?? recognisedPhase(run.input, style: style) ?? result.last ?? initial)
         }
@@ -402,7 +417,8 @@ public enum MightyStructure {
         return count
     }
 
-    public static func item(_ run: MightyGraphRun, index: Int) -> Item {
+    /// `ordinal`: the request's number (`MightyGraphSupport.requestOrdinals`); nil counts every run before it.
+    public static func item(_ run: MightyGraphRun, index: Int, ordinal: Int? = nil) -> Item {
         let finished = MightyGraphLayout.finished(run)
         let answer = run.resultEntries.last(where: { $0.kind == "assistant" && !$0.text.isEmpty })?.text ?? run.finalOutput
         let result = finished ? answer.map(preview).flatMap { $0.isEmpty ? nil : $0 } : nil
@@ -415,11 +431,12 @@ public enum MightyStructure {
         let entries = run.rootEntries + blocks.flatMap(\.entries)
         let tally = Tally(agents: blocks.filter { MightyGraphSupport.blockKind($0) == "agent" }.count,
                           tools: entries.filter { $0.activity.map { toolKinds.contains($0.kind) } ?? false }.count)
-        return Item(runIndex: index, runID: run.id, ordinal: index + 1, nodeID: MightyGraphLayout.nodeID(run, suffix: "request"),
+        return Item(runIndex: index, runID: run.id, ordinal: ordinal ?? index + 1, nodeID: MightyGraphLayout.nodeID(run, suffix: "request"),
                     executionNodeID: MightyGraphLayout.nodeID(run, suffix: MightyGraphLayout.workSuffix),
                     input: preview(run.input), status: MobileMightySupport.status(run.status), finished: finished,
                     result: result, request: excerpt(run.input, maximumBytes: requestBytes, lines: requestLines), message: message,
-                    activity: activity(run.rootEntries, limit: requestActivity), answer: full, tally: tally, clusters: clusters(run))
+                    activity: activity(run.rootEntries, limit: requestActivity), answer: full, tally: tally, clusters: clusters(run),
+                    noticeRun: run.noticeRun == true, quiet: run.quietNotice)
     }
 
     /// 요청 is always there; 실행 runs until every block settled, unless the request
@@ -479,11 +496,15 @@ public enum MightyStructure {
     }
 
     /// The run's sub-agent, task and task-notice blocks, by index. A block id the run repeats (a
-    /// damaged save) is kept at its first place only, so every node id is unique.
+    /// damaged save) is kept at its first place only, so every node id is unique. Background blocks
+    /// are left out outside a notice run (`BackgroundNoticeRuns.shownAgents`).
     static func kept(_ run: MightyGraphRun) -> [Int] {
         var seen = Set<String>()
+        let shown = run.noticeRun != true && run.agents.contains { $0.background == true }
+            ? Set(BackgroundNoticeRuns.shownAgents(run).map(\.id)) : nil
         return run.agents.indices.filter { index in
-            (["agent", "task"].contains(MightyGraphSupport.blockKind(run.agents[index])) || run.agents[index].isTaskNotice) && seen.insert(run.agents[index].id).inserted
+            (["agent", "task"].contains(MightyGraphSupport.blockKind(run.agents[index])) || run.agents[index].isTaskNotice)
+                && shown.map { $0.contains(run.agents[index].id) } != false && seen.insert(run.agents[index].id).inserted
         }
     }
 

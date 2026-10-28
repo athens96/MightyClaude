@@ -9,6 +9,9 @@ struct BackgroundTaskRows: View {
     /// The background strip's rows carry the diagram's kind words and a run's last
     /// output line (`PlanCardSupport.backgroundStripRows`); the style's task list has neither.
     let items: [PlanCardSupport.BackgroundStripRow]
+    /// Rows opened to their command and output lines, by task id. The strip's own state: opening a row
+    /// redraws these rows alone.
+    @ViewState private var opened = Set<String>()
 
     init(tasks: [StyleWidgetPresentation.Task]) { items = tasks.map { PlanCardSupport.BackgroundStripRow(task: $0) } }
     init(strip: [PlanCardSupport.BackgroundStripRow]) { items = strip }
@@ -35,21 +38,47 @@ struct BackgroundTaskRows: View {
         let parts = item.kindText.map { [$0, task.elapsed(now: now), PlanCardSupport.noticeDelivered(task.status) ? L("plan.background.noticeDelivered") : ""] }
             ?? [task.kindTitle, task.statusTitle, task.elapsed(now: now), PlanCardSupport.backgroundNotice(task.status) ?? ""]
         let detail = parts.filter { !$0.isEmpty }.joined(separator: " · ")
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Circle().fill(color(task.status)).frame(width: 6, height: 6)
-                Text(verbatim: task.text).font(.ui(size: 11)).foregroundStyle(Palette.ink).lineLimit(1)
-                Spacer(minLength: 4)
-                Text(verbatim: detail).font(.ui(size: 10).monospacedDigit()).foregroundStyle(Palette.ink2).lineLimit(1)
+        let id = item.opens ? item.id : nil
+        let open = id.map(opened.contains) ?? false
+        let head = HStack(spacing: DesignMetrics.Spacing.sm) {
+            Circle().fill(color(task.status)).frame(width: 6, height: 6)
+            Text(verbatim: task.text).font(.ui(size: 11)).foregroundStyle(Palette.ink).lineLimit(1)
+            Spacer(minLength: 4)
+            Text(verbatim: detail).font(.ui(size: 10).monospacedDigit()).foregroundStyle(Palette.ink2).lineLimit(1)
+            if id != nil {
+                Image(systemName: open ? "chevron.up" : "chevron.down").font(.ui(size: 9, weight: .semibold)).foregroundStyle(Palette.ink2)
             }
-            if let tail = item.tail {
+        }
+        return VStack(alignment: .leading, spacing: 0) {
+            if let id {
+                Button { if !opened.insert(id).inserted { opened.remove(id) } } label: { head.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(open ? L("graph.block.collapse") : L("graph.block.expand"))
+                    .accessibilityIdentifier("background-work-row-\(id)")
+            } else {
+                head
+            }
+            if open {
+                // The command (a sub-agent's first prompt line) and the output's last lines, under the text.
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                    if let command = item.command {
+                        Text(verbatim: command).font(.code(size: 10)).foregroundStyle(Palette.ink)
+                            .lineLimit(4).truncationMode(.tail).textSelection(.enabled)
+                    }
+                    ForEach(Array(item.tailLines.enumerated()), id: \.offset) { _, line in
+                        Text(verbatim: line).font(.code(size: 10)).foregroundStyle(Palette.ink2.opacity(0.8))
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                }
+                .padding(.leading, DesignMetrics.Spacing.lg).padding(.top, DesignMetrics.Spacing.xxs)
+            } else if let tail = item.tail {
                 // Under the text, past the dot (6) and its gap.
                 Text(verbatim: tail).font(.code(size: 10)).foregroundStyle(Palette.ink2.opacity(0.8))
                     .lineLimit(1).truncationMode(.middle)
                     .padding(.leading, DesignMetrics.Spacing.lg)
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: id == nil ? .combine : .contain)
     }
 
     private func color(_ status: String) -> Color {
@@ -70,7 +99,8 @@ struct BackgroundWorkStrip: View {
     @EnvironmentObject private var store: AppStore
     let sessionId: String
     let work: BackgroundWork
-    /// The pane's latest request, whose blocks the rows meet by `toolUseId`.
+    /// The pane's latest request, whose blocks the rows meet by `toolUseId`: their command and, for a run, the
+    /// output lines of `output`. Its background blocks are data the diagram no longer draws.
     var run: MightyGraphRun? = nil
     /// The pane's background output lines; only this pane redraws when they change.
     @ObservedObject var output: BackgroundPaneOutput

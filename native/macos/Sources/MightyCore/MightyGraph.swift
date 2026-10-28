@@ -77,7 +77,19 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
         let sum = agents.reduce(usage ?? GraphTokenUsage()) { $0 + ($1.usage ?? GraphTokenUsage()) }
         return sum.isEmpty ? nil : sum
     }
-    public var settled: Bool { MightyGraphSupport.terminal(status) && agents.allSatisfy { MightyGraphSupport.terminal($0.status) } }
+    /// Ended, and every block a view draws for it too: background work a request started runs on in the strip
+    /// above the composer and is not waited for (`BackgroundNoticeRuns.shownAgents`).
+    public var settled: Bool { MightyGraphSupport.terminal(status) && BackgroundNoticeRuns.shownAgents(self).allSatisfy { MightyGraphSupport.terminal($0.status) } }
+    /// The run as views draw it: background blocks only inside a notice run (`BackgroundNoticeRuns.shownAgents`).
+    public var shown: MightyGraphRun {
+        let agents = BackgroundNoticeRuns.shownAgents(self)
+        guard agents.count != self.agents.count else { return self }
+        var run = self; run.agents = agents; return run
+    }
+    /// A notice run taken into a running turn: finished, with no reply of its own. No view follows it or gives it a result card.
+    public var quietNotice: Bool {
+        noticeRun == true && MightyGraphSupport.terminal(status) && (finalOutput ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     /// Background tasks and sub-agents still running after the request's own turn ended: it reads completed and waits on them.
     public var backgroundWaiting: Int { status == "completed" ? agents.filter { ($0.isTask || $0.isBackgroundAgent) && !MightyGraphSupport.terminal($0.status) }.count : 0 }
 
@@ -358,7 +370,50 @@ extension MightyGraphSupport {
     /// The runs the user asked for: every run but the notice runs (`BackgroundNoticeRuns`).
     public static func requestRuns(_ runs: [MightyGraphRun]) -> [MightyGraphRun] { runs.filter { $0.noticeRun != true } }
     /// The user's newest request. A notice run may come after it, even while it still runs.
-    public static func newestRequestRun(_ runs: [MightyGraphRun]) -> MightyGraphRun? { runs.last { $0.noticeRun != true } }
+    public static func newestRequestRun(_ runs: [MightyGraphRun]) -> MightyGraphRun? { newestRequestIndex(runs).map { runs[$0] } }
+    /// Where the user's newest request is in `runs`: the one rule every "newest request" reader uses.
+    public static func newestRequestIndex(_ runs: [MightyGraphRun]) -> Int? { runs.lastIndex { $0.noticeRun != true } }
+    /// The run the views follow as the newest work (natural submit's not-own rule): the newest request, or a notice
+    /// run after it that is a turn of its own — running, or holding Claude's reply. A notice taken into a running turn
+    /// (`MightyGraphRun.quietNotice`) never takes the request's place.
+    public static func followRunIndex(_ runs: [MightyGraphRun]) -> Int? {
+        let newest = newestRequestIndex(runs)
+        return runs.indices.last { index in
+            index == newest || (runs[index].noticeRun == true && index > (newest ?? -1) && !runs[index].quietNotice)
+        }
+    }
+    /// Each run's request number. Notice runs add nothing to the count and carry the number of the request
+    /// before them (at least 1), so a reader that shows a number never shows 0.
+    public static func requestOrdinals(_ runs: [MightyGraphRun]) -> [Int] {
+        var count = 0
+        return runs.map { run in
+            if run.noticeRun != true { count += 1 }
+            return max(1, count)
+        }
+    }
+    /// The runs as views draw them (`MightyGraphRun.shown`).
+    public static func shownRuns(_ runs: [MightyGraphRun]) -> [MightyGraphRun] {
+        guard runs.contains(where: { $0.agents.contains { $0.background == true } }) else { return runs }
+        return runs.map(\.shown)
+    }
+    /// The run the process's lines, statuses and usage belong to (`RunSession.recordGraph`): a notice run that ended
+    /// takes none (they are the request's before it), and a running notice turn's never reach a request still waiting
+    /// for its own run.
+    static func routedIndex(_ runs: [MightyGraphRun]) -> Int {
+        var index = runs.lastIndex { $0.noticeRun != true || !terminal($0.status) } ?? runs.count - 1
+        if runs[index].sourceRunID == nil, runs[index].noticeRun != true,
+           let notice = runs.lastIndex(where: { $0.noticeRun == true && !terminal($0.status) }) { index = notice }
+        return index
+    }
+    /// Whether `event` is the newest request's own: a log, status or usage line routed to it, or a graph observation
+    /// that is neither a notice run's nor a run bound before. `AppStore.apply` ends 전송 중 and `recordGraph` moves
+    /// the request out of "starting" by this one rule. True when there is no run to tell by.
+    public static func newestRequestOwns(_ event: RunEvent, runs: [MightyGraphRun]) -> Bool {
+        guard !runs.isEmpty, let newest = newestRequestIndex(runs) else { return true }
+        guard event.type == "graph" else { return routedIndex(runs) == newest }
+        guard let node = event.graph else { return true }
+        return !BackgroundNoticeRuns.isNoticeRun(node.runId) && !runs[..<newest].contains { $0.sourceRunID == node.runId }
+    }
 }
 
 extension RunSession {
@@ -402,19 +457,12 @@ extension RunSession {
         // or a graph observation of the run means it runs.
         // Written back at once: a path below that returns early (a graph observation that
         // does not normalize, a stale generation) never leaves 전송 중 after the app's own
-        // submit state (`AppStore.apply`, the same `startedBy`) moved on.
-        // The run the process's lines, statuses and usage belong to: a notice run that ended takes none
-        // (they are the request's before it), and a running notice turn's never reach a request still
-        // waiting for its own run.
-        var index = runs.lastIndex { $0.noticeRun != true || !MightyGraphSupport.terminal($0.status) } ?? runs.count - 1
-        if runs[index].sourceRunID == nil, runs[index].noticeRun != true,
-           let notice = runs.lastIndex(where: { $0.noticeRun == true && !MightyGraphSupport.terminal($0.status) }) { index = notice }
+        // submit state (`AppStore.apply`, the same `newestRequestOwns` and `startedBy`) moved on.
+        var index = MightyGraphSupport.routedIndex(runs)
         // Only the request's own run starts it: never a notice turn's lines or an earlier run's blocks.
-        let newest = runs.count - 1
-        let ownEvent = event.type == "graph"
-            ? event.graph.map { node in !BackgroundNoticeRuns.isNoticeRun(node.runId) && !runs[..<newest].contains { $0.sourceRunID == node.runId } } ?? true
-            : index == newest
-        if ownEvent, MightyGraphSupport.startedBy(event, status: runs[newest].status) {
+        // A status routed to it moves it below, as any status does.
+        if let newest = MightyGraphSupport.newestRequestIndex(runs), MightyGraphSupport.newestRequestOwns(event, runs: runs),
+           MightyGraphSupport.startedBy(event, status: runs[newest].status) {
             runs[newest].status = "running"
             graphRuns = runs
         }

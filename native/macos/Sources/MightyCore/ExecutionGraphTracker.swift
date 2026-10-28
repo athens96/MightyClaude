@@ -68,8 +68,11 @@ final class ExecutionGraphTracker {
     private var noticeTurn: String?
     /// The notice run, complete at once and without a result, that notices taken into a running turn share until its result.
     private var absorbedRun: String?
-    /// The earlier notice run a notice turn answers in again while it concerns only blocks copied before.
+    /// The earlier notice run a notice turn answers in again while it concerns only blocks copied before. A turn
+    /// about blocks of two earlier runs answers in the first one it names.
     private var mergeTurn: String?
+    /// The state `mergeTurn`'s main had before the turn reopened it, given back if the turn brings new work after all.
+    private var mergeRestore: String?
     /// Each notice run's copies of finished blocks, oldest first.
     private var noticeCopies: [String: [String]] = [:]
     /// Each copied block's latest notice run.
@@ -738,7 +741,9 @@ final class ExecutionGraphTracker {
         if let earlier = copiedIn[id] {
             copy(id, into: earlier)
             if noticeTurn == nil, mergeTurn == nil, opensTurn {
-                mergeTurn = earlier; setNoticeState(earlier, "running")
+                mergeTurn = earlier
+                mergeRestore = nodes[ExecutionGraphSupport.mainNodeID(runId: earlier)]?.state
+                setNoticeState(earlier, "running")
             }
             return
         }
@@ -746,8 +751,8 @@ final class ExecutionGraphTracker {
         if let open = noticeTurn { run = open }
         else if opensTurn || mergeTurn != nil {
             guard let opened = openNoticeRun(running: true) else { return }
-            // The turn brought new work after all: the earlier run gets nothing of it.
-            if let merged = mergeTurn { setNoticeState(merged, "completed"); mergeTurn = nil }
+            // The turn brought new work after all: the earlier run gets nothing of it and ends as it was.
+            if let merged = mergeTurn { setNoticeState(merged, mergeRestore ?? "completed"); mergeTurn = nil; mergeRestore = nil }
             noticeTurn = opened; run = opened
         } else if let open = absorbedRun { run = open }
         else {
@@ -788,8 +793,10 @@ final class ExecutionGraphTracker {
     private func setNoticeState(_ run: String, _ state: String) {
         let main = ExecutionGraphSupport.mainNodeID(runId: run)
         guard !finished, var node = nodes[main], node.state != state else { return }
-        node.state = state; node.updatedAt = mightyTimestamp()
-        nodes[main] = node; emit(node)
+        node.state = state
+        guard var normalized = ExecutionGraphSupport.normalized(node) else { return }
+        normalized.updatedAt = mightyTimestamp()
+        nodes[main] = normalized; emit(normalized)
     }
     /// The next notice run's main block: running until a notice turn's result, or complete at once for absorbed notices.
     private func openNoticeRun(running: Bool) -> String? {
@@ -804,7 +811,7 @@ final class ExecutionGraphTracker {
     }
     /// A notice turn or a steered turn ended: the next one starts with no notices.
     private func clearNoticeTurn() {
-        steeredTurn = nil; noticeTurn = nil; absorbedRun = nil; mergeTurn = nil
+        steeredTurn = nil; noticeTurn = nil; absorbedRun = nil; mergeTurn = nil; mergeRestore = nil
     }
     /// Messages a background sub-agent sent this session (`AgentHandback`). Its
     /// framed final report is its result and ends it; like the agent's

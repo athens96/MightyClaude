@@ -319,15 +319,18 @@ public struct MobileSessionDetail: Codable, Sendable, Equatable {
     public var askTargets: [MobileAskTarget]?
     /// The target the pane's sends go to now; absent for Claude.
     public var askTarget: String?
+    /// Background work still running, as the Mac's strip lists it; absent when none runs.
+    public var backgroundWork: [MobileBackgroundWork]?
     public static let maximumEntries = 80
     public init(revision: Int, session: MobileSessionSummary, entries: [LogEntry], permissions: [MobilePermission] = [], queued: [MobileQueuedItem] = [], usage: MobileUsage? = nil, elapsedSeconds: Double? = nil,
                 hasOlder: Bool? = nil, settings: MobileSettings? = nil, mighty: MobileMighty? = nil, statusLine: MobileStatusLine? = nil, rateLimits: [MobileRateLimit]? = nil,
-                askTargets: [MobileAskTarget]? = nil, askTarget: String? = nil) {
+                askTargets: [MobileAskTarget]? = nil, askTarget: String? = nil, backgroundWork: [MobileBackgroundWork]? = nil) {
         self.revision = revision; self.session = session; self.entries = MobileRemoteSupport.phoneEntries(entries); self.permissions = permissions; self.queued = queued; self.usage = usage; self.elapsedSeconds = elapsedSeconds
         self.hasOlder = hasOlder; self.settings = settings; self.mighty = mighty; self.statusLine = statusLine; self.rateLimits = rateLimits
         // No targets: neither field is sent, so the phone draws no switch.
         let offered = askTargets?.isEmpty == false ? askTargets : nil
         self.askTargets = offered; self.askTarget = offered == nil ? nil : askTarget
+        self.backgroundWork = backgroundWork?.isEmpty == false ? backgroundWork : nil
     }
 }
 
@@ -435,11 +438,40 @@ public struct MobileMightyRun: Codable, Sendable, Equatable, Identifiable {
     public var status: String
     public var blocks: [MobileBlock]
     /// The run's final answer at the larger `maximumRunResult` ceiling; carried
-    /// only by the newest run once it has settled, so older runs lean on their
-    /// `main` block's shorter output and the long poll stays small.
+    /// only by the newest request and the notice runs after it once each has
+    /// settled, so older runs lean on their `main` block's shorter output and
+    /// the long poll stays small.
     public var result: String?
-    public init(id: String, input: String, title: String? = nil, status: String, blocks: [MobileBlock], result: String? = nil) {
+    /// `true` for Claude's reply to finished background work (`MightyGraphRun.noticeRun`): not a request,
+    /// so it takes no request number; its `main` block is titled as such. Absent otherwise.
+    public var noticeRun: Bool?
+    public init(id: String, input: String, title: String? = nil, status: String, blocks: [MobileBlock], result: String? = nil, noticeRun: Bool? = nil) {
         self.id = id; self.input = input; self.title = title; self.status = status; self.blocks = blocks; self.result = result
+        self.noticeRun = noticeRun == true ? true : nil
+    }
+}
+
+/// One background task still running in a pane (`MobileSessionDetail.backgroundWork`): a row of the Mac's
+/// background strip. Its output file's path never travels; only the last lines the host read of it do.
+public struct MobileBackgroundWork: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    /// "agent" (a background sub-agent) or "run" (a background command).
+    public var kind: String
+    public var title: String
+    /// Always "running": ended work is in the notice run's diagram.
+    public var status: String
+    /// ISO 8601, as the CLI reported the start.
+    public var startedAt: String
+    /// The command a run runs, or the first line of a sub-agent's prompt.
+    public var command: String?
+    /// A run's last output lines (at most 6).
+    public var outputTail: [String]?
+    public static let kinds = ["agent", "run"]
+    public static let maximumTitle = 1_000
+    public static let maximumCommand = 2_000
+    public init(id: String, kind: String, title: String, status: String = "running", startedAt: String, command: String? = nil, outputTail: [String]? = nil) {
+        self.id = id; self.kind = kind; self.title = title; self.status = status; self.startedAt = startedAt
+        self.command = command; self.outputTail = outputTail
     }
 }
 

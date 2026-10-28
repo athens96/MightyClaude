@@ -279,7 +279,8 @@ struct MobileRemoteExtensionTests {
                                    background: true, outputFile: "/tmp/example/tasks/t1.output", noticeReply: "테스트가 모두 통과했습니다.")
         let sub = MightyGraphAgent(id: "a1", title: "조사", status: "running", background: true)
         let plain = MightyGraphAgent(id: "a2", title: "검토", status: "running")
-        let graph = MightyGraphRun(id: "r", agents: [run, sub, plain])
+        // Background blocks travel in a notice run; a request's are left out (`requestRunsLeaveTheirBackgroundBlocksOut`).
+        let graph = MightyGraphRun(id: "r:notice:1", agents: [run, sub, plain], noticeRun: true)
         let lines = (1...8).map { "line \($0)" }
         let blocks = MobileMightySupport.blocks(graph, ordinal: 1, outputTails: ["t1": lines, "a1": ["not a run"]])
         let task = try #require(blocks.first { $0.id == "t1" })
@@ -299,7 +300,72 @@ struct MobileRemoteExtensionTests {
         #expect(json["background"] == nil && json["outputTail"] == nil && json["noticeReply"] == nil)
         // A notice reply is bounded like `output`.
         var long = run; long.noticeReply = String(repeating: "가", count: 3_000)
-        #expect(MobileMightySupport.blocks(MightyGraphRun(id: "r", agents: [long]), ordinal: 1).last?.noticeReply?.count == 2_000)
+        #expect(MobileMightySupport.blocks(MightyGraphRun(id: "r:notice:1", agents: [long], noticeRun: true), ordinal: 1).last?.noticeReply?.count == 2_000)
+    }
+
+    @Test func requestRunsLeaveTheirBackgroundBlocksOutAndNoticeRunsTravelFlagged() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            let task = MightyGraphAgent(id: "t1", title: "npm test", input: "npm test", status: "running", kind: "task", background: true, outputFile: "/tmp/t1.output")
+            let under = MightyGraphAgent(id: "t1-child", parentID: "t1", title: "inner", status: "running")
+            let plain = MightyGraphAgent(id: "a2", title: "검토", status: "completed")
+            let request = MightyGraphRun(id: "r", input: "테스트", status: "completed", agents: [task, under, plain], finalOutput: "시작했습니다.")
+            var copy = task; copy.id = "r:notice:1:t1"; copy.status = "completed"; copy.sourceBlockId = "t1"
+            let notice = MightyGraphRun(id: "r:notice:1", input: "npm test · 완료", status: "completed", agents: [copy], finalOutput: "통과했습니다.", noticeRun: true)
+            let next = MightyGraphRun(id: "n", input: "다음", status: "running")
+            let runs = MobileMightySupport.runs([request, notice, next])
+            // The request's background block and the block under it are left out; the notice run carries the copy.
+            #expect(runs[0].blocks.map(\.id) == ["r:main", "a2"])
+            #expect(runs[1].blocks.map(\.id) == ["r:notice:1:main", "r:notice:1:t1"])
+            #expect(runs[1].blocks[0].title == "백그라운드 작업 완료" && runs[1].noticeRun == true && runs[1].title == nil)
+            // A notice run takes no request number: the next request is 요청 2.
+            #expect(runs[2].blocks[0].title == L("remote.block.request", ["ordinal": "2"]))
+            #expect(runs[0].noticeRun == nil)
+            let json = try encoded(runs[0])
+            #expect(json["noticeRun"] == nil)
+            #expect(try encoded(runs[1])["noticeRun"] as? Bool == true)
+            // The newest request and the notice runs after it carry their result; an older request does not.
+            let settled = MobileMightySupport.runs([request, notice])
+            #expect(settled[0].result == "시작했습니다." && settled[1].result == "통과했습니다.")
+            let older = MobileMightySupport.runs([request, notice, MightyGraphRun(id: "m", status: "completed", finalOutput: "끝")])
+            #expect(older[0].result == nil && older[1].result == nil && older[2].result == "끝")
+        }
+    }
+
+    @Test func runningBackgroundWorkTravelsWithItsCommandAndTailButNoPath() throws {
+        let started = "2026-10-28T00:00:00.000Z"
+        let work = BackgroundWork(tasks: [BackgroundTask(id: "b1", toolUseId: "tool-shell", kind: "shell", description: "Run the checks", startedAt: started),
+                                          BackgroundTask(id: "b2", toolUseId: "tool-agent", kind: "agent", description: "Survey", startedAt: started),
+                                          BackgroundTask(id: "b3", toolUseId: "tool-done", kind: "shell", description: "Build", startedAt: started, status: "completed")],
+                                  turnEnded: true)
+        let shellID = ExecutionGraphSupport.agentNodeID(runId: "exec", toolUseId: "tool-shell")
+        let agentID = ExecutionGraphSupport.agentNodeID(runId: "exec", toolUseId: "tool-agent")
+        let run = MightyGraphRun(id: "r", agents: [MightyGraphAgent(id: shellID, title: "Run the checks", input: "npm test -- --watch=false", status: "running", kind: "task",
+                                                                    background: true, outputFile: "/tmp/example/b1.output"),
+                                                   MightyGraphAgent(id: agentID, title: "Survey", input: "\nList the help pages.\nThen sort them.", status: "running", background: true)],
+                                 sourceRunID: "exec")
+        let lines = (1...9).map { "line \($0)" }
+        let items = try #require(PlanCardSupport.mobileBackgroundWork(work, run: run, output: [shellID: lines]))
+        // Running work only.
+        #expect(items.map(\.id) == ["b1", "b2"])
+        #expect(items[0].kind == "run" && items[0].command == "npm test -- --watch=false" && items[0].outputTail == Array(lines.suffix(6)))
+        #expect(items[0].status == "running" && items[0].startedAt == started && items[0].title == "Run the checks")
+        #expect(items[1].kind == "agent" && items[1].command == "List the help pages." && items[1].outputTail == nil)
+        // The strip's opened row reads the same command and lines.
+        let rows = PlanCardSupport.backgroundStripRows(work, run: run, output: [shellID: lines])
+        #expect(rows[0].id == "b1" && rows[0].run == true && rows[0].tailLines == Array(lines.suffix(6)) && rows[0].opens)
+        // Nothing runs: no field at all.
+        #expect(PlanCardSupport.mobileBackgroundWork(BackgroundWork(tasks: [work.tasks[2]], turnEnded: true), run: run) == nil)
+        let summary = MobileSessionSummary(id: "s1", workspaceId: "w1", title: "Claude", kind: "claude", provider: "claude", model: "default",
+                                           status: "idle", revision: 1, updatedAt: "2026-09-17T00:00:00Z")
+        let detail = MobileSessionDetail(revision: 1, session: summary, entries: [], backgroundWork: items)
+        let data = try JSONEncoder().encode(detail)
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(!text.contains("/tmp/example") && !text.contains("outputFile"))
+        let decoded = try JSONDecoder().decode(MobileSessionDetail.self, from: data)
+        #expect(decoded.backgroundWork == items)
+        let wire = try #require(try encoded(detail)["backgroundWork"] as? [[String: Any]])
+        #expect(Set(wire[1].keys) == ["id", "kind", "title", "status", "startedAt", "command"])
+        #expect(try encoded(MobileSessionDetail(revision: 1, session: summary, entries: [], backgroundWork: []))["backgroundWork"] == nil)
     }
 
     @Test func backgroundLabelsNameTheKindAndHowItEnded() {

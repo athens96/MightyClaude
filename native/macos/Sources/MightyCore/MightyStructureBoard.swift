@@ -31,6 +31,8 @@ extension MightyStructure {
         public var columns: [BoardColumn]
 
         public var runIDs: [String] { items.map(\.runID) }
+        /// Only notice runs taken into a running turn (`Item.quiet`): the view never moves on to it by itself.
+        public var quiet: Bool { !items.isEmpty && items.allSatisfy(\.quiet) }
         /// The current step's place, else the last step that is over.
         public var currentStepIndex: Int? {
             steps.firstIndex { $0.step == .current } ?? steps.lastIndex { $0.step != .pending }
@@ -191,11 +193,15 @@ extension MightyStructure {
         private var seenNewest: String?
         public init() {}
 
+        /// The newest board: the last one, but a quiet notice's board after it (`Board.quiet`), which the
+        /// view never moves on to by itself (`MightyGraphSupport.followRunIndex`).
+        public static func newestIndex(_ boards: [Board]) -> Int? { boards.lastIndex { !$0.quiet } ?? boards.indices.last }
+
         /// The place of the board shown in `boards`, nil when there is none. A picked
         /// board that is gone is found by a request it held, else the oldest board is shown.
         public func index(in boards: [Board]) -> Int? {
             guard !boards.isEmpty else { return nil }
-            guard let chosen else { return boards.count - 1 }
+            guard let chosen else { return Self.newestIndex(boards) }
             if let index = boards.firstIndex(where: { $0.id == chosen }) { return index }
             let runs = Set(chosenRuns)
             return boards.firstIndex { $0.runIDs.contains(where: runs.contains) } ?? 0
@@ -203,25 +209,26 @@ extension MightyStructure {
 
         /// The shown board is the newest one.
         public func onNewest(in boards: [Board]) -> Bool {
-            index(in: boards).map { $0 == boards.count - 1 } ?? true
+            index(in: boards).map { $0 == Self.newestIndex(boards) } ?? true
         }
 
         /// A board newer than the one shown arrived since the user left the newest board.
         public func hasUnseen(in boards: [Board]) -> Bool {
-            !onNewest(in: boards) && boards.last?.id != seenNewest
+            !onNewest(in: boards) && Self.newestIndex(boards).map { boards[$0].id } != seenNewest
         }
 
         /// Shows board `id`. The newest board is shown as "the newest", so the view moves
         /// on with new ones again.
         public mutating func select(_ id: String, in boards: [Board]) {
             guard let target = boards.first(where: { $0.id == id }) else { return }
-            if target.id == boards.last?.id {
+            let newest = Self.newestIndex(boards).map { boards[$0].id }
+            if target.id == newest {
                 chosen = nil
                 chosenRuns = []
                 seenNewest = nil
                 return
             }
-            if onNewest(in: boards) { seenNewest = boards.last?.id }
+            if onNewest(in: boards) { seenNewest = newest }
             chosen = target.id
             chosenRuns = target.runIDs
         }
@@ -234,8 +241,8 @@ extension MightyStructure {
 
         /// Shows the newest board, and moves on with new ones from now on.
         public mutating func showNewest(in boards: [Board]) {
-            guard let last = boards.last else { chosen = nil; return }
-            select(last.id, in: boards)
+            guard let newest = Self.newestIndex(boards) else { chosen = nil; return }
+            select(boards[newest].id, in: boards)
         }
     }
 }

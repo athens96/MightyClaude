@@ -279,15 +279,17 @@ public enum MobileMightySupport {
     }
 
     /// The blocks of one run: the request itself, then its children in the
-    /// order the graph recorded them.
+    /// order the graph recorded them. Background blocks travel only in a notice
+    /// run (`BackgroundNoticeRuns.shownAgents`), whose main block is titled as one.
     /// `outputTails`: a background run's last output lines by block id (`AppStore.backgroundOutput`),
     /// held in host memory only; the output file's path never reaches the wire.
     public static func blocks(_ run: MightyGraphRun, ordinal: Int, outputTails: [String: [String]] = [:]) -> [MobileBlock] {
         let mainStatus = status(run.status)
-        var result = [MobileBlock(id: run.id + ":main", kind: "main", title: L("remote.block.request", ["ordinal": String(ordinal)]), status: mainStatus,
+        let title = run.noticeRun == true ? BackgroundNoticeRuns.title : L("remote.block.request", ["ordinal": String(ordinal)])
+        var result = [MobileBlock(id: run.id + ":main", kind: "main", title: title, status: mainStatus,
                                   summary: summary(run.input), output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus),
                                   nodeModelLabel: run.nodeModelLabel, activity: activity(run.rootEntries, status: mainStatus))]
-        for agent in run.agents {
+        for agent in BackgroundNoticeRuns.shownAgents(run) {
             let state = status(agent.status)
             var block = MobileBlock(id: agent.id, kind: MightyGraphSupport.blockKind(agent), title: MightyGraphSupport.blockTitle(agent),
                                     status: state, summary: summary(agent.input), output: output(answer(agent.entries)),
@@ -314,15 +316,25 @@ public enum MobileMightySupport {
     public static func runs(_ values: [MightyGraphRun], outputTails: [String: [String]] = [:], title: (String) -> String? = { _ in nil }) -> [MobileMightyRun] {
         let window = values.suffix(MobileWire.mightyRuns)
         let offset = values.count - window.count
+        let ordinals = MightyGraphSupport.requestOrdinals(values)
+        let carried = carriesResult(Array(window))
         return window.enumerated().map { index, run in
             let state = status(run.status)
-            // Only the newest run carries its full result, and only once it has settled.
-            let newest = index == window.count - 1 && settled(state)
-            return MobileMightyRun(id: run.id, input: ActivitySupport.clean(run.input, maximumBytes: MobileWire.maximumText),
-                                   title: title(run.input),
-                                   status: state, blocks: blocks(run, ordinal: offset + index + 1, outputTails: outputTails),
-                                   result: newest ? output(run.finalOutput, maximum: MobileWire.maximumRunResult) : nil)
+            let notice = run.noticeRun == true
+            var mobile = MobileMightyRun(id: run.id, input: ActivitySupport.clean(run.input, maximumBytes: MobileWire.maximumText),
+                                         title: notice ? nil : title(run.input),
+                                         status: state, blocks: blocks(run, ordinal: ordinals[offset + index], outputTails: outputTails),
+                                         result: carried(index) && settled(state) ? output(run.finalOutput, maximum: MobileWire.maximumRunResult) : nil)
+            mobile.noticeRun = notice ? true : nil
+            return mobile
         }
+    }
+
+    /// Which runs of `window` carry their full result once settled: the newest request and the notice runs
+    /// after it (Claude's replies to its background work), not older ones.
+    static func carriesResult(_ window: [MightyGraphRun]) -> (Int) -> Bool {
+        let first = MightyGraphSupport.newestRequestIndex(window) ?? window.count - 1
+        return { $0 >= first }
     }
 
     /// A cheap digest of what the phone would see change: run and block
@@ -337,8 +349,9 @@ public enum MobileMightySupport {
     /// during a stream is every token, so it must allocate nothing.
     public static func digest(_ values: [MightyGraphRun]) -> Int {
         var hasher = Hasher()
-        let window = values.suffix(MobileWire.mightyRuns)
-        if let newest = window.last, settled(status(newest.status)) { hasher.combine(newest.finalOutput?.utf8.count) }
+        let window = Array(values.suffix(MobileWire.mightyRuns))
+        let carried = carriesResult(window)
+        for (index, run) in window.enumerated() where carried(index) && settled(status(run.status)) { hasher.combine(run.finalOutput?.utf8.count) }
         for run in window {
             hasher.combine(run.id); hasher.combine(run.status); hasher.combine(run.agents.count)
             hasher.combine(run.rootEntries.count); hasher.combine(run.rootEntries.last?.id)

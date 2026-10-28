@@ -345,10 +345,18 @@ struct MobileRemoteStructureTests {
     @Test func aBackgroundRunsCardCarriesItsTailAndReplyButNeverItsFile() throws {
         let task = MightyGraphAgent(id: "t1", title: "npm test", input: "npm test", status: "running", kind: "task",
                                     background: true, outputFile: "/tmp/example/tasks/t1.output", noticeReply: "통과")
-        let runs = [Fixture.run("r1", status: "running", agents: [task, Fixture.agent("a1", status: "running")])]
+        // Background cards travel in a notice run; a request leaves them out.
+        let request = [Fixture.run("r0", status: "running", agents: [task, Fixture.agent("a1", status: "running")])]
+        let requestWire = try #require(MobileStructure.make(MightyStructure.make(runs: request, style: nil, currentPhase: nil), runCount: 1))
+        #expect(requestWire.rows?.first?.item.clusters.flatMap(\.nodes).map(\.id) == ["a1"])
+        #expect(requestWire.rows?.first?.item.noticeRun == nil)
+        var notice = Fixture.run("r1", status: "running", agents: [task, Fixture.agent("a1", status: "running")])
+        notice.noticeRun = true
+        let runs = [notice]
         let shape = MightyStructure.make(runs: runs, style: nil, currentPhase: nil)
         let lines = (1...8).map { "line \($0)" }
         let wire = try #require(MobileStructure.make(shape, runCount: 1, tails: ["t1": lines, "a1": ["no"]]))
+        #expect(wire.rows?.first?.item.noticeRun == true)
         let clusters = try #require(wire.rows?.first?.item.clusters)
         let nodes = clusters.flatMap(\.nodes)
         let card = try #require(nodes.first { $0.id == "t1" })

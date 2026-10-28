@@ -81,9 +81,10 @@ public enum MightyTimeline {
     }
 
     public struct Group: Equatable, Sendable, Identifiable {
-        /// Index into the runs the diagram draws, so `ordinal == runIndex + 1`.
+        /// Index into the runs the diagram draws.
         public var runIndex: Int
         public var runID: String
+        /// The request's number (`MightyGraphSupport.requestOrdinals`).
         public var ordinal: Int
         /// The request's status, bucketed as a block's is.
         public var status: String
@@ -91,6 +92,8 @@ public enum MightyTimeline {
         public var rows: [Row]
         public var tally: Tally
         public var result: Result?
+        /// Claude's reply to finished background work (`MightyGraphRun.noticeRun`), titled as such, not a request.
+        public var noticeRun = false
         public var id: String { runID }
     }
 
@@ -117,11 +120,16 @@ public enum MightyTimeline {
 
     /// Every request the diagram draws, oldest first, numbered as the diagram numbers them.
     public static func groups(_ runs: [MightyGraphRun]) -> [Group] {
-        runs.enumerated().map { group($1, index: $0) }
+        let ordinals = MightyGraphSupport.requestOrdinals(runs)
+        return runs.enumerated().map { group($1, index: $0, ordinal: ordinals[$0]) }
     }
 
-    public static func group(_ run: MightyGraphRun, index: Int) -> Group {
-        var blocks = MobileMightySupport.blocks(run, ordinal: index + 1)
+    /// The rows index the agents a view draws (`MightyGraphRun.shown`): a view must draw the same runs.
+    public static func group(_ raw: MightyGraphRun, index: Int, ordinal: Int? = nil) -> Group {
+        let run = raw.shown
+        let ordinal = ordinal ?? index + 1
+        let notice = run.noticeRun == true
+        var blocks = MobileMightySupport.blocks(run, ordinal: ordinal)
         // The phone's `main` block is the request and its work at once. Here, as in the
         // diagram, the request holds its input alone, in a neutral state of its own that
         // never reads as the work's outcome, and a 실행 block after it holds the work:
@@ -129,7 +137,7 @@ public enum MightyTimeline {
         if let main = blocks.first {
             blocks[0] = MobileBlock(id: main.id, kind: main.kind, title: main.title, status: requestStatus, summary: main.summary)
             blocks.insert(MobileBlock(id: run.id + ":" + executionKind, kind: executionKind,
-                                      title: L("graph.block.executionOf", ["n": String(index + 1)]), status: main.status,
+                                      title: BackgroundNoticeRuns.executionTitle(notice: notice, ordinal: ordinal), status: main.status,
                                       output: main.output, durationMs: main.durationMs, nodeModelLabel: main.nodeModelLabel, activity: main.activity), at: 1)
         }
         var rows: [Row] = []
@@ -143,13 +151,13 @@ public enum MightyTimeline {
                             node: node(status: block.status), latest: latest, isExecution: position == 1))
         }
         var result: Result?
-        if MightyGraphLayout.finished(run) {
+        if MightyGraphLayout.hasResult(run) {
             let tone = DesignTone(blockStatus: run.status)
             let text = run.resultEntries.last(where: { $0.kind == "assistant" && !$0.text.isEmpty })?.text
             result = Result(nodeID: MightyGraphLayout.nodeID(run, suffix: "result"), tone: tone == .run ? .done : tone, text: text)
         }
-        return Group(runIndex: index, runID: run.id, ordinal: index + 1, status: MobileMightySupport.status(run.status),
-                     input: run.input, rows: rows, tally: tally(Array(blocks.dropFirst())), result: result)
+        return Group(runIndex: index, runID: run.id, ordinal: ordinal, status: MobileMightySupport.status(run.status),
+                     input: run.input, rows: rows, tally: tally(Array(blocks.dropFirst())), result: result, noticeRun: notice)
     }
 }
 
@@ -161,7 +169,7 @@ extension MightyGraphLayout {
         for run in runs {
             // The request block holds its input alone; the run's own work is its 실행 block.
             if DesignTone(blockStatus: run.status) == .run { ids.insert(nodeID(run, suffix: workSuffix)) }
-            for agent in run.agents where DesignTone(blockStatus: agent.status) == .run {
+            for agent in BackgroundNoticeRuns.shownAgents(run) where DesignTone(blockStatus: agent.status) == .run {
                 ids.insert(nodeID(run, suffix: "agent:" + agent.id))
             }
         }

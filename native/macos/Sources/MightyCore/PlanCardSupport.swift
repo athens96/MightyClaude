@@ -100,14 +100,26 @@ public enum PlanCardSupport {
 
     /// One row of the background strip: the task list's row, and the kind words the
     /// diagram's block uses (nil: the row keeps the task list's own words) with, for a
-    /// background run, its last output line.
+    /// background run, its last output line. Opened, the row shows `command` and `tailLines`.
     public struct BackgroundStripRow: Sendable, Equatable {
         public var task: StyleWidgetPresentation.Task
         public var kindText: String?
         public var tail: String?
-        public init(task: StyleWidgetPresentation.Task, kindText: String? = nil, tail: String? = nil) {
+        /// The CLI's task id (`BackgroundTask.id`); nil when the rows no longer line up with the tasks.
+        public var id: String?
+        /// A background run (a command), a background sub-agent (false), or nil when neither is known.
+        public var run: Bool?
+        /// The command a run runs, or the first line of a sub-agent's prompt, from its graph block.
+        public var command: String?
+        /// A run's last output lines, at most `BackgroundOutputTail.maxLines`.
+        public var tailLines: [String] = []
+        public init(task: StyleWidgetPresentation.Task, kindText: String? = nil, tail: String? = nil, id: String? = nil, run: Bool? = nil,
+                    command: String? = nil, tailLines: [String] = []) {
             self.task = task; self.kindText = kindText; self.tail = tail
+            self.id = id; self.run = run; self.command = command; self.tailLines = tailLines
         }
+        /// Whether opening the row shows anything more.
+        public var opens: Bool { command != nil || !tailLines.isEmpty }
     }
 
     /// The strip's rows, in `backgroundTasks`' order. Each task meets its graph block in
@@ -139,10 +151,35 @@ public enum PlanCardSupport {
             let isRun: Bool
             if let block, block.isTask || block.isBackgroundAgent { isRun = block.isTask }
             else if task.kind == "agent" || task.kind == "shell" { isRun = task.kind == "shell" }
-            else { return BackgroundStripRow(task: task) }
-            let tail = isRun ? block.flatMap { output[$0.id]?.last } : nil
-            return BackgroundStripRow(task: task, kindText: MightyGraphSupport.backgroundLabel(run: isRun, status: task.status), tail: tail)
+            else { return BackgroundStripRow(task: task, id: source.id) }
+            let lines = isRun ? block.flatMap { output[$0.id] }.map { Array($0.suffix(BackgroundOutputTail.maxLines)) } ?? [] : []
+            return BackgroundStripRow(task: task, kindText: MightyGraphSupport.backgroundLabel(run: isRun, status: task.status), tail: lines.last,
+                                      id: source.id, run: isRun, command: block.flatMap { stripCommand($0, run: isRun) }, tailLines: lines)
         }
+    }
+
+    /// What an opened strip row shows the work doing: a run's whole command, a sub-agent's first prompt line.
+    static func stripCommand(_ block: MightyGraphAgent, run: Bool) -> String? {
+        let text = run ? block.shownInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            : block.input.split(whereSeparator: \.isNewline).lazy.map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
+        return text.isEmpty ? nil : text
+    }
+
+    /// The phone's `backgroundWork`: the strip's running rows (`backgroundStripRows`), each with its command and
+    /// output lines; never a path. Nil when nothing runs.
+    public static func mobileBackgroundWork(_ work: BackgroundWork?, run: MightyGraphRun?, output: [String: [String]] = [:]) -> [MobileBackgroundWork]? {
+        guard let work, !work.running.isEmpty else { return nil }
+        let rows = Dictionary(backgroundStripRows(work, run: run, output: output).compactMap { row in row.id.map { ($0, row) } },
+                              uniquingKeysWith: { first, _ in first })
+        let items = work.running.map { task -> MobileBackgroundWork in
+            let row = rows[task.id]
+            let title = ActivitySupport.clean(row?.task.text ?? task.description, maximumBytes: MobileBackgroundWork.maximumTitle, singleLine: true)
+            return MobileBackgroundWork(id: task.id, kind: (row?.run ?? (task.kind == "shell")) ? "run" : "agent", title: title,
+                                        startedAt: task.startedAt,
+                                        command: row?.command.map { ActivitySupport.clean($0, maximumBytes: MobileBackgroundWork.maximumCommand) }.flatMap { $0.isEmpty ? nil : $0 },
+                                        outputTail: row.flatMap { $0.tailLines.isEmpty ? nil : $0.tailLines })
+        }
+        return items.isEmpty ? nil : items
     }
 
     /// The expandable background list outside a style: in any view once the

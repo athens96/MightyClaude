@@ -162,4 +162,129 @@ struct BackgroundNoticeRunsTests {
         var budget = 1_000_000
         #expect(MightyGraphSupport.normalized([run], restoring: true, budget: &budget).first?.noticeRun == true)
     }
+
+    // MARK: Views of notice runs
+
+    private static func layout(_ runs: [MightyGraphRun], running: Bool = false) -> MightyGraphLayout {
+        .make(runs: runs, draft: "", running: running, expanded: [], splitsExecution: true)
+    }
+    private static func node(_ run: String, _ suffix: String) -> String { MightyGraphBlockSize.nodeID(runID: run, suffix: suffix) }
+    /// A request whose background command still runs, a notice run taken into its turn (no reply), and one with a reply.
+    private static func runs(answered: Bool = true, requestStatus: String = "completed") -> [MightyGraphRun] {
+        let task = MightyGraphAgent(id: "t", title: "Build", input: "npm run build", status: "running", kind: "task", background: true)
+        var request = MightyGraphRun(id: "r", input: "build it", status: requestStatus, agents: [MightyGraphAgent(id: "fg", title: "Read", status: "completed"), task],
+                                     finalOutput: requestStatus == "completed" ? "Started." : nil)
+        request.refreshResult()
+        var copy = task; copy.id = "r:notice:1:t"; copy.status = "completed"; copy.sourceBlockId = "t"
+        var quiet = MightyGraphRun(id: "r:notice:1", input: "Build · 완료", status: "completed", agents: [copy], noticeRun: true)
+        quiet.refreshResult()
+        var reply = MightyGraphRun(id: "r:notice:2", input: "Build · 완료", status: answered ? "completed" : "running", agents: [copy],
+                                   finalOutput: answered ? "The build passed." : nil, noticeRun: true)
+        reply.agents[0].id = "r:notice:2:t"
+        reply.refreshResult()
+        return [request, quiet, reply]
+    }
+
+    @Test func theRunRulesNameTheNewestRequestTheFollowedRunAndTheNumbers() {
+        let all = Self.runs()
+        #expect(MightyGraphSupport.newestRequestIndex(all) == 0)
+        // A quiet notice run is never followed; one with a reply, or still running, is.
+        #expect(all[1].quietNotice && !all[2].quietNotice && !all[0].quietNotice)
+        #expect(MightyGraphSupport.followRunIndex(all) == 2)
+        #expect(MightyGraphSupport.followRunIndex(Self.runs(answered: false)) == 2)
+        #expect(MightyGraphSupport.followRunIndex(Array(all.prefix(2))) == 0)
+        // A request after the notice runs is the newest again; notice runs take no number.
+        let next = all + [MightyGraphRun(id: "n", status: "starting")]
+        #expect(MightyGraphSupport.newestRequestIndex(next) == 3 && MightyGraphSupport.followRunIndex(next) == 3)
+        #expect(MightyGraphSupport.requestOrdinals(next) == [1, 1, 1, 2])
+        #expect(MightyGraphSupport.requestOrdinals([all[1], all[0]]) == [1, 1])
+        #expect(MightyGraphSupport.newestRequestIndex([all[1]]) == nil)
+        // Views draw the request without its background block; data keeps it.
+        let shown = MightyGraphSupport.shownRuns(all)
+        #expect(shown[0].agents.map(\.id) == ["fg"] && all[0].agents.count == 2 && shown[2].agents.count == 1)
+    }
+
+    @Test func aRequestWhoseBackgroundWorkRunsOnHasItsResultAndAQuietNoticeRunHasNone() {
+        let all = Self.runs()
+        // The request's own turn ended: its result shows while its background command still runs in the strip.
+        #expect(all[0].settled && MightyGraphLayout.finished(all[0]) && all[0].resultEntries.first?.text == "Started.")
+        let graph = Self.layout(MightyGraphSupport.shownRuns(all))
+        let ids = Set(graph.nodes.map(\.id))
+        #expect(ids.contains(Self.node("r", "result")))
+        #expect(!ids.contains(Self.node("r", "agent:t")))
+        #expect(!ids.contains(Self.node("r:notice:1", "result")) && ids.contains(Self.node("r:notice:1", "agent:r:notice:1:t")))
+        #expect(ids.contains(Self.node("r:notice:2", "result")))
+        // The latest result is the newest run that has one, never the quiet run's empty card.
+        #expect(MightyGraphLayout.latestResultID(runs: all) == Self.node("r:notice:2", "result"))
+        #expect(MightyGraphLayout.latestResultID(runs: Array(all.prefix(2))) == Self.node("r", "result"))
+        #expect(MightyGraphLayout.fittedResultID(runs: Array(all.prefix(2)), viewport: CGSize(width: 900, height: 600), sharedResultSize: nil) == Self.node("r", "result"))
+        #expect(MightyGraphLayout.filesPanelOpen(runs: Array(all.prefix(2)), resultFilesRunID: "r"))
+        // 기록 gives the quiet run no result card either, and numbers the request alone.
+        let groups = MightyTimeline.groups(MightyGraphSupport.shownRuns(all))
+        #expect(groups.map(\.ordinal) == [1, 1, 1] && groups.map(\.noticeRun) == [false, true, true])
+        #expect(groups[1].result == nil && groups[2].result?.text == "The build passed.")
+        #expect(groups[0].rows.map(\.nodeID) == [Self.node("r", "request"), Self.node("r", MightyGraphLayout.workSuffix), Self.node("r", "agent:fg")])
+    }
+
+    @Test func theFollowedBlockMovesOnToANoticeRunWithAReplyButNotToAQuietOne() {
+        let all = MightyGraphSupport.shownRuns(Self.runs())
+        #expect(MightyGraphFollow.targetID(Self.layout(all), runs: all) == Self.node("r:notice:2", "result"))
+        // Still running, its newest block is followed.
+        let open = MightyGraphSupport.shownRuns(Self.runs(answered: false))
+        #expect(MightyGraphFollow.targetID(Self.layout(open, running: true), runs: open) == Self.node("r:notice:2", "agent:r:notice:2:t"))
+        // A quiet notice run after a running request leaves the camera on the request.
+        let running = MightyGraphSupport.shownRuns(Array(Self.runs(requestStatus: "running").prefix(2)))
+        let graph = Self.layout(running, running: true)
+        #expect(MightyGraphFollow.targetID(graph, runs: running) == Self.node("r", "agent:fg"))
+        #expect(graph.newestRequestTargetID(running) == Self.node("r", MightyGraphLayout.workSuffix))
+        #expect(graph.newestRequestTargetID(all) == Self.node("r", "request"))
+    }
+
+    @Test func aNoticeRunStaysInThePhaseBeforeItAndTheNewestRequestTakesThePanes() throws {
+        let style = try #require(BundledStyles.shared.evaluator("ouroboros"))
+        let request = MightyGraphRun(id: "r1", input: "ooo interview 할 일 앱", status: "completed")
+        let notice = MightyGraphRun(id: "r1:notice:1", input: "ooo seed · 완료", status: "completed", finalOutput: "done", noticeRun: true)
+        // The pane's phase is its newest request's, not the notice run's after it; the notice run's lines name no phase.
+        #expect(MightyStructure.phaseIDs(runs: [request, notice], style: style, currentPhase: style.manifest.phase("seed")) == ["seed", "seed"])
+        #expect(MightyStructure.phaseIDs(runs: [request, notice], style: style) == ["interview", "interview"])
+        let plan = try #require(BundledStyles.shared.evaluator("claude-plan"))
+        let executed = MightyGraphRun(id: "p1", input: "go", status: "completed", sourceRunID: "s1")
+        let record = PlanRecord(id: "x", runId: "c", plan: "# plan", receivedAt: "2026-10-12T00:00:00.000Z", decidedAt: "2026-10-12T00:01:00.000Z",
+                                outcome: .approvedAuto, graphRunId: "s1")
+        #expect(MightyStructure.phaseIDs(runs: [executed, MightyGraphRun(id: "s1:notice:1", status: "completed", noticeRun: true)], style: plan, planHistory: [record])
+                == ["execute", "execute"])
+        // The structure leaves the request's background block out and numbers the request alone.
+        let all = Self.runs()
+        let items = MightyStructure.make(runs: all, style: nil, currentPhase: nil)
+        let rows: [MightyStructure.Row]
+        if case .free(let free) = items { rows = free } else { rows = [] }
+        #expect(rows.map(\.item.ordinal) == [1, 1, 1] && rows.map(\.item.noticeRun) == [false, true, true])
+        #expect(rows[0].item.clusters.flatMap(\.nodes).map(\.agentID) == ["fg"] && rows[1].item.clusters.flatMap(\.nodes).map(\.agentID) == ["r:notice:1:t"])
+        // The board a view moves on with is never a quiet notice's.
+        let boards = MightyStructure.boards(MightyStructure.make(runs: Array(all.prefix(2)), style: nil, currentPhase: nil))
+        #expect(boards.map(\.quiet) == [false, true])
+        var navigation = MightyStructure.Navigation()
+        #expect(navigation.index(in: boards) == 0 && navigation.onNewest(in: boards))
+        navigation.step(1, in: boards)
+        #expect(navigation.index(in: boards) == 1 && !navigation.onNewest(in: boards))
+        navigation.showNewest(in: boards)
+        #expect(navigation.index(in: boards) == 0)
+    }
+
+    /// 전송 중 ends, and the request leaves "starting", by one rule: only the request's own lines, statuses and blocks.
+    @Test func onlyTheNewestRequestsOwnEventsStartIt() {
+        var notice = MightyGraphRun(id: "proc-1:notice:1", status: "running", sourceRunID: "proc-1:notice:1", noticeRun: true)
+        notice.agents = []
+        let runs = [MightyGraphRun(id: "one", status: "completed", sourceRunID: "proc-1"), notice, MightyGraphRun(id: "two", status: "starting")]
+        let line = RunEvent(sessionId: "pane", type: "log", entry: LogEntry(id: "l", kind: "assistant", text: "x", provider: "claude"))
+        let status = RunEvent(sessionId: "pane", type: "status", status: "running")
+        #expect(!MightyGraphSupport.newestRequestOwns(line, runs: runs) && !MightyGraphSupport.newestRequestOwns(status, runs: runs))
+        let old = RunEvent(sessionId: "pane", type: "graph", graph: ExecutionGraphNode(id: "b", runId: "proc-1", kind: "task", state: "completed", title: "B"))
+        let fresh = RunEvent(sessionId: "pane", type: "graph", graph: ExecutionGraphNode(id: "m", runId: "proc-2", kind: "main", state: "running", title: "M"))
+        #expect(!MightyGraphSupport.newestRequestOwns(old, runs: runs) && MightyGraphSupport.newestRequestOwns(fresh, runs: runs))
+        // The notice turn over, the process's lines are the new request's.
+        var ended = runs; ended[1].status = "completed"
+        #expect(MightyGraphSupport.newestRequestOwns(line, runs: ended) && MightyGraphSupport.newestRequestOwns(status, runs: ended))
+        #expect(MightyGraphSupport.newestRequestOwns(line, runs: []))
+    }
 }

@@ -36,7 +36,9 @@ struct MobileRemoteTracking {
         /// guided panel's state. Not the streamed
         /// text — see `AppStore.mobileMightyDigest`.
         var mighty: Int
-        init(_ session: RunSession, editable: Bool, options: Int, mighty: Int) {
+        /// The running background work the phone lists (`MobileSessionDetail.backgroundWork`).
+        var background: Int
+        init(_ session: RunSession, editable: Bool, options: Int, mighty: Int, background: Int = 0) {
             status = session.status; title = session.title; provider = session.provider; model = session.model; resumeId = session.resumeId
             count = session.logs.count
             tail = session.logs.suffix(12).map { "\($0.id):\($0.text.utf8.count):\($0.activity?.state ?? "")" }
@@ -44,7 +46,7 @@ struct MobileRemoteTracking {
             settings = session.settings.effort + "|" + session.settings.permissionMode
             view = (session.agentViewMode ?? "") + "|" + (session.mightyStyle ?? "")
             limits = session.sessionUsage?.rateLimitsUpdatedAt
-            self.editable = editable; self.options = options; self.mighty = mighty
+            self.editable = editable; self.options = options; self.mighty = mighty; self.background = background
         }
     }
 }
@@ -343,7 +345,8 @@ extension AppStore {
         var nextSummaries: [String: MobileSessionSummary] = [:]
         for session in phoneSessions {
             let editable = MobileRemoteSupport.editable(status: session.status, pendingRun: pendingRuns.contains(session.id))
-            let fingerprint = MobileRemoteTracking.SessionFingerprint(session, editable: editable, options: mobileOptionsDigest(session), mighty: mobileMightyDigest(session))
+            let fingerprint = MobileRemoteTracking.SessionFingerprint(session, editable: editable, options: mobileOptionsDigest(session), mighty: mobileMightyDigest(session),
+                                                                           background: mobileBackgroundDigest(session))
             let changed = mobileTracking.seen[session.id] != fingerprint || heldMoved.contains(session.id)
             if changed { mobileTracking.sessionRevisions[session.id, default: 0] += 1 }
             var summary = mobileSummary(session, revision: mobileTracking.sessionRevisions[session.id, default: 1], permissions: permissions, queued: queued, held: held,
@@ -469,7 +472,26 @@ extension AppStore {
                                    mighty: mobileMighty(session, structure: structure),
                                    statusLine: mobileStatusLine(id), rateLimits: MobileRemoteSupport.rateLimits(session.sessionUsage?.rateLimits ?? []),
                                    askTargets: targets.map { MobileAskTarget(id: $0.id, label: $0.label) },
-                                   askTarget: AskTargets.effective(saved: session.askTarget, available: targets)?.id)
+                                   askTarget: AskTargets.effective(saved: session.askTarget, available: targets)?.id,
+                                   backgroundWork: mobileBackgroundWork(session))
+    }
+
+    /// The pane's running background work as its strip lists it, joined to the newest request's blocks for the
+    /// command and a run's output lines; never a path.
+    func mobileBackgroundWork(_ session: RunSession) -> [MobileBackgroundWork]? {
+        guard session.kind == SessionKind.claude, session.backgroundWork?.running.isEmpty == false else { return nil }
+        return PlanCardSupport.mobileBackgroundWork(session.backgroundWork, run: MightyGraphSupport.newestRequestRun(session.graphRuns ?? []),
+                                                    output: backgroundOutput.lines(forPane: session.id))
+    }
+
+    /// What wakes a phone watching the pane's `backgroundWork`: the running tasks and, while any runs, its output
+    /// lines' phone revision (moved at most once per `BackgroundOutputModel.phoneInterval`).
+    func mobileBackgroundDigest(_ session: RunSession) -> Int {
+        guard session.kind == SessionKind.claude, let running = session.backgroundWork?.running, !running.isEmpty else { return 0 }
+        var hasher = Hasher()
+        for task in running { hasher.combine(task.id); hasher.combine(task.description); hasher.combine(task.toolUseId) }
+        hasher.combine(backgroundOutput.phoneRevision(forPane: session.id))
+        return hasher.finalize()
     }
 
     // MARK: Mighty

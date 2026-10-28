@@ -566,7 +566,8 @@ struct SessionPaneView: View {
                 let retained = session.mightyGraphRuns
                 let history = store.graphHistory(for: session, retained: retained)
                 let phase = guidedPhase
-                MightyGraphView(sessionID: session.id, provider: session.provider, runs: history.runs + retained, draft: draft.wrappedValue, running: running,
+                // Background blocks show only in notice runs; the strip above the composer lists running work.
+                MightyGraphView(sessionID: session.id, provider: session.provider, runs: MightyGraphSupport.shownRuns(history.runs + retained), draft: draft.wrappedValue, running: running,
                     blockSizes: session.graphBlockSizes ?? [:],
                     onSaveBlockSize: { id, size in store.setGraphBlockSize(session.id, nodeID: id, size: size) },
                     workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },

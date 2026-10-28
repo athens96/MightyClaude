@@ -214,7 +214,7 @@ public struct MightyGraphLayout {
     }
     /// Whether the result files panel is open beside the newest result card.
     public static func filesPanelOpen(runs: [MightyGraphRun], resultFilesRunID: String?) -> Bool {
-        guard let index = runs.indices.last(where: { finished(runs[$0]) }), let resultFilesRunID,
+        guard let index = runs.indices.last(where: { hasResult(runs[$0]) }), let resultFilesRunID,
               runs[index].id == resultFilesRunID, runs[index].status == "completed" else { return false }
         return true
     }
@@ -285,9 +285,14 @@ public struct MightyGraphLayout {
     public static func terminal(_ state: String) -> Bool {
         ["completed", "error", "failed", "stopped", "cancelled", "interrupted"].contains(state)
     }
+    /// Ended with every block a view draws for it (`BackgroundNoticeRuns.shownAgents`): background work the
+    /// request started runs on in the strip and is not waited for.
     public static func finished(_ run: MightyGraphRun) -> Bool {
-        terminal(run.status) && run.agents.allSatisfy { terminal($0.status) }
+        terminal(run.status) && BackgroundNoticeRuns.shownAgents(run).allSatisfy { terminal($0.status) }
     }
+    /// Finished with a result card under it: every finished run but a notice run without a reply of its own
+    /// (`MightyGraphRun.quietNotice`), whose card would hold nothing.
+    public static func hasResult(_ run: MightyGraphRun) -> Bool { finished(run) && !run.quietNotice }
     public static func nodeID(_ run: MightyGraphRun, suffix: String) -> String {
         MightyGraphBlockSize.nodeID(runID: run.id, suffix: suffix)
     }
@@ -302,8 +307,9 @@ public struct MightyGraphLayout {
         return Self.nodeID(last, suffix: "request")
     }
 
+    /// The newest result card: the newest run that has one (`hasResult`).
     public static func latestResultID(runs: [MightyGraphRun]) -> String? {
-        runs.indices.last(where: { finished(runs[$0]) }).map { nodeID(runs[$0], suffix: "result") }
+        runs.indices.last(where: { hasResult(runs[$0]) }).map { nodeID(runs[$0], suffix: "result") }
     }
 
     public static func fittedResultID(runs: [MightyGraphRun], viewport: CGSize?, sharedResultSize: MightyGraphBlockSize?) -> String? {
@@ -419,7 +425,7 @@ public struct MightyGraphLayout {
                 if let tree = branch(index) { branches.append(tree) }
             }
             let branchWidth = branches.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, branches.count - 1)) * siblingGap
-            let width = max(mainSize.width, workSize?.width ?? 0, branchWidth, finished(run) ? resultSize.width : 0)
+            let width = max(mainSize.width, workSize?.width ?? 0, branchWidth, hasResult(run) ? resultSize.width : 0)
             var tree = Tree(nodes: [Node(id: mainID, content: .request(runIndex), frame: CGRect(x: (width - mainSize.width) / 2, y: 0, width: mainSize.width, height: mainHeight))], edges: [], width: width, height: mainHeight, top: mainID, leaves: [mainID])
             // The block the sub-agents branch from: the 실행 block right under the request, or the request itself.
             var parentID = mainID
@@ -460,7 +466,7 @@ public struct MightyGraphLayout {
                 tree.leaves = [id]
                 tree.height += rowGap + planSize.height
             }
-            if finished(run) {
+            if hasResult(run) {
                 let id = resultID
                 let height = resultSize.height
                 tree.nodes.append(Node(id: id, content: .result(runIndex), frame: CGRect(x: (width - resultSize.width) / 2, y: tree.height + rowGap, width: resultSize.width, height: height)))
@@ -508,7 +514,7 @@ public struct MightyGraphLayout {
         result.size = CGSize(width: MightyGraphCamera.canvasWidth(leading: leading, trailing: trailing),
                              height: max(188, max(bottom, result.nodes.map(\.frame.maxY).max() ?? 0) + 24 - result.originY))
         if let resultFilesRunID, let runIndex = runs.firstIndex(where: { $0.id == resultFilesRunID }),
-           runs[runIndex].status == "completed", finished(runs[runIndex]),
+           runs[runIndex].status == "completed", hasResult(runs[runIndex]),
            let resultNode = result.nodes.first(where: { $0.content == .result(runIndex) }) {
             let panelID = nodeID(runs[runIndex], suffix: "result-files")
             let panelSize = CGSize(width: 320, height: resultNode.frame.height)

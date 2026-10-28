@@ -109,10 +109,11 @@ struct AgentNoticeTests {
                 for run in runs {
                     let notice = try #require(run.main, "\(name): \(run.id) main")
                     #expect(notice.title == L("graph.background.noticeRun") && notice.parentId == nil, "\(name): \(run.id) main")
-                    // A run with Claude's answer is complete, or runs again for a later turn that answers in it; the
-                    // request's result never holds that answer.
+                    // A run with Claude's answer is complete; only a stream that ends inside a turn answering in it again
+                    // leaves it running. The request's result never holds that answer.
                     if let output = notice.output {
-                        #expect(["completed", "running"].contains(notice.state), "\(name): \(run.id) state")
+                        let endsInTurn = (item["events"] as? [[String: Any]])?.last?["type"] as? String != "result"
+                        #expect(notice.state == "completed" || (endsInTurn && notice.state == "running"), "\(name): \(run.id) state \(notice.state)")
                         #expect(main.output?.contains(output) != true, "\(name): \(run.id) answer in the request's result")
                     }
                     for copy in run.copies {
@@ -128,6 +129,38 @@ struct AgentNoticeTests {
                     #expect(copy.state == original.state && copy.output == original.output && copy.outputFile == original.outputFile, "\(name): \(copy.id) copy")
                 }
             }
+        }
+    }
+
+    /// A turn that would answer in an earlier notice run but brings new work opens a run for that work; the earlier
+    /// run ends as it was before the turn, an error included.
+    @Test func aMixedTurnLeavesTheEarlierRunInItsOwnState() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            let cases = try #require(try Self.load()["streams"] as? [[String: Any]])
+            let mixed = try #require(cases.first { ($0["name"] as? String)?.hasPrefix("notice runs: a turn that also brings a new block") == true })
+            var events = try #require(mixed["events"] as? [[String: Any]])
+            // The first notice turn fails; stop after the mixed turn's answer.
+            let first = try #require(events.firstIndex { $0["type"] as? String == "result" && $0["result"] as? String == "The build passed." })
+            events[first]["is_error"] = true
+            let mixedEnd = try #require(events.firstIndex { $0["type"] as? String == "result" && $0["result"] as? String == "The checks passed." })
+            var nodes: [ExecutionGraphNode] = []
+            var afterFirst = false, reopened = false
+            let earlier = ExecutionGraphSupport.mainNodeID(runId: "mixed:notice:1")
+            let tracker = ExecutionGraphTracker(runID: "mixed", input: "Do the request", emit: { node in
+                nodes.append(node)
+                if afterFirst, node.id == earlier, node.state == "running" { reopened = true }
+            })
+            for (index, event) in events.prefix(mixedEnd + 1).enumerated() {
+                tracker.consume(event)
+                if index == first { afterFirst = true }
+            }
+            var latest: [String: ExecutionGraphNode] = [:]
+            for node in nodes { latest[node.id] = node }
+            let runs = Self.noticeRuns(latest)
+            #expect(runs.count == 2)
+            #expect(reopened, "the turn about the copied build first answers in its run")
+            #expect(runs.first?.main?.state == "error" && runs.first?.main?.output == "The build passed.")
+            #expect(runs.last?.main?.state == "completed" && runs.last?.main?.output == "The checks passed.")
         }
     }
 

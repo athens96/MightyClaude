@@ -21,16 +21,17 @@ public enum MightyGraphFollow {
 
     // MARK: Diagram
 
-    /// The block a following camera keeps above the composer: the newest request's
+    /// The block a following camera keeps above the composer: the newest work's
     /// lowest block in the flow — its result, a plan waiting for an answer, its
     /// deepest sub-agent, its 실행 block or the request itself — and of blocks in one
-    /// row the one added last. Blocks hung beside the flow and the next-request
-    /// draft never count, so typing a draft never moves the view; with no request
-    /// the draft block is the only block there is.
+    /// row the one added last. The newest work is the newest request, or a notice run
+    /// after it that is a turn of its own (`MightyGraphSupport.followRunIndex`): a
+    /// following camera moves on to it, any other stays. Blocks hung beside the flow
+    /// and the next-request draft never count, so typing a draft never moves the view;
+    /// with no request the draft block is the only block there is.
     public static func targetID(_ layout: MightyGraphLayout, runs: [MightyGraphRun]) -> String? {
         guard !runs.isEmpty else { return layout.nodes.first { $0.content == .draft }?.id }
-        // A notice run after the newest request is not one (`MightyGraphSupport.newestRequestRun`).
-        let newest = runs.lastIndex { $0.noticeRun != true } ?? runs.count - 1
+        let newest = MightyGraphSupport.followRunIndex(runs) ?? runs.count - 1
         var best: MightyGraphLayout.Node?
         for node in layout.nodes where run(of: node.content) == newest {
             if node.frame.maxY >= (best?.frame.maxY ?? -.infinity) { best = node }

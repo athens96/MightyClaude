@@ -62,6 +62,8 @@ public struct MobileStructure: Codable, Sendable, Equatable {
         public var clusters: [Cluster]
         /// Sub-agent rows left out past `maximumNodes`; absent when none were.
         public var omittedNodes: Int?
+        /// `true` for Claude's reply to finished background work (`MightyGraphRun.noticeRun`); absent otherwise.
+        public var noticeRun: Bool?
     }
 
     public struct Activity: Codable, Sendable, Equatable {
@@ -171,7 +173,7 @@ public struct MobileStructure: Codable, Sendable, Equatable {
         let candidates = all.filter { newest[$0.runID] == $0.runIndex }.sorted { $0.runIndex > $1.runIndex }.prefix(maximumItems)
         var next: [String: Wired] = [:]
         let wired = candidates.map { source -> Wired in
-            let name = title(source.runID)
+            let name = source.noticeRun ? nil : title(source.runID)
             let held = tails.isEmpty ? [:] : itemTails(source, tails)
             if let kept = cache[source.runID], kept.source == source, kept.title == name, kept.tails == held {
                 next[source.runID] = kept
@@ -271,7 +273,7 @@ public struct MobileStructure: Codable, Sendable, Equatable {
                     activity: item.activity.suffix(maximumActivity).map(activity),
                     answer: item.answer.map { capped($0.text, answerBytes, markdown: true) },
                     tally: Tally(agents: item.tally.agents, tools: item.tally.tools), clusters: clusters,
-                    omittedNodes: total > nodes ? total - nodes : nil)
+                    omittedNodes: total > nodes ? total - nodes : nil, noticeRun: item.noticeRun ? true : nil)
     }
 
     static func activity(_ line: MightyStructure.ActivityLine) -> Activity {

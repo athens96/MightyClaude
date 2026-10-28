@@ -1380,8 +1380,10 @@ final class AppStore: ObservableObject, DelegationHost {
         receivePermissionEvent(event)
         receiveAntigravityEvent(event)
         let receivedAt = Date()
-        // The run's first event: the sent request runs now (natural submit B1).
+        // The run's first event: the sent request runs now (natural submit B1). Only the request's own: a notice
+        // turn's lines or status never end 전송 중, by the rule `recordGraph` moves the request on by.
         if let sent = submitPending[event.sessionId], case .pending = sent.state,
+           MightyGraphSupport.newestRequestOwns(event, runs: snapshot.sessions.first { $0.id == event.sessionId }?.graphRuns ?? []),
            event.type == "status" || MightyGraphSupport.startedBy(event, status: "starting") {
             submitEnded(event.sessionId, entryId: sent.entryId, failure: nil, at: receivedAt)
         }

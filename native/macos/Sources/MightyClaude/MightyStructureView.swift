@@ -126,7 +126,7 @@ struct MightyStructureView: View {
                 header(board)
                 Divider().overlay(Palette.border)
             }
-            page(board, onNewest: index.map { $0 == boards.count - 1 } ?? true)
+            page(board, onNewest: memory.navigation.onNewest(in: boards))
         }
         .onReceive(NotificationCenter.default.publisher(for: NSScroller.preferredScrollerStyleDidChangeNotification)) { _ in
             legacyScrollers = NSScroller.preferredScrollerStyle == .legacy
@@ -595,7 +595,7 @@ struct MightyStructureView: View {
         case .execution(let item):
             // The column says 실행 and the bar says which request: the card needs no title.
             execution(item, width: width, titled: false, tone: tone)
-                .accessibilityLabel(L("graph.block.executionOf", ["n": "\(item.ordinal)"]))
+                .accessibilityLabel(BackgroundNoticeRuns.executionTitle(notice: item.noticeRun, ordinal: item.ordinal))
         case .result(let item): resultCard(item, tone: tone)
         case .summary(let item): summaryCard(item, width: width, tone: tone)
         case .agent(let node, _, let parent): nodeCard(node, column: width, parent: parent, tone: tone)
@@ -660,7 +660,7 @@ struct MightyStructureView: View {
             }
             Divider().overlay(Palette.border)
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Label(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), systemImage: MightyGraphView.executionIcon)
+                Label(BackgroundNoticeRuns.executionTitle(notice: item.noticeRun, ordinal: item.ordinal), systemImage: MightyGraphView.executionIcon)
                     .font(.ui(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 MightyStatusMark(status: item.status, text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status),
                                  pending: pendingState(item.runID), edge: tone)
@@ -695,7 +695,7 @@ struct MightyStructureView: View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 if titled {
-                    Label(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), systemImage: MightyGraphView.executionIcon)
+                    Label(BackgroundNoticeRuns.executionTitle(notice: item.noticeRun, ordinal: item.ordinal), systemImage: MightyGraphView.executionIcon)
                         .font(.ui(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 }
                 MightyStatusMark(status: item.status, text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status),
@@ -951,7 +951,8 @@ struct MightyStructureView: View {
     }
 
     private func heading(_ item: MightyStructure.Item) -> String {
-        StyleChrome.requestTitle(prefix: styleTitles.prefix(item.input), ordinal: item.ordinal, providerLabel: ProviderOptions.label(provider))
+        if item.noticeRun { return BackgroundNoticeRuns.title }
+        return StyleChrome.requestTitle(prefix: styleTitles.prefix(item.input), ordinal: item.ordinal, providerLabel: ProviderOptions.label(provider))
     }
 }
 

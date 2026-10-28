@@ -224,7 +224,8 @@ struct ExecutionGraphTests {
         #expect(run.status == "completed")
         let agent = try #require(run.agents.first)
         #expect(agent.background == true); #expect(agent.isBackgroundAgent); #expect(agent.status == "running")
-        #expect(run.backgroundWaiting == 1); #expect(!run.settled)
+        // Its own turn ended: the request is settled and shows its result, while the agent runs on in the strip.
+        #expect(run.backgroundWaiting == 1); #expect(run.settled); #expect(run.resultEntries.first?.text == "Started the survey.")
         let foreground = MightyGraphRun(id: "r", status: "completed", agents: [MightyGraphAgent(id: "a", status: "running")])
         #expect(foreground.backgroundWaiting == 0)
     }
