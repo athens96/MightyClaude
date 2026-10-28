@@ -284,7 +284,7 @@ function parseBlock(raw: unknown): MobileBlock | undefined {
   return block;
 }
 
-function parseRun(raw: unknown): MobileMightyRun | undefined {
+function parseRun(raw: unknown, filtering: boolean): MobileMightyRun | undefined {
   if (!isRecord(raw)) return undefined;
   if (typeof raw.id !== 'string' || raw.id.length === 0) return undefined;
   const notice = raw.noticeRun === true;
@@ -293,6 +293,7 @@ function parseRun(raw: unknown): MobileMightyRun | undefined {
       .map(parseBlock)
       .filter((block): block is MobileBlock => block !== undefined),
     notice,
+    filtering,
   );
   const run: MobileMightyRun = {
     id: raw.id,
@@ -314,14 +315,15 @@ function parseRun(raw: unknown): MobileMightyRun | undefined {
 /**
  * Reads `MobileSessionDetail.mighty`. Returns undefined when the host sent nothing we
  * can draw; otherwise every list is present (possibly empty) and every string is safe
- * to render.
+ * to render. `filtering`: the host leaves background blocks out of a request itself
+ * (`hostFiltersBackground`), so a request draws none; false keeps what an older host sent.
  */
-export function normalizeMighty(raw: unknown): MobileMighty | undefined {
+export function normalizeMighty(raw: unknown, filtering = false): MobileMighty | undefined {
   if (!isRecord(raw)) return undefined;
   const mighty: MobileMighty = {
     style: inlineText(raw.style, 40),
     runs: arrayOf(raw.runs)
-      .map(parseRun)
+      .map((run) => parseRun(run, filtering))
       .filter((run): run is MobileMightyRun => run !== undefined)
       .slice(-MAX_RUNS),
   };

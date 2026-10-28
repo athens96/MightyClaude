@@ -70,7 +70,7 @@ Claude 有时会在后台运行耗时较长的命令或子智能体。这时即�
 - 输入框上方会显示一行提示，说明本轮已结束，但后台任务仍在运行。点击{{ui:plan.background.show}}可以查看每个任务的类型、状态和用时。
 - 运行中的任务标有{{ui:plan.background.awaitingNotice}}。任务结束时会通知 Claude，Claude 收到结果后继续回答。结束的任务变为{{ui:plan.background.noticeDelivered}}，并一直留在这一行，直到发送下一个请求。
 - 运行期间，后台任务不会画在请求的块里，只在上面这一行中。点击某一行可以展开它运行的命令（子代理显示提示的第一行）和输出的最后几行（最多 6 行）。手机上，Mighty 视图上方有一行折叠的“N 个后台任务”，展开后是同样的行。
-- 任务结束、通知送达 Claude 后，请求本身不会增加任何内容；Claude 的每一次回答都会生成一个新的{{ui:graph.background.noticeRun}}图表，里面有已结束任务的{{ui:graph.block.task}}块（命令、结束状态、摘要）和 Claude 的回答。它不是请求，所以不占请求编号。在流程中它是最下方的一张新卡片；在{{ui:graph.view.timeline}}和{{ui:graph.view.structure}}中它接在下一行。
+- 任务结束、通知送达 Claude 后，请求本身不会增加任何内容；Claude 的每一次回答都会生成一个新的{{ui:graph.background.noticeRun}}图表，里面有已结束任务的{{ui:graph.block.task}}块（命令、结束状态、摘要）和 Claude 的回答。它不是请求，所以不占请求编号。在流程中它是最下方的一张新卡片；在{{ui:graph.view.timeline}}中它是新增的一行，在{{ui:graph.view.structure}}中它是末尾新增的一张卡片（看板）。
 - 在后台启动的子代理也一样。它结束后，Mighty 视图中它的块会变为{{ui:graph.state.completed}}、{{ui:graph.state.error}}或{{ui:graph.state.stopped}}（应用在它结束前重启的也算{{ui:graph.state.stopped}}），它交回的最终报告会成为该块的结果。它在运行途中发来的消息只会追加到块的记录里，不会让块结束。Claude 对其结束的回答会显示在{{ui:graph.background.noticeRun}}图表中。
 - 此时发送的请求会进入队列，在后台任务结束后开始。要立即开始，请点击停止：队列会保留，其中的第一个请求接着开始。在开启了[Mighty 编排](delegation.md#worktree)、位于 git 仓库中的窗格里，也可以按{{kbd:⌘Enter}}立即在新的 worktree 中运行。
 - 如果这一行碍事，点击它右侧的眼睛按钮（{{ui:plan.background.hideStrip}}）。所有窗格中都会隐藏这一行，后台任务照常运行。

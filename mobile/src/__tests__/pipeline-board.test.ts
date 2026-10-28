@@ -197,6 +197,19 @@ describe('pipelines', () => {
   });
 });
 
+describe('a notice item in a styled structure', () => {
+  it('stays in the pipeline of the request before it, so the board count does not change', () => {
+    const notice = item(1, { runId: 'r1:notice:1', noticeRun: true, request: 'npm test · 완료' });
+    // The same column lists the notice before its request: the number and the notice flag still put it after.
+    const boards = structureBoards(styled('run', { run: [notice, item(1)] }));
+    expect(boards).toHaveLength(1);
+    expect(boards[0]!.items.map((entry) => entry.runId)).toEqual(['r1', 'r1:notice:1']);
+    const same = structureBoards(styled('run', { run: [item(1), notice, item(2)] }));
+    expect(same).toHaveLength(1);
+    expect(same[0]!.items.map((entry) => entry.runId)).toEqual(['r1', 'r1:notice:1', 'r2']);
+  });
+});
+
 describe('a notice board', () => {
   const boards = structureBoards(
     free([

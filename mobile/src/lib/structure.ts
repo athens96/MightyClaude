@@ -123,7 +123,7 @@ function parseNode(raw: unknown): StructureNode | undefined {
   return node;
 }
 
-function parseItem(raw: unknown): StructureItem | undefined {
+function parseItem(raw: unknown, filtering: boolean): StructureItem | undefined {
   if (!isRecord(raw) || typeof raw.runId !== 'string' || raw.runId.length === 0) return undefined;
   const tally = isRecord(raw.tally) ? raw.tally : {};
   let budget = MAX_STRUCTURE_NODES;
@@ -136,6 +136,7 @@ function parseItem(raw: unknown): StructureItem | undefined {
         .map(parseNode)
         .filter((node): node is StructureNode => node !== undefined),
       notice,
+      filtering,
     );
     const kept = nodes.slice(0, budget);
     dropped += nodes.length - kept.length;
@@ -168,7 +169,7 @@ function parseItem(raw: unknown): StructureItem | undefined {
   return item;
 }
 
-function parseColumn(raw: unknown): StructureColumn | undefined {
+function parseColumn(raw: unknown, filtering: boolean): StructureColumn | undefined {
   if (!isRecord(raw) || typeof raw.id !== 'string' || raw.id.length === 0) return undefined;
   const title = inlineText(raw.title, MAX_STRUCTURE_TITLE);
   return {
@@ -176,14 +177,14 @@ function parseColumn(raw: unknown): StructureColumn | undefined {
     title: title.length > 0 ? title : raw.id.slice(0, MAX_STRUCTURE_TITLE),
     step: parseStep(raw.step),
     items: arrayOf(raw.items)
-      .map(parseItem)
+      .map((item) => parseItem(item, filtering))
       .filter((item): item is StructureItem => item !== undefined),
   };
 }
 
-function parseRow(raw: unknown): StructureRow | undefined {
+function parseRow(raw: unknown, filtering: boolean): StructureRow | undefined {
   if (!isRecord(raw)) return undefined;
-  const item = parseItem(raw.item);
+  const item = parseItem(raw.item, filtering);
   if (!item) return undefined;
   return { item, request: parseStep(raw.request), execution: parseStep(raw.execution), result: parseStep(raw.result) };
 }
@@ -208,14 +209,15 @@ function clampColumns(columns: StructureColumn[]): { columns: StructureColumn[];
  * Reads `MobileMighty.structure`. `none` when the host sent nothing (an older Mac, or a
  * pane with nothing to draw); `unreadable` when it sent something this app does not know
  * how to read; otherwise a structure whose every list and text is bounded and safe.
+ * `filtering` is as for `normalizeMighty`: a request draws no background nodes.
  */
-export function normalizeStructure(raw: unknown): StructureState {
+export function normalizeStructure(raw: unknown, filtering = false): StructureState {
   if (raw === undefined || raw === null) return { kind: 'none' };
   if (!isRecord(raw) || raw.v !== STRUCTURE_VERSION) return { kind: 'unreadable' };
   const omitted = count(raw.omitted);
   if (raw.shape === 'phases') {
     const parsed = arrayOf(raw.columns)
-      .map(parseColumn)
+      .map((column) => parseColumn(column, filtering))
       .filter((column): column is StructureColumn => column !== undefined)
       .slice(0, MAX_STRUCTURE_COLUMNS);
     if (parsed.length === 0) return { kind: 'unreadable' };
@@ -227,7 +229,7 @@ export function normalizeStructure(raw: unknown): StructureState {
   if (raw.shape === 'free') {
     if (!Array.isArray(raw.rows)) return { kind: 'unreadable' };
     const parsed = raw.rows
-      .map(parseRow)
+      .map((row) => parseRow(row, filtering))
       .filter((row): row is StructureRow => row !== undefined);
     const rows = parsed.slice(-MAX_STRUCTURE_ITEMS);
     const structure: MobileStructure = { v: STRUCTURE_VERSION, shape: 'free', rows };
@@ -262,12 +264,12 @@ function isTag(value: unknown): value is number {
  *   phone holds stays on screen and its old tag is sent again, so the next answer brings
  *   the new value once there is room.
  */
-export function receiveStructure(held: HeldStructure | undefined, mighty: unknown): HeldStructure | undefined {
+export function receiveStructure(held: HeldStructure | undefined, mighty: unknown, filtering = false): HeldStructure | undefined {
   if (!isRecord(mighty) || !isTag(mighty.structureTag)) return held;
   const tag = mighty.structureTag;
   if (tag === 0) return held?.tag === 0 ? held : { tag, state: { kind: 'none' } };
   if (mighty.structure !== undefined && mighty.structure !== null) {
-    const state = normalizeStructure(mighty.structure);
+    const state = normalizeStructure(mighty.structure, filtering);
     if (state.kind !== 'ok') return { tag, state };
     const previous = held?.state.kind === 'ok' ? held.state.structure : undefined;
     return { tag, state: { kind: 'ok', structure: stabilizeStructure(previous, state.structure) } };

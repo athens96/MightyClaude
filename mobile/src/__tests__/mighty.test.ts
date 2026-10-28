@@ -610,12 +610,15 @@ describe('notice runs: Claude\'s reply to finished background work', () => {
       { id: 't', kind: 'task', title: '빌드', status: 'completed', background: true },
       { id: 'steer', kind: 'steer', title: '중간 요청', status: 'completed' },
     ];
-    const request = normalizeMighty({ style: 'cli', runs: [{ id: 'r1', input: 'x', status: 'completed', blocks }] })!.runs[0]!;
+    const request = normalizeMighty({ style: 'cli', runs: [{ id: 'r1', input: 'x', status: 'completed', blocks }] }, true)!.runs[0]!;
     expect(request.blocks.map((entry) => entry.id)).toEqual(['m', 'a', 'steer']);
     expect(request.noticeRun).toBeUndefined();
-    const copies = normalizeMighty({ style: 'cli', runs: [{ id: 'r1:notice:1', input: 'x', status: 'completed', noticeRun: true, blocks }] })!.runs[0]!;
+    const copies = normalizeMighty({ style: 'cli', runs: [{ id: 'r1:notice:1', input: 'x', status: 'completed', noticeRun: true, blocks }] }, true)!.runs[0]!;
     expect(copies.blocks.map((entry) => entry.id)).toEqual(['m', 'a', 'bg', 't', 'steer']);
     expect(copies.noticeRun).toBe(true);
+    // A host that sent no sign of notice runs keeps its background blocks in the request.
+    const old = normalizeMighty({ style: 'cli', runs: [{ id: 'r1', input: 'x', status: 'completed', blocks }] })!.runs[0]!;
+    expect(old.blocks.map((entry) => entry.id)).toEqual(['m', 'a', 'bg', 't', 'steer']);
     // Only the word true counts.
     expect(normalizeMighty({ style: 'cli', runs: [{ id: 'r2', input: 'x', status: 'completed', noticeRun: 'yes', blocks }] })!.runs[0]!.noticeRun).toBeUndefined();
   });

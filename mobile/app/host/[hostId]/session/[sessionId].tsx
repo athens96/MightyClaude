@@ -83,7 +83,7 @@ import { t } from '@/lib/i18n';
 import { pushViewing } from '@/lib/push/runtime';
 import { answeredToast, isPlanRequest, pendingPlan, planAnswerBody } from '@/lib/plan';
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
-import { parseBackgroundWork } from '@/lib/background-work';
+import { hostFiltersBackground, parseBackgroundWork } from '@/lib/background-work';
 import { defaultView, isQuietNotice, normalizeMighty } from '@/lib/mighty';
 import {
   receiveStructure,
@@ -361,7 +361,11 @@ export default function SessionScreen() {
           signal,
         });
         if (asked) {
-          const next = receiveStructure(heldStructureRef.current, (data as { mighty?: unknown }).mighty);
+          const next = receiveStructure(
+            heldStructureRef.current,
+            (data as { mighty?: unknown }).mighty,
+            hostFiltersBackground(data as { backgroundWork?: unknown; mighty?: unknown }),
+          );
           if (next !== heldStructureRef.current) {
             heldStructureRef.current = next;
             setHeldStructure(next);
@@ -1029,8 +1033,8 @@ export default function SessionScreen() {
   // The host sends `mighty` only for a pane in Mighty view; an unknown shape is dropped
   // rather than trusted, so nothing here can be fed a field we cannot draw.
   const mighty = useMemo(
-    () => (canMighty ? normalizeMighty(detail?.mighty) : undefined),
-    [canMighty, detail?.mighty],
+    () => (canMighty ? normalizeMighty(detail?.mighty, hostFiltersBackground(detail)) : undefined),
+    [canMighty, detail?.mighty, detail?.backgroundWork],
   );
   const panel = useMemo(() => panelOf(mighty, canStyle), [canStyle, mighty]);
   // A pane that switches style keeps this screen mounted, so the group the user was

@@ -115,7 +115,8 @@ function pipelineBoards(columns: readonly StructureColumn[]): Board[] {
       items.push(item);
     }
   });
-  items.sort((a, b) => a.ordinal - b.ordinal);
+  // A notice item carries the number of the request before it and follows it, in the phase it is in.
+  items.sort((a, b) => a.ordinal - b.ordinal || Number(a.noticeRun === true) - Number(b.noticeRun === true));
   const groups: StructureItem[][] = [];
   let previous: number | undefined;
   for (const item of items) {

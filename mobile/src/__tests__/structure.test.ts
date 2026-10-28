@@ -208,7 +208,7 @@ describe('notice runs in the structure', () => {
     runId, ordinal: 1, status: 'completed', finished: true, activity: [], tally: { agents: 1, tools: 0 }, clusters: [{ nodes }], ...extra,
   });
   const read = (items: unknown[]) => {
-    const state = normalizeStructure({ v: 1, shape: 'free', rows: items.map((entry) => ({ item: entry, request: 'done', execution: 'done', result: 'done' })) });
+    const state = normalizeStructure({ v: 1, shape: 'free', rows: items.map((entry) => ({ item: entry, request: 'done', execution: 'done', result: 'done' })) }, true);
     if (state.kind !== 'ok' || state.structure.shape !== 'free') throw new Error('not a free structure');
     return state.structure.rows.map((row) => row.item);
   };
@@ -219,6 +219,12 @@ describe('notice runs in the structure', () => {
     expect(request!.noticeRun).toBeUndefined();
     expect(notice!.clusters[0]!.nodes.map((entry) => entry.id)).toEqual(['a', 'bg', 'bg-child', 'b']);
     expect(notice!.noticeRun).toBe(true);
+  });
+
+  it('keeps the background nodes of a request for a host that predates notice runs', () => {
+    const state = normalizeStructure({ v: 1, shape: 'free', rows: [{ item: rawItem('r1'), request: 'done', execution: 'done', result: 'done' }] });
+    if (state.kind !== 'ok' || state.structure.shape !== 'free') throw new Error('not a free structure');
+    expect(state.structure.rows[0]!.item.clusters[0]!.nodes.map((entry) => entry.id)).toEqual(['a', 'bg', 'bg-child', 'b']);
   });
 
   it('names a notice run as such and numbers it as no request', () => {

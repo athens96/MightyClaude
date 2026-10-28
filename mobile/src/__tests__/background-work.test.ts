@@ -1,4 +1,16 @@
-import { backgroundElapsed, backgroundLastLine, parseBackgroundWork, shownBlocks, shownNodes } from '@/lib/background-work';
+import { resetLanguage } from '@/lib/i18n';
+import {
+  backgroundElapsed,
+  backgroundLastLine,
+  backgroundTitle,
+  hostFiltersBackground,
+  parseBackgroundWork,
+  shownBlocks,
+  shownNodes,
+} from '@/lib/background-work';
+
+beforeAll(() => resetLanguage('ko'));
+afterAll(() => resetLanguage());
 
 describe('parseBackgroundWork', () => {
   const run = { id: 'w1', kind: 'run', title: 'npm test', status: 'running', startedAt: '2026-10-28T10:00:00Z', command: 'npm test', outputTail: ['a', 'b'] };
@@ -83,9 +95,13 @@ describe('what a run draws', () => {
   const blocks = [{ id: 'a' }, { id: 'b', background: true as const }, { id: 'c' }];
 
   it('omits background blocks unless the run is a notice run', () => {
-    expect(shownBlocks(blocks, false).map((block) => block.id)).toEqual(['a', 'c']);
-    expect(shownBlocks(blocks, true).map((block) => block.id)).toEqual(['a', 'b', 'c']);
-    expect(shownBlocks([], false)).toEqual([]);
+    expect(shownBlocks(blocks, false, true).map((block) => block.id)).toEqual(['a', 'c']);
+    expect(shownBlocks(blocks, true, true).map((block) => block.id)).toEqual(['a', 'b', 'c']);
+    expect(shownBlocks([], false, true)).toEqual([]);
+  });
+
+  it('keeps every block of a host that predates notice runs', () => {
+    expect(shownBlocks(blocks, false, false).map((block) => block.id)).toEqual(['a', 'b', 'c']);
   });
 
   it('takes the nodes under a hidden background node with it, until the depth comes back', () => {
@@ -99,7 +115,28 @@ describe('what a run draws', () => {
       { id: 'bg2-child', depth: 1 },
       { id: 'b', depth: 0 },
     ];
-    expect(shownNodes(nodes, false).map((node) => node.id)).toEqual(['a', 'sibling', 'b']);
-    expect(shownNodes(nodes, true)).toHaveLength(nodes.length);
+    expect(shownNodes(nodes, false, true).map((node) => node.id)).toEqual(['a', 'sibling', 'b']);
+    expect(shownNodes(nodes, true, true)).toHaveLength(nodes.length);
+    expect(shownNodes(nodes, false, false)).toHaveLength(nodes.length);
+  });
+});
+
+describe('which host filters', () => {
+  it('knows a new host by backgroundWork or a notice run, and no other', () => {
+    expect(hostFiltersBackground(undefined)).toBe(false);
+    expect(hostFiltersBackground({})).toBe(false);
+    expect(hostFiltersBackground({ mighty: { runs: [{ id: 'r1' }, { id: 'r2', noticeRun: false }, { id: 'r3', noticeRun: 'yes' }] } })).toBe(false);
+    expect(hostFiltersBackground({ mighty: 'x' })).toBe(false);
+    expect(hostFiltersBackground({ backgroundWork: [] })).toBe(true);
+    expect(hostFiltersBackground({ backgroundWork: null })).toBe(false);
+    expect(hostFiltersBackground({ mighty: { runs: [{ id: 'r1' }, { id: 'r1:notice:1', noticeRun: true }] } })).toBe(true);
+  });
+});
+
+describe('a row\'s name', () => {
+  it('falls back to what its kind is called', () => {
+    expect(backgroundTitle({ kind: 'run', title: 'npm test' })).toBe('npm test');
+    expect(backgroundTitle({ kind: 'run', title: '  ' })).toBe('백그라운드 작업');
+    expect(backgroundTitle({ kind: 'agent', title: '' })).toBe('하위 에이전트');
   });
 });

@@ -279,10 +279,10 @@ MobileBackgroundWork { id, kind: "agent" | "run", title, status: "running", star
 
 - **`backgroundWork`**는 세부 정보에 **지금 도는 작업만** 실린다(`status`는 언제나 `running`). 하나도 없으면 필드 자체가 없다. `kind`는 백그라운드 하위 에이전트(`agent`)나 백그라운드 명령(`run`), `command`는 명령(하위 에이전트는 프롬프트의 첫 줄), `outputTail`은 `run`의 출력 끝 줄 최대 6줄이다. 출력 파일의 경로는 어떤 필드로도 보내지 않는다. 끝난 작업은 여기 없고 알림 실행의 도해에 있다. 휴대폰은 `parseBackgroundWork`로 읽고(도는 것만 남긴다), Mighty 보기(흐름·파이프라인) 위에 접힌 **백그라운드 작업 N개** 띠(`plan.background.listTitle`)로 보인다. 띠를 열면 작업마다 종류·이름·경과 시간·마지막 출력 줄이 보이고, 한 줄을 열면 명령과 출력 끝 줄이 보인다.
 - **알림 실행**은 루트에서 `<task-notification>`(또는 백그라운드 하위 에이전트의 최종 보고)이 Claude 턴을 열 때 생기는 실행이다. 일반 `MobileMightyRun`과 구조 `Item`으로 가고, 다른 점은 `noticeRun: true`뿐이다. 이 실행은 요청이 아니다. 휴대폰은 **백그라운드 작업 완료**(`graph.background.noticeRun`)를 제목으로 보이고, 요청 번호를 세지 않으며(알림 실행은 앞 요청의 번호를 따른다), 파이프라인 보드도 "요청 n"으로 세지 않는다. main 블록의 `summary`는 끝난 작업(`<제목> · 완료|실패|중단됨` 줄들)이고 `output`이 Claude의 답이다. 나머지 블록은 끝난 백그라운드 블록의 사본(`background: true`, `outputTail`, `noticeReply`)이다.
-- **요청의 실행에는 백그라운드 블록이 없다.** 호스트는 `background: true` 블록을 알림 실행에만 싣는다. 휴대폰도 같은 규칙으로 `noticeRun`이 아닌 실행의 `background` 블록·노드(와 그 아래 노드)를 그리지 않는다(구버전 호스트 대비, `shownBlocks`·`shownNodes`).
+- **요청의 실행에는 백그라운드 블록이 없다.** 호스트는 `background: true` 블록을 알림 실행에만 싣는다. 휴대폰도 같은 규칙으로 `noticeRun`이 아닌 실행의 `background` 블록·노드(와 그 아래 노드)를 그리지 않되, **새 호스트라는 증거가 있을 때만** 그렇다: 세부 정보에 `backgroundWork`가 있거나 페이로드의 어느 실행이 `noticeRun: true`일 때(`hostFiltersBackground`, `shownBlocks`·`shownNodes`). 둘 다 없으면 알림 실행이 생기기 전의 호스트이므로, 그 호스트가 요청에 그대로 둔 백그라운드 블록을 휴대폰이 숨기지 않는다(숨기면 볼 곳이 없다).
 - **조용한 알림 실행**(상태가 completed이고 답이 빈 것: 다른 요청의 턴 안에서 받은 알림)은 결과 카드가 없고 따라가지 않는다. 다시 열려 도는 알림 실행은 도는 동안 앞의 답을 그대로 보인다. 화면이 따라가는 가장 최근 실행은 가장 최근 **요청**이거나, 그 뒤의 조용하지 않은 알림 실행이다.
 - 알림 실행은 사용자 요청이 아니다: 요청 번호·펫·"내가 보낸 것" 판정에 들지 않는다(휴대폰은 보낸 글의 실행을 찾을 때 알림 실행을 건너뛴다).
-- 구버전 호스트는 `backgroundWork`와 `noticeRun`을 보내지 않는다. 신버전 휴대폰은 띠를 그리지 않고, 실행의 백그라운드 블록을 숨기며, 구버전 휴대폰은 두 필드를 무시한다. 공유 픽스처는 `native/contracts/fixtures/background-output.json`이다.
+- 구버전 호스트는 `backgroundWork`와 `noticeRun`을 보내지 않는다. 신버전 휴대폰은 띠를 그리지 않고 요청의 백그라운드 블록을 숨기지도 않으며(위), 구버전 휴대폰은 두 필드를 무시한다. 공유 픽스처는 `native/contracts/fixtures/background-output.json`이다.
 
 ### 스타일 (style)
 

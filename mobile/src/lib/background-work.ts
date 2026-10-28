@@ -1,5 +1,6 @@
 import type { MobileBackgroundWork } from '@/api/types';
 import { BACKGROUND_OUTPUT, parseBackground } from '@/lib/background-output';
+import { t } from '@/lib/i18n';
 import { inlineText } from '@/lib/styles';
 
 /**
@@ -60,19 +61,38 @@ export function backgroundLastLine(tail: readonly string[] | undefined): string 
 }
 
 /**
- * The blocks of a run a view draws: a background block only inside a notice run (the host already
- * leaves them out of a request; this covers a host that predates that).
+ * Whether the host leaves background blocks out of a request itself, so the phone draws by the same rule:
+ * evidence is `backgroundWork` on the detail, or a notice run in the payload. A host from before notice
+ * runs sends neither and keeps its background blocks in the request, where they are the only place to see them.
  */
-export function shownBlocks<T extends { background?: true }>(blocks: readonly T[], noticeRun: boolean): T[] {
-  return noticeRun ? [...blocks] : blocks.filter((block) => block.background !== true);
+export function hostFiltersBackground(detail: { backgroundWork?: unknown; mighty?: unknown } | undefined): boolean {
+  if (!detail) return false;
+  if (detail.backgroundWork !== undefined && detail.backgroundWork !== null) return true;
+  const mighty = detail.mighty;
+  if (typeof mighty !== 'object' || mighty === null) return false;
+  const runs = (mighty as { runs?: unknown }).runs;
+  return Array.isArray(runs) && runs.some((run) => typeof run === 'object' && run !== null && (run as { noticeRun?: unknown }).noticeRun === true);
+}
+
+/** The row's name: the host's title, else what its kind is called. */
+export function backgroundTitle(item: Pick<MobileBackgroundWork, 'title' | 'kind'>): string {
+  return item.title.trim().length > 0 ? item.title : t(item.kind === 'run' ? 'graph.block.task' : 'graph.block.agent');
+}
+
+/**
+ * The blocks of a run a view draws: a background block only inside a notice run. `filtering` is false for a
+ * host that predates notice runs (`hostFiltersBackground`), which still shows its background blocks in the request.
+ */
+export function shownBlocks<T extends { background?: true }>(blocks: readonly T[], noticeRun: boolean, filtering: boolean): T[] {
+  return noticeRun || !filtering ? [...blocks] : blocks.filter((block) => block.background !== true);
 }
 
 /**
  * The nodes of one structure cluster a view draws, depth-first: as `shownBlocks`, and a node under a
  * hidden background node (deeper than it, until the depth comes back) goes with it.
  */
-export function shownNodes<T extends { background?: true; depth: number }>(nodes: readonly T[], noticeRun: boolean): T[] {
-  if (noticeRun) return [...nodes];
+export function shownNodes<T extends { background?: true; depth: number }>(nodes: readonly T[], noticeRun: boolean, filtering: boolean): T[] {
+  if (noticeRun || !filtering) return [...nodes];
   const shown: T[] = [];
   let hiddenDepth: number | undefined;
   for (const node of nodes) {

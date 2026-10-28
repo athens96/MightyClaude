@@ -4,7 +4,7 @@ import type { MobileBackgroundWork } from '@/api/types';
 import { RunHead } from '@/components/background-run';
 import { formatDuration } from '@/components/log-entry-view';
 import { useNow } from '@/hooks/use-now';
-import { backgroundElapsed, backgroundLastLine } from '@/lib/background-work';
+import { backgroundElapsed, backgroundLastLine, backgroundTitle } from '@/lib/background-work';
 import { t } from '@/lib/i18n';
 import { BLOCK_KIND_MARKS } from '@/lib/mighty';
 import { monoText, radius, spacing, useStyles, type Palette } from '@/theme';
@@ -57,7 +57,7 @@ function WorkRow({ item, now }: { item: MobileBackgroundWork; now: number }) {
       <View style={styles.rowHead}>
         <Text style={styles.mark}>{BLOCK_KIND_MARKS[kind]}</Text>
         <Text numberOfLines={1} style={styles.rowTitle}>
-          {item.title}
+          {backgroundTitle(item)}
         </Text>
         {elapsed !== undefined ? <Text style={styles.elapsed}>{formatDuration(elapsed)}</Text> : null}
       </View>
