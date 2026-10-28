@@ -114,18 +114,22 @@ struct AskTargetsTests {
     }
 
     /// Restoring keeps a Claude agent pane's choice, even one no longer offered (it reads
-    /// as Claude when sent), and drops it from every other pane.
+    /// as Claude when sent), and drops it from every other pane, a remote workspace's included.
     @Test func restoringKeepsTheChoiceOnlyOnAClaudeAgentPane() {
         let workspace = Workspace(id: "w", name: "W", path: "/tmp")
         let claude = RunSession(id: "claude", workspaceId: "w", title: "c", askTarget: "codex")
         let stale = RunSession(id: "stale", workspaceId: "w", title: "s", askTarget: "no-such-target")
         let codex = RunSession(id: "codex", workspaceId: "w", title: "x", provider: "codex", askTarget: "codex")
         let shell = RunSession(id: "shell", workspaceId: "w", title: "t", kind: "shell", askTarget: "codex")
-        let restored = StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [claude, stale, codex, shell]), restoring: true)
+        let remoteWorkspace = Workspace(id: "r", name: "R", path: "/Users/someone/project", remote: RemoteWorkspaceReference(connectionId: "conn", workspaceId: "host-ws", hostName: "Host"))
+        let remote = RunSession(id: "remote", workspaceId: "r", title: "r", askTarget: "codex")
+        let restored = StateRepository.normalize(AppSnapshot(workspaces: [workspace, remoteWorkspace], sessions: [claude, stale, codex, shell, remote]), restoring: true)
         let saved = Dictionary(uniqueKeysWithValues: restored.sessions.map { ($0.id, $0.askTarget) })
         #expect(saved["claude"] == .some("codex"))
         #expect(saved["stale"] == .some("no-such-target"))
         #expect(saved["codex"] == .some(nil))
         #expect(saved["shell"] == .some(nil))
+        // A remote workspace's Claude pane drops it too: its CLIs are on another computer.
+        #expect(saved["remote"] == .some(nil))
     }
 }

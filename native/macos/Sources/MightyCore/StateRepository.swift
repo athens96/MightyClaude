@@ -308,8 +308,12 @@ public actor StateRepository {
         }
         let logShares = fairShares(demands: candidates.map { approximateLogBytes(TranscriptRetention.trimmed($0.logs)) }, total: totalLogBudget)
         let graphShares = fairShares(demands: candidates.map { approximateGraphBytes($0.graphRuns ?? []) }, total: totalGraphBudget)
+        // A remote workspace's pane runs on another computer, whose CLIs this Mac cannot see: it never asks another CLI.
+        let remoteWorkspaceIds = Set(output.workspaces.filter { $0.remote != nil }.map(\.id))
         for (position, original) in candidates.enumerated() {
-            output.sessions.append(normalizeOne(original, logShares[position], graphShares[position]))
+            var session = normalizeOne(original, logShares[position], graphShares[position])
+            if remoteWorkspaceIds.contains(session.workspaceId) { session.askTarget = nil }
+            output.sessions.append(session)
         }
         output.activeWorkspaceId = value.activeWorkspaceId.flatMap { workspaceIds.contains($0) ? $0 : nil } ?? output.workspaces.first?.id
         output.activeSessionId = output.sessions.first { $0.id == value.activeSessionId && $0.workspaceId == output.activeWorkspaceId }?.id ?? output.sessions.first { $0.workspaceId == output.activeWorkspaceId }?.id

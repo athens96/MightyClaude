@@ -47,7 +47,8 @@ extension AppStore {
     /// knows whether it still stands, so a send never goes unwrapped just because
     /// its workspace was not scanned yet. Panes on Claude return at once.
     func awaitAskTargets(_ id: String, timeout: TimeInterval) async {
-        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.askTarget != nil, !askTargetsKnown(session) else { return }
+        // A remote workspace's pane never asks another CLI, so there is nothing to wait for.
+        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.askTarget != nil, !isRemoteWorkspace(session.workspaceId), !askTargetsKnown(session) else { return }
         refreshSlashCommands(for: session)
         refreshAskExecutables()
         let deadline = Date().addingTimeInterval(timeout)
