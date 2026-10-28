@@ -54,6 +54,11 @@ export interface Board {
   ordinal: number;
   /** A free board of Claude's reply to finished background work: no request number, named as such. */
   noticeRun?: true;
+  /**
+   * Only notice runs taken into a running turn: done, without a reply of their own (the Mac's
+   * `Board.quiet`). The view never moves on to such a board by itself (`newestBoardIndex`).
+   */
+  quiet?: true;
   /** A free request board's number and the count of request boards: notice boards are no request, so they are left out. */
   requestNumber?: number;
   requestCount?: number;
@@ -96,8 +101,17 @@ function freeBoard(row: StructureRow, ordinal: number): Board {
     },
     { step: steps[2]!, cards: [{ kind: 'result', id: `result:${item.runId}`, item }], count: item.finished ? 1 : 0 },
   ];
-  const board = withHeadline({ id: item.runId, kind: 'request', ordinal, items: [item], status: item.status, steps, columns });
+  const board = withQuiet(withHeadline({ id: item.runId, kind: 'request', ordinal, items: [item], status: item.status, steps, columns }));
   return item.noticeRun ? { ...board, noticeRun: true } : board;
+}
+
+/** A notice run taken into a running turn (the Mac's `Item.quiet`): completed, without an answer. */
+function quietItem(item: StructureItem): boolean {
+  return item.noticeRun === true && item.status === 'completed' && (item.answer ?? '').trim() === '';
+}
+
+function withQuiet(board: Board): Board {
+  return board.items.length > 0 && board.items.every(quietItem) ? { ...board, quiet: true } : board;
 }
 
 /**
@@ -151,7 +165,7 @@ function pipelineBoards(columns: readonly StructureColumn[]): Board[] {
       : group.some((item) => item.status === 'waiting')
         ? 'waiting'
         : lastItem.status;
-    return withHeadline({
+    return withQuiet(withHeadline({
       id: group[0]!.runId,
       kind: 'pipeline',
       ordinal: index + 1,
@@ -159,7 +173,7 @@ function pipelineBoards(columns: readonly StructureColumn[]): Board[] {
       status,
       steps: boardColumns.map((column) => column.step),
       columns: boardColumns,
-    });
+    }));
   });
 }
 
@@ -307,35 +321,46 @@ export interface BoardNavigation {
 export const NEWEST_BOARD: BoardNavigation = { chosenRuns: [] };
 
 /**
+ * The newest board: the last one, but a quiet board after it (`Board.quiet`), which the view
+ * never moves on to by itself (the Mac's `Navigation.newestIndex`); undefined when there is none.
+ */
+export function newestBoardIndex(boards: readonly Board[]): number | undefined {
+  for (let index = boards.length - 1; index >= 0; index -= 1) if (boards[index]?.quiet !== true) return index;
+  return boards.length > 0 ? boards.length - 1 : undefined;
+}
+
+/**
  * The place of the board shown, undefined when there is none. A picked board that is gone
  * is found by a request it held; with none of them left the newest board is shown, as if
  * nothing were picked, so no newer board reads as unseen.
  */
 export function boardIndex(navigation: BoardNavigation, boards: readonly Board[]): number | undefined {
-  if (boards.length === 0) return undefined;
-  if (navigation.chosen === undefined) return boards.length - 1;
+  const newest = newestBoardIndex(boards);
+  if (newest === undefined || navigation.chosen === undefined) return newest;
   const index = boards.findIndex((board) => board.id === navigation.chosen);
   if (index >= 0) return index;
   const runs = new Set(navigation.chosenRuns);
   const holding = boards.findIndex((board) => board.items.some((item) => runs.has(item.runId)));
-  return holding >= 0 ? holding : boards.length - 1;
+  return holding >= 0 ? holding : newest;
 }
 
 export function onNewestBoard(navigation: BoardNavigation, boards: readonly Board[]): boolean {
   const index = boardIndex(navigation, boards);
-  return index === undefined || index === boards.length - 1;
+  return index === undefined || index === newestBoardIndex(boards);
 }
 
 /** A board newer than the one shown arrived since the user left the newest. */
 export function hasUnseenBoard(navigation: BoardNavigation, boards: readonly Board[]): boolean {
-  return !onNewestBoard(navigation, boards) && boards[boards.length - 1]?.id !== navigation.seenNewest;
+  const newest = newestBoardIndex(boards);
+  return !onNewestBoard(navigation, boards) && (newest === undefined ? undefined : boards[newest]?.id) !== navigation.seenNewest;
 }
 
 /** Shows board `id`; the newest board is shown as "the newest", so the view moves on again. */
 export function selectBoard(navigation: BoardNavigation, id: string, boards: readonly Board[]): BoardNavigation {
   const target = boards.find((board) => board.id === id);
   if (!target) return navigation;
-  const newest = boards[boards.length - 1];
+  const at = newestBoardIndex(boards);
+  const newest = at === undefined ? undefined : boards[at];
   if (target.id === newest?.id) return NEWEST_BOARD;
   return {
     chosen: target.id,

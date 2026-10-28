@@ -13,6 +13,7 @@ import {
   chosenColumnAfterMove,
   chosenColumnAfterUpdate,
   hasUnseenBoard,
+  newestBoardIndex,
   onNewestBoard,
   selectBoard,
   stepBoard,
@@ -301,6 +302,42 @@ describe('navigation', () => {
     const gone = structureBoards(styled('goal', { seed: [item(1)], goal: [item(4)] }));
     expect(boardIndex(nav, gone)).toBe(gone.length - 1);
     expect(hasUnseenBoard(nav, gone)).toBe(false);
+  });
+
+  it('never moves on to a quiet board by itself (web structureMotion, the Mac\'s Navigation.newestIndex)', () => {
+    const quietNotice = item(1, { runId: 'r1:notice:1', noticeRun: true, request: 'npm test · 완료' });
+    const boards = structureBoards(
+      free([row(item(1, { request: 'Fix it' }), 'done', 'done', 'done'), row(quietNotice, 'done', 'done', 'done')]),
+    );
+    expect(boards.map((board) => board.quiet)).toEqual([undefined, true]);
+    expect(newestBoardIndex(boards)).toBe(0);
+    let nav = NEWEST_BOARD;
+    expect(boardIndex(nav, boards)).toBe(0);
+    expect(onNewestBoard(nav, boards)).toBe(true);
+    expect(hasUnseenBoard(nav, boards)).toBe(false);
+    // The user may still step onto it; it is not the newest, so the view stays there.
+    nav = stepBoard(nav, 1, boards);
+    expect(boardIndex(nav, boards)).toBe(1);
+    expect(onNewestBoard(nav, boards)).toBe(false);
+    expect(hasUnseenBoard(nav, boards)).toBe(false);
+    // Going back to the newest shows the request again.
+    nav = selectBoard(nav, 'r1', boards);
+    expect(nav).toBe(NEWEST_BOARD);
+    expect(boardIndex(nav, boards)).toBe(0);
+  });
+
+  it('moves on to a notice board with a reply, and shows the last board when every board is quiet', () => {
+    const answered = item(1, { runId: 'r1:notice:1', noticeRun: true, answer: 'The build passed.' });
+    const boards = structureBoards(free([row(item(1), 'done', 'done', 'done'), row(answered, 'done', 'done', 'done')]));
+    expect(boards[1]!.quiet).toBeUndefined();
+    expect(newestBoardIndex(boards)).toBe(1);
+    // A notice turn that failed or was stopped is no quiet board: its card says so.
+    const failed = item(1, { runId: 'r1:notice:2', noticeRun: true, status: 'error' });
+    expect(structureBoards(free([row(failed, 'done', 'done', 'error')]))[0]!.quiet).toBeUndefined();
+    const onlyQuiet = structureBoards(free([row(item(1, { runId: 'r1:notice:1', noticeRun: true }), 'done', 'done', 'done')]));
+    expect(newestBoardIndex(onlyQuiet)).toBe(0);
+    expect(boardIndex(NEWEST_BOARD, onlyQuiet)).toBe(0);
+    expect(newestBoardIndex([])).toBeUndefined();
   });
 
   it('opens a board on its current step and keeps a column the user moved to', () => {
