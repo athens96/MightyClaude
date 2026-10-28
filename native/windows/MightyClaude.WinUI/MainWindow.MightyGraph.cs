@@ -697,7 +697,6 @@ public sealed partial class MainWindow
         /// </summary>
         private void AimGraphCamera(IReadOnlyList<MightyGraphRun> runs, MightyGraphLayout layout, (double W, double H)? viewport, bool retry = false)
         {
-            var ids = runs.Select(r => r.Id).ToList();
             // A later pass over the diagram as drawn has no runs of its own to observe: those may be older than what another view saw since.
             if (!retry) ObserveGraphRuns(runs, () => layout);
             graphFollowTargetId = MightyGraphFollow.TargetID(layout, runs) ?? MightyGraphCamera.PendingNodeID;
@@ -706,7 +705,8 @@ public sealed partial class MainWindow
             if (planKey is not null && planKey != graphAimedPlanKey) graphAim = (graphPlanNodeId, true);
             graphAimedPlanKey = planKey;
             if (viewport is not { } size) return;
-            ReaimStrandedGraph(layout, ids.LastOrDefault(), size, retry);
+            // The newest request's run, as the Mac's newestRunID: a notice run after it is no request (M/MightyGraphView.swift:307).
+            ReaimStrandedGraph(layout, MightyGraphSupport.NewestRequestRun(runs)?.Id, size, retry);
             // A drag sets the pan itself on every move: the target waits for the release (EndGraphDrag).
             if (graphAim is { } aim && !graphResizing && !graphDragging)
             {
