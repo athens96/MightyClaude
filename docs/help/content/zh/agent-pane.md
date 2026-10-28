@@ -75,7 +75,7 @@ Google 的智能体通过 Antigravity CLI（`agy`）运行，它也可以运行 
 ### 发送对象 {#ask-target}
 安装了 oh-my-claudecode 的 Claude 窗格，输入框里会出现{{ui:composer.ask.menuLabel}}开关。它列出已安装的其他 CLI（Codex、Antigravity 等）；选定后，之后的请求会通过 oh-my-claudecode 的 `ask` 发给它，答案会出现在 Claude 的回复中。选择{{ui:composer.ask.claude}}则像以前一样发给 Claude。Mac、Windows 应用的网页窗口和手机上都能使用。
 - 向其他 CLI 提问时无法发送附件。
-- oh-my-claudecode 启动所选 CLI 时会关闭它的审批确认和沙盒，因此它可以不经询问就修改此文件夹中的文件并运行命令。Mighty Claude 的权限模式和审批卡片只管 Claude 启动它的那一步。
+- oh-my-claudecode 启动所选 CLI 时会关闭它的审批确认和沙盒，因此它可以不经询问就修改此文件夹中的文件并运行命令。Mighty Claude 的权限模式和审批卡片只管 Claude 启动它的那一步。选择了某个 CLI 期间，输入框会用一行显示此警告。
 - 在 Windows 上，旧版 oh-my-claudecode 会拒绝向 Antigravity 提问。如果收到这样的回答，请更新 oh-my-claudecode 或改用 Gemini CLI。
 - 以 `/` 开头的文字仍原样发给 Claude。
 

@@ -9,7 +9,7 @@ describe('the composer with the send-to switch', () => {
   beforeAll(() => resetLanguage('ko'));
   afterAll(() => resetLanguage());
 
-  function render(ask: { name?: string; busy: boolean }): { sent: string[]; sendDisabled: boolean; pillValue: unknown } {
+  function render(ask: { name?: string; busy: boolean }): { sent: string[]; sendDisabled: boolean; pillValue: unknown; warning: string[] } {
     const sent: string[] = [];
     let renderer: ReactTestRenderer | undefined;
     act(() => {
@@ -38,9 +38,12 @@ describe('the composer with the send-to switch', () => {
     const pill = pressable(t('composer.ask.menuLabel'));
     const sendDisabled = send.props.disabled === true;
     const pillValue: unknown = pill.props.accessibilityValue;
+    const warning = renderer!.root
+      .findAll((node) => (node.type as unknown) === 'Text' && typeof node.props.children === 'string' && node.props.children.startsWith('⚠'))
+      .map((node) => node.props.children as string);
     act(() => send.props.onPress());
     act(() => renderer!.unmount());
-    return { sent, sendDisabled, pillValue };
+    return { sent, sendDisabled, pillValue, warning };
   }
 
   it('names the chosen CLI to a screen reader, and Claude when none is chosen', () => {
@@ -56,5 +59,10 @@ describe('the composer with the send-to switch', () => {
 
   it('sends once the choice is saved', () => {
     expect(render({ name: 'Codex', busy: false }).sent).toEqual(['왜 느린지 봐줘']);
+  });
+
+  it('warns that a chosen CLI runs without approvals, and says nothing for Claude', () => {
+    expect(render({ name: 'Codex', busy: false }).warning).toEqual([t('composer.ask.unsandboxed', { name: 'Codex' })]);
+    expect(render({ busy: false }).warning).toEqual([]);
   });
 });

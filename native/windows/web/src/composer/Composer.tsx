@@ -5,7 +5,7 @@ import type { RunSession } from '../store/models';
 import { attachmentRefusal, byteLabel, toBase64 } from './attachments';
 import { enterAction, maximumDraft } from './keys';
 import { choose, closed, move, paletteDraft, paletteKey, paletteState, safeIndex, type PaletteState, type SlashCatalog, type SlashCommand } from './slash';
-import { StyleRow, Toolbar } from './Toolbar';
+import { AskUnsandboxedRow, StyleRow, Toolbar } from './Toolbar';
 import { Icon } from '../icons/Icon';
 import type { AttachmentPreview, ComposerState, SendResult } from './types';
 import { usePageOverlay } from '../shell/overlay';
@@ -274,6 +274,7 @@ export function Composer({ session }: { session: RunSession }) {
       )}
       {/* Files staged before another CLI was chosen stay, but do not go with its ask (M/SessionPaneView.swift ask-attachments-off). */}
       {asked && state && state.attachments.length > 0 && <div className="composer-row" data-testid="composer-ask-attachments-off" role="status">{t('composer.ask.attachmentsOff')}</div>}
+      <AskUnsandboxedRow target={asked} />
       {state?.askNotice && (
         <div className="composer-row" data-testid="composer-ask-notice" role="status">
           <span>{state.askNotice}</span>

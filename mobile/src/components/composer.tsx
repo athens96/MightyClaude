@@ -245,6 +245,7 @@ export function Composer({
           {asking && attachments ? <Text style={styles.hint}>{t('composer.ask.attachmentsOff')}</Text> : null}
         </View>
       ) : null}
+      {asking ? <Text style={styles.askWarning}>{t('composer.ask.unsandboxed', { name: ask?.name ?? '' })}</Text> : null}
 
       <View style={styles.row}>
         {attachments ? (
@@ -427,6 +428,7 @@ const makeStyles = (palette: Palette) =>
     askTextOn: { color: palette.accent },
     uploadRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     hint: { color: palette.textFaint, flex: 1, fontSize: 11 },
+    askWarning: { color: palette.textFaint, fontSize: 11 },
     sheetTitle: { ...typeScale.title, color: palette.text },
     terminalNote: {
       color: palette.warning,

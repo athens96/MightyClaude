@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { ServicesContext, type AppServices } from '../app/context';
 import { translator } from '../i18n/locale';
 import type { Pills } from './menus';
-import { askRows, chooseAskTarget, Toolbar } from './Toolbar';
+import { AskUnsandboxedRow, askRows, chooseAskTarget, Toolbar } from './Toolbar';
 import type { AskTargetOption } from './types';
 
-const t = translator([{ 'composer.ask.menuLabel': 'Send to', 'composer.ask.claude': 'Claude (default)' }]);
+const t = translator([{ 'composer.ask.menuLabel': 'Send to', 'composer.ask.claude': 'Claude (default)', 'composer.ask.unsandboxed': '⚠ {name} runs without approvals' }]);
 const services = { bridge: { call: () => Promise.resolve(null) }, store: { dispatch: () => {} }, t } as unknown as AppServices;
 const pills: Pills = {
   provider: 'claude', model: 'Default', modelTip: '', showsEffort: false, effort: '', effortEnabled: false, effortTip: '', permission: 'Ask', permissionHelp: '',
@@ -53,5 +53,17 @@ describe('the 보낼 대상 pill', () => {
     await chooseAskTarget(bridge, 'p', 'codex');
     await chooseAskTarget(bridge, 'p', null);
     expect(calls).toEqual([['setAskTarget', { paneId: 'p', target: 'codex' }], ['setAskTarget', { paneId: 'p', target: null }]]);
+  });
+});
+
+describe('the unsandboxed warning row', () => {
+  const row = (target: AskTargetOption | null) =>
+    renderToStaticMarkup(createElement(ServicesContext.Provider, { value: services }, createElement(AskUnsandboxedRow, { target })));
+
+  it('names the CLI asked, and is gone once Claude is the target', () => {
+    const html = row(targets[0] ?? null);
+    expect(html).toContain('data-testid="composer-ask-unsandboxed"');
+    expect(html).toContain('⚠ Codex runs without approvals');
+    expect(row(null)).toBe('');
   });
 });

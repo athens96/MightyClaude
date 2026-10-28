@@ -734,6 +734,15 @@ struct SessionPaneView: View {
                 .font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 .accessibilityElement(children: .combine).accessibilityIdentifier("ask-attachments-off-\(session.id)")
             }
+            // Another CLI runs without approvals or a sandbox: say so for as long as it is the target.
+            if let askTarget {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+                    Image(systemName: "info.circle").foregroundStyle(Palette.accent)
+                    Text(L("composer.ask.unsandboxed", ["name": askTarget.label])).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
+                .accessibilityElement(children: .combine).accessibilityIdentifier("ask-unsandboxed-\(session.id)")
+            }
             if let notice = store.askFallbackNotices[session.id] {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "info.circle").foregroundStyle(Palette.accent)

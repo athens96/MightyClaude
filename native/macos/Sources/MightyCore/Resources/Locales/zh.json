@@ -62,6 +62,7 @@
   "composer.ask.fellBack": "找不到 {name}，将发送给 Claude",
   "composer.ask.menuLabel": "发送对象",
   "composer.ask.placeholder": "向 {name} 提问…",
+  "composer.ask.unsandboxed": "⚠ {name} 不经确认直接运行，可能修改此文件夹中的文件或执行命令",
   "composer.attach.helpMac": "附加文件 · 最多 8 个，每个 5 MiB，总计 8 MiB",
   "composer.attach.name": "附加文件和图片",
   "composer.attach.tooltip": "附加文件或图片 · 也可以用 Ctrl+V 粘贴图片或文件。",

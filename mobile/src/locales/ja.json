@@ -62,6 +62,7 @@
   "composer.ask.fellBack": "{name} が見つからないため Claude に送ります",
   "composer.ask.menuLabel": "送信先",
   "composer.ask.placeholder": "{name} に尋ねる…",
+  "composer.ask.unsandboxed": "⚠ {name} は確認なしで実行され、このフォルダのファイルを変更したりコマンドを実行したりすることがあります",
   "composer.attach.helpMac": "ファイルを添付 · 最大8個、1ファイル5 MiB、合計8 MiBまで",
   "composer.attach.name": "ファイルと画像を添付",
   "composer.attach.tooltip": "ファイル・画像を添付 · 画像やファイルはCtrl+Vでも貼り付けられます。",

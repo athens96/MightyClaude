@@ -220,6 +220,13 @@ export function StyleRow({ paneId, style }: { paneId: string; style: { label: st
 /** One row of the 보낼 대상 menu: a target id (null for Claude) or the separator under Claude. */
 export type AskRow = { kind: 'choice'; id: string | null; text: string; checked: boolean } | { kind: 'separator' };
 
+/** The row above the editor while another CLI is the target: it runs without approvals or a sandbox (M/SessionPaneView.swift ask-unsandboxed). */
+export function AskUnsandboxedRow({ target }: { target: AskTargetOption | null }) {
+  const { t } = useServices();
+  if (!target) return null;
+  return <div className="composer-row" data-testid="composer-ask-unsandboxed" role="status">{t('composer.ask.unsandboxed', { name: target.label })}</div>;
+}
+
 /** The 보낼 대상 menu (M/SessionPaneView.swift askOptions): Claude first, a separator, then every installed CLI; the one in use is checked. */
 export function askRows(targets: readonly AskTargetOption[], current: string | null, t: Translate): AskRow[] {
   return [

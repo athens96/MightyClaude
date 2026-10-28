@@ -62,6 +62,7 @@
   "composer.ask.fellBack": "{name} wasn't found, so this goes to Claude",
   "composer.ask.menuLabel": "Send to",
   "composer.ask.placeholder": "Ask {name}…",
+  "composer.ask.unsandboxed": "⚠ {name} runs without approvals and can change files or run commands in this folder",
   "composer.attach.helpMac": "Attach files · up to 8, 5 MiB each, 8 MiB in total",
   "composer.attach.name": "Attach files and images",
   "composer.attach.tooltip": "Attach files or images · You can also paste images or files with Ctrl+V.",
