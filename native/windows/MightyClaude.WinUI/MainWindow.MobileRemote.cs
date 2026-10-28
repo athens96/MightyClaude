@@ -471,6 +471,11 @@ public sealed partial class MainWindow
             // The phone's close never asks, a parent's with open children included (M/AppStore+Delegation.swift:204-206), and goes through the service like the desktop's.
             case "close": pane.MobileCancelQueue(); token.ThrowIfCancellationRequested(); await ClosePane(request.SessionId); return null;
             case "settings": await pane.MobileSettings(body, token); return null;
+            // The phone's 보낼 대상 switch (M/AppStore+MobileRemote.swift mobileSetAskTarget): a target the pane offers, or null for Claude.
+            case "setAskTarget":
+                var target = body.TryGetProperty("target", out var chosen) && chosen.ValueKind == JsonValueKind.String ? chosen.GetString() : null;
+                if (target is not null && !AskTargetsFor(pane.MobileSession).Any(t => t.Id == target)) throw new MobileRequestException(400, Locale.Get("remote.error.badBody"));
+                token.ThrowIfCancellationRequested(); await SetAskTarget(request.SessionId, target); return null;
             case "guided": return await pane.MobileGuided(body, token);
             // An Antigravity card answered on the phone, as its own buttons answer it; what comes back is why nothing happened.
             case "antigravityPermission":
@@ -508,10 +513,23 @@ public sealed partial class MainWindow
             if (!queueKeptOnStop) { CancelQueueOnStop(); MobileCancelQueue(); } else { composerSubmissionVersion++; queueDrainTimer.Stop(); }
         }
         internal void MobileCancelQueue() { composerSubmissionVersion++; queueDrainTimer.Stop(); queuedInputs.Clear(); RenderQueuedInputs(); RefreshComposerState(); }
+        /// <summary>
+        /// A phone's send, and a queued request run from the phone. Only the phone's own words (not <paramref name="prepared"/>, a
+        /// style's prompt, nor a queued item, already as it goes) are wrapped for the pane's "send to" choice, once, before they are queued
+        /// or started; a saved choice not yet known to stand waits briefly first (M/AppStore+MobileRemote.swift mobileSubmit).
+        /// </summary>
         internal async Task<SubmitReceipt> MobileSubmit(string text, IReadOnlyList<RunAttachment> files, CancellationToken token, bool prepared = false, string? queueId = null)
         {
-            token.ThrowIfCancellationRequested(); var pane = Session;
+            token.ThrowIfCancellationRequested();
+            if (!prepared && queueId is null && Session.AskTarget is not null) { await owner.AwaitAskTargets(id); token.ThrowIfCancellationRequested(); if (!QueuePaneAlive) throw new OperationCanceledException(); }
+            var pane = Session;
             if (owner.ManualMutationBlockReason(pane) is { } block) throw new MobileRequestException(409, block);
+            if (!prepared && queueId is null && AskingTarget is { } asked)
+            {
+                // An older phone may still send files: an ask carries words alone.
+                if (files.Count > 0) throw new MobileRequestException(409, Locale.Get("composer.ask.attachmentsOff"));
+                text = AskTargets.Wrap(text, asked) ?? throw new MobileRequestException(400, Locale.Get("remote.error.nothingToSend"));
+            }
             var request = new StartRunRequest(id, pane.WorkspaceId, pane.Kind, text, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files).Validate();
             if (MobileBusy)
             {
@@ -599,6 +617,10 @@ public sealed partial class MainWindow
         internal MobilePaneDigest MobileDigest()
         {
             var pane = Session; var offered = MobileOptions(pane); var options = new HashCode();
+            // The 보낼 대상 switch: the targets offered and the one in use.
+            var askTargets = owner.AskTargetsFor(pane);
+            foreach (var target in askTargets) options.Add("ask:" + target.Id);
+            options.Add("askTarget:" + AskTargets.Effective(pane.AskTarget, askTargets)?.Id);
             foreach (var item in offered.Models) { options.Add(item.Id); options.Add(item.Label); }
             foreach (var item in offered.PermissionModes) options.Add(item.Id);
             foreach (var item in offered.MightyStyles) options.Add(item.Id);
@@ -626,8 +648,12 @@ public sealed partial class MainWindow
             var legacy = style is null ? null : MobileLegacyStyleAdapter.Payload(style, GuidedPhase(style), stylePrerequisites?.Ready ?? false);
             var mighty = new { style = MobileRemoteSupport.Style(styleId), styleId, runs = MobileMightySupport.Runs(MobileMightySupport.SavedRuns(pane), styles is null ? null : input => StylePresentation.RequestPrefix(styles, input), owner.BackgroundOutputFor(pane.Id)), panel = MobileStylePanel(style), ouroboros = legacy };
             var statusLine = Refresher?.Result is { } statusResult ? new { lines = statusResult.Lines.Select(line => line.Select(s => new { s.Text, fg = Terminal(s.Foreground) is { } color ? $"#{color.R:X2}{color.G:X2}{color.B:X2}" : null, bold = s.Bold })) } : null;
+            // The 보낼 대상 switch needs the pane's catalogue, which a pane only ever read from the phone has not scanned (M/AppStore+MobileRemote.swift mobileSession).
+            owner.RefreshAskCatalog(pane);
+            var askTargets = owner.AskTargetsFor(pane);
             // The rows delegation holds for the pane come first, as on the desktop (M/AppStore+MobileRemote.swift:398).
-            return new(DelegationQueueRows.MobileItems(owner.service.HeldItems(id), queuedInputs.Items), settings, mighty, statusLine);
+            return new(DelegationQueueRows.MobileItems(owner.service.HeldItems(id), queuedInputs.Items), settings, mighty, statusLine,
+                askTargets.Select(t => new MobileAskTarget(t.Id, t.Label)).ToArray(), AskTargets.Effective(pane.AskTarget, askTargets)?.Id);
         }
         /// <summary>The style panel the phone draws, in the shared golden shape (M/MightyCore/Styles/StylePanelProjection.swift).</summary>
         private object? MobileStylePanel(RegisteredStyle? chosen) => chosen is { } style

@@ -34,6 +34,8 @@ public static class SessionTemplate
         {
             Provider = provider, Title = pane.Title == ProviderCatalog.Name(pane.Provider) ? ProviderCatalog.Name(provider) : pane.Title,
             Model = "default", Settings = new(), ResumeId = null, SessionUsage = null,
+            // Only a Claude agent asks other CLIs; another provider starts back on Claude (M/AppStore.swift switchProvider).
+            AskTarget = null,
             Logs = TranscriptRetention.Trimmed([.. pane.Logs, new(Wire.Id(), "system", line, Wire.Now(), provider)]),
         };
     }

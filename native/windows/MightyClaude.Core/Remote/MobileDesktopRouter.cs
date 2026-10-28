@@ -9,7 +9,13 @@ public sealed record MobileImageResult(MobileImagePreview? Image, string? Reason
 /// <summary>What the revision of a pane is read from beside its record (<see cref="MobileRevisions.Reading"/>).</summary>
 public sealed record MobilePaneDigest(bool Editable, int Options, int Mighty);
 public sealed record MobileQueuedItem(string Id, string Text);
-public sealed record MobilePaneExtras(IReadOnlyList<MobileQueuedItem> Queued, object? Settings = null, object? Mighty = null, object? StatusLine = null);
+/// <summary>
+/// What a pane's detail carries beside its record. <c>AskTargets</c>: the composer's "send to" targets, sent only on a pane that offers
+/// any (a Claude agent pane with oh-my-claudecode's ask and an installed target); <c>AskTarget</c>: the one its sends go to now, null for Claude.
+/// </summary>
+public sealed record MobilePaneExtras(IReadOnlyList<MobileQueuedItem> Queued, object? Settings = null, object? Mighty = null, object? StatusLine = null, IReadOnlyList<MobileAskTarget>? AskTargets = null, string? AskTarget = null);
+/// <summary>One choice of the phone's "send to" switch (<c>AskTargets</c>), in the desktop menu's order.</summary>
+public sealed record MobileAskTarget(string Id, string Label);
 public sealed record MobileDesktopAction(string SessionId, string Action, JsonElement Body, IReadOnlyList<RunAttachment>? Attachments = null);
 
 /// The m1 contract used by the existing phone app. The caller dispatches routes
@@ -309,6 +315,13 @@ public sealed class MobileDesktopRouter : IDisposable
                         }
                         finally { if (claim is not null) uploads.Finish(claim, accepted); submitSlots.Release(); }
                     }
+                    if (operation == "setAskTarget")
+                    {
+                        // The pane's "send to" choice: a target id it offers, or null for Claude (docs/mobile-remote.md). Which ids it offers is the desktop's.
+                        var value = Object(body);
+                        if (value.TryGetProperty("target", out var target) && target.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)) throw new MobileRequestException(400, Locale.Get("remote.error.badBody"));
+                        await action(new(pane.Id, operation, value), token); Changed(); return Reply(OK());
+                    }
                     if (operation is "stop" or "rename" or "close" or "settings" or "command" or "guided")
                     {
                         var value = operation is "stop" or "close" ? JsonSerializer.SerializeToElement(new { }) : Object(body);
@@ -386,7 +399,9 @@ public sealed class MobileDesktopRouter : IDisposable
         return new { protocol = 1, revision, session = Summary(pane, revision), entries = MobileRemoteSupport.PhoneEntries(pane.Logs.TakeLast(MobileWire.MaximumEntries)), hasOlder = pane.Logs.Count > MobileWire.MaximumEntries,
             permissions = Pending(pane.Id).Select(MobilePermission.From).Concat(service.AntigravityCard(pane.Id) is { } card ? [MobilePermission.FromAntigravity(card)] : []).ToArray(), queued = detail.Queued,
             usage = usage is null ? null : new { usage.Model, usage.ContextUsedTokens, usage.ContextWindowTokens, usage.ContextPercent, usage.TotalTokens, usage.CostUSD }, elapsedSeconds = pane.RunTiming?.Elapsed(), settings = detail.Settings, mighty = Mighty(detail.Mighty, structure, structureTag), statusLine = detail.StatusLine,
-            rateLimits = MobileRemoteSupport.RateLimits(usage?.RateLimits) };
+            rateLimits = MobileRemoteSupport.RateLimits(usage?.RateLimits),
+            // No targets: neither field is sent, so the phone draws no switch (M/MightyCore/Remote/MobileRemoteModels.swift MobileSessionDetail).
+            askTargets = detail.AskTargets is { Count: > 0 } targets ? targets : null, askTarget = detail.AskTargets is { Count: > 0 } ? detail.AskTarget : null };
     }
     /// <summary>
     /// The read-only file routes (M/MightyCore/Remote/MobileRemoteService.swift:1048-1104). The folder and the file are read

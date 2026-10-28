@@ -503,7 +503,8 @@ public static class SlashPalette
 // which rescans when the cache is missing or older than 30 seconds.
 public sealed class SlashCatalogCache
 {
-    private sealed record Entry(SlashCommand[] Commands, DateTimeOffset ScannedAt);
+    /// <summary><c>OffersAsk</c>: oh-my-claudecode's ask is in <c>Commands</c>, read once per scan for the composer's "send to" switch (AskTargets).</summary>
+    private sealed record Entry(SlashCommand[] Commands, DateTimeOffset ScannedAt, bool OffersAsk);
     private readonly Dictionary<string, Entry> cache = new(StringComparer.Ordinal);
     private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(30);
 
@@ -515,7 +516,11 @@ public sealed class SlashCatalogCache
             ? e.Commands : null;
 
     public void Set(string provider, string? workspacePath, SlashCommand[] commands) =>
-        cache[Key(provider, workspacePath)] = new Entry(commands, DateTimeOffset.UtcNow);
+        cache[Key(provider, workspacePath)] = new Entry(commands, DateTimeOffset.UtcNow, commands.Any(c => c.Invocation == AskTargets.Skill));
+
+    /// <summary>Whether the last scan, however old, found oh-my-claudecode's ask; null before the first scan (or after the provider was cleared).</summary>
+    public bool? OffersAsk(string provider, string? workspacePath) =>
+        cache.TryGetValue(Key(provider, workspacePath), out var e) ? e.OffersAsk : null;
 
     public void ClearProvider(string provider)
     {

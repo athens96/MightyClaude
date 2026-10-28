@@ -5,6 +5,8 @@ import { clearUnsupported, contextLabel, unsupportedSettings, type MenuName, typ
 import { usePageOverlay } from '../shell/overlay';
 import { BetaBadge } from '../shell/parts';
 import { Icon, type IconName } from '../icons/Icon';
+import type { Translate } from '../i18n/locale';
+import type { AskTargetOption } from './types';
 
 /** A toolbar narrower than this folds effort, permission and Fast into one options menu (ArrangeComposer's overflow). */
 const narrowToolbar = 420;
@@ -215,12 +217,68 @@ export function StyleRow({ paneId, style }: { paneId: string; style: { label: st
   );
 }
 
+/** One row of the 보낼 대상 menu: a target id (null for Claude) or the separator under Claude. */
+export type AskRow = { kind: 'choice'; id: string | null; text: string; checked: boolean } | { kind: 'separator' };
+
+/** The 보낼 대상 menu (M/SessionPaneView.swift askOptions): Claude first, a separator, then every installed CLI; the one in use is checked. */
+export function askRows(targets: readonly AskTargetOption[], current: string | null, t: Translate): AskRow[] {
+  return [
+    { kind: 'choice', id: null, text: t('composer.ask.claude'), checked: current === null },
+    { kind: 'separator' },
+    ...targets.map((target): AskRow => ({ kind: 'choice', id: target.id, text: target.label, checked: current === target.id })),
+  ];
+}
+
+/** Chooses where the pane's sends go (null: Claude). The host checks the pane offers it, saves it and pushes the composer again. */
+export function chooseAskTarget(bridge: { call: (method: string, args?: unknown) => Promise<unknown> }, paneId: string, target: string | null): Promise<unknown> {
+  return bridge.call('setAskTarget', { paneId, target });
+}
+
+/**
+ * The 보낼 대상 pill (M/SessionPaneView.swift askMenu): the target asked, or Claude, tinted while another CLI is asked, with its own
+ * menu. Drawn only while the pane offers a target; it stays on while the pane is busy, since the choice is the next request's.
+ */
+export function AskPill({ paneId, targets, current, compact = false }: { paneId: string; targets: readonly AskTargetOption[]; current: string | null; compact?: boolean }) {
+  const { bridge, t } = useServices();
+  const [open, setOpen] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = usePopover(close);
+  usePageOverlay(open);
+  if (targets.length === 0) return null;
+  const asked = targets.find((target) => target.id === current) ?? null;
+  const name = asked?.label ?? 'Claude';
+  const choose = (target: string | null) => {
+    setOpen(false);
+    setProblem(null);
+    chooseAskTarget(bridge, paneId, target).catch((failure: unknown) => setProblem(failure instanceof Error ? failure.message : String(failure)));
+  };
+  return (
+    <>
+      <button type="button" className={'composer-pill' + (compact ? ' compact' : '') + (asked ? ' on' : '')} data-pill="ask" data-testid="composer-ask" aria-haspopup="menu"
+        aria-label={t('composer.ask.menuLabel') + ' · ' + (asked?.label ?? t('composer.ask.claude'))} title={t('composer.ask.menuLabel') + ' · ' + name} onClick={() => setOpen(!open)}>
+        <Icon name="message-square-share" size={13} weight={1.75} className="pill-glyph" />{!compact && <span className="pill-text">{name}</span>}{!compact && <Icon name="chevron-down" size={8} weight={3} className="pill-chevron" />}
+      </button>
+      {problem && <span className="composer-pill-problem" role="alert">{problem}</span>}
+      {open && (
+        <div ref={ref} className="composer-popover composer-menu" role="menu" data-menu="ask" data-page-overlay="">
+          {askRows(targets, asked?.id ?? null, t).map((row, index) => row.kind === 'separator' ? <div key={index} className="menu-separator" role="separator" /> : (
+            <button key={index} type="button" role="menuitemradio" aria-checked={row.checked} className="menu-row" data-ask-target={row.id ?? 'claude'} onClick={() => choose(row.id)}>
+              <span className="menu-check">{row.checked ? '✓' : ''}</span>{row.text}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 /**
  * The composer's pills (spec §3 Menus): model, effort, permission, Codex Fast, the … pill (run settings; its context menu holds
  * the pane's actions) and the context ring (session info). Every list and every change is the host's; while the pane is busy
  * the pills are off, as in WinUI.
  */
-export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown, resumed = false }: { paneId: string; pills: Pills; busy: boolean; showUsage: boolean; onUsageShown: () => void; resumed?: boolean }) {
+export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown, resumed = false, askTargets = [], askTarget = null }: { paneId: string; pills: Pills; busy: boolean; showUsage: boolean; onUsageShown: () => void; resumed?: boolean; askTargets?: readonly AskTargetOption[]; askTarget?: string | null }) {
   const { bridge, t } = useServices();
   const [open, setOpen] = useState<Open>(null);
   const [narrow, setNarrow] = useState(false);
@@ -272,6 +330,7 @@ export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown, resumed 
   return (
     <div ref={host} className="composer-pills">
       {pill('model', <><span className="pill-glyph"><ProviderMark provider={pills.provider} size={12} /></span><span className="pill-text">{pills.model}</span></>, pills.modelTip)}
+      <AskPill paneId={paneId} targets={askTargets} current={askTarget} compact={narrow} />
       {!narrow && pills.showsEffort && pill('effort', <>{glyph('brain')}<span className="pill-text">{pills.effort}</span></>, pills.effortTip, pills.effortEnabled)}
       {!narrow && pill('permission', <>{glyph(pills.unlocked ? 'lock-open' : 'shield-half')}<span className="pill-text">{pills.permission}</span></>, pills.permissionHelp, true, pills.unlocked)}
       {!narrow && pills.showsFast && (

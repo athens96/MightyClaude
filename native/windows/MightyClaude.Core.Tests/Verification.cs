@@ -1037,6 +1037,13 @@ internal static class Verification
         await Test("background output: a file reads its end, a missing one none, one still being written as it stands", BackgroundOutputVerification.ReadTakesTheEndOfAFileAnotherProcessWrites);
         await Test("background output: the phone's blocks and nodes carry the lines and the notice reply, never the output file", BackgroundOutputVerification.ThePhoneGetsTheLinesAndTheReplyButNeverTheFile);
         await Test("background output: the kind words, backgroundWaiting and the strip's rows follow the block", BackgroundOutputVerification.TheKindWordsAndTheStripFollowTheBlock);
+        // native/contracts/fixtures/ask-targets.json, which the Mac (AskTargetsTests) and the phone read too (the composer's 보낼 대상 switch).
+        await Test("ask targets: the targets and the skill are the fixture's", AskTargetsVerification.TheTargetsAndSkillAreTheFixtures);
+        await Test("ask targets: every shared available, effective and wrap case holds, and a wrapped send is never wrapped again", AskTargetsVerification.EveryAvailableEffectiveAndWrapCaseHolds);
+        await Test("ask targets: a choice falls back only once known to be gone, and an unreliable PATH read keeps what was found", AskTargetsVerification.AChoiceFallsBackOnlyWhenKnownToBeGone);
+        await Test("ask targets: a wrapped send titles its pane by the question", AskTargetsVerification.TheQuestionTitlesThePane);
+        await Test("ask targets: the choice is saved per pane and kept only on a Claude agent pane", AskTargetsVerification.TheChoiceIsSavedPerPaneAndKeptOnlyOnAClaudeAgentPane);
+        await Test("ask targets: the phone sees the switch only where it is offered, and its setAskTarget passes an id or null", AskTargetsVerification.ThePhoneSeesTheSwitchOnlyWhereItIsOffered);
         await Test("design tokens: only the light theme setting picks the light palette", DesignTokenVerification.ThemeSettingPicksThePalette);
         await Test("design tokens: inks, fills and marks clear the macOS contrast rules", DesignTokenVerification.InksFillsAndMarksClearTheirContrast);
         // The text setting (M/MightyCore/TextAppearance.swift): at the standard values every size is today's.

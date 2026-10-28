@@ -333,7 +333,7 @@ public sealed partial class MainWindow
             {
                 var commands = await Task.Run(() => SlashCommandCatalog.Commands(provider, path));
                 if (!owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return;
-                owner.slashCatalogs.Set(provider, path, commands);
+                owner.SetSlashCatalog(provider, path, commands);
                 RefreshPalette(input.Text);
             }
             catch (Exception) { /* A pane with no catalogue still shows its built-ins. */ }

@@ -127,6 +127,15 @@ public sealed partial class MainWindow
         });
         bridge.Register("sessionInfo", args => Task.FromResult<object?>(WebPane(args.Text("paneId")).WebSessionInfo()));
         bridge.Register("newConversation", async args => await WebPane(args.Text("paneId")).ResetConversationAsync(CancellationToken.None));
+        // The 보낼 대상 switch (MainWindow.AskTargets.cs): a target the pane offers, or null for Claude; and its fallback notice taken down.
+        bridge.Register("setAskTarget", async args =>
+        {
+            var view = WebPane(args.Text("paneId"));
+            if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty("target", out var target) || target.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)) throw new ArgumentException("Unknown target.");
+            await SetAskTarget(view.PaneId, target.ValueKind == JsonValueKind.String ? target.GetString() : null);
+            return null;
+        });
+        bridge.Register("dismissAskNotice", args => { DismissAskNotice(WebPane(args.Text("paneId")).PaneId); return Task.FromResult<object?>(null); });
         bridge.Register("attachmentPreview", args => Task.FromResult(WebPane(args.Text("paneId")).WebAttachmentPreview(args.Text("id") ?? "")));
     }
 
@@ -246,7 +255,7 @@ public sealed partial class MainWindow
             var path = SlashWorkspacePath;
             if (owner.slashCatalogs.IsStale(pane.Provider, path))
             {
-                try { owner.slashCatalogs.Set(pane.Provider, path, await Task.Run(() => SlashCommandCatalog.Commands(pane.Provider, path))); }
+                try { var commands = await Task.Run(() => SlashCommandCatalog.Commands(pane.Provider, path)); if (!owner.closing) owner.SetSlashCatalog(pane.Provider, path, commands); }
                 catch (Exception ex) when (ex is not OutOfMemoryException) { /* A pane with no catalogue still shows its built-ins. */ }
             }
             var builtins = SlashPalette.Builtins(pane.Provider);
@@ -436,6 +445,9 @@ public sealed partial class MainWindow
         internal object WebComposerState()
         {
             var pane = Session;
+            // The 보낼 대상 switch shows once the pane's catalogue says oh-my-claudecode's ask is there: a pane never scanned is scanned now.
+            owner.RefreshAskCatalog(pane, whenStale: false);
+            var askTargets = owner.AskTargetsFor(pane);
             var busy = pane.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(pane);
             var queueable = busy && !starting && !queueStarting && pane.Kind == "claude" && HasComposerContent;
             var primary = queueable ? "queue" : busy ? "stop" : "send";
@@ -473,6 +485,11 @@ public sealed partial class MainWindow
                 toggles = pane.Kind == "claude" && pane.Provider == "claude"
                     ? new { background = owner.ShowsBackgroundWork, statusLine = LocalPath(Workspace) is null ? (bool?)null : owner.service.Snapshot.StatusLineEnabled }
                     : null,
+                // The 보낼 대상 switch (M/SessionPaneView.swift askMenu): the targets offered (none hides it), the one sends go to now
+                // (null for Claude), and the notice that a saved one is gone.
+                askTargets = askTargets.Select(t => new { id = t.Id, label = t.Label }),
+                askTarget = AskTargets.Effective(pane.AskTarget, askTargets)?.Id,
+                askNotice = owner.askFallbackNotices.GetValueOrDefault(id),
             };
         }
     }

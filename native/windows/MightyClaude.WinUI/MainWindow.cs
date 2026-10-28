@@ -138,7 +138,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); if (WebShell.Enabled) ShowWebShell(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); if (WebShell.RuntimeMissing) error.Text = Locale.Get("browser.runtime.missing"); await CheckResources(); InitializeAgentIO(); InitializeRemoteWorkspaces(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); await PresentSetupIfNeeded(); }); return; }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); if (WebShell.Enabled) ShowWebShell(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); if (WebShell.RuntimeMissing) error.Text = Locale.Get("browser.runtime.missing"); await CheckResources(); InitializeAgentIO(); InitializeRemoteWorkspaces(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); RefreshAskExecutables(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); await PresentSetupIfNeeded(); }); return; }
         try { await service.InitializeAsync(); if (options.HelpLanguage is { } helpLanguage) await service.UpdateAsync(s => s with { LanguagePreference = helpLanguage }); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); if (WebShell.Enabled) ShowWebShell(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); if (options.PerfScenario) { await RunPerfScenario(); await FinishSmoke(true); } else if (options.HelpCapture) await RunHelpCapture(); else if (webShell is not null) await RunWebShellSmoke(); else await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
         }
@@ -520,25 +520,34 @@ public sealed partial class MainWindow : Window
             (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
         private static bool SubmitKeyAllowed(bool composing, bool shift, bool otherModifier) => !composing && !shift && !otherModifier;
         /// <summary><paramref name="secondSend"/>: Ctrl+Enter, which on a busy pane runs the draft in a new child worktree where one can be made and otherwise queues it, as Enter does (<see cref="DeferBusyComposer"/>).</summary>
-        private Task Send(bool secondSend = false) => owner.Act(() => Submit(secondSend));
+        /// <param name="wrapsAsk">False for a prompt the app made (a style's action): never asked of another CLI.</param>
+        private Task Send(bool secondSend = false, bool wrapsAsk = true) => owner.Act(() => Submit(secondSend, wrapsAsk));
         /// <summary>
         /// The composer's send, shared by the WinUI editor and the web page's (MainWindow.WebShell.Composer.cs): the editor's text and
         /// attachments go the way the spec orders it (a mutation block, a guided question, a typed built-in, a busy pane's queue or
         /// worktree, then a start). What happened: started, notStarted, queued, worktree, answered, builtin, blocked or none, with the
         /// request's user entry and graph run when it started at once (natural submit B5; <see cref="SubmitReceipt"/>).
+        /// The pane's "send to" choice wraps the words once, here, before they are queued or started (<see cref="AskTargets.Wrap"/>);
+        /// <paramref name="wrapsAsk"/> false is a prompt the app made, never asked of another CLI.
         /// </summary>
-        internal async Task<SubmitReceipt> Submit(bool secondSend = false)
+        internal async Task<SubmitReceipt> Submit(bool secondSend = false, bool wrapsAsk = true)
         {
             if (owner.ManualMutationBlockReason(Session) is not null) { RefreshComposerState(); return new("blocked"); }
             if (await AnswerGuidedQuestion()) return new("answered");
             if (await SubmitTypedBuiltin()) return new("builtin");
+            // A saved choice not yet known to stand waits briefly for the pane's catalogue and the PATH read (M/AppStore.swift submit).
+            if (wrapsAsk && Session.AskTarget is not null) { await owner.AwaitAskTargets(id); if (!QueuePaneAlive) return new("none"); }
+            // Asking another CLI carries the words alone: staged files stay in the composer.
+            var asked = wrapsAsk ? AskingTarget : null;
+            if (asked is not null && AskTargets.Wrap(input.Text, asked) is null) return new("none");
             var queuedBefore = queuedInputs.Items.Count; var draftBefore = input.Text;
-            if (await DeferBusyComposer(secondSend)) return new(queuedInputs.Items.Count > queuedBefore ? "queued" : input.Text != draftBefore ? "worktree" : "none");
+            if (await DeferBusyComposer(secondSend, asked)) return new(queuedInputs.Items.Count > queuedBefore ? "queued" : input.Text != draftBefore ? "worktree" : "none");
             RefreshComposerState(); if (!canSend || starting || composingInput) return new("blocked");
+            if (asked is not null && AskTargets.Wrap(input.Text, asked) is null) return new("none");
             starting = true; var submissionVersion = ++composerSubmissionVersion;
             // The draft and its attachments are taken and cleared at submit, before the model list is read (M/AppStore.swift:946-951):
             // what is typed or pasted meanwhile is the next draft, and the editor shows that the models are being checked.
-            var submitted = input.Text; var files = pendingAttachments.ToArray(); var started = false;
+            var typed = input.Text; var submitted = asked is null ? typed : AskTargets.Wrap(typed, asked)!; RunAttachment[] files = asked is null ? pendingAttachments.ToArray() : []; var started = false;
             var taken = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => taken.Contains(file.Id)); RefreshAttachments();
             updating = true; input.Text = ""; updating = false;
             RefreshComposerState();
@@ -573,7 +582,7 @@ public sealed partial class MainWindow : Window
                 // A start that did not happen puts the draft back where nothing new was typed, and its attachments beside what was added (M/AppStore.swift:1004-1010).
                 if (!started && QueuePaneAlive)
                 {
-                    if (input.Text.Length == 0) { updating = true; input.Text = submitted; updating = false; }
+                    if (input.Text.Length == 0) { updating = true; input.Text = typed; updating = false; }
                     var kept = pendingAttachments.Select(file => file.Id).ToHashSet(); pendingAttachments.InsertRange(0, files.Where(file => !kept.Contains(file.Id))); RefreshAttachments();
                 }
                 if (owner.service.Snapshot.Sessions.Any(p => p.Id == id)) Refresh();
@@ -608,10 +617,13 @@ public sealed partial class MainWindow : Window
             var said = reason.Length > 0 ? reason : attachmentsLoading && !busy ? Locale.Get("composer.hint.attachmentsLoading") : "";
             AutomationProperties.SetHelpText(input, said.Length == 0 ? InputShortcuts : said + " " + InputShortcuts);
             // While a run is busy the editor says what Enter will do with the next request (M/SessionPaneView.swift:98-99).
+            // A busy pane keeps its queue hint; an idle one asking another CLI names it (M/SessionPaneView.swift placeholder).
+            var asking = AskingTarget;
             placeholderKey = checkingModels ? "composer.placeholder.checkingModels" : busy ? (pane.Kind == "claude" && owner.service.SecondSend(pane) == ComposerSecondSend.Worktree
-                ? "composer.placeholder.busyWorktree" : "composer.placeholder.busyQueue") : pane.Kind == "shell" ? "composer.placeholder.shell" : "composer.placeholder.idle";
-            input.PlaceholderText = Locale.Get(placeholderKey); blockedReason = reason;
-            canSend = mutationBlock is null && remoteBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
+                ? "composer.placeholder.busyWorktree" : "composer.placeholder.busyQueue") : pane.Kind == "shell" ? "composer.placeholder.shell" : asking is not null ? "composer.ask.placeholder" : "composer.placeholder.idle";
+            input.PlaceholderText = Locale.Get(placeholderKey, new Dictionary<string, string> { ["name"] = asking?.Label ?? "" }); blockedReason = reason;
+            // Asking another CLI needs words: files alone do not go with its ask.
+            canSend = mutationBlock is null && remoteBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0 && asking is null);
             send.IsEnabled = busy ? !stopping : canSend; ShowSendSymbol(busy ? "stop" : "send");
             AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
             context.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible; RefreshContextIndicator();
@@ -621,7 +633,7 @@ public sealed partial class MainWindow : Window
             // With no level to choose and none chosen the effort menu is off, and Fast where it is unsupported and off (M/SessionPaneView.swift:378, 410).
             if (levels.Length == 0 && pane.Settings.Effort == "default") effort.IsEnabled = false;
             if (!Capabilities.FastMode && !pane.Settings.FastMode) fast.IsEnabled = false;
-            attach.IsEnabled = !attachmentsLoading; attach.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
+            attach.IsEnabled = !attachmentsLoading && asking is null; attach.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
             RefreshStyles();
             RefreshQueuedComposer(busy);
             if (mutationBlock is not null && (!busy || HasComposerContent)) send.IsEnabled = worktreeButton.IsEnabled = false;

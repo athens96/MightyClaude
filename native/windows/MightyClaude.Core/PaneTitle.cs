@@ -62,11 +62,12 @@ public static class PaneTitle
 
     /// <summary>The automatic title: the newest titled request shortened, or <paramref name="defaultTitle"/>.</summary>
     public static string AutoTitle(RunSession session, string defaultTitle) =>
-        Tooltip(session) is { } text ? Shortened(text) ?? defaultTitle : defaultTitle;
+        // A request asked of another CLI titles the pane by its question (AskTargets.Question).
+        Tooltip(session) is { } text ? Shortened(AskTargets.Question(text)) ?? defaultTitle : defaultTitle;
 
     /// <summary>A pane that just sent <paramref name="input"/>: retitled when it follows requests and the input has text.</summary>
     public static RunSession Requested(RunSession session, string? input) =>
-        FollowsRequests(session) && Shortened(input) is { } title ? session with { Title = title } : session;
+        FollowsRequests(session) && Shortened(AskTargets.Question(input ?? "")) is { } title ? session with { Title = title } : session;
 
     /// <summary>
     /// Restore-time migration (macOS StateRepository.normalize): every automatic agent pane — including

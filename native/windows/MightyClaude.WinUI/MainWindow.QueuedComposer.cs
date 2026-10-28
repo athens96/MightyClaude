@@ -72,11 +72,14 @@ public sealed partial class MainWindow
         /// written words in a new child worktree where <see cref="DesktopService.SecondSend"/> offers one, and otherwise queues too.
         /// </summary>
         /// <returns>True when the busy path handled this send, including validation refusals.</returns>
-        private async Task<bool> DeferBusyComposer(bool secondSend)
+        /// <param name="asked">The pane's "send to" target, or null for Claude: its words are queued already wrapped, and staged files stay.</param>
+        private async Task<bool> DeferBusyComposer(bool secondSend, AskTarget? asked = null)
         {
             if (Session.Status != "running" && !starting && !owner.service.IsSessionRunning(id) && !owner.BackgroundUpdateHolds(Session)) return false;
             if (Session.Kind != "claude" || !HasComposerContent || starting || composingInput || attachmentsLoading) return true;
-            var text = input.Text; var files = pendingAttachments.ToArray();
+            var typed = input.Text; var text = asked is null ? typed : AskTargets.Wrap(typed, asked);
+            if (text is null) return true;
+            RunAttachment[] files = asked is null ? pendingAttachments.ToArray() : [];
             var pane = Session;
             // The same request validation applies before consuming a draft even though it runs later.
             _ = new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, text, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files).Validate();
@@ -85,7 +88,7 @@ public sealed partial class MainWindow
             {
                 // Taken from the composer now, so a second Ctrl+Enter cannot send it again.
                 var sent = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => sent.Contains(file.Id)); RefreshAttachments();
-                if (input.Text == text) { updating = true; input.Text = ""; updating = false; await Change(s => s with { Draft = "" }); }
+                if (input.Text == typed) { updating = true; input.Text = ""; updating = false; await Change(s => s with { Draft = "" }); }
                 RunInNewWorktree(text, files);
                 RefreshComposerState();
                 return true;
@@ -93,7 +96,7 @@ public sealed partial class MainWindow
             // A plan-mode style's queued request starts fresh in plan mode (§1.17.4), and the queued item keeps that decision.
             queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(LaunchesInPlanMode));
             var consumed = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => consumed.Contains(file.Id)); RefreshAttachments();
-            if (input.Text == text) { updating = true; input.Text = ""; updating = false; await Change(s => s with { Draft = "" }); }
+            if (input.Text == typed) { updating = true; input.Text = ""; updating = false; await Change(s => s with { Draft = "" }); }
             RefreshComposerState(); RenderQueuedInputs();
             // The stream may finish while the draft is being taken.
             if (Session.Status is "completed" or "idle") queueDrainTimer.Start();

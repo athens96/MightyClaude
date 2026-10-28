@@ -55,6 +55,18 @@ export interface ComposerState {
   toggles?: { background: boolean; statusLine: boolean | null } | null;
   /** A Mighty Claude pane's style row (M/SessionPaneView.swift composer): the chosen style's name, its source badge, what it is for; null elsewhere. */
   style?: { label: string; badge: string | null; hint: string; enabled: boolean } | null;
+  /** The 보낼 대상 switch (MainWindow.AskTargets.cs): the other CLIs a Claude pane with oh-my-claudecode may ask, in the menu's order; none (or absent) hides it. */
+  askTargets?: AskTargetOption[];
+  /** The target the pane's sends go to now; null or absent for Claude. */
+  askTarget?: string | null;
+  /** The notice that the saved target is gone and sends go to Claude (composer.ask.fellBack), until it is dismissed. */
+  askNotice?: string | null;
+}
+
+/** One choice of the 보낼 대상 switch: an oh-my-claudecode ask target id and its name. */
+export interface AskTargetOption {
+  id: string;
+  label: string;
 }
 
 /**

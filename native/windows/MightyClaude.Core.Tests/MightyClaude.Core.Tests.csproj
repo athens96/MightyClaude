@@ -21,6 +21,7 @@
     <EmbeddedResource Include="../../contracts/fixtures/antigravity-permissions.json" LogicalName="MightyClaude.Core.Tests.AntigravityPermissions.json" />
     <EmbeddedResource Include="../../contracts/fixtures/pending.json" LogicalName="MightyClaude.Core.Tests.Pending.json" />
     <EmbeddedResource Include="../../contracts/fixtures/background-output.json" LogicalName="MightyClaude.Core.Tests.BackgroundOutput.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/ask-targets.json" LogicalName="MightyClaude.Core.Tests.AskTargets.json" />
     <EmbeddedResource Include="../../contracts/fixtures/remote-v2/*.json" LogicalName="MightyClaude.Core.Tests.RemoteV2.%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>

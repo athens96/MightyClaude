@@ -140,6 +140,9 @@ public sealed record RunSession : IJsonOnDeserializing
     // file is the authority. Damage in either loads as nothing instead of failing the snapshot.
     [JsonPropertyName("parentSessionId"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? ParentSessionId { get; init; }
     [JsonPropertyName("workingFolder"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? WorkingFolder { get; init; }
+    // The composer's "send to" choice on a Claude agent pane (macOS RunSession.askTarget): an AskTargets id. Absent (older saves)
+    // sends to Claude, and so does an id no longer offered. Damage loads as nothing instead of failing the snapshot.
+    [JsonPropertyName("askTarget"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? AskTarget { get; init; }
 
     internal RunSession Apply(RunEvent ev)
     {

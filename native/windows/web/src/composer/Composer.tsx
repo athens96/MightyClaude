@@ -249,7 +249,9 @@ export function Composer({ session }: { session: RunSession }) {
 
   const queue = state?.queue;
   const queued = (queue?.held.length ?? 0) + (queue?.items.length ?? 0);
-  const placeholder = t(state?.placeholderKey ?? (session.kind === 'shell' ? 'composer.placeholder.shell' : 'composer.placeholder.idle'));
+  // The 보낼 대상 switch: the target asked now (null for Claude). Its name fills composer.ask.placeholder, which the host picks for an idle pane.
+  const asked = state?.askTargets?.find((target) => target.id === state.askTarget) ?? null;
+  const placeholder = t(state?.placeholderKey ?? (session.kind === 'shell' ? 'composer.placeholder.shell' : 'composer.placeholder.idle'), { name: asked?.label ?? '' });
   const primaryName = state?.primary === 'queue' ? t('queue.add') : state?.primary === 'stop' ? t('composer.stop.name') : t('composer.send.name');
   const primaryTip = state?.primary === 'queue' ? t('queue.addHint') : state?.primary === 'stop' ? t('composer.stop.tooltip') : t('composer.send.tooltip');
 
@@ -268,6 +270,14 @@ export function Composer({ session }: { session: RunSession }) {
         <div className="composer-row composer-error" data-testid="composer-error" role="alert">
           <span>{state?.attachmentError ?? error}</span>
           <button type="button" className="composer-icon-button" aria-label={t('composer.attachment.dismissError')} onClick={() => { setError(null); if (state?.attachmentError) call('dismissAttachmentError'); }}>×</button>
+        </div>
+      )}
+      {/* Files staged before another CLI was chosen stay, but do not go with its ask (M/SessionPaneView.swift ask-attachments-off). */}
+      {asked && state && state.attachments.length > 0 && <div className="composer-row" data-testid="composer-ask-attachments-off" role="status">{t('composer.ask.attachmentsOff')}</div>}
+      {state?.askNotice && (
+        <div className="composer-row" data-testid="composer-ask-notice" role="status">
+          <span>{state.askNotice}</span>
+          <button type="button" className="composer-icon-button" aria-label={t('common.close')} onClick={() => call('dismissAskNotice')}>×</button>
         </div>
       )}
       {palette.commands.length > 0 && (
@@ -359,9 +369,9 @@ export function Composer({ session }: { session: RunSession }) {
         <ComposerCard paneId={paneId} kind="login" />
         <div className="composer-toolbar">
           {state?.attachmentsAllowed !== false && (
-            <button type="button" className="composer-pill compact composer-attach" aria-label={t('composer.attach.name')} title={t('composer.attach.name')} disabled={state?.attachmentsLoading} onClick={() => call('pickAttachments')}><Icon name="paperclip" size={14} weight={1.75} /></button>
+            <button type="button" className="composer-pill compact composer-attach" aria-label={t('composer.attach.name')} title={asked ? t('composer.ask.attachmentsOff') : t('composer.attach.name')} disabled={state?.attachmentsLoading || asked !== null} onClick={() => call('pickAttachments')}><Icon name="paperclip" size={14} weight={1.75} /></button>
           )}
-          {state?.pills ? <Toolbar paneId={paneId} pills={state.pills} busy={state.busy} showUsage={showUsage} onUsageShown={usageShown} resumed={state.resumed} />
+          {state?.pills ? <Toolbar paneId={paneId} pills={state.pills} busy={state.busy} showUsage={showUsage} onUsageShown={usageShown} resumed={state.resumed} askTargets={state.askTargets ?? []} askTarget={asked?.id ?? null} />
             : <span className="composer-shell-title">{t('composer.shell.title')}</span>}
           {state?.toggles && (
             <button type="button" className={'composer-toggle' + (state.toggles.background ? ' on' : '')} aria-pressed={state.toggles.background} title={t(state.toggles.background ? 'composer.backgroundWork.hide' : 'composer.backgroundWork.show')}

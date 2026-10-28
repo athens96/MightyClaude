@@ -558,7 +558,8 @@ public sealed partial class MainWindow
             var action=style.Manifest.Actions.First(a=>a.Id==actionId);if(action.RequiresText&&string.IsNullOrWhiteSpace(input.Text)){input.Focus(FocusState.Programmatic);return;}
             var original=input.Text;var prompt=action.Prompt(action.TakesText?original:"");
             input.Text=prompt;input.SelectionStart=input.Text.Length;input.Focus(FocusState.Programmatic);
-            try{await Send();}
+            // The app's own prompt: never asked of another CLI (M/AppStore+Styles.swift sendGuidedPrompt).
+            try{await Send(wrapsAsk:false);}
             finally
             {
                 if(!owner.closing&&owner.service.Snapshot.Sessions.Any(p=>p.Id==id)&&(input.Text==prompt||!action.TakesText&&input.Text.Length==0))
