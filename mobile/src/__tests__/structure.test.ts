@@ -9,6 +9,7 @@ import {
   MAX_STRUCTURE_ITEMS,
   MAX_STRUCTURE_NODES,
   MAX_STRUCTURE_PROMPT,
+  executionTitle,
   firstTextLine,
   foldText,
   foldedRequestLine,
@@ -193,6 +194,39 @@ describe('normalizeStructure', () => {
     if (tied.kind !== 'ok') throw new Error('expected a structure');
     expect(structureItems(tied.structure)).toHaveLength(MAX_STRUCTURE_ITEMS);
     expect(tied.structure.omitted).toBe(10);
+  });
+});
+
+describe('notice runs in the structure', () => {
+  const nodes = [
+    { id: 'a', depth: 0, title: 'A', status: 'completed', kind: 'agent' },
+    { id: 'bg', depth: 0, title: 'BG', status: 'completed', kind: 'task', background: true },
+    { id: 'bg-child', depth: 1, title: 'BGC', status: 'completed', kind: 'agent' },
+    { id: 'b', depth: 0, title: 'B', status: 'completed', kind: 'agent' },
+  ];
+  const rawItem = (runId: string, extra: Record<string, unknown> = {}) => ({
+    runId, ordinal: 1, status: 'completed', finished: true, activity: [], tally: { agents: 1, tools: 0 }, clusters: [{ nodes }], ...extra,
+  });
+  const read = (items: unknown[]) => {
+    const state = normalizeStructure({ v: 1, shape: 'free', rows: items.map((entry) => ({ item: entry, request: 'done', execution: 'done', result: 'done' })) });
+    if (state.kind !== 'ok' || state.structure.shape !== 'free') throw new Error('not a free structure');
+    return state.structure.rows.map((row) => row.item);
+  };
+
+  it('draws background nodes only in a notice run, and the nodes under a hidden one go with it', () => {
+    const [request, notice] = read([rawItem('r1'), rawItem('r1:notice:1', { noticeRun: true })]);
+    expect(request!.clusters[0]!.nodes.map((entry) => entry.id)).toEqual(['a', 'b']);
+    expect(request!.noticeRun).toBeUndefined();
+    expect(notice!.clusters[0]!.nodes.map((entry) => entry.id)).toEqual(['a', 'bg', 'bg-child', 'b']);
+    expect(notice!.noticeRun).toBe(true);
+  });
+
+  it('names a notice run as such and numbers it as no request', () => {
+    const [request, notice] = read([rawItem('r1'), rawItem('r1:notice:1', { noticeRun: true })]);
+    expect(itemHeading(request!)).toBe('Request 1');
+    expect(itemHeading(notice!)).toBe('Background work finished');
+    expect(executionTitle(request!)).toBe('Run · Request 1');
+    expect(executionTitle(notice!)).toBe('Run');
   });
 });
 

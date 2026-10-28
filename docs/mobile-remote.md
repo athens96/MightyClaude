@@ -173,7 +173,8 @@ MobileSessionDetail   { …, hasOlder?: boolean,
                         settings?: MobileSettings, mighty?: MobileMighty,
                         statusLine?: { lines: [[{ text, fg?: "#RRGGBB", bold?: boolean }]] },   // 최대 6줄
                         rateLimits?: [{ label, usedPercent, resetsAt?: ISO-8601 }],
-                        askTargets?: [{ id, label }], askTarget?: string }   // 아래 "보낼 대상" 절
+                        askTargets?: [{ id, label }], askTarget?: string,    // 아래 "보낼 대상" 절
+                        backgroundWork?: [MobileBackgroundWork] }            // 아래 "백그라운드 작업과 알림 실행" 절
 MobileSettings {
   editable: boolean,                         // 실행 중이면 false
   model, permissionMode, effort?, agentViewMode, mightyStyle, styleId,
@@ -187,9 +188,11 @@ MobileCommand { name, description, source, argumentHint?, action? }
 MobileMighty {
   style: "cli" | "ouroboros",
   styleId: string,                                                       // 아래 "스타일" 절
-  runs: [{ id, input, title?, status, blocks: [MobileBlock], result? }], // 최근 20개 요청, 시간순
+  runs: [{ id, input, title?, status, blocks: [MobileBlock], result?, noticeRun?: true }], // 최근 20개 요청, 시간순
+                                             // noticeRun(선택, 추가 필드)은 끝난 백그라운드 작업에 Claude가 답한 실행(알림 실행)에만 실리는 `true`.
+                                             //   요청이 아니므로 요청 번호를 세지 않는다. 아래 "백그라운드 작업과 알림 실행" 절
                                              // result(선택, 추가 필드)는 그 요청의 최종 결과(run.finalOutput)를 블록 output과 같은 규칙으로
-                                             //   정리해 20 000자까지 담는다. 창의 **가장 최근 요청 하나**가 끝났을 때(completed·error·stopped)만,
+                                             //   정리해 20 000자까지 담는다. 창의 **가장 최근 요청 하나와 그 뒤의 알림 실행**이 끝났을 때(completed·error·stopped)만,
                                              //   결과가 비어 있지 않을 때만 실린다 — 롱 폴 페이로드를 작게 두려는 것이다. 그 밖의 요청은
                                              //   main 블록의 output(2 000자)을 쓴다. 롱 폴을 깨우는 mighty 요약값에는 이 요청이 끝난 뒤
                                              //   결과 길이도 들어가므로 상태가 바뀐 뒤 늦게 도착한 결과도 휴대폰을 깨운다.
@@ -207,12 +210,13 @@ MobileBlock { id, kind, title, status, summary?, output?, durationMs?, nodeModel
                                              //   Mac 대화 기록과 같은 문구: 도구 호출은 그 요약(없으면 도구 이름), 답변·오류는 첫 줄. 실행 자체의
                                              //   "turn" 행과 질문의 원문(JSON)은 빠진다. 줄마다 summary처럼 한 줄로 펴고 1 000바이트에서 자른다.
                                              //   끝난 블록에는 없다. 이 필드를 모르는 구버전 휴대폰은 무시한다.
-                                             // background(선택, 추가 필드)는 백그라운드 하위 에이전트와 모든 task 블록에만 실리는 `true`.
+                                             // background(선택, 추가 필드)는 백그라운드 하위 에이전트와 모든 task 블록에만 실리는 `true`. 이 블록은 알림 실행(`noticeRun`)에만 실린다.
                                              //   휴대폰은 이것으로 "하위 에이전트 · …" / "백그라운드 실행 · …" 종류 줄을 그린다(steer 블록은 제외).
                                              // outputTail(선택, 추가 필드)은 task 블록에만: 백그라운드 실행의 출력 파일 끝 줄 최대 6줄(줄당 200 글자, 넘으면 "…"),
                                              //   오래된 것부터. 한도와 자르는 규칙은 공유 픽스처 native/contracts/fixtures/background-output.json이 정한다
                                              //   (휴대폰 테스트가 maxLines를 거기서 읽는다). 출력 파일의 경로·내용 전체는 보내지 않는다: `outputFile`은 어떤 필드로도 실리지 않는다.
-                                             // noticeReply(선택, 추가 필드)는 그 작업 알림 하나에 Claude가 한 답. 블록 output과 같은 규칙으로 2 000자에서 자른다.
+                                             // noticeReply(선택, 추가 필드)는 예전 호스트가 그 작업 알림 하나에 Claude가 한 답으로 채운 값. 블록 output과 같은 규칙으로 2 000자에서 자른다.
+                                             //   알림 실행(아래 "백그라운드 작업과 알림 실행" 절)이 생긴 뒤의 호스트는 더 채우지 않는다. 휴대폰은 있으면 그대로 읽는다.
                                              //   세 필드 모두 없으면(구버전 호스트) 휴대폰은 지금까지처럼 그리고, 이 필드를 모르는 구버전 휴대폰은 무시한다.
                                              // 롱 폴을 깨우는 mighty 요약값은 블록 id·상태와 함께 run.rootEntries·agent.entries의 개수와
                                              // 마지막 기록 id를 해시한다 — 새 단계가 휴대폰을 깨운다. 스트리밍 중인 글자는 여전히 해시하지 않는다.
@@ -247,7 +251,8 @@ Item {
   answer?,                                    // 끝난 요청의 최종 답(Markdown)
   tally: { agents, tools },                   // 노드를 덜어내도 요청 전체를 센다
   clusters: [{ nodes: [Node] }],              // 하위 에이전트 트리마다 하나, 뿌리부터 깊이 우선
-  omittedNodes?: number
+  omittedNodes?: number,
+  noticeRun?: true                            // 알림 실행(끝난 백그라운드 작업에 Claude가 답한 실행). 요청 번호가 없다: ordinal은 앞 요청의 번호를 따른다
 }
 Activity { kind, state, text }                // kind는 AgentActivity.kind, text는 한 줄
 Node { id, depth, title, status, kind: "agent" | "task", model?, prompt?, output?, activity?: Activity,
@@ -262,6 +267,22 @@ Node { id, depth, title, status, kind: "agent" | "task", model?, prompt?, output
 **다시 만드는 때.** 호스트는 휴대폰이 물을 때만, 그리고 창마다 `MightyStructure.Signature`나 키(요청 이름을 읽는 실행 가능한 스타일들의 id·해시, 모델 목록)가 바뀔 때만(스트리밍 글자는 몇 줄씩 자랄 때만) 구조를 다시 만든다. 바뀐 요청의 카드만 다시 읽고(`ItemCache`), 전송 모양과 JSON 크기도 바뀌지 않은 요청은 지난 것을 그대로 쓴다. 그 사이의 읽기는 마지막 값을 그대로 보낸다. 롱 폴을 깨우는 mighty 요약값에는 답한 계획 기록의 개수와 마지막 결과도 들어간다(계획 답이 요청의 단계를 옮긴다).
 
 **버전이 어긋날 때.** 구버전 휴대폰은 묻지 않으므로 받지도 않는다. 신버전 휴대폰이 구버전 데스크톱 앱(Mac·Windows)에 붙으면 `capabilities`에 `"structure"`가 없으므로 묻지 않고, 요청이 있는 창의 구조 보기는 "Mac 업데이트가 필요합니다"(`phone.structure.needsUpdate.*`)를 보인다. 이 문구(와 `phone.structure.omitted`·`phone.structure.unreadable.*`)는 아직 Mac만 말하지만, Windows 호스트도 같은 기능 이름으로 구조를 보낸다. 휴대폰이 모르는 `v`·`shape`면 "휴대폰 앱 업데이트가 필요합니다"(`phone.structure.unreadable.*`)를 보인다. 공유 픽스처 `native/contracts/fixtures/mobile-structure.json`을 Mac(`MobileRemoteStructureTests`), Windows(`MobileStructureVerification.cs`)와 휴대폰(`structure.test.ts`)이 함께 읽어 필드 이름이 어긋나지 않게 한다.
+
+#### 백그라운드 작업과 알림 실행 (`backgroundWork`, `noticeRun`)
+
+백그라운드 작업(`run_in_background` 명령, 백그라운드 하위 에이전트)은 **도는 동안은 띠에, 끝나면 알림 실행에** 산다. 호스트는 둘 다 같은 규칙으로 보낸다(Mac `MobileRemoteModels.swift`의 `MobileBackgroundWork`, Windows `MightyClaude.Core`의 같은 모델).
+
+```
+MobileBackgroundWork { id, kind: "agent" | "run", title, status: "running", startedAt: ISO-8601,
+                       command?, outputTail?: [string] }
+```
+
+- **`backgroundWork`**는 세부 정보에 **지금 도는 작업만** 실린다(`status`는 언제나 `running`). 하나도 없으면 필드 자체가 없다. `kind`는 백그라운드 하위 에이전트(`agent`)나 백그라운드 명령(`run`), `command`는 명령(하위 에이전트는 프롬프트의 첫 줄), `outputTail`은 `run`의 출력 끝 줄 최대 6줄이다. 출력 파일의 경로는 어떤 필드로도 보내지 않는다. 끝난 작업은 여기 없고 알림 실행의 도해에 있다. 휴대폰은 `parseBackgroundWork`로 읽고(도는 것만 남긴다), Mighty 보기(흐름·파이프라인) 위에 접힌 **백그라운드 작업 N개** 띠(`plan.background.listTitle`)로 보인다. 띠를 열면 작업마다 종류·이름·경과 시간·마지막 출력 줄이 보이고, 한 줄을 열면 명령과 출력 끝 줄이 보인다.
+- **알림 실행**은 루트에서 `<task-notification>`(또는 백그라운드 하위 에이전트의 최종 보고)이 Claude 턴을 열 때 생기는 실행이다. 일반 `MobileMightyRun`과 구조 `Item`으로 가고, 다른 점은 `noticeRun: true`뿐이다. 이 실행은 요청이 아니다. 휴대폰은 **백그라운드 작업 완료**(`graph.background.noticeRun`)를 제목으로 보이고, 요청 번호를 세지 않으며(알림 실행은 앞 요청의 번호를 따른다), 파이프라인 보드도 "요청 n"으로 세지 않는다. main 블록의 `summary`는 끝난 작업(`<제목> · 완료|실패|중단됨` 줄들)이고 `output`이 Claude의 답이다. 나머지 블록은 끝난 백그라운드 블록의 사본(`background: true`, `outputTail`, `noticeReply`)이다.
+- **요청의 실행에는 백그라운드 블록이 없다.** 호스트는 `background: true` 블록을 알림 실행에만 싣는다. 휴대폰도 같은 규칙으로 `noticeRun`이 아닌 실행의 `background` 블록·노드(와 그 아래 노드)를 그리지 않는다(구버전 호스트 대비, `shownBlocks`·`shownNodes`).
+- **조용한 알림 실행**(상태가 completed이고 답이 빈 것: 다른 요청의 턴 안에서 받은 알림)은 결과 카드가 없고 따라가지 않는다. 다시 열려 도는 알림 실행은 도는 동안 앞의 답을 그대로 보인다. 화면이 따라가는 가장 최근 실행은 가장 최근 **요청**이거나, 그 뒤의 조용하지 않은 알림 실행이다.
+- 알림 실행은 사용자 요청이 아니다: 요청 번호·펫·"내가 보낸 것" 판정에 들지 않는다(휴대폰은 보낸 글의 실행을 찾을 때 알림 실행을 건너뛴다).
+- 구버전 호스트는 `backgroundWork`와 `noticeRun`을 보내지 않는다. 신버전 휴대폰은 띠를 그리지 않고, 실행의 백그라운드 블록을 숨기며, 구버전 휴대폰은 두 필드를 무시한다. 공유 픽스처는 `native/contracts/fixtures/background-output.json`이다.
 
 ### 스타일 (style)
 

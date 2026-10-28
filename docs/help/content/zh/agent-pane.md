@@ -108,7 +108,7 @@ Claude、Codex 和 Antigravity 窗格的标题栏中有{{ui:graph.view.default}}
 ### Mighty 流程 {#diagram}
 每个请求生成一个请求块，其正下方是{{ui:graph.block.execution}}块。请求块只包含发出的请求；智能体因该请求所做的事（消息、工具调用、进度）显示在{{ui:graph.block.execution}}块中。子智能体和后台任务从{{ui:graph.block.execution}}块下方分支出来。请求结束后，会附上{{ui:graph.block.result}}卡片。
 
-在后台启动的子智能体块带有{{ui:graph.background.agentWaiting}}一行，后台命令（任务）块带有{{ui:graph.background.runWaiting}}一行，两者由此区分；工作结束后，这一行末尾会变为已完成、失败或已中断。后台命令块会显示所运行的命令和输出的最后几行（折叠时显示几行，展开后最多 6 行）；如果 Claude 已回应任务通知，这段回答会显示在{{ui:graph.background.reply}}之下。输入框上方的后台任务条显示最后一行。手机上的 Mighty 视图和流水线也会显示同样的内容。
+在后台启动的子智能体和后台命令（任务）在运行期间不会画成请求的块，而是在输入框上方的后台任务条里。每一行显示类型、名称、用时和输出的最后一行；展开一行会显示它运行的命令（子智能体显示提示的第一行）和输出的最后几行（最多 6 行）。任务结束、通知送达 Claude 后，Claude 的每一次回答都会生成一个新的{{ui:graph.background.noticeRun}}图表，每个已结束的任务一个块：类型行（子智能体还是后台命令，以及结束状态）、命令、输出的最后几行，以及子智能体的报告。在{{ui:graph.view.timeline}}和{{ui:graph.view.structure}}中，这个图表接在下一行。手机上的 Mighty 视图和流水线也一样。
 
 - 拖动空白处或滚动即可移动流程。用缩放按钮可以在 50% 到 150% 之间调整。
 - 点击某个块后，只在该块内部滚动。点击空白处或按{{kbd:Esc}}即可取消选择。
@@ -140,6 +140,6 @@ Claude、Codex 和 Antigravity 窗格的标题栏中有{{ui:graph.view.default}}
 ![[agent-structure]]
 
 ### 结果卡片 {#result}
-请求结束后，{{ui:graph.block.result}}卡片会整理出结果。Claude 的回答结束后请求即变为完成；如果它启动的后台任务仍在运行，状态中会显示剩余的任务数。Claude 收到任务通知后再次回答时，这段回答会接在结果下方，前面有一行标明任务名称。如果结果中提到了文件，可以用{{ui:graph.resultFiles.openButton}}按钮打开文件列表。点击块中的文件路径会弹出预览。最新的结果卡片会适应窗格大小；如果你手动调整过大小，会出现{{ui:graph.result.fitToWindow}}按钮。
+请求结束后，{{ui:graph.block.result}}卡片会整理出结果。Claude 的回答结束后请求即变为完成；如果它启动的后台任务仍在运行，状态中会显示剩余的任务数。Claude 收到后台任务的通知后再次回答时，这段回答不会接在请求的结果后面，而是成为新的{{ui:graph.background.noticeRun}}图表的结果。如果结果中提到了文件，可以用{{ui:graph.resultFiles.openButton}}按钮打开文件列表。点击块中的文件路径会弹出预览。最新的结果卡片会适应窗格大小；如果你手动调整过大小，会出现{{ui:graph.result.fitToWindow}}按钮。
 
 ![[result-card]]

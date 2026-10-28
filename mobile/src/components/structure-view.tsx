@@ -64,6 +64,7 @@ import { submitScroll } from '@/lib/submit-scroll';
 import {
   FOLD_LINES,
   foldText,
+  executionTitle,
   foldedRequestLine,
   foldedResultLine,
   isCardFolded,
@@ -323,7 +324,7 @@ const ExecutionCard = memo(function ExecutionCard({ item, tone }: { item: Struct
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   return (
-    <View accessibilityLabel={t('graph.block.executionOf', { n: item.ordinal })} style={[styles.card, cardTint(palette, tone)]}>
+    <View accessibilityLabel={executionTitle(item)} style={[styles.card, cardTint(palette, tone)]}>
       <CardBar tone={tone} />
       <View style={styles.partHead}>
         <CardPill status={item.status} tone={tone} />
@@ -446,7 +447,7 @@ const SummaryCard = memo(function SummaryCard({
       <View style={styles.divider} />
       <View style={styles.partHead}>
         <Text numberOfLines={1} style={styles.partLabel}>
-          {t('graph.block.executionOf', { n: item.ordinal })}
+          {executionTitle(item)}
         </Text>
         <CardPill status={item.status} tone={tone} />
         <Tally item={item} />

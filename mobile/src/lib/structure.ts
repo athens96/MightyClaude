@@ -9,6 +9,7 @@ import type {
   StructureStep,
 } from '@/api/types';
 import { parseBackground } from '@/lib/background-output';
+import { shownNodes } from '@/lib/background-work';
 import { t } from '@/lib/i18n';
 import { blockText, inlineText } from '@/lib/styles';
 
@@ -127,11 +128,15 @@ function parseItem(raw: unknown): StructureItem | undefined {
   const tally = isRecord(raw.tally) ? raw.tally : {};
   let budget = MAX_STRUCTURE_NODES;
   let dropped = 0;
+  const notice = raw.noticeRun === true;
   const clusters: StructureCluster[] = [];
   for (const cluster of arrayOf(raw.clusters)) {
-    const nodes = arrayOf(isRecord(cluster) ? cluster.nodes : undefined)
-      .map(parseNode)
-      .filter((node): node is StructureNode => node !== undefined);
+    const nodes = shownNodes(
+      arrayOf(isRecord(cluster) ? cluster.nodes : undefined)
+        .map(parseNode)
+        .filter((node): node is StructureNode => node !== undefined),
+      notice,
+    );
     const kept = nodes.slice(0, budget);
     dropped += nodes.length - kept.length;
     budget -= kept.length;
@@ -159,6 +164,7 @@ function parseItem(raw: unknown): StructureItem | undefined {
   if (answer) item.answer = answer;
   const omittedNodes = count(raw.omittedNodes) + dropped;
   if (omittedNodes > 0) item.omittedNodes = omittedNodes;
+  if (notice) item.noticeRun = true;
   return item;
 }
 
@@ -380,8 +386,9 @@ export function stepStateWord(step: StructureStep): string {
           : t('graph.structure.step.pending');
 }
 
-/** "Seed · 요청 3", or just "요청 3". */
+/** The style name and the request number (Seed, Request 3), or just the number; the reply to finished background work is no request and says so. */
 export function itemHeading(item: StructureItem): string {
+  if (item.noticeRun) return t('graph.background.noticeRun');
   const request = t('remote.block.request', { ordinal: item.ordinal });
   return item.title ? `${item.title} · ${request}` : request;
 }
@@ -497,4 +504,9 @@ export function foldedRequestLine(item: StructureItem): string {
 export function foldedResultLine(item: StructureItem): string | undefined {
   if (item.status !== 'completed' || !item.answer) return undefined;
   return firstTextLine(item.answer);
+}
+
+/** The run block title with the request number, or the plain title in a notice run, which is no request. */
+export function executionTitle(item: Pick<StructureItem, 'noticeRun' | 'ordinal'>): string {
+  return item.noticeRun ? t('graph.block.execution') : t('graph.block.executionOf', { n: item.ordinal });
 }

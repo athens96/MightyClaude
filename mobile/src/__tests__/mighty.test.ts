@@ -18,7 +18,11 @@ import {
   blockKindMark,
   blockTitle,
   defaultView,
+  followRunIndex,
+  isQuietNotice,
+  newestRequestIndex,
   normalizeMighty,
+  requestOrdinals,
   resultPreview,
   runHeading,
   runPreview,
@@ -79,9 +83,9 @@ describe('block labels and marks', () => {
 
 describe('run headings and previews', () => {
   it('prefixes the title and counts requests from one', () => {
-    expect(runHeading(run({ title: '인터뷰' }), 0)).toBe('인터뷰 · 요청 1');
-    expect(runHeading(run(), 2)).toBe('요청 3');
-    expect(runHeading(run({ title: '   ' }), 1)).toBe('요청 2');
+    expect(runHeading(run({ title: '인터뷰' }), 1)).toBe('인터뷰 · 요청 1');
+    expect(runHeading(run(), 3)).toBe('요청 3');
+    expect(runHeading(run({ title: '   ' }), 2)).toBe('요청 2');
   });
 
   it('flattens a multi-line input into one line and cuts it', () => {
@@ -556,5 +560,63 @@ describe('the final result of a run', () => {
     expect(emoji.preview).toBe(`${'가'.repeat(RESULT_PREVIEW_CHARS - 1)}…`);
     // A short result, even with trailing blank lines, is shown whole.
     expect(resultPreview('짧은 답\n\n')).toEqual({ preview: '짧은 답\n\n', folded: false });
+  });
+});
+
+
+describe('notice runs: Claude\'s reply to finished background work', () => {
+  const main = (output?: string, status = 'completed') => block({ id: 'm', kind: 'main', status, output });
+  const notice = (overrides: Partial<MobileMightyRun> = {}) => run({ id: 'r1:notice:1', noticeRun: true, blocks: [main('정리했습니다')], ...overrides });
+
+  it('is no request: it carries its own name and takes no request number', () => {
+    const runs = [run({ id: 'a' }), notice(), run({ id: 'b' }), notice({ id: 'b:notice:1' })];
+    expect(requestOrdinals(runs)).toEqual([1, 1, 2, 2]);
+    expect(runHeading(runs[1]!, 1)).toBe('백그라운드 작업 완료');
+    expect(runHeading(runs[2]!, 2)).toBe('요청 2');
+    // A pane that starts with a notice run never shows 0.
+    expect(requestOrdinals([notice(), run()])).toEqual([1, 1]);
+    expect(newestRequestIndex(runs)).toBe(2);
+    expect(newestRequestIndex([notice()])).toBeUndefined();
+  });
+
+  it('is followed only when it is a turn of its own, never when it was taken into a running turn', () => {
+    const quiet = notice({ blocks: [main()] });
+    expect(isQuietNotice(quiet)).toBe(true);
+    expect(isQuietNotice(notice())).toBe(false);
+    expect(isQuietNotice(notice({ status: 'error', blocks: [main()] }))).toBe(false);
+    expect(isQuietNotice(notice({ status: 'running', blocks: [main(undefined, 'running')] }))).toBe(false);
+    expect(isQuietNotice(run({ blocks: [main()] }))).toBe(false);
+    expect(followRunIndex([run({ id: 'a' }), quiet])).toBe(0);
+    expect(followRunIndex([run({ id: 'a' }), notice()])).toBe(1);
+    expect(followRunIndex([run({ id: 'a' }), notice({ status: 'running', blocks: [main(undefined, 'running')] })])).toBe(1);
+    // The newest request stays the one followed when it comes after the notice.
+    expect(followRunIndex([notice(), run({ id: 'b' })])).toBe(1);
+    expect(followRunIndex([])).toBeUndefined();
+  });
+
+  it('has no result card when quiet, and keeps its earlier reply while a later notice turn answers in it', () => {
+    expect(runResult(notice({ blocks: [main()] }))).toBeUndefined();
+    expect(runResult(notice({ status: 'running', blocks: [main('이전 답', 'running')] }))).toBe('이전 답');
+    expect(runResult(notice({ status: 'running', blocks: [main(undefined, 'running')] }))).toBeUndefined();
+    // A request still running shows none, as before.
+    expect(runResult(run({ status: 'running', blocks: [main('중간', 'running')] }))).toBeUndefined();
+  });
+
+  it('draws background blocks only inside a notice run', () => {
+    const blocks = [
+      { id: 'm', kind: 'main', title: '요청 1', status: 'completed' },
+      { id: 'a', kind: 'agent', title: '검색', status: 'completed' },
+      { id: 'bg', kind: 'agent', title: '배경', status: 'completed', background: true },
+      { id: 't', kind: 'task', title: '빌드', status: 'completed', background: true },
+      { id: 'steer', kind: 'steer', title: '중간 요청', status: 'completed' },
+    ];
+    const request = normalizeMighty({ style: 'cli', runs: [{ id: 'r1', input: 'x', status: 'completed', blocks }] })!.runs[0]!;
+    expect(request.blocks.map((entry) => entry.id)).toEqual(['m', 'a', 'steer']);
+    expect(request.noticeRun).toBeUndefined();
+    const copies = normalizeMighty({ style: 'cli', runs: [{ id: 'r1:notice:1', input: 'x', status: 'completed', noticeRun: true, blocks }] })!.runs[0]!;
+    expect(copies.blocks.map((entry) => entry.id)).toEqual(['m', 'a', 'bg', 't', 'steer']);
+    expect(copies.noticeRun).toBe(true);
+    // Only the word true counts.
+    expect(normalizeMighty({ style: 'cli', runs: [{ id: 'r2', input: 'x', status: 'completed', noticeRun: 'yes', blocks }] })!.runs[0]!.noticeRun).toBeUndefined();
   });
 });

@@ -108,7 +108,7 @@ Claude, Codex, Antigravity 창 머리에는 {{ui:graph.view.default}} | {{ui:gra
 ### 마이티 흐름 {#diagram}
 요청마다 요청 블록이 생기고, 바로 아래 {{ui:graph.block.execution}} 블록이 붙습니다. 요청 블록에는 보낸 요청만 담기고, 에이전트가 그 요청으로 한 일(메시지, 도구 호출, 진행 상태)은 {{ui:graph.block.execution}} 블록에 나옵니다. 하위 에이전트와 백그라운드 작업은 {{ui:graph.block.execution}} 블록 아래로 갈라져 나옵니다. 끝나면 {{ui:graph.block.result}} 카드가 붙습니다.
 
-백그라운드로 시작한 하위 에이전트 블록에는 {{ui:graph.background.agentWaiting}} 줄이, 백그라운드 명령(작업) 블록에는 {{ui:graph.background.runWaiting}} 줄이 붙어 둘을 가르고, 끝나면 줄 끝이 완료·실패·중단됨으로 바뀝니다. 백그라운드 명령 블록은 실행한 명령과 출력의 마지막 줄들을 보여 주고(접어 두면 몇 줄, 펼치면 최대 6줄), 작업 알림에 Claude가 답했으면 {{ui:graph.background.reply}} 아래에 그 답이 나옵니다. 입력창 위의 백그라운드 작업 줄에는 마지막 한 줄이 나옵니다. 휴대폰의 마이티 보기와 파이프라인도 같은 줄을 보여 줍니다.
+백그라운드로 시작한 하위 에이전트와 백그라운드 명령(작업)은 도는 동안 요청의 블록으로 그려지지 않고 입력창 위의 백그라운드 작업 줄에 있습니다. 행에는 종류, 이름, 걸린 시간과 마지막 출력 한 줄이 나오고, 행을 펼치면 실행한 명령(하위 에이전트는 프롬프트 첫 줄)과 출력의 마지막 줄들(최대 6줄)이 나옵니다. 작업이 끝나 알림이 가면 Claude의 답마다 새 {{ui:graph.background.noticeRun}} 다이어그램이 생기고, 끝난 작업마다 블록 하나가 종류 줄(하위 에이전트인지 백그라운드 실행인지와 끝난 상태), 명령, 출력의 마지막 줄들, 하위 에이전트의 보고를 담습니다. {{ui:graph.view.timeline}}과 {{ui:graph.view.structure}}에서는 이 다이어그램이 다음 줄로 붙습니다. 휴대폰의 마이티 보기와 파이프라인도 같습니다.
 
 - 빈 곳을 끌거나 스크롤해서 흐름을 움직입니다. 확대·축소 단추로 50~150%로 볼 수 있습니다.
 - 블록을 누르면 그 블록 안만 스크롤합니다. 빈 곳을 누르거나 {{kbd:Esc}}를 누르면 선택이 풀립니다.
@@ -140,6 +140,6 @@ Claude, Codex, Antigravity 창 머리에는 {{ui:graph.view.default}} | {{ui:gra
 ![[agent-structure]]
 
 ### 결과 카드 {#result}
-요청이 끝나면 {{ui:graph.block.result}} 카드에 결과가 정리됩니다. 요청은 Claude의 답이 끝나면 완료로 바뀌고, 그 요청이 띄운 백그라운드 작업이 아직 돌면 상태에 남은 작업 수가 함께 나옵니다. 작업 알림을 받고 Claude가 다시 답하면 그 답이 결과 아래에 작업 이름을 단 줄과 함께 이어집니다. 결과에 파일이 나오면 {{ui:graph.resultFiles.openButton}} 단추로 목록을 엽니다. 블록 안의 파일 경로를 누르면 미리보기가 뜹니다. 가장 최근 결과 카드는 창 크기에 맞춰지고, 크기를 직접 바꿨다면 {{ui:graph.result.fitToWindow}} 단추가 생깁니다.
+요청이 끝나면 {{ui:graph.block.result}} 카드에 결과가 정리됩니다. 요청은 Claude의 답이 끝나면 완료로 바뀌고, 그 요청이 띄운 백그라운드 작업이 아직 돌면 상태에 남은 작업 수가 함께 나옵니다. 백그라운드 작업의 알림을 받고 Claude가 다시 답하면 그 답은 요청의 결과에 붙지 않고 새 {{ui:graph.background.noticeRun}} 다이어그램의 결과가 됩니다. 결과에 파일이 나오면 {{ui:graph.resultFiles.openButton}} 단추로 목록을 엽니다. 블록 안의 파일 경로를 누르면 미리보기가 뜹니다. 가장 최근 결과 카드는 창 크기에 맞춰지고, 크기를 직접 바꿨다면 {{ui:graph.result.fitToWindow}} 단추가 생깁니다.
 
 ![[result-card]]

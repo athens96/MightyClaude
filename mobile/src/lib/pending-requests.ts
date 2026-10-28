@@ -53,7 +53,7 @@ export interface PendingRequest {
 export interface PaneSnapshot {
   entries: readonly LogEntry[];
   /** Absent outside the Mighty view (no runs are sent), so a request then waits for its entry alone. */
-  runs?: readonly { id: string; input: string }[];
+  runs?: readonly { id: string; input: string; noticeRun?: boolean }[];
   /** The words of the pane's queued requests, when the host sent its queue. */
   queued?: readonly string[];
 }
@@ -121,11 +121,12 @@ export function entryArrived(request: PendingRequest, entries: readonly LogEntry
  * The host's Mighty runs for `request`: the ones it arrived with, the one the answer named, or the new ones with its words (any
  * new one for a start answered without ids).
  */
-export function runsFor(request: PendingRequest, runs: readonly { id: string; input: string }[]): readonly string[] {
+export function runsFor(request: PendingRequest, runs: readonly { id: string; input: string; noticeRun?: boolean }[]): readonly string[] {
   if (request.arrivedRunIds) return request.arrivedRunIds;
   if (request.runId !== undefined) return runs.some((run) => run.id === request.runId) ? [request.runId] : [];
   const known = new Set(request.knownRunIds);
-  const fresh = runs.filter((run) => !known.has(run.id));
+  // A notice run (Claude's reply to finished background work) is no request of anyone's.
+  const fresh = runs.filter((run) => !known.has(run.id) && run.noticeRun !== true);
   const same = fresh.filter((run) => sameWords(run.input, request.text));
   return (same.length > 0 ? same : request.phase === 'started' ? fresh : []).map((run) => run.id);
 }
@@ -347,7 +348,7 @@ export function heldRuns(shown: PendingRequest | undefined): readonly string[] {
  * The request the block list draws (the newest drawn one) while its run is not among the host's, or while it holds in its
  * run's place (`heldRuns`).
  */
-export function shownInBlocks(requests: readonly PendingRequest[], runs: readonly { id: string; input: string }[]): PendingRequest | undefined {
+export function shownInBlocks(requests: readonly PendingRequest[], runs: readonly { id: string; input: string; noticeRun?: boolean }[]): PendingRequest | undefined {
   const request = newestDrawn(requests);
   if (!request) return undefined;
   return request.phase === 'failed' || request.doneAt !== undefined || runsFor(request, runs).length === 0 ? request : undefined;

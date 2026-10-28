@@ -8,6 +8,7 @@ import {
   type MobileMightyRun,
 } from '@/api/types';
 import { parseBackground } from '@/lib/background-output';
+import { shownBlocks } from '@/lib/background-work';
 import { t } from '@/lib/i18n';
 import {
   blockText,
@@ -111,11 +112,55 @@ export function blockTitle(block: MobileBlock): string {
   return title.length > 0 ? title : blockKindLabel(block.kind);
 }
 
-/** `<title> · Request 3`, or just `Request 3` when the run has no title. */
-export function runHeading(run: MobileMightyRun, index: number): string {
+/**
+ * `<title> · Request 3`, or just `Request 3` when the run has no title. Claude's reply to finished
+ * background work is no request: it carries its own name and no number.
+ */
+export function runHeading(run: MobileMightyRun, ordinal: number): string {
+  if (run.noticeRun) return t('graph.background.noticeRun');
   const title = run.title?.trim() ?? '';
-  const request = t('remote.block.request', { ordinal: index + 1 });
+  const request = t('remote.block.request', { ordinal });
   return `${title.length > 0 ? `${title} · ` : ''}${request}`;
+}
+
+/**
+ * Each run's request number. A notice run adds nothing to the count and carries the number of the request
+ * before it (at least 1), as the Mac's `requestOrdinals`.
+ */
+export function requestOrdinals(runs: readonly Pick<MobileMightyRun, 'noticeRun'>[]): number[] {
+  let count = 0;
+  return runs.map((run) => {
+    if (!run.noticeRun) count += 1;
+    return Math.max(1, count);
+  });
+}
+
+/** The newest run that is a request, not a notice run; undefined when every run is a notice. */
+export function newestRequestIndex(runs: readonly Pick<MobileMightyRun, 'noticeRun'>[]): number | undefined {
+  for (let index = runs.length - 1; index >= 0; index -= 1) if (!runs[index]!.noticeRun) return index;
+  return undefined;
+}
+
+/**
+ * A notice run taken into a running turn: complete, with no reply of its own. It gets no result card and
+ * no view follows it (the Mac's `quietNotice`); a notice turn that failed or was stopped is not one.
+ */
+export function isQuietNotice(run: MobileMightyRun): boolean {
+  if (!run.noticeRun || run.status !== 'completed') return false;
+  return (run.result ?? run.blocks.find((block) => block.kind === 'main')?.output ?? '').trim().length === 0;
+}
+
+/**
+ * The run the Mighty view follows as the newest work: the newest request, or a notice run after it that is a
+ * turn of its own (running, or holding Claude's reply). A quiet notice never takes the request's place.
+ */
+export function followRunIndex(runs: readonly MobileMightyRun[]): number | undefined {
+  const newest = newestRequestIndex(runs);
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const run = runs[index]!;
+    if (index === newest || (run.noticeRun && index > (newest ?? -1) && !isQuietNotice(run))) return index;
+  }
+  return undefined;
 }
 
 /** One line of the request, for the collapsed group. */
@@ -172,8 +217,12 @@ export const RESULT_PREVIEW_CHARS = 1_500;
  * nothing — a run still in motion, or one that said nothing, gets no result card.
  */
 export function runResult(run: MobileMightyRun): string | undefined {
-  if (run.status !== 'completed' && run.status !== 'error' && run.status !== 'stopped') return undefined;
-  const text = run.result ?? run.blocks.find((block) => block.kind === 'main')?.output ?? '';
+  const main = run.blocks.find((block) => block.kind === 'main')?.output ?? '';
+  // A notice run a later notice turn answers in again keeps showing its earlier reply while it runs.
+  if (run.status !== 'completed' && run.status !== 'error' && run.status !== 'stopped') {
+    return run.noticeRun && main.trim().length > 0 ? main : undefined;
+  }
+  const text = run.result ?? main;
   return text.trim().length > 0 ? text : undefined;
 }
 
@@ -238,9 +287,13 @@ function parseBlock(raw: unknown): MobileBlock | undefined {
 function parseRun(raw: unknown): MobileMightyRun | undefined {
   if (!isRecord(raw)) return undefined;
   if (typeof raw.id !== 'string' || raw.id.length === 0) return undefined;
-  const parsed = arrayOf(raw.blocks)
-    .map(parseBlock)
-    .filter((block): block is MobileBlock => block !== undefined);
+  const notice = raw.noticeRun === true;
+  const parsed = shownBlocks(
+    arrayOf(raw.blocks)
+      .map(parseBlock)
+      .filter((block): block is MobileBlock => block !== undefined),
+    notice,
+  );
   const run: MobileMightyRun = {
     id: raw.id,
     input: typeof raw.input === 'string' ? raw.input : '',
@@ -250,6 +303,7 @@ function parseRun(raw: unknown): MobileMightyRun | undefined {
   if (parsed.length > MAX_BLOCKS_PER_RUN) {
     run.omittedBlocks = parsed.length - MAX_BLOCKS_PER_RUN;
   }
+  if (notice) run.noticeRun = true;
   const title = inlineText(raw.title, 160);
   if (title.length > 0) run.title = title;
   const result = blockText(raw.result, MAX_RUN_RESULT);

@@ -101,7 +101,8 @@ describe('the fields on a payload', () => {
     const mighty = normalizeMighty({
       runs: [
         {
-          id: 'r1',
+          id: 'r1:notice:1',
+          noticeRun: true,
           input: 'go',
           status: 'running',
           blocks: [{ id: 'b1', kind: 'task', title: 'build', status: 'running', background: true, outputTail: ['a', 'b'] }],
@@ -121,7 +122,8 @@ describe('the fields on a payload', () => {
           execution: 'done',
           result: 'done',
           item: {
-            runId: 'r1',
+            runId: 'r1:notice:1',
+            noticeRun: true,
             ordinal: 1,
             status: 'completed',
             finished: true,

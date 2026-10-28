@@ -400,6 +400,30 @@ export interface MobileMightyRun {
   result?: string;
   /** Older blocks the phone dropped to keep the list drawable; absent when none were. */
   omittedBlocks?: number;
+  /**
+   * `true` for Claude's reply to finished background work: not a request, so it takes no request
+   * number, and its blocks are copies of the finished background blocks. A host that predates it omits it.
+   */
+  noticeRun?: true;
+}
+
+/**
+ * One background task or sub-agent still running in a pane, as the Mac's strip lists it
+ * (`MobileSessionDetail.backgroundWork`, running items only; ended work is in a notice run's diagram).
+ * The output file's path never travels, only the last lines the host read of it.
+ */
+export interface MobileBackgroundWork {
+  id: string;
+  /** `agent`: a background sub-agent; `run`: a background command. */
+  kind: 'agent' | 'run';
+  title: string;
+  status: 'running';
+  /** ISO 8601, as the CLI reported the start. */
+  startedAt: string;
+  /** The command a run runs, or the first line of a sub-agent's prompt. */
+  command?: string;
+  /** A run's last output lines (at most `BACKGROUND_OUTPUT.maxLines`). */
+  outputTail?: string[];
 }
 
 /** One Ouroboros skill the host offers as a button. */
@@ -588,6 +612,8 @@ export interface StructureItem {
   tally: { agents: number; tools: number };
   clusters: StructureCluster[];
   omittedNodes?: number;
+  /** As on `MobileMightyRun`: Claude's reply to finished background work, not a request. */
+  noticeRun?: true;
 }
 
 export interface StructureColumn {
@@ -679,6 +705,8 @@ export interface MobileSessionDetail {
   askTargets?: AskTargetOption[];
   /** The target this pane's sends go to now; absent for Claude. */
   askTarget?: string;
+  /** Background work still running, as the Mac's strip lists it; absent when none runs. Read through `parseBackgroundWork`. */
+  backgroundWork?: MobileBackgroundWork[];
 }
 
 export interface AskTargetOption {

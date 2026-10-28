@@ -52,6 +52,11 @@ export interface Board {
   kind: BoardKind;
   /** 1-based place among the boards the phone holds. */
   ordinal: number;
+  /** A free board of Claude's reply to finished background work: no request number, named as such. */
+  noticeRun?: true;
+  /** A free request board's number and the count of request boards: notice boards are no request, so they are left out. */
+  requestNumber?: number;
+  requestCount?: number;
   /** The board's requests, oldest first. */
   items: StructureItem[];
   /** The first request's first line, when it has one. */
@@ -65,9 +70,13 @@ export interface Board {
 
 /** The boards of a structure, oldest first. */
 export function structureBoards(structure: MobileStructure): Board[] {
-  return structure.shape === 'free'
-    ? structure.rows.map((row, index) => freeBoard(row, index + 1))
-    : pipelineBoards(structure.columns);
+  if (structure.shape !== 'free') return pipelineBoards(structure.columns);
+  const requestCount = structure.rows.filter((row) => !row.item.noticeRun).length;
+  let requests = 0;
+  return structure.rows.map((row, index) => {
+    if (!row.item.noticeRun) requests += 1;
+    return { ...freeBoard(row, index + 1), requestNumber: Math.max(1, requests), requestCount };
+  });
 }
 
 function freeBoard(row: StructureRow, ordinal: number): Board {
@@ -87,7 +96,8 @@ function freeBoard(row: StructureRow, ordinal: number): Board {
     },
     { step: steps[2]!, cards: [{ kind: 'result', id: `result:${item.runId}`, item }], count: item.finished ? 1 : 0 },
   ];
-  return withHeadline({ id: item.runId, kind: 'request', ordinal, items: [item], status: item.status, steps, columns });
+  const board = withHeadline({ id: item.runId, kind: 'request', ordinal, items: [item], status: item.status, steps, columns });
+  return item.noticeRun ? { ...board, noticeRun: true } : board;
 }
 
 /**
@@ -239,12 +249,19 @@ export function boardStepName(step: BoardStep): string {
  * heading say it; `omitted` counts requests, so a pipeline's place counts the boards held.
  */
 export function boardPosition(board: Board, index: number, count: number, omitted = 0): string {
-  if (board.kind === 'request') return t('graph.structure.board.request', { n: omitted + index + 1, count: omitted + count });
+  if (board.noticeRun) return t('graph.background.noticeRun');
+  if (board.kind === 'request') {
+    return t('graph.structure.board.request', {
+      n: omitted + (board.requestNumber ?? index + 1),
+      count: omitted + (board.requestCount ?? count),
+    });
+  }
   return t('graph.structure.board.pipeline', { n: index + 1, count });
 }
 
 /** The board's words: its first request's first line, else that request's style name, else its place. */
 export function boardTitle(board: Board, count: number, omitted = 0): string {
+  if (board.noticeRun) return t('graph.background.noticeRun');
   return board.headline ?? board.items[0]?.title ?? boardPosition(board, board.ordinal - 1, count, omitted);
 }
 

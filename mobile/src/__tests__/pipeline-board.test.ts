@@ -197,6 +197,25 @@ describe('pipelines', () => {
   });
 });
 
+describe('a notice board', () => {
+  const boards = structureBoards(
+    free([
+      row(item(1, { request: 'Fix it' }), 'done', 'done', 'done'),
+      row(item(1, { runId: 'r1:notice:1', noticeRun: true, request: 'npm test · 완료' }), 'done', 'done', 'done'),
+      row(item(2, { request: 'Next' }), 'done', 'done', 'done'),
+    ]),
+  );
+
+  it('is no request: it takes no number and names itself, and the requests count without it', () => {
+    expect(boards.map((board) => board.noticeRun)).toEqual([undefined, true, undefined]);
+    expect(boardPosition(boards[0]!, 0, 3)).toBe('Request 1 / 2');
+    expect(boardPosition(boards[1]!, 1, 3)).toBe('Background work finished');
+    expect(boardPosition(boards[2]!, 2, 3)).toBe('Request 2 / 2');
+    expect(boardTitle(boards[1]!, 3)).toBe('Background work finished');
+    expect(boardPosition(boards[2]!, 2, 3, 5)).toBe('Request 7 / 7');
+  });
+});
+
 describe('words', () => {
   const boards = structureBoards(
     free([row(item(1, { request: 'Fix it' }), 'done', 'done', 'done'), row(item(2, { title: 'Seed' }), 'done', 'current', 'pending')]),

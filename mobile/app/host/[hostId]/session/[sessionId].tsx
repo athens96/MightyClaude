@@ -36,6 +36,7 @@ import {
 import { Composer } from '@/components/composer';
 import { LogEntryView } from '@/components/log-entry-view';
 import { GuidedPanel } from '@/components/guided-panel';
+import { BackgroundStrip } from '@/components/background-strip';
 import { MightyRunList } from '@/components/mighty-blocks';
 import { PendingRequestView } from '@/components/pending-request';
 import { MightyStructureView } from '@/components/structure-view';
@@ -82,7 +83,8 @@ import { t } from '@/lib/i18n';
 import { pushViewing } from '@/lib/push/runtime';
 import { answeredToast, isPlanRequest, pendingPlan, planAnswerBody } from '@/lib/plan';
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
-import { defaultView, normalizeMighty } from '@/lib/mighty';
+import { parseBackgroundWork } from '@/lib/background-work';
+import { defaultView, isQuietNotice, normalizeMighty } from '@/lib/mighty';
 import {
   receiveStructure,
   structureQuery,
@@ -565,6 +567,8 @@ export default function SessionScreen() {
 
   // The "send to" switch: the host's list and word, with the choice just made held until the next detail.
   const askView = useMemo(() => parseAskTargets(detail), [detail]);
+  // Running background work, listed in a strip above the Mighty views.
+  const backgroundWork = useMemo(() => parseBackgroundWork(detail), [detail]);
   const [askChoice, setAskChoice] = useState<{ target: string | null; revision: number | undefined } | undefined>(undefined);
   const [askOpen, setAskOpen] = useState(false);
   const [askSaving, setAskSaving] = useState(false);
@@ -1181,7 +1185,11 @@ export default function SessionScreen() {
 
   // New work pulls the shown list back to its newest content, even from further up,
   // unless the user is dragging it.
-  const blocksProgress = useMemo(() => blocksProgressKey(mighty?.runs ?? []), [mighty]);
+  // A quiet notice run (taken into a running turn, no reply of its own) never pulls the list.
+  const blocksProgress = useMemo(
+    () => blocksProgressKey((mighty?.runs ?? []).filter((run) => !isQuietNotice(run))),
+    [mighty],
+  );
   const entriesProgress = useMemo(() => entriesProgressKey(entries), [entries]);
   const followBlockProgress = blockFollow.followProgress;
   const followLogProgress = logFollow.followProgress;
@@ -1384,6 +1392,7 @@ export default function SessionScreen() {
         }
       >
         <View collapsable={false} style={styles.body}>
+          {mighty && view !== 'log' ? <BackgroundStrip work={backgroundWork} /> : null}
           {view === 'structure' && mighty ? (
             <MightyStructureView
               state={shownStructureState}

@@ -22,6 +22,8 @@ import { t } from '@/lib/i18n';
 import { toneOf } from '@/lib/status-tone';
 import { runTally, timelineNode, type TimelineNode } from '@/lib/timeline';
 import {
+  followRunIndex,
+  requestOrdinals,
   blockActivity,
   blockGist,
   blockKindLabel,
@@ -319,9 +321,10 @@ function ResultCard({ run, text }: { run: MobileMightyRun; text: string }) {
   );
 }
 
-function RunGroup({ run, index, newest }: {
+function RunGroup({ run, ordinal, newest }: {
   run: MobileMightyRun;
-  index: number;
+  /** The request's number; a notice run (Claude's reply to finished background work) has none to show. */
+  ordinal: number;
   /** The newest request starts open while it runs; see `runFold`. */
   newest: boolean;
 }) {
@@ -349,7 +352,7 @@ function RunGroup({ run, index, newest }: {
         <View style={styles.runTitleRow}>
           <Text style={styles.runChevron}>{open ? '▾' : '▸'}</Text>
           <Text numberOfLines={2} style={styles.runTitle}>
-            {runHeading(run, index)}
+            {runHeading(run, ordinal)}
           </Text>
           <StatusChip status={run.status} />
         </View>
@@ -431,7 +434,9 @@ export function MightyRunList({
   follow?: FollowBottomProps;
 }) {
   const styles = useStyles(makeStyles);
-  const last = runs.length - 1;
+  // The run followed as newest: the newest request, or a notice run after it that is a turn of its own.
+  const followed = followRunIndex(runs);
+  const ordinals = requestOrdinals(runs);
 
   return (
     <FlatList
@@ -441,7 +446,7 @@ export function MightyRunList({
       keyExtractor={(run) => run.id}
       renderItem={({ item, index }) => (
         <View style={styles.listItem}>
-          <RunGroup run={item} index={index} newest={index === last} />
+          <RunGroup run={item} ordinal={ordinals[index] ?? index + 1} newest={index === followed} />
         </View>
       )}
       contentContainerStyle={contentContainerStyle}

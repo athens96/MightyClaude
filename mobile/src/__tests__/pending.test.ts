@@ -146,6 +146,18 @@ describe('sent requests on the phone', () => {
     expect(reconcile(requests, { entries: [...before.entries, user('u2', 'with a file\n/tmp/a.png')] }, 1140)).toHaveLength(0);
   });
 
+  it('never takes a notice run for the request it waits on', () => {
+    const mightyBefore: PaneSnapshot = { entries: before.entries, runs: [{ id: 'r1', input: 'first' }] };
+    let requests: readonly PendingRequest[] = [newPendingRequest(mightyBefore, 'c1', 'with a file', 1000)];
+    requests = applyAnswer(requests, 'c1', started(), 1100);
+    const entry = [...before.entries, user('u2', 'with a file')];
+    // A notice run lands first: the start answered without ids must wait for its own run.
+    const notice: PaneSnapshot = { entries: entry, runs: [...mightyBefore.runs!, { id: 'r1:notice:1', input: 'build · 완료', noticeRun: true }] };
+    expect(reconcile(requests, notice, 1140)).toHaveLength(1);
+    const own: PaneSnapshot = { entries: entry, runs: [...notice.runs!, { id: 'r2', input: 'with a file' }] };
+    expect(reconcile(requests, own, 1140)).toHaveLength(0);
+  });
+
   it('in the Mighty view waits for the run as well as the entry', () => {
     const mightyBefore: PaneSnapshot = { entries: before.entries, runs: [{ id: 'r1', input: 'first' }] };
     let requests: readonly PendingRequest[] = [newPendingRequest(mightyBefore, 'c1', 'go', 1000)];
