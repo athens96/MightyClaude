@@ -113,7 +113,7 @@ public struct SetupProber: Sendable {
     }
 
     /// Each executable copy of `name` on the PATH, in order, once.
-    static func executables(_ name: String, environment: [String: String]) -> [URL] {
+    public static func executables(_ name: String, environment: [String: String]) -> [URL] {
         var seen = Set<String>()
         return (environment["PATH"] ?? "").split(separator: ":").prefix(64).compactMap { directory in
             let url = URL(fileURLWithPath: String(directory)).appendingPathComponent(name)

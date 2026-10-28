@@ -48,6 +48,8 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileCommands(sessionId: String) async throws -> [MobileCommand]
     /// Returns the body of `usage`/`help`; nil when the action has no text.
     func mobilePerformCommand(sessionId: String, action: String) async throws -> String?
+    /// Sets the pane's composer "send to" target (nil: Claude). One the pane does not offer is a bad request.
+    func mobileSetAskTarget(sessionId: String, target: String?) async throws
     /// Draws an svg for a file preview; MightyCore has no AppKit to do it.
     var mobileSVGRasterizer: MobileWorkspaceFiles.SVGRasterizer? { get }
 }
@@ -71,6 +73,10 @@ public extension MobileHostDelegate {
     }
     /// A host without plan cards has nothing to answer.
     func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws { throw MightyError(L("plan.error.notPlan")) }
+    /// A host without the "send to" switch offers no targets, so every value but Claude is refused.
+    func mobileSetAskTarget(sessionId: String, target: String?) async throws {
+        guard target == nil else { throw MobileHostError.badRequest(L("remote.error.badBody")) }
+    }
 }
 
 /// A routed reply: HTTP-like status plus a JSON body.
@@ -1254,6 +1260,10 @@ public actor MobileRemoteService {
                 case "settings":
                     let request = try decode(body, as: MobileSettingsRequest.self)
                     try await perform { try await delegate.mobileApplySettings(sessionId: id, request: request) }
+                    return reply(200, MobileOK())
+                case "setAskTarget":
+                    let request = try decode(body, as: MobileSetAskTargetRequest.self)
+                    try await perform { try await delegate.mobileSetAskTarget(sessionId: id, target: request.target) }
                     return reply(200, MobileOK())
                 case "command":
                     let request = try decode(body, as: MobileCommandRequest.self)

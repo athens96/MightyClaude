@@ -184,6 +184,9 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
     func mobileClose(sessionId: String) async throws {
         try await MainActor.run { try store.orClosing().mobileClose(sessionId) }
     }
+    func mobileSetAskTarget(sessionId: String, target: String?) async throws {
+        try await MainActor.run { try store.orClosing().mobileSetAskTarget(sessionId, target: target) }
+    }
     func mobileEntries(sessionId: String, before: String, limit: Int) async throws -> MobileEntriesPage {
         try await MainActor.run { try store.orClosing().mobileEntries(sessionId, before: before, limit: limit) }
     }
@@ -414,6 +417,10 @@ extension AppStore {
         var ids = options.models.map { $0.id + "\u{1F}" + $0.label } + options.permissionModes.map(\.id) + options.mightyStyles.map(\.id)
         ids += options.styles.map { $0.id + "|" + ($0.source?.rawValue ?? "") }
         ids += (options.efforts ?? []).map(\.id)
+        // The composer's "send to" switch: the targets offered and the one in use.
+        let targets = askTargets(for: session)
+        ids += targets.map { "ask:" + $0.id }
+        ids.append("askTarget:" + (AskTargets.effective(saved: session.askTarget, available: targets)?.id ?? ""))
         return ids.joined(separator: "|").hashValue
     }
 
@@ -450,12 +457,15 @@ extension AppStore {
         if Date().timeIntervalSince(statusLines[id]?.updatedAt ?? .distantPast) >= Self.mobileStatusLineInterval {
             refreshStatusLine(for: session)
         }
+        let targets = askTargets(for: session)
         return MobileSessionDetail(revision: revision, session: summary, entries: Array(session.logs.suffix(MobileSessionDetail.maximumEntries)),
                                    permissions: permissions, queued: DelegationQueueRows.mobileItems(held: delegationHeld[id] ?? [], queued: queuedInputs[id] ?? []),
                                    usage: mobileUsage(session), elapsedSeconds: session.runTiming?.elapsed(),
                                    hasOlder: MobileRemoteSupport.hasOlder(entryCount: session.logs.count), settings: mobileSettings(session),
                                    mighty: mobileMighty(session, structure: structure),
-                                   statusLine: mobileStatusLine(id), rateLimits: MobileRemoteSupport.rateLimits(session.sessionUsage?.rateLimits ?? []))
+                                   statusLine: mobileStatusLine(id), rateLimits: MobileRemoteSupport.rateLimits(session.sessionUsage?.rateLimits ?? []),
+                                   askTargets: targets.map { MobileAskTarget(id: $0.id, label: $0.label) },
+                                   askTarget: AskTargets.effective(saved: session.askTarget, available: targets)?.id)
     }
 
     // MARK: Mighty
@@ -658,6 +668,13 @@ extension AppStore {
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { throw MightyError(L("remote.error.paneNotFound")) }
         guard !usesLocalTerminal(session) else { throw MightyError(L("remote.error.localTerminalInput")) }
         guard !text.isEmpty || !attachments.isEmpty else { throw MightyError(L("remote.error.nothingToSend")) }
+        // The pane's "send to" choice wraps the phone's text as it does the composer's.
+        var text = text
+        if askSendTarget(session) != nil {
+            guard attachments.isEmpty else { throw MightyError(L("composer.ask.attachmentsOff")) }
+            guard let wrapped = askSendText(text, session: session) else { throw MightyError(L("remote.error.nothingToSend")) }
+            text = wrapped
+        }
         if let reason = runBlockedReason(session, checkRuntime: false) { throw MightyError(reason) }
         let held = backgroundUpdateHolds(session)
         if session.status == "running" || pendingRuns.contains(id) || held {
@@ -764,6 +781,13 @@ extension AppStore {
         } else {
             guard renameSession(id, to: title) else { throw MobileHostError.badRequest(L("remote.error.badTitle")) }
         }
+    }
+
+    /// The phone's "send to" switch: a target this pane offers, or nil for Claude.
+    func mobileSetAskTarget(_ id: String, target: String?) throws {
+        let session = try mobileAISession(id)
+        if let target, !askTargets(for: session).contains(where: { $0.id == target }) { throw MobileHostError.badRequest(L("remote.error.badBody")) }
+        setAskTarget(id, target: target)
     }
 
     func mobileClose(_ id: String) throws {

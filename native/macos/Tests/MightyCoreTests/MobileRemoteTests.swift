@@ -142,6 +142,12 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         try known(sessionId); commands.append("close:\(sessionId)")
     }
+    func mobileSetAskTarget(sessionId: String, target: String?) async throws {
+        lock.lock(); defer { lock.unlock() }
+        try known(sessionId)
+        guard target == nil || target == "codex" else { throw MobileHostError.badRequest("요청 본문이 올바르지 않습니다.") }
+        commands.append("ask:\(target ?? "claude")")
+    }
     func mobileEntries(sessionId: String, before: String, limit: Int) async throws -> MobileEntriesPage {
         lock.lock(); defer { lock.unlock() }
         try known(sessionId)
@@ -608,6 +614,20 @@ struct MobileRemoteTests {
         #expect(try await call(service, "POST", "/m1/sessions/session-1/close").0 == 200)
         #expect(try await call(service, "POST", "/m1/sessions/missing/close").0 == 404)
         #expect(host.recorded() == ["rename:릴리스 준비", "rename:" + String(repeating: "가", count: 80), "close:session-1"])
+    }
+
+    /// The phone's "send to" switch: a target or null reaches the pane; one it
+    /// does not offer is the pane's 400, an unknown pane 404.
+    @Test func setAskTargetForwardsATargetOrNull() async throws {
+        let host = FakeMobileHost()
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/setAskTarget", body: ["target": "codex"]).0 == 200)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/setAskTarget", body: ["target": NSNull()]).0 == 200)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/setAskTarget", body: ["target": "muse"]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/setAskTarget", body: ["target": 3]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/missing/setAskTarget", body: ["target": "codex"]).0 == 404)
+        #expect(host.recorded() == ["ask:codex", "ask:claude"])
     }
 
     @Test func theEntriesRouteForwardsItsCursorAndChecksItsQuery() async throws {

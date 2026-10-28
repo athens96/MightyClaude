@@ -314,12 +314,34 @@ public struct MobileSessionDetail: Codable, Sendable, Equatable {
     public var mighty: MobileMighty?
     public var statusLine: MobileStatusLine?
     public var rateLimits: [MobileRateLimit]?
+    /// The composer's "send to" targets, present only on a pane that offers any
+    /// (a Claude agent pane with oh-my-claudecode's ask and an installed target).
+    public var askTargets: [MobileAskTarget]?
+    /// The target the pane's sends go to now; absent for Claude.
+    public var askTarget: String?
     public static let maximumEntries = 80
     public init(revision: Int, session: MobileSessionSummary, entries: [LogEntry], permissions: [MobilePermission] = [], queued: [MobileQueuedItem] = [], usage: MobileUsage? = nil, elapsedSeconds: Double? = nil,
-                hasOlder: Bool? = nil, settings: MobileSettings? = nil, mighty: MobileMighty? = nil, statusLine: MobileStatusLine? = nil, rateLimits: [MobileRateLimit]? = nil) {
+                hasOlder: Bool? = nil, settings: MobileSettings? = nil, mighty: MobileMighty? = nil, statusLine: MobileStatusLine? = nil, rateLimits: [MobileRateLimit]? = nil,
+                askTargets: [MobileAskTarget]? = nil, askTarget: String? = nil) {
         self.revision = revision; self.session = session; self.entries = MobileRemoteSupport.phoneEntries(entries); self.permissions = permissions; self.queued = queued; self.usage = usage; self.elapsedSeconds = elapsedSeconds
         self.hasOlder = hasOlder; self.settings = settings; self.mighty = mighty; self.statusLine = statusLine; self.rateLimits = rateLimits
+        // No targets: neither field is sent, so the phone draws no switch.
+        let offered = askTargets?.isEmpty == false ? askTargets : nil
+        self.askTargets = offered; self.askTarget = offered == nil ? nil : askTarget
     }
+}
+
+/// One choice of the phone's "send to" switch (`AskTargets`), in the Mac menu's order.
+public struct MobileAskTarget: Codable, Sendable, Equatable {
+    public var id: String
+    public var label: String
+    public init(id: String, label: String) { self.id = id; self.label = label }
+}
+
+/// `POST …/setAskTarget`: a target the pane offers, or null for Claude.
+public struct MobileSetAskTargetRequest: Codable, Sendable, Equatable {
+    public var target: String?
+    public init(target: String?) { self.target = target }
 }
 
 /// One choice of a settings picker, in the same order the Mac's menu shows.

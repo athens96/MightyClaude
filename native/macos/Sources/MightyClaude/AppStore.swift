@@ -135,6 +135,15 @@ final class AppStore: ObservableObject, DelegationHost {
     lazy var toolkitStore: ToolkitStore = ToolkitStore(directory: dataDirectory)
     /// Slash-command completion (AppStore+SlashCommands.swift).
     @Published var slashCatalogs: [String: SlashCatalogEntry] = [:]
+    /// The composer's "send to" targets (AppStore+AskTargets.swift): which target
+    /// executables the login shell's PATH has, read with the slash catalogue.
+    @Published var installedAskExecutables: Set<String> = []
+    /// A pane's notice that its saved target is gone and the send goes to Claude.
+    @Published var askFallbackNotices: [String: String] = [:]
+    /// Until the PATH was read once, no saved target is judged missing.
+    var askProbeFinished = false
+    var askProbeInFlight = false
+    var askProbedAt: Date?
     @Published var statusLines: [String: StatusLineState] = [:]
     @Published var appUpdate = AppUpdateState()
     /// Mighty styles (AppStore+Styles.swift): what was found, what was said
@@ -537,6 +546,7 @@ final class AppStore: ObservableObject, DelegationHost {
             // The help capture shows its demo CLIs and never asks the real ones.
             if !helpCapturing { await refreshRuntime() }
             Task { await self.presentSetupIfNeeded() }
+            refreshAskExecutables()
             if !smokeTesting { beginAutomaticCLIUpdatesIfNeeded() }
             discardStaleAppUpdates()
             checkForAppUpdateAutomatically()
@@ -881,6 +891,8 @@ final class AppStore: ObservableObject, DelegationHost {
             $0.settings = RunSettings()
             $0.resumeId = nil
             $0.sessionUsage = nil
+            // Only a Claude agent asks other CLIs; another provider starts back on Claude.
+            $0.askTarget = nil
             $0.logs.append(LogEntry(kind: "system", text: L("pane.log.switchedProvider", ["provider": ProviderOptions.label(provider)])))
             $0.logs = TranscriptRetention.trimmed($0.logs)
         }
@@ -932,8 +944,8 @@ final class AppStore: ObservableObject, DelegationHost {
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
         guard !usesLocalTerminal(session) else { error = L("composer.localTerminalInput"); return }
         let originalDraft = drafts[id] ?? ""
-        let input = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attachments = attachmentDrafts[id] ?? []
+        var input = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        var attachments = attachmentDrafts[id] ?? []
         guard !input.isEmpty || !attachments.isEmpty else { return }
         // A pick from the worktree menu runs the text in a new child, of
         // another agent too, and never in this pane: offered no more, the
@@ -942,6 +954,13 @@ final class AppStore: ObservableObject, DelegationHost {
             guard !input.isEmpty, offersWorktreeMenu(session) else { return }
             runInNewWorktree(id, input: input, attachments: attachments, draft: originalDraft, agent: agent)
             return
+        }
+        // Asking another CLI carries the text alone: staged files stay in the composer.
+        // (A child picked from the worktree menu runs its own agent, so it gets the text as typed.)
+        if askSendTarget(session) != nil {
+            guard let wrapped = askSendText(input, session: session) else { return }
+            input = wrapped
+            attachments = []
         }
         if let reason = runBlockedReason(session) { error = reason; return }
         let held = backgroundUpdateHolds(session)

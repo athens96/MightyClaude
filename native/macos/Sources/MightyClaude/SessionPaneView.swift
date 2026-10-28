@@ -39,11 +39,14 @@ struct SessionPaneView: View {
         return nil
     }
     private var selectedModelName: String { store.modelLabel(for: session) }
+    /// The "send to" switch's targets (empty hides it) and the one sends go to now (nil: Claude).
+    private var askTargets: [AskTarget] { store.askTargets(for: session) }
+    private var askTarget: AskTarget? { store.askSendTarget(session) }
     /// Sending stays possible while a run is busy: a busy pane queues the text
-    /// (⌘Enter may run it in a new worktree).
+    /// (⌘Enter may run it in a new worktree). Asking another CLI needs words: files stay behind.
     private var canSend: Bool {
         guard !stopping, !importingAttachments, blockedReason == nil else { return false }
-        if !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.kind != "shell" && !attachments.isEmpty) { return true }
+        if !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.kind != "shell" && !attachments.isEmpty && askTarget == nil) { return true }
         // Multi-select picks in the question panel are confirmed with Enter on an empty draft.
         return guided && store.guidedCanConfirm(session.id)
     }
@@ -112,6 +115,7 @@ struct SessionPaneView: View {
             // which lives here and not in the engine (§1.7).
             if !value.isEmpty { return value }
         }
+        if let askTarget { return L("composer.ask.placeholder", ["name": askTarget.label]) }
         if store.pendingRuns.contains(session.id), session.status != "running" { return L("composer.placeholder.checkingModels") }
         if running {
             switch secondSend {
@@ -484,11 +488,41 @@ struct SessionPaneView: View {
         .accessibilityIdentifier("composer-more-\(session.id)")
     }
 
+    /// The pill's name: the target asked, or Claude.
+    private func askPillTitle(_ current: AskTarget?) -> String { current?.label ?? ProviderOptions.label("claude") }
+
+    /// Claude first, then every installed CLI; the one in use is checked.
+    @ViewBuilder private func askOptions(_ targets: [AskTarget], current: AskTarget?) -> some View {
+        Button { store.setAskTarget(session.id, target: nil) } label: {
+            if current == nil { Label(L("composer.ask.claude"), systemImage: "checkmark") } else { Text(L("composer.ask.claude")) }
+        }
+        Divider()
+        ForEach(targets, id: \.id) { target in
+            Button { store.setAskTarget(session.id, target: target.id) } label: {
+                if current?.id == target.id { Label(target.label, systemImage: "checkmark") } else { Text(target.label) }
+            }
+        }
+    }
+
+    /// The "send to" switch: tinted while another CLI is asked.
+    private func askMenu(_ targets: [AskTarget], current: AskTarget?, compact: Bool) -> some View {
+        Menu { askOptions(targets, current: current) } label: {
+            ComposerPill(title: askPillTitle(current), systemImage: "paperplane", active: current != nil, chevron: true, maximumTextWidth: 90, compact: compact)
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+        .help("\(L("composer.ask.menuLabel")) · \(askPillTitle(current))")
+        .accessibilityLabel(L("composer.ask.menuLabel")).accessibilityValue(current?.label ?? L("composer.ask.claude"))
+        .accessibilityIdentifier("composer-ask-\(session.id)")
+    }
+
     private var showsEffort: Bool { runtime.capabilities.effort || session.settings.effort != "default" }
     private var showsFast: Bool { session.provider == "codex" && (runtime.capabilities.fastMode || session.settings.fastMode) }
 
-    private var overflowMenu: some View {
+    private func overflowMenu(askTargets targets: [AskTarget], current: AskTarget?) -> some View {
         Menu {
+            if !targets.isEmpty {
+                Menu("\(L("composer.ask.menuLabel")) · \(askPillTitle(current))") { askOptions(targets, current: current) }
+            }
             if showsEffort {
                 Menu(L("composer.effort.menu", ["effort": effortLabel(session.settings.effort)])) { effortOptions }
                     .disabled(effortLevels.isEmpty && session.settings.effort == "default")
@@ -503,7 +537,7 @@ struct SessionPaneView: View {
             Divider()
             Button(L("composer.runSettings.more")) { store.selectSession(session.id); store.settingsSession = session }
         } label: {
-            ComposerPill(title: "", systemImage: "slider.horizontal.3", active: session.settings.permissionMode == "fullAccess" || session.settings.fastMode, compact: true)
+            ComposerPill(title: "", systemImage: "slider.horizontal.3", active: session.settings.permissionMode == "fullAccess" || session.settings.fastMode || current != nil, compact: true)
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running)
         .accessibilityLabel(L("composer.runOptions.accessibility")).accessibilityValue("\(effortLabel(session.settings.effort)), \(permissionModeMenuLabel(session.settings.permissionMode))")
@@ -689,6 +723,25 @@ struct SessionPaneView: View {
                 .font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 .accessibilityIdentifier("attachment-error-\(session.id)")
             }
+            // Files staged before another CLI was chosen stay, but do not go with its ask.
+            if askTarget != nil, !attachments.isEmpty {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+                    Image(systemName: "info.circle").foregroundStyle(Palette.accent)
+                    Text(L("composer.ask.attachmentsOff")).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
+                .accessibilityElement(children: .combine).accessibilityIdentifier("ask-attachments-off-\(session.id)")
+            }
+            if let notice = store.askFallbackNotices[session.id] {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+                    Image(systemName: "info.circle").foregroundStyle(Palette.accent)
+                    Text(notice).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                    Button { store.askFallbackNotices.removeValue(forKey: session.id) } label: { Image(systemName: "xmark").font(.ui(size: 9)).frame(width: 18, height: 16) }
+                        .buttonStyle(.plain).accessibilityLabel(L("common.close"))
+                }
+                .font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
+                .accessibilityIdentifier("ask-fell-back-\(session.id)")
+            }
             if let problem = store.inputMethodProblem, composerFocused {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(problem.recoveryState == .reconnected ? Palette.doneText : Palette.waitText).padding(.top, 1)
@@ -770,6 +823,8 @@ struct SessionPaneView: View {
         .onChange(of: session.model) { _, _ in store.refreshStatusLine(sessionID: session.id) }
         // A workspace's own manifests are read when it first draws a pane.
         .task(id: session.workspaceId) { store.scanWorkspaceStyles(for: session) }
+        // The "send to" switch shows only once the catalogue says oh-my-claudecode's ask is there.
+        .task(id: "\(session.workspaceId)|\(session.provider)") { if session.kind == "claude", session.provider == "claude" { store.refreshSlashCommands(for: session) } }
         // The style id alone does not change when a restored pane's registry
         // finally arrives, so the hash of the resolved style is watched too.
         .task(id: styleIdentity) { if let style { store.refreshStyle(style, for: session) } }
@@ -809,13 +864,17 @@ struct SessionPaneView: View {
             let height = ComposerToolbarMetrics.height, gap = ComposerToolbarMetrics.spacing
             let actionsWidth = (running && canSend ? Self.compactStop + gap + height + (offersSecondSend ? height + gap : 0) : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap) + (showsBackgroundWorkToggle ? 16 + gap : 0) + (showsStatusLineToggle ? 16 + gap : 0)
             let width = max(0, geometry.size.width - actionsWidth - ComposerToolbarMetrics.spacing)
-            let style = ComposerToolbarMetrics.style(width: width, model: selectedModelName, effort: showsEffort ? effortLabel(session.settings.effort) : nil, permission: permissionLabel(session.settings.permissionMode, provider: session.provider), fast: showsFast)
+            let targets = askTargets
+            let current = AskTargets.effective(saved: session.askTarget, available: targets)
+            let style = ComposerToolbarMetrics.style(width: width, model: selectedModelName, effort: showsEffort ? effortLabel(session.settings.effort) : nil, permission: permissionLabel(session.settings.permissionMode, provider: session.provider), fast: showsFast,
+                                                     ask: targets.isEmpty ? nil : askPillTitle(current))
             HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
                 if session.kind != "shell" {
                     HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
-                        attachmentButton
+                        attachmentButton(asking: current != nil)
                         modelMenu(maximumTextWidth: ComposerToolbarMetrics.modelTextWidth(style: style, width: width))
-                        if style == .overflow { overflowMenu }
+                        if !targets.isEmpty, style != .overflow { askMenu(targets, current: current, compact: style == .compact) }
+                        if style == .overflow { overflowMenu(askTargets: targets, current: current) }
                         else {
                             if showsEffort { effortMenu(compact: style == .compact) }
                             permissionMenu(compact: style == .compact)
@@ -1055,7 +1114,8 @@ struct SessionPaneView: View {
         return name.flatMap { name in SlashCommandCatalog.builtins(provider: session.provider).first { $0.invocation == name } }
     }
 
-    private var attachmentButton: some View {
+    /// Off while another CLI is asked: its ask carries text alone.
+    private func attachmentButton(asking: Bool) -> some View {
         Menu {
             Button(L("composer.attachment.choose")) { store.chooseAttachments(session.id) }
             Button(L("composer.attachment.paste")) { store.pasteAttachments(session.id) }
@@ -1067,8 +1127,8 @@ struct SessionPaneView: View {
             ComposerPill(title: "", systemImage: "paperclip", compact: true)
         } primaryAction: { store.chooseAttachments(session.id) }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
-        .disabled(importingAttachments || !runtime.capabilities.attachments)
-        .help(runtime.capabilities.attachments ? L("composer.attach.helpMac") : L("composer.attachment.unsupported"))
+        .disabled(importingAttachments || !runtime.capabilities.attachments || asking)
+        .help(asking ? L("composer.ask.attachmentsOff") : runtime.capabilities.attachments ? L("composer.attach.helpMac") : L("composer.attachment.unsupported"))
         .accessibilityLabel(L("phone.composer.attach")).accessibilityIdentifier("attach-\(session.id)")
     }
 

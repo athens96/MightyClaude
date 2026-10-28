@@ -8,7 +8,9 @@ import MightyCore
 /// Built-ins are answered in the app because the CLIs' headless modes do
 /// not implement their interactive commands.
 extension AppStore {
-    struct SlashCatalogEntry { var commands: [SlashCommand]; var scannedAt: Date }
+    /// `offersAsk`: oh-my-claudecode's ask is in `commands`, read once per scan
+    /// because the composer and every phone publish ask (AppStore+AskTargets.swift).
+    struct SlashCatalogEntry { var commands: [SlashCommand]; var scannedAt: Date; var offersAsk = false }
 
     static func slashCatalogKey(provider: String, workspacePath: String?) -> String { provider + "|" + (workspacePath ?? "") }
 
@@ -134,7 +136,8 @@ extension AppStore {
         }
     }
 
-    /// Rescans when the cache is missing or older than 30 s.
+    /// Rescans when the cache is missing or older than 30 s. The "send to"
+    /// switch's installed CLIs are read again with it (AppStore+AskTargets.swift).
     func refreshSlashCommands(for session: RunSession) {
         guard session.kind != "shell", !ending else { return }
         let workspace = snapshot.workspaces.first { $0.id == session.workspaceId }
@@ -143,13 +146,19 @@ extension AppStore {
         if let entry = slashCatalogs[key], Date().timeIntervalSince(entry.scannedAt) < 30 { return }
         guard !slashScansInFlight.contains(key) else { return }
         slashScansInFlight.insert(key)
+        refreshAskExecutables()
         let provider = session.provider
         Task.detached(priority: .userInitiated) { [weak self] in
             let commands = SlashCommandCatalog.commands(provider: provider, workspacePath: path)
+            let offersAsk = commands.contains { $0.invocation == AskTargets.skill }
             await MainActor.run {
                 guard let self else { return }
-                self.slashCatalogs[key] = SlashCatalogEntry(commands: commands, scannedAt: Date())
+                // Whether oh-my-claudecode's ask is there decides the switch, on the Mac and the phone.
+                let hadAsk = self.slashCatalogs[key]?.offersAsk
+                self.slashCatalogs[key] = SlashCatalogEntry(commands: commands, scannedAt: Date(), offersAsk: offersAsk)
                 self.slashScansInFlight.remove(key)
+                if hadAsk != offersAsk { self.mobileObserve() }
+                self.reconcileAskTargets()
             }
         }
     }
