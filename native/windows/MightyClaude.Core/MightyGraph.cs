@@ -438,10 +438,12 @@ public static class MightyGraphSupport
     }
 
     /// <summary>A request's result shows once it settled (<see cref="MightyGraphRun.Settled"/>: its background work runs on in the strip);
-    /// a notice run a later turn answers in again keeps its earlier reply meanwhile (<see cref="MightyGraphRun.ReopenedWithReply"/>).</summary>
+    /// a notice run a later turn answers in again keeps its earlier reply meanwhile (<see cref="MightyGraphRun.ReopenedWithReply"/>),
+    /// and after that turn failed or was stopped, so its card never loses the earlier answer.</summary>
     public static void RefreshResult(MightyGraphRun run)
     {
-        if (!(run.Status == "completed" && run.Settled || run.ReopenedWithReply) || string.IsNullOrEmpty(run.FinalOutput))
+        var noticeEnded = run.NoticeRun == true && run.Status is "error" or "stopped";
+        if (!(run.Status == "completed" && run.Settled || run.ReopenedWithReply || noticeEnded) || string.IsNullOrEmpty(run.FinalOutput))
         { run.ResultEntries = []; return; }
         var ts = run.ResultEntries.FirstOrDefault()?.Timestamp ?? run.RootEntries.LastOrDefault()?.Timestamp ?? Wire.Now();
         var provider = run.Provider ?? "claude";

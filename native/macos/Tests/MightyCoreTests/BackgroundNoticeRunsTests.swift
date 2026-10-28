@@ -316,6 +316,16 @@ struct BackgroundNoticeRunsTests {
         #expect(reopened.reopenedWithReply && MightyGraphLayout.hasResult(reopened) && reopened.resultEntries.first?.text == "The build passed.")
         let graph = Self.layout([request, reopened], running: true)
         #expect(graph.nodes.contains { $0.id == Self.node("r:notice:1", "result") })
+        // The reopened turn failed or was stopped: the card keeps the earlier reply; a request's error result still shows none.
+        for status in ["error", "stopped"] {
+            var ended = reopened
+            ended.status = status
+            ended.refreshResult()
+            #expect(MightyGraphLayout.hasResult(ended) && ended.resultEntries.first?.text == "The build passed.")
+        }
+        var failedRequest = MightyGraphRun(id: "r", status: "error", finalOutput: "Started.")
+        failedRequest.refreshResult()
+        #expect(failedRequest.resultEntries.isEmpty)
         // A first notice turn still waiting for its reply has no card yet.
         var opening = MightyGraphRun(id: "r:notice:2", status: "running", noticeRun: true)
         opening.refreshResult()

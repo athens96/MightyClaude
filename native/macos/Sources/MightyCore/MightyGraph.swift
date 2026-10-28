@@ -127,8 +127,11 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
         for index in agents.indices { agents[index].entries = labelled(agents[index].entries) }
     }
 
+    /// A request's result shows once it settled; a notice run keeps its reply while a later turn answers in it again
+    /// (`reopenedWithReply`) and after that turn failed or was stopped, so its card never loses the earlier answer.
     mutating func refreshResult() {
-        guard (status == "completed" && settled) || reopenedWithReply, let text = finalOutput, !text.isEmpty else { resultEntries = []; return }
+        guard (status == "completed" && settled) || reopenedWithReply || (noticeRun == true && ["error", "stopped"].contains(status)),
+              let text = finalOutput, !text.isEmpty else { resultEntries = []; return }
         let timestamp = resultEntries.first?.timestamp ?? rootEntries.last?.timestamp ?? mightyTimestamp()
         let entry = LogEntry(id: id + "-result", kind: "assistant", text: text, timestamp: timestamp, provider: provider ?? "claude")
         resultEntries = [entry]
