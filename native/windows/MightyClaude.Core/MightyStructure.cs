@@ -340,8 +340,7 @@ public static partial class MightyStructure
 
     /// <summary>One card. <paramref name="ordinal"/>: the request's number (<see cref="MightyGraphSupport.RequestOrdinals"/>); null counts every
     /// run before it. The card reads the run as views draw it (<see cref="MightyGraphRun.Shown"/>): background blocks only in a notice run.</summary>
-    public static Item ItemFor(MightyGraphRun raw, int index) => ItemFor(raw, index, null);
-    public static Item ItemFor(MightyGraphRun raw, int index, int? ordinal)
+    public static Item ItemFor(MightyGraphRun raw, int index, int? ordinal = null)
     {
         var run = raw.Shown;
         var finished = MightyGraphLayout.Finished(run);

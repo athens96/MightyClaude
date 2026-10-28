@@ -23,9 +23,8 @@ public enum BackgroundNoticeRuns {
     /// Agents a view draws for a run: background blocks only inside a notice run.
     /// Blocks under a hidden background block are hidden with it.
     public static func shownAgents(_ run: MightyGraphRun) -> [MightyGraphAgent] {
-        guard run.noticeRun != true else { return run.agents }
+        guard run.noticeRun != true, run.agents.contains(where: { $0.background == true }) else { return run.agents }
         var hidden = Set(run.agents.filter { $0.background == true }.map(\.id))
-        guard !hidden.isEmpty else { return run.agents }
         var grew = true
         while grew {
             grew = false

@@ -43,7 +43,6 @@ public static class MightyTimeline
         return new(tone, status == "running", status is "completed" or "running" ? tone : null);
     }
     public static DesignTone? RailAbove(IReadOnlyList<Row> rows, int index) => index > 0 && index < rows.Count ? rows[index - 1].Node.Rail : null;
-    public static bool GroupOpen(Group group, int count, IReadOnlySet<string> flipped) => (group.RunIndex == count - 1) != flipped.Contains(group.RunId);
     /// <summary>Open by default: the newest request, and a notice run after it that has a result (M/MightyGraphView.swift timelineOpensByDefault).</summary>
     public static bool GroupOpen(Group group, IReadOnlyList<MightyGraphRun> runs, IReadOnlySet<string> flipped)
     {

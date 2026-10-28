@@ -133,8 +133,9 @@ internal static class MightyTimelineVerification
         Check(MightyTimeline.DurationLabel(double.NaN) is null && MightyTimeline.DurationLabel(-1) is null && MightyTimeline.DurationLabel(999) == "999ms", "invalid duration never reaches labels");
         Check(!MightyTimeline.Folds(string.Concat(Enumerable.Repeat("👨‍👩‍👧", 600))) && MightyTimeline.Folds(string.Concat(Enumerable.Repeat("가", 601))) && MightyTimeline.Folds("1\n2\n3\n4\n5\n6\n7\n8\n9"), "result folding counts graphemes or actual lines, not UTF16 units");
         var groups = MightyTimeline.Groups([Run("older"), Run("latest")]); var flipped = new HashSet<string>();
-        Check(!MightyTimeline.GroupOpen(groups[0], 2, flipped) && MightyTimeline.GroupOpen(groups[1], 2, flipped), "latest group starts open; old group retains its result below collapsed rows");
-        flipped.Add("latest"); Check(!MightyTimeline.GroupOpen(groups[1], 2, flipped), "manual group toggle is independent of row/result expansion");
+        var timelineRuns = new List<MightyGraphRun> { Run("older"), Run("latest") };
+        Check(!MightyTimeline.GroupOpen(groups[0], timelineRuns, flipped) && MightyTimeline.GroupOpen(groups[1], timelineRuns, flipped), "latest group starts open; old group retains its result below collapsed rows");
+        flipped.Add("latest"); Check(!MightyTimeline.GroupOpen(groups[1], timelineRuns, flipped), "manual group toggle is independent of row/result expansion");
         return Task.CompletedTask;
     }
     internal static Task SavedModeIsIndependentAndLenient()

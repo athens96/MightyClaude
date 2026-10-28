@@ -741,7 +741,8 @@ public sealed partial class MainWindow
         /// </summary>
         private void ObserveGraphRuns(IReadOnlyList<MightyGraphRun> runs, Func<MightyGraphLayout> layout)
         {
-            var ids = runs.Select(r => r.Id).ToList();
+            // The user's requests: a notice run (BackgroundNoticeRuns) never starts following by itself; a following camera moves on to it.
+            var ids = MightyGraphSupport.RequestRuns(runs).Select(r => r.Id).ToList();
             var previous = graphRunIds; graphRunIds = ids;
             switch (MightyGraphFollow.RunsChanged(previous, ids, graphFollow.Following))
             {

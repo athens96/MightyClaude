@@ -25,9 +25,8 @@ public static class BackgroundNoticeRuns
     /// hidden with it. The run's own list when nothing is hidden.</summary>
     public static List<MightyGraphAgent> ShownAgents(MightyGraphRun run)
     {
-        if (run.NoticeRun == true) return run.Agents;
+        if (run.NoticeRun == true || !run.Agents.Any(agent => agent.Background == true)) return run.Agents;
         var hidden = run.Agents.Where(agent => agent.Background == true).Select(agent => agent.Id).ToHashSet(StringComparer.Ordinal);
-        if (hidden.Count == 0) return run.Agents;
         for (var grew = true; grew;)
         {
             grew = false;

@@ -246,7 +246,8 @@ public sealed partial class MainWindow
                 foreach (var group in groups)
                 {
                     var run = runs[group.RunIndex].Shown;
-                    var fingerprint = JsonSerializer.Serialize(new { run, group.Ordinal, older = group.RunIndex < older.Count, open = MightyTimeline.GroupOpen(group, runs, timelineFlipped), rows = group.Rows.Where(r => timelineOpen.Contains(r.NodeId)).Select(r => r.NodeId), full = group.Result is { } result && timelineFull.Contains(result.NodeId), title = GraphRequestTitle(run, group.Ordinal), language = Locale.LanguagePreference, catalog });
+                    // The shown run keeps its background waiting count outside its JSON: the status pill reads it, so it is part of the key.
+                    var fingerprint = JsonSerializer.Serialize(new { run, waiting = MightyGraphSupport.BackgroundWaiting(run), group.Ordinal, older = group.RunIndex < older.Count, open = MightyTimeline.GroupOpen(group, runs, timelineFlipped), rows = group.Rows.Where(r => timelineOpen.Contains(r.NodeId)).Select(r => r.NodeId), full = group.Result is { } result && timelineFull.Contains(result.NodeId), title = GraphRequestTitle(run, group.Ordinal), language = Locale.LanguagePreference, catalog });
                     if (!timelineGroups.TryGetValue(group.RunId, out var known) || known.Fingerprint != fingerprint)
                     {
                         var view = BuildTimelineGroup(group, run, pane, group.RunIndex < older.Count, MightyTimeline.GroupOpen(group, runs, timelineFlipped));

@@ -313,10 +313,10 @@ internal static class MightyStructureVerification
 
         var runs = new List<MightyGraphRun> { Run("r1", final: "첫 결과"), Run("r2", status: "running") };
         var cache = new MightyStructure.ItemCache();
-        Check(cache.Items(runs, new(runs, null, null)).SequenceEqual(runs.Select(MightyStructure.ItemFor)), "the cache builds every card the first time");
+        Check(cache.Items(runs, new(runs, null, null)).SequenceEqual(runs.Select((run, index) => MightyStructure.ItemFor(run, index))), "the cache builds every card the first time");
         runs[1].RootEntries.Add(Said("m", "진행 중"));
         var second = cache.Items(runs, new(runs, null, null));
-        Check(second[1].Message?.Text == "진행 중" && second.SequenceEqual(runs.Select(MightyStructure.ItemFor)), "the cache rebuilds the request that moved");
+        Check(second[1].Message?.Text == "진행 중" && second.SequenceEqual(runs.Select((run, index) => MightyStructure.ItemFor(run, index))), "the cache rebuilds the request that moved");
         Check(ReferenceEquals(second[0], cache.Items(runs, new(runs, null, null))[0]), "a card that kept its place is not copied");
         // The oldest request trimmed: a kept card takes its new number.
         var trimmed = runs.Skip(1).ToList(); var third = cache.Items(trimmed, new(trimmed, null, null));

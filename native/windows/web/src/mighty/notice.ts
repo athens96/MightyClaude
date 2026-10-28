@@ -9,9 +9,8 @@ const ended = (status: string) => status === 'completed' || status === 'error' |
 
 /** The agents a view draws for a run: background blocks only inside a notice run, and the blocks under a hidden one with it. */
 export function shownAgents(run: MightyGraphRun): MightyGraphAgent[] {
-  if (run.noticeRun === true) return run.agents;
+  if (run.noticeRun === true || !run.agents.some((agent) => agent.background === true)) return run.agents;
   const hidden = new Set(run.agents.filter((agent) => agent.background === true).map((agent) => agent.id));
-  if (hidden.size === 0) return run.agents;
   for (let grew = true; grew;) {
     grew = false;
     for (const agent of run.agents) {
