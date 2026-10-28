@@ -63,6 +63,7 @@ export function Composer({
   /**
    * The "send to" switch, present only on a pane whose host offers targets. `name` is the chosen CLI's label, absent
    * for Claude; the pill opens the choice, and while a CLI is chosen the box asks it and files cannot go along.
+   * While `busy` (a choice being saved) nothing is sent.
    */
   ask?: { name?: string; busy: boolean; onOpen: () => void };
   /**
@@ -127,7 +128,9 @@ export function Composer({
   const asking = ask?.name !== undefined;
   // Files stay staged while a CLI is asked but do not go, so they are no draft.
   const empty = draftIsEmpty(text, picked.length, ask?.name ?? null);
-  const blocked = disabled || tooLong || empty;
+  // While a new "send to" choice is being saved, a send waits: the host could still wrap it for the old one.
+  const askSaving = ask?.busy === true;
+  const blocked = disabled || tooLong || empty || askSaving;
   // A draft on a running pane always queues as the next request, files or not.
   const busyChoices = busySendChoices({ submitModes });
   // While a run is busy the round buttons show only for a draft with something in it,
@@ -136,7 +139,7 @@ export function Composer({
 
   const submit = (mode?: SubmitMode) => {
     const value = text.trim();
-    if (tooLong || draftIsEmpty(value, picked.length, ask?.name ?? null)) return;
+    if (tooLong || askSaving || draftIsEmpty(value, picked.length, ask?.name ?? null)) return;
     onSend(value, mode);
   };
 
@@ -229,6 +232,7 @@ export function Composer({
             accessibilityLabel={t('composer.ask.menuLabel')}
             accessibilityRole="button"
             accessibilityState={{ busy: ask.busy, disabled: disabled || ask.busy }}
+            accessibilityValue={{ text: ask.name ?? t('composer.ask.claude') }}
             disabled={disabled || ask.busy}
             hitSlop={6}
             onPress={ask.onOpen}
