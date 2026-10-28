@@ -214,6 +214,8 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         value = value with { PhaseModels = PhaseModelPreferences.Normalize(value.PhaseModels) };
         var workspaces = (value.Workspaces ?? []).Where(ValidWorkspace).DistinctBy(w => w.Id).Take(64).Select(w => w with { Name = Wire.Clean(w.Name, 120), Remote = w.Remote is { } r ? r with { HostName = Wire.Clean(r.HostName, 120) } : null }).ToList();
         var ids = workspaces.Select(w => w.Id).ToHashSet();
+        // A remote workspace's panes run on another computer, whose CLIs this PC cannot see: they never ask another CLI.
+        var remoteIds = workspaces.Where(w => w.Remote is not null).Select(w => w.Id).ToHashSet();
         var textBudget = 2 * 1024 * 1024;
         string Bounded(string? text, int limit) { var result = Wire.Clean(text, Math.Min(limit, Math.Max(0, textBudget / 6))); textBudget -= JsonSerializer.SerializeToUtf8Bytes(result, Wire.Json).Length; return result; }
         LogEntry NormalizeLog(LogEntry log)
@@ -264,7 +266,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
                 ParentSessionId = s.Kind == "claude" && Wire.Identifier(s.ParentSessionId) && s.ParentSessionId != s.Id ? s.ParentSessionId : null,
                 WorkingFolder = s.Kind == "claude" && DelegationPanes.IsWorkingFolder(s.WorkingFolder) ? s.WorkingFolder : null,
                 // Only a Claude agent pane asks other CLIs; a saved id that is no longer offered is kept and reads as Claude (macOS StateRepository.normalize).
-                AskTarget = planMode ? s.AskTarget : null };
+                AskTarget = planMode && !remoteIds.Contains(s.WorkspaceId) ? s.AskTarget : null };
             return restoring ? PaneTitle.Restored(normalized) : normalized;
         }
         var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && (s.Kind is "claude" or "shell" or "browser" || !restoring && FilePaneKind.IsFilePane(s.Kind) && s.Id == FilePaneKind.PaneId(s.WorkspaceId) || !restoring && AgentIOPaneKind.IsAgentIO(s.Kind) && s.OwnerSessionId is { } owner && s.Id == AgentIOPaneKind.PaneId(owner, s.Kind) && (value.Sessions ?? []).Any(parent => parent.Id == owner && parent.Kind == "claude" && parent.WorkspaceId == s.WorkspaceId))).DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();

@@ -131,7 +131,7 @@ public sealed partial class MainWindow
         bridge.Register("setAskTarget", async args =>
         {
             var view = WebPane(args.Text("paneId"));
-            if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty("target", out var target) || target.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)) throw new ArgumentException("Unknown target.");
+            if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty("target", out var target) || target.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)) throw new ArgumentException(Locale.Get("remote.error.badBody"));
             await SetAskTarget(view.PaneId, target.ValueKind == JsonValueKind.String ? target.GetString() : null);
             return null;
         });

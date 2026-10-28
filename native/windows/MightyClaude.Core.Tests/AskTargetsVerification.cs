@@ -128,10 +128,13 @@ internal static class AskTargetsVerification
         var stale = new RunSession { Id = "stale", WorkspaceId = "w", AskTarget = "no-such-target" };
         var codex = new RunSession { Id = "codex", WorkspaceId = "w", Provider = "codex", AskTarget = "codex" };
         var shell = new RunSession { Id = "shell", WorkspaceId = "w", Kind = "shell", AskTarget = "codex" };
-        var restored = StateStore.Normalize(new AppSnapshot { Workspaces = [workspace], Sessions = [claude, stale, codex, shell] }, true).Sessions.ToDictionary(s => s.Id, s => s.AskTarget);
+        var remoteWorkspace = new Workspace { Id = "r", Path = "/Users/someone/project", Remote = new("conn", "host-ws", "Host") };
+        var remote = new RunSession { Id = "remote", WorkspaceId = "r", AskTarget = "codex" };
+        var restored = StateStore.Normalize(new AppSnapshot { Workspaces = [workspace, remoteWorkspace], Sessions = [claude, stale, codex, shell, remote] }, true).Sessions.ToDictionary(s => s.Id, s => s.AskTarget);
         Check(restored["claude"] == "codex", "a Claude agent pane keeps its choice");
         Check(restored["stale"] == "no-such-target", "one no longer offered is kept, and reads as Claude when sent");
         Check(restored["codex"] is null && restored["shell"] is null, "every other pane drops it");
+        Check(restored.TryGetValue("remote", out var onRemote) && onRemote is null, "a remote workspace's Claude pane drops it too");
         Check(SessionTemplate.SwitchProvider(claude, "codex").AskTarget is null, "another provider starts back on Claude");
         return Task.CompletedTask;
     }

@@ -13,7 +13,8 @@ public sealed partial class MainWindow
     private IReadOnlySet<string> installedAskExecutables = new HashSet<string>(StringComparer.Ordinal);
     /// <summary>Until the PATH was read conclusively once, no saved target is judged missing.</summary>
     private bool askProbeFinished, askProbeInFlight;
-    private DateTime? askProbedAt;
+    /// <summary>When the PATH was last read successfully (a pane's choice can be judged from then on), and when a read was last tried (the 30 s pace).</summary>
+    private DateTime? askProbedAt, askProbeTriedAt;
     /// <summary>A pane's notice that its saved target is gone and its sends go to Claude, until it is dismissed or another target is chosen.</summary>
     private readonly Dictionary<string, string> askFallbackNotices = new(StringComparer.Ordinal);
     /// <summary>How long a send with a saved choice not yet known to stand waits for the pane's catalogue and the PATH read (M/AppStore.swift submit).</summary>
@@ -24,7 +25,7 @@ public sealed partial class MainWindow
     private void RefreshAskExecutables()
     {
         if (closing || askProbeInFlight) return;
-        if (askProbedAt is { } at && DateTime.UtcNow - at < TimeSpan.FromSeconds(30)) return;
+        if (askProbeTriedAt is { } at && DateTime.UtcNow - at < TimeSpan.FromSeconds(30)) return;
         askProbeInFlight = true;
         _ = ProbeAskExecutables();
     }
@@ -40,8 +41,9 @@ public sealed partial class MainWindow
                 return AskTargets.All.Select(t => t.Executable).Where(name => SetupProber.Executables(name, environment).Count > 0).ToHashSet(StringComparer.Ordinal);
             });
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { askProbeInFlight = false; askProbedAt = DateTime.UtcNow; return; }
-        askProbeInFlight = false; askProbedAt = DateTime.UtcNow;
+        // A read that failed leaves the PATH unknown: a saved choice is never taken as gone, or sent unwrapped, on its account.
+        catch (Exception ex) when (ex is not OutOfMemoryException) { askProbeInFlight = false; askProbeTriedAt = DateTime.UtcNow; return; }
+        askProbeInFlight = false; askProbeTriedAt = askProbedAt = DateTime.UtcNow;
         if (closing) return;
         // This PC's own environment, read from the registry each time: as the Mac's login shell, it may judge a target gone.
         var read = AskTargets.Probed(installedAskExecutables, found, loginShell: true);
@@ -79,8 +81,9 @@ public sealed partial class MainWindow
     /// </summary>
     private async Task AwaitAskTargets(string id)
     {
-        if (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { AskTarget: not null } pane || AskTargetsKnown(pane)) return;
-        RefreshAskCatalog(pane);
+        // A remote workspace's pane never asks another CLI, so there is nothing to wait for.
+        if (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { AskTarget: not null } pane || !AsksOtherCli(pane) || AskTargetsKnown(pane)) return;
+        RefreshAskCatalog(pane); RefreshAskExecutables();
         var deadline = DateTime.UtcNow + AskWait;
         while (!closing && DateTime.UtcNow < deadline && service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is { } current && !AskTargetsKnown(current)) await Task.Delay(25);
     }
@@ -92,11 +95,12 @@ public sealed partial class MainWindow
     private void RefreshAskCatalog(RunSession pane, bool whenStale = true)
     {
         if (closing || !AsksOtherCli(pane)) return;
-        RefreshAskExecutables();
         var path = AskCatalogPath(pane);
         if (whenStale ? !slashCatalogs.IsStale(pane.Provider, path) : slashCatalogs.OffersAsk(pane.Provider, path) is not null) return;
         var key = pane.Provider + "|" + (path ?? "");
         if (!slashScansInFlight.Add(key)) return;
+        // Only a scan that starts reads the PATH again with it (M/AppStore+SlashCommands.swift refreshSlashCommands).
+        RefreshAskExecutables();
         _ = ScanAskCatalog(pane.Provider, path, key);
     }
 
@@ -155,7 +159,7 @@ public sealed partial class MainWindow
         if (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { } pane) throw new InvalidOperationException("Session not found.");
         if (target is not null)
         {
-            if (!AskTargetsFor(pane).Any(t => t.Id == target)) throw new ArgumentException("Unknown target.");
+            if (!AskTargetsFor(pane).Any(t => t.Id == target)) throw new ArgumentException(Locale.Get("remote.error.badBody"));
             askFallbackNotices.Remove(id);
         }
         if (pane.AskTarget != target) await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { AskTarget = target } : p).ToList() });
