@@ -55,12 +55,16 @@ public static partial class MightyStructure
     /// <summary>
     /// One request as a card. <see cref="NodeId"/> is the request's own diagram node and <see cref="ExecutionNodeId"/> the run
     /// block under it; <see cref="Message"/> is the main block's latest reply, left out once the request finished with that
-    /// very reply as its <see cref="Answer"/>.
+    /// very reply as its <see cref="Answer"/>. <see cref="Ordinal"/> is the request's number (<see cref="MightyGraphSupport.RequestOrdinals"/>): a
+    /// notice run adds none and carries the one before it. <see cref="NoticeRun"/>: Claude's reply to finished background work
+    /// (<see cref="MightyGraphRun.NoticeRun"/>), titled as such, not a request; <see cref="Quiet"/>: a notice run taken into a running turn,
+    /// without a reply (<see cref="MightyGraphRun.QuietNotice"/>), never followed.
     /// </summary>
     public sealed record Item(int RunIndex, string RunId, int Ordinal, string NodeId, string ExecutionNodeId, string Input, string Status, bool Finished, string? Result,
-        Excerpt? Request, Excerpt? Message, IReadOnlyList<ActivityLine> Activity, Excerpt? Answer, Tally Tally, IReadOnlyList<Cluster> Clusters)
+        Excerpt? Request, Excerpt? Message, IReadOnlyList<ActivityLine> Activity, Excerpt? Answer, Tally Tally, IReadOnlyList<Cluster> Clusters, bool NoticeRun = false, bool Quiet = false)
     {
         public bool Equals(Item? other) => ReferenceEquals(this, other) || other is not null && RunIndex == other.RunIndex && RunId == other.RunId && Ordinal == other.Ordinal && NodeId == other.NodeId
+            && NoticeRun == other.NoticeRun && Quiet == other.Quiet
             && ExecutionNodeId == other.ExecutionNodeId && Input == other.Input && Status == other.Status && Finished == other.Finished && Result == other.Result && Request == other.Request
             && Message == other.Message && Answer == other.Answer && Tally == other.Tally && Activity.SequenceEqual(other.Activity) && Clusters.SequenceEqual(other.Clusters);
         public override int GetHashCode() => HashCode.Combine(RunId, RunIndex, Status, Finished, Activity.Count, Clusters.Count);
@@ -144,12 +148,14 @@ public static partial class MightyStructure
             // A card names an untitled block in the app's language: in another language every card is read again.
             if (language != Locale.LanguagePreference) { built = []; language = Locale.LanguagePreference; }
             var next = new Dictionary<string, (Signature.Request, Item)>(runs.Count); var items = new List<Item>(runs.Count);
+            var ordinals = MightyGraphSupport.RequestOrdinals(runs);
             for (var index = 0; index < runs.Count; index++)
             {
                 var run = runs[index]; var request = index < signature.Requests.Length ? signature.Requests[index] : null;
                 // A trim of older requests moves a kept card's number, nothing else; a card that kept its place is the same card.
                 var item = request is not null && built.TryGetValue(run.Id, out var kept) && kept.Request == request
-                    ? kept.Item.RunIndex == index ? kept.Item : kept.Item with { RunIndex = index, Ordinal = index + 1 } : ItemFor(run, index);
+                    ? kept.Item.RunIndex == index && kept.Item.Ordinal == ordinals[index] ? kept.Item : kept.Item with { RunIndex = index, Ordinal = ordinals[index] }
+                    : ItemFor(run, index, ordinals[index]);
                 if (request is not null) next[run.Id] = (request, item);
                 items.Add(item);
             }
@@ -216,7 +222,8 @@ public static partial class MightyStructure
     public static Shape Make(IReadOnlyList<MightyGraphRun> runs, StyleEvaluator? style, StylePhase? currentPhase, bool startingNew = false,
         IReadOnlyList<PlanRecord>? planHistory = null, string? pendingPlanRunID = null, IReadOnlyList<Item>? items = null)
     {
-        var cards = items is not null && items.Count == runs.Count ? items : runs.Select(ItemFor).ToList();
+        var ordinals = items is not null && items.Count == runs.Count ? null : MightyGraphSupport.RequestOrdinals(runs);
+        var cards = ordinals is null ? items! : runs.Select((run, index) => ItemFor(run, index, ordinals[index])).ToList();
         if (style is null || style.Manifest.Phases.Length == 0) return Shape.Free(cards.Select(RowFor).ToList());
         var ordered = Ordered(style.Manifest);
         var pane = currentPhase is not null && ordered.Any(p => p.Id == currentPhase.Id) ? currentPhase : null;
@@ -249,15 +256,29 @@ public static partial class MightyStructure
             // The diagram's own match for the pending plan's request (PlanCardSupport.DiagramRecords).
             var waiting = -1;
             if (pendingPlanRunID is not null) for (var index = runs.Count - 1; index >= 0 && waiting < 0; index--) if (runs[index].SourceRunID == pendingPlanRunID || runs[index].Id == pendingPlanRunID) waiting = index;
-            return runs.Select((run, index) => index == waiting ? Phase("awaitingApproval")
-                : (planHistory ?? []).LastOrDefault(record => PlanRecordBelongs(record, run))?.Outcome is PlanOutcome.ApprovedAuto or PlanOutcome.ApprovedConfirm ? Phase("executing") : Phase("planning")).ToList();
+            var stages = new List<string>(runs.Count);
+            for (var index = 0; index < runs.Count; index++)
+            {
+                var run = runs[index];
+                // A notice run is no request of its own: it stays in the phase of the run before it.
+                if (run.NoticeRun == true) stages.Add(stages.Count > 0 ? stages[^1] : Phase("planning"));
+                else stages.Add(index == waiting ? Phase("awaitingApproval")
+                    : (planHistory ?? []).LastOrDefault(record => PlanRecordBelongs(record, run))?.Outcome is PlanOutcome.ApprovedAuto or PlanOutcome.ApprovedConfirm ? Phase("executing") : Phase("planning"));
+            }
+            return stages;
         }
         // An empty history reads as the style's default phase.
         var initial = style.CurrentPhase([])?.Id ?? first;
         var pane = currentPhase is null ? null : manifest.Phases.FirstOrDefault(p => p.Id == currentPhase.Id)?.Id;
         var result = new List<string>(runs.Count);
+        // The pane's phase is its newest request's; a notice run after it is not one.
+        var newestRequest = MightyGraphSupport.NewestRequestIndex(runs);
         for (var index = 0; index < runs.Count; index++)
-            result.Add((index == runs.Count - 1 ? pane : null) ?? RecognisedPhase(runs[index].Input, style) ?? result.LastOrDefault() ?? initial);
+        {
+            // A notice run is no request of its own: it stays in the phase of the run before it.
+            if (runs[index].NoticeRun == true) { result.Add(result.LastOrDefault() ?? initial); continue; }
+            result.Add((index == newestRequest ? pane : null) ?? RecognisedPhase(runs[index].Input, style) ?? result.LastOrDefault() ?? initial);
+        }
         return result;
     }
 
@@ -317,8 +338,12 @@ public static partial class MightyStructure
         return text[..end];
     }
 
-    public static Item ItemFor(MightyGraphRun run, int index)
+    /// <summary>One card. <paramref name="ordinal"/>: the request's number (<see cref="MightyGraphSupport.RequestOrdinals"/>); null counts every
+    /// run before it. The card reads the run as views draw it (<see cref="MightyGraphRun.Shown"/>): background blocks only in a notice run.</summary>
+    public static Item ItemFor(MightyGraphRun raw, int index) => ItemFor(raw, index, null);
+    public static Item ItemFor(MightyGraphRun raw, int index, int? ordinal)
     {
+        var run = raw.Shown;
         var finished = MightyGraphLayout.Finished(run);
         var answer = run.ResultEntries.LastOrDefault(e => e.Kind == "assistant" && e.Text.Length > 0)?.Text ?? run.FinalOutput;
         var result = finished && answer is not null && Preview(answer) is { Length: > 0 } line ? line : null;
@@ -329,9 +354,9 @@ public static partial class MightyStructure
         // Counted over the blocks the clusters draw, so a steer's or a question's records add nothing.
         var blocks = Kept(run).Select(at => run.Agents[at]).ToList();
         var tools = run.RootEntries.Concat(blocks.SelectMany(block => block.Entries)).Count(e => e.Activity is { } activity && ToolKinds.Contains(activity.Kind));
-        return new(index, run.Id, index + 1, MightyGraphLayout.NodeID(run, "request"), MightyGraphLayout.NodeID(run, ExecutionSuffix), Preview(run.Input), MightyTimeline.Status(run.Status),
+        return new(index, run.Id, ordinal ?? index + 1, MightyGraphLayout.NodeID(run, "request"), MightyGraphLayout.NodeID(run, ExecutionSuffix), Preview(run.Input), MightyTimeline.Status(run.Status),
             finished, result, ExcerptOf(run.Input, RequestBytes, RequestLines), message, Activity(run.RootEntries, RequestActivity), full,
-            new(blocks.Count(block => MightyGraphSupport.BlockKind(block) == "agent"), tools), Clusters(run));
+            new(blocks.Count(block => MightyGraphSupport.BlockKind(block) == "agent"), tools), Clusters(run), run.NoticeRun == true, run.QuietNotice);
     }
 
     /// <summary>The request is always there; the run goes on until every block settled, unless the request failed or was stopped; the result waits until the request finished.</summary>
@@ -348,8 +373,10 @@ public static partial class MightyStructure
     /// are the conversation's own moments, not work handed to a sub-agent, and are left out; tasks are work, so they stay, and
     /// so does a task's notice (a 작업 알림 steer): it and its reply are the run's work on that task's outcome.
     /// </summary>
-    public static IReadOnlyList<Cluster> Clusters(MightyGraphRun run)
+    /// <remarks>A node's agent index indexes the agents of the run as views draw it (<see cref="MightyGraphRun.Shown"/>).</remarks>
+    public static IReadOnlyList<Cluster> Clusters(MightyGraphRun raw)
     {
+        var run = raw.Shown;
         var kept = Kept(run); var known = kept.Select(at => run.Agents[at].Id).ToHashSet(); var children = new Dictionary<string, List<int>>();
         foreach (var index in kept)
         {

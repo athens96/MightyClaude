@@ -12,8 +12,10 @@ public sealed record MobileQueuedItem(string Id, string Text);
 /// <summary>
 /// What a pane's detail carries beside its record. <c>AskTargets</c>: the composer's "send to" targets, sent only on a pane that offers
 /// any (a Claude agent pane with oh-my-claudecode's ask and an installed target); <c>AskTarget</c>: the one its sends go to now, null for Claude.
+/// <c>BackgroundWork</c>: the background work still running, as the strip lists it (<see cref="PlanCardSupport.MobileBackgroundWork"/>); absent when none runs.
 /// </summary>
-public sealed record MobilePaneExtras(IReadOnlyList<MobileQueuedItem> Queued, object? Settings = null, object? Mighty = null, object? StatusLine = null, IReadOnlyList<MobileAskTarget>? AskTargets = null, string? AskTarget = null);
+public sealed record MobilePaneExtras(IReadOnlyList<MobileQueuedItem> Queued, object? Settings = null, object? Mighty = null, object? StatusLine = null, IReadOnlyList<MobileAskTarget>? AskTargets = null, string? AskTarget = null,
+    IReadOnlyList<MobileBackgroundWork>? BackgroundWork = null);
 /// <summary>One choice of the phone's "send to" switch (<c>AskTargets</c>), in the desktop menu's order.</summary>
 public sealed record MobileAskTarget(string Id, string Label);
 public sealed record MobileDesktopAction(string SessionId, string Action, JsonElement Body, IReadOnlyList<RunAttachment>? Attachments = null);
@@ -401,7 +403,9 @@ public sealed class MobileDesktopRouter : IDisposable
             usage = usage is null ? null : new { usage.Model, usage.ContextUsedTokens, usage.ContextWindowTokens, usage.ContextPercent, usage.TotalTokens, usage.CostUSD }, elapsedSeconds = pane.RunTiming?.Elapsed(), settings = detail.Settings, mighty = Mighty(detail.Mighty, structure, structureTag), statusLine = detail.StatusLine,
             rateLimits = MobileRemoteSupport.RateLimits(usage?.RateLimits),
             // No targets: neither field is sent, so the phone draws no switch (M/MightyCore/Remote/MobileRemoteModels.swift MobileSessionDetail).
-            askTargets = detail.AskTargets is { Count: > 0 } targets ? targets : null, askTarget = detail.AskTargets is { Count: > 0 } ? detail.AskTarget : null };
+            askTargets = detail.AskTargets is { Count: > 0 } targets ? targets : null, askTarget = detail.AskTargets is { Count: > 0 } ? detail.AskTarget : null,
+            // Running background work only, never an output file's path (M/MightyCore/Remote/MobileRemoteModels.swift MobileSessionDetail.backgroundWork).
+            backgroundWork = detail.BackgroundWork is { Count: > 0 } work ? work : null };
     }
     /// <summary>
     /// The read-only file routes (M/MightyCore/Remote/MobileRemoteService.swift:1048-1104). The folder and the file are read

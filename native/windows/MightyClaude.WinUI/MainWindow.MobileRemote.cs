@@ -630,6 +630,8 @@ public sealed partial class MainWindow
             // A background run's output lines live in the host's memory, not in the runs: they move the pane too, through their
             // revision, which moves at most once per 3 s a pane.
             mighty.Add(owner.BackgroundOutputPhoneRevisionFor(pane.Id));
+            // The detail's backgroundWork: the running tasks, what they are and the block each meets.
+            foreach (var task in pane.BackgroundWork?.Running ?? []) { mighty.Add(task.Id); mighty.Add(task.Description); mighty.Add(task.ToolUseId); mighty.Add(task.Kind); }
             if (MobileActiveStyle is { } style)
             {
                 mighty.Add(style.Id); mighty.Add(style.Hash); mighty.Add(GuidedPhase(style)?.Id); mighty.Add(pane.Status == "running"); mighty.Add(stylePrerequisites?.Ready);
@@ -652,8 +654,10 @@ public sealed partial class MainWindow
             owner.RefreshAskCatalog(pane);
             var askTargets = owner.AskTargetsFor(pane);
             // The rows delegation holds for the pane come first, as on the desktop (M/AppStore+MobileRemote.swift:398).
+            // The background work still running, as the strip lists it, its block met in the newest request (never a notice run).
+            var background = PlanCardSupport.MobileBackgroundWork(pane.BackgroundWork, MightyGraphSupport.NewestRequestRun(pane.GraphRuns), owner.BackgroundOutputFor(pane.Id));
             return new(DelegationQueueRows.MobileItems(owner.service.HeldItems(id), queuedInputs.Items), settings, mighty, statusLine,
-                askTargets.Select(t => new MobileAskTarget(t.Id, t.Label)).ToArray(), AskTargets.Effective(pane.AskTarget, askTargets)?.Id);
+                askTargets.Select(t => new MobileAskTarget(t.Id, t.Label)).ToArray(), AskTargets.Effective(pane.AskTarget, askTargets)?.Id, background);
         }
         /// <summary>The style panel the phone draws, in the shared golden shape (M/MightyCore/Styles/StylePanelProjection.swift).</summary>
         private object? MobileStylePanel(RegisteredStyle? chosen) => chosen is { } style

@@ -29,8 +29,9 @@ public sealed record MobileStructure(int V, string Shape, IReadOnlyList<MobileSt
     /// <param name="Message">The main agent's latest reply, left out once that reply is the answer.</param>
     /// <param name="Answer">The final answer as Markdown, once the request finished with one.</param>
     /// <param name="OmittedNodes">Sub-agent rows left out past <see cref="MaximumNodes"/>; absent when none were.</param>
+    /// <param name="NoticeRun"><c>true</c> for Claude's reply to finished background work (<see cref="MightyGraphRun.NoticeRun"/>); absent otherwise.</param>
     public sealed record Item(string RunId, int Ordinal, string? Title, string Status, bool Finished, string? Request, string? Message, IReadOnlyList<Activity> Activity,
-        string? Answer, Tally Tally, IReadOnlyList<Cluster> Clusters, int? OmittedNodes);
+        string? Answer, Tally Tally, IReadOnlyList<Cluster> Clusters, int? OmittedNodes, bool? NoticeRun = null);
     public sealed record Activity(string Kind, string State, string Text);
     /// <summary>What the request holds now, counted over all of it even when nodes were left out.</summary>
     public sealed record Tally(int Agents, int Tools);
@@ -80,7 +81,8 @@ public sealed record MobileStructure(int V, string Shape, IReadOnlyList<MobileSt
         var next = new Dictionary<string, Wired>();
         var requests = all.Where(item => newest[item.RunId] == item.RunIndex).OrderByDescending(item => item.RunIndex).Take(MaximumItems).Select(source =>
         {
-            var name = title?.Invoke(source.RunId);
+            // A notice run is no request: it takes no style title.
+            var name = source.NoticeRun ? null : title?.Invoke(source.RunId);
             var held = tails is { Count: > 0 } ? TailsKey(source, tails) : "";
             if (wired is null || !wired.TryGetValue(source.RunId, out var made) || made.Source != source || made.Title != name || made.Tails != held)
             {
@@ -165,7 +167,8 @@ public sealed record MobileStructure(int V, string Shape, IReadOnlyList<MobileSt
         var named = title is null ? null : Capped(title, TitleBytes, singleLine: true);
         return new(item.RunId, item.Ordinal, named is { Length: > 0 } ? named : null, item.Status, item.Finished, item.Request is { } request ? Capped(request.Text, RequestBytes) : null,
             item.Message is { } message ? Capped(message.Text, MessageBytes) : null, item.Activity.TakeLast(MaximumActivity).Select(ActivityFor).ToList(),
-            item.Answer is { } answer ? Capped(answer.Text, AnswerBytes, markdown: true) : null, new(item.Tally.Agents, item.Tally.Tools), clusters, total > nodes ? total - nodes : null);
+            item.Answer is { } answer ? Capped(answer.Text, AnswerBytes, markdown: true) : null, new(item.Tally.Agents, item.Tally.Tools), clusters, total > nodes ? total - nodes : null,
+            item.NoticeRun ? true : null);
     }
 
     private static Activity ActivityFor(MightyStructure.ActivityLine line) =>

@@ -45,8 +45,9 @@ internal static class MightyTimelineVerification
             $"an unanswered delegation notice ends with its own words, a person's steer with the 중간 요청 words; got '{Unfinished("n")}', '{Unfinished("f")}', '{Unfinished("p")}'");
         return Task.CompletedTask;
     }
-    /// <summary>A background task's <c>&lt;task-notification&gt;</c> is a 작업 알림 steer under main, once per task, answered by the next
-    /// root-level reply; it is neither a person's 중간 요청 nor counted as one (macOS ExecutionGraphTests.aTaskNotificationIsATaskNoticeSteer).</summary>
+    /// <summary>A background task's <c>&lt;task-notification&gt;</c> makes no 작업 알림 steer any more: taken into the running turn, its block is
+    /// copied into one notice run that is complete at once and has no result. A saved 작업 알림 still reads as one, and is neither a person's
+    /// 중간 요청 nor counted as one (macOS ExecutionGraphTests.aTaskNotificationCopiesItsBlockAndAnOldNoticeSteerStillReads).</summary>
     internal static Task ATaskNotificationIsATaskNoticeSteer()
     {
         var emitted = new List<ExecutionGraphNode>();
@@ -71,18 +72,21 @@ internal static class MightyTimelineVerification
         tracker.Finish("completed");
         var latest = new Dictionary<string, ExecutionGraphNode>(); foreach (var node in emitted) latest[node.Id] = node;
         var main = ExecutionGraphSupport.MainNodeID("notice-run");
-        var notices = latest.Values.Where(n => n.Kind == "steer").ToList();
-        var build = latest[ExecutionGraphSupport.Identifier("notice-run", "steer:notice:" + ExecutionGraphSupport.AgentNodeID("notice-run", "build-cmd"))];
-        var lint = latest[ExecutionGraphSupport.Identifier("notice-run", "steer:notice:" + ExecutionGraphSupport.AgentNodeID("notice-run", "lint-cmd"))];
-        Check(notices.Count == 2 && notices.All(n => n.ParentId == main), "one 작업 알림 per notified task, under main; got " + notices.Count);
-        Check(build.Input == MightyGraphSupport.TaskNoticePrefix + "Build · 완료\nBuild done" && build.State == "completed" && build.Output == "The build passed.",
-            "the notice reads the task and its outcome, and the next root answer is its reply; got '" + build.Input + "' -> '" + build.Output + "'");
-        Check(lint.Input == MightyGraphSupport.TaskNoticePrefix + "npm run lint · 중단됨" && lint.State == "stopped" && lint.Entries[^1].Text == Locale.Get("graph.block.unfinished.taskNotice")
-            && Locale.Get("graph.block.unfinished.taskNotice") != Locale.Get("graph.block.unfinished.steer"), "a notice for a task already settled still shows, and an unanswered one ends in its own words; got '" + lint.Input + "'");
+        Check(!latest.Values.Any(n => n.Kind == "steer"), "no 작업 알림 steer is made");
+        var noticeMain = latest[ExecutionGraphSupport.MainNodeID("notice-run:notice:1")];
+        var build = latest["notice-run:notice:1:" + ExecutionGraphSupport.AgentNodeID("notice-run", "build-cmd")];
+        var lint = latest["notice-run:notice:1:" + ExecutionGraphSupport.AgentNodeID("notice-run", "lint-cmd")];
+        Check(noticeMain is { State: "completed", Output: null } && noticeMain.Title == Locale.Get("graph.background.noticeRun"), "the absorbed notice run is complete without a result");
+        Check(noticeMain.Input == "Build · 완료\nnpm run lint · 실패", "the notice run names each finished task and how it ended; got '" + noticeMain.Input + "'");
+        Check(build is { State: "completed", Background: true } && build.ParentId == noticeMain.Id && lint.State == "error", "each block is copied once, as it ended");
+        Check(latest[main].Output == "The build passed." || latest[main].Output is null, "the request's answer stays its own; got '" + latest[main].Output + "'");
         var run = tracker.BuildRun()!;
-        var agent = run.Agents.Single(a => a.Id == build.Id);
+        Check(run.Agents.All(a => a.Kind != "steer") && run.NoticeRun is null, "the request holds no notice block");
+        Check(tracker.BuildNoticeRuns() is [{ NoticeRun: true, Agents.Count: 2 }], "the notice run is built apart, flagged");
+        var agent = new MightyGraphAgent { Id = "saved-notice", Kind = "steer", Input = MightyGraphSupport.TaskNoticePrefix + "Build · 완료\nBuild done" };
         Check(MightyGraphSupport.BlockTitle(agent) == "작업 알림" && MightyGraphSupport.BlockKind(agent) == "steer" && MightyGraphSupport.IsTaskNotice(agent) && MightyGraphSupport.IsNotice(agent) && !MightyGraphSupport.IsDelegationNotice(agent)
-            && MightyGraphSupport.ShownInput(agent) == "Build · 완료\nBuild done", "the block is a 작업 알림 that shows its line without the prefix");
+            && MightyGraphSupport.ShownInput(agent) == "Build · 완료\nBuild done", "a saved block is a 작업 알림 that shows its line without the prefix");
+        run.Agents.Add(agent);
         Check(MightyTimeline.KindLabel("steer", agent.Input) == "작업 알림" && MightyTimeline.KindLabel("steer", "Also add tests") == "중간 요청", "the timeline names it the same way");
         run.Agents.Add(new MightyGraphAgent { Id = "person", Kind = "steer", Status = "completed", Input = "Also add tests" });
         var summary = MightyGraphBlockModel.ToolbarSummary([run]);

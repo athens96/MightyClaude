@@ -11,6 +11,7 @@ import { providerLabel } from '../conversation/format';
 import { Pending } from '../pending/Pending';
 import type { PendingState } from '../pending/display';
 import { holding, pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
+import { quietNotice } from './notice';
 import { animateScrollTop, isNearBottom, submitScroll } from '../pending/submitScroll';
 import { Motion, reducesMotion } from '../theme/tokens';
 
@@ -184,7 +185,7 @@ export function Timeline({ session, groups: hostGroups, older, history, onOpenRo
     const shownGroups = heldBack ? (hostGroups ?? []).filter((group) => !heldBack.split('\n').includes(group.runId)) : hostGroups;
     const failed = pending.phase === 'failed';
     const group: TimelineGroup = {
-      runId: pendingRunId(pending), ordinal: (shownGroups?.length ?? 0) + 1, title: t('graph.block.nextRequest'), status: failed ? 'error' : 'starting',
+      runId: pendingRunId(pending), ordinal: (shownGroups ?? []).filter((group) => group.noticeRun !== true).length + 1, title: t('graph.block.nextRequest'), status: failed ? 'error' : 'starting',
       statusWord: '', tone: failed ? 'err' : 'run', input: pending.text, tally: '', open: false, older: false, rows: [], resultFolds: false,
     };
     return [...(shownGroups ?? []), group];
@@ -215,8 +216,12 @@ export function Timeline({ session, groups: hostGroups, older, history, onOpenRo
     const element = scroller.current;
     if (!element) return;
     const list = groups ?? [];
-    const finished = new Map(list.map((g) => [g.runId, terminalStatus.has(g.status)]));
-    const last = list[list.length - 1]?.runId ?? null;
+    // A request's result is revealed as it finishes; a notice run's never steals the view (notice.ts).
+    const finished = new Map(list.filter((g) => g.noticeRun !== true).map((g) => [g.runId, terminalStatus.has(g.status)]));
+    // The newest work: the last request, or a notice run after it with a reply or still running, and whether it is answered,
+    // followed only from the newest end; a quiet notice run (taken into a running turn) never moves the view.
+    const followed = [...list].reverse().find((g) => { const run = runs.get(g.runId); return !run || !quietNotice(run); });
+    const last = followed ? followed.runId + (followed.noticeRun && followed.resultNodeId ? ':answered' : '') : null;
     const before = progress.current;
     const newlyFinished = !!before && list.some((g) => finished.get(g.runId) && before.finished.get(g.runId) === false);
     // An own send (this composer's Enter, or its group taking the place of the one the page drew) goes to the last group

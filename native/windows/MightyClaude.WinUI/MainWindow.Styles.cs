@@ -261,7 +261,7 @@ public sealed partial class MainWindow
                 {
                     var registry=StyleRegistry.Load(owner.StateDirectory,workspace);var chosen=registry.Runnable(pane.MightyStyle,pane.MightyStyleHash);
                     var since=DateTimeOffset.TryParse(pane.MightyStyleSince,out var date)?date:(DateTimeOffset?)null;
-                    return (Registry:registry,Chosen:chosen,Reading:chosen is null?null:StyleStateEngine.Read(chosen.Manifest,workspace,since,pane),Prerequisites:chosen is null?null:StylePrerequisites.Read(chosen.Manifest,workspace,owner.options.SmokeTest?owner.StateDirectory:null));
+                    return (Registry:registry,Chosen:chosen,Reading:chosen is null?null:StyleStateEngine.Read(chosen.Manifest,workspace,since,MightyGraphSupport.WithoutNoticeRuns(pane)),Prerequisites:chosen is null?null:StylePrerequisites.Read(chosen.Manifest,workspace,owner.options.SmokeTest?owner.StateDirectory:null));
                 });
                 if(owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id)||Session.MightyStyle!=pane.MightyStyle||Session.MightyStyleHash!=pane.MightyStyleHash||Session.MightyStyleSince!=pane.MightyStyleSince)return;
                 var before=activeStyle;styleRegistry=data.Registry;activeStyle=data.Chosen;styleReading=data.Reading;stylePrerequisites=data.Prerequisites;loadedStyleKey=key;
@@ -308,12 +308,12 @@ public sealed partial class MainWindow
             }
             await Change(p=>p with{MightyStyle=selected?.Id,MightyStyleHash=selected?.Hash,MightyStyleSince=p.MightyStyle==selected?.Id?p.MightyStyleSince:null});styleStartingNew=false;styleGroup=null;loadedStyleKey=null;await LoadStyles();Refresh();
         });
-        private StylePhase? GuidedPhase(RegisteredStyle style)=>style.Evaluator.CurrentPhase(Session.GraphRuns is {Count:>0} runs?runs.Select(r=>r.Input):Session.Logs.Where(l=>l.Kind=="user").Select(l=>l.Text),styleReading?.Files,LiveStyleReading(style).PlanStage);
+        private StylePhase? GuidedPhase(RegisteredStyle style)=>style.Evaluator.CurrentPhase(Session.GraphRuns is {Count:>0} runs?MightyGraphSupport.RequestRuns(runs).Select(r=>r.Input):Session.Logs.Where(l=>l.Kind=="user").Select(l=>l.Text),styleReading?.Files,LiveStyleReading(style).PlanStage);
         /// <summary>
         /// The cached file and event reading with the pane's own plan stage and run-state widgets added (§1.17): they
         /// come from the pane and its waiting plan, never from disk, so they are read live on every render.
         /// </summary>
-        private StyleStateReading LiveStyleReading(RegisteredStyle style)=>StyleStateEngine.Live(styleReading,style.Manifest,Session,PendingPlan is not null);
+        private StyleStateReading LiveStyleReading(RegisteredStyle style)=>StyleStateEngine.Live(styleReading,style.Manifest,MightyGraphSupport.WithoutNoticeRuns(Session),PendingPlan is not null);
         private void RefreshStyleComposer()
         {
             if(owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id))return;

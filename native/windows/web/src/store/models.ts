@@ -146,6 +146,8 @@ export interface MightyGraphAgent {
   background?: boolean;
   /** Claude's reply in the turn this block's notice alone opened. */
   noticeReply?: string;
+  /** A copy in a notice run: the id of the finished background block it copies. */
+  sourceBlockId?: string;
 }
 
 export interface MightyGraphRun {
@@ -162,6 +164,8 @@ export interface MightyGraphRun {
   provider?: string;
   nodeModelLabel?: string;
   configuredModel?: string;
+  /** Claude's reply to finished background work, not a request the user sent (mighty/notice.ts); absent otherwise. */
+  noticeRun?: boolean;
 }
 
 export interface GraphBlockSize {

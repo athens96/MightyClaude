@@ -30,7 +30,9 @@ public static class MightyGraphFollow
     public static string? TargetID(MightyGraphLayout layout, IReadOnlyList<MightyGraphRun> runs)
     {
         if (runs.Count == 0) return layout.Nodes.FirstOrDefault(n => n.Kind == "draft")?.Id;
-        var newest = MightyGraphLayout.NodeID(runs[^1], "");
+        // The newest work: the newest request, or a notice run after it that is a turn of its own (MightyGraphSupport.FollowRunIndex);
+        // a quiet notice run never takes the camera from the request.
+        var newest = MightyGraphLayout.NodeID(runs[MightyGraphSupport.FollowRunIndex(runs) ?? runs.Count - 1], "");
         MightyGraphLayout.Node? best = null;
         foreach (var node in layout.Nodes)
             if (node.Kind is "request" or MightyGraphLayout.WorkKind or "result" or "plan" or "agent" && node.Id.StartsWith(newest, StringComparison.Ordinal)

@@ -14,10 +14,11 @@ namespace MightyClaude.WinUI;
 /// One diagram block's copy (MightyGraphBlockModel.Blocks), without its frame (the page lays out) or its transcript (the page holds the runs).
 /// A background sub-agent's or a task's block says so (<c>Background</c>); a task's block carries its run's last output lines
 /// (<c>OutputTail</c>, from the host's memory, at most <see cref="BackgroundOutputTail.MaxLines"/>) and Claude's reply to its notice
-/// (<c>NoticeReply</c>). Its output file never reaches the page's copy. Each is absent otherwise.
+/// (<c>NoticeReply</c>). Its output file never reaches the page's copy. A notice run's request block (BackgroundNoticeRuns) says so (<c>Notice</c>):
+/// it wears the task's terminal symbol and no provider mark. Each is absent otherwise.
 /// </summary>
 internal sealed record WebMightyBlock(string Kind, string Title, string State, string? Capsule, string Help, string Indicator, string Outline, string Status, string Tone,
-    string? FilesRunId, string? RecordId, bool FromRecord, string? Provider, bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null);
+    string? FilesRunId, string? RecordId, bool FromRecord, string? Provider, bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, bool? Notice = null);
 
 internal sealed record WebMightyFile(string Path, int? Line);
 internal sealed record WebMightyExecution(string Status, string StatusWord, string? Goal, string? Progress, IReadOnlyList<string> Counts, string? Line, string? Note, string Footer, string? Dashboard,
@@ -33,8 +34,9 @@ internal sealed record WebMightyInputs(string? PlanRunID, IReadOnlyList<object> 
 
 internal sealed record WebTimelineRow(string NodeId, string Kind, string KindLabel, string Title, string Status, string StatusWord, string Tone, bool Ring, string? Rail,
     string? Latest, string? Duration, string? Capsule, string? Input, int? AgentIndex);
+/// <summary>One 기록 group; <c>NoticeRun</c> marks Claude's reply to finished background work (BackgroundNoticeRuns), absent for a request.</summary>
 internal sealed record WebTimelineGroup(string RunId, int Ordinal, string Title, string Status, string StatusWord, string Tone, string Input, string Tally, bool Open, bool Older,
-    IReadOnlyList<WebTimelineRow> Rows, string? ResultNodeId, string? ResultTone, string? Result, bool ResultFolds, string? ResultCaption);
+    IReadOnlyList<WebTimelineRow> Rows, string? ResultNodeId, string? ResultTone, string? Result, bool ResultFolds, string? ResultCaption, bool? NoticeRun = null);
 
 internal sealed record WebStructureActivity(string Kind, string State, string Text);
 /// <summary>A structure card for the page; an agent card adds its kind, "kind · model", its depth and its prompt apart from its output; <c>RevealId</c> is the block its reveal shows.
@@ -44,7 +46,8 @@ internal sealed record WebStructureCard(string Id, string Kind, string RunId, st
     string? NodeKind = null, string? Meta = null, int Depth = 0, string? Prompt = null, string? ExecutionNodeId = null, string? ResultNodeId = null, string? Tint = null,
     bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null);
 internal sealed record WebStructureColumn(string Id, string Title, string Step, string StepWord, int Count, IReadOnlyList<WebStructureCard> Cards, string? Tone);
-internal sealed record WebStructureBoard(string Id, string Kind, int Ordinal, string? Headline, string Status, string StatusWord, string Tone, IReadOnlyList<string> RunIds, IReadOnlyList<WebStructureColumn> Columns, string? StyleName);
+/// <summary>One 파이프라인 board; <c>Quiet</c>: it holds only notice runs taken into a running turn (MightyStructure.Board.Quiet), which the view never moves on to by itself.</summary>
+internal sealed record WebStructureBoard(string Id, string Kind, int Ordinal, string? Headline, string Status, string StatusWord, string Tone, IReadOnlyList<string> RunIds, IReadOnlyList<WebStructureColumn> Columns, string? StyleName, bool? Quiet = null);
 
 public sealed partial class MainWindow
 {
@@ -285,13 +288,15 @@ public sealed partial class MainWindow
                 foreach (var agent in run.Agents)
                     if (agent.IsTask || agent.IsBackgroundAgent) background.TryAdd(MightyGraphLayout.NodeID(run, "agent:" + agent.Id), agent);
             var copy = new Dictionary<string, WebMightyBlock>(StringComparer.Ordinal);
+            var ordinals = MightyGraphSupport.RequestOrdinals(runs);
             var cards = new Dictionary<string, WebMightyExecution>(StringComparer.Ordinal);
             foreach (var raw in blocks)
             {
                 var block = raw;
                 var index = -1;
                 for (var i = 0; i < runs.Count; i++) if (block.Kind is "request" && block.Id == MightyGraphLayout.NodeID(runs[i], "request")) { index = i; break; }
-                if (index >= 0) block = block with { Title = GraphRequestTitle(runs[index], index + 1) };
+                if (index >= 0) block = block with { Title = GraphRequestTitle(runs[index], ordinals[index]) };
+                var notice = index >= 0 && runs[index].NoticeRun == true;
                 if (block.Kind == MightyGraphLayout.ExecutionKind)
                 {
                     block = ExecutionBlock(block);
@@ -300,9 +305,9 @@ public sealed partial class MainWindow
                 var fromRecord = LoadedFromRecord(block.Id, older) && block.Kind is "request" or MightyGraphLayout.WorkKind;
                 var held = background.GetValueOrDefault(block.Id);
                 copy[block.Id] = new(block.Kind, block.Title, block.State, block.Capsule, block.CapsuleHelp, block.Indicator, block.Outline, block.Status,
-                    MightyGraphBlockModel.Tone(block).ToString().ToLowerInvariant(), block.ResultFilesRunId, block.RecordId, fromRecord, MightyGraphBlockModel.TitleProvider(block, pane.Provider),
+                    MightyGraphBlockModel.Tone(block).ToString().ToLowerInvariant(), block.ResultFilesRunId, block.RecordId, fromRecord, notice ? null : MightyGraphBlockModel.TitleProvider(block, pane.Provider),
                     held is null ? (bool?)null : true, held is { IsTask: true } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(held.Id)) : null,
-                    held?.NoticeReply is { Length: > 0 } reply ? reply : null);
+                    held?.NoticeReply is { Length: > 0 } reply ? reply : null, notice ? true : null);
             }
             WebMightyHistory? history = null;
             if (ShowsHistoryBlock(pane, retained))
@@ -375,7 +380,7 @@ public sealed partial class MainWindow
             var groups = new List<WebTimelineGroup>();
             foreach (var group in MightyTimeline.Groups(runs))
             {
-                var run = runs[group.RunIndex];
+                var run = runs[group.RunIndex].Shown;
                 var rows = group.Rows.Select(row =>
                 {
                     var agent = row.AgentIndex is { } at && at < run.Agents.Count ? run.Agents[at] : null;
@@ -388,10 +393,11 @@ public sealed partial class MainWindow
                 }).ToList();
                 var tally = Locale.Get("phone.blocks.tally", new Dictionary<string, string> { ["total"] = group.Tally.Total.ToString(), ["settled"] = group.Tally.Settled.ToString() });
                 var total = run.TotalUsage;
-                var caption = Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = group.Ordinal.ToString() }) + (total is null || total.IsEmpty ? "" : " · " + total.Summary);
+                var caption = (group.NoticeRun ? BackgroundNoticeRuns.Title : Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = group.Ordinal.ToString() })) + (total is null || total.IsEmpty ? "" : " · " + total.Summary);
                 groups.Add(new(group.RunId, group.Ordinal, GraphRequestTitle(run, group.Ordinal), group.Status, MightyGraphBlockModel.RunStateLabel(run),
-                    Tone(StatusGlyph.Tone(group.Status)), group.Input, tally, MightyTimeline.GroupOpen(group, runs.Count, webTimelineFlipped), group.RunIndex < older, rows,
-                    group.Result?.NodeId, group.Result is { } r ? Tone(r.Tone) : null, group.Result?.Text, group.Result?.Text is { } text && MightyTimeline.Folds(text), group.Result is null ? null : caption));
+                    Tone(StatusGlyph.Tone(group.Status)), group.Input, tally, MightyTimeline.GroupOpen(group, runs, webTimelineFlipped), group.RunIndex < older, rows,
+                    group.Result?.NodeId, group.Result is { } r ? Tone(r.Tone) : null, group.Result?.Text, group.Result?.Text is { } text && MightyTimeline.Folds(text), group.Result is null ? null : caption,
+                    group.NoticeRun ? true : null));
             }
             return groups;
         }
@@ -437,7 +443,8 @@ public sealed partial class MainWindow
             var styleName = activeStyle?.Manifest.Name;
             return boards.Select(board => new WebStructureBoard(board.Id, board.Kind.ToString().ToLowerInvariant(), board.Ordinal, board.Headline, board.Status, MightyGraphBlockModel.StateLabel(board.Status), Tone(board.Status), board.RunIds,
                 board.Columns.Select(column => new WebStructureColumn(column.Id, column.Step.Title ?? Locale.Get("graph.structure.column." + column.Id), column.Step.Step.ToString().ToLowerInvariant(),
-                    StepWord(column.Step.Step), column.Count, column.Cards.Select(card => Card(card, column)).ToList(), ToneWord(MightyStructure.Tone.OfColumn(column)))).ToList(), board.Kind == MightyStructure.BoardKind.Pipeline ? styleName : null)).ToList();
+                    StepWord(column.Step.Step), column.Count, column.Cards.Select(card => Card(card, column)).ToList(), ToneWord(MightyStructure.Tone.OfColumn(column)))).ToList(), board.Kind == MightyStructure.BoardKind.Pipeline ? styleName : null,
+                board.Quiet ? true : null)).ToList();
         }
 
         /// <summary>A block drag released in the page, saved as the WinUI drag saves it (<see cref="EndResultResize"/>): the newest result and the waiting plan keep the pane's one size, any other block its own.</summary>

@@ -77,14 +77,14 @@ internal static class WebDelta
     /// <summary>The same for a graph run (a class, made anew by every normalize): every field <see cref="MightyGraphRun"/> writes.</summary>
     internal static bool SameRun(MightyGraphRun a, MightyGraphRun b) => ReferenceEquals(a, b)
         || a.Id == b.Id && a.Input == b.Input && a.Status == b.Status && a.SourceRunID == b.SourceRunID && a.FinalOutput == b.FinalOutput
-            && a.Provider == b.Provider && a.NodeModelLabel == b.NodeModelLabel && a.ConfiguredModel == b.ConfiguredModel && Equals(a.Usage, b.Usage)
+            && a.Provider == b.Provider && a.NodeModelLabel == b.NodeModelLabel && a.ConfiguredModel == b.ConfiguredModel && a.NoticeRun == b.NoticeRun && Equals(a.Usage, b.Usage)
             && SameList(a.RootEntries, b.RootEntries, SameEntry) && SameList(a.ResultEntries, b.ResultEntries, SameEntry)
             && SameList(a.Agents, b.Agents, SameAgent) && SameList(a.ResponseRecords, b.ResponseRecords, (x, y) => Equals(x, y));
 
     private static bool SameAgent(MightyGraphAgent a, MightyGraphAgent b) => ReferenceEquals(a, b)
         || a.Id == b.Id && a.ParentID == b.ParentID && a.Title == b.Title && a.Input == b.Input && a.Status == b.Status && a.Kind == b.Kind
             && Equals(a.Usage, b.Usage) && a.ActivityGeneration == b.ActivityGeneration
-            && a.Background == b.Background && a.NoticeReply == b.NoticeReply
+            && a.Background == b.Background && a.NoticeReply == b.NoticeReply && a.SourceBlockId == b.SourceBlockId
             && SameList(a.Entries, b.Entries, SameEntry) && SameList(a.ResponseRecords, b.ResponseRecords, (x, y) => Equals(x, y));
 
     /// <summary>A run as the page holds it: a task block's output file stays on this side (never shown, never on the page).</summary>

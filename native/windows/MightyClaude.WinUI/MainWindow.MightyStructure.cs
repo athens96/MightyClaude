@@ -333,7 +333,8 @@ public sealed partial class MainWindow
             var help = MightyGraphBlockModel.ToolbarHelp(retained);
             ToolTipService.SetToolTip(graphTotal, help); AutomationProperties.SetHelpText(graphTotal, help);
 
-            var newest = runs.Count > 0 ? runs[^1].Id : null; var arrived = newest != structureNewestId;
+            // A notice run is no request: the newest request decides (MightyGraphSupport.NewestRequestRun).
+            var newest = MightyGraphSupport.NewestRequestRun(runs)?.Id; var arrived = newest != structureNewestId;
             structureNewestId = newest;
             var moved = board?.Id != structureBoardId;
             structureBoardId = board?.Id;

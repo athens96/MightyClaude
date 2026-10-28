@@ -12,6 +12,8 @@ public static partial class MightyStructure
     public sealed record Board(string Id, BoardKind Kind, int Ordinal, IReadOnlyList<Item> Items, string? Headline, string Status, IReadOnlyList<BoardStep> Steps, IReadOnlyList<BoardColumn> Columns)
     {
         public IReadOnlyList<string> RunIds => Items.Select(item => item.RunId).ToList();
+        /// <summary>Only notice runs taken into a running turn (<see cref="Item.Quiet"/>): the view never moves on to it by itself.</summary>
+        public bool Quiet => Items.Count > 0 && Items.All(item => item.Quiet);
         /// <summary>The current step's place, else the last step that is over.</summary>
         public int? CurrentStepIndex
         {
@@ -140,11 +142,19 @@ public static partial class MightyStructure
         /// <summary>The newest board when the user left it.</summary>
         private string? seenNewest;
 
+        /// <summary>The newest board: the last one, but a quiet notice's board after it (<see cref="Board.Quiet"/>), which the view never
+        /// moves on to by itself (<see cref="MightyGraphSupport.FollowRunIndex"/>).</summary>
+        public static int? NewestIndex(IReadOnlyList<Board> boards)
+        {
+            for (var index = boards.Count - 1; index >= 0; index--) if (!boards[index].Quiet) return index;
+            return boards.Count > 0 ? boards.Count - 1 : null;
+        }
+
         /// <summary>The place of the board shown in <paramref name="boards"/>, null when there is none. A picked board that is gone is found by a request it held, else the oldest board is shown.</summary>
         public int? Index(IReadOnlyList<Board> boards)
         {
             if (boards.Count == 0) return null;
-            if (Chosen is null) return boards.Count - 1;
+            if (Chosen is null) return NewestIndex(boards);
             for (var index = 0; index < boards.Count; index++) if (boards[index].Id == Chosen) return index;
             var runs = chosenRuns.ToHashSet();
             for (var index = 0; index < boards.Count; index++) if (boards[index].Items.Any(item => runs.Contains(item.RunId))) return index;
@@ -152,17 +162,18 @@ public static partial class MightyStructure
         }
 
         /// <summary>The shown board is the newest one.</summary>
-        public bool OnNewest(IReadOnlyList<Board> boards) => Index(boards) is not { } index || index == boards.Count - 1;
+        public bool OnNewest(IReadOnlyList<Board> boards) => Index(boards) is not { } index || index == NewestIndex(boards);
 
         /// <summary>A board newer than the one shown arrived since the user left the newest board.</summary>
-        public bool HasUnseen(IReadOnlyList<Board> boards) => !OnNewest(boards) && boards[^1].Id != seenNewest;
+        public bool HasUnseen(IReadOnlyList<Board> boards) => !OnNewest(boards) && (NewestIndex(boards) is { } newest ? boards[newest].Id : null) != seenNewest;
 
         /// <summary>Shows board <paramref name="id"/>. The newest board is shown as "the newest", so the view moves on with new ones again.</summary>
         public void Select(string id, IReadOnlyList<Board> boards)
         {
             if (boards.FirstOrDefault(board => board.Id == id) is not { } target) return;
-            if (target.Id == boards[^1].Id) { Chosen = null; chosenRuns = []; seenNewest = null; return; }
-            if (OnNewest(boards)) seenNewest = boards[^1].Id;
+            var newest = NewestIndex(boards) is { } at ? boards[at].Id : null;
+            if (target.Id == newest) { Chosen = null; chosenRuns = []; seenNewest = null; return; }
+            if (OnNewest(boards)) seenNewest = newest;
             Chosen = target.Id; chosenRuns = target.RunIds;
         }
 
@@ -176,8 +187,8 @@ public static partial class MightyStructure
         /// <summary>Shows the newest board, and moves on with new ones from now on.</summary>
         public void ShowNewest(IReadOnlyList<Board> boards)
         {
-            if (boards.Count == 0) { Chosen = null; return; }
-            Select(boards[^1].Id, boards);
+            if (NewestIndex(boards) is not { } newest) { Chosen = null; return; }
+            Select(boards[newest].Id, boards);
         }
     }
 }

@@ -328,7 +328,6 @@
   "graph.ouroboros.waiting": "Reading the status…",
   "graph.result.afterNotice": "After a notice",
   "graph.result.afterSteer": "After {block}",
-  "graph.result.afterTaskNotice": "After task notice · {title}",
   "graph.result.fitToWindow": "Fit to window",
   "graph.resultFiles.closeButton": "Close file list",
   "graph.resultFiles.countLabel": "{count} result files · toggle list",

@@ -76,7 +76,8 @@ export const drawsDiagram = (session: RunSession) => session.kind === 'claude' &
 /** The graph runs that came after the request's Enter. */
 export function runsSince(request: PendingRequest, runs: readonly MightyGraphRun[]): MightyGraphRun[] {
   const known = new Set(request.knownRunIds);
-  return runs.filter((run) => !known.has(run.id));
+  // A notice run (Claude's reply to finished background work) is never the request's run.
+  return runs.filter((run) => !known.has(run.id) && run.noticeRun !== true);
 }
 
 /** Whether the host's user entry for `request` is in the pane: the one the answer named, or a new one with its words. */

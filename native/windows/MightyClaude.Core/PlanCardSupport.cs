@@ -20,8 +20,8 @@ public static class PlanCardSupport
     /// </summary>
     public static string? DiagramPlanRunID(ToolPermissionRequest? request, bool showsDiagram, IReadOnlyList<MightyGraphRun> runs)
     {
-        if (!showsDiagram || request is not { CanAnswerPlan: true, State: "pending" } || runs.Count == 0) return null;
-        var last = runs[^1];
+        // The newest request's: a notice run after it is no request (BackgroundNoticeRuns).
+        if (!showsDiagram || request is not { CanAnswerPlan: true, State: "pending" } || MightyGraphSupport.NewestRequestRun(runs) is not { } last) return null;
         return MightyGraphLayout.Finished(last) ? null : last.Id;
     }
 
@@ -102,9 +102,16 @@ public static class PlanCardSupport
     /// <summary>
     /// One row of the background strip (M/PlanCardSupport.swift BackgroundStripRow): the task list's row, and the kind words
     /// the diagram's block uses (null: the row keeps the task list's own words) with, for a background run, its last output line.
+    /// Opened, the row shows <c>Command</c> and <c>TailLines</c>. <c>Id</c> is the CLI's task id (null when the rows no longer line up
+    /// with the tasks); <c>Run</c> says a background run (a command), a background sub-agent (false), or null when neither is known;
+    /// <c>Command</c> is the command a run runs, or the first line of a sub-agent's prompt, from its graph block; <c>TailLines</c> a run's
+    /// last output lines, at most <see cref="BackgroundOutputTail.MaxLines"/>.
     /// </summary>
-    public sealed record BackgroundStripRow(StylePresentation.TaskRow Task, string? KindText = null, string? Tail = null)
+    public sealed record BackgroundStripRow(StylePresentation.TaskRow Task, string? KindText = null, string? Tail = null, string? Id = null, bool? Run = null,
+        string? Command = null, IReadOnlyList<string>? TailLines = null)
     {
+        /// <summary>Whether opening the row shows anything more.</summary>
+        public bool Opens => Command is not null || TailLines is { Count: > 0 };
         /// <summary>Kind · status · elapsed · notice. Kind words already say waiting or how it ended, so only a delivered notice is added to them.</summary>
         public string Detail(DateTimeOffset now) => string.Join(" · ", (KindText is { } kind
             ? new[] { kind, Task.Elapsed(now), NoticeDelivered(Task.Status) ? Locale.Get("plan.background.noticeDelivered") : "" }
@@ -139,10 +146,42 @@ public static class PlanCardSupport
             bool isRun;
             if (block is not null && (block.IsTask || block.IsBackgroundAgent)) isRun = block.IsTask;
             else if (task.Kind is "agent" or "shell") isRun = task.Kind == "shell";
-            else return new BackgroundStripRow(task);
-            var tail = isRun && block is not null && output?.GetValueOrDefault(block.Id) is { Count: > 0 } lines ? lines[^1] : null;
-            return new BackgroundStripRow(task, MightyGraphSupport.BackgroundLabel(isRun, task.Status), tail);
+            else return new BackgroundStripRow(task, Id: source.Id);
+            IReadOnlyList<string> lines = isRun && block is not null && output?.GetValueOrDefault(block.Id) is { Count: > 0 } all ? all.TakeLast(BackgroundOutputTail.MaxLines).ToList() : [];
+            return new BackgroundStripRow(task, MightyGraphSupport.BackgroundLabel(isRun, task.Status), lines.Count > 0 ? lines[^1] : null,
+                source.Id, isRun, block is null ? null : StripCommand(block, isRun), lines);
         }).ToList();
+    }
+
+    /// <summary>What an opened strip row shows the work doing: a run's whole command, a sub-agent's first prompt line (M/PlanCardSupport.swift stripCommand).</summary>
+    internal static string? StripCommand(MightyGraphAgent block, bool run)
+    {
+        var text = run ? MightyGraphSupport.ShownInput(block).Trim()
+            : block.Input.Split('\n').Select(line => line.Trim('\r', ' ', '\t')).FirstOrDefault(line => line.Length > 0) ?? "";
+        return text.Length == 0 ? null : text;
+    }
+
+    /// <summary>
+    /// The phone's <c>backgroundWork</c> (M/PlanCardSupport.swift mobileBackgroundWork): the strip's running rows, each with its command and
+    /// output lines; never a path. A task that is neither a sub-agent nor a command (the CLI's <c>other</c> kind, with no graph block to tell)
+    /// is left out: the wire names only those two kinds. Null when nothing of them runs.
+    /// </summary>
+    public static List<MobileBackgroundWork>? MobileBackgroundWork(BackgroundWork? work, MightyGraphRun? run, IReadOnlyDictionary<string, IReadOnlyList<string>>? output = null)
+    {
+        if (work is null || work.Running.Count == 0) return null;
+        var rows = new Dictionary<string, BackgroundStripRow>(StringComparer.Ordinal);
+        foreach (var row in BackgroundStripRows(work, run, output)) if (row.Id is { } id) rows.TryAdd(id, row);
+        var items = new List<MobileBackgroundWork>();
+        foreach (var task in work.Running)
+        {
+            var row = rows.GetValueOrDefault(task.Id);
+            if ((row?.Run ?? (task.Kind == "shell" ? true : task.Kind == "agent" ? false : null)) is not { } isRun) continue;
+            var title = ActivitySupport.Clean(row?.Task.Text ?? task.Description, Core.MobileBackgroundWork.MaximumTitle, true);
+            var command = row?.Command is { } text ? ActivitySupport.Clean(text, Core.MobileBackgroundWork.MaximumCommand) : null;
+            items.Add(new(task.Id, isRun ? "run" : "agent", title, "running", task.StartedAt, string.IsNullOrEmpty(command) ? null : command,
+                row?.TailLines is { Count: > 0 } lines ? [.. lines] : null));
+        }
+        return items.Count == 0 ? null : items;
     }
 
     /// <summary>

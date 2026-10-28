@@ -221,7 +221,8 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     const ownSend = own !== ownSeen.current;
     ownSeen.current = own;
     if (ownSend && submitScroll('diagram', true, true, watch.current.following).scroll === 'toRequest') watch.current.start();
-    const ids = runs.map((r) => r.id);
+    // The user's requests: a notice run (notice.ts) never starts following by itself; a following camera moves on to it.
+    const ids = runs.filter((r) => r.noticeRun !== true).map((r) => r.id);
     const previous = runIds.current;
     const change = runsChanged(previous, ids, watch.current.following);
     runIds.current = ids;

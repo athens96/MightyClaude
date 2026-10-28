@@ -32,6 +32,12 @@ export interface BackgroundTask {
   detail: string;
   /** A background run's last output line, for a dim monospace line under the row; absent otherwise. */
   tail?: string;
+  /** The CLI's task id: the row's key for opening it. */
+  id?: string;
+  /** Opened: the command a run runs, or a sub-agent's first prompt line; absent without a block to read it from. */
+  command?: string;
+  /** Opened: a run's last output lines (at most six). */
+  tailLines?: string[];
 }
 
 export interface BackgroundCard {

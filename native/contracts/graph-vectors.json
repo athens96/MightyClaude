@@ -11398,22 +11398,33 @@
           {
             "activityGeneration" : null,
             "entries" : [
-              {
-                "id" : "graph-6a977dfab3da5378fd2fde1a621278eb793860ee6d642e53",
-                "kind" : "system",
-                "provider" : "claude",
-                "text" : "작업 알림에 대한 응답을 받기 전에 실행이 종료되었습니다."
-              }
+
             ],
-            "id" : "graph-bdbbfc6b5978faa0ac87733ef69a2b0881bcb4ee1a184fe8",
-            "input" : "[Mighty Claude task notice] Build · 완료\nBuild done",
-            "kind" : "steer",
+            "id" : "graph-c1136c63aff3d214ca951881ff30f8867f36304a063d557b",
+            "input" : "Build · 완료",
+            "kind" : "main",
             "output" : null,
-            "parentId" : "graph-5fdc64ac5f29f7a77731646221870699f515fe05198e2da3",
+            "parentId" : null,
             "responseRecords" : null,
-            "runId" : "vec-cs-5",
-            "state" : "stopped",
-            "title" : "중간 요청",
+            "runId" : "vec-cs-5:notice:1",
+            "state" : "completed",
+            "title" : "백그라운드 작업 완료",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "vec-cs-5:notice:1:graph-d298d123ef08ec6c87f4f156f01ba5b1b416bfad03b1d357",
+            "input" : "npm run build",
+            "kind" : "task",
+            "output" : "Build done",
+            "parentId" : "graph-c1136c63aff3d214ca951881ff30f8867f36304a063d557b",
+            "responseRecords" : null,
+            "runId" : "vec-cs-5:notice:1",
+            "state" : "completed",
+            "title" : "Build",
             "usage" : null
           }
         ]

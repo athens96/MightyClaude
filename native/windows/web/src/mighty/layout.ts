@@ -1,5 +1,6 @@
 // The Mighty diagram's layout, ported from Core/MightyGraphLayout.cs (itself the macOS MightyGraphLayout): pure, checked
 // against native/contracts/graph-vectors.json (splitsExecution off) and the Windows rules (splitsExecution on).
+import { newestRequestRun, quietNotice, reopenedWithReply, shownAgents, shownRuns } from './notice';
 import type { GraphBlockSize, MightyGraphRun } from '../store/models';
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -117,7 +118,10 @@ export const isResizable = (kind: string) =>
 
 export const terminal = (state: string) =>
   state === 'completed' || state === 'error' || state === 'failed' || state === 'stopped' || state === 'cancelled' || state === 'interrupted';
-export const finished = (run: MightyGraphRun) => terminal(run.status) && run.agents.every((a) => terminal(a.status));
+/** Ended with every block a view draws for it (shownAgents): background work the request started runs on in the strip. */
+export const finished = (run: MightyGraphRun) => terminal(run.status) && shownAgents(run).every((a) => terminal(a.status));
+/** Has a result card: every finished run but a quiet notice run, and a notice run a later turn answers in again (Core MightyGraphLayout.HasResult). */
+export const hasResult = (run: MightyGraphRun) => (finished(run) && !quietNotice(run)) || reopenedWithReply(run);
 export const runNodeId = (run: MightyGraphRun, suffix: string) => nodeId(run.id, suffix);
 
 export function nodeAt(layout: Layout, x: number, y: number): LayoutNode | undefined {
@@ -125,14 +129,15 @@ export function nodeAt(layout: Layout, x: number, y: number): LayoutNode | undef
 }
 
 export function newestRequestTargetID(layout: Layout, runs: readonly MightyGraphRun[]): string | null {
-  const last = runs[runs.length - 1];
+  // A notice run after it is not a request.
+  const last = newestRequestRun(runs);
   if (!last) return null;
   const work = runNodeId(last, WorkSuffix);
   return !finished(last) && layout.nodes.some((n) => n.id === work) ? work : runNodeId(last, 'request');
 }
 
 export function latestResultID(runs: readonly MightyGraphRun[]): string | null {
-  for (let i = runs.length - 1; i >= 0; i--) if (finished(runs[i] as MightyGraphRun)) return runNodeId(runs[i] as MightyGraphRun, 'result');
+  for (let i = runs.length - 1; i >= 0; i--) if (hasResult(runs[i] as MightyGraphRun)) return runNodeId(runs[i] as MightyGraphRun, 'result');
   return null;
 }
 
@@ -174,7 +179,7 @@ export const resultDragSides = (start: Size, dragged: Size) => ({ horizontal: Ma
 export function filesPanelOpen(runs: readonly MightyGraphRun[], resultFilesRunID: string | null): boolean {
   for (let i = runs.length - 1; i >= 0; i--) {
     const run = runs[i] as MightyGraphRun;
-    if (finished(run)) return resultFilesRunID !== null && run.id === resultFilesRunID && run.status === 'completed';
+    if (hasResult(run)) return resultFilesRunID !== null && run.id === resultFilesRunID && run.status === 'completed';
   }
   return false;
 }
@@ -226,7 +231,9 @@ export interface MakeOptions {
   executions?: readonly { runID: string; key: string }[];
 }
 
-export function makeLayout(runs: readonly MightyGraphRun[], draft: string, running: boolean, expanded: ReadonlySet<string>, options: MakeOptions = {}): Layout {
+export function makeLayout(given: readonly MightyGraphRun[], draft: string, running: boolean, expanded: ReadonlySet<string>, options: MakeOptions = {}): Layout {
+  // The runs as views draw them: a request's background blocks show only in the notice run that reports them (Core MightyGraphLayout.Make).
+  const runs = shownRuns(given);
   const viewport = options.viewport ?? null;
   const zoom = options.zoom ?? null;
   const splitsExecution = options.splitsExecution ?? false;
@@ -260,6 +267,7 @@ export function makeLayout(runs: readonly MightyGraphRun[], draft: string, runni
     const resultID = runNodeId(run, 'result');
     const resSize = sizeOf(resultID, RequestWidth, expanded.has(resultID) ? 440 : 200);
     const runFinished = finished(run);
+    const runResult = hasResult(run);
 
     const visited = new Set<number>();
     const indexes = new Map<string, number>();
@@ -312,7 +320,7 @@ export function makeLayout(runs: readonly MightyGraphRun[], draft: string, runni
     });
 
     const branchWidth = branches.reduce((s, b) => s + b.width, 0) + Math.max(0, branches.length - 1) * SiblingGap;
-    const treeWidth = Math.max(Math.max(mainSize.w, workSize?.w ?? 0), Math.max(branchWidth, runFinished ? resSize.w : 0));
+    const treeWidth = Math.max(Math.max(mainSize.w, workSize?.w ?? 0), Math.max(branchWidth, runResult ? resSize.w : 0));
     const tree: Tree = {
       nodes: [{ id: mainID, kind: 'request', frame: { x: (treeWidth - mainSize.w) / 2, y: 0, w: mainSize.w, h: mainHeight } }],
       edges: [], width: treeWidth, height: mainHeight, top: mainID, leaves: [mainID],
@@ -353,7 +361,7 @@ export function makeLayout(runs: readonly MightyGraphRun[], draft: string, runni
       tree.leaves = [planID];
       tree.height += RowGap + block.h;
     }
-    if (runFinished) {
+    if (runResult) {
       tree.nodes.push({ id: resultID, kind: 'result', frame: { x: (treeWidth - resSize.w) / 2, y: tree.height + RowGap, w: resSize.w, h: resSize.h } });
       tree.edges.push(...tree.leaves.map((l) => ({ source: l, target: resultID, joins: true })));
       tree.leaves = [resultID];
@@ -408,7 +416,7 @@ export function makeLayout(runs: readonly MightyGraphRun[], draft: string, runni
 
   if (resultFilesRunID !== null) {
     const panelRun = runs.find((r) => r.id === resultFilesRunID);
-    if (panelRun && panelRun.status === 'completed' && finished(panelRun)) {
+    if (panelRun && panelRun.status === 'completed' && hasResult(panelRun)) {
       const resultNode = layout.nodes.find((n) => n.kind === 'result' && n.id === runNodeId(panelRun, 'result'));
       if (resultNode) {
         const frame = { x: maxX(resultNode.frame) + 16, y: resultNode.frame.y, w: 320, h: resultNode.frame.h };

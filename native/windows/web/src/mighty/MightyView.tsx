@@ -5,6 +5,7 @@ import type { RunSession } from '../store/models';
 import type { ViewChoice } from '../store/store';
 import { shownInMighty } from '../pending/requests';
 import { nodeId, RequestStep } from './layout';
+import { newestRequestRun } from './notice';
 import { Diagram, type Aim } from './Diagram';
 import { Structure } from './Structure';
 import { Timeline } from './Timeline';
@@ -87,7 +88,7 @@ export function MightyView({ session }: { session: RunSession }) {
     if (!steered || steered.paneId !== session.id || steered.seq === steerSeen.current) return;
     steerSeen.current = steered.seq;
     const runs = session.graphRuns ?? [];
-    const run = runs.find((r) => r.id === steered.runId) ?? runs[runs.length - 1];
+    const run = runs.find((r) => r.id === steered.runId) ?? newestRequestRun(runs);
     if (!run) return;
     const steer = [...run.agents].reverse().find((agent) => agent.kind === 'steer');
     aimAt(steer ? nodeId(run.id, 'agent:' + steer.id) : nodeId(run.id, RequestStep), nodeId(run.id, RequestStep));

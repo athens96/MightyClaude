@@ -325,6 +325,9 @@ public static class MightyGraphBlockModel
         var blocks = new List<MightyGraphBlock>();
         // Laid out with its 실행 blocks (MightyGraphLayout.Make splitsExecution), a request block holds what was asked alone.
         var split = layout.Nodes.Any(n => n.Kind == MightyGraphLayout.WorkKind);
+        // Request numbers: a notice run (BackgroundNoticeRuns) takes none and is titled as one.
+        var ordinals = MightyGraphSupport.RequestOrdinals(runs);
+        string Title(MightyGraphRun run, int runIndex) => run.NoticeRun == true ? BackgroundNoticeRuns.Title : RequestTitle(ordinals[runIndex], providerLabel);
         foreach (var node in layout.Nodes)
         {
             var (runIndex, agentId) = Locate(node, runs);
@@ -337,11 +340,11 @@ public static class MightyGraphBlockModel
                     break;
                 // The request alone, with no status of its own: the 실행 block under it runs and settles (macOS transcriptCard inputOnly).
                 case "request" when run is not null && split:
-                    blocks.Add(new(node.Id, "request", node.Frame, RequestTitle(runIndex + 1, providerLabel), "", run.Input, [], null, "", "none", null));
+                    blocks.Add(new(node.Id, "request", node.Frame, Title(run, runIndex), "", run.Input, [], null, "", "none", null));
                     break;
                 // The main agent's own work for the request: its replies, tool calls, status and tokens.
                 case MightyGraphLayout.WorkKind when run is not null:
-                    blocks.Add(new(node.Id, MightyGraphLayout.WorkKind, node.Frame, ExecutionTitle(runIndex + 1),
+                    blocks.Add(new(node.Id, MightyGraphLayout.WorkKind, node.Frame, BackgroundNoticeRuns.ExecutionTitle(run.NoticeRun == true, ordinals[runIndex]),
                         RunStateLabel(run), "",
                         run.RootEntries.Where(e => e.Kind != "user").ToList(),
                         ModelUsageFormat.BlockCapsule(run.Usage, run.ResponseRecords ?? [], run.NodeModelLabel, catalog, versioned: true),
@@ -350,7 +353,7 @@ public static class MightyGraphBlockModel
                         MightyGraphActivity.Outline(run.Status, animationsEnabled), run.Status));
                     break;
                 case "request" when run is not null:
-                    blocks.Add(new(node.Id, "request", node.Frame, RequestTitle(runIndex + 1, providerLabel),
+                    blocks.Add(new(node.Id, "request", node.Frame, Title(run, runIndex),
                         RunStateLabel(run), run.Input,
                         run.RootEntries.Where(e => e.Kind != "user").ToList(),
                         ModelUsageFormat.BlockCapsule(run.Usage, run.ResponseRecords ?? [], run.NodeModelLabel, catalog, versioned: true),

@@ -83,7 +83,8 @@ internal static class SessionHistoryVerification
         Frame(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "Started ping." } } } });
         Frame(new { type = "result", subtype = "success", is_error = false, result = "Started ping." });
         var waiting = tracker.BuildRun(includeRunning: true)!;
-        Check(waiting.Status == "completed" && MightyGraphSupport.BackgroundWaiting(waiting) == 1 && !MightyGraphLayout.Finished(waiting)
+        // Its result shows as its own turn ends (the background task runs on in the strip), and it says what it waits on.
+        Check(waiting.Status == "completed" && MightyGraphSupport.BackgroundWaiting(waiting) == 1 && MightyGraphLayout.Finished(waiting)
             && MightyGraphBlockModel.RunStateLabel(waiting) == "턴 완료 · 백그라운드 1개 실행 중", "the request reads completed and waits on its task; got " + waiting.Status + " / " + MightyGraphBlockModel.RunStateLabel(waiting));
         Frame(new { type = "user", message = new { content = new[] { new { type = "text", text = notice } } } });
         Frame(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "Ping finished fine." } } } });
@@ -91,12 +92,15 @@ internal static class SessionHistoryVerification
         Frame(new { type = "result", subtype = "success", is_error = false, result = " ", origin = new { kind = "task-notification" } });
         tracker.Finish("completed");
         var live = tracker.BuildRun()!;
+        var notices = tracker.BuildNoticeRuns();
+        Check(!live.Agents.Any(MightyGraphSupport.IsTaskNotice) && notices is [{ NoticeRun: true, Status: "completed", FinalOutput: "Ping finished fine.", Input: "ping · 완료" }],
+            "the notice turn is a run of its own whose result is its answer; an empty notice turn adds nothing");
+        Check(live.FinalOutput == "Started ping." && MightyGraphSupport.BackgroundWaiting(live) == 0 && MightyGraphBlockModel.RunStateLabel(live) == "완료",
+            "the request's result stays its own; got " + live.FinalOutput);
+        // An older save's result that goes on with a notice section: the main block keeps the request's own answer, and the
+        // result's whole text is not copied into it again.
         var expected = "Started ping." + MightyGraphSupport.NoticeSectionMark + "작업 알림 · ping 이후**\n\nPing finished fine.";
-        var reply = live.Agents.Single(a => MightyGraphSupport.IsTaskNotice(a));
-        Check(reply.Status == "completed" && reply.Entries.Any(e => e.Kind == "assistant" && e.Text == "Ping finished fine."), "the notice and its reply are recorded after the turn ended");
-        Check(live.FinalOutput == expected && MightyGraphSupport.BackgroundWaiting(live) == 0 && MightyGraphBlockModel.RunStateLabel(live) == "완료",
-            "the result is the request's answer, then the notice turn's under its line; an empty notice turn adds nothing; got " + live.FinalOutput);
-        // The main block keeps the request's own answer; the result's whole text is not copied into it again.
+        live.FinalOutput = expected;
         live.RootEntries = [new("a1", "assistant", "Started ping.", Stamp(Base)), new("a2", "assistant", "Ping finished fine.", Stamp(Base))];
         MightyGraphSupport.RefreshResult(live);
         Check(live.ResultEntries.Single().Text == expected && live.RootEntries.Count == 2, "the result block shows the whole result and the main block stays as it was");
@@ -118,7 +122,8 @@ internal static class SessionHistoryVerification
             ClaudeAnswer("Ping finished fine.", at.AddSeconds(31), "a3"),
         ]);
         var replayed = SessionHistory.Load(new SessionHistoryRequest("claude", id, fixture.Workspace) { Home = fixture.Home }).Runs;
-        Check(replayed.Count == 1 && replayed[0].FinalOutput == expected, "a replayed record builds the live result; got " + string.Join(" | ", replayed.Select(r => r.Input + " => " + r.FinalOutput)));
+        Check(replayed.Count == 2 && replayed[0].FinalOutput == "Started ping." && replayed[1] is { NoticeRun: true, FinalOutput: "Ping finished fine." },
+            "a replayed record builds the live runs; got " + string.Join(" | ", replayed.Select(r => r.Input + " => " + r.FinalOutput)));
         return Task.CompletedTask;
     }
 

@@ -4,8 +4,8 @@ using MightyClaude.Core;
 /// <summary>
 /// The file the macOS AgentNoticeTests read too (native/contracts/fixtures/agent-notices.json): a background sub-agent's
 /// <c>&lt;task-notification&gt;</c> and final report (its hand-back) settle its block the way a background command's
-/// notification does, with one 작업 알림 per agent, and the turn a hand-back opens is a notice turn, not the request's. A
-/// message the agent sends while still running only joins its block's log.
+/// notification does, and the turn either opens is a notice turn with a run of its own (<see cref="BackgroundNoticeRuns"/>),
+/// not the request's. A message the agent sends while still running only joins its block's log.
 /// </summary>
 internal static class AgentNoticeVerification
 {
@@ -31,7 +31,8 @@ internal static class AgentNoticeVerification
     {
         HandBacksParseAsTheFixtureSays();
         NoticeResultsAreTheFixtures();
-        StreamsSettleTheBlockWithOneNoticePerAgent();
+        StreamsSettleTheBlockAndOpenNoticeRuns();
+        AMixedTurnLeavesTheEarlierRunInItsOwnState();
         return Task.CompletedTask;
     }
 
@@ -58,17 +59,34 @@ internal static class AgentNoticeVerification
             Same(ClaudeStream.IsNotificationResult(MetadataJson.Property(item, "event")), MetadataJson.Flag(item, "expect"), (item.Text("name") ?? "") + ": a notice turn's result");
     }
 
-    private static void StreamsSettleTheBlockWithOneNoticePerAgent()
+    /// <summary>The notice runs a stream opened, in the order they were numbered: each run's main and its copies by id.</summary>
+    private static List<(string Id, ExecutionGraphNode? Main, List<ExecutionGraphNode> Copies)> NoticeRuns(Dictionary<string, ExecutionGraphNode> latest)
+    {
+        static int Number(string id) => int.TryParse(id[(id.LastIndexOf(BackgroundNoticeRuns.Marker, StringComparison.Ordinal) + BackgroundNoticeRuns.Marker.Length)..], out var n) ? n : 0;
+        return latest.Values.GroupBy(n => n.RunId).Where(g => BackgroundNoticeRuns.IsNoticeRun(g.Key)).OrderBy(g => Number(g.Key))
+            .Select(g => (g.Key, g.FirstOrDefault(n => n.Kind == "main"), g.Where(n => n.Kind != "main").OrderBy(n => n.Id, StringComparer.Ordinal).ToList())).ToList();
+    }
+
+    /// <summary>Runs <paramref name="action"/> with the app's words in Korean: the fixture's notice run inputs are read in Korean.</summary>
+    private static void InKorean(Action action)
+    {
+        var saved = Locale.LanguagePreference;
+        try { Locale.LanguagePreference = "ko"; Locale.ResetCache(); action(); }
+        finally { Locale.LanguagePreference = saved; Locale.ResetCache(); }
+    }
+
+    private static void StreamsSettleTheBlockAndOpenNoticeRuns() => InKorean(() =>
     {
         var cases = Items(Fixture.Value, "streams");
-        Check(cases.Count >= 13, "the fixture has every stream case; got " + cases.Count);
+        Check(cases.Count >= 25, "the fixture has every stream case; got " + cases.Count);
         foreach (var item in cases)
         {
             var name = item.Text("name") ?? "";
             const string runID = "agent-notices";
             var emitted = new List<ExecutionGraphNode>();
             var tracker = new ExecutionGraphTracker(runID, "Do the request", "claude", null, emitted.Add);
-            foreach (var value in Items(item, "events")) tracker.Consume(value);
+            var events = Items(item, "events");
+            foreach (var value in events) tracker.Consume(value);
             var expect = MetadataJson.Property(item, "expect");
             var tool = item.Text("agentToolUseId") ?? throw new InvalidOperationException(name + ": no agentToolUseId");
             var latest = new Dictionary<string, ExecutionGraphNode>();
@@ -97,15 +115,85 @@ internal static class AgentNoticeVerification
             var main = latest[ExecutionGraphSupport.MainNodeID(runID)];
             foreach (var part in Items(expect, "mainOutputContains").Select(e => e.GetString() ?? ""))
                 Check(main.Output?.Contains(part, StringComparison.Ordinal) == true, name + ": the result holds '" + part + "'; got '" + main.Output + "'");
-            // A notice turn's answer follows in the result under the line its notices earned (a locale key, with the titles).
+            // A turn that opened no notice run (a running agent's own message) still follows in the result under its line.
             foreach (var section in Items(expect, "mainNoticeSections"))
             {
                 var header = Locale.Get(section.Text("header") ?? "", section.Text("title") is { } title ? new Dictionary<string, string> { ["title"] = title } : null);
                 var part = MightyGraphSupport.NoticeSectionMark + header + "**\n\n" + (section.Text("answer") ?? "");
                 Check(main.Output?.Contains(part, StringComparison.Ordinal) == true, name + ": the result holds '" + part + "'; got '" + main.Output + "'");
             }
+
+            // Each notice turn is a run of its own: "<run>:notice:<n>", n from 1.
+            var runs = NoticeRuns(latest);
+            SameList(runs.Select(r => r.Id), runs.Select((_, index) => BackgroundNoticeRuns.RunID(runID, index + 1)), name + ": run ids");
+            if (expect.TryGetProperty("noticeRuns", out var count) && count.ValueKind == JsonValueKind.Number) Same(runs.Count, count.GetInt32(), name + ": notice runs");
+            if (expect.TryGetProperty("noticeRunChildren", out var children) && children.ValueKind == JsonValueKind.Array)
+                SameList(runs.Select(r => r.Copies.Count), children.EnumerateArray().Select(c => c.GetInt32()), name + ": copies");
+            if (expect.TryGetProperty("noticeRunOutput", out var output))
+                Same(runs.FirstOrDefault().Main?.Output, output.ValueKind == JsonValueKind.String ? output.GetString() : null, name + ": notice run output");
+            if (expect.Text("noticeRunInput") is { } input) Same(runs.FirstOrDefault().Main?.Input, input, name + ": notice run input");
+            var endsInTurn = events.Count == 0 || events[^1].Text("type") != "result";
+            foreach (var (id, noticeMain, copies) in runs)
+            {
+                var notice = noticeMain ?? throw new InvalidOperationException(name + ": " + id + " has no main");
+                Check(notice.Title == Locale.Get("graph.background.noticeRun") && notice.ParentId is null, name + ": " + id + " main");
+                // A run with Claude's answer is complete; only a stream that ends inside a turn answering in it again leaves it running.
+                // The request's result never holds that answer.
+                if (notice.Output is { } answer)
+                {
+                    Check(notice.State == "completed" || endsInTurn && notice.State == "running", name + ": " + id + " state " + notice.State);
+                    Check(main.Output?.Contains(answer, StringComparison.Ordinal) != true, name + ": " + id + " answer in the request's result");
+                }
+                foreach (var copy in copies)
+                {
+                    var source = copy.SourceBlockId is { } sourceId ? latest.GetValueOrDefault(sourceId) : null;
+                    Check(source is not null, name + ": " + copy.Id + " source");
+                    Check(copy.Id == id + ":" + source!.Id && copy.ParentId == notice.Id && copy.Background == true, name + ": " + copy.Id);
+                }
+            }
+            // A block's latest copy is the block as it ended: kind, title, request, state, result and output file.
+            foreach (var source in runs.SelectMany(r => r.Copies).Select(c => c.SourceBlockId).OfType<string>().Distinct())
+            {
+                var copy = runs.Last(r => r.Copies.Any(c => c.SourceBlockId == source)).Copies.First(c => c.SourceBlockId == source);
+                var original = latest[source];
+                Check(copy.Kind == original.Kind && copy.Title == original.Title && copy.Input == original.Input, name + ": " + copy.Id + " copy");
+                Check(copy.State == original.State && copy.Output == original.Output && copy.OutputFile == original.OutputFile, name + ": " + copy.Id + " copy");
+            }
         }
-    }
+    });
+
+    /// <summary>A turn that would answer in an earlier notice run but brings new work opens a run for that work; the earlier run ends as it
+    /// was before the turn, an error included (macOS AgentNoticeTests.aMixedTurnLeavesTheEarlierRunInItsOwnState).</summary>
+    private static void AMixedTurnLeavesTheEarlierRunInItsOwnState() => InKorean(() =>
+    {
+        var mixed = Items(Fixture.Value, "streams").First(c => c.Text("name")?.StartsWith("notice runs: a turn that also brings a new block", StringComparison.Ordinal) == true);
+        var events = Items(mixed, "events").Select(e => System.Text.Json.Nodes.JsonNode.Parse(e.GetRawText())!).ToList();
+        // The first notice turn fails; stop after the mixed turn's answer.
+        var first = events.FindIndex(e => (string?)e["type"] == "result" && (string?)e["result"] == "The build passed.");
+        var mixedEnd = events.FindIndex(e => (string?)e["type"] == "result" && (string?)e["result"] == "The checks passed.");
+        Check(first >= 0 && mixedEnd > first, "the mixed case has both answers");
+        events[first]!["is_error"] = true;
+        var nodes = new List<ExecutionGraphNode>();
+        bool afterFirst = false, reopened = false;
+        var earlier = ExecutionGraphSupport.MainNodeID("mixed:notice:1");
+        var tracker = new ExecutionGraphTracker("mixed", "Do the request", "claude", null, node =>
+        {
+            nodes.Add(node);
+            if (afterFirst && node.Id == earlier && node.State == "running") reopened = true;
+        });
+        for (var index = 0; index <= mixedEnd; index++)
+        {
+            tracker.Consume(JsonSerializer.SerializeToElement(events[index]));
+            if (index == first) afterFirst = true;
+        }
+        var latest = new Dictionary<string, ExecutionGraphNode>();
+        foreach (var node in nodes) latest[node.Id] = node;
+        var runs = NoticeRuns(latest);
+        Same(runs.Count, 2, "a mixed turn opens a second run");
+        Check(reopened, "the turn about the copied build first answers in its run");
+        Check(runs[0].Main is { State: "error", Output: "The build passed." }, "the earlier run ends as it was: " + runs[0].Main?.State + " / " + runs[0].Main?.Output);
+        Check(runs[1].Main is { State: "completed", Output: "The checks passed." }, "the new run has the mixed turn's answer");
+    });
 
     // ── history ─────────────────────────────────────────────────────────────
 
@@ -133,7 +221,7 @@ internal static class AgentNoticeVerification
     {
         type = "assistant", uuid, timestamp = Stamp(at), message = new { id = "m-" + uuid, role = "assistant", content = new[] { new { type = "text", text } } },
     };
-    private static MightyGraphRun Replay(params object[] lines)
+    private static List<MightyGraphRun> Replay(params object[] lines)
     {
         var root = Path.Combine(Path.GetTempPath(), "mc-agent-notices-" + Guid.NewGuid().ToString("N"));
         try
@@ -145,7 +233,7 @@ internal static class AgentNoticeVerification
             const string id = "5b0c1d2e-3333-4444-8555-666677778888";
             File.WriteAllText(Path.Combine(folder, id + ".jsonl"), string.Join("\n", lines.Select(line => JsonSerializer.Serialize(line))) + "\n");
             var runs = SessionHistory.Load(new SessionHistoryRequest("claude", id, workspace) { Home = home }).Runs;
-            return runs.FirstOrDefault() ?? throw new InvalidOperationException("the record replays no request");
+            return runs.Count > 0 ? runs : throw new InvalidOperationException("the record replays no request");
         }
         finally { try { Directory.Delete(root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
@@ -154,18 +242,18 @@ internal static class AgentNoticeVerification
         var agent = run.Agents.FirstOrDefault(a => a.Kind is null) ?? throw new InvalidOperationException(why + ": no agent block");
         Same(agent.Status, "completed", why + ": the agent's state");
         Same(agent.Entries.LastOrDefault(e => e.Id.EndsWith("-answer", StringComparison.Ordinal))?.Text, Report, why + ": the agent's result is its report");
-        Same(run.Agents.Count(a => MightyGraphSupport.IsTaskNotice(a)), 1, why + ": one 작업 알림");
+        Same(run.Agents.Count(a => MightyGraphSupport.IsTaskNotice(a)), 0, why + ": no 작업 알림");
     }
 
     /// <summary>
-    /// A hand-back recorded as a meta line opens a notice turn, as live: the block takes the report, one 작업 알림, and that
-    /// turn's answer follows the request's in the result (macOS AgentNoticeTests.aRecordedHandBackTurnSettlesTheAgentAsLive).
+    /// A hand-back recorded as a meta line opens a notice turn, as live: the block takes the report, and that turn's answer is the result
+    /// of a notice run of its own; the notification after it answers in the same run (macOS AgentNoticeTests.aRecordedHandBackTurnSettlesTheAgentAsLive).
     /// </summary>
     internal static Task ARecordedHandBackTurnSettlesTheAgentAsLive()
     {
         const string agent = "a1b2c3d4e5f6a7b8c";
         const string notice = "<task-notification>\n<task-id>" + agent + "</task-id>\n<tool-use-id>toolu_FAKEagent0001</tool-use-id>\n<status>completed</status>\n<summary>Agent \"Survey the docs\" finished</summary>\n</task-notification>";
-        var run = Replay(
+        var runs = Replay(
             User("u1", 0, "survey the docs"),
             AgentCall("docs-surveyor"),
             Launch(agent),
@@ -175,17 +263,25 @@ internal static class AgentNoticeVerification
             Answer("a3", "The survey found one page.", 31),
             User("n1", 32, notice, ("origin", new { kind = "task-notification" })),
             Answer("a4", "Already handled.", 33));
+        Same(runs.Count, 2, "the request and one notice run");
+        var run = runs[0];
         CheckSettled(run, "a recorded hand-back turn");
-        Check(run.FinalOutput?.StartsWith("Started the survey.", StringComparison.Ordinal) == true && run.FinalOutput.Contains("The survey found one page.", StringComparison.Ordinal),
-            "the hand-back turn's answer follows the request's; got '" + run.FinalOutput + "'");
+        Same(run.FinalOutput, "Started the survey.", "the request keeps its own answer");
+        Check(run.NoticeRun is null, "the request is no notice run");
+        var noticeRun = runs[1];
+        Check(noticeRun.NoticeRun == true && noticeRun.Status == "completed", "the hand-back turn is a notice run of its own");
+        Same(noticeRun.FinalOutput, "The survey found one page.\n\nAlready handled.", "the notification after it answers in the same run");
+        var copy = noticeRun.Agents.FirstOrDefault() ?? throw new InvalidOperationException("the notice run has no copy");
+        Check(copy.SourceBlockId == run.Agents.First(a => a.Kind is null).Id && copy.Background == true, "the copy names its block");
+        Same(copy.Entries.LastOrDefault(e => e.Id.EndsWith("-answer", StringComparison.Ordinal))?.Text, Report, "the copy's result is the report");
         return Task.CompletedTask;
     }
 
-    /// <summary>A hand-back taken into the running turn is recorded as a queued command; it settles the block by the call's name
-    /// (macOS AgentNoticeTests.aQueuedHandBackSettlesTheAgentByItsName).</summary>
+    /// <summary>A hand-back taken into the running turn is recorded as a queued command; it settles the block by the call's name, and its
+    /// copy goes to a finished notice run without a result (macOS AgentNoticeTests.aQueuedHandBackSettlesTheAgentByItsName).</summary>
     internal static Task AQueuedHandBackSettlesTheAgentByItsName()
     {
-        var run = Replay(
+        var runs = Replay(
             User("u1", 0, "survey the docs"),
             AgentCall("docs-surveyor"),
             Launch("a2b3c4d5e6f7a8b9c"),
@@ -198,8 +294,11 @@ internal static class AgentNoticeVerification
                 },
             },
             Answer("a2", "The survey is done.", 11));
+        Same(runs.Count, 2, "the request and one notice run");
+        var run = runs[0];
         CheckSettled(run, "a queued hand-back");
         Same(run.FinalOutput, "The survey is done.", "the request's result");
+        Check(runs[1] is { NoticeRun: true, Status: "completed", FinalOutput: null, Agents.Count: 1 }, "the absorbed notice run is finished, without a result");
         return Task.CompletedTask;
     }
 }

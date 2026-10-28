@@ -23,6 +23,8 @@ export interface MightyBlockCopy {
   outputTail?: string[];
   /** Claude's reply to a task's notice, when that notice alone opened its turn. */
   noticeReply?: string;
+  /** A notice run's request block (notice.ts): titled 백그라운드 작업 완료, with the task's terminal symbol and no provider mark. */
+  notice?: boolean;
 }
 
 export interface MightyFile { path: string; line?: number }
@@ -102,6 +104,8 @@ export interface TimelineGroup {
   result?: string;
   resultFolds: boolean;
   resultCaption?: string;
+  /** Claude's reply to finished background work (notice.ts), not a request: it takes no request number. */
+  noticeRun?: boolean;
 }
 
 export interface StructureCard {
@@ -141,7 +145,9 @@ export interface StructureCard {
 export interface StructureActivity { kind: string; state: string; text: string }
 
 export interface StructureColumn { id: string; title: string; step: string; stepWord: string; count: number; cards: StructureCard[]; /** The step's state colour (MightyStructure.Tone.OfColumn), none while it is to come. */ tone?: string | null }
-export interface StructureBoard { id: string; kind: string; ordinal: number; headline?: string; status: string; statusWord: string; tone: string; runIds: string[]; columns: StructureColumn[]; styleName?: string }
+export interface StructureBoard { id: string; kind: string; ordinal: number; headline?: string; status: string; statusWord: string; tone: string; runIds: string[]; columns: StructureColumn[]; styleName?: string;
+  /** Only notice runs taken into a running turn (notice.ts quietNotice): the view never moves on to it by itself. */
+  quiet?: boolean }
 
 /** host → web: a pane's Mighty model, only what changed: blocks by id, and the other parts whole when they changed. */
 export interface MightyMessage {

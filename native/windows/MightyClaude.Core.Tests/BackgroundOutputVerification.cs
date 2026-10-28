@@ -84,20 +84,23 @@ internal static class BackgroundOutputVerification
         var foreground = new MightyGraphAgent { Id = "graph-front", Title = "Look", Input = "Look", Status = "completed" };
         var lines = Enumerable.Range(1, 8).Select(index => "step " + index).ToList();
         var tails = new Dictionary<string, IReadOnlyList<string>> { ["graph-task"] = lines, ["graph-agent"] = ["not a run"] };
-        var blocks = MobileMightySupport.Blocks(RunWith(task, agent, foreground), 1, tails);
+        // Background blocks travel in the notice run that reports them (BackgroundNoticeRuns); a request leaves them out.
+        MightyGraphRun Notice(params MightyGraphAgent[] agents) { var run = RunWith(agents); run.NoticeRun = true; return run; }
+        Check(MobileMightySupport.Blocks(RunWith(task, agent, foreground), 1, tails).Select(b => b.Id).SequenceEqual(["run-1:main", "graph-front"]), "a request's background blocks stay off the phone");
+        var blocks = MobileMightySupport.Blocks(Notice(task, agent, foreground), 1, tails);
         var run = blocks.Single(b => b.Id == "graph-task");
         Check(run.Background == true && run.NoticeReply == "The build passed.", "a task block carries background and its notice reply");
         Check(run.OutputTail is { } tail && tail.SequenceEqual(lines.TakeLast(BackgroundOutputTail.MaxLines)), "a task block carries at most the last six lines");
         var sub = blocks.Single(b => b.Id == "graph-agent");
         Check(sub.Background == true && sub.OutputTail is null && sub.NoticeReply is null, "a background sub-agent says so, and carries no lines");
         Check(blocks.Single(b => b.Id == "graph-front") is { Background: null, OutputTail: null, NoticeReply: null }, "a foreground agent carries none of it");
-        Check(MobileMightySupport.Blocks(RunWith(task), 1).Single(b => b.Id == "graph-task").OutputTail is null, "no lines read: no outputTail");
-        var json = JsonSerializer.Serialize(MobileMightySupport.Runs([RunWith(task, agent, foreground)], outputTails: tails), Wire.Json);
+        Check(MobileMightySupport.Blocks(Notice(task), 1).Single(b => b.Id == "graph-task").OutputTail is null, "no lines read: no outputTail");
+        var json = JsonSerializer.Serialize(MobileMightySupport.Runs([Notice(task, agent, foreground)], outputTails: tails), Wire.Json);
         Check(!json.Contains("outputFile", StringComparison.Ordinal) && !json.Contains(file, StringComparison.Ordinal), "the output file never reaches the phone: " + json);
         Check(json.Contains("\"outputTail\"", StringComparison.Ordinal) && json.Contains("\"noticeReply\"", StringComparison.Ordinal) && json.Contains("\"background\":true", StringComparison.Ordinal), "the wire names the fields: " + json);
 
         // The structure node the phone draws carries the same, and no file either.
-        var item = MobileStructure.ItemFor(MightyStructure.ItemFor(RunWith(task, agent), 0), null, null, tails);
+        var item = MobileStructure.ItemFor(MightyStructure.ItemFor(Notice(task, agent), 0), null, null, tails);
         var nodes = item.Clusters.SelectMany(cluster => cluster.Nodes).ToList();
         var node = nodes.Single(n => n.Id == "graph-task");
         Check(node.Background == true && node.NoticeReply == "The build passed." && node.OutputTail is { Count: BackgroundOutputTail.MaxLines }, "a task node carries background, its lines and its reply");

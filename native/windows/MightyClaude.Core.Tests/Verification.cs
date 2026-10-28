@@ -210,6 +210,10 @@ internal static class Verification
         await Test("agent notices: hand-backs, notice results and background sub-agent streams follow native/contracts/fixtures/agent-notices.json", AgentNoticeVerification.TheSharedCasesHold);
         await Test("agent notices: a recorded hand-back turn settles the agent as live", AgentNoticeVerification.ARecordedHandBackTurnSettlesTheAgentAsLive);
         await Test("agent notices: a queued hand-back settles the agent by its name", AgentNoticeVerification.AQueuedHandBackSettlesTheAgentByItsName);
+        await Test("background notice runs: ids, the views' filter and the saved flags", BackgroundNoticeRunsVerification.RunIDsAndTheFilter);
+        await Test("background notice runs: the newest request, the followed run, numbers, result cards, 기록 and 파이프라인", BackgroundNoticeRunsVerification.TheRunRulesAndTheViews);
+        await Test("background notice runs: the pane keeps the notice run apart with its own lines, and the phone and the strip get theirs", BackgroundNoticeRunsVerification.ThePaneKeepsTheNoticeRunApart);
+        await Test("background notice runs: an absorbed or ended notice run leaves the request its place", BackgroundNoticeRunsVerification.AbsorbedAndEndedNoticeRunsLeaveTheRequestItsPlace);
         await Test("MightyTimelineVerification TheRequestRowHoldsTheInputAndTheExecutionRowTheWork", MightyTimelineVerification.TheRequestRowHoldsTheInputAndTheExecutionRowTheWork);
         await Test("MightyTimelineVerification StatusRailsCountsAndDurationStayHonest", MightyTimelineVerification.StatusRailsCountsAndDurationStayHonest);
         await Test("mighty execution block: a stable node id", MightyGraphExecutionBlockVerification.TheExecutionBlockHasAStableNodeID);

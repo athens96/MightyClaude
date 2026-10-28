@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { Icon } from '../icons/Icon';
+import { backgroundRowOpens } from '../mighty/background';
 import { useServices, useStoreState } from '../app/context';
 import { Markdown } from '../conversation/MarkdownView';
 import { cardKey, forwardIndex, restoreIndex } from './keys';
@@ -233,6 +234,13 @@ function PlanHistory({ card }: { card: PlanHistoryCard }) {
 
 function Background({ card, call }: { card: BackgroundCard; call: Call }) {
   const { t } = useServices();
+  // The rows opened to their command and output lines, by task id: this card's own state, so opening one redraws only the strip.
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  const flip = (id: string) => setOpened((current) => {
+    const next = new Set(current);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
   return (
     <div className="card-strip" data-card="background">
       <div className="card-strip-line">
@@ -245,14 +253,34 @@ function Background({ card, call }: { card: BackgroundCard; call: Call }) {
       </div>
       {card.open && (
         <div className="card-strip-list">
-          {card.tasks.map((task, index) => (
-            <div className="background-task" key={index} title={task.text + ' · ' + task.detail}>
-              <span className={'background-dot status-' + task.status} aria-hidden="true" />
-              <span className="background-text">{task.text}</span>
-              <span className="background-detail">{task.detail}</span>
-              {task.tail && <span className="background-tail" data-testid="background-tail">{task.tail}</span>}
-            </div>
-          ))}
+          {card.tasks.map((task, index) => {
+            const opens = task.id !== undefined && backgroundRowOpens(task);
+            const open = opens && opened.has(task.id!);
+            const row = (
+              <>
+                <span className={'background-dot status-' + task.status} aria-hidden="true" />
+                <span className="background-text">{task.text}</span>
+                <span className="background-detail">{task.detail}</span>
+                {opens && <Icon name={open ? 'chevron-down' : 'chevron-right'} size={10} weight={1.75} />}
+                {open ? (
+                  <span className="background-more" data-testid="background-more">
+                    {task.command && <span className="background-command" data-testid="background-command">{task.command}</span>}
+                    {(task.tailLines ?? []).map((line, at) => <span className="background-tail" key={at}>{line}</span>)}
+                  </span>
+                ) : task.tail && <span className="background-tail" data-testid="background-tail">{task.tail}</span>}
+              </>
+            );
+            return opens ? (
+              <div className="background-task opens" key={task.id ?? index} role="button" tabIndex={0} aria-expanded={open} title={task.text + ' · ' + task.detail}
+                aria-description={t(open ? 'graph.block.collapse' : 'graph.block.expand')}
+                onClick={(event) => { if (!window.getSelection()?.toString()) { event.stopPropagation(); flip(task.id!); } }}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); flip(task.id!); } }}>
+                {row}
+              </div>
+            ) : (
+              <div className="background-task" key={task.id ?? index} title={task.text + ' · ' + task.detail}>{row}</div>
+            );
+          })}
         </div>
       )}
     </div>

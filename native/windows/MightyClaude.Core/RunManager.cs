@@ -217,6 +217,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 ReadChildren(true);
                 tracker?.Finish(state);
                 if (tracker?.BuildRun() is { } graphRun) emit(new(request.SessionId, "graph_run", GraphRun: graphRun));
+                // Each notice run its background work opened (BackgroundNoticeRuns) is a run of its own.
+                foreach (var notice in tracker?.TakeNoticeRuns() ?? []) emit(new(request.SessionId, "graph_run", GraphRun: notice));
                 lock (run.NodeGate) { run.Finished = true; emit(RunEvent.State(request.SessionId, state, state == "error" && run.AuthenticationFailure ? "authentication" : null)); }
             }
         }
@@ -227,7 +229,11 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             {
                 if (run.Finalizing || run.Finished) return false;
                 if (readChildren) ReadChildren(false);
-                if (Interlocked.Exchange(ref graphDirty, 0) != 0 && tracker?.BuildRun(includeRunning: true) is { } live) emit(new(request.SessionId, "graph_run", GraphRun: live));
+                if (Interlocked.Exchange(ref graphDirty, 0) != 0 && tracker?.BuildRun(includeRunning: true) is { } live)
+                {
+                    emit(new(request.SessionId, "graph_run", GraphRun: live));
+                    foreach (var notice in tracker.TakeNoticeRuns(includeRunning: true)) emit(new(request.SessionId, "graph_run", GraphRun: notice));
+                }
                 return true;
             }
         }
@@ -338,7 +344,10 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     using var doc = System.Text.Json.JsonDocument.Parse(line); var frame = doc.RootElement;
                     shown = request.Provider == "claude" ? ClaudeStream.PresentFailure(frame) : null;
                     using var presented = shown is null ? null : System.Text.Json.JsonDocument.Parse(shown);
+                    var notices = tracker?.NoticeRevision;
                     tracker?.Consume(presented?.RootElement ?? frame);
+                    // A notice turn's run (BackgroundNoticeRuns) reaches the pane before the turn's lines, which it then takes.
+                    if (tracker is not null && tracker.NoticeRevision != notices) PublishGraph(false);
                     if (request.Provider == "claude")
                     {
                         ReadPlanMode(frame);

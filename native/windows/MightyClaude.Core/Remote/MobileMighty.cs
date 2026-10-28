@@ -32,8 +32,25 @@ public static class MobileWire
 /// <param name="NoticeReply">Claude's reply to the task's notice, bounded like <c>Output</c>.</param>
 public sealed record MobileBlock(string Id, string Kind, string Title, string Status, string? Summary = null, string? Output = null, double? DurationMs = null, string? NodeModelLabel = null, IReadOnlyList<string>? Activity = null,
     bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null);
-/// <summary>One request of the pane. <c>Result</c> is carried only by the newest run once it has settled.</summary>
-public sealed record MobileMightyRun(string Id, string Input, string? Title, string Status, IReadOnlyList<MobileBlock> Blocks, string? Result = null);
+/// <summary>One request of the pane. <c>Result</c> is carried only by the newest request and the notice runs after it once each has
+/// settled. <c>NoticeRun</c> is <c>true</c> for Claude's reply to finished background work (<see cref="MightyGraphRun.NoticeRun"/>): not a
+/// request, so it takes no request number; its <c>main</c> block is titled as such. Absent otherwise.</summary>
+public sealed record MobileMightyRun(string Id, string Input, string? Title, string Status, IReadOnlyList<MobileBlock> Blocks, string? Result = null, bool? NoticeRun = null);
+
+/// <summary>
+/// One background task still running in a pane (the detail's <c>backgroundWork</c>): a row of the background strip. Its output file's
+/// path never travels; only the last lines the host read of it do (M/MightyCore/Remote/MobileRemoteModels.swift MobileBackgroundWork).
+/// </summary>
+/// <param name="Kind">"agent" (a background sub-agent) or "run" (a background command).</param>
+/// <param name="Status">Always "running": ended work is in the notice run's diagram.</param>
+/// <param name="StartedAt">ISO 8601, as the CLI reported the start.</param>
+/// <param name="Command">The command a run runs, or the first line of a sub-agent's prompt.</param>
+/// <param name="OutputTail">A run's last output lines (at most 6).</param>
+public sealed record MobileBackgroundWork(string Id, string Kind, string Title, string Status, string StartedAt, string? Command = null, IReadOnlyList<string>? OutputTail = null)
+{
+    public const int MaximumTitle = 1_000;
+    public const int MaximumCommand = 2_000;
+}
 
 /// <summary>
 /// The Mighty graph as a phone reads it (M/MightyCore/Remote/MobileRemoteSupport.swift:190-384). Every status that reaches
@@ -90,7 +107,8 @@ public static class MobileMightySupport
     private static string? Answer(IReadOnlyList<LogEntry> entries) => entries.LastOrDefault(e => e.Kind == "assistant" && e.Text.Length > 0)?.Text;
 
     /// <summary>
-    /// The blocks of one run: the request itself, then its children in the order the graph recorded them.
+    /// The blocks of one run: the request itself, then its children in the order the graph recorded them. Background blocks
+    /// travel only in a notice run (<see cref="BackgroundNoticeRuns.ShownAgents"/>), whose main block is titled as one.
     /// <paramref name="outputTails"/>: a background run's last output lines by block id, held in host memory only; the output
     /// file's path never reaches the wire.
     /// </summary>
@@ -99,10 +117,10 @@ public static class MobileMightySupport
         var main = Status(run.Status);
         var result = new List<MobileBlock>
         {
-            new(run.Id + ":main", "main", Locale.Get("remote.block.request", new Dictionary<string, string> { ["ordinal"] = ordinal.ToString(CultureInfo.InvariantCulture) }), main,
+            new(run.Id + ":main", "main", run.NoticeRun == true ? BackgroundNoticeRuns.Title : Locale.Get("remote.block.request", new Dictionary<string, string> { ["ordinal"] = ordinal.ToString(CultureInfo.InvariantCulture) }), main,
                 Summary(run.Input), Output(run.FinalOutput), Duration(run.RootEntries, main), run.NodeModelLabel, Activity(run.RootEntries, main)),
         };
-        foreach (var agent in run.Agents)
+        foreach (var agent in BackgroundNoticeRuns.ShownAgents(run))
         {
             var state = Status(agent.Status);
             result.Add(new(agent.Id, MightyGraphSupport.BlockKind(agent), MightyGraphSupport.BlockTitle(agent), state, Summary(agent.Input), Output(Answer(agent.Entries)), Duration(agent.Entries, state), Activity: Activity(agent.Entries, state),
@@ -119,17 +137,28 @@ public static class MobileMightySupport
 
     /// <summary>
     /// The pane's newest runs, oldest first. <paramref name="title"/> is the guided style's own name for a request; only the
-    /// newest run carries its full result, and only once it has settled.
+    /// newest request and the notice runs after it carry their full result, each once it has settled. Requests are numbered with
+    /// <see cref="MightyGraphSupport.RequestOrdinals"/>: a notice run takes none.
     /// </summary>
     public static IReadOnlyList<MobileMightyRun> Runs(IReadOnlyList<MightyGraphRun> values, Func<string, string?>? title = null, IReadOnlyDictionary<string, IReadOnlyList<string>>? outputTails = null)
     {
         var offset = Math.Max(0, values.Count - MobileWire.MightyRuns); var result = new List<MobileMightyRun>();
+        var ordinals = MightyGraphSupport.RequestOrdinals(values); var carried = FirstCarried(values, offset);
         for (var index = offset; index < values.Count; index++)
         {
-            var run = values[index]; var state = Status(run.Status); var newest = index == values.Count - 1 && Settled(state);
-            result.Add(new(run.Id, ActivitySupport.Clean(run.Input, MobileWire.MaximumText), title?.Invoke(run.Input), state, Blocks(run, index + 1, outputTails), newest ? Output(run.FinalOutput, MobileWire.MaximumRunResult) : null));
+            var run = values[index]; var state = Status(run.Status); var notice = run.NoticeRun == true;
+            result.Add(new(run.Id, ActivitySupport.Clean(run.Input, MobileWire.MaximumText), notice ? null : title?.Invoke(run.Input), state, Blocks(run, ordinals[index], outputTails),
+                index >= carried && Settled(state) ? Output(run.FinalOutput, MobileWire.MaximumRunResult) : null, notice ? true : null));
         }
         return result;
+    }
+
+    /// <summary>The first run of the window from <paramref name="offset"/> that carries its result once settled: the newest request, after
+    /// which only notice runs (Claude's replies to its background work) follow; the last run when the window holds no request.</summary>
+    private static int FirstCarried(IReadOnlyList<MightyGraphRun> values, int offset)
+    {
+        for (var index = values.Count - 1; index >= offset; index--) if (values[index].NoticeRun != true) return index;
+        return values.Count - 1;
     }
 
     /// <summary>The runs the payload is made from: the saved graph, or the requests grouped out of the transcript of a pane that has none.</summary>
@@ -173,7 +202,9 @@ public static class MobileMightySupport
     {
         // The output lines of a background run are hashed beside this by the host (they live in its memory, not in the runs).
         var hash = new HashCode(); var offset = Math.Max(0, values.Count - MobileWire.MightyRuns);
-        if (values.Count > 0 && Settled(Status(values[^1].Status))) hash.Add(values[^1].FinalOutput?.Length);
+        // The runs Runs gives their result: the newest request and the notice runs after it.
+        for (var index = FirstCarried(values, offset); index >= 0 && index < values.Count; index++)
+            if (Settled(Status(values[index].Status))) hash.Add(values[index].FinalOutput?.Length);
         for (var index = offset; index < values.Count; index++)
         {
             var run = values[index];

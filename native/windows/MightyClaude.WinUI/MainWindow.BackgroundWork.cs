@@ -50,6 +50,8 @@ public sealed partial class MainWindow
         /// <summary>The elapsed texts on screen: the strip's and the guided panel's task list, ticked once a second.</summary>
         private readonly List<(TextBlock Text, PlanCardSupport.BackgroundStripRow Row)> stripElapsed = [], guidedElapsed = [];
         private DispatcherTimer? backgroundTicker;
+        /// <summary>The strip rows opened to their command and output lines, by task id; only this pane's strip draws again for them.</summary>
+        private readonly HashSet<string> backgroundOpenRows = new(StringComparer.Ordinal);
 
         /// <summary>
         /// The composer's background-work toggle (M/SessionPaneView.swift backgroundWorkToggle): the status-line toggle's
@@ -110,9 +112,11 @@ public sealed partial class MainWindow
             var work = pane.BackgroundWork;
             var shows = pane.Kind == "claude" && PlanCardSupport.ShowsBackgroundStrip(work, mighty, drawsTasks, owner.ShowsBackgroundWork);
             var backgroundOpen = owner.BackgroundWorkOpen;
-            // The rows meet the latest request's blocks by tool use id: their kind words and a run's last output line.
-            var rows = shows && backgroundOpen ? PlanCardSupport.BackgroundStripRows(work, pane.GraphRuns?.LastOrDefault(), owner.BackgroundOutputFor(pane.Id)) : [];
-            var key = shows ? string.Join("|", work!.Tasks.Select(t => t.Id + ":" + t.Status + ":" + t.Description)) + "|" + string.Join("|", rows.Select(r => r.KindText + ":" + r.Tail))
+            // The rows meet the newest request's blocks by tool use id (never a notice run's copies): their kind words, command and output lines.
+            var rows = shows && backgroundOpen ? PlanCardSupport.BackgroundStripRows(work, MightyGraphSupport.NewestRequestRun(pane.GraphRuns), owner.BackgroundOutputFor(pane.Id)) : [];
+            backgroundOpenRows.IntersectWith(rows.Select(r => r.Id).OfType<string>());
+            var key = shows ? string.Join("|", work!.Tasks.Select(t => t.Id + ":" + t.Status + ":" + t.Description)) + "|" + string.Join("|", rows.Select(r => r.KindText + ":" + r.Tail
+                    + (r.Id is { } rowId && backgroundOpenRows.Contains(rowId) ? ":open:" + r.Command + ":" + string.Join("\n", r.TailLines ?? []) : "")))
                 + "|" + work.TurnEnded + "|" + backgroundOpen + "|" + Locale.LanguagePreference + "|" + owner.service.Snapshot.Theme : "";
             if (key == backgroundKey) return;
             backgroundKey = key;
@@ -193,7 +197,20 @@ public sealed partial class MainWindow
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(detail, Microsoft.UI.Xaml.FontNumeralAlignment.Tabular);
                 Grid.SetColumn(detail, 2); row.Children.Add(detail);
                 AutomationProperties.SetName(row, task.Text + " · " + detail.Text);
-                if (item.Tail is { } tail)
+                var opened = item.Id is { } openId && item.Opens && backgroundOpenRows.Contains(openId);
+                if (opened)
+                {
+                    // Opened: the command (or the sub-agent's first prompt line) and the run's last output lines (M/BackgroundWorkViews.swift).
+                    var more = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
+                    if (item.Command is { } command)
+                        more.Children.Add(new TextBlock { Text = command, TextSize = 10, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 4, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true, TextFont = TextArea.Code });
+                    foreach (var output in item.TailLines ?? [])
+                        more.Children.Add(new TextBlock { Text = output, TextSize = 10, Foreground = b.Brush(DesignToken.Ink2), Opacity = 0.8, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, TextFont = TextArea.Code });
+                    Grid.SetColumn(more, 1); Grid.SetColumnSpan(more, 2); Grid.SetRow(more, 1);
+                    row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowDefinitions.Add(new() { Height = GridLength.Auto });
+                    row.Children.Add(more);
+                }
+                else if (item.Tail is { } tail)
                 {
                     // Under the text, past the dot and its gap: one dim monospace line, cut at its end.
                     var line = new TextBlock
@@ -205,7 +222,21 @@ public sealed partial class MainWindow
                     row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowDefinitions.Add(new() { Height = GridLength.Auto });
                     row.Children.Add(line);
                 }
-                rows.Children.Add(row);
+                if (item.Opens && item.Id is { } rowKey)
+                {
+                    // A row with more to show opens and folds on a press; only this pane's strip is drawn again.
+                    var toggle = new Button { Content = row, Padding = new Thickness(0), MinWidth = 0, MinHeight = 0, BorderThickness = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+                    owner.PaintPlainButton(toggle, b.Transparent, b.Subtle);
+                    AutomationProperties.SetName(toggle, task.Text + " · " + detail.Text);
+                    AutomationProperties.SetHelpText(toggle, Locale.Get(opened ? "graph.block.collapse" : "graph.block.expand"));
+                    toggle.Click += (_, _) =>
+                    {
+                        if (!backgroundOpenRows.Remove(rowKey)) backgroundOpenRows.Add(rowKey);
+                        RefreshBackgroundWork(Session);
+                    };
+                    rows.Children.Add(toggle);
+                }
+                else rows.Children.Add(row);
                 elapsed.Add((detail, item));
             }
             if (items.Any(t => t.Task.Running))

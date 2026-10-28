@@ -217,7 +217,13 @@ export class ColumnWatch {
 // ── MightyStructureBoard.Navigation ──
 
 /** What the navigation reads of a board. */
-export interface NavigableBoard { id: string; runIds: readonly string[] }
+export interface NavigableBoard { id: string; runIds: readonly string[]; quiet?: boolean }
+
+/** The newest board: the last one, but a quiet notice's board after it, which the view never moves on to by itself. */
+export function newestBoardIndex(boards: readonly NavigableBoard[]): number | null {
+  for (let index = boards.length - 1; index >= 0; index--) if (boards[index]!.quiet !== true) return index;
+  return boards.length > 0 ? boards.length - 1 : null;
+}
 
 /**
  * Which board the view shows (MightyStructureBoard.Navigation): on the newest board the view moves on with new ones; a board
@@ -231,7 +237,7 @@ export class StructureNavigation {
 
   index(boards: readonly NavigableBoard[]): number | null {
     if (boards.length === 0) return null;
-    if (this.chosen === null) return boards.length - 1;
+    if (this.chosen === null) return newestBoardIndex(boards);
     const at = boards.findIndex((board) => board.id === this.chosen);
     if (at >= 0) return at;
     const runs = new Set(this.chosenRuns);
@@ -241,18 +247,21 @@ export class StructureNavigation {
 
   onNewest(boards: readonly NavigableBoard[]): boolean {
     const index = this.index(boards);
-    return index === null || index === boards.length - 1;
+    return index === null || index === newestBoardIndex(boards);
   }
 
   hasUnseen(boards: readonly NavigableBoard[]): boolean {
-    return !this.onNewest(boards) && boards[boards.length - 1]!.id !== this.seenNewest;
+    const newest = newestBoardIndex(boards);
+    return !this.onNewest(boards) && (newest === null ? null : boards[newest]!.id) !== this.seenNewest;
   }
 
   select(id: string, boards: readonly NavigableBoard[]): void {
     const target = boards.find((board) => board.id === id);
     if (!target) return;
-    if (target.id === boards[boards.length - 1]!.id) { this.chosen = null; this.chosenRuns = []; this.seenNewest = null; return; }
-    if (this.onNewest(boards)) this.seenNewest = boards[boards.length - 1]!.id;
+    const at = newestBoardIndex(boards);
+    const newest = at === null ? null : boards[at]!.id;
+    if (target.id === newest) { this.chosen = null; this.chosenRuns = []; this.seenNewest = null; return; }
+    if (this.onNewest(boards)) this.seenNewest = newest;
     this.chosen = target.id; this.chosenRuns = target.runIds;
   }
 
@@ -263,8 +272,9 @@ export class StructureNavigation {
   }
 
   showNewest(boards: readonly NavigableBoard[]): void {
-    if (boards.length === 0) { this.chosen = null; return; }
-    this.select(boards[boards.length - 1]!.id, boards);
+    const newest = newestBoardIndex(boards);
+    if (newest === null) { this.chosen = null; return; }
+    this.select(boards[newest]!.id, boards);
   }
 }
 

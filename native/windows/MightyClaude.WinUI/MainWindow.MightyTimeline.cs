@@ -192,6 +192,8 @@ public sealed partial class MainWindow
 
         private string GraphRequestTitle(MightyGraphRun run, int ordinal)
         {
+            // A notice run is no request: it is titled as Claude's reply to finished background work (BackgroundNoticeRuns).
+            if (run.NoticeRun == true) return BackgroundNoticeRuns.Title;
             var prefix = activeStyle is null || styleRegistry is null ? null : StylePresentation.RequestPrefix(styleRegistry.Styles, run.Input);
             var provider = ProviderMark.Label(Session.Provider);
             var tail = MightyGraphBlockModel.RequestTitle(ordinal, provider);
@@ -220,10 +222,12 @@ public sealed partial class MainWindow
                 var older = GraphHistoryRuns(pane, retained);
                 IReadOnlyList<MightyGraphRun> runs = [.. older, .. retained];
                 var groups = MightyTimeline.Groups(runs);
-                var current = retained.Select(r => new MightyGraphCamera.ResultReveal.RunProgress(r.Id, MightyGraphLayout.Finished(r))).ToList();
-                var follow = timelineProgress is null || runs.LastOrDefault()?.Id != timelineLastRun ||
+                // The newest work (MightyGraphSupport.FollowRunIndex): a quiet notice run never moves the view; a finished one never reveals.
+                var current = MightyGraphSupport.RequestRuns(retained).Select(r => new MightyGraphCamera.ResultReveal.RunProgress(r.Id, MightyGraphLayout.Finished(r))).ToList();
+                var followed = MightyGraphSupport.FollowRunIndex(runs) is { } at ? runs[at].Id : null;
+                var follow = timelineProgress is null || followed != timelineLastRun ||
                     MightyGraphCamera.ResultReveal.FinishedRunID(timelineProgress, current, timelineWasRunning) is not null;
-                timelineProgress = current; timelineLastRun = runs.LastOrDefault()?.Id; timelineWasRunning = pane.Status == "running";
+                timelineProgress = current; timelineLastRun = followed; timelineWasRunning = pane.Status == "running";
                 var anchor = timelineStack.Children.OfType<StackPanel>().FirstOrDefault(v => v.Tag is string && TimelineTop(v) + v.ActualHeight >= timelineScroll.VerticalOffset);
                 var anchorId = anchor?.Tag as string; var anchorOffset = anchor is null ? 0 : TimelineTop(anchor) - timelineScroll.VerticalOffset;
                 var oldOffset = timelineScroll.VerticalOffset;
@@ -241,11 +245,11 @@ public sealed partial class MainWindow
                 var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
                 foreach (var group in groups)
                 {
-                    var run = runs[group.RunIndex];
-                    var fingerprint = JsonSerializer.Serialize(new { run, group.Ordinal, older = group.RunIndex < older.Count, open = MightyTimeline.GroupOpen(group, runs.Count, timelineFlipped), rows = group.Rows.Where(r => timelineOpen.Contains(r.NodeId)).Select(r => r.NodeId), full = group.Result is { } result && timelineFull.Contains(result.NodeId), title = GraphRequestTitle(run, group.Ordinal), language = Locale.LanguagePreference, catalog });
+                    var run = runs[group.RunIndex].Shown;
+                    var fingerprint = JsonSerializer.Serialize(new { run, group.Ordinal, older = group.RunIndex < older.Count, open = MightyTimeline.GroupOpen(group, runs, timelineFlipped), rows = group.Rows.Where(r => timelineOpen.Contains(r.NodeId)).Select(r => r.NodeId), full = group.Result is { } result && timelineFull.Contains(result.NodeId), title = GraphRequestTitle(run, group.Ordinal), language = Locale.LanguagePreference, catalog });
                     if (!timelineGroups.TryGetValue(group.RunId, out var known) || known.Fingerprint != fingerprint)
                     {
-                        var view = BuildTimelineGroup(group, run, pane, group.RunIndex < older.Count, MightyTimeline.GroupOpen(group, runs.Count, timelineFlipped));
+                        var view = BuildTimelineGroup(group, run, pane, group.RunIndex < older.Count, MightyTimeline.GroupOpen(group, runs, timelineFlipped));
                         view.Tag = group.RunId; timelineGroups[group.RunId] = known = (fingerprint, view);
                     }
                     desired.Add(known.View);
@@ -265,7 +269,7 @@ public sealed partial class MainWindow
                 }
                 foreach (var key in timelineGroups.Keys.Where(key => !groups.Any(g => g.RunId == key)).ToArray()) timelineGroups.Remove(key);
                 // The parts the smoke reads follow the groups: only those still drawn are kept.
-                var drawnRows = groups.Where(g => MightyTimeline.GroupOpen(g, runs.Count, timelineFlipped)).SelectMany(g => g.Rows.Select(r => r.NodeId)).ToHashSet();
+                var drawnRows = groups.Where(g => MightyTimeline.GroupOpen(g, runs, timelineFlipped)).SelectMany(g => g.Rows.Select(r => r.NodeId)).ToHashSet();
                 var drawnResults = groups.Select(g => g.Result?.NodeId).OfType<string>().ToHashSet();
                 foreach (var key in timelineHeads.Keys.Where(key => !timelineGroups.ContainsKey(key)).ToArray()) timelineHeads.Remove(key);
                 foreach (var key in timelineRows.Keys.Where(key => !drawnRows.Contains(key)).ToArray()) timelineRows.Remove(key);

@@ -376,7 +376,7 @@ export const Block = memo(function Block(props: BlockProps) {
       data-pending-request={extra.pending ? id : undefined}
       style={{ left: x, top: y, width: w, height: h }} title={copy?.fromRecord ? t('graph.history.tag') : undefined}>
       <div className="mighty-head">
-        <span className={'mighty-symbol kind-' + kind} aria-hidden="true"><Icon name={blockSymbol(kind, tone)} size={14} weight={1.75} /></span>
+        <span className={'mighty-symbol kind-' + (copy?.notice ? 'task' : kind)} aria-hidden="true"><Icon name={copy?.notice ? 'terminal' : blockSymbol(kind, tone)} size={14} weight={1.75} /></span>
         <span className="mighty-title">
           {/* "요청 2 · Claude": the provider's mark before its name (ProviderBadgeIcon.labelled), else before the title. */}
           {copy?.provider && (copy.title ?? '').lastIndexOf(providerLabel(copy.provider)) > 0

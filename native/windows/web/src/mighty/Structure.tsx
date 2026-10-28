@@ -4,7 +4,7 @@ import { Markdown } from '../conversation/MarkdownView';
 import { backgroundLabel } from './background';
 import { nodeId, RequestStep, terminal } from './layout';
 import {
-  ColumnWatch, StructureNavigation, WheelTracker, confined, isDrag, mayPan, panOrigin, scrollable, stepsSummary, userMoving,
+  ColumnWatch, StructureNavigation, WheelTracker, confined, isDrag, mayPan, newestBoardIndex, panOrigin, scrollable, stepsSummary, userMoving,
   type Page, type PanTarget, type Scroll, type XY,
 } from './structureMotion';
 import type { StructureActivity, StructureBoard, StructureCard } from './types';
@@ -293,7 +293,7 @@ export function Structure({ boards, onReveal, pending: sent, session, own = 0 }:
 
   const index = navigation.index(list);
   const board = index === null ? undefined : list[index];
-  const newest = index !== null && index === list.length - 1;
+  const newest = index !== null && index === newestBoardIndex(list);
   const now = () => performance.now() / 1000;
   const moving = () => userMoving(false, !!press.current?.panning, releasedAt.current, wheel.current, now());
 

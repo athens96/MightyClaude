@@ -32,3 +32,6 @@ export function shownTail(tail: readonly string[] | undefined, status: string, o
   const lines = tail ?? [];
   return lines.slice(-(open ? MaxTailLines : terminal(status) ? 2 : 3));
 }
+
+/** Whether a strip row opens to show more: its command (a run's, or a sub-agent's first prompt line) or its output lines (Core PlanCardSupport.BackgroundStripRow.Opens). */
+export const backgroundRowOpens = (row: { command?: string; tailLines?: readonly string[] }) => row.command !== undefined || (row.tailLines?.length ?? 0) > 0;

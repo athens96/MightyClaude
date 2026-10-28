@@ -126,6 +126,8 @@ public sealed record ExecutionGraphNode
     [JsonPropertyName("outputFile")] public string? OutputFile { get; init; }
     /// <summary>Claude's answer in the turn this block's notice opened, when it was that turn's only notice.</summary>
     [JsonPropertyName("noticeReply")] public string? NoticeReply { get; init; }
+    /// <summary>A copy in a notice run (<see cref="BackgroundNoticeRuns"/>): the id of the finished background block it copies.</summary>
+    [JsonPropertyName("sourceBlockId")] public string? SourceBlockId { get; init; }
 
     /// Structural equality (macOS ExecutionGraphNode: Equatable) — the synthesized
     /// record comparison would compare the lists by reference.
@@ -133,7 +135,7 @@ public sealed record ExecutionGraphNode
         other is not null && Id == other.Id && RunId == other.RunId && ParentId == other.ParentId && Kind == other.Kind
         && State == other.State && Title == other.Title && Input == other.Input && Output == other.Output
         && Equals(Usage, other.Usage) && ActivityGeneration == other.ActivityGeneration
-        && Background == other.Background && OutputFile == other.OutputFile && NoticeReply == other.NoticeReply
+        && Background == other.Background && OutputFile == other.OutputFile && NoticeReply == other.NoticeReply && SourceBlockId == other.SourceBlockId
         && GraphEquality.Records(ResponseRecords, other.ResponseRecords)
         && GraphEquality.Entries(Entries, other.Entries);
     public override int GetHashCode() => HashCode.Combine(Id, RunId, ParentId, Kind, State, Title, Entries.Count);
@@ -200,12 +202,13 @@ public static class ExecutionGraphSupport
             Background = node.Background == true ? true : null,
             OutputFile = node.OutputFile is { } file && Bytes(file) <= 4096 && file.IndexOfAny(MightyStructure.Newlines) < 0 ? file : null,
             NoticeReply = node.NoticeReply is null ? null : ActivitySupport.Clean(node.NoticeReply, MaximumOutputBytes),
+            SourceBlockId = node.SourceBlockId is { } source && Wire.Identifier(source) ? source : null,
         };
         if (restoring && !Terminal(result.State)) result = result with { State = "stopped" };
         if (node.Kind == "main") return result with { Entries = [] };
 
         var remaining = MaximumNodeBytes - Bytes(result.Title) - Bytes(result.Input) - Bytes(result.Output)
-            - Bytes(result.OutputFile) - Bytes(result.NoticeReply);
+            - Bytes(result.OutputFile) - Bytes(result.NoticeReply) - Bytes(result.SourceBlockId);
         var seen = new HashSet<string>();
         var entries = new List<LogEntry>();
         foreach (var original in node.Entries.TakeLast(MaximumEntries).Reverse())

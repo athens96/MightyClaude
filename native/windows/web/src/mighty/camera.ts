@@ -2,6 +2,7 @@
 // MightyGraphFollow.cs, MightyGraphViewModel.cs, MightyGraphDotGrid.cs and MightyGraphActivity.cs. Pure.
 // screen = node × zoom + camera.
 import type { MightyGraphRun } from '../store/models';
+import { followRunIndex } from './notice';
 import { CentreX, HistoryNodeID, ExecutionSuffix, ImagesSuffix, PlanRecordSuffix, PendingNodeID, WorkKind, maxY, nodeId, type Layout, type Rect, type Size } from './layout';
 import { ease } from '../theme/tokens';
 
@@ -96,8 +97,12 @@ export function cameraTween(from: Point, to: Point, progress: number): Point {
 export const FollowMargin = 16;
 export const FollowSlack = 36;
 
+/**
+ * The newest work's lowest block in the flow: the newest request, or a notice run after it that is a turn of its own
+ * (followRunIndex); a quiet notice run never takes the camera from the request.
+ */
 export function followTargetID(layout: Layout, runs: readonly MightyGraphRun[]): string | null {
-  const last = runs[runs.length - 1];
+  const last = runs[followRunIndex(runs) ?? runs.length - 1];
   if (!last) return layout.nodes.find((n) => n.kind === 'draft')?.id ?? null;
   const newest = nodeId(last.id, '');
   let best: Layout['nodes'][number] | null = null;

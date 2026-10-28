@@ -498,11 +498,12 @@ public sealed partial class MainWindow
             var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
             // "Request N · Claude": the short name, as macOS ProviderOptions.label, so its mark can go before it.
             var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog);
+            var ordinals = MightyGraphSupport.RequestOrdinals(runs);
             for (var i = 0; i < runs.Count; i++)
             {
                 var nodeId = MightyGraphLayout.NodeID(runs[i], "request");
                 var at = blocks.FindIndex(block => block.Id == nodeId);
-                if (at >= 0) blocks[at] = blocks[at] with { Title = GraphRequestTitle(runs[i], i + 1) };
+                if (at >= 0) blocks[at] = blocks[at] with { Title = GraphRequestTitle(runs[i], ordinals[i]) };
             }
             for (var i = 0; i < blocks.Count; i++)
                 if (blocks[i].Kind == MightyGraphLayout.ExecutionKind) blocks[i] = ExecutionBlock(blocks[i]);

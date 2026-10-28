@@ -19,8 +19,10 @@ public static class MightyTimeline
     public const string RequestStatus = "idle";
     public static readonly Node RequestNode = new(DesignTone.Idle, false, null);
     public sealed record Result(string NodeId, DesignTone Tone, string? Text);
+    /// <summary>One request's group. <paramref name="Ordinal"/> is the request's number (<see cref="MightyGraphSupport.RequestOrdinals"/>);
+    /// <paramref name="NoticeRun"/>: Claude's reply to finished background work (<see cref="MightyGraphRun.NoticeRun"/>), titled as such, not a request.</summary>
     public sealed record Group(int RunIndex, string RunId, int Ordinal, string Status, string Input,
-        IReadOnlyList<Row> Rows, Tally Tally, Result? Result);
+        IReadOnlyList<Row> Rows, Tally Tally, Result? Result, bool NoticeRun = false);
 
     /// <summary>The diagram, the timeline or the structure (<see cref="MightyStructure"/>); a word this build does not know reads as the diagram (M/MightyCore/MightyTimeline.swift:4-10).</summary>
     public static string? NormalizeMode(string? value) => value is "diagram" or "timeline" or "structure" ? value : null;
@@ -42,11 +44,26 @@ public static class MightyTimeline
     }
     public static DesignTone? RailAbove(IReadOnlyList<Row> rows, int index) => index > 0 && index < rows.Count ? rows[index - 1].Node.Rail : null;
     public static bool GroupOpen(Group group, int count, IReadOnlySet<string> flipped) => (group.RunIndex == count - 1) != flipped.Contains(group.RunId);
-    public static bool Folds(string text) => new StringInfo(text).LengthInTextElements > 600 || text.Count(c => c == '\n') >= 8;
-    public static List<Group> Groups(IReadOnlyList<MightyGraphRun> runs) => runs.Select(Project).ToList();
-
-    private static Group Project(MightyGraphRun run, int index)
+    /// <summary>Open by default: the newest request, and a notice run after it that has a result (M/MightyGraphView.swift timelineOpensByDefault).</summary>
+    public static bool GroupOpen(Group group, IReadOnlyList<MightyGraphRun> runs, IReadOnlySet<string> flipped)
     {
+        var index = group.RunIndex;
+        var open = MightyGraphSupport.NewestRequestIndex(runs) is not { } newest ? index == runs.Count - 1
+            : index == newest || index > newest && index < runs.Count && runs[index].NoticeRun == true && MightyGraphLayout.HasResult(runs[index]);
+        return open != flipped.Contains(group.RunId);
+    }
+    public static bool Folds(string text) => new StringInfo(text).LengthInTextElements > 600 || text.Count(c => c == '\n') >= 8;
+    /// <summary>Every request the diagram draws, oldest first, numbered as the diagram numbers them. The rows index the agents a view draws
+    /// (<see cref="MightyGraphRun.Shown"/>): a view must draw the same runs.</summary>
+    public static List<Group> Groups(IReadOnlyList<MightyGraphRun> runs)
+    {
+        var ordinals = MightyGraphSupport.RequestOrdinals(runs);
+        return runs.Select((run, index) => Project(run.Shown, index, ordinals[index])).ToList();
+    }
+
+    private static Group Project(MightyGraphRun run, int index, int ordinal)
+    {
+        var notice = run.NoticeRun == true;
         var rows = new List<Row>();
         void Add(int? agentIndex, string suffix, string kind, string title, string rawStatus, IReadOnlyList<LogEntry> entries, bool execution = false)
         {
@@ -56,23 +73,24 @@ public static class MightyTimeline
         }
         // As in the diagram, the request holds its input alone, in a neutral state of its own that never reads as the
         // work's outcome, and a 실행 block after it holds the work: its status, steps and span (macOS MightyTimeline.group).
-        rows.Add(new(MightyGraphLayout.NodeID(run, "request"), null, "main", Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = (index + 1).ToString(CultureInfo.InvariantCulture) }), RequestStatus, RequestNode, null, null));
-        Add(null, MightyGraphLayout.WorkSuffix, ExecutionKind, MightyGraphBlockModel.ExecutionTitle(index + 1), run.Status, run.RootEntries, execution: true);
+        rows.Add(new(MightyGraphLayout.NodeID(run, "request"), null, "main", notice ? BackgroundNoticeRuns.Title
+            : Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = ordinal.ToString(CultureInfo.InvariantCulture) }), RequestStatus, RequestNode, null, null));
+        Add(null, MightyGraphLayout.WorkSuffix, ExecutionKind, BackgroundNoticeRuns.ExecutionTitle(notice, ordinal), run.Status, run.RootEntries, execution: true);
         for (var i = 0; i < run.Agents.Count; i++)
         {
             var agent = run.Agents[i];
             Add(i, "agent:" + agent.Id, MightyGraphSupport.BlockKind(agent), MightyGraphSupport.BlockTitle(agent), agent.Status, agent.Entries);
         }
         Result? result = null;
-        if (MightyGraphLayout.Finished(run))
+        if (MightyGraphLayout.HasResult(run))
         {
             var tone = StatusGlyph.Tone(Status(run.Status));
             result = new(MightyGraphLayout.NodeID(run, "result"), tone == DesignTone.Run ? DesignTone.Done : tone,
                 run.ResultEntries.LastOrDefault(e => e.Kind == "assistant" && e.Text.Length > 0)?.Text);
         }
         var blocks = rows.Skip(1).ToList();
-        return new(index, run.Id, index + 1, Status(run.Status), run.Input, rows,
-            new(blocks.Count, blocks.Count(r => r.Status is "completed" or "error" or "stopped"), blocks.Count(r => r.Status == "running")), result);
+        return new(index, run.Id, ordinal, Status(run.Status), run.Input, rows,
+            new(blocks.Count, blocks.Count(r => r.Status is "completed" or "error" or "stopped"), blocks.Count(r => r.Status == "running")), result, notice);
     }
 
     private static string? Latest(IReadOnlyList<LogEntry> entries)

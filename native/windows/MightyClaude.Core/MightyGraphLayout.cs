@@ -98,8 +98,14 @@ public sealed class MightyGraphLayout
     public static bool Terminal(string state) =>
         state is "completed" or "error" or "failed" or "stopped" or "cancelled" or "interrupted";
 
+    /// <summary>Ended with every block a view draws for it (<see cref="BackgroundNoticeRuns.ShownAgents"/>): background work the request
+    /// started runs on in the strip and is not waited for.</summary>
     public static bool Finished(MightyGraphRun run) =>
-        Terminal(run.Status) && run.Agents.All(a => Terminal(a.Status));
+        Terminal(run.Status) && BackgroundNoticeRuns.ShownAgents(run).All(a => Terminal(a.Status));
+    /// <summary>Has a result card under it: every finished run but a notice run without a reply of its own (<see cref="MightyGraphRun.QuietNotice"/>),
+    /// whose card would hold nothing; and a notice run a later turn answers in again, which keeps showing its earlier reply
+    /// (<see cref="MightyGraphRun.ReopenedWithReply"/>).</summary>
+    public static bool HasResult(MightyGraphRun run) => Finished(run) && !run.QuietNotice || run.ReopenedWithReply;
 
     public static string NodeID(MightyGraphRun run, string suffix) =>
         MightyGraphBlockSize.NodeId(run.Id, suffix);
@@ -109,15 +115,16 @@ public sealed class MightyGraphLayout
     /// (macOS <c>newestRequestTargetID</c>).
     public string? NewestRequestTargetID(IReadOnlyList<MightyGraphRun> runs)
     {
-        if (runs.Count == 0) return null;
-        var work = NodeID(runs[^1], WorkSuffix);
-        return !Finished(runs[^1]) && Nodes.Any(n => n.Id == work) ? work : NodeID(runs[^1], "request");
+        // A notice run after it is not a request (MightyGraphSupport.NewestRequestRun).
+        if (MightyGraphSupport.NewestRequestRun(runs) is not { } last) return null;
+        var work = NodeID(last, WorkSuffix);
+        return !Finished(last) && Nodes.Any(n => n.Id == work) ? work : NodeID(last, "request");
     }
 
     public static string? LatestResultID(IReadOnlyList<MightyGraphRun> runs)
     {
         for (var i = runs.Count - 1; i >= 0; i--)
-            if (Finished(runs[i])) return NodeID(runs[i], "result");
+            if (HasResult(runs[i])) return NodeID(runs[i], "result");
         return null;
     }
 
@@ -194,7 +201,7 @@ public sealed class MightyGraphLayout
     public static bool FilesPanelOpen(IReadOnlyList<MightyGraphRun> runs, string? resultFilesRunID)
     {
         for (var i = runs.Count - 1; i >= 0; i--)
-            if (Finished(runs[i])) return resultFilesRunID is not null && runs[i].Id == resultFilesRunID && runs[i].Status == "completed";
+            if (HasResult(runs[i])) return resultFilesRunID is not null && runs[i].Id == resultFilesRunID && runs[i].Status == "completed";
         return false;
     }
 
@@ -281,6 +288,8 @@ public sealed class MightyGraphLayout
         IReadOnlyList<(string RunID, string Step, int Count)>? galleries = null,
         IReadOnlyList<(string RunID, string Key)>? executions = null)
     {
+        // The runs as views draw them: a request's background blocks show only in the notice run that reports them (BackgroundNoticeRuns).
+        runs = MightyGraphSupport.ShownRuns(runs);
         var latestResultID = LatestResultID(runs);
         var filesPanelOpenForLatest = FilesPanelOpen(runs, resultFilesRunID);
         var shared = sharedResultSize?.Normalized is { } savedSize ? (savedSize.Width, savedSize.Height) : ((double W, double H)?)null;
@@ -378,7 +387,7 @@ public sealed class MightyGraphLayout
             }
 
             var branchWidth = branches.Sum(b => b.Width) + Math.Max(0, branches.Count - 1) * SiblingGap;
-            var treeWidth = Math.Max(Math.Max(mainSize.W, workSize?.W ?? 0), Math.Max(branchWidth, Finished(run) ? resultSize.W : 0));
+            var treeWidth = Math.Max(Math.Max(mainSize.W, workSize?.W ?? 0), Math.Max(branchWidth, HasResult(run) ? resultSize.W : 0));
             var mainNode = new Node(mainID, "request", new((treeWidth - mainSize.W) / 2, 0, mainSize.W, mainHeight));
             var tree = new Tree { Nodes = [mainNode], Width = treeWidth, Height = mainHeight, Top = mainID, Leaves = [mainID] };
             // The block the sub-agents branch from: the 실행 block right under the request, or the request itself.
@@ -425,7 +434,7 @@ public sealed class MightyGraphLayout
                 tree.Leaves = [planID];
                 tree.Height += RowGap + planBlock.H;
             }
-            if (Finished(run))
+            if (HasResult(run))
             {
                 var height = resultSize.H;
                 tree.Nodes.Add(new Node(resultID, "result", new((treeWidth - resultSize.W) / 2, tree.Height + RowGap, resultSize.W, height)));
@@ -488,7 +497,7 @@ public sealed class MightyGraphLayout
         {
             var panelRunIndex = -1;
             for (var i = 0; i < runs.Count; i++) if (runs[i].Id == resultFilesRunID) { panelRunIndex = i; break; }
-            if (panelRunIndex >= 0 && runs[panelRunIndex].Status == "completed" && Finished(runs[panelRunIndex]))
+            if (panelRunIndex >= 0 && runs[panelRunIndex].Status == "completed" && HasResult(runs[panelRunIndex]))
             {
                 var resultNode = layout.Nodes.FirstOrDefault(n => n.Kind == "result" && n.Id == NodeID(runs[panelRunIndex], "result"));
                 if (resultNode is not null)

@@ -196,7 +196,7 @@ public static class SessionHistory
         foreach (var turn in scan.Turns)
         {
             token.ThrowIfCancellationRequested();
-            if (HistoryReplay.Run(turn, format, ref childBytes) is { } run) runs.Add(run);
+            runs.AddRange(HistoryReplay.Runs(turn, format, ref childBytes));
         }
         return new SessionHistoryChunk(runs, file, scan.End, scan.ReachedStart);
     }
@@ -723,8 +723,9 @@ public static class HistoryReplay
     /// <summary>Sub-agents' transcripts one chunk's requests may read together.</summary>
     public const long AntigravityChildBytes = 32L * 1_048_576;
 
+    /// <summary>The request, then the notice runs its background work opened (<see cref="BackgroundNoticeRuns"/>), as live.</summary>
     /// <param name="childBytes">What reading Antigravity sub-agents' transcripts may still spend.</param>
-    public static MightyGraphRun? Run(HistoryTurn turn, HistoryFormat format, ref long childBytes)
+    public static List<MightyGraphRun> Runs(HistoryTurn turn, HistoryFormat format, ref long childBytes)
     {
         var provider = format.Provider;
         var model = provider == "codex" ? CodexModel(turn.Lines) : null;
@@ -739,20 +740,25 @@ public static class HistoryReplay
             _ => Claude(turn.Lines, tracker, At),
         };
         tracker.Finish(status);
-        if (tracker.BuildRun() is not { } run || run.Id != runID) return null;
-        if (run.NodeModelLabel is null && model is not null) run.NodeModelLabel = GraphModelLabel.NodeModelLabel(model, "default");
-        // Blocks the tracker made carry the replay's own clock; the request
-        // happened when its record says.
-        if (latest is { } settled)
+        if (tracker.BuildRun() is not { } request || request.Id != runID) return [];
+        var result = new List<MightyGraphRun>();
+        foreach (var run in tracker.BuildNoticeRuns().Prepend(request))
         {
-            var stamp = settled.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
-            List<LogEntry> Settle(List<LogEntry> entries) =>
-                entries.Select(e => AgentRunTiming.Parse(e.Timestamp) is { } date && date > settled.AddSeconds(1) ? e with { Timestamp = stamp } : e).ToList();
-            run.RootEntries = Settle(run.RootEntries); run.ResultEntries = Settle(run.ResultEntries);
-            foreach (var agent in run.Agents) agent.Entries = Settle(agent.Entries);
+            if (run.NodeModelLabel is null && model is not null) run.NodeModelLabel = GraphModelLabel.NodeModelLabel(model, "default");
+            // Blocks the tracker made carry the replay's own clock; the request
+            // happened when its record says.
+            if (latest is { } settled)
+            {
+                var stamp = settled.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+                List<LogEntry> Settle(List<LogEntry> entries) =>
+                    entries.Select(e => AgentRunTiming.Parse(e.Timestamp) is { } date && date > settled.AddSeconds(1) ? e with { Timestamp = stamp } : e).ToList();
+                run.RootEntries = Settle(run.RootEntries); run.ResultEntries = Settle(run.ResultEntries);
+                foreach (var agent in run.Agents) agent.Entries = Settle(agent.Entries);
+            }
+            var budget = SessionHistory.RunBudget;
+            if (MightyGraphSupport.Normalized([run], restoring: true, budget: ref budget, provider: provider).FirstOrDefault() is { } normalized) result.Add(normalized);
         }
-        var budget = SessionHistory.RunBudget;
-        return MightyGraphSupport.Normalized([run], restoring: true, budget: ref budget, provider: provider).FirstOrDefault();
+        return result;
     }
 
     private static JsonElement Element(object value) => JsonSerializer.SerializeToElement(value);
