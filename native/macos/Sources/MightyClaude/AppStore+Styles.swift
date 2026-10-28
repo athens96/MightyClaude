@@ -387,7 +387,8 @@ extension AppStore {
     func sendGuidedPrompt(_ id: String, prompt: String, consumesDraft: Bool) {
         let original = drafts[id] ?? ""
         drafts[id] = prompt
-        submit(id)
+        // The app's own prompt: never asked of another CLI.
+        submit(id, wrapsAsk: false)
         if drafts[id] == prompt || !consumesDraft { drafts[id] = original }
     }
 

@@ -75,7 +75,9 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         try await mobileGuidedReceipt(sessionId: sessionId, style: style, skill: skill, text: text).outcome
     }
     func mobileSubmitReceipt(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> MobileSubmitReceipt {
-        try await settle(sessionId, MainActor.run { () -> (outcome: MobileSubmitOutcome, started: AppStore.StartedRequest?) in
+        // A saved "send to" choice in a workspace the Mac has not scanned yet is known before the send.
+        await store?.awaitAskTargets(sessionId, timeout: 2)
+        return try await settle(sessionId, MainActor.run { () -> (outcome: MobileSubmitOutcome, started: AppStore.StartedRequest?) in
             let store = try self.store.orClosing()
             return try (store.mobileSubmit(sessionId, text: text, mode: mode, attachments: attachments), store.startedRequests[sessionId])
         })
@@ -457,6 +459,8 @@ extension AppStore {
         if Date().timeIntervalSince(statusLines[id]?.updatedAt ?? .distantPast) >= Self.mobileStatusLineInterval {
             refreshStatusLine(for: session)
         }
+        // The "send to" switch needs the pane's catalogue, which a pane the Mac never drew has not scanned.
+        if session.kind == SessionKind.claude, session.provider == "claude" { refreshSlashCommands(for: session) }
         let targets = askTargets(for: session)
         return MobileSessionDetail(revision: revision, session: summary, entries: Array(session.logs.suffix(MobileSessionDetail.maximumEntries)),
                                    permissions: permissions, queued: DelegationQueueRows.mobileItems(held: delegationHeld[id] ?? [], queued: queuedInputs[id] ?? []),
@@ -663,14 +667,15 @@ extension AppStore {
     /// pane that is not running has nothing to drain its queue, so the request
     /// starts the run either way. The Mac composer's draft and attachments
     /// are left alone: the phone's text never came from them.
-    func mobileSubmit(_ id: String, text: String, mode: String? = nil, attachments: [RunAttachment] = []) throws -> MobileSubmitOutcome {
+    /// `wrapsAsk` false: a prompt the app made (a style's action), never asked of another CLI.
+    func mobileSubmit(_ id: String, text: String, mode: String? = nil, attachments: [RunAttachment] = [], wrapsAsk: Bool = true) throws -> MobileSubmitOutcome {
         guard !ending, !closingSessions.contains(id), let session = mobilePane(id),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { throw MightyError(L("remote.error.paneNotFound")) }
         guard !usesLocalTerminal(session) else { throw MightyError(L("remote.error.localTerminalInput")) }
         guard !text.isEmpty || !attachments.isEmpty else { throw MightyError(L("remote.error.nothingToSend")) }
         // The pane's "send to" choice wraps the phone's text as it does the composer's.
         var text = text
-        if askSendTarget(session) != nil {
+        if wrapsAsk, askSendTarget(session) != nil {
             guard attachments.isEmpty else { throw MightyError(L("composer.ask.attachmentsOff")) }
             guard let wrapped = askSendText(text, session: session) else { throw MightyError(L("remote.error.nothingToSend")) }
             text = wrapped
@@ -708,7 +713,7 @@ extension AppStore {
         case .unknownStyle: throw MobileHostError.badRequest(MobileRemoteSupport.unknownStyleMessage)
         case .otherPane(let styleId): throw MobileHostError.conflict(L("remote.error.otherStyle", ["style": styleId]))
         case .unknownAction: throw MobileHostError.badRequest(L("remote.error.unknownSkill"))
-        case .send(let prompt): return try mobileSubmit(id, text: prompt)
+        case .send(let prompt): return try mobileSubmit(id, text: prompt, wrapsAsk: false)
         }
     }
 

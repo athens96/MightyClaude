@@ -13,20 +13,46 @@ extension AppStore {
         if let at = askProbedAt, Date().timeIntervalSince(at) < 30 { return }
         askProbeInFlight = true
         let providers = providers
-        Task.detached(priority: .utility) { [weak self] in
-            let environment = await providers.executionEnvironment().values
-            let found = Set(AskTargets.all.map(\.executable).filter { !SetupProber.executables($0, environment: environment).isEmpty })
-            await MainActor.run {
-                guard let self else { return }
-                self.askProbeInFlight = false
-                self.askProbedAt = Date()
-                self.askProbeFinished = true
-                if self.installedAskExecutables != found {
-                    self.installedAskExecutables = found
-                    self.mobileObserve()
-                }
-                self.reconcileAskTargets()
-            }
+        Task { [weak self] in
+            let read = await Self.readAskExecutables(providers)
+            self?.finishAskProbe(found: read.found, loginShell: read.loginShell)
+        }
+    }
+
+    /// The PATH walk, off the main actor.
+    private nonisolated static func readAskExecutables(_ providers: ProviderService) async -> (found: Set<String>, loginShell: Bool) {
+        let environment = await providers.executionEnvironment()
+        let found = Set(AskTargets.all.map(\.executable).filter { !SetupProber.executables($0, environment: environment.values).isEmpty })
+        return (found, environment.source != .processFallback)
+    }
+
+    private func finishAskProbe(found: Set<String>, loginShell: Bool) {
+        askProbeInFlight = false
+        askProbedAt = Date()
+        let read = AskTargets.probed(previous: installedAskExecutables, found: found, loginShell: loginShell)
+        if installedAskExecutables != read.installed {
+            installedAskExecutables = read.installed
+            mobileObserve()
+        }
+        // An inconclusive read never judges a choice gone.
+        guard read.conclusive else { return }
+        askProbeFinished = true
+        reconcileAskTargets()
+    }
+
+    /// Whether this pane's choice can be judged now: its catalogue scanned and the PATH read once.
+    func askTargetsKnown(_ session: RunSession) -> Bool { askProbedAt != nil && askCatalog(session) != nil }
+
+    /// Waits briefly, as `awaitSlashCommands` does, until a pane with a saved choice
+    /// knows whether it still stands, so a send never goes unwrapped just because
+    /// its workspace was not scanned yet. Panes on Claude return at once.
+    func awaitAskTargets(_ id: String, timeout: TimeInterval) async {
+        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.askTarget != nil, !askTargetsKnown(session) else { return }
+        refreshSlashCommands(for: session)
+        refreshAskExecutables()
+        let deadline = Date().addingTimeInterval(timeout)
+        while !ending, Date() < deadline, let current = snapshot.sessions.first(where: { $0.id == id }), !askTargetsKnown(current) {
+            try? await Task.sleep(for: .milliseconds(25))
         }
     }
 
@@ -69,8 +95,9 @@ extension AppStore {
     /// throws a good choice away before either is known.
     func reconcileAskTargets() {
         guard askProbeFinished else { return }
-        for session in snapshot.sessions where session.askTarget != nil && askCatalog(session) != nil {
-            guard askSendTarget(session) == nil, let saved = session.askTarget else { continue }
+        for session in snapshot.sessions where session.askTarget != nil {
+            guard AskTargets.fellBack(saved: session.askTarget, available: askTargets(for: session), probed: askProbeFinished, scanned: askCatalog(session) != nil),
+                  let saved = session.askTarget else { continue }
             let name = AskTargets.all.first { $0.id == saved }?.label ?? saved
             askFallbackNotices[session.id] = L("composer.ask.fellBack", ["name": name])
             setAskTarget(session.id, target: nil)

@@ -216,6 +216,24 @@ struct MobileRemoteExtensionTests {
         #expect((listed["commands"] as? [[String: Any]])?.first?["argumentHint"] == nil)
     }
 
+    /// A host without the "send to" switch answers `setAskTarget` itself: Claude
+    /// (null) is what it already does, any target is a bad request.
+    @Test func aHostWithoutTheSwitchTakesOnlyClaude() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-ask-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", appVersion: "9.9.9")
+        // The service holds its host weakly.
+        let host = SwitchlessHost()
+        await service.attach(host)
+        func call(_ body: [String: Any]) async throws -> Int {
+            await service.route(method: "POST", path: "/m1/sessions/s/setAskTarget", body: try JSONSerialization.data(withJSONObject: body), deviceId: "cGhvbmUtb25lLTAwMDAwMDA").status
+        }
+        #expect(try await call(["target": NSNull()]) == 200)
+        #expect(try await call([:]) == 200)
+        #expect(try await call(["target": "codex"]) == 400)
+        withExtendedLifetime(host) {}
+    }
+
     // MARK: Mighty
 
     private func agent(_ id: String, kind: String?, status: String, title: String = "", input: String = "", answer: String? = nil) -> MightyGraphAgent {
@@ -1261,4 +1279,24 @@ struct MobileRemoteExtensionTests {
         let decoded = try JSONDecoder().decode(MobileGuidedRequest.self, from: Data(#"{"styleId":"gstack","actionId":"ship"}"#.utf8))
         #expect(decoded.resolvedStyle == "gstack" && decoded.style == nil)
     }
+}
+
+/// A host that predates the "send to" switch: `mobileSetAskTarget` is the protocol's default.
+private final class SwitchlessHost: MobileHostDelegate, @unchecked Sendable {
+    func mobileState() async -> MobileState { MobileState(revision: 1, hostName: "Test Mac", workspaces: [], sessions: []) }
+    func mobileSession(id: String) async -> MobileSessionDetail? { nil }
+    func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String { "started" }
+    func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String { "started" }
+    func mobileStop(sessionId: String) async throws -> Bool { false }
+    func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws {}
+    func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {}
+    func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String { "new" }
+    func mobileRemoveQueued(sessionId: String, itemId: String) async throws {}
+    func mobileRunNextQueued(sessionId: String) async throws {}
+    func mobileRename(sessionId: String, title: String, titleMode: String?) async throws {}
+    func mobileClose(sessionId: String) async throws {}
+    func mobileEntries(sessionId: String, before: String, limit: Int) async throws -> MobileEntriesPage { MobileEntriesPage(entries: [], hasMore: false) }
+    func mobileApplySettings(sessionId: String, request: MobileSettingsRequest) async throws {}
+    func mobileCommands(sessionId: String) async throws -> [MobileCommand] { [] }
+    func mobilePerformCommand(sessionId: String, action: String) async throws -> String? { nil }
 }

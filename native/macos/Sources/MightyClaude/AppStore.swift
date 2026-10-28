@@ -939,7 +939,9 @@ final class AppStore: ObservableObject, DelegationHost {
     /// which runs the text in a new child worktree where
     /// ``composerSecondSend(_:)`` offers one, and otherwise queues it too.
     /// `agent`, from the worktree button's menu, is that new child's agent.
-    func submit(_ id: String, secondSend: Bool = false, agent: String? = nil) {
+    /// `wrapsAsk` false: a prompt the app made (a style's action), never asked of
+    /// another CLI. `askReady`: the wait for the pane's "send to" choice is over.
+    func submit(_ id: String, secondSend: Bool = false, agent: String? = nil, wrapsAsk: Bool = true, askReady: Bool = false) {
         guard !ending, !closingSessions.contains(id), !importingAttachments.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
         guard !usesLocalTerminal(session) else { error = L("composer.localTerminalInput"); return }
@@ -957,7 +959,15 @@ final class AppStore: ObservableObject, DelegationHost {
         }
         // Asking another CLI carries the text alone: staged files stay in the composer.
         // (A child picked from the worktree menu runs its own agent, so it gets the text as typed.)
-        if askSendTarget(session) != nil {
+        // A saved choice not yet known to stand waits briefly for the pane's catalogue and the PATH read.
+        if wrapsAsk, !askReady, session.askTarget != nil, !askTargetsKnown(session) {
+            Task { [weak self] in
+                await self?.awaitAskTargets(id, timeout: 2)
+                self?.submit(id, secondSend: secondSend, askReady: true)
+            }
+            return
+        }
+        if wrapsAsk, askSendTarget(session) != nil {
             guard let wrapped = askSendText(input, session: session) else { return }
             input = wrapped
             attachments = []
@@ -1177,7 +1187,7 @@ final class AppStore: ObservableObject, DelegationHost {
         let logText = [input, attachmentSummary].filter { !$0.isEmpty }.joined(separator: "\n\n")
         let inputEntry = LogEntry(kind: "user", text: logText)
         let autoTitle: String? = (session.titleMode ?? "auto") == "auto" && session.kind != "shell" && session.kind != "browser"
-            ? PaneTitle.shortened(titleFrom ?? (queued?.antigravityGrant != nil ? "" : input)) : nil
+            ? PaneTitle.shortened(AskTargets.question(titleFrom ?? (queued?.antigravityGrant != nil ? "" : input))) : nil
         // §1.16: the first request in the pane's style is where its state starts.
         let startsStyle = guidedStyle(session) != nil && session.mightyStyleSince == nil
         updateSession(id) {

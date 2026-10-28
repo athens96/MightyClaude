@@ -22,6 +22,7 @@ public enum PaneTitle {
     /// user log entry, or `defaultTitle` when none exists.
     public static func autoTitle(for session: RunSession, defaultTitle: String) -> String {
         guard let text = session.titleTooltip else { return defaultTitle }
-        return shortened(text) ?? defaultTitle
+        // A request asked of another CLI titles the pane by its question.
+        return shortened(AskTargets.question(text)) ?? defaultTitle
     }
 }

@@ -115,14 +115,15 @@ struct SessionPaneView: View {
             // which lives here and not in the engine (§1.7).
             if !value.isEmpty { return value }
         }
-        if let askTarget { return L("composer.ask.placeholder", ["name": askTarget.label]) }
         if store.pendingRuns.contains(session.id), session.status != "running" { return L("composer.placeholder.checkingModels") }
+        // A busy pane keeps its ⌘Enter / queue hint; the tinted pill still names the target.
         if running {
             switch secondSend {
             case .worktree: return L("composer.placeholder.busyWorktreeMac")
             case .queue: return L("composer.placeholder.busyQueue")
             }
         }
+        if let askTarget { return L("composer.ask.placeholder", ["name": askTarget.label]) }
         return session.kind == "shell" ? L("composer.placeholder.shell") : L("composer.placeholder.idle")
     }
     private var inputHelpWhileBusy: String {
@@ -525,21 +526,22 @@ struct SessionPaneView: View {
             }
             if showsEffort {
                 Menu(L("composer.effort.menu", ["effort": effortLabel(session.settings.effort)])) { effortOptions }
-                    .disabled(effortLevels.isEmpty && session.settings.effort == "default")
+                    .disabled(running || (effortLevels.isEmpty && session.settings.effort == "default"))
             }
-            Menu(L("composer.permission.menu", ["permission": permissionModeMenuLabel(session.settings.permissionMode)])) { permissionOptions }
+            // The run's settings wait for the run; the "send to" choice above does not.
+            Menu(L("composer.permission.menu", ["permission": permissionModeMenuLabel(session.settings.permissionMode)])) { permissionOptions }.disabled(running)
             if showsFast {
                 Button { updateSettings { $0.fastMode.toggle() } } label: {
                     Label(session.settings.fastMode ? L("composer.fast.on") : L("composer.fast.off"), systemImage: session.settings.fastMode ? "checkmark" : "bolt")
-                }.disabled(!runtime.capabilities.fastMode && !session.settings.fastMode)
+                }.disabled(running || (!runtime.capabilities.fastMode && !session.settings.fastMode))
                     .help(L("composer.fast.helpShort"))
             }
             Divider()
-            Button(L("composer.runSettings.more")) { store.selectSession(session.id); store.settingsSession = session }
+            Button(L("composer.runSettings.more")) { store.selectSession(session.id); store.settingsSession = session }.disabled(running)
         } label: {
             ComposerPill(title: "", systemImage: "slider.horizontal.3", active: session.settings.permissionMode == "fullAccess" || session.settings.fastMode || current != nil, compact: true)
         }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running)
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running && targets.isEmpty)
         .accessibilityLabel(L("composer.runOptions.accessibility")).accessibilityValue("\(effortLabel(session.settings.effort)), \(permissionModeMenuLabel(session.settings.permissionMode))")
         .accessibilityIdentifier("composer-options-\(session.id)")
         .help(L("composer.runOptions.help"))

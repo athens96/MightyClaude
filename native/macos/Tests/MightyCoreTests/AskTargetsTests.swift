@@ -76,6 +76,43 @@ struct AskTargetsTests {
         #expect(old.askTarget == nil)
     }
 
+    /// A saved target falls back to Claude only once both the PATH read and the
+    /// pane's catalogue are in, and only when the target is not offered.
+    @Test func aChoiceFallsBackOnlyWhenKnownToBeGone() {
+        let codex = AskTargets.all.filter { $0.id == "codex" }
+        #expect(AskTargets.fellBack(saved: "gemini", available: codex, probed: true, scanned: true))
+        #expect(AskTargets.fellBack(saved: "codex", available: [], probed: true, scanned: true))
+        #expect(!AskTargets.fellBack(saved: "codex", available: codex, probed: true, scanned: true))
+        #expect(!AskTargets.fellBack(saved: nil, available: [], probed: true, scanned: true))
+        #expect(!AskTargets.fellBack(saved: "gemini", available: codex, probed: false, scanned: true))
+        #expect(!AskTargets.fellBack(saved: "gemini", available: codex, probed: true, scanned: false))
+    }
+
+    /// A PATH that is not the login shell's, or a read finding nothing after one that
+    /// found some, never takes a CLI away and never judges a target gone.
+    @Test func anUnreliableReadKeepsWhatWasFound() {
+        let all = AskTargets.probed(previous: ["codex"], found: ["codex", "agy"], loginShell: true)
+        #expect(all.installed == ["codex", "agy"] && all.conclusive)
+        let fewer = AskTargets.probed(previous: ["codex", "agy"], found: ["agy"], loginShell: true)
+        #expect(fewer.installed == ["agy"] && fewer.conclusive)
+        let first = AskTargets.probed(previous: [], found: [], loginShell: true)
+        #expect(first.installed.isEmpty && first.conclusive)
+        let hiccup = AskTargets.probed(previous: ["codex"], found: [], loginShell: true)
+        #expect(hiccup.installed == ["codex"] && !hiccup.conclusive)
+        let fallback = AskTargets.probed(previous: ["codex"], found: ["agy"], loginShell: false)
+        #expect(fallback.installed == ["codex", "agy"] && !fallback.conclusive)
+    }
+
+    /// A wrapped send titles its pane by the question; anything else as it is.
+    @Test func theQuestionInsideAWrappedSend() {
+        let codex = AskTargets.all.first { $0.id == "codex" }
+        let wrapped = AskTargets.wrap("  왜 느린지 봐줘 ", target: codex) ?? ""
+        #expect(AskTargets.question(wrapped) == "왜 느린지 봐줘")
+        #expect(AskTargets.question("/oh-my-claudecode:ask muse hi") == "/oh-my-claudecode:ask muse hi")
+        #expect(AskTargets.question("그냥 질문") == "그냥 질문")
+        #expect(PaneTitle.autoTitle(for: RunSession(workspaceId: "w", title: "t", logs: [LogEntry(kind: "user", text: wrapped)]), defaultTitle: "Claude") == "왜 느린지 봐줘")
+    }
+
     /// Restoring keeps a Claude agent pane's choice, even one no longer offered (it reads
     /// as Claude when sent), and drops it from every other pane.
     @Test func restoringKeepsTheChoiceOnlyOnAClaudeAgentPane() {

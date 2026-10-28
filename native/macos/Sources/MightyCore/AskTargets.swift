@@ -30,6 +30,35 @@ public enum AskTargets {
         return available.first { $0.id == saved }
     }
 
+    /// Whether a saved target is gone and the pane falls back to Claude (with its
+    /// one notice). Only judged once the PATH was read conclusively (`probed`) and
+    /// the pane's slash catalogue scanned, so nothing unknown yet counts as gone.
+    public static func fellBack(saved: String?, available: [AskTarget], probed: Bool, scanned: Bool) -> Bool {
+        guard saved != nil, probed, scanned else { return false }
+        return effective(saved: saved, available: available) == nil
+    }
+
+    /// The installed set after a PATH read, and whether the read is conclusive
+    /// enough to judge a target gone. A PATH that is not the login shell's only
+    /// adds what it found; a read finding nothing after one that found some is a
+    /// hiccup, not every CLI uninstalled at once.
+    public static func probed(previous: Set<String>, found: Set<String>, loginShell: Bool) -> (installed: Set<String>, conclusive: Bool) {
+        if !loginShell { return (previous.union(found), false) }
+        if found.isEmpty && !previous.isEmpty { return (previous, false) }
+        return (found, true)
+    }
+
+    /// The question inside a wrapped send (`/oh-my-claudecode:ask codex <text>` → `<text>`),
+    /// so a pane's automatic title names the question; any other text unchanged.
+    public static func question(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        for target in all {
+            let prefix = "/\(skill) \(target.id) "
+            if trimmed.hasPrefix(prefix) { return String(trimmed.dropFirst(prefix.count)) }
+        }
+        return text
+    }
+
     /// What is sent: nil when nothing should be sent.
     public static func wrap(_ text: String, target: AskTarget?) -> String? {
         guard let target else { return text }
