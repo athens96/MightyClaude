@@ -349,9 +349,10 @@ public enum MobileMightySupport {
     /// during a stream is every token, so it must allocate nothing.
     public static func digest(_ values: [MightyGraphRun]) -> Int {
         var hasher = Hasher()
-        let window = Array(values.suffix(MobileWire.mightyRuns))
-        let carried = carriesResult(window)
-        for (index, run) in window.enumerated() where carried(index) && settled(status(run.status)) { hasher.combine(run.finalOutput?.utf8.count) }
+        let window = values.suffix(MobileWire.mightyRuns)
+        // The runs `runs` gives their result (`carriesResult`), read on the slice itself: nothing is copied.
+        let firstCarried = window.lastIndex { $0.noticeRun != true } ?? window.endIndex - 1
+        for index in window.indices where index >= firstCarried && settled(status(window[index].status)) { hasher.combine(window[index].finalOutput?.utf8.count) }
         for run in window {
             hasher.combine(run.id); hasher.combine(run.status); hasher.combine(run.agents.count)
             hasher.combine(run.rootEntries.count); hasher.combine(run.rootEntries.last?.id)

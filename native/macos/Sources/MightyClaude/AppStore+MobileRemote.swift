@@ -487,9 +487,14 @@ extension AppStore {
     /// What wakes a phone watching the pane's `backgroundWork`: the running tasks and, while any runs, its output
     /// lines' phone revision (moved at most once per `BackgroundOutputModel.phoneInterval`).
     func mobileBackgroundDigest(_ session: RunSession) -> Int {
-        guard session.kind == SessionKind.claude, let running = session.backgroundWork?.running, !running.isEmpty else { return 0 }
+        guard session.kind == SessionKind.claude, let tasks = session.backgroundWork?.tasks else { return 0 }
         var hasher = Hasher()
-        for task in running { hasher.combine(task.id); hasher.combine(task.description); hasher.combine(task.toolUseId) }
+        var running = false
+        for task in tasks where task.status == "running" {
+            running = true
+            hasher.combine(task.id); hasher.combine(task.description); hasher.combine(task.toolUseId)
+        }
+        guard running else { return 0 }
         hasher.combine(backgroundOutput.phoneRevision(forPane: session.id))
         return hasher.finalize()
     }

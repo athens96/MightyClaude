@@ -353,6 +353,9 @@ struct MobileRemoteExtensionTests {
         // The strip's opened row reads the same command and lines.
         let rows = PlanCardSupport.backgroundStripRows(work, run: run, output: [shellID: lines])
         #expect(rows[0].id == "b1" && rows[0].run == true && rows[0].tailLines == Array(lines.suffix(6)) && rows[0].opens)
+        // A task of neither kind, with no block to tell, is left out: the wire names only sub-agents and commands.
+        let other = BackgroundWork(tasks: work.tasks + [BackgroundTask(id: "b4", kind: "other", description: "Something", startedAt: started)], turnEnded: true)
+        #expect(PlanCardSupport.mobileBackgroundWork(other, run: run, output: [shellID: lines])?.map(\.id) == ["b1", "b2"])
         // Nothing runs: no field at all.
         #expect(PlanCardSupport.mobileBackgroundWork(BackgroundWork(tasks: [work.tasks[2]], turnEnded: true), run: run) == nil)
         let summary = MobileSessionSummary(id: "s1", workspaceId: "w1", title: "Claude", kind: "claude", provider: "claude", model: "default",

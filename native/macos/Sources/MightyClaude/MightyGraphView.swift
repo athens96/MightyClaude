@@ -138,6 +138,18 @@ struct MightyGraphView: View {
         return parts.joined(separator: " · ")
     }
 
+    /// The header's sub-agents and background runs. A copy in a notice run counts as the block it copies, once
+    /// however many notice runs hold it.
+    static func workCounts(_ runs: ArraySlice<MightyGraphRun>) -> (agents: Int, tasks: Int) {
+        var agents = Set<String>(), tasks = Set<String>()
+        for run in runs {
+            for agent in run.agents where !agent.isSteer && !agent.isCompact && !agent.isQuestion {
+                if agent.isTask { tasks.insert(agent.sourceBlockId ?? agent.id) } else { agents.insert(agent.sourceBlockId ?? agent.id) }
+            }
+        }
+        return (agents.count, tasks.count)
+    }
+
     /// Title, symbol and tint for a child block by kind.
     static func agentPresentation(_ agent: MightyGraphAgent) -> (title: String, icon: String, tint: Color) {
         // The title comes from the core so the phone's Mighty view names the
@@ -218,9 +230,10 @@ struct MightyGraphView: View {
         // Totals are the pane's own requests; those read back from the
         // record are counted apart.
         let own = ownRuns
-        let agentCount = own.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer && !$0.isCompact && !$0.isQuestion }.count }
+        let work = Self.workCounts(own)
+        let agentCount = work.agents
         let questionCount = own.reduce(0) { $0 + $1.agents.filter(\.isQuestion).count }
-        let taskCount = own.reduce(0) { $0 + $1.agents.filter(\.isTask).count }
+        let taskCount = work.tasks
         // Only steers a person sent; a delegation or task notice is not counted.
         let steerCount = own.reduce(0) { $0 + $1.agents.filter { $0.isSteer && !$0.isNotice }.count }
         let compactCount = own.reduce(0) { $0 + $1.agents.filter(\.isCompact).count }

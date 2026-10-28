@@ -166,15 +166,17 @@ public enum PlanCardSupport {
     }
 
     /// The phone's `backgroundWork`: the strip's running rows (`backgroundStripRows`), each with its command and
-    /// output lines; never a path. Nil when nothing runs.
+    /// output lines; never a path. A task that is neither a sub-agent nor a command (the CLI's `other` kind, with no
+    /// graph block to tell) is left out: the wire names only those two kinds. Nil when nothing of them runs.
     public static func mobileBackgroundWork(_ work: BackgroundWork?, run: MightyGraphRun?, output: [String: [String]] = [:]) -> [MobileBackgroundWork]? {
         guard let work, !work.running.isEmpty else { return nil }
         let rows = Dictionary(backgroundStripRows(work, run: run, output: output).compactMap { row in row.id.map { ($0, row) } },
                               uniquingKeysWith: { first, _ in first })
-        let items = work.running.map { task -> MobileBackgroundWork in
+        let items = work.running.compactMap { task -> MobileBackgroundWork? in
             let row = rows[task.id]
+            guard let run = row?.run ?? (task.kind == "shell" ? true : task.kind == "agent" ? false : nil) else { return nil }
             let title = ActivitySupport.clean(row?.task.text ?? task.description, maximumBytes: MobileBackgroundWork.maximumTitle, singleLine: true)
-            return MobileBackgroundWork(id: task.id, kind: (row?.run ?? (task.kind == "shell")) ? "run" : "agent", title: title,
+            return MobileBackgroundWork(id: task.id, kind: run ? "run" : "agent", title: title,
                                         startedAt: task.startedAt,
                                         command: row?.command.map { ActivitySupport.clean($0, maximumBytes: MobileBackgroundWork.maximumCommand) }.flatMap { $0.isEmpty ? nil : $0 },
                                         outputTail: row.flatMap { $0.tailLines.isEmpty ? nil : $0.tailLines })

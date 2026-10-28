@@ -466,7 +466,6 @@ public struct MobileBackgroundWork: Codable, Sendable, Equatable, Identifiable {
     public var command: String?
     /// A run's last output lines (at most 6).
     public var outputTail: [String]?
-    public static let kinds = ["agent", "run"]
     public static let maximumTitle = 1_000
     public static let maximumCommand = 2_000
     public init(id: String, kind: String, title: String, status: String = "running", startedAt: String, command: String? = nil, outputTail: [String]? = nil) {

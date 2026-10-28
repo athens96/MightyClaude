@@ -287,4 +287,61 @@ struct BackgroundNoticeRunsTests {
         #expect(MightyGraphSupport.newestRequestOwns(line, runs: ended) && MightyGraphSupport.newestRequestOwns(status, runs: ended))
         #expect(MightyGraphSupport.newestRequestOwns(line, runs: []))
     }
+
+    /// The 실행 block still says the request waits on its background work after views dropped those blocks.
+    @Test func aShownRequestStillCountsTheBackgroundWorkItWaitsOn() throws {
+        let all = Self.runs()
+        #expect(all[0].backgroundWaiting == 1)
+        let shown = MightyGraphSupport.shownRuns(all)
+        #expect(shown[0].agents.map(\.id) == ["fg"] && shown[0].backgroundWaiting == 1)
+        #expect(MightyGraphSupport.shownRuns(Self.runs(requestStatus: "running"))[0].backgroundWaiting == 0)
+        // The count is never saved: the state file holds the run as it is.
+        let data = try JSONEncoder().encode(shown[0])
+        #expect(!String(decoding: data, as: UTF8.self).contains("shownBackgroundWaiting"))
+        #expect(try JSONDecoder().decode(MightyGraphRun.self, from: JSONEncoder().encode(all[0])) == all[0])
+    }
+
+    /// Only a notice run that opened complete without a reply is quiet: a notice turn that failed or was stopped before
+    /// its reply keeps its card and is followed; one a later turn reopens keeps showing its earlier reply.
+    @Test func aFailedNoticeTurnIsNotQuietAndAReopenedOneKeepsItsReply() {
+        var failed = MightyGraphRun(id: "r:notice:1", status: "error", noticeRun: true)
+        failed.refreshResult()
+        #expect(!failed.quietNotice && MightyGraphLayout.hasResult(failed))
+        let stopped = MightyGraphRun(id: "r:notice:1", status: "stopped", noticeRun: true)
+        #expect(!stopped.quietNotice)
+        let request = MightyGraphRun(id: "r", status: "completed", finalOutput: "Started.")
+        #expect(MightyGraphSupport.followRunIndex([request, failed]) == 1)
+        var reopened = MightyGraphRun(id: "r:notice:1", status: "running", finalOutput: "The build passed.", noticeRun: true)
+        reopened.refreshResult()
+        #expect(reopened.reopenedWithReply && MightyGraphLayout.hasResult(reopened) && reopened.resultEntries.first?.text == "The build passed.")
+        let graph = Self.layout([request, reopened], running: true)
+        #expect(graph.nodes.contains { $0.id == Self.node("r:notice:1", "result") })
+        // A first notice turn still waiting for its reply has no card yet.
+        var opening = MightyGraphRun(id: "r:notice:2", status: "running", noticeRun: true)
+        opening.refreshResult()
+        #expect(!MightyGraphLayout.hasResult(opening) && opening.resultEntries.isEmpty)
+    }
+
+    /// A process that ends in the middle of a notice turn ends that turn's run, so the request waiting behind it is
+    /// started by its own process's lines and 전송 중 cannot stay.
+    @Test func aProcessEndingInANoticeTurnEndsItsRun() throws {
+        let box = SessionBox(RunSession(id: "pane", workspaceId: "space", title: "Claude", provider: "claude"))
+        func record(_ event: RunEvent) { box.session.recordGraph(event) }
+        record(RunEvent(sessionId: "pane", type: "log", entry: LogEntry(id: "request-one", kind: "user", text: "build it", provider: "claude")))
+        let tracker = ExecutionGraphTracker(runID: "proc-1", input: "build it", emit: { record(RunEvent(sessionId: "pane", type: "graph", graph: $0)) })
+        for event in [command("build", "npm run build", description: "Build the app"), launched("build", task: "b1"), result("Building.")] { tracker.consume(event) }
+        box.session.beginGraphRun(input: "and lint", id: "request-two", configuredModel: "default", status: "starting")
+        tracker.consume(notification("b1", summary: "Build done"))
+        let line = RunEvent(sessionId: "pane", type: "log", entry: LogEntry(id: "line-2", kind: "assistant", text: "Linting.", provider: "claude"))
+        #expect(box.session.mightyGraphRuns[1].status == "running")
+        #expect(!MightyGraphSupport.newestRequestOwns(line, runs: box.session.graphRuns ?? []))
+        tracker.finish(state: "stopped")
+        var runs = box.session.mightyGraphRuns
+        #expect(runs.map(\.id) == ["request-one", "proc-1:notice:1", "request-two"])
+        #expect(runs[1].status == "stopped" && !runs[1].quietNotice)
+        #expect(MightyGraphSupport.newestRequestOwns(line, runs: box.session.graphRuns ?? []))
+        record(line)
+        runs = box.session.mightyGraphRuns
+        #expect(runs[2].status == "running" && runs[2].rootEntries.contains { $0.text == "Linting." })
+    }
 }

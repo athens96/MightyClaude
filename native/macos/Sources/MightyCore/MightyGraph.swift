@@ -68,6 +68,11 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     public var configuredModel: String?
     /// Claude's reply to finished background work, not a request the user sent (`BackgroundNoticeRuns`); absent otherwise and in older saves.
     public var noticeRun: Bool?
+    /// `backgroundWaiting` of the run `shown` was made from, whose background blocks it no longer holds. Never saved.
+    private var shownBackgroundWaiting: Int?
+    private enum CodingKeys: String, CodingKey {
+        case id, input, status, rootEntries, agents, resultEntries, sourceRunID, finalOutput, usage, responseRecords, provider, nodeModelLabel, configuredModel, noticeRun
+    }
     public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, responseRecords: [GraphResponseRecord]? = nil, provider: String? = nil, nodeModelLabel: String? = nil, configuredModel: String? = nil,
                 noticeRun: Bool? = nil) {
         self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.responseRecords = responseRecords; self.provider = provider; self.nodeModelLabel = nodeModelLabel; self.configuredModel = configuredModel
@@ -81,17 +86,29 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     /// above the composer and is not waited for (`BackgroundNoticeRuns.shownAgents`).
     public var settled: Bool { MightyGraphSupport.terminal(status) && BackgroundNoticeRuns.shownAgents(self).allSatisfy { MightyGraphSupport.terminal($0.status) } }
     /// The run as views draw it: background blocks only inside a notice run (`BackgroundNoticeRuns.shownAgents`).
+    /// It still says how much background work it waits on (`backgroundWaiting`), counted before the blocks went.
     public var shown: MightyGraphRun {
         let agents = BackgroundNoticeRuns.shownAgents(self)
         guard agents.count != self.agents.count else { return self }
-        var run = self; run.agents = agents; return run
+        var run = self
+        run.shownBackgroundWaiting = backgroundWaiting
+        run.agents = agents
+        return run
     }
-    /// A notice run taken into a running turn: finished, with no reply of its own. No view follows it or gives it a result card.
+    /// A notice run taken into a running turn: it opens complete and has no reply of its own. No view follows it or
+    /// gives it a result card. A notice turn that failed or was stopped before its reply is not one: its card says so.
     public var quietNotice: Bool {
-        noticeRun == true && MightyGraphSupport.terminal(status) && (finalOutput ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        noticeRun == true && status == "completed" && (finalOutput ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    /// A notice run a later notice turn answers in again (`ExecutionGraphTracker`): it keeps showing its earlier reply meanwhile.
+    public var reopenedWithReply: Bool {
+        noticeRun == true && !MightyGraphSupport.terminal(status) && !(finalOutput ?? "").isEmpty
     }
     /// Background tasks and sub-agents still running after the request's own turn ended: it reads completed and waits on them.
-    public var backgroundWaiting: Int { status == "completed" ? agents.filter { ($0.isTask || $0.isBackgroundAgent) && !MightyGraphSupport.terminal($0.status) }.count : 0 }
+    public var backgroundWaiting: Int {
+        guard status == "completed" else { return 0 }
+        return shownBackgroundWaiting ?? agents.filter { ($0.isTask || $0.isBackgroundAgent) && !MightyGraphSupport.terminal($0.status) }.count
+    }
 
     /// The owning session is authoritative, including pre-provider graph saves.
     mutating func applyProvider(_ value: String) {
@@ -111,7 +128,7 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     }
 
     mutating func refreshResult() {
-        guard status == "completed", settled, let text = finalOutput, !text.isEmpty else { resultEntries = []; return }
+        guard (status == "completed" && settled) || reopenedWithReply, let text = finalOutput, !text.isEmpty else { resultEntries = []; return }
         let timestamp = resultEntries.first?.timestamp ?? rootEntries.last?.timestamp ?? mightyTimestamp()
         let entry = LogEntry(id: id + "-result", kind: "assistant", text: text, timestamp: timestamp, provider: provider ?? "claude")
         resultEntries = [entry]

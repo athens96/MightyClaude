@@ -19,7 +19,7 @@ public enum MightyStructure {
     /// One block of a cluster, flattened depth-first.
     public struct Node: Equatable, Sendable, Identifiable {
         public var agentID: String
-        /// Index into the run's `agents`.
+        /// Index into the agents of the run as views draw it (`MightyGraphRun.shown`).
         public var agentIndex: Int
         /// The diagram node this row stands for (`MightyGraphLayout.Node.id`).
         public var nodeID: String
@@ -418,7 +418,9 @@ public enum MightyStructure {
     }
 
     /// `ordinal`: the request's number (`MightyGraphSupport.requestOrdinals`); nil counts every run before it.
-    public static func item(_ run: MightyGraphRun, index: Int, ordinal: Int? = nil) -> Item {
+    /// The card reads the run as views draw it (`MightyGraphRun.shown`): background blocks only in a notice run.
+    public static func item(_ raw: MightyGraphRun, index: Int, ordinal: Int? = nil) -> Item {
+        let run = raw.shown
         let finished = MightyGraphLayout.finished(run)
         let answer = run.resultEntries.last(where: { $0.kind == "assistant" && !$0.text.isEmpty })?.text ?? run.finalOutput
         let result = finished ? answer.map(preview).flatMap { $0.isEmpty ? nil : $0 } : nil
@@ -461,7 +463,9 @@ public enum MightyStructure {
     /// handed to a sub-agent, and no block is ever their child; tasks (backgrounded
     /// commands) are work, so they stay, and so does a task's notice (a 작업 알림
     /// steer): it and its reply are the run's work on that task's outcome.
-    public static func clusters(_ run: MightyGraphRun) -> [Cluster] {
+    /// `Node.agentIndex` indexes the agents of `run.shown`, which views draw.
+    public static func clusters(_ raw: MightyGraphRun) -> [Cluster] {
+        let run = raw.shown
         let kept = kept(run)
         let indexes = Dictionary(kept.map { (run.agents[$0].id, $0) }, uniquingKeysWith: { first, _ in first })
         var children: [String: [Int]] = [:]
@@ -496,15 +500,11 @@ public enum MightyStructure {
     }
 
     /// The run's sub-agent, task and task-notice blocks, by index. A block id the run repeats (a
-    /// damaged save) is kept at its first place only, so every node id is unique. Background blocks
-    /// are left out outside a notice run (`BackgroundNoticeRuns.shownAgents`).
+    /// damaged save) is kept at its first place only, so every node id is unique.
     static func kept(_ run: MightyGraphRun) -> [Int] {
         var seen = Set<String>()
-        let shown = run.noticeRun != true && run.agents.contains { $0.background == true }
-            ? Set(BackgroundNoticeRuns.shownAgents(run).map(\.id)) : nil
         return run.agents.indices.filter { index in
-            (["agent", "task"].contains(MightyGraphSupport.blockKind(run.agents[index])) || run.agents[index].isTaskNotice)
-                && shown.map { $0.contains(run.agents[index].id) } != false && seen.insert(run.agents[index].id).inserted
+            (["agent", "task"].contains(MightyGraphSupport.blockKind(run.agents[index])) || run.agents[index].isTaskNotice) && seen.insert(run.agents[index].id).inserted
         }
     }
 

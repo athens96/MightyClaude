@@ -290,9 +290,10 @@ public struct MightyGraphLayout {
     public static func finished(_ run: MightyGraphRun) -> Bool {
         terminal(run.status) && BackgroundNoticeRuns.shownAgents(run).allSatisfy { terminal($0.status) }
     }
-    /// Finished with a result card under it: every finished run but a notice run without a reply of its own
-    /// (`MightyGraphRun.quietNotice`), whose card would hold nothing.
-    public static func hasResult(_ run: MightyGraphRun) -> Bool { finished(run) && !run.quietNotice }
+    /// Has a result card under it: every finished run but a notice run without a reply of its own
+    /// (`MightyGraphRun.quietNotice`), whose card would hold nothing; and a notice run a later turn answers in again,
+    /// which keeps showing its earlier reply (`MightyGraphRun.reopenedWithReply`).
+    public static func hasResult(_ run: MightyGraphRun) -> Bool { (finished(run) && !run.quietNotice) || run.reopenedWithReply }
     public static func nodeID(_ run: MightyGraphRun, suffix: String) -> String {
         MightyGraphBlockSize.nodeID(runID: run.id, suffix: suffix)
     }
