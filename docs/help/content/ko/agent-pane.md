@@ -73,10 +73,10 @@ Google 에이전트는 Antigravity CLI(`agy`)로 실행됩니다. Antigravity는
 - 터미널 창에는 첨부할 수 없습니다.
 
 ### 보낼 대상 {#ask-target}
-oh-my-claudecode가 설치된 Claude 창에는 입력창에 {{ui:composer.ask.menuLabel}} 스위치가 나타납니다. 설치된 다른 CLI(Codex, Antigravity 등)가 목록에 오르고, 하나를 고르면 이후 요청이 oh-my-claudecode의 `ask`를 거쳐 그 CLI로 갑니다. 답은 Claude의 답글 안에 돌아옵니다. {{ui:composer.ask.claude}}를 고르면 원래대로 Claude에게 보냅니다. Mac, Windows, 휴대폰에서 모두 쓸 수 있습니다.
+oh-my-claudecode가 설치된 Claude 창에는 입력창에 {{ui:composer.ask.menuLabel}} 스위치가 나타납니다. 설치된 다른 CLI(Codex, Antigravity 등)가 목록에 오르고, 하나를 고르면 이후 요청이 oh-my-claudecode의 `ask`를 거쳐 그 CLI로 갑니다. 답은 Claude의 답글 안에 돌아옵니다. {{ui:composer.ask.claude}}를 고르면 원래대로 Claude에게 보냅니다. Mac, Windows 앱의 웹 창, 휴대폰에서 쓸 수 있습니다.
 - 다른 CLI에게 묻는 동안에는 첨부를 보낼 수 없습니다.
 - oh-my-claudecode는 고른 CLI를 승인 확인과 샌드박스를 끈 채로 실행합니다. 그래서 그 CLI는 묻지 않고 이 폴더의 파일을 바꾸고 명령을 실행할 수 있습니다. 마이티 클로드의 권한 모드와 승인 카드는 그 CLI를 실행하는 Claude의 단계에만 적용됩니다.
-- Windows에서는 oh-my-claudecode가 Antigravity에게 물을 수 없어 목록에 나오지 않습니다. 대신 Gemini CLI를 고르세요.
+- Windows에서 예전 버전의 oh-my-claudecode는 Antigravity에게 묻기를 거절합니다. 그런 답이 돌아오면 oh-my-claudecode를 업데이트하거나 Gemini CLI를 고르세요.
 - `/`로 시작하는 글은 그대로 Claude에게 갑니다.
 
 ### 슬래시 명령 {#slash}

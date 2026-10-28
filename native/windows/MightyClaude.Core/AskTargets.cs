@@ -21,9 +21,6 @@ public static class AskTargets
         new("cursor", "Cursor", "cursor-agent"),
     ];
 
-    /// <summary>Targets oh-my-claudecode's ask refuses on Windows ("not supported on Windows"; it points to gemini): this PC never offers them (fixture unsupportedOn.windows).</summary>
-    public static readonly IReadOnlySet<string> UnsupportedOnWindows = new HashSet<string>(StringComparer.Ordinal) { "antigravity" };
-
     /// <summary>The targets a pane offers: none unless it is a Claude agent pane whose slash list has the skill; then every installed one.</summary>
     public static IReadOnlyList<AskTarget> Available(bool isClaudeAgent, IReadOnlySet<string> slash, IReadOnlySet<string> installed)
         => !isClaudeAgent || !slash.Contains(Skill) ? [] : All.Where(target => installed.Contains(target.Executable)).ToArray();

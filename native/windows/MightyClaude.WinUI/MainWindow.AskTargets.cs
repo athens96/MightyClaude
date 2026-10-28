@@ -64,13 +64,13 @@ public sealed partial class MainWindow
     /// </summary>
     private bool AsksOtherCli(RunSession pane) => webShell is not null && pane.Kind == "claude" && pane.Provider == "claude" && !service.IsRemoteWorkspace(pane.WorkspaceId);
 
-    /// <summary>The targets a pane's switch offers, in the menu's order; empty hides it. One oh-my-claudecode's ask refuses on Windows is never offered.</summary>
+    /// <summary>The targets a pane's switch offers, in the menu's order; empty hides it.</summary>
     internal IReadOnlyList<AskTarget> AskTargetsFor(RunSession pane)
     {
         // Cheapest tests first: the composer asks on every refresh and the phone four times a second.
         if (installedAskExecutables.Count == 0 || !AsksOtherCli(pane)) return [];
         var offers = slashCatalogs.OffersAsk(pane.Provider, AskCatalogPath(pane)) == true;
-        return AskTargets.Available(true, offers ? AskSkillOnly : NoSlash, installedAskExecutables).Where(t => !AskTargets.UnsupportedOnWindows.Contains(t.Id)).ToArray();
+        return AskTargets.Available(true, offers ? AskSkillOnly : NoSlash, installedAskExecutables);
     }
 
     /// <summary>The target a pane's sends go to now; null for Claude.</summary>

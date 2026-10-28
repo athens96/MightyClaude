@@ -73,10 +73,10 @@ Click the paperclip, drag files onto the composer, or paste a picture with {{kbd
 - Terminal panes can't take attachments.
 
 ### Send to {#ask-target}
-A Claude pane with oh-my-claudecode installed shows a {{ui:composer.ask.menuLabel}} switch in the composer. It lists the other CLIs that are installed (Codex, Antigravity and so on); once you pick one, your requests go to it through oh-my-claudecode's `ask`. The answer comes back inside Claude's reply. Pick {{ui:composer.ask.claude}} to send to Claude as before. It works on the Mac, on Windows and on the phone.
+A Claude pane with oh-my-claudecode installed shows a {{ui:composer.ask.menuLabel}} switch in the composer. It lists the other CLIs that are installed (Codex, Antigravity and so on); once you pick one, your requests go to it through oh-my-claudecode's `ask`. The answer comes back inside Claude's reply. Pick {{ui:composer.ask.claude}} to send to Claude as before. It works on the Mac, in the Windows app's web window and on the phone.
 - Attachments can't be sent while you are asking another CLI.
 - oh-my-claudecode starts the chosen CLI with its approvals and sandbox turned off, so it can change files and run commands in this folder without asking. Mighty Claude's permission mode and approval cards cover only Claude's step that starts it.
-- On Windows, oh-my-claudecode can't ask Antigravity, so it isn't listed there. Use Gemini CLI instead.
+- On Windows, older versions of oh-my-claudecode refuse to ask Antigravity. If that answer comes back, update oh-my-claudecode or use Gemini CLI.
 - Text that starts with `/` still goes to Claude as it is.
 
 ### Slash commands {#slash}
