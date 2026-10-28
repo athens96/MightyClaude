@@ -145,7 +145,7 @@ MobilePermission {
 | POST | `/m1/sessions/{id}/close` | | `{ protocol, ok }` — 실행 중이면 Mac에서 닫을 때와 같이 중지 후 닫는다 |
 | GET | `/m1/sessions/{id}/entries?before=<entryId>&limit=<1..100>` | | `{ protocol, entries: [LogEntry], hasMore }` — `before`보다 오래된 항목을 시간순으로. `before`가 호스트 기록에 없으면(밀려남) 가장 오래된 쪽부터가 아니라 **빈 배열과 `hasMore: false`** |
 | POST | `/m1/sessions/{id}/settings` | `{ model?, permissionMode?, effort?, agentViewMode?, mightyStyle?, styleId? }` (하나 이상) | `{ protocol, ok }` · 실행 중이면 409 · 옵션에 없는 값 400 · `styleId`가 있으면 `mightyStyle`은 무시한다(아래 "스타일" 절) |
-| POST | `/m1/sessions/{id}/setAskTarget` | `{ target: string \| null }` | `{ protocol, ok }` — 이 창의 보낼 대상. 세부 정보의 `askTargets`에 있는 id이거나 Claude를 뜻하는 `null`이다. 그 창이 내놓지 않는 id·문자열이 아닌 값·틀린 본문은 400(`remote.error.badBody`). 아래 "보낼 대상" 절 |
+| POST | `/m1/sessions/{id}/setAskTarget` | `{ target: string \| null }` | `{ protocol, ok }` — 이 창의 보낼 대상. 세부 정보의 `askTargets`에 있는 id이거나 Claude를 뜻하는 `null`(`target`을 빼도 Claude)이다. 그 창이 내놓지 않는 id, 문자열도 `null`도 아닌 `target`, 객체가 아닌 본문은 400(`remote.error.badBody`). 알 수 없는 창은 404, Mac은 셸·로컬 터미널 창에도 409. 아래 "보낼 대상" 절 |
 | GET | `/m1/sessions/{id}/commands` | | `{ protocol, commands: [MobileCommand] }` |
 | POST | `/m1/sessions/{id}/command` | `{ action }` (`clear` `usage` `help`만) | `{ protocol, ok, message? }` — `usage`·`help`는 `message`에 본문 |
 | POST | `/m1/sessions/{id}/guided` | 새 형식 `{ styleId, actionId, text? }` · 레거시 `{ style: "ouroboros", skill, text? }` | 202 `{ protocol, accepted }` — 호스트가 Mac과 같은 함수로 프롬프트를 만든다(`/ouroboros:seed`, `/re0 docs/spec.md`). 스타일을 모르거나 승인되지 않음 400, 이 창이 그 스타일이 아님 409, 행동(스킬)을 모름 400. 자세한 값은 아래 "스타일" 절 |
@@ -403,8 +403,8 @@ MobileFilePreview {
 oh-my-claudecode가 깔린 Claude 창은 입력창에 **보낼 대상** 스위치를 갖는다. 고르면 그 창의 이후 요청이 `oh-my-claudecode:ask`를 거쳐 Codex·Antigravity 등 설치된 다른 CLI로 간다. 목록·보이는 조건·감싸는 규칙은 공유 고정 파일 `native/contracts/fixtures/ask-targets.json`(Mac `AskTargets`, Windows Core `AskTargets`)이 정한다.
 
 - 세부 정보의 `askTargets: [{ id, label }]`는 이 창이 스위치를 보일 때만 실린다(Claude 에이전트 창이고, 슬래시 명령에 `oh-my-claudecode:ask`가 있고, 대상 실행 파일이 하나 이상 설치됨). 목록 순서는 데스크톱 메뉴와 같다(`codex` `antigravity` `gemini` `grok` `cursor` 중 설치된 것). `askTarget`은 지금 보내지는 대상의 id이며 Claude이면 없다. 저장된 대상이 더는 쓸 수 없으면 호스트가 Claude로 읽어 `askTarget`을 빼고 보낸다. 대상이 없으면 두 필드 모두 없다.
-- `POST /m1/sessions/{id}/setAskTarget`은 `{ target }`(id 또는 `null`)을 받는다. 그 창이 내놓지 않는 id, 문자열도 `null`도 아닌 값, 틀린 본문은 400(`remote.error.badBody`). 알 수 없는 창은 404.
-- **호스트가 감싼다.** 휴대폰은 늘 평문을 `submit`에 보내고, 호스트가 대상이 Claude가 아닐 때 `/oh-my-claudecode:ask <id> <글>`로 바꿔 보낸다(앞뒤 공백을 뺀 글이 비면 아무것도 보내지 않고, `/`로 시작하는 글은 그대로 보낸다). 대상이 정해진 동안에는 첨부를 보낼 수 없어, `attachments`가 있는 `submit`은 409(`composer.ask.attachmentsOff`)다. 새 휴대폰은 대상을 고르면 첨부 단추를 막고 이미 고른 파일을 비운다.
+- `POST /m1/sessions/{id}/setAskTarget`은 `{ target }`(id 또는 `null`)을 받고, `target`이 없으면 Claude로 읽어 200이다. 그 창이 내놓지 않는 id, 문자열도 `null`도 아닌 `target`, 객체가 아닌 본문만 400(`remote.error.badBody`). 알 수 없는 창은 404이고, Mac은 셸·로컬 터미널 창에도 409다.
+- **호스트가 감싼다.** 휴대폰은 늘 평문을 `submit`에 보내고, 호스트가 대상이 Claude가 아닐 때 `/oh-my-claudecode:ask <id> <글>`로 바꿔 보낸다(앞뒤 공백을 뺀 글이 비면 아무것도 보내지 않고, `/`로 시작하는 글은 그대로 보낸다). 대상이 정해진 동안에는 첨부를 보낼 수 없어, `attachments`가 있는 `submit`은 409(`composer.ask.attachmentsOff`)다. 새 휴대폰은 대상이 정해진 동안 첨부 단추를 막고 안내 문구(`composer.ask.attachmentsOff`)를 보이며, 이미 고른 파일은 지우지 않고 그대로 두되 보내지 않는다(대상이 세부 정보로 와도 같다). 파일만 있으면 보낼 글이 없는 것으로 본다.
 - 휴대폰은 고른 값을 다음 세부 정보가 올 때까지 먼저 보이고, 요청이 실패하면 되돌리며 오류를 알린다.
 - 구버전 호스트는 두 필드도 라우트도 모르므로 휴대폰에 스위치가 보이지 않는다. 구버전 휴대폰은 두 필드를 무시하므로 스위치를 모르고 평문만 보낸다.
 

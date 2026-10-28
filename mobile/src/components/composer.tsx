@@ -8,6 +8,7 @@ import { Pending, PendingBars, usePendingShown } from '@/components/pending';
 import { Sheet } from '@/components/sheets';
 import { byteLength } from '@/api/client';
 import { MAX_TEXT_BYTES, type MobileCommand, type SubmitMode } from '@/api/types';
+import { draftIsEmpty } from '@/lib/ask-targets';
 import { commandInsertion, commandQuery, filterCommands } from '@/lib/commands';
 import { t } from '@/lib/i18n';
 import { useBusyState } from '@/hooks/use-pending';
@@ -124,7 +125,8 @@ export function Composer({
 
   const picked = attachments?.files ?? [];
   const asking = ask?.name !== undefined;
-  const empty = text.trim().length === 0 && picked.length === 0;
+  // Files stay staged while a CLI is asked but do not go, so they are no draft.
+  const empty = draftIsEmpty(text, picked.length, ask?.name ?? null);
   const blocked = disabled || tooLong || empty;
   // A draft on a running pane always queues as the next request, files or not.
   const busyChoices = busySendChoices({ submitModes });
@@ -134,7 +136,7 @@ export function Composer({
 
   const submit = (mode?: SubmitMode) => {
     const value = text.trim();
-    if (tooLong || (value.length === 0 && picked.length === 0)) return;
+    if (tooLong || draftIsEmpty(value, picked.length, ask?.name ?? null)) return;
     onSend(value, mode);
   };
 

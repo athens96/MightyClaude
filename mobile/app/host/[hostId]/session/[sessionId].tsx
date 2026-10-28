@@ -127,7 +127,7 @@ import {
   useSessionDetail,
 } from '@/store/live';
 import { showToast } from '@/store/toast';
-import { CLAUDE_ASK, parseAskTargets, shownAskTarget } from '@/lib/ask-targets';
+import { CLAUDE_ASK, filesTravel, parseAskTargets, shownAskTarget } from '@/lib/ask-targets';
 import { spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 /**
@@ -563,6 +563,19 @@ export default function SessionScreen() {
     return cancelAttachments;
   }, [cancelAttachments, clearAttachments, sessionId]);
 
+  // The "send to" switch: the host's list and word, with the choice just made held until the next detail.
+  const askView = useMemo(() => parseAskTargets(detail), [detail]);
+  const [askChoice, setAskChoice] = useState<{ target: string | null; revision: number | undefined } | undefined>(undefined);
+  const [askOpen, setAskOpen] = useState(false);
+  const [askSaving, setAskSaving] = useState(false);
+  useEffect(() => {
+    setAskChoice(undefined);
+    setAskOpen(false);
+  }, [sessionId]);
+  const askTarget = shownAskTarget(askView, askChoice, detail?.revision);
+  // Files stay staged while a CLI is asked, but only Claude takes them along.
+  const sendsFiles = filesTravel(askTarget);
+
   // What the pane holds now, read by the send that starts a request and by the reconcile.
   const snapshotRef = useRef<PaneSnapshot>({ entries: NO_ENTRIES });
   const runningRef = useRef(false);
@@ -595,7 +608,7 @@ export default function SessionScreen() {
           // attempt fail before it started.
           const request: SendRequest = { client, sessionId, text: value };
           if (mode) request.mode = mode;
-          if (attachFiles.length > 0) {
+          if (sendsFiles && attachFiles.length > 0) {
             request.upload = () => uploadAttachments(client, sessionId);
           }
           const result = await sendWithAttachments(request);
@@ -633,7 +646,7 @@ export default function SessionScreen() {
           if (!(drawn && answer.outcome === 'started')) showToast(acceptedMessage(result.accepted), 'success');
           // A queued request is no move yet: it is own when it runs (its entry lands, the settle below).
           if (answer.outcome === 'started' || answer.outcome === 'steered') setOwnMove((count) => count + 1);
-          clearAttachments();
+          if (sendsFiles) clearAttachments();
           poll.refresh();
         } finally {
           sendingRef.current = false;
@@ -641,7 +654,7 @@ export default function SessionScreen() {
         }
       })();
     },
-    [attachFiles.length, clearAttachments, client, poll, sessionId, updatePending, uploadAttachments],
+    [attachFiles.length, clearAttachments, client, poll, sendsFiles, sessionId, updatePending, uploadAttachments],
   );
 
   // Stop can be pressed on a picture of the pane that is out of date — the run ended
@@ -749,16 +762,6 @@ export default function SessionScreen() {
     [client, poll, sessionId, settle],
   );
 
-  // The "send to" switch: the host's list and word, with the choice just made held until the next detail.
-  const askView = useMemo(() => parseAskTargets(detail), [detail]);
-  const [askChoice, setAskChoice] = useState<{ target: string | null; revision: number | undefined } | undefined>(undefined);
-  const [askOpen, setAskOpen] = useState(false);
-  const [askSaving, setAskSaving] = useState(false);
-  useEffect(() => {
-    setAskChoice(undefined);
-    setAskOpen(false);
-  }, [sessionId]);
-  const askTarget = shownAskTarget(askView, askChoice, detail?.revision);
   const askOptions = useMemo(
     () => [{ id: CLAUDE_ASK, label: t('composer.ask.claude') }, ...askView.targets],
     [askView.targets],
@@ -770,8 +773,6 @@ export default function SessionScreen() {
       const before = askChoice;
       setAskChoice({ target, revision: detail?.revision });
       setAskOpen(false);
-      // Files cannot go to another CLI, so the ones already picked are put back.
-      if (target !== null) clearAttachments();
       void (async () => {
         setAskSaving(true);
         try {
@@ -785,7 +786,7 @@ export default function SessionScreen() {
         }
       })();
     },
-    [askChoice, clearAttachments, client, detail?.revision, poll, sessionId],
+    [askChoice, client, detail?.revision, poll, sessionId],
   );
 
   const answer = useCallback(

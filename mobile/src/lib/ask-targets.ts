@@ -42,3 +42,13 @@ export function shownAskTarget(
   if (!choice || choice.revision !== revision) return view.selected;
   return choice.target === null || view.targets.some((target) => target.id === choice.target) ? choice.target : view.selected;
 }
+
+/** Whether staged files go with a send: only to Claude. Asking another CLI keeps them staged and sends text alone. */
+export function filesTravel(target: string | null): boolean {
+  return target === null;
+}
+
+/** The composer's "nothing to send" rule: files count only while they travel, so a CLI asked with files alone has no draft. */
+export function draftIsEmpty(text: string, fileCount: number, target: string | null): boolean {
+  return text.trim().length === 0 && (!filesTravel(target) || fileCount === 0);
+}

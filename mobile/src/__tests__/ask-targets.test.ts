@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { parseAskTargets, shownAskTarget } from '@/lib/ask-targets';
+import { draftIsEmpty, filesTravel, parseAskTargets, shownAskTarget } from '@/lib/ask-targets';
 
 /** The same file the Mac AskTargets, Windows Core AskTargets and Windows page read. */
 const fixture = JSON.parse(
@@ -60,5 +60,23 @@ describe('shownAskTarget', () => {
 
   it('ignores a choice the list does not offer', () => {
     expect(shownAskTarget(view, { target: 'nope', revision: 4 }, 4)).toBe('codex');
+  });
+});
+
+describe('staged files while a CLI is asked', () => {
+  const view = parseAskTargets({ askTargets: wire, askTarget: 'codex' });
+
+  it('travel only to Claude, including a target that arrived with the detail', () => {
+    // Chosen on the Mac or restored: no choice was made on the phone, the detail alone says codex.
+    expect(filesTravel(shownAskTarget(view, undefined, 4))).toBe(false);
+    expect(filesTravel(shownAskTarget(parseAskTargets({ askTargets: wire }), undefined, 4))).toBe(true);
+    expect(filesTravel(shownAskTarget(view, { target: null, revision: 4 }, 4))).toBe(true);
+  });
+
+  it('are not a draft on their own while a CLI is asked', () => {
+    expect(draftIsEmpty('', 2, null)).toBe(false);
+    expect(draftIsEmpty('', 2, 'codex')).toBe(true);
+    expect(draftIsEmpty('  ', 0, null)).toBe(true);
+    expect(draftIsEmpty('look', 2, 'codex')).toBe(false);
   });
 });
