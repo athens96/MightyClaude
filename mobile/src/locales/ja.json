@@ -239,6 +239,7 @@
   "graph.background.agentEnded": "サブエージェント · {status}",
   "graph.background.runEnded": "バックグラウンド実行 · {status}",
   "graph.background.reply": "Claude の返答",
+  "graph.background.noticeRun": "バックグラウンド作業完了",
   "graph.block.agent": "サブエージェント",
   "graph.block.blockUsageLabel": "このブロック",
   "graph.block.compact": "コンテキストの要約",

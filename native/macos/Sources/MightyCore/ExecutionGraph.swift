@@ -102,13 +102,15 @@ public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
     public var outputFile: String?
     /// Claude's answer in the turn this block's notice opened, when it was that turn's only notice.
     public var noticeReply: String?
+    /// A copy in a notice run (`BackgroundNoticeRuns`): the id of the finished background block it copies.
+    public var sourceBlockId: String?
 
     public init(id: String, runId: String, parentId: String? = nil, kind: String, state: String, title: String,
                 input: String? = nil, output: String? = nil, entries: [LogEntry] = [], updatedAt: String = mightyTimestamp(), usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil,
-                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil) {
+                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil) {
         self.id = id; self.runId = runId; self.parentId = parentId; self.kind = kind; self.state = state
         self.title = title; self.input = input; self.output = output; self.entries = entries; self.updatedAt = updatedAt; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
-        self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply
+        self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply; self.sourceBlockId = sourceBlockId
     }
 }
 
@@ -149,11 +151,12 @@ public enum ExecutionGraphSupport {
         result.background = node.background == true ? true : nil
         result.outputFile = node.outputFile.flatMap { $0.utf8.count <= 4096 && !$0.contains(where: \.isNewline) ? $0 : nil }
         result.noticeReply = node.noticeReply.map { ActivitySupport.clean($0, maximumBytes: maximumOutputBytes) }
+        result.sourceBlockId = node.sourceBlockId.flatMap { CoreValidation.identifier($0) ? $0 : nil }
         if restoring && !terminal(result.state) { result.state = "stopped" }
         if node.kind == "main" { result.entries = []; return result }
 
         var remaining = maximumNodeBytes - result.title.utf8.count - (result.input?.utf8.count ?? 0) - (result.output?.utf8.count ?? 0)
-            - (result.outputFile?.utf8.count ?? 0) - (result.noticeReply?.utf8.count ?? 0)
+            - (result.outputFile?.utf8.count ?? 0) - (result.noticeReply?.utf8.count ?? 0) - (result.sourceBlockId?.utf8.count ?? 0)
         var seen = Set<String>()
         var entries: [LogEntry] = []
         for var entry in node.entries.suffix(maximumEntries).reversed() {

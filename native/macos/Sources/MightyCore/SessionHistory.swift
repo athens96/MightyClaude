@@ -250,7 +250,7 @@ public enum SessionHistory {
         var childBytes = min(HistoryReplay.antigravityChildBytes, max(0, request.maximumBytes))
         for turn in scan.turns {
             try Task.checkCancellation()
-            if let run = HistoryReplay.run(turn, format: format, childBytes: &childBytes) { runs.append(run) }
+            runs.append(contentsOf: HistoryReplay.runs(turn, format: format, childBytes: &childBytes))
         }
         return SessionHistoryChunk(runs: runs, file: file, end: scan.end, reachedStart: scan.reachedStart)
     }
@@ -634,8 +634,9 @@ final class HistoryReplay {
         return key.flatMap { CoreValidation.identifier($0) ? $0 : nil } ?? runPrefix + "o\(turn.start)"
     }
 
+    /// The request, then the notice runs its background work opened (`BackgroundNoticeRuns`), as live.
     /// `childBytes`: what reading sub-agents' transcripts may still spend.
-    static func run(_ turn: HistoryTurn, format: HistoryFormat, childBytes: inout Int) -> MightyGraphRun? {
+    static func runs(_ turn: HistoryTurn, format: HistoryFormat, childBytes: inout Int) -> [MightyGraphRun] {
         let provider: String
         let model: String?
         switch format {
@@ -663,22 +664,26 @@ final class HistoryReplay {
         parser.finishActivities(stopped: true)
         parser.finishGraph(state: status)
         replay.apply(RunEvent(sessionId: "history", type: "status", status: status))
-        guard var run = replay.session.graphRuns?.last, run.id == runID else { return nil }
-        if run.nodeModelLabel == nil, let model { run.nodeModelLabel = GraphModelLabel.nodeModelLabel(cliReportedModel: model, configuredModel: "default") }
-        // Blocks the tracker made carry the replay's own clock; the request
-        // happened when its record says.
-        if let latest = AgentRunTiming.parseTimestamp(replay.stamp) {
-            let settle: ([LogEntry]) -> [LogEntry] = { entries in
-                entries.map { entry in
-                    guard let date = AgentRunTiming.parseTimestamp(entry.timestamp), date > latest.addingTimeInterval(1) else { return entry }
-                    var entry = entry; entry.timestamp = replay.stamp; return entry
+        let recorded = replay.session.graphRuns ?? []
+        guard recorded.first?.id == runID else { return [] }
+        return recorded.compactMap { original in
+            var run = original
+            if run.nodeModelLabel == nil, let model { run.nodeModelLabel = GraphModelLabel.nodeModelLabel(cliReportedModel: model, configuredModel: "default") }
+            // Blocks the tracker made carry the replay's own clock; the request
+            // happened when its record says.
+            if let latest = AgentRunTiming.parseTimestamp(replay.stamp) {
+                let settle: ([LogEntry]) -> [LogEntry] = { entries in
+                    entries.map { entry in
+                        guard let date = AgentRunTiming.parseTimestamp(entry.timestamp), date > latest.addingTimeInterval(1) else { return entry }
+                        var entry = entry; entry.timestamp = replay.stamp; return entry
+                    }
                 }
+                run.rootEntries = settle(run.rootEntries); run.resultEntries = settle(run.resultEntries)
+                for index in run.agents.indices { run.agents[index].entries = settle(run.agents[index].entries) }
             }
-            run.rootEntries = settle(run.rootEntries); run.resultEntries = settle(run.resultEntries)
-            for index in run.agents.indices { run.agents[index].entries = settle(run.agents[index].entries) }
+            var budget = SessionHistory.runBudget
+            return MightyGraphSupport.normalized([run], restoring: true, budget: &budget, provider: provider).first
         }
-        var budget = SessionHistory.runBudget
-        return MightyGraphSupport.normalized([run], restoring: true, budget: &budget, provider: provider).first
     }
 
     // MARK: Claude records

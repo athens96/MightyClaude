@@ -239,6 +239,7 @@
   "graph.background.agentEnded": "하위 에이전트 · {status}",
   "graph.background.runEnded": "백그라운드 실행 · {status}",
   "graph.background.reply": "Claude의 답",
+  "graph.background.noticeRun": "백그라운드 작업 완료",
   "graph.block.agent": "하위 에이전트",
   "graph.block.blockUsageLabel": "이 블록",
   "graph.block.compact": "컨텍스트 정리",

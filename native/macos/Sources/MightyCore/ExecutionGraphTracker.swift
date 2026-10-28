@@ -58,16 +58,18 @@ final class ExecutionGraphTracker {
     private var messageConfigured: [String: Bool] = [:]
     private var nodeResponseOrder: [String: [String]] = [:]
     private var pendingSteers: [String] = []
-    /// The tasks whose notices arrived since the last root result: the next notice turn's answer is headed by them.
-    private var noticedTasks: [String] = []
     /// The request's own root result arrived; a steer after it opens a turn whose answer follows in the result.
     private var turnEnded = false
     /// What the steer that opened such a turn is called (중간 요청 or 위임 알림): its answer's section is headed by it.
     private var steeredTurn: String?
-    /// The task block whose notice alone opened the coming notice turn: that turn's answer is its `noticeReply`.
-    private var replyTarget: String?
-    /// 작업 알림 added since the last root result; a reply target needs exactly one.
-    private var turnNotices = 0
+    /// Notice runs opened so far (`BackgroundNoticeRuns`); the next one is numbered one more.
+    private var noticeIndex = 0
+    /// The notice run of the turn a root-level notice opened after the request's own turn: that turn's result is its result.
+    private var noticeTurn: String?
+    /// The notice run, complete at once and without a result, that notices taken into a running turn share until its result.
+    private var absorbedRun: String?
+    /// Each notice run's copies of finished blocks, oldest first.
+    private var noticeCopies: [String: [String]] = [:]
     private var messageOrder: [String] = []
     private var unnamedUsage = 0
     private var compactions = 0
@@ -313,21 +315,28 @@ final class ExecutionGraphTracker {
                 }
             }
             // Task completion arrives as an injected user message, not a tool event; so does a sub-agent's final report.
-            // Only the request's own turn shows them as 작업 알림; a nested agent's still settle their blocks.
+            // Either settles its block and copies it into a notice run; only a root-level one opens a notice turn.
             if let text = Self.text(message["content"]) {
                 if text.contains("<task-notification>") { settleTasks(in: text, notice: parentTool == nil) }
                 if text.contains(AgentHandback.opening) { settleHandbacks(in: text, origin: value["origin"] as? [String: Any], notice: parentTool == nil) }
             }
-        } else if type == "result", ClaudeStream.isNotificationResult(value) {
-            // A notice turn's answer follows the request's in the result, headed by the notices it answered.
+        } else if type == "result", ClaudeStream.isNotificationResult(value) || (parentTool == nil && noticeTurn != nil) {
             guard parentTool == nil else { return }
-            let titles = noticedTasks, target = replyTarget
+            let run = noticeTurn
             clearNoticeTurn()
-            guard let answer = (value["result"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty else { return }
-            let header = titles.isEmpty ? L("graph.result.afterNotice") : L("graph.result.afterTaskNotice", ["title": titles.joined(separator: ", ")])
-            update(mainID) { $0.output = MightyGraphSupport.withNoticeSection($0.output, header: header, answer: answer) }
-            // The block whose notice alone opened this turn keeps the answer too; the result's section stays.
-            if let target { update(target) { $0.noticeReply = answer } }
+            let answer = (value["result"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if let run {
+                // A notice turn's answer is its own run's result; the request's result stays as it was.
+                let failed = value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error")
+                update(ExecutionGraphSupport.mainNodeID(runId: run)) { node in
+                    if !answer.isEmpty { node.output = answer }
+                    node.state = failed ? "error" : "completed"
+                }
+                return
+            }
+            // Any other notice turn (a delegation notice, a sub-agent's message) follows the request's answer in the result.
+            guard !answer.isEmpty else { return }
+            update(mainID) { $0.output = MightyGraphSupport.withNoticeSection($0.output, header: L("graph.result.afterNotice"), answer: answer) }
         } else if type == "result" {
             if parentTool == nil, let steered = steeredTurn {
                 // A turn a steer opened after the request's result: its answer follows in the result, as a notice turn's does.
@@ -339,7 +348,7 @@ final class ExecutionGraphTracker {
                 turnEnded = true
                 // Main output comes only from the CLI's actual root result. The request's own turn ended: it reads
                 // completed while background tasks it started still run; the process's end settles the rest.
-                noticedTasks.removeAll(); replyTarget = nil; turnNotices = 0
+                absorbedRun = nil
                 let failed = value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error")
                 update(mainID) { node in
                     node.output = value["result"] as? String
@@ -673,17 +682,9 @@ final class ExecutionGraphTracker {
     }
     private func settleTasks(in text: String, notice: Bool) {
         var remaining = text[...]
-        var notifications = 0
-        var settledTask: String?
-        defer {
-            // Only a message with one notification, for a task block whose notice it added, opens a turn that block alone answers.
-            if notice, notifications > 1 { replyTarget = nil }
-            else if notice, let settledTask, turnNotices == 1 { replyTarget = settledTask }
-        }
         while let start = remaining.range(of: "<task-notification>"), let end = remaining.range(of: "</task-notification>", range: start.upperBound..<remaining.endIndex) {
             let body = remaining[start.upperBound..<end.lowerBound]
             remaining = remaining[end.upperBound...]
-            notifications += 1
             let byTool = Self.tag(body, "tool-use-id").map { ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: $0) }.flatMap { nodes[$0] != nil ? $0 : nil }
             guard let id = byTool ?? Self.tag(body, "task-id").flatMap({ taskAliases[$0] }), let kind = nodes[id]?.kind, ["task", "agent"].contains(kind) else { continue }
             let status = Self.tag(body, "status")?.lowercased() ?? "completed"
@@ -697,7 +698,7 @@ final class ExecutionGraphTracker {
                     if empty, let summary { node.output = summary }
                 }
                 if empty, summary != nil, let output = nodes[id]?.output { agentSummaries[id] = output }
-                if notice { addNotice(for: id, state: state, detail: summary) }
+                addNotice(for: id, root: notice)
             } else {
                 let file = Self.tag(body, "output-file")
                 update(id) { node in
@@ -706,33 +707,68 @@ final class ExecutionGraphTracker {
                     node.state = state
                     if let summary { node.output = summary }
                 }
-                if notice, addNotice(for: id, state: state, detail: summary) { settledTask = id }
+                addNotice(for: id, root: notice)
             }
         }
     }
-    /// The notice entered the turn like a steer: a 작업 알림 under main, once per
-    /// block, whose reply is the next root-level answer. A block's later notice
-    /// (an agent's notification after its hand-back) adds nothing, nor its title
-    /// to the heading of the next notice turn's answer.
-    @discardableResult
-    private func addNotice(for id: String, state: String, detail: String?) -> Bool {
-        guard let notified = nodes[id], nodes[ExecutionGraphSupport.identifier(runID, "steer:notice:" + id)] == nil else { return false }
-        turnNotices += 1
-        // A second notice in the same turn: its answer belongs to both, so to neither block alone.
-        if turnNotices > 1 { replyTarget = nil }
-        let named = notified.title.isEmpty ? notified.input ?? "" : notified.title
-        if !noticedTasks.contains(named), noticedTasks.count < 16 { noticedTasks.append(named) }
-        let line = named + " · " + L(state == "completed" ? "graph.block.taskNotice.completed" : state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
-        addSteer(id: "notice:" + id, text: MightyGraphSupport.taskNoticePrefix + line + (detail.map { "\n" + $0 } ?? ""))
-        return true
+    /// A finished background block goes into a notice run (`BackgroundNoticeRuns`) as a copy. A root-level notice
+    /// after the request's own turn opens the notice turn's run, which every notice until that turn's result joins
+    /// and whose result is Claude's answer. A notice taken into a running turn (a nested agent's, or one in the
+    /// request's or a steer's own turn) joins a run that is complete at once and has no result; the running turn's
+    /// answer stays its own. A block notified again in the same run updates its copy.
+    private func addNotice(for id: String, root: Bool) {
+        guard provider == "claude", let block = nodes[id] else { return }
+        let run: String
+        if let open = noticeTurn { run = open }
+        else if root, turnEnded, steeredTurn == nil {
+            guard let opened = openNoticeRun(running: true) else { return }
+            noticeTurn = opened; run = opened
+        } else if let open = absorbedRun { run = open }
+        else {
+            guard let opened = openNoticeRun(running: false) else { return }
+            absorbedRun = opened; run = opened
+        }
+        let main = ExecutionGraphSupport.mainNodeID(runId: run)
+        let joined = run + ":" + id
+        let copyID = CoreValidation.identifier(joined) ? joined : ExecutionGraphSupport.identifier(run, "copy:" + id)
+        if nodes[copyID] == nil {
+            guard nodes.count < ExecutionGraphSupport.maximumNodes else { return }
+            let copy = ExecutionGraphNode(id: copyID, runId: run, parentId: main, kind: block.kind, state: block.state, title: block.title,
+                                          input: block.input, output: block.output, background: true, outputFile: block.outputFile, sourceBlockId: id)
+            guard let normalized = ExecutionGraphSupport.normalized(copy) else { return }
+            nodes[copyID] = normalized; order.append(copyID); emit(normalized)
+            noticeCopies[run, default: []].append(copyID)
+        } else {
+            update(copyID) { copy in
+                copy.title = block.title; copy.input = block.input; copy.state = block.state
+                copy.output = block.output; copy.outputFile = block.outputFile
+            }
+        }
+        // The run's request: each finished block and how it ended, one per line.
+        let lines = (noticeCopies[run] ?? []).compactMap { nodes[$0] }.map { copy in
+            (copy.title.isEmpty ? copy.input ?? "" : copy.title) + " · "
+                + L(copy.state == "completed" ? "graph.block.taskNotice.completed" : copy.state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
+        }
+        update(main) { $0.input = lines.joined(separator: "\n") }
+    }
+    /// The next notice run's main block: running until a notice turn's result, or complete at once for absorbed notices.
+    private func openNoticeRun(running: Bool) -> String? {
+        guard nodes.count < ExecutionGraphSupport.maximumNodes else { return nil }
+        let run = BackgroundNoticeRuns.runID(original: runID, index: noticeIndex + 1)
+        let main = ExecutionGraphNode(id: ExecutionGraphSupport.mainNodeID(runId: run), runId: run, kind: "main",
+                                      state: running ? "running" : "completed", title: L("graph.background.noticeRun"))
+        guard let normalized = ExecutionGraphSupport.normalized(main) else { return nil }
+        noticeIndex += 1
+        nodes[normalized.id] = normalized; order.append(normalized.id); emit(normalized)
+        return run
     }
     /// A notice turn or a steered turn ended: the next one starts with no notices.
     private func clearNoticeTurn() {
-        noticedTasks.removeAll(); steeredTurn = nil; replyTarget = nil; turnNotices = 0
+        steeredTurn = nil; noticeTurn = nil; absorbedRun = nil
     }
     /// Messages a background sub-agent sent this session (`AgentHandback`). Its
-    /// framed final report is its result and ends it; with the agent's
-    /// notification it makes one 작업 알림, whichever of the two comes first. A
+    /// framed final report is its result and ends it; like the agent's
+    /// notification it copies the block into a notice run (`addNotice`). A
     /// message it sent while still running joins its block's log and changes
     /// nothing else. `origin` is the event's: its `senderTaskId` is the agent ID
     /// of a lone message, and `handback: true` marks a lone one as the report.
@@ -757,7 +793,7 @@ final class ExecutionGraphTracker {
                 if replaceable, !message.body.isEmpty { node.output = message.body }
             }
             if replaceable, !message.body.isEmpty { agentSummaries.removeValue(forKey: id) }
-            if notice, let settled = nodes[id] { addNotice(for: id, state: settled.state, detail: nil) }
+            addNotice(for: id, root: notice)
         }
     }
 
@@ -877,6 +913,8 @@ final class ExecutionGraphTracker {
         for (id, agent) in pendingParents { if let parent = aliases[agent], id != parent { update(id) { $0.parentId = parent } } }
         for id in order where id != mainID {
             guard let node = nodes[id], !ExecutionGraphSupport.terminal(node.state) else { continue }
+            // A notice turn the process ended before its answer ends with the request.
+            if node.kind == "main" { update(id) { $0.state = state }; continue }
             // Process success does not prove that an unfinished background
             // agent succeeded or returned an answer.
             update(id) { value in

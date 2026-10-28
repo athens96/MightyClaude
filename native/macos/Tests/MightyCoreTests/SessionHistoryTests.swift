@@ -56,9 +56,9 @@ struct SessionHistoryTests {
     }
     private func inputs(_ chunk: SessionHistoryChunk) -> [String] { chunk.runs.map(\.input) }
 
-    /// A replayed record builds the live result: the request's answer, then each notice turn's under a line naming
-    /// the notice (ExecutionGraphTests.theRequestTurnEndsBeforeItsBackgroundTaskAndANoticeTurnsAnswerFollows).
-    @Test func aNoticeTurnsAnswerFollowsTheRequestsLiveAndReplayed() throws {
+    /// A replayed record builds the live runs: the request with its own answer, then the notice turn's run with that
+    /// turn's answer (ExecutionGraphTests.theRequestTurnEndsBeforeItsBackgroundTaskAndANoticeTurnOpensItsOwnRun).
+    @Test func aNoticeTurnOpensItsOwnRunLiveAndReplayed() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             let notice = "<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>ping-cmd</tool-use-id>\n<status>completed</status>\n<summary>ping exited 0</summary>\n</task-notification>"
             let lines = [
@@ -75,8 +75,11 @@ struct SessionHistoryTests {
             let url = try folder().appendingPathComponent("notice.jsonl")
             try write(lines, to: url)
             let chunk = try SessionHistory.load(try request(url))
-            #expect(inputs(chunk) == ["ping it"])
-            #expect(chunk.runs.first?.finalOutput == "Started ping." + MightyGraphSupport.noticeSectionMark + "작업 알림 · ping 이후**\n\nPing finished fine.")
+            #expect(inputs(chunk) == ["ping it", "ping · 완료"])
+            #expect(chunk.runs.first?.finalOutput == "Started ping."); #expect(chunk.runs.first?.noticeRun == nil)
+            let noticeRun = try #require(chunk.runs.last)
+            #expect(noticeRun.noticeRun == true); #expect(noticeRun.status == "completed"); #expect(noticeRun.finalOutput == "Ping finished fine.")
+            #expect(noticeRun.id.hasPrefix(HistoryReplay.runPrefix)); #expect(noticeRun.agents.first?.sourceBlockId == chunk.runs.first?.agents.first?.id)
         }
     }
 

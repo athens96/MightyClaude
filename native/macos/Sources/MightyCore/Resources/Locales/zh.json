@@ -239,6 +239,7 @@
   "graph.background.agentEnded": "子代理 · {status}",
   "graph.background.runEnded": "后台运行 · {status}",
   "graph.background.reply": "Claude 的回复",
+  "graph.background.noticeRun": "后台工作已完成",
   "graph.block.agent": "子智能体",
   "graph.block.blockUsageLabel": "此块",
   "graph.block.compact": "上下文摘要",

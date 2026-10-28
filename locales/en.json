@@ -239,6 +239,7 @@
   "graph.background.agentEnded": "Sub-agent · {status}",
   "graph.background.runEnded": "Background run · {status}",
   "graph.background.reply": "Claude's reply",
+  "graph.background.noticeRun": "Background work finished",
   "graph.block.agent": "Sub-agent",
   "graph.block.blockUsageLabel": "This block",
   "graph.block.compact": "Context summary",

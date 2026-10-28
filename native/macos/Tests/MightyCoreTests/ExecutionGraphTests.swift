@@ -154,23 +154,27 @@ struct ExecutionGraphTests {
         try send(notification(task: "task-b1", tool: "build", status: "failed", summary: "late duplicate"), to: parser)
         #expect(try latest(nodes, buildID).state == "completed")
         #expect(try latest(nodes, mainID).state == "running"); #expect(try latest(nodes, mainID).entries.isEmpty)
-        // Each notification shows as a 작업 알림 under main instead of vanishing into main; the late duplicate makes no second one.
-        let notices = Set(nodes.filter { $0.kind == "steer" }.map(\.id))
-        #expect(notices.count == 2)
-        let buildNotice = try latest(nodes, ExecutionGraphSupport.identifier("task-run", "steer:notice:" + buildID))
-        #expect(buildNotice.parentId == mainID); #expect(buildNotice.state == "running")
-        #expect(buildNotice.input == MightyGraphSupport.taskNoticePrefix + "Build the app · " + L("graph.block.taskNotice.completed") + "\nBackground command \"Build the app\" completed (exit code 0)")
-        #expect(try latest(nodes, ExecutionGraphSupport.identifier("task-run", "steer:notice:" + syncID)).input
-            == MightyGraphSupport.taskNoticePrefix + "rsync -a src/ dst/ · " + L("graph.block.taskNotice.failed") + "\nrsync exited with code 23")
-        // The next root-level answer is their reply.
+        // Notifications taken into the request's own turn make no 작업 알림: their blocks are copied into one notice run
+        // that is complete at once and has no result; the late duplicate only updates its copy.
+        #expect(!nodes.contains { $0.kind == "steer" })
+        let notice = BackgroundNoticeRuns.runID(original: "task-run", index: 1)
+        let noticeMain = try latest(nodes, ExecutionGraphSupport.mainNodeID(runId: notice))
+        #expect(noticeMain.state == "completed"); #expect(noticeMain.output == nil); #expect(noticeMain.title == L("graph.background.noticeRun"))
+        #expect(noticeMain.input == "Build the app · " + L("graph.block.taskNotice.completed") + "\nrsync -a src/ dst/ · " + L("graph.block.taskNotice.failed"))
+        let copy = try latest(nodes, notice + ":" + buildID)
+        #expect(copy.parentId == noticeMain.id); #expect(copy.sourceBlockId == buildID); #expect(copy.background == true); #expect(copy.kind == "task")
+        #expect(copy.state == "completed"); #expect(copy.output == "Background command \"Build the app\" completed (exit code 0)"); #expect(copy.outputFile == "/tmp/task-b1.output")
+        #expect(Set(nodes.filter { $0.runId == notice }.map(\.id)).count == 3)
+        // The request's own answer stays its own.
         try send(assistant([["type": "text", "text": "Both settled."]], id: "main-2"), to: parser)
-        #expect(try latest(nodes, buildNotice.id).state == "completed"); #expect(try latest(nodes, buildNotice.id).output == "Both settled.")
+        try send(["type": "result", "subtype": "success", "is_error": false, "result": "Both settled."], to: parser)
+        #expect(try latest(nodes, mainID).output == "Both settled."); #expect(try latest(nodes, noticeMain.id).output == nil)
     }
 
     /// The request's own turn ended while its backgrounded command ran: it reads completed and waits on it; the
-    /// notice and its reply are still recorded, the result goes on with the notice turn's answer under a line naming
-    /// the notice, and an empty notice turn adds nothing (Windows SessionHistoryVerification.ANoticeTurnsAnswerFollowsTheRequestsLiveAndReplayed).
-    @Test func theRequestTurnEndsBeforeItsBackgroundTaskAndANoticeTurnsAnswerFollows() throws {
+    /// notice turn is a run of its own whose result is that turn's answer, the request's result stays its own, and an
+    /// empty notice turn adds nothing (Windows SessionHistoryVerification.ANoticeTurnsAnswerFollowsTheRequestsLiveAndReplayed).
+    @Test func theRequestTurnEndsBeforeItsBackgroundTaskAndANoticeTurnOpensItsOwnRun() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             var nodes: [ExecutionGraphNode] = []
             let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "wait-run", graph: { nodes.append($0) }, graphInput: "ping it")
@@ -184,17 +188,22 @@ struct ExecutionGraphTests {
             let waiting = MightyGraphRun(id: "r", status: "completed", agents: [MightyGraphAgent(id: "t", status: "running", kind: "task")])
             #expect(waiting.backgroundWaiting == 1); #expect(!waiting.settled)
             try send(notification(task: "b1", tool: "ping-cmd", status: "completed", summary: "ping exited 0"), to: parser)
+            let noticeMainID = ExecutionGraphSupport.mainNodeID(runId: "wait-run:notice:1")
+            #expect(try latest(nodes, noticeMainID).state == "running"); #expect(try latest(nodes, noticeMainID).input == "ping · 완료")
             try send(assistant([["type": "text", "text": "Ping finished fine."]], id: "main-3"), to: parser)
             try send(["type": "result", "subtype": "success", "is_error": false, "result": "Ping finished fine.", "origin": ["kind": "task-notification"]], to: parser)
             try send(["type": "result", "subtype": "success", "is_error": false, "result": " ", "origin": ["kind": "task-notification"]], to: parser)
             parser.finishGraph(state: "completed")
-            let notice = try latest(nodes, ExecutionGraphSupport.identifier("wait-run", "steer:notice:" + pingID))
+            #expect(!nodes.contains { $0.kind == "steer" })
+            let notice = try latest(nodes, noticeMainID)
             #expect(notice.state == "completed"); #expect(notice.output == "Ping finished fine.")
-            #expect(try latest(nodes, mainID).output == "Started ping." + MightyGraphSupport.noticeSectionMark + "작업 알림 · ping 이후**\n\nPing finished fine.")
+            #expect(try latest(nodes, "wait-run:notice:1:" + pingID).state == "completed")
+            #expect(try latest(nodes, mainID).output == "Started ping.")
             #expect(try latest(nodes, mainID).state == "completed")
-            // The main block keeps the request's own answer; the result's whole text is not copied into it again.
+            // An older save's result that goes on with a notice section: the main block keeps the request's own answer,
+            // and the result's whole text is not copied into it again.
             var run = MightyGraphRun(id: "r", status: "completed", rootEntries: [LogEntry(id: "a1", kind: "assistant", text: "Started ping."), LogEntry(id: "a2", kind: "assistant", text: "Ping finished fine.")],
-                                     finalOutput: try latest(nodes, mainID).output)
+                                     finalOutput: "Started ping." + MightyGraphSupport.noticeSectionMark + "작업 알림 · ping 이후**\n\nPing finished fine.")
             run.refreshResult()
             #expect(run.resultEntries.first?.text == run.finalOutput); #expect(run.rootEntries.count == 2)
         }
@@ -242,7 +251,8 @@ struct ExecutionGraphTests {
         }
     }
 
-    @Test func aTaskNotificationIsATaskNoticeSteer() throws {
+    /// A task notification makes no 작업 알림 steer any more; a saved one still reads as one.
+    @Test func aTaskNotificationCopiesItsBlockAndAnOldNoticeSteerStillReads() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             var nodes: [ExecutionGraphNode] = []
             let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "notice-run", graph: { nodes.append($0) }, graphInput: "Build project")
@@ -252,11 +262,12 @@ struct ExecutionGraphTests {
             try send(notification(task: "task-l1", tool: "lint", status: "stopped", summary: ""), to: parser)
             parser.finishGraph(state: "completed")
             let lintID = ExecutionGraphSupport.agentNodeID(runId: "notice-run", toolUseId: "lint")
-            let notice = try latest(nodes, ExecutionGraphSupport.identifier("notice-run", "steer:notice:" + lintID))
-            #expect(notice.input == MightyGraphSupport.taskNoticePrefix + "npm run lint · 중단됨")
-            #expect(notice.state == "stopped"); #expect(notice.entries.last?.text == L("graph.block.unfinished.taskNotice"))
+            #expect(!nodes.contains { $0.kind == "steer" })
+            let notice = try latest(nodes, ExecutionGraphSupport.mainNodeID(runId: "notice-run:notice:1"))
+            #expect(notice.input == "npm run lint · 실패"); #expect(notice.state == "completed"); #expect(notice.output == nil)
+            #expect(try latest(nodes, "notice-run:notice:1:" + lintID).state == "error")
             #expect(L("graph.block.unfinished.taskNotice") != L("graph.block.unfinished.steer"))
-            let agent = MightyGraphAgent(id: notice.id, input: MightyGraphSupport.taskNoticePrefix + "Build · 완료\nBuild done", kind: "steer")
+            let agent = MightyGraphAgent(id: "saved-notice", input: MightyGraphSupport.taskNoticePrefix + "Build · 완료\nBuild done", kind: "steer")
             #expect(MightyGraphSupport.blockTitle(agent) == "작업 알림"); #expect(MightyGraphSupport.blockKind(agent) == "steer")
             #expect(agent.isTaskNotice && agent.isNotice && !agent.isDelegationNotice); #expect(agent.shownInput == "Build · 완료\nBuild done")
             let person = MightyGraphAgent(id: "p", input: "Also add tests", kind: "steer")

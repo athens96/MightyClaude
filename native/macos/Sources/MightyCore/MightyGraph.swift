@@ -19,10 +19,12 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     public var outputFile: String?
     /// Claude's answer in the turn this block's notice opened alone.
     public var noticeReply: String?
+    /// A copy in a notice run: the finished background block it copies. See `ExecutionGraphNode`.
+    public var sourceBlockId: String?
     public init(id: String, parentID: String? = nil, title: String = L("graph.agent.defaultTitle"), input: String = "", status: String = "running", entries: [LogEntry] = [], kind: String? = nil, usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil,
-                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil) {
+                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil) {
         self.id = id; self.parentID = parentID; self.title = title; self.input = input; self.status = status; self.entries = entries; self.kind = kind; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
-        self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply
+        self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply; self.sourceBlockId = sourceBlockId
     }
     public var isTask: Bool { kind == "task" }
     /// A sub-agent started with `run_in_background`.
@@ -64,8 +66,12 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     /// The model the request was configured with when it started ("default" when the CLI
     /// decides). Kept so a later CLI report can recompute `nodeModelLabel`.
     public var configuredModel: String?
-    public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, responseRecords: [GraphResponseRecord]? = nil, provider: String? = nil, nodeModelLabel: String? = nil, configuredModel: String? = nil) {
+    /// Claude's reply to finished background work, not a request the user sent (`BackgroundNoticeRuns`); absent otherwise and in older saves.
+    public var noticeRun: Bool?
+    public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, responseRecords: [GraphResponseRecord]? = nil, provider: String? = nil, nodeModelLabel: String? = nil, configuredModel: String? = nil,
+                noticeRun: Bool? = nil) {
         self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.responseRecords = responseRecords; self.provider = provider; self.nodeModelLabel = nodeModelLabel; self.configuredModel = configuredModel
+        self.noticeRun = noticeRun
     }
     public var totalUsage: GraphTokenUsage? {
         let sum = agents.reduce(usage ?? GraphTokenUsage()) { $0 + ($1.usage ?? GraphTokenUsage()) }
@@ -234,6 +240,7 @@ public enum MightyGraphSupport {
             run.provider = ProviderOptions.normalizeProvider(resolvedProvider)
             if restoring && !terminal(run.status) { run.status = "stopped" }
             if let source = run.sourceRunID, !CoreValidation.identifier(source) { run.sourceRunID = nil }
+            run.noticeRun = run.noticeRun == true ? true : nil
             // Prefer the actual final answer over older intermediate output.
             run.finalOutput = run.finalOutput.map { bounded($0, maximum: min(32_768, max(0, budget / 3)), budget: &budget) }
             budget -= (run.finalOutput?.utf8.count ?? 0) * 2
@@ -244,6 +251,7 @@ public enum MightyGraphSupport {
                 agent.input = bounded(agent.input, maximum: 16_384, budget: &budget)
                 agent.noticeReply = agent.noticeReply.map { bounded($0, maximum: 32_768, budget: &budget) }.flatMap { $0.isEmpty ? nil : $0 }
                 agent.background = agent.background == true ? true : nil
+                if let source = agent.sourceBlockId, !CoreValidation.identifier(source) { agent.sourceBlockId = nil }
                 if let file = agent.outputFile, file.utf8.count > 4096 || file.contains(where: \.isNewline) { agent.outputFile = nil }
                 budget -= agent.outputFile?.utf8.count ?? 0
                 agent.status = states.contains(agent.status) ? agent.status : "stopped"
@@ -393,15 +401,29 @@ extension RunSession {
             graphRuns = runs
             return
         }
-        var index = runs.count - 1
+        // A notice run that ended takes none of the process's later lines: they are the request's before it.
+        var index = runs.lastIndex { $0.noticeRun != true || !MightyGraphSupport.terminal($0.status) } ?? runs.count - 1
         if event.type == "graph", let node = event.graph.flatMap({ ExecutionGraphSupport.normalized($0) }) {
             if let existing = runs.firstIndex(where: { $0.sourceRunID == node.runId }) { index = existing }
-            else {
+            else if BackgroundNoticeRuns.isNoticeRun(node.runId) {
+                // A notice run opens with its main block, after the request whose work it reports on and before a
+                // request still waiting for its own run, which stays the newest.
+                guard node.kind == "main" else { return }
+                let original = runs.last { $0.sourceRunID.map { node.runId.hasPrefix($0 + BackgroundNoticeRuns.marker) } == true }
+                index = runs.count
+                while index > 0, runs[index - 1].sourceRunID == nil, !MightyGraphSupport.terminal(runs[index - 1].status) { index -= 1 }
+                runs.insert(MightyGraphRun(id: node.runId, input: node.input ?? "", status: node.state, sourceRunID: node.runId, provider: provider,
+                                           nodeModelLabel: original?.nodeModelLabel, configuredModel: original?.configuredModel,
+                                           noticeRun: true), at: index)
+            } else {
                 // New process identities bind only to the pending request.
+                index = runs.count - 1
                 guard runs[index].sourceRunID == nil, runs[index].status == "running" else { return }
                 runs[index].sourceRunID = node.runId
             }
             if node.kind == "main" {
+                // A notice run's request is the finished work its main block names.
+                if runs[index].noticeRun == true, let input = node.input { runs[index].input = input }
                 runs[index].status = MightyGraphSupport.nextState(runs[index].status, node.state)
                 if let usage = node.usage { runs[index].usage = usage }
                 if let records = node.responseRecords { runs[index].responseRecords = records }
@@ -409,7 +431,7 @@ extension RunSession {
             } else {
                 let parent = node.parentId == ExecutionGraphSupport.mainNodeID(runId: node.runId) ? nil : node.parentId
                 var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact", "question"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration, responseRecords: node.responseRecords,
-                                              background: node.background, outputFile: node.outputFile, noticeReply: node.noticeReply)
+                                              background: node.background, outputFile: node.outputFile, noticeReply: node.noticeReply, sourceBlockId: node.sourceBlockId)
                 if let output = node.output, !output.isEmpty {
                     // Codex and Antigravity children take new assignments: one answer per generation.
                     let answerID = ["codex", "gemini"].contains(provider)
@@ -441,6 +463,7 @@ extension RunSession {
                     if agent.background == nil { agent.background = previous.background }
                     if agent.outputFile == nil { agent.outputFile = previous.outputFile }
                     if agent.noticeReply == nil { agent.noticeReply = previous.noticeReply }
+                    if agent.sourceBlockId == nil { agent.sourceBlockId = previous.sourceBlockId }
                     if !previous.input.isEmpty { agent.input = previous.input }
                     var mergedEntries = previous.entries
                     for entry in agent.entries {

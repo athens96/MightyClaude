@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "_comment": "Background sub-agent notices and hand-backs (docs/superpowers/specs/2026-10-26-agent-notices-design.md). Read by the Mac MightyCore AgentNoticeTests and the Windows Core checks. Shapes follow Claude Code records; IDs and text are made up. A stream's expect.mainNoticeSections lists each notice turn's answer the main result must hold, under the line built from its locale key (and title); agentLogLacks lists text the block's log must not hold.",
+  "_comment": "Background sub-agent notices and hand-backs (docs/superpowers/specs/2026-10-26-agent-notices-design.md) and the notice runs they open (docs/superpowers/specs/2026-10-28-background-notice-runs-design.md). Read by the Mac MightyCore AgentNoticeTests and the Windows Core checks. Shapes follow Claude Code records; IDs and text are made up. A stream's expect.mainNoticeSections lists each notice turn's answer the main result must hold, under the line built from its locale key (and title); agentLogLacks lists text the block's log must not hold. noticeRuns counts the runs '<run>:notice:<n>' the stream opened, noticeRunChildren is each one's number of copied blocks (in n order), noticeRunOutput is the first one's main output (null: none) and noticeRunInput its main input, read in Korean ('<block title> · 완료|실패|중단됨' per line).",
   "streams": [
     {
       "name": "background agent: hand-back by agent ID, then its notification",
@@ -145,12 +145,18 @@
         "agentKind": "agent",
         "agentState": "completed",
         "agentOutput": "## Docs survey\n\n- help/board.md mentions the board view.\n- help/flow.md does not.",
-        "noticeBlocks": 1,
+        "noticeBlocks": 0,
         "mainOutputContains": [
-          "Started the survey.",
-          "The survey found one page."
+          "Started the survey."
         ],
-        "agentBackground": true
+        "agentBackground": true,
+        "noticeRuns": 2,
+        "noticeRunChildren": [
+          1,
+          1
+        ],
+        "noticeRunOutput": "The survey found one page.",
+        "noticeRunInput": "docs-surveyor · 완료"
       }
     },
     {
@@ -246,7 +252,14 @@
         "agentKind": "agent",
         "agentState": "completed",
         "agentOutput": "Two pages use the old label.\n\n  - the nested line keeps its own indent",
-        "noticeBlocks": 1
+        "noticeBlocks": 0,
+        "noticeRuns": 2,
+        "noticeRunChildren": [
+          1,
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "label-checker · 완료"
       }
     },
     {
@@ -329,7 +342,13 @@
         "agentKind": "agent",
         "agentState": "error",
         "agentOutput": "Agent \"Rename the labels\" failed: the tool limit was reached",
-        "noticeBlocks": 1
+        "noticeBlocks": 0,
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "Rename the labels · 실패"
       }
     },
     {
@@ -401,7 +420,13 @@
         "agentKind": "agent",
         "agentState": "stopped",
         "agentOutput": "Agent \"Watch the build\" didn't finish before the previous session ended",
-        "noticeBlocks": 1
+        "noticeBlocks": 0,
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "build-watcher · 중단됨"
       }
     },
     {
@@ -463,7 +488,13 @@
         "agentKind": "agent",
         "agentState": "stopped",
         "agentOutput": "Agent \"Tidy the notes\" was stopped",
-        "noticeBlocks": 1
+        "noticeBlocks": 0,
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "Tidy the notes · 중단됨"
       }
     },
     {
@@ -621,19 +652,21 @@
         "agentKind": "agent",
         "agentState": "completed",
         "agentOutput": "All five pages read.\n\nNone is out of date.",
-        "noticeBlocks": 1,
+        "noticeBlocks": 0,
         "agentLog": [
           "Halfway: two of five pages read."
         ],
+        "noticeRuns": 2,
+        "noticeRunChildren": [
+          1,
+          1
+        ],
+        "noticeRunOutput": "All pages are current.",
+        "noticeRunInput": "page-reader · 완료",
         "mainNoticeSections": [
           {
             "header": "graph.result.afterNotice",
             "answer": "Noted the progress."
-          },
-          {
-            "header": "graph.result.afterTaskNotice",
-            "title": "page-reader",
-            "answer": "All pages are current."
           }
         ]
       }
@@ -779,7 +812,14 @@
         "agentKind": "agent",
         "agentState": "completed",
         "agentOutput": "Sorted 12 notes, oldest first.",
-        "noticeBlocks": 1
+        "noticeBlocks": 0,
+        "noticeRuns": 2,
+        "noticeRunChildren": [
+          1,
+          1
+        ],
+        "noticeRunOutput": "Waiting for its report.",
+        "noticeRunInput": "Sort the notes · 완료"
       }
     },
     {
@@ -880,7 +920,13 @@
         "agentKind": "agent",
         "agentState": "completed",
         "agentOutput": "Three notes taken.",
-        "noticeBlocks": 0
+        "noticeBlocks": 0,
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "note-taker · 완료"
       }
     },
     {
@@ -1031,9 +1077,15 @@
         "agentKind": "task",
         "agentState": "completed",
         "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
-        "noticeBlocks": 1,
+        "noticeBlocks": 0,
         "agentBackground": true,
-        "agentOutputFile": "/tmp/example/tasks/b1c2d3e4f.output"
+        "agentOutputFile": "/tmp/example/tasks/b1c2d3e4f.output",
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "Build the app · 완료"
       }
     },
     {
@@ -1147,7 +1199,8 @@
         "noticeBlocks": 0,
         "agentLogLacks": [
           "Forty pages counted."
-        ]
+        ],
+        "noticeRuns": 0
       }
     },
     {
@@ -1259,17 +1312,16 @@
         "agentKind": "agent",
         "agentState": "completed",
         "agentOutput": "Renamed the three labels.",
-        "noticeBlocks": 1,
+        "noticeBlocks": 0,
         "agentLogLacks": [
           "Renamed the three labels."
         ],
-        "mainNoticeSections": [
-          {
-            "header": "graph.result.afterTaskNotice",
-            "title": "label-fixer",
-            "answer": "The labels are fixed."
-          }
-        ]
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": "The labels are fixed.",
+        "noticeRunInput": "label-fixer · 완료"
       }
     },
     {
@@ -1404,20 +1456,16 @@
         "agentKind": "task",
         "agentState": "completed",
         "agentOutput": "Background command \"Run the checks\" completed (exit code 0)",
-        "noticeBlocks": 1,
-        "mainNoticeSections": [
-          {
-            "header": "graph.result.afterTaskNotice",
-            "title": "Run the checks",
-            "answer": "The checks passed."
-          },
-          {
-            "header": "graph.result.afterNotice",
-            "answer": "Already reported."
-          }
+        "noticeBlocks": 0,
+        "agentNoticeReply": null,
+        "noticeReplyBlocks": 0,
+        "noticeRuns": 2,
+        "noticeRunChildren": [
+          1,
+          1
         ],
-        "agentNoticeReply": "The checks passed.",
-        "noticeReplyBlocks": 1
+        "noticeRunOutput": "The checks passed.",
+        "noticeRunInput": "Run the checks · 완료"
       }
     },
     {
@@ -1563,14 +1611,20 @@
         "agentKind": "task",
         "agentState": "completed",
         "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
-        "noticeBlocks": 1,
+        "noticeBlocks": 0,
         "agentBackground": true,
         "agentOutputFile": "/tmp/example/tasks/e5f6a7b8c-moved.output",
-        "agentNoticeReply": null
+        "agentNoticeReply": null,
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "Build the app · 완료"
       }
     },
     {
-      "name": "the turn one notification opened: its answer is the command's reply and still follows in the result",
+      "name": "the turn one notification opened: its answer is the notice run's result, not the request's",
       "agentToolUseId": "toolu_FAKEcommand0017",
       "events": [
         {
@@ -1667,22 +1721,21 @@
         "agentKind": "task",
         "agentState": "completed",
         "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
-        "noticeBlocks": 1,
+        "noticeBlocks": 0,
         "agentBackground": true,
         "agentOutputFile": "/tmp/example/tasks/f6a7b8c9d.output",
-        "agentNoticeReply": "Build finished fine.",
-        "noticeReplyBlocks": 1,
-        "mainNoticeSections": [
-          {
-            "header": "graph.result.afterTaskNotice",
-            "title": "Build the app",
-            "answer": "Build finished fine."
-          }
-        ]
+        "agentNoticeReply": null,
+        "noticeReplyBlocks": 0,
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": "Build finished fine.",
+        "noticeRunInput": "Build the app · 완료"
       }
     },
     {
-      "name": "two notifications in one message: the turn's answer is only in the result",
+      "name": "two notifications in one message: one notice run with both blocks",
       "agentToolUseId": "toolu_FAKEcommand0018",
       "events": [
         {
@@ -1794,17 +1847,16 @@
         "agentKind": "task",
         "agentState": "completed",
         "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
-        "noticeBlocks": 2,
+        "noticeBlocks": 0,
         "agentBackground": true,
         "agentNoticeReply": null,
         "noticeReplyBlocks": 0,
-        "mainNoticeSections": [
-          {
-            "header": "graph.result.afterTaskNotice",
-            "title": "Build the app, Run the checks",
-            "answer": "Both finished."
-          }
-        ]
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          2
+        ],
+        "noticeRunOutput": "Both finished.",
+        "noticeRunInput": "Build the app · 완료\nRun the checks · 완료"
       }
     },
     {
@@ -1930,21 +1982,20 @@
         "agentKind": "task",
         "agentState": "completed",
         "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
-        "noticeBlocks": 2,
+        "noticeBlocks": 0,
         "agentBackground": true,
         "agentNoticeReply": null,
         "noticeReplyBlocks": 0,
-        "mainNoticeSections": [
-          {
-            "header": "graph.result.afterTaskNotice",
-            "title": "Build the app, Run the checks",
-            "answer": "Both finished."
-          }
-        ]
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          2
+        ],
+        "noticeRunOutput": "Both finished.",
+        "noticeRunInput": "Build the app · 완료\nRun the checks · 완료"
       }
     },
     {
-      "name": "a lone notification before the request's own result: the request's answer is no command's reply",
+      "name": "a lone notification before the request's own result: a finished notice run without a result, the request's answer stays",
       "agentToolUseId": "toolu_FAKEcommand0022",
       "events": [
         {
@@ -2017,13 +2068,19 @@
         "agentKind": "task",
         "agentState": "completed",
         "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
-        "noticeBlocks": 1,
+        "noticeBlocks": 0,
         "agentBackground": true,
         "agentNoticeReply": null,
         "noticeReplyBlocks": 0,
         "mainOutputContains": [
           "Built and done."
-        ]
+        ],
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "Build the app · 완료"
       }
     },
     {
@@ -2092,6 +2149,464 @@
         "noticeBlocks": 0,
         "agentBackground": true,
         "agentOutputFile": "/tmp/example/my tasks/f2a3b4c5d.output"
+      }
+    },
+    {
+      "name": "notice run: one command notification, then its reply",
+      "agentToolUseId": "toolu_FAKEcommand0024",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-60",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-60",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0024",
+                "name": "Bash",
+                "input": {
+                  "command": "npm run lint",
+                  "description": "Lint the code",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcommand0024",
+                "type": "tool_result",
+                "content": "Command running in background with ID: a3b4c5d6e. Output is being written to: /tmp/example/tasks/a3b4c5d6e.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-61",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-61",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Linting."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Linting."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a3b4c5d6e</task-id>\n<output-file>/tmp/example/tasks/a3b4c5d6e.output</output-file>\n<status>completed</status>\n<summary>Background command \"Lint the code\" completed (exit code 0)</summary>\n</task-notification>"
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-62",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-62",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "The lint is clean."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "The lint is clean.",
+          "origin": {
+            "kind": "task-notification"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "task",
+        "agentState": "completed",
+        "agentOutput": "Background command \"Lint the code\" completed (exit code 0)",
+        "noticeBlocks": 0,
+        "agentBackground": true,
+        "agentOutputFile": "/tmp/example/tasks/a3b4c5d6e.output",
+        "agentNoticeReply": null,
+        "noticeReplyBlocks": 0,
+        "mainOutputContains": [
+          "Linting."
+        ],
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": "The lint is clean.",
+        "noticeRunInput": "Lint the code · 완료"
+      }
+    },
+    {
+      "name": "notice run: two notifications in one message, then one reply",
+      "agentToolUseId": "toolu_FAKEcommand0025",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-63",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-63",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0025",
+                "name": "Bash",
+                "input": {
+                  "command": "npm run build",
+                  "description": "Build the app",
+                  "run_in_background": true
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0026",
+                "name": "Bash",
+                "input": {
+                  "command": "npm test",
+                  "description": "Run the checks",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcommand0025",
+                "type": "tool_result",
+                "content": "Command running in background with ID: b4c5d6e7f. Output is being written to: /tmp/example/tasks/b4c5d6e7f.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcommand0026",
+                "type": "tool_result",
+                "content": "Command running in background with ID: c5d6e7f8a. Output is being written to: /tmp/example/tasks/c5d6e7f8a.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-64",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-64",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Started both."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Started both."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>b4c5d6e7f</task-id>\n<output-file>/tmp/example/tasks/b4c5d6e7f.output</output-file>\n<status>completed</status>\n<summary>Background command \"Build the app\" completed (exit code 0)</summary>\n</task-notification>\n<task-notification>\n<task-id>c5d6e7f8a</task-id>\n<output-file>/tmp/example/tasks/c5d6e7f8a.output</output-file>\n<status>failed</status>\n<summary>Background command \"Run the checks\" failed with exit code 1</summary>\n</task-notification>"
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-65",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-65",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "The build passed and one check failed."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "The build passed and one check failed.",
+          "origin": {
+            "kind": "task-notification"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "task",
+        "agentState": "completed",
+        "agentOutput": "Background command \"Build the app\" completed (exit code 0)",
+        "noticeBlocks": 0,
+        "agentBackground": true,
+        "noticeReplyBlocks": 0,
+        "mainOutputContains": [
+          "Started both."
+        ],
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          2
+        ],
+        "noticeRunOutput": "The build passed and one check failed.",
+        "noticeRunInput": "Build the app · 완료\nRun the checks · 실패"
+      }
+    },
+    {
+      "name": "notice run: an agent's notification and its hand-back in one message, the copy's result is the report",
+      "agentToolUseId": "toolu_FAKEagent0027",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-66",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-66",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0027",
+                "name": "Agent",
+                "input": {
+                  "description": "Check the links",
+                  "prompt": "Find stale links in the help.",
+                  "subagent_type": "general-purpose",
+                  "name": "link-checker",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0027",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: c1d2e3f4a5b6c7d8e (internal ID - do not mention to user. Use SendMessage with to: 'c1d2e3f4a5b6c7d8e' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-67",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-67",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Checking in the background."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Checking in the background."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>c1d2e3f4a5b6c7d8e</task-id>\n<tool-use-id>toolu_FAKEagent0027</tool-use-id>\n<output-file>/tmp/example/tasks/c1d2e3f4a5b6c7d8e.output</output-file>\n<status>completed</status>\n<summary>Agent \"Check the links\" finished</summary>\n</task-notification>\n\nAnother Claude session sent a message:\n<agent-message from=\"c1d2e3f4a5b6c7d8e\">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The harness indents every line of the report. The report follows:\n  Found two stale links.\n  \n  - help/flow.md\n  - help/board.md\n</agent-message>"
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-68",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-68",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Two links need fixing."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Two links need fixing.",
+          "origin": {
+            "kind": "task-notification"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "completed",
+        "agentOutput": "Found two stale links.\n\n- help/flow.md\n- help/board.md",
+        "noticeBlocks": 0,
+        "agentBackground": true,
+        "noticeReplyBlocks": 0,
+        "mainOutputContains": [
+          "Checking in the background."
+        ],
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": "Two links need fixing.",
+        "noticeRunInput": "link-checker · 완료"
+      }
+    },
+    {
+      "name": "notice run: a notification absorbed into the request's own turn makes a finished run without a result, the request's answer stays",
+      "agentToolUseId": "toolu_FAKEcommand0028",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-69",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-69",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0028",
+                "name": "Bash",
+                "input": {
+                  "command": "npm run docs",
+                  "description": "Build the docs",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcommand0028",
+                "type": "tool_result",
+                "content": "Command running in background with ID: d6e7f8a9b. Output is being written to: /tmp/example/tasks/d6e7f8a9b.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "<system-reminder>\n<task-notification>\n<task-id>d6e7f8a9b</task-id>\n<output-file>/tmp/example/tasks/d6e7f8a9b.output</output-file>\n<status>completed</status>\n<summary>Background command \"Build the docs\" completed (exit code 0)</summary>\n</task-notification>\n</system-reminder>"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-70",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-70",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "The docs are built and published."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "The docs are built and published."
+        }
+      ],
+      "expect": {
+        "agentKind": "task",
+        "agentState": "completed",
+        "agentOutput": "Background command \"Build the docs\" completed (exit code 0)",
+        "noticeBlocks": 0,
+        "agentBackground": true,
+        "noticeReplyBlocks": 0,
+        "mainOutputContains": [
+          "The docs are built and published."
+        ],
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "Build the docs · 완료"
       }
     }
   ],
