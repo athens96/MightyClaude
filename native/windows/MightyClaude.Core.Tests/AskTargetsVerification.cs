@@ -37,6 +37,10 @@ internal static class AskTargetsVerification
         Check(targets.Select(t => t.GetProperty("label").GetString()).SequenceEqual(AskTargets.All.Select(t => t.Label)), "labels");
         Check(targets.Select(t => t.GetProperty("executable").GetString()).SequenceEqual(AskTargets.All.Select(t => t.Executable)), "executables");
         Check(!AskTargets.All.Any(t => t.Id is "claude" or "muse"), "neither claude nor muse is a target");
+        // oh-my-claudecode's ask refuses some targets on Windows: this PC never offers them.
+        var unsupported = Set(Fixture.Value.GetProperty("unsupportedOn"), "windows");
+        Check(unsupported.SetEquals(AskTargets.UnsupportedOnWindows), "unsupported on Windows: expected " + Shown(unsupported) + ", got " + Shown(AskTargets.UnsupportedOnWindows));
+        Check(unsupported.All(id => AskTargets.All.Any(t => t.Id == id)), "every unsupported id is a target");
         return Task.CompletedTask;
     }
 

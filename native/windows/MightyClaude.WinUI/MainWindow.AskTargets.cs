@@ -13,8 +13,8 @@ public sealed partial class MainWindow
     private IReadOnlySet<string> installedAskExecutables = new HashSet<string>(StringComparer.Ordinal);
     /// <summary>Until the PATH was read conclusively once, no saved target is judged missing.</summary>
     private bool askProbeFinished, askProbeInFlight;
-    /// <summary>When the PATH was last read successfully (a pane's choice can be judged from then on), and when a read was last tried (the 30 s pace).</summary>
-    private DateTime? askProbedAt, askProbeTriedAt;
+    /// <summary>When the PATH was last read successfully (a pane's choice can be judged from then on), and when the next read may start (30 s after one that worked, 2 s after one that failed).</summary>
+    private DateTime? askProbedAt, askProbeNextAt;
     /// <summary>A pane's notice that its saved target is gone and its sends go to Claude, until it is dismissed or another target is chosen.</summary>
     private readonly Dictionary<string, string> askFallbackNotices = new(StringComparer.Ordinal);
     /// <summary>How long a send with a saved choice not yet known to stand waits for the pane's catalogue and the PATH read (M/AppStore.swift submit).</summary>
@@ -25,7 +25,7 @@ public sealed partial class MainWindow
     private void RefreshAskExecutables()
     {
         if (closing || askProbeInFlight) return;
-        if (askProbeTriedAt is { } at && DateTime.UtcNow - at < TimeSpan.FromSeconds(30)) return;
+        if (askProbeNextAt is { } next && DateTime.UtcNow < next) return;
         askProbeInFlight = true;
         _ = ProbeAskExecutables();
     }
@@ -41,9 +41,10 @@ public sealed partial class MainWindow
                 return AskTargets.All.Select(t => t.Executable).Where(name => SetupProber.Executables(name, environment).Count > 0).ToHashSet(StringComparer.Ordinal);
             });
         }
-        // A read that failed leaves the PATH unknown: a saved choice is never taken as gone, or sent unwrapped, on its account.
-        catch (Exception ex) when (ex is not OutOfMemoryException) { askProbeInFlight = false; askProbeTriedAt = DateTime.UtcNow; return; }
-        askProbeInFlight = false; askProbeTriedAt = askProbedAt = DateTime.UtcNow;
+        // A read that failed leaves the PATH unknown: a saved choice is never taken as gone, or sent unwrapped, on its account. The
+        // next send or scan reads it again after a short pause, not the 30 s one, so the switch is not held back by one bad read.
+        catch (Exception ex) when (ex is not OutOfMemoryException) { askProbeInFlight = false; askProbeNextAt = DateTime.UtcNow + TimeSpan.FromSeconds(2); return; }
+        askProbeInFlight = false; askProbedAt = DateTime.UtcNow; askProbeNextAt = askProbedAt + TimeSpan.FromSeconds(30);
         if (closing) return;
         // This PC's own environment, read from the registry each time: as the Mac's login shell, it may judge a target gone.
         var read = AskTargets.Probed(installedAskExecutables, found, loginShell: true);
@@ -57,16 +58,19 @@ public sealed partial class MainWindow
     /// <summary>The folder a pane's catalogue is kept under: its workspace's, none for a remote one (as <c>SlashWorkspacePath</c>).</summary>
     private string? AskCatalogPath(RunSession pane) => LocalPath(service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId));
 
-    /// <summary>A Claude agent pane of this PC: a remote workspace's pane runs on another computer, whose CLIs this PC cannot see.</summary>
-    private bool AsksOtherCli(RunSession pane) => pane.Kind == "claude" && pane.Provider == "claude" && !service.IsRemoteWorkspace(pane.WorkspaceId);
+    /// <summary>
+    /// A Claude agent pane of this PC drawn by the web shell: a remote workspace's pane runs on another computer, whose CLIs this PC
+    /// cannot see, and the WinUI composer has no switch, so a saved choice never wraps a send there unseen (nor shows on the phone).
+    /// </summary>
+    private bool AsksOtherCli(RunSession pane) => webShell is not null && pane.Kind == "claude" && pane.Provider == "claude" && !service.IsRemoteWorkspace(pane.WorkspaceId);
 
-    /// <summary>The targets a pane's switch offers, in the menu's order; empty hides it.</summary>
+    /// <summary>The targets a pane's switch offers, in the menu's order; empty hides it. One oh-my-claudecode's ask refuses on Windows is never offered.</summary>
     internal IReadOnlyList<AskTarget> AskTargetsFor(RunSession pane)
     {
         // Cheapest tests first: the composer asks on every refresh and the phone four times a second.
         if (installedAskExecutables.Count == 0 || !AsksOtherCli(pane)) return [];
         var offers = slashCatalogs.OffersAsk(pane.Provider, AskCatalogPath(pane)) == true;
-        return AskTargets.Available(true, offers ? AskSkillOnly : NoSlash, installedAskExecutables);
+        return AskTargets.Available(true, offers ? AskSkillOnly : NoSlash, installedAskExecutables).Where(t => !AskTargets.UnsupportedOnWindows.Contains(t.Id)).ToArray();
     }
 
     /// <summary>The target a pane's sends go to now; null for Claude.</summary>
@@ -156,7 +160,7 @@ public sealed partial class MainWindow
     /// <summary>Saves a pane's choice (null: Claude) and redraws its composer and the phones. A target the pane does not offer is refused.</summary>
     private async Task SetAskTarget(string id, string? target)
     {
-        if (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { } pane) throw new InvalidOperationException("Session not found.");
+        if (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { } pane) throw new InvalidOperationException(Locale.Get("remote.error.paneNotFound"));
         if (target is not null)
         {
             if (!AskTargetsFor(pane).Any(t => t.Id == target)) throw new ArgumentException(Locale.Get("remote.error.badBody"));
