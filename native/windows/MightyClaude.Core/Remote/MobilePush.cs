@@ -86,6 +86,25 @@ public sealed record MobilePushRequest(string Id, string RunId, string Kind, str
         if (permission.Plan is not null || permission.ToolName == ClaudePlanMode.ToolName) return new(permission.Id, permission.RunId, MobilePushKinds.Plan, permission.Summary, MobilePushButtonKinds.None);
         return new(permission.Id, permission.RunId, MobilePushKinds.Permission, permission.Summary, permission.CanAllow ? MobilePushButtonKinds.Claude : MobilePushButtonKinds.None);
     }
+
+    /// <summary>
+    /// A pending request as a push (M/MobilePushRequest.init(request:)): a question reads as its questions and a plan as its first
+    /// line, not as the tool's name (its activity summary); either is empty when it cannot be read, so the phone shows its own sentence.
+    /// </summary>
+    public static MobilePushRequest From(ToolPermissionRequest request)
+    {
+        var push = From(MobilePermission.From(request));
+        return push.Kind switch
+        {
+            MobilePushKinds.Question => push with { Summary = (request.ToolName == "AskUserQuestion" ? UserQuestionnaire.Parse(request.InputJson) : null) is { } questionnaire ? string.Join(" · ", questionnaire.Questions.Select(q => q.Question)) : "" },
+            MobilePushKinds.Plan => push with { Summary = request.Plan is { } plan ? PlanLine(plan) : "" },
+            _ => push,
+        };
+    }
+
+    /// <summary>The plan's first line with text, without its Markdown heading marks (M/MobilePushRequest.planLine).</summary>
+    internal static string PlanLine(string plan) =>
+        plan.Split(['\r', '\n']).Select(line => line.TrimStart('#', ' ', '\t').TrimEnd(' ', '\t')).FirstOrDefault(line => line.Length > 0) ?? "";
 }
 
 /// <summary>One pane as the planner sees it; Status is the pane's own run status (running, completed, error, stopped, …), not the phone's display status.</summary>
@@ -108,7 +127,7 @@ public sealed record MobilePushPane(string SessionId, string Workspace, string T
         return RemoteWorkspacePhone.Sessions(sessions, workspaces).Where(session => session.Kind != "files").Select(session =>
         {
             var requests = permissions.GetValueOrDefault(session.Id, []).Where(p => p.State == "pending" && !autoAllowed(session.Id, p))
-                .Select(p => MobilePushRequest.From(MobilePermission.From(p))).ToList();
+                .Select(p => MobilePushRequest.From(p)).ToList();
             if (antigravity(session.Id) is { } card) requests.Add(MobilePushRequest.From(MobilePermission.FromAntigravity(card)));
             var preview = MobileRemoteSupport.PreviewLine(session) is { } line ? MobilePushPlanner.Clip(line.Text, PreviewLimit) : null;
             return new MobilePushPane(session.Id, names.GetValueOrDefault(session.WorkspaceId, ""), session.Title, session.Status, preview, requests, signInLost(session.Id));

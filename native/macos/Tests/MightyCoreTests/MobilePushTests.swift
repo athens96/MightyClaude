@@ -109,6 +109,21 @@ struct MobilePushPlannerTests {
         #expect(MobilePushRequest(permission(MobileAntigravityCard.toolName, antigravity: once)).kind == .permission)
     }
 
+    @Test func aQuestionOrAPlanReadsAsWhatItAsksNotAsItsTool() {
+        func request(_ toolName: String, _ inputJSON: String, canAnswer: Bool = true) -> ToolPermissionRequest {
+            ToolPermissionRequest(id: "r", runId: "u", toolUseId: "t", toolName: toolName, inputJSON: inputJSON, summary: toolName,
+                                  canAnswerQuestions: canAnswer && toolName == "AskUserQuestion", canAnswerPlan: canAnswer && toolName == ClaudePlanMode.toolName)
+        }
+        let options = #"[{"label":"A","description":""},{"label":"B","description":""}]"#
+        let two = #"{"questions":[{"header":"h","question":"어느 쪽?","multiSelect":false,"options":\#(options)},{"header":"g","question":"언제?","multiSelect":false,"options":\#(options)}]}"#
+        #expect(MobilePushRequest(request: request("AskUserQuestion", two)).summary == "어느 쪽? · 언제?")
+        #expect(MobilePushRequest(request: request("AskUserQuestion", two, canAnswer: false)).summary == "어느 쪽? · 언제?")
+        #expect(MobilePushRequest(request: request("AskUserQuestion", "{}")).summary == "")
+        #expect(MobilePushRequest(request: request(ClaudePlanMode.toolName, #"{"plan":"\n## 로그인 고치기\n- 1단계"}"#)).summary == "로그인 고치기")
+        #expect(MobilePushRequest(request: request(ClaudePlanMode.toolName, "{}")).summary == "")
+        #expect(MobilePushRequest(request: request("Bash", #"{"command":"ls"}"#)).summary == "Bash")
+    }
+
     @Test func aWideMessageStaysWithinThePushLimit() throws {
         var subject = MobilePushPlanner()
         _ = subject.observe([], hostId: "h", hostName: "H", at: "t")
