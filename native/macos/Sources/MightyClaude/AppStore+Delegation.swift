@@ -685,7 +685,9 @@ extension AppStore {
             return await startRun(sessionId: sessionId, input: input)
         case .steer:
             guard !ending, !closingSessions.contains(sessionId), let session = snapshot.sessions.first(where: { $0.id == sessionId }),
-                  session.status == "running", canSteer(session), let runId = delegationRuns.runId(sessionId) else { return nil }
+                  session.status == "running", canSteer(session), let runId = delegationRuns.runId(sessionId),
+                  // Claude is answering finished background work: what comes now waits for that turn instead of steering into it.
+                  !MightyGraphSupport.noticeTurnRunning(session.graphRuns ?? []) else { return nil }
             guard await steerRunningTurn(sessionId, text: input) else { return nil }
             updateSession(sessionId) { $0.logs.append(LogEntry(kind: "user", text: input)); $0.logs = TranscriptRetention.trimmed($0.logs) }
             // The user's 바로 실행 steering the held items in: the views move to that 중간 요청

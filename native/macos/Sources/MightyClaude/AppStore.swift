@@ -390,9 +390,9 @@ final class AppStore: ObservableObject, DelegationHost {
     var quietChildParents: [String: Set<String>] = [:]
     /// Panes a queued row is being steered into, until the run answers: a second click cannot steer a row twice.
     private var steeringQueuedRows = Set<String>()
-    /// Queued rows starting with the items delegation holds for their pane,
-    /// until that release is over.
-    private var releasingRows: Set<String> = []
+    /// Queued rows starting with the items delegation holds for their pane, by row id, until that release is over: 바로 실행
+    /// awaits it to know whether a run took the row (``startNextQueuedRow(_:own:)``).
+    private var heldReleases: [String: Task<SubmitOutcome, Never>] = [:]
     private(set) var closingSessions = Set<String>()
     private var draftRevisions: [String: UInt64] = [:]
     var attachmentTasks: [String: Task<Void, Never>] = [:]
@@ -1180,9 +1180,7 @@ final class AppStore: ObservableObject, DelegationHost {
         case (.here, _):
             // At the head, the queue's own start takes it: held items go ahead of it in its run, a refused start keeps it there.
             take(); queuedInputs[id, default: []].insert(item, at: 0)
-            runNextQueuedRow(id, own: own)
-            // Still at the head: the queue's start did not take it (refused, or held meanwhile), so nothing ran (Windows StartNextQueuedInput's false).
-            return queuedInputs[id]?.first?.id == item.id ? nil : .here
+            return await startNextQueuedRow(id, own: own) ? .here : nil
         case (.steer, _):
             return await steerQueuedRow(id, itemId: itemId, own: own) ? .steer : nil
         default:
@@ -1200,8 +1198,8 @@ final class AppStore: ObservableObject, DelegationHost {
         defer { if own { ownHeldReleases.remove(id) } }
         switch await delegation.runNext(in: id) {
         case .released: return true
-        // Released meanwhile by another send: the queued rows as before.
-        case .nothingHeld: runNextQueuedRow(id, own: own); return true
+        // Released meanwhile by another send: the queued rows as before, true only when a run took the first.
+        case .nothingHeld: return await startNextQueuedRow(id, own: own)
         case .notStarted: return false
         }
     }
@@ -1215,6 +1213,18 @@ final class AppStore: ObservableObject, DelegationHost {
         settleQueue(id, status: "completed", own: own)
     }
 
+    /// ``runNextQueuedRow(_:own:)``, saying whether a start took the first row (Windows `StartNextQueuedInput`): its run is
+    /// starting in the pane, or the items held for the pane went with it in a run that started. False when nothing took it:
+    /// the pane was busy or held, its start was refused (the row stays at the head), or the pane cannot run at all (the queue
+    /// was dropped with a log line).
+    func startNextQueuedRow(_ id: String, own: Bool? = nil) async -> Bool {
+        let head = queuedInputs[id]?.first?.id, wasStarting = pendingRuns.contains(id)
+        runNextQueuedRow(id, own: own)
+        // Nothing suspends between the start and this reading: a run `start` began is still in `pendingRuns`.
+        if let head, let release = heldReleases[head] { return await release.value == .started }
+        return !wasStarting && pendingRuns.contains(id)
+    }
+
     /// A child whose run end is still being recorded runs nothing yet; its
     /// record settles the queue again (``childRunEndRecorded(_:)``).
     func settleQueue(_ id: String, status: String, own: Bool? = nil) {
@@ -1224,8 +1234,8 @@ final class AppStore: ObservableObject, DelegationHost {
             guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id),
                   let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
             let next = queue[0]
-            // Held for a background update, which drains the queue when it ends.
-            if backgroundUpdateHolds(session) { heldForUpdate.insert(id); return }
+            // Held for a background update, or one the user started (a CLI update or a plugin change), which drains the queue when it ends.
+            if backgroundUpdateHolds(session) || manualUpdateHolds(session) { heldForUpdate.insert(id); return }
             if let reason = runBlockedReason(session) {
                 queuedInputs.removeValue(forKey: id)
                 updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.cancelledUnrunnable", ["count": "\(queue.count)", "reason": reason]))) }
@@ -1234,9 +1244,9 @@ final class AppStore: ObservableObject, DelegationHost {
             queuedInputs[id] = queue.count > 1 ? Array(queue.dropFirst()) : nil
             // Items held for the pane go first, in this request's run.
             if !(delegationHeld[id] ?? []).isEmpty {
-                releasingRows.insert(next.id)
                 let release = releaseHeld(id, input: next.text, attachments: next.attachments, from: .queue(next))
-                Task { _ = await release.value; releasingRows.remove(next.id) }
+                heldReleases[next.id] = release
+                Task { _ = await release.value; heldReleases.removeValue(forKey: next.id) }
                 return
             }
             // A queued request now runs: own when it was this Mac's (B2), the phone's only followed.

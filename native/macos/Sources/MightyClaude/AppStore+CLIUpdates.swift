@@ -62,11 +62,11 @@ extension AppStore {
         session.kind != "shell" && automaticUpdateRunning && (updatingCLI == session.provider || updatingPluginsFor == session.provider) && !isRemoteSession(session)
     }
 
-    /// Runs the queues a background step held back, once it ended.
-    private func releaseHeldQueues(_ provider: String) {
+    /// Runs the queues a background step, or a CLI update or plugin change the user started, held back, once it ended.
+    func releaseHeldQueues(_ provider: String) {
         for id in heldForUpdate.sorted() {
             guard let session = snapshot.sessions.first(where: { $0.id == id }) else { heldForUpdate.remove(id); continue }
-            guard session.provider == provider, !backgroundUpdateHolds(session) else { continue }
+            guard session.provider == provider, !backgroundUpdateHolds(session), !manualUpdateHolds(session) else { continue }
             heldForUpdate.remove(id)
             // The queue as a run's end drains it, not run next: what
             // delegation holds goes with the human's request, never alone.

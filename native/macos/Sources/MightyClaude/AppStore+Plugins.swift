@@ -64,7 +64,12 @@ extension AppStore {
         }
         guard !Task.isCancelled else { return ClaudePluginOperationResult(status: "cancelled", detail: L("plugins.operation.cancelled")) }
         isManagingPlugins = true
-        defer { isManagingPlugins = false; resendAwaitingLoginRequests() }
+        defer {
+            isManagingPlugins = false
+            // The queues the change held (``manualUpdateHolds(_:)``) run now.
+            for held in ["claude", "codex"] { releaseHeldQueues(held) }
+            resendAwaitingLoginRequests()
+        }
         return await operation()
     }
 }
