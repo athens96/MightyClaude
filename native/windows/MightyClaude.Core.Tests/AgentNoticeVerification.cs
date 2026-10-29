@@ -33,6 +33,8 @@ internal static class AgentNoticeVerification
         NoticeResultsAreTheFixtures();
         StreamsSettleTheBlockAndOpenNoticeRuns();
         AMixedTurnLeavesTheEarlierRunInItsOwnState();
+        NoticeTitlesFollowTheFixture();
+        ResultTitlesFollowTheFixture();
         return Task.CompletedTask;
     }
 
@@ -115,13 +117,8 @@ internal static class AgentNoticeVerification
             var main = latest[ExecutionGraphSupport.MainNodeID(runID)];
             foreach (var part in Items(expect, "mainOutputContains").Select(e => e.GetString() ?? ""))
                 Check(main.Output?.Contains(part, StringComparison.Ordinal) == true, name + ": the result holds '" + part + "'; got '" + main.Output + "'");
-            // A turn that opened no notice run (a running agent's own message) still follows in the result under its line.
-            foreach (var section in Items(expect, "mainNoticeSections"))
-            {
-                var header = Locale.Get(section.Text("header") ?? "", section.Text("title") is { } title ? new Dictionary<string, string> { ["title"] = title } : null);
-                var part = MightyGraphSupport.NoticeSectionMark + header + "**\n\n" + (section.Text("answer") ?? "");
-                Check(main.Output?.Contains(part, StringComparison.Ordinal) == true, name + ": the result holds '" + part + "'; got '" + main.Output + "'");
-            }
+            // No answer to a notice extends the request's result any more.
+            Check(main.Output?.Contains(MightyGraphSupport.NoticeSectionMark, StringComparison.Ordinal) != true, name + ": notice section in the request's result; got '" + main.Output + "'");
 
             // Each notice turn is a run of its own: "<run>:notice:<n>", n from 1.
             var runs = NoticeRuns(latest);
@@ -132,11 +129,16 @@ internal static class AgentNoticeVerification
             if (expect.TryGetProperty("noticeRunOutput", out var output))
                 Same(runs.FirstOrDefault().Main?.Output, output.ValueKind == JsonValueKind.String ? output.GetString() : null, name + ": notice run output");
             if (expect.Text("noticeRunInput") is { } input) Same(runs.FirstOrDefault().Main?.Input, input, name + ": notice run input");
+            if (expect.TryGetProperty("noticeRunTitles", out var titles) && titles.ValueKind == JsonValueKind.Array)
+                SameList(runs.Select(r => r.Main?.Title ?? ""), titles.EnumerateArray().Select(t => t.GetString() ?? ""), name + ": titles");
+            if (expect.TryGetProperty("noticeRunOutputs", out var outputs) && outputs.ValueKind == JsonValueKind.Array)
+                SameList(runs.Select(r => r.Main?.Output ?? "<none>"), outputs.EnumerateArray().Select(o => o.ValueKind == JsonValueKind.String ? o.GetString() ?? "" : "<none>"), name + ": outputs");
+            var kinds = new[] { BackgroundNoticeRuns.Opener.Work, BackgroundNoticeRuns.Opener.Message, BackgroundNoticeRuns.Opener.Delegation }.Select(BackgroundNoticeRuns.Kind).ToList();
             var endsInTurn = events.Count == 0 || events[^1].Text("type") != "result";
             foreach (var (id, noticeMain, copies) in runs)
             {
                 var notice = noticeMain ?? throw new InvalidOperationException(name + ": " + id + " has no main");
-                Check(notice.Title == Locale.Get("graph.background.noticeRun") && notice.ParentId is null, name + ": " + id + " main");
+                Check(kinds.Any(kind => notice.Title == kind || notice.Title.StartsWith(kind + " · ", StringComparison.Ordinal)) && notice.ParentId is null, name + ": " + id + " main '" + notice.Title + "'");
                 // A run with Claude's answer is complete; only a stream that ends inside a turn answering in it again leaves it running.
                 // The request's result never holds that answer.
                 if (notice.Output is { } answer)
@@ -159,6 +161,37 @@ internal static class AgentNoticeVerification
                 Check(copy.Kind == original.Kind && copy.Title == original.Title && copy.Input == original.Input, name + ": " + copy.Id + " copy");
                 Check(copy.State == original.State && copy.Output == original.Output && copy.OutputFile == original.OutputFile, name + ": " + copy.Id + " copy");
             }
+        }
+    });
+
+    /// <summary>The notice run title rule: kind and names in, "&lt;kind&gt; · &lt;name&gt;", "&lt;kind&gt; · &lt;first&gt; 외 &lt;n&gt;개" or the kind alone out
+    /// (macOS AgentNoticeTests.noticeTitlesFollowTheFixture).</summary>
+    private static void NoticeTitlesFollowTheFixture() => InKorean(() =>
+    {
+        var cases = Items(Fixture.Value, "noticeTitles");
+        Check(cases.Count >= 4, "the fixture has notice title cases");
+        foreach (var item in cases)
+        {
+            var names = Items(item, "names").Select(n => n.GetString() ?? "").ToList();
+            var title = BackgroundNoticeRuns.Title(Locale.Get(item.Text("kind") ?? ""), names);
+            Same(title, item.Text("expect"), "notice title: " + item.Text("name"));
+        }
+    });
+
+    /// <summary>The result title rule: how the request ended, or 현재까지의 결과 with the count while background work runs
+    /// (macOS AgentNoticeTests.resultTitlesFollowTheFixture).</summary>
+    private static void ResultTitlesFollowTheFixture() => InKorean(() =>
+    {
+        var cases = Items(Fixture.Value, "resultTitles");
+        Check(cases.Count >= 4, "the fixture has result title cases");
+        foreach (var item in cases)
+        {
+            var expect = MetadataJson.Property(item, "expect");
+            var count = MetadataJson.Property(expect, "count");
+            var wanted = Locale.Get(expect.Text("key") ?? "", count.ValueKind == JsonValueKind.Number
+                ? new Dictionary<string, string> { ["count"] = count.GetInt32().ToString(System.Globalization.CultureInfo.InvariantCulture) } : null);
+            var waiting = MetadataJson.Property(item, "waiting") is { ValueKind: JsonValueKind.Number } number ? number.GetInt32() : 0;
+            Same(MightyGraphBlockModel.ResultTitle(item.Text("status") ?? "", waiting), wanted, "result title: " + item.Text("name"));
         }
     });
 

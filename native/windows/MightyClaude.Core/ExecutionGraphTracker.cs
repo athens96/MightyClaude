@@ -131,9 +131,10 @@ public sealed partial class ExecutionGraphTracker
     private readonly Dictionary<string, bool> messageConfigured = [];
     private readonly Dictionary<string, List<string>> nodeResponseOrder = [];
     private readonly List<string> pendingSteers = [];
-    /// <summary>The request's own root result arrived; a steer after it opens a turn whose answer follows in the result.</summary>
+    /// <summary>The request's own root result arrived; a user's steer after it opens a turn whose answer follows in the result.</summary>
     private bool turnEnded;
-    /// <summary>What the steer that opened such a turn is called (중간 요청 or 위임 알림): its answer's section is headed by it.</summary>
+    /// <summary>What the steer that opened such a turn is called (중간 요청): its answer's section is headed by it. A delegation notice after
+    /// the result opens a notice run instead (<see cref="JoinTurn"/>).</summary>
     private string? steeredTurn;
     /// <summary>Notice runs opened so far (<see cref="BackgroundNoticeRuns"/>); the next one is numbered one more.</summary>
     private int noticeIndex;
@@ -151,6 +152,14 @@ public sealed partial class ExecutionGraphTracker
     private readonly List<string> noticeRuns = [];
     /// <summary>Each copied block's latest notice run.</summary>
     private readonly Dictionary<string, string> copiedIn = [];
+    /// <summary>What opened a notice run and what it names while it holds no copy (<see cref="BackgroundNoticeRuns.Title"/>).</summary>
+    private sealed record NoticeOpening(BackgroundNoticeRuns.Opener Opener, IReadOnlyList<string> Names, IReadOnlyList<string> Lines);
+    /// <summary>What opened each notice run.</summary>
+    private readonly Dictionary<string, NoticeOpening> noticeOpeners = [];
+    /// <summary>Lines of root messages this turn no run took yet (in or before the request's own turn): a notice answer opens a run naming them.</summary>
+    private readonly List<string> turnLines = [];
+    /// <summary>The most lines and names a notice run's opener, or a turn waiting for its answer, holds.</summary>
+    private const int NoticeLineLimit = 16;
     /// <summary>Moves each time a notice run opens or runs again (<see cref="NoticeRevision"/>).</summary>
     private int noticeRevision;
     /// <summary>Notice runs with a node that changed since <see cref="TakeNoticeRuns"/> last built them.</summary>
@@ -181,8 +190,10 @@ public sealed partial class ExecutionGraphTracker
             var before = pendingSteers.Count;
             SteerLocked(id, text);
             // After the request's result the steer starts a new turn in the same process (macOS).
-            if (turnEnded && steeredTurn is null && pendingSteers.Count > before)
-                steeredTurn = Locale.Get(MightyGraphSupport.IsDelegationNotice(text) ? "graph.block.delegationNotice" : "graph.block.steer");
+            if (!turnEnded || steeredTurn is not null || pendingSteers.Count == before) return;
+            // A delegation notice's answer is its own 위임 알림 run's; the block stays under the request and takes the reply.
+            if (MightyGraphSupport.IsDelegationNotice(text)) JoinTurn(BackgroundNoticeRuns.Opener.Delegation, null, text);
+            else steeredTurn = Locale.Get("graph.block.steer");
         }
     }
     private void SteerLocked(string id, string text)
@@ -439,7 +450,8 @@ public sealed partial class ExecutionGraphTracker
         else if (type == "result" && (ClaudeStream.IsNotificationResult(value) || parentTool is null && (noticeTurn is not null || mergeTurn is not null)))
         {
             if (parentTool is not null) return;
-            var (run, merged) = (noticeTurn, mergeTurn);
+            var (run, merged, absorbed) = (noticeTurn, mergeTurn, absorbedRun);
+            var lines = turnLines.ToList();
             ClearNoticeTurn();
             var answer = value.Text("result")?.Trim() ?? "";
             var failed = IsTrue(value, "is_error") || (value.Text("subtype") ?? "").StartsWith("error", StringComparison.Ordinal);
@@ -456,9 +468,25 @@ public sealed partial class ExecutionGraphTracker
                 SetNoticeState(merged, failed ? "error" : "completed");
                 return;
             }
-            // Any other notice turn (a delegation notice, a sub-agent's message) follows the request's answer in the result.
+            // A notice answer no notice run took never extends the request's result: it is the answer of the run its notices
+            // were taken into, or of a run of its own.
             if (answer.Length == 0) return;
-            Update(mainID, n => n with { Output = MightyGraphSupport.WithNoticeSection(n.Output, Locale.Get("graph.result.afterNotice"), answer) });
+            if (absorbed is not null)
+            {
+                // The lines this turn held are about the same work: they join the run's request.
+                if (lines.Count > 0)
+                {
+                    var opened = noticeOpeners.GetValueOrDefault(absorbed) ?? new(BackgroundNoticeRuns.Opener.Work, [], []);
+                    noticeOpeners[absorbed] = opened with { Lines = opened.Lines.Concat(lines).Take(NoticeLineLimit).ToList() };
+                    Describe(absorbed);
+                }
+                Update(ExecutionGraphSupport.MainNodeID(absorbed), n => n with { Output = answer });
+                return;
+            }
+            var peer = MetadataJson.Property(value, "origin") is { ValueKind: JsonValueKind.Object } origin && origin.Text("kind") == "peer";
+            if (OpenNoticeRun(false, peer ? BackgroundNoticeRuns.Opener.Message : BackgroundNoticeRuns.Opener.Work, lines: lines) is not { } own) return;
+            Update(ExecutionGraphSupport.MainNodeID(own), n => n with { Output = answer });
+            if (failed) SetNoticeState(own, "error");
         }
         else if (type == "result")
         {
@@ -472,7 +500,8 @@ public sealed partial class ExecutionGraphTracker
             }
             else if (parentTool is null)
             {
-                absorbedRun = null; turnEnded = true;
+                // The lines its turn held are the request's own answer's, not a notice run's.
+                absorbedRun = null; turnLines.Clear(); turnEnded = true;
                 Update(mainID, n => n with { Output = value.Text("result"), State = IsTrue(value, "is_error") || (value.Text("subtype") ?? "").StartsWith("error", StringComparison.Ordinal) ? n.State : "completed" });
             }
             else if (current != mainID)
@@ -677,7 +706,12 @@ public sealed partial class ExecutionGraphTracker
             remaining = remaining[(end + close.Length)..];
             var byTool = Tag(body, "tool-use-id") is { } tool && ExecutionGraphSupport.AgentNodeID(runID, tool) is var toolNode && nodes.ContainsKey(toolNode) ? toolNode : null;
             var id = byTool ?? (Tag(body, "task-id") is { } task ? taskAliases.GetValueOrDefault(task) : null);
-            if (id is null || nodes.GetValueOrDefault(id)?.Kind is not { } kind || kind is not ("task" or "agent")) continue;
+            if (id is null || nodes.GetValueOrDefault(id)?.Kind is not { } kind || kind is not ("task" or "agent"))
+            {
+                // Work this run never started (an earlier process's) has no block to copy: its line names the turn's run.
+                if (notice) JoinTurn(BackgroundNoticeRuns.Opener.Work, null, Tag(body, "summary") ?? Tag(body, "status"));
+                continue;
+            }
             var status = Tag(body, "status")?.ToLowerInvariant() ?? "completed";
             var state = status == "completed" ? "completed" : status is "failed" or "error" ? "error" : "stopped";
             var summary = Tag(body, "summary");
@@ -760,11 +794,48 @@ public sealed partial class ExecutionGraphTracker
             if (copiedIn.ContainsKey(id) || copiedIn.Count < 512) copiedIn[id] = run;
         }
         else Update(copyID, n => n with { Title = block.Title, Input = block.Input, State = block.State, Output = block.Output, OutputFile = block.OutputFile });
-        // The run's request: each finished block and how it ended, one per line.
-        var lines = (noticeCopies.GetValueOrDefault(run) ?? []).Select(nodes.GetValueOrDefault).OfType<ExecutionGraphNode>().Select(copy =>
-            (copy.Title is { Length: > 0 } title ? title : copy.Input ?? "") + " · "
-            + Locale.Get(copy.State == "completed" ? "graph.block.taskNotice.completed" : copy.State == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped"));
-        Update(main, n => n with { Input = string.Join("\n", lines) });
+        Describe(run);
+    }
+    /// <summary>A notice run's title and request lines: its opener's lines, then each copied block and how it ended. A run holding copies is
+    /// named after them; one without is named by what opened it (macOS describe).</summary>
+    private void Describe(string run)
+    {
+        var copies = (noticeCopies.GetValueOrDefault(run) ?? []).Select(nodes.GetValueOrDefault).OfType<ExecutionGraphNode>().ToList();
+        var opened = noticeOpeners.GetValueOrDefault(run) ?? new(BackgroundNoticeRuns.Opener.Work, [], []);
+        static string Name(ExecutionGraphNode copy) => copy.Title.Length > 0 ? copy.Title : copy.Input ?? "";
+        var lines = opened.Lines.Concat(copies.Select(copy => Name(copy) + " · "
+            + Locale.Get(copy.State == "completed" ? "graph.block.taskNotice.completed" : copy.State == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")));
+        var title = copies.Count == 0 ? BackgroundNoticeRuns.Title(BackgroundNoticeRuns.Kind(opened.Opener), opened.Names)
+            : BackgroundNoticeRuns.Title(BackgroundNoticeRuns.Kind(BackgroundNoticeRuns.Opener.Work), copies.Select(Name).ToList());
+        Update(ExecutionGraphSupport.MainNodeID(run), n => n with { Title = title, Input = string.Join("\n", lines) });
+    }
+    /// <summary>A root message about no block a notice run copies: a running agent's message, a message from a sender this run does not
+    /// know, a notification for work this run never started, a delegation notice after the request's result. It joins the turn's open
+    /// notice run, or opens that turn's run when it opens a turn; otherwise its line waits in <see cref="turnLines"/> for the turn's answer.
+    /// One that brings neither a name nor a line (a notification without a summary or a status) opens nothing: an answer to it still opens
+    /// a run of its own (the notice <c>result</c> branch) (macOS joinTurn).</summary>
+    private void JoinTurn(BackgroundNoticeRuns.Opener opener, string? name, string? line)
+    {
+        if (Provider != "claude") return;
+        var text = line?.Trim() is { Length: > 0 } trimmed ? trimmed : null;
+        if (name is null && text is null) return;
+        if ((noticeTurn ?? mergeTurn) is { } run)
+        {
+            var opened = noticeOpeners.GetValueOrDefault(run) ?? new(opener, [], []);
+            List<string> names = [.. opened.Names], lines = [.. opened.Lines];
+            if (name is not null && names.Count < NoticeLineLimit) names.Add(name);
+            if (text is not null && lines.Count < NoticeLineLimit) lines.Add(text);
+            noticeOpeners[run] = opened with { Names = names, Lines = lines };
+            Describe(run);
+        }
+        else if (turnEnded && steeredTurn is null)
+        {
+            List<string> lines = [.. turnLines];
+            if (text is not null) lines.Add(text);
+            noticeTurn = OpenNoticeRun(true, opener, name is null ? Array.Empty<string>() : new[] { name }, lines.Take(NoticeLineLimit).ToList());
+            turnLines.Clear();
+        }
+        else if (text is not null && turnLines.Count < NoticeLineLimit) turnLines.Add(text);
     }
     /// <summary>A notice run's main block running again for a turn that answers in it, or ended. Unlike <see cref="Update"/>, an ended
     /// main may run again: the turn after it is new work in the same run.</summary>
@@ -777,14 +848,18 @@ public sealed partial class ExecutionGraphTracker
         nodes[main] = normalized; emit(normalized);
         if (state == "running") noticeRevision += 1;
     }
-    /// <summary>The next notice run's main block: running until a notice turn's result, or complete at once for absorbed notices.</summary>
-    private string? OpenNoticeRun(bool running)
+    /// <summary>The next notice run's main block: running until a notice turn's result, or complete at once for absorbed notices.
+    /// <paramref name="opener"/> and <paramref name="names"/> title it until a copy joins; <paramref name="lines"/> are its request.</summary>
+    private string? OpenNoticeRun(bool running, BackgroundNoticeRuns.Opener opener = BackgroundNoticeRuns.Opener.Work, IReadOnlyList<string>? names = null, IReadOnlyList<string>? lines = null)
     {
         if (nodes.Count >= ExecutionGraphSupport.MaximumNodes) return null;
+        names ??= []; lines ??= [];
         var run = BackgroundNoticeRuns.RunID(runID, noticeIndex + 1);
-        var main = new ExecutionGraphNode(ExecutionGraphSupport.MainNodeID(run), run, null, "main", running ? "running" : "completed", Locale.Get("graph.background.noticeRun"));
+        var main = new ExecutionGraphNode(ExecutionGraphSupport.MainNodeID(run), run, null, "main", running ? "running" : "completed",
+            BackgroundNoticeRuns.Title(BackgroundNoticeRuns.Kind(opener), names)) { Input = lines.Count == 0 ? null : string.Join("\n", lines) };
         if (ExecutionGraphSupport.Normalized(main) is not { } normalized) return null;
         noticeIndex += 1; noticeRevision += 1;
+        noticeOpeners[run] = new(opener, names, lines);
         nodes[normalized.Id] = normalized; order.Add(normalized.Id); emit(normalized);
         noticeRuns.Add(run);
         return run;
@@ -792,7 +867,7 @@ public sealed partial class ExecutionGraphTracker
     /// <summary>A notice turn or a steered turn ended: the next one starts with no notices.</summary>
     private void ClearNoticeTurn()
     {
-        steeredTurn = null; noticeTurn = null; absorbedRun = null; mergeTurn = null; mergeRestore = null;
+        steeredTurn = null; noticeTurn = null; absorbedRun = null; mergeTurn = null; mergeRestore = null; turnLines.Clear();
     }
     /// Messages a background sub-agent sent this session (AgentHandback). Its
     /// framed final report is its result and ends it; like the agent's
@@ -808,10 +883,20 @@ public sealed partial class ExecutionGraphTracker
         foreach (var message in messages)
         {
             var id = taskAliases.GetValueOrDefault(message.From) ?? (sender is null ? null : taskAliases.GetValueOrDefault(sender)) ?? agentNames.GetValueOrDefault(message.From);
-            if (id is null || nodes.GetValueOrDefault(id) is not { Kind: "agent" } node) continue;
+            if (id is null || nodes.GetValueOrDefault(id) is not { Kind: "agent" } node)
+            {
+                // A sender this run does not know: its message is the turn's, in a 하위 에이전트 메시지 run without a name.
+                if (notice && message.Body.Length > 0) JoinTurn(BackgroundNoticeRuns.Opener.Message, null, message.Body);
+                continue;
+            }
             if (!message.IsHandback && !(lone && MetadataJson.Flag(origin, "handback")))
             {
-                if (message.Body.Length > 0) Append(Entry(ExecutionGraphSupport.Identifier(runID, id + ":peer:" + message.Body), "assistant", message.Body), id);
+                if (message.Body.Length > 0)
+                {
+                    Append(Entry(ExecutionGraphSupport.Identifier(runID, id + ":peer:" + message.Body), "assistant", message.Body), id);
+                    // A running agent's message opens (or joins) the turn's 하위 에이전트 메시지 run, named after the agent.
+                    if (notice) JoinTurn(BackgroundNoticeRuns.Opener.Message, node.Title.Length == 0 ? null : node.Title, message.Body);
+                }
                 continue;
             }
             var terminal = ExecutionGraphSupport.Terminal(node.State);
@@ -1031,6 +1116,8 @@ public sealed partial class ExecutionGraphTracker
             ConfiguredModel = configuredModel,
             NodeModelLabel = GraphModelLabel.NodeModelLabel(null, configuredModel),
             NoticeRun = notice ? true : null,
+            // A notice run's title is its main block's, named after the work it reports on (BackgroundNoticeRuns.Title).
+            NoticeTitle = notice && main.Title.Length > 0 ? main.Title : null,
         };
         foreach (var nodeID in order.Where(value => value != mainOf))
         {

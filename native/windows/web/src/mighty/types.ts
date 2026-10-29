@@ -106,6 +106,8 @@ export interface TimelineGroup {
   resultCaption?: string;
   /** Claude's reply to finished background work (notice.ts), not a request: it takes no request number. */
   noticeRun?: boolean;
+  /** The result head's title (Core MightyGraphBlockModel.ResultTitle): 현재까지의 결과 with the count while background work runs. */
+  resultTitle?: string;
 }
 
 export interface StructureCard {
@@ -139,6 +141,8 @@ export interface StructureCard {
   background?: boolean;
   outputTail?: string[];
   noticeReply?: string;
+  /** A result or summary card's result title (Core MightyGraphBlockModel.ResultTitle): 현재까지의 결과 with the count while background work runs. */
+  resultTitle?: string;
 }
 
 /** One tool call on a card: its kind (command, read, edit, search, web, agent, turn, tool), its state and its words. */

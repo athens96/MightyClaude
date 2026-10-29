@@ -34,17 +34,19 @@ internal sealed record WebMightyInputs(string? PlanRunID, IReadOnlyList<object> 
 
 internal sealed record WebTimelineRow(string NodeId, string Kind, string KindLabel, string Title, string Status, string StatusWord, string Tone, bool Ring, string? Rail,
     string? Latest, string? Duration, string? Capsule, string? Input, int? AgentIndex);
-/// <summary>One 기록 group; <c>NoticeRun</c> marks Claude's reply to finished background work (BackgroundNoticeRuns), absent for a request.</summary>
+/// <summary>One 기록 group; <c>NoticeRun</c> marks Claude's reply to finished background work (BackgroundNoticeRuns), absent for a request.
+/// <c>ResultTitle</c> is its result head's title (<see cref="MightyGraphBlockModel.ResultTitle"/>): the result so far while background work runs.</summary>
 internal sealed record WebTimelineGroup(string RunId, int Ordinal, string Title, string Status, string StatusWord, string Tone, string Input, string Tally, bool Open, bool Older,
-    IReadOnlyList<WebTimelineRow> Rows, string? ResultNodeId, string? ResultTone, string? Result, bool ResultFolds, string? ResultCaption, bool? NoticeRun = null);
+    IReadOnlyList<WebTimelineRow> Rows, string? ResultNodeId, string? ResultTone, string? Result, bool ResultFolds, string? ResultCaption, bool? NoticeRun = null, string? ResultTitle = null);
 
 internal sealed record WebStructureActivity(string Kind, string State, string Text);
 /// <summary>A structure card for the page; an agent card adds its kind, "kind · model", its depth and its prompt apart from its output; <c>RevealId</c> is the block its reveal shows.
-/// <c>Background</c>, <c>OutputTail</c> and <c>NoticeReply</c> are an agent card's as on <see cref="WebMightyBlock"/>.</summary>
+/// <c>Background</c>, <c>OutputTail</c> and <c>NoticeReply</c> are an agent card's as on <see cref="WebMightyBlock"/>. <c>ResultTitle</c> is a result or summary
+/// card's result title (<see cref="MightyGraphBlockModel.ResultTitle"/>), absent on the others.</summary>
 internal sealed record WebStructureCard(string Id, string Kind, string RunId, string NodeId, string Title, string Status, string StatusWord, string Tone, string? Parent,
     string? Text, string? Message, string? Answer, IReadOnlyList<WebStructureActivity> Activity, string? Tally, bool Finished, string? ResultLine,
     string? NodeKind = null, string? Meta = null, int Depth = 0, string? Prompt = null, string? ExecutionNodeId = null, string? ResultNodeId = null, string? Tint = null,
-    bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null);
+    bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, string? ResultTitle = null);
 internal sealed record WebStructureColumn(string Id, string Title, string Step, string StepWord, int Count, IReadOnlyList<WebStructureCard> Cards, string? Tone);
 /// <summary>One 파이프라인 board; <c>Quiet</c>: it holds only notice runs taken into a running turn (MightyStructure.Board.Quiet), which the view never moves on to by itself.</summary>
 internal sealed record WebStructureBoard(string Id, string Kind, int Ordinal, string? Headline, string Status, string StatusWord, string Tone, IReadOnlyList<string> RunIds, IReadOnlyList<WebStructureColumn> Columns, string? StyleName, bool? Quiet = null);
@@ -393,11 +395,13 @@ public sealed partial class MainWindow
                 }).ToList();
                 var tally = Locale.Get("phone.blocks.tally", new Dictionary<string, string> { ["total"] = group.Tally.Total.ToString(), ["settled"] = group.Tally.Settled.ToString() });
                 var total = run.TotalUsage;
-                var caption = (group.NoticeRun ? BackgroundNoticeRuns.Title : Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = group.Ordinal.ToString() })) + (total is null || total.IsEmpty ? "" : " · " + total.Summary);
+                var caption = (group.NoticeRun ? BackgroundNoticeRuns.Heading(group.NoticeTitle) : Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = group.Ordinal.ToString() })) + (total is null || total.IsEmpty ? "" : " · " + total.Summary);
                 groups.Add(new(group.RunId, group.Ordinal, GraphRequestTitle(run, group.Ordinal), group.Status, MightyGraphBlockModel.RunStateLabel(run),
                     Tone(StatusGlyph.Tone(group.Status)), group.Input, tally, MightyTimeline.GroupOpen(group, runs, webTimelineFlipped), group.RunIndex < older, rows,
                     group.Result?.NodeId, group.Result is { } r ? Tone(r.Tone) : null, group.Result?.Text, group.Result?.Text is { } text && MightyTimeline.Folds(text), group.Result is null ? null : caption,
-                    group.NoticeRun ? true : null));
+                    group.NoticeRun ? true : null,
+                    // How the request ended, or the result so far while its background work runs.
+                    group.Result is null ? null : MightyGraphBlockModel.ResultTitle(run.Status, MightyGraphSupport.BackgroundWaiting(run))));
             }
             return groups;
         }
@@ -438,7 +442,8 @@ public sealed partial class MainWindow
                     // A task notice's title already names its kind (MightyStructure.Kept keeps no other steer).
                     node?.Kind, node is null ? null : string.Join(" · ", new[] { node.Kind == "steer" ? null : MightyTimeline.KindLabel(node.Kind, null), model }.Where(p => !string.IsNullOrEmpty(p))),
                     node?.Depth ?? 0, node?.Prompt?.Preview, item.ExecutionNodeId, MightyGraphLayout.NodeID(runs[item.RunIndex], "result"), ToneWord(MightyStructure.Tone.OfCard(card, column)),
-                    node is { Background: true } ? true : (bool?)null, node is { Kind: "task" } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(node.AgentId)) : null, node?.NoticeReply?.Text);
+                    node is { Background: true } ? true : (bool?)null, node is { Kind: "task" } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(node.AgentId)) : null, node?.NoticeReply?.Text,
+                    card.Kind is MightyStructure.CardKind.Result or MightyStructure.CardKind.Summary ? MightyGraphBlockModel.ResultTitle(item.Status, item.BackgroundWaiting) : null);
             }
             var styleName = activeStyle?.Manifest.Name;
             return boards.Select(board => new WebStructureBoard(board.Id, board.Kind.ToString().ToLowerInvariant(), board.Ordinal, board.Headline, board.Status, MightyGraphBlockModel.StateLabel(board.Status), Tone(board.Status), board.RunIds,

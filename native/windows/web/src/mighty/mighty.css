@@ -213,7 +213,7 @@
 .timeline-result-head { display: flex; align-items: center; gap: var(--space-sm); padding: var(--inset-graph-block-body-v) var(--inset-graph-block-body-h); background: var(--done); color: var(--on-status); }
 .timeline-result.tone-err .timeline-result-head { background: var(--err); }
 .timeline-result.tone-stop .timeline-result-head { background: var(--stop); }
-.timeline-result-title { font-size: 12px; font-weight: 800; white-space: nowrap; }
+.timeline-result-title { font-size: 12px; font-weight: 800; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .timeline-result-caption { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
 .timeline-result-body { display: flex; flex-direction: column; gap: 4px; padding: var(--space-sm) var(--inset-graph-block-body-h) var(--space-md); }
 .timeline-result-text { font-family: var(--font-transcript); font-size: 12.5px; color: var(--ink); white-space: pre-wrap; user-select: text; }

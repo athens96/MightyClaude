@@ -151,6 +151,38 @@ internal static class SessionHistoryVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// A delegation notice handed in after the request's result opens a 위임 알림 notice run with the answer; the 위임 알림 block stays in
+    /// the request and takes the reply; the request's result is untouched and no second run opens
+    /// (macOS ExecutionGraphTests.aDelegationNoticeAfterTheTurnOpensItsOwnRun).
+    /// </summary>
+    internal static Task ADelegationNoticeAfterTheTurnOpensItsOwnRun()
+    {
+        var emitted = new List<ExecutionGraphNode>();
+        var tracker = new ExecutionGraphTracker("deleg-after", "Split the work", "claude", null, emitted.Add);
+        void Frame(object value) { using var json = JsonDocument.Parse(Json(value)); tracker.Consume(json.RootElement.Clone()); }
+        Frame(new { type = "assistant", message = new { id = "main-1", content = new[] { new { type = "text", text = "Delegated." } } } });
+        Frame(new { type = "result", subtype = "success", is_error = false, result = "Delegated." });
+        const string noticeText = "[Mighty Claude notice n-1] Your child c-1 reported revision 1. Read the report with child_status; merge it with merge when it is right.";
+        tracker.Steer("n-1", noticeText);
+        Frame(new { type = "assistant", message = new { id = "main-2", content = new[] { new { type = "text", text = "Merged the child." } } } });
+        Frame(new { type = "result", subtype = "success", is_error = false, result = "Merged the child." });
+        var latest = new Dictionary<string, ExecutionGraphNode>();
+        foreach (var node in emitted) latest[node.Id] = node;
+        Check(latest[ExecutionGraphSupport.MainNodeID("deleg-after")].Output == "Delegated.", "the request's result is untouched; got " + latest[ExecutionGraphSupport.MainNodeID("deleg-after")].Output);
+        var notice = latest.GetValueOrDefault(ExecutionGraphSupport.MainNodeID(BackgroundNoticeRuns.RunID("deleg-after", 1)))
+            ?? throw new InvalidOperationException("the delegation notice opens no run");
+        Check(notice.Title == Locale.Get("graph.block.delegationNotice") && notice.Input == noticeText, "the 위임 알림 run names the notice and holds it; got '" + notice.Title + "' / '" + notice.Input + "'");
+        Check(notice is { Output: "Merged the child.", State: "completed" }, "the run's result is the answer; got " + notice.State + " / " + notice.Output);
+        var steer = latest[ExecutionGraphSupport.Identifier("deleg-after", "steer:n-1")];
+        Check(steer.RunId == "deleg-after" && steer.Output == "Merged the child.", "the 위임 알림 block stays in the request and takes the reply");
+        // One notice, one run: nothing opened a second.
+        Check(!emitted.Any(n => n.RunId == BackgroundNoticeRuns.RunID("deleg-after", 2)), "no second run opens");
+        tracker.Finish("completed");
+        Check(tracker.BuildNoticeRuns() is [{ NoticeRun: true, NoticeTitle: var title }] && title == Locale.Get("graph.block.delegationNotice"), "the projection carries the run's title");
+        return Task.CompletedTask;
+    }
+
     internal static Task ScrollingUpLoadsTheTenRequestsAboveTheRetainedOneFromAClaudeRecord()
     {
         using var fixture = new Fixture();

@@ -214,6 +214,8 @@ internal static class Verification
         await Test("background notice runs: the newest request, the followed run, numbers, result cards, 기록 and 파이프라인", BackgroundNoticeRunsVerification.TheRunRulesAndTheViews);
         await Test("background notice runs: the pane keeps the notice run apart with its own lines, and the phone and the strip get theirs", BackgroundNoticeRunsVerification.ThePaneKeepsTheNoticeRunApart);
         await Test("background notice runs: an absorbed or ended notice run leaves the request its place", BackgroundNoticeRunsVerification.AbsorbedAndEndedNoticeRunsLeaveTheRequestItsPlace);
+        await Test("background notice runs: the heading is the run's own title or the generic one, and the title is saved", BackgroundNoticeRunsVerification.TheHeadingIsTheRunsTitleOrTheGenericOne);
+        await Test("background notice runs: a request waiting on background work reads 현재까지의 결과, on the phone too", BackgroundNoticeRunsVerification.ARequestWaitingOnBackgroundWorkReadsTheResultSoFar);
         await Test("MightyTimelineVerification TheRequestRowHoldsTheInputAndTheExecutionRowTheWork", MightyTimelineVerification.TheRequestRowHoldsTheInputAndTheExecutionRowTheWork);
         await Test("MightyTimelineVerification StatusRailsCountsAndDurationStayHonest", MightyTimelineVerification.StatusRailsCountsAndDurationStayHonest);
         await Test("mighty execution block: a stable node id", MightyGraphExecutionBlockVerification.TheExecutionBlockHasAStableNodeID);
@@ -1087,6 +1089,7 @@ internal static class Verification
         await Test("agent images: a line carrying a picture over 1 MiB reaches the parser", AgentImageVerification.ALineCarryingAPictureOverOneMiBReachesTheParser);
         await Test("session history: a notice turn's answer follows the request's, live and replayed", SessionHistoryVerification.ANoticeTurnsAnswerFollowsTheRequestsLiveAndReplayed);
         await Test("session history: a steer after the turn follows in the result", SessionHistoryVerification.ASteerAfterTheTurnFollowsInTheResult);
+        await Test("session history: a delegation notice after the turn opens its own 위임 알림 run", SessionHistoryVerification.ADelegationNoticeAfterTheTurnOpensItsOwnRun);
         await Test("session history: scrolling up loads the ten requests above the retained one from a Claude record", SessionHistoryVerification.ScrollingUpLoadsTheTenRequestsAboveTheRetainedOneFromAClaudeRecord);
         await Test("session history: a replaced record starts over and a pane without a session has none", SessionHistoryVerification.AReplacedRecordStartsOverAndAPaneWithoutASessionHasNone);
         await Test("session history: only what the user typed is a request", SessionHistoryVerification.OnlyWhatTheUserTypedIsARequest);

@@ -192,8 +192,8 @@ public sealed partial class MainWindow
 
         private string GraphRequestTitle(MightyGraphRun run, int ordinal)
         {
-            // A notice run is no request: it is titled as Claude's reply to finished background work (BackgroundNoticeRuns).
-            if (run.NoticeRun == true) return BackgroundNoticeRuns.Title;
+            // A notice run is no request: it is titled after the work Claude replied to (BackgroundNoticeRuns.Heading).
+            if (run.NoticeRun == true) return BackgroundNoticeRuns.Heading(run);
             var prefix = activeStyle is null || styleRegistry is null ? null : StylePresentation.RequestPrefix(styleRegistry.Styles, run.Input);
             var provider = ProviderMark.Label(Session.Provider);
             var tail = MightyGraphBlockModel.RequestTitle(ordinal, provider);
@@ -507,7 +507,8 @@ public sealed partial class MainWindow
             var header = TimelineHeading(); header.Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyV); header.Background = fill; header.CornerRadius = new CornerRadius(radius);
             var named = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             named.Children.Add(MightySymbols.Create(TimelineResultSymbol(result.Tone), 11, ink, MightySymbols.Weight.Bold, fill));
-            var title = new TextBlock { Text = MightyGraphBlockModel.ResultTitle(run.Status), TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.ExtraBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+            // How the request ended, or the result so far while its background work runs.
+            var title = new TextBlock { Text = MightyGraphBlockModel.ResultTitle(run.Status, MightyGraphSupport.BackgroundWaiting(run)), TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.ExtraBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
             named.Children.Add(title); header.Children.Add(named);
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             var files = run.Status == "completed" ? MightyGraphBlockModel.FilesFor(run, LocalPath(Workspace)) : [];
@@ -534,7 +535,8 @@ public sealed partial class MainWindow
             }
             var caption = new TextBlock
             {
-                Text = Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = group.Ordinal.ToString() }) + (run.TotalUsage is { } usage ? " · " + GraphTokenUsage.Compact(usage.Total) : ""),
+                // "요청 n", or a notice run's own title (M/MightyGraphView.swift timelineRequestName).
+                Text = (group.NoticeRun ? BackgroundNoticeRuns.Heading(group.NoticeTitle) : Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = group.Ordinal.ToString() })) + (run.TotalUsage is { } usage ? " · " + GraphTokenUsage.Compact(usage.Total) : ""),
                 TextSize = 10.5, FontWeight = FontWeights.SemiBold, TextFont = TextArea.Code, VerticalAlignment = VerticalAlignment.Center, Foreground = ink,
             };
             actions.Children.Add(caption);

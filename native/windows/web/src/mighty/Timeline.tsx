@@ -12,6 +12,7 @@ import { Pending } from '../pending/Pending';
 import type { PendingState } from '../pending/display';
 import { holding, pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
 import { quietNotice } from './notice';
+import { timelineResultTitle } from './resultTitle';
 import { animateScrollTop, isNearBottom, submitScroll } from '../pending/submitScroll';
 import { Motion, reducesMotion } from '../theme/tokens';
 
@@ -139,7 +140,7 @@ const Group = memo(function Group({ group, run, paneId, provider, onOpenRow, pen
         <div className={'timeline-result tone-' + resultTone} data-node-id={group.resultNodeId}>
           <div className="timeline-result-head">
             <Icon name={resultTone === 'err' ? 'triangle-alert' : resultTone === 'stop' ? 'circle-stop' : 'badge-check'} size={12} weight={2.4} />
-            <span className="timeline-result-title">{t('graph.block.result')}</span>
+            <span className="timeline-result-title">{timelineResultTitle(group, t)}</span>
             <span className="spacer" />
             {group.resultCaption && <span className="timeline-result-caption">{group.resultCaption}</span>}
           </div>

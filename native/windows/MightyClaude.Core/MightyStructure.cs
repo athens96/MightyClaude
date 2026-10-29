@@ -58,13 +58,16 @@ public static partial class MightyStructure
     /// very reply as its <see cref="Answer"/>. <see cref="Ordinal"/> is the request's number (<see cref="MightyGraphSupport.RequestOrdinals"/>): a
     /// notice run adds none and carries the one before it. <see cref="NoticeRun"/>: Claude's reply to finished background work
     /// (<see cref="MightyGraphRun.NoticeRun"/>), titled as such, not a request; <see cref="Quiet"/>: a notice run taken into a running turn,
-    /// without a reply (<see cref="MightyGraphRun.QuietNotice"/>), never followed.
+    /// without a reply (<see cref="MightyGraphRun.QuietNotice"/>), never followed. <see cref="NoticeTitle"/>: a notice run's own title
+    /// (<see cref="MightyGraphRun.NoticeTitle"/>), null for a request and an older notice run; <see cref="BackgroundWaiting"/>: background work the
+    /// request still waits on (<see cref="MightyGraphSupport.BackgroundWaiting"/>), whose answer reads 현재까지의 결과 meanwhile.
     /// </summary>
     public sealed record Item(int RunIndex, string RunId, int Ordinal, string NodeId, string ExecutionNodeId, string Input, string Status, bool Finished, string? Result,
-        Excerpt? Request, Excerpt? Message, IReadOnlyList<ActivityLine> Activity, Excerpt? Answer, Tally Tally, IReadOnlyList<Cluster> Clusters, bool NoticeRun = false, bool Quiet = false)
+        Excerpt? Request, Excerpt? Message, IReadOnlyList<ActivityLine> Activity, Excerpt? Answer, Tally Tally, IReadOnlyList<Cluster> Clusters, bool NoticeRun = false, bool Quiet = false,
+        string? NoticeTitle = null, int BackgroundWaiting = 0)
     {
         public bool Equals(Item? other) => ReferenceEquals(this, other) || other is not null && RunIndex == other.RunIndex && RunId == other.RunId && Ordinal == other.Ordinal && NodeId == other.NodeId
-            && NoticeRun == other.NoticeRun && Quiet == other.Quiet
+            && NoticeRun == other.NoticeRun && Quiet == other.Quiet && NoticeTitle == other.NoticeTitle && BackgroundWaiting == other.BackgroundWaiting
             && ExecutionNodeId == other.ExecutionNodeId && Input == other.Input && Status == other.Status && Finished == other.Finished && Result == other.Result && Request == other.Request
             && Message == other.Message && Answer == other.Answer && Tally == other.Tally && Activity.SequenceEqual(other.Activity) && Clusters.SequenceEqual(other.Clusters);
         public override int GetHashCode() => HashCode.Combine(RunId, RunIndex, Status, Finished, Activity.Count, Clusters.Count);
@@ -104,9 +107,10 @@ public static partial class MightyStructure
         /// <summary><c>Notice</c>: Claude's reply to a task's notice, which can land with no new record.</summary>
         internal readonly record struct Block(string Id, string Title, string Status, string? ParentId, string? Kind, int Input, int Entries, int Tail, int Records, int Notice);
         /// <summary>One request's part, which is all its card reads (<see cref="ItemCache"/> keys on it).</summary>
-        internal sealed record Request(string Id, string Status, string? SourceRunId, int Input, int RootEntries, int RootTail, int ResultEntries, int Result, int? FinalOutput, Block[] Blocks)
+        /// <summary><c>NoticeTitle</c>: a notice run's title, which can move with no other change its card reads.</summary>
+        internal sealed record Request(string Id, string Status, string? SourceRunId, int Input, int RootEntries, int RootTail, int ResultEntries, int Result, int? FinalOutput, string? NoticeTitle, Block[] Blocks)
         {
-            public bool Equals(Request? other) => other is not null && Id == other.Id && Status == other.Status && SourceRunId == other.SourceRunId && Input == other.Input && RootEntries == other.RootEntries
+            public bool Equals(Request? other) => other is not null && Id == other.Id && Status == other.Status && SourceRunId == other.SourceRunId && NoticeTitle == other.NoticeTitle && Input == other.Input && RootEntries == other.RootEntries
                 && RootTail == other.RootTail && ResultEntries == other.ResultEntries && Result == other.Result && FinalOutput == other.FinalOutput && Blocks.AsSpan().SequenceEqual(other.Blocks);
             public override int GetHashCode() => HashCode.Combine(Id, Status, Input, RootEntries, RootTail, Blocks.Length);
         }
@@ -120,7 +124,7 @@ public static partial class MightyStructure
             IReadOnlyList<PlanRecord>? planHistory = null, string? pendingPlanRunID = null)
         {
             Requests = runs.Select(run => new Request(run.Id, run.Status, run.SourceRunID, Bytes(run.Input), run.RootEntries.Count, Tail(run.RootEntries), run.ResultEntries.Count,
-                Bytes(run.ResultEntries.LastOrDefault()?.Text), run.FinalOutput is { } final ? Bytes(final) : null,
+                Bytes(run.ResultEntries.LastOrDefault()?.Text), run.FinalOutput is { } final ? Bytes(final) : null, run.NoticeTitle,
                 run.Agents.Select(a => new Block(a.Id, a.Title, a.Status, a.ParentID, a.Kind, Bytes(a.Input), a.Entries.Count, Tail(a.Entries), a.ResponseRecords?.Count ?? 0, Bytes(a.NoticeReply))).ToArray())).ToArray();
             phases = style is null ? [] : Ordered(style.Manifest).Select(p => p.Id).ToArray();
             recognition = style?.Manifest.Id; this.currentPhase = currentPhase?.Id; this.startingNew = startingNew;
@@ -355,7 +359,8 @@ public static partial class MightyStructure
         var tools = run.RootEntries.Concat(blocks.SelectMany(block => block.Entries)).Count(e => e.Activity is { } activity && ToolKinds.Contains(activity.Kind));
         return new(index, run.Id, ordinal ?? index + 1, MightyGraphLayout.NodeID(run, "request"), MightyGraphLayout.NodeID(run, ExecutionSuffix), Preview(run.Input), MightyTimeline.Status(run.Status),
             finished, result, ExcerptOf(run.Input, RequestBytes, RequestLines), message, Activity(run.RootEntries, RequestActivity), full,
-            new(blocks.Count(block => MightyGraphSupport.BlockKind(block) == "agent"), tools), Clusters(run), run.NoticeRun == true, run.QuietNotice);
+            new(blocks.Count(block => MightyGraphSupport.BlockKind(block) == "agent"), tools), Clusters(run), run.NoticeRun == true, run.QuietNotice,
+            run.NoticeRun == true ? run.NoticeTitle : null, MightyGraphSupport.BackgroundWaiting(run));
     }
 
     /// <summary>The request is always there; the run goes on until every block settled, unless the request failed or was stopped; the result waits until the request finished.</summary>

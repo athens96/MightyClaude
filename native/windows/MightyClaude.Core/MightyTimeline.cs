@@ -20,9 +20,10 @@ public static class MightyTimeline
     public static readonly Node RequestNode = new(DesignTone.Idle, false, null);
     public sealed record Result(string NodeId, DesignTone Tone, string? Text);
     /// <summary>One request's group. <paramref name="Ordinal"/> is the request's number (<see cref="MightyGraphSupport.RequestOrdinals"/>);
-    /// <paramref name="NoticeRun"/>: Claude's reply to finished background work (<see cref="MightyGraphRun.NoticeRun"/>), titled as such, not a request.</summary>
+    /// <paramref name="NoticeRun"/>: Claude's reply to finished background work (<see cref="MightyGraphRun.NoticeRun"/>), titled as such, not a request;
+    /// <paramref name="NoticeTitle"/>: a notice run's own title (<see cref="MightyGraphRun.NoticeTitle"/>), null for a request and an older notice run.</summary>
     public sealed record Group(int RunIndex, string RunId, int Ordinal, string Status, string Input,
-        IReadOnlyList<Row> Rows, Tally Tally, Result? Result, bool NoticeRun = false);
+        IReadOnlyList<Row> Rows, Tally Tally, Result? Result, bool NoticeRun = false, string? NoticeTitle = null);
 
     /// <summary>The diagram, the timeline or the structure (<see cref="MightyStructure"/>); a word this build does not know reads as the diagram (M/MightyCore/MightyTimeline.swift:4-10).</summary>
     public static string? NormalizeMode(string? value) => value is "diagram" or "timeline" or "structure" ? value : null;
@@ -72,7 +73,7 @@ public static class MightyTimeline
         }
         // As in the diagram, the request holds its input alone, in a neutral state of its own that never reads as the
         // work's outcome, and a 실행 block after it holds the work: its status, steps and span (macOS MightyTimeline.group).
-        rows.Add(new(MightyGraphLayout.NodeID(run, "request"), null, "main", notice ? BackgroundNoticeRuns.Title
+        rows.Add(new(MightyGraphLayout.NodeID(run, "request"), null, "main", notice ? BackgroundNoticeRuns.Heading(run)
             : Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = ordinal.ToString(CultureInfo.InvariantCulture) }), RequestStatus, RequestNode, null, null));
         Add(null, MightyGraphLayout.WorkSuffix, ExecutionKind, BackgroundNoticeRuns.ExecutionTitle(notice, ordinal), run.Status, run.RootEntries, execution: true);
         for (var i = 0; i < run.Agents.Count; i++)
@@ -89,7 +90,8 @@ public static class MightyTimeline
         }
         var blocks = rows.Skip(1).ToList();
         return new(index, run.Id, ordinal, Status(run.Status), run.Input, rows,
-            new(blocks.Count, blocks.Count(r => r.Status is "completed" or "error" or "stopped"), blocks.Count(r => r.Status == "running")), result, notice);
+            new(blocks.Count, blocks.Count(r => r.Status is "completed" or "error" or "stopped"), blocks.Count(r => r.Status == "running")), result, notice,
+            notice ? run.NoticeTitle : null);
     }
 
     private static string? Latest(IReadOnlyList<LogEntry> entries)

@@ -311,7 +311,8 @@ internal static class ClaudePlanModeVerification
                 var answer = JsonDocument.Parse(await File.ReadAllTextAsync(record + ".decision")).RootElement.GetProperty("response").GetProperty("response");
                 Check(seen[0] is { CanAnswerPlan: true, CanAllow: false, Plan: "# Plan\n1. Do it" }, "the plan reached the host as a plan");
                 Check(all.Where(e => e.Type == "plan").Select(e => e.Plan!.Outcome).SequenceEqual([decision.Outcome]), "the answer is recorded once");
-                var graphRun = all.LastOrDefault(e => e.Type == "graph_run")?.GraphRun;
+                // The request's own run: the fixture's answer to its notification after the turn is a notice run of its own (BackgroundNoticeRuns).
+                var graphRun = all.LastOrDefault(e => e.Type == "graph_run" && e.GraphRun?.NoticeRun != true)?.GraphRun;
                 Check(graphRun is not null && all.Single(e => e.Type == "plan").Plan!.GraphRunId == graphRun.SourceRunID, "the record names its request's graph run");
                 Check(all.Last(e => e.Type == "status").Status == final, "the run ends " + final);
                 if (decision == PlanDecision.Cancel)

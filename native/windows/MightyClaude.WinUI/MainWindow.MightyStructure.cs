@@ -1062,15 +1062,19 @@ public sealed partial class MainWindow
             ["agents"] = item.Tally.Agents.ToString(CultureInfo.InvariantCulture), ["tools"] = item.Tally.Tools.ToString(CultureInfo.InvariantCulture),
         }), StructureOutputSize, owner.brushes.Brush(DesignToken.Ink2), FontWeights.SemiBold);
 
-        /// <summary>The result's header words and symbol (11 bold), in the outcome's ink once there is one (M/MightyStructureView.swift:652-662).</summary>
+        /// <summary>The result's header words and symbol (11 bold), in the outcome's ink once there is one (M/MightyStructureView.swift:652-662): the
+        /// result so far while background work the request started still runs (<see cref="StructureResultName"/>).</summary>
         private StackPanel StructureResultTitle(MightyStructure.Item item)
         {
             var b = owner.brushes; var ink = item.Finished ? b.Text(StatusGlyph.Tone(item.Status)) : b.Brush(DesignToken.Ink2);
             var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
             label.Children.Add(MightySymbols.Create(item.Status switch { "error" => "exclamationmark.triangle", "stopped" => "stop.circle", _ => "checkmark.seal" }, StructureOutputSize, ink, MightySymbols.Weight.Bold));
-            label.Children.Add(StructureWords(MightyGraphBlockModel.ResultTitle(item.Status), StructureOutputSize, ink, FontWeights.Bold));
+            label.Children.Add(StructureWords(StructureResultName(item), StructureOutputSize, ink, FontWeights.Bold));
             return label;
         }
+
+        /// <summary>The answer's name: how the request ended, or the result so far while its background work runs (M/MightyStructureView.swift resultName).</summary>
+        private static string StructureResultName(MightyStructure.Item item) => MightyGraphBlockModel.ResultTitle(item.Status, item.BackgroundWaiting);
 
         /// <summary>
         /// A free board's 결과 card (M/MightyStructureView.swift:548-562, 664-673): its header words, then the answer as the transcript
@@ -1146,7 +1150,7 @@ public sealed partial class MainWindow
             var view = MarkdownView(TranscriptRtf.RenderMarkdown(source, light), 0);
             view.MinHeight = 0; view.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
             ScrollViewer.SetVerticalScrollBarVisibility(view, ScrollBarVisibility.Disabled); ScrollViewer.SetVerticalScrollMode(view, ScrollMode.Disabled);
-            AutomationProperties.SetAutomationId(view, "mighty-structure-answer-" + item.RunId); AutomationProperties.SetName(view, Locale.Get("graph.block.result"));
+            AutomationProperties.SetAutomationId(view, "mighty-structure-answer-" + item.RunId); AutomationProperties.SetName(view, StructureResultName(item));
             view.SelectionChanged += OnStructureSelectionChanged; view.LostFocus += OnStructureSelectionChanged;
             structureAnswers[item.RunId] = (view, source, light);
             if (!answer.Cut) return view;

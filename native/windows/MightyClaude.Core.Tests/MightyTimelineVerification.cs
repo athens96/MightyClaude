@@ -76,7 +76,9 @@ internal static class MightyTimelineVerification
         var noticeMain = latest[ExecutionGraphSupport.MainNodeID("notice-run:notice:1")];
         var build = latest["notice-run:notice:1:" + ExecutionGraphSupport.AgentNodeID("notice-run", "build-cmd")];
         var lint = latest["notice-run:notice:1:" + ExecutionGraphSupport.AgentNodeID("notice-run", "lint-cmd")];
-        Check(noticeMain is { State: "completed", Output: null } && noticeMain.Title == Locale.Get("graph.background.noticeRun"), "the absorbed notice run is complete without a result");
+        // Named after the blocks it copies (BackgroundNoticeRuns.Title): the build by its title, the lint by its command.
+        Check(noticeMain is { State: "completed", Output: null } && noticeMain.Title == BackgroundNoticeRuns.Title(BackgroundNoticeRuns.Kind(BackgroundNoticeRuns.Opener.Work), ["Build", "npm run lint"]),
+            "the absorbed notice run is complete without a result; got '" + noticeMain.Title + "'");
         Check(noticeMain.Input == "Build · 완료\nnpm run lint · 실패", "the notice run names each finished task and how it ended; got '" + noticeMain.Input + "'");
         Check(build is { State: "completed", Background: true } && build.ParentId == noticeMain.Id && lint.State == "error", "each block is copied once, as it ended");
         Check(latest[main].Output == "The build passed." || latest[main].Output is null, "the request's answer stays its own; got '" + latest[main].Output + "'");

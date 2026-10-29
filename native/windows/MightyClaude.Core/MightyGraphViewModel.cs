@@ -286,11 +286,13 @@ public static class MightyGraphBlockModel
     public static DesignTone Tone(MightyGraphBlock block) =>
         block.Status.Length == 0 ? DesignTone.Idle : StatusGlyph.Tone(MightyTimeline.Status(block.Status));
 
-    /// <summary>The result block's title, by how the run ended.</summary>
-    public static string ResultTitle(string runStatus) => runStatus switch
+    /// <summary>The result card's title in every view and on the phone: how the request ended, or the result so far while background
+    /// work it started still runs (<paramref name="waiting"/>, <see cref="MightyGraphSupport.BackgroundWaiting"/>) (macOS MightyGraphSupport.resultTitle).</summary>
+    public static string ResultTitle(string runStatus, int waiting = 0) => runStatus switch
     {
         "error" or "failed" => Locale.Get("graph.block.resultError"),
         "stopped" or "cancelled" or "interrupted" => Locale.Get("graph.block.resultStopped"),
+        _ when waiting > 0 => Locale.Get("graph.block.resultSoFar", new Dictionary<string, string> { ["count"] = waiting.ToString(System.Globalization.CultureInfo.InvariantCulture) }),
         _ => Locale.Get("graph.block.result"),
     };
 
@@ -325,9 +327,9 @@ public static class MightyGraphBlockModel
         var blocks = new List<MightyGraphBlock>();
         // Laid out with its 실행 blocks (MightyGraphLayout.Make splitsExecution), a request block holds what was asked alone.
         var split = layout.Nodes.Any(n => n.Kind == MightyGraphLayout.WorkKind);
-        // Request numbers: a notice run (BackgroundNoticeRuns) takes none and is titled as one.
+        // Request numbers: a notice run (BackgroundNoticeRuns) takes none and is titled after the work it reports on.
         var ordinals = MightyGraphSupport.RequestOrdinals(runs);
-        string Title(MightyGraphRun run, int runIndex) => run.NoticeRun == true ? BackgroundNoticeRuns.Title : RequestTitle(ordinals[runIndex], providerLabel);
+        string Title(MightyGraphRun run, int runIndex) => run.NoticeRun == true ? BackgroundNoticeRuns.Heading(run) : RequestTitle(ordinals[runIndex], providerLabel);
         foreach (var node in layout.Nodes)
         {
             var (runIndex, agentId) = Locate(node, runs);
@@ -371,7 +373,8 @@ public static class MightyGraphBlockModel
                         MightyGraphActivity.Outline(agent.Status, animationsEnabled), agent.Status));
                     break;
                 case "result" when run is not null:
-                    blocks.Add(new(node.Id, "result", node.Frame, ResultTitle(run.Status),
+                    // While background work the request started still runs, its result is the result so far.
+                    blocks.Add(new(node.Id, "result", node.Frame, ResultTitle(run.Status, MightyGraphSupport.BackgroundWaiting(run)),
                         StateLabel(ResultState(run.Status)), "", run.ResultEntries.Where(e => e.Kind != "user").ToList(),
                         ModelUsageFormat.BlockCapsule(run.TotalUsage, [], null, catalog, versioned: true),
                         Help(run.TotalUsage, [], Locale.Get("graph.block.totalUsageLabel"), catalog),

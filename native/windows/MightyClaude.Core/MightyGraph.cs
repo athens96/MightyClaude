@@ -56,6 +56,9 @@ public sealed class MightyGraphRun
     [JsonPropertyName("configuredModel")] public string? ConfiguredModel { get; set; }
     /// <summary>Claude's reply to finished background work, not a request the user sent (<see cref="BackgroundNoticeRuns"/>); absent otherwise and in older saves.</summary>
     [JsonPropertyName("noticeRun")] public bool? NoticeRun { get; set; }
+    /// <summary>A notice run's title, "&lt;kind&gt; · &lt;name&gt;" (<see cref="BackgroundNoticeRuns.Title"/>), its main block's; absent in request runs
+    /// and in older saves, whose notice runs read <see cref="BackgroundNoticeRuns.GenericTitle"/> (<see cref="BackgroundNoticeRuns.Heading(MightyGraphRun)"/>).</summary>
+    [JsonPropertyName("noticeTitle")] public string? NoticeTitle { get; set; }
     /// <summary><see cref="BackgroundWaiting"/> of the run <see cref="Shown"/> was made from, whose background blocks it no longer holds. Never saved.</summary>
     [JsonIgnore] internal int? ShownBackgroundWaiting { get; set; }
 
@@ -64,7 +67,7 @@ public sealed class MightyGraphRun
         Id = Id, Input = Input, Status = Status, RootEntries = [.. RootEntries], Agents = [.. Agents.Select(a => a.Copy())],
         ResultEntries = [.. ResultEntries], SourceRunID = SourceRunID, FinalOutput = FinalOutput, Usage = Usage,
         ResponseRecords = ResponseRecords is null ? null : [.. ResponseRecords], Provider = Provider,
-        NodeModelLabel = NodeModelLabel, ConfiguredModel = ConfiguredModel, NoticeRun = NoticeRun, ShownBackgroundWaiting = ShownBackgroundWaiting,
+        NodeModelLabel = NodeModelLabel, ConfiguredModel = ConfiguredModel, NoticeRun = NoticeRun, NoticeTitle = NoticeTitle, ShownBackgroundWaiting = ShownBackgroundWaiting,
     };
     /// Tokens of the main block alone; this adds every child block.
     [JsonIgnore] public GraphTokenUsage? TotalUsage
@@ -299,6 +302,7 @@ public static class MightyGraphSupport
                 ResponseRecords = run.ResponseRecords,
                 NoticeRun = run.NoticeRun == true ? true : null,
             };
+            r.NoticeTitle = r.NoticeRun == true && run.NoticeTitle is { } noticeTitle && Bounded(noticeTitle, 240, ref budget) is { Length: > 0 } title ? title : null;
 
             var resolvedProvider = provider ?? run.Provider
                 ?? run.RootEntries.Select(e => e.Provider).FirstOrDefault(p => p is not null && Wire.Providers.Contains(p)) ?? "claude";

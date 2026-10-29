@@ -166,6 +166,8 @@ export interface MightyGraphRun {
   configuredModel?: string;
   /** Claude's reply to finished background work, not a request the user sent (mighty/notice.ts); absent otherwise. */
   noticeRun?: boolean;
+  /** A notice run's title, "<kind> · <name>" (Core BackgroundNoticeRuns.Title); absent in request runs and older saves. */
+  noticeTitle?: string;
 }
 
 export interface GraphBlockSize {
