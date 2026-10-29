@@ -188,9 +188,14 @@ MobileCommand { name, description, source, argumentHint?, action? }
 MobileMighty {
   style: "cli" | "ouroboros",
   styleId: string,                                                       // 아래 "스타일" 절
-  runs: [{ id, input, title?, status, blocks: [MobileBlock], result?, noticeRun?: true }], // 최근 20개 요청, 시간순
+  runs: [{ id, input, title?, status, blocks: [MobileBlock], result?, noticeRun?: true, backgroundWaiting?: number }], // 최근 20개 요청, 시간순
                                              // noticeRun(선택, 추가 필드)은 끝난 백그라운드 작업에 Claude가 답한 실행(알림 실행)에만 실리는 `true`.
                                              //   요청이 아니므로 요청 번호를 세지 않는다. 아래 "백그라운드 작업과 알림 실행" 절
+                                             // title은 요청에서는 스타일이 붙인 이름이고, 알림 실행에서는 그 실행의 제목("백그라운드 작업 완료 · lint")이다.
+                                             //   main 블록의 title도 같은 제목이다. 제목이 없던 예전 저장은 일반 제목 "백그라운드 작업 완료"를 싣는다.
+                                             // backgroundWaiting(선택, 추가 필드, 양의 정수)은 요청이 시작한 백그라운드 작업 중 그 턴이 끝난 뒤에도
+                                             //   아직 도는 것의 수다. 0이면 싣지 않는다. 이 동안 결과 카드는 "현재까지의 결과 · 백그라운드 작업 {count}개
+                                             //   기다리는 중"(`graph.block.resultSoFar`)이다. 아래 "백그라운드 작업과 알림 실행" 절
                                              // result(선택, 추가 필드)는 그 요청의 최종 결과(run.finalOutput)를 블록 output과 같은 규칙으로
                                              //   정리해 20 000자까지 담는다. 창의 **가장 최근 요청 하나와 그 뒤의 알림 실행**이 끝났을 때(completed·error·stopped)만,
                                              //   결과가 비어 있지 않을 때만 실린다 — 롱 폴 페이로드를 작게 두려는 것이다. 그 밖의 요청은
@@ -244,7 +249,8 @@ MobileStructure {
 Step = "done" | "current" | "pending" | "error" | "stopped"           // 모르는 값은 pending(회색)으로 읽는다
 Item {
   runId, ordinal,                             // ordinal은 창 안의 요청 번호("요청 3")
-  title?,                                     // 스타일이 붙인 요청 이름(MobileMightyRun.title과 같은 규칙)
+  title?,                                     // 스타일이 붙인 요청 이름, 알림 실행이면 그 실행의 제목(MobileMightyRun.title과 같은 규칙).
+                                              //   제목이 없던 예전 저장의 알림 실행은 이 필드가 없다
   status, finished: boolean,                  // status는 블록 상태 어휘
   request?, message?,                         // 요청 전문, 메인 에이전트의 최근 답(그 답이 최종 답이면 빠짐)
   activity: [Activity],                       // 메인 에이전트의 최근 도구 호출 최대 5개, 오래된 것부터
@@ -252,7 +258,8 @@ Item {
   tally: { agents, tools },                   // 노드를 덜어내도 요청 전체를 센다
   clusters: [{ nodes: [Node] }],              // 하위 에이전트 트리마다 하나, 뿌리부터 깊이 우선
   omittedNodes?: number,
-  noticeRun?: true                            // 알림 실행(끝난 백그라운드 작업에 Claude가 답한 실행). 요청 번호가 없다: ordinal은 앞 요청의 번호를 따른다
+  noticeRun?: true,                           // 알림 실행(끝난 백그라운드 작업에 Claude가 답한 실행). 요청 번호가 없다: ordinal은 앞 요청의 번호를 따른다
+  backgroundWaiting?: number                  // MobileMightyRun.backgroundWaiting과 같다: 그 요청이 아직 기다리는 백그라운드 작업 수, 없으면 빠진다
 }
 Activity { kind, state, text }                // kind는 AgentActivity.kind, text는 한 줄
 Node { id, depth, title, status, kind: "agent" | "task", model?, prompt?, output?, activity?: Activity,
@@ -278,7 +285,17 @@ MobileBackgroundWork { id, kind: "agent" | "run", title, status: "running", star
 ```
 
 - **`backgroundWork`**는 세부 정보에 **지금 도는 작업만** 실린다(`status`는 언제나 `running`). 하나도 없으면 필드 자체가 없다. `kind`는 백그라운드 하위 에이전트(`agent`)나 백그라운드 명령(`run`), `command`는 명령(하위 에이전트는 프롬프트의 첫 줄), `outputTail`은 `run`의 출력 끝 줄 최대 6줄이다. 출력 파일의 경로는 어떤 필드로도 보내지 않는다. 끝난 작업은 여기 없고 알림 실행의 도해에 있다. 휴대폰은 `parseBackgroundWork`로 읽고(도는 것만 남긴다), Mighty 보기(흐름·파이프라인) 위에 접힌 **백그라운드 작업 N개** 띠(`plan.background.listTitle`)로 보인다. 띠를 열면 작업마다 종류·이름·경과 시간·마지막 출력 줄이 보이고, 한 줄을 열면 명령과 출력 끝 줄이 보인다.
-- **알림 실행**은 루트에서 `<task-notification>`(또는 백그라운드 하위 에이전트의 최종 보고)이 Claude 턴을 열 때 생기는 실행이다. 일반 `MobileMightyRun`과 구조 `Item`으로 가고, 다른 점은 `noticeRun: true`뿐이다. 이 실행은 요청이 아니다. 휴대폰은 **백그라운드 작업 완료**(`graph.background.noticeRun`)를 제목으로 보이고, 요청 번호를 세지 않으며(알림 실행은 앞 요청의 번호를 따른다), 파이프라인 보드도 "요청 n"으로 세지 않는다. main 블록의 `summary`는 끝난 작업(`<제목> · 완료|실패|중단됨` 줄들)이고 `output`이 Claude의 답이다. 나머지 블록은 끝난 백그라운드 블록의 사본(`background: true`, `outputTail`, `noticeReply`)이다.
+- **알림 실행**은 루트에서 `<task-notification>`(또는 백그라운드 하위 에이전트의 최종 보고)이 Claude 턴을 열 때 생기는 실행이다. 일반 `MobileMightyRun`과 구조 `Item`으로 가고, 다른 점은 `noticeRun: true`와 `title`이다. 이 실행은 요청이 아니다. 휴대폰은 `title`(그 실행을 연 작업의 이름이 붙은 제목, 예: "백그라운드 작업 완료 · 코드 검토 에이전트", "하위 에이전트 메시지 · scout")을 앞뒤 공백을 지우고 제목으로 보이며, 없거나 비어 있으면 **백그라운드 작업 완료**(`graph.background.noticeRun`)를 보인다(Mac의 `BackgroundNoticeRuns.heading(title:)`, 휴대폰의 `noticeHeading`). 요청 번호를 세지 않으며(알림 실행은 앞 요청의 번호를 따른다), 파이프라인 보드도 "요청 n"으로 세지 않는다. main 블록의 `summary`는 끝난 작업(`<제목> · 완료|실패|중단됨` 줄들)이고 `output`이 Claude의 답이다. 나머지 블록은 끝난 백그라운드 블록의 사본(`background: true`, `outputTail`, `noticeReply`)이다.
+- **기다리는 결과.** 요청의 턴이 끝났는데 그 요청이 시작한 백그라운드 작업이 아직 돌면, 호스트는 그 수를 실행과 구조 `Item`의 `backgroundWaiting`에 싣는다(롱 폴을 깨우는 mighty 요약값에도 이 수와 알림 실행의 제목이 들어간다). 휴대폰은 `resultTitle(status, backgroundWaiting)`로 결과 제목을 고른다: error면 "요청 실패", stopped면 "요청 중단", 그 밖에 수가 0보다 크면 "현재까지의 결과 · 백그라운드 작업 {count}개 기다리는 중"(`graph.block.resultSoFar`), 아니면 "최종 결과". 흐름의 결과 카드는 기다리는 동안 "✓"를 붙이지 않는다. 작업이 다 끝나면 필드가 빠지고 "✓ 최종 결과"로 돌아온다. 휴대폰은 양의 정수만 읽는다(0, 음수, 소수, 문자열은 없는 것으로 본다).
+- **호스트와 휴대폰 버전이 어긋날 때**
+
+  | 호스트 | 휴대폰 | 결과 카드 | 알림 실행 제목 |
+  | --- | --- | --- | --- |
+  | 새 | 새 | 기다리는 동안 "현재까지의 결과 · …"를 보인다. | 이름 붙은 제목을 보인다. |
+  | 새 | 예전 | `backgroundWaiting`을 모른다. 0.4.46처럼 "최종 결과"다. | `noticeRun`을 먼저 보고 "백그라운드 작업 완료"를 쓴다. `title`은 무시한다. `main` 블록 제목에는 새 제목이 보인다. |
+  | 예전 | 새 | 필드가 없으니 "최종 결과"다. | `title`이 없으니 "백그라운드 작업 완료"다. |
+
+  예전 호스트에서는 "알림 이후" 절이 여전히 결과 안에 있고, 휴대폰은 그 글을 그대로 보인다.
 - **요청의 실행에는 백그라운드 블록이 없다.** 호스트는 `background: true` 블록을 알림 실행에만 싣는다. 휴대폰도 같은 규칙으로 `noticeRun`이 아닌 실행의 `background` 블록·노드(와 그 아래 노드)를 그리지 않되, **새 호스트라는 증거가 있을 때만** 그렇다: 세부 정보에 `backgroundWork`가 있거나 페이로드의 어느 실행이 `noticeRun: true`일 때(`hostFiltersBackground`, `shownBlocks`·`shownNodes`). 둘 다 없으면 알림 실행이 생기기 전의 호스트이므로, 그 호스트가 요청에 그대로 둔 백그라운드 블록을 휴대폰이 숨기지 않는다(숨기면 볼 곳이 없다).
 - **조용한 알림 실행**(상태가 completed이고 답이 빈 것: 다른 요청의 턴 안에서 받은 알림)은 결과 카드가 없고 따라가지 않는다. 다시 열려 도는 알림 실행은 도는 동안 앞의 답을 그대로 보인다. 화면이 따라가는 가장 최근 실행은 가장 최근 **요청**이거나, 그 뒤의 조용하지 않은 알림 실행이다.
 - 알림 실행은 사용자 요청이 아니다: 요청 번호·펫·"내가 보낸 것" 판정에 들지 않는다(휴대폰은 보낸 글의 실행을 찾을 때 알림 실행을 건너뛴다).

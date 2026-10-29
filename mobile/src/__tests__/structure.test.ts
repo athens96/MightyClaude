@@ -234,6 +234,29 @@ describe('notice runs in the structure', () => {
     expect(executionTitle(request!)).toBe('Run · Request 1');
     expect(executionTitle(notice!)).toBe('Run');
   });
+
+  it('names a notice run by the title its host sent, else the generic one', () => {
+    const [titled, untitled, blank] = read([
+      rawItem('r1:notice:1', { noticeRun: true, title: '  Background work finished · lint  ' }),
+      rawItem('r1:notice:2', { noticeRun: true }),
+      rawItem('r1:notice:3', { noticeRun: true, title: '   ' }),
+    ]);
+    expect(itemHeading(titled!)).toBe('Background work finished · lint');
+    expect(itemHeading(untitled!)).toBe('Background work finished');
+    expect(itemHeading(blank!)).toBe('Background work finished');
+  });
+
+  it('reads a positive waiting count and nothing else, and titles the result so far meanwhile', () => {
+    const waiting = (backgroundWaiting: unknown) => read([rawItem('r1', { backgroundWaiting })])[0]!;
+    expect(waiting(2).backgroundWaiting).toBe(2);
+    for (const bad of [0, -1, 1.5, '2', null]) expect(waiting(bad).backgroundWaiting).toBeUndefined();
+    expect(resultHeading(waiting(2))).toBe('Result so far · waiting on 2 background tasks');
+    // An older host sends no count: the result reads as before.
+    expect(resultHeading(waiting(undefined))).toBe('Final result');
+    // How the request ended comes first.
+    expect(resultHeading({ ...waiting(2), status: 'error' })).toBe('Request failed');
+    expect(resultHeading({ ...waiting(2), status: 'stopped' })).toBe('Request stopped');
+  });
 });
 
 describe('what the phone holds', () => {

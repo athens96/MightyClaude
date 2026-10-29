@@ -5,7 +5,7 @@ import {
   type MobileBlock,
   type MobileMightyRun,
 } from '@/api/types';
-import { resetLanguage } from '@/lib/i18n';
+import { resetLanguage, t } from '@/lib/i18n';
 import {
   MAX_BLOCKS_PER_RUN,
   MAX_INPUT_PREVIEW,
@@ -24,6 +24,7 @@ import {
   normalizeMighty,
   requestOrdinals,
   resultPreview,
+  resultTitle,
   runHeading,
   runPreview,
   runFold,
@@ -579,6 +580,15 @@ describe('notice runs: Claude\'s reply to finished background work', () => {
     expect(newestRequestIndex([notice()])).toBeUndefined();
   });
 
+  it('names a notice run by its title, else the generic one', () => {
+    expect(runHeading(run({ id: 'r1:notice:1', noticeRun: true, title: '백그라운드 작업 완료 · lint' }), 1)).toBe('백그라운드 작업 완료 · lint');
+    expect(runHeading(run({ id: 'r1:notice:1', noticeRun: true }), 1)).toBe(t('graph.background.noticeRun'));
+    expect(runHeading(run({ id: 'r1:notice:1', noticeRun: true, title: '   ' }), 1)).toBe(t('graph.background.noticeRun'));
+    // The title arrives through the parse, which keeps it.
+    const parsed = normalizeMighty({ style: 'cli', runs: [{ id: 'r1:notice:1', input: 'x', status: 'completed', noticeRun: true, title: '하위 에이전트 메시지 · scout', blocks: [] }] })!.runs[0]!;
+    expect(runHeading(parsed, 1)).toBe('하위 에이전트 메시지 · scout');
+  });
+
   it('is followed only when it is a turn of its own, never when it was taken into a running turn', () => {
     const quiet = notice({ blocks: [main()] });
     expect(isQuietNotice(quiet)).toBe(true);
@@ -621,5 +631,24 @@ describe('notice runs: Claude\'s reply to finished background work', () => {
     expect(old.blocks.map((entry) => entry.id)).toEqual(['m', 'a', 'bg', 't', 'steer']);
     // Only the word true counts.
     expect(normalizeMighty({ style: 'cli', runs: [{ id: 'r2', input: 'x', status: 'completed', noticeRun: 'yes', blocks }] })!.runs[0]!.noticeRun).toBeUndefined();
+  });
+});
+
+describe('a result still waiting on background work', () => {
+  it('reads a positive waiting count and nothing else', () => {
+    const run = (backgroundWaiting: unknown) => normalizeMighty({ style: 'cli', runs: [{ id: 'r1', input: 'x', status: 'completed', backgroundWaiting, blocks: [] }] })!.runs[0]!;
+    expect(run(2).backgroundWaiting).toBe(2);
+    for (const bad of [0, -1, 1.5, '2', null]) expect(run(bad).backgroundWaiting).toBeUndefined();
+    // An older host sends none.
+    expect(normalizeMighty({ style: 'cli', runs: [{ id: 'r1', input: 'x', status: 'completed', blocks: [] }] })!.runs[0]!.backgroundWaiting).toBeUndefined();
+  });
+
+  it('titles the result so far while background work waits', () => {
+    expect(resultTitle('completed', 2)).toBe(t('graph.block.resultSoFar', { count: 2 }));
+    expect(resultTitle('completed', 2)).toBe('현재까지의 결과 · 백그라운드 작업 2개 기다리는 중');
+    expect(resultTitle('completed', undefined)).toBe(t('graph.block.result'));
+    expect(resultTitle('completed', 0)).toBe(t('graph.block.result'));
+    expect(resultTitle('error', 2)).toBe(t('graph.block.resultError'));
+    expect(resultTitle('stopped', 2)).toBe(t('graph.block.resultStopped'));
   });
 });

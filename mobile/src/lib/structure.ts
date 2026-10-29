@@ -11,6 +11,7 @@ import type {
 import { parseBackground } from '@/lib/background-output';
 import { shownNodes } from '@/lib/background-work';
 import { t } from '@/lib/i18n';
+import { noticeHeading, parseBackgroundWaiting, resultTitle } from '@/lib/mighty';
 import { blockText, inlineText } from '@/lib/styles';
 
 /**
@@ -166,6 +167,8 @@ function parseItem(raw: unknown, filtering: boolean): StructureItem | undefined 
   const omittedNodes = count(raw.omittedNodes) + dropped;
   if (omittedNodes > 0) item.omittedNodes = omittedNodes;
   if (notice) item.noticeRun = true;
+  const waiting = parseBackgroundWaiting(raw.backgroundWaiting);
+  if (waiting !== undefined) item.backgroundWaiting = waiting;
   return item;
 }
 
@@ -388,18 +391,19 @@ export function stepStateWord(step: StructureStep): string {
           : t('graph.structure.step.pending');
 }
 
-/** The style name and the request number (Seed, Request 3), or just the number; the reply to finished background work is no request and says so. */
+/**
+ * The style name and the request number (Seed, Request 3), or just the number; the reply to finished background
+ * work is no request and carries its own heading (`noticeHeading`).
+ */
 export function itemHeading(item: StructureItem): string {
-  if (item.noticeRun) return t('graph.background.noticeRun');
+  if (item.noticeRun) return noticeHeading(item.title);
   const request = t('remote.block.request', { ordinal: item.ordinal });
   return item.title ? `${item.title} · ${request}` : request;
 }
 
-/** The result part's heading, by how the request ended. */
+/** The result part's heading, by how the request ended, or the result so far while its background work runs (`resultTitle`). */
 export function resultHeading(item: StructureItem): string {
-  if (item.status === 'error') return t('graph.block.resultError');
-  if (item.status === 'stopped') return t('graph.block.resultStopped');
-  return t('graph.block.result');
+  return resultTitle(item.status, item.backgroundWaiting);
 }
 
 // ------------------------------------------------------------------ folding

@@ -227,6 +227,26 @@ describe('a notice board', () => {
     expect(boardPosition(boards[2]!, 2, 3)).toBe('Request 2 / 2');
     expect(boardTitle(boards[1]!, 3)).toBe('Background work finished');
     expect(boardPosition(boards[2]!, 2, 3, 5)).toBe('Request 7 / 7');
+    // A host that sent no title (older, or an older save): no noticeTitle, the generic name.
+    expect(boards[1]!.noticeTitle).toBeUndefined();
+  });
+
+  it('takes the title its host sent for the notice run', () => {
+    const named = structureBoards(
+      free([
+        row(item(1, { request: 'Fix it' }), 'done', 'done', 'done'),
+        row(item(1, { runId: 'r1:notice:1', noticeRun: true, title: 'Background work finished · lint' }), 'done', 'done', 'done'),
+        row(item(1, { runId: 'r1:notice:2', noticeRun: true, title: '   ' }), 'done', 'done', 'done'),
+      ]),
+    );
+    expect(named[1]!.noticeTitle).toBe('Background work finished · lint');
+    expect(boardPosition(named[1]!, 1, 3)).toBe('Background work finished · lint');
+    expect(boardTitle(named[1]!, 3)).toBe('Background work finished · lint');
+    // A blank title reads as none.
+    expect(named[2]!.noticeTitle).toBeUndefined();
+    expect(boardTitle(named[2]!, 3)).toBe('Background work finished');
+    // A request's title is never a notice title.
+    expect(named[0]!.noticeTitle).toBeUndefined();
   });
 });
 

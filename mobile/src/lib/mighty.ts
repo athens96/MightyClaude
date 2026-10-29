@@ -113,11 +113,38 @@ export function blockTitle(block: MobileBlock): string {
 }
 
 /**
+ * A notice run's heading: the title the host sent ("백그라운드 작업 완료 · lint"), trimmed, or the generic
+ * one when it sent none (an older host or save), as the Mac's `BackgroundNoticeRuns.heading(title:)`.
+ */
+export function noticeHeading(title: string | undefined): string {
+  const trimmed = title?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : t('graph.background.noticeRun');
+}
+
+/**
+ * The result card's title: how the run ended, or the result so far while background work it started still
+ * runs (the Mac's `MightyGraphSupport.resultTitle`). `waiting` is the host's `backgroundWaiting`.
+ */
+export function resultTitle(status: string, waiting: number | undefined): string {
+  if (status === 'error') return t('graph.block.resultError');
+  if (status === 'stopped') return t('graph.block.resultStopped');
+  return waiting !== undefined && waiting > 0 ? t('graph.block.resultSoFar', { count: waiting }) : t('graph.block.result');
+}
+
+/** The most background work a count shows; the host never sends that many. */
+export const MAX_BACKGROUND_WAITING = 999;
+
+/** `backgroundWaiting` as the host sent it: a positive integer (capped), or undefined for anything else. */
+export function parseBackgroundWaiting(raw: unknown): number | undefined {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? Math.min(raw, MAX_BACKGROUND_WAITING) : undefined;
+}
+
+/**
  * `<title> · Request 3`, or just `Request 3` when the run has no title. Claude's reply to finished
- * background work is no request: it carries its own name and no number.
+ * background work is no request: it carries its own heading (`noticeHeading`) and no number.
  */
 export function runHeading(run: MobileMightyRun, ordinal: number): string {
-  if (run.noticeRun) return t('graph.background.noticeRun');
+  if (run.noticeRun) return noticeHeading(run.title);
   const title = run.title?.trim() ?? '';
   const request = t('remote.block.request', { ordinal });
   return `${title.length > 0 ? `${title} · ` : ''}${request}`;
@@ -305,6 +332,8 @@ function parseRun(raw: unknown, filtering: boolean): MobileMightyRun | undefined
     run.omittedBlocks = parsed.length - MAX_BLOCKS_PER_RUN;
   }
   if (notice) run.noticeRun = true;
+  const waiting = parseBackgroundWaiting(raw.backgroundWaiting);
+  if (waiting !== undefined) run.backgroundWaiting = waiting;
   const title = inlineText(raw.title, 160);
   if (title.length > 0) run.title = title;
   const result = blockText(raw.result, MAX_RUN_RESULT);

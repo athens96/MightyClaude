@@ -31,6 +31,7 @@ import {
   blockPrompt,
   blockTitle,
   resultPreview,
+  resultTitle,
   runHeading,
   runFold,
   runPreview,
@@ -282,6 +283,16 @@ function BlockDetails({ block, runInput, runHead }: { block: MobileBlock; runInp
 }
 
 /**
+ * The result card's heading: "✓ 최종 결과" once a run finished, the result so far (no "✓") while background
+ * work it started still runs, else plain 최종 결과.
+ */
+function resultCardHeading(run: MobileMightyRun): string {
+  if (run.status !== 'completed') return t('phone.blocks.finalResult');
+  if (run.backgroundWaiting !== undefined && run.backgroundWaiting > 0) return resultTitle(run.status, run.backgroundWaiting);
+  return `✓ ${t('phone.blocks.finalResult')}`;
+}
+
+/**
  * The run's final answer, set apart from the blocks the way the Mac's result block is: a
  * white card under a header strip in the run's colour — green once it finished, the
  * status colour when it ended in an error or was stopped. A long answer shows its head
@@ -298,7 +309,7 @@ function ResultCard({ run, text }: { run: MobileMightyRun; text: string }) {
     <View style={styles.resultCard}>
       <View style={[styles.resultHead, { backgroundColor: colors.fill }]}>
         <Text style={[styles.resultHeading, { color: colors.onFill }]}>
-          {run.status === 'completed' ? `✓ ${t('phone.blocks.finalResult')}` : t('phone.blocks.finalResult')}
+          {resultCardHeading(run)}
         </Text>
       </View>
       <View style={styles.resultBody}>

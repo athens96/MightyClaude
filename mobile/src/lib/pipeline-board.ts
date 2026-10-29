@@ -7,7 +7,7 @@ import type {
   StructureStep,
 } from '@/api/types';
 import { t } from '@/lib/i18n';
-import { blockKindLabel } from '@/lib/mighty';
+import { blockKindLabel, noticeHeading } from '@/lib/mighty';
 import { stepStateWord } from '@/lib/structure';
 import { pipelineTone, stepTone, type Tone } from '@/lib/status-tone';
 
@@ -54,6 +54,8 @@ export interface Board {
   ordinal: number;
   /** A free board of Claude's reply to finished background work: no request number, named as such. */
   noticeRun?: true;
+  /** A notice board's heading as the host titled it ("백그라운드 작업 완료 · lint"); absent from older hosts and saves. */
+  noticeTitle?: string;
   /**
    * Only notice runs taken into a running turn: done, without a reply of their own (the Mac's
    * `Board.quiet`). The view never moves on to such a board by itself (`newestBoardIndex`).
@@ -102,7 +104,9 @@ function freeBoard(row: StructureRow, ordinal: number): Board {
     { step: steps[2]!, cards: [{ kind: 'result', id: `result:${item.runId}`, item }], count: item.finished ? 1 : 0 },
   ];
   const board = withQuiet(withHeadline({ id: item.runId, kind: 'request', ordinal, items: [item], status: item.status, steps, columns }));
-  return item.noticeRun ? { ...board, noticeRun: true } : board;
+  if (!item.noticeRun) return board;
+  const title = item.title?.trim();
+  return title ? { ...board, noticeRun: true, noticeTitle: title } : { ...board, noticeRun: true };
 }
 
 /** A notice run taken into a running turn (the Mac's `Item.quiet`): completed, without an answer. */
@@ -264,7 +268,7 @@ export function boardStepName(step: BoardStep): string {
  * heading say it; `omitted` counts requests, so a pipeline's place counts the boards held.
  */
 export function boardPosition(board: Board, index: number, count: number, omitted = 0): string {
-  if (board.noticeRun) return t('graph.background.noticeRun');
+  if (board.noticeRun) return noticeHeading(board.noticeTitle);
   if (board.kind === 'request') {
     return t('graph.structure.board.request', {
       n: omitted + (board.requestNumber ?? index + 1),
@@ -276,7 +280,7 @@ export function boardPosition(board: Board, index: number, count: number, omitte
 
 /** The board's words: its first request's first line, else that request's style name, else its place. */
 export function boardTitle(board: Board, count: number, omitted = 0): string {
-  if (board.noticeRun) return t('graph.background.noticeRun');
+  if (board.noticeRun) return noticeHeading(board.noticeTitle);
   return board.headline ?? board.items[0]?.title ?? boardPosition(board, board.ordinal - 1, count, omitted);
 }
 

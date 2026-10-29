@@ -390,6 +390,7 @@ export interface MobileMightyRun {
   id: string;
   /** What was asked; shown as a one-line preview. */
   input: string;
+  /** The style's own name for the request; for a notice run, its heading ("백그라운드 작업 완료 · lint"), absent from older hosts. */
   title?: string;
   status: string;
   blocks: MobileBlock[];
@@ -405,6 +406,11 @@ export interface MobileMightyRun {
    * number, and its blocks are copies of the finished background blocks. A host that predates it omits it.
    */
   noticeRun?: true;
+  /**
+   * Background work the request started that still runs after its own turn: its result card reads
+   * 현재까지의 결과 with this count meanwhile. A positive integer; absent when none (and from older hosts).
+   */
+  backgroundWaiting?: number;
 }
 
 /**
@@ -602,6 +608,7 @@ export interface StructureCluster {
 export interface StructureItem {
   runId: string;
   ordinal: number;
+  /** The style's own name for the request, or a notice run's heading, as `MobileMightyRun.title`. */
   title?: string;
   status: string;
   finished: boolean;
@@ -614,6 +621,8 @@ export interface StructureItem {
   omittedNodes?: number;
   /** As on `MobileMightyRun`: Claude's reply to finished background work, not a request. */
   noticeRun?: true;
+  /** Background work the request still waits on, as `MobileMightyRun.backgroundWaiting`; absent when none. */
+  backgroundWaiting?: number;
 }
 
 export interface StructureColumn {
