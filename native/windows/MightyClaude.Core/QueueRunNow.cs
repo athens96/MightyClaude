@@ -31,11 +31,11 @@ public enum QueueRunNowPath
 public static class QueueRunNow
 {
     /// <summary>The pane as 바로 실행 reads it.</summary>
-    /// <param name="Busy">Running, starting, or held for a CLI update.</param>
-    /// <param name="HeldForUpdate">Held for a CLI update.</param>
+    /// <param name="Busy">Running, starting, held for a CLI update or plugin change, or a child whose last run's end is still being recorded.</param>
+    /// <param name="HeldForUpdate">Held for a CLI update or plugin change, automatic or by hand.</param>
     /// <param name="SecondSend"><see cref="ComposerSecondSends.Choose"/>: <see cref="ComposerSecondSend.Worktree"/> where a new child of the pane's agent can be made now.</param>
     /// <param name="MenuOnly"><see cref="ComposerSecondSends.MenuOnly"/>.</param>
-    /// <param name="WaitsOnBackgroundOnly">A local Claude pane, not stopping, whose turn ended and whose background work still runs.</param>
+    /// <param name="WaitsOnBackgroundOnly">A local Claude pane, not stopping, whose turn ended and whose background work still runs, with no notice turn running (<see cref="MightyGraphSupport.NoticeTurnRunning"/>).</param>
     /// <param name="Held">Items delegation holds for the pane.</param>
     public sealed record Pane(bool Busy, bool HeldForUpdate, ComposerSecondSend SecondSend, bool MenuOnly, bool WaitsOnBackgroundOnly, int Held);
 

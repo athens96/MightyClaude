@@ -454,4 +454,22 @@ internal static class DelegationHumanChildVerification
         }
         finally { fixture.Remove(); }
     }
+
+    /// <summary>
+    /// A human's child whose start throws outside its pane's start (its worktree, the file's save, a notice's delivery) still gives its
+    /// text back, and only once: its queued row goes back or its quiet start ends. Nothing here can make those throw, so it is read
+    /// from the Core source: every failure call goes through the one guarded call, and a catch with no run makes it.
+    /// </summary>
+    internal static Task AStartThatThrowsGivesTheTextBackOnce()
+    {
+        var source = File.ReadAllText(Path.Combine(Path.GetDirectoryName(ClaudePluginVerification.WinUISource())!, "MightyClaude.Core", "DelegationDelegateTool.cs"));
+        var at = source.IndexOf("private async Task StartChild(", StringComparison.Ordinal);
+        Check(at >= 0, "StartChild is there");
+        var end = source.IndexOf("\n    }\n", at, StringComparison.Ordinal);
+        var start = source[at..(end < 0 ? source.Length : end)];
+        Check(start.IndexOf("human.Failed(id)", StringComparison.Ordinal) is var call && call >= 0 && call == start.LastIndexOf("human.Failed(id)", StringComparison.Ordinal) && start.Contains("if (human is null || failedCalled) return;", StringComparison.Ordinal), "the failure call is made in one place, at most once");
+        Check(start.Contains("catch (Exception ex) when (ex is not OutOfMemoryException && runId is null && human is not null)", StringComparison.Ordinal)
+            && start.Contains("await FailOnce();\n            throw;", StringComparison.Ordinal), "a start that throws with no run still gives the text back");
+        return Task.CompletedTask;
+    }
 }

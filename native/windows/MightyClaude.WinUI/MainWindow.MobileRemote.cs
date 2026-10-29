@@ -603,7 +603,10 @@ public sealed partial class MainWindow
             finally { failure = owner.error.Text != deskError && owner.error.Text.Length > 0 ? owner.error.Text : null; owner.error.Text = deskError; }
             token.ThrowIfCancellationRequested();
             // Decided runnable a moment ago: nothing ran, so its start failed.
-            return ran is null ? throw new MobileRequestException(409, failure ?? Locale.Get("remote.error.startFailed")) : wire.RunNow;
+            if (ran is null) throw new MobileRequestException(409, failure ?? Locale.Get("remote.error.startFailed"));
+            // A start that failed after it was taken (the held items' release, a child's run): the phone hears why, never ok.
+            if (failure is not null) throw new MobileRequestException(409, failure);
+            return wire.RunNow;
         }
         /// <summary>
         /// The style this pane is really running: a Claude pane in the Mighty view whose stored style is registered, approved and

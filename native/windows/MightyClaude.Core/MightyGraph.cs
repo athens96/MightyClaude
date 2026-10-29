@@ -160,6 +160,18 @@ public static class MightyGraphSupport
         for (var index = runs.Count - 1; index >= 0; index--) if (runs[index].NoticeRun != true) return index;
         return null;
     }
+    /// <summary>
+    /// Whether Claude is answering finished background work now: a notice run after the user's newest request (<see cref="BackgroundNoticeRuns"/>)
+    /// has not ended (its own notice turn, or an earlier one it answers in again). A steer then would open its turn inside that one, whose
+    /// result would end both and leave the steer's answer to replace the request's: 바로 실행 waits for its turn instead
+    /// (M/MightyGraph.swift noticeTurnRunning).
+    /// </summary>
+    public static bool NoticeTurnRunning(IReadOnlyList<MightyGraphRun> runs)
+    {
+        var newest = NewestRequestIndex(runs) ?? -1;
+        for (var index = runs.Count - 1; index > newest; index--) if (runs[index].NoticeRun == true && !Terminal(runs[index].Status)) return true;
+        return false;
+    }
     /// <summary>The run the views follow as the newest work (natural submit's not-own rule): the newest request, or a notice run after it
     /// that is a turn of its own — running, or holding Claude's reply. A notice taken into a running turn (<see cref="MightyGraphRun.QuietNotice"/>)
     /// never takes the request's place.</summary>

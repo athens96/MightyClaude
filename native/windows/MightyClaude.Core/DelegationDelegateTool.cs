@@ -120,16 +120,24 @@ public sealed partial class DelegationCoordinator
     /// the starting mode, then its first run, which <paramref name="human"/> starts when the human's send made the child (with the
     /// send's attachments) and the host otherwise. The child moves to running once that run has started, as the run its parent
     /// awaits, and otherwise to failed, with one failed_to_start notice when the parent's delegate made it, or
-    /// <paramref name="human"/>'s failure call when the human's send did. Whatever a failed start made stays until a human
-    /// discards the child; the app never removes it on its own.
+    /// <paramref name="human"/>'s failure call when the human's send did, exactly once, also when the start throws. Whatever a failed
+    /// start made stays until a human discards the child; the app never removes it on its own.
     /// </summary>
     private async Task StartChild(string id, ChildWorktreeBase start, string task, string parentAgent, HumanChildStarter? human = null)
     {
         string? runId = null;
+        var failedCalled = false;
+        // The human's text needs another way once, whichever way the start ends without a run.
+        async Task FailOnce()
+        {
+            if (human is null || failedCalled) return;
+            failedCalled = true;
+            await Host(() => human.Failed(id));
+        }
         try
         {
             // A human's child that will never start: their text needs another way (its queued row goes back, a quiet start ends).
-            if (File.Children.Find(record => record.Id == id) is not { State: ChildState.Creating } child) { if (human is not null) await Host(() => human.Failed(id)); return; }
+            if (File.Children.Find(record => record.Id == id) is not { State: ChildState.Creating } child) { await FailOnce(); return; }
             if (await worktrees.Make(id, start, task) is ChildWorktreeOutcome.Created { Worktree: var worktree })
             {
                 var pane = new DelegationChildPane(id, child.ParentSessionId, child.StartingMode, worktree.WorkingFolder, !child.NotifiesParent, child.Agent);
@@ -144,7 +152,7 @@ public sealed partial class DelegationCoordinator
             var context = await PruneContext();
             var next = File; var index = next.Children.FindIndex(record => record.Id == id);
             // With no run, the human's text has not gone anywhere: it needs another way on every early return.
-            if (index < 0) { if (runId is null && human is not null) await Host(() => human.Failed(id)); return; }
+            if (index < 0) { if (runId is null) await FailOnce(); return; }
             if (runId is not null)
             {
                 // Once the host has reported this run's start, or even its end, the record is past creating.
@@ -153,7 +161,7 @@ public sealed partial class DelegationCoordinator
             }
             else
             {
-                if (next.Children[index].Applying(ChildStateEvent.FailStart) is not { } failed) { if (human is not null) await Host(() => human.Failed(id)); return; }
+                if (next.Children[index].Applying(ChildStateEvent.FailStart) is not { } failed) { await FailOnce(); return; }
                 next = next.SettingChild(index, failed);
                 if (failed.NotifiesParent) next = next with { Notices = next.Notices.Add(new(Wire.Id(), id, 0, NoticeKind.FailedToStart, DeliveryLane.Pending)) };
             }
@@ -162,7 +170,13 @@ public sealed partial class DelegationCoordinator
             SaveOrKeep(next, context);
             // A failed start's notice goes to the parent's pane while the child still counts as starting.
             if (runId is null) await DeliverPending();
-            if (runId is null && human is not null) await Host(() => human.Failed(id));
+            if (runId is null) await FailOnce();
+        }
+        // Its worktree, the file's save or a notice's delivery threw: with no run, the human's text still needs another way.
+        catch (Exception ex) when (ex is not OutOfMemoryException && runId is null && human is not null)
+        {
+            await FailOnce();
+            throw;
         }
         finally { starting.Remove(id); }
     }

@@ -61,4 +61,61 @@ internal static class QueueRunNowVerification
         Check(buffer.Items.Select(i => i.Id).SequenceEqual([earlier.Id, later.Id]), "a row put back goes to the head, once");
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// A steer into a running notice turn would lose its answer: that turn's result ends the steer's turn too, and the steer's own
+    /// result then replaces the request's (M/QueueRunNowFixtureTests.swift aRunningNoticeTurnTakesNoSteer). While a notice run after the
+    /// newest request runs, its rows wait for their turn.
+    /// </summary>
+    internal static Task ARunningNoticeTurnTakesNoSteer()
+    {
+        var request = new MightyGraphRun { Id = "r", Status = "completed" };
+        var running = new MightyGraphRun { Id = "r" + BackgroundNoticeRuns.Marker + "1", Status = "running", NoticeRun = true };
+        var answered = new MightyGraphRun { Id = "r" + BackgroundNoticeRuns.Marker + "1", Status = "completed", FinalOutput = "Done.", NoticeRun = true };
+        Check(MightyGraphSupport.NoticeTurnRunning([request, running]), "a running notice run after the request is a notice turn");
+        Check(!MightyGraphSupport.NoticeTurnRunning([request, answered]), "an answered notice run is not");
+        Check(!MightyGraphSupport.NoticeTurnRunning([request]) && !MightyGraphSupport.NoticeTurnRunning([]), "no notice run, no notice turn");
+        // An older request's notice run left running never holds the newest request's queue.
+        Check(!MightyGraphSupport.NoticeTurnRunning([request, running, new MightyGraphRun { Id = "r2", Status = "completed" }]), "only the newest request's notice runs count");
+        // The pane reads it as not only waiting on background work: the row waits for its turn instead of steering.
+        var pane = new QueueRunNow.Pane(true, false, ComposerSecondSend.Queue, false, !MightyGraphSupport.NoticeTurnRunning([request, running]), 0);
+        Check(QueueRunNow.Decide(null, "Next", 0, pane) == QueueRunNowPath.WaitsForTurn, "a row waits for its turn while a notice turn runs");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// What the window does with 바로 실행, read from the WinUI source (WinUI does not build here), as the Mac's AppStore does: the phone is
+    /// never told a failed start ran, the queue's start says whether it took the row, a pane held by a manual update or plugin change (or
+    /// recording a child's end) never offers a here that does nothing, no steer goes into a running notice turn, a put-back row leaves a
+    /// queue an error paused alone, and a stop draws its rows as stopping.
+    /// </summary>
+    internal static Task TheWindowRunsNowOnlyWhatCanRun()
+    {
+        var folder = ClaudePluginVerification.WinUISource();
+        string Source(string file) => File.ReadAllText(Path.Combine(folder, file));
+        static string Member(string text, string signature)
+        {
+            var at = text.IndexOf(signature, StringComparison.Ordinal);
+            Check(at >= 0, "the member is there: " + signature);
+            var end = text.IndexOf("\n        }\n", at, StringComparison.Ordinal);
+            return text[at..(end < 0 ? text.Length : end)];
+        }
+        var remote = Member(Source("MainWindow.MobileRemote.cs"), "internal async Task<object?> MobileRunQueuedNow(");
+        Check(remote.Contains("if (failure is not null) throw new MobileRequestException(409, failure);", StringComparison.Ordinal)
+            && remote.IndexOf("if (failure is not null)", StringComparison.Ordinal) < remote.IndexOf("return wire.RunNow;", StringComparison.Ordinal), "a failed start answers the phone with its failure, never ok");
+        var queue = Source("MainWindow.QueuedComposer.cs");
+        Check(queue.Contains("private async Task<bool> StartNextQueuedInput()", StringComparison.Ordinal)
+            && Member(queue, "internal async Task<QueueRunNowPath?> RunQueuedNow(").Contains("return await StartNextQueuedInput() ? path : null;", StringComparison.Ordinal), "a here the queue's start did not take ran nothing");
+        var take = Member(queue, "private async Task<bool> TakeNextQueuedInput(");
+        Check(!take.Contains("return;", StringComparison.Ordinal) && take.Contains("return true;", StringComparison.Ordinal), "every way the queue's start ends says whether it took the row");
+        var pane = Member(queue, "private QueueRunNow.Pane RunNowPane(");
+        Check(pane.Contains("owner.ManualMutationBlockReason(pane) is not null", StringComparison.Ordinal) && pane.Contains("EndingRuns.Contains(id)", StringComparison.Ordinal)
+            && pane.Contains("MightyGraphSupport.NoticeTurnRunning(pane.GraphRuns ?? [])", StringComparison.Ordinal), "a held, recording or notice-answering pane offers no here or steer that would not run");
+        Check(Member(queue, "private async Task<bool> SteerQueuedInput(").Contains("MightyGraphSupport.NoticeTurnRunning(Session.GraphRuns ?? [])", StringComparison.Ordinal), "no row steers into a running notice turn");
+        Check(Member(queue, "internal async Task PutBackQueuedRow(").Contains("Session.Status is not (\"running\" or \"error\")", StringComparison.Ordinal), "a put-back row leaves a queue an error paused");
+        var stop = Member(queue, "private Task StopActiveRun(");
+        var stopsAt = stop.IndexOf("stopping = true;", StringComparison.Ordinal);
+        Check(stopsAt >= 0 && stopsAt < stop.IndexOf("RenderQueuedInputs();", StringComparison.Ordinal), "a stop draws its rows as stopping");
+        return Task.CompletedTask;
+    }
 }

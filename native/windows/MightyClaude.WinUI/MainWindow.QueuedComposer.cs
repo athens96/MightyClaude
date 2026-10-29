@@ -115,8 +115,9 @@ public sealed partial class MainWindow
             if (stopping) return;
             composerSubmissionVersion++;
             queueKeptOnStop = BackgroundQueuePolicy.StopKeepsQueue(Session.BackgroundWork);
-            queueDrainTimer.Stop(); if (!queueKeptOnStop) CancelQueueOnStop(); RenderQueuedInputs();
-            stopping = true; RefreshComposerState();
+            queueDrainTimer.Stop(); if (!queueKeptOnStop) CancelQueueOnStop();
+            // The rows are drawn as the stop leaves them: none steers into a run being stopped.
+            stopping = true; RenderQueuedInputs(); RefreshComposerState();
             try { await owner.service.StopAsync(id); }
             finally { stopping = false; if (QueuePaneAlive) Refresh(); }
         });
@@ -288,10 +289,15 @@ public sealed partial class MainWindow
         /// <summary>The pane as 바로 실행 reads it (M/AppStore.swift queueRunNowPane), worked out once for all its rows.</summary>
         private QueueRunNow.Pane RunNowPane()
         {
-            var pane = Session; var holds = owner.BackgroundUpdateHolds(pane); var second = owner.service.SecondSend(pane);
-            return new(pane.Status == "running" || starting || queueStarting || holds, holds, second,
+            var pane = Session; var second = owner.service.SecondSend(pane);
+            // A manual CLI update or plugin change holds the pane's start as a background update does (StartNextQueuedInput passes), and a
+            // child whose last run's end is still being recorded starts nothing yet: neither offers a here that would do nothing.
+            var blocked = owner.ManualMutationBlockReason(pane) is not null; var recording = blocked && owner.service.Delegation?.EndingRuns.Contains(id) == true;
+            var holds = owner.BackgroundUpdateHolds(pane) || blocked && !recording;
+            return new(pane.Status == "running" || starting || queueStarting || holds || recording, holds, second,
                 second == ComposerSecondSend.Queue && owner.service.WorktreeMenuOnly(pane, LaunchesInPlanMode),
-                pane.Kind == "claude" && pane.Provider == "claude" && Workspace.Remote is null && !stopping && pane.BackgroundWork?.WaitingOnBackground == true,
+                pane.Kind == "claude" && pane.Provider == "claude" && Workspace.Remote is null && !stopping && !recording && pane.BackgroundWork?.WaitingOnBackground == true
+                    && !MightyGraphSupport.NoticeTurnRunning(pane.GraphRuns ?? []),
                 owner.service.HeldItems(id).Count);
         }
 
@@ -343,8 +349,8 @@ public sealed partial class MainWindow
             if (path != QueueRunNowPath.Here) return null;
             // At the head, the queue's own start takes it: held items go ahead of it in its run, a refused start keeps it there.
             queuedInputs.MoveToFront(row.Id); RenderQueuedInputs();
-            await StartNextQueuedInput();
-            return path;
+            // Not taken (refused, or held meanwhile): nothing ran, and the row stays at the head.
+            return await StartNextQueuedInput() ? path : null;
         }
 
         /// <summary>
@@ -382,7 +388,9 @@ public sealed partial class MainWindow
             var asked = row?.Id;
             var next = asked is null ? queuedInputs.Items.FirstOrDefault() : queuedInputs.Items.FirstOrDefault(item => item.Id == asked);
             if (next is null || Session.Kind != "claude" || next.Attachments.Count > 0 || QueueRunNow.IsContinuation(next)
-                || !BackgroundQueuePolicy.SteersRunNext(Session.BackgroundWork, Session.Provider == "claude" && Workspace.Remote is null, stopping, 1, false)) return false;
+                || !BackgroundQueuePolicy.SteersRunNext(Session.BackgroundWork, Session.Provider == "claude" && Workspace.Remote is null, stopping, 1, false)
+                // Claude is answering finished background work: a steer now would lose its own answer to that turn's result.
+                || MightyGraphSupport.NoticeTurnRunning(Session.GraphRuns ?? [])) return false;
             steeringQueuedRow = true;
             try { if (!await owner.service.TrySteerAsync(id, next.Text)) return false; }
             finally { steeringQueuedRow = false; }
@@ -394,7 +402,7 @@ public sealed partial class MainWindow
         /// <summary>
         /// A queued row whose new worktree could not be made or started (M/AppStore+Delegation.swift putBackQueuedRow): back at the
         /// head of the queue (never the composer, and without the 16-row check: it was queued), and the transcript says why. A pane
-        /// idle meanwhile, its queue not paused, runs it now.
+        /// idle meanwhile runs it now, unless an error paused its queue.
         /// </summary>
         internal async Task PutBackQueuedRow(QueuedComposerInput item, string reason)
         {
@@ -404,13 +412,26 @@ public sealed partial class MainWindow
             var waiting = queuedInputs.Items.Count > 0;
             queuedInputs.Insert(0, item);
             RenderQueuedInputs(); RefreshComposerState();
-            if (!waiting && Session.Status != "running" && !starting && !queueStarting && !owner.service.IsSessionRunning(id)) queueDrainTimer.Start();
+            if (!waiting && Session.Status is not ("running" or "error") && !starting && !queueStarting && !owner.service.IsSessionRunning(id)) queueDrainTimer.Start();
         }
 
-        private Task StartNextQueuedInput() => owner.Act(async () =>
+        /// <summary>
+        /// Starts the first queued row now (M/AppStore.swift runNextQueuedRow): true when its run took it. False, never silently, when
+        /// nothing did: the pane cannot take it now (busy, held for an update or a plugin change, the row gone meanwhile), the pane cannot
+        /// run at all (what waited is dropped and the transcript says why), or its start was refused or no run took it (the row stays at
+        /// the head and the transcript says so).
+        /// </summary>
+        private async Task<bool> StartNextQueuedInput()
+        {
+            var started = false;
+            await owner.Act(async () => { started = await TakeNextQueuedInput(); });
+            return started;
+        }
+
+        private async Task<bool> TakeNextQueuedInput()
         {
             // An update or a plugin change, by hand or in the background, only holds what waited: it passes (M/AppStore.swift:902-903).
-            if (!QueuePaneAlive || starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(Session) || owner.ManualMutationBlockReason(Session) is not null || queuedInputs.Items.FirstOrDefault() is not { } item) return;
+            if (!QueuePaneAlive || starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(Session) || owner.ManualMutationBlockReason(Session) is not null || queuedInputs.Items.FirstOrDefault() is not { } item) return false;
             // A pane that cannot run at all drops what waited and says why (M/AppStore.swift:904-908), but only once a fresh reading,
             // the CLI looked for again rather than the one held, says so too: a reading taken mid-update may be wrong.
             if (RunBlockReason(PaneRuntime(Session.Provider)) is not null)
@@ -420,12 +441,12 @@ public sealed partial class MainWindow
                 // A remote pane's CLI is its host's: its last answer, never a reading of this PC's CLI in the host's path.
                 try { fresh = LocalPath(Workspace) is { } folder ? await owner.ReadProviderAfresh(Session.Provider, folder) : RemoteWorkspaceFeatures.ProviderRuntime(Session.Provider, Workspace.Remote!, owner.service.Remote?.Connection(Workspace.Remote!.ConnectionId)); }
                 finally { queueStarting = false; if (QueuePaneAlive) RefreshComposerState(); }
-                if (!QueuePaneAlive || !queuedInputs.Items.Contains(item)) return;
+                if (!QueuePaneAlive || !queuedInputs.Items.Contains(item)) return false;
                 if (RunBlockReason(fresh) is { } blocked)
                 {
                     var notice = QueuedInputBuffer.UnrunnableNotice(queuedInputs.Items.Count, blocked);
                     queuedInputs.Clear(); RenderQueuedInputs(); await SlashNote(notice);
-                    return;
+                    return false;
                 }
             }
             queueStarting = true; RefreshComposerState();
@@ -433,17 +454,18 @@ public sealed partial class MainWindow
             try
             {
                 await PrepareModels();
-                if (!QueuePaneAlive || !queuedInputs.Items.Any(queued => queued.Id == item.Id)) return;
+                if (!QueuePaneAlive || !queuedInputs.Items.Any(queued => queued.Id == item.Id)) return false;
                 var pane = Session; last = pane.Logs.LastOrDefault()?.Id;
                 var submitted = item.Prepared ? item.Text : await PrepareStyleSubmission(item.Text, item.Attachments.Count > 0);
                 var request = await PrepareStyleRunRequest(new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, submitted, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, item.Attachments.ToList()));
                 // The decision made when the item was queued wins (§1.17.4); an Antigravity card's continuation carries its rules.
                 request = request with { PermissionModeOverride = item.PermissionModeOverride, AntigravityGrant = item.AntigravityGrant, AntigravityCard = item.AntigravityCard };
                 // Stop or removal while style consent was open must prevent this request from starting.
-                if (!QueuePaneAlive || !queuedInputs.Items.Any(queued => queued.Id == item.Id)) return;
+                if (!QueuePaneAlive || !queuedInputs.Items.Any(queued => queued.Id == item.Id)) return false;
                 // No run took it (the items held for the pane stay held): it stays at the head of the queue, and the transcript says so (M/AppStore+Delegation.swift:191-195).
-                if (await owner.StartFromComposer(request) is DelegationRelease.NotStarted) { if (QueuePaneAlive) await SlashNote(QueuedInputBuffer.KeptNotice(Locale.Get("remote.error.startFailed"))); return; }
+                if (await owner.StartFromComposer(request) is DelegationRelease.NotStarted) { if (QueuePaneAlive) await SlashNote(QueuedInputBuffer.KeptNotice(Locale.Get("remote.error.startFailed"))); return false; }
                 queuedInputs.Remove(item.Id);
+                return true;
             }
             // Refused before its run began (nothing of it reached the transcript): the request stays, and the transcript says why (M/AppStore.swift:917-921).
             catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException) && QueuePaneAlive && Session.Logs.LastOrDefault()?.Id == last)
@@ -452,6 +474,6 @@ public sealed partial class MainWindow
                 throw;
             }
             finally { queueStarting = false; if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); } }
-        });
+        }
     }
 }

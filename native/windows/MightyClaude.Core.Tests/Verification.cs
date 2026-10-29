@@ -531,6 +531,9 @@ internal static class Verification
         await Test("delegation: git says why it gave no result, and only its own lock goes", DelegationHumanChildVerification.GitSaysWhyItGaveNoResultAndOnlyItsOwnLockGoes);
         await Test("delegation: every agent's modes and widest child modes are native/contracts/fixtures/delegation-modes.json", DelegationCrossAgentVerification.TheSharedModeTablesHold);
         await Test("queue: 바로 실행 follows native/contracts/fixtures/queue-run-now.json", QueueRunNowVerification.EveryCaseDecidesAsTheFixtureSays);
+        await Test("queue: 바로 실행 never steers into a running notice turn", QueueRunNowVerification.ARunningNoticeTurnTakesNoSteer);
+        await Test("queue: the window runs now only what can run, and tells the phone when a start failed", QueueRunNowVerification.TheWindowRunsNowOnlyWhatCanRun);
+        await Test("delegation: a human's child whose start throws gives its text back once", DelegationHumanChildVerification.AStartThatThrowsGivesTheTextBackOnce);
         await Test("delegation: agents are named by their words, and modes compare within and across agents", DelegationCrossAgentVerification.AgentsAndModesAcrossAgents);
         await Test("delegation: what the app knows of each CLI, the worktree menu and its cap", DelegationCrossAgentVerification.AvailabilityTheMenuAndItsCap);
         await Test("delegation: delegate takes an optional agent, and every answer names the child's agent", DelegationCrossAgentVerification.TheToolTakesAnOptionalAgentAndNamesItEverywhere);
