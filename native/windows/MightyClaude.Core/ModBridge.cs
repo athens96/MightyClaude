@@ -18,21 +18,54 @@ public sealed class ModBridge : IAsyncDisposable
 
     public sealed class Connection(string id, string token, Action<JsonElement> receive) : IDisposable
     {
-        internal DateTimeOffset Window;
-        internal int Count;
+        // Private, so no caller outside can hold it: the rate window, delivery and Dispose share it.
+        private readonly object sync = new();
+        private DateTimeOffset window;
+        private int count;
         private int received;
+        private readonly Action<JsonElement> receive = receive;
         public string Id { get; } = id;
         public string Token { get; } = token;
         public string Url { get; internal set; } = "";
-        public int Received { get { lock (this) return received; } internal set { lock (this) received = value; } }
+        public int Received { get { lock (sync) return received; } internal set { lock (sync) received = value; } }
+        /// <summary>Requests counted in the current one-second window.</summary>
+        internal int Requests { get { lock (sync) return count; } }
         internal bool GraphEnabled { get; init; }
-        internal Action<JsonElement> Receive { get; } = receive;
+        internal DateTimeOffset Window { init => window = value; }
         internal Action? Release { get; set; }
-        // Dispatch shares this lock. Once Dispose returns, even an authenticated
-        // request that was still reading its body cannot reach the previous run.
+
+        /// <summary>Counts one request in the rolling one-second window; false once <paramref name="limit"/> is reached.</summary>
+        internal bool Admit(DateTimeOffset now, int limit)
+        {
+            lock (sync)
+            {
+                if (now - window >= TimeSpan.FromSeconds(1)) { window = now; count = 0; }
+                if (count >= limit) return false;
+                count++;
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Hands a checked event to the run while it is still <paramref name="current"/>. Dispose shares the lock, so once it
+        /// returns even an authenticated request that was still reading its body cannot reach the previous run.
+        /// </summary>
+        internal bool Deliver(Func<Connection, bool> current, JsonElement value)
+        {
+            lock (sync)
+            {
+                if (!current(this)) return false;
+                // Long runs continue after 4096 events; only the rolling rate
+                // limit bounds traffic. The diagnostic counter cannot overflow.
+                if (received < int.MaxValue) received++;
+                receive(value);
+                return true;
+            }
+        }
+
         public void Dispose()
         {
-            lock (this) { var release = Release; Release = null; release?.Invoke(); }
+            lock (sync) { var release = Release; Release = null; release?.Invoke(); }
         }
     }
 
@@ -83,13 +116,7 @@ public sealed class ModBridge : IAsyncDisposable
                 var chunked = context.Request.Headers.TransferEncoding.ToString().Split(',').Any(value => value.Trim().Equals("chunked", StringComparison.OrdinalIgnoreCase));
                 limit.MaxRequestBodySize = GraphBodyLimit + (chunked ? MetadataBodyLimit : 0);
             }
-            lock (connection)
-            {
-                var now = clock.GetUtcNow();
-                if (now - connection.Window >= TimeSpan.FromSeconds(1)) { connection.Window = now; connection.Count = 0; }
-                if (connection.Count >= RequestsPerSecond) { context.Response.StatusCode = 429; return; }
-                connection.Count++;
-            }
+            if (!connection.Admit(clock.GetUtcNow(), RequestsPerSecond)) { context.Response.StatusCode = 429; return; }
 
             var payload = await HttpHost.ReadJsonWithLengthAsync(context, graphRequest ? GraphBodyLimit : MetadataBodyLimit);
             using var body = payload.Document;
@@ -101,14 +128,7 @@ public sealed class ModBridge : IAsyncDisposable
             { context.Response.StatusCode = 413; return; }
             if (!ValidMetadata(value, connection.Id, graphRequest)) { context.Response.StatusCode = 400; return; }
 
-            lock (connection)
-            {
-                if (!IsCurrent(connection)) { context.Response.StatusCode = 410; return; }
-                // Long runs continue after 4096 events; only the rolling rate
-                // limit bounds traffic. The diagnostic counter cannot overflow.
-                if (connection.Received < int.MaxValue) connection.Received++;
-                connection.Receive(value);
-            }
+            if (!connection.Deliver(IsCurrent, value)) { context.Response.StatusCode = 410; return; }
             context.Response.StatusCode = 204;
         }
         catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)

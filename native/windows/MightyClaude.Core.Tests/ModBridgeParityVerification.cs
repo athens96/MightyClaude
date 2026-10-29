@@ -180,7 +180,7 @@ internal static class ModBridgeParityVerification
         await using var stream = socket.GetStream();
         var headers = $"POST /events HTTP/1.1\r\nHost: {uri.Host}:{uri.Port}\r\nAuthorization: Bearer {connection.Token}\r\nContent-Type: application/json\r\nX-Mighty-Graph: 1\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n";
         await stream.WriteAsync(Encoding.ASCII.GetBytes(headers)); await stream.WriteAsync(bytes.AsMemory(0, 1)); await stream.FlushAsync();
-        await Verification.Until(() => { lock (connection) return connection.Count == 1; });
+        await Verification.Until(() => connection.Requests == 1);
         connection.Dispose();
         await stream.WriteAsync(bytes.AsMemory(1)); await stream.FlushAsync();
         using var reader = new StreamReader(stream, Encoding.ASCII, false, 1024, leaveOpen: true);
