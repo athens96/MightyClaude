@@ -333,12 +333,16 @@ public sealed partial class MainWindow
             return worktreeMenu.Items.OfType<MenuFlyoutItem>().Where(item => AutomationProperties.GetAutomationId(item).StartsWith("composer-worktree-", StringComparison.Ordinal)).ToList();
         }
 
-        /// <summary>Whether the held item <paramref name="itemId"/> is the first row of this pane's queue, under its header, pinned and with no remove button.</summary>
+        /// <summary>Whether the held item <paramref name="itemId"/> is the first row of this pane's queue, under its header, pinned and with no remove button;
+        /// as the first held row it carries 바로 실행 (bare, or in the wrapper that explains why it waits).</summary>
         internal bool DelegationSmokeHeldRow(string itemId)
         {
             RenderQueuedInputs();
+            static IEnumerable<Button> Buttons(Grid grid) => grid.Children.OfType<Button>().Concat(grid.Children.OfType<Border>().Select(border => border.Child).OfType<Button>());
             return queuedInputHost.Visibility == Visibility.Visible && queuedInputHost.Children.Count >= 2 && queuedInputHost.Children[1] is Border { Child: Grid row }
-                && AutomationProperties.GetAutomationId(row) == "queue-held-" + itemId && row.Children.OfType<FontIcon>().Any() && !row.Children.OfType<Button>().Any();
+                && AutomationProperties.GetAutomationId(row) == "queue-held-" + itemId && row.Children.OfType<FontIcon>().Any()
+                && Buttons(row).All(button => AutomationProperties.GetAutomationId(button) == "queue-run-now-" + itemId)
+                && Buttons(row).Any();
         }
     }
 }
