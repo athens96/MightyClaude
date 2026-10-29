@@ -183,6 +183,31 @@ internal static class SessionHistoryVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// A delegation notice after the request's result with no room left for its run: its answer follows in the request's result under
+    /// 위임 알림, as before notice runs, and never replaces that result (macOS ExecutionGraphTests.aDelegationNoticeAtTheNodeCapFollowsInTheResult).
+    /// </summary>
+    internal static Task ADelegationNoticeAtTheNodeCapFollowsInTheResult()
+    {
+        var emitted = new List<ExecutionGraphNode>();
+        var tracker = new ExecutionGraphTracker("deleg-full", "Split the work", "claude", null, emitted.Add);
+        void Frame(object value) { using var json = JsonDocument.Parse(Json(value)); tracker.Consume(json.RootElement.Clone()); }
+        // The request's own blocks fill all nodes but one, which the notice's steer block takes.
+        for (var index = 1; index < ExecutionGraphSupport.MaximumNodes - 1; index++) Frame(new { type = "system", subtype = "compact_boundary", uuid = "c" + index });
+        Frame(new { type = "result", subtype = "success", is_error = false, result = "Delegated." });
+        tracker.Steer("n-1", "[Mighty Claude notice n-1] Your child c-1 reported revision 1.");
+        Frame(new { type = "assistant", message = new { id = "main-2", content = new[] { new { type = "text", text = "Merged the child." } } } });
+        Frame(new { type = "result", subtype = "success", is_error = false, result = "Merged the child." });
+        var latest = new Dictionary<string, ExecutionGraphNode>();
+        foreach (var node in emitted) latest[node.Id] = node;
+        Check(latest.Count == ExecutionGraphSupport.MaximumNodes && !latest.Values.Any(n => BackgroundNoticeRuns.IsNoticeRun(n.RunId)), "the graph is full and no notice run opened; got " + latest.Count);
+        var header = Locale.Get("graph.result.afterSteer", new Dictionary<string, string> { ["block"] = Locale.Get("graph.block.delegationNotice") });
+        var output = latest[ExecutionGraphSupport.MainNodeID("deleg-full")].Output;
+        Check(output == "Delegated." + MightyGraphSupport.NoticeSectionMark + header + "**\n\nMerged the child.", "the answer follows under 위임 알림 and keeps the result; got " + output);
+        Check(latest[ExecutionGraphSupport.Identifier("deleg-full", "steer:n-1")].Output == "Merged the child.", "the 위임 알림 block takes the reply");
+        return Task.CompletedTask;
+    }
+
     internal static Task ScrollingUpLoadsTheTenRequestsAboveTheRetainedOneFromAClaudeRecord()
     {
         using var fixture = new Fixture();
