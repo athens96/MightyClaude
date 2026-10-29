@@ -412,7 +412,12 @@ extension MightyGraphSupport {
     /// 바로 실행 waits for its turn instead (Windows `NoticeTurnRunning`).
     public static func noticeTurnRunning(_ runs: [MightyGraphRun]) -> Bool {
         let newest = newestRequestIndex(runs) ?? -1
-        return runs.indices.contains { $0 > newest && runs[$0].noticeRun == true && !terminal(runs[$0].status) }
+        return runs[(newest + 1)...].contains { $0.noticeRun == true && !terminal($0.status) }
+    }
+    /// A notice turn ran before an event and no longer does after it: what waited for that turn (delegation's items, which
+    /// no steer took meanwhile) is offered again now, not only at the run's end (Windows `NoticeTurnEnded`).
+    public static func noticeTurnEnded(before: [MightyGraphRun], after: [MightyGraphRun]) -> Bool {
+        noticeTurnRunning(before) && !noticeTurnRunning(after)
     }
     /// The run the views follow as the newest work (natural submit's not-own rule): the newest request, or a notice
     /// run after it that is a turn of its own — running, or holding Claude's reply. A notice taken into a running turn

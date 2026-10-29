@@ -95,6 +95,11 @@ import Testing
         #expect(!MightyGraphSupport.noticeTurnRunning([request]) && !MightyGraphSupport.noticeTurnRunning([]))
         // An older request's notice run left running never holds the newest request's queue.
         #expect(!MightyGraphSupport.noticeTurnRunning([request, running, MightyGraphRun(id: "r2", status: "completed")]))
+        // Its answer is the edge that offers delegation's waiting items again; no other change is.
+        #expect(MightyGraphSupport.noticeTurnEnded(before: [request, running], after: [request, answered]))
+        #expect(!MightyGraphSupport.noticeTurnEnded(before: [request, running], after: [request, running]))
+        #expect(!MightyGraphSupport.noticeTurnEnded(before: [request, answered], after: [request, answered]))
+        #expect(!MightyGraphSupport.noticeTurnEnded(before: [request], after: [request, running]))
         // The pane carries it: a human row waits for its turn instead of steering, and so do the held items, which a busy pane
         // takes only as a steer. Idle, or with no notice turn, the held items go as before.
         let pane = QueueRunNow.Pane(busy: true, heldForUpdate: false, secondSend: .queue, menuOnly: false, waitsOnBackgroundOnly: true, held: 0,

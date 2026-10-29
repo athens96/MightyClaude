@@ -1120,6 +1120,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// offers a here that would not run (Windows `RunNowPane`).
     func queueRunNowPane(_ session: RunSession, stopping: Bool = false) -> QueueRunNow.Pane {
         let id = session.id, holds = backgroundUpdateHolds(session) || manualUpdateHolds(session)
+        // The same predicates as Windows `RunNowPane`.
         let recording = delegation?.endingRuns.contains(id) == true
         return QueueRunNow.Pane(busy: session.status == "running" || pendingRuns.contains(id) || holds || recording, heldForUpdate: holds,
                                 secondSend: composerSecondSend(session), menuOnly: worktreeMenuOnly(session),
@@ -1219,9 +1220,11 @@ final class AppStore: ObservableObject, DelegationHost {
     /// was dropped with a log line).
     func startNextQueuedRow(_ id: String, own: Bool? = nil) async -> Bool {
         let head = queuedInputs[id]?.first?.id, wasStarting = pendingRuns.contains(id)
+        let earlier = head.flatMap { heldReleases[$0] }
         runNextQueuedRow(id, own: own)
-        // Nothing suspends between the start and this reading: a run `start` began is still in `pendingRuns`.
-        if let head, let release = heldReleases[head] { return await release.value == .started }
+        // Nothing suspends between the start and this reading: a run `start` began is still in `pendingRuns`, and a release
+        // this start began is the row's entry now (one that was there before is another start's).
+        if let head, let release = heldReleases[head], release != earlier { return await release.value == .started }
         return !wasStarting && pendingRuns.contains(id)
     }
 
@@ -1246,7 +1249,8 @@ final class AppStore: ObservableObject, DelegationHost {
             if !(delegationHeld[id] ?? []).isEmpty {
                 let release = releaseHeld(id, input: next.text, attachments: next.attachments, from: .queue(next))
                 heldReleases[next.id] = release
-                Task { _ = await release.value; heldReleases.removeValue(forKey: next.id) }
+                // Only this release's own entry goes: a later release of the same row (put back meanwhile) keeps its own.
+                Task { _ = await release.value; if heldReleases[next.id] == release { heldReleases.removeValue(forKey: next.id) } }
                 return
             }
             // A queued request now runs: own when it was this Mac's (B2), the phone's only followed.
@@ -1493,6 +1497,7 @@ final class AppStore: ObservableObject, DelegationHost {
            event.type == "status" || MightyGraphSupport.startedBy(event, status: "starting") {
             submitEnded(event.sessionId, entryId: sent.entryId, failure: nil, at: receivedAt)
         }
+        let runsBefore = snapshot.sessions.first { $0.id == event.sessionId }?.graphRuns ?? []
         updateSession(event.sessionId) { session in
             session.recordRunTiming(event, at: receivedAt)
             session.recordSessionUsage(event)
@@ -1510,6 +1515,8 @@ final class AppStore: ObservableObject, DelegationHost {
             }
         }
         receiveLoginSignal(event)
+        // A notice turn's answer came: delegation's items that waited for it rather than steer in are offered again now.
+        if MightyGraphSupport.noticeTurnEnded(before: runsBefore, after: snapshot.sessions.first { $0.id == event.sessionId }?.graphRuns ?? []) { offerDelegationPending() }
         if event.type == "resume", let id = event.resumeId { rememberSessionID(id) }
         if event.type == "status", let provider = snapshot.sessions.first(where: { $0.id == event.sessionId })?.provider { providerLastActive[provider] = receivedAt }
         companion.receive(event, snapshot: snapshot, at: receivedAt)
