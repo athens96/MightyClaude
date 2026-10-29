@@ -128,7 +128,8 @@ public sealed partial class DelegationCoordinator
         string? runId = null;
         try
         {
-            if (File.Children.Find(record => record.Id == id) is not { State: ChildState.Creating } child) return;
+            // A human's child that will never start: their text needs another way (its queued row goes back, a quiet start ends).
+            if (File.Children.Find(record => record.Id == id) is not { State: ChildState.Creating } child) { if (human is not null) await Host(() => human.Failed(id)); return; }
             if (await worktrees.Make(id, start, task) is ChildWorktreeOutcome.Created { Worktree: var worktree })
             {
                 var pane = new DelegationChildPane(id, child.ParentSessionId, child.StartingMode, worktree.WorkingFolder, !child.NotifiesParent, child.Agent);
@@ -142,7 +143,8 @@ public sealed partial class DelegationCoordinator
             }
             var context = await PruneContext();
             var next = File; var index = next.Children.FindIndex(record => record.Id == id);
-            if (index < 0) return;
+            // With no run, the human's text has not gone anywhere: it needs another way on every early return.
+            if (index < 0) { if (runId is null && human is not null) await Host(() => human.Failed(id)); return; }
             if (runId is not null)
             {
                 // Once the host has reported this run's start, or even its end, the record is past creating.
@@ -151,7 +153,7 @@ public sealed partial class DelegationCoordinator
             }
             else
             {
-                if (next.Children[index].Applying(ChildStateEvent.FailStart) is not { } failed) return;
+                if (next.Children[index].Applying(ChildStateEvent.FailStart) is not { } failed) { if (human is not null) await Host(() => human.Failed(id)); return; }
                 next = next.SettingChild(index, failed);
                 if (failed.NotifiesParent) next = next with { Notices = next.Notices.Add(new(Wire.Id(), id, 0, NoticeKind.FailedToStart, DeliveryLane.Pending)) };
             }

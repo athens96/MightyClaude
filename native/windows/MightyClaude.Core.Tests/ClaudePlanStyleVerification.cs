@@ -215,7 +215,12 @@ internal static class ClaudePlanStyleVerification
             && !BackgroundQueuePolicy.SteersRunNext(waiting, false, false, 1, false) && !BackgroundQueuePolicy.SteersRunNext(waiting, true, true, 1, false) && !BackgroundQueuePolicy.SteersRunNext(waiting, true, false, 0, false)
             && !BackgroundQueuePolicy.SteersRunNext(waiting, true, false, 1, true) && !BackgroundQueuePolicy.SteersRunNext(new BackgroundWork([running with { Status = "completed" }], TurnEnded: true), true, false, 1, false),
             "run next steers only into a run whose only work left is background work");
-        Check(DelegationQueueRows.OffersRunNext(true, 0, steers: true) && !DelegationQueueRows.OffersRunNext(true, 0, steers: false) && DelegationQueueRows.OffersRunNext(true, 1), "a busy pane offers run next when it can steer, and always for held items");
+        // 바로 실행 on a row of a busy pane that can make no worktree: steered into a run that only waits on background work,
+        // otherwise disabled until the turn ends; the first held row sends the held items (M/BackgroundQueuePolicyTests.swift).
+        static QueueRunNow.Pane BusyPane(bool waitsOnBackgroundOnly, int held = 0) => new(true, false, ComposerSecondSend.Queue, false, waitsOnBackgroundOnly, held);
+        Check(QueueRunNow.Decide(null, "Next", 0, BusyPane(true)) == QueueRunNowPath.Steer && QueueRunNow.Decide(null, "Next", 0, BusyPane(false)) == QueueRunNowPath.WaitsForTurn
+            && QueueRunNow.Decide(null, "Next", 1, BusyPane(true)) == QueueRunNowPath.WaitsForTurn && QueueRunNow.Decide(0, "", 0, BusyPane(false, 1)) == QueueRunNowPath.Held,
+            "a busy pane's row is steered only into a run that waits on background work, and the first held row always sends");
         using (var started = JsonDocument.Parse("""{"type":"system","subtype":"task_started","task_id":"b1","task_type":"local_bash","description":"ping"}"""))
         {
             var tracker = new BackgroundTaskTracker(() => DateTimeOffset.Parse("2026-10-06T01:00:00Z", System.Globalization.CultureInfo.InvariantCulture));

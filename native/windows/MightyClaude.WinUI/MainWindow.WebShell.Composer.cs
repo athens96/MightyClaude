@@ -81,7 +81,9 @@ public sealed partial class MainWindow
         });
         bridge.Register("stop", async args => { await WebPane(args.Text("paneId")).WebStop(); return null; });
         bridge.Register("queueRemove", args => { WebPane(args.Text("paneId")).WebQueueRemove(args.Text("itemId") ?? ""); return Task.FromResult<object?>(null); });
-        bridge.Register("queueRunNext", async args => { await WebPane(args.Text("paneId")).WebRunNext(); return null; });
+        // 바로 실행 on one queued row (agent: the row's menu pick), and that menu's rows.
+        bridge.Register("queueRunNow", async args => { var view = WebPane(args.Text("paneId")); await Act(() => view.RunQueuedNow(args.Text("itemId") ?? "", args.Text("agent"))); return null; });
+        bridge.Register("queueRunNowMenu", args => Task.FromResult<object?>(WebPane(args.Text("paneId")).WebRunNowChoices()));
         bridge.Register("installCli", args =>
         {
             if (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == args.Text("paneId")) is { } pane && SetupItemForMissingCli(pane) is { } item) OpenSetup(item);
@@ -303,7 +305,15 @@ public sealed partial class MainWindow
 
         internal void WebQueueRemove(string itemId) { if (queuedInputs.Remove(itemId)) { RenderQueuedInputs(); RefreshComposerState(); } }
 
-        internal Task WebRunNext() => RunNext();
+        /// <summary>A queued row's agent menu as the page draws it: each agent's row of <see cref="FillRunNowMenu"/>, and whether it can run now.</summary>
+        internal object WebRunNowChoices()
+        {
+            var pane = Session;
+            if (!owner.service.OffersWorktreeMenu(pane, LaunchesInPlanMode)) return Array.Empty<object>();
+            return owner.service.WorktreeChildChoices(pane, LaunchesInPlanMode)
+                .Select(choice => new { agent = choice.Agent, text = ProviderCatalog.BetaLabel(choice.Agent, WorktreeChoiceTitle(choice, pane.Provider, marksShortcut: false)), enabled = choice.Blocked is null })
+                .ToArray();
+        }
 
         internal Task WebPickAttachments() => PickAttachments();
 
@@ -539,6 +549,10 @@ public sealed partial class MainWindow
             return new { word, tone = StatusGlyph.Tone(shown).ToString().ToLowerInvariant(), timed = pane.Kind != "shell" && pane.RunTiming is not null, rest, help };
         }
 
+        /// <summary>The page's name for what 바로 실행 does on the row <paramref name="rowId"/> (<see cref="QueueRunNow.Name"/>); null for no button.</summary>
+        private static string? RunNowName(IReadOnlyDictionary<string, QueueRunNowPath> rows, string rowId) =>
+            rows.GetValueOrDefault(rowId, QueueRunNowPath.Hidden) is var path && path != QueueRunNowPath.Hidden ? QueueRunNow.Name(path) : null;
+
         /// <summary>What the page draws of the composer, read from the state the last <see cref="RefreshComposerState"/> left.</summary>
         internal object WebComposerState()
         {
@@ -549,7 +563,7 @@ public sealed partial class MainWindow
             var busy = pane.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(pane);
             var queueable = busy && !starting && !queueStarting && pane.Kind == "claude" && HasComposerContent;
             var primary = queueable ? "queue" : busy ? "stop" : "send";
-            var held = owner.service.HeldItems(id);
+            var held = owner.service.HeldItems(id); var runNow = RunNowRows();
             var mutationBlock = owner.ManualMutationBlockReason(pane);
             var queueEnabled = !starting && !queueStarting && !attachmentsLoading && !stopping && queuedInputs.Items.Count < QueuedInputBuffer.MaximumItems && mutationBlock is null;
             return new
@@ -562,9 +576,9 @@ public sealed partial class MainWindow
                 worktree = offersWorktree, worktreeMenuOnly, worktreeEnabled = offersWorktree && queueEnabled,
                 queue = new
                 {
-                    held = held.Select(h => new { id = h.Id, text = h.Text }),
-                    items = queuedInputs.Items.Select(q => new { id = q.Id, text = q.Text, attachments = q.Attachments.Select(a => a.Name) }),
-                    runNext = DelegationQueueRows.OffersRunNext(busy, held.Count, SteersRunNext),
+                    // What 바로 실행 does on each row, decided once for the pane; null draws no button (a held row after the first).
+                    held = held.Select(h => new { id = h.Id, text = h.Text, runNow = RunNowName(runNow, h.Id) }),
+                    items = queuedInputs.Items.Select(q => new { id = q.Id, text = q.Text, attachments = q.Attachments.Select(a => a.Name), runNow = RunNowName(runNow, q.Id) }),
                     waitsOnBackground = BackgroundQueuePolicy.WaitsOnBackground(pane.BackgroundWork, queuedInputs.Items.Count)
                         ? owner.service.SecondSend(pane) == ComposerSecondSend.Worktree ? "queue.waitingOnBackground.windowsWorktree" : "queue.waitingOnBackground.windows" : null,
                 },

@@ -229,7 +229,7 @@ describe('sent requests and view choices (natural submit)', () => {
   it('counts a queued request that now runs (or 다음 실행) as an own send, by its words', () => {
     const state = loaded();
     const session = selectedSession(state.snapshot)!;
-    const composer = (texts: string[]) => ({ paneId: session.id, queue: { held: [], items: texts.map((text, i) => ({ id: 'q' + i, text, attachments: [] })), runNext: false, waitsOnBackground: null } }) as unknown as ComposerState;
+    const composer = (texts: string[]) => ({ paneId: session.id, queue: { held: [], items: texts.map((text, i) => ({ id: 'q' + i, text, attachments: [] })), waitsOnBackground: null } }) as unknown as ComposerState;
     let next = reduce(state, { kind: 'composer', state: composer(['queued words', 'later']) });
     // The host lets go of the first item, then its request entry comes.
     next = reduce(next, { kind: 'composer', state: composer(['later']) });
@@ -298,7 +298,7 @@ describe('sent requests and view choices (natural submit)', () => {
     const state = loaded();
     const session = selectedSession(state.snapshot)!;
     const past = session.logs.find((entry) => entry.kind === 'user')!;
-    const composer = { paneId: session.id, queue: { held: [], items: [{ id: 'q', text: past.text, attachments: [] }], runNext: false, waitsOnBackground: null } } as unknown as ComposerState;
+    const composer = { paneId: session.id, queue: { held: [], items: [{ id: 'q', text: past.text, attachments: [] }], waitsOnBackground: null } } as unknown as ComposerState;
     const next = reduce(reduce(state, { kind: 'composer', state: composer }), { kind: 'delta', sessions: [{ id: session.id, session: { ...session, title: 'again' } }], removed: [] });
     expect(next.ownSubmits[session.id]).toBeUndefined();
   });

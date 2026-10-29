@@ -163,6 +163,8 @@ internal sealed class ComposerGlyph
 
     /// <summary><c>arrow.triangle.branch</c> at 12 semibold, centred in the toolbar-high second send: the draft runs now in a new child worktree.</summary>
     internal static ComposerGlyph WorktreeBranch() => new ComposerGlyph(10 * 12 / 11.0, 10.6 * 12 / 11.0, DesignMetrics.Layout.Toolbar, DesignMetrics.Layout.Toolbar).Stroke(BranchOutline, 1.5, 12 / 11.0);
+    /// <summary><c>arrow.triangle.branch</c> at 8: a queued row's 바로 실행 that opens a new worktree, beside the play triangle's place.</summary>
+    internal static ComposerGlyph QueueBranch() => new ComposerGlyph(10 * 8 / 11.0, 10.6 * 8 / 11.0, 10, 10).Stroke(BranchOutline, 1.1, 8 / 11.0);
 
     /// <summary><c>arrow.up</c> at 14 semibold: about 10 × 12 with a 1.8pt stroke, centred in the toolbar-high send button.</summary>
     internal static ComposerGlyph ArrowUp() => new ComposerGlyph(10, 12.2, DesignMetrics.Layout.Toolbar, DesignMetrics.Layout.Toolbar).Stroke("M5 11.2 L5 1 M0.9 5.1 L5 1 L9.1 5.1", 1.8);

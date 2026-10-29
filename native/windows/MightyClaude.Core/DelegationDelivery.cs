@@ -26,21 +26,25 @@ public abstract record DelegationRelease
 
 /// <summary>
 /// A pane's queued list with delegation's held items in it (M/DelegationDelivery.swift:31-52). The items held for the pane come
-/// first, oldest first, as they run first; the human's queued requests follow. Held rows cannot be removed, do not count toward
-/// the queue's 16-item cap, and keep run next on offer while there are any. The phone gets them in its existing <c>queued</c> item shape.
+/// first, oldest first, as they run first; the human's queued requests follow. Held rows cannot be removed and do not count toward
+/// the queue's 16-item cap; the first one's 바로 실행 sends them all (<see cref="QueueRunNow"/>). The phone gets them in its existing
+/// <c>queued</c> item shape, each with what 바로 실행 does on it.
 /// </summary>
 public static class DelegationQueueRows
 {
-    /// <summary>The pane's rows in the phone's <c>queued</c> array: held first, then the human's requests.</summary>
-    public static IReadOnlyList<MobileQueuedItem> MobileItems(IEnumerable<DelegationDeliveryItem> held, IEnumerable<QueuedComposerInput> queued) =>
-        [.. held.Select(item => new MobileQueuedItem(item.Id, item.Text)), .. queued.Select(item => new MobileQueuedItem(item.Id, item.Text))];
+    /// <summary>
+    /// The pane's rows in the phone's <c>queued</c> array: held first, then the human's requests. <paramref name="runNow"/>: what 바로 실행
+    /// does on the row with that id; without it, or for <see cref="QueueRunNowPath.Hidden"/>, the row carries no <c>runNow</c>.
+    /// </summary>
+    public static IReadOnlyList<MobileQueuedItem> MobileItems(IEnumerable<DelegationDeliveryItem> held, IEnumerable<QueuedComposerInput> queued, Func<string, QueueRunNowPath>? runNow = null)
+    {
+        MobileQueuedItem Item(string id, string text) =>
+            QueueRunNow.Wire(runNow?.Invoke(id) ?? QueueRunNowPath.Hidden) is { } wire ? new MobileQueuedItem(id, text, wire.RunNow, wire.Reason) : new MobileQueuedItem(id, text);
+        return [.. held.Select(item => Item(item.Id, item.Text)), .. queued.Select(item => Item(item.Id, item.Text))];
+    }
 
     /// <summary><c>held_not_removable</c> when <paramref name="itemId"/> is one of the pane's held rows, and the remove route changes nothing; null when it may go on.</summary>
     public static DelegationReasonCode? RemoveRefusal(string itemId, IEnumerable<DelegationDeliveryItem> held) => held.Any(item => item.Id == itemId) ? DelegationReasonCode.HeldNotRemovable : null;
-
-    /// <summary>Whether the queued list offers run next: whenever items are held, otherwise while the pane is not busy or its first
-    /// request can be steered into a run that only waits on background work (<see cref="BackgroundQueuePolicy.SteersRunNext"/>).</summary>
-    public static bool OffersRunNext(bool busy, int held, bool steers = false) => held > 0 || !busy || steers;
 }
 
 public sealed partial record DelegationFile

@@ -381,23 +381,27 @@ public sealed partial class MainWindow
         internal void RefreshHeldRows() { if (QueuePaneAlive && Session.Kind == "claude") { RenderQueuedInputs(); RefreshComposerState(); } }
 
         /// <summary>
-        /// The composer's second send on this busy pane (<see cref="ComposerSecondSend.Worktree"/>), or the worktree menu's pick of
-        /// the child's <paramref name="agent"/> (M/AppStore+Delegation.swift runInNewWorktree): the text and its attachments run now in
-        /// a new child pane, in its own worktree beside this one, made as delegate makes one, in plan mode when the pane's style
-        /// starts every request so and the child runs this pane's agent. This pane's run goes on undisturbed, and the new child shows
-        /// at once. When no child can be made, or it cannot start after all, the transcript says why and the text goes on by
-        /// <see cref="RunAfterNoWorktree"/>; a text meant for another agent goes back to the composer instead (<see cref="ReturnToComposer"/>).
+        /// The composer's second send on this busy pane (<see cref="ComposerSecondSend.Worktree"/>), the worktree menu's pick of the
+        /// child's <paramref name="agent"/>, or a <paramref name="queued"/> row's 바로 실행 (M/AppStore+Delegation.swift runInNewWorktree):
+        /// the text and its attachments run now in a new child pane, in its own worktree beside this one, made as delegate makes one,
+        /// in plan mode when the pane's style starts every request so (a queued row: when it was queued so) and the child runs this
+        /// pane's agent. This pane's run goes on undisturbed, and the new child shows at once unless <paramref name="quiet"/> (the
+        /// phone's 바로 실행: never selected here). When no child can be made, or it cannot start after all, the transcript says why
+        /// and the text goes on by <see cref="RunAfterNoWorktree"/>; a text meant for another agent goes back to the composer instead
+        /// (<see cref="ReturnToComposer"/>), and a queued row goes back to the head of the queue (<see cref="PutBackQueuedRow"/>), never
+        /// to the composer.
         /// </summary>
-        private void RunInNewWorktree(string text, IReadOnlyList<RunAttachment> files, string? agent = null)
+        private void RunInNewWorktree(string text, IReadOnlyList<RunAttachment> files, string? agent = null, QueuedComposerInput? queued = null, bool quiet = false)
         {
-            var planFirst = LaunchesInPlanMode; var parentId = id;
+            var planFirst = queued is null ? LaunchesInPlanMode : queued.PermissionModeOverride == "plan"; var parentId = id;
             var toComposer = ComposerSecondSends.ReturnsToComposer(agent, Session.Provider);
             // A pane that went away meanwhile has no composer to fall back to: the text is the child's failed task on its card.
             Task FallBack(string reason) => owner.OnWindow(async () =>
             {
                 if (owner.views.TryGetValue(parentId, out var view))
                 {
-                    if (toComposer) await view.ReturnToComposer(text, files, reason);
+                    if (queued is not null) await view.PutBackQueuedRow(queued, reason);
+                    else if (toComposer) await view.ReturnToComposer(text, files, reason);
                     else await view.RunAfterNoWorktree(text, files, reason);
                 }
                 return true;
@@ -405,11 +409,12 @@ public sealed partial class MainWindow
             _ = owner.Act(async () =>
             {
                 HumanChildStart answer;
-                try { answer = await owner.service.StartHumanChildAsync(parentId, text, files, planFirst, _ => FallBack(Locale.Get("delegation.human.error.startFailed")), agent); }
+                try { answer = await owner.service.StartHumanChildAsync(parentId, text, files, planFirst, _ => FallBack(Locale.Get("delegation.human.error.startFailed")), agent, quiet); }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
-                    // A start that threw took nothing: the text goes on as a refused one does, and the error shows.
-                    owner.error.Text = ex.Message; await FallBack(ex.Message);
+                    // A start that threw took nothing: the text goes on as a refused one does, and the error shows (not for the phone's).
+                    if (!quiet) owner.error.Text = ex.Message;
+                    await FallBack(ex.Message);
                     if (!owner.closing) owner.Render();
                     return;
                 }

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace MightyClaude.Core;
 
@@ -8,7 +9,13 @@ public sealed record MobileImagePreview(string Mime, string Data, int Width, int
 public sealed record MobileImageResult(MobileImagePreview? Image, string? Reason = null);
 /// <summary>What the revision of a pane is read from beside its record (<see cref="MobileRevisions.Reading"/>).</summary>
 public sealed record MobilePaneDigest(bool Editable, int Options, int Mighty);
-public sealed record MobileQueuedItem(string Id, string Text);
+/// <summary>
+/// One row of the phone's <c>queued</c> array. <c>RunNow</c> and <c>RunNowReason</c>: what 바로 실행 does on it (<see cref="QueueRunNow.Wire"/>),
+/// both left out when the row has no button (a held row after the first), as an older host's rows are.
+/// </summary>
+public sealed record MobileQueuedItem(string Id, string Text,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RunNow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RunNowReason = null);
 /// <summary>
 /// What a pane's detail carries beside its record. <c>AskTargets</c>: the composer's "send to" targets, sent only on a pane that offers
 /// any (a Claude agent pane with oh-my-claudecode's ask and an installed target); <c>AskTarget</c>: the one its sends go to now, null for Claude.
@@ -337,6 +344,13 @@ public sealed class MobileDesktopRouter : IDisposable
                 }
                 if (method == "POST" && route.Length == 5 && route[3] == "queue" && route[4] == "run-next")
                 { await action(new(pane.Id, "queue-next", JsonSerializer.SerializeToElement(new { })), token); Changed(); return Reply(OK()); }
+                // 바로 실행 on one row (M/MobileRemoteService.swift): "worktree" or "here" in ran; 404 for a row no longer queued, 409 for one that cannot run now.
+                if (method == "POST" && route.Length == 6 && route[3] == "queue" && route[5] == "run-now")
+                {
+                    if (!Wire.Identifier(route[4])) throw new MobileRequestException(404, Locale.Get("remote.error.queueItemNotFound"));
+                    var ran = await action(new(pane.Id, "queue-run-now", JsonSerializer.SerializeToElement(new { id = route[4] })), token); Changed();
+                    return Reply(new { protocol = 1, ok = true, ran });
+                }
                 if (method == "POST" && route.Length == 6 && route[3] == "queue" && route[5] == "remove")
                 {
                     // A row held for the pane is refused, and nothing changes (M/AppStore+MobileRemote.swift:676-684).

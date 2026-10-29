@@ -53,14 +53,36 @@ public sealed partial class MainWindow
             }
         }
 
-        /// <summary><c>Codex · Working folder</c>, <c>Claude · Accept file edits (Ctrl+Enter)</c>, or <c>Codex — not signed in</c>.</summary>
-        private static string WorktreeChoiceTitle(DelegationChildChoice choice, string parent)
+        /// <summary>
+        /// The composer menu's rows for a queued row's 바로 실행 (M/QueuedInputsView.swift agentMenu): the same agents, the pane's own
+        /// without the Ctrl+Enter mark; a pick runs the row <paramref name="itemId"/> now in a new child of that agent.
+        /// </summary>
+        private void FillRunNowMenu(MenuFlyout menu, string itemId)
+        {
+            menu.Items.Clear();
+            menu.Items.Add(MenuHeader(Locale.Get("composer.worktreeMenu.title")));
+            var pane = Session;
+            foreach (var choice in owner.service.OffersWorktreeMenu(pane, LaunchesInPlanMode) ? owner.service.WorktreeChildChoices(pane, LaunchesInPlanMode) : [])
+            {
+                var agent = choice.Agent;
+                var item = new MenuFlyoutItem { Text = ProviderCatalog.BetaLabel(agent, WorktreeChoiceTitle(choice, pane.Provider, marksShortcut: false)), IsEnabled = choice.Blocked is null };
+                item.Click += async (_, _) => await owner.Act(() => RunQueuedNow(itemId, agent));
+                AutomationProperties.SetAutomationId(item, $"queue-run-now-{agent}-{itemId}");
+                menu.Items.Add(item);
+            }
+        }
+
+        /// <summary>
+        /// <c>Codex · Working folder</c>, <c>Claude · Accept file edits (Ctrl+Enter)</c>, or <c>Codex — not signed in</c>.
+        /// <paramref name="marksShortcut"/> false (a queued row's menu): the pane's own agent without the Ctrl+Enter mark.
+        /// </summary>
+        private static string WorktreeChoiceTitle(DelegationChildChoice choice, string parent, bool marksShortcut = true)
         {
             var words = new Dictionary<string, string> { ["agent"] = ProviderMark.Label(choice.Agent) };
             if (choice.Blocked is not { } blocked)
             {
                 words["mode"] = PermissionLabel(choice.Agent, choice.Mode ?? "");
-                return Locale.Get(choice.Agent == parent ? "composer.worktreeMenu.sameAgentWindows" : "composer.worktreeMenu.agent", words);
+                return Locale.Get(choice.Agent == parent && marksShortcut ? "composer.worktreeMenu.sameAgentWindows" : "composer.worktreeMenu.agent", words);
             }
             words["reason"] = Locale.Get(blocked switch
             {

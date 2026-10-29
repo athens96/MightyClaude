@@ -68,7 +68,7 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
   pills' menus (the WinUI MenuFlyouts read row by row), run settings and session info are the WinUI composer's code; the host
   pushes a `composer` state per pane when it changes. Pure parts here: Enter rules (`keys.ts`), slash palette ranking and keys
   (`slash.ts`, mirroring Core's SlashCommands.cs), attachment limits, the header clock. Host methods: `composerState`,
-  `updateDraft`, `send`, `stop`, `queueRemove`, `queueRunNext`, `installCli`, `pickAttachments`, `addAttachments`,
+  `updateDraft`, `send`, `stop`, `queueRemove`, `queueRunNow` (`{paneId, itemId, agent?}`: 바로 실행 on one row), `queueRunNowMenu` (that row's agent menu), `installCli`, `pickAttachments`, `addAttachments`,
   `removeAttachment`, `dismissAttachmentError`, `attachmentPreview`, `slashCommands`, `slashAction`, `composerMenu`,
   `composerMenuChoose`, `toggleFast`, `runSettings`, `applyRunSettings`, `sessionInfo`, `newConversation`.
   `send` takes `{paneId, text, second, attachments, clientId?}` and answers `{accepted, outcome, entryId?, runId?, clientId?, draft,

@@ -362,14 +362,21 @@ internal static class DelegationDeliveryVerification
         }
         finally { fixture.Remove(); }
 
-        // Held rows come first in the phone's queued array, in its item shape, cannot be removed, and keep run next on offer.
+        // Held rows come first in the phone's queued array, in its item shape, cannot be removed, and the first keeps 바로 실행 on offer.
         DelegationDeliveryItem[] held = [new("n-1", DelegationDeliveryKind.Notice, "c1", "parent", "Notice 1"), new("n-2", DelegationDeliveryKind.Notice, "c2", "parent", "Notice 2")];
         QueuedComposerInput[] queued = [new("q-1", "Human row", [])];
         SameList(DelegationQueueRows.MobileItems(held, queued), [new MobileQueuedItem("n-1", "Notice 1"), new MobileQueuedItem("n-2", "Notice 2"), new MobileQueuedItem("q-1", "Human row")], "held rows come first in the phone's queue");
         Same(System.Text.Json.JsonSerializer.Serialize(DelegationQueueRows.MobileItems(held, queued)[0], Wire.Json), """{"id":"n-1","text":"Notice 1"}""", "the existing item shape, nothing more");
         SameList(DelegationQueueRows.MobileItems([], queued), [new MobileQueuedItem("q-1", "Human row")], "with nothing held, the human's rows alone");
         Check(DelegationQueueRows.RemoveRefusal("n-2", held) == DelegationReasonCode.HeldNotRemovable && DelegationQueueRows.RemoveRefusal("q-1", held) is null && DelegationQueueRows.RemoveRefusal("n-2", []) is null, "a held row cannot be removed");
-        Check(DelegationQueueRows.OffersRunNext(true, 1) && DelegationQueueRows.OffersRunNext(false, 2) && DelegationQueueRows.OffersRunNext(false, 0) && !DelegationQueueRows.OffersRunNext(true, 0), "run next shows whenever items are held");
+        // The first held row has 바로 실행 for them all, busy or not, and the others none; a human row on an idle pane runs here.
+        static QueueRunNow.Pane RunNowPane(bool busy, int held) => new(busy, false, ComposerSecondSend.Worktree, false, false, held);
+        foreach (var busy in new[] { true, false })
+            Check(QueueRunNow.Decide(0, "", 0, RunNowPane(busy, 2)) == QueueRunNowPath.Held && QueueRunNow.Decide(1, "", 0, RunNowPane(busy, 2)) == QueueRunNowPath.Hidden, "the first held row sends them all, busy or not");
+        Check(QueueRunNow.Decide(null, "Human row", 0, RunNowPane(false, 2)) == QueueRunNowPath.Here && QueueRunNow.Decide(null, "Human row", 0, RunNowPane(false, 0)) == QueueRunNowPath.Here, "a human row on an idle pane runs here");
+        // Each row carries what 바로 실행 does on it; a hidden one carries neither field.
+        SameList(DelegationQueueRows.MobileItems(held, queued, rowId => rowId == "n-1" ? QueueRunNowPath.Held : rowId == "n-2" ? QueueRunNowPath.Hidden : QueueRunNowPath.Worktree),
+            [new MobileQueuedItem("n-1", "Notice 1", "here"), new MobileQueuedItem("n-2", "Notice 2"), new MobileQueuedItem("q-1", "Human row", "worktree")], "the phone's rows carry 바로 실행");
     }
 
     internal static async Task PendingItemsAreOfferedAgainAndNeverOvertaken()

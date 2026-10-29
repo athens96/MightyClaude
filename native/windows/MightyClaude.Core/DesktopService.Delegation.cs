@@ -73,6 +73,13 @@ public sealed partial class DesktopService : IDelegationHost
     /// next request once that run's end is recorded after a normal finish, and is dropped after any other end.
     /// </summary>
     private readonly Dictionary<string, string> followingNotes = [];
+    /// <summary>
+    /// Panes whose new worktree children the phone's 바로 실행 is starting, one token per start, each released exactly once (when
+    /// the child's first run is asked for, after its pane is made, or when no child comes): such a child is never selected in
+    /// this window (<see cref="DelegationPanes.AddingChild"/>), as the phone's gesture must not move the desk's view
+    /// (M/AppStore.swift quietChildParents). Under <c>sync</c>.
+    /// </summary>
+    private readonly Dictionary<string, HashSet<string>> quietChildParents = [];
 
     /// <summary>
     /// Delegation's records, tools, delivery and git actions. Made at launch from the profile's delegation file whether or not
@@ -224,7 +231,9 @@ public sealed partial class DesktopService : IDelegationHost
         var task = delegation?.File.Copy(pane.SessionId, DelegationCopyKind.Task)?.Text; Task save;
         lock (sync)
         {
-            if (closing || DelegationPanes.AddingChild(snapshot, pane, task) is not { } next) return false;
+            // The phone's 바로 실행 child never moves this window's view.
+            var quiet = quietChildParents.TryGetValue(pane.ParentSessionId, out var tokens) && tokens.Count > 0;
+            if (closing || DelegationPanes.AddingChild(snapshot, pane, task, quiet) is not { } next) return false;
             snapshot = StateStore.Normalize(next, false); save = QueueSave();
         }
         // A save the disk refuses is reported as any other; the pane is open all the same.
@@ -407,27 +416,47 @@ public sealed partial class DesktopService : IDelegationHost
 
     /// <summary>
     /// The composer's second send on the busy agent pane <paramref name="parentId"/> (<see cref="ComposerSecondSend.Worktree"/>), or
-    /// the worktree button's menu naming the child's <paramref name="agent"/>: <paramref name="text"/> and its attachments run now
-    /// in a new child pane, in its own worktree beside the pane, made by delegation as delegate makes one, in plan mode when
-    /// <paramref name="planFirst"/> and the child runs the pane's agent. The pane's run goes on undisturbed, and the new child shows
-    /// at once. What delegation answered; when the child's worktree, pane or first run could not be made after the answer,
-    /// <paramref name="failed"/> hears it with the child's id (the child stays listed as failed to start), and the text needs another way.
+    /// the worktree button's menu naming the child's <paramref name="agent"/>, or a queued row's 바로 실행: <paramref name="text"/> and
+    /// its attachments run now in a new child pane, in its own worktree beside the pane, made by delegation as delegate makes one, in
+    /// plan mode when <paramref name="planFirst"/> and the child runs the pane's agent. The pane's run goes on undisturbed, and the
+    /// new child shows at once unless <paramref name="quiet"/> (the phone's 바로 실행: never selected here). What delegation answered;
+    /// when the child's worktree, pane or first run could not be made after the answer, <paramref name="failed"/> hears it with the
+    /// child's id (the child stays listed as failed to start), and the text needs another way.
     /// </summary>
-    public async Task<HumanChildStart> StartHumanChildAsync(string parentId, string text, IReadOnlyList<RunAttachment> attachments, bool planFirst, Func<string, Task> failed, string? agent = null)
+    public async Task<HumanChildStart> StartHumanChildAsync(string parentId, string text, IReadOnlyList<RunAttachment> attachments, bool planFirst, Func<string, Task> failed, string? agent = null, bool quiet = false)
     {
         if (delegation is not { } coordinator) return new HumanChildStart.Failed(Locale.Get("delegation.human.error.switchedOff"));
         // A remote workspace's pane has no children: its folder is on its host (M/SessionPaneView's remote note).
         Workspace? remote; lock (sync) remote = snapshot.Sessions.FirstOrDefault(s => s.Id == parentId) is { } parent ? snapshot.Workspaces.FirstOrDefault(w => w.Id == parent.WorkspaceId && w.Remote is not null) : null;
         if (remote?.Remote is { } reference) return new HumanChildStart.Failed(Locale.Get("remote.pane.agentNote", new Dictionary<string, string> { ["host"] = reference.HostName }));
+        // Until the child's pane is made (its first run is asked for) or no child comes, it is not selected here. The token is this
+        // start's own, so however many of its ends are reported, it is released once.
+        var quietToken = quiet ? Wire.Id() : null;
+        if (quietToken is not null) lock (sync) { if (!quietChildParents.TryGetValue(parentId, out var tokens)) quietChildParents[parentId] = tokens = []; tokens.Add(quietToken); }
         var starter = new HumanChildStarter(async (childId, run) =>
         {
+            EndQuietChild(parentId, quietToken);
             // Kept before the run starts, so a command that ends at once still finds its note.
             if (run.FollowingNote is { } note) lock (sync) followingNotes[childId] = note;
             var runId = await StartDelegatedRun(childId, run.Input, attachments);
             if (runId is null) lock (sync) followingNotes.Remove(childId);
             return runId;
-        }, failed);
-        return await coordinator.StartHumanChild(text, parentId, starter, planFirst, agent);
+        }, async childId => { EndQuietChild(parentId, quietToken); await failed(childId); });
+        HumanChildStart? answer = null;
+        try { return answer = await coordinator.StartHumanChild(text, parentId, starter, planFirst, agent); }
+        // A refused or failed answer made no child, and one that threw neither: nothing waits for its pane.
+        finally { if (answer is not HumanChildStart.Started) EndQuietChild(parentId, quietToken); }
+    }
+
+    /// <summary>The quiet start <paramref name="token"/> of the pane <paramref name="parentId"/> no longer waits for its child's pane; a token already released changes nothing.</summary>
+    private void EndQuietChild(string parentId, string? token)
+    {
+        if (token is null) return;
+        lock (sync)
+        {
+            if (!quietChildParents.TryGetValue(parentId, out var tokens) || !tokens.Remove(token)) return;
+            if (tokens.Count == 0) quietChildParents.Remove(parentId);
+        }
     }
 
     // What the window calls and draws.

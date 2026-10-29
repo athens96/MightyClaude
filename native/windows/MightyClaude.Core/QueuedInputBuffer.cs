@@ -23,6 +23,19 @@ public sealed class QueuedInputBuffer
         var item = new QueuedComposerInput(Wire.Id(), text, files, permissionModeOverride, prepared, antigravityGrant, antigravityCard); items.Add(item); return item;
     }
     public bool Remove(string id) => items.RemoveAll(item => item.Id == id) > 0;
+    /// <summary>The queued request <paramref name="id"/> moved to the head of the queue (바로 실행 in this pane); false when it is not queued.</summary>
+    public bool MoveToFront(string id)
+    {
+        var index = items.FindIndex(item => item.Id == id);
+        if (index < 0) return false;
+        var item = items[index]; items.RemoveAt(index); items.Insert(0, item);
+        return true;
+    }
+    /// <summary>
+    /// <paramref name="item"/> back at <paramref name="index"/>, as it was queued (a row whose new worktree could not be made or
+    /// started): without the 16-item check, since it was queued already, and never twice.
+    /// </summary>
+    public void Insert(int index, QueuedComposerInput item) { if (!items.Any(queued => queued.Id == item.Id)) items.Insert(Math.Clamp(index, 0, items.Count), item); }
     public void Clear() => items.Clear();
     /// <param name="keepOnStop">The stopped run's turn was already over (it only waited on background work): the queue survives and runs next.</param>
     public bool Settle(string status, bool keepOnStop = false)

@@ -36,10 +36,11 @@ public static class DelegationPanes
     /// title is its task <paramref name="task"/>, kept as the pane's name, and its parent's tab group keeps showing what it
     /// showed, except that a child the human started shows at once, selected and active, while the human is still on its parent
     /// with nothing typed there. The layout is saved as it then is, and the workspace leaves a preset layout mode, as when a
-    /// human adds a tab; focus stays focus. null, changing nothing, when no pane can be made: the app is at its pane cap, the id is taken, or the parent pane
+    /// human adds a tab; focus stays focus. A <paramref name="quiet"/> child (the phone's 바로 실행) is never selected: the phone's
+    /// gesture does not move this window's view. null, changing nothing, when no pane can be made: the app is at its pane cap, the id is taken, or the parent pane
     /// or its workspace is gone.
     /// </summary>
-    public static AppSnapshot? AddingChild(AppSnapshot state, DelegationChildPane pane, string? task)
+    public static AppSnapshot? AddingChild(AppSnapshot state, DelegationChildPane pane, string? task, bool quiet = false)
     {
         if (!PaneLayout.HasRoom(state) || state.Sessions.Any(session => session.Id == pane.SessionId) || state.Sessions.FirstOrDefault(session => session.Id == pane.ParentSessionId) is not { } parent
             || !state.Workspaces.Any(workspace => workspace.Id == parent.WorkspaceId)) return null;
@@ -53,7 +54,7 @@ public static class DelegationPanes
         if (PaneLayout.Groups(root).FirstOrDefault(tabs => tabs.SessionIds.Contains(parent.Id)) is not { } group) return null;
         // A tab moved into a group is selected there; the group goes back to the tab it showed.
         var next = PaneLayout.Move(PaneLayout.Normalize(root, open.Append(child.Id))!, child.Id, group.Id, index: group.SessionIds.IndexOf(parent.Id) + 1);
-        var shows = pane.StartedByHuman && state.ActiveSessionId == parent.Id && string.IsNullOrEmpty(parent.Draft);
+        var shows = pane.StartedByHuman && !quiet && state.ActiveSessionId == parent.Id && string.IsNullOrEmpty(parent.Draft);
         next = PaneLayout.Select(next, shows ? child.Id : group.SelectedSessionId ?? parent.Id);
         return state with
         {

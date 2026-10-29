@@ -1,11 +1,23 @@
 // What the host pushes of a pane's composer (MainWindow.WebShell.Composer.cs WebComposerState): read from the never-shown
 // WinUI composer the page's draft is mirrored into, so every rule (block reasons, busy, queue, attachments) stays C#'s.
 import type { Pills } from './menus';
+import type { RunNow } from './queue';
+
+export type { RunNow, RunNowChoice } from './queue';
+
+/** A row delegation holds for the pane; only the first carries 바로 실행 (the host sends null for the rest). */
+export interface QueueHeld {
+  id: string;
+  text: string;
+  runNow: RunNow | null;
+}
 
 export interface QueueItem {
   id: string;
   text: string;
   attachments: string[];
+  /** What 바로 실행 does on the row (Core QueueRunNow); null draws no button. */
+  runNow: RunNow | null;
 }
 
 export interface ComposerAttachment {
@@ -37,9 +49,8 @@ export interface ComposerState {
   worktreeMenuOnly: boolean;
   worktreeEnabled: boolean;
   queue: {
-    held: { id: string; text: string }[];
+    held: QueueHeld[];
     items: QueueItem[];
-    runNext: boolean;
     waitsOnBackground: string | null;
   };
   attachments: ComposerAttachment[];

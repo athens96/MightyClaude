@@ -467,6 +467,7 @@ public sealed partial class MainWindow
             case "stop": var running = service.IsSessionRunning(request.SessionId); pane.MobileStopQueue(); await service.StopAsync(request.SessionId); return running;
             case "queue-remove": pane.MobileQueueRemove(body.Text("id") ?? ""); return null;
             case "queue-next": return await pane.MobileRunNext(token);
+            case "queue-run-now": return await pane.MobileRunQueuedNow(body.Text("id") ?? "", token);
             case "rename": if (body.Text("titleMode") == "auto") await service.SetSessionAutoTitleAsync(request.SessionId); else await service.RenameSessionAsync(request.SessionId, body.Text("title")!.Trim()); Render(); return null;
             // The phone's close never asks, a parent's with open children included (M/AppStore+Delegation.swift:204-206), and goes through the service like the desktop's.
             case "close": pane.MobileCancelQueue(); token.ThrowIfCancellationRequested(); await ClosePane(request.SessionId); return null;
@@ -575,10 +576,34 @@ public sealed partial class MainWindow
                 if (release is DelegationRelease.Released) { if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); } return null; }
             }
             // A run that only waits on background work takes the first request as a new turn, as the desktop's run next does.
-            if (await SteerFirstQueuedInput()) return null;
+            if (await SteerQueuedInput()) return null;
             if (MobileBusy) throw new MobileRequestException(409, "Session is still running.");
             var next = queuedInputs.Items.FirstOrDefault() ?? throw new MobileRequestException(409, "The queue is empty.");
             await MobileSubmit(next.Text, next.Attachments, token, next.Prepared, next.Id); queuedInputs.Remove(next.Id); RenderQueuedInputs(); RefreshComposerState(); return null;
+        }
+        /// <summary>
+        /// The phone's 바로 실행 on <paramref name="itemId"/> (M/AppStore+MobileRemote.swift mobileRunQueuedNow): what <see cref="RunNowFor"/>
+        /// decides now, as this window's click would, but a worktree child is not selected here. "worktree" or "here"; 404 for a row no
+        /// longer queued, 409 <c>queue.runNowRefused</c> for one that cannot run now (or why the pane may not run), and
+        /// <c>remote.error.startFailed</c> when a start decided a moment ago did not happen.
+        /// </summary>
+        internal async Task<object?> MobileRunQueuedNow(string itemId, CancellationToken token)
+        {
+            if (!owner.service.HeldItems(id).Any(item => item.Id == itemId) && !queuedInputs.Items.Any(item => item.Id == itemId)) throw new MobileRequestException(404, Locale.Get("remote.error.queueItemNotFound"));
+            var path = RunNowFor(itemId);
+            // A dimmed row is never sent by the phone; this answers a row that changed under it.
+            if (path == QueueRunNowPath.AgentMenu || !QueueRunNow.Runs(path) || QueueRunNow.Wire(path) is not { } wire) throw new MobileRequestException(409, Locale.Get("queue.runNowRefused"));
+            // Settling a blocked pane throws the whole queue away with only a log line.
+            if (path is QueueRunNowPath.Here or QueueRunNowPath.Held && owner.DelegatedRunBlockReason(Session) is { } blocked) throw new MobileRequestException(409, blocked);
+            QueueRunNowPath? ran; string? failure;
+            // The window's error line is the desk's: a start the phone asked for answers the phone with its failure instead.
+            var deskError = owner.error.Text;
+            try { ran = await RunQueuedNow(itemId, quiet: true); }
+            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException)) { throw new MobileRequestException(409, ex.Message); }
+            finally { failure = owner.error.Text != deskError && owner.error.Text.Length > 0 ? owner.error.Text : null; owner.error.Text = deskError; }
+            token.ThrowIfCancellationRequested();
+            // Decided runnable a moment ago: nothing ran, so its start failed.
+            return ran is null ? throw new MobileRequestException(409, failure ?? Locale.Get("remote.error.startFailed")) : wire.RunNow;
         }
         /// <summary>
         /// The style this pane is really running: a Claude pane in the Mighty view whose stored style is registered, approved and
@@ -656,7 +681,8 @@ public sealed partial class MainWindow
             // The rows delegation holds for the pane come first, as on the desktop (M/AppStore+MobileRemote.swift:398).
             // The background work still running, as the strip lists it, its block met in the newest request (never a notice run).
             var background = PlanCardSupport.MobileBackgroundWork(pane.BackgroundWork, MightyGraphSupport.NewestRequestRun(pane.GraphRuns), owner.BackgroundOutputFor(pane.Id));
-            return new(DelegationQueueRows.MobileItems(owner.service.HeldItems(id), queuedInputs.Items), settings, mighty, statusLine,
+            var runNow = RunNowRows();
+            return new(DelegationQueueRows.MobileItems(owner.service.HeldItems(id), queuedInputs.Items, rowId => runNow.GetValueOrDefault(rowId, QueueRunNowPath.Hidden)), settings, mighty, statusLine,
                 askTargets.Select(t => new MobileAskTarget(t.Id, t.Label)).ToArray(), AskTargets.Effective(pane.AskTarget, askTargets)?.Id, background);
         }
         /// <summary>The style panel the phone draws, in the shared golden shape (M/MightyCore/Styles/StylePanelProjection.swift).</summary>

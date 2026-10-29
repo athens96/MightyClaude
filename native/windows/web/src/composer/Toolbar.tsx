@@ -15,7 +15,7 @@ const narrowToolbar = 420;
 type Open = { kind: 'menu'; name: MenuName; rows: MenuRow[] } | { kind: 'runSettings'; info: RunSettingsInfo } | { kind: 'sessionInfo'; info: SessionInfo } | null;
 
 /** Closes a popover on a press outside it or on Esc. */
-function usePopover(close: () => void) {
+export function usePopover(close: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const press = (event: PointerEvent) => { if (ref.current && !ref.current.contains(event.target as Node)) close(); };
@@ -27,7 +27,8 @@ function usePopover(close: () => void) {
   return ref;
 }
 
-function MenuList({ rows, path, choose }: { rows: MenuRow[]; path: number[]; choose: (path: number[], row: MenuRow) => void }) {
+/** A popover menu's rows (the WinUI MenuFlyout's, read row by row): headers, separators, choices, actions and submenus. */
+export function MenuList({ rows, path, choose }: { rows: MenuRow[]; path: number[]; choose: (path: number[], row: MenuRow) => void }) {
   const [opened, setOpened] = useState<number | null>(null);
   return (
     <>

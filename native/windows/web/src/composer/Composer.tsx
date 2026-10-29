@@ -5,7 +5,8 @@ import type { RunSession } from '../store/models';
 import { attachmentRefusal, byteLabel, toBase64 } from './attachments';
 import { enterAction, maximumDraft } from './keys';
 import { choose, closed, move, paletteDraft, paletteKey, paletteState, safeIndex, type PaletteState, type SlashCatalog, type SlashCommand } from './slash';
-import { AskUnsandboxedRow, StyleRow, Toolbar } from './Toolbar';
+import { AskUnsandboxedRow, MenuList, StyleRow, Toolbar, usePopover } from './Toolbar';
+import { readRunNow, runNowBranches, runNowTip, runNowWaits, type RunNow, type RunNowChoice } from './queue';
 import { Icon } from '../icons/Icon';
 import type { AttachmentPreview, ComposerState, SendResult } from './types';
 import { usePageOverlay } from '../shell/overlay';
@@ -330,14 +331,13 @@ export function Composer({ session }: { session: RunSession }) {
             <div className="composer-queue-header">
               <Icon name="rotate-ccw-clock" size={11} weight={2.4} className="composer-queue-clock" />
               <span>{t(state.busy ? 'queue.waitingBusy' : 'queue.waiting', { count: queued })}</span>
-              {queue.runNext && <button type="button" className="composer-text-button composer-queue-run" title={t('queue.runNextHelp')} onClick={() => call('queueRunNext')}>
-                <Icon name="play" size={9} weight={1} fill />{t('queue.runNext')}</button>}
             </div>
             {queue.waitsOnBackground && <div className="composer-queue-notice">{t(queue.waitsOnBackground)}</div>}
             {queue.held.map((item, index) => (
               <div className="composer-queue-item" key={item.id} data-queue-held={item.id}>
                 <span className="composer-queue-number">{index + 1}</span>
                 <span className="composer-queue-text">{item.text}</span>
+                <RunNowButton paneId={paneId} itemId={item.id} runNow={readRunNow(item.runNow)} held={queue.held.length} />
                 <span className="composer-queue-pin" title={t('queue.heldHelp')} aria-label={t('queue.held')}><Icon name="pin" size={10} weight={2.2} fill /></span>
               </div>
             ))}
@@ -348,6 +348,7 @@ export function Composer({ session }: { session: RunSession }) {
                   {item.text.length === 0 ? t('queue.attachmentsOnly') : item.text}
                   {item.attachments.length > 0 && <span className="composer-queue-files">{item.attachments.join(', ')}</span>}
                 </span>
+                <RunNowButton paneId={paneId} itemId={item.id} runNow={readRunNow(item.runNow)} held={queue.held.length} />
                 <button type="button" className="composer-icon-button" aria-label={t('queue.remove')} onClick={() => call('queueRemove', { itemId: item.id })}>×</button>
               </div>
             ))}
@@ -413,5 +414,41 @@ export function Composer({ session }: { session: RunSession }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * 바로 실행 beside a queued row's × or the first held row's pin (M/QueuedInputsView.swift runNowButton): what the host decided
+ * for the row (Core QueueRunNow). On a worktree row a right-click, Shift+F10 or the menu key picks the child's agent; an
+ * agent-menu row's click opens that menu. A row that must wait is drawn with aria-disabled, not disabled: Chromium shows no
+ * title on a disabled button, and the reason must stay readable and the button focusable. A null runNow draws nothing.
+ */
+function RunNowButton({ paneId, itemId, runNow, held }: { paneId: string; itemId: string; runNow: RunNow | null; held: number }) {
+  const { bridge, t } = useServices();
+  const [choices, setChoices] = useState<RunNowChoice[] | null>(null);
+  const close = useCallback(() => setChoices(null), []);
+  const menuRef = usePopover(close);
+  usePageOverlay(choices !== null);
+  if (runNow === null) return null;
+  const openMenu = async () => { try { setChoices(await bridge.call<RunNowChoice[]>('queueRunNowMenu', { paneId })); } catch { setChoices(null); } };
+  const run = (agent?: string) => { setChoices(null); void bridge.call('queueRunNow', { paneId, itemId, ...(agent ? { agent } : {}) }).catch(() => {}); };
+  const branch = runNowBranches(runNow);
+  const waits = runNowWaits(runNow);
+  const [key, values] = runNowTip(runNow, held);
+  return (
+    <span className="composer-queue-run-now" ref={menuRef}>
+      <button type="button" className={'composer-text-button composer-queue-run' + (waits ? ' waits' : '')} data-run-now={itemId} title={t(key, values)}
+        aria-disabled={waits || undefined} aria-haspopup={branch ? 'menu' : undefined}
+        onClick={() => { if (waits) return; if (runNow === 'agentMenu') void openMenu(); else run(); }}
+        onContextMenu={branch ? (event) => { event.preventDefault(); void openMenu(); } : undefined}>
+        <Icon name={branch ? 'split' : 'play'} size={9} weight={branch ? 2.2 : 1} fill={!branch} />{t('queue.runNow')}
+      </button>
+      {choices && (
+        <div className="composer-popover composer-menu" role="menu" data-menu="run-now" data-page-overlay="">
+          <MenuList rows={[{ kind: 'header', text: t('composer.worktreeMenu.title') }, ...choices.map((c) => ({ kind: 'action' as const, text: c.text, enabled: c.enabled }))]}
+            path={[]} choose={(path) => { const choice = choices[(path[0] ?? 0) - 1]; if (choice) run(choice.agent); }} />
+        </div>
+      )}
+    </span>
   );
 }

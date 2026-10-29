@@ -174,10 +174,11 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// The waiting requests (M/QueuedInputsView.swift:15-63): a line that counts them behind an accent clock, with
-        /// "run next" while the pane is idle or anything is held; then delegation's held notices and follow-ups first, each
-        /// with a pin and no remove button; then each request on the subtle wash at radius 8 — its number in 10 semibold
-        /// <c>ink2</c>, its words in 11 (two lines), its attachments' names in 10 <c>ink2</c> and a remove button.
+        /// The waiting requests (M/QueuedInputsView.swift): a line that counts them behind an accent clock; then delegation's held
+        /// notices and follow-ups first, each with a pin and no remove button; then each request on the subtle wash at radius 8 — its
+        /// number in 10 semibold <c>ink2</c>, its words in 11 (two lines), its attachments' names in 10 <c>ink2</c> and a remove
+        /// button. Each human row has 바로 실행 before its remove button, and the first held row before its pin (<see cref="RunNowButton"/>),
+        /// decided once for the pane as it is now (<see cref="RunNowRows"/>); the other held rows have none.
         /// </summary>
         private void RenderQueuedInputs()
         {
@@ -187,88 +188,223 @@ public sealed partial class MainWindow
             FitComposerSpacing();
             if (total == 0) return;
             var busy = Session.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(Session);
-            var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            var runNow = RunNowRows();
+            var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             header.Children.Add(new FontIcon { Glyph = "", TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = accent, VerticalAlignment = VerticalAlignment.Center });
             var waitsOnBackground = BackgroundQueuePolicy.WaitsOnBackground(Session.BackgroundWork, queuedInputs.Items.Count);
             var count = new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = total.ToString() }) + (waitsOnBackground ? "\n" + Locale.Get(owner.service.SecondSend(Session) == ComposerSecondSend.Worktree ? "queue.waitingOnBackground.windowsWorktree" : "queue.waitingOnBackground.windows") : ""), TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
             if (waitsOnBackground) AutomationProperties.SetAutomationId(count, "queue-background-" + id);
             Grid.SetColumn(count, 1); header.Children.Add(count);
-            if (DelegationQueueRows.OffersRunNext(busy, held.Count, SteersRunNext))
-            {
-                var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
-                label.Children.Add(new FontIcon { Glyph = "", TextSize = 8, VerticalAlignment = VerticalAlignment.Center });
-                label.Children.Add(new TextBlock { Text = Locale.Get("queue.runNext"), TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center });
-                var next = Button(Locale.Get("queue.runNext"), RunNext); next.Content = label; next.Padding = new(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1); next.MinWidth = 0; next.MinHeight = 0; next.BorderThickness = new(0); next.CornerRadius = new(DesignMetrics.Radius.FileRow);
-                owner.PaintPlainButton(next, b.Transparent, b.Subtle, ink: accent);
-                AutomationProperties.SetAutomationId(next, "queue-run-" + id); Grid.SetColumn(next, 2); header.Children.Add(next);
-            }
             queuedInputHost.Children.Add(header);
             var index = 0;
             foreach (var item in held)
             {
-                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs) }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs) }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 var number = new TextBlock { Text = (++index).ToString(), TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, Width = 14, TextAlignment = TextAlignment.Right, Margin = new(0, 1, 0, 0), VerticalAlignment = VerticalAlignment.Top };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(number, FontNumeralAlignment.Tabular); row.Children.Add(number);
                 var words = new TextBlock { Text = item.Text, TextSize = 11, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
                 Grid.SetColumn(words, 1); row.Children.Add(words);
+                // The first held row's 바로 실행 sends them all; the others draw nothing (Hidden).
+                if (RunNowButton(item.Id, runNow.GetValueOrDefault(item.Id, QueueRunNowPath.Hidden), held.Count) is { } runButton) { Grid.SetColumn(runButton, 2); row.Children.Add(runButton); }
                 // Held for the pane, not the human's request: a pin where the remove button would be (M/QueuedInputsView.swift:39-41).
                 var pin = new FontIcon { Glyph = "", TextSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, TextWidth = 18, TextHeight = 16, VerticalAlignment = VerticalAlignment.Top };
-                ToolTipService.SetToolTip(pin, Locale.Get("queue.heldHelp")); AutomationProperties.SetName(pin, Locale.Get("queue.held")); Grid.SetColumn(pin, 2); row.Children.Add(pin);
+                ToolTipService.SetToolTip(pin, Locale.Get("queue.heldHelp")); AutomationProperties.SetName(pin, Locale.Get("queue.held")); Grid.SetColumn(pin, 3); row.Children.Add(pin);
                 AutomationProperties.SetAutomationId(row, "queue-held-" + item.Id);
                 queuedInputHost.Children.Add(new Border { Child = row, CornerRadius = new(DesignMetrics.Radius.Row), Background = b.Subtle });
             }
             foreach (var item in queuedInputs.Items)
             {
-                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs) }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs) }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 var number = new TextBlock { Text = (++index).ToString(), TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, Width = 14, TextAlignment = TextAlignment.Right, Margin = new(0, 1, 0, 0), VerticalAlignment = VerticalAlignment.Top };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(number, FontNumeralAlignment.Tabular); row.Children.Add(number);
                 var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
                 words.Children.Add(new TextBlock { Text = item.Text.Length == 0 ? Locale.Get("queue.attachmentsOnly") : item.Text, TextSize = 11, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
                 if (item.Attachments.Count > 0) words.Children.Add(new TextBlock { Text = string.Join(", ", item.Attachments.Select(file => file.Name)), TextSize = 10, Foreground = ink2, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis });
                 Grid.SetColumn(words, 1); row.Children.Add(words);
+                if (RunNowButton(item.Id, runNow.GetValueOrDefault(item.Id, QueueRunNowPath.Hidden), held.Count) is { } runButton) { Grid.SetColumn(runButton, 2); row.Children.Add(runButton); }
                 var remove = Button("×", () => { queuedInputs.Remove(item.Id); RenderQueuedInputs(); RefreshComposerState(); return Task.CompletedTask; }); remove.Content = new FontIcon { Glyph = "", TextSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
                 remove.Width = 18; remove.Height = 16; remove.MinWidth = 0; remove.MinHeight = 0; remove.Padding = new(0); remove.BorderThickness = new(0); remove.CornerRadius = new(DesignMetrics.Radius.FileRow); remove.VerticalAlignment = VerticalAlignment.Top;
                 owner.PaintPlainButton(remove, b.Transparent, b.Subtle, ink: ink2);
-                AutomationProperties.SetName(remove, Locale.Get("queue.remove")); AutomationProperties.SetAutomationId(remove, "queue-remove-" + item.Id); Grid.SetColumn(remove, 2); row.Children.Add(remove);
+                AutomationProperties.SetName(remove, Locale.Get("queue.remove")); AutomationProperties.SetAutomationId(remove, "queue-remove-" + item.Id); Grid.SetColumn(remove, 3); row.Children.Add(remove);
                 AutomationProperties.SetAutomationId(row, "queue-item-" + item.Id);
                 queuedInputHost.Children.Add(new Border { Child = row, CornerRadius = new(DesignMetrics.Radius.Row), Background = b.Subtle });
             }
         }
 
         /// <summary>
-        /// Run next (M/AppStore.swift:865-885): the items delegation holds for the pane go first, all of them in one run, steered
-        /// into its running Claude run when it has one; only with nothing held does the first queued row run, as before. Held
-        /// items no run took stay held.
+        /// 바로 실행 beside a row's remove button (or the first held row's pin) in the old 다음 실행's look: the play triangle, or the
+        /// branch on a worktree row, at 8 and "바로 실행" at 10 medium in the accent (M/QueuedInputsView.swift runNowButton). A row that
+        /// cannot run now keeps its slot with the button disabled in <c>ink2</c>; a disabled control shows no tooltip, so the reason
+        /// sits on a transparent wrapper, and in the button's help text. A worktree row's right-click (or Shift+F10, or the menu key)
+        /// picks the child's agent; an agent-menu row's click opens that menu. Null for <see cref="QueueRunNowPath.Hidden"/>.
         /// </summary>
-        private Task RunNext() => owner.Act(async () =>
+        private FrameworkElement? RunNowButton(string itemId, QueueRunNowPath path, int heldCount)
         {
-            if (!QueuePaneAlive) return;
-            // Nothing held: the first queued row runs at once, as before, or joins the run that only waits on background work as a new turn.
-            if (owner.service.HeldItems(id).Count == 0) { if (!await SteerFirstQueuedInput()) await StartNextQueuedInput(); return; }
+            if (path == QueueRunNowPath.Hidden) return null;
+            var b = owner.brushes; var waits = !QueueRunNow.Runs(path); var branch = path is QueueRunNowPath.Worktree or QueueRunNowPath.AgentMenu;
+            var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
+            var ink = b.Brush(waits ? DesignToken.Ink2 : DesignToken.Accent);
+            label.Children.Add(branch ? ComposerGlyph.QueueBranch().Ink(ink).View : new FontIcon { Glyph = "", TextSize = 8, VerticalAlignment = VerticalAlignment.Center });
+            label.Children.Add(new TextBlock { Text = Locale.Get("queue.runNow"), TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center });
+            var tip = RunNowTip(path, heldCount);
+            var button = new Button { Content = label, Padding = new(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1), MinWidth = 0, MinHeight = 0, BorderThickness = new(0), CornerRadius = new(DesignMetrics.Radius.FileRow), VerticalAlignment = VerticalAlignment.Top };
+            AutomationProperties.SetName(button, Locale.Get("queue.runNow")); AutomationProperties.SetHelpText(button, tip); AutomationProperties.SetAutomationId(button, "queue-run-now-" + itemId);
+            if (waits)
+            {
+                owner.PaintPlainButton(button, b.Transparent, b.Subtle, ink: ink, disabledInk: ink);
+                button.IsEnabled = false;
+                // The wrapper's transparent background is hit-tested, so its tooltip shows over the disabled button.
+                var wrapper = new Border { Child = button, Background = b.Transparent, VerticalAlignment = VerticalAlignment.Top };
+                ToolTipService.SetToolTip(wrapper, tip);
+                return wrapper;
+            }
+            owner.PaintPlainButton(button, b.Transparent, b.Subtle, ink: ink);
+            ToolTipService.SetToolTip(button, tip);
+            if (branch)
+            {
+                // The composer worktree menu's rows without the Ctrl+Enter mark: a pick runs the row in a new child of that agent.
+                var menu = new MenuFlyout();
+                menu.Opening += (_, _) => FillRunNowMenu(menu, itemId);
+                button.ContextFlyout = menu;
+                if (path == QueueRunNowPath.AgentMenu) { button.Click += (_, _) => menu.ShowAt(button); return button; }
+            }
+            button.Click += async (_, _) => await owner.Act(() => RunQueuedNow(itemId));
+            return button;
+        }
+
+        /// <summary>The tooltip of 바로 실행 for <paramref name="path"/>: which of a new worktree or this pane happens, or why the row waits.</summary>
+        private static string RunNowTip(QueueRunNowPath path, int heldCount) => path switch
+        {
+            QueueRunNowPath.Worktree => Locale.Get("queue.runNowWorktreeHelp"),
+            QueueRunNowPath.AgentMenu => Locale.Get("queue.worktreeMenuHintMac"),
+            QueueRunNowPath.Steer => Locale.Get("queue.runNowSteerHelp"),
+            QueueRunNowPath.Held => Locale.Get("queue.runNowHeldHelp", new Dictionary<string, string> { ["count"] = heldCount.ToString(System.Globalization.CultureInfo.InvariantCulture) }),
+            QueueRunNowPath.WaitsForTurn => Locale.Get("queue.runNowUnavailableHelp"),
+            QueueRunNowPath.WaitsForHeld => Locale.Get("queue.runNowAfterHeldHelp"),
+            QueueRunNowPath.WaitsForUpdate => Locale.Get("queue.runNowUpdateHelp"),
+            _ => Locale.Get("queue.runNowHereHelp"),
+        };
+
+        /// <summary>The pane as 바로 실행 reads it (M/AppStore.swift queueRunNowPane), worked out once for all its rows.</summary>
+        private QueueRunNow.Pane RunNowPane()
+        {
+            var pane = Session; var holds = owner.BackgroundUpdateHolds(pane); var second = owner.service.SecondSend(pane);
+            return new(pane.Status == "running" || starting || queueStarting || holds, holds, second,
+                second == ComposerSecondSend.Queue && owner.service.WorktreeMenuOnly(pane, LaunchesInPlanMode),
+                pane.Kind == "claude" && pane.Provider == "claude" && Workspace.Remote is null && !stopping && pane.BackgroundWork?.WaitingOnBackground == true,
+                owner.service.HeldItems(id).Count);
+        }
+
+        /// <summary>What 바로 실행 does on each row of the pane (held first, then the human's), by row id, the pane read once (M/AppStore.swift queueRunNowRows).</summary>
+        internal IReadOnlyDictionary<string, QueueRunNowPath> RunNowRows()
+        {
+            var pane = RunNowPane(); var rows = new Dictionary<string, QueueRunNowPath>(StringComparer.Ordinal);
+            var index = 0;
+            foreach (var item in owner.service.HeldItems(id)) rows.TryAdd(item.Id, QueueRunNow.Decide(index++, "", 0, pane));
+            // An Antigravity card's follow-up (its grant or card) is never sent to a worktree or steered.
+            foreach (var item in queuedInputs.Items) rows.TryAdd(item.Id, QueueRunNow.Decide(null, item.Text, item.Attachments.Count, pane, QueueRunNow.IsContinuation(item)));
+            return rows;
+        }
+
+        /// <summary>What 바로 실행 on the row <paramref name="itemId"/> (held or the human's) does now (M/AppStore.swift queueRunNow).</summary>
+        internal QueueRunNowPath RunNowFor(string itemId)
+        {
+            var heldIndex = owner.service.HeldItems(id).ToList().FindIndex(item => item.Id == itemId);
+            if (heldIndex >= 0) return QueueRunNow.Decide(heldIndex, "", 0, RunNowPane());
+            return queuedInputs.Items.FirstOrDefault(item => item.Id == itemId) is { } row
+                ? QueueRunNow.Decide(null, row.Text, row.Attachments.Count, RunNowPane(), QueueRunNow.IsContinuation(row))
+                : QueueRunNowPath.Hidden;
+        }
+
+        /// <summary>
+        /// 바로 실행 on a queued or held row (M/AppStore.swift runQueuedNow): a new worktree child (of <paramref name="agent"/> when the
+        /// row's menu picked one), the row at the head of the queue started now, the row steered into a run that only waits on
+        /// background work, or every held item released. <paramref name="quiet"/>: the phone's, whose worktree child is not selected
+        /// here. What ran, or null when nothing did (a disabled or hidden row among them): a disabled answer does nothing before the
+        /// queue is touched.
+        /// </summary>
+        internal async Task<QueueRunNowPath?> RunQueuedNow(string itemId, string? agent = null, bool quiet = false)
+        {
+            if (!QueuePaneAlive) return null;
+            var path = RunNowFor(itemId);
+            if (!QueueRunNow.Runs(path)) return null;
+            if (path == QueueRunNowPath.Held) return await ReleaseHeldNow() ? path : null;
+            if (queuedInputs.Items.FirstOrDefault(item => item.Id == itemId) is not { } row) return null;
+            if (path == QueueRunNowPath.Worktree || (path == QueueRunNowPath.AgentMenu && agent is not null))
+            {
+                // A pick from the menu needs the menu still on offer; a plain click runs the pane's own agent. An Antigravity card's
+                // continuation never leaves its pane (QueueRunNow.Decide).
+                if (QueueRunNow.IsContinuation(row) || agent is not null && !owner.service.OffersWorktreeMenu(Session, LaunchesInPlanMode)) return null;
+                queuedInputs.Remove(row.Id); RenderQueuedInputs(); RefreshComposerState();
+                RunInNewWorktree(row.Text, row.Attachments, agent, queued: row, quiet: quiet);
+                return QueueRunNowPath.Worktree;
+            }
+            if (path == QueueRunNowPath.Steer) return await SteerQueuedInput(row) ? path : null;
+            if (path != QueueRunNowPath.Here) return null;
+            // At the head, the queue's own start takes it: held items go ahead of it in its run, a refused start keeps it there.
+            queuedInputs.MoveToFront(row.Id); RenderQueuedInputs();
+            await StartNextQueuedInput();
+            return path;
+        }
+
+        /// <summary>
+        /// The held rows' 바로 실행 (M/AppStore.swift runNextHeld): the items delegation holds for the pane go to it now, all of them in
+        /// one run, steered into its running Claude run when it has one; with nothing held any more, the first queued row runs, as run
+        /// next did. Items no run took stay held, and that throws why.
+        /// </summary>
+        private async Task<bool> ReleaseHeldNow()
+        {
             if (owner.DelegatedRunBlockReason(Session) is { } blocked) throw new InvalidOperationException(blocked);
             switch (await owner.service.RunNextAsync(id))
             {
                 case DelegationRelease.NotStarted: throw new InvalidOperationException(Locale.Get("remote.error.startFailed"));
+                // Taken meanwhile by another run: the first queued row runs now, as run next did.
                 case DelegationRelease.NothingHeld: await StartNextQueuedInput(); break;
             }
             if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); }
-        });
+            return true;
+        }
 
-        /// <summary>The pane's first queued request can go into its running Claude process now (<see cref="BackgroundQueuePolicy.SteersRunNext"/>).</summary>
-        private bool SteersRunNext => Session.Kind == "claude" && BackgroundQueuePolicy.SteersRunNext(Session.BackgroundWork, Session.Provider == "claude" && Workspace.Remote is null, stopping,
-            queuedInputs.Items.Count, queuedInputs.Items.FirstOrDefault()?.Attachments.Count > 0);
+        /// <summary>A queued row is being steered into this pane's run, until the run answers: a second click cannot steer a row twice.</summary>
+        private bool steeringQueuedRow;
 
         /// <summary>
-        /// Hands the first queued request into the run that only waits on background work, as a new turn in the same process
-        /// (M/AppStore.swift steerQueuedRow); the tracker shows it as a 중간 요청 under the request. False when it may not or the run
-        /// refused it: it stays queued.
+        /// Hands the queued request <paramref name="row"/> (null: the first) into the run that only waits on background work, as a new
+        /// turn in the same process (M/AppStore.swift steerQueuedRow); the tracker shows it as a 중간 요청 under the request. False when
+        /// it may not (the row has attachments, continues an Antigravity card, or the run does not only wait on background work), a
+        /// steer of this pane is under way, or the run refused it: it stays queued.
         /// </summary>
-        private async Task<bool> SteerFirstQueuedInput()
+        private async Task<bool> SteerQueuedInput(QueuedComposerInput? row = null)
         {
-            if (!SteersRunNext || queuedInputs.Items.FirstOrDefault() is not { } item || !await owner.service.TrySteerAsync(id, item.Text)) return false;
-            queuedInputs.Remove(item.Id);
+            // One steer at a time per pane: the row stays queued while the run answers.
+            if (steeringQueuedRow) return false;
+            // The row asked for, or the first; a row no longer queued is not steered.
+            var asked = row?.Id;
+            var next = asked is null ? queuedInputs.Items.FirstOrDefault() : queuedInputs.Items.FirstOrDefault(item => item.Id == asked);
+            if (next is null || Session.Kind != "claude" || next.Attachments.Count > 0 || QueueRunNow.IsContinuation(next)
+                || !BackgroundQueuePolicy.SteersRunNext(Session.BackgroundWork, Session.Provider == "claude" && Workspace.Remote is null, stopping, 1, false)) return false;
+            steeringQueuedRow = true;
+            try { if (!await owner.service.TrySteerAsync(id, next.Text)) return false; }
+            finally { steeringQueuedRow = false; }
+            queuedInputs.Remove(next.Id);
             if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); }
             return true;
+        }
+
+        /// <summary>
+        /// A queued row whose new worktree could not be made or started (M/AppStore+Delegation.swift putBackQueuedRow): back at the
+        /// head of the queue (never the composer, and without the 16-row check: it was queued), and the transcript says why. A pane
+        /// idle meanwhile, its queue not paused, runs it now.
+        /// </summary>
+        internal async Task PutBackQueuedRow(QueuedComposerInput item, string reason)
+        {
+            if (!QueuePaneAlive) return;
+            await SlashNote(Locale.Get("delegation.human.queued", new Dictionary<string, string> { ["reason"] = reason }));
+            if (!QueuePaneAlive) return;
+            var waiting = queuedInputs.Items.Count > 0;
+            queuedInputs.Insert(0, item);
+            RenderQueuedInputs(); RefreshComposerState();
+            if (!waiting && Session.Status != "running" && !starting && !queueStarting && !owner.service.IsSessionRunning(id)) queueDrainTimer.Start();
         }
 
         private Task StartNextQueuedInput() => owner.Act(async () =>
