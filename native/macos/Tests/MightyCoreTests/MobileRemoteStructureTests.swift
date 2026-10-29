@@ -372,6 +372,37 @@ struct MobileRemoteStructureTests {
         #expect(first.tag != second.tag)
         #expect(second.value?.rows?.first?.item.clusters.first?.nodes.first?.outputTail == ["a", "b"])
     }
+
+    /// A request still waiting on background work carries the count (its answer reads 현재까지의 결과); a notice run
+    /// carries its own title, or none from an older save (the phone then reads the generic one).
+    @Test func anItemCarriesTheWaitingCountAndANoticeRunsTitle() throws {
+        var task = MightyGraphAgent(id: "t1", title: "npm test", input: "npm test", status: "running", kind: "task", background: true)
+        let request = Fixture.run("r0", status: "completed", agents: [task], final: "Started.")
+        var notice = Fixture.run("r0:notice:1", status: "completed", final: "Passed.")
+        notice.noticeRun = true; notice.noticeTitle = "백그라운드 작업 완료 · npm test"
+        var older = Fixture.run("r0:notice:2", status: "completed", final: "Again.")
+        older.noticeRun = true
+        let runs = [request, notice, older]
+        let items = MightyStructure.make(runs: runs, style: nil, currentPhase: nil)
+        if case .free(let rows) = items {
+            #expect(rows.map(\.item.backgroundWaiting) == [1, 0, 0])
+            #expect(rows.map(\.item.noticeTitle) == [nil, "백그라운드 작업 완료 · npm test", nil])
+        } else { Issue.record("a free pane makes rows") }
+        let wire = try #require(MobileStructure.make(items, runCount: runs.count, title: { _ in "style name" }))
+        let wired = try #require(wire.rows).map(\.item)
+        #expect(wired.map(\.backgroundWaiting) == [1, nil, nil])
+        #expect(wired.map(\.title) == ["style name", "백그라운드 작업 완료 · npm test", nil])
+        let json = try Self.encoded(wired[1])
+        #expect(json["backgroundWaiting"] == nil && json["title"] as? String == "백그라운드 작업 완료 · npm test")
+        // The command ended: the count goes, and the cached card is built again.
+        task.status = "completed"
+        let cache = MobileStructureCache()
+        let first = cache.structure(pane: "p", runs: runs, style: nil, currentPhase: nil)
+        var settled = runs; settled[0].agents = [task]
+        let second = cache.structure(pane: "p", runs: settled, style: nil, currentPhase: nil)
+        #expect(first.tag != second.tag)
+        #expect(second.value?.rows?.first?.item.backgroundWaiting == nil)
+    }
 }
 
 private final class StructureHost: MobileHostDelegate, @unchecked Sendable {

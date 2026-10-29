@@ -159,7 +159,8 @@ struct ExecutionGraphTests {
         #expect(!nodes.contains { $0.kind == "steer" })
         let notice = BackgroundNoticeRuns.runID(original: "task-run", index: 1)
         let noticeMain = try latest(nodes, ExecutionGraphSupport.mainNodeID(runId: notice))
-        #expect(noticeMain.state == "completed"); #expect(noticeMain.output == nil); #expect(noticeMain.title == L("graph.background.noticeRun"))
+        #expect(noticeMain.state == "completed"); #expect(noticeMain.output == nil)
+        #expect(noticeMain.title == BackgroundNoticeRuns.title(kind: L("graph.background.noticeRun"), names: ["Build the app", "rsync -a src/ dst/"]))
         #expect(noticeMain.input == "Build the app · " + L("graph.block.taskNotice.completed") + "\nrsync -a src/ dst/ · " + L("graph.block.taskNotice.failed"))
         let copy = try latest(nodes, notice + ":" + buildID)
         #expect(copy.parentId == noticeMain.id); #expect(copy.sourceBlockId == buildID); #expect(copy.background == true); #expect(copy.kind == "task")
@@ -249,6 +250,30 @@ struct ExecutionGraphTests {
             #expect(late.state == "completed"); #expect(late.output == "It is noon.")
             #expect(try latest(nodes, mainID).state == "completed")
             #expect(try latest(nodes, mainID).output == "Started ping." + MightyGraphSupport.noticeSectionMark + "중간 요청 이후**\n\nIt is noon.")
+        }
+    }
+
+    /// A delegation notice handed in after the request's result opens a 위임 알림 notice run with the answer;
+    /// the 위임 알림 block stays in the request and takes the reply; the request's result is untouched.
+    @Test func aDelegationNoticeAfterTheTurnOpensItsOwnRun() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var nodes: [ExecutionGraphNode] = []
+            let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "deleg-after", graph: { nodes.append($0) }, graphInput: "Split the work")
+            try send(assistant([["type": "text", "text": "Delegated."]], id: "main-1"), to: parser)
+            try send(["type": "result", "subtype": "success", "is_error": false, "result": "Delegated."], to: parser)
+            let text = "[Mighty Claude notice n-1] Your child c-1 reported revision 1. Read the report with child_status; merge it with merge when it is right."
+            parser.steer(id: "n-1", text: text)
+            try send(assistant([["type": "text", "text": "Merged the child."]], id: "main-2"), to: parser)
+            try send(["type": "result", "subtype": "success", "is_error": false, "result": "Merged the child."], to: parser)
+            let mainID = ExecutionGraphSupport.mainNodeID(runId: "deleg-after")
+            #expect(try latest(nodes, mainID).output == "Delegated.")
+            let notice = try latest(nodes, ExecutionGraphSupport.mainNodeID(runId: BackgroundNoticeRuns.runID(original: "deleg-after", index: 1)))
+            #expect(notice.title == L("graph.block.delegationNotice")); #expect(notice.input == text)
+            #expect(notice.output == "Merged the child."); #expect(notice.state == "completed")
+            let steer = try latest(nodes, ExecutionGraphSupport.identifier("deleg-after", "steer:n-1"))
+            #expect(steer.runId == "deleg-after"); #expect(steer.output == "Merged the child.")
+            // One notice, one run: nothing opened a second.
+            #expect(!nodes.contains { $0.runId == BackgroundNoticeRuns.runID(original: "deleg-after", index: 2) })
         }
     }
 

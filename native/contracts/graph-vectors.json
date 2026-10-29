@@ -11408,7 +11408,7 @@
             "responseRecords" : null,
             "runId" : "vec-cs-5:notice:1",
             "state" : "completed",
-            "title" : "백그라운드 작업 완료",
+            "title" : "백그라운드 작업 완료 · Build",
             "usage" : null
           },
           {

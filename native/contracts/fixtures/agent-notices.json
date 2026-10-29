@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "_comment": "Background sub-agent notices and hand-backs (docs/superpowers/specs/2026-10-26-agent-notices-design.md) and the notice runs they open (docs/superpowers/specs/2026-10-28-background-notice-runs-design.md). Read by the Mac MightyCore AgentNoticeTests and the Windows Core checks. Shapes follow Claude Code records; IDs and text are made up. A stream's expect.mainNoticeSections lists each notice turn's answer the main result must hold, under the line built from its locale key (and title); agentLogLacks lists text the block's log must not hold. noticeRuns counts the runs '<run>:notice:<n>' the stream opened, noticeRunChildren is each one's number of copied blocks (in n order), noticeRunOutput is the first one's main output (null: none) and noticeRunInput its main input, read in Korean ('<block title> · 완료|실패|중단됨' per line). A notice turn about blocks an earlier notice run already holds opens no run: its answer goes on in that run's output after a blank line; a turn that also brings a new block opens a run for the new blocks only, and the earlier run ends in the state it had before that turn. A turn about blocks of two earlier notice runs answers in the first one it names.",
+  "_comment": "Background sub-agent notices and hand-backs (docs/superpowers/specs/2026-10-26-agent-notices-design.md) and the notice runs they open (docs/superpowers/specs/2026-10-28-background-notice-runs-design.md). Read by the Mac MightyCore AgentNoticeTests and the Windows Core checks. Shapes follow Claude Code records; IDs and text are made up. No stream's main result holds a notice section (MightyGraphSupport.noticeSectionMark): every answer to a notice is a notice run's. agentLogLacks lists text the block's log must not hold. noticeRuns counts the runs '<run>:notice:<n>' the stream opened, noticeRunChildren is each one's number of copied blocks (in n order), noticeRunOutput is the first one's main output (null: none) and noticeRunInput its main input, read in Korean ('<block title> · 완료|실패|중단됨' per line). A notice turn about blocks an earlier notice run already holds opens no run: its answer goes on in that run's output after a blank line; a turn that also brings a new block opens a run for the new blocks only, and the earlier run ends in the state it had before that turn. A turn about blocks of two earlier notice runs answers in the first one it names. noticeRunTitles is every notice run's main title, in n order, read in Korean ('<kind> · <name>', '<kind> · <first> 외 <n>개' or '<kind>' alone; a run holding copies is named after them, one without by what opened it); noticeRunOutputs is every notice run's main output (null: none). A root message about no block a run copies (a running agent's message, a sender this session does not know, a notification for work this run never started) after the request's result opens a run of its own: 하위 에이전트 메시지 for a message (named after a known sender), 백그라운드 작업 완료 for a notification; its line is the run's input. noticeTitles is the pure title rule: kind (a locale key, read in Korean) and names in, title out. resultTitles is the pure result-title rule: status and waiting in, locale key (and count) out.",
   "streams": [
     {
       "name": "background agent: hand-back by agent ID, then its notification",
@@ -155,7 +155,10 @@
           1
         ],
         "noticeRunOutput": "The survey found one page.\n\nAlready handled.",
-        "noticeRunInput": "docs-surveyor · 완료"
+        "noticeRunInput": "docs-surveyor · 완료",
+        "noticeRunTitles": [
+          "백그라운드 작업 완료 · docs-surveyor"
+        ]
       }
     },
     {
@@ -654,17 +657,20 @@
         "agentLog": [
           "Halfway: two of five pages read."
         ],
-        "noticeRuns": 1,
+        "noticeRuns": 2,
         "noticeRunChildren": [
+          0,
           1
         ],
-        "noticeRunOutput": "All pages are current.",
-        "noticeRunInput": "page-reader · 완료",
-        "mainNoticeSections": [
-          {
-            "header": "graph.result.afterNotice",
-            "answer": "Noted the progress."
-          }
+        "noticeRunOutput": "Noted the progress.",
+        "noticeRunInput": "Halfway: two of five pages read.",
+        "noticeRunTitles": [
+          "하위 에이전트 메시지 · page-reader",
+          "백그라운드 작업 완료 · page-reader"
+        ],
+        "noticeRunOutputs": [
+          "Noted the progress.",
+          "All pages are current."
         ]
       }
     },
@@ -1196,7 +1202,14 @@
         "agentLogLacks": [
           "Forty pages counted."
         ],
-        "noticeRuns": 0
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          0
+        ],
+        "noticeRunOutput": "That report is not from my agent.",
+        "noticeRunTitles": [
+          "하위 에이전트 메시지"
+        ]
       }
     },
     {
@@ -2257,7 +2270,10 @@
           1
         ],
         "noticeRunOutput": "The lint is clean.",
-        "noticeRunInput": "Lint the code · 완료"
+        "noticeRunInput": "Lint the code · 완료",
+        "noticeRunTitles": [
+          "백그라운드 작업 완료 · Lint the code"
+        ]
       }
     },
     {
@@ -2392,7 +2408,10 @@
           2
         ],
         "noticeRunOutput": "The build passed and one check failed.",
-        "noticeRunInput": "Build the app · 완료\nRun the checks · 실패"
+        "noticeRunInput": "Build the app · 완료\nRun the checks · 실패",
+        "noticeRunTitles": [
+          "백그라운드 작업 완료 · Build the app 외 1개"
+        ]
       }
     },
     {
@@ -2807,6 +2826,240 @@
         "noticeRunOutput": "The build passed.\n\nNothing new on the build.",
         "noticeRunInput": "Build the app · 완료"
       }
+    },
+    {
+      "name": "a notification for work this run never started opens a 백그라운드 작업 완료 run",
+      "agentToolUseId": "toolu_FAKEcmd0901",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEcmd0901",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEcmd0901",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcmd0901",
+                "name": "Bash",
+                "input": {
+                  "command": "tail -f app.log",
+                  "description": "Watch the logs",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcmd0901",
+                "type": "tool_result",
+                "content": "Command running in background with ID: c9d0e1f2a. Output is being written to: /tmp/example/tasks/c9d0e1f2a.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-90",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-90",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Watching."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Watching."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>0f1e2d3c4</task-id>\n<status>completed</status>\n<summary>Background command \"Old build\" completed (exit code 0)</summary>\n</task-notification>"
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-91",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-91",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "The old build finished."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "The old build finished.",
+          "origin": {
+            "kind": "task-notification"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "task",
+        "agentState": "running",
+        "noticeBlocks": 0,
+        "mainOutputContains": [
+          "Watching."
+        ],
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          0
+        ],
+        "noticeRunOutput": "The old build finished.",
+        "noticeRunInput": "Background command \"Old build\" completed (exit code 0)",
+        "noticeRunTitles": [
+          "백그라운드 작업 완료"
+        ]
+      }
+    },
+    {
+      "name": "a running agent's message after the turn opens a 하위 에이전트 메시지 run",
+      "agentToolUseId": "toolu_FAKEagent0902",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0902",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0902",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0902",
+                "name": "Agent",
+                "input": {
+                  "description": "Find the config",
+                  "prompt": "Find where the app reads its config.",
+                  "subagent_type": "general-purpose",
+                  "name": "scout",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0902",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: b2c3d4e5f6a7b8c9d (internal ID - do not mention to user. Use SendMessage with to: 'b2c3d4e5f6a7b8c9d' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-92",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-92",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Scouting."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Scouting."
+        },
+        {
+          "type": "user",
+          "isMeta": true,
+          "origin": {
+            "kind": "peer",
+            "from": "b2c3d4e5f6a7b8c9d",
+            "senderTaskId": "b2c3d4e5f6a7b8c9d"
+          },
+          "message": {
+            "role": "user",
+            "content": "Another Claude session sent a message:\n<agent-message from=\"b2c3d4e5f6a7b8c9d\">\nFound the config.\n</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session, so this was not typed by your user."
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-93",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-93",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Good."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Good.",
+          "origin": {
+            "kind": "peer"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "running",
+        "noticeBlocks": 0,
+        "agentLog": [
+          "Found the config."
+        ],
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          0
+        ],
+        "noticeRunOutput": "Good.",
+        "noticeRunInput": "Found the config.",
+        "noticeRunTitles": [
+          "하위 에이전트 메시지 · scout"
+        ]
+      }
     }
   ],
   "handbacks": [
@@ -2989,6 +3242,75 @@
         }
       },
       "expect": false
+    }
+  ],
+  "noticeTitles": [
+    {
+      "name": "no names",
+      "kind": "graph.background.noticeRun",
+      "names": [],
+      "expect": "백그라운드 작업 완료"
+    },
+    {
+      "name": "one",
+      "kind": "graph.background.noticeRun",
+      "names": [
+        "코드 검토 에이전트"
+      ],
+      "expect": "백그라운드 작업 완료 · 코드 검토 에이전트"
+    },
+    {
+      "name": "three",
+      "kind": "graph.background.noticeRun",
+      "names": [
+        "Build",
+        "Test",
+        "Build"
+      ],
+      "expect": "백그라운드 작업 완료 · Build 외 2개"
+    },
+    {
+      "name": "long first line",
+      "kind": "graph.background.messageRun",
+      "names": [
+        "abcdefghijklmnopqrstuvwxyz0123456789\nsecond"
+      ],
+      "expect": "하위 에이전트 메시지 · abcdefghijklmnopqrstuvwxyz01234…"
+    }
+  ],
+  "resultTitles": [
+    {
+      "name": "waiting",
+      "status": "completed",
+      "waiting": 2,
+      "expect": {
+        "key": "graph.block.resultSoFar",
+        "count": 2
+      }
+    },
+    {
+      "name": "settled",
+      "status": "completed",
+      "waiting": 0,
+      "expect": {
+        "key": "graph.block.result"
+      }
+    },
+    {
+      "name": "failed",
+      "status": "error",
+      "waiting": 1,
+      "expect": {
+        "key": "graph.block.resultError"
+      }
+    },
+    {
+      "name": "stopped",
+      "status": "stopped",
+      "waiting": 1,
+      "expect": {
+        "key": "graph.block.resultStopped"
+      }
     }
   ]
 }

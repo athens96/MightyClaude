@@ -280,12 +280,12 @@ public enum MobileMightySupport {
 
     /// The blocks of one run: the request itself, then its children in the
     /// order the graph recorded them. Background blocks travel only in a notice
-    /// run (`BackgroundNoticeRuns.shownAgents`), whose main block is titled as one.
+    /// run (`BackgroundNoticeRuns.shownAgents`), whose main block takes the run's heading (`BackgroundNoticeRuns.heading`).
     /// `outputTails`: a background run's last output lines by block id (`AppStore.backgroundOutput`),
     /// held in host memory only; the output file's path never reaches the wire.
     public static func blocks(_ run: MightyGraphRun, ordinal: Int, outputTails: [String: [String]] = [:]) -> [MobileBlock] {
         let mainStatus = status(run.status)
-        let title = run.noticeRun == true ? BackgroundNoticeRuns.title : L("remote.block.request", ["ordinal": String(ordinal)])
+        let title = run.noticeRun == true ? BackgroundNoticeRuns.heading(run) : L("remote.block.request", ["ordinal": String(ordinal)])
         var result = [MobileBlock(id: run.id + ":main", kind: "main", title: title, status: mainStatus,
                                   summary: summary(run.input), output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus),
                                   nodeModelLabel: run.nodeModelLabel, activity: activity(run.rootEntries, status: mainStatus))]
@@ -312,7 +312,8 @@ public enum MobileMightySupport {
     /// The pane's newest runs, oldest first, as the phone lists them. `title`
     /// is the registry's prefix rule: a pane keeps blocks it made under an
     /// earlier style, so every runnable style is asked, not just this one
-    /// (§1.10). The phone adds its own number and provider.
+    /// (§1.10). A notice run's `title` is its heading (`BackgroundNoticeRuns.heading`). The phone adds its own
+    /// number and provider.
     public static func runs(_ values: [MightyGraphRun], outputTails: [String: [String]] = [:], title: (String) -> String? = { _ in nil }) -> [MobileMightyRun] {
         let window = values.suffix(MobileWire.mightyRuns)
         let offset = values.count - window.count
@@ -322,10 +323,11 @@ public enum MobileMightySupport {
             let state = status(run.status)
             let notice = run.noticeRun == true
             var mobile = MobileMightyRun(id: run.id, input: ActivitySupport.clean(run.input, maximumBytes: MobileWire.maximumText),
-                                         title: notice ? nil : title(run.input),
+                                         title: notice ? BackgroundNoticeRuns.heading(run) : title(run.input),
                                          status: state, blocks: blocks(run, ordinal: ordinals[offset + index], outputTails: outputTails),
                                          result: carried(index) && settled(state) ? output(run.finalOutput, maximum: MobileWire.maximumRunResult) : nil)
             mobile.noticeRun = notice ? true : nil
+            mobile.backgroundWaiting = run.backgroundWaiting > 0 ? run.backgroundWaiting : nil
             return mobile
         }
     }
@@ -357,6 +359,8 @@ public enum MobileMightySupport {
         for run in window {
             hasher.combine(run.id); hasher.combine(run.status); hasher.combine(run.agents.count)
             hasher.combine(run.rootEntries.count); hasher.combine(run.rootEntries.last?.id)
+            // The result card's 현재까지의 결과 count and a notice run's title move without a new record.
+            hasher.combine(run.backgroundWaiting); hasher.combine(run.noticeTitle)
             // The blocks the phone draws: a request's background blocks wait for their notice run (the strip shows them meanwhile).
             for agent in BackgroundNoticeRuns.shownAgents(run) {
                 hasher.combine(agent.id); hasher.combine(agent.status); hasher.combine(agent.kind)

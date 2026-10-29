@@ -77,6 +77,9 @@ struct BackgroundNoticeRunsTests {
             #expect(request.agents.first?.background == true); #expect(BackgroundNoticeRuns.shownAgents(request).isEmpty)
             #expect(notice.noticeRun == true); #expect(notice.id == "proc-1:notice:1"); #expect(notice.sourceRunID == "proc-1:notice:1")
             #expect(notice.input == "Build the app · 완료"); #expect(notice.status == "completed"); #expect(notice.finalOutput == "The build passed.")
+            // The projection carries the main block's title, named after the finished work; a request has none.
+            #expect(notice.noticeTitle == "백그라운드 작업 완료 · Build the app"); #expect(request.noticeTitle == nil)
+            #expect(BackgroundNoticeRuns.heading(notice) == notice.noticeTitle)
             let copy = try #require(notice.agents.first)
             #expect(copy.sourceBlockId == request.agents.first?.id); #expect(copy.kind == "task"); #expect(copy.background == true)
             #expect(copy.title == "Build the app"); #expect(copy.input == "npm run build"); #expect(copy.status == "completed")
@@ -161,6 +164,30 @@ struct BackgroundNoticeRunsTests {
         #expect(try JSONDecoder().decode(ExecutionGraphNode.self, from: JSONEncoder().encode(node)).sourceBlockId == "graph-source")
         var budget = 1_000_000
         #expect(MightyGraphSupport.normalized([run], restoring: true, budget: &budget).first?.noticeRun == true)
+    }
+
+    /// A notice run without a title of its own (an older save) reads the generic heading; one with a title reads it.
+    @Test func theHeadingIsTheRunsTitleOrTheGenericOne() {
+        LocaleOverride.$language.withValue(.ko) {
+            #expect(BackgroundNoticeRuns.genericTitle == L("graph.background.noticeRun"))
+            #expect(BackgroundNoticeRuns.heading(MightyGraphRun(id: "r:notice:1", noticeRun: true)) == BackgroundNoticeRuns.genericTitle)
+            #expect(BackgroundNoticeRuns.heading(MightyGraphRun(id: "r:notice:1", noticeRun: true, noticeTitle: "  \n")) == BackgroundNoticeRuns.genericTitle)
+            let named = MightyGraphRun(id: "r:notice:1", noticeRun: true, noticeTitle: "하위 에이전트 메시지 · scout")
+            #expect(BackgroundNoticeRuns.heading(named) == "하위 에이전트 메시지 · scout")
+        }
+    }
+
+    /// The title is saved with the run; a save without it reads nil; a request run keeps none through normalization.
+    @Test func theNoticeTitleSurvivesCodingAndOldSavesReadNil() throws {
+        let run = MightyGraphRun(id: "r:notice:1", status: "completed", noticeRun: true, noticeTitle: "백그라운드 작업 완료 · Build")
+        let decoded = try JSONDecoder().decode(MightyGraphRun.self, from: JSONEncoder().encode(run))
+        #expect(decoded == run); #expect(decoded.noticeTitle == "백그라운드 작업 완료 · Build")
+        let old = Data(#"{"id":"r:notice:1","input":"","status":"completed","rootEntries":[],"agents":[],"resultEntries":[],"noticeRun":true}"#.utf8)
+        #expect(try JSONDecoder().decode(MightyGraphRun.self, from: old).noticeTitle == nil)
+        var budget = 1_000_000
+        let request = MightyGraphRun(id: "r", status: "completed", noticeTitle: "stray")
+        let normalized = MightyGraphSupport.normalized([request, run], restoring: true, budget: &budget)
+        #expect(normalized.map(\.noticeTitle) == [nil, "백그라운드 작업 완료 · Build"])
     }
 
     // MARK: Views of notice runs
@@ -286,6 +313,21 @@ struct BackgroundNoticeRunsTests {
         var ended = runs; ended[1].status = "completed"
         #expect(MightyGraphSupport.newestRequestOwns(line, runs: ended) && MightyGraphSupport.newestRequestOwns(status, runs: ended))
         #expect(MightyGraphSupport.newestRequestOwns(line, runs: []))
+    }
+
+    /// A request whose background command still runs titles its result 현재까지의 결과 with the count, and 최종 결과
+    /// once the command ended; the count is the one the shown run still carries.
+    @Test func aRequestWaitingOnBackgroundWorkReadsTheResultSoFar() {
+        LocaleOverride.$language.withValue(.ko) {
+            var all = Self.runs()
+            let shown = MightyGraphSupport.shownRuns(all)[0]
+            #expect(MightyGraphSupport.resultTitle(status: shown.status, waiting: shown.backgroundWaiting) == L("graph.block.resultSoFar", ["count": "1"]))
+            #expect(L("graph.block.resultSoFar", ["count": "1"]) == "현재까지의 결과 · 백그라운드 작업 1개 기다리는 중")
+            all[0].agents[1].status = "completed"
+            let settled = MightyGraphSupport.shownRuns(all)[0]
+            #expect(settled.backgroundWaiting == 0)
+            #expect(MightyGraphSupport.resultTitle(status: settled.status, waiting: settled.backgroundWaiting) == L("graph.block.result"))
+        }
     }
 
     /// The 실행 block still says the request waits on its background work after views dropped those blocks.

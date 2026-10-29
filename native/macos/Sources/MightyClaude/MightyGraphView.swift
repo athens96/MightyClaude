@@ -602,7 +602,7 @@ struct MightyGraphView: View {
             // A notice run's request is the finished work it names, under its own title and the task block's symbol.
             let run = runs[index]
             let notice = run.noticeRun == true
-            let title = notice ? BackgroundNoticeRuns.title
+            let title = notice ? BackgroundNoticeRuns.heading(run)
                 : StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: ordinals[index], providerLabel: ProviderOptions.label(provider))
             let icon = notice ? BackgroundNoticeRuns.icon : styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue
             transcriptCard(node, title: title, titleProvider: provider, icon: icon, status: run.status,
@@ -632,7 +632,8 @@ struct MightyGraphView: View {
             let failed = ["error", "failed"].contains(run.status)
             let stopped = ["stopped", "cancelled", "interrupted"].contains(run.status)
             let status = failed ? "error" : stopped ? "stopped" : "completed"
-            transcriptCard(node, title: failed ? L("graph.block.resultError") : stopped ? L("graph.block.resultStopped") : L("graph.block.result"), icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : "checkmark.seal",
+            // While background work the request started still runs, its result is the result so far.
+            transcriptCard(node, title: MightyGraphSupport.resultTitle(status: run.status, waiting: run.backgroundWaiting), icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : "checkmark.seal",
                            status: status, input: "", entries: run.resultEntries, tint: Palette.text(status),
                            usage: run.totalUsage, usageLabel: L("graph.block.totalUsageLabel"), resultFilesRunID: run.status == "completed" ? run.id : nil,
                            headerFill: Palette.heroFill(DesignTone(status: status)),
@@ -1036,7 +1037,7 @@ struct MightyGraphView: View {
 
     /// "Request N · Claude", its status, the request itself and the block and finished counts.
     private func timelineHeader(_ group: MightyTimeline.Group, run: MightyGraphRun, open: Bool) -> some View {
-        let title = group.noticeRun ? BackgroundNoticeRuns.title
+        let title = group.noticeRun ? Self.noticeHeading(group)
             : StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: group.ordinal, providerLabel: ProviderOptions.label(provider))
         let prompt = group.input.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
         return Button {
@@ -1105,8 +1106,10 @@ struct MightyGraphView: View {
 
     /// "요청 n", or a notice run's own title.
     private static func timelineRequestName(_ group: MightyTimeline.Group) -> String {
-        group.noticeRun ? BackgroundNoticeRuns.title : L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"])
+        group.noticeRun ? noticeHeading(group) : L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"])
     }
+    /// A notice run's heading in 기록: its own title, or the generic one for an older save (`BackgroundNoticeRuns.heading`).
+    private static func noticeHeading(_ group: MightyTimeline.Group) -> String { group.noticeTitle ?? BackgroundNoticeRuns.genericTitle }
 
     /// The glyph and ink the diagram gives the block.
     private func timelineLook(_ row: MightyTimeline.Row, run: MightyGraphRun) -> (icon: String, tint: Color) {
@@ -1166,11 +1169,8 @@ struct MightyGraphView: View {
     }
 
     private func timelineResult(_ result: MightyTimeline.Result, group: MightyTimeline.Group, run: MightyGraphRun) -> some View {
-        let title = switch result.tone {
-        case .err: L("graph.block.resultError")
-        case .stop: L("graph.block.resultStopped")
-        default: L("graph.block.result")
-        }
+        // How the request ended, or the result so far while its background work runs (`MightyGraphSupport.resultTitle`).
+        let title = MightyGraphSupport.resultTitle(status: run.status, waiting: run.backgroundWaiting)
         let tokens = run.totalUsage.map { GraphTokenUsage.compact($0.total) }
         let caption = ([Self.timelineRequestName(group)] + [tokens].compactMap { $0 }).joined(separator: " · ")
         let files = run.status == "completed" ? resultFiles.files(for: run.id) : []

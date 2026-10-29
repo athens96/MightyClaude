@@ -94,6 +94,8 @@ public enum MightyTimeline {
         public var result: Result?
         /// Claude's reply to finished background work (`MightyGraphRun.noticeRun`), titled as such, not a request.
         public var noticeRun = false
+        /// A notice run's own title (`MightyGraphRun.noticeTitle`); nil for a request and an older notice run.
+        public var noticeTitle: String? = nil
         public var id: String { runID }
     }
 
@@ -157,7 +159,8 @@ public enum MightyTimeline {
             result = Result(nodeID: MightyGraphLayout.nodeID(run, suffix: "result"), tone: tone == .run ? .done : tone, text: text)
         }
         return Group(runIndex: index, runID: run.id, ordinal: ordinal, status: MobileMightySupport.status(run.status),
-                     input: run.input, rows: rows, tally: tally(Array(blocks.dropFirst())), result: result, noticeRun: notice)
+                     input: run.input, rows: rows, tally: tally(Array(blocks.dropFirst())), result: result, noticeRun: notice,
+                     noticeTitle: notice ? run.noticeTitle : nil)
     }
 }
 

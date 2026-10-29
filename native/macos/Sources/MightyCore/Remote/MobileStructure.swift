@@ -46,7 +46,7 @@ public struct MobileStructure: Codable, Sendable, Equatable {
         public var runId: String
         /// The request's number in the pane, as its heading says it.
         public var ordinal: Int
-        /// The style's own name for the request, as `MobileMightyRun.title`.
+        /// The style's own name for the request, or a notice run's title, as `MobileMightyRun.title`.
         public var title: String?
         /// A block status (`MobileWire.blockStatuses`).
         public var status: String
@@ -64,6 +64,8 @@ public struct MobileStructure: Codable, Sendable, Equatable {
         public var omittedNodes: Int?
         /// `true` for Claude's reply to finished background work (`MightyGraphRun.noticeRun`); absent otherwise.
         public var noticeRun: Bool?
+        /// Background work the request still waits on, as `MobileMightyRun.backgroundWaiting`; absent when none.
+        public var backgroundWaiting: Int?
     }
 
     public struct Activity: Codable, Sendable, Equatable {
@@ -173,7 +175,7 @@ public struct MobileStructure: Codable, Sendable, Equatable {
         let candidates = all.filter { newest[$0.runID] == $0.runIndex }.sorted { $0.runIndex > $1.runIndex }.prefix(maximumItems)
         var next: [String: Wired] = [:]
         let wired = candidates.map { source -> Wired in
-            let name = source.noticeRun ? nil : title(source.runID)
+            let name = source.noticeRun ? source.noticeTitle : title(source.runID)
             let held = tails.isEmpty ? [:] : itemTails(source, tails)
             if let kept = cache[source.runID], kept.source == source, kept.title == name, kept.tails == held {
                 next[source.runID] = kept
@@ -273,7 +275,8 @@ public struct MobileStructure: Codable, Sendable, Equatable {
                     activity: item.activity.suffix(maximumActivity).map(activity),
                     answer: item.answer.map { capped($0.text, answerBytes, markdown: true) },
                     tally: Tally(agents: item.tally.agents, tools: item.tally.tools), clusters: clusters,
-                    omittedNodes: total > nodes ? total - nodes : nil, noticeRun: item.noticeRun ? true : nil)
+                    omittedNodes: total > nodes ? total - nodes : nil, noticeRun: item.noticeRun ? true : nil,
+                    backgroundWaiting: item.backgroundWaiting > 0 ? item.backgroundWaiting : nil)
     }
 
     static func activity(_ line: MightyStructure.ActivityLine) -> Activity {

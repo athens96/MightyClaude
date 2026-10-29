@@ -737,14 +737,15 @@ struct MightyStructureView: View {
         }
     }
 
-    /// The result card's header words, in the outcome's colour once there is one.
+    /// The result card's header words, in the outcome's colour once there is one: the result so far while
+    /// background work the request started still runs (`MightyGraphSupport.resultTitle`).
     private func resultTitle(_ item: MightyStructure.Item) -> some View {
-        let look: (title: String, icon: String) = switch item.status {
-        case "error": (L("graph.block.resultError"), "exclamationmark.triangle")
-        case "stopped": (L("graph.block.resultStopped"), "stop.circle")
-        default: (L("graph.block.result"), "checkmark.seal")
+        let icon = switch item.status {
+        case "error": "exclamationmark.triangle"
+        case "stopped": "stop.circle"
+        default: "checkmark.seal"
         }
-        return Label(look.title, systemImage: look.icon)
+        return Label(Self.resultName(item), systemImage: icon)
             .font(.ui(size: Self.outputSize, weight: .bold)).lineLimit(1)
             .foregroundStyle(item.finished ? Palette.text(item.status) : Palette.ink2)
     }
@@ -753,7 +754,7 @@ struct MightyStructureView: View {
     /// reply of a request that failed or stopped is in its 실행 part).
     @ViewBuilder private func outcome(_ item: MightyStructure.Item) -> some View {
         if let answer = item.answer {
-            foldableMarkdown(answer, key: Self.foldKey("answer", item.runID), name: L("graph.block.result"))
+            foldableMarkdown(answer, key: Self.foldKey("answer", item.runID), name: Self.resultName(item))
         } else {
             Text(item.finished ? MightyGraphView.statusLabel(item.status) : L("graph.structure.resultPending"))
                 .font(.ui(size: Self.textSize)).foregroundStyle(Palette.ink2)
@@ -950,8 +951,13 @@ struct MightyStructureView: View {
         .accessibilityIdentifier("mighty-structure-reveal-\(nodeID)")
     }
 
+    /// The answer's name: how the request ended, or the result so far while its background work runs.
+    private static func resultName(_ item: MightyStructure.Item) -> String {
+        MightyGraphSupport.resultTitle(status: item.status, waiting: item.backgroundWaiting)
+    }
+
     private func heading(_ item: MightyStructure.Item) -> String {
-        if item.noticeRun { return BackgroundNoticeRuns.title }
+        if item.noticeRun { return item.noticeTitle ?? BackgroundNoticeRuns.genericTitle }
         return StyleChrome.requestTitle(prefix: styleTitles.prefix(item.input), ordinal: item.ordinal, providerLabel: ProviderOptions.label(provider))
     }
 }

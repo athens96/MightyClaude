@@ -445,6 +445,9 @@ public struct MobileMightyRun: Codable, Sendable, Equatable, Identifiable {
     /// `true` for Claude's reply to finished background work (`MightyGraphRun.noticeRun`): not a request,
     /// so it takes no request number; its `main` block is titled as such. Absent otherwise.
     public var noticeRun: Bool?
+    /// Background work a request started that still runs after its own turn (`MightyGraphRun.backgroundWaiting`): its
+    /// result card reads 현재까지의 결과 meanwhile. Absent when none (and from older hosts).
+    public var backgroundWaiting: Int?
     public init(id: String, input: String, title: String? = nil, status: String, blocks: [MobileBlock], result: String? = nil, noticeRun: Bool? = nil) {
         self.id = id; self.input = input; self.title = title; self.status = status; self.blocks = blocks; self.result = result
         self.noticeRun = noticeRun == true ? true : nil

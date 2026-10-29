@@ -316,7 +316,18 @@ struct MobileRemoteExtensionTests {
             // The request's background block and the block under it are left out; the notice run carries the copy.
             #expect(runs[0].blocks.map(\.id) == ["r:main", "a2"])
             #expect(runs[1].blocks.map(\.id) == ["r:notice:1:main", "r:notice:1:t1"])
-            #expect(runs[1].blocks[0].title == "백그라운드 작업 완료" && runs[1].noticeRun == true && runs[1].title == nil)
+            // A notice run saved without a title of its own (an older save) is headed generically, in `title` and its main block.
+            #expect(runs[1].blocks[0].title == "백그라운드 작업 완료" && runs[1].noticeRun == true && runs[1].title == "백그라운드 작업 완료")
+            // One with a title carries it in both.
+            var named = notice; named.noticeTitle = "백그라운드 작업 완료 · npm test"
+            let titled = MobileMightySupport.runs([request, named])
+            #expect(titled[1].title == BackgroundNoticeRuns.heading(named) && titled[1].blocks[0].title == "백그라운드 작업 완료 · npm test")
+            // The request still waits on its background command: it says how many, and only then.
+            #expect(runs[0].backgroundWaiting == 1 && runs[1].backgroundWaiting == nil && runs[2].backgroundWaiting == nil)
+            #expect(try encoded(runs[0])["backgroundWaiting"] as? Int == 1)
+            #expect(try encoded(runs[1])["backgroundWaiting"] == nil)
+            var ended = request; ended.agents[0].status = "completed"
+            #expect(MobileMightySupport.runs([ended])[0].backgroundWaiting == nil)
             // A notice run takes no request number: the next request is 요청 2.
             #expect(runs[2].blocks[0].title == L("remote.block.request", ["ordinal": "2"]))
             #expect(runs[0].noticeRun == nil)
@@ -507,6 +518,22 @@ struct MobileRemoteExtensionTests {
         let noticeFirst = MobileMightySupport.digest([notice])
         notice.agents[0].status = "completed"
         #expect(MobileMightySupport.digest([notice]) != noticeFirst)
+    }
+
+    /// The 현재까지의 결과 count and a notice run's title move what the phone draws without a new record: both wake it.
+    @Test func theMightyDigestMovesWithTheWaitingCountAndTheNoticeTitle() {
+        var task = agent("bg", kind: "task", status: "running")
+        task.background = true
+        var request = MightyGraphRun(id: "r", status: "completed", agents: [task, agent("bg2", kind: "task", status: "running")])
+        request.agents[1].background = true
+        #expect(request.backgroundWaiting == 2)
+        let waiting = MobileMightySupport.digest([request])
+        request.agents[1].status = "completed"
+        #expect(request.backgroundWaiting == 1 && MobileMightySupport.digest([request]) != waiting)
+        var notice = MightyGraphRun(id: "r:notice:1", status: "running", noticeRun: true)
+        let untitled = MobileMightySupport.digest([notice])
+        notice.noticeTitle = "하위 에이전트 메시지 · scout"
+        #expect(MobileMightySupport.digest([notice]) != untitled)
     }
 
     @Test func theMightyDigestMovesOnANewStepInEitherBlock() {

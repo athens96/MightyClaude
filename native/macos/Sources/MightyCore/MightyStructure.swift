@@ -124,6 +124,10 @@ public enum MightyStructure {
         public var noticeRun = false
         /// A notice run taken into a running turn, without a reply (`MightyGraphRun.quietNotice`): never followed.
         public var quiet = false
+        /// A notice run's own title (`MightyGraphRun.noticeTitle`); nil for a request and an older notice run.
+        public var noticeTitle: String? = nil
+        /// Background work the request still waits on (`MightyGraphRun.backgroundWaiting`): its answer reads 현재까지의 결과.
+        public var backgroundWaiting: Int = 0
         public var id: String { runID }
     }
 
@@ -174,6 +178,8 @@ public enum MightyStructure {
             var sourceRunID: String?
             var input, rootEntries, rootTail, resultEntries, result: Int
             var finalOutput: Int?
+            /// A notice run's title, which can move with no other change its card reads.
+            var noticeTitle: String?
             var blocks: [Block]
         }
         var requests: [Request]
@@ -189,7 +195,7 @@ public enum MightyStructure {
             requests = runs.map { run in
                 Request(id: run.id, status: run.status, sourceRunID: run.sourceRunID, input: run.input.utf8.count,
                         rootEntries: run.rootEntries.count, rootTail: MightyStructure.tail(run.rootEntries), resultEntries: run.resultEntries.count,
-                        result: run.resultEntries.last?.text.utf8.count ?? 0, finalOutput: run.finalOutput?.utf8.count,
+                        result: run.resultEntries.last?.text.utf8.count ?? 0, finalOutput: run.finalOutput?.utf8.count, noticeTitle: run.noticeTitle,
                         blocks: run.agents.map {
                             Block(id: $0.id, title: $0.title, status: $0.status, parentID: $0.parentID, kind: $0.kind, input: $0.input.utf8.count,
                                   entries: $0.entries.count, tail: MightyStructure.tail($0.entries), records: $0.responseRecords?.count ?? 0,
@@ -438,7 +444,8 @@ public enum MightyStructure {
                     input: preview(run.input), status: MobileMightySupport.status(run.status), finished: finished,
                     result: result, request: excerpt(run.input, maximumBytes: requestBytes, lines: requestLines), message: message,
                     activity: activity(run.rootEntries, limit: requestActivity), answer: full, tally: tally, clusters: clusters(run),
-                    noticeRun: run.noticeRun == true, quiet: run.quietNotice)
+                    noticeRun: run.noticeRun == true, quiet: run.quietNotice,
+                    noticeTitle: run.noticeRun == true ? run.noticeTitle : nil, backgroundWaiting: run.backgroundWaiting)
     }
 
     /// 요청 is always there; 실행 runs until every block settled, unless the request

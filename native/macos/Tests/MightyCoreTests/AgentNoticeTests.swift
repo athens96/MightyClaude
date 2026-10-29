@@ -92,12 +92,8 @@ struct AgentNoticeTests {
                 for part in expect["mainOutputContains"] as? [String] ?? [] {
                     #expect(main.output?.contains(part) == true, "\(name): \(part)")
                 }
-                // A turn that opened no notice run (a running agent's own message) still follows in the result under its line.
-                for section in expect["mainNoticeSections"] as? [[String: Any]] ?? [] {
-                    let header = L(section["header"] as? String ?? "", (section["title"] as? String).map { ["title": $0] } ?? [:])
-                    let part = MightyGraphSupport.noticeSectionMark + header + "**\n\n" + (section["answer"] as? String ?? "")
-                    #expect(main.output?.contains(part) == true, "\(name): \(part)")
-                }
+                // No answer to a notice extends the request's result any more.
+                #expect(main.output?.contains(MightyGraphSupport.noticeSectionMark) != true, "\(name): notice section in the request's result")
 
                 // Each notice turn is a run of its own: "<run>:notice:<n>", n from 1.
                 let runs = Self.noticeRuns(latest)
@@ -106,9 +102,14 @@ struct AgentNoticeTests {
                 if let children = expect["noticeRunChildren"] as? [Int] { #expect(runs.map(\.copies.count) == children, "\(name): copies") }
                 if expect.keys.contains("noticeRunOutput") { #expect(runs.first?.main?.output == expect["noticeRunOutput"] as? String, "\(name): notice run output") }
                 if let input = expect["noticeRunInput"] as? String { #expect(runs.first?.main?.input == input, "\(name): notice run input") }
+                if let titles = expect["noticeRunTitles"] as? [String] { #expect(runs.map { $0.main?.title ?? "" } == titles, "\(name): titles") }
+                if let outputs = expect["noticeRunOutputs"] as? [Any] {
+                    #expect(runs.map { $0.main?.output } == outputs.map { $0 as? String }, "\(name): outputs")
+                }
+                let kinds = [BackgroundNoticeRuns.Opener.work, .message, .delegation].map(BackgroundNoticeRuns.kind)
                 for run in runs {
                     let notice = try #require(run.main, "\(name): \(run.id) main")
-                    #expect(notice.title == L("graph.background.noticeRun") && notice.parentId == nil, "\(name): \(run.id) main")
+                    #expect(kinds.contains { notice.title == $0 || notice.title.hasPrefix($0 + " · ") } && notice.parentId == nil, "\(name): \(run.id) main")
                     // A run with Claude's answer is complete; only a stream that ends inside a turn answering in it again
                     // leaves it running. The request's result never holds that answer.
                     if let output = notice.output {
@@ -128,6 +129,31 @@ struct AgentNoticeTests {
                     #expect(copy.kind == original.kind && copy.title == original.title && copy.input == original.input, "\(name): \(copy.id) copy")
                     #expect(copy.state == original.state && copy.output == original.output && copy.outputFile == original.outputFile, "\(name): \(copy.id) copy")
                 }
+            }
+        }
+    }
+
+    /// The notice run title rule: kind and names in, "<kind> · <name>", "<kind> · <first> 외 <n>개" or the kind alone out.
+    @Test func noticeTitlesFollowTheFixture() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            let cases = try #require(try Self.load()["noticeTitles"] as? [[String: Any]])
+            #expect(cases.count >= 4)
+            for item in cases {
+                let title = BackgroundNoticeRuns.title(kind: L(item["kind"] as? String ?? ""), names: item["names"] as? [String] ?? [])
+                #expect(title == item["expect"] as? String, "\(item["name"] ?? "")")
+            }
+        }
+    }
+
+    /// The result title rule: how the request ended, or 현재까지의 결과 with the count while background work runs.
+    @Test func resultTitlesFollowTheFixture() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            let cases = try #require(try Self.load()["resultTitles"] as? [[String: Any]])
+            #expect(cases.count >= 4)
+            for item in cases {
+                let expect = try #require(item["expect"] as? [String: Any])
+                let wanted = L(expect["key"] as? String ?? "", (expect["count"] as? Int).map { ["count": "\($0)"] } ?? [:])
+                #expect(MightyGraphSupport.resultTitle(status: item["status"] as? String ?? "", waiting: item["waiting"] as? Int ?? 0) == wanted, "\(item["name"] ?? "")")
             }
         }
     }

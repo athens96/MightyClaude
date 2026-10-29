@@ -68,15 +68,18 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     public var configuredModel: String?
     /// Claude's reply to finished background work, not a request the user sent (`BackgroundNoticeRuns`); absent otherwise and in older saves.
     public var noticeRun: Bool?
+    /// A notice run's title, "<kind> · <name>" (`BackgroundNoticeRuns.title(kind:names:)`), its main block's; absent in
+    /// request runs and in older saves, whose notice runs read `BackgroundNoticeRuns.genericTitle` (`heading`).
+    public var noticeTitle: String?
     /// `backgroundWaiting` of the run `shown` was made from, whose background blocks it no longer holds. Never saved.
     private var shownBackgroundWaiting: Int?
     private enum CodingKeys: String, CodingKey {
-        case id, input, status, rootEntries, agents, resultEntries, sourceRunID, finalOutput, usage, responseRecords, provider, nodeModelLabel, configuredModel, noticeRun
+        case id, input, status, rootEntries, agents, resultEntries, sourceRunID, finalOutput, usage, responseRecords, provider, nodeModelLabel, configuredModel, noticeRun, noticeTitle
     }
     public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, responseRecords: [GraphResponseRecord]? = nil, provider: String? = nil, nodeModelLabel: String? = nil, configuredModel: String? = nil,
-                noticeRun: Bool? = nil) {
+                noticeRun: Bool? = nil, noticeTitle: String? = nil) {
         self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.responseRecords = responseRecords; self.provider = provider; self.nodeModelLabel = nodeModelLabel; self.configuredModel = configuredModel
-        self.noticeRun = noticeRun
+        self.noticeRun = noticeRun; self.noticeTitle = noticeTitle
     }
     public var totalUsage: GraphTokenUsage? {
         let sum = agents.reduce(usage ?? GraphTokenUsage()) { $0 + ($1.usage ?? GraphTokenUsage()) }
@@ -206,6 +209,15 @@ public enum MightyGraphSupport {
         (result.map { $0.isEmpty ? "**" : $0 + noticeSectionMark } ?? "**") + header + "**\n\n" + answer
     }
     public static func isTaskNotice(_ input: String) -> Bool { input.hasPrefix(taskNoticePrefix) }
+    /// The result card's title in every view and on the phone: how the request ended, or the result so far while
+    /// background work it started still runs (`MightyGraphRun.backgroundWaiting`).
+    public static func resultTitle(status: String, waiting: Int) -> String {
+        switch status {
+        case "error", "failed": L("graph.block.resultError")
+        case "stopped", "cancelled", "interrupted": L("graph.block.resultStopped")
+        default: waiting > 0 ? L("graph.block.resultSoFar", ["count": "\(waiting)"]) : L("graph.block.result")
+        }
+    }
     /// Whether `event` is the first sign of the run a "starting" request (`status`) waits
     /// for that is not itself a status: a log line of the run or a graph observation. A
     /// user's line begins a request of its own (`recordGraph`), so it is not one.
@@ -273,6 +285,7 @@ public enum MightyGraphSupport {
             if restoring && !terminal(run.status) { run.status = "stopped" }
             if let source = run.sourceRunID, !CoreValidation.identifier(source) { run.sourceRunID = nil }
             run.noticeRun = run.noticeRun == true ? true : nil
+            run.noticeTitle = run.noticeRun == true ? run.noticeTitle.map { bounded($0, maximum: 240, budget: &budget) }.flatMap { $0.isEmpty ? nil : $0 } : nil
             // Prefer the actual final answer over older intermediate output.
             run.finalOutput = run.finalOutput.map { bounded($0, maximum: min(32_768, max(0, budget / 3)), budget: &budget) }
             budget -= (run.finalOutput?.utf8.count ?? 0) * 2
@@ -516,6 +529,7 @@ extension RunSession {
                 // Its state is its main block's: a later notice turn may answer in it again (`ExecutionGraphTracker`).
                 if runs[index].noticeRun == true {
                     if let input = node.input { runs[index].input = input }
+                    if !node.title.isEmpty { runs[index].noticeTitle = node.title }
                     runs[index].status = node.state
                 } else {
                     runs[index].status = MightyGraphSupport.nextState(runs[index].status, node.state)
