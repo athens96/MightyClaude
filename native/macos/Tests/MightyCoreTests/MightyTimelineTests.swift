@@ -101,6 +101,18 @@ struct MightyTimelineTests {
         #expect(MightyTimeline.group(Self.run("r", status: "stopped"), index: 0).result?.tone == .stop)
     }
 
+    @Test func theResultSoFarHasANeutralHeader() {
+        func shown(_ taskStatus: String, run status: String = "completed") -> MightyGraphRun {
+            let task = MightyGraphAgent(id: "t", status: taskStatus, kind: "task", background: true)
+            return Self.run("r", status: status, agents: [task], final: "Built.").shown
+        }
+        // While background work the request started runs, the 기록 result head is neutral, then done once it ends.
+        #expect(MightyTimeline.group(shown("running"), index: 0).result?.tone == .idle)
+        #expect(MightyTimeline.group(shown("completed"), index: 0).result?.tone == .done)
+        // A failed request says so whatever still runs.
+        #expect(MightyTimeline.group(shown("running", run: "error"), index: 0).result?.tone == .err)
+    }
+
     @Test func theRailIsLitOnlyUnderFinishedOrRunningBlocks() {
         #expect(MightyTimeline.node(status: "completed") == .init(tone: .done, ring: false, rail: .done))
         #expect(MightyTimeline.node(status: "running") == .init(tone: .run, ring: true, rail: .run))

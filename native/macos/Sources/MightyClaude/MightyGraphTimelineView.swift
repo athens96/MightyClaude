@@ -269,6 +269,8 @@ struct MightyTimelineResultCard<Files: View>: View {
         switch tone {
         case .err: "exclamationmark.triangle.fill"
         case .stop: "stop.circle.fill"
+        // The result so far (현재까지의 결과): a neutral clock, not the done seal.
+        case .idle: MightyGraphView.resultSoFarIcon
         default: "checkmark.seal.fill"
         }
     }

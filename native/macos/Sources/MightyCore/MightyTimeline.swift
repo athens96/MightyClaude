@@ -74,7 +74,8 @@ public enum MightyTimeline {
     /// The card under a request once the diagram draws its result card.
     public struct Result: Equatable, Sendable {
         public var nodeID: String
-        /// done, err or stop: the header strip's fill.
+        /// done, err or stop: the header strip's fill; idle while it is the result so far (현재까지의 결과), its request's
+        /// background work still running (`MightyGraphRun.backgroundWaiting`).
         public var tone: DesignTone
         /// The final answer the diagram's result card shows; nil when there is none.
         public var text: String?
@@ -154,9 +155,11 @@ public enum MightyTimeline {
         }
         var result: Result?
         if MightyGraphLayout.hasResult(run) {
-            let tone = DesignTone(blockStatus: run.status)
+            let status = DesignTone(blockStatus: run.status)
+            // The result so far is neutral, as the diagram's result card is (`MightyGraphView.resultSoFarIcon`).
+            let tone: DesignTone = run.status == "completed" && run.backgroundWaiting > 0 ? .idle : status == .run ? .done : status
             let text = run.resultEntries.last(where: { $0.kind == "assistant" && !$0.text.isEmpty })?.text
-            result = Result(nodeID: MightyGraphLayout.nodeID(run, suffix: "result"), tone: tone == .run ? .done : tone, text: text)
+            result = Result(nodeID: MightyGraphLayout.nodeID(run, suffix: "result"), tone: tone, text: text)
         }
         return Group(runIndex: index, runID: run.id, ordinal: ordinal, status: MobileMightySupport.status(run.status),
                      input: run.input, rows: rows, tally: tally(Array(blocks.dropFirst())), result: result, noticeRun: notice,
