@@ -92,11 +92,12 @@ public sealed class OutputParser
     /// <summary>
     /// Keep each picture a tool or message returned and show it after the tool's row
     /// (macOS CLIStreamParser.images). The base64 never leaves this function; only
-    /// references do. A sub-agent's pictures stay out of the request's transcript.
+    /// references do. A sub-agent's pictures go to its graph block; with no graph to take them (none, or finished) they join
+    /// the request's transcript, as on the Mac.
     /// </summary>
     private void Images(List<(string MediaType, string Base64)> payloads, string key, string? toolId, bool child, string? parentToolId = null)
     {
-        if (imageCache is null || payloads.Count == 0 || child && graphImages is null) return;
+        if (imageCache is null || payloads.Count == 0) return;
         var refs = new List<AgentImageRef>(); AgentImageError? failure = null;
         AgentActivity? previous = null;
         if (toolId is not null) activities.TryGetValue(ActivitySupport.Id(activityNamespace, toolId), out previous);
@@ -114,14 +115,14 @@ public sealed class OutputParser
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failure = AgentImageError.Undecodable; }
         }
         if (failure is { } error && !child) log("system", AgentImageSupport.FailureText(error));
-        EmitImages(refs, key, source, toolId, parentToolId, child);
+        EmitImages(refs, key, source, toolId, parentToolId);
     }
-    private void EmitImages(List<AgentImageRef> refs, string key, string source, string? toolId = null, string? parentToolId = null, bool child = false)
+    private void EmitImages(List<AgentImageRef> refs, string key, string source, string? toolId = null, string? parentToolId = null)
     {
         if (refs.Count == 0) return;
         var label = source.Length == 0 ? Locale.Get("images.source.agent") : source;
         var entry = new LogEntry(ActivitySupport.Id(activityNamespace, "image:" + key + ":" + string.Concat(refs.Select(r => r.Hash))), "image", AgentImageSupport.EntryText(refs, label), Wire.Now(), provider, null, refs);
-        if (graphImages?.Invoke(entry, toolId, parentToolId) == true || child) return;
+        if (graphImages?.Invoke(entry, toolId, parentToolId) == true) return;
         imageEntry?.Invoke(entry);
     }
     /// <summary>A picture an item names only by path (Codex <c>image_view</c>): read under the Markdown path rule, never from anywhere else.</summary>

@@ -1076,7 +1076,7 @@ internal static class Verification
         await Test("add pane menu: the sidebar open-folder button shows only when no workspace is listed", AddPaneMenuVerification.TheOpenFolderButtonShowsOnlyWhenNoWorkspaceIsListed);
         await Test("add pane menu: only Claude and Codex picked from the menu may ask 새로 시작 / 이어가기", AddPaneMenuVerification.OnlyClaudeAndCodexFromTheMenuMayAskToResume);
         await Test("agent images: Claude Read and MCP screenshot results become inline image entries without base64", AgentImageVerification.ClaudeReadAndMcpScreenshotResultsBecomeImageEntriesWithoutBase64);
-        await Test("agent images: without a cache or for a sub-agent pictures stay out of the transcript", AgentImageVerification.WithoutACacheOrForASubAgentPicturesStayOut);
+        await Test("agent images: without a cache pictures stay out; without a graph a sub-agent's join the transcript", AgentImageVerification.PicturesWithoutACacheOrAGraph);
         await Test("agent images: refused pictures leave a notice and no entry", AgentImageVerification.RefusedPicturesLeaveANoticeAndNoEntry);
         await Test("agent images: Codex MCP results, image_view and image_generation become entries", AgentImageVerification.CodexMcpResultsImageViewAndImageGenerationBecomeEntries);
         await Test("agent images: headers give type and size, and the caps refuse oversize pictures", AgentImageVerification.HeadersGiveTypeAndSizeAndCapsRefuseOversizePictures);

@@ -99,7 +99,7 @@ internal static class AgentImageVerification
         return Task.CompletedTask;
     }
 
-    internal static Task WithoutACacheOrForASubAgentPicturesStayOut()
+    internal static Task PicturesWithoutACacheOrAGraph()
     {
         var (plain, entries, _, _) = Parser("claude", null);
         plain.Parse(Line(new { type = "user", message = new { content = new object[] { new { type = "tool_result", tool_use_id = "t", content = new[] { ClaudeImage(Png()) } } } } }));
@@ -109,7 +109,8 @@ internal static class AgentImageVerification
         {
             var (parser, childEntries, logs, _) = Parser("claude", new AgentImageCache(Path.Combine(directory, "c")));
             parser.Parse(Line(new { type = "user", parent_tool_use_id = "agent-1", message = new { content = new object[] { new { type = "tool_result", tool_use_id = "read-1", content = new[] { ClaudeImage(Png()) } } } } }));
-            Check(childEntries.Count == 0 && logs.Count == 0, "a sub-agent's pictures stay out of the request's transcript");
+            // No graph takes the picture here, so it joins the request's transcript, as the Mac's CLIStreamParser.emitImages does.
+            Check(childEntries.Count == 1 && logs.Count == 0, "without a graph a sub-agent's picture is shown in the request's transcript");
         }
         finally { Directory.Delete(directory, true); }
         return Task.CompletedTask;
