@@ -53,6 +53,8 @@ Windows 电脑也一样，只是需要一条 Windows 防火墙规则，以免连
 
 会话中的任务正在运行时，发送按钮会变成{{ui:queue.add}}，你发送的内容会作为该窗格的下一个请求进入队列，不会插入正在运行的任务。
 
+当电脑上的应用足够新时，排队的请求会显示{{ui:queue.runNow}}按钮。点按后，由电脑决定是在电脑上的新 worktree 子窗格中运行，还是在本窗格中运行。灰色的按钮在点按时会说明原因。手机不能选择代理。
+
 在{{ui:phone.session.view.blocks}}视图中，已完成的请求会直接显示请求和{{ui:phone.blocks.finalResult}}。过程步骤折叠为一行，点击即可展开。仍在运行的请求会显示所有步骤。
 
 {{ui:phone.session.view.structure}}视图以看板的形式逐个显示桌面应用发送的流水线。没有风格的窗格中每个请求是一个看板；使用风格的窗格中每条流水线是一个看板，即阶段不回退的一串连续请求。用顶部的 ◀ ▶ 切换看板，点击中间的位置（如"请求 3 / 7"）可从列表中选择。查看较早的看板时如果出现新看板，会显示{{ui:graph.structure.board.newRequest}}或{{ui:graph.structure.board.newPipeline}}标记，点击即可前往最新的看板。下面是看板的状态和一排阶段标签：已完成的阶段为绿色，当前阶段为强调色，尚未开始的阶段为灰色，每个标签都带有卡片数。每个阶段各有一列，左右滑动或点击标签即可切换，打开时显示当前阶段的列。没有风格的窗格的列为{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}，子代理卡片排在{{ui:graph.structure.column.execution}}卡片之后。使用风格的窗格中，每列列出该阶段的请求及其子代理，已结束的请求折叠为一张卡片，点按即可展开。正在运行的卡片边框会闪烁。此视图需要与手机应用版本相同或更新的桌面应用（Mac 或 Windows）；桌面应用较旧时，视图会提示更新桌面应用。

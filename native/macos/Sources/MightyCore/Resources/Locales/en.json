@@ -1882,7 +1882,6 @@
   "queue.log.keptAfterFailure": "Could not run the queued request, so it stays in the queue. {error}",
   "queue.remove": "Remove queued request",
   "queue.removeHelp": "Remove from queue",
-  "queue.runNext": "Run next",
   "queue.runNow": "Run now",
   "queue.runNowWorktreeHelpMac": "Runs this request now in a child pane with its own new worktree, beside this one. Right-click (or Control-click) to pick its agent.",
   "queue.runNowWorktreeHelp": "Runs this request now in a child pane with its own new worktree, beside this one. Right-click to pick its agent.",

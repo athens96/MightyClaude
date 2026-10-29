@@ -21,7 +21,8 @@ section: agent-pane
 - {{kbd:Enter}}或{{ui:queue.add}}按钮：作为下一个请求放入队列。当前任务结束后按顺序执行。每个窗格最多可放 16 个。
 - {{kbd:⌘Enter}}或{{ui:queue.worktree}}按钮：在此 Mac 上开启了 Mighty 编排、位于有提交的分支上的 git 仓库中的 Claude 窗格，或处于子窗格能更改文件的模式的 Codex、Antigravity 窗格里，会在此窗格旁打开一个拥有自己 git worktree 的新子窗格并立即运行，正在运行的任务照常继续；子窗格完成后，在侧边栏的卡片上合并它的结果（[在新的 worktree 中运行](delegation.md#worktree)）。
 - 在子窗格中、在这样的仓库之外，或关闭 Mighty 编排时，{{kbd:⌘Enter}}也会像{{kbd:Enter}}一样放入队列。无法创建或启动子窗格时，文字同样会放入队列（[在新的 worktree 中运行](delegation.md#worktree)）。你发送的内容不再插入正在运行的任务；在较早的记录中，Mighty 视图仍会把这类文字显示为橙色的{{ui:graph.block.steer}}块。直接送进正在运行的 Claude 父窗格的委派通知，显示为同样颜色的{{ui:graph.block.delegationNotice}}块（[通知和保留](delegation.md#notices)）。
-- 点击队列中的{{ui:queue.runNext}}，可以立即执行排在第一位的请求。Claude 的回答已结束、只剩后台任务时也会显示这个按钮，点击后该请求会直接送进正在运行的 Claude，并在 Mighty 视图中显示为{{ui:graph.block.steer}}块。带附件的请求会等到任务结束。
+- 队列中的每个请求，在 ✕ 旁都有一个{{ui:queue.runNow}}按钮。在能创建新 worktree 的地方（条件与上面的 {{kbd:⌘Enter}} 相同），它会立即在新的子窗格中运行该请求，正在运行的任务照常继续。右键点按（Mac 上也可按住 Control 点按）可以选择其他代理。按钮的提示会说明将会发生哪一种。只有附件、没有文字的请求不会进入 worktree。
+- 无法创建 worktree 时，请求在本窗格中处理。窗格处于空闲状态（例如因出错而停止）时，会立即开始该请求。Claude 的回答已结束、只剩后台任务的窗格，会把它直接送进正在运行的 Claude，并在 Mighty 视图中显示为{{ui:graph.block.steer}}块（带附件的请求要等到任务结束）。其他情况下按钮显示为灰色，提示会说明原因：当前任务必须先结束、为该窗格保留的项目要先送出，或 CLI 正在更新。此时请求依次等待。Antigravity 卡片的后续请求只会在它自己的窗格中运行。
 
 停止任务时，排队中的请求也会被取消。但在只等待后台工作的窗格中停止时，队列会保留，并立即开始第一个请求。重新打开应用后，队列会被清空。
 

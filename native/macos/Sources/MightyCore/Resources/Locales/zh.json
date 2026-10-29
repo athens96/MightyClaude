@@ -1882,7 +1882,6 @@
   "queue.log.keptAfterFailure": "无法运行排队的请求，因此它仍保留在队列中。{error}",
   "queue.remove": "移除排队的请求",
   "queue.removeHelp": "从队列中移除",
-  "queue.runNext": "运行下一个",
   "queue.runNow": "立即运行",
   "queue.runNowWorktreeHelpMac": "在此窗格旁打开子窗格，立即在新的 worktree 中运行此请求。右键点按（或按住 Control 点按）可选择其代理。",
   "queue.runNowWorktreeHelp": "在此窗格旁打开子窗格，立即在新的 worktree 中运行此请求。右键单击可选择其代理。",

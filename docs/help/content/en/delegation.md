@@ -28,7 +28,7 @@ This is how it goes when you start a child yourself.
 | To do this | Use |
 |---|---|
 | Run after the current task | {{kbd:Enter}} (goes into the queue) |
-| Run right away, apart from the current task | {{kbd:⌘Enter}} or the {{ui:queue.worktree}} button |
+| Run right away, apart from the current task | {{kbd:⌘Enter}} or the {{ui:queue.worktree}} button, or a queued row's {{ui:queue.runNow}} button |
 | Bring the result into the parent's branch | The card's {{ui:delegation.card.merge}} button |
 | Undo a merge | The card's {{ui:delegation.card.undo}} button |
 | Throw the result away | The card's {{ui:delegation.card.discard}} button |
@@ -43,6 +43,7 @@ While a Claude, Codex or Antigravity pane is running, type a request and press {
 - Its first message is your text, followed by a note from the app on where the child works, asking it to commit and write REPORT.md when it is done, so that its card can merge it. A slash command (text starting with `/`) runs alone, as you typed it, and the app's note follows as the child pane's next request, so it never becomes the command's arguments.
 - {{platform:mac}} To run the request with another agent, right-click the {{ui:queue.worktree}} button (or Control-click it) and pick Claude, Codex or Antigravity. {{kbd:⌘Enter}} and a plain click keep the pane's own agent. A greyed-out entry says why it cannot run: its CLI is not installed or not signed in (check Settings › CLI), it has no mode that can change files within what the pane's mode allows, or 3 children you started are already open. A child of another agent starts in the widest of its own modes that can change files and does nothing the pane's mode does not allow ([Codex and Antigravity](#agents)), with the model and {{ui:composer.effort.label}} a new pane of that agent would get, and opens in the pane's view without its style. If that child cannot be made or started, your text and attachments go back to the composer and the transcript says why; they never go to the pane itself. Where the pane's own agent cannot have a child in its mode but another agent can, the button still shows, a click opens the menu, and {{kbd:⌘Enter}} queues the request.
 - {{platform:windows}} To run the request with another agent, right-click the {{ui:queue.worktree}} button (or press Shift+F10 on it) and pick Claude, Codex or Antigravity. {{kbd:Ctrl+Enter}} and a plain click keep the pane's own agent. The rest works as on the Mac above: a greyed-out entry says why it cannot run, a child of another agent starts in the widest of its own modes that does nothing the pane's mode does not allow, with the model and {{ui:composer.effort.label}} a new pane of that agent would get, and text whose child cannot start goes back to the composer. Where only another agent's child fits, a click opens the menu and {{kbd:Ctrl+Enter}} queues the request as before.
+- A request already in the queue can go the same way with its row's {{ui:queue.runNow}} button. Pick the agent with {{platform:mac}} right-click (or Control-click) or {{platform:windows}} right-click (or Shift+F10). If its child cannot be made or started, the request goes back to the head of the queue and the transcript says why.
 - Use a child pane like any pane of its agent: answer its approval cards, send follow-up requests and change its permission mode.
 - The parent pane's Claude gets no notices about a child you started, since it never asked for it. The parent's tools neither list it nor merge it or send it follow-ups (`human_started`). Follow its state in the sidebar and use its card's buttons yourself.
 - A parent pane can have up to 3 open children, with 10 GB of free disk. Closing or discarding finished child panes makes room.
@@ -141,7 +142,7 @@ Held notices show at the top of the queue above the parent's composer, as rows w
 ![[delegation-held]]
 
 - The next time you send something, all held items go first, oldest first, ahead of your text, in one run.
-- The {{ui:queue.runNext}} button sends only the held items, in one run.
+- The {{ui:queue.runNow}} button on the top held row sends all held items now, in one run, to this pane. The other held rows have no button. A {{ui:queue.runNow}} that opens a new worktree leaves the held items held for this pane. While items are held, a request that could otherwise go into the running Claude stays greyed out until they are sent.
 - Each notice is delivered exactly once, even across a relaunch. Held rows also show in the phone's queue, and a send from the phone delivers them too.
 
 ## Follow-ups {#follow-up}

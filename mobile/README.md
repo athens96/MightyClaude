@@ -167,7 +167,7 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 | 이름 | 앱에서 보이는 것 |
 |---|---|
 | `submit-mode` | 실행 중일 때 `바로 전달`(steer) / `다음 요청`(queue) 두 버튼 |
-| `queue` | 대기열 항목 `삭제`, 실행 중이 아닐 때 `다음 실행` |
+| `queue` | 대기열 항목 `삭제`, 행마다 `바로 실행`(호스트가 새 worktree 자식 창이나 이 창을 정함, 못 하면 흐림) |
 | `pane` | 헤더 `⋯` 메뉴의 이름 변경(1~80자) · 창 닫기(되돌릴 수 없음, 닫으면 뒤로 이동) |
 | `history` | 위로 스크롤하면 `entries?before=…&limit=50`으로 이전 기록을 이어 붙임 |
 | `settings` | 헤더의 모델 / 권한 모드 / 사고 강도(+보기 방식·Mighty 스타일) 선택 |

@@ -1882,7 +1882,6 @@
   "queue.log.keptAfterFailure": "대기 중인 요청을 실행하지 못해 대기열에 남겨 두었습니다. {error}",
   "queue.remove": "대기 요청 제거",
   "queue.removeHelp": "대기열에서 제거",
-  "queue.runNext": "다음 실행",
   "queue.runNow": "바로 실행",
   "queue.runNowWorktreeHelpMac": "이 창 옆에 자식 창을 열어 새 worktree에서 이 요청을 바로 실행합니다. 오른쪽 클릭(또는 Control-클릭)하면 에이전트를 고릅니다.",
   "queue.runNowWorktreeHelp": "이 창 옆에 자식 창을 열어 새 worktree에서 이 요청을 바로 실행합니다. 오른쪽 클릭하면 에이전트를 고릅니다.",
