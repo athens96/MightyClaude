@@ -196,7 +196,7 @@ public sealed partial class MainWindow
         var before = service.Snapshot.Sessions.First(p => p.Id == paneId);
         var value = before.Settings.MaxTurns == 17 ? "18" : "17";
         var calls = 0; var raceOnApply = false; string? refusal = null;
-        var shown = false; var held = false; var blocked = false; var unlocked = false; var draftKept = false; var refusalShown = false; var refused = false;
+        var shown = false; var held = false; var blocked = false; var unlocked = false; var draftKept = false; var ctrlEnterIgnored = false; var refusalShown = false; var refused = false;
         string? route = null, error = null; var menuChosen = false; var diagnostics = new List<object>();
         var scope = "document.querySelector(" + JsonSerializer.Serialize(".pane-slot:not(.hidden)[data-pane-id=\"" + paneId + "\"]") + ")";
         string Query(string selector) => scope + "?.querySelector(" + JsonSerializer.Serialize(selector) + ")";
@@ -256,17 +256,21 @@ public sealed partial class MainWindow
             unlocked = await Until(Query("[data-testid=run-settings] fieldset") + "?.disabled === false && " + Query("[data-testid=run-settings-apply]") + "?.disabled === false");
             draftKept = await core.ExecuteScriptAsync(Query("[data-testid=run-settings] input[inputmode=numeric]") + "?.value === " + JsonSerializer.Serialize(value)) == "true";
             await Capture("unlocked");
+            // As the Mac's Apply (.defaultAction): only a plain Enter applies; Ctrl+Enter leaves the popover as it is.
+            await core.ExecuteScriptAsync(enter.Replace("keyCode: 13,", "keyCode: 13, ctrlKey: true,", StringComparison.Ordinal));
+            await Task.Delay(100);
+            ctrlEnterIgnored = calls == 0 && await core.ExecuteScriptAsync("!!" + Query("[data-testid=run-settings]")) == "true";
             raceOnApply = true;
             await core.ExecuteScriptAsync(enter);
             refusalShown = await Until(Query("[data-testid=run-settings] [role=alert]") + "?.textContent === " + JsonSerializer.Serialize(Locale.Get("phone.session.settingsLocked")));
             refused = calls == 1 && refusal == Locale.Get("phone.session.settingsLocked") && service.Snapshot.Sessions.First(p => p.Id == paneId).Settings == before.Settings;
             await Capture("afterRacedApply");
-            return shown && held && blocked && unlocked && draftKept && refusalShown && refused;
+            return shown && held && blocked && unlocked && draftKept && ctrlEnterIgnored && refusalShown && refused;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { error = ex.GetType().Name + ": " + ex.Message; return false; }
         finally
         {
-            result["composerRunSettings"] = new { shown, held, blocked, unlocked, draftKept, refusalShown, refused, calls, route, menuChosen, diagnostics, error };
+            result["composerRunSettings"] = new { shown, held, blocked, unlocked, draftKept, ctrlEnterIgnored, refusalShown, refused, calls, route, menuChosen, diagnostics, error };
             bridge.Register("applyRunSettings", ApplyWebRunSettings);
             await core.ExecuteScriptAsync(Query("[data-testid=run-settings] .popover-footer .popover-button") + "?.click()");
             await core.ExecuteScriptAsync(Query("[data-menu=options]") + "?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");

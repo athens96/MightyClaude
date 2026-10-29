@@ -7,7 +7,7 @@ import { BetaBadge } from '../shell/parts';
 import { Icon, type IconName } from '../icons/Icon';
 import type { Translate } from '../i18n/locale';
 import type { AskTargetOption } from './types';
-import { enterAction } from './keys';
+import { runSettingsEnter } from './keys';
 
 /** A toolbar narrower than this folds effort, permission and Fast into one options menu (ArrangeComposer's overflow). */
 const narrowToolbar = 420;
@@ -87,10 +87,10 @@ export function RunSettingsPopover({ paneId, info, busy = info.held, close }: { 
   return (
     <div ref={ref} className="composer-popover run-settings" data-testid="run-settings" data-page-overlay="" role="dialog" aria-label={t('settings.run.title')} onKeyDown={(event) => {
       if (event.key !== 'Enter' || event.target instanceof HTMLButtonElement || event.target instanceof HTMLSelectElement) return;
-      const action = enterAction({ ...event, keyCode: event.nativeEvent.keyCode, isComposing: event.nativeEvent.isComposing });
+      const action = runSettingsEnter({ ...event, keyCode: event.nativeEvent.keyCode, isComposing: event.nativeEvent.isComposing });
       if (action === 'pass') return;
       event.preventDefault();
-      if (action !== 'swallow' && !held) void apply();
+      if (action === 'apply' && !held) void apply();
     }}>
       <div className="popover-header"><strong>{t('settings.run.title')}</strong><span>{info.provider}</span>{info.beta && <span className="beta-badge">Beta</span>}</div>
       <fieldset className="popover-body run-settings-fields" disabled={held}>

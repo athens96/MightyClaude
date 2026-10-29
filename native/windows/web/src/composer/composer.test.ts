@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { attachmentRefusal, byteLabel, maximumFileBytes, toBase64 } from './attachments';
-import { enterAction, type EnterKey } from './keys';
+import { enterAction, runSettingsEnter, type EnterKey } from './keys';
 
 const enter = (over: Partial<EnterKey> = {}): EnterKey => ({ key: 'Enter', isComposing: false, keyCode: 13, shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, repeat: false, ...over });
 
@@ -23,6 +23,22 @@ describe('enterAction', () => {
   });
   it('passes other keys', () => {
     expect(enterAction(enter({ key: 'a' }))).toBe('pass');
+  });
+});
+
+describe('runSettingsEnter', () => {
+  it('applies on a plain Enter only, as the Mac Apply button (.defaultAction)', () => {
+    expect(runSettingsEnter(enter())).toBe('apply');
+    expect(runSettingsEnter(enter({ ctrlKey: true }))).toBe('pass');
+    expect(runSettingsEnter(enter({ shiftKey: true }))).toBe('pass');
+    expect(runSettingsEnter(enter({ altKey: true }))).toBe('pass');
+    expect(runSettingsEnter(enter({ metaKey: true }))).toBe('pass');
+  });
+  it('never applies during an IME composition, and swallows a repeat', () => {
+    expect(runSettingsEnter(enter({ isComposing: true }))).toBe('pass');
+    expect(runSettingsEnter(enter({ keyCode: 229 }))).toBe('pass');
+    expect(runSettingsEnter(enter({ repeat: true }))).toBe('swallow');
+    expect(runSettingsEnter(enter({ key: 'a' }))).toBe('pass');
   });
 });
 

@@ -24,5 +24,15 @@ export function enterAction(event: EnterKey): EnterAction {
   return event.ctrlKey ? 'second' : 'send';
 }
 
+/**
+ * The run settings popover's Enter in a single-line field: a plain Enter applies, as the Mac's Apply button
+ * (`.keyboardShortcut(.defaultAction)`, Return without modifiers); a repeat is kept from the field; any modifier and an
+ * IME composition's Enter are left alone.
+ */
+export function runSettingsEnter(event: EnterKey): 'apply' | 'swallow' | 'pass' {
+  const action = enterAction(event);
+  return action === 'send' ? 'apply' : action === 'swallow' ? 'swallow' : 'pass';
+}
+
 /** The editor's text limit (the WinUI TextBox's MaxLength). */
 export const maximumDraft = 100_000;
