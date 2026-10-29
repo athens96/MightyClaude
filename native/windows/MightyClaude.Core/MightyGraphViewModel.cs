@@ -225,7 +225,8 @@ public static class MightyGraphViewModel
 /// running/waiting indicator choice, the card's activity outline
 /// (<see cref="MightyGraphActivity"/>) and the status its colours follow (empty for the
 /// draft, the files panel and a request over its 실행 block). <c>SoFar</c>: a result that is the result so far (현재까지의 결과) while
-/// background work its request started still runs, drawn neutral (idle, a clock) rather than done. WinUI renders these and decides nothing.
+/// background work its request started still runs: its strip is neutral (<see cref="MightyGraphBlockModel.StripTone"/>) with a clock rather
+/// than done; its status tone stays the request's, as on the Mac. WinUI renders these and decides nothing.
 /// </summary>
 public sealed record MightyGraphBlock(
     string Id,
@@ -283,10 +284,14 @@ public static class MightyGraphBlockModel
     /// <summary>
     /// The tone a block's status pill, result strip and incoming edge take (macOS
     /// <c>DesignTone(blockStatus:)</c>): anything unfinished that is not waiting runs. A block with
-    /// no status (the draft, the files panel, a request over its 실행 block) is idle, and so is the result so far (<see cref="MightyGraphBlock.SoFar"/>).
+    /// no status (the draft, the files panel, a request over its 실행 block) is idle.
     /// </summary>
     public static DesignTone Tone(MightyGraphBlock block) =>
-        block.SoFar || block.Status.Length == 0 ? DesignTone.Idle : StatusGlyph.Tone(MightyTimeline.Status(block.Status));
+        block.Status.Length == 0 ? DesignTone.Idle : StatusGlyph.Tone(MightyTimeline.Status(block.Status));
+
+    /// <summary>The tone of a result's header strip and symbol: idle while it is the result so far (<see cref="MightyGraphBlock.SoFar"/>),
+    /// else its <see cref="Tone"/>. Only the strip and symbol change, as on the Mac (macOS MightyGraphView result card headerFill).</summary>
+    public static DesignTone StripTone(MightyGraphBlock block) => block.SoFar ? DesignTone.Idle : Tone(block);
 
     /// <summary>The result card's title in every view and on the phone: how the request ended, or the result so far while background
     /// work it started still runs (<paramref name="waiting"/>, <see cref="MightyGraphSupport.BackgroundWaiting"/>) (macOS MightyGraphSupport.resultTitle).</summary>

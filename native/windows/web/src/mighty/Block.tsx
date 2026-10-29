@@ -170,7 +170,7 @@ function blockSymbol(kind: string, tone: string): IconName {
     case 'steer': return 'message-square-text';
     case 'compact': return 'shrink';
     case 'question': return 'message-circle-question-mark';
-    // The result so far (현재까지의 결과) comes idle from the host (Core MightyGraphBlock.SoFar): a neutral clock, not the done seal.
+    // The result so far (현재까지의 결과, Core MightyGraphBlock.SoFar) is drawn with the idle tone: a neutral clock, not the done seal.
     case 'result': return tone === 'err' ? 'triangle-alert' : tone === 'stop' ? 'circle-stop' : tone === 'idle' ? 'clock' : 'badge-check';
     case 'plan': case 'planRecord': return 'clipboard-list';
     case 'draft': return 'pencil';
@@ -383,12 +383,12 @@ export const Block = memo(function Block(props: BlockProps) {
   const recorded = extra.planRecord ? planRecordPresentation(extra.planRecord, t, globalThis.document?.documentElement.lang || 'en') : undefined;
   const documentPlan = recorded?.plan ?? (kind === 'plan' ? extra.markdown : undefined);
   return (
-    <div className={`mighty-block kind-${kind} tone-${tone}${selected ? ' selected' : ''}${copy?.outline === 'marching' || copy?.outline === 'solid' ? ' halo' : ''}`}
+    <div className={`mighty-block kind-${kind} tone-${tone}${copy?.soFar ? ' so-far' : ''}${selected ? ' selected' : ''}${copy?.outline === 'marching' || copy?.outline === 'solid' ? ' halo' : ''}`}
       data-block-id={id} data-kind={kind} data-renders={renders.current} data-changed={changed} data-visible={props.visible ? '1' : '0'}
       data-pending-request={extra.pending ? id : undefined}
       style={{ left: x, top: y, width: w, height: h }} title={copy?.fromRecord ? t('graph.history.tag') : undefined}>
       <div className="mighty-head">
-        <span className={'mighty-symbol kind-' + (copy?.notice ? 'task' : kind)} aria-hidden="true"><Icon name={copy?.notice ? 'terminal' : blockSymbol(kind, tone)} size={14} weight={1.75} /></span>
+        <span className={'mighty-symbol kind-' + (copy?.notice ? 'task' : kind)} aria-hidden="true"><Icon name={copy?.notice ? 'terminal' : blockSymbol(kind, copy?.soFar ? 'idle' : tone)} size={14} weight={1.75} /></span>
         <span className="mighty-title">
           {/* "요청 2 · Claude": the provider's mark before its name (ProviderBadgeIcon.labelled), else before the title. */}
           {copy?.provider && (copy.title ?? '').lastIndexOf(providerLabel(copy.provider)) > 0

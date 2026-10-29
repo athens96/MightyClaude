@@ -483,10 +483,11 @@ public sealed partial class MainWindow
             return transcript.View;
         }
 
-        /// <summary>The symbol on a result's strip, by how the request ended (M/MightyGraphTimelineView.swift:262-268).</summary>
+        /// <summary>The symbol on a result's strip, by how the request ended, or a clock while it is the result so far (M/MightyGraphTimelineView.swift icon).</summary>
         private static string TimelineResultSymbol(DesignTone tone) => tone switch
         {
-            DesignTone.Err => "exclamationmark.triangle.fill", DesignTone.Stop => "stop.circle.fill", _ => "checkmark.seal.fill",
+            // The result so far (현재까지의 결과): a neutral clock, not the done seal.
+            DesignTone.Err => "exclamationmark.triangle.fill", DesignTone.Stop => "stop.circle.fill", DesignTone.Idle => "clock", _ => "checkmark.seal.fill",
         };
 
         /// <summary>

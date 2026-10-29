@@ -38,7 +38,8 @@
 .mighty-block.kind-result .mighty-head { background: var(--done); color: var(--on-status); border-bottom-color: transparent; border-radius: calc(var(--radius-block) - 1px) calc(var(--radius-block) - 1px) 0 0; }
 .mighty-block.kind-result.tone-err .mighty-head { background: var(--err); }
 .mighty-block.kind-result.tone-stop .mighty-head { background: var(--stop); }
-.mighty-block.kind-result.tone-idle .mighty-head { background: var(--idle); }
+/* The result so far (현재까지의 결과): a neutral strip; its tone stays the request's. */
+.mighty-block.kind-result.so-far .mighty-head { background: var(--idle); }
 .mighty-block.kind-result .mighty-head .mighty-icon, .mighty-block.kind-result .mighty-head .mighty-capsule { color: var(--on-status); }
 .mighty-block.kind-result .mighty-head .mighty-capsule { background: rgba(0, 0, 0, .18); }
 .mighty-symbol { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; color: var(--accent); }
@@ -214,6 +215,8 @@
 .timeline-result-head { display: flex; align-items: center; gap: var(--space-sm); padding: var(--inset-graph-block-body-v) var(--inset-graph-block-body-h); background: var(--done); color: var(--on-status); }
 .timeline-result.tone-err .timeline-result-head { background: var(--err); }
 .timeline-result.tone-stop .timeline-result-head { background: var(--stop); }
+/* The result so far (현재까지의 결과) comes idle from the host: a neutral strip. */
+.timeline-result.tone-idle .timeline-result-head { background: var(--idle); }
 .timeline-result-title { font-size: 12px; font-weight: 800; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .timeline-result-caption { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
 .timeline-result-body { display: flex; flex-direction: column; gap: 4px; padding: var(--space-sm) var(--inset-graph-block-body-h) var(--space-md); }

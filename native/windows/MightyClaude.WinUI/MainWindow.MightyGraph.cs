@@ -1110,7 +1110,8 @@ public sealed partial class MainWindow
         {
             var b = owner.brushes;
             var strip = block.Kind == "result";
-            var tone = MightyGraphBlockModel.Tone(block);
+            // The result so far's strip and symbol are neutral; its status tone is the request's (MightyGraphBlockModel.StripTone).
+            var tone = strip ? MightyGraphBlockModel.StripTone(block) : MightyGraphBlockModel.Tone(block);
             var ink = strip ? b.FillInk(tone) : b.Brush(DesignToken.Ink);
             var quiet = strip ? b.FillInk(tone) : b.Brush(DesignToken.Ink2);
             var header = new Grid

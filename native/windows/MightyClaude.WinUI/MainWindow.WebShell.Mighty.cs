@@ -18,7 +18,8 @@ namespace MightyClaude.WinUI;
 /// it wears the task's terminal symbol and no provider mark. Each is absent otherwise.
 /// </summary>
 internal sealed record WebMightyBlock(string Kind, string Title, string State, string? Capsule, string Help, string Indicator, string Outline, string Status, string Tone,
-    string? FilesRunId, string? RecordId, bool FromRecord, string? Provider, bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, bool? Notice = null);
+    string? FilesRunId, string? RecordId, bool FromRecord, string? Provider, bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, bool? Notice = null,
+    bool? SoFar = null);
 
 internal sealed record WebMightyFile(string Path, int? Line);
 internal sealed record WebMightyExecution(string Status, string StatusWord, string? Goal, string? Progress, IReadOnlyList<string> Counts, string? Line, string? Note, string Footer, string? Dashboard,
@@ -310,7 +311,7 @@ public sealed partial class MainWindow
                 copy[block.Id] = new(block.Kind, block.Title, block.State, block.Capsule, block.CapsuleHelp, block.Indicator, block.Outline, block.Status,
                     MightyGraphBlockModel.Tone(block).ToString().ToLowerInvariant(), block.ResultFilesRunId, block.RecordId, fromRecord, notice ? null : MightyGraphBlockModel.TitleProvider(block, pane.Provider),
                     held is null ? (bool?)null : true, held is { IsTask: true } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(held.Id)) : null,
-                    held?.NoticeReply is { Length: > 0 } reply ? reply : null, notice ? true : null);
+                    held?.NoticeReply is { Length: > 0 } reply ? reply : null, notice ? true : null, block.SoFar ? true : null);
             }
             WebMightyHistory? history = null;
             if (ShowsHistoryBlock(pane, retained))

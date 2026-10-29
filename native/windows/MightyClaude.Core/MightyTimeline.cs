@@ -84,8 +84,10 @@ public static class MightyTimeline
         Result? result = null;
         if (MightyGraphLayout.HasResult(run))
         {
-            var tone = StatusGlyph.Tone(Status(run.Status));
-            result = new(MightyGraphLayout.NodeID(run, "result"), tone == DesignTone.Run ? DesignTone.Done : tone,
+            var status = StatusGlyph.Tone(Status(run.Status));
+            // The result so far is neutral, as the diagram's result card is (macOS MightyTimeline.group).
+            var tone = run.Status == "completed" && MightyGraphSupport.BackgroundWaiting(run) > 0 ? DesignTone.Idle : status == DesignTone.Run ? DesignTone.Done : status;
+            result = new(MightyGraphLayout.NodeID(run, "result"), tone,
                 run.ResultEntries.LastOrDefault(e => e.Kind == "assistant" && e.Text.Length > 0)?.Text);
         }
         var blocks = rows.Skip(1).ToList();

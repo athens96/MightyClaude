@@ -25,6 +25,8 @@ export interface MightyBlockCopy {
   noticeReply?: string;
   /** A notice run's request block (notice.ts): titled 백그라운드 작업 완료, with the task's terminal symbol and no provider mark. */
   notice?: boolean;
+  /** A result that is the result so far (Core MightyGraphBlock.SoFar): its strip and symbol are neutral, its tone stays the request's. */
+  soFar?: boolean;
 }
 
 export interface MightyFile { path: string; line?: number }
