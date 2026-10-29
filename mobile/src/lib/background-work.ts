@@ -48,6 +48,18 @@ export function parseBackgroundWork(detail: { backgroundWork?: unknown } | undef
   return rows;
 }
 
+/** The detail's finished count (`backgroundDone`): a whole number from 0, else undefined (an older host sends none). */
+export function parseBackgroundDone(detail: { backgroundDone?: unknown } | undefined): number | undefined {
+  const raw = detail?.backgroundDone;
+  return typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 ? Math.min(raw, 999) : undefined;
+}
+
+/** The strip's header counts (the Mac's `PlanCardSupport.backgroundCounts`); without a finished count, the running one alone. */
+export function backgroundCounts(done: number | undefined, running: number): string {
+  const runs = t('plan.background.runningCount', { count: running });
+  return done === undefined ? runs : `${t('plan.background.doneCount', { count: done })} · ${runs}`;
+}
+
 /** Milliseconds since `startedAt`, or undefined when the host's time cannot be read. */
 export function backgroundElapsed(startedAt: string, now: number): number | undefined {
   const start = Date.parse(startedAt);
@@ -62,12 +74,14 @@ export function backgroundLastLine(tail: readonly string[] | undefined): string 
 
 /**
  * Whether the host leaves background blocks out of a request itself, so the phone draws by the same rule:
- * evidence is `backgroundWork` on the detail, or a notice run in the payload. A host from before notice
- * runs sends neither and keeps its background blocks in the request, where they are the only place to see them.
+ * evidence is `backgroundWork` or `backgroundDone` on the detail, or a notice run in the payload. A host from
+ * before notice runs sends none of them and keeps its background blocks in the request, where they are the
+ * only place to see them.
  */
-export function hostFiltersBackground(detail: { backgroundWork?: unknown; mighty?: unknown } | undefined): boolean {
+export function hostFiltersBackground(detail: { backgroundWork?: unknown; backgroundDone?: unknown; mighty?: unknown } | undefined): boolean {
   if (!detail) return false;
   if (detail.backgroundWork !== undefined && detail.backgroundWork !== null) return true;
+  if (detail.backgroundDone !== undefined && detail.backgroundDone !== null) return true;
   const mighty = detail.mighty;
   if (typeof mighty !== 'object' || mighty === null) return false;
   const runs = (mighty as { runs?: unknown }).runs;

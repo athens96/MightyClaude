@@ -175,7 +175,8 @@ MobileSessionDetail   { …, hasOlder?: boolean,
                         statusLine?: { lines: [[{ text, fg?: "#RRGGBB", bold?: boolean }]] },   // 최대 6줄
                         rateLimits?: [{ label, usedPercent, resetsAt?: ISO-8601 }],
                         askTargets?: [{ id, label }], askTarget?: string,    // 아래 "보낼 대상" 절
-                        backgroundWork?: [MobileBackgroundWork] }            // 아래 "백그라운드 작업과 알림 실행" 절
+                        backgroundWork?: [MobileBackgroundWork],             // 아래 "백그라운드 작업과 알림 실행" 절
+                        backgroundDone?: number }                            // 0 이상의 정수, 같은 절
 MobileSettings {
   editable: boolean,                         // 실행 중이면 false
   model, permissionMode, effort?, agentViewMode, mightyStyle, styleId,
@@ -276,7 +277,7 @@ Node { id, depth, title, status, kind: "agent" | "task", model?, prompt?, output
 
 **버전이 어긋날 때.** 구버전 휴대폰은 묻지 않으므로 받지도 않는다. 신버전 휴대폰이 구버전 데스크톱 앱(Mac·Windows)에 붙으면 `capabilities`에 `"structure"`가 없으므로 묻지 않고, 요청이 있는 창의 구조 보기는 "Mac 업데이트가 필요합니다"(`phone.structure.needsUpdate.*`)를 보인다. 이 문구(와 `phone.structure.omitted`·`phone.structure.unreadable.*`)는 아직 Mac만 말하지만, Windows 호스트도 같은 기능 이름으로 구조를 보낸다. 휴대폰이 모르는 `v`·`shape`면 "휴대폰 앱 업데이트가 필요합니다"(`phone.structure.unreadable.*`)를 보인다. 공유 픽스처 `native/contracts/fixtures/mobile-structure.json`을 Mac(`MobileRemoteStructureTests`), Windows(`MobileStructureVerification.cs`)와 휴대폰(`structure.test.ts`)이 함께 읽어 필드 이름이 어긋나지 않게 한다.
 
-#### 백그라운드 작업과 알림 실행 (`backgroundWork`, `noticeRun`)
+#### 백그라운드 작업과 알림 실행 (`backgroundWork`, `backgroundDone`, `noticeRun`)
 
 백그라운드 작업(`run_in_background` 명령, 백그라운드 하위 에이전트)은 **도는 동안은 띠에, 끝나면 알림 실행에** 산다. 호스트는 둘 다 같은 규칙으로 보낸다(Mac `MobileRemoteModels.swift`의 `MobileBackgroundWork`, Windows `MightyClaude.Core`의 같은 모델).
 
@@ -285,7 +286,17 @@ MobileBackgroundWork { id, kind: "agent" | "run", title, status: "running", star
                        command?, outputTail?: [string] }
 ```
 
-- **`backgroundWork`**는 세부 정보에 **지금 도는 작업만** 실린다(`status`는 언제나 `running`). 하나도 없으면 필드 자체가 없다. `kind`는 백그라운드 하위 에이전트(`agent`)나 백그라운드 명령(`run`), `command`는 명령(하위 에이전트는 프롬프트의 첫 줄), `outputTail`은 `run`의 출력 끝 줄 최대 6줄이다. 출력 파일의 경로는 어떤 필드로도 보내지 않는다. 끝난 작업은 여기 없고 알림 실행의 도해에 있다. 휴대폰은 `parseBackgroundWork`로 읽고(도는 것만 남긴다), Mighty 보기(흐름·파이프라인) 위에 접힌 **백그라운드 작업 N개** 띠(`plan.background.listTitle`)로 보인다. 띠를 열면 작업마다 종류·이름·경과 시간·마지막 출력 줄이 보이고, 한 줄을 열면 명령과 출력 끝 줄이 보인다.
+- **`backgroundWork`**는 세부 정보에 **지금 도는 작업만** 실린다(`status`는 언제나 `running`). 하나도 없으면 필드 자체가 없다. `kind`는 백그라운드 하위 에이전트(`agent`)나 백그라운드 명령(`run`), `command`는 명령(하위 에이전트는 프롬프트의 첫 줄), `outputTail`은 `run`의 출력 끝 줄 최대 6줄이다. 출력 파일의 경로는 어떤 필드로도 보내지 않는다. 끝난 작업은 여기 없고 알림 실행의 도해에 있다. 휴대폰은 `parseBackgroundWork`로 읽고(도는 것만 남긴다), Mighty 보기(흐름·파이프라인) 위에 접힌 **백그라운드 작업 · 끝남 N개 · 작업 중 N개** 띠(`plan.background.title`, `plan.background.doneCount`, `plan.background.runningCount`; `backgroundCounts`)로 보인다. 작업 중 수는 받은 `backgroundWork` 행의 수다. 띠를 열면 작업마다 종류·이름·경과 시간·마지막 출력 줄이 보이고, 한 줄을 열면 명령과 출력 끝 줄이 보인다.
+- **`backgroundDone`**은 0 이상의 정수로, Mac 띠의 끝남 수(그 띠가 든 작업 중 `running`이 아닌 것의 수)다. 호스트는 Mighty 보기의 띠가 보일 때(`showsBackgroundStrip(work, mighty: true, styleDrawsTasks: false)`, Mac `PlanCardSupport.mobileBackgroundDone`) **0을 포함해 언제나** 싣고, 아니면 뺀다. 0도 싣는 것은 필드가 있으면 새 호스트임을 알게 하기 위해서다("끝남 0개"와 "모름"을 가린다). 이 수는 롱 폴을 깨우는 요약값에도 들어가 바뀌면 휴대폰이 깬다. 휴대폰은 `parseBackgroundDone`으로 읽는다(0 이상의 정수만, 그 밖에는 없는 것으로 본다). `backgroundDone`도 새 호스트의 증거다(`hostFiltersBackground`, 아래). 휴대폰은 끝난 행을 받지 않으므로, 모든 작업이 끝나면 띠는 머리("끝남 N개 · 작업 중 0개")만 남고 열리지 않는다. `backgroundWork`가 비고 `backgroundDone`도 없거나 0이면 띠가 없다.
+- **띠의 수: 호스트와 휴대폰 버전이 어긋날 때**
+
+  | 호스트 | 휴대폰 | 띠 |
+  | --- | --- | --- |
+  | 새 | 새 | "끝남 N개 · 작업 중 N개". 모두 끝나면 머리만 남는다. |
+  | 새 | 예전 | `backgroundDone`을 모른다. 예전처럼 "백그라운드 작업 N개"를 보이고, 도는 것이 없으면 띠가 없다. |
+  | 예전 | 새 | `backgroundDone`이 없다. "백그라운드 작업 · 작업 중 N개"만 보인다. |
+
+  휴대폰의 작업 중 수는 `other` 종류(하위 에이전트도 명령도 아닌 CLI 작업)를 세지 않는다. 그런 행은 원래 보내지 않는다. Mac 머리는 센다. 드물어서 맞추지 않는다.
 - **알림 실행**은 루트에서 `<task-notification>`(또는 백그라운드 하위 에이전트의 최종 보고)이 Claude 턴을 열 때 생기는 실행이다. 일반 `MobileMightyRun`과 구조 `Item`으로 가고, 다른 점은 `noticeRun: true`와 `title`이다. 이 실행은 요청이 아니다. 휴대폰은 `title`(그 실행을 연 작업의 이름이 붙은 제목, 예: "백그라운드 작업 완료 · 코드 검토 에이전트", "하위 에이전트 메시지 · scout")을 앞뒤 공백을 지우고 제목으로 보이며, 없거나 비어 있으면 **백그라운드 작업 완료**(`graph.background.noticeRun`)를 보인다(Mac의 `BackgroundNoticeRuns.heading(title:)`, 휴대폰의 `noticeHeading`). 요청 번호를 세지 않으며(알림 실행은 앞 요청의 번호를 따른다), 파이프라인 보드도 "요청 n"으로 세지 않는다. main 블록의 `summary`는 끝난 작업(`<제목> · 완료|실패|중단됨` 줄들)이고 `output`이 Claude의 답이다. 나머지 블록은 끝난 백그라운드 블록의 사본(`background: true`, `outputTail`, `noticeReply`)이다.
 - **기다리는 결과.** 요청의 턴이 끝났는데 그 요청이 시작한 백그라운드 작업이 아직 돌면, 호스트는 그 수를 실행과 구조 `Item`의 `backgroundWaiting`에 싣는다(롱 폴을 깨우는 mighty 요약값에도 이 수와 알림 실행의 제목이 들어간다). 휴대폰은 `resultTitle(status, backgroundWaiting)`로 결과 제목을 고른다: error면 "요청 실패", stopped면 "요청 중단", 그 밖에 수가 0보다 크면 "현재까지의 결과 · 백그라운드 작업 {count}개 기다리는 중"(`graph.block.resultSoFar`), 아니면 "최종 결과". 흐름의 결과 카드는 기다리는 동안 "✓"를 붙이지 않는다. 작업이 다 끝나면 필드가 빠지고 "✓ 최종 결과"로 돌아온다. 휴대폰은 양의 정수만 읽는다(0, 음수, 소수, 문자열은 없는 것으로 본다).
 - **호스트와 휴대폰 버전이 어긋날 때**
@@ -297,7 +308,7 @@ MobileBackgroundWork { id, kind: "agent" | "run", title, status: "running", star
   | 예전 | 새 | 필드가 없으니 "최종 결과"다. | `title`이 없으니 "백그라운드 작업 완료"다. |
 
   예전 호스트에서는 "알림 이후" 절이 여전히 결과 안에 있고, 휴대폰은 그 글을 그대로 보인다.
-- **요청의 실행에는 백그라운드 블록이 없다.** 호스트는 `background: true` 블록을 알림 실행에만 싣는다. 휴대폰도 같은 규칙으로 `noticeRun`이 아닌 실행의 `background` 블록·노드(와 그 아래 노드)를 그리지 않되, **새 호스트라는 증거가 있을 때만** 그렇다: 세부 정보에 `backgroundWork`가 있거나 페이로드의 어느 실행이 `noticeRun: true`일 때(`hostFiltersBackground`, `shownBlocks`·`shownNodes`). 둘 다 없으면 알림 실행이 생기기 전의 호스트이므로, 그 호스트가 요청에 그대로 둔 백그라운드 블록을 휴대폰이 숨기지 않는다(숨기면 볼 곳이 없다).
+- **요청의 실행에는 백그라운드 블록이 없다.** 호스트는 `background: true` 블록을 알림 실행에만 싣는다. 휴대폰도 같은 규칙으로 `noticeRun`이 아닌 실행의 `background` 블록·노드(와 그 아래 노드)를 그리지 않되, **새 호스트라는 증거가 있을 때만** 그렇다: 세부 정보에 `backgroundWork`나 `backgroundDone`이 있거나 페이로드의 어느 실행이 `noticeRun: true`일 때(`hostFiltersBackground`, `shownBlocks`·`shownNodes`). 모두 없으면 알림 실행이 생기기 전의 호스트이므로, 그 호스트가 요청에 그대로 둔 백그라운드 블록을 휴대폰이 숨기지 않는다(숨기면 볼 곳이 없다).
 - **조용한 알림 실행**(상태가 completed이고 답이 빈 것: 다른 요청의 턴 안에서 받은 알림)은 결과 카드가 없고 따라가지 않는다. 다시 열려 도는 알림 실행은 도는 동안 앞의 답을 그대로 보인다. 화면이 따라가는 가장 최근 실행은 가장 최근 **요청**이거나, 그 뒤의 조용하지 않은 알림 실행이다.
 - 알림 실행은 사용자 요청이 아니다: 요청 번호·펫·"내가 보낸 것" 판정에 들지 않는다(휴대폰은 보낸 글의 실행을 찾을 때 알림 실행을 건너뛴다).
 - 구버전 호스트는 `backgroundWork`와 `noticeRun`을 보내지 않는다. 신버전 휴대폰은 띠를 그리지 않고 요청의 백그라운드 블록을 숨기지도 않으며(위), 구버전 휴대폰은 두 필드를 무시한다. 그래서 **이번 릴리스 전의 휴대폰이 새 호스트에 붙으면** 도는 백그라운드 작업이 어디에도 보이지 않는다: 호스트가 요청의 실행에서 그 블록을 빼고, 휴대폰은 띠를 그리지 못하므로 작업이 끝나 알림 실행이 올 때까지 기다려야 한다. 또 알림 실행을 일반 요청으로 보아 "요청 n"으로 번호를 매기거나 흐름·파이프라인이 그 실행을 따라갈 수 있다. 이런 휴대폰은 앱을 업데이트해야 한다. 공유 픽스처는 `native/contracts/fixtures/background-output.json`이다.

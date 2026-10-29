@@ -85,7 +85,7 @@ import { runNowOf } from '@/lib/queue';
 import { pushViewing } from '@/lib/push/runtime';
 import { answeredToast, isPlanRequest, pendingPlan, planAnswerBody } from '@/lib/plan';
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
-import { hostFiltersBackground, parseBackgroundWork } from '@/lib/background-work';
+import { hostFiltersBackground, parseBackgroundDone, parseBackgroundWork } from '@/lib/background-work';
 import { defaultView, isQuietNotice, normalizeMighty } from '@/lib/mighty';
 import {
   receiveStructure,
@@ -366,7 +366,7 @@ export default function SessionScreen() {
           const next = receiveStructure(
             heldStructureRef.current,
             (data as { mighty?: unknown }).mighty,
-            hostFiltersBackground(data as { backgroundWork?: unknown; mighty?: unknown }),
+            hostFiltersBackground(data as { backgroundWork?: unknown; backgroundDone?: unknown; mighty?: unknown }),
           );
           if (next !== heldStructureRef.current) {
             heldStructureRef.current = next;
@@ -573,8 +573,9 @@ export default function SessionScreen() {
 
   // The "send to" switch: the host's list and word, with the choice just made held until the next detail.
   const askView = useMemo(() => parseAskTargets(detail), [detail]);
-  // Running background work, listed in a strip above the Mighty views.
+  // Running background work, listed in a strip above the Mighty views, and how many ended (absent from an older host).
   const backgroundWork = useMemo(() => parseBackgroundWork(detail), [detail]);
+  const backgroundDone = useMemo(() => parseBackgroundDone(detail), [detail]);
   const [askChoice, setAskChoice] = useState<{ target: string | null; revision: number | undefined } | undefined>(undefined);
   const [askOpen, setAskOpen] = useState(false);
   const [askSaving, setAskSaving] = useState(false);
@@ -1044,7 +1045,7 @@ export default function SessionScreen() {
   // rather than trusted, so nothing here can be fed a field we cannot draw.
   const mighty = useMemo(
     () => (canMighty ? normalizeMighty(detail?.mighty, hostFiltersBackground(detail)) : undefined),
-    [canMighty, detail?.mighty, detail?.backgroundWork],
+    [canMighty, detail?.mighty, detail?.backgroundWork, detail?.backgroundDone],
   );
   const panel = useMemo(() => panelOf(mighty, canStyle), [canStyle, mighty]);
   // A pane that switches style keeps this screen mounted, so the group the user was
@@ -1406,7 +1407,7 @@ export default function SessionScreen() {
         }
       >
         <View collapsable={false} style={styles.body}>
-          {mighty && view !== 'log' ? <BackgroundStrip work={backgroundWork} /> : null}
+          {mighty && view !== 'log' ? <BackgroundStrip work={backgroundWork} done={backgroundDone} /> : null}
           {view === 'structure' && mighty ? (
             <MightyStructureView
               state={shownStructureState}

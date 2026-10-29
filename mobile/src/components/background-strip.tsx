@@ -4,36 +4,50 @@ import type { MobileBackgroundWork } from '@/api/types';
 import { RunHead } from '@/components/background-run';
 import { formatDuration } from '@/components/log-entry-view';
 import { useNow } from '@/hooks/use-now';
-import { backgroundElapsed, backgroundLastLine, backgroundTitle } from '@/lib/background-work';
+import { backgroundCounts, backgroundElapsed, backgroundLastLine, backgroundTitle } from '@/lib/background-work';
 import { t } from '@/lib/i18n';
 import { BLOCK_KIND_MARKS } from '@/lib/mighty';
 import { monoText, radius, spacing, useStyles, type Palette } from '@/theme';
 
 /**
- * The running background work of a pane, folded into one row above the Mighty view (`plan.background.listTitle`);
- * opened, one row each with its kind, name, elapsed time and last output line, and a row opened in turn
- * shows its command (or a sub-agent's first prompt line) and the last output lines. Ended work is not here:
- * each finished batch is a diagram of its own in the view.
+ * The pane's background work, folded into one row above the Mighty view: "백그라운드 작업 · 끝남 N개 · 작업 중 N개"
+ * (`plan.background.title`, `backgroundCounts`; only the running count from a host that sends no finished one).
+ * Opened, it lists the running rows, one each with its kind, name, elapsed time and last output line, and a row
+ * opened in turn shows its command (or a sub-agent's first prompt line) and the last output lines. Ended work is
+ * only counted here: each finished batch is a diagram of its own in the view. Once all ended the row stays,
+ * with nothing to open.
  */
-export function BackgroundStrip({ work }: { work: readonly MobileBackgroundWork[] }) {
+export function BackgroundStrip({ work, done }: { work: readonly MobileBackgroundWork[]; done?: number }) {
   const styles = useStyles(makeStyles);
   const [open, setOpen] = useState(false);
   const now = useNow(1000, open && work.length > 0);
-  if (work.length === 0) return null;
+  if (work.length === 0 && (done ?? 0) === 0) return null;
+  const counts = backgroundCounts(done, work.length);
+  const head = (
+    <>
+      <Text style={styles.headTitle}>{t('plan.background.title')}</Text>
+      <Text numberOfLines={1} style={styles.headCounts}>
+        {counts}
+      </Text>
+    </>
+  );
   return (
     <View style={styles.strip}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        onPress={() => setOpen((value) => !value)}
-        style={({ pressed }) => [styles.head, pressed && styles.pressed]}
-      >
-        <Text style={styles.chevron}>{open ? '▾' : '▸'}</Text>
-        <Text numberOfLines={1} style={styles.headTitle}>
-          {t('plan.background.listTitle', { count: work.length })}
-        </Text>
-      </Pressable>
-      {open ? work.map((item) => <WorkRow key={item.id} item={item} now={now} />) : null}
+      {work.length > 0 ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${t('plan.background.title')} · ${counts}`}
+          accessibilityState={{ expanded: open }}
+          onPress={() => setOpen((value) => !value)}
+          style={({ pressed }) => [styles.head, pressed && styles.pressed]}
+        >
+          <Text style={styles.chevron}>{open ? '▾' : '▸'}</Text>
+          {head}
+        </Pressable>
+      ) : (
+        <View style={styles.head}>{head}</View>
+      )}
+      {open && work.length > 0 ? work.map((item) => <WorkRow key={item.id} item={item} now={now} />) : null}
     </View>
   );
 }
@@ -84,7 +98,8 @@ const makeStyles = (palette: Palette) =>
     },
     head: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, minHeight: 44 },
     chevron: { color: palette.textFaint, fontSize: 12 },
-    headTitle: { color: palette.textMuted, flex: 1, fontSize: 13, fontWeight: '600' },
+    headTitle: { color: palette.textMuted, fontSize: 13, fontWeight: '600' },
+    headCounts: { color: palette.textFaint, flex: 1, fontSize: 13 },
     row: { gap: spacing.xs, paddingVertical: spacing.sm },
     rowHead: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     mark: { color: palette.textFaint, fontSize: 12 },

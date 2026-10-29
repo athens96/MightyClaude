@@ -422,7 +422,8 @@ export interface MobileMightyRun {
 
 /**
  * One background task or sub-agent still running in a pane, as the Mac's strip lists it
- * (`MobileSessionDetail.backgroundWork`, running items only; ended work is in a notice run's diagram).
+ * (`MobileSessionDetail.backgroundWork`, running items only). Ended work is only counted on the strip
+ * (`MobileSessionDetail.backgroundDone`); its blocks are in a notice run's diagram.
  * The output file's path never travels, only the last lines the host read of it.
  */
 export interface MobileBackgroundWork {
@@ -723,6 +724,9 @@ export interface MobileSessionDetail {
   askTarget?: string;
   /** Background work still running, as the Mac's strip lists it; absent when none runs. Read through `parseBackgroundWork`. */
   backgroundWork?: MobileBackgroundWork[];
+  /** How many of the pane's background tasks ended, as the Mac's strip counts them; sent with the strip (0 included),
+   *  absent when it does not show and from older hosts. Read through `parseBackgroundDone`. */
+  backgroundDone?: number;
 }
 
 export interface AskTargetOption {

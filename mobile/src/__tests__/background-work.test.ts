@@ -1,9 +1,11 @@
 import { resetLanguage } from '@/lib/i18n';
 import {
+  backgroundCounts,
   backgroundElapsed,
   backgroundLastLine,
   backgroundTitle,
   hostFiltersBackground,
+  parseBackgroundDone,
   parseBackgroundWork,
   shownBlocks,
   shownNodes,
@@ -121,14 +123,29 @@ describe('what a run draws', () => {
   });
 });
 
+describe('the finished count', () => {
+  it('reads a non-negative whole finished count and nothing else', () => {
+    expect(parseBackgroundDone({ backgroundDone: 0 })).toBe(0);
+    expect(parseBackgroundDone({ backgroundDone: 3 })).toBe(3);
+    for (const bad of [-1, 1.5, '2', null, undefined]) expect(parseBackgroundDone({ backgroundDone: bad })).toBeUndefined();
+    expect(parseBackgroundDone(undefined)).toBeUndefined();
+  });
+  it('counts what ended and what runs, or only what runs for an older host', () => {
+    expect(backgroundCounts(1, 2)).toBe('끝남 1개 · 작업 중 2개');
+    expect(backgroundCounts(3, 0)).toBe('끝남 3개 · 작업 중 0개');
+    expect(backgroundCounts(undefined, 2)).toBe('작업 중 2개');
+  });
+});
+
 describe('which host filters', () => {
-  it('knows a new host by backgroundWork or a notice run, and no other', () => {
+  it('knows a new host by backgroundWork, backgroundDone or a notice run, and no other', () => {
     expect(hostFiltersBackground(undefined)).toBe(false);
     expect(hostFiltersBackground({})).toBe(false);
     expect(hostFiltersBackground({ mighty: { runs: [{ id: 'r1' }, { id: 'r2', noticeRun: false }, { id: 'r3', noticeRun: 'yes' }] } })).toBe(false);
     expect(hostFiltersBackground({ mighty: 'x' })).toBe(false);
     expect(hostFiltersBackground({ backgroundWork: [] })).toBe(true);
     expect(hostFiltersBackground({ backgroundWork: null })).toBe(false);
+    expect(hostFiltersBackground({ backgroundDone: 0 })).toBe(true);
     expect(hostFiltersBackground({ mighty: { runs: [{ id: 'r1' }, { id: 'r1:notice:1', noticeRun: true }] } })).toBe(true);
   });
 });
