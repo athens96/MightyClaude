@@ -6,7 +6,7 @@ macOS 코드베이스에서 발견한 모든 기능 영역과 Windows 구현 현
 
 > **2026-10 웹 화면 전환:** Windows 창의 화면은 이제 WebView2에 띄운 React 페이지(`native/windows/web`)가 기본이다. 아래 표의 WinUI 파일은 그대로 동작의 근거이며, 페이지는 같은 메서드를 호출하고 설정·대화 상자 같은 폼은 보이지 않는 WinUI 폼을 읽어 그린다. 상태 폴더의 `ui-winui` 파일로 이전 화면을 쓸 수 있다. 웹 화면의 스모크는 `MainWindow.WebShell*.cs`(`MIGHTY_SMOKE_WEB=1`, CI의 `test-native-windows.ps1 -Web`)에, 남은 차이는 `native/windows/web/README.md`의 "Known gaps"에 있다.
 
-최종 검증: `4301339`의 Windows x64·ARM64 Core·빌드·네이티브 GUI 검사가 모두 통과했고, 배포 ZIP과 화면 자료를 업로드했다. [검증 기록과 다운로드 안내](windows-port-verification.md)에 통과 범위·OS 차이·실기 미확인 항목을 정리했다. 아래 개별 행의 과거 커밋·CI 대기 문구는 구현 이력이며 최신 자동 검사 결과는 이 기록을 따른다. 물리 입력기·실제 계정·기기의 미확인 표시는 계속 유효하다.
+최종 검증: `ecfa1b23`의 Windows x64·ARM64에서 각각 Core 959개·웹 376개, 앱 빌드·기본 웹 화면·WinUI 대체 화면·설치/제거 검사가 모두 통과했다. [최신 수정과 검증·다운로드 기록](windows-runtime-parity-2026-10.md#검증-결과)에 근거를 정리했다. [이전 이식 검증 기록](windows-port-verification.md)과 아래 개별 행의 과거 커밋·CI 대기 문구는 구현 이력이다. 물리 입력기·실제 계정·기기의 미확인 표시는 계속 유효하다.
 
 2026-10-04 소스 대조: 아래 표의 **코드 구현**은 현재 작업 트리에서 실행 경로가 연결됐다는 뜻이다. **Core 검증**은 macOS 호스트에서 C# 테스트를 실행한 결과이며 Windows 화면 검증과 구분한다. WinUI C# 교차 컴파일은 API·타입 검증용으로, Windows 전용 XAML 생성·패키징·ConPTY·IME·WebView2의 실제 실행을 증명하지 않는다. 새 코드의 Windows 기기 점검은 [화면 체크리스트](windows-screen-checklist.md)를 따른다. 기존 커밋의 CI 통과 표시는 해당 커밋에만 적용된다.
 
