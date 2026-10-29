@@ -206,7 +206,7 @@ public sealed partial class MainWindow
         var view = WebPane(paneId); var responses = smokePermissionResponses ?? [];
         var steps = new List<object>(); var ok = true;
         var plans = new List<PlanDecision>(); var previousPlan = smokePlanAnswerer;
-        var previousHistory = service.Snapshot.Sessions.First(p => p.Id == paneId).PlanHistory;
+        List<PlanRecord>? previousHistory = null; var historyCaptured = false;
         async Task<string> Eval(string script) => await core.ExecuteScriptAsync(script);
         async Task<string?> Active() => JsonSerializer.Deserialize<string?>(await Eval("(() => { const e = document.activeElement; return !e || e === document.body ? 'body' : e.dataset.answer ?? e.dataset.testid ?? e.className ?? e.tagName; })()"));
         async Task<bool> Until(string script, int seconds = 3)
@@ -258,6 +258,8 @@ public sealed partial class MainWindow
         const string Composer = "document.activeElement?.dataset?.testid === 'composer-input'";
         try
         {
+            // Inside the try: a missing pane is this smoke's failed step, not the end of the whole smoke run.
+            previousHistory = service.Snapshot.Sessions.First(p => p.Id == paneId).PlanHistory; historyCaptured = true;
             smokePlanAnswerer = (_, _, decision) => plans.Add(decision);
             // A question of two steps arrives while the composer has the keyboard: it stays there.
             await Eval("document.querySelector('[data-testid=composer-input]')?.focus()");
@@ -344,9 +346,7 @@ public sealed partial class MainWindow
             var sent = await Until("!document.querySelector('[data-card=plan]')", 5) && plans is [{ Kind: "revise", Feedback: "fix\nit" }];
             steps.Add(new { step = "planEnterSends", passed = sent, decisions = plans.Select(p => p.Kind + ":" + p.Feedback).ToArray() }); ok &= sent;
 
-            // i18n-exempt-begin: Korean feedback history smoke fixture, not product copy.
-            var record = new PlanRecord("web-history-plan", "web-history-run", "# Saved plan\n\nrecord-plan-marker", "2027-01-15T08:05:00.000Z", "2027-01-15T08:06:00.000Z", PlanOutcome.Revised, "검토 의견 history-feedback-marker", PlanTruncated: true);
-            // i18n-exempt-end
+            var record = new PlanRecord("web-history-plan", "web-history-run", "# Saved plan\n\nrecord-plan-marker", "2027-01-15T08:05:00.000Z", "2027-01-15T08:06:00.000Z", PlanOutcome.Revised, "Review note history-feedback-marker", PlanTruncated: true);
             await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(p => p.Id == paneId ? p with { PlanHistory = [.. previousHistory ?? [], record] } : p).ToList() });
             view.Refresh();
             ok &= await Until("!!document.querySelector('[data-card=planHistory]')", 15);
@@ -365,8 +365,11 @@ public sealed partial class MainWindow
         finally
         {
             smokePlanAnswerer = previousPlan;
-            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(p => p.Id == paneId ? p with { PlanHistory = previousHistory } : p).ToList() });
-            view.Refresh();
+            if (historyCaptured)
+            {
+                await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(p => p.Id == paneId ? p with { PlanHistory = previousHistory } : p).ToList() });
+                view.Refresh();
+            }
         }
         result["cardsKeys"] = new { passed = ok, steps };
         return ok;
