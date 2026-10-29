@@ -957,7 +957,7 @@ struct MightyStructureView: View {
     }
 
     private func heading(_ item: MightyStructure.Item) -> String {
-        if item.noticeRun { return item.noticeTitle ?? BackgroundNoticeRuns.genericTitle }
+        if item.noticeRun { return BackgroundNoticeRuns.heading(title: item.noticeTitle) }
         return StyleChrome.requestTitle(prefix: styleTitles.prefix(item.input), ordinal: item.ordinal, providerLabel: ProviderOptions.label(provider))
     }
 }

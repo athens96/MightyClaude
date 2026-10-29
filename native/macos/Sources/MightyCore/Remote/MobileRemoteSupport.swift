@@ -395,6 +395,8 @@ public enum MobileMightySupport {
         for run in identities {
             hasher.combine(run.id); hasher.combine(run.status); hasher.combine(0)
             hasher.combine(run.entries); hasher.combine(run.lastEntry)
+            // `digest(_:)`'s waiting count and notice title, which a legacy run never has.
+            hasher.combine(0); hasher.combine(String?.none)
         }
         return hasher.finalize()
     }

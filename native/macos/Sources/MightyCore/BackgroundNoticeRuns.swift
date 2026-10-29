@@ -36,8 +36,11 @@ public enum BackgroundNoticeRuns {
         return L("graph.background.noticeRunTitle", ["kind": kind, "name": name])
     }
     /// A notice run's heading: its own title, or the generic one (older saves).
-    public static func heading(_ run: MightyGraphRun) -> String {
-        guard let title = run.noticeTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return genericTitle }
+    public static func heading(_ run: MightyGraphRun) -> String { heading(title: run.noticeTitle) }
+    /// The heading for a carried notice title (`MightyTimeline.Group.noticeTitle`, `MightyStructure.Item.noticeTitle`):
+    /// the title trimmed, or the generic one when it is absent or blank.
+    public static func heading(title: String?) -> String {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return genericTitle }
         return title
     }
     /// The symbol in front of a notice run's heading: the task block's (`MightyGraphView.agentPresentation`).

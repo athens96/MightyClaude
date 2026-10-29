@@ -1109,7 +1109,7 @@ struct MightyGraphView: View {
         group.noticeRun ? noticeHeading(group) : L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"])
     }
     /// A notice run's heading in 기록: its own title, or the generic one for an older save (`BackgroundNoticeRuns.heading`).
-    private static func noticeHeading(_ group: MightyTimeline.Group) -> String { group.noticeTitle ?? BackgroundNoticeRuns.genericTitle }
+    private static func noticeHeading(_ group: MightyTimeline.Group) -> String { BackgroundNoticeRuns.heading(title: group.noticeTitle) }
 
     /// The glyph and ink the diagram gives the block.
     private func timelineLook(_ row: MightyTimeline.Row, run: MightyGraphRun) -> (icon: String, tint: Color) {

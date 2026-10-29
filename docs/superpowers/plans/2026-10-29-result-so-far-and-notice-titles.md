@@ -138,7 +138,7 @@ extension MightyGraphSupport {
     "noticeRunOutput": "Noted the progress.", "noticeRunInput": "Halfway: two of five pages read.",
     "noticeRunTitles": ["하위 에이전트 메시지 · page-reader", "백그라운드 작업 완료 · page-reader"]
     ```
-  - **"a hand-back from a sender this session does not know is ignored":** change its expectations:
+  - **"a hand-back from a sender this session does not know is ignored"** (renamed in Task 1 review to "a hand-back from a sender this session does not know opens an unnamed 하위 에이전트 메시지 run and leaves the agent alone"): change its expectations:
     ```json
     "noticeRuns": 1, "noticeRunChildren": [0], "noticeRunOutput": "That report is not from my agent.",
     "noticeRunTitles": ["하위 에이전트 메시지"]

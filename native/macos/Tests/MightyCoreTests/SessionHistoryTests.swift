@@ -54,10 +54,7 @@ struct SessionHistoryTests {
         let file = try #require(SessionHistory.identify(url))
         return SessionHistoryRequest(provider: provider, resumeID: "unused", workspacePath: "/unused", file: file, end: end, anchor: anchor, turns: turns)
     }
-    /// `requests`: only the requests, without the notice runs between them (`MightyGraphSupport.requestRuns`).
-    private func inputs(_ chunk: SessionHistoryChunk, requests: Bool = false) -> [String] {
-        (requests ? MightyGraphSupport.requestRuns(chunk.runs) : chunk.runs).map(\.input)
-    }
+    private func inputs(_ chunk: SessionHistoryChunk) -> [String] { chunk.runs.map(\.input) }
 
     /// A replayed record builds the live runs: the request with its own answer, then the notice turn's run with that
     /// turn's answer (ExecutionGraphTests.theRequestTurnEndsBeforeItsBackgroundTaskAndANoticeTurnOpensItsOwnRun).
@@ -199,9 +196,7 @@ struct SessionHistoryTests {
         ]
         try write(lines, to: url)
         let chunk = try SessionHistory.load(try request(url))
-        #expect(inputs(chunk, requests: true) == ["요청 1", "/review main"])
-        // A notification for work the request never started, after its answer, is a notice run of its own, not a request.
-        #expect(chunk.runs.filter { $0.noticeRun == true }.map(\.noticeTitle) == [L("graph.background.noticeRun")])
+        #expect(inputs(chunk) == ["요청 1", "/review main"])
         // The interruption stopped the first request.
         #expect(chunk.runs.first?.status == "stopped")
     }
@@ -475,9 +470,7 @@ struct SessionHistoryTests {
         lines += claudeAt("u4", date(4), "please explain <command-name>x</command-name> here")
         try write(lines, to: url)
         let chunk = try SessionHistory.load(try request(url))
-        // The notification after /model's output names no work this run started: a notice run, not a request.
-        #expect(inputs(chunk, requests: true) == ["첫 요청", "/model", "둘째 요청", "please explain <command-name>x</command-name> here"])
-        #expect(chunk.runs.filter { $0.noticeRun == true }.count == 1)
+        #expect(inputs(chunk) == ["첫 요청", "/model", "둘째 요청", "please explain <command-name>x</command-name> here"])
         // The local command's printed output is its result, not a request.
         let model = try #require(chunk.runs.first { $0.input == "/model" })
         #expect(model.finalOutput == "oops")

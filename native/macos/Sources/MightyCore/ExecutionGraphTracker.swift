@@ -83,6 +83,8 @@ final class ExecutionGraphTracker {
     private var noticeOpeners: [String: NoticeOpening] = [:]
     /// Lines of root messages this turn no run took yet (in or before the request's own turn): a notice answer opens a run naming them.
     private var turnLines: [String] = []
+    /// The most lines and names a notice run's opener, or a turn waiting for its answer, holds.
+    private static let noticeLineLimit = 16
     private var messageOrder: [String] = []
     private var unnamedUsage = 0
     private var compactions = 0
@@ -361,7 +363,16 @@ final class ExecutionGraphTracker {
             // A notice answer no notice run took never extends the request's result: it is the answer of the run its notices
             // were taken into, or of a run of its own.
             guard !answer.isEmpty else { return }
-            if let absorbed { update(ExecutionGraphSupport.mainNodeID(runId: absorbed)) { $0.output = answer }; return }
+            if let absorbed {
+                // The lines this turn held are about the same work: they join the run's request.
+                if !lines.isEmpty {
+                    var opened: NoticeOpening = noticeOpeners[absorbed] ?? (opener: .work, names: [], lines: [])
+                    opened.lines = Array((opened.lines + lines).prefix(Self.noticeLineLimit))
+                    noticeOpeners[absorbed] = opened; describe(absorbed)
+                }
+                update(ExecutionGraphSupport.mainNodeID(runId: absorbed)) { $0.output = answer }
+                return
+            }
             let peer = (value["origin"] as? [String: Any])?["kind"] as? String == "peer"
             guard let opened = openNoticeRun(running: false, opener: peer ? .message : .work, lines: lines) else { return }
             update(ExecutionGraphSupport.mainNodeID(runId: opened)) { $0.output = answer }
@@ -816,20 +827,22 @@ final class ExecutionGraphTracker {
     /// A root message about no block a notice run copies: a running agent's message, a message from a sender this run
     /// does not know, a notification for work this run never started, a delegation notice after the request's result.
     /// It joins the turn's open notice run, or opens that turn's run when it opens a turn; otherwise its line waits in
-    /// `turnLines` for the turn's answer.
+    /// `turnLines` for the turn's answer. One that brings neither a name nor a line (a notification without a summary
+    /// or a status) opens nothing: an answer to it still opens a run of its own (the notice `result` branch).
     private func joinTurn(_ opener: BackgroundNoticeRuns.Opener, name: String?, line: String?) {
         guard provider == "claude" else { return }
         let trimmed = line?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let text: String? = trimmed.isEmpty ? nil : trimmed
+        guard name != nil || text != nil else { return }
         if let run = noticeTurn ?? mergeTurn {
             var opened: NoticeOpening = noticeOpeners[run] ?? (opener: opener, names: [], lines: [])
-            if let name { opened.names.append(name) }
-            if let text { opened.lines.append(text) }
+            if let name, opened.names.count < Self.noticeLineLimit { opened.names.append(name) }
+            if let text, opened.lines.count < Self.noticeLineLimit { opened.lines.append(text) }
             noticeOpeners[run] = opened; describe(run)
         } else if turnEnded, steeredTurn == nil {
-            noticeTurn = openNoticeRun(running: true, opener: opener, names: name.map { [$0] } ?? [], lines: turnLines + (text.map { [$0] } ?? []))
+            noticeTurn = openNoticeRun(running: true, opener: opener, names: name.map { [$0] } ?? [], lines: Array((turnLines + (text.map { [$0] } ?? [])).prefix(Self.noticeLineLimit)))
             turnLines = []
-        } else if let text, turnLines.count < 16 { turnLines.append(text) }
+        } else if let text, turnLines.count < Self.noticeLineLimit { turnLines.append(text) }
     }
     /// A notice run's main block running again for a turn that answers in it, or ended. Unlike `update`, an ended
     /// main may run again: the turn after it is new work in the same run.

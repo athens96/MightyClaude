@@ -510,10 +510,13 @@ struct MobileRemoteExtensionTests {
         var request = MightyGraphRun(id: "r", status: "completed", agents: [agent("fg", kind: nil, status: "completed"), background])
         let first = MobileMightySupport.digest([request])
         request.agents[1].entries.append(LogEntry(id: "b1", kind: "assistant", text: "compiling"))
-        request.agents[1].status = "completed"
         #expect(MobileMightySupport.digest([request]) == first)
+        // Its end moves the request's waiting count (현재까지의 결과 → 최종 결과), which the phone draws.
+        request.agents[1].status = "completed"
+        let ended = MobileMightySupport.digest([request])
+        #expect(ended != first)
         request.agents.append(agent("fg2", kind: nil, status: "running"))
-        #expect(MobileMightySupport.digest([request]) != first)
+        #expect(MobileMightySupport.digest([request]) != ended)
         var notice = MightyGraphRun(id: "r:notice:1", status: "running", agents: [background], noticeRun: true)
         let noticeFirst = MobileMightySupport.digest([notice])
         notice.agents[0].status = "completed"

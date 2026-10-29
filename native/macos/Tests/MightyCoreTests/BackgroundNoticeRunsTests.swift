@@ -174,6 +174,10 @@ struct BackgroundNoticeRunsTests {
             #expect(BackgroundNoticeRuns.heading(MightyGraphRun(id: "r:notice:1", noticeRun: true, noticeTitle: "  \n")) == BackgroundNoticeRuns.genericTitle)
             let named = MightyGraphRun(id: "r:notice:1", noticeRun: true, noticeTitle: "하위 에이전트 메시지 · scout")
             #expect(BackgroundNoticeRuns.heading(named) == "하위 에이전트 메시지 · scout")
+            // A title a view carries reads the same way, trimmed.
+            #expect(BackgroundNoticeRuns.heading(title: nil) == BackgroundNoticeRuns.genericTitle)
+            #expect(BackgroundNoticeRuns.heading(title: " \n") == BackgroundNoticeRuns.genericTitle)
+            #expect(BackgroundNoticeRuns.heading(title: " 위임 알림 \n") == "위임 알림")
         }
     }
 
