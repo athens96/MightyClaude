@@ -367,7 +367,7 @@ final class AppStore: ObservableObject, DelegationHost {
         enum Target: Equatable {
             /// A new request: its graph run, the user entry's id.
             case run(String)
-            /// 다음 실행 handed this text into the running turn: its 중간 요청 block.
+            /// 바로 실행 handed this text into the running turn: its 중간 요청 block.
             case steer(String)
         }
         let serial: Int
@@ -382,7 +382,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// its mark keeps `pendingMinVisible`. Kept here, not in the pane's view, so a redrawn
     /// pane still shows the stop going.
     @Published private(set) var stopPending: [String: PendingState] = [:]
-    /// Panes whose held items the user's 다음 실행 is releasing: the run that takes them is
+    /// Panes whose held items the user's 바로 실행 is releasing: the run that takes them is
     /// the user's own (natural submit B2).
     var ownHeldReleases = Set<String>()
     /// Panes whose new worktree children the phone's 바로 실행 is starting, one token per start, each released exactly once:
@@ -1072,7 +1072,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// (steered into its running Claude run when it has one), and the queued
     /// rows follow in later runs; otherwise the first queued row runs now,
     /// as after an error left the queue paused.
-    /// `own`: this Mac's 다음 실행 moves every view to the run, whoever queued the row; the phone's only follows.
+    /// `own`: true moves every view of this Mac to the run, whoever queued the row; the old phone's 다음 실행 only follows.
     func runNextQueuedInput(_ id: String, own: Bool = true) {
         if !(delegationHeld[id] ?? []).isEmpty { Task { await runNextHeld(id, own: own) }; return }
         // A run that only waits on background work takes the first row as a new turn; refused, it stays queued.
@@ -1090,8 +1090,9 @@ final class AppStore: ObservableObject, DelegationHost {
     }
 
     /// Hands the queued request `itemId` (nil: the first) into the run that only waits on background work, as a new turn in
-    /// the same process (Windows `SteerFirstQueuedInput`); the tracker shows it as a 중간 요청 under the request. False when it
-    /// may not (the row has attachments, or the run does not only wait on background work) or the run refused it: it stays queued.
+    /// the same process (Windows `SteerQueuedInput`); the tracker shows it as a 중간 요청 under the request. False when it
+    /// may not (the row has attachments, the run does not only wait on background work, or a notice turn is running) or the run
+    /// refused it: it stays queued.
     func steerQueuedRow(_ id: String, itemId: String? = nil, own: Bool = true) async -> Bool {
         // One steer at a time per pane: the row stays queued while the run answers.
         guard !steeringQueuedRows.contains(id) else { return false }
@@ -1100,25 +1101,38 @@ final class AppStore: ObservableObject, DelegationHost {
         let row: QueuedInput? = if let itemId { rows.first(where: { $0.id == itemId }) } else { rows.first }
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.kind == "claude", let next = row, next.attachments.isEmpty, !next.isContinuation,
               BackgroundQueuePolicy.steersRunNext(work: session.backgroundWork, localClaude: session.provider == "claude" && !isRemoteSession(session),
-                                                  stopping: false, queued: 1, firstHasAttachments: false) else { return false }
+                                                  stopping: false, queued: 1, firstHasAttachments: false),
+              // Claude is answering finished background work: a steer now would lose its own answer to that turn's result.
+              !MightyGraphSupport.noticeTurnRunning(session.graphRuns ?? []) else { return false }
         steeringQueuedRows.insert(id)
         defer { steeringQueuedRows.remove(id) }
         guard await runner.steer(sessionId: id, text: next.text) else { return false }
         queuedInputs[id]?.removeAll { $0.id == next.id }
         if queuedInputs[id]?.isEmpty == true { queuedInputs.removeValue(forKey: id) }
-        // The user's own 바로 실행 (or 다음 실행): the pane's views move to its 중간 요청 (natural submit B2).
+        // The user's own 바로 실행: the pane's views move to its 중간 요청 (natural submit B2).
         if own { noteOwnSubmit(id, target: .steer(next.text)) }
         return true
     }
 
     /// The pane `session` as 바로 실행 reads it, worked out once for all its rows. `stopping`: the pane's stop is under way.
+    /// A manual CLI update or plugin change holds it as a background update does (settling it then would throw the queue away),
+    /// and a child whose last run's end is still being recorded starts nothing yet (``settleQueue(_:status:own:)``): neither
+    /// offers a here that would not run (Windows `RunNowPane`).
     func queueRunNowPane(_ session: RunSession, stopping: Bool = false) -> QueueRunNow.Pane {
-        let id = session.id, holds = backgroundUpdateHolds(session)
-        return QueueRunNow.Pane(busy: session.status == "running" || pendingRuns.contains(id) || holds, heldForUpdate: holds,
+        let id = session.id, holds = backgroundUpdateHolds(session) || manualUpdateHolds(session)
+        let recording = delegation?.endingRuns.contains(id) == true
+        return QueueRunNow.Pane(busy: session.status == "running" || pendingRuns.contains(id) || holds || recording, heldForUpdate: holds,
                                 secondSend: composerSecondSend(session), menuOnly: worktreeMenuOnly(session),
-                                waitsOnBackgroundOnly: session.kind == "claude" && session.provider == "claude" && !isRemoteSession(session) && !stopping
-                                    && session.backgroundWork?.waitingOnBackground == true,
+                                waitsOnBackgroundOnly: session.kind == "claude" && session.provider == "claude" && !isRemoteSession(session) && !stopping && !recording
+                                    && session.backgroundWork?.waitingOnBackground == true && !MightyGraphSupport.noticeTurnRunning(session.graphRuns ?? []),
                                 held: (delegationHeld[id] ?? []).count)
+    }
+
+    /// A CLI update or plugin change the user started on this Mac holds the pane's runs (``runBlockedReason(_:checkRuntime:)``);
+    /// a remote pane runs its host's CLI, which it never touches (Windows `ManualMutationBlockReason`).
+    func manualUpdateHolds(_ session: RunSession) -> Bool {
+        guard session.kind != "shell", !isRemoteSession(session) else { return false }
+        return (updatingCLI == session.provider && !automaticUpdateRunning) || (["claude", "codex"].contains(session.provider) && isManagingPlugins)
     }
 
     /// What 바로 실행 does on each row of `session` (held first, then the human's), by row id, the pane read once.
@@ -1167,7 +1181,8 @@ final class AppStore: ObservableObject, DelegationHost {
             // At the head, the queue's own start takes it: held items go ahead of it in its run, a refused start keeps it there.
             take(); queuedInputs[id, default: []].insert(item, at: 0)
             runNextQueuedRow(id, own: own)
-            return .here
+            // Still at the head: the queue's start did not take it (refused, or held meanwhile), so nothing ran (Windows StartNextQueuedInput's false).
+            return queuedInputs[id]?.first?.id == item.id ? nil : .here
         case (.steer, _):
             return await steerQueuedRow(id, itemId: itemId, own: own) ? .steer : nil
         default:
@@ -1177,7 +1192,7 @@ final class AppStore: ObservableObject, DelegationHost {
 
     /// Run next with items held for the pane: delegation releases them. False
     /// when no run took them; they stay held.
-    /// `own`: the user's 다음 실행 on this Mac, whose run every view moves to.
+    /// `own`: the user's 바로 실행 on this Mac, whose run every view moves to.
     @discardableResult
     func runNextHeld(_ id: String, own: Bool = false) async -> Bool {
         guard let delegation else { return false }
@@ -1194,7 +1209,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// Runs the first queued row now, as a run that ended would: items held
     /// for the pane go ahead of it in its run. A background update's end
     /// drains its queues this way.
-    /// `own`: set by a 다음 실행, overriding the row's own flag.
+    /// `own`: set by a 바로 실행 (or the old phone's 다음 실행), overriding the row's own flag.
     func runNextQueuedRow(_ id: String, own: Bool? = nil) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id) else { return }
         settleQueue(id, status: "completed", own: own)

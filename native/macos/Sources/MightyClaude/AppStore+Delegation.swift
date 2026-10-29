@@ -360,7 +360,7 @@ extension AppStore {
     /// another agent back to the composer, anything else on as the pane's next request. `quiet`: the phone's click.
     private func noWorktree(_ id: String, input: String, attachments: [RunAttachment], from origin: WorktreeOrigin, toComposer: Bool, quiet: Bool = false, reason: String) {
         switch origin {
-        case .queue(let item): putBackQueuedRow(id, item, own: quiet ? false : nil, reason: reason)
+        case .queue(let item): putBackQueuedRow(id, item, own: !quiet, reason: reason)
         case .composer(let draft):
             if toComposer { returnToComposer(id, attachments: attachments, draft: draft, reason: reason) }
             else { runAfterNoWorktree(id, input: input, attachments: attachments, draft: draft, reason: reason) }
@@ -369,13 +369,13 @@ extension AppStore {
 
     /// A queued row whose new worktree could not be made or started: back at the head of the queue (never the composer, and
     /// without the 16-row check: it was queued), and the transcript says why. A pane idle meanwhile, its queue not paused, runs it now,
-    /// as `own` says (false: the phone's click, which this Mac only follows; nil: the row's own flag).
-    private func putBackQueuedRow(_ id: String, _ item: QueuedInput, own: Bool?, reason: String) {
+    /// as `own` says (true: this Mac's click; false: the phone's, which this Mac only follows). A queue an error paused stays paused.
+    private func putBackQueuedRow(_ id: String, _ item: QueuedInput, own: Bool, reason: String) {
         guard !ending, !closingSessions.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }) else { return }
         updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("delegation.human.queued", ["reason": reason]))); $0.logs = TranscriptRetention.trimmed($0.logs) }
         let waiting = queuedInputs[id]?.isEmpty == false
         if queuedInputs[id]?.contains(where: { $0.id == item.id }) != true { queuedInputs[id, default: []].insert(item, at: 0) }
-        if !waiting, session.status != "running", !pendingRuns.contains(id) { runNextQueuedRow(id, own: own) }
+        if !waiting, session.status != "running", session.status != "error", !pendingRuns.contains(id) { runNextQueuedRow(id, own: own) }
     }
 
     /// The text of a child of another agent that could not be made or
@@ -672,7 +672,7 @@ extension AppStore {
     /// A run with `input` in the pane, the way a send starts one: its id, or
     /// nil when the pane cannot run now (a child without its worktree among them).
     /// Its words are delegation's, so they never title the pane.
-    /// It is the user's own only while their 다음 실행 releases the pane's held items (`ownHeldReleases`).
+    /// It is the user's own only while their 바로 실행 releases the pane's held items (`ownHeldReleases`).
     func startRun(sessionId: String, input: String) async -> String? {
         await startDelivered(sessionId, input: input, attachments: [], restoringDraft: nil, titleFrom: "", own: ownHeldReleases.contains(sessionId))
     }
@@ -688,7 +688,7 @@ extension AppStore {
                   session.status == "running", canSteer(session), let runId = delegationRuns.runId(sessionId) else { return nil }
             guard await steerRunningTurn(sessionId, text: input) else { return nil }
             updateSession(sessionId) { $0.logs.append(LogEntry(kind: "user", text: input)); $0.logs = TranscriptRetention.trimmed($0.logs) }
-            // The user's 다음 실행 steering the held items in: the views move to that 중간 요청
+            // The user's 바로 실행 steering the held items in: the views move to that 중간 요청
             // (natural submit B2), as for a queued row (`steerQueuedRow`).
             if ownHeldReleases.contains(sessionId) { noteOwnSubmit(sessionId, target: .steer(input)) }
             return runId

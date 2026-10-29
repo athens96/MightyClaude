@@ -816,7 +816,7 @@ extension AppStore {
         // Settling a blocked pane throws the whole queue away with only a log
         // line; the phone would be told "ok" and watch its requests vanish.
         if let reason = runBlockedReason(session, checkRuntime: false) { throw MobileHostError.conflict(reason) }
-        // The phone's 다음 실행: the Mac's views only follow it.
+        // The old phone's 다음 실행: the Mac's views only follow it.
         runNextQueuedInput(id, own: false)
     }
 
@@ -839,6 +839,8 @@ extension AppStore {
         error = macError
         // Decided runnable a moment ago: nothing ran, so its start failed.
         guard ran != nil else { throw MobileHostError.conflict(failure ?? L("remote.error.startFailed")) }
+        // A start that failed after it was taken (the held items' release, a child's run): the phone hears why, never ok.
+        if let failure { throw MobileHostError.conflict(failure) }
         return wire
     }
 

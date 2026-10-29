@@ -406,6 +406,14 @@ extension MightyGraphSupport {
     public static func newestRequestRun(_ runs: [MightyGraphRun]) -> MightyGraphRun? { newestRequestIndex(runs).map { runs[$0] } }
     /// Where the user's newest request is in `runs`: the one rule every "newest request" reader uses.
     public static func newestRequestIndex(_ runs: [MightyGraphRun]) -> Int? { runs.lastIndex { $0.noticeRun != true } }
+    /// Whether Claude is answering finished background work now: a notice run after the user's newest request
+    /// (`BackgroundNoticeRuns`) has not ended (its own notice turn, or an earlier one it answers in again). A steer then would
+    /// open its turn inside that one, whose result would end both and leave the steer's answer to replace the request's:
+    /// 바로 실행 waits for its turn instead (Windows `NoticeTurnRunning`).
+    public static func noticeTurnRunning(_ runs: [MightyGraphRun]) -> Bool {
+        let newest = newestRequestIndex(runs) ?? -1
+        return runs.indices.contains { $0 > newest && runs[$0].noticeRun == true && !terminal(runs[$0].status) }
+    }
     /// The run the views follow as the newest work (natural submit's not-own rule): the newest request, or a notice
     /// run after it that is a turn of its own — running, or holding Claude's reply. A notice taken into a running turn
     /// (`MightyGraphRun.quietNotice`) never takes the request's place.

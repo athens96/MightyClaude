@@ -83,4 +83,21 @@ import Testing
         let here = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(items[0])) as? [String: Any])
         #expect(Set(here.keys) == ["id", "text", "runNow"])
     }
+
+    /// A steer into a running notice turn would lose its answer: that turn's result ends the steer's turn too, and the steer's own
+    /// result then replaces the request's. While a notice run after the newest request runs, its rows wait for their turn.
+    @Test func aRunningNoticeTurnTakesNoSteer() {
+        let request = MightyGraphRun(id: "r", status: "completed")
+        let running = MightyGraphRun(id: "r" + BackgroundNoticeRuns.marker + "1", status: "running", noticeRun: true)
+        let answered = MightyGraphRun(id: "r" + BackgroundNoticeRuns.marker + "1", status: "completed", finalOutput: "Done.", noticeRun: true)
+        #expect(MightyGraphSupport.noticeTurnRunning([request, running]))
+        #expect(!MightyGraphSupport.noticeTurnRunning([request, answered]))
+        #expect(!MightyGraphSupport.noticeTurnRunning([request]) && !MightyGraphSupport.noticeTurnRunning([]))
+        // An older request's notice run left running never holds the newest request's queue.
+        #expect(!MightyGraphSupport.noticeTurnRunning([request, running, MightyGraphRun(id: "r2", status: "completed")]))
+        // The pane reads it as not only waiting on background work: the row waits for its turn instead of steering.
+        let pane = QueueRunNow.Pane(busy: true, heldForUpdate: false, secondSend: .queue, menuOnly: false,
+                                    waitsOnBackgroundOnly: !MightyGraphSupport.noticeTurnRunning([request, running]), held: 0)
+        #expect(QueueRunNow.decide(heldIndex: nil, text: "Next", attachments: 0, pane: pane) == .waitsForTurn)
+    }
 }

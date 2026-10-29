@@ -24,14 +24,15 @@ public enum QueueRunNow: String, Sendable, CaseIterable {
 
     /// The pane as 바로 실행 reads it.
     public struct Pane: Sendable, Equatable {
-        /// Running, starting, or held for a CLI update.
+        /// Running, starting, held for a CLI update or plugin change, or a child whose last run's end is still being recorded.
         public var busy: Bool
         public var heldForUpdate: Bool
         /// `ComposerSecondSend.choose(…)`: `.worktree` where a new child of the pane's agent can be made now.
         public var secondSend: ComposerSecondSend
         /// `ComposerSecondSend.menuOnly(…)`.
         public var menuOnly: Bool
-        /// A local Claude pane, not stopping, whose turn ended and whose background work still runs.
+        /// A local Claude pane, not stopping, whose turn ended and whose background work still runs, with no notice turn running
+        /// (`MightyGraphSupport.noticeTurnRunning`).
         public var waitsOnBackgroundOnly: Bool
         /// Items delegation holds for the pane.
         public var held: Int
