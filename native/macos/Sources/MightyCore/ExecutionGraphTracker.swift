@@ -81,10 +81,25 @@ final class ExecutionGraphTracker {
     /// What opened each notice run and what it names while it holds no copy (`BackgroundNoticeRuns.title(kind:names:)`).
     private typealias NoticeOpening = (opener: BackgroundNoticeRuns.Opener, names: [String], lines: [String])
     private var noticeOpeners: [String: NoticeOpening] = [:]
-    /// Lines of root messages this turn no run took yet (in or before the request's own turn): a notice answer opens a run naming them.
-    private var turnLines: [String] = []
+    /// A root message's line no run took yet, with the name it gives a run (a known sender's block title) and the agent block
+    /// that sent it (nil: finished work, a delegation notice, a sender this run does not know).
+    private struct HeldLine { var line: String?; var name: String?; var agent: String? }
+    /// Lines of root messages this turn no run took yet (in or before the request's own turn), with their names: a notice answer
+    /// opens a run naming them.
+    private var turnLines: [HeldLine] = []
     /// The most lines and names a notice run's opener, or a turn waiting for its answer, holds.
     private static let noticeLineLimit = 16
+    /// The most 하위 에이전트 메시지 runs one request opens; past it a message turn answers in the latest one again.
+    private static let messageRunLimit = 8
+    /// Nodes a 하위 에이전트 메시지 run may not take, so the copies finished work brings, and the 백그라운드 작업 완료 run
+    /// that holds them, still fit under `ExecutionGraphSupport.maximumNodes`.
+    private static let noticeHeadroom = 16
+    /// 하위 에이전트 메시지 runs opened so far, and the latest one.
+    private var messageRunCount = 0
+    private var latestMessageRun: String?
+    /// The agent block whose messages alone a 하위 에이전트 메시지 run holds: that agent's next message turn answers in it again
+    /// while no other run came after it.
+    private var messageAgents: [String: String] = [:]
     private var messageOrder: [String] = []
     private var unnamedUsage = 0
     private var compactions = 0
@@ -105,8 +120,11 @@ final class ExecutionGraphTracker {
         // After the request's result the steer starts a new turn in the same process.
         guard addSteer(id: id, text: text), turnEnded, steeredTurn == nil else { return }
         // A delegation notice's answer is its own 위임 알림 run's; the block stays under the request and takes the reply.
-        if MightyGraphSupport.isDelegationNotice(text) { joinTurn(.delegation, name: nil, line: text) }
-        else { steeredTurn = L("graph.block.steer") }
+        if MightyGraphSupport.isDelegationNotice(text) {
+            joinTurn(.delegation, name: nil, line: text)
+            // No room for its run: its answer follows in the request's result under 위임 알림, as before notice runs, rather than replace it.
+            if noticeTurn == nil, mergeTurn == nil { steeredTurn = L("graph.block.delegationNotice") }
+        } else { steeredTurn = L("graph.block.steer") }
     }
     @discardableResult
     private func addSteer(id: String, text: String) -> Bool {
@@ -365,18 +383,23 @@ final class ExecutionGraphTracker {
             guard !answer.isEmpty else { return }
             if let absorbed {
                 // The lines this turn held are about the same work: they join the run's request.
-                if !lines.isEmpty {
-                    var opened: NoticeOpening = noticeOpeners[absorbed] ?? (opener: .work, names: [], lines: [])
-                    opened.lines = Array((opened.lines + lines).prefix(Self.noticeLineLimit))
-                    noticeOpeners[absorbed] = opened; describe(absorbed)
-                }
+                addOpening(absorbed, lines)
                 update(ExecutionGraphSupport.mainNodeID(runId: absorbed)) { $0.output = answer }
+                if failed { setNoticeState(absorbed, "error") }
                 return
             }
             let peer = (value["origin"] as? [String: Any])?["kind"] as? String == "peer"
-            guard let opened = openNoticeRun(running: false, opener: peer ? .message : .work, lines: lines) else { return }
-            update(ExecutionGraphSupport.mainNodeID(runId: opened)) { $0.output = answer }
-            if failed { setNoticeState(opened, "error") }
+            let opener: BackgroundNoticeRuns.Opener = peer ? .message : .work
+            if opener == .message, let run = messageRun(lines) { answerAgain(in: run, lines, answer: answer, failed: failed); return }
+            if let opened = openNoticeRun(running: false, opener: opener, names: Self.names(lines), lines: lines.compactMap(\.line), agent: Self.soleAgent(lines)) {
+                update(ExecutionGraphSupport.mainNodeID(runId: opened)) { $0.output = answer }
+                if failed { setNoticeState(opened, "error") }
+                return
+            }
+            // No room for a run of its own: the answer goes on in the latest notice run, or as a last resort follows in the
+            // request's result under its kind, as before notice runs. It is never dropped.
+            if let latest = latestNoticeRun { answerAgain(in: latest, lines, answer: answer, failed: failed); return }
+            update(mainID) { $0.output = MightyGraphSupport.withNoticeSection($0.output, header: L("graph.result.afterSteer", ["block": BackgroundNoticeRuns.kind(opener)]), answer: answer) }
         } else if type == "result" {
             if parentTool == nil, let steered = steeredTurn {
                 // A turn a steer opened after the request's result: its answer follows in the result, as a notice turn's does.
@@ -802,6 +825,8 @@ final class ExecutionGraphTracker {
             guard let normalized = ExecutionGraphSupport.normalized(copy) else { return }
             nodes[copyID] = normalized; order.append(copyID); emit(normalized)
             noticeCopies[run, default: []].append(copyID)
+            // A run holding a copy is named after the work, no longer an agent's messages alone.
+            messageAgents.removeValue(forKey: run)
             if copiedIn[id] != nil || copiedIn.count < 512 { copiedIn[id] = run }
         } else {
             update(copyID) { copy in
@@ -828,21 +853,74 @@ final class ExecutionGraphTracker {
     /// does not know, a notification for work this run never started, a delegation notice after the request's result.
     /// It joins the turn's open notice run, or opens that turn's run when it opens a turn; otherwise its line waits in
     /// `turnLines` for the turn's answer. One that brings neither a name nor a line (a notification without a summary
-    /// or a status) opens nothing: an answer to it still opens a run of its own (the notice `result` branch).
-    private func joinTurn(_ opener: BackgroundNoticeRuns.Opener, name: String?, line: String?) {
+    /// or a status) opens nothing: an answer to it still opens a run of its own (the notice `result` branch). A message
+    /// turn answers in an earlier 하위 에이전트 메시지 run again instead of opening one (`messageRun`). With no room for a
+    /// run, the line waits for the answer, which finds a place of its own.
+    private func joinTurn(_ opener: BackgroundNoticeRuns.Opener, name: String?, line: String?, agent: String? = nil) {
         guard provider == "claude" else { return }
         let trimmed = line?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let text: String? = trimmed.isEmpty ? nil : trimmed
-        guard name != nil || text != nil else { return }
+        let held = HeldLine(line: trimmed.isEmpty ? nil : trimmed, name: name, agent: agent)
+        guard held.name != nil || held.line != nil else { return }
         if let run = noticeTurn ?? mergeTurn {
-            var opened: NoticeOpening = noticeOpeners[run] ?? (opener: opener, names: [], lines: [])
-            if let name, opened.names.count < Self.noticeLineLimit { opened.names.append(name) }
-            if let text, opened.lines.count < Self.noticeLineLimit { opened.lines.append(text) }
-            noticeOpeners[run] = opened; describe(run)
+            addOpening(run, [held])
         } else if turnEnded, steeredTurn == nil {
-            noticeTurn = openNoticeRun(running: true, opener: opener, names: name.map { [$0] } ?? [], lines: Array((turnLines + (text.map { [$0] } ?? [])).prefix(Self.noticeLineLimit)))
+            let lines = Array((turnLines + [held]).prefix(Self.noticeLineLimit))
             turnLines = []
-        } else if let text, turnLines.count < Self.noticeLineLimit { turnLines.append(text) }
+            if opener == .message, let run = messageRun(lines) {
+                // The turn answers in that run again, as a turn about blocks it copied does (`mergeTurn`).
+                mergeTurn = run
+                mergeRestore = nodes[ExecutionGraphSupport.mainNodeID(runId: run)]?.state
+                setNoticeState(run, "running")
+                addOpening(run, lines)
+            } else if let opened = openNoticeRun(running: true, opener: opener, names: Self.names(lines), lines: lines.compactMap(\.line), agent: Self.soleAgent(lines)) {
+                noticeTurn = opened
+            } else { turnLines = lines }
+        } else if turnLines.count < Self.noticeLineLimit { turnLines.append(held) }
+    }
+    /// The 하위 에이전트 메시지 run a turn of these messages answers in again instead of opening its own: the latest notice run
+    /// while it holds only messages of the one agent that sent all of them, or past `messageRunLimit` the latest message run.
+    private func messageRun(_ lines: [HeldLine]) -> String? {
+        guard let latest = latestMessageRun, nodes[ExecutionGraphSupport.mainNodeID(runId: latest)] != nil else { return nil }
+        if let agent = Self.soleAgent(lines), messageAgents[latest] == agent, latestNoticeRun == latest { return latest }
+        return messageRunCount >= Self.messageRunLimit ? latest : nil
+    }
+    /// The latest notice run opened, if any.
+    private var latestNoticeRun: String? {
+        guard noticeIndex > 0 else { return nil }
+        let run = BackgroundNoticeRuns.runID(original: runID, index: noticeIndex)
+        return nodes[ExecutionGraphSupport.mainNodeID(runId: run)] != nil ? run : nil
+    }
+    /// The one agent block that sent every one of these lines, if they all came from one.
+    private static func soleAgent(_ lines: [HeldLine]) -> String? {
+        guard let agent = lines.first?.agent, lines.allSatisfy({ $0.agent == agent }) else { return nil }
+        return agent
+    }
+    /// The names these lines give a run: each sender once, at most `noticeLineLimit`.
+    private static func names(_ lines: [HeldLine]) -> [String] {
+        var names: [String] = []
+        for name in lines.compactMap(\.name) where !names.contains(name) && names.count < noticeLineLimit { names.append(name) }
+        return names
+    }
+    /// Lines and names that join notice run `run`'s request and title, each sender named once. A line from anyone but the
+    /// agent whose messages alone the run holds ends that (`messageAgents`).
+    private func addOpening(_ run: String, _ lines: [HeldLine]) {
+        guard !lines.isEmpty else { return }
+        var opened: NoticeOpening = noticeOpeners[run] ?? (opener: .work, names: [], lines: [])
+        for held in lines {
+            if let name = held.name, !opened.names.contains(name), opened.names.count < Self.noticeLineLimit { opened.names.append(name) }
+            if let line = held.line, opened.lines.count < Self.noticeLineLimit { opened.lines.append(line) }
+            if held.agent == nil || messageAgents[run] != held.agent { messageAgents.removeValue(forKey: run) }
+        }
+        noticeOpeners[run] = opened; describe(run)
+    }
+    /// A notice answer that goes on in the earlier notice run `run`: its lines join the run's request, the answer its result
+    /// as a new paragraph, and the run ends as the turn did.
+    private func answerAgain(in run: String, _ lines: [HeldLine], answer: String, failed: Bool) {
+        addOpening(run, lines)
+        update(ExecutionGraphSupport.mainNodeID(runId: run)) { node in
+            node.output = (node.output?.isEmpty ?? true) ? answer : node.output! + "\n\n" + answer
+        }
+        setNoticeState(run, failed ? "error" : "completed")
     }
     /// A notice run's main block running again for a turn that answers in it, or ended. Unlike `update`, an ended
     /// main may run again: the turn after it is new work in the same run.
@@ -855,9 +933,11 @@ final class ExecutionGraphTracker {
         nodes[main] = normalized; emit(normalized)
     }
     /// The next notice run's main block: running until a notice turn's result, or complete at once for absorbed notices.
-    /// `opener` and `names` title it until a copy joins; `lines` are its request.
-    private func openNoticeRun(running: Bool, opener: BackgroundNoticeRuns.Opener = .work, names: [String] = [], lines: [String] = []) -> String? {
-        guard nodes.count < ExecutionGraphSupport.maximumNodes else { return nil }
+    /// `opener` and `names` title it until a copy joins; `lines` are its request; `agent` is the agent block whose messages
+    /// alone a 하위 에이전트 메시지 run holds. A message run leaves `noticeHeadroom` nodes free.
+    private func openNoticeRun(running: Bool, opener: BackgroundNoticeRuns.Opener = .work, names: [String] = [], lines: [String] = [], agent: String? = nil) -> String? {
+        let room = opener == .message ? ExecutionGraphSupport.maximumNodes - Self.noticeHeadroom : ExecutionGraphSupport.maximumNodes
+        guard nodes.count < room else { return nil }
         let run = BackgroundNoticeRuns.runID(original: runID, index: noticeIndex + 1)
         let main = ExecutionGraphNode(id: ExecutionGraphSupport.mainNodeID(runId: run), runId: run, kind: "main",
                                       state: running ? "running" : "completed", title: BackgroundNoticeRuns.title(kind: BackgroundNoticeRuns.kind(opener), names: names),
@@ -865,6 +945,10 @@ final class ExecutionGraphTracker {
         guard let normalized = ExecutionGraphSupport.normalized(main) else { return nil }
         noticeIndex += 1
         noticeOpeners[run] = (opener: opener, names: names, lines: lines)
+        if opener == .message {
+            messageRunCount += 1; latestMessageRun = run
+            if let agent { messageAgents[run] = agent }
+        }
         nodes[normalized.id] = normalized; order.append(normalized.id); emit(normalized)
         return run
     }
@@ -893,7 +977,7 @@ final class ExecutionGraphTracker {
                 if !message.body.isEmpty {
                     append(LogEntry(id: ExecutionGraphSupport.identifier(runID, id + ":peer:" + message.body), kind: "assistant", text: message.body, provider: provider), to: id)
                     // A running agent's message opens (or joins) the turn's 하위 에이전트 메시지 run, named after the agent.
-                    if notice { joinTurn(.message, name: node.title.isEmpty ? nil : node.title, line: message.body) }
+                    if notice { joinTurn(.message, name: node.title.isEmpty ? nil : node.title, line: message.body, agent: id) }
                 }
                 continue
             }

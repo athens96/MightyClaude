@@ -277,6 +277,30 @@ struct ExecutionGraphTests {
         }
     }
 
+    /// A delegation notice after the request's result with no room left for its run: its answer follows in the request's
+    /// result under 위임 알림, as before notice runs, and never replaces that result.
+    @Test func aDelegationNoticeAtTheNodeCapFollowsInTheResult() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var nodes: [ExecutionGraphNode] = []
+            let tracker = ExecutionGraphTracker(runID: "deleg-full", input: "Split the work", emit: { nodes.append($0) })
+            // The request's own blocks fill all nodes but one, which the notice's steer block takes.
+            for index in 1..<(ExecutionGraphSupport.maximumNodes - 1) {
+                tracker.consume(["type": "system", "subtype": "compact_boundary", "uuid": "c\(index)"])
+            }
+            tracker.consume(["type": "result", "subtype": "success", "is_error": false, "result": "Delegated."])
+            tracker.steer(id: "n-1", text: "[Mighty Claude notice n-1] Your child c-1 reported revision 1.")
+            tracker.consume(["type": "assistant", "message": ["id": "main-2", "role": "assistant", "content": [["type": "text", "text": "Merged the child."]]]])
+            tracker.consume(["type": "result", "subtype": "success", "is_error": false, "result": "Merged the child."])
+            var latest: [String: ExecutionGraphNode] = [:]
+            for node in nodes { latest[node.id] = node }
+            #expect(latest.count == ExecutionGraphSupport.maximumNodes)
+            #expect(!latest.values.contains { BackgroundNoticeRuns.isNoticeRun($0.runId) })
+            let main = try #require(latest[ExecutionGraphSupport.mainNodeID(runId: "deleg-full")])
+            #expect(main.output == "Delegated." + MightyGraphSupport.noticeSectionMark + "위임 알림 이후**\n\nMerged the child.")
+            #expect(latest[ExecutionGraphSupport.identifier("deleg-full", "steer:n-1")]?.output == "Merged the child.")
+        }
+    }
+
     /// A task notification makes no 작업 알림 steer any more; a saved one still reads as one.
     @Test func aTaskNotificationCopiesItsBlockAndAnOldNoticeSteerStillReads() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
