@@ -196,6 +196,19 @@ public sealed partial class MainWindow
         var before = service.Snapshot.Sessions.First(p => p.Id == paneId);
         var value = before.Settings.MaxTurns == 17 ? "18" : "17";
         var calls = 0; var raceOnApply = false; string? refusal = null;
+        var shown = false; var held = false; var blocked = false; var unlocked = false; var draftKept = false; var refusalShown = false; var refused = false;
+        string? route = null, error = null; var menuChosen = false; var diagnostics = new List<object>();
+        var scope = "document.querySelector(" + JsonSerializer.Serialize(".pane-slot:not(.hidden)[data-pane-id=\"" + paneId + "\"]") + ")";
+        string Query(string selector) => scope + "?.querySelector(" + JsonSerializer.Serialize(selector) + ")";
+        async Task Capture(string step)
+        {
+            var page = await core.ExecuteScriptAsync("(() => { const p = " + scope + ", bar = p?.querySelector('.composer-pills'), dialog = p?.querySelector('[data-testid=run-settings]'); return JSON.stringify({ "
+                + "panePresent: !!p, paneId: p?.dataset.paneId ?? null, viewportWidth: innerWidth, viewportHeight: innerHeight, devicePixelRatio, paneWidth: p?.getBoundingClientRect().width ?? null, toolbarParentWidth: bar?.parentElement?.getBoundingClientRect().width ?? null, "
+                + "pills: [...(bar?.querySelectorAll('[data-pill]') ?? [])].map(e => ({ name: e.dataset.pill, disabled: e.disabled })), menus: [...(p?.querySelectorAll('[data-menu]') ?? [])].map(e => ({ name: e.dataset.menu, rows: [...e.querySelectorAll('[role=menuitem], [role=menuitemradio]')].map(b => ({ text: b.textContent.trim().slice(0, 160), disabled: b.disabled })) })), "
+                + "popoverShown: !!dialog, fields: [...(dialog?.querySelectorAll('input') ?? [])].map(e => ({ inputMode: e.inputMode, disabled: e.matches(':disabled') })), applyDisabled: dialog?.querySelector('[data-testid=run-settings-apply]')?.disabled ?? null, "
+                + "alerts: [...(p?.querySelectorAll('.composer-pill-problem, [data-testid=run-settings] [role=alert]') ?? [])].map(e => e.textContent), active: document.activeElement?.dataset.testid ?? document.activeElement?.tagName ?? null }); })()");
+            diagnostics.Add(new { step, hostStatus = service.Snapshot.Sessions.FirstOrDefault(p => p.Id == paneId)?.Status, page = JsonDocument.Parse(JsonSerializer.Deserialize<string>(page) ?? "{}").RootElement.Clone() });
+        }
         async Task<bool> Until(string script)
         {
             var deadline = DateTime.UtcNow.AddSeconds(5);
@@ -216,30 +229,47 @@ public sealed partial class MainWindow
         });
         try
         {
-            await core.ExecuteScriptAsync("document.querySelector('[data-pill=more]')?.click()");
-            var shown = await Until("!!document.querySelector('[data-testid=run-settings] input[inputmode=numeric]')");
-            await core.ExecuteScriptAsync("(() => { const e = document.querySelector('[data-testid=run-settings] input[inputmode=numeric]'); if (!e) return; e.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, " + JsonSerializer.Serialize(value) + "); e.dispatchEvent(new Event('input', { bubbles: true })); })()");
+            await Until("!!(" + Query("[data-pill=more]") + " || " + Query("[data-pill=options]") + ")");
+            await Capture("beforeOpen");
+            // Below 420 px Toolbar folds More into Options. Follow the visible UI instead of requiring a wide pane.
+            route = JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("(() => { const p = " + scope + "; if (!p) return 'missing-pane'; for (const name of ['more', 'options']) { const b = p.querySelector('[data-pill=' + name + ']'); if (b && !b.disabled) { b.click(); return name; } } return 'unavailable'; })()"));
+            if (route == "options")
+            {
+                var row = "[...(" + scope + "?.querySelectorAll('[data-menu=options] button[role=menuitem]') ?? [])].find(b => !b.disabled && b.textContent.trim() === " + JsonSerializer.Serialize(Locale.Get("composer.runSettings.more")) + ")";
+                await Until("!!(" + row + ")");
+                await Capture("optionsOpened");
+                menuChosen = await core.ExecuteScriptAsync("(() => { const b = " + row + "; b?.click(); return !!b; })()") == "true";
+            }
+            shown = await Until("!!" + Query("[data-testid=run-settings] input[inputmode=numeric]"));
+            await Capture("afterOpen");
+            if (!shown) return false;
+            await core.ExecuteScriptAsync("(() => { const e = " + Query("[data-testid=run-settings] input[inputmode=numeric]") + "; if (!e) return; e.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, " + JsonSerializer.Serialize(value) + "); e.dispatchEvent(new Event('input', { bubbles: true })); })()");
             await Running(true);
-            var held = await Until("document.querySelector('[data-testid=run-settings] fieldset')?.disabled === true && document.querySelector('[data-testid=run-settings-apply]')?.disabled === true");
-            const string Enter = "document.querySelector('[data-testid=run-settings] input[inputmode=numeric]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }))";
-            await core.ExecuteScriptAsync(Enter);
-            await core.ExecuteScriptAsync("document.querySelector('[data-testid=run-settings-apply]')?.click()");
+            held = await Until(Query("[data-testid=run-settings] fieldset") + "?.disabled === true && " + Query("[data-testid=run-settings-apply]") + "?.disabled === true");
+            await Capture("held");
+            var enter = Query("[data-testid=run-settings] input[inputmode=numeric]") + "?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }))";
+            await core.ExecuteScriptAsync(enter);
+            await core.ExecuteScriptAsync(Query("[data-testid=run-settings-apply]") + "?.click()");
             await Task.Delay(100);
-            var blocked = calls == 0 && service.Snapshot.Sessions.First(p => p.Id == paneId).Settings == before.Settings;
+            blocked = calls == 0 && service.Snapshot.Sessions.First(p => p.Id == paneId).Settings == before.Settings;
             await Running(false);
-            var unlocked = await Until("document.querySelector('[data-testid=run-settings] fieldset')?.disabled === false && document.querySelector('[data-testid=run-settings-apply]')?.disabled === false");
-            var draftKept = await core.ExecuteScriptAsync("document.querySelector('[data-testid=run-settings] input[inputmode=numeric]')?.value === " + JsonSerializer.Serialize(value)) == "true";
+            unlocked = await Until(Query("[data-testid=run-settings] fieldset") + "?.disabled === false && " + Query("[data-testid=run-settings-apply]") + "?.disabled === false");
+            draftKept = await core.ExecuteScriptAsync(Query("[data-testid=run-settings] input[inputmode=numeric]") + "?.value === " + JsonSerializer.Serialize(value)) == "true";
+            await Capture("unlocked");
             raceOnApply = true;
-            await core.ExecuteScriptAsync(Enter);
-            var refusalShown = await Until("document.querySelector('[data-testid=run-settings] [role=alert]')?.textContent === " + JsonSerializer.Serialize(Locale.Get("phone.session.settingsLocked")));
-            var refused = calls == 1 && refusal == Locale.Get("phone.session.settingsLocked") && service.Snapshot.Sessions.First(p => p.Id == paneId).Settings == before.Settings;
-            result["composerRunSettings"] = new { shown, held, blocked, unlocked, draftKept, refusalShown, refused, calls };
+            await core.ExecuteScriptAsync(enter);
+            refusalShown = await Until(Query("[data-testid=run-settings] [role=alert]") + "?.textContent === " + JsonSerializer.Serialize(Locale.Get("phone.session.settingsLocked")));
+            refused = calls == 1 && refusal == Locale.Get("phone.session.settingsLocked") && service.Snapshot.Sessions.First(p => p.Id == paneId).Settings == before.Settings;
+            await Capture("afterRacedApply");
             return shown && held && blocked && unlocked && draftKept && refusalShown && refused;
         }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { error = ex.GetType().Name + ": " + ex.Message; return false; }
         finally
         {
+            result["composerRunSettings"] = new { shown, held, blocked, unlocked, draftKept, refusalShown, refused, calls, route, menuChosen, diagnostics, error };
             bridge.Register("applyRunSettings", ApplyWebRunSettings);
-            await core.ExecuteScriptAsync("document.querySelector('[data-testid=run-settings] .popover-footer .popover-button')?.click()");
+            await core.ExecuteScriptAsync(Query("[data-testid=run-settings] .popover-footer .popover-button") + "?.click()");
+            await core.ExecuteScriptAsync(Query("[data-menu=options]") + "?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
             await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(p => p.Id == paneId ? p with { Status = before.Status, Settings = before.Settings } : p).ToList() });
             view.Refresh();
         }
