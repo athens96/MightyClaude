@@ -36,6 +36,7 @@ import {
   type MobileSessionDetail,
   type MobileState,
   type OkResponse,
+  type RunNowResponse,
   type Provider,
   type PlanDecisionKind,
   type QuestionAnswers,
@@ -233,8 +234,8 @@ export interface MobileClient {
   stop(sessionId: string, signal?: AbortSignal): Promise<StopResponse>;
   /** Drops one queued request ("queue"). */
   removeQueued(sessionId: string, itemId: string, signal?: AbortSignal): Promise<OkResponse>;
-  /** Starts the first queued request on an idle pane ("queue"). */
-  runNext(sessionId: string, signal?: AbortSignal): Promise<OkResponse>;
+  /** 바로 실행 on one queued row ("queue", host 0.4.47+): a new worktree child or this pane, as the host decides. */
+  runQueuedNow(sessionId: string, itemId: string, signal?: AbortSignal): Promise<RunNowResponse>;
   /** Renames the pane ("pane"); the title is trimmed to 1..80 characters. */
   rename(sessionId: string, title: string, signal?: AbortSignal): Promise<OkResponse>;
   /** Restores automatic titling for the pane ("pane"); sends `titleMode: "auto"`. */
@@ -445,13 +446,15 @@ export function createClient(channel: RelayChannel): MobileClient {
         signal,
       ),
 
-    runNext: (sessionId, signal) =>
-      request<OkResponse>(
+    runQueuedNow: async (sessionId, itemId, signal) => {
+      const answer = await request<RunNowResponse>(
         'POST',
-        `/m1/sessions/${encodeURIComponent(sessionId)}/queue/run-next`,
+        `/m1/sessions/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(itemId)}/run-now`,
         {},
         signal,
-      ),
+      );
+      return { ...answer, ran: answer.ran === 'worktree' || answer.ran === 'here' ? answer.ran : undefined };
+    },
 
     rename: (sessionId, title, signal) => {
       const trimmed = title.trim();

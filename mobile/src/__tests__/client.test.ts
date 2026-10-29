@@ -168,7 +168,7 @@ describe('the m1 capability extension routes', () => {
     const fake = fakeChannel(ok);
     const client = createClient(fake.channel);
     await client.removeQueued('s1', 'q/1');
-    await client.runNext('s1');
+    await client.runQueuedNow('s1', 'q 1');
     await client.rename('s1', '  새 이름  ');
     await client.close('s1');
     await client.updateSettings('s1', { model: 'opus', effort: undefined, permissionMode: 'ask' });
@@ -176,16 +176,27 @@ describe('the m1 capability extension routes', () => {
     await client.runCommand('s1', 'usage');
     expect(fake.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
       'POST /m1/sessions/s1/queue/q%2F1/remove',
-      'POST /m1/sessions/s1/queue/run-next',
+      'POST /m1/sessions/s1/queue/q%201/run-now',
       'POST /m1/sessions/s1/rename',
       'POST /m1/sessions/s1/close',
       'POST /m1/sessions/s1/settings',
       'GET /m1/sessions/s1/commands',
       'POST /m1/sessions/s1/command',
     ]);
+    expect(fake.calls[1]?.body).toEqual({});
     expect(fake.calls[2]?.body).toEqual({ title: '새 이름' });
     expect(fake.calls[4]?.body).toEqual({ model: 'opus', permissionMode: 'ask' });
     expect(fake.calls[6]?.body).toEqual({ action: 'usage' });
+  });
+
+  it('reads how 바로 실행 ran, and an unknown answer as neither', async () => {
+    const ran = await createClient(fakeChannel({ status: 200, body: { protocol: 1, ok: true, ran: 'worktree' } }).channel).runQueuedNow('s1', 'q1');
+    expect(ran.ran).toBe('worktree');
+    const here = await createClient(fakeChannel({ status: 200, body: { protocol: 1, ok: true, ran: 'here' } }).channel).runQueuedNow('s1', 'q1');
+    expect(here.ran).toBe('here');
+    const unknown = await createClient(fakeChannel({ status: 200, body: { protocol: 1, ok: true, ran: 'steer' } }).channel).runQueuedNow('s1', 'q1');
+    expect(unknown.ran).toBeUndefined();
+    expect(unknown.ok).toBe(true);
   });
 
   it('pages history with before and a clamped limit', async () => {
@@ -296,7 +307,7 @@ describe('the m1 capability extension routes', () => {
   it('maps every new route’s host error onto ApiError', async () => {
     const cases: Array<[number, string, (client: MobileClient) => Promise<unknown>]> = [
       [404, '없는 항목입니다', (client) => client.removeQueued('s1', 'q1')],
-      [409, '실행 중입니다', (client) => client.runNext('s1')],
+      [409, '실행 중입니다', (client) => client.runQueuedNow('s1', 'q1')],
       [400, '이름이 올바르지 않습니다', (client) => client.rename('s1', '이름')],
       [404, '없는 실행 창입니다', (client) => client.close('s1')],
       [400, '잘못된 요청입니다', (client) => client.entries('s1', { before: 'e1' })],

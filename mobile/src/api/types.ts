@@ -287,6 +287,13 @@ export type PlanDecisionKind = 'approveAutoEdit' | 'approveConfirmEach' | 'revis
 export interface QueuedItem {
   id: string;
   text: string;
+  /**
+   * 바로 실행 (host 0.4.47+): "worktree" — a new worktree child of the pane's agent; "here" — this pane now; "unavailable" — a
+   * dimmed button whose reason is `runNowReason`. Absent: no button (a held row after the first, or an old host).
+   */
+  runNow?: 'worktree' | 'here' | 'unavailable';
+  /** With "unavailable": "turn" (the current task), "held" (held items first), "update" (a CLI update), "agent" (pick another agent on the computer). */
+  runNowReason?: 'turn' | 'held' | 'update' | 'agent';
 }
 
 export interface MobileUsage {
@@ -795,6 +802,11 @@ export interface StopResponse {
 export interface OkResponse {
   protocol: number;
   ok: boolean;
+}
+
+/** `POST /m1/sessions/{id}/queue/{itemId}/run-now`. */
+export interface RunNowResponse extends OkResponse {
+  ran?: 'worktree' | 'here';
 }
 
 export interface CreateSessionResponse {

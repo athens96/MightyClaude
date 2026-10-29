@@ -37,7 +37,7 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 | GET | `/m1/info` | | `{ protocol, hostId, hostName, appVersion, platform }` |
 | GET | `/m1/state?since=<rev>&wait=<0..10>` | | `MobileState` — `revision`이 `since`보다 커질 때까지 최대 `wait`초 기다렸다가 응답. 시간 안에 변화가 없으면 같은 `revision`으로 현재 상태를 돌려준다 |
 | GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>[&structure=<tag>]` | | `MobileSessionDetail` — 세션 단위 `revision`으로 같은 방식. `structure`는 `"structure"` 기능이 있는 호스트(Mac·Windows)에만(아래 "구조 보기" 절) |
-| POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "queued", outcome?, entryId?, runId? }`(`/submit`과 `/guided`에서 `"steered"`는 구버전 호스트만 보낸다. 새 호스트는 다음 실행(`/queue/run-next`, 답은 따로)으로만 실행 중인 턴에 넣는다. 새 필드는 아래 "라우트" 표) · 실행할 수 없으면 409 |
+| POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "queued", outcome?, entryId?, runId? }`(`/submit`과 `/guided`에서 `"steered"`는 구버전 호스트만 보낸다. 새 호스트는 바로 실행(`/queue/{itemId}/run-now`, 옛 폰은 `/queue/run-next`, 답은 따로)으로만 실행 중인 턴에 넣는다. 새 필드는 아래 "라우트" 표) · 실행할 수 없으면 409 |
 | POST | `/m1/sessions/{id}/stop` | | `{ protocol, stopped }` — 실행 중인 요청이 없어 멈출 것이 없었으면 `stopped: false` |
 | POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow, always? }` | `{ protocol, ok: true }` — `always`는 Antigravity 권한 카드에만(아래 "Antigravity 권한 카드" 절) |
 | POST | `/m1/sessions/{id}/answers` | `{ requestId, runId, answers: { "<질문 문장>": { selectedOptions, customText? } } }` | `{ protocol, ok: true }` |
@@ -84,7 +84,7 @@ MobileSessionDetail {
   protocol: 1, revision: number, session: MobileSessionSummary,
   entries: [LogEntry],                 // 최근 80개. id는 안정적이며 스트리밍 중 같은 id의 text가 갱신된다
   permissions: [MobilePermission],     // pending 상태만
-  queued: [{ id, text }],
+  queued: [{ id, text, runNow?, runNowReason? }],   // 아래 "대기열 행의 바로 실행"
   usage?: { model?, contextUsedTokens?, contextWindowTokens?, contextPercent?, totalTokens?, costUSD? },
   elapsedSeconds?: number
 }
@@ -129,7 +129,7 @@ MobilePermission {
 | `mightyStyle` | `cli` `ouroboros` — 둘 고정(v6까지는 `paperthin`도 있었고 v7에서 그 스타일과 함께 뺐다). `ouroboros`가 아닌 스타일(번들 클러드 플랜 포함)에는 언제나 `cli`가 실린다(진짜 값은 `styleId`, 아래 "스타일" 절) |
 | 블록 `kind` | `main` `agent` `task` `steer` `compact` `question` |
 | 블록 `status` | `running` `waiting` `completed` `error` `stopped` |
-| `accepted` | `started` `queued`(`/submit`·`/guided`에서 `steered`는 구버전 호스트만 보낸다. 새 호스트는 다음 실행으로만 넣고, 그 답은 `/queue/run-next`의 `{ protocol, ok }`다) |
+| `accepted` | `started` `queued`(`/submit`·`/guided`에서 `steered`는 구버전 호스트만 보낸다. 새 호스트는 바로 실행(`/queue/{itemId}/run-now`, 옛 폰은 `/queue/run-next`)으로만 넣고, 그 답은 그 라우트의 것이다) |
 | `mode` | `steer` `queue`(둘 다 받지만 실행 중이면 둘 다 대기열) |
 | 명령 `source` | `app` `builtin` `project` `user` `plugin` |
 | 명령 `action` | `model` `permission` `clear` `usage` `help` `rename` |
@@ -140,7 +140,8 @@ MobilePermission {
 |---|---|---|---|
 | POST | `/m1/sessions/{id}/submit` | `{ text, mode?, attachments?: [uploadId] }` | 202 `{ protocol, accepted }` — `accepted`는 **실제로 일어난 일**이다. 실행 중이면 `mode`와 상관없이(`"queue"`, `"steer"`, 생략 모두) 대기열에 넣고 `queued`를 돌려준다. `mode: "steer"`도 400이 아니라 대기열이다(구버전 휴대폰 호환). 실행 중인 턴에는 넣지 않는다. 실행 중이 아니면 `mode`와 상관없이 바로 시작하고 `started`를 돌려준다. 대기열이 가득 차면 409. 새 호스트는 `{ protocol, accepted, outcome, entryId?, runId? }`를 돌려준다: `outcome`은 `accepted`와 같은 낱말이고(`accepted`는 옛 휴대폰을 위해 그대로 둔다), 바로 시작한 요청에는 그 요청의 사용자 항목 id `entryId`와 그래프 실행 id `runId`가 붙는다(Mac은 둘이 같은 id이고 Windows는 서로 다른 id다. 그래프가 없는 창이면 `runId`가 없다). 대기열에 들어간 요청은 아직 블록이 없으므로 id가 없고, 위임으로 잡아 둔 항목과 함께 풀려 시작한 요청도 그 사이 다른 실행이 시작됐을 수 있어 id 없이 답한다. 휴대폰은 `entryId`로 먼저 그려 둔 요청 블록을 실제 항목에 맞추고, id가 없는 옛 응답이면 글과 시각으로 맞춘다. 읽는 규칙과 사례는 [interaction.md](interaction.md) "보내기 응답"과 `native/contracts/fixtures/pending.json` `submitResponses`. `guided`의 202도 같은 모양이다 |
 | POST | `/m1/sessions/{id}/queue/{itemId}/remove` | | `{ protocol, ok }` · 없는 항목 404 |
-| POST | `/m1/sessions/{id}/queue/run-next` | | `{ protocol, ok }` · 실행 중이거나 대기열이 비면 409 |
+| POST | `/m1/sessions/{id}/queue/{itemId}/run-now` | | `{ protocol, ok: true, ran: "worktree" \| "here" }` — 그 행의 바로 실행. 호스트는 누른 순간의 상태로 다시 판단한다. 없는 행 404 `remote.error.queueItemNotFound` · 지금 바로 실행할 수 없는 행(흐린 행이나 단추 없는 행. 폰은 부르지 않으므로 그 사이 상태가 바뀐 때만 온다) 409 `queue.runNowRefused` · 실행할 수 없는 창 409와 그 이유 · 시작 실패 409 `remote.error.startFailed` |
+| POST | `/m1/sessions/{id}/queue/run-next` | | `{ protocol, ok }` · 실행 중이거나 대기열이 비면 409. 옛 폰용. 새 폰은 부르지 않는다 |
 | POST | `/m1/sessions/{id}/rename` | `{ title }` (앞뒤 공백 제거 후 1~80자) 또는 `{ title: "", titleMode: "auto" }` | `{ protocol, ok }` — `titleMode: "auto"`이면 `title`을 무시하고 제목을 자동 모드로 되돌린다; 오래된 폰이 `title`만 보내면 고정 이름으로 처리 |
 | POST | `/m1/sessions/{id}/close` | | `{ protocol, ok }` — 실행 중이면 Mac에서 닫을 때와 같이 중지 후 닫는다 |
 | GET | `/m1/sessions/{id}/entries?before=<entryId>&limit=<1..100>` | | `{ protocol, entries: [LogEntry], hasMore }` — `before`보다 오래된 항목을 시간순으로. `before`가 호스트 기록에 없으면(밀려남) 가장 오래된 쪽부터가 아니라 **빈 배열과 `hasMore: false`** |
@@ -445,6 +446,34 @@ oh-my-claudecode가 깔린 Claude 창은 입력창에 **보낼 대상** 스위�
 - **호스트가 감싼다.** 휴대폰은 늘 평문을 `submit`에 보내고, 호스트가 대상이 Claude가 아닐 때 `/oh-my-claudecode:ask <id> <글>`로 바꿔 보낸다(앞뒤 공백을 뺀 글이 비면 아무것도 보내지 않고, `/`로 시작하는 글은 그대로 보낸다). 대상이 정해진 동안에는 첨부를 보낼 수 없어, `attachments`가 있는 `submit`은 409(`composer.ask.attachmentsOff`)다. 새 휴대폰은 대상이 정해진 동안 첨부 단추를 막고 안내 문구(`composer.ask.attachmentsOff`)를 보이며, 이미 고른 파일은 지우지 않고 그대로 두되 보내지 않는다(대상이 세부 정보로 와도 같다). 파일만 있으면 보낼 글이 없는 것으로 본다.
 - 휴대폰은 고른 값을 다음 세부 정보가 올 때까지 먼저 보이고, 요청이 실패하면 되돌리며 오류를 알린다.
 - 구버전 호스트는 두 필드도 라우트도 모르므로 휴대폰에 스위치가 보이지 않는다. 구버전 휴대폰은 두 필드를 무시하므로 스위치를 모르고 평문만 보낸다.
+
+### 대기열 행의 바로 실행
+
+세부 정보의 대기열 행은 `{ id, text, runNow?, runNowReason? }`다. 호스트가 그 행에서 **바로 실행**이 무엇을 하는지 정해 보낸다(판단 규칙과 사례는 `native/contracts/fixtures/queue-run-now.json`, [contracts README](../native/contracts/README.md) "Queue run now").
+
+| 호스트의 판단 | `runNow` | `runNowReason` | 휴대폰 |
+| --- | --- | --- | --- |
+| `worktree` | `"worktree"` | – | 활성 단추. 그 창 에이전트의 새 worktree 자식 창에서 실행 |
+| `here`, `steer`, `held` | `"here"` | – | 활성 단추. 이 창에서 지금 실행(시작, 중간 요청, 보류된 항목 전달) |
+| `waitsForTurn` | `"unavailable"` | `"turn"` | 흐린 단추. 누르면 `queue.runNowUnavailableHelp`를 알린다 |
+| `waitsForHeld` | `"unavailable"` | `"held"` | 흐린 단추. `queue.runNowAfterHeldHelp` |
+| `waitsForUpdate` | `"unavailable"` | `"update"` | 흐린 단추. `queue.runNowUpdateHelp` |
+| `agentMenu` | `"unavailable"` | `"agent"` | 흐린 단추. `phone.queue.runNowAgentOnComputer`(다른 에이전트는 컴퓨터에서 고른다) |
+| `hidden` | – | – | 단추 없음 |
+
+- `"unavailable"`은 흐린 단추다. 접근성에는 비활성으로 알리지만 누를 수는 있고, 누르면 호스트를 부르지 않고 이유를 알림으로 띄운다(휴대폰에는 툴팁이 없다).
+- 이유는 문구가 아니라 낱말이다. 호스트와 휴대폰의 언어가 다를 수 있어 휴대폰이 자기 언어로 문구를 고른다.
+- 휴대폰은 모르는 `runNow`를 없는 것으로 읽고(단추 없음), 모르거나 빠진 `runNowReason`은 `"turn"`으로 읽는다. 앞으로 값이 늘어도 안전하다.
+- `runNow`가 곧 능력 표시다. `/m1/info`의 능력은 늘리지 않는다. 옛 호스트는 `runNow`를 보내지 않으므로 단추가 없다.
+- 누르면 `POST /m1/sessions/{id}/queue/{itemId}/run-now`(위 "라우트" 표). `ran: "here"`이면 휴대폰은 예전 다음 실행처럼 그 행의 글로 내 요청을 지켜보고 "다음 요청을 시작했습니다"를 띄운다. `ran: "worktree"`이면 "새 worktree의 자식 창에서 실행했습니다"를 띄우고 지켜보지 않는다(요청이 이 창에 생기지 않는다). 모르는 `ran`은 없는 것으로 읽는다.
+- 휴대폰에서 연 worktree 자식 창은 Mac·Windows에서 선택되지 않는다. 새 탭은 생기지만 보던 화면을 그대로 둔다.
+
+| | 새 호스트 | 옛 호스트 |
+| --- | --- | --- |
+| 새 휴대폰 | 행마다 바로 실행(활성이나 흐림). 다음 실행 없음 | `runNow`가 없으므로 단추 없음. 다음 실행도 없음 |
+| 옛 휴대폰 | 머리의 다음 실행(쉬는 창, `/queue/run-next`), 호스트는 예전대로 답한다 | 지금 그대로 |
+
+새 휴대폰과 옛 호스트 조합에서는 쉬는 창의 멈춘 대기열을 휴대폰에서 다시 흘릴 수 없다. 호스트를 올리면 된다.
 
 ### Antigravity 권한 카드
 

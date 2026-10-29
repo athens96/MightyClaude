@@ -3,28 +3,29 @@ import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import type { QueuedItem } from '@/api/types';
 import { Button } from '@/components/ui';
 import { t } from '@/lib/i18n';
+import { runNowOf, runNowReasonKey } from '@/lib/queue';
 import { monoText, motion, radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 /** How long a queued send's flash waits for its row to be listed. */
 const FLASH_WAIT_MS = 5000;
 
 /**
- * The pane's queue. Removing an item and starting the next one are offered only on a
- * host that advertised "queue"; otherwise the list reads exactly as it did before.
+ * The pane's queue. Removing an item and 바로 실행 are offered only on a host that advertised
+ * "queue"; otherwise the list reads exactly as it did before. 바로 실행 sits on each row the host
+ * sent a `runNow` for (an old host sends none, so it shows none): the host runs the row in a new
+ * worktree child or in this pane. A row that must wait is dimmed, and a tap says why.
  */
 export function QueuedList({
   items,
   manageable,
-  canRunNext,
   busy,
   flash = 0,
   onRemove,
-  onRunNext,
+  onRunNow,
+  onExplain,
 }: {
   items: QueuedItem[];
   manageable: boolean;
-  /** The pane is idle, so the first item can be started by hand. */
-  canRunNext: boolean;
   busy: boolean;
   /**
    * Bumped when a send from this phone was queued (natural submit B3): the list washes in
@@ -33,7 +34,10 @@ export function QueuedList({
    */
   flash?: number;
   onRemove: (itemId: string) => void;
-  onRunNext: () => void;
+  /** 바로 실행 on a row the host can run now. */
+  onRunNow: (item: QueuedItem) => void;
+  /** A tap on a dimmed 바로 실행: the words that say why it must wait. */
+  onExplain: (text: string) => void;
 }) {
   const styles = useStyles(makeStyles);
   const palette = usePalette();
@@ -67,27 +71,43 @@ export function QueuedList({
     <Animated.View style={[styles.wrap, { backgroundColor }]}>
       <View style={styles.header}>
         <Text style={styles.title}>{t('phone.queue.title', { count: items.length })}</Text>
-        {manageable && canRunNext ? (
-          <Button label={t('queue.runNext')} tone="neutral" compact busy={busy} onPress={onRunNext} />
-        ) : null}
       </View>
-      {items.map((item) => (
-        <View key={item.id} style={styles.row}>
-          <Text numberOfLines={2} style={styles.text}>
-            · {item.text}
-          </Text>
-          {manageable ? (
-            <Button
-              label={t('phone.queue.remove')}
-              accessibilityLabel={t('phone.queue.removeLabel', { text: item.text.slice(0, 30) })}
-              tone="ghost"
-              compact
-              busy={busy}
-              onPress={() => onRemove(item.id)}
-            />
-          ) : null}
-        </View>
-      ))}
+      {items.map((item) => {
+        const runNow = runNowOf(item);
+        return (
+          <View key={item.id} style={styles.row}>
+            <Text numberOfLines={2} style={styles.text}>
+              · {item.text}
+            </Text>
+            {manageable && runNow ? (
+              <Button
+                label={t('queue.runNow')}
+                accessibilityLabel={t('phone.queue.runNowLabel', { text: item.text.slice(0, 30) })}
+                accessibilityHint={
+                  runNow.kind === 'unavailable'
+                    ? t(runNowReasonKey(runNow.reason))
+                    : t(runNow.kind === 'worktree' ? 'phone.queue.runNowWorktreeHint' : 'queue.runNowHereHelp')
+                }
+                tone="neutral"
+                compact
+                dimmed={runNow.kind === 'unavailable'}
+                busy={busy && runNow.kind !== 'unavailable'}
+                onPress={() => (runNow.kind === 'unavailable' ? onExplain(t(runNowReasonKey(runNow.reason))) : onRunNow(item))}
+              />
+            ) : null}
+            {manageable ? (
+              <Button
+                label={t('phone.queue.remove')}
+                accessibilityLabel={t('phone.queue.removeLabel', { text: item.text.slice(0, 30) })}
+                tone="ghost"
+                compact
+                busy={busy}
+                onPress={() => onRemove(item.id)}
+              />
+            ) : null}
+          </View>
+        );
+      })}
     </Animated.View>
   );
 }

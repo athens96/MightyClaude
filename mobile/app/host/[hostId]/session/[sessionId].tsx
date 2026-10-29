@@ -28,6 +28,7 @@ import {
   type MobilePermission,
   type MobileSessionDetail,
   type PlanDecisionKind,
+  type QueuedItem,
   type QuestionAnswers,
   type SettingsPatch,
   type StructureItem,
@@ -80,6 +81,7 @@ import {
   retainDropped,
 } from '@/lib/history';
 import { t } from '@/lib/i18n';
+import { runNowOf } from '@/lib/queue';
 import { pushViewing } from '@/lib/push/runtime';
 import { answeredToast, isPlanRequest, pendingPlan, planAnswerBody } from '@/lib/plan';
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
@@ -836,33 +838,41 @@ export default function SessionScreen() {
     [client, poll, sessionId],
   );
 
-  const firstQueued = detail?.queued[0]?.text;
-  const runNext = useCallback(() => {
-    if (!client || !sessionId) return;
-    // The baseline is the pane before the call: its entry may come with a poll while the
-    // call is still out.
-    const asked = Date.now();
-    const watched = firstQueued === undefined ? undefined : newPendingRequest(snapshotRef.current, newClientId(asked), firstQueued, asked, false);
-    void (async () => {
-      setQueueBusy(true);
-      try {
-        await client.runNext(sessionId);
-        if (shownSession.current !== sessionId) return;
-        showToast(t('phone.session.toast.nextStarted'), 'success');
-        // 다음 실행 is an own request (B2): nothing is drawn for it, but the views move to
-        // its entry when it lands. Started with no ids: any new request entry is it.
-        if (watched) {
-          updatePending((previous) => [...previous, { ...watched, phase: 'started', answeredAt: Date.now() }]);
-          setSettleTick((count) => count + 1);
+  const runNow = useCallback(
+    (item: QueuedItem) => {
+      if (!client || !sessionId) return;
+      const kind = runNowOf(item)?.kind;
+      if (kind !== 'worktree' && kind !== 'here') return;
+      // The baseline is the pane before the call: its entry may come with a poll while the
+      // call is still out. Run here, it is an own request (B2), watched by its words as
+      // 다음 실행's was; a worktree child is another pane, so nothing here waits for it.
+      const asked = Date.now();
+      const watched = kind === 'here' ? newPendingRequest(snapshotRef.current, newClientId(asked), item.text, asked, false) : undefined;
+      void (async () => {
+        setQueueBusy(true);
+        try {
+          const answer = await client.runQueuedNow(sessionId, item.id);
+          if (shownSession.current !== sessionId) return;
+          const worktree = answer.ran === 'worktree';
+          showToast(t(worktree ? 'phone.session.toast.runNowWorktree' : 'phone.session.toast.nextStarted'), 'success');
+          // Nothing is drawn for it, but the views move to its entry when it lands. Started
+          // with no ids: any new request entry is it.
+          if (watched && !worktree) {
+            updatePending((previous) => [...previous, { ...watched, phase: 'started', answeredAt: Date.now() }]);
+            setSettleTick((count) => count + 1);
+          }
+          poll.refresh();
+        } catch (error) {
+          showToast(describeError(error), 'error');
+        } finally {
+          setQueueBusy(false);
         }
-        poll.refresh();
-      } catch (error) {
-        showToast(describeError(error), 'error');
-      } finally {
-        setQueueBusy(false);
-      }
-    })();
-  }, [client, firstQueued, poll, sessionId, updatePending]);
+      })();
+    },
+    [client, poll, sessionId, updatePending],
+  );
+  // A dimmed 바로 실행 says why on a tap (a phone has no tooltip); the host is not asked.
+  const explainRunNow = useCallback((text: string) => showToast(text, 'info'), []);
 
   const rename = useCallback(
     (title: string) => {
@@ -1342,11 +1352,11 @@ export default function SessionScreen() {
       <QueuedList
         items={detail.queued}
         manageable={canQueue}
-        canRunNext={!running}
         busy={queueBusy}
         flash={queueFlash}
         onRemove={removeQueued}
-        onRunNext={runNext}
+        onRunNow={runNow}
+        onExplain={explainRunNow}
       />
     </View>
   ) : null;

@@ -35,6 +35,13 @@ interface ButtonProps {
   style?: StyleProp<ViewStyle>;
   /** Read out instead of the label, for buttons whose label alone says too little. */
   accessibilityLabel?: string;
+  /** Read out after the label: what a tap does, or why it cannot be done now. */
+  accessibilityHint?: string;
+  /**
+   * Drawn and announced as disabled, but still tappable: a phone has no tooltip, so a tap on a
+   * dimmed button is how it says why it cannot act (the caller's `onPress` explains).
+   */
+  dimmed?: boolean;
 }
 
 /**
@@ -81,6 +88,8 @@ export function Button({
   compact = false,
   style,
   accessibilityLabel,
+  accessibilityHint,
+  dimmed = false,
 }: ButtonProps) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
@@ -91,8 +100,9 @@ export function Button({
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       accessibilityRole="button"
-      accessibilityState={{ disabled: inactive, busy }}
+      accessibilityState={{ disabled: inactive || dimmed, busy }}
       disabled={inactive}
       hitSlop={compact ? 4 : undefined}
       onPress={() => {
@@ -104,7 +114,7 @@ export function Button({
         compact && styles.buttonCompact,
         { backgroundColor: toneBackground(palette, tone) },
         tone === 'neutral' && styles.buttonOutline,
-        inactive && styles.buttonDisabled,
+        (inactive || dimmed) && styles.buttonDisabled,
         pressed && styles.buttonPressed,
         style,
       ]}
