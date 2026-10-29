@@ -127,7 +127,7 @@ internal sealed class SessionUsageTracker
         var incoming = MetadataJson.Property(root, "usage").Deserialize<SessionUsage>(Wire.Json);
         if (incoming is null || incoming.Provider != "claude") return;
         Identity(root.Text("claudeSessionId"));
-        if (MetadataJson.Integer(root, "sequence") is { } sequence) { if (sequence <= lastModSequence) return; lastModSequence = sequence; }
+        if (MetadataJson.SafeInteger(root, "sequence") is { } sequence) { if (sequence <= lastModSequence) return; lastModSequence = sequence; }
         authoritativeContext = true;
         value = value with { ContextUsedTokens = incoming.ContextUsedTokens, ContextWindowTokens = incoming.ContextWindowTokens, Model = incoming.Model ?? value.Model, Source = "claude.mods+stream-json" };
         if (incoming.CostUSD is { } cost) value = value with { CostUSD = cost, CostScope = "session" };

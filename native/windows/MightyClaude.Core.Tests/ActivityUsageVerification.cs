@@ -64,9 +64,13 @@ internal static class ActivityUsageVerification
         Check(values.Last().InputTokens == 2400 && values.Last().ContextUsedTokens == 350 && values.Last().ContextWindowTokens == 200000 && values.Last().TokenScope == "run", "Run totals must not overwrite current context");
         var stamp = "2026-09-16T00:00:00Z";
         var observed = new SessionUsage { ProviderSessionId = "claude-session", Source = "claude.mods", ContextUsedTokens = 1000, ContextWindowTokens = 200000, CostUSD = 0.5, CostScope = "session", RateLimits = [new("five_hour", 42)], UpdatedAt = stamp };
-        JsonElement Envelope(long sequence, SessionUsage usage) => Json(JsonSerializer.Serialize(new { version = 1, claudeSessionId = "claude-session", @event = "session.usage", sequence, usage }, Wire.Json));
-        parser.ReceiveMod(Envelope(3, observed)); var count = values.Count;
+        JsonElement Envelope(object sequence, SessionUsage usage) => Json(JsonSerializer.Serialize(new { version = 1, claudeSessionId = "claude-session", @event = "session.usage", sequence, usage }, Wire.Json));
+        parser.ReceiveMod(Envelope(Json("3e0"), observed)); var count = values.Count;
         parser.ReceiveMod(Envelope(2, observed with { ContextUsedTokens = 1900 })); Check(values.Count == count, "Stale Mods usage sequence must be ignored");
+        foreach (var sequence in new[] { "3.0", "3e0", "2.0", "2e0" })
+            parser.ReceiveMod(Envelope(Json(sequence), observed with { ContextUsedTokens = 1900, ContextWindowTokens = 100000, CostUSD = 9, RateLimits = [new("five_hour", 95)], RateLimitsUpdatedAt = "2026-09-16T00:01:00Z" }));
+        Check(values.Count == count && values.Last().ContextUsedTokens == 1000 && values.Last().ContextWindowTokens == 200000 && values.Last().CostUSD == 0.5 && values.Last().RateLimits?.Single().PercentUsed == 42,
+            "Equivalent or older decimal/exponent Mods sequences must not replace context, quota or cost");
         Check(values.Last().RateLimitsUpdatedAt == stamp && values.Last().ContextPercent == 0.5 && values.Last().CostScope == "session", "Direct Mods context/quota source missing");
         parser.Parse("""{"type":"assistant","session_id":"claude-session","message":{"model":"claude-sonnet-test","usage":{"input_tokens":500,"output_tokens":10},"content":[]}}""");
         Check(values.Last().RateLimitsUpdatedAt == stamp && values.Last().InputTokens == 2400 && values.Last().ContextUsedTokens == 500, "stdout must not refresh quota age or replace final run totals");
