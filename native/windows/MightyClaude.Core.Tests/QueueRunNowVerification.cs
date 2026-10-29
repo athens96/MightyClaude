@@ -100,7 +100,7 @@ internal static class QueueRunNowVerification
     internal static Task TheWindowRunsNowOnlyWhatCanRun()
     {
         var folder = ClaudePluginVerification.WinUISource();
-        string Source(string file) => File.ReadAllText(Path.Combine(folder, file));
+        string Source(string file) => File.ReadAllText(Path.Combine(folder, file)).Replace("\r\n", "\n");
         static string Member(string text, string signature)
         {
             var at = text.IndexOf(signature, StringComparison.Ordinal);
@@ -121,14 +121,15 @@ internal static class QueueRunNowVerification
             && pane.Contains("var recording = owner.service.Delegation?.EndingRuns.Contains(id) == true;", StringComparison.Ordinal)
             && pane.Contains("MightyGraphSupport.NoticeTurnRunning(pane.GraphRuns ?? [])", StringComparison.Ordinal), "a held, recording or notice-answering pane offers no here or steer that would not run");
         Check(Member(queue, "private async Task<bool> ReleaseHeldNow(").Contains("case DelegationRelease.NothingHeld: if (!await StartNextQueuedInput()) return false;", StringComparison.Ordinal), "run next with nothing held is true only when a run took the first row");
-        var deliver = File.ReadAllText(Path.Combine(Path.GetDirectoryName(folder)!, "MightyClaude.Core", "DesktopService.Delegation.cs"));
+        var deliver = File.ReadAllText(Path.Combine(Path.GetDirectoryName(folder)!, "MightyClaude.Core", "DesktopService.Delegation.cs")).Replace("\r\n", "\n");
         Check(Member(deliver, "async Task<string?> IDelegationHost.Deliver(").Contains("!MightyGraphSupport.NoticeTurnRunning(s.GraphRuns ?? [])", StringComparison.Ordinal), "delegation never steers into a running notice turn");
         // What waited for that turn is offered again when it ends, not only at the run's end.
-        var service = File.ReadAllText(Path.Combine(Path.GetDirectoryName(folder)!, "MightyClaude.Core", "DesktopService.cs"));
+        var service = File.ReadAllText(Path.Combine(Path.GetDirectoryName(folder)!, "MightyClaude.Core", "DesktopService.cs")).Replace("\r\n", "\n");
         var receiveAt = service.IndexOf("private void Receive(RunEvent value)", StringComparison.Ordinal);
         Check(receiveAt >= 0, "Receive is there");
         // A service member: to its closing brace at member indent, past the lock's own.
-        var receive = service[receiveAt..service.IndexOf("\n    }\n", receiveAt, StringComparison.Ordinal)];
+        var receiveEnd = receiveAt < 0 ? -1 : service.IndexOf("\n    }\n", receiveAt, StringComparison.Ordinal);
+        var receive = receiveAt < 0 || receiveEnd < 0 ? "" : service[receiveAt..receiveEnd];
         Check(receive.Contains("noticeTurnEnded = MightyGraphSupport.NoticeTurnEnded(before,", StringComparison.Ordinal)
             && receive.IndexOf("var before = ", StringComparison.Ordinal) < receive.IndexOf("snapshot = snapshot.Apply(value);", StringComparison.Ordinal)
             && receive.Contains("|| noticeTurnEnded) OfferDelegationPending();", StringComparison.Ordinal), "a notice turn's end offers delegation's waiting items again");

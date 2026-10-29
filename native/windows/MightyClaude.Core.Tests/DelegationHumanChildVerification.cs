@@ -462,7 +462,7 @@ internal static class DelegationHumanChildVerification
     /// </summary>
     internal static Task AStartThatThrowsGivesTheTextBackOnce()
     {
-        var source = File.ReadAllText(Path.Combine(Path.GetDirectoryName(ClaudePluginVerification.WinUISource())!, "MightyClaude.Core", "DelegationDelegateTool.cs"));
+        var source = File.ReadAllText(Path.Combine(Path.GetDirectoryName(ClaudePluginVerification.WinUISource())!, "MightyClaude.Core", "DelegationDelegateTool.cs")).Replace("\r\n", "\n");
         var at = source.IndexOf("private async Task StartChild(", StringComparison.Ordinal);
         Check(at >= 0, "StartChild is there");
         var end = source.IndexOf("\n    }\n", at, StringComparison.Ordinal);
