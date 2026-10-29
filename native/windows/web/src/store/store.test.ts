@@ -226,7 +226,7 @@ describe('sent requests and view choices (natural submit)', () => {
       session.graphViewMode === undefined ? { presentation: 'never-saved' } : undefined);
   });
 
-  it('counts a queued request that now runs (or 다음 실행) as an own send, by its words', () => {
+  it('counts a queued request that now runs (or 바로 실행) as an own send, by its words', () => {
     const state = loaded();
     const session = selectedSession(state.snapshot)!;
     const composer = (texts: string[]) => ({ paneId: session.id, queue: { held: [], items: texts.map((text, i) => ({ id: 'q' + i, text, attachments: [] })), waitsOnBackground: null } }) as unknown as ComposerState;

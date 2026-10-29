@@ -67,7 +67,7 @@
 판단 순서:
 1. **보류된 행:** 첫 보류된 행(`heldIndex == 0`)이면 `held`, 나머지는 `hidden`. 보류된 항목은 언제나 함께 가므로 단추는 하나면 된다.
 2. **창이 쉬고 있으면**(실행 중도, 시작 중도, CLI 업데이트로 붙잡힌 것도 아님. 오류로 멈춘 대기열이 그렇다) `here`. 돌고 있는 작업이 없으니 worktree로 나눌 까닭이 없다.
-3. **CLI 업데이트로 붙잡힌 창**이면 `waitsForUpdate`. ⌘Enter도 그때는 worktree를 열지 않는다. 사용자가 시작한 CLI 업데이트나 플러그인 변경도 같다(맥 `manualUpdateHolds`, 윈도우 `ManualMutationBlockReason`). 마지막 실행의 끝을 아직 기록하는 자식 창은 바쁜 창으로 읽는다(`waitsForTurn`).
+3. **CLI 업데이트로 붙잡힌 창**이면 `waitsForUpdate`. ⌘Enter도 그때는 worktree를 열지 않는다. 사용자가 시작한 CLI 업데이트나 플러그인 변경도 같다(맥 `manualUpdateHolds`, 윈도우 `ManualMutationBlockReason`). 마지막 실행의 끝을 아직 기록하는 자식 창은 바쁜 창으로 읽는다.
    - **Antigravity 권한 카드의 이어짐**(허용한 카드가 대기열에 넣은 후속 요청, 맥 `QueuedInput.antigravityGrant`/`antigravityCard`, `isContinuation`)이면 `waitsForTurn`. 그 허용 규칙과 카드는 이 창의 다음 실행 몫이라 worktree 자식, 에이전트 메뉴, steer 어느 길로도 가지 않는다. 창이 쉬면 2번에서 `here`다. 픽스처 행의 `continuation`.
 4. 행에 **글**이 있고 `ComposerSecondSend.choose`가 `.worktree`면 `worktree`.
 5. 행에 글이 있고 `menuOnly`면 `agentMenu`.

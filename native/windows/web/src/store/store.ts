@@ -57,7 +57,7 @@ export interface StoreState {
   /** A send that went into the running run as a new turn: the diagram shows its steer block (`seq` counts them). */
   steered?: { paneId: string; runId?: string; seq: number };
   /**
-   * The queue items each pane's composer let go of lately (they ran, 다음 실행 took them, or they were removed), with when: a
+   * The queue items each pane's composer let go of lately (they ran, 바로 실행 took them, or they were removed), with when: a
    * request entry with their words that comes soon after is an own send that now runs (B2), and the views move to it.
    */
   dequeued?: Readonly<Record<string, readonly { text: string; at: number }[]>>;
@@ -224,7 +224,7 @@ export function rememberDequeued(state: StoreState, next: ComposerState, now: nu
 
 /**
  * A delta's new request entries that carry the words of a queue item (still queued, or let go of lately): a queued send that
- * now runs, or 다음 실행. Each is an own send, so every view moves to it (scrollRule `own`).
+ * now runs, or 바로 실행. Each is an own send, so every view moves to it (scrollRule `own`).
  */
 export function queuedStarts(state: StoreState, sessions: readonly SessionDelta[], now: number, previous: readonly RunSession[] = []): StoreState {
   let next = state;

@@ -367,7 +367,7 @@ struct MightyGraphView: View {
         // Cancelled when the graph leaves the screen or the pane closes.
         .task(id: ouroborosRequest) { await ouroboros.run(ouroborosRequest) }
         // The user's own request (natural submit B2): moved to once its block is there;
-        // a 다음 실행 once its 중간 요청 block arrives.
+        // a 바로 실행 steer once its 중간 요청 block arrives.
         .onChange(of: ownSubmit) { _, _ in handleOwnSubmit() }
         .onChange(of: MightyGraphSupport.newestRequestRun(runs)?.agents.filter(\.isSteer).map(\.id) ?? []) { _, _ in handleOwnSubmit() }
     }
@@ -375,7 +375,7 @@ struct MightyGraphView: View {
     /// Moves the views to the pane's newest own request, once (`SubmitScroll`, own): the
     /// diagram's camera follows it (animated in the diagram, so the diagram shows it when the
     /// user goes back), the 파이프라인 goes back to its newest board, the 기록 shows its
-    /// group. A 다음 실행 aims at its 중간 요청 block. Waits while the block is not there yet.
+    /// group. A 바로 실행 steer aims at its 중간 요청 block. Waits while the block is not there yet.
     private func handleOwnSubmit() {
         guard let own = ownSubmit, own.serial != handledOwnSubmit else { return }
         let view = SubmitScroll.View(showsMighty: true, mightyViewMode: viewMode)

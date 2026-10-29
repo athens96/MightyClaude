@@ -170,7 +170,7 @@ public enum SubmitScroll {
         public init(scroll: Target, resetBoard: Bool) { self.scroll = scroll; self.resetBoard = resetBoard }
     }
 
-    /// `own`: this composer's Enter, a queued request that now runs, 다음 실행 or a selected
+    /// `own`: this composer's Enter, a queued request that now runs, 바로 실행 or a selected
     /// ⌘Enter child. An own request always moves to its block, back to the newest 파이프라인
     /// board when an older one is chosen. Anything else follows only near the bottom, and
     /// never on an older 파이프라인 board, which the user chose (its badge says there is more).
