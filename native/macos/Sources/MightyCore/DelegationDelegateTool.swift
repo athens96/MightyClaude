@@ -158,7 +158,8 @@ extension DelegationCoordinator {
     /// never removes it on its own.
     func startChild(_ id: String, base: ChildWorktreeBase, task: String, parentAgent: String, human: HumanChildStarter? = nil) async {
         defer { starting.remove(id) }
-        guard let child = file.children.first(where: { $0.id == id }), child.state == .creating else { return }
+        // A human's child that will never start: their text needs another way (its queued row goes back, a quiet count ends).
+        guard let child = file.children.first(where: { $0.id == id }), child.state == .creating else { await human?.failed(id); return }
         var runId: String?
         if case .created(let worktree) = await worktrees.make(sessionId: id, base: base, task: task) {
             let pane = DelegationChildPane(sessionId: id, parentSessionId: child.parentSessionId, mode: child.startingMode, folder: worktree.workingFolder,
@@ -170,12 +171,13 @@ extension DelegationCoordinator {
         }
         let context = await pruneContext()
         var next = file
-        guard let index = next.children.firstIndex(where: { $0.id == id }) else { return }
+        // With no run, the human's text has not gone anywhere: it needs another way on every early return.
+        guard let index = next.children.firstIndex(where: { $0.id == id }) else { if runId == nil { await human?.failed(id) }; return }
         if let runId {
             // Once the host has reported this run's start, or even its end, the record is past creating.
             guard next.children[index].state == .creating, next.children[index].noteRun(runId) else { return }
         } else {
-            guard next.children[index].apply(.failStart) else { return }
+            guard next.children[index].apply(.failStart) else { await human?.failed(id); return }
             if next.children[index].notifiesParent { next.notices.append(Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: 0, kind: .failedToStart)) }
         }
         // The admitted record kept room for this child's report copy, far more

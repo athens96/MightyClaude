@@ -43,11 +43,14 @@ public enum QueueRunNow: String, Sendable, CaseIterable {
 
     /// Nothing a person sends joins a running turn, so a busy pane that can make no worktree and is not only waiting on
     /// background work can only say why the row waits. Held items go ahead of the pane's next request, so a human row is
-    /// never steered past them. `heldIndex`: the row's place among the held rows, nil for a human row.
-    public static func decide(heldIndex: Int?, text: String, attachments: Int, pane: Pane) -> QueueRunNow {
+    /// never steered past them. `heldIndex`: the row's place among the held rows, nil for a human row. `continuation`: the
+    /// row continues an Antigravity permission card (``QueuedInput/isContinuation``); its allow rules and card belong to
+    /// this pane's next run, so it never goes to a worktree child nor into a running turn: here when idle, else it waits.
+    public static func decide(heldIndex: Int?, text: String, attachments: Int, continuation: Bool = false, pane: Pane) -> QueueRunNow {
         if let heldIndex { return heldIndex == 0 ? .held : .hidden }
         if !pane.busy, !pane.heldForUpdate { return .here }
         if pane.heldForUpdate { return .waitsForUpdate }
+        if continuation { return .waitsForTurn }
         // A new worktree needs written words for its task; files alone wait.
         let words = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if words, pane.secondSend == .worktree { return .worktree }
@@ -72,4 +75,10 @@ public enum QueueRunNow: String, Sendable, CaseIterable {
         case .hidden: return nil
         }
     }
+}
+
+public extension QueuedInput {
+    /// The follow-up of an allowed Antigravity card (`antigravityGrant`, `antigravityCard`): it must start as this pane's
+    /// own next run, so 바로 실행 never sends it to a worktree child or steers it (``QueueRunNow/decide(heldIndex:text:attachments:continuation:pane:)``).
+    var isContinuation: Bool { antigravityGrant != nil || antigravityCard != nil }
 }

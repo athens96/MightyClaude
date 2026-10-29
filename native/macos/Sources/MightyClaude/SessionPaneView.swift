@@ -148,10 +148,8 @@ struct SessionPaneView: View {
     private var queued: [QueuedInput] { store.queuedInputs[session.id] ?? [] }
     /// Delegation's notices or follow-ups held for this pane: rows that run first.
     private var held: [DelegationDeliveryItem] { store.delegationHeld[session.id] ?? [] }
-    /// What 바로 실행 does on each queued row, held ones first (`AppStore.queueRunNow`).
-    private var queueRunNow: [String: QueueRunNow] {
-        Dictionary((held.map(\.id) + queued.map(\.id)).map { ($0, store.queueRunNow(session, rowId: $0, stopping: stopping)) }, uniquingKeysWith: { first, _ in first })
-    }
+    /// What 바로 실행 does on each queued row, held ones first: the pane read once, then each row decided (`AppStore.queueRunNowRows`).
+    private var queueRunNow: [String: QueueRunNow] { store.queueRunNowRows(session, stopping: stopping) }
     /// Present when a `statusLine` command produced something, or a
     /// workspace-level command is waiting to be allowed.
     /// Local Claude panes can show Claude's `statusLine`; the button flips

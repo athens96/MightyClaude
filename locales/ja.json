@@ -1883,6 +1883,7 @@
   "queue.remove": "キュー内のリクエストを削除",
   "queue.removeHelp": "キューから削除",
   "queue.runNext": "次を実行",
+  "queue.runNextHelp": "キューの最初のリクエストを今すぐ実行",
   "queue.runNow": "すぐ実行",
   "queue.runNowWorktreeHelpMac": "このペインの隣に子ペインを開き、新しいworktreeでこのリクエストをすぐ実行します。右クリック(またはControlクリック)でエージェントを選べます。",
   "queue.runNowHereHelp": "このペインでこのリクエストを今すぐ実行します。",

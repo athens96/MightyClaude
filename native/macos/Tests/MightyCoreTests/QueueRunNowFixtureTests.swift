@@ -19,7 +19,7 @@ import Testing
             let name = item["name"] as? String ?? ""
             let row = try #require(item["row"] as? [String: Any]), p = try #require(item["pane"] as? [String: Any])
             // Every case lists every field, so no reader ever falls back on a default.
-            #expect(Set(row.keys) == ["heldIndex", "text", "attachments"], "\(name): row fields")
+            #expect(Set(row.keys) == ["heldIndex", "text", "attachments", "continuation"], "\(name): row fields")
             #expect(Set(p.keys) == ["busy", "heldForUpdate", "kind", "provider", "mode", "isChild", "delegationOn", "canHostWorktree", "otherAgentReady",
                                     "waitsOnBackgroundOnly", "held"], "\(name): pane fields")
             #expect(item.keys.contains("wire"), "\(name): wire")
@@ -32,7 +32,8 @@ import Testing
                                                        canHostWorktree: flag("canHostWorktree"), choices: choices)
             let pane = QueueRunNow.Pane(busy: flag("busy"), heldForUpdate: flag("heldForUpdate"), secondSend: second, menuOnly: menuOnly,
                                         waitsOnBackgroundOnly: flag("waitsOnBackgroundOnly"), held: p["held"] as? Int ?? 0)
-            let path = QueueRunNow.decide(heldIndex: row["heldIndex"] as? Int, text: row["text"] as? String ?? "", attachments: row["attachments"] as? Int ?? 0, pane: pane)
+            let path = QueueRunNow.decide(heldIndex: row["heldIndex"] as? Int, text: row["text"] as? String ?? "", attachments: row["attachments"] as? Int ?? 0,
+                                          continuation: row["continuation"] as? Bool ?? false, pane: pane)
             #expect(path.rawValue == item["expect"] as? String, "\(name)")
             seen.insert(path.rawValue)
             let wire = item["wire"] as? [String: String]
@@ -47,6 +48,24 @@ import Testing
     @Test func onlyTheWorktreeAgentMenuHereSteerAndHeldAnswersRun() {
         #expect(QueueRunNow.allCases.filter(\.runs) == [.worktree, .agentMenu, .here, .steer, .held])
         #expect(QueueRunNow.hidden.wire == nil)
+    }
+
+    /// An allowed Antigravity card's follow-up belongs to this pane's next run: never a worktree child, the agent menu or a
+    /// steer, whatever the pane could do for another row; here once the pane is idle.
+    @Test func anAntigravityCardContinuationNeverLeavesItsPane() {
+        let continuation = QueuedInput(text: "Allowed: go on", antigravityGrant: AntigravityAllowGrant(requestId: "agy-1", rules: ["command(date)"], temporary: true))
+        #expect(continuation.isContinuation && !QueuedInput(text: "Plain").isContinuation)
+        func pane(busy: Bool = true, second: ComposerSecondSend = .queue, menuOnly: Bool = false, waits: Bool = false) -> QueueRunNow.Pane {
+            QueueRunNow.Pane(busy: busy, heldForUpdate: false, secondSend: second, menuOnly: menuOnly, waitsOnBackgroundOnly: waits, held: 0)
+        }
+        for busyPane in [pane(second: .worktree), pane(menuOnly: true), pane(waits: true), pane()] {
+            #expect(QueueRunNow.decide(heldIndex: nil, text: continuation.text, attachments: 0, continuation: true, pane: busyPane) == .waitsForTurn)
+        }
+        // The same words without the card take the worktree, the menu and the steer.
+        #expect(QueueRunNow.decide(heldIndex: nil, text: continuation.text, attachments: 0, pane: pane(second: .worktree)) == .worktree)
+        #expect(QueueRunNow.decide(heldIndex: nil, text: continuation.text, attachments: 0, pane: pane(menuOnly: true)) == .agentMenu)
+        #expect(QueueRunNow.decide(heldIndex: nil, text: continuation.text, attachments: 0, pane: pane(waits: true)) == .steer)
+        #expect(QueueRunNow.decide(heldIndex: nil, text: continuation.text, attachments: 0, continuation: true, pane: pane(busy: false, second: .worktree)) == .here)
     }
 
     @Test func thePhonesRowsCarryTheirRunNowAndReasonAndLeaveThemOutWhenHidden() throws {

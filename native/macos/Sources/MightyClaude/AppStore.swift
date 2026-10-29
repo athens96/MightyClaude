@@ -385,9 +385,11 @@ final class AppStore: ObservableObject, DelegationHost {
     /// Panes whose held items the user's 다음 실행 is releasing: the run that takes them is
     /// the user's own (natural submit B2).
     var ownHeldReleases = Set<String>()
-    /// Panes whose new worktree children the phone's 바로 실행 is starting, by how many: such a child is never selected on
-    /// this Mac (``createPane(_:)``), as the phone's gesture must not move the desk's view.
-    var quietChildParents: [String: Int] = [:]
+    /// Panes whose new worktree children the phone's 바로 실행 is starting, one token per start, each released exactly once:
+    /// such a child is never selected on this Mac (``createPane(_:)``), as the phone's gesture must not move the desk's view.
+    var quietChildParents: [String: Set<String>] = [:]
+    /// Panes a queued row is being steered into, until the run answers: a second click cannot steer a row twice.
+    private var steeringQueuedRows = Set<String>()
     /// Queued rows starting with the items delegation holds for their pane,
     /// until that release is over.
     private var releasingRows: Set<String> = []
@@ -1091,13 +1093,17 @@ final class AppStore: ObservableObject, DelegationHost {
     /// the same process (Windows `SteerFirstQueuedInput`); the tracker shows it as a 중간 요청 under the request. False when it
     /// may not (the row has attachments, or the run does not only wait on background work) or the run refused it: it stays queued.
     func steerQueuedRow(_ id: String, itemId: String? = nil, own: Bool = true) async -> Bool {
+        // One steer at a time per pane: the row stays queued while the run answers.
+        guard !steeringQueuedRows.contains(id) else { return false }
         let rows = queuedInputs[id] ?? []
         // The row asked for, or the first; a row no longer queued is not steered.
         let row: QueuedInput? = if let itemId { rows.first(where: { $0.id == itemId }) } else { rows.first }
-        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.kind == "claude", let next = row, next.attachments.isEmpty,
+        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.kind == "claude", let next = row, next.attachments.isEmpty, !next.isContinuation,
               BackgroundQueuePolicy.steersRunNext(work: session.backgroundWork, localClaude: session.provider == "claude" && !isRemoteSession(session),
-                                                  stopping: false, queued: 1, firstHasAttachments: false),
-              await runner.steer(sessionId: id, text: next.text) else { return false }
+                                                  stopping: false, queued: 1, firstHasAttachments: false) else { return false }
+        steeringQueuedRows.insert(id)
+        defer { steeringQueuedRows.remove(id) }
+        guard await runner.steer(sessionId: id, text: next.text) else { return false }
         queuedInputs[id]?.removeAll { $0.id == next.id }
         if queuedInputs[id]?.isEmpty == true { queuedInputs.removeValue(forKey: id) }
         // The user's own 바로 실행 (or 다음 실행): the pane's views move to its 중간 요청 (natural submit B2).
@@ -1105,17 +1111,36 @@ final class AppStore: ObservableObject, DelegationHost {
         return true
     }
 
+    /// The pane `session` as 바로 실행 reads it, worked out once for all its rows. `stopping`: the pane's stop is under way.
+    func queueRunNowPane(_ session: RunSession, stopping: Bool = false) -> QueueRunNow.Pane {
+        let id = session.id, holds = backgroundUpdateHolds(session)
+        return QueueRunNow.Pane(busy: session.status == "running" || pendingRuns.contains(id) || holds, heldForUpdate: holds,
+                                secondSend: composerSecondSend(session), menuOnly: worktreeMenuOnly(session),
+                                waitsOnBackgroundOnly: session.kind == "claude" && session.provider == "claude" && !isRemoteSession(session) && !stopping
+                                    && session.backgroundWork?.waitingOnBackground == true,
+                                held: (delegationHeld[id] ?? []).count)
+    }
+
+    /// What 바로 실행 does on each row of `session` (held first, then the human's), by row id, the pane read once.
+    func queueRunNowRows(_ session: RunSession, stopping: Bool = false) -> [String: QueueRunNow] {
+        let pane = queueRunNowPane(session, stopping: stopping)
+        var rows: [String: QueueRunNow] = [:]
+        for (index, item) in (delegationHeld[session.id] ?? []).enumerated() { rows[item.id] = QueueRunNow.decide(heldIndex: index, text: "", attachments: 0, pane: pane) }
+        for item in queuedInputs[session.id] ?? [] where rows[item.id] == nil {
+            rows[item.id] = QueueRunNow.decide(heldIndex: nil, text: item.text, attachments: item.attachments.count, continuation: item.isContinuation, pane: pane)
+        }
+        return rows
+    }
+
     /// What 바로 실행 on the row `rowId` (held or the human's) of `session` does now (``QueueRunNow``). `stopping`: the pane's stop is under way.
     func queueRunNow(_ session: RunSession, rowId: String, stopping: Bool = false) -> QueueRunNow {
-        let id = session.id, holds = backgroundUpdateHolds(session), held = delegationHeld[id] ?? []
-        let pane = QueueRunNow.Pane(busy: session.status == "running" || pendingRuns.contains(id) || holds, heldForUpdate: holds,
-                                    secondSend: composerSecondSend(session), menuOnly: worktreeMenuOnly(session),
-                                    waitsOnBackgroundOnly: session.kind == "claude" && session.provider == "claude" && !isRemoteSession(session) && !stopping
-                                        && session.backgroundWork?.waitingOnBackground == true,
-                                    held: held.count)
-        if let index = held.firstIndex(where: { $0.id == rowId }) { return QueueRunNow.decide(heldIndex: index, text: "", attachments: 0, pane: pane) }
+        let id = session.id, held = delegationHeld[id] ?? []
+        if let index = held.firstIndex(where: { $0.id == rowId }) {
+            return QueueRunNow.decide(heldIndex: index, text: "", attachments: 0, pane: queueRunNowPane(session, stopping: stopping))
+        }
         guard let item = queuedInputs[id]?.first(where: { $0.id == rowId }) else { return .hidden }
-        return QueueRunNow.decide(heldIndex: nil, text: item.text, attachments: item.attachments.count, pane: pane)
+        return QueueRunNow.decide(heldIndex: nil, text: item.text, attachments: item.attachments.count, continuation: item.isContinuation,
+                                  pane: queueRunNowPane(session, stopping: stopping))
     }
 
     /// 바로 실행 on the row `itemId` of the pane `id`: what ``queueRunNow(_:rowId:stopping:)`` decides now. `agent`: the row's agent
@@ -1132,8 +1157,9 @@ final class AppStore: ObservableObject, DelegationHost {
         func take() { queuedInputs[id]?.remove(at: index); if queuedInputs[id]?.isEmpty == true { queuedInputs.removeValue(forKey: id) } }
         switch (path, agent) {
         case (.worktree, _), (.agentMenu, .some):
-            // A pick from the menu needs the menu still on offer; a plain click runs the pane's own agent.
-            guard agent == nil || offersWorktreeMenu(session) else { return nil }
+            // A pick from the menu needs the menu still on offer; a plain click runs the pane's own agent. An Antigravity
+            // card's continuation never leaves its pane (``QueueRunNow/decide(heldIndex:text:attachments:continuation:pane:)``).
+            guard !item.isContinuation, agent == nil || offersWorktreeMenu(session) else { return nil }
             take()
             runInNewWorktree(id, input: item.text, attachments: item.attachments, from: .queue(item), agent: agent, quiet: !own)
             return .worktree

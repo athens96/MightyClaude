@@ -62,6 +62,7 @@
   1. A held row: the first one (`heldIndex == 0`) → `held`; any other → `hidden`.
   2. An idle pane (not running, not starting, not held for a CLI update) → `here`.
   3. Held for a CLI update → `waitsForUpdate`.
+     - A continuation row (the follow-up an allowed Antigravity permission card queued: Mac `QueuedInput.isContinuation`, i.e. `antigravityGrant`/`antigravityCard`) → `waitsForTurn`. It never goes to a worktree child, the agent menu or a steer; the action refuses it too. The fixture row's `continuation` flag. (Added in the Task 1 review.)
   4. The row has words (trimmed text not empty) and `secondSend == .worktree` → `worktree`.
   5. The row has words and `menuOnly` → `agentMenu`.
   6. `waitsOnBackgroundOnly` (local Claude, not stopping, turn ended, background work running) and the row has no attachments: `steer` when nothing is held, else `waitsForHeld`.
@@ -613,11 +614,18 @@ public enum QueueRunNow: String, Sendable, CaseIterable {
 
 **Interfaces:** the C# mirror of Task 1 with PascalCase names:
 - `QueueRunNowPath { Worktree, AgentMenu, Here, Steer, Held, WaitsForTurn, WaitsForHeld, WaitsForUpdate, Hidden }`
-- `QueueRunNow.Pane` record and `QueueRunNow.Decide(int? heldIndex, string text, int attachments, Pane pane)`
+- `QueueRunNow.Pane` record and `QueueRunNow.Decide(int? heldIndex, string text, int attachments, Pane pane, bool continuation = false)`
+  - `continuation`: the row continues an allowed Antigravity permission card (`QueuedComposerInput.AntigravityGrant`/`AntigravityCard`, as Mac `QueuedInput.isContinuation`). Mirror the Mac rule: after the update hold, a continuation is `WaitsForTurn`; `RunQueuedNow`'s worktree branch refuses one too, and `SteerFirstQueuedInput` by row id never steers one. The fixture rows carry `continuation`.
 - `QueueRunNow.Runs(path)`
 - `QueueRunNow.Wire(path)` → `(string RunNow, string? Reason)?`
 - `QueueRunNow.Name(path)`, which is the camelCase fixture name
 - `MobileQueuedItem(string Id, string Text, string? RunNow = null, string? RunNowReason = null)`
+- Also mirror the Task 1 review fixes (Mac commit after 3f2802b8):
+  - a quiet (phone) worktree start holds its own token, released exactly once on start, failure or refusal;
+  - a child that never starts always reports its failure, so a queued row goes back;
+  - the phone's run-now reads the pane's stop under way, and answers `remote.error.startFailed` when a decided start fails (`queue.runNowRefused` only before the run);
+  - one steer of a queued row at a time per pane;
+  - the pane facts are read once per draw, then each row is decided.
 
 The web gets `runNow: RunNow | null` per row (`hidden` → null) and two bridges, `queueRunNow { paneId, itemId, agent? }` and `queueRunNowMenu { paneId }`. `queueRunNext` goes away.
 
@@ -642,7 +650,8 @@ The web gets `runNow: RunNow | null` per row (`hidden` → null) and two bridges
               var menuOnly = ComposerSecondSends.MenuOnly(Text("kind"), Text("provider"), Text("mode"), Flag("isChild"), Flag("delegationOn"), Flag("canHostWorktree"), choices);
               var pane = new QueueRunNow.Pane(Flag("busy"), Flag("heldForUpdate"), second, menuOnly, Flag("waitsOnBackgroundOnly"), p.GetProperty("held").GetInt32());
               var heldIndex = row.GetProperty("heldIndex") is { ValueKind: JsonValueKind.Number } index ? index.GetInt32() : (int?)null;
-              var path = QueueRunNow.Decide(heldIndex, row.GetProperty("text").GetString() ?? "", row.GetProperty("attachments").GetInt32(), pane);
+              var path = QueueRunNow.Decide(heldIndex, row.GetProperty("text").GetString() ?? "", row.GetProperty("attachments").GetInt32(), pane,
+                  row.GetProperty("continuation").GetBoolean());
               Check(QueueRunNow.Name(path) == item.GetProperty("expect").GetString(), $"queue run now: {label}");
               var wire = item.GetProperty("wire");
               (string RunNow, string? Reason)? expected = wire.ValueKind == JsonValueKind.Null ? null
@@ -710,7 +719,10 @@ The web gets `runNow: RunNow | null` per row (`hidden` → null) and two bridges
       var pane = RunNowPane();
       var heldIndex = owner.service.HeldItems(id).ToList().FindIndex(item => item.Id == itemId);
       if (heldIndex >= 0) return QueueRunNow.Decide(heldIndex, "", 0, pane);
-      return queuedInputs.Items.FirstOrDefault(item => item.Id == itemId) is { } row ? QueueRunNow.Decide(null, row.Text, row.Attachments.Count, pane) : QueueRunNowPath.Hidden;
+      // An Antigravity card's follow-up (its grant or card) is never sent to a worktree or steered.
+      return queuedInputs.Items.FirstOrDefault(item => item.Id == itemId) is { } row
+          ? QueueRunNow.Decide(null, row.Text, row.Attachments.Count, pane, row.AntigravityGrant is not null || row.AntigravityCard is not null)
+          : QueueRunNowPath.Hidden;
   }
 
   /// <summary>
@@ -901,6 +913,7 @@ The web gets `runNow: RunNow | null` per row (`hidden` → null) and two bridges
   - `native/contracts/README.md`: ~80, plus a route row
 
 **Interfaces (consumes):** Task 1's wire, `queued[].runNow?` / `queued[].runNowReason?` and `POST …/queue/{itemId}/run-now` → `{ protocol, ok, ran }`.
+- The fixture's rows now carry `continuation` (an Antigravity card's follow-up never leaves its pane; its wire is `{unavailable, turn}` busy or `{here}` idle). The phone reads only `wire`, so nothing changes for it beyond reading every case.
 
 - [ ] **Step 1: Tests first.**
   ```ts

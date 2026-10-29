@@ -89,7 +89,7 @@ function decodeHangulEscapes(source) {
   });
 }
 
-/// The five clients (the budget's areas). `roots` is where literals are counted and key
+/// The five clients (the budget's areas), and the Windows web window, whose key references alone are checked. `roots` is where literals are counted and key
 /// references are found; `copies` are the copies that must be byte-identical to the original.
 const CLIENTS = [
   {
@@ -124,6 +124,17 @@ const CLIENTS = [
     roots: ['mobile/app', 'mobile/src'],
     extensions: ['.ts', '.tsx'],
     copies: ['mobile/src/locales'],
+  },
+  {
+    // The Windows web window reads the root files through its bundler (`@locales/…`), so it
+    // has no copy. Only its key references are checked (a key it calls must exist, and its
+    // calls keep a key in use); its literals are not a budget area. Its tests are left out.
+    label: 'Windows web',
+    roots: ['native/windows/web/src'],
+    extensions: ['.ts', '.tsx'],
+    copies: [],
+    referencesOnly: true,
+    skipFile: /\.test\.tsx?$/,
   },
 ];
 
@@ -526,12 +537,15 @@ for (const client of CLIENTS) {
   const calledFrom = new Map(); // key -> first file path that references it
   for (const root of client.roots) {
     for (const relative of walk(root, client.extensions, [])) {
+      if (client.skipFile?.test(relative)) continue;
       const source = readText(relative);
       files += 1;
-      const classified = classifyLiterals(relative, source);
-      literals += classified.counted;
-      exempt += classified.exempt;
-      allowed += classified.allowed;
+      if (!client.referencesOnly) {
+        const classified = classifyLiterals(relative, source);
+        literals += classified.counted;
+        exempt += classified.exempt;
+        allowed += classified.allowed;
+      }
       const stripped = stripComments(source);
       for (const match of stripped.matchAll(REFERENCE)) {
         keys.add(match[1]);
@@ -554,6 +568,7 @@ for (const client of CLIENTS) {
       fail(`${client.label}: ${filePath}에서 부르는 ${key}가 locales/ko.json에 없습니다.`);
     }
   }
+  if (client.referencesOnly) continue;
   const limit = budget?.areas?.[client.label];
   report.push({ label: client.label, literals, exempt, allowed, files, moved: keys.size, budget: limit });
 }

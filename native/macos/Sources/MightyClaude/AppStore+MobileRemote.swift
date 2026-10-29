@@ -470,8 +470,9 @@ extension AppStore {
         // The "send to" switch needs the pane's catalogue, which a pane the Mac never drew has not scanned.
         if session.kind == SessionKind.claude, session.provider == "claude" { refreshSlashCommands(for: session) }
         let targets = askTargets(for: session)
+        let runNow = queueRunNowRows(session, stopping: stopPending[id]?.isPending == true)
         return MobileSessionDetail(revision: revision, session: summary, entries: Array(session.logs.suffix(MobileSessionDetail.maximumEntries)),
-                                   permissions: permissions, queued: DelegationQueueRows.mobileItems(held: delegationHeld[id] ?? [], queued: queuedInputs[id] ?? []) { self.queueRunNow(session, rowId: $0) },
+                                   permissions: permissions, queued: DelegationQueueRows.mobileItems(held: delegationHeld[id] ?? [], queued: queuedInputs[id] ?? []) { runNow[$0] ?? .hidden },
                                    usage: mobileUsage(session), elapsedSeconds: session.runTiming?.elapsed(),
                                    hasOlder: MobileRemoteSupport.hasOlder(entryCount: session.logs.count), settings: mobileSettings(session),
                                    mighty: mobileMighty(session, structure: structure),
@@ -818,16 +819,18 @@ extension AppStore {
         guard (delegationHeld[id] ?? []).contains(where: { $0.id == itemId }) || queuedInputs[id]?.contains(where: { $0.id == itemId }) == true else {
             throw MobileHostError.notFound(L("remote.error.queueItemNotFound"))
         }
-        let path = queueRunNow(session, rowId: itemId)
+        let stopping = stopPending[id]?.isPending == true
+        let path = queueRunNow(session, rowId: itemId, stopping: stopping)
         // A dimmed row is never sent by the phone; this answers a row that changed under it.
         guard path != .agentMenu, path.runs, let wire = path.wire?.runNow else { throw MobileHostError.conflict(L("queue.runNowRefused")) }
         // Settling a blocked pane throws the whole queue away with only a log line.
         if path == .here || path == .held, let reason = runBlockedReason(session, checkRuntime: false) { throw MobileHostError.conflict(reason) }
         let macError = error
-        let ran = await runQueuedNow(id, itemId: itemId, own: false)
+        let ran = await runQueuedNow(id, itemId: itemId, stopping: stopping, own: false)
         let failure = error == macError ? nil : error
         error = macError
-        guard ran != nil else { throw MobileHostError.conflict(failure ?? L("queue.runNowRefused")) }
+        // Decided runnable a moment ago: nothing ran, so its start failed.
+        guard ran != nil else { throw MobileHostError.conflict(failure ?? L("remote.error.startFailed")) }
         return wire
     }
 

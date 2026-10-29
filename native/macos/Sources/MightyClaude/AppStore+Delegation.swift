@@ -309,7 +309,7 @@ extension AppStore {
     /// ``runAfterNoWorktree(_:input:attachments:draft:reason:)``; a text
     /// meant for another agent goes back to the composer instead
     /// (``ComposerSecondSend/returnsToComposer(childAgent:parentAgent:)``), and a
-    /// queued row goes back to the head of the queue (``putBackQueuedRow(_:_:reason:)``).
+    /// queued row goes back to the head of the queue (``putBackQueuedRow(_:_:own:reason:)``).
     func runInNewWorktree(_ id: String, input: String, attachments: [RunAttachment], from origin: WorktreeOrigin, agent: String? = nil, quiet: Bool = false) {
         guard let delegation, let parent = snapshot.sessions.first(where: { $0.id == id }) else { return }
         let toComposer = ComposerSecondSend.returnsToComposer(childAgent: agent, parentAgent: parent.provider)
@@ -325,14 +325,16 @@ extension AppStore {
             // The row keeps the plan-mode decision recorded when it was queued.
             planFirst = item.permissionModeOverride == StyleLaunchPermissionMode.plan.rawValue
         }
-        // Until the child's pane is made (its first run starts) or no child comes, it is not selected here.
-        if quiet { quietChildParents[id, default: 0] += 1 }
+        // Until the child's pane is made (its first run starts) or no child comes, it is not selected here. The token is
+        // this start's own, so however many of its ends are reported, it is released once.
+        let quietToken: String? = quiet ? UUID().uuidString : nil
+        if let quietToken { quietChildParents[id, default: []].insert(quietToken) }
         let starter = HumanChildStarter(start: { [weak self] childId, run in
-            await self?.endQuietChild(id, quiet: quiet)
+            await self?.endQuietChild(id, token: quietToken)
             return await self?.startHumanChildRun(childId, run: run, attachments: attachments)
         }, failed: { [weak self] childId in
-            await self?.endQuietChild(id, quiet: quiet)
-            await self?.humanChildFailedToStart(childId, parentId: id, input: input, attachments: attachments, from: origin, toComposer: toComposer)
+            await self?.endQuietChild(id, token: quietToken)
+            await self?.humanChildFailedToStart(childId, parentId: id, input: input, attachments: attachments, from: origin, toComposer: toComposer, quiet: quiet)
         })
         Task { [weak self] in
             let outcome = await delegation.startHumanChild(input, parentId: id, planFirst: planFirst, agent: agent, starter: starter)
@@ -343,22 +345,22 @@ extension AppStore {
             case .refused(let code): reason = DelegationText.reason(code)
             case .failed(let message): reason = message
             }
-            endQuietChild(id, quiet: quiet)
-            noWorktree(id, input: input, attachments: attachments, from: origin, toComposer: toComposer, reason: reason)
+            endQuietChild(id, token: quietToken)
+            noWorktree(id, input: input, attachments: attachments, from: origin, toComposer: toComposer, quiet: quiet, reason: reason)
         }
     }
 
-    /// One quiet child of the pane `id` no longer waits for its pane.
-    private func endQuietChild(_ id: String, quiet: Bool) {
-        guard quiet, let count = quietChildParents[id] else { return }
-        quietChildParents[id] = count > 1 ? count - 1 : nil
+    /// The quiet start `token` of the pane `id` no longer waits for its child's pane; a token already released changes nothing.
+    private func endQuietChild(_ id: String, token: String?) {
+        guard let token, quietChildParents[id]?.remove(token) != nil else { return }
+        if quietChildParents[id]?.isEmpty == true { quietChildParents.removeValue(forKey: id) }
     }
 
     /// Where a new worktree's text goes when no child runs it: a queued row back to the head of the queue, a text meant for
-    /// another agent back to the composer, anything else on as the pane's next request.
-    private func noWorktree(_ id: String, input: String, attachments: [RunAttachment], from origin: WorktreeOrigin, toComposer: Bool, reason: String) {
+    /// another agent back to the composer, anything else on as the pane's next request. `quiet`: the phone's click.
+    private func noWorktree(_ id: String, input: String, attachments: [RunAttachment], from origin: WorktreeOrigin, toComposer: Bool, quiet: Bool = false, reason: String) {
         switch origin {
-        case .queue(let item): putBackQueuedRow(id, item, reason: reason)
+        case .queue(let item): putBackQueuedRow(id, item, own: quiet ? false : nil, reason: reason)
         case .composer(let draft):
             if toComposer { returnToComposer(id, attachments: attachments, draft: draft, reason: reason) }
             else { runAfterNoWorktree(id, input: input, attachments: attachments, draft: draft, reason: reason) }
@@ -366,13 +368,14 @@ extension AppStore {
     }
 
     /// A queued row whose new worktree could not be made or started: back at the head of the queue (never the composer, and
-    /// without the 16-row check: it was queued), and the transcript says why. A pane idle meanwhile, its queue not paused, runs it now.
-    private func putBackQueuedRow(_ id: String, _ item: QueuedInput, reason: String) {
+    /// without the 16-row check: it was queued), and the transcript says why. A pane idle meanwhile, its queue not paused, runs it now,
+    /// as `own` says (false: the phone's click, which this Mac only follows; nil: the row's own flag).
+    private func putBackQueuedRow(_ id: String, _ item: QueuedInput, own: Bool?, reason: String) {
         guard !ending, !closingSessions.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }) else { return }
         updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("delegation.human.queued", ["reason": reason]))); $0.logs = TranscriptRetention.trimmed($0.logs) }
         let waiting = queuedInputs[id]?.isEmpty == false
         if queuedInputs[id]?.contains(where: { $0.id == item.id }) != true { queuedInputs[id, default: []].insert(item, at: 0) }
-        if !waiting, session.status != "running", !pendingRuns.contains(id) { runNextQueuedRow(id) }
+        if !waiting, session.status != "running", !pendingRuns.contains(id) { runNextQueuedRow(id, own: own) }
     }
 
     /// The text of a child of another agent that could not be made or
@@ -402,11 +405,12 @@ extension AppStore {
     /// A child the human started whose worktree, pane or first run could not
     /// be made after all: it stays listed as failed to start, and the text
     /// and its attachments go on from the parent as if no child had been made.
-    private func humanChildFailedToStart(_ childId: String, parentId: String, input: String, attachments: [RunAttachment], from origin: WorktreeOrigin, toComposer: Bool) {
+    private func humanChildFailedToStart(_ childId: String, parentId: String, input: String, attachments: [RunAttachment], from origin: WorktreeOrigin, toComposer: Bool,
+                                         quiet: Bool) {
         // A failed start puts the run's attachments in the child's composer; they go with the text instead.
         let ids = Set(attachments.map(\.id))
         attachmentDrafts[childId]?.removeAll { ids.contains($0.id) }
-        noWorktree(parentId, input: input, attachments: attachments, from: origin, toComposer: toComposer, reason: L("delegation.human.error.startFailed"))
+        noWorktree(parentId, input: input, attachments: attachments, from: origin, toComposer: toComposer, quiet: quiet, reason: L("delegation.human.error.startFailed"))
     }
 
     /// The text of a second send that no new child runs
@@ -652,7 +656,7 @@ extension AppStore {
         // parent and not typing there; otherwise the new tab is selected on insert and the group
         // keeps showing what it showed.
         // The phone's 바로 실행 child never moves this Mac's view (`quietChildParents`).
-        let shows = pane.startedByHuman && quietChildParents[parent.id] == nil && snapshot.activeSessionId == parent.id && !showsDashboard && (drafts[parent.id] ?? "").isEmpty
+        let shows = pane.startedByHuman && (quietChildParents[parent.id] ?? []).isEmpty && snapshot.activeSessionId == parent.id && !showsDashboard && (drafts[parent.id] ?? "").isEmpty
         guard let next = PaneLayouts.selecting(root: PaneLayouts.inserting(root: root, sessionId: session.id, targetGroupId: group?.id, placement: "tab"),
                                                id: shows ? session.id : group?.selectedSessionId ?? parent.id),
               next.group(containing: session.id) != nil else { return false }

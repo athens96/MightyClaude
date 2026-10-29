@@ -485,7 +485,9 @@ the held count), with what 바로 실행 does there (`worktree`, `agentMenu`, `h
 or `hidden`) and the phone's `{runNow, runNowReason?}` for it, or null. The Mac
 (`QueueRunNowFixtureTests`, rule `MightyCore/QueueRunNow.swift`) and Windows Core
 (`QueueRunNowVerification`) read every case, and the phone reads only `wire`.
-`otherAgentReady` stands for `menuOnly`'s choices holding one unblocked agent.
+`otherAgentReady` stands for `menuOnly`'s choices holding one unblocked agent, and a
+row's `continuation` marks the follow-up an allowed Antigravity permission card queued,
+which never leaves its pane (busy: `waitsForTurn`; idle: `here`).
 
 ## Model labels (`fixtures/model-labels.json`)
 

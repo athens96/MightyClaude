@@ -68,6 +68,7 @@
 1. **보류된 행:** 첫 보류된 행(`heldIndex == 0`)이면 `held`, 나머지는 `hidden`. 보류된 항목은 언제나 함께 가므로 단추는 하나면 된다.
 2. **창이 쉬고 있으면**(실행 중도, 시작 중도, CLI 업데이트로 붙잡힌 것도 아님. 오류로 멈춘 대기열이 그렇다) `here`. 돌고 있는 작업이 없으니 worktree로 나눌 까닭이 없다.
 3. **CLI 업데이트로 붙잡힌 창**이면 `waitsForUpdate`. ⌘Enter도 그때는 worktree를 열지 않는다.
+   - **Antigravity 권한 카드의 이어짐**(허용한 카드가 대기열에 넣은 후속 요청, 맥 `QueuedInput.antigravityGrant`/`antigravityCard`, `isContinuation`)이면 `waitsForTurn`. 그 허용 규칙과 카드는 이 창의 다음 실행 몫이라 worktree 자식, 에이전트 메뉴, steer 어느 길로도 가지 않는다. 창이 쉬면 2번에서 `here`다. 픽스처 행의 `continuation`.
 4. 행에 **글**이 있고 `ComposerSecondSend.choose`가 `.worktree`면 `worktree`.
 5. 행에 글이 있고 `menuOnly`면 `agentMenu`.
 6. 창이 **백그라운드 작업만 기다리고**(로컬 Claude, 중지 중 아님, 턴이 끝남), 행에 첨부가 없으면, 보류된 항목이 없을 때 `steer`, 있을 때 `waitsForHeld`.
@@ -239,7 +240,7 @@
 
 ## 테스트
 - **`native/contracts/fixtures/queue-run-now.json`**(새 파일, 맥·윈도우가 판단을 읽고, 폰은 `wire`를 읽는다).
-  - 사례마다 행(`heldIndex`, 사람의 행은 null, `text`, `attachments`)과 창(`busy`, `heldForUpdate`, `kind`, `provider`, `mode`, `isChild`, `delegationOn`, `canHostWorktree`, `otherAgentReady`, `waitsOnBackgroundOnly`, `held`)을 둔다.
+  - 사례마다 행(`heldIndex`, 사람의 행은 null, `text`, `attachments`, `continuation`)과 창(`busy`, `heldForUpdate`, `kind`, `provider`, `mode`, `isChild`, `delegationOn`, `canHostWorktree`, `otherAgentReady`, `waitsOnBackgroundOnly`, `held`)을 둔다.
   - 기대 결과 `expect`와 폰 값 `wire`(`{ runNow, runNowReason? }` 또는 null)를 둔다.
   - 바쁜 Claude 창, git 저장소, 위임 켜짐 → worktree
   - 백그라운드 작업만 기다리는 같은 창 → worktree(worktree가 steer를 이긴다)
@@ -260,6 +261,7 @@
   - 첫 보류된 행, 바쁜 창 → held(`wire` here)
   - 둘째 보류된 행 → hidden(`wire` null)
   - 첫 보류된 행, 쉬는 창 → held
+  - Antigravity 카드의 이어짐(`continuation: true`): worktree를 만들 수 있는 바쁜 창 → waitsForTurn, 메뉴만 되는 창 → waitsForTurn, 백그라운드 작업만 기다리는 창 → waitsForTurn, 쉬는 창 → here
 - **맥:** 픽스처 테스트. `mobileItems`가 `runNow`와 `runNowReason`을 싣고 빈 값은 빼는 것. 새 라우트(`MobileRemoteTests`: 200과 `ran`, 404, 409). `offersRunNext`를 쓰던 테스트는 `QueueRunNow.decide`로 옮긴다.
 - **윈도우 Core:** 같은 픽스처를 읽는 `QueueRunNowVerification`. `MobileItems`와 `RunNow`.
 - **웹(vitest):** `readRunNow` 파싱, `runNowTip`(결과 → 키와 수, 비활성 여부).
