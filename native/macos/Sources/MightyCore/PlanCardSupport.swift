@@ -88,6 +88,12 @@ public enum PlanCardSupport {
         return L("plan.background.status", ["count": "\(work.running.count)"])
     }
 
+    /// The pane's background state in one line: `backgroundStatus` after the turn, else how many still run.
+    /// The strip no longer shows it; the frozen plan-style tests still pin it.
+    public static func backgroundSummary(_ work: BackgroundWork) -> String {
+        backgroundStatus(work) ?? L("styles.state.backgroundRunning", ["count": "\(work.running.count)"])
+    }
+
     /// The pane's background tasks as the plan style's task list draws them
     /// (§1.17): running first, at most `StyleLimits.maximumTaskListItems`.
     public static func backgroundTasks(_ work: BackgroundWork?) -> [StyleWidgetPresentation.Task] {
