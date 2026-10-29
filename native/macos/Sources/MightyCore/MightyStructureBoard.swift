@@ -174,8 +174,10 @@ extension MightyStructure {
         return cards
     }
 
-    /// The request's first line with words in it.
+    /// The request's first line with words in it. A notice run is no request: its heading, which names the work it
+    /// reports on (`BackgroundNoticeRuns.heading(title:)`), as the request card and the phone's board say.
     static func firstLine(_ item: Item) -> String? {
+        if item.noticeRun { return BackgroundNoticeRuns.heading(title: item.noticeTitle) }
         let text = item.request?.text ?? item.input
         return text.split(whereSeparator: \.isNewline).lazy.map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
     }

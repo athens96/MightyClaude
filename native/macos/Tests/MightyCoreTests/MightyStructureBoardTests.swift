@@ -52,6 +52,15 @@ struct MightyStructureBoardTests {
         #expect(parents == [nil, nodes[0].title, nil])
     }
 
+    @Test func aNoticeRunsBoardIsHeadedByItsTitle() {
+        var notice = T.run("r1:notice:1", input: "Build the app · done", final: "Built.")
+        notice.noticeRun = true; notice.noticeTitle = "Background work finished · Build the app"
+        var older = notice; older.id = "r1:notice:2"; older.noticeTitle = nil
+        let boards = Self.boards([T.run("r1", input: "Build it", final: "Started."), notice, older])
+        // A notice run is no request: its board says what work it reports on, an older save the generic heading.
+        #expect(boards.map(\.headline) == ["Build it", "Background work finished · Build the app", BackgroundNoticeRuns.genericTitle])
+    }
+
     // MARK: Pipelines
 
     @Test func aStyledPaneSplitsIntoPipelinesWhereThePhaseGoesBack() throws {

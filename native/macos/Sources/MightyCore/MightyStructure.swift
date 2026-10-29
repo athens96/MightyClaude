@@ -180,6 +180,10 @@ public enum MightyStructure {
             var finalOutput: Int?
             /// A notice run's title, which can move with no other change its card reads.
             var noticeTitle: String?
+            /// Background work the request still waits on (`MightyGraphRun.backgroundWaiting`). A shown run no longer holds
+            /// its background blocks, so their ending moves nothing else here, yet its answer's title goes from 현재까지의 결과
+            /// to 최종 결과.
+            var backgroundWaiting = 0
             var blocks: [Block]
         }
         var requests: [Request]
@@ -196,7 +200,7 @@ public enum MightyStructure {
                 Request(id: run.id, status: run.status, sourceRunID: run.sourceRunID, input: run.input.utf8.count,
                         rootEntries: run.rootEntries.count, rootTail: MightyStructure.tail(run.rootEntries), resultEntries: run.resultEntries.count,
                         result: run.resultEntries.last?.text.utf8.count ?? 0, finalOutput: run.finalOutput?.utf8.count, noticeTitle: run.noticeTitle,
-                        blocks: run.agents.map {
+                        backgroundWaiting: run.backgroundWaiting, blocks: run.agents.map {
                             Block(id: $0.id, title: $0.title, status: $0.status, parentID: $0.parentID, kind: $0.kind, input: $0.input.utf8.count,
                                   entries: $0.entries.count, tail: MightyStructure.tail($0.entries), records: $0.responseRecords?.count ?? 0,
                                   notice: $0.noticeReply?.utf8.count ?? 0)

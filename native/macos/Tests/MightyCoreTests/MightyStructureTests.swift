@@ -524,6 +524,25 @@ struct MightyStructureTests {
         #expect(MightyStructure.make(runs: trimmed, style: nil, currentPhase: nil, items: third) == MightyStructure.make(runs: trimmed, style: nil, currentPhase: nil))
     }
 
+    @Test func aShownRunsCardRebuildsWhenItsBackgroundWorkEnds() {
+        func run(_ status: String) -> MightyGraphRun {
+            var task = Self.agent("t", status: status, kind: "task")
+            task.background = true
+            return Self.run("r", agents: [task], final: "Built.").shown
+        }
+        // Views sign the shown runs, which no longer hold the background block: only the waiting count moves.
+        let waiting = run("running"), ended = run("completed")
+        #expect(waiting.agents.isEmpty && ended.agents.isEmpty)
+        #expect(waiting.backgroundWaiting == 1 && ended.backgroundWaiting == 0)
+        let before = MightyStructure.Signature(runs: [waiting], style: nil, currentPhase: nil)
+        let after = MightyStructure.Signature(runs: [ended], style: nil, currentPhase: nil)
+        #expect(before != after)
+        var cache = MightyStructure.ItemCache()
+        #expect(cache.items([waiting], signature: before).first?.backgroundWaiting == 1)
+        // The card is built again, so its answer goes from 현재까지의 결과 to 최종 결과.
+        #expect(cache.items([ended], signature: after).first?.backgroundWaiting == 0)
+    }
+
     // MARK: Empty pane and the saved choice
 
     @Test func anEmptyPaneHasNoRequests() throws {

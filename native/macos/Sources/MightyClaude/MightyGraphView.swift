@@ -632,11 +632,13 @@ struct MightyGraphView: View {
             let failed = ["error", "failed"].contains(run.status)
             let stopped = ["stopped", "cancelled", "interrupted"].contains(run.status)
             let status = failed ? "error" : stopped ? "stopped" : "completed"
-            // While background work the request started still runs, its result is the result so far.
-            transcriptCard(node, title: MightyGraphSupport.resultTitle(status: run.status, waiting: run.backgroundWaiting), icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : "checkmark.seal",
-                           status: status, input: "", entries: run.resultEntries, tint: Palette.text(status),
+            // While background work the request started still runs, its result is the result so far: a neutral clock, not the done seal.
+            let soFar = !failed && !stopped && run.backgroundWaiting > 0
+            transcriptCard(node, title: MightyGraphSupport.resultTitle(status: run.status, waiting: run.backgroundWaiting),
+                           icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : soFar ? Self.resultSoFarIcon : "checkmark.seal",
+                           status: status, input: "", entries: run.resultEntries, tint: soFar ? Palette.ink2 : Palette.text(status),
                            usage: run.totalUsage, usageLabel: L("graph.block.totalUsageLabel"), resultFilesRunID: run.status == "completed" ? run.id : nil,
-                           headerFill: Palette.heroFill(DesignTone(status: status)),
+                           headerFill: Palette.heroFill(soFar ? .idle : DesignTone(status: status)),
                            onContentHeight: node.id == MightyGraphLayout.latestResultID(runs: runs) ? { resultMeasured(node.id, $0) } : nil)
         case .resultFiles(let index):
             MightyGraphResultFilesView(nodeID: node.id, files: resultFiles.files(for: runs[index].id),
@@ -681,6 +683,8 @@ struct MightyGraphView: View {
 
     /// The 실행 block's glyph, in the diagram and on its timeline row.
     static let executionIcon = "gearshape.2"
+    /// A result's glyph while it is the result so far (현재까지의 결과): neutral, for the request is not done with its background work.
+    static let resultSoFarIcon = "clock"
 
     /// `headerFill` paints the header as a strip (the result card's outcome colour) with
     /// white words on it; the other blocks keep a plain header on the white card.

@@ -740,14 +740,16 @@ struct MightyStructureView: View {
     /// The result card's header words, in the outcome's colour once there is one: the result so far while
     /// background work the request started still runs (`MightyGraphSupport.resultTitle`).
     private func resultTitle(_ item: MightyStructure.Item) -> some View {
+        // The result so far is neutral: a clock in the secondary ink, not the done seal.
+        let soFar = item.backgroundWaiting > 0 && !["error", "stopped"].contains(item.status)
         let icon = switch item.status {
         case "error": "exclamationmark.triangle"
         case "stopped": "stop.circle"
-        default: "checkmark.seal"
+        default: soFar ? MightyGraphView.resultSoFarIcon : "checkmark.seal"
         }
         return Label(Self.resultName(item), systemImage: icon)
             .font(.ui(size: Self.outputSize, weight: .bold)).lineLimit(1)
-            .foregroundStyle(item.finished ? Palette.text(item.status) : Palette.ink2)
+            .foregroundStyle(item.finished && !soFar ? Palette.text(item.status) : Palette.ink2)
     }
 
     /// The answer as the transcript renders a reply; without one, its state (the last
