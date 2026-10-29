@@ -159,3 +159,4 @@
   - 하위 에이전트의 "하위 에이전트 · 응답 대기"(`graph.background.agentWaiting`)는 그대로다.
   - 도움말 본문은 이 말을 옮겨 적지 않으므로 고칠 곳이 없다.
   - 예전 문서(`2026-10-27-background-work-kinds-*`)는 기록이라 두고, 코드 주석(`MainWindow.WebShell.Cards.cs` ~21)은 고친다.
+- **`backgroundSummary`는 맥에만 남긴다:** 고정된 스타일 엔진 테스트(`StylesClaudePlanTests`)가 이 함수를 확인하므로 맥 `PlanCardSupport.backgroundSummary`와 그 테스트는 그대로 둔다(5c22a513). 앱 화면은 더 이상 쓰지 않는다. 윈도우의 같은 함수는 지웠다.

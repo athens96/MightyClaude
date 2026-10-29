@@ -146,8 +146,8 @@ public sealed partial class MainWindow
         /// <summary>
         /// Lays the toolbar out for its width (M/SessionPaneView.swift:707-726): attach, model, then effort,
         /// permission, Fast and … as pills, as symbols, or folded into the options menu. The width is what the
-        /// right cluster leaves, measured off the cluster itself, so its background-work and status-line toggles
-        /// count as the Mac's formula counts them (16 + gap each) and the pills never run under it.
+        /// right cluster leaves, measured off the cluster itself, so its status-line toggle
+        /// counts as the Mac's formula counts it (16 + gap) and the pills never run under it.
         /// </summary>
         private void ArrangeComposer()
         {
@@ -326,8 +326,8 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// Builds the pills and the right cluster (M/SessionPaneView.swift:707-771): one 32pt row, the pills
-        /// leading and sized to their contents, then the resume mark, the context ring, the background-work
-        /// and status-line toggles and stop / send (stop, the new worktree and queue while a draft waits on a busy pane), 6 apart.
+        /// leading and sized to their contents, then the resume mark, the context ring, the
+        /// status-line toggle and stop / send (stop, the new worktree and queue while a draft waits on a busy pane), 6 apart.
         /// </summary>
         private void BuildToolbar()
         {

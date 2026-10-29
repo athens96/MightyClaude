@@ -79,8 +79,7 @@ public sealed partial class MainWindow
     private Task OpenSettings() => Act(ShowCategorizedSettingsAsync);
 
     // 화면 (M/SettingsViews.swift:221-251): the theme and the language as segmented pickers, the language
-    // note, then the status-line and browser switches, each with its 11pt explanation under the label, and
-    // between them the background work line's switch.
+    // note, then the status-line and browser switches, each with its 11pt explanation under the label.
     private StackPanel BuildDisplaySection()
     {
         var rows = new StackPanel();

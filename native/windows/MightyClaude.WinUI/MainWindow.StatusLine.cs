@@ -112,7 +112,7 @@ public sealed partial class MainWindow
         // A remote pane has no status line: its command and settings would be this PC's, run in its host's path (M/AppStore+StatusLine.swift).
         private bool StatusLineEligible => owner.service.Snapshot.StatusLineEnabled && Session.Kind == "claude" && Session.Provider == "claude" && LocalPath(Workspace) is not null;
 
-        /// <summary>Adds the status-line toggle to the composer's right cluster, between the background-work toggle and stop / send.</summary>
+        /// <summary>Adds the status-line toggle to the composer's right cluster, before stop / send.</summary>
         private void InitializeStatusLineToggle(StackPanel cluster)
         {
             InitializeStatusLineGlyph();
