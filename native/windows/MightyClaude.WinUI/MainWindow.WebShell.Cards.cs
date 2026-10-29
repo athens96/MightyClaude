@@ -11,8 +11,9 @@ namespace MightyClaude.WinUI;
 /// <summary>The next-action rows (MainWindow.NextActions.cs): the labels of the latest reply's options.</summary>
 internal sealed record WebNextActionsCard(string EntryId, IReadOnlyList<string> Actions) { public string Kind => "nextActions"; }
 
-/// <summary>One answered plan of the history strip (MainWindow.PlanCard.cs PlanRecordRow).</summary>
-internal sealed record WebPlanRecord(string Id, string OutcomeTitle, string Tone, string Time, string Headline, string Plan, bool Truncated, string? Feedback);
+/// <summary>One answered plan of the history strip (MainWindow.PlanCard.cs PlanRecordRow).
+/// <c>Received</c> (plan.card.received, "Received 14:05") is the expanded document's subtitle (PlanApprovalCard.swift PlanRecordView).</summary>
+internal sealed record WebPlanRecord(string Id, string OutcomeTitle, string Tone, string Time, string Received, string Headline, string Plan, bool Truncated, string? Feedback);
 internal sealed record WebPlanHistoryCard(IReadOnlyList<WebPlanRecord> Records) { public string Kind => "planHistory"; }
 
 /// <summary>
@@ -352,10 +353,11 @@ public sealed partial class MainWindow
             await Mouse("[data-card=planHistory] > .card-fold");
             ok &= await Until("!!document.querySelector('[data-testid=plan-record-expand]')");
             await Mouse("[data-testid=plan-record-expand]");
-            await Check("planHistoryIndependentDocument", "document.querySelector('[data-testid=plan-document]')?.parentElement?.parentElement === document.body && document.querySelector('[data-testid=plan-document]')?.textContent.includes('record-plan-marker') === true && document.querySelector('[data-testid=plan-document]')?.textContent.includes('history-feedback-marker') === true");
+            // The document is the plan text under its title and received time only, as the Mac's PlanDocumentSheet.
+            await Check("planHistoryIndependentDocument", "document.querySelector('[data-testid=plan-document]')?.parentElement?.parentElement === document.body && document.querySelector('[data-testid=plan-document]')?.textContent.includes('record-plan-marker') === true && document.querySelector('[data-testid=plan-document]')?.textContent.includes('history-feedback-marker') === false");
             await Check("planHistoryDecisionMetadata", "document.querySelector('[data-testid=plan-document] strong')?.textContent === " + JsonSerializer.Serialize(Locale.Get("plan.card.title") + " · " + PlanCardSupport.OutcomeTitle(record.Outcome))
-                + " && document.querySelector('[data-testid=plan-document] .plan-record-time')?.textContent === " + JsonSerializer.Serialize(PlanCardSupport.TimeText(record.DecidedAt))
-                + " && document.querySelector('[data-testid=plan-document] .card-note')?.textContent === " + JsonSerializer.Serialize(Locale.Get("plan.history.truncated")));
+                + " && document.querySelector('[data-testid=plan-document] .plan-record-time')?.textContent === " + JsonSerializer.Serialize(PlanCardSupport.ReceivedText(record.ReceivedAt))
+                + " && !document.querySelector('[data-testid=plan-document] .card-note')");
             await Escape();
             await Check("planHistoryRestoresFocus", "!document.querySelector('[data-testid=plan-document]') && document.activeElement?.dataset.testid === 'plan-record-expand'");
         }
@@ -418,7 +420,7 @@ public sealed partial class MainWindow
             if (records.Count == 0) return null;
             return new(Enumerable.Reverse(records).Select(r => new WebPlanRecord(r.Id, PlanCardSupport.OutcomeTitle(r.Outcome),
                 r.Outcome switch { PlanOutcome.ApprovedAuto or PlanOutcome.ApprovedConfirm => "done", PlanOutcome.Revised => "wait", _ => "stop" },
-                PlanCardSupport.TimeText(r.DecidedAt), PlanCardSupport.Headline(r.Plan), r.Plan, r.PlanTruncated == true, r.Feedback is { Length: > 0 } f ? f : null)).ToArray());
+                PlanCardSupport.TimeText(r.DecidedAt), PlanCardSupport.ReceivedText(r.ReceivedAt), PlanCardSupport.Headline(r.Plan), r.Plan, r.PlanTruncated == true, r.Feedback is { Length: > 0 } f ? f : null)).ToArray());
         }
 
         /// <summary>As <see cref="RefreshBackgroundWork"/>: the strip's line and, open, its rows.</summary>

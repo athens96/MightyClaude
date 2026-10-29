@@ -7,10 +7,12 @@ import type { PlanRecord } from '../store/models';
 import { Block, type BlockActions } from '../mighty/Block';
 import { PlanDocumentDialog } from './PlanDocument';
 import { maximumPlanFeedbackBytes, planFeedbackState, planRecordPresentation } from './plan';
+import { entryTime } from '../conversation/format';
 
 const t = translator([{
   'plan.outcome.revised': 'Changes requested', 'plan.outcome.approvedAuto': 'Approved (auto edit)', 'plan.outcome.approvedConfirm': 'Approved (confirm each)',
   'plan.outcome.cancelled': 'Cancelled', 'plan.history.feedback': 'Requested changes', 'plan.history.truncated': 'Only the beginning was kept.', 'plan.card.title': 'Plan',
+  'plan.card.received': 'Received {time}', 'plan.card.close': 'Close',
 }]);
 const services = { bridge: { call: () => Promise.resolve(null) }, store: {}, t } as unknown as AppServices;
 const record: PlanRecord = {
@@ -56,18 +58,26 @@ describe('answered plans', () => {
       const shown = planRecordPresentation({ ...record, outcome: outcome!, decidedAt: 'invalid' }, t, 'en');
       expect(shown).toMatchObject({ outcomeTitle: title, tone, time: '', headline: 'Release plan', feedback: record.feedback, truncated: true });
     }
+    expect(planRecordPresentation({ ...record, receivedAt: 'invalid' }, t, 'en').received).toBe('');
   });
 
-  it('keeps the warning and requested changes in the standalone document, too', () => {
+  it('subtitles the expanded record with when the plan was received, as the Mac does', () => {
+    const shown = planRecordPresentation(record, t, 'en');
+    expect(shown.received).toBe('Received ' + entryTime(record.receivedAt, 'en'));
+    expect(shown.received).not.toContain(shown.time);
+  });
+
+  it('shows only the plan text under its title and received time in the standalone document (M/PlanDocumentSheet)', () => {
+    const shown = planRecordPresentation(record, t, 'en');
     const element = createElement(PlanDocumentDialog, {
-      title: 'Plan · Changes requested', subtitle: '10:10 AM', plan: record.plan, feedback: record.feedback, truncated: true, onClose: () => {},
+      title: 'Plan · ' + shown.outcomeTitle, subtitle: shown.received, plan: shown.plan, onClose: () => {},
     });
     const html = renderToStaticMarkup(createElement(ServicesContext.Provider, { value: services }, element));
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('Plan · Changes requested');
-    expect(html).toContain('10:10 AM');
+    expect(html).toContain(shown.received);
     expect(html).toContain('Release plan');
-    expect(html).toContain('먼저 테스트를 추가해 주세요.');
-    expect(html).toContain('Only the beginning was kept.');
+    expect(html).not.toContain('먼저 테스트를 추가해 주세요.');
+    expect(html).not.toContain('Only the beginning was kept.');
   });
 });

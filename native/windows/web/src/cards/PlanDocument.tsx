@@ -24,13 +24,12 @@ export interface PlanDocumentProps {
   title: string;
   subtitle?: string;
   plan: string;
-  feedback?: string;
-  truncated?: boolean;
   onClose(): void;
 }
 
 /**
- * A pending or answered plan opened over the whole window, outside the graph's transformed/clipped layer. Like the picture
+ * A pending or answered plan opened over the whole window: its title, when it was received and the plan text only
+ * (M/PlanApprovalCard.swift PlanDocumentSheet), outside the graph's transformed/clipped layer. Like the picture
  * viewer it hides overlapping native browser panes, owns Escape/Tab, and returns focus to its Expand button on close.
  */
 export function PlanDocument(props: PlanDocumentProps) {
@@ -38,7 +37,7 @@ export function PlanDocument(props: PlanDocumentProps) {
 }
 
 /** Exported separately so the document's content and metadata can be checked without a browser. */
-export function PlanDocumentDialog({ title, subtitle, plan, feedback, truncated, onClose }: PlanDocumentProps) {
+export function PlanDocumentDialog({ title, subtitle, plan, onClose }: PlanDocumentProps) {
   const { t } = useServices();
   const card = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
@@ -75,8 +74,6 @@ export function PlanDocumentDialog({ title, subtitle, plan, feedback, truncated,
         </div>
         <div className="card-dialog-document">
           <Markdown text={plan} />
-          {truncated && <div className="card-note">{t('plan.history.truncated')}</div>}
-          {feedback && <div className="plan-feedback open">{t('plan.history.feedback')} · {feedback}</div>}
         </div>
       </div>
     </div>

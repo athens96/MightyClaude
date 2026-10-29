@@ -203,7 +203,7 @@ function PlanHistory({ card }: { card: PlanHistoryCard }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [documentId, setDocumentId] = useState<string | null>(null);
-  const document = card.records.find((record) => record.id === documentId);
+  const opened = card.records.find((record) => record.id === documentId);
   const latest = card.records[0];
   const toggle = (id: string) => setExpanded((now) => { const next = new Set(now); if (!next.delete(id)) next.add(id); return next; });
   return (
@@ -234,8 +234,8 @@ function PlanHistory({ card }: { card: PlanHistoryCard }) {
           })}
         </div>
       )}
-      {document && <PlanDocument title={t('plan.card.title') + ' · ' + document.outcomeTitle} subtitle={document.time} plan={document.plan}
-        feedback={document.feedback} truncated={document.truncated} onClose={() => setDocumentId(null)} />}
+      {opened && <PlanDocument title={t('plan.card.title') + ' · ' + opened.outcomeTitle} subtitle={opened.received} plan={opened.plan}
+        onClose={() => setDocumentId(null)} />}
     </div>
   );
 }

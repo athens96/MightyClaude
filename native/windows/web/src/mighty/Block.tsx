@@ -13,6 +13,7 @@ import { backgroundLabel, shownTail } from './background';
 import { dashForCard, dashOffset } from './camera';
 import { isResizable, terminal, visibleImages } from './layout';
 import type { MightyBlockCopy, MightyExecutionCard, MightyFile } from './types';
+import type { PlanRecord as PresentedPlanRecord } from '../cards/types';
 import { BottomRight, type Edges } from './resize';
 import { useMenu } from '../shell/parts';
 import { Pending } from '../pending/Pending';
@@ -270,7 +271,8 @@ function Execution({ card, paneId, open }: { card: MightyExecutionCard; paneId: 
   );
 }
 
-function Body(props: BlockProps) {
+/** `recorded`: the block's answered plan as presented, worked out once by the block. */
+function Body({ recorded, ...props }: BlockProps & { recorded?: PresentedPlanRecord }) {
   const { t } = useServices();
   const { kind, extra, copy, paneId, provider, running, actions, id } = props;
   const content = useRef<HTMLDivElement>(null);
@@ -293,7 +295,7 @@ function Body(props: BlockProps) {
       return <div className="mighty-body"><div className="mighty-pad">{extra.markdown ? <Markdown text={extra.markdown} /> : null}</div></div>;
     case 'planRecord':
       return <div className="mighty-body"><div className="mighty-pad mighty-plan-record" data-testid="mighty-plan-record">
-        {extra.planRecord && <PlanRecordDetails record={planRecordPresentation(extra.planRecord, t, globalThis.document?.documentElement.lang || 'en')} expanded={props.expanded} />}
+        {recorded && <PlanRecordDetails record={recorded} expanded={props.expanded} />}
       </div></div>;
     case 'resultFiles':
       return (
@@ -377,7 +379,7 @@ export const Block = memo(function Block(props: BlockProps) {
   const tone = copy?.tone ?? 'idle';
   const status = copy?.status ?? '';
   const resizable = isResizable(kind);
-  const recorded = extra.planRecord && planRecordPresentation(extra.planRecord, t, globalThis.document?.documentElement.lang || 'en');
+  const recorded = extra.planRecord ? planRecordPresentation(extra.planRecord, t, globalThis.document?.documentElement.lang || 'en') : undefined;
   const documentPlan = recorded?.plan ?? (kind === 'plan' ? extra.markdown : undefined);
   return (
     <div className={`mighty-block kind-${kind} tone-${tone}${selected ? ' selected' : ''}${copy?.outline === 'marching' || copy?.outline === 'solid' ? ' halo' : ''}`}
@@ -418,7 +420,7 @@ export const Block = memo(function Block(props: BlockProps) {
           )}
         </span>
       </div>
-      {props.visible && <Body {...props} />}
+      {props.visible && <Body {...props} recorded={recorded} />}
       {kind === 'draft' && <svg className="mighty-draft-outline" width={w} height={h} aria-hidden="true"><rect x={0.75} y={0.75} width={w - 1.5} height={h - 1.5} rx={12} /></svg>}
       <Outline outline={copy?.outline ?? 'none'} w={w} h={h} />
       {resizable && (
@@ -428,7 +430,7 @@ export const Block = memo(function Block(props: BlockProps) {
         </>
       )}
       {planOpen && documentPlan !== undefined && <PlanDocument title={t('plan.card.title') + (recorded ? ' · ' + recorded.outcomeTitle : '')}
-        subtitle={recorded?.time} plan={documentPlan} feedback={recorded?.feedback} truncated={recorded?.truncated} onClose={() => setPlanOpen(false)} />}
+        subtitle={recorded?.received} plan={documentPlan} onClose={() => setPlanOpen(false)} />}
     </div>
   );
 });

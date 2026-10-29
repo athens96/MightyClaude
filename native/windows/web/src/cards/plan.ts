@@ -15,11 +15,13 @@ export function planFeedbackState(feedback: string): 'empty' | 'valid' | 'tooLon
 /** The same record presentation the host supplies to the history strip, for records carried by the graph snapshot. */
 export function planRecordPresentation(record: StoredPlanRecord, t: Translate, language: string): PlanRecord {
   const outcome = ['approvedAuto', 'approvedConfirm', 'revised'].includes(record.outcome) ? record.outcome : 'cancelled';
+  const received = entryTime(record.receivedAt, language);
   return {
     id: record.id,
     outcomeTitle: t('plan.outcome.' + outcome),
     tone: outcome === 'revised' ? 'wait' : outcome === 'cancelled' ? 'stop' : 'done',
     time: entryTime(record.decidedAt, language),
+    received: received ? t('plan.card.received', { time: received }) : '',
     headline: record.plan.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim().replace(/^#+\s*/, '') ?? '',
     plan: record.plan,
     truncated: record.planTruncated === true,

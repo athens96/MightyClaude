@@ -13,6 +13,8 @@ export interface PlanRecord {
   outcomeTitle: string;
   tone: 'done' | 'wait' | 'stop';
   time: string;
+  /** "Received 10:05": the expanded document's subtitle (PlanCardSupport.receivedText). */
+  received: string;
   headline: string;
   plan: string;
   truncated: boolean;
