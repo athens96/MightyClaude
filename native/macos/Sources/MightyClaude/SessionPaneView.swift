@@ -148,6 +148,10 @@ struct SessionPaneView: View {
     private var queued: [QueuedInput] { store.queuedInputs[session.id] ?? [] }
     /// Delegation's notices or follow-ups held for this pane: rows that run first.
     private var held: [DelegationDeliveryItem] { store.delegationHeld[session.id] ?? [] }
+    /// What 바로 실행 does on each queued row, held ones first (`AppStore.queueRunNow`).
+    private var queueRunNow: [String: QueueRunNow] {
+        Dictionary((held.map(\.id) + queued.map(\.id)).map { ($0, store.queueRunNow(session, rowId: $0, stopping: stopping)) }, uniquingKeysWith: { first, _ in first })
+    }
     /// Present when a `statusLine` command produced something, or a
     /// workspace-level command is waiting to be allowed.
     /// Local Claude panes can show Claude's `statusLine`; the button flips
@@ -676,12 +680,17 @@ struct SessionPaneView: View {
                 .accessibilityIdentifier("attachments-\(session.id)")
             }
             if !queued.isEmpty || !held.isEmpty {
-                QueuedInputsView(sessionID: session.id, held: held, items: queued, running: running || store.hasModal,
-                                 onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) },
+                QueuedInputsView(sessionID: session.id, held: held, items: queued, running: running,
+                                 onRemove: { store.removeQueuedInput(session.id, itemId: $0) },
                                  notice: BackgroundQueuePolicy.waitsOnBackground(work: session.backgroundWork, queued: queued.count)
                                      ? L(secondSend == .worktree ? "queue.waitingOnBackground.macWorktree" : "queue.waitingOnBackground.mac") : nil,
-                                 steersRunNext: !stopping && store.steersRunNext(session.id),
-                                 addedAt: store.queueAddedAt[session.id])
+                                 addedAt: store.queueAddedAt[session.id],
+                                 runNow: queueRunNow,
+                                 onRunNow: { row, agent in Task { await store.runQueuedNow(session.id, itemId: row, agent: agent, stopping: stopping) } },
+                                 agentChoices: store.offersWorktreeMenu(session) ? store.worktreeChildChoices(session) : [],
+                                 parentProvider: session.provider, disabled: store.hasModal)
+                    // 바로 실행 reads whether the folder can host a worktree from the cache this fills.
+                    .onAppear { store.refreshWorktreeReadiness(for: session) }
                     .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, attachments.isEmpty ? DesignMetrics.Spacing.sm : 0)
             }
             if paletteVisible {
@@ -1009,13 +1018,14 @@ struct SessionPaneView: View {
     }
 
     /// `Codex · Working folder`, `Claude · Accept file edits (⌘Enter)`, or `Codex — not signed in`.
-    static func worktreeChoiceTitle(_ choice: DelegationChildChoice, parent: String) -> String {
+    /// `marksShortcut` false (a queued row's menu): the pane's own agent without the ⌘Enter mark.
+    static func worktreeChoiceTitle(_ choice: DelegationChildChoice, parent: String, marksShortcut: Bool = true) -> String {
         let agent = ProviderOptions.label(choice.agent)
         let reason: String
         switch choice.blocked {
         case nil:
             let mode = permissionLabel(choice.mode ?? "", provider: choice.agent)
-            return choice.agent == parent ? L("composer.worktreeMenu.sameAgent", ["agent": agent, "mode": mode]) : L("composer.worktreeMenu.agent", ["agent": agent, "mode": mode])
+            return choice.agent == parent && marksShortcut ? L("composer.worktreeMenu.sameAgent", ["agent": agent, "mode": mode]) : L("composer.worktreeMenu.agent", ["agent": agent, "mode": mode])
         case .notInstalled?: reason = L("composer.worktreeMenu.notInstalled")
         case .signedOut?: reason = L("composer.worktreeMenu.signedOut")
         case .noMode?: reason = L("composer.worktreeMenu.noMode")

@@ -10,6 +10,10 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
     var commands: [String] = []
     var failSubmit = false
     var runNextFails = false
+    /// Where the fake's 바로 실행 runs a row ("worktree" or "here"), and whether it refuses it instead.
+    var runNowAnswer = "worktree"
+    var runNowFails = false
+    static let runNowRefusal = "This request cannot run now."
     /// The pane is busy, so a submit defers instead of starting.
     var running = true
     /// What a send to the busy pane finally reported: queued, as the store
@@ -132,6 +136,14 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
         // queue and would still answer ok.
         if let blockedReason { throw MobileHostError.conflict(blockedReason) }
         commands.append("run-next:\(sessionId)")
+    }
+    func mobileRunQueuedNow(sessionId: String, itemId: String) async throws -> String {
+        lock.lock(); defer { lock.unlock() }
+        try known(sessionId)
+        guard itemId == "q1" else { throw MobileHostError.notFound("Queued item not found.") }
+        if runNowFails { throw MobileHostError.conflict(Self.runNowRefusal) }
+        commands.append("run-now:\(sessionId):\(itemId)")
+        return runNowAnswer
     }
     func mobileRename(sessionId: String, title: String, titleMode: String?) async throws {
         lock.lock(); defer { lock.unlock() }
@@ -598,6 +610,25 @@ struct MobileRemoteTests {
         #expect(try await call(service, "POST", "/m1/sessions/missing/queue/run-next").0 == 404)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/queue/q1/drop").0 == 404)
         #expect(host.recorded() == ["remove:session-1:q1", "run-next:session-1"])
+    }
+
+    /// 바로 실행 on one row: where it ran, 404 for a row or pane it does not know, 409 with the host's reason when it cannot run now.
+    @Test func runNowRunsTheQueuedRowAndSaysWhereItRan() async throws {
+        let host = FakeMobileHost()
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let worktree = try await call(service, "POST", "/m1/sessions/session-1/queue/q1/run-now")
+        #expect(worktree.0 == 200 && worktree.1["protocol"] as? Int == 1 && worktree.1["ok"] as? Bool == true && worktree.1["ran"] as? String == "worktree")
+        host.runNowAnswer = "here"
+        let here = try await call(service, "POST", "/m1/sessions/session-1/queue/q1/run-now")
+        #expect(here.0 == 200 && here.1["ran"] as? String == "here")
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/queue/q9/run-now").0 == 404)
+        #expect(try await call(service, "POST", "/m1/sessions/missing/queue/q1/run-now").0 == 404)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/queue/..%2Fx/run-now").0 == 404)
+        host.runNowFails = true
+        let refused = try await call(service, "POST", "/m1/sessions/session-1/queue/q1/run-now")
+        #expect(refused.0 == 409 && refused.1["error"] as? String == FakeMobileHost.runNowRefusal)
+        #expect(host.recorded() == ["run-now:session-1:q1", "run-now:session-1:q1"])
     }
 
     @Test func renameChecksItsBoundsAndCloseIsAcknowledged() async throws {

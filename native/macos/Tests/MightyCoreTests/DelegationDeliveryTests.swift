@@ -486,7 +486,7 @@ private struct Fixture {
         fixture.expectEachTakenOnce([toRunning.id, toStopped.id])
     }
 
-    @Test func heldRowsComeFirstInThePhonesQueuedArrayInItsItemShapeCannotBeRemovedAndKeepRunNextOnOffer() throws {
+    @Test func heldRowsComeFirstInThePhonesQueuedArrayInItsItemShapeCannotBeRemovedAndKeepRunNowOnOffer() throws {
         let held = [DelegationDeliveryItem(id: "n-1", kind: .notice, childId: "c1", sessionId: "parent", text: "Notice 1"),
                     DelegationDeliveryItem(id: "n-2", kind: .notice, childId: "c2", sessionId: "parent", text: "Notice 2")]
         let queued = [QueuedInput(id: "q-1", text: "Human row")]
@@ -503,11 +503,16 @@ private struct Fixture {
         #expect(DelegationQueueRows.removeRefusal(itemId: "q-1", held: held) == nil)
         #expect(DelegationQueueRows.removeRefusal(itemId: "n-2", held: []) == nil)
 
-        // Run next shows whenever items are held, busy or not; otherwise only while idle.
-        #expect(DelegationQueueRows.offersRunNext(busy: true, held: 1))
-        #expect(DelegationQueueRows.offersRunNext(busy: false, held: 2))
-        #expect(DelegationQueueRows.offersRunNext(busy: false, held: 0))
-        #expect(!DelegationQueueRows.offersRunNext(busy: true, held: 0))
+        // The first held row has 바로 실행 for them all, busy or not, and the others none; a human row on an idle pane runs here.
+        func pane(busy: Bool, held: Int) -> QueueRunNow.Pane {
+            QueueRunNow.Pane(busy: busy, heldForUpdate: false, secondSend: .worktree, menuOnly: false, waitsOnBackgroundOnly: false, held: held)
+        }
+        for busy in [true, false] {
+            #expect(QueueRunNow.decide(heldIndex: 0, text: "", attachments: 0, pane: pane(busy: busy, held: 2)) == .held)
+            #expect(QueueRunNow.decide(heldIndex: 1, text: "", attachments: 0, pane: pane(busy: busy, held: 2)) == .hidden)
+        }
+        #expect(QueueRunNow.decide(heldIndex: nil, text: "Human row", attachments: 0, pane: pane(busy: false, held: 2)) == .here)
+        #expect(QueueRunNow.decide(heldIndex: nil, text: "Human row", attachments: 0, pane: pane(busy: false, held: 0)) == .here)
     }
 
     @Test func theHeldRowsTheAppShowsFollowTheFileAcrossARelaunch() async throws {

@@ -39,6 +39,8 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String
     func mobileRemoveQueued(sessionId: String, itemId: String) async throws
     func mobileRunNextQueued(sessionId: String) async throws
+    /// 바로 실행 on the queued row `itemId`, decided as the pane is now: "worktree" or "here".
+    func mobileRunQueuedNow(sessionId: String, itemId: String) async throws -> String
     /// `titleMode` "auto" restores automatic titling; `title` is ignored in that case.
     /// Nil (or any other value) treats the call as a fixed rename.
     func mobileRename(sessionId: String, title: String, titleMode: String?) async throws
@@ -73,6 +75,10 @@ public extension MobileHostDelegate {
     }
     /// A host without plan cards has nothing to answer.
     func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws { throw MightyError(L("plan.error.notPlan")) }
+    /// A host without 바로 실행 on its rows knows no such row.
+    func mobileRunQueuedNow(sessionId: String, itemId: String) async throws -> String {
+        throw MobileHostError.notFound(L("remote.error.queueItemNotFound"))
+    }
     /// A host without the "send to" switch offers no targets, so every value but Claude is refused.
     func mobileSetAskTarget(sessionId: String, target: String?) async throws {
         guard target == nil else { throw MobileHostError.badRequest(L("remote.error.badBody")) }
@@ -1132,6 +1138,12 @@ public actor MobileRemoteService {
                 let id = try sessionID(route[1])
                 try await perform { try await delegate.mobileRunNextQueued(sessionId: id) }
                 return reply(200, MobileOK())
+            }
+            if method == "POST", route.count == 5, route[0] == "sessions", route[2] == "queue", route[4] == "run-now", url.query == nil {
+                let id = try sessionID(route[1])
+                guard CoreValidation.identifier(route[3]) else { throw Failure(404, L("remote.error.queueItemNotFound")) }
+                let ran = try await perform { try await delegate.mobileRunQueuedNow(sessionId: id, itemId: route[3]) }
+                return reply(200, MobileRunNowReply(ran: ran))
             }
             if method == "POST", route.count == 5, route[0] == "sessions", route[2] == "queue", route[4] == "remove", url.query == nil {
                 let id = try sessionID(route[1])

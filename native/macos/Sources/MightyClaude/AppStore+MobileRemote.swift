@@ -182,6 +182,11 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         let store = try await MainActor.run { try self.store.orClosing() }
         try await store.mobileRunNextQueued(sessionId)
     }
+    func mobileRunQueuedNow(sessionId: String, itemId: String) async throws -> String {
+        // Awaits a steer or delegation's release of held items, so it cannot be folded into MainActor.run.
+        let store = try await MainActor.run { try self.store.orClosing() }
+        return try await store.mobileRunQueuedNow(sessionId, itemId: itemId)
+    }
     func mobileRename(sessionId: String, title: String, titleMode: String?) async throws {
         try await MainActor.run { try store.orClosing().mobileRename(sessionId, title: title, titleMode: titleMode) }
     }
@@ -466,7 +471,7 @@ extension AppStore {
         if session.kind == SessionKind.claude, session.provider == "claude" { refreshSlashCommands(for: session) }
         let targets = askTargets(for: session)
         return MobileSessionDetail(revision: revision, session: summary, entries: Array(session.logs.suffix(MobileSessionDetail.maximumEntries)),
-                                   permissions: permissions, queued: DelegationQueueRows.mobileItems(held: delegationHeld[id] ?? [], queued: queuedInputs[id] ?? []),
+                                   permissions: permissions, queued: DelegationQueueRows.mobileItems(held: delegationHeld[id] ?? [], queued: queuedInputs[id] ?? []) { self.queueRunNow(session, rowId: $0) },
                                    usage: mobileUsage(session), elapsedSeconds: session.runTiming?.elapsed(),
                                    hasOlder: MobileRemoteSupport.hasOlder(entryCount: session.logs.count), settings: mobileSettings(session),
                                    mighty: mobileMighty(session, structure: structure),
@@ -804,6 +809,26 @@ extension AppStore {
         if let reason = runBlockedReason(session, checkRuntime: false) { throw MobileHostError.conflict(reason) }
         // The phone's 다음 실행: the Mac's views only follow it.
         runNextQueuedInput(id, own: false)
+    }
+
+    /// The phone's 바로 실행 on `itemId`: what ``queueRunNow(_:rowId:stopping:)`` decides now, as this Mac's click would, but only
+    /// followed by this Mac's views, and a worktree child is not selected here. "worktree" or "here".
+    func mobileRunQueuedNow(_ id: String, itemId: String) async throws -> String {
+        let session = try mobileCommandSession(id)
+        guard (delegationHeld[id] ?? []).contains(where: { $0.id == itemId }) || queuedInputs[id]?.contains(where: { $0.id == itemId }) == true else {
+            throw MobileHostError.notFound(L("remote.error.queueItemNotFound"))
+        }
+        let path = queueRunNow(session, rowId: itemId)
+        // A dimmed row is never sent by the phone; this answers a row that changed under it.
+        guard path != .agentMenu, path.runs, let wire = path.wire?.runNow else { throw MobileHostError.conflict(L("queue.runNowRefused")) }
+        // Settling a blocked pane throws the whole queue away with only a log line.
+        if path == .here || path == .held, let reason = runBlockedReason(session, checkRuntime: false) { throw MobileHostError.conflict(reason) }
+        let macError = error
+        let ran = await runQueuedNow(id, itemId: itemId, own: false)
+        let failure = error == macError ? nil : error
+        error = macError
+        guard ran != nil else { throw MobileHostError.conflict(failure ?? L("queue.runNowRefused")) }
+        return wire
     }
 
     func mobileRename(_ id: String, title: String, titleMode: String?) throws {

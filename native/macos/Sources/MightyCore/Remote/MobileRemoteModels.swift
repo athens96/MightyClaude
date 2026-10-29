@@ -295,7 +295,13 @@ public struct MobileUsage: Codable, Sendable, Equatable {
 public struct MobileQueuedItem: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var text: String
-    public init(id: String, text: String) { self.id = id; self.text = text }
+    /// The row's 바로 실행: "worktree", "here" or "unavailable" (``QueueRunNow/wire``); absent without a button.
+    public var runNow: String?
+    /// Why an "unavailable" row waits: "turn", "held", "update" or "agent"; absent otherwise.
+    public var runNowReason: String?
+    public init(id: String, text: String, runNow: String? = nil, runNowReason: String? = nil) {
+        self.id = id; self.text = text; self.runNow = runNow; self.runNowReason = runNowReason
+    }
 }
 
 public struct MobileSessionDetail: Codable, Sendable, Equatable {
@@ -683,6 +689,13 @@ public struct MobileOK: Codable, Sendable, Equatable {
     public var `protocol`: Int = 1
     public var ok: Bool = true
     public init() {}
+}
+/// `POST /m1/sessions/{id}/queue/{itemId}/run-now`: where the row ran, "worktree" or "here".
+public struct MobileRunNowReply: Codable, Sendable, Equatable {
+    public var `protocol`: Int = 1
+    public var ok: Bool = true
+    public var ran: String
+    public init(ran: String) { self.ran = ran }
 }
 public struct MobileStopped: Codable, Sendable, Equatable {
     public var `protocol`: Int = 1

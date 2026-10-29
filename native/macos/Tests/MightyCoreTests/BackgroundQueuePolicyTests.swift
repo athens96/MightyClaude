@@ -31,9 +31,15 @@ struct BackgroundQueuePolicyTests {
         #expect(!BackgroundQueuePolicy.steersRunNext(work: waiting, localClaude: true, stopping: false, queued: 1, firstHasAttachments: true))
         var ended = running; ended.status = "completed"
         #expect(!BackgroundQueuePolicy.steersRunNext(work: BackgroundWork(tasks: [ended], turnEnded: true), localClaude: true, stopping: false, queued: 1, firstHasAttachments: false))
-        #expect(DelegationQueueRows.offersRunNext(busy: true, held: 0, steers: true))
-        #expect(!DelegationQueueRows.offersRunNext(busy: true, held: 0, steers: false))
-        #expect(DelegationQueueRows.offersRunNext(busy: true, held: 1))
+        // 바로 실행 on a row of a busy pane that can make no worktree: steered into a run that only waits on background work,
+        // otherwise disabled until the turn ends; the first held row sends the held items.
+        func pane(waitsOnBackgroundOnly: Bool, held: Int = 0) -> QueueRunNow.Pane {
+            QueueRunNow.Pane(busy: true, heldForUpdate: false, secondSend: .queue, menuOnly: false, waitsOnBackgroundOnly: waitsOnBackgroundOnly, held: held)
+        }
+        #expect(QueueRunNow.decide(heldIndex: nil, text: "Next", attachments: 0, pane: pane(waitsOnBackgroundOnly: true)) == .steer)
+        #expect(QueueRunNow.decide(heldIndex: nil, text: "Next", attachments: 0, pane: pane(waitsOnBackgroundOnly: false)) == .waitsForTurn)
+        #expect(QueueRunNow.decide(heldIndex: nil, text: "Next", attachments: 1, pane: pane(waitsOnBackgroundOnly: true)) == .waitsForTurn)
+        #expect(QueueRunNow.decide(heldIndex: 0, text: "", attachments: 0, pane: pane(waitsOnBackgroundOnly: false, held: 1)) == .held)
         let tracker = BackgroundTaskTracker(clock: { Date(timeIntervalSince1970: 1_800_000_000) })
         _ = tracker.consume(["type": "system", "subtype": "task_started", "task_id": "b1", "task_type": "local_bash", "description": "ping"])
         #expect(tracker.turnEnded()?.waitingOnBackground == true)

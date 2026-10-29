@@ -186,7 +186,7 @@ extension AppStore {
             addWorkspace(crossWorkspace)
             guard let codexPane = addSession(kind: "claude", provider: "codex", workspaceId: crossWorkspace.id) else { throw MightyError("No Codex pane.") }
             let crossText = "Smoke cross-agent child: write a note."
-            runInNewWorktree(codexPane, input: crossText, attachments: [], draft: crossText, agent: "claude")
+            runInNewWorktree(codexPane, input: crossText, attachments: [], from: .composer(draft: crossText), agent: "claude")
             let crossChild = try await delegationSmokeAwait("the Codex pane's Claude child", timeout: 60) { () -> ChildRecord? in
                 await crossDelegation.file.children.first { $0.parentSessionId == codexPane && $0.startedByHuman == true && $0.state != .creating }
             }

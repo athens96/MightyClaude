@@ -148,11 +148,14 @@ struct HelpCaptureDelegationTests {
         let demo = profile.delegation
         let file = try Self.file(profile)
         // Held for the stopped parent, oldest first: the reported child's and the
-        // waiting child's, which cannot be removed and keep run next on offer.
+        // waiting child's, which cannot be removed; the first one's 바로 실행 sends both.
         let held = try #require(file.heldItemsByPane()[Self.parentId])
         #expect(held.map(\.childId) == [demo.children[1].id, demo.children[3].id])
         #expect(held.allSatisfy { $0.kind == .notice && $0.text.hasPrefix("[Mighty Claude notice \($0.id)] Your child \($0.childId)") })
-        #expect(DelegationQueueRows.offersRunNext(busy: false, held: held.count) && DelegationQueueRows.removeRefusal(itemId: held[0].id, held: held) == .heldNotRemovable)
+        let stopped = QueueRunNow.Pane(busy: false, heldForUpdate: false, secondSend: .worktree, menuOnly: false, waitsOnBackgroundOnly: false, held: held.count)
+        #expect(QueueRunNow.decide(heldIndex: 0, text: "", attachments: 0, pane: stopped) == .held)
+        #expect(QueueRunNow.decide(heldIndex: 1, text: "", attachments: 0, pane: stopped) == .hidden)
+        #expect(DelegationQueueRows.removeRefusal(itemId: held[0].id, held: held) == .heldNotRemovable)
         #expect(file.heldItemsByPane()[Self.closedParentId]?.map(\.childId) == [demo.children[4].id])
         // The parent delegated three tasks, as many as a pane may have open; the delivered
         // notice started its second run, which merged that child; once the human closed the

@@ -30,14 +30,20 @@ public enum DelegationRelease: Sendable, Equatable {
 
 /// A pane's queued list with delegation's held items in it (macOS only). The
 /// items held for the pane come first, oldest first, as they run first; the
-/// human's queued requests follow. Held rows cannot be removed, do not count
-/// toward the queue's 16-item cap, and keep run next on offer while there
-/// are any. The phone gets them in its existing `queued` item shape.
+/// human's queued requests follow. Held rows cannot be removed and do not
+/// count toward the queue's 16-item cap; the first held row carries 바로 실행
+/// for them all (``QueueRunNow/held``). The phone gets them in its existing
+/// `queued` item shape, each with its 바로 실행 (``QueueRunNow/wire``).
 public enum DelegationQueueRows {
     /// The pane's rows in the phone's `queued` array: held first, then the
-    /// human's requests.
-    public static func mobileItems(held: [DelegationDeliveryItem], queued: [QueuedInput]) -> [MobileQueuedItem] {
-        held.map { MobileQueuedItem(id: $0.id, text: $0.text) } + queued.map { MobileQueuedItem(id: $0.id, text: $0.text) }
+    /// human's requests. `runNow` decides each row's 바로 실행 by its id; a
+    /// row without a button carries neither field.
+    public static func mobileItems(held: [DelegationDeliveryItem], queued: [QueuedInput], runNow: (String) -> QueueRunNow = { _ in .hidden }) -> [MobileQueuedItem] {
+        let rows = held.map { (id: $0.id, text: $0.text) } + queued.map { (id: $0.id, text: $0.text) }
+        return rows.map { row in
+            let wire = runNow(row.id).wire
+            return MobileQueuedItem(id: row.id, text: row.text, runNow: wire?.runNow, runNowReason: wire?.reason)
+        }
     }
 
     /// `held_not_removable` when `itemId` is one of the pane's held rows, and
@@ -45,12 +51,6 @@ public enum DelegationQueueRows {
     public static func removeRefusal(itemId: String, held: [DelegationDeliveryItem]) -> DelegationReasonCode? {
         held.contains { $0.id == itemId } ? .heldNotRemovable : nil
     }
-
-    /// Whether the queued list offers run next: whenever items are held,
-    /// otherwise only while the pane is not busy.
-    /// Also while its first request can be steered into a run that only waits
-    /// on background work (`BackgroundQueuePolicy.steersRunNext`).
-    public static func offersRunNext(busy: Bool, held: Int, steers: Bool = false) -> Bool { held > 0 || !busy || steers }
 }
 
 extension DelegationFile {

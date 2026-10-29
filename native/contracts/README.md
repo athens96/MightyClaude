@@ -475,6 +475,18 @@ parent's mode whenever its child can write in it), or null when none fits.
 (Windows Core) read it. Rules: `MightyCore/DelegationProviders.swift`,
 `MightyClaude.Core/DelegationProviders.cs`.
 
+## Queue run now (`fixtures/queue-run-now.json`)
+
+Each case is one queued row (its place among the held rows, or null for the
+human's, its text and attachment count) on one pane (busy, held for a CLI update,
+the inputs of `ComposerSecondSend.choose` and `menuOnly`, a background-only wait,
+the held count), with what 바로 실행 does there (`worktree`, `agentMenu`, `here`,
+`steer`, `held`, a disabled `waitsForTurn` / `waitsForHeld` / `waitsForUpdate`,
+or `hidden`) and the phone's `{runNow, runNowReason?}` for it, or null. The Mac
+(`QueueRunNowFixtureTests`, rule `MightyCore/QueueRunNow.swift`) and Windows Core
+(`QueueRunNowVerification`) read every case, and the phone reads only `wire`.
+`otherAgentReady` stands for `menuOnly`'s choices holding one unblocked agent.
+
 ## Model labels (`fixtures/model-labels.json`)
 
 Every place a model is chosen or shown labels it with its family and version:
