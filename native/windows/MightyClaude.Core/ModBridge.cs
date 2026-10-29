@@ -175,8 +175,10 @@ public sealed class ModBridge : IAsyncDisposable
         if (graph.ValueKind != JsonValueKind.Object || graph.EnumerateObject().Any(p => !GraphKeys.Contains(p.Name)) || !VersionOne(graph)) return false;
         var phase = graph.Text("phase");
         if (kind == "agent.spawn" ? phase is not ("starting" or "running" or "error" or "stopped") : phase is not ("completed" or "error" or "stopped")) return false;
+        // As the Mac's validModGraph: an identifier that is also already clean (ActivitySupport.clean, 128 bytes, one line).
         foreach (var key in new[] { "agentId", "parentAgentId", "parentToolUseId" })
-            if (graph.TryGetProperty(key, out var raw) && raw.ValueKind != JsonValueKind.Null && !Wire.Identifier(raw.ValueKind == JsonValueKind.String ? raw.GetString() : null)) return false;
+            if (graph.TryGetProperty(key, out var raw) && raw.ValueKind != JsonValueKind.Null
+                && (!Wire.Identifier(raw.ValueKind == JsonValueKind.String ? raw.GetString() : null) || !CleanText(raw, 128, true))) return false;
         var agentId = graph.Text("agentId");
         if (agentId is not null && agentId == graph.Text("parentAgentId")) return false;
         if (kind == "agent.spawn" && graph.Text("parentToolUseId") is null) return false;

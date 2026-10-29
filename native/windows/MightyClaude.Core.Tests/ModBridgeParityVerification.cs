@@ -97,7 +97,7 @@ internal static class ModBridgeParityVerification
         (string Key, object? Value)[] changes =
         [
             ("version", true), ("version", 2), ("version", 1.5), ("phase", "completed"), ("phase", null),
-            ("agentId", "child-agent\n"), ("agentId", 123), ("agentId", null), ("parentAgentId", "child-agent"),
+            ("agentId", "child-agent\n"), ("agentId", 123), ("agentId", null), ("agentId", new string('a', 129)), ("parentAgentId", "child-agent"),
             ("parentToolUseId", null), ("parentToolUseId", "path/to/tool"), ("model", "not a model"),
             ("input", new string('i', 16_385)), ("input", string.Concat(Enumerable.Repeat("한", 5462))),
             ("output", new string('o', 32_769)), ("credentials", "never accepted"),
@@ -116,6 +116,9 @@ internal static class ModBridgeParityVerification
         Check(await Post(http, connection, missing) == HttpStatusCode.BadRequest, "Agent lifecycle events require graph metadata.");
         Check(await Post(http, connection, Envelope(connection, "session.start", valid)) == HttpStatusCode.BadRequest, "Ordinary events cannot smuggle graph metadata.");
         Check(seen == 0 && connection.Received == 0, "Invalid graph content must not reach any consumer.");
+        // The Mac's validModGraph also requires each ID to be clean at 128 bytes on one line: IDs at that boundary still pass.
+        var longest = new Dictionary<string, object?>(valid) { ["agentId"] = "a" + new string('b', 127), ["parentAgentId"] = "p" + new string('q', 127), ["parentToolUseId"] = "t" + new string('u', 127) };
+        Check(await Post(http, connection, Envelope(connection, graph: longest)) == HttpStatusCode.NoContent && seen == 1, "Clean 128-byte graph identities are accepted, as on the Mac.");
     }
 
     internal static async Task BodyAllowanceIsLimitedToAuthenticatedGraphRequests()
