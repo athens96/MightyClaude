@@ -2,6 +2,8 @@
 
 macOS 코드베이스에서 발견한 모든 기능 영역과 Windows 구현 현황.
 
+2026-10-29 실행기·기본 웹 화면 재대조: [Claude Mods, 하위 에이전트, 승인·재개와 계획 화면의 차이 보완](windows-runtime-parity-2026-10.md). 아래의 과거 구현 이력과 이번 수정의 검증 결과를 구분한다.
+
 > **2026-10 웹 화면 전환:** Windows 창의 화면은 이제 WebView2에 띄운 React 페이지(`native/windows/web`)가 기본이다. 아래 표의 WinUI 파일은 그대로 동작의 근거이며, 페이지는 같은 메서드를 호출하고 설정·대화 상자 같은 폼은 보이지 않는 WinUI 폼을 읽어 그린다. 상태 폴더의 `ui-winui` 파일로 이전 화면을 쓸 수 있다. 웹 화면의 스모크는 `MainWindow.WebShell*.cs`(`MIGHTY_SMOKE_WEB=1`, CI의 `test-native-windows.ps1 -Web`)에, 남은 차이는 `native/windows/web/README.md`의 "Known gaps"에 있다.
 
 최종 검증: `4301339`의 Windows x64·ARM64 Core·빌드·네이티브 GUI 검사가 모두 통과했고, 배포 ZIP과 화면 자료를 업로드했다. [검증 기록과 다운로드 안내](windows-port-verification.md)에 통과 범위·OS 차이·실기 미확인 항목을 정리했다. 아래 개별 행의 과거 커밋·CI 대기 문구는 구현 이력이며 최신 자동 검사 결과는 이 기록을 따른다. 물리 입력기·실제 계정·기기의 미확인 표시는 계속 유효하다.

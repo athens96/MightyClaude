@@ -588,6 +588,17 @@ internal static class Verification
         await Test("a leftover background task's report does not end the real request", ActivityUsageVerification.LeftoverTaskResult);
         await Test("optional metadata recovery, elapsed checkpoints and workspace state", ActivityUsageVerification.Persistence);
         await Test("authenticated structured Mods output and usage boundaries", ActivityUsageVerification.Mods);
+        await Test("Mods parity: graph lifecycle carries bounded input and output", ModBridgeParityVerification.GraphLifecycleCarriesBoundedContent);
+        await Test("Mods parity: graph opt-in, authentication and run isolation", ModBridgeParityVerification.GraphOptInAuthenticationAndRunIsolation);
+        await Test("Mods parity: malformed graph metadata never reaches a run", ModBridgeParityVerification.MalformedGraphIsRejectedBeforeDelivery);
+        await Test("Mods parity: content-length and chunked body limits stay scoped", ModBridgeParityVerification.BodyAllowanceIsLimitedToAuthenticatedGraphRequests);
+        await Test("Mods parity: per-run rate limits recover and long runs keep receiving", ModBridgeParityVerification.RateLimitRecoversAndLongRunsKeepReceiving);
+        await Test("Mods parity: revocation stops an authenticated partial upload", ModBridgeParityVerification.RevokedRunCannotReceiveAnAlreadyAuthenticatedUpload);
+        await Test("runtime parity: explicit approval wins delayed Mods", RuntimeParityVerification.ApprovalStateWinsDelayedMods);
+        await Test("runtime parity: Mods cannot replace the root resume identity", RuntimeParityVerification.ModsNeverReplaceRootResume);
+        await Test("runtime parity: child activities stay in their graph", RuntimeParityVerification.ChildActivitiesStayInTheirGraph);
+        await Test("runtime parity: child images reach their graph and gallery", RuntimeParityVerification.ChildImagesReachTheirGraphAndGallery);
+        await Test("runtime parity: a real runner preserves child ownership and images across restore", RuntimeParityVerification.RunnerPreservesChildOwnershipAndImagesAcrossRestore);
         await Test("pane docking, split geometry, normalization and layout persistence", PaneLayoutVerification.Run);
         await Test("execution settings wire, permissions, fast/search/network overrides", SettingsVerification.Run);
         await Test("Claude Auto permissions, supported runtime gate and legacy-safe persistence", AutoPermissionVerification.Run);

@@ -205,6 +205,7 @@ public sealed partial class MainWindow
         var view = WebPane(paneId); var responses = smokePermissionResponses ?? [];
         var steps = new List<object>(); var ok = true;
         var plans = new List<PlanDecision>(); var previousPlan = smokePlanAnswerer;
+        var previousHistory = service.Snapshot.Sessions.First(p => p.Id == paneId).PlanHistory;
         async Task<string> Eval(string script) => await core.ExecuteScriptAsync(script);
         async Task<string?> Active() => JsonSerializer.Deserialize<string?>(await Eval("(() => { const e = document.activeElement; return !e || e === document.body ? 'body' : e.dataset.answer ?? e.dataset.testid ?? e.className ?? e.tagName; })()"));
         async Task<bool> Until(string script, int seconds = 3)
@@ -250,6 +251,7 @@ public sealed partial class MainWindow
         Task Home() => Key("Home", "Home", 0x24);
         Task End() => Key("End", "End", 0x23);
         Task Enter() => Key("Enter", "Enter", 0x0D, "\r");
+        Task Escape() => Key("Escape", "Escape", 0x1B);
         Task Space() => Key(" ", "Space", 0x20, " ");
         Task Tab() => Key("Tab", "Tab", 0x09);
         const string Composer = "document.activeElement?.dataset?.testid === 'composer-input'";
@@ -311,10 +313,26 @@ public sealed partial class MainWindow
             await Check("planArrivesComposerKept", Composer);
             await Mouse("[data-card=plan] [data-testid=plan-text]");
             await Focused("planMouseOnWords", "plan-expand");
+            await Enter();
+            await Check("planDocumentOpensOutsideCard", "document.querySelector('[data-testid=plan-document]')?.parentElement?.parentElement === document.body");
+            await Escape(); await Focused("planDocumentRestoresFocus", "plan-expand");
             await End(); await Focused("planEnd", "plan-approveAuto");
             await Home(); await Right(); await Right(); await Focused("planRight", "plan-revise-open");
             // Enter opens the change request; Enter in its box is a new line, Tab leaves it as usual, Enter on Send sends.
             await Enter(); await Check("planReviseOpens", "document.activeElement?.matches('[data-card=plan] .plan-revise textarea') === true");
+            // UTF-8, not characters: 5,461 Korean syllables and one ASCII byte fit exactly; another byte must not send.
+            async Task Feedback(string expression) => await Eval("(() => { const e = document.querySelector('[data-card=plan] .plan-revise textarea'); if (!e) return; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(e, " + expression + "); e.dispatchEvent(new Event('input', { bubbles: true })); e.focus(); })()");
+            // i18n-exempt-begin: Korean UTF-8 input smoke fixture, not product copy.
+            await Feedback("'한'.repeat(5461) + 'ab'");
+            // i18n-exempt-end
+            await Check("planKoreanFeedbackTooLong", "!!document.querySelector('[data-testid=plan-revise-too-long]') && document.querySelector('[data-answer=plan-revise-send]')?.disabled === true");
+            await Eval("document.querySelector('[data-answer=plan-revise-send]')?.click()");
+            steps.Add(new { step = "planTooLongDoesNotSend", passed = plans.Count == 0 }); ok &= plans.Count == 0;
+            // i18n-exempt-begin: Korean UTF-8 input smoke fixture, not product copy.
+            await Feedback("'한'.repeat(5461) + 'a'");
+            // i18n-exempt-end
+            await Check("planKoreanFeedbackAtLimit", "!document.querySelector('[data-testid=plan-revise-too-long]') && document.querySelector('[data-answer=plan-revise-send]')?.disabled === false");
+            await Feedback("''");
             await core.CallDevToolsProtocolMethodAsync("Input.insertText", "{\"text\":\"fix\"}");
             await Enter(); await Down();
             await core.CallDevToolsProtocolMethodAsync("Input.insertText", "{\"text\":\"it\"}");
@@ -324,9 +342,30 @@ public sealed partial class MainWindow
             await Enter();
             var sent = await Until("!document.querySelector('[data-card=plan]')", 5) && plans is [{ Kind: "revise", Feedback: "fix\nit" }];
             steps.Add(new { step = "planEnterSends", passed = sent, decisions = plans.Select(p => p.Kind + ":" + p.Feedback).ToArray() }); ok &= sent;
+
+            // i18n-exempt-begin: Korean feedback history smoke fixture, not product copy.
+            var record = new PlanRecord("web-history-plan", "web-history-run", "# Saved plan\n\nrecord-plan-marker", "2027-01-15T08:05:00.000Z", "2027-01-15T08:06:00.000Z", PlanOutcome.Revised, "검토 의견 history-feedback-marker", PlanTruncated: true);
+            // i18n-exempt-end
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(p => p.Id == paneId ? p with { PlanHistory = [.. previousHistory ?? [], record] } : p).ToList() });
+            view.Refresh();
+            ok &= await Until("!!document.querySelector('[data-card=planHistory]')", 15);
+            await Mouse("[data-card=planHistory] > .card-fold");
+            ok &= await Until("!!document.querySelector('[data-testid=plan-record-expand]')");
+            await Mouse("[data-testid=plan-record-expand]");
+            await Check("planHistoryIndependentDocument", "document.querySelector('[data-testid=plan-document]')?.parentElement?.parentElement === document.body && document.querySelector('[data-testid=plan-document]')?.textContent.includes('record-plan-marker') === true && document.querySelector('[data-testid=plan-document]')?.textContent.includes('history-feedback-marker') === true");
+            await Check("planHistoryDecisionMetadata", "document.querySelector('[data-testid=plan-document] strong')?.textContent === " + JsonSerializer.Serialize(Locale.Get("plan.card.title") + " · " + PlanCardSupport.OutcomeTitle(record.Outcome))
+                + " && document.querySelector('[data-testid=plan-document] .plan-record-time')?.textContent === " + JsonSerializer.Serialize(PlanCardSupport.TimeText(record.DecidedAt))
+                + " && document.querySelector('[data-testid=plan-document] .card-note')?.textContent === " + JsonSerializer.Serialize(Locale.Get("plan.history.truncated")));
+            await Escape();
+            await Check("planHistoryRestoresFocus", "!document.querySelector('[data-testid=plan-document]') && document.activeElement?.dataset.testid === 'plan-record-expand'");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { steps.Add(new { step = "error", passed = false, error = ex.Message }); ok = false; }
-        finally { smokePlanAnswerer = previousPlan; }
+        finally
+        {
+            smokePlanAnswerer = previousPlan;
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(p => p.Id == paneId ? p with { PlanHistory = previousHistory } : p).ToList() });
+            view.Refresh();
+        }
         result["cardsKeys"] = new { passed = ok, steps };
         return ok;
     }

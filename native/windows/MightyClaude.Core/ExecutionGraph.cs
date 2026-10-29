@@ -161,7 +161,7 @@ public static class ExecutionGraphSupport
     public const int MaximumOutputBytes = 32 * 1024;
     public const int MaximumNodeBytes = 64 * 1024;
     public static readonly string[] Kinds = ["main", "agent", "task", "steer", "compact", "question"];
-    public static readonly string[] EntryKinds = ["user", "assistant", "system", "output", "error"];
+    public static readonly string[] EntryKinds = ["user", "assistant", "system", "output", "error", "image"];
 
     public static string MainNodeID(string runId) => Identifier(runId, "main");
     public static string AgentNodeID(string runId, string toolUseId) => Identifier(runId, "tool:" + toolUseId);
@@ -217,8 +217,9 @@ public static class ExecutionGraphSupport
             if (!Wire.Identifier(entry.Id) || !seen.Add(entry.Id) || !EntryKinds.Contains(entry.Kind)) continue;
             if (entry.Provider is { } provider && !Wire.Providers.Contains(provider)) continue;
             if (Bytes(entry.Timestamp) > 80 || AgentRunTiming.Parse(entry.Timestamp) is null || remaining <= 256) continue;
-            entry = entry with { Activity = ActivitySupport.Normalize(entry.Activity, restoring) };
-            var metadata = Bytes(entry.Id) + Bytes(entry.Timestamp) + Bytes(entry.Kind) + Bytes(entry.Provider);
+            entry = entry with { Activity = ActivitySupport.Normalize(entry.Activity, restoring), Images = entry.Kind == "image" ? AgentImageSupport.Normalized(entry.Images) : null };
+            var metadata = Bytes(entry.Id) + Bytes(entry.Timestamp) + Bytes(entry.Kind) + Bytes(entry.Provider) + AgentImageSupport.ApproximateBytes(entry.Images);
+            if (metadata > remaining) continue;
             var activityBytes = entry.Activity is { } value
                 ? Bytes(value.Id) + Bytes(value.Kind) + Bytes(value.State) + Bytes(value.Provider) + Bytes(value.Summary) + Bytes(value.ToolName) + Bytes(value.Output)
                 : 0;

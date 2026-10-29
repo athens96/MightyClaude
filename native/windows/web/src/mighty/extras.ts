@@ -43,7 +43,7 @@ export function blockExtras({ layout, runs, inputs, draft, planHistory, resultSi
       }
       case 'draft': extra = { draft: draft }; break;
       case 'plan': extra = { markdown: planText }; break;
-      case 'planRecord': extra = { markdown: planHistory?.find((r) => r.id === suffix.slice(PlanRecordSuffix.length))?.plan }; break;
+      case 'planRecord': extra = { planRecord: planHistory?.find((r) => r.id === suffix.slice(PlanRecordSuffix.length)) }; break;
       case 'resultFiles': extra = { files: filesOf(run) }; break;
       case 'images': { const step = suffix.slice(ImagesSuffix.length); extra = { images: run ? { runId: run.id, step, count: inputs?.galleries.find((g) => g.runID === run.id && g.step === step)?.count ?? 0 } : undefined }; break; }
       case 'execution': extra = { execution: inputs?.executionCards[node.id] }; break;
@@ -53,7 +53,7 @@ export function blockExtras({ layout, runs, inputs, draft, planHistory, resultSi
     // The host's pushed data (files, an execution's card, the history state, a gallery) arrives as new objects whenever any
     // part of the inputs changed: a part equal by value keeps the object the block was drawn with.
     if (before) {
-      for (const key of ['files', 'images', 'execution', 'history'] as const) {
+      for (const key of ['files', 'images', 'execution', 'history', 'planRecord'] as const) {
         if (extra[key] !== undefined && before[key] !== undefined && extra[key] !== before[key] && JSON.stringify(extra[key]) === JSON.stringify(before[key])) extra = { ...extra, [key]: before[key] };
       }
     }

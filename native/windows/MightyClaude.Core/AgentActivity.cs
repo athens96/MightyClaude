@@ -99,6 +99,9 @@ internal static class MetadataJson
 {
     internal static JsonElement Property(JsonElement value, string key) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(key, out var child) ? child : default;
     internal static long? Integer(JsonElement value, string key) { var item = Property(value, key); return item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var number) ? number : null; }
+    // Mods follow JavaScript's number contract: integral decimal/exponent notation is valid within the safe integer range.
+    internal static long? SafeInteger(JsonElement value, string key)
+    { return Number(value, key) is { } number && Math.Truncate(number) == number && number is >= -9_007_199_254_740_991 and <= 9_007_199_254_740_991 ? (long)number : null; }
     internal static double? Number(JsonElement value, string key) { var item = Property(value, key); return item.ValueKind == JsonValueKind.Number && item.TryGetDouble(out var number) && double.IsFinite(number) ? number : null; }
     internal static bool Flag(JsonElement value, string key) => Property(value, key).ValueKind == JsonValueKind.True;
     internal static void Write(Utf8JsonWriter writer, JsonSerializerOptions options, params (string Key, object? Value)[] fields)

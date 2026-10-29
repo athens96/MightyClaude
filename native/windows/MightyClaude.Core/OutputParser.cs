@@ -13,6 +13,7 @@ public sealed class OutputParser
     private readonly Action<string, string> log;
     private readonly Action<string> resume;
     private readonly Action<AgentActivity>? activity;
+    private readonly Func<AgentActivity, string?, bool>? graphActivity;
     private readonly SessionUsageTracker usage;
     private readonly Func<double> clock;
     private readonly object sync = new();
@@ -21,6 +22,7 @@ public sealed class OutputParser
     private readonly Dictionary<string, AgentActivity> activities = [];
     private readonly Dictionary<string, double> starts = [];
     private readonly Dictionary<string, long> sequences = [];
+    private readonly Dictionary<string, string> permissionStates = [];
     private readonly Queue<string> activityOrder = [];
     private readonly StringBuilder pending = new();
     private string? lastResume;
@@ -38,6 +40,7 @@ public sealed class OutputParser
     private readonly AntigravityDenialCollector denials = new();
     private readonly AgentImageCache? imageCache;
     private readonly Action<LogEntry>? imageEntry;
+    private readonly Func<LogEntry, string?, string?, bool>? graphImages;
     private int storedImages;
     private bool imageLimitNoted;
     public bool Failed { get; private set; }
@@ -50,13 +53,16 @@ public sealed class OutputParser
     /// <param name="requestedResume">The Antigravity conversation the run was asked to continue (M/MightyCore/CLIStreamParser.swift requestedResume).</param>
     /// <param name="answer">Hears each Antigravity reply the transcript shows (M/MightyCore/CLIStreamParser.swift flushText → antigravityAnswer).</param>
     /// <param name="antigravityPermission">Hears the card an Antigravity turn leaves when it was refused anything (M/MightyCore/CLIStreamParser.swift antigravityPermission).</param>
-    public OutputParser(string provider, Action<string, string> log, Action<string> resume, Action<AgentActivity>? activity = null, Action<SessionUsage>? usage = null, string? activityNamespace = null, Func<double>? activityClock = null, AgentImageCache? images = null, Action<LogEntry>? imageEntry = null, string? requestedResume = null, Action<string>? answer = null, Action<AntigravityPermissionRequest>? antigravityPermission = null)
+    /// <param name="graphActivity">Routes a tool's activity with its original tool ID before the main activity callback; true means a child graph took it.</param>
+    /// <param name="graphImages">Routes a picture entry with its tool and spawning tool IDs; true means it belongs to a child graph.</param>
+    public OutputParser(string provider, Action<string, string> log, Action<string> resume, Action<AgentActivity>? activity = null, Action<SessionUsage>? usage = null, string? activityNamespace = null, Func<double>? activityClock = null, AgentImageCache? images = null, Action<LogEntry>? imageEntry = null, string? requestedResume = null, Action<string>? answer = null, Action<AntigravityPermissionRequest>? antigravityPermission = null, Func<AgentActivity, string?, bool>? graphActivity = null, Func<LogEntry, string?, string?, bool>? graphImages = null)
     {
         this.provider = provider; this.log = log; this.resume = resume; this.activity = activity; this.requestedResume = requestedResume; this.answer = answer;
         this.antigravityPermission = provider == "gemini" ? antigravityPermission : null;
         this.usage = new(provider, usage); this.activityNamespace = activityNamespace ?? Wire.Id();
         var origin = Stopwatch.GetTimestamp(); clock = activityClock ?? (() => Stopwatch.GetElapsedTime(origin).TotalMilliseconds);
         imageCache = images; this.imageEntry = imageEntry;
+        this.graphActivity = graphActivity; this.graphImages = graphImages;
     }
     /// <summary>
     /// The longest standard-output line an agent's run reads (M/MightyCore/CLIStreamParser.swift:36-42): 64 MiB, since a line carries
@@ -88,9 +94,9 @@ public sealed class OutputParser
     /// (macOS CLIStreamParser.images). The base64 never leaves this function; only
     /// references do. A sub-agent's pictures stay out of the request's transcript.
     /// </summary>
-    private void Images(List<(string MediaType, string Base64)> payloads, string key, string? toolId, bool child)
+    private void Images(List<(string MediaType, string Base64)> payloads, string key, string? toolId, bool child, string? parentToolId = null)
     {
-        if (imageCache is null || payloads.Count == 0 || child) return;
+        if (imageCache is null || payloads.Count == 0 || child && graphImages is null) return;
         var refs = new List<AgentImageRef>(); AgentImageError? failure = null;
         AgentActivity? previous = null;
         if (toolId is not null) activities.TryGetValue(ActivitySupport.Id(activityNamespace, toolId), out previous);
@@ -100,21 +106,23 @@ public sealed class OutputParser
         {
             if (storedImages >= AgentImageSupport.MaximumImagesPerRun)
             {
-                if (!imageLimitNoted) { imageLimitNoted = true; log("system", Locale.Get("images.tooMany", new Dictionary<string, string> { ["count"] = AgentImageSupport.MaximumImagesPerRun.ToString(System.Globalization.CultureInfo.InvariantCulture) })); }
+                if (!imageLimitNoted && !child) { imageLimitNoted = true; log("system", Locale.Get("images.tooMany", new Dictionary<string, string> { ["count"] = AgentImageSupport.MaximumImagesPerRun.ToString(System.Globalization.CultureInfo.InvariantCulture) })); }
                 break;
             }
             try { refs.Add(imageCache.Prepare(payload.Base64, payload.MediaType).Ref(source.Length == 0 ? Locale.Get("images.source.agent") : source, readPath)); storedImages++; }
             catch (AgentImageException ex) { failure = ex.Error; }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failure = AgentImageError.Undecodable; }
         }
-        if (failure is { } error) log("system", AgentImageSupport.FailureText(error));
-        EmitImages(refs, key, source);
+        if (failure is { } error && !child) log("system", AgentImageSupport.FailureText(error));
+        EmitImages(refs, key, source, toolId, parentToolId, child);
     }
-    private void EmitImages(List<AgentImageRef> refs, string key, string source)
+    private void EmitImages(List<AgentImageRef> refs, string key, string source, string? toolId = null, string? parentToolId = null, bool child = false)
     {
-        if (refs.Count == 0 || imageEntry is null) return;
+        if (refs.Count == 0) return;
         var label = source.Length == 0 ? Locale.Get("images.source.agent") : source;
-        imageEntry(new LogEntry(ActivitySupport.Id(activityNamespace, "image:" + key + ":" + string.Concat(refs.Select(r => r.Hash))), "image", AgentImageSupport.EntryText(refs, label), Wire.Now(), provider, null, refs));
+        var entry = new LogEntry(ActivitySupport.Id(activityNamespace, "image:" + key + ":" + string.Concat(refs.Select(r => r.Hash))), "image", AgentImageSupport.EntryText(refs, label), Wire.Now(), provider, null, refs);
+        if (graphImages?.Invoke(entry, toolId, parentToolId) == true || child) return;
+        imageEntry?.Invoke(entry);
     }
     /// <summary>A picture an item names only by path (Codex <c>image_view</c>): read under the Markdown path rule, never from anywhere else.</summary>
     private void PathImage(string? path, string key)
@@ -150,6 +158,7 @@ public sealed class OutputParser
     {
         if (string.IsNullOrEmpty(rawId) || Encoding.UTF8.GetByteCount(rawId) > 512) return;
         var id = ActivitySupport.Id(activityNamespace, rawId); activities.TryGetValue(id, out var previous);
+        if (previous?.State == "waiting" && state == "running" && permissionStates.GetValueOrDefault(id) == "waiting") return;
         if (previous is not null && ActivitySupport.Terminal(previous.State) && !ActivitySupport.Terminal(state) || previous?.State == "error" && state == "completed") return;
         var tool = name ?? previous?.ToolName ?? "Tool";
         var selected = summary ?? (input.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ? previous?.Summary : null) ?? ActivitySupport.Summary(tool, input);
@@ -159,32 +168,41 @@ public sealed class OutputParser
         else if (!starts.ContainsKey(id)) { var now = clock(); if (double.IsFinite(now) && now >= 0) starts[id] = now; }
         var value = ActivitySupport.Normalize(new(id, provider, ActivitySupport.Kind(tool), state, selected, tool, output ?? previous?.Output, duration));
         if (value is null || value == previous) return;
-        if (previous is null) { activityOrder.Enqueue(id); if (activityOrder.Count > 512) { var expired = activityOrder.Dequeue(); activities.Remove(expired); starts.Remove(expired); sequences.Remove(expired); } }
-        activities[id] = value; activity?.Invoke(value);
+        if (previous is null) { activityOrder.Enqueue(id); if (activityOrder.Count > 512) { var expired = activityOrder.Dequeue(); activities.Remove(expired); starts.Remove(expired); sequences.Remove(expired); permissionStates.Remove(expired); } }
+        activities[id] = value; ToolActivity(value, rawId);
     }
+    private void ToolActivity(AgentActivity value, string? toolId = null)
+    { if (graphActivity?.Invoke(value, toolId) != true) activity?.Invoke(value); }
     /// <summary>
     /// Once the stdio approval is observed it owns the waiting state of that
     /// tool call in the activity list (macOS CLIStreamParser.permissionActivity).
     /// </summary>
     public void PermissionActivity(ToolPermissionRequest request, string state)
     {
-        lock (sync) Tool(request.ToolUseId, state, request.ToolName, summary: request.Summary);
+        lock (sync)
+        {
+            if (closed || string.IsNullOrEmpty(request.ToolUseId) || Encoding.UTF8.GetByteCount(request.ToolUseId) > 512) return;
+            permissionStates[ActivitySupport.Id(activityNamespace, request.ToolUseId)] = state;
+            Tool(request.ToolUseId, state, request.ToolName, summary: request.Summary);
+        }
     }
     public void ReceiveMod(JsonElement root)
     {
         lock (sync)
         {
             if (provider != "claude" || closed) return;
-            Resume(root.Text("claudeSessionId")); usage.ConsumeMod(root);
+            // Only the root CLI stream owns resume identity; a Mod may describe a child's session.
+            usage.ConsumeMod(root);
             var kind = root.Text("event");
             if (kind == "turn.start" && root.Text("agentId") is null) { Turn(Locale.Get("run.turn.generating", new Dictionary<string, string> { ["name"] = "Claude" })); return; }
             if (kind == "turn.complete") { if (root.Text("agentId") is null) Turn(Locale.Get("run.turn.finishing", new Dictionary<string, string> { ["name"] = "Claude" })); return; }
             if (kind is not ("tool.call" or "tool.waiting" or "tool.complete")) return;
             if (root.Text("toolUseId") is not { } rawId || root.Text("tool") is not { } name) return;
             var id = ActivitySupport.Id(activityNamespace, rawId);
-            if (MetadataJson.Integer(root, "sequence") is { } sequence) { if (sequences.TryGetValue(id, out var old) && old >= sequence) return; sequences[id] = sequence; }
+            if (MetadataJson.SafeInteger(root, "sequence") is { } sequence) { if (sequences.TryGetValue(id, out var old) && old >= sequence) return; sequences[id] = sequence; }
             if (kind == "tool.call") Tool(rawId, name == "AskUserQuestion" ? "waiting" : "running", name, summary: root.Text("summary"));
-            if (kind == "tool.waiting") Tool(rawId, "waiting", name, summary: root.Text("summary"));
+            // The stdio approval remains authoritative after a UI answer, even if its best-effort Mod arrives later.
+            if (kind == "tool.waiting" && !permissionStates.ContainsKey(id)) Tool(rawId, "waiting", name, summary: root.Text("summary"));
             if (kind == "tool.complete") Tool(rawId, MetadataJson.Flag(root, "isError") ? "error" : "completed", name, output: root.Text("output"), summary: root.Text("summary"));
         }
     }
@@ -199,7 +217,7 @@ public sealed class OutputParser
                     double? duration = previous.DurationMs;
                     if (starts.Remove(id, out var start) && ActivitySupport.ValidDuration(clock() - start)) duration = clock() - start;
                     var value = previous with { State = stopped ? "stopped" : "error", Output = previous.Output ?? Locale.Get("run.tool.endedBeforeResult"), DurationMs = duration };
-                    activities[id] = value; activity?.Invoke(value);
+                    activities[id] = value; ToolActivity(value);
                 }
         }
     }
@@ -215,19 +233,20 @@ public sealed class OutputParser
             if (provider == "claude")
             {
                 var child = MetadataJson.Property(root, "parent_tool_use_id").ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null);
+                var parentToolId = root.Text("parent_tool_use_id");
                 if (!child) Resume(root.Text("session_id"));
                 var message = MetadataJson.Property(root, "message"); var blocks = MetadataJson.Property(message, "content");
                 if (type == "assistant" && blocks.ValueKind == JsonValueKind.Array)
                 {
                     if (!child) Assistant(string.Join('\n', blocks.EnumerateArray().Where(b => b.Text("type") == "text").Select(b => b.Text("text") ?? "")), root.Text("uuid") ?? message.Text("id"));
                     foreach (var block in blocks.EnumerateArray().Where(b => b.Text("type") == "tool_use")) Tool(block.Text("id"), block.Text("name") == "AskUserQuestion" ? "waiting" : "running", block.Text("name"), MetadataJson.Property(block, "input"));
-                    Images(blocks.EnumerateArray().Where(b => b.Text("type") == "image").SelectMany(b => AgentImageSupport.Payloads(b)).ToList(), root.Text("uuid") ?? message.Text("id") ?? "message", null, child);
+                    Images(blocks.EnumerateArray().Where(b => b.Text("type") == "image").SelectMany(b => AgentImageSupport.Payloads(b)).ToList(), root.Text("uuid") ?? message.Text("id") ?? "message", null, child, parentToolId);
                 }
                 if (type == "user" && blocks.ValueKind == JsonValueKind.Array)
                     foreach (var block in blocks.EnumerateArray().Where(b => b.Text("type") == "tool_result"))
                     {
                         Tool(block.Text("tool_use_id"), MetadataJson.Flag(block, "is_error") ? "error" : "completed", output: ActivitySupport.Output(MetadataJson.Property(block, "content")));
-                        if (block.Text("tool_use_id") is { Length: > 0 } toolId && Encoding.UTF8.GetByteCount(toolId) <= 512) Images(AgentImageSupport.Payloads(MetadataJson.Property(block, "content")), toolId, toolId, child);
+                        if (block.Text("tool_use_id") is { Length: > 0 } toolId && Encoding.UTF8.GetByteCount(toolId) <= 512) Images(AgentImageSupport.Payloads(MetadataJson.Property(block, "content")), toolId, toolId, child, parentToolId);
                     }
                 if (type == "system" && root.Text("subtype") == "permission_denied") Tool(root.Text("tool_use_id"), "error", root.Text("tool_name"), output: Error(MetadataJson.Property(root, "message"), Locale.Get("run.tool.permissionDenied")));
                 // The CLI summarized its own context mid-turn: the transcript says so (M/MightyCore/CLIStreamParser.swift:383-384).

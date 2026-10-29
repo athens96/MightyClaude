@@ -44,6 +44,8 @@
 .menu-nested { padding-left: var(--space-md); }
 
 .run-settings { width: 360px; display: flex; flex-direction: column; }
+.run-settings-fields { border: 0; margin: 0; min-width: 0; }
+.run-settings-held { padding: 0 var(--space-lg) var(--space-md); }
 /* The session details (M/SessionInfoViews.swift): 370 wide, 14 padded, 10 between the header and the body. */
 .session-info { width: 370px; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--radius-block); }
 .session-info .popover-body { padding: 0; gap: var(--space-sm); }

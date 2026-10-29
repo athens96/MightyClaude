@@ -234,7 +234,7 @@ public static class MightyGraphSupport
     private static int LiveBytes(MightyGraphRun run)
     {
         int Bytes(string? v) => v is null ? 0 : Encoding.UTF8.GetByteCount(v);
-        int EntryBytes(List<LogEntry> entries) => entries.Sum(e => 512 + Bytes(e.Text) + Bytes(e.Activity?.Output) + Bytes(e.Activity?.Summary));
+        int EntryBytes(List<LogEntry> entries) => entries.Sum(e => 512 + Bytes(e.Text) + Bytes(e.Activity?.Output) + Bytes(e.Activity?.Summary) + AgentImageSupport.ApproximateBytes(e.Images));
         return 512 + Bytes(run.Id) + Bytes(run.SourceRunID) + Bytes(run.Input)
             + Bytes(run.FinalOutput) * 3 + EntryBytes(run.RootEntries)
             + run.Agents.Sum(a => 768 + Bytes(a.Id) + Bytes(a.ParentID) + Bytes(a.Title) + Bytes(a.Input) + EntryBytes(a.Entries));
@@ -361,11 +361,12 @@ public static class MightyGraphSupport
         var result = new List<LogEntry>();
         foreach (var original in values.TakeLast(100).Reverse())
         {
-            var overhead = 256 + Encoding.UTF8.GetByteCount(original.Id) + Encoding.UTF8.GetByteCount(original.Timestamp);
+            var images = original.Kind == "image" ? AgentImageSupport.Normalized(original.Images) : null;
+            var overhead = 256 + Encoding.UTF8.GetByteCount(original.Id) + Encoding.UTF8.GetByteCount(original.Timestamp) + AgentImageSupport.ApproximateBytes(images);
             if (budget < overhead || !Wire.Identifier(original.Id) || !ids.Add(original.Id)
-                || original.Kind is not ("user" or "assistant" or "system" or "output" or "error")) continue;
+                || !ExecutionGraphSupport.EntryKinds.Contains(original.Kind)) continue;
             budget -= overhead;
-            var entry = original with { Text = Clip(original.Text, 32_768, ref budget) };
+            var entry = original with { Text = Clip(original.Text, 32_768, ref budget), Images = images };
             if (entry.Activity is not null)
             {
                 var activity = ActivitySupport.Normalize(entry.Activity, restoring);

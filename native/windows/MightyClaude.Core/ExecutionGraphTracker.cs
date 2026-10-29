@@ -898,6 +898,29 @@ public sealed partial class ExecutionGraphTracker
         }
         return true;
     }
+    /// <summary>
+    /// A child's tool or message pictures belong to its graph block. The spawning tool is the fallback when the individual
+    /// tool's owner was never seen or was evicted; a child not yet bound to a block never sends its pictures to the main log.
+    /// </summary>
+    public bool Images(LogEntry entry, string? toolID, string? parentToolID = null)
+    {
+        lock (sync)
+        {
+            if (finished) return false;
+            if (toolID is not null && toolOwners.TryGetValue(toolID, out var owner) && owner != Owner.Node(mainID))
+            {
+                if (NodeID(owner) is not { } id) return true;
+                if (id != mainID) { Append(entry, id); return true; }
+            }
+            if (Key(parentToolID) is { } parent)
+            {
+                var child = ExecutionGraphSupport.AgentNodeID(runID, parent);
+                if (nodes.ContainsKey(child)) Append(entry, child);
+                return true;
+            }
+            return false;
+        }
+    }
     private PendingAgent BoundedPending(PendingAgent pending, string agent)
     {
         var metadata = pending.Metadata;

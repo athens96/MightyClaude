@@ -216,6 +216,10 @@ public static class AgentImageSupport
         return result.Count == 0 ? null : result;
     }
 
+    /// <summary>Bytes image references cost in saved graph/history budgets, matching macOS AgentImageSupport.approximateBytes.</summary>
+    internal static int ApproximateBytes(IReadOnlyList<AgentImageRef>? refs) => refs?.Sum(value =>
+        160 + Encoding.UTF8.GetByteCount(value.MediaType) + Encoding.UTF8.GetByteCount(value.Source) + (value.Path is null ? 0 : Encoding.UTF8.GetByteCount(value.Path))) ?? 0;
+
     /// <summary>The text an image entry carries; any reader without picture support shows it instead.</summary>
     public static string EntryText(IReadOnlyCollection<AgentImageRef> refs, string source)
     {

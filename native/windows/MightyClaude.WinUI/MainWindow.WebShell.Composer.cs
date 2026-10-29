@@ -114,8 +114,7 @@ public sealed partial class MainWindow
             return null;
         });
         bridge.Register("runSettings", args => Task.FromResult<object?>(WebPane(args.Text("paneId")).WebRunSettings()));
-        bridge.Register("applyRunSettings", async args =>
-            await WebPane(args.Text("paneId")).WebApplyRunSettings(Flag(args, "fastMode"), args.Text("webSearch") ?? "default", Flag(args, "networkAccess"), args.Text("maxTurns"), args.Text("maxBudgetUsd")));
+        bridge.Register("applyRunSettings", ApplyWebRunSettings);
         bridge.Register("toggleFast", async args => { await WebPane(args.Text("paneId")).WebToggleFast(); return null; });
         // The composer's two eye toggles of a Claude pane (M/SessionPaneView.swift backgroundWorkToggle, statusLineToggle): app-wide preferences.
         bridge.Register("composerToggle", async args =>
@@ -138,6 +137,9 @@ public sealed partial class MainWindow
         bridge.Register("dismissAskNotice", args => { DismissAskNotice(WebPane(args.Text("paneId")).PaneId); return Task.FromResult<object?>(null); });
         bridge.Register("attachmentPreview", args => Task.FromResult(WebPane(args.Text("paneId")).WebAttachmentPreview(args.Text("id") ?? "")));
     }
+
+    private async Task<object?> ApplyWebRunSettings(JsonElement args) =>
+        await WebPane(args.Text("paneId")).WebApplyRunSettings(Flag(args, "fastMode"), args.Text("webSearch") ?? "default", Flag(args, "networkAccess"), args.Text("maxTurns"), args.Text("maxBudgetUsd"));
 
     /// <summary>
     /// The composer's part of the web smoke: text typed into the page's editor must reach the pane's draft in the service, and
@@ -180,9 +182,67 @@ public sealed partial class MainWindow
                 "blocked" or "notStarted" or "queued" or "none" => started.Count == 0,
                 _ => false,
             };
-            return typed && drafted && page.TryGetProperty("primary", out var primary) && primary.GetBoolean() && answered;
+            var settings = await RunWebRunSettingsSmoke(core, paneId, result);
+            return typed && drafted && page.TryGetProperty("primary", out var primary) && primary.GetBoolean() && answered && settings;
         }
         finally { smokeStart = previous; }
+    }
+
+    /// <summary>A live busy push locks an already open popover; a start racing Apply is refused by the host and shown in it.</summary>
+    private async Task<bool> RunWebRunSettingsSmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, string paneId, Dictionary<string, object?> result)
+    {
+        if (webShell is null) return false;
+        var bridge = webShell.Bridge; var view = WebPane(paneId);
+        var before = service.Snapshot.Sessions.First(p => p.Id == paneId);
+        var value = before.Settings.MaxTurns == 17 ? "18" : "17";
+        var calls = 0; var raceOnApply = false; string? refusal = null;
+        async Task<bool> Until(string script)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < deadline) { if (await core.ExecuteScriptAsync(script) == "true") return true; await Task.Delay(50); }
+            return false;
+        }
+        async Task Running(bool running)
+        {
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(p => p.Id == paneId ? p with { Status = running ? "running" : before.Status } : p).ToList() });
+            view.Refresh();
+        }
+        bridge.Register("applyRunSettings", async args =>
+        {
+            calls++;
+            // The request already left the page, but a queue/mobile start won before the host handled it.
+            if (raceOnApply) await Running(true);
+            var answer = await ApplyWebRunSettings(args); refusal = answer as string; return answer;
+        });
+        try
+        {
+            await core.ExecuteScriptAsync("document.querySelector('[data-pill=more]')?.click()");
+            var shown = await Until("!!document.querySelector('[data-testid=run-settings] input[inputmode=numeric]')");
+            await core.ExecuteScriptAsync("(() => { const e = document.querySelector('[data-testid=run-settings] input[inputmode=numeric]'); if (!e) return; e.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, " + JsonSerializer.Serialize(value) + "); e.dispatchEvent(new Event('input', { bubbles: true })); })()");
+            await Running(true);
+            var held = await Until("document.querySelector('[data-testid=run-settings] fieldset')?.disabled === true && document.querySelector('[data-testid=run-settings-apply]')?.disabled === true");
+            const string Enter = "document.querySelector('[data-testid=run-settings] input[inputmode=numeric]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }))";
+            await core.ExecuteScriptAsync(Enter);
+            await core.ExecuteScriptAsync("document.querySelector('[data-testid=run-settings-apply]')?.click()");
+            await Task.Delay(100);
+            var blocked = calls == 0 && service.Snapshot.Sessions.First(p => p.Id == paneId).Settings == before.Settings;
+            await Running(false);
+            var unlocked = await Until("document.querySelector('[data-testid=run-settings] fieldset')?.disabled === false && document.querySelector('[data-testid=run-settings-apply]')?.disabled === false");
+            var draftKept = await core.ExecuteScriptAsync("document.querySelector('[data-testid=run-settings] input[inputmode=numeric]')?.value === " + JsonSerializer.Serialize(value)) == "true";
+            raceOnApply = true;
+            await core.ExecuteScriptAsync(Enter);
+            var refusalShown = await Until("document.querySelector('[data-testid=run-settings] [role=alert]')?.textContent === " + JsonSerializer.Serialize(Locale.Get("phone.session.settingsLocked")));
+            var refused = calls == 1 && refusal == Locale.Get("phone.session.settingsLocked") && service.Snapshot.Sessions.First(p => p.Id == paneId).Settings == before.Settings;
+            result["composerRunSettings"] = new { shown, held, blocked, unlocked, draftKept, refusalShown, refused, calls };
+            return shown && held && blocked && unlocked && draftKept && refusalShown && refused;
+        }
+        finally
+        {
+            bridge.Register("applyRunSettings", ApplyWebRunSettings);
+            await core.ExecuteScriptAsync("document.querySelector('[data-testid=run-settings] .popover-footer .popover-button')?.click()");
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(p => p.Id == paneId ? p with { Status = before.Status, Settings = before.Settings } : p).ToList() });
+            view.Refresh();
+        }
     }
 
     private sealed partial class PaneView
@@ -379,7 +439,11 @@ public sealed partial class MainWindow
         /// <summary>Apply, validated as the popover's (<see cref="RunSettingsFrom"/>): the refusal's message, or null once saved.</summary>
         internal async Task<string?> WebApplyRunSettings(bool fastMode, string webSearch, bool networkAccess, string? turns, string? budget)
         {
-            if (!QueuePaneAlive || Session.Status == "running") return null;
+            if (!QueuePaneAlive) return Locale.Get("remote.error.paneNotFound");
+            // A web request may race a queue/mobile start before its composer push arrives. Refuse explicitly so Apply
+            // keeps the draft open; null would tell the page that values which were ignored had been saved.
+            if (starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(Session))
+                return Locale.Get("phone.session.settingsLocked");
             var (setting, refusal) = RunSettingsFrom(Session, fastMode, webSearch, networkAccess, turns, budget);
             if (setting is null) return refusal ?? "";
             await Change(p => p with { Settings = setting }); Refresh();

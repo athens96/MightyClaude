@@ -148,11 +148,13 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         AntigravitySubagentWatcher? antigravityWatcher = null;
         using var graphCancel = new CancellationTokenSource();
         Task graphTask = Task.CompletedTask;
-        var parser = new OutputParser(request.Provider, (kind, text) => Log(run, kind, text), id => emit(new(request.SessionId, "resume", ResumeId: id)), value => { if (tracker?.Activity(value) != true) Activity(run, value); }, value => { if (!run.Finalizing) emit(new(request.SessionId, "usage", Usage: value)); }, run.ActivityId,
+        var parser = new OutputParser(request.Provider, (kind, text) => Log(run, kind, text), id => emit(new(request.SessionId, "resume", ResumeId: id)), value => Activity(run, value), value => { if (!run.Finalizing) emit(new(request.SessionId, "usage", Usage: value)); }, run.ActivityId,
             images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); },
             requestedResume: request.Provider == "gemini" ? request.ResumeId : null, answer: text => tracker?.AntigravityAnswer(text),
             // The card goes out before the run's last status (M/ProcessRunner.swift antigravityPermission).
-            antigravityPermission: card => { if (!run.Finished && request.Kind == "claude") emit(new(request.SessionId, "antigravityPermission", AntigravityPermission: card)); });
+            antigravityPermission: card => { if (!run.Finished && request.Kind == "claude") emit(new(request.SessionId, "antigravityPermission", AntigravityPermission: card)); },
+            graphActivity: (value, toolId) => tracker?.Activity(value, toolId) == true,
+            graphImages: (entry, toolId, parentToolId) => tracker?.Images(entry, toolId, parentToolId) == true);
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
             tracker = new ExecutionGraphTracker(Wire.Identifier(request.GraphRunId) ? request.GraphRunId! : Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), node => { Interlocked.Exchange(ref graphDirty, 1); HandOver(run, node); });
         run.Tracker = tracker;
@@ -292,7 +294,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 {
                     if (!ProviderCatalog.SupportsMods(command.Version)) throw new InvalidOperationException(Locale.Get("run.error.modsVersionRequired"));
                     if (!File.Exists(Path.Combine(pluginDirectory, ".claude-plugin", "plugin.json"))) throw new FileNotFoundException(Locale.Get("run.error.modsResourceMissing"));
-                    mod = await bridge.RegisterAsync(value => { if (run.Finalizing || token.IsCancellationRequested || !runs.TryGetValue(request.SessionId, out var current) || !ReferenceEquals(current, run)) return; parser.ReceiveMod(value); if (tracker is not null) FeedMod(tracker, value); }, token);
+                    // Attribute each Mod's tool to its child before the parser emits the corresponding activity.
+                    mod = await bridge.RegisterAsync(value => { if (run.Finalizing || token.IsCancellationRequested || !runs.TryGetValue(request.SessionId, out var current) || !ReferenceEquals(current, run)) return; if (tracker is not null) FeedMod(tracker, value); parser.ReceiveMod(value); }, token, graphEnabled: true);
                     environment["CLAUDE_CODE_ENABLE_FUNCTION_HOOKS"] = "1"; environment["MIGHTY_CLAUDE_BRIDGE_URL"] = mod.Url; environment["MIGHTY_CLAUDE_BRIDGE_TOKEN"] = mod.Token; environment["MIGHTY_CLAUDE_RUN_ID"] = mod.Id;
                     environment["MIGHTY_CLAUDE_ACTIVITY"] = "1"; environment["MIGHTY_CLAUDE_USAGE"] = "1"; environment["MIGHTY_CLAUDE_GRAPH"] = "1";
                     if (request.Settings!.Effort != "default") environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.Settings.Effort;
@@ -537,7 +540,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         {
             if (root.Text("claudeSessionId") is not { } sessionId || root.Text("event") is not { } ev) return;
             ModGraphMetadata? graph = null;
-            if (MetadataJson.Property(root, "graph") is { ValueKind: System.Text.Json.JsonValueKind.Object } gEl && MetadataJson.Integer(gEl, "version") == 1)
+            if (MetadataJson.Property(root, "graph") is { ValueKind: System.Text.Json.JsonValueKind.Object } gEl && MetadataJson.SafeInteger(gEl, "version") == 1)
                 graph = new ModGraphMetadata(1, gEl.Text("phase") ?? "running", gEl.Text("agentId"), gEl.Text("parentAgentId"), gEl.Text("parentToolUseId"), gEl.Text("name") ?? gEl.Text("agentType"), gEl.Text("agentType"), gEl.Text("model"), gEl.Text("input"), gEl.Text("output"));
             tracker.ReceiveMod(new ModMetadata(sessionId, ev, root.Text("tool"), root.Text("toolUseId"), root.Text("agentId"), graph));
         }

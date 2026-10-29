@@ -29,12 +29,14 @@ public sealed class HttpHost : IAsyncDisposable
         catch { await app.DisposeAsync(); throw; }
     }
     public static async Task<JsonDocument> ReadJsonAsync(HttpContext context, int maximum = 512 * 1024, int timeoutSeconds = 10)
+        => (await ReadJsonWithLengthAsync(context, maximum, timeoutSeconds)).Document;
+    internal static async Task<(JsonDocument Document, int Length)> ReadJsonWithLengthAsync(HttpContext context, int maximum = 512 * 1024, int timeoutSeconds = 10)
     {
         if (context.Request.ContentType?.Split(';')[0].Trim() != "application/json" || context.Request.ContentLength > maximum) throw new InvalidDataException(Locale.Get("http.error.invalidJsonRequest"));
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted); timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         using var data = new MemoryStream(); var buffer = new byte[4096]; int count;
         while ((count = await context.Request.Body.ReadAsync(buffer, timeout.Token)) > 0) { if (data.Length + count > maximum) throw new InvalidDataException(Locale.Get("http.error.requestTooLarge")); data.Write(buffer, 0, count); }
-        return JsonDocument.Parse(data.ToArray(), new JsonDocumentOptions { MaxDepth = 32 });
+        return (JsonDocument.Parse(data.ToArray(), new JsonDocumentOptions { MaxDepth = 32 }), checked((int)data.Length));
     }
     public static async Task ReplyAsync(HttpContext context, int status, object value)
     {

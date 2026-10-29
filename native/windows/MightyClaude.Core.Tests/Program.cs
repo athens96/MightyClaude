@@ -19,6 +19,7 @@ if (args is ["--group-child", var groupPid])
     return;
 }
 if (args.Contains("--codex-approval-fixture")) { await CodexApprovalVerification.FakeCliAsync(args); return; }
+if (args.FirstOrDefault() == "--runtime-parity-cli") { await RuntimeParityVerification.FakeCliAsync(); return; }
 if (args.Length >= 3 && args[0] == "--fake-cli") { await Verification.FakeCliAsync(args[1], args[2], args.Skip(3).ToArray()); return; }
 // The scripted Claude of the delegation checks, and the app's delegation server it reaches, as the app binary runs it.
 if (args.Length >= 2 && args[0] == DelegationFakeClaude.Argument) { Environment.ExitCode = await DelegationFakeClaude.RunAsync(args[1], args.Skip(2).ToArray()); return; }

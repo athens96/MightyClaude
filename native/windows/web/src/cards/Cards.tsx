@@ -7,6 +7,8 @@ import { Markdown } from '../conversation/MarkdownView';
 import { cardKey, forwardIndex, restoreIndex } from './keys';
 import * as draftOf from './questionnaire';
 import { usePageOverlay } from '../shell/overlay';
+import { PlanDocument, PlanRecordDetails } from './PlanDocument';
+import { planFeedbackState } from './plan';
 import { Pending } from '../pending/Pending';
 import { usePendingAction, type ActionResult } from '../pending/usePending';
 import type {
@@ -200,6 +202,8 @@ function PlanHistory({ card }: { card: PlanHistoryCard }) {
   const { t } = useServices();
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [documentId, setDocumentId] = useState<string | null>(null);
+  const document = card.records.find((record) => record.id === documentId);
   const latest = card.records[0];
   const toggle = (id: string) => setExpanded((now) => { const next = new Set(now); if (!next.delete(id)) next.add(id); return next; });
   return (
@@ -215,19 +219,23 @@ function PlanHistory({ card }: { card: PlanHistoryCard }) {
             const shown = expanded.has(record.id);
             return (
               <div className="plan-record" key={record.id} data-plan-record={record.id}>
-                <Fold open={shown} label={t(shown ? 'plan.history.hide' : 'plan.history.show')} onClick={() => toggle(record.id)}>
-                  <span className={'plan-pill tone-' + record.tone}>{record.outcomeTitle}</span>
-                  <span className="plan-record-time">{record.time}</span>
-                  <span className="card-strip-summary">{record.headline}</span>
-                </Fold>
-                {shown && <div className="plan-document"><Markdown text={record.plan} /></div>}
-                {shown && record.truncated && <div className="card-note">{t('plan.history.truncated')}</div>}
-                {record.feedback && <div className={'plan-feedback' + (shown ? ' open' : '')}>{t('plan.history.feedback')} · {record.feedback}</div>}
+                <div className="plan-record-meta">
+                  <Fold open={shown} label={t(shown ? 'plan.history.hide' : 'plan.history.show')} onClick={() => toggle(record.id)}>
+                    <span className={'plan-pill tone-' + record.tone}>{record.outcomeTitle}</span>
+                    <span className="plan-record-time">{record.time}</span>
+                    <span className="card-strip-summary">{record.headline}</span>
+                  </Fold>
+                  <button type="button" className="card-icon-button" data-testid="plan-record-expand" aria-label={t('plan.card.expand')} title={t('plan.card.expand')}
+                    onClick={() => setDocumentId(record.id)}><Icon name="maximize-2" size={13} weight={1.75} /></button>
+                </div>
+                <PlanRecordDetails record={record} expanded={shown} metadata={false} />
               </div>
             );
           })}
         </div>
       )}
+      {document && <PlanDocument title={t('plan.card.title') + ' · ' + document.outcomeTitle} subtitle={document.time} plan={document.plan}
+        feedback={document.feedback} truncated={document.truncated} onClose={() => setDocumentId(null)} />}
     </div>
   );
 }
@@ -448,6 +456,7 @@ function Plan({ card, reply }: { card: PlanCard; reply: Reply }) {
   const sending = card.sending || running;
   const [revising, setRevising] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const feedbackState = planFeedbackState(feedback);
   const [full, setFull] = useState(false);
   const answers = useRef<HTMLDivElement>(null);
   const measure = useRef<HTMLDivElement>(null);
@@ -461,8 +470,10 @@ function Plan({ card, reply }: { card: PlanCard; reply: Reply }) {
     observer.observe(row);
     return () => observer.disconnect();
   }, []);
-  usePageOverlay(full);
-  const answer = (decision: string) => void run(() => reply('planAnswer', { requestId: card.requestId, decision, feedback: decision === 'revise' ? feedback : undefined }));
+  const answer = (decision: string) => {
+    if (decision === 'revise' && feedbackState !== 'valid') return;
+    void run(() => reply('planAnswer', { requestId: card.requestId, decision, feedback: decision === 'revise' ? feedback : undefined }));
+  };
   const tile = (key: string, decision: string | null, accent = false) => (
     <button
       type="button"
@@ -487,9 +498,10 @@ function Plan({ card, reply }: { card: PlanCard; reply: Reply }) {
       {revising && (
         <div className="plan-revise">
           <textarea className="card-text" value={feedback} placeholder={t('plan.card.revisePlaceholder')} aria-label={t('plan.card.revisePlaceholder')} disabled={sending} autoFocus onChange={(event) => setFeedback(event.target.value)} />
+          {feedbackState === 'tooLong' && <div className="card-error" data-testid="plan-revise-too-long" role="alert">{t('plan.error.feedbackTooLong')}</div>}
           <div className="plan-revise-actions">
             <button type="button" className="card-button" data-answer="plan-revise-close" disabled={sending} onClick={() => setRevising(false)}>{t('plan.card.reviseClose')}</button>
-            <button type="button" className="card-button prominent" data-answer="plan-revise-send" disabled={sending || feedback.trim().length === 0} onClick={() => answer('revise')}>{t('plan.card.reviseSend')}</button>
+            <button type="button" className="card-button prominent" data-answer="plan-revise-send" disabled={sending || feedbackState !== 'valid'} onClick={() => answer('revise')}>{t('plan.card.reviseSend')}</button>
           </div>
         </div>
       )}
@@ -512,19 +524,7 @@ function Plan({ card, reply }: { card: PlanCard; reply: Reply }) {
           {tile('plan.card.approveAuto', 'approveAuto', true)}
         </span>
       </div>
-      {full && (
-        <div className="card-dialog" role="dialog" data-page-overlay="" aria-label={t('plan.card.title')} onClick={() => setFull(false)}>
-          {/* M/PlanApprovalCard.swift PlanDocumentSheet: the clipboard and the title over a rule with Close at the right, then the plan. */}
-          <div className="card-dialog-body" data-testid="plan-document" onClick={(event) => event.stopPropagation()}>
-            <div className="card-dialog-title">
-              <Icon name="clipboard-list" size={15} weight={1.8} className="card-dialog-mark" /><strong>{t('plan.card.title')}</strong>
-              <span className="card-spacer" />
-              <button type="button" className="card-dialog-close" data-testid="plan-document-close" autoFocus onClick={() => setFull(false)}>{t('plan.card.close')}</button>
-            </div>
-            <div className="card-dialog-document"><Markdown text={card.plan} /></div>
-          </div>
-        </div>
-      )}
+      {full && <PlanDocument title={t('plan.card.title')} subtitle={card.received} plan={card.plan} onClose={() => setFull(false)} />}
     </div>
   );
 }

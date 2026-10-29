@@ -34,7 +34,8 @@
   "exemptRegions": {
     "native/macos/Sources/MightyClaude/AppStore.swift": "The GUI smoke (runSmokeTest and its composer and attachment checks): fixtures and failure messages for smoke-result.json, not UI.",
     "native/macos/Sources/MightyClaude/AgentMarkdownView.swift": "AgentMarkdownDiagnostics, the GUI smoke's Markdown fixture, not UI.",
-    "native/windows/MightyClaude.WinUI/MainWindow.AccountUsage.cs": "RunAccountUsageSmoke (--smoke-test): failure messages for smoke-result.json, not UI."
+    "native/windows/MightyClaude.WinUI/MainWindow.AccountUsage.cs": "RunAccountUsageSmoke (--smoke-test): failure messages for smoke-result.json, not UI.",
+    "native/windows/MightyClaude.WinUI/MainWindow.WebShell.Cards.cs": "Korean UTF-8 input smoke fixtures"
   },
   "allow": [
     {

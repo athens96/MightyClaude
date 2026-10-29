@@ -7,6 +7,7 @@ import { BetaBadge } from '../shell/parts';
 import { Icon, type IconName } from '../icons/Icon';
 import type { Translate } from '../i18n/locale';
 import type { AskTargetOption } from './types';
+import { enterAction } from './keys';
 
 /** A toolbar narrower than this folds effort, permission and Fast into one options menu (ArrangeComposer's overflow). */
 const narrowToolbar = 420;
@@ -60,25 +61,39 @@ function MenuList({ rows, path, choose }: { rows: MenuRow[]; path: number[]; cho
   );
 }
 
-function RunSettingsPopover({ paneId, info, close }: { paneId: string; info: RunSettingsInfo; close: () => void }) {
+export function RunSettingsPopover({ paneId, info, busy = info.held, close }: { paneId: string; info: RunSettingsInfo; busy?: boolean; close: () => void }) {
   const { bridge, t } = useServices();
   const [values, setValues] = useState<RunSettingsValues>(info.values);
   const [problem, setProblem] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const applying = useRef(false);
+  // The live composer state wins over the opening snapshot, including when a mobile send starts or the queue finishes.
+  const held = busy || saving;
   const ref = usePopover(close);
   const set = (change: Partial<RunSettingsValues>) => setValues((current) => ({ ...current, ...change }));
   const apply = async () => {
+    if (busy || applying.current) return;
+    applying.current = true; setSaving(true); setProblem(null);
     try {
       const refusal = await bridge.call<string | null>('applyRunSettings', { paneId, ...values });
       if (refusal !== null && refusal !== undefined) setProblem(refusal);
       else close();
     } catch (failure) {
       setProblem(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      applying.current = false; setSaving(false);
     }
   };
   return (
-    <div ref={ref} className="composer-popover run-settings" data-testid="run-settings" data-page-overlay="" role="dialog" aria-label={t('settings.run.title')} onKeyDown={(event) => { if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement) && !(event.target instanceof HTMLSelectElement)) { event.preventDefault(); void apply(); } }}>
+    <div ref={ref} className="composer-popover run-settings" data-testid="run-settings" data-page-overlay="" role="dialog" aria-label={t('settings.run.title')} onKeyDown={(event) => {
+      if (event.key !== 'Enter' || event.target instanceof HTMLButtonElement || event.target instanceof HTMLSelectElement) return;
+      const action = enterAction({ ...event, keyCode: event.nativeEvent.keyCode, isComposing: event.nativeEvent.isComposing });
+      if (action === 'pass') return;
+      event.preventDefault();
+      if (action !== 'swallow' && !held) void apply();
+    }}>
       <div className="popover-header"><strong>{t('settings.run.title')}</strong><span>{info.provider}</span>{info.beta && <span className="beta-badge">Beta</span>}</div>
-      <div className="popover-body">
+      <fieldset className="popover-body run-settings-fields" disabled={held}>
         <section>
           <div className="popover-strong">{info.model}</div>
           {info.modelDescription && <div className="popover-quiet">{info.modelDescription}</div>}
@@ -124,12 +139,13 @@ function RunSettingsPopover({ paneId, info, close }: { paneId: string; info: Run
             <button type="button" className="composer-text-button" onClick={() => setValues(clearUnsupported(info, values))}>{t('settings.run.unsupportedResetButton')}</button>
           </section>
         )}
-      </div>
+      </fieldset>
+      {busy && <div className="popover-quiet run-settings-held" role="status">{t('phone.session.settingsLocked')}</div>}
       {problem && <div className="popover-problem" role="alert">{problem}</div>}
       <div className="popover-footer">
         <span className="popover-quiet">{t('settings.run.appliesNextRequest')}</span>
         <button type="button" className="popover-button" onClick={close}>{t('settings.run.cancelButton')}</button>
-        <button type="button" className="popover-button prominent" disabled={info.held} onClick={() => void apply()}>{t('settings.run.applyButton')}</button>
+        <button type="button" className="popover-button prominent" data-testid="run-settings-apply" disabled={held} onClick={() => void apply()}>{t('settings.run.applyButton')}</button>
       </div>
     </div>
   );
@@ -363,7 +379,7 @@ export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown, resumed 
           <MenuList rows={open.rows} path={[]} choose={choose(open.name)} />
         </div>
       )}
-      {open?.kind === 'runSettings' && <RunSettingsPopover paneId={paneId} info={open.info} close={close} />}
+      {open?.kind === 'runSettings' && <RunSettingsPopover paneId={paneId} info={open.info} busy={busy} close={close} />}
       {open?.kind === 'sessionInfo' && <SessionInfoPopover info={open.info} close={close} />}
     </div>
   );

@@ -6,7 +6,9 @@ import { Entry } from '../conversation/Entry';
 import { HeightCache, estimateHeight, layout, nearBottom, visibleRange } from '../conversation/virtual';
 import { Markdown } from '../conversation/MarkdownView';
 import { ProviderMark } from '../conversation/ProviderMark';
-import type { LogEntry } from '../store/models';
+import type { LogEntry, PlanRecord } from '../store/models';
+import { PlanDocument, PlanRecordDetails } from '../cards/PlanDocument';
+import { planRecordPresentation } from '../cards/plan';
 import { backgroundLabel, shownTail } from './background';
 import { dashForCard, dashOffset } from './camera';
 import { isResizable, terminal, visibleImages } from './layout';
@@ -35,6 +37,7 @@ export interface BlockExtra {
   entries?: readonly LogEntry[];
   finalOutput?: string;
   markdown?: string;
+  planRecord?: PlanRecord;
   files?: readonly MightyFile[];
   filesOpen?: boolean;
   images?: { runId: string; step: string; count: number };
@@ -287,8 +290,11 @@ function Body(props: BlockProps) {
     case 'request':
       return <div className="mighty-body"><div className="mighty-band">{extra.input}</div></div>;
     case 'plan':
-    case 'planRecord':
       return <div className="mighty-body"><div className="mighty-pad">{extra.markdown ? <Markdown text={extra.markdown} /> : null}</div></div>;
+    case 'planRecord':
+      return <div className="mighty-body"><div className="mighty-pad mighty-plan-record" data-testid="mighty-plan-record">
+        {extra.planRecord && <PlanRecordDetails record={planRecordPresentation(extra.planRecord, t, globalThis.document?.documentElement.lang || 'en')} expanded={props.expanded} />}
+      </div></div>;
     case 'resultFiles':
       return (
         <div className="mighty-body">
@@ -352,6 +358,7 @@ function Body(props: BlockProps) {
  */
 export const Block = memo(function Block(props: BlockProps) {
   const { t } = useServices();
+  const [planOpen, setPlanOpen] = useState(false);
   const renders = useRef(0);
   renders.current += 1;
   // Which props differed from the last draw (by identity): the smoke reads it to tell why a block drew again.
@@ -370,6 +377,8 @@ export const Block = memo(function Block(props: BlockProps) {
   const tone = copy?.tone ?? 'idle';
   const status = copy?.status ?? '';
   const resizable = isResizable(kind);
+  const recorded = extra.planRecord && planRecordPresentation(extra.planRecord, t, globalThis.document?.documentElement.lang || 'en');
+  const documentPlan = recorded?.plan ?? (kind === 'plan' ? extra.markdown : undefined);
   return (
     <div className={`mighty-block kind-${kind} tone-${tone}${selected ? ' selected' : ''}${copy?.outline === 'marching' || copy?.outline === 'solid' ? ' halo' : ''}`}
       data-block-id={id} data-kind={kind} data-renders={renders.current} data-changed={changed} data-visible={props.visible ? '1' : '0'}
@@ -401,6 +410,8 @@ export const Block = memo(function Block(props: BlockProps) {
             <button className={'mighty-icon' + (expanded ? ' on' : '')} data-testid="mighty-ouroboros-list" title={t(expanded ? 'graph.ouroboros.hideACs' : 'graph.ouroboros.showACs')}
               aria-pressed={expanded} onClick={() => actions.toggleExpand(id, !expanded)}>☰</button>
           )}
+          {documentPlan !== undefined && <button type="button" className="mighty-icon" data-testid="mighty-plan-expand" aria-label={t('plan.card.expand')} title={t('plan.card.expand')}
+            onClick={() => setPlanOpen(true)}><Icon name="maximize-2" size={13} weight={1.75} /></button>}
           {resizable && !extra.fitted && (
             <button className="mighty-icon" data-expand="" title={t(expanded ? 'graph.block.collapse' : 'graph.block.expand')} aria-label={t(expanded ? 'graph.block.collapse' : 'graph.block.expand')}
               onClick={() => actions.toggleExpand(id, !expanded)}><Icon name={expanded ? 'fold-vertical' : 'unfold-vertical'} size={14} weight={1.75} /></button>
@@ -416,6 +427,8 @@ export const Block = memo(function Block(props: BlockProps) {
             onDoubleClick={() => actions.resetSize(id)} onContextMenu={(e) => { e.preventDefault(); actions.resetSize(id); }}><Icon name="move-diagonal-2" size={11} weight={2} /></div>
         </>
       )}
+      {planOpen && documentPlan !== undefined && <PlanDocument title={t('plan.card.title') + (recorded ? ' · ' + recorded.outcomeTitle : '')}
+        subtitle={recorded?.time} plan={documentPlan} feedback={recorded?.feedback} truncated={recorded?.truncated} onClose={() => setPlanOpen(false)} />}
     </div>
   );
 });
