@@ -118,11 +118,10 @@ public sealed partial class MainWindow
         bridge.Register("runSettings", args => Task.FromResult<object?>(WebPane(args.Text("paneId")).WebRunSettings()));
         bridge.Register("applyRunSettings", ApplyWebRunSettings);
         bridge.Register("toggleFast", async args => { await WebPane(args.Text("paneId")).WebToggleFast(); return null; });
-        // The composer's two eye toggles of a Claude pane (M/SessionPaneView.swift backgroundWorkToggle, statusLineToggle): app-wide preferences.
+        // The composer's status-line toggle of a Claude pane (M/SessionPaneView.swift statusLineToggle): an app-wide preference.
         bridge.Register("composerToggle", async args =>
         {
-            if (args.Text("which") == "background") await Act(() => SetShowsBackgroundWork(!ShowsBackgroundWork));
-            else if (args.Text("which") == "statusLine") await Act(() => SetStatusLineEnabled(!service.Snapshot.StatusLineEnabled));
+            if (args.Text("which") == "statusLine") await Act(() => SetStatusLineEnabled(!service.Snapshot.StatusLineEnabled));
             Render();
             return null;
         });
@@ -592,10 +591,10 @@ public sealed partial class MainWindow
                     : null,
                 header = WebHeader(pane),
                 // The marks at the toolbar's right (M/SessionPaneView.swift composerToolbar): the resume mark, and a Claude pane's
-                // background-work and status-line toggles with whether each is on.
+                // status-line toggle with whether it is on.
                 resumed = pane.ResumeId is not null,
                 toggles = pane.Kind == "claude" && pane.Provider == "claude"
-                    ? new { background = owner.ShowsBackgroundWork, statusLine = LocalPath(Workspace) is null ? (bool?)null : owner.service.Snapshot.StatusLineEnabled }
+                    ? new { statusLine = LocalPath(Workspace) is null ? (bool?)null : owner.service.Snapshot.StatusLineEnabled }
                     : null,
                 // The 보낼 대상 switch (M/SessionPaneView.swift askMenu): the targets offered (none hides it), the one sends go to now
                 // (null for Claude), and the notice that a saved one is gone.

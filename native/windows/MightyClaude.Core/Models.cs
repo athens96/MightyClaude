@@ -329,11 +329,7 @@ public sealed record AppSnapshot
     // the default, matching the Mac's autoLoginCLIs.
     [JsonConverter(typeof(LenientNullableBoolConverter))]
     public bool? AutoLoginCLIs { get; init; }
-    // The background work line above an agent pane's composer is drawn (Settings → General → Display, the
-    // line's hide button, the pane's … menu). Null (older state) means shown, matching the Mac's showsBackgroundWork.
-    [JsonConverter(typeof(LenientNullableBoolConverter))]
-    public bool? ShowsBackgroundWork { get; init; }
-    // That line was left open on its task rows. Null (older state) means folded, matching the Mac's backgroundWorkOpen.
+    // The background strip was left open on its task rows. Null (older state) means folded, matching the Mac's backgroundWorkOpen.
     [JsonConverter(typeof(LenientNullableBoolConverter))]
     public bool? BackgroundWorkOpen { get; init; }
     // Where the last new folder or Git clone was made, the create sheets' starting location (WorkspaceCreate.DefaultLocation).

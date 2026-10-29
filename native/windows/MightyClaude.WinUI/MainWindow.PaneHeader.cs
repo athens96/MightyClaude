@@ -418,16 +418,6 @@ public sealed partial class MainWindow
             var copy = Add(Locale.Get("pane.menu.copyLog"), () => { Copy(RunLogText.Copy(Session)); return Task.CompletedTask; });
             AutomationProperties.SetAutomationId(copy, "pane-menu-copy-" + id);
             var restart = shell ? null : Add(Locale.Get("pane.menu.newConversation"), () => owner.Act(ResetConversation));
-            // The background work line's switch (M/SessionPaneView.swift paneMenu): the mark is the saved setting's, so a
-            // click's own flip is put back and Opening reads it again.
-            ToggleMenuFlyoutItem? backgroundWork = null;
-            if (Session.Kind == "claude")
-            {
-                backgroundWork = new ToggleMenuFlyoutItem { Text = Locale.Get("pane.menu.backgroundWork"), IsChecked = owner.ShowsBackgroundWork };
-                AutomationProperties.SetAutomationId(backgroundWork, "pane-menu-background-work-" + id);
-                backgroundWork.Click += async (_, _) => { backgroundWork.IsChecked = owner.ShowsBackgroundWork; await ToggleBackgroundWorkShown(); };
-                menu.Items.Add(backgroundWork);
-            }
             menu.Items.Add(new MenuFlyoutSeparator());
             Add(Locale.Get("menu.closePane"), () => owner.CloseSession(id));
             menu.Opening += (_, _) =>
@@ -437,7 +427,6 @@ public sealed partial class MainWindow
                 focus.Text = Locale.Get(LayoutMode(state, state.ActiveWorkspaceId) == "focus" ? "pane.menu.restoreLayout" : "menu.focusPane");
                 copy.IsEnabled = pane?.Logs.Count > 0;
                 if (restart is not null) restart.IsEnabled = pane is { ResumeId: not null } && pane.Status != "running" && !starting && !queueStarting;
-                if (backgroundWork is not null) backgroundWork.IsChecked = owner.ShowsBackgroundWork;
             };
             // The Mac's ellipsis at 13 bold draws 12.5 wide; Segoe's More needs 15 to draw as wide.
             var more = paneMenuButton = IconButton("\uE712", 15, Microsoft.UI.Text.FontWeights.Bold, "pane-menu-" + id);

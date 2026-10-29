@@ -9,22 +9,10 @@ namespace MightyClaude.WinUI;
 public sealed partial class MainWindow
 {
     /// <summary>
-    /// The background work line above every agent pane's composer is drawn (null, older state, means shown). Settings →
-    /// General → Display, the line's hide button, the pane's … menu and the composer's toggle all set this one saved value (M/AppStore.swift showsBackgroundWork).
+    /// The background strip above a Claude pane's composer is open on its task rows (null, older state, means folded); saved,
+    /// so it opens the same way next time (M/AppStore.swift backgroundWorkOpen). Nothing hides the strip.
     /// </summary>
-    private bool ShowsBackgroundWork => service.Snapshot.ShowsBackgroundWork != false;
-
-    /// <summary>The line is open on its task rows (null means folded); saved, so it opens the same way next time.</summary>
     private bool BackgroundWorkOpen => service.Snapshot.BackgroundWorkOpen == true;
-
-    /// <summary>Shows or hides the line in every pane now; the returned task is the save.</summary>
-    private Task SetShowsBackgroundWork(bool shown)
-    {
-        if (ShowsBackgroundWork == shown) return Task.CompletedTask;
-        var save = service.UpdateAsync(s => s with { ShowsBackgroundWork = shown });
-        RefreshBackgroundWorkLines();
-        return save;
-    }
 
     /// <summary>Opens or folds the line in every pane now; the returned task is the save.</summary>
     private Task SetBackgroundWorkOpen(bool open)
@@ -54,63 +42,18 @@ public sealed partial class MainWindow
         private readonly HashSet<string> backgroundOpenRows = new(StringComparer.Ordinal);
 
         /// <summary>
-        /// The composer's background-work toggle (M/SessionPaneView.swift backgroundWorkToggle): the status-line toggle's
-        /// 16pt-wide, toolbar-high frame, on Claude panes alone. The Mac's <c>rectangle.stack</c> and <c>rectangle.stack.fill</c>
-        /// become the list mark the line itself starts with (Segoe's BulletedList, one shape in both states), ink2 off and
-        /// accent on, as the status-line toggle.
-        /// </summary>
-        private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton backgroundWorkToggle = new()
-        {
-            Width = 16, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center,
-            Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow),
-        };
-        private readonly FontIcon backgroundWorkGlyph = new() { Glyph = "\uE8FD", TextSize = 12, IsHitTestVisible = false };
-
-        /// <summary>
-        /// Adds the background-work toggle to the composer's right cluster, between the context ring and the status-line
-        /// toggle. It sets the saved value the line's eye, the pane's … menu and Settings set, for every pane at once, so a
-        /// hidden line can always be brought back from the composer.
-        /// </summary>
-        private void InitializeBackgroundWorkToggle(StackPanel cluster)
-        {
-            DressComposerToggle(backgroundWorkToggle, backgroundWorkGlyph);
-            AutomationProperties.SetName(backgroundWorkToggle, Locale.Get("composer.backgroundWork.name"));
-            AutomationProperties.SetAutomationId(backgroundWorkToggle, "background-work-toggle-" + id);
-            backgroundWorkToggle.IsChecked = owner.ShowsBackgroundWork;
-            UpdateBackgroundWorkTip();
-            // A press (pointer, keys or the UIA Toggle pattern) flips the check and the saved value follows it. A refresh
-            // only copies the saved value onto the check, so the two already agree and nothing is saved.
-            void Flipped()
-            {
-                UpdateBackgroundWorkTip();
-                var on = backgroundWorkToggle.IsChecked == true;
-                if (on != owner.ShowsBackgroundWork) _ = owner.Act(() => owner.SetShowsBackgroundWork(on));
-            }
-            backgroundWorkToggle.Checked += (_, _) => Flipped();
-            backgroundWorkToggle.Unchecked += (_, _) => Flipped();
-            cluster.Children.Add(backgroundWorkToggle);
-        }
-
-        /// <summary>The help says what a press does next (M/SessionPaneView.swift backgroundWorkToggle).</summary>
-        private void UpdateBackgroundWorkTip() =>
-            ToolTipService.SetToolTip(backgroundWorkToggle, Locale.Get(backgroundWorkToggle.IsChecked == true ? "composer.backgroundWork.hide" : "composer.backgroundWork.show"));
-
-        /// <summary>
-        /// The pane's background agents outside a style that draws its own list: in any view once the turn is over, and
-        /// in the Mighty view all along, while they run and after they ended and told the agent — folded to one line that
-        /// opens to the task rows.
+        /// The pane's background work outside a style that draws its own list: in any view once the turn is over, and in the
+        /// Mighty view all along, while it runs and after it ended with its report — folded to one line, headed by how many
+        /// tasks ended and how many still run, that opens to the task rows (M/BackgroundWorkViews.swift BackgroundWorkStrip).
         /// </summary>
         internal void RefreshBackgroundWork(RunSession pane)
         {
             owner.WebCardsChanged(this);
             if (backgroundHost is null) return;
-            // The composer's toggle shows the saved value, on Claude panes alone (M/SessionPaneView.swift showsBackgroundWorkToggle).
-            backgroundWorkToggle.IsChecked = owner.ShowsBackgroundWork;
-            backgroundWorkToggle.Visibility = pane.Kind == "claude" && pane.Provider == "claude" ? Visibility.Visible : Visibility.Collapsed;
             var mighty = pane.Kind == "claude" && pane.Provider == "claude" && pane.AgentViewMode == "mighty";
             var drawsTasks = mighty && activeStyle?.Evaluator.DrawsTasks == true;
             var work = pane.BackgroundWork;
-            var shows = pane.Kind == "claude" && PlanCardSupport.ShowsBackgroundStrip(work, mighty, drawsTasks, owner.ShowsBackgroundWork);
+            var shows = pane.Kind == "claude" && PlanCardSupport.ShowsBackgroundStrip(work, mighty, drawsTasks);
             var backgroundOpen = owner.BackgroundWorkOpen;
             // The rows meet the newest request's blocks by tool use id (never a notice run's copies): their kind words, command and output lines.
             var rows = shows && backgroundOpen ? PlanCardSupport.BackgroundStripRows(work, MightyGraphSupport.NewestRequestRun(pane.GraphRuns), owner.BackgroundOutputFor(pane.Id)) : [];
@@ -124,13 +67,14 @@ public sealed partial class MainWindow
             backgroundHost.Visibility = shows ? Visibility.Visible : Visibility.Collapsed;
             if (!shows) return;
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2);
-            var count = work!.Tasks.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var counts = PlanCardSupport.BackgroundCounts(work!);
             var face = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) face.ColumnDefinitions.Add(new() { Width = width });
             face.Children.Add(ComposerGlyph.Icon("", 11).Ink(b.Brush(DesignToken.Accent)).View);
-            var title = new TextBlock { Text = Locale.Get("plan.background.listTitle", new Dictionary<string, string> { ["count"] = count }), TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+            var title = new TextBlock { Text = Locale.Get("plan.background.title"), TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1); face.Children.Add(title);
-            var summary = new TextBlock { Text = PlanCardSupport.BackgroundStripSummary(work), TextSize = 11, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            var summary = new TextBlock { Text = counts, TextSize = 11, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(summary, Microsoft.UI.Xaml.FontNumeralAlignment.Tabular);
             Grid.SetColumn(summary, 2); face.Children.Add(summary);
             var chevron = (backgroundOpen ? ComposerGlyph.ChevronDown(8, 1.2) : ComposerGlyph.ChevronRight(8, 1.2)).Ink(ink2);
             Grid.SetColumn(chevron.View, 3); face.Children.Add(chevron.View);
@@ -138,23 +82,8 @@ public sealed partial class MainWindow
             fold.IsChecked = backgroundOpen;
             AutomationProperties.SetAutomationId(fold, "background-work-" + id);
             fold.Click += (_, _) => _ = ToggleBackgroundWorkOpen();
-            // The eye on the line's trailing side hides it everywhere; Settings, the pane's … menu and the composer's toggle bring it back.
-            var hide = new Button
-            {
-                Width = 22, Height = 20, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), BorderThickness = new Thickness(0),
-                Content = new FontIcon { Glyph = "\uED1A", TextSize = 11 }, VerticalAlignment = VerticalAlignment.Center,
-            };
-            owner.PaintPlainButton(hide, b.Transparent, b.Subtle, ink: ink2);
-            var hideName = Locale.Get("plan.background.hideStrip");
-            AutomationProperties.SetName(hide, hideName); AutomationProperties.SetAutomationId(hide, "background-work-hide-" + id);
-            ToolTipService.SetToolTip(hide, Locale.Get("plan.background.hideStripHelp"));
-            hide.Click += (_, _) => _ = HideBackgroundWork();
-            var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
-            line.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            line.Children.Add(fold);
-            Grid.SetColumn(hide, 1); line.Children.Add(hide);
             var strip = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            strip.Children.Add(line);
+            strip.Children.Add(fold);
             if (backgroundOpen) strip.Children.Add(BackgroundRows(rows, stripElapsed));
             backgroundHost.Children.Add(new Border
             {
@@ -165,12 +94,6 @@ public sealed partial class MainWindow
 
         /// <summary>The line's own fold: opens or folds it in every pane, and saves that.</summary>
         private Task ToggleBackgroundWorkOpen() => owner.Act(() => owner.SetBackgroundWorkOpen(!owner.BackgroundWorkOpen));
-
-        /// <summary>The line's eye button: hides the line in every pane, and saves that.</summary>
-        private Task HideBackgroundWork() => owner.Act(() => owner.SetShowsBackgroundWork(false));
-
-        /// <summary>The pane's … menu item: shows or hides the line, and saves that.</summary>
-        private Task ToggleBackgroundWorkShown() => owner.Act(() => owner.SetShowsBackgroundWork(!owner.ShowsBackgroundWork));
 
         /// <summary>
         /// Background tasks, one row each (M/BackgroundWorkViews.swift BackgroundTaskRows): a status dot, what the task is

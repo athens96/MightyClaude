@@ -177,7 +177,6 @@ internal static class ClaudePlanStyleVerification
             Check(StylePresentation.Elapsed(start, start.AddSeconds(3725)) == "1시간 2분" && StylePresentation.Elapsed(start, start.AddSeconds(-5)) == "0초", "hours, and a clock that went back");
             var odd = StylePresentation.Tasks(new StyleStateWidget("taskList", Tasks: [new StyleTaskItem(" \n", "weird", "nope", "2026-10-06T01:00:00.000Z")]));
             Check(odd[0].Kind == "other" && odd[0].Text == "작업" && odd[0].StatusTitle == "알 수 없음", "closed fallbacks, and the kind for an empty description");
-            Check(PlanCardSupport.BackgroundSummary(work) == "턴 완료 · 백그라운드 1개 실행 중" && PlanCardSupport.BackgroundSummary(work with { TurnEnded = false }) == "백그라운드 1개 실행 중", "the folded line");
             return 0;
         });
         var many = new BackgroundWork(Enumerable.Range(0, 12).Select(i => new BackgroundTask("t" + i, "agent", "task " + i, "2026-10-06T01:00:00.000Z")).ToList());
@@ -190,10 +189,16 @@ internal static class ClaudePlanStyleVerification
         Check(PlanCardSupport.ShowsBackgroundStrip(told, false, false) && PlanCardSupport.ShowsBackgroundStrip(told with { TurnEnded = false }, true, false) && !PlanCardSupport.ShowsBackgroundStrip(told with { TurnEnded = false }, false, false),
             "work that ended and told the agent stays on the line, by the same view rule");
         Check(!PlanCardSupport.ShowsBackgroundStrip(lost, false, false) && !PlanCardSupport.ShowsBackgroundStrip(lost, true, false), "work that ended with the process told no one and leaves the line");
+        var mixed = work with { Tasks = [work.Tasks[0], work.Tasks[0] with { Id = "x", Status = "completed" }, work.Tasks[0] with { Id = "y", Status = "unknown" }] };
+        Check(PlanCardSupport.BackgroundFinished(mixed) == mixed.Tasks.Count - mixed.Running.Count, "finished is every task that no longer runs");
+        Check(PlanCardSupport.MobileBackgroundDone(mixed) == PlanCardSupport.BackgroundFinished(mixed) && PlanCardSupport.MobileBackgroundDone(lost) is null && PlanCardSupport.MobileBackgroundDone(null) is null,
+            "the phone's finished count travels only while the strip shows");
         Korean(() =>
         {
-            Check(PlanCardSupport.BackgroundNotice("running") == "끝나면 알림" && PlanCardSupport.BackgroundNotice("failed") == "알림 전달됨" && PlanCardSupport.BackgroundNotice("unknown") is null, "each row says what the agent hears");
-            Check(PlanCardSupport.BackgroundStripSummary(work) == "턴 완료 · 백그라운드 1개 실행 중 · 끝나면 알림" && PlanCardSupport.BackgroundStripSummary(told) == "모두 끝남 · 알림 전달됨", "the folded line says the agent is told");
+            Check(PlanCardSupport.BackgroundCounts(told) == "끝남 1개 · 작업 중 0개", "all ended: the strip stays with nothing running");
+            var rows = PlanCardSupport.BackgroundStripRows(mixed, null);
+            // A running run now reads "백그라운드 실행 · 실행 중", so no row mentions a notice at all.
+            Check(rows.All(r => !r.Detail(DateTimeOffset.UtcNow).Contains("알림", StringComparison.Ordinal)), "no row says what the agent hears");
             return 0;
         });
         var payload = JsonSerializer.Serialize(StylePresentation.Payload(new StyleStateWidget("taskList", Tasks: [new StyleTaskItem("x", "agent", "running", "2026-10-06T01:00:00.000Z")])));

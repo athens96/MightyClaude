@@ -356,7 +356,6 @@ public sealed partial class MainWindow
             owner.PaintPlainButton(context, b.Transparent, b.Subtle, ink: ink2);
             AutomationProperties.SetName(context, Locale.Get("composer.context.name")); AutomationProperties.SetAutomationId(context, "context-" + id);
             toolbarActions.Children.Add(context);
-            InitializeBackgroundWorkToggle(toolbarActions);
             InitializeStatusLineToggle(toolbarActions);
             InitializeQueuedComposer(toolbarActions);
             send = new Button { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(0) };

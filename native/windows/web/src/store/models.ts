@@ -302,7 +302,6 @@ export interface AppSnapshot {
   autoUpdateCLIs?: boolean;
   autoUpdatePlugins?: boolean;
   autoLoginCLIs?: boolean;
-  showsBackgroundWork?: boolean;
   backgroundWorkOpen?: boolean;
   antigravityMigrated?: boolean;
   referenceBubbleWidth?: number;

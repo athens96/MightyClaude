@@ -44,8 +44,8 @@ export interface BackgroundTask {
 
 export interface BackgroundCard {
   kind: 'background';
-  count: number;
-  summary: string;
+  /** The header's counts, how many tasks ended and how many still run, already joined (Core PlanCardSupport.BackgroundCounts). */
+  counts: string;
   open: boolean;
   tasks: BackgroundTask[];
 }

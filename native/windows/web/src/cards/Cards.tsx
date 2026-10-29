@@ -254,10 +254,9 @@ function Background({ card, call }: { card: BackgroundCard; call: Call }) {
       <div className="card-strip-line">
         <Fold open={card.open} label={t(card.open ? 'plan.background.hide' : 'plan.background.show')} onClick={() => void call('backgroundWork', { action: 'toggle' })}>
           <span className="card-strip-mark" aria-hidden="true"><Icon name="layers" size={14} weight={1.75} /></span>
-          <strong>{t('plan.background.listTitle', { count: card.count })}</strong>
-          <span className="card-strip-summary">{card.summary}</span>
+          <strong>{t('plan.background.title')}</strong>
+          <span className="card-strip-summary">{card.counts}</span>
         </Fold>
-        <button type="button" className="card-icon-button" aria-label={t('plan.background.hideStrip')} title={t('plan.background.hideStripHelp')} onClick={() => void call('backgroundWork', { action: 'hide' })}><Icon name="eye-off" size={13} weight={1.75} /></button>
       </div>
       {card.open && (
         <div className="card-strip-list">

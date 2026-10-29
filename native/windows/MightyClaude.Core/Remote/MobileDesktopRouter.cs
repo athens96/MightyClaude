@@ -20,9 +20,10 @@ public sealed record MobileQueuedItem(string Id, string Text,
 /// What a pane's detail carries beside its record. <c>AskTargets</c>: the composer's "send to" targets, sent only on a pane that offers
 /// any (a Claude agent pane with oh-my-claudecode's ask and an installed target); <c>AskTarget</c>: the one its sends go to now, null for Claude.
 /// <c>BackgroundWork</c>: the background work still running, as the strip lists it (<see cref="PlanCardSupport.MobileBackgroundWork"/>); absent when none runs.
+/// <c>BackgroundDone</c>: how many of the strip's tasks ended, sent with the strip, 0 included (<see cref="PlanCardSupport.MobileBackgroundDone"/>); absent when it does not show.
 /// </summary>
 public sealed record MobilePaneExtras(IReadOnlyList<MobileQueuedItem> Queued, object? Settings = null, object? Mighty = null, object? StatusLine = null, IReadOnlyList<MobileAskTarget>? AskTargets = null, string? AskTarget = null,
-    IReadOnlyList<MobileBackgroundWork>? BackgroundWork = null);
+    IReadOnlyList<MobileBackgroundWork>? BackgroundWork = null, int? BackgroundDone = null);
 /// <summary>One choice of the phone's "send to" switch (<c>AskTargets</c>), in the desktop menu's order.</summary>
 public sealed record MobileAskTarget(string Id, string Label);
 public sealed record MobileDesktopAction(string SessionId, string Action, JsonElement Body, IReadOnlyList<RunAttachment>? Attachments = null);
@@ -419,7 +420,9 @@ public sealed class MobileDesktopRouter : IDisposable
             // No targets: neither field is sent, so the phone draws no switch (M/MightyCore/Remote/MobileRemoteModels.swift MobileSessionDetail).
             askTargets = detail.AskTargets is { Count: > 0 } targets ? targets : null, askTarget = detail.AskTargets is { Count: > 0 } ? detail.AskTarget : null,
             // Running background work only, never an output file's path (M/MightyCore/Remote/MobileRemoteModels.swift MobileSessionDetail.backgroundWork).
-            backgroundWork = detail.BackgroundWork is { Count: > 0 } work ? work : null };
+            backgroundWork = detail.BackgroundWork is { Count: > 0 } work ? work : null,
+            // How many of the strip's tasks ended, 0 included, while it shows (M/MightyCore/Remote/MobileRemoteModels.swift MobileSessionDetail.backgroundDone).
+            backgroundDone = detail.BackgroundDone };
     }
     /// <summary>
     /// The read-only file routes (M/MightyCore/Remote/MobileRemoteService.swift:1048-1104). The folder and the file are read

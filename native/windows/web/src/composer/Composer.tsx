@@ -375,10 +375,6 @@ export function Composer({ session }: { session: RunSession }) {
           )}
           {state?.pills ? <Toolbar paneId={paneId} pills={state.pills} busy={state.busy} showUsage={showUsage} onUsageShown={usageShown} resumed={state.resumed} askTargets={state.askTargets ?? []} askTarget={asked?.id ?? null} />
             : <span className="composer-shell-title">{t('composer.shell.title')}</span>}
-          {state?.toggles && (
-            <button type="button" className={'composer-toggle' + (state.toggles.background ? ' on' : '')} aria-pressed={state.toggles.background} title={t(state.toggles.background ? 'composer.backgroundWork.hide' : 'composer.backgroundWork.show')}
-              aria-label={t('composer.backgroundWork.name')} onClick={() => call('composerToggle', { which: 'background' })}><Icon name="layers" size={13} weight={1.75} fill={state.toggles.background} /></button>
-          )}
           {state?.toggles && state.toggles.statusLine !== null && (
             <button type="button" className={'composer-toggle' + (state.toggles.statusLine ? ' on' : '')} aria-pressed={state.toggles.statusLine} title={t(state.toggles.statusLine ? 'composer.statusLine.hide' : 'composer.statusLine.show')}
               aria-label={t('composer.statusLine.name')} onClick={() => call('composerToggle', { which: 'statusLine' })}><Icon name="panel-bottom" size={13} weight={1.75} /></button>

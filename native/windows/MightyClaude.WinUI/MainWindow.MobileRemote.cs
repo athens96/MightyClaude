@@ -660,6 +660,8 @@ public sealed partial class MainWindow
             mighty.Add(owner.BackgroundOutputPhoneRevisionFor(pane.Id));
             // The detail's backgroundWork: the running tasks, what they are and the block each meets.
             foreach (var task in pane.BackgroundWork?.Running ?? []) { mighty.Add(task.Id); mighty.Add(task.Description); mighty.Add(task.ToolUseId); mighty.Add(task.Kind); }
+            // The detail's backgroundDone: the strip's finished count while it shows (M/AppStore+MobileRemote.swift mobileBackgroundDigest).
+            mighty.Add(PlanCardSupport.MobileBackgroundDone(pane.BackgroundWork));
             if (MobileActiveStyle is { } style)
             {
                 mighty.Add(style.Id); mighty.Add(style.Hash); mighty.Add(GuidedPhase(style)?.Id); mighty.Add(pane.Status == "running"); mighty.Add(stylePrerequisites?.Ready);
@@ -685,8 +687,9 @@ public sealed partial class MainWindow
             // The background work still running, as the strip lists it, its block met in the newest request (never a notice run).
             var background = PlanCardSupport.MobileBackgroundWork(pane.BackgroundWork, MightyGraphSupport.NewestRequestRun(pane.GraphRuns), owner.BackgroundOutputFor(pane.Id));
             var runNow = RunNowRows();
+            // How many of the strip's tasks ended, while the strip shows (M/AppStore+MobileRemote.swift mobileBackgroundDone).
             return new(DelegationQueueRows.MobileItems(owner.service.HeldItems(id), queuedInputs.Items, rowId => runNow.GetValueOrDefault(rowId, QueueRunNowPath.Hidden)), settings, mighty, statusLine,
-                askTargets.Select(t => new MobileAskTarget(t.Id, t.Label)).ToArray(), AskTargets.Effective(pane.AskTarget, askTargets)?.Id, background);
+                askTargets.Select(t => new MobileAskTarget(t.Id, t.Label)).ToArray(), AskTargets.Effective(pane.AskTarget, askTargets)?.Id, background, PlanCardSupport.MobileBackgroundDone(pane.BackgroundWork));
         }
         /// <summary>The style panel the phone draws, in the shared golden shape (M/MightyCore/Styles/StylePanelProjection.swift).</summary>
         private object? MobileStylePanel(RegisteredStyle? chosen) => chosen is { } style

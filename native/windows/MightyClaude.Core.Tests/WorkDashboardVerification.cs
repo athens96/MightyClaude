@@ -91,40 +91,43 @@ internal static class WorkDashboardVerification
         finally { Directory.Delete(directory, true); }
     }
 
-    // The background work line above the composer: older state shows it folded, both switches survive a reload, only a
-    // JSON boolean counts, and a hidden line draws nothing in either view (M/SnapshotPreferencesTests, M/PlanCardTests).
-    internal static async Task BackgroundWorkLinePersistsAndHides()
+    // The background strip above the composer: older state shows it folded, its open state survives a reload, only a JSON
+    // boolean counts, and the old hide switch is read past and never written again; nothing hides the strip in either view
+    // (M/SnapshotPreferencesTests, M/PlanCardTests).
+    internal static async Task BackgroundWorkOpenPersistsAndTheOldHideSwitchIsDropped()
     {
-        var legacy = System.Text.Json.JsonSerializer.Deserialize<AppSnapshot>("""{"version":1,"workspaces":[],"sessions":[],"layout":"grid","theme":"dark","sidebarWidth":300}""", Wire.Json)!;
-        Check(legacy.ShowsBackgroundWork is null && legacy.BackgroundWorkOpen is null && new AppSnapshot().ShowsBackgroundWork is null && new AppSnapshot().BackgroundWorkOpen is null,
-            $"old state without the fields must show the line folded; got shows={legacy.ShowsBackgroundWork} open={legacy.BackgroundWorkOpen}");
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<AppSnapshot>("""{"version":1,"workspaces":[],"sessions":[],"layout":"grid","theme":"dark","sidebarWidth":300,"showsBackgroundWork":false,"backgroundWorkOpen":true}""", Wire.Json)!;
+        Check(legacy.BackgroundWorkOpen == true && new AppSnapshot().BackgroundWorkOpen is null,
+            $"old state with the hide switch must still load and keep the strip open; got open={legacy.BackgroundWorkOpen}");
         var invalid = System.Text.Json.JsonSerializer.Deserialize<AppSnapshot>("""{"version":1,"showsBackgroundWork":0,"backgroundWorkOpen":"true"}""", Wire.Json)!;
-        Check(invalid.ShowsBackgroundWork is null && invalid.BackgroundWorkOpen is null, $"only a JSON boolean counts; got shows={invalid.ShowsBackgroundWork} open={invalid.BackgroundWorkOpen}");
-        var normalized = StateStore.Normalize(new AppSnapshot { ShowsBackgroundWork = false, BackgroundWorkOpen = true }, false);
-        Check(normalized.ShowsBackgroundWork == false && normalized.BackgroundWorkOpen == true, $"normalize must keep both; got shows={normalized.ShowsBackgroundWork} open={normalized.BackgroundWorkOpen}");
+        Check(invalid.BackgroundWorkOpen is null, $"only a JSON boolean counts; got open={invalid.BackgroundWorkOpen}");
+        var normalized = StateStore.Normalize(new AppSnapshot { BackgroundWorkOpen = true }, false);
+        Check(normalized.BackgroundWorkOpen == true, $"normalize must keep the open state; got open={normalized.BackgroundWorkOpen}");
         var directory = Verification.Temp();
         try
         {
-            foreach (var (shows, open) in new[] { (false, true), (true, false) })
+            foreach (var open in new[] { true, false })
             {
                 var store = new StateStore(directory); await store.LoadAsync();
-                await store.SaveAsync(new AppSnapshot { ShowsBackgroundWork = shows, BackgroundWorkOpen = open });
+                await store.SaveAsync(new AppSnapshot { BackgroundWorkOpen = open });
                 var restored = await new StateStore(directory).LoadAsync();
-                Check(restored.ShowsBackgroundWork == shows && restored.BackgroundWorkOpen == open, $"reload must restore shows={shows} open={open}; got shows={restored.ShowsBackgroundWork} open={restored.BackgroundWorkOpen}");
+                var raw = File.ReadAllText(Path.Combine(directory, "workspace-state.json"));
+                Check(restored.BackgroundWorkOpen == open && !raw.Contains("showsBackgroundWork", StringComparison.Ordinal),
+                    $"reload must restore open={open} and the file must not carry the hide switch; got open={restored.BackgroundWorkOpen}, file has it: {raw.Contains("showsBackgroundWork", StringComparison.Ordinal)}");
             }
         }
         finally { Directory.Delete(directory, true); }
         var work = new BackgroundWork([new BackgroundTask("a", "agent", "look", "2026-10-06T01:00:00.000Z")], TurnEnded: true);
         foreach (var mighty in new[] { false, true })
-            Check(PlanCardSupport.ShowsBackgroundStrip(work, mighty, false) && PlanCardSupport.ShowsBackgroundStrip(work, mighty, false, enabled: true) && !PlanCardSupport.ShowsBackgroundStrip(work, mighty, false, enabled: false),
-                $"a hidden line draws nothing (mighty={mighty})");
+            Check(PlanCardSupport.ShowsBackgroundStrip(work, mighty, false), $"the strip draws in either view (mighty={mighty})");
     }
 
     // Another reader can hold the state file at the moment a save replaces it (on Windows a plain read shares no delete,
     // so the replace is refused with "Access to the path is denied"; the GUI smoke's own polling read did exactly that).
-    // A brief block must not drop the save: rapid switches ending hidden leave the file hidden once the block lifts.
+    // A brief block must not drop the save (the save-retry rule this guards): rapid switches of the background strip's open
+    // state ending open leave the file open once the block lifts.
     // On macOS an immutable flag stands in for the held file; elsewhere there is no unprivileged way to block a rename.
-    internal static async Task BackgroundWorkHideSurvivesABriefReplaceBlock()
+    internal static async Task BackgroundWorkOpenSurvivesABriefReplaceBlock()
     {
         var directory = Verification.Temp(); var path = Path.Combine(directory, "workspace-state.json");
         await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(null));
@@ -135,20 +138,20 @@ internal static class WorkDashboardVerification
         try
         {
             await service.InitializeAsync();
-            await service.UpdateAsync(s => s with { ShowsBackgroundWork = true });
+            await service.UpdateAsync(s => s with { BackgroundWorkOpen = false });
             if (OperatingSystem.IsWindows()) held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             else Flag(path, "uchg");
             var saves = new List<Task>();
-            for (var i = 0; i < 20; i++) { var shown = i % 2 == 1; saves.Add(service.UpdateAsync(s => s with { ShowsBackgroundWork = shown })); }
-            saves.Add(service.UpdateAsync(s => s with { ShowsBackgroundWork = false }));
+            for (var i = 0; i < 20; i++) { var open = i % 2 == 1; saves.Add(service.UpdateAsync(s => s with { BackgroundWorkOpen = open })); }
+            saves.Add(service.UpdateAsync(s => s with { BackgroundWorkOpen = true }));
             await Task.Delay(300);
             if (held is not null) { await held.DisposeAsync(); held = null; } else Flag(path, "nouchg");
             Exception? last = null;
             try { await saves[^1]; } catch (Exception ex) { last = ex; }
             var raw = await File.ReadAllTextAsync(path);
             var stored = await new StateStore(directory).LoadAsync();
-            Check(last is null && stored.ShowsBackgroundWork == false && service.Snapshot.ShowsBackgroundWork == false && service.SaveStatus == "saved",
-                $"the last switch (hidden) must reach the file once a brief block lifts; got memory={service.Snapshot.ShowsBackgroundWork}, stored={stored.ShowsBackgroundWork}, file has showsBackgroundWork false: {raw.Contains("\"showsBackgroundWork\":false", StringComparison.Ordinal)}, last save {last?.GetType().Name}: {last?.Message}, save {service.SaveStatus}, failures {failures.Count}");
+            Check(last is null && stored.BackgroundWorkOpen == true && service.Snapshot.BackgroundWorkOpen == true && raw.Contains("\"backgroundWorkOpen\":true", StringComparison.Ordinal) && service.SaveStatus == "saved",
+                $"the last switch (open) must reach the file once a brief block lifts; got memory={service.Snapshot.BackgroundWorkOpen}, stored={stored.BackgroundWorkOpen}, file has backgroundWorkOpen true: {raw.Contains("\"backgroundWorkOpen\":true", StringComparison.Ordinal)}, last save {last?.GetType().Name}: {last?.Message}, save {service.SaveStatus}, failures {failures.Count}");
         }
         finally
         {

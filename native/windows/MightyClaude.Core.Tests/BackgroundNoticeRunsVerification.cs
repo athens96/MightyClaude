@@ -218,6 +218,8 @@ internal static class BackgroundNoticeRunsVerification
         Check(phone.Count == 1 && phone[0] is { Id: "b2", Kind: "run", Status: "running", Command: "npm run lint" } && phone[0].OutputTail!.Count == 6, "the phone gets the running command, its lines, and no other kind");
         Check(!JsonSerializer.Serialize(phone, Wire.Json).Contains("/tmp/", StringComparison.Ordinal), "no path travels");
         Check(PlanCardSupport.MobileBackgroundWork(new BackgroundWork([new("b3", "shell", "Done", Wire.Now(), "completed")]), linted) is null, "nothing running: no backgroundWork");
+        Check(PlanCardSupport.MobileBackgroundDone(work) == 0 && PlanCardSupport.MobileBackgroundDone(new BackgroundWork([new("b3", "shell", "Done", Wire.Now(), "completed")], TurnEnded: true)) == 1,
+            "the phone's backgroundDone: 0 while all runs, the finished count once some ended");
     }
 
     /// <summary>A notice run without a title of its own (an older save) reads the generic heading, one with a title reads it; the title is

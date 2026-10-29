@@ -108,13 +108,6 @@ public sealed partial class MainWindow
         statusLineToggle.Checked += (_, _) => StatusLineToggled(); statusLineToggle.Unchecked += (_, _) => StatusLineToggled();
         SettingsRow(rows, SettingsLabeled(SettingsTitled(statusLineLabel, Locale.Get("settings.display.statusLineDescription")), statusLineToggle, top: true));
 
-        // The background work line above the composer; the line's eye button and the pane's … menu set the same value.
-        var backgroundWorkLabel = Locale.Get("settings.display.backgroundWorkToggle");
-        var backgroundWorkToggle = SettingsSwitch(backgroundWorkLabel, ShowsBackgroundWork, "settings-background-work");
-        void BackgroundWorkToggled() => _ = Act(() => SetShowsBackgroundWork(backgroundWorkToggle.IsChecked == true));
-        backgroundWorkToggle.Checked += (_, _) => BackgroundWorkToggled(); backgroundWorkToggle.Unchecked += (_, _) => BackgroundWorkToggled();
-        SettingsRow(rows, SettingsLabeled(SettingsText(backgroundWorkLabel), backgroundWorkToggle));
-
         // Mighty Orchestration is on unless turned off here (or by its registry value).
         var delegationLabel = Locale.Get("settings.delegation.toggle");
         var delegationToggle = SettingsSwitch(delegationLabel, DelegationOn, "settings-delegation");

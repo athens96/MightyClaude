@@ -62,8 +62,8 @@ export interface ComposerState {
   header: { word: string; tone: string; timed: boolean; rest: string; help: string };
   /** The pane goes on from an earlier session: the toolbar shows the resume mark. */
   resumed?: boolean;
-  /** A Claude pane's background-work and status-line toggles, each on or off (no status line for a remote pane); null elsewhere. */
-  toggles?: { background: boolean; statusLine: boolean | null } | null;
+  /** A Claude pane's status-line toggle, on or off (null for a remote pane, which has no status line); null elsewhere. */
+  toggles?: { statusLine: boolean | null } | null;
   /** A Mighty Claude pane's style row (M/SessionPaneView.swift composer): the chosen style's name, its source badge, what it is for; null elsewhere. */
   style?: { label: string; badge: string | null; hint: string; enabled: boolean } | null;
   /** The 보낼 대상 switch (MainWindow.AskTargets.cs): the other CLIs a Claude pane with oh-my-claudecode may ask, in the menu's order; none (or absent) hides it. */

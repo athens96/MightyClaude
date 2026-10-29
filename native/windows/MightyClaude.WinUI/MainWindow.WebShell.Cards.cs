@@ -17,14 +17,15 @@ internal sealed record WebPlanRecord(string Id, string OutcomeTitle, string Tone
 internal sealed record WebPlanHistoryCard(IReadOnlyList<WebPlanRecord> Records) { public string Kind => "planHistory"; }
 
 /// <summary>
-/// One background task row: kind · status · elapsed · notice, already joined (PlanCardSupport.BackgroundStripRow.Detail), its kind
-/// words the diagram block's (하위 에이전트 · 응답 대기, 백그라운드 실행 · 알림으로 확인) when the row meets one; <c>Tail</c> is a background
+/// One background task row: kind · status · elapsed, already joined (PlanCardSupport.BackgroundStripRow.Detail), its kind
+/// words the diagram block's (하위 에이전트 · 응답 대기, 백그라운드 실행 · 실행 중) when the row meets one; <c>Tail</c> is a background
 /// run's last output line, absent otherwise.
 /// </summary>
 /// <summary>One strip row. <c>Id</c> is the CLI's task id (the row's key for opening it); opened, the row shows <c>Command</c> (a run's command or a
 /// sub-agent's first prompt line) and <c>TailLines</c> (a run's last output lines, at most six). Each is absent when there is none.</summary>
 internal sealed record WebBackgroundTask(string Text, string Status, string Detail, string? Tail = null, string? Id = null, string? Command = null, IReadOnlyList<string>? TailLines = null);
-internal sealed record WebBackgroundCard(int Count, string Summary, bool Open, IReadOnlyList<WebBackgroundTask> Tasks) { public string Kind => "background"; }
+/// <summary>The background strip: <c>Counts</c> is its header's "done · running" counts (PlanCardSupport.BackgroundCounts), <c>Open</c> whether it shows its rows.</summary>
+internal sealed record WebBackgroundCard(string Counts, bool Open, IReadOnlyList<WebBackgroundTask> Tasks) { public string Kind => "background"; }
 
 /// <summary>The generic tool permission card (MainWindow.ToolPermission.cs RenderToolPermissionCards), its words the host's.</summary>
 internal sealed record WebPermissionField(string Label, string Value, bool Code);
@@ -432,18 +433,17 @@ public sealed partial class MainWindow
             var mighty = pane.Kind == "claude" && pane.Provider == "claude" && pane.AgentViewMode == "mighty";
             var drawsTasks = mighty && activeStyle?.Evaluator.DrawsTasks == true;
             var work = pane.BackgroundWork;
-            if (pane.Kind != "claude" || !PlanCardSupport.ShowsBackgroundStrip(work, mighty, drawsTasks, owner.ShowsBackgroundWork)) return null;
+            if (pane.Kind != "claude" || !PlanCardSupport.ShowsBackgroundStrip(work, mighty, drawsTasks)) return null;
             var open = owner.BackgroundWorkOpen; var now = DateTimeOffset.UtcNow;
             // The rows meet the newest request's blocks (never a notice run's copies): kind words, command and output lines.
             var tasks = open ? PlanCardSupport.BackgroundStripRows(work, MightyGraphSupport.NewestRequestRun(pane.GraphRuns), owner.BackgroundOutputFor(pane.Id))
                 .Select(row => new WebBackgroundTask(row.Task.Text, row.Task.Status, row.Detail(now), row.Tail, row.Id, row.Command, row.TailLines is { Count: > 0 } lines ? lines : null)).ToArray() : [];
-            return new(work!.Tasks.Count, PlanCardSupport.BackgroundStripSummary(work), open, tasks);
+            return new(PlanCardSupport.BackgroundCounts(work!), open, tasks);
         }
 
         internal Task WebBackgroundWork(string action) => action switch
         {
             "toggle" => owner.SetBackgroundWorkOpen(!owner.BackgroundWorkOpen),
-            "hide" => owner.SetShowsBackgroundWork(false),
             _ => throw new ArgumentException("Unknown action."),
         };
 

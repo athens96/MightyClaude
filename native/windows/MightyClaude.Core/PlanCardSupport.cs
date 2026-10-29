@@ -112,10 +112,10 @@ public static class PlanCardSupport
     {
         /// <summary>Whether opening the row shows anything more.</summary>
         public bool Opens => Command is not null || TailLines is { Count: > 0 };
-        /// <summary>Kind · status · elapsed · notice. Kind words already say waiting or how it ended, so only a delivered notice is added to them.</summary>
+        /// <summary>Kind · status · elapsed; kind words already say waiting or how it ended.</summary>
         public string Detail(DateTimeOffset now) => string.Join(" · ", (KindText is { } kind
-            ? new[] { kind, Task.Elapsed(now), NoticeDelivered(Task.Status) ? Locale.Get("plan.background.noticeDelivered") : "" }
-            : new[] { Task.KindTitle, Task.StatusTitle, Task.Elapsed(now), BackgroundNotice(Task.Status) ?? "" }).Where(s => s.Length > 0));
+            ? new[] { kind, Task.Elapsed(now) }
+            : new[] { Task.KindTitle, Task.StatusTitle, Task.Elapsed(now) }).Where(s => s.Length > 0));
     }
 
     /// <summary>
@@ -186,33 +186,32 @@ public static class PlanCardSupport
 
     /// <summary>
     /// The expandable background list outside a style (M/PlanCardSupport.swift showsBackgroundStrip): in any view once
-    /// the turn is over, and in the Mighty view all along, while background work runs or after it ended and the agent was
-    /// told — unless the style draws its own, or the user hid the line (<see cref="AppSnapshot.ShowsBackgroundWork"/>).
-    /// It stays until the next request starts a run and clears the work.
+    /// the turn is over, and in the Mighty view all along, while background work runs or after it ended with its report.
+    /// A style that draws its own task list keeps it. It stays until the next request starts a run and clears the work;
+    /// nothing hides it.
     /// </summary>
-    public static bool ShowsBackgroundStrip(BackgroundWork? work, bool mighty, bool styleDrawsTasks, bool enabled = true) =>
-        enabled && !styleDrawsTasks && work is not null && (work.TurnEnded || mighty) && work.Tasks.Any(t => t.Status == "running" || NoticeDelivered(t.Status));
+    public static bool ShowsBackgroundStrip(BackgroundWork? work, bool mighty, bool styleDrawsTasks) =>
+        !styleDrawsTasks && work is not null && (work.TurnEnded || mighty) && work.Tasks.Any(t => t.Status == "running" || NoticeDelivered(t.Status));
 
-    /// <summary>The strip's folded line: the header's "turn done" word while waiting, else how many still run.</summary>
-    public static string BackgroundSummary(BackgroundWork work) =>
-        BackgroundStatus(work) ?? Locale.Get("styles.state.backgroundRunning", new Dictionary<string, string> { ["count"] = work.Running.Count.ToString(CultureInfo.InvariantCulture) });
-
-    /// <summary>
-    /// A task that ended with the CLI's own end report; the same report reaches the agent as its task notification. An
-    /// <c>unknown</c> task ended with the process, so no notification went out.
-    /// </summary>
+    /// <summary>A task that ended with the CLI's own end report (completed, failed, stopped); an <c>unknown</c> one ended with the process.</summary>
     public static bool NoticeDelivered(string status) => status is "completed" or "failed" or "stopped";
 
     /// <summary>
-    /// What the agent hears of a background task: a running one tells it when it ends (the runner keeps the CLI's input
-    /// open while background work runs), an ended one has told it; null for one that ended without telling.
+    /// The strip's tasks that no longer run (ended with a report, or with the process): the current run's, so what ended
+    /// since the request that started it (M/PlanCardSupport.swift backgroundFinished).
     /// </summary>
-    public static string? BackgroundNotice(string status) =>
-        status == "running" ? Locale.Get("plan.background.awaitingNotice") : NoticeDelivered(status) ? Locale.Get("plan.background.noticeDelivered") : null;
+    public static int BackgroundFinished(BackgroundWork work) => work.Tasks.Count - work.Running.Count;
 
-    /// <summary>The strip's folded line: <see cref="BackgroundSummary"/> and that the agent hears when each ends, or once all ended, that it was told.</summary>
-    public static string BackgroundStripSummary(BackgroundWork work) =>
-        work.Running.Count > 0 ? BackgroundSummary(work) + " · " + Locale.Get("plan.background.awaitingNotice") : Locale.Get("plan.background.allNotified");
+    /// <summary>The strip's header counts, done then running (plan.background.doneCount · runningCount), over every task it holds, not only the rows it lists (M/PlanCardSupport.swift backgroundCounts).</summary>
+    public static string BackgroundCounts(BackgroundWork work) =>
+        Locale.Get("plan.background.doneCount", new Dictionary<string, string> { ["count"] = BackgroundFinished(work).ToString(CultureInfo.InvariantCulture) }) + " · "
+        + Locale.Get("plan.background.runningCount", new Dictionary<string, string> { ["count"] = work.Running.Count.ToString(CultureInfo.InvariantCulture) });
+
+    /// <summary>
+    /// The phone's <c>backgroundDone</c> (M/PlanCardSupport.swift mobileBackgroundDone): the finished count whenever the Mighty
+    /// view's strip shows, 0 included (its presence tells the phone the host counts); null otherwise.
+    /// </summary>
+    public static int? MobileBackgroundDone(BackgroundWork? work) => work is not null && ShowsBackgroundStrip(work, true, false) ? BackgroundFinished(work) : null;
 
     /// <summary>"HH:mm" in the given zone (local when null) for an ISO 8601 time; the input when unreadable.</summary>
     public static string TimeText(string iso, TimeZoneInfo? zone = null)

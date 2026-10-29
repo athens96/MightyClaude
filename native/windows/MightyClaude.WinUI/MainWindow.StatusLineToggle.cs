@@ -51,7 +51,7 @@ public sealed partial class MainWindow
             UpdateStatusLineGlyph();
         }
 
-        /// <summary>The look of the composer's 16pt toggles, the status line's and the background work's, with their symbol as content.</summary>
+        /// <summary>The look of the composer's 16pt status-line toggle, with its symbol as content.</summary>
         private void DressComposerToggle(Microsoft.UI.Xaml.Controls.Primitives.ToggleButton toggle, IconElement glyph)
         {
             // Retain the native ToggleButton template, focus and UIA Toggle pattern.

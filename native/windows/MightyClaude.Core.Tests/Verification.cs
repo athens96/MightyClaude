@@ -304,9 +304,9 @@ internal static class Verification
         await Test("WorkDashboardVerification ActivityAndAgeRemainBoundedAndTruthful", WorkDashboardVerification.ActivityAndAgeRemainBoundedAndTruthful);
         await Test("WorkDashboardVerification SettingsSelectionSurvivesPersistence", WorkDashboardVerification.SettingsSelectionSurvivesPersistence);
         await Test("WorkDashboardVerification SidebarCollapsedPersistsAndKeepsWidth", WorkDashboardVerification.SidebarCollapsedPersistsAndKeepsWidth);
-        await Test("WorkDashboardVerification BackgroundWorkLinePersistsAndHides", WorkDashboardVerification.BackgroundWorkLinePersistsAndHides);
-        if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()) await Test("WorkDashboardVerification BackgroundWorkHideSurvivesABriefReplaceBlock", WorkDashboardVerification.BackgroundWorkHideSurvivesABriefReplaceBlock);
-        else { skipped++; Console.WriteLine("SKIP background work hide survives a brief replace block (needs Windows file sharing or macOS file flags)"); }
+        await Test("WorkDashboardVerification BackgroundWorkOpenPersistsAndTheOldHideSwitchIsDropped", WorkDashboardVerification.BackgroundWorkOpenPersistsAndTheOldHideSwitchIsDropped);
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()) await Test("WorkDashboardVerification BackgroundWorkOpenSurvivesABriefReplaceBlock", WorkDashboardVerification.BackgroundWorkOpenSurvivesABriefReplaceBlock);
+        else { skipped++; Console.WriteLine("SKIP background work open survives a brief replace block (needs Windows file sharing or macOS file flags)"); }
         await Test("windows parity: the running count leaves out agent and file panes", WindowsParityVerification.RunningCountLeavesOutAgentAndFilePanes);
         await Test("windows parity: a shell pane's status follows its shell", WindowsParityVerification.ShellPaneStatusFollowsItsShell);
         if (OperatingSystem.IsWindows()) await Test("windows parity: a real shell reads running only while a command runs", WindowsParityVerification.RealShellReadsRunningOnlyWhileACommandRuns);
