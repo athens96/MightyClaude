@@ -170,12 +170,16 @@ internal static class RuntimeParityVerification
             Check(withImagesBudget < plainBudget, "Saved history charges the reference metadata to its byte budget");
             var longPath = "/" + new string('x', WorkspaceFiles.MaximumPathBytes - 1);
             var expensive = image with { Id = "too-many-reference-bytes", Images = Enumerable.Repeat(oversizedSource with { Path = longPath }, AgentImageSupport.MaximumImagesPerEntry).ToList() };
+            // As on the Mac (ExecutionGraph.swift / MightyGraph.swift entries): the newest entry is kept even when its pictures are past
+            // the budget, without its activity and with its text clipped, and the spent budget leaves no room for older entries.
             var capped = ExecutionGraphSupport.Normalized(node with { Entries = [ordinary, expensive] })!;
-            Check(capped.Entries.Select(entry => entry.Id).SequenceEqual([ordinary.Id]), "Image metadata that cannot fit the node byte budget is skipped, leaving space for older entries");
+            Check(capped.Entries.Select(entry => entry.Id).SequenceEqual([expensive.Id]) && capped.Entries[0] is { Activity: null, Text.Length: 0, Images.Count: AgentImageSupport.MaximumImagesPerEntry },
+                "Image metadata past the node byte budget keeps its entry with clipped text, leaving no space for older entries");
             history.Agents[0].Entries = [ordinary, expensive];
             var cappedBudget = 100_000;
             var cappedHistory = MightyGraphSupport.Normalized([history], false, ref cappedBudget).Single();
-            Check(cappedBudget >= 0 && cappedHistory.Agents[0].Entries.Select(entry => entry.Id).SequenceEqual([ordinary.Id]), "Saved graph image metadata cannot overdraw its per-agent or global byte budget");
+            Check(cappedBudget < 100_000 - 65_536 && cappedHistory.Agents[0].Entries.Select(entry => entry.Id).SequenceEqual([expensive.Id]) && cappedHistory.Agents[0].Entries[0].Text.Length == 0,
+                "Saved graph pictures are charged after their entry is admitted: they clip its text and spend the budget older entries would use");
 
             var mainPng = AgentImageVerification.Png(2, 2, 110);
             flow.Frame(Line(new { type = "assistant", uuid = "main-message", message = new { content = new[] { Picture(mainPng) } } }));

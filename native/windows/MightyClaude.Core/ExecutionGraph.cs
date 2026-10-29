@@ -218,8 +218,8 @@ public static class ExecutionGraphSupport
             if (entry.Provider is { } provider && !Wire.Providers.Contains(provider)) continue;
             if (Bytes(entry.Timestamp) > 80 || AgentRunTiming.Parse(entry.Timestamp) is null || remaining <= 256) continue;
             entry = entry with { Activity = ActivitySupport.Normalize(entry.Activity, restoring), Images = entry.Kind == "image" ? AgentImageSupport.Normalized(entry.Images) : null };
+            // An entry past the budget is kept without its activity and with its text clipped, as on the Mac (ExecutionGraph.swift).
             var metadata = Bytes(entry.Id) + Bytes(entry.Timestamp) + Bytes(entry.Kind) + Bytes(entry.Provider) + AgentImageSupport.ApproximateBytes(entry.Images);
-            if (metadata > remaining) continue;
             var activityBytes = entry.Activity is { } value
                 ? Bytes(value.Id) + Bytes(value.Kind) + Bytes(value.State) + Bytes(value.Provider) + Bytes(value.Summary) + Bytes(value.ToolName) + Bytes(value.Output)
                 : 0;

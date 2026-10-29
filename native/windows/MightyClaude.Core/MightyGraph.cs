@@ -361,11 +361,13 @@ public static class MightyGraphSupport
         var result = new List<LogEntry>();
         foreach (var original in values.TakeLast(100).Reverse())
         {
-            var images = original.Kind == "image" ? AgentImageSupport.Normalized(original.Images) : null;
-            var overhead = 256 + Encoding.UTF8.GetByteCount(original.Id) + Encoding.UTF8.GetByteCount(original.Timestamp) + AgentImageSupport.ApproximateBytes(images);
+            var overhead = 256 + Encoding.UTF8.GetByteCount(original.Id) + Encoding.UTF8.GetByteCount(original.Timestamp);
             if (budget < overhead || !Wire.Identifier(original.Id) || !ids.Add(original.Id)
                 || !ExecutionGraphSupport.EntryKinds.Contains(original.Kind)) continue;
             budget -= overhead;
+            // Pictures are counted after the entry is admitted, as on the Mac (MightyGraph.swift entries): they clip its text, never drop it.
+            var images = original.Kind == "image" ? AgentImageSupport.Normalized(original.Images) : null;
+            budget -= AgentImageSupport.ApproximateBytes(images);
             var entry = original with { Text = Clip(original.Text, 32_768, ref budget), Images = images };
             if (entry.Activity is not null)
             {
