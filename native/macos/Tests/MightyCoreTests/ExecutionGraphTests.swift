@@ -32,6 +32,10 @@ struct ExecutionGraphTests {
     private func latest(_ nodes: [ExecutionGraphNode], _ id: String) throws -> ExecutionGraphNode {
         try #require(nodes.last(where: { $0.id == id }))
     }
+    /// An event as the parser hands it to the tracker: read back from JSON.
+    private func event(_ value: [String: Any]) throws -> [String: Any] {
+        try #require(try JSONSerialization.jsonObject(with: JSONSerialization.data(withJSONObject: value)) as? [String: Any])
+    }
 
     @Test func nestedStdoutRoutesVisibleTextAndToolsWithoutFinishingOrResumingMain() throws {
         var nodes: [ExecutionGraphNode] = []; var logs: [String] = []; var resumes: [String] = []; var activities: [AgentActivity] = []
@@ -285,12 +289,12 @@ struct ExecutionGraphTests {
             let tracker = ExecutionGraphTracker(runID: "deleg-full", input: "Split the work", emit: { nodes.append($0) })
             // The request's own blocks fill all nodes but one, which the notice's steer block takes.
             for index in 1..<(ExecutionGraphSupport.maximumNodes - 1) {
-                tracker.consume(["type": "system", "subtype": "compact_boundary", "uuid": "c\(index)"])
+                tracker.consume(try event(["type": "system", "subtype": "compact_boundary", "uuid": "c\(index)"]))
             }
-            tracker.consume(["type": "result", "subtype": "success", "is_error": false, "result": "Delegated."])
+            tracker.consume(try event(["type": "result", "subtype": "success", "is_error": false, "result": "Delegated."]))
             tracker.steer(id: "n-1", text: "[Mighty Claude notice n-1] Your child c-1 reported revision 1.")
-            tracker.consume(["type": "assistant", "message": ["id": "main-2", "role": "assistant", "content": [["type": "text", "text": "Merged the child."]]]])
-            tracker.consume(["type": "result", "subtype": "success", "is_error": false, "result": "Merged the child."])
+            tracker.consume(try event(assistant([["type": "text", "text": "Merged the child."]], id: "main-2")))
+            tracker.consume(try event(["type": "result", "subtype": "success", "is_error": false, "result": "Merged the child."]))
             var latest: [String: ExecutionGraphNode] = [:]
             for node in nodes { latest[node.id] = node }
             #expect(latest.count == ExecutionGraphSupport.maximumNodes)
@@ -298,6 +302,44 @@ struct ExecutionGraphTests {
             let main = try #require(latest[ExecutionGraphSupport.mainNodeID(runId: "deleg-full")])
             #expect(main.output == "Delegated." + MightyGraphSupport.noticeSectionMark + "위임 알림 이후**\n\nMerged the child.")
             #expect(latest[ExecutionGraphSupport.identifier("deleg-full", "steer:n-1")]?.output == "Merged the child.")
+        }
+    }
+
+    /// A running agent's message turn when message runs have no room: its answer takes the nodes kept for work copies, and at the
+    /// very cap it joins the agent's log as Claude's answer. It never becomes a section of the request's result.
+    @Test func aMessageAnswerWithNoRoomNeverBecomesASectionOfTheResult() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            func stream(filling count: Int) throws -> [String: ExecutionGraphNode] {
+                var nodes: [ExecutionGraphNode] = []
+                let tracker = ExecutionGraphTracker(runID: "msg-full", input: "Find the config", emit: { nodes.append($0) })
+                var call = spawn("toolu_scout", prompt: "Find it.", background: true)
+                call["input"] = ["description": "Find the config", "prompt": "Find it.", "name": "scout", "run_in_background": true]
+                tracker.consume(try event(assistant([call], id: "m-1")))
+                tracker.consume(try event(toolResult("toolu_scout", text: "Async agent launched successfully.\nagentId: b2c3d4e5f6a7b8c9d (internal ID)")))
+                for index in 0..<count { tracker.consume(try event(["type": "system", "subtype": "compact_boundary", "uuid": "c\(index)"])) }
+                tracker.consume(try event(["type": "result", "subtype": "success", "is_error": false, "result": "Scouting."]))
+                let agent = "b2c3d4e5f6a7b8c9d"
+                tracker.consume(try event(["type": "user", "origin": ["kind": "peer", "from": agent, "senderTaskId": agent],
+                                           "message": ["role": "user", "content": "Another Claude session sent a message:\n<agent-message from=\"\(agent)\">\nFound the config.\n</agent-message>"]]))
+                tracker.consume(try event(assistant([["type": "text", "text": "Good."]], id: "m-2")))
+                tracker.consume(try event(["type": "result", "subtype": "success", "is_error": false, "result": "Good.", "origin": ["kind": "peer"]]))
+                var latest: [String: ExecutionGraphNode] = [:]
+                for node in nodes { latest[node.id] = node }
+                return latest
+            }
+            let mainID = ExecutionGraphSupport.mainNodeID(runId: "msg-full")
+            let agentID = ExecutionGraphSupport.agentNodeID(runId: "msg-full", toolUseId: "toolu_scout")
+            // The main block, the agent and compactions up to the reserve: the message run takes a kept node.
+            let reserved = try stream(filling: ExecutionGraphSupport.maximumNodes - 16 - 2)
+            let run = try #require(reserved[ExecutionGraphSupport.mainNodeID(runId: BackgroundNoticeRuns.runID(original: "msg-full", index: 1))])
+            #expect(run.title == "하위 에이전트 메시지 · scout"); #expect(run.output == "Good."); #expect(run.input == "Found the config.")
+            #expect(reserved[mainID]?.output == "Scouting.")
+            // Every node taken: the answer joins the agent's log, the request's result stays.
+            let full = try stream(filling: ExecutionGraphSupport.maximumNodes - 2)
+            #expect(full.count == ExecutionGraphSupport.maximumNodes)
+            #expect(!full.values.contains { BackgroundNoticeRuns.isNoticeRun($0.runId) })
+            #expect(full[mainID]?.output == "Scouting.")
+            #expect(full[agentID]?.entries.contains { $0.kind == "assistant" && $0.text == "**Claude의 답**\n\nGood." } == true)
         }
     }
 

@@ -79,7 +79,8 @@ final class ExecutionGraphTracker {
     /// Each copied block's latest notice run.
     private var copiedIn: [String: String] = [:]
     /// What opened each notice run and what it names while it holds no copy (`BackgroundNoticeRuns.title(kind:names:)`).
-    private typealias NoticeOpening = (opener: BackgroundNoticeRuns.Opener, names: [String], lines: [String])
+    /// `senders` says who each name stands for (its agent block, or the name when no block sent it), so a sender is named once.
+    private typealias NoticeOpening = (opener: BackgroundNoticeRuns.Opener, names: [String], lines: [String], senders: [String])
     private var noticeOpeners: [String: NoticeOpening] = [:]
     /// A root message's line no run took yet, with the name it gives a run (a known sender's block title) and the agent block
     /// that sent it (nil: finished work, a delegation notice, a sender this run does not know).
@@ -391,14 +392,29 @@ final class ExecutionGraphTracker {
             let peer = (value["origin"] as? [String: Any])?["kind"] as? String == "peer"
             let opener: BackgroundNoticeRuns.Opener = peer ? .message : .work
             if opener == .message, let run = messageRun(lines) { answerAgain(in: run, lines, answer: answer, failed: failed); return }
-            if let opened = openNoticeRun(running: false, opener: opener, names: Self.names(lines), lines: lines.compactMap(\.line), agent: Self.soleAgent(lines)) {
+            let named = Self.senders(lines)
+            func openOwn(reserving: Bool) -> Bool {
+                guard let opened = openNoticeRun(running: false, opener: opener, names: named.names, lines: lines.compactMap(\.line), senders: named.senders,
+                                                 agent: Self.soleAgent(lines), reserving: reserving) else { return false }
                 update(ExecutionGraphSupport.mainNodeID(runId: opened)) { $0.output = answer }
                 if failed { setNoticeState(opened, "error") }
-                return
+                return true
             }
-            // No room for a run of its own: the answer goes on in the latest notice run, or as a last resort follows in the
-            // request's result under its kind, as before notice runs. It is never dropped.
+            if openOwn(reserving: true) { return }
+            // No room for a run of its own: the answer goes on in the latest notice run. It is never dropped.
             if let latest = latestNoticeRun { answerAgain(in: latest, lines, answer: answer, failed: failed); return }
+            if opener == .message {
+                // A message's answer may take the nodes kept for work copies rather than become a section of the request's result;
+                // at the very cap it joins the log of the one agent that sent the messages, which adds no node.
+                if openOwn(reserving: false) { return }
+                if let agent = Self.soleAgent(lines), nodes[agent] != nil {
+                    append(LogEntry(id: ExecutionGraphSupport.identifier(runID, agent + ":reply:" + answer), kind: "assistant",
+                                    text: "**" + L("graph.background.reply") + "**\n\n" + answer, provider: provider), to: agent)
+                    return
+                }
+            }
+            // The last resort, at the very cap with nowhere else (work this run never started, a sender it does not know): the answer
+            // follows in the request's result under its kind, as before notice runs.
             update(mainID) { $0.output = MightyGraphSupport.withNoticeSection($0.output, header: L("graph.result.afterSteer", ["block": BackgroundNoticeRuns.kind(opener)]), answer: answer) }
         } else if type == "result" {
             if parentTool == nil, let steered = steeredTurn {
@@ -840,7 +856,7 @@ final class ExecutionGraphTracker {
     /// holding copies is named after them; one without is named by what opened it.
     private func describe(_ run: String) {
         let copies = (noticeCopies[run] ?? []).compactMap { nodes[$0] }
-        let opened: NoticeOpening = noticeOpeners[run] ?? (opener: .work, names: [], lines: [])
+        let opened: NoticeOpening = noticeOpeners[run] ?? (opener: .work, names: [], lines: [], senders: [])
         func name(_ copy: ExecutionGraphNode) -> String { copy.title.isEmpty ? copy.input ?? "" : copy.title }
         let lines = opened.lines + copies.map { copy in
             name(copy) + " · " + L(copy.state == "completed" ? "graph.block.taskNotice.completed" : copy.state == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")
@@ -872,7 +888,8 @@ final class ExecutionGraphTracker {
                 mergeRestore = nodes[ExecutionGraphSupport.mainNodeID(runId: run)]?.state
                 setNoticeState(run, "running")
                 addOpening(run, lines)
-            } else if let opened = openNoticeRun(running: true, opener: opener, names: Self.names(lines), lines: lines.compactMap(\.line), agent: Self.soleAgent(lines)) {
+            } else if let opened = openNoticeRun(running: true, opener: opener, names: Self.senders(lines).names, lines: lines.compactMap(\.line),
+                                                 senders: Self.senders(lines).senders, agent: Self.soleAgent(lines)) {
                 noticeTurn = opened
             } else { turnLines = lines }
         } else if turnLines.count < Self.noticeLineLimit { turnLines.append(held) }
@@ -895,19 +912,27 @@ final class ExecutionGraphTracker {
         guard let agent = lines.first?.agent, lines.allSatisfy({ $0.agent == agent }) else { return nil }
         return agent
     }
-    /// The names these lines give a run: each sender once, at most `noticeLineLimit`.
-    private static func names(_ lines: [HeldLine]) -> [String] {
-        var names: [String] = []
-        for name in lines.compactMap(\.name) where !names.contains(name) && names.count < noticeLineLimit { names.append(name) }
-        return names
+    /// The names these lines give a run and who each stands for: each sender once, by its agent block (or by its name when no
+    /// block sent it, `senderKey`), at most `noticeLineLimit`. Two agents that share a title are two names.
+    private static func senders(_ lines: [HeldLine]) -> (names: [String], senders: [String]) {
+        var names: [String] = [], senders: [String] = []
+        for held in lines {
+            guard let name = held.name, let key = senderKey(held), !senders.contains(key), names.count < noticeLineLimit else { continue }
+            names.append(name); senders.append(key)
+        }
+        return (names, senders)
     }
+    /// Who a line's name stands for: the agent block that sent it, else the name itself.
+    private static func senderKey(_ held: HeldLine) -> String? { held.agent ?? held.name }
     /// Lines and names that join notice run `run`'s request and title, each sender named once. A line from anyone but the
     /// agent whose messages alone the run holds ends that (`messageAgents`).
     private func addOpening(_ run: String, _ lines: [HeldLine]) {
         guard !lines.isEmpty else { return }
-        var opened: NoticeOpening = noticeOpeners[run] ?? (opener: .work, names: [], lines: [])
+        var opened: NoticeOpening = noticeOpeners[run] ?? (opener: .work, names: [], lines: [], senders: [])
         for held in lines {
-            if let name = held.name, !opened.names.contains(name), opened.names.count < Self.noticeLineLimit { opened.names.append(name) }
+            if let name = held.name, let key = Self.senderKey(held), !opened.senders.contains(key), opened.names.count < Self.noticeLineLimit {
+                opened.names.append(name); opened.senders.append(key)
+            }
             if let line = held.line, opened.lines.count < Self.noticeLineLimit { opened.lines.append(line) }
             if held.agent == nil || messageAgents[run] != held.agent { messageAgents.removeValue(forKey: run) }
         }
@@ -933,10 +958,12 @@ final class ExecutionGraphTracker {
         nodes[main] = normalized; emit(normalized)
     }
     /// The next notice run's main block: running until a notice turn's result, or complete at once for absorbed notices.
-    /// `opener` and `names` title it until a copy joins; `lines` are its request; `agent` is the agent block whose messages
-    /// alone a 하위 에이전트 메시지 run holds. A message run leaves `noticeHeadroom` nodes free.
-    private func openNoticeRun(running: Bool, opener: BackgroundNoticeRuns.Opener = .work, names: [String] = [], lines: [String] = [], agent: String? = nil) -> String? {
-        let room = opener == .message ? ExecutionGraphSupport.maximumNodes - Self.noticeHeadroom : ExecutionGraphSupport.maximumNodes
+    /// `opener` and `names` title it until a copy joins (`senders`: who each name stands for); `lines` are its request; `agent`
+    /// is the agent block whose messages alone a 하위 에이전트 메시지 run holds. A message run leaves `noticeHeadroom` nodes free
+    /// unless `reserving` is false (its answer's last chance of a run of its own).
+    private func openNoticeRun(running: Bool, opener: BackgroundNoticeRuns.Opener = .work, names: [String] = [], lines: [String] = [], senders: [String] = [],
+                               agent: String? = nil, reserving: Bool = true) -> String? {
+        let room = opener == .message && reserving ? ExecutionGraphSupport.maximumNodes - Self.noticeHeadroom : ExecutionGraphSupport.maximumNodes
         guard nodes.count < room else { return nil }
         let run = BackgroundNoticeRuns.runID(original: runID, index: noticeIndex + 1)
         let main = ExecutionGraphNode(id: ExecutionGraphSupport.mainNodeID(runId: run), runId: run, kind: "main",
@@ -944,7 +971,7 @@ final class ExecutionGraphTracker {
                                       input: lines.isEmpty ? nil : lines.joined(separator: "\n"))
         guard let normalized = ExecutionGraphSupport.normalized(main) else { return nil }
         noticeIndex += 1
-        noticeOpeners[run] = (opener: opener, names: names, lines: lines)
+        noticeOpeners[run] = (opener: opener, names: names, lines: lines, senders: senders)
         if opener == .message {
             messageRunCount += 1; latestMessageRun = run
             if let agent { messageAgents[run] = agent }
