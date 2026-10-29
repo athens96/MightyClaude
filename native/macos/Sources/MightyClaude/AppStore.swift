@@ -1975,8 +1975,9 @@ final class AppStore: ObservableObject, DelegationHost {
             let folded = try await savedState()
             let foldRemembered = !backgroundWorkOpen && folded.backgroundWorkOpen == false
             result["openRemembered"] = openRemembered && foldRemembered
-            let raw = String(decoding: try Data(contentsOf: dataDirectory.appendingPathComponent("workspace-state.json")), as: UTF8.self)
-            let noHideSwitch = !raw.contains("showsBackgroundWork")
+            // Only the snapshot's own top-level key counts; a pane's text that happens to name it does not.
+            let data = try Data(contentsOf: dataDirectory.appendingPathComponent("workspace-state.json"))
+            let noHideSwitch = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["showsBackgroundWork"] == nil
             result["noHideSwitch"] = noHideSwitch
             result["passed"] = drawn && openRemembered && foldRemembered && noHideSwitch
         } catch { result["error"] = error.localizedDescription }

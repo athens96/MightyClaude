@@ -139,7 +139,10 @@ struct PlanCardTests {
             // No row says what the agent hears.
             let rows = PlanCardSupport.backgroundStripRows(mixed, run: nil)
             #expect(!rows.isEmpty)
-            for word in ["끝나면 알림", "알림 전달됨"] { #expect(!rows.contains { $0.kindText?.contains(word) == true }) }
+            for word in ["끝나면 알림", "알림 전달됨"] {
+                #expect(!rows.contains { $0.kindText?.contains(word) == true })
+                #expect(!PlanCardSupport.backgroundCounts(mixed).contains(word))
+            }
         }
         #expect(PlanCardSupport.mobileBackgroundDone(mixed) == 2)
         #expect(PlanCardSupport.mobileBackgroundDone(BackgroundWork(tasks: [running], turnEnded: false)) == 0)
