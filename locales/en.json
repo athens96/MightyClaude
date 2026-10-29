@@ -260,7 +260,7 @@
   "graph.block.result": "Final result",
   "graph.block.resultError": "Request failed",
   "graph.block.resultStopped": "Request stopped",
-  "graph.block.resultSoFar": "Result so far · waiting on {count} background tasks",
+  "graph.block.resultSoFar": "Result so far · background tasks waiting: {count}",
   "graph.block.scrolling": "Block scroll",
   "graph.block.steer": "Mid-turn input",
   "graph.block.task": "Background task",

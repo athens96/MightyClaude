@@ -250,7 +250,7 @@ describe('notice runs in the structure', () => {
     const waiting = (backgroundWaiting: unknown) => read([rawItem('r1', { backgroundWaiting })])[0]!;
     expect(waiting(2).backgroundWaiting).toBe(2);
     for (const bad of [0, -1, 1.5, '2', null]) expect(waiting(bad).backgroundWaiting).toBeUndefined();
-    expect(resultHeading(waiting(2))).toBe('Result so far · waiting on 2 background tasks');
+    expect(resultHeading(waiting(2))).toBe('Result so far · background tasks waiting: 2');
     // An older host sends no count: the result reads as before.
     expect(resultHeading(waiting(undefined))).toBe('Final result');
     // How the request ended comes first.
