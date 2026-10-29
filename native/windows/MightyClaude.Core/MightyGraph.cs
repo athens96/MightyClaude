@@ -172,6 +172,11 @@ public static class MightyGraphSupport
         for (var index = runs.Count - 1; index > newest; index--) if (runs[index].NoticeRun == true && !Terminal(runs[index].Status)) return true;
         return false;
     }
+    /// <summary>
+    /// A notice turn ran before an event and no longer does after it: what waited for that turn (delegation's items, which no steer
+    /// took meanwhile) is offered again now, not only at the run's end (M/MightyGraph.swift noticeTurnEnded).
+    /// </summary>
+    public static bool NoticeTurnEnded(IReadOnlyList<MightyGraphRun> before, IReadOnlyList<MightyGraphRun> after) => NoticeTurnRunning(before) && !NoticeTurnRunning(after);
     /// <summary>The run the views follow as the newest work (natural submit's not-own rule): the newest request, or a notice run after it
     /// that is a turn of its own — running, or holding Claude's reply. A notice taken into a running turn (<see cref="MightyGraphRun.QuietNotice"/>)
     /// never takes the request's place.</summary>

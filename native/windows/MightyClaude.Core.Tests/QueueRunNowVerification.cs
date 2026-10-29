@@ -77,6 +77,9 @@ internal static class QueueRunNowVerification
         Check(!MightyGraphSupport.NoticeTurnRunning([request]) && !MightyGraphSupport.NoticeTurnRunning([]), "no notice run, no notice turn");
         // An older request's notice run left running never holds the newest request's queue.
         Check(!MightyGraphSupport.NoticeTurnRunning([request, running, new MightyGraphRun { Id = "r2", Status = "completed" }]), "only the newest request's notice runs count");
+        // Its answer is the edge that offers delegation's waiting items again; no other change is.
+        Check(MightyGraphSupport.NoticeTurnEnded([request, running], [request, answered]) && !MightyGraphSupport.NoticeTurnEnded([request, running], [request, running])
+            && !MightyGraphSupport.NoticeTurnEnded([request, answered], [request, answered]) && !MightyGraphSupport.NoticeTurnEnded([request], [request, running]), "a notice turn's end is its answer");
         // The pane carries it: a human row waits for its turn instead of steering, and so do the held items, which a busy pane takes
         // only as a steer. Idle, or with no notice turn, the held items go as before.
         var pane = new QueueRunNow.Pane(true, false, ComposerSecondSend.Queue, false, true, 0, MightyGraphSupport.NoticeTurnRunning([request, running]));
@@ -115,11 +118,20 @@ internal static class QueueRunNowVerification
         Check(!take.Contains("return;", StringComparison.Ordinal) && take.Contains("return true;", StringComparison.Ordinal), "every way the queue's start ends says whether it took the row");
         var pane = Member(queue, "private QueueRunNow.Pane RunNowPane(");
         Check(pane.Contains("var holds = owner.BackgroundUpdateHolds(pane) || owner.ManualUpdateReason(pane) is not null;", StringComparison.Ordinal)
-            && pane.Contains("var recording = !holds && owner.ManualMutationBlockReason(pane) is not null;", StringComparison.Ordinal)
+            && pane.Contains("var recording = owner.service.Delegation?.EndingRuns.Contains(id) == true;", StringComparison.Ordinal)
             && pane.Contains("MightyGraphSupport.NoticeTurnRunning(pane.GraphRuns ?? [])", StringComparison.Ordinal), "a held, recording or notice-answering pane offers no here or steer that would not run");
         Check(Member(queue, "private async Task<bool> ReleaseHeldNow(").Contains("case DelegationRelease.NothingHeld: if (!await StartNextQueuedInput()) return false;", StringComparison.Ordinal), "run next with nothing held is true only when a run took the first row");
         var deliver = File.ReadAllText(Path.Combine(Path.GetDirectoryName(folder)!, "MightyClaude.Core", "DesktopService.Delegation.cs"));
         Check(Member(deliver, "async Task<string?> IDelegationHost.Deliver(").Contains("!MightyGraphSupport.NoticeTurnRunning(s.GraphRuns ?? [])", StringComparison.Ordinal), "delegation never steers into a running notice turn");
+        // What waited for that turn is offered again when it ends, not only at the run's end.
+        var service = File.ReadAllText(Path.Combine(Path.GetDirectoryName(folder)!, "MightyClaude.Core", "DesktopService.cs"));
+        var receiveAt = service.IndexOf("private void Receive(RunEvent value)", StringComparison.Ordinal);
+        Check(receiveAt >= 0, "Receive is there");
+        // A service member: to its closing brace at member indent, past the lock's own.
+        var receive = service[receiveAt..service.IndexOf("\n    }\n", receiveAt, StringComparison.Ordinal)];
+        Check(receive.Contains("noticeTurnEnded = MightyGraphSupport.NoticeTurnEnded(before,", StringComparison.Ordinal)
+            && receive.IndexOf("var before = ", StringComparison.Ordinal) < receive.IndexOf("snapshot = snapshot.Apply(value);", StringComparison.Ordinal)
+            && receive.Contains("|| noticeTurnEnded) OfferDelegationPending();", StringComparison.Ordinal), "a notice turn's end offers delegation's waiting items again");
         Check(Member(queue, "private async Task<bool> SteerQueuedInput(").Contains("MightyGraphSupport.NoticeTurnRunning(Session.GraphRuns ?? [])", StringComparison.Ordinal), "no row steers into a running notice turn");
         Check(Member(queue, "internal async Task PutBackQueuedRow(").Contains("Session.Status is not (\"running\" or \"error\")", StringComparison.Ordinal), "a put-back row leaves a queue an error paused");
         var stop = Member(queue, "private Task StopActiveRun(");

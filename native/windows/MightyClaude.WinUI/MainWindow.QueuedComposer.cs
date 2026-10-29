@@ -291,10 +291,10 @@ public sealed partial class MainWindow
         {
             var pane = Session; var second = owner.service.SecondSend(pane);
             // A manual CLI update or plugin change holds the pane's start as a background update does (StartNextQueuedInput passes), also
-            // in a child recording its last run's end; such a child is otherwise a busy pane, which starts nothing yet. Neither offers a
-            // here that would do nothing (M/AppStore.swift queueRunNowPane).
+            // in a child recording its last run's end; such a child is a busy pane, which starts nothing yet and takes no steer. Neither
+            // offers a here that would do nothing. The same predicates as M/AppStore.swift queueRunNowPane.
             var holds = owner.BackgroundUpdateHolds(pane) || owner.ManualUpdateReason(pane) is not null;
-            var recording = !holds && owner.ManualMutationBlockReason(pane) is not null;
+            var recording = owner.service.Delegation?.EndingRuns.Contains(id) == true;
             return new(pane.Status == "running" || starting || queueStarting || holds || recording, holds, second,
                 second == ComposerSecondSend.Queue && owner.service.WorktreeMenuOnly(pane, LaunchesInPlanMode),
                 pane.Kind == "claude" && pane.Provider == "claude" && Workspace.Remote is null && !stopping && !recording && pane.BackgroundWork?.WaitingOnBackground == true,

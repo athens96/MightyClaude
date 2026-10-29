@@ -218,10 +218,12 @@ public sealed partial class DesktopService : IAsyncDisposable
     private void Receive(RunEvent value)
     {
         if (!value.Valid()) return;
-        var ended = false;
+        var ended = false; var noticeTurnEnded = false;
         lock (sync)
         {
+            var before = snapshot.Sessions.FirstOrDefault(s => s.Id == value.SessionId)?.GraphRuns ?? [];
             snapshot = snapshot.Apply(value);
+            noticeTurnEnded = MightyGraphSupport.NoticeTurnEnded(before, snapshot.Sessions.FirstOrDefault(s => s.Id == value.SessionId)?.GraphRuns ?? []);
             if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") { if (routes.Remove(value.SessionId, out var route)) route.Ended.TrySetResult(); ended = DelegationRunEnded(value.SessionId, value.Status!); }
             // A streaming run sends many events a second: each asks for a save, which starts at most every 1.5 s (M/AppStore.swift
             // scheduleSave). A run's end is saved at once.
@@ -232,7 +234,8 @@ public sealed partial class DesktopService : IAsyncDisposable
         if (value.Type == "resume" && value.ResumeId is { } resumed) RememberSession(resumed);
         RunEventReceived?.Invoke(value);
         // A run that is up takes what its start could not, and a pane's end offers again what it could not take while ending (M/AppStore.swift:1023, M/AppStore+Delegation.swift:82-92).
-        if (ended || value.Type == "status" && value.Status == "running") OfferDelegationPending();
+        // A notice turn's answer came: delegation's items that waited for it rather than steer in are offered again now (M/AppStore.swift apply).
+        if (ended || value.Type == "status" && value.Status == "running" || noticeTurnEnded) OfferDelegationPending();
     }
     // Session ids this app's panes started or resumed (macOS KnownSessionIDs):
     // the "기존 세션 이어가기" list never hides them as automated runs.
