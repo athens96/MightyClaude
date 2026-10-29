@@ -208,6 +208,46 @@ internal static class SessionHistoryVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// A running agent's message turn when message runs have no room: its answer takes the nodes kept for work copies, and at the very cap it
+    /// joins the agent's log as Claude's answer. It never becomes a section of the request's result
+    /// (macOS ExecutionGraphTests.aMessageAnswerWithNoRoomNeverBecomesASectionOfTheResult).
+    /// </summary>
+    internal static Task AMessageAnswerWithNoRoomNeverBecomesASectionOfTheResult()
+    {
+        const string agent = "b2c3d4e5f6a7b8c9d";
+        Dictionary<string, ExecutionGraphNode> Replay(int filling)
+        {
+            var emitted = new List<ExecutionGraphNode>();
+            var tracker = new ExecutionGraphTracker("msg-full", "Find the config", "claude", null, emitted.Add);
+            void Frame(object value) { using var json = JsonDocument.Parse(Json(value)); tracker.Consume(json.RootElement.Clone()); }
+            Frame(new { type = "assistant", message = new { id = "m-1", content = new[] { new { type = "tool_use", id = "toolu_scout", name = "Agent",
+                input = new { description = "Find the config", prompt = "Find it.", name = "scout", run_in_background = true } } } } });
+            Frame(new { type = "user", message = new { content = new[] { new { type = "tool_result", tool_use_id = "toolu_scout", content = "Async agent launched successfully.\nagentId: " + agent + " (internal ID)" } } } });
+            for (var index = 0; index < filling; index++) Frame(new { type = "system", subtype = "compact_boundary", uuid = "c" + index });
+            Frame(new { type = "result", subtype = "success", is_error = false, result = "Scouting." });
+            Frame(new { type = "user", origin = new { kind = "peer", from = agent, senderTaskId = agent },
+                message = new { role = "user", content = "Another Claude session sent a message:\n<agent-message from=\"" + agent + "\">\nFound the config.\n</agent-message>" } });
+            Frame(new { type = "assistant", message = new { id = "m-2", content = new[] { new { type = "text", text = "Good." } } } });
+            Frame(new { type = "result", subtype = "success", is_error = false, result = "Good.", origin = new { kind = "peer" } });
+            var latest = new Dictionary<string, ExecutionGraphNode>();
+            foreach (var node in emitted) latest[node.Id] = node;
+            return latest;
+        }
+        var mainID = ExecutionGraphSupport.MainNodeID("msg-full"); var agentID = ExecutionGraphSupport.AgentNodeID("msg-full", "toolu_scout");
+        // The main block, the agent and compactions up to the reserve: the message run takes a kept node.
+        var reserved = Replay(ExecutionGraphSupport.MaximumNodes - 16 - 2);
+        var run = reserved.GetValueOrDefault(ExecutionGraphSupport.MainNodeID(BackgroundNoticeRuns.RunID("msg-full", 1))) ?? throw new InvalidOperationException("the message opens no run");
+        Check(run.Title == Locale.Get("graph.background.messageRun") + " · scout" && run.Output == "Good." && run.Input == "Found the config." && reserved[mainID].Output == "Scouting.",
+            "the message run takes a kept node; got '" + run.Title + "' / '" + run.Output + "'");
+        // Every node taken: the answer joins the agent's log, the request's result stays.
+        var full = Replay(ExecutionGraphSupport.MaximumNodes - 2);
+        var reply = "**" + Locale.Get("graph.background.reply") + "**\n\nGood.";
+        Check(full.Count == ExecutionGraphSupport.MaximumNodes && !full.Values.Any(n => BackgroundNoticeRuns.IsNoticeRun(n.RunId)) && full[mainID].Output == "Scouting."
+            && full[agentID].Entries.Any(e => e.Kind == "assistant" && e.Text == reply), "at the very cap the answer joins the agent's log; got " + full[mainID].Output);
+        return Task.CompletedTask;
+    }
+
     internal static Task ScrollingUpLoadsTheTenRequestsAboveTheRetainedOneFromAClaudeRecord()
     {
         using var fixture = new Fixture();

@@ -153,7 +153,8 @@ public sealed partial class ExecutionGraphTracker
     /// <summary>Each copied block's latest notice run.</summary>
     private readonly Dictionary<string, string> copiedIn = [];
     /// <summary>What opened a notice run and what it names while it holds no copy (<see cref="BackgroundNoticeRuns.Title(string, IReadOnlyList{string})"/>).</summary>
-    private sealed record NoticeOpening(BackgroundNoticeRuns.Opener Opener, IReadOnlyList<string> Names, IReadOnlyList<string> Lines);
+    /// <c>Senders</c> says who each name stands for (its agent block, or the name when no block sent it), so a sender is named once.
+    private sealed record NoticeOpening(BackgroundNoticeRuns.Opener Opener, IReadOnlyList<string> Names, IReadOnlyList<string> Lines, IReadOnlyList<string> Senders);
     /// <summary>What opened each notice run.</summary>
     private readonly Dictionary<string, NoticeOpening> noticeOpeners = [];
     /// <summary>A root message's line no run took yet, with the name it gives a run (a known sender's block title) and the agent block that
@@ -502,15 +503,30 @@ public sealed partial class ExecutionGraphTracker
             var peer = MetadataJson.Property(value, "origin") is { ValueKind: JsonValueKind.Object } origin && origin.Text("kind") == "peer";
             var opener = peer ? BackgroundNoticeRuns.Opener.Message : BackgroundNoticeRuns.Opener.Work;
             if (opener == BackgroundNoticeRuns.Opener.Message && MessageRun(lines) is { } again) { AnswerAgain(again, lines, answer, failed); return; }
-            if (OpenNoticeRun(false, opener, Names(lines), lines.Select(h => h.Line).OfType<string>().ToList(), SoleAgent(lines)) is { } own)
+            var (names, senders) = Senders(lines);
+            bool OpenOwn(bool reserving)
             {
+                if (OpenNoticeRun(false, opener, names, lines.Select(h => h.Line).OfType<string>().ToList(), senders, SoleAgent(lines), reserving) is not { } own) return false;
                 Update(ExecutionGraphSupport.MainNodeID(own), n => n with { Output = answer });
                 if (failed) SetNoticeState(own, "error");
-                return;
+                return true;
             }
-            // No room for a run of its own: the answer goes on in the latest notice run, or as a last resort follows in the request's result
-            // under its kind, as before notice runs. It is never dropped (macOS).
+            if (OpenOwn(true)) return;
+            // No room for a run of its own: the answer goes on in the latest notice run. It is never dropped (macOS).
             if (LatestNoticeRun is { } latest) { AnswerAgain(latest, lines, answer, failed); return; }
+            if (opener == BackgroundNoticeRuns.Opener.Message)
+            {
+                // A message's answer may take the nodes kept for work copies rather than become a section of the request's result; at the
+                // very cap it joins the log of the one agent that sent the messages, which adds no node.
+                if (OpenOwn(false)) return;
+                if (SoleAgent(lines) is { } sender && nodes.ContainsKey(sender))
+                {
+                    Append(Entry(ExecutionGraphSupport.Identifier(runID, sender + ":reply:" + answer), "assistant", "**" + Locale.Get("graph.background.reply") + "**\n\n" + answer), sender);
+                    return;
+                }
+            }
+            // The last resort, at the very cap with nowhere else (work this run never started, a sender it does not know): the answer
+            // follows in the request's result under its kind, as before notice runs.
             Update(mainID, n => n with { Output = MightyGraphSupport.WithNoticeSection(n.Output, Locale.Get("graph.result.afterSteer", new Dictionary<string, string> { ["block"] = BackgroundNoticeRuns.Kind(opener) }), answer) });
         }
         else if (type == "result")
@@ -828,7 +844,7 @@ public sealed partial class ExecutionGraphTracker
     private void Describe(string run)
     {
         var copies = (noticeCopies.GetValueOrDefault(run) ?? []).Select(nodes.GetValueOrDefault).OfType<ExecutionGraphNode>().ToList();
-        var opened = noticeOpeners.GetValueOrDefault(run) ?? new(BackgroundNoticeRuns.Opener.Work, [], []);
+        var opened = noticeOpeners.GetValueOrDefault(run) ?? new(BackgroundNoticeRuns.Opener.Work, [], [], []);
         static string Name(ExecutionGraphNode copy) => copy.Title.Length > 0 ? copy.Title : copy.Input ?? "";
         var lines = opened.Lines.Concat(copies.Select(copy => Name(copy) + " · "
             + Locale.Get(copy.State == "completed" ? "graph.block.taskNotice.completed" : copy.State == "error" ? "graph.block.taskNotice.failed" : "graph.block.taskNotice.stopped")));
@@ -861,7 +877,8 @@ public sealed partial class ExecutionGraphTracker
                 SetNoticeState(again, "running");
                 AddOpening(again, lines);
             }
-            else if (OpenNoticeRun(true, opener, Names(lines), lines.Select(h => h.Line).OfType<string>().ToList(), SoleAgent(lines)) is { } opened) noticeTurn = opened;
+            else if (Senders(lines) is var (names, senders) && OpenNoticeRun(true, opener, names, lines.Select(h => h.Line).OfType<string>().ToList(), senders, SoleAgent(lines)) is { } opened)
+                noticeTurn = opened;
             else turnLines.AddRange(lines);
         }
         else if (turnLines.Count < NoticeLineLimit) turnLines.Add(held);
@@ -879,23 +896,34 @@ public sealed partial class ExecutionGraphTracker
     /// <summary>The one agent block that sent every one of these lines, if they all came from one.</summary>
     private static string? SoleAgent(IReadOnlyList<HeldLine> lines) =>
         lines.Count > 0 && lines[0].Agent is { } agent && lines.All(h => h.Agent == agent) ? agent : null;
-    /// <summary>The names these lines give a run: each sender once, at most <see cref="NoticeLineLimit"/>.</summary>
-    private static List<string> Names(IReadOnlyList<HeldLine> lines) =>
-        lines.Select(h => h.Name).OfType<string>().Distinct(StringComparer.Ordinal).Take(NoticeLineLimit).ToList();
+    /// <summary>The names these lines give a run and who each stands for: each sender once, by its agent block (or by its name when no block
+    /// sent it, <see cref="SenderKey"/>), at most <see cref="NoticeLineLimit"/>. Two agents that share a title are two names (macOS senders).</summary>
+    private static (List<string> Names, List<string> Senders) Senders(IReadOnlyList<HeldLine> lines)
+    {
+        List<string> names = [], senders = [];
+        foreach (var held in lines)
+        {
+            if (held.Name is not { } name || SenderKey(held) is not { } key || senders.Contains(key, StringComparer.Ordinal) || names.Count >= NoticeLineLimit) continue;
+            names.Add(name); senders.Add(key);
+        }
+        return (names, senders);
+    }
+    /// <summary>Who a line's name stands for: the agent block that sent it, else the name itself.</summary>
+    private static string? SenderKey(HeldLine held) => held.Agent ?? held.Name;
     /// <summary>Lines and names that join notice run <paramref name="run"/>'s request and title, each sender named once. A line from anyone but
     /// the agent whose messages alone the run holds ends that (<see cref="messageAgents"/>) (macOS addOpening).</summary>
     private void AddOpening(string run, IReadOnlyList<HeldLine> lines)
     {
         if (lines.Count == 0) return;
-        var opened = noticeOpeners.GetValueOrDefault(run) ?? new(BackgroundNoticeRuns.Opener.Work, [], []);
-        List<string> names = [.. opened.Names], requestLines = [.. opened.Lines];
+        var opened = noticeOpeners.GetValueOrDefault(run) ?? new(BackgroundNoticeRuns.Opener.Work, [], [], []);
+        List<string> names = [.. opened.Names], requestLines = [.. opened.Lines], senders = [.. opened.Senders];
         foreach (var held in lines)
         {
-            if (held.Name is { } name && !names.Contains(name, StringComparer.Ordinal) && names.Count < NoticeLineLimit) names.Add(name);
+            if (held.Name is { } name && SenderKey(held) is { } key && !senders.Contains(key, StringComparer.Ordinal) && names.Count < NoticeLineLimit) { names.Add(name); senders.Add(key); }
             if (held.Line is { } text && requestLines.Count < NoticeLineLimit) requestLines.Add(text);
             if (held.Agent is null || messageAgents.GetValueOrDefault(run) != held.Agent) messageAgents.Remove(run);
         }
-        noticeOpeners[run] = opened with { Names = names, Lines = requestLines };
+        noticeOpeners[run] = opened with { Names = names, Lines = requestLines, Senders = senders };
         Describe(run);
     }
     /// <summary>A notice answer that goes on in the earlier notice run <paramref name="run"/>: its lines join the run's request, the answer its
@@ -920,19 +948,20 @@ public sealed partial class ExecutionGraphTracker
     /// <summary>The next notice run's main block: running until a notice turn's result, or complete at once for absorbed notices.
     /// <paramref name="opener"/> and <paramref name="names"/> title it until a copy joins; <paramref name="lines"/> are its request;
     /// <paramref name="agent"/> is the agent block whose messages alone a 하위 에이전트 메시지 run holds. A message run leaves
-    /// <see cref="NoticeHeadroom"/> nodes free.</summary>
+    /// <see cref="NoticeHeadroom"/> nodes free unless <paramref name="reserving"/> is false (its answer's last chance of a run of its own);
+    /// <paramref name="senders"/> says who each name stands for.</summary>
     private string? OpenNoticeRun(bool running, BackgroundNoticeRuns.Opener opener = BackgroundNoticeRuns.Opener.Work, IReadOnlyList<string>? names = null,
-        IReadOnlyList<string>? lines = null, string? agent = null)
+        IReadOnlyList<string>? lines = null, IReadOnlyList<string>? senders = null, string? agent = null, bool reserving = true)
     {
-        var room = opener == BackgroundNoticeRuns.Opener.Message ? ExecutionGraphSupport.MaximumNodes - NoticeHeadroom : ExecutionGraphSupport.MaximumNodes;
+        var room = opener == BackgroundNoticeRuns.Opener.Message && reserving ? ExecutionGraphSupport.MaximumNodes - NoticeHeadroom : ExecutionGraphSupport.MaximumNodes;
         if (nodes.Count >= room) return null;
-        names ??= []; lines ??= [];
+        names ??= []; lines ??= []; senders ??= [];
         var run = BackgroundNoticeRuns.RunID(runID, noticeIndex + 1);
         var main = new ExecutionGraphNode(ExecutionGraphSupport.MainNodeID(run), run, null, "main", running ? "running" : "completed",
             BackgroundNoticeRuns.Title(BackgroundNoticeRuns.Kind(opener), names)) { Input = lines.Count == 0 ? null : string.Join("\n", lines) };
         if (ExecutionGraphSupport.Normalized(main) is not { } normalized) return null;
         noticeIndex += 1; noticeRevision += 1;
-        noticeOpeners[run] = new(opener, names, lines);
+        noticeOpeners[run] = new(opener, names, lines, senders);
         if (opener == BackgroundNoticeRuns.Opener.Message)
         {
             messageRunCount += 1; latestMessageRun = run;

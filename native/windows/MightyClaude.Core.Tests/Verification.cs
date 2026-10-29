@@ -1091,6 +1091,7 @@ internal static class Verification
         await Test("session history: a steer after the turn follows in the result", SessionHistoryVerification.ASteerAfterTheTurnFollowsInTheResult);
         await Test("session history: a delegation notice after the turn opens its own 위임 알림 run", SessionHistoryVerification.ADelegationNoticeAfterTheTurnOpensItsOwnRun);
         await Test("session history: a delegation notice at the node cap follows in the result under 위임 알림", SessionHistoryVerification.ADelegationNoticeAtTheNodeCapFollowsInTheResult);
+        await Test("session history: a message answer with no room never becomes a section of the result", SessionHistoryVerification.AMessageAnswerWithNoRoomNeverBecomesASectionOfTheResult);
         await Test("session history: scrolling up loads the ten requests above the retained one from a Claude record", SessionHistoryVerification.ScrollingUpLoadsTheTenRequestsAboveTheRetainedOneFromAClaudeRecord);
         await Test("session history: a replaced record starts over and a pane without a session has none", SessionHistoryVerification.AReplacedRecordStartsOverAndAPaneWithoutASessionHasNone);
         await Test("session history: only what the user typed is a request", SessionHistoryVerification.OnlyWhatTheUserTypedIsARequest);
