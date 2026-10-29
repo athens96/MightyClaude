@@ -20,4 +20,9 @@ describe('result titles', () => {
     expect(structureResultLook({ status: 'error', resultTitle: soFar }, t)).toEqual({ title: t('graph.block.resultError'), icon: 'triangle-alert' });
     expect(structureResultLook({ status: 'stopped' }, t)).toEqual({ title: t('graph.block.resultStopped'), icon: 'circle-stop' });
   });
+
+  it('draw the result so far neutral: a clock and no outcome ink', () => {
+    expect(structureResultLook({ status: 'completed', resultTitle: soFar, resultWaiting: true }, t)).toEqual({ title: soFar, icon: 'clock', soFar: true });
+    expect(structureResultLook({ status: 'error', resultTitle: soFar, resultWaiting: true }, t)).toEqual({ title: t('graph.block.resultError'), icon: 'triangle-alert' });
+  });
 });

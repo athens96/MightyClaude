@@ -38,6 +38,7 @@
 .mighty-block.kind-result .mighty-head { background: var(--done); color: var(--on-status); border-bottom-color: transparent; border-radius: calc(var(--radius-block) - 1px) calc(var(--radius-block) - 1px) 0 0; }
 .mighty-block.kind-result.tone-err .mighty-head { background: var(--err); }
 .mighty-block.kind-result.tone-stop .mighty-head { background: var(--stop); }
+.mighty-block.kind-result.tone-idle .mighty-head { background: var(--idle); }
 .mighty-block.kind-result .mighty-head .mighty-icon, .mighty-block.kind-result .mighty-head .mighty-capsule { color: var(--on-status); }
 .mighty-block.kind-result .mighty-head .mighty-capsule { background: rgba(0, 0, 0, .18); }
 .mighty-symbol { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; color: var(--accent); }

@@ -42,11 +42,12 @@ internal sealed record WebTimelineGroup(string RunId, int Ordinal, string Title,
 internal sealed record WebStructureActivity(string Kind, string State, string Text);
 /// <summary>A structure card for the page; an agent card adds its kind, "kind · model", its depth and its prompt apart from its output; <c>RevealId</c> is the block its reveal shows.
 /// <c>Background</c>, <c>OutputTail</c> and <c>NoticeReply</c> are an agent card's as on <see cref="WebMightyBlock"/>. <c>ResultTitle</c> is a result or summary
-/// card's result title (<see cref="MightyGraphBlockModel.ResultTitle"/>), absent on the others.</summary>
+/// card's result title (<see cref="MightyGraphBlockModel.ResultTitle"/>), absent on the others; <c>ResultWaiting</c> marks such a card that is the result
+/// so far, drawn neutral.</summary>
 internal sealed record WebStructureCard(string Id, string Kind, string RunId, string NodeId, string Title, string Status, string StatusWord, string Tone, string? Parent,
     string? Text, string? Message, string? Answer, IReadOnlyList<WebStructureActivity> Activity, string? Tally, bool Finished, string? ResultLine,
     string? NodeKind = null, string? Meta = null, int Depth = 0, string? Prompt = null, string? ExecutionNodeId = null, string? ResultNodeId = null, string? Tint = null,
-    bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, string? ResultTitle = null);
+    bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, string? ResultTitle = null, bool? ResultWaiting = null);
 internal sealed record WebStructureColumn(string Id, string Title, string Step, string StepWord, int Count, IReadOnlyList<WebStructureCard> Cards, string? Tone);
 /// <summary>One 파이프라인 board; <c>Quiet</c>: it holds only notice runs taken into a running turn (MightyStructure.Board.Quiet), which the view never moves on to by itself.</summary>
 internal sealed record WebStructureBoard(string Id, string Kind, int Ordinal, string? Headline, string Status, string StatusWord, string Tone, IReadOnlyList<string> RunIds, IReadOnlyList<WebStructureColumn> Columns, string? StyleName, bool? Quiet = null);
@@ -443,7 +444,8 @@ public sealed partial class MainWindow
                     node?.Kind, node is null ? null : string.Join(" · ", new[] { node.Kind == "steer" ? null : MightyTimeline.KindLabel(node.Kind, null), model }.Where(p => !string.IsNullOrEmpty(p))),
                     node?.Depth ?? 0, node?.Prompt?.Preview, item.ExecutionNodeId, MightyGraphLayout.NodeID(runs[item.RunIndex], "result"), ToneWord(MightyStructure.Tone.OfCard(card, column)),
                     node is { Background: true } ? true : (bool?)null, node is { Kind: "task" } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(node.AgentId)) : null, node?.NoticeReply?.Text,
-                    card.Kind is MightyStructure.CardKind.Result or MightyStructure.CardKind.Summary ? MightyGraphBlockModel.ResultTitle(item.Status, item.BackgroundWaiting) : null);
+                    card.Kind is MightyStructure.CardKind.Result or MightyStructure.CardKind.Summary ? MightyGraphBlockModel.ResultTitle(item.Status, item.BackgroundWaiting) : null,
+                    card.Kind is MightyStructure.CardKind.Result or MightyStructure.CardKind.Summary && item.BackgroundWaiting > 0 && item.Status is not ("error" or "stopped") ? true : (bool?)null);
             }
             var styleName = activeStyle?.Manifest.Name;
             return boards.Select(board => new WebStructureBoard(board.Id, board.Kind.ToString().ToLowerInvariant(), board.Ordinal, board.Headline, board.Status, MightyGraphBlockModel.StateLabel(board.Status), Tone(board.Status), board.RunIds,

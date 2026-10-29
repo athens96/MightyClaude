@@ -1130,7 +1130,7 @@ public sealed partial class MainWindow
             var symbol = block.Kind switch
             {
                 "request" => look.Symbol,
-                "result" => tone == DesignTone.Err ? "exclamationmark.triangle" : tone == DesignTone.Stop ? "stop.circle" : "checkmark.seal",
+                "result" => tone == DesignTone.Err ? "exclamationmark.triangle" : tone == DesignTone.Stop ? "stop.circle" : block.SoFar ? "clock" : "checkmark.seal",
                 _ => BlockSymbol(block.Kind),
             };
             header.Children.Add(view.Symbol = MightySymbols.Create(symbol, 13, strip ? ink : b.Brush(BlockTint(block, look.Tint)), cut: b.Brush(DesignToken.Card)));

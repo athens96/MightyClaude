@@ -50,6 +50,13 @@ internal static class MightyStructureBoardVerification
         // A nested sub-agent names the block it runs under; a root names none.
         var agents = running.Columns[1].Cards.Where(c => c.Kind == MightyStructure.CardKind.Agent).ToList();
         Check(agents.All(c => c.Item.RunId == "r2") && agents.Select(c => c.Parent).SequenceEqual([null, nodes[0].Title, null]), "a nested sub-agent names its parent block");
+
+        // A notice run is no request: its board says what work it reports on, an older save the generic heading (macOS aNoticeRunsBoardIsHeadedByItsTitle).
+        var notice = Run("r1:notice:1", "Build the app · done", final: "Built."); notice.NoticeRun = true; notice.NoticeTitle = "Background work finished · Build the app";
+        var older = Run("r1:notice:2", "Build the app · done", final: "Built."); older.NoticeRun = true;
+        var headed = Boards([Run("r1", "Build it", final: "Started."), notice, older]);
+        Check(headed.Select(b => b.Headline).SequenceEqual(["Build it", "Background work finished · Build the app", BackgroundNoticeRuns.GenericTitle]),
+            "a notice run's board is headed by its title: " + string.Join(" | ", headed.Select(b => b.Headline)));
         return Task.CompletedTask;
     }
 

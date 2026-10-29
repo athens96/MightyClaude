@@ -77,7 +77,7 @@ internal static class WebDelta
     /// <summary>The same for a graph run (a class, made anew by every normalize): every field <see cref="MightyGraphRun"/> writes.</summary>
     internal static bool SameRun(MightyGraphRun a, MightyGraphRun b) => ReferenceEquals(a, b)
         || a.Id == b.Id && a.Input == b.Input && a.Status == b.Status && a.SourceRunID == b.SourceRunID && a.FinalOutput == b.FinalOutput
-            && a.Provider == b.Provider && a.NodeModelLabel == b.NodeModelLabel && a.ConfiguredModel == b.ConfiguredModel && a.NoticeRun == b.NoticeRun && Equals(a.Usage, b.Usage)
+            && a.Provider == b.Provider && a.NodeModelLabel == b.NodeModelLabel && a.ConfiguredModel == b.ConfiguredModel && a.NoticeRun == b.NoticeRun && a.NoticeTitle == b.NoticeTitle && Equals(a.Usage, b.Usage)
             && SameList(a.RootEntries, b.RootEntries, SameEntry) && SameList(a.ResultEntries, b.ResultEntries, SameEntry)
             && SameList(a.Agents, b.Agents, SameAgent) && SameList(a.ResponseRecords, b.ResponseRecords, (x, y) => Equals(x, y));
 

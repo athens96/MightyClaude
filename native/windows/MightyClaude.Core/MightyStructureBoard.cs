@@ -124,8 +124,9 @@ public static partial class MightyStructure
         return cards;
     }
 
-    /// <summary>The request's first line with words in it.</summary>
-    private static string? FirstLine(Item item) =>
+    /// <summary>The request's first line with words in it. A notice run is no request: its heading, which names the work it reports on
+    /// (<see cref="BackgroundNoticeRuns.Heading(string?)"/>), as the request card and the phone's board say (macOS firstLine).</summary>
+    private static string? FirstLine(Item item) => item.NoticeRun ? BackgroundNoticeRuns.Heading(item.NoticeTitle) :
         (item.Request?.Text ?? item.Input).Split(Newlines).Select(line => line.Trim()).FirstOrDefault(line => line.Length > 0);
 
     /// <summary>

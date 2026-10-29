@@ -170,7 +170,8 @@ function blockSymbol(kind: string, tone: string): IconName {
     case 'steer': return 'message-square-text';
     case 'compact': return 'shrink';
     case 'question': return 'message-circle-question-mark';
-    case 'result': return tone === 'err' ? 'triangle-alert' : tone === 'stop' ? 'circle-stop' : 'badge-check';
+    // The result so far (현재까지의 결과) comes idle from the host (Core MightyGraphBlock.SoFar): a neutral clock, not the done seal.
+    case 'result': return tone === 'err' ? 'triangle-alert' : tone === 'stop' ? 'circle-stop' : tone === 'idle' ? 'clock' : 'badge-check';
     case 'plan': case 'planRecord': return 'clipboard-list';
     case 'draft': return 'pencil';
     case 'resultFiles': return 'files';

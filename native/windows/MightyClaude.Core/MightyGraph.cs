@@ -56,7 +56,7 @@ public sealed class MightyGraphRun
     [JsonPropertyName("configuredModel")] public string? ConfiguredModel { get; set; }
     /// <summary>Claude's reply to finished background work, not a request the user sent (<see cref="BackgroundNoticeRuns"/>); absent otherwise and in older saves.</summary>
     [JsonPropertyName("noticeRun")] public bool? NoticeRun { get; set; }
-    /// <summary>A notice run's title, "&lt;kind&gt; · &lt;name&gt;" (<see cref="BackgroundNoticeRuns.Title"/>), its main block's; absent in request runs
+    /// <summary>A notice run's title, "&lt;kind&gt; · &lt;name&gt;" (<see cref="BackgroundNoticeRuns.Title(string, IReadOnlyList{string})"/>), its main block's; absent in request runs
     /// and in older saves, whose notice runs read <see cref="BackgroundNoticeRuns.GenericTitle"/> (<see cref="BackgroundNoticeRuns.Heading(MightyGraphRun)"/>).</summary>
     [JsonPropertyName("noticeTitle")] public string? NoticeTitle { get; set; }
     /// <summary><see cref="BackgroundWaiting"/> of the run <see cref="Shown"/> was made from, whose background blocks it no longer holds. Never saved.</summary>

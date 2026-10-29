@@ -1066,9 +1066,11 @@ public sealed partial class MainWindow
         /// result so far while background work the request started still runs (<see cref="StructureResultName"/>).</summary>
         private StackPanel StructureResultTitle(MightyStructure.Item item)
         {
-            var b = owner.brushes; var ink = item.Finished ? b.Text(StatusGlyph.Tone(item.Status)) : b.Brush(DesignToken.Ink2);
+            // The result so far is neutral: a clock in the secondary ink, not the done seal (M/MightyStructureView.swift resultTitle).
+            var soFar = item.BackgroundWaiting > 0 && item.Status is not ("error" or "stopped");
+            var b = owner.brushes; var ink = item.Finished && !soFar ? b.Text(StatusGlyph.Tone(item.Status)) : b.Brush(DesignToken.Ink2);
             var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
-            label.Children.Add(MightySymbols.Create(item.Status switch { "error" => "exclamationmark.triangle", "stopped" => "stop.circle", _ => "checkmark.seal" }, StructureOutputSize, ink, MightySymbols.Weight.Bold));
+            label.Children.Add(MightySymbols.Create(item.Status switch { "error" => "exclamationmark.triangle", "stopped" => "stop.circle", _ => soFar ? "clock" : "checkmark.seal" }, StructureOutputSize, ink, MightySymbols.Weight.Bold));
             label.Children.Add(StructureWords(StructureResultName(item), StructureOutputSize, ink, FontWeights.Bold));
             return label;
         }

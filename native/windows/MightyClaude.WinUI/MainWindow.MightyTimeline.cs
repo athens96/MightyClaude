@@ -505,11 +505,20 @@ public sealed partial class MainWindow
             // The Mac draws the strip as a shape of the card's own radius, round at every corner
             // (docs/design-system/crops/timeline-*.webp): a strip lower than twice the radius ends in half circles.
             var header = TimelineHeading(); header.Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyV); header.Background = fill; header.CornerRadius = new CornerRadius(radius);
-            var named = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
+            // The symbol, then the title in the rest of the strip's first column: a long one (the result so far with its count) ends in "…",
+            // as the Mac's one line does, and says itself whole in its tooltip.
+            var named = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
+            named.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); named.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
             named.Children.Add(MightySymbols.Create(TimelineResultSymbol(result.Tone), 11, ink, MightySymbols.Weight.Bold, fill));
             // How the request ended, or the result so far while its background work runs.
-            var title = new TextBlock { Text = MightyGraphBlockModel.ResultTitle(run.Status, MightyGraphSupport.BackgroundWaiting(run)), TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.ExtraBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
-            named.Children.Add(title); header.Children.Add(named);
+            var titleText = MightyGraphBlockModel.ResultTitle(run.Status, MightyGraphSupport.BackgroundWaiting(run));
+            var title = new TextBlock
+            {
+                Text = titleText, TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.ExtraBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+            ToolTipService.SetToolTip(title, titleText);
+            Grid.SetColumn(title, 1); named.Children.Add(title); header.Children.Add(named);
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             var files = run.Status == "completed" ? MightyGraphBlockModel.FilesFor(run, LocalPath(Workspace)) : [];
             if (files.Count > 0)

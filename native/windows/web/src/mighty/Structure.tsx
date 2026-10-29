@@ -113,7 +113,8 @@ const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCar
     case 'result': {
       const ended = card.status === 'error' || card.status === 'stopped';
       const reveal = <RevealButton id={card.finished ? card.resultNodeId ?? card.nodeId : card.executionNodeId ?? card.nodeId} fallback={request} onReveal={onReveal} />;
-      const outcome = card.answer ? <div className="structure-answer"><Markdown text={card.answer} /></div>
+      // A free card's answer carries no visible result title: it is named by it (the result so far while background work runs, M/MightyStructureView.swift resultName).
+      const outcome = card.answer ? <div className="structure-answer" role="group" aria-label={structureResultLook(card, t).title}><Markdown text={card.answer} /></div>
         : <div className="structure-quiet">{card.finished ? card.statusWord : t('graph.structure.resultPending')}</div>;
       return (
         <div className={'structure-card tone-' + card.tone + ' kind-result' + tintClass(card.tint)} data-card-id={card.id} data-node-id={card.nodeId}>
@@ -180,8 +181,8 @@ const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCar
 /** The result's title in the outcome's ink once there is one: the host's, the result so far while background work runs (resultTitle.ts). */
 function ResultTitle({ card }: { card: StructureCard }) {
   const { t } = useServices();
-  const { title, icon } = structureResultLook(card, t);
-  return <span className={'structure-result-title' + (card.finished ? ' tone-' + card.tone : '')}><Icon name={icon} size={11} weight={2} />{title}</span>;
+  const { title, icon, soFar } = structureResultLook(card, t);
+  return <span className={'structure-result-title' + (card.finished && !soFar ? ' tone-' + card.tone : '')}><Icon name={icon} size={11} weight={2} />{title}</span>;
 }
 
 /** A column's step as the pipeline's chip (M/MightyStructureView.swift chip): done green with a check, current the accent with a dot, pending grey with a ring. */

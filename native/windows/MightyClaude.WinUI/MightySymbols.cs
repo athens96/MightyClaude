@@ -37,7 +37,7 @@ internal static class MightySymbols
         "terminal" => "\uE756", "person.crop.square.filled.and.at.rectangle" => "\uE8D4", "text.bubble" => "\uE8BD", "gearshape.2" => "\uE9F5",
         "questionmark.bubble" or "questionmark.bubble.fill" or "questionmark.square.dashed" or "questionmark.folder" or "doc.questionmark" => "\uE9CE",
         "exclamationmark.triangle" => "\uE7BA", "exclamationmark.triangle.fill" => "\uE814",
-        "clock.arrow.circlepath" => "\uE81C", "chevron.down" => "\uE70D", "chevron.right" => "\uE76C", "xmark" => "\uE711",
+        "clock.arrow.circlepath" => "\uE81C", "clock" => "\uE823", "chevron.down" => "\uE70D", "chevron.right" => "\uE76C", "xmark" => "\uE711",
         "arrow.clockwise" => "\uE72C", "flag" => "\uE7C1", "bolt" or "bolt.fill" => "\uE945",
         "doc.text" => "\uE8A5", "doc.richtext" => "\uE8A1", "globe" => "\uE774", "photo" => "\uE91B", "folder" => "\uE8B7", "folder.badge.plus" => "\uE8F4",
         "arrow.up.forward.app" => "\uE8A7",

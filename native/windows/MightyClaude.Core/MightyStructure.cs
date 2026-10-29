@@ -106,11 +106,13 @@ public static partial class MightyStructure
     {
         /// <summary><c>Notice</c>: Claude's reply to a task's notice, which can land with no new record.</summary>
         internal readonly record struct Block(string Id, string Title, string Status, string? ParentId, string? Kind, int Input, int Entries, int Tail, int Records, int Notice);
-        /// <summary>One request's part, which is all its card reads (<see cref="ItemCache"/> keys on it).</summary>
-        /// <summary><c>NoticeTitle</c>: a notice run's title, which can move with no other change its card reads.</summary>
-        internal sealed record Request(string Id, string Status, string? SourceRunId, int Input, int RootEntries, int RootTail, int ResultEntries, int Result, int? FinalOutput, string? NoticeTitle, Block[] Blocks)
+        /// <summary>One request's part, which is all its card reads (<see cref="ItemCache"/> keys on it). <c>NoticeTitle</c>: a notice run's title, which can move with no other change its card reads. <c>BackgroundWaiting</c>:
+        /// background work the request still waits on (<see cref="MightyGraphSupport.BackgroundWaiting"/>); a shown run no longer holds its
+        /// background blocks, so their ending moves nothing else here, yet its answer's title goes from 현재까지의 결과 to 최종 결과.</summary>
+        internal sealed record Request(string Id, string Status, string? SourceRunId, int Input, int RootEntries, int RootTail, int ResultEntries, int Result, int? FinalOutput, string? NoticeTitle, int BackgroundWaiting, Block[] Blocks)
         {
-            public bool Equals(Request? other) => other is not null && Id == other.Id && Status == other.Status && SourceRunId == other.SourceRunId && NoticeTitle == other.NoticeTitle && Input == other.Input && RootEntries == other.RootEntries
+            public bool Equals(Request? other) => other is not null && Id == other.Id && Status == other.Status && SourceRunId == other.SourceRunId && NoticeTitle == other.NoticeTitle
+                && BackgroundWaiting == other.BackgroundWaiting && Input == other.Input && RootEntries == other.RootEntries
                 && RootTail == other.RootTail && ResultEntries == other.ResultEntries && Result == other.Result && FinalOutput == other.FinalOutput && Blocks.AsSpan().SequenceEqual(other.Blocks);
             public override int GetHashCode() => HashCode.Combine(Id, Status, Input, RootEntries, RootTail, Blocks.Length);
         }
@@ -124,7 +126,7 @@ public static partial class MightyStructure
             IReadOnlyList<PlanRecord>? planHistory = null, string? pendingPlanRunID = null)
         {
             Requests = runs.Select(run => new Request(run.Id, run.Status, run.SourceRunID, Bytes(run.Input), run.RootEntries.Count, Tail(run.RootEntries), run.ResultEntries.Count,
-                Bytes(run.ResultEntries.LastOrDefault()?.Text), run.FinalOutput is { } final ? Bytes(final) : null, run.NoticeTitle,
+                Bytes(run.ResultEntries.LastOrDefault()?.Text), run.FinalOutput is { } final ? Bytes(final) : null, run.NoticeTitle, MightyGraphSupport.BackgroundWaiting(run),
                 run.Agents.Select(a => new Block(a.Id, a.Title, a.Status, a.ParentID, a.Kind, Bytes(a.Input), a.Entries.Count, Tail(a.Entries), a.ResponseRecords?.Count ?? 0, Bytes(a.NoticeReply))).ToArray())).ToArray();
             phases = style is null ? [] : Ordered(style.Manifest).Select(p => p.Id).ToArray();
             recognition = style?.Manifest.Id; this.currentPhase = currentPhase?.Id; this.startingNew = startingNew;

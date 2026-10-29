@@ -224,7 +224,8 @@ public static class MightyGraphViewModel
 /// state, request and output text, the usage capsule and its tooltip, the
 /// running/waiting indicator choice, the card's activity outline
 /// (<see cref="MightyGraphActivity"/>) and the status its colours follow (empty for the
-/// draft, the files panel and a request over its 실행 block). WinUI renders these and decides nothing.
+/// draft, the files panel and a request over its 실행 block). <c>SoFar</c>: a result that is the result so far (현재까지의 결과) while
+/// background work its request started still runs, drawn neutral (idle, a clock) rather than done. WinUI renders these and decides nothing.
 /// </summary>
 public sealed record MightyGraphBlock(
     string Id,
@@ -240,7 +241,8 @@ public sealed record MightyGraphBlock(
     string? ResultFilesRunId,
     string Outline = MightyGraphActivity.None,
     string Status = "",
-    string? RecordId = null);
+    string? RecordId = null,
+    bool SoFar = false);
 
 public static class MightyGraphBlockModel
 {
@@ -281,10 +283,10 @@ public static class MightyGraphBlockModel
     /// <summary>
     /// The tone a block's status pill, result strip and incoming edge take (macOS
     /// <c>DesignTone(blockStatus:)</c>): anything unfinished that is not waiting runs. A block with
-    /// no status (the draft, the files panel, a request over its 실행 block) is idle.
+    /// no status (the draft, the files panel, a request over its 실행 block) is idle, and so is the result so far (<see cref="MightyGraphBlock.SoFar"/>).
     /// </summary>
     public static DesignTone Tone(MightyGraphBlock block) =>
-        block.Status.Length == 0 ? DesignTone.Idle : StatusGlyph.Tone(MightyTimeline.Status(block.Status));
+        block.SoFar || block.Status.Length == 0 ? DesignTone.Idle : StatusGlyph.Tone(MightyTimeline.Status(block.Status));
 
     /// <summary>The result card's title in every view and on the phone: how the request ended, or the result so far while background
     /// work it started still runs (<paramref name="waiting"/>, <see cref="MightyGraphSupport.BackgroundWaiting"/>) (macOS MightyGraphSupport.resultTitle).</summary>
@@ -378,7 +380,9 @@ public static class MightyGraphBlockModel
                         StateLabel(ResultState(run.Status)), "", run.ResultEntries.Where(e => e.Kind != "user").ToList(),
                         ModelUsageFormat.BlockCapsule(run.TotalUsage, [], null, catalog, versioned: true),
                         Help(run.TotalUsage, [], Locale.Get("graph.block.totalUsageLabel"), catalog),
-                        "none", run.Status == "completed" ? run.Id : null, Status: ResultState(run.Status)));
+                        "none", run.Status == "completed" ? run.Id : null, Status: ResultState(run.Status),
+                        // The result so far is neutral, not the done strip (macOS resultSoFarIcon).
+                        SoFar: ResultState(run.Status) == "completed" && MightyGraphSupport.BackgroundWaiting(run) > 0));
                     break;
                 case "plan" when run is not null:
                     blocks.Add(new(node.Id, "plan", node.Frame, Locale.Get("plan.card.title"), StateLabel("waiting"), "", [], null, "", "none", null, Status: "waiting"));

@@ -143,6 +143,8 @@ export interface StructureCard {
   noticeReply?: string;
   /** A result or summary card's result title (Core MightyGraphBlockModel.ResultTitle): 현재까지의 결과 with the count while background work runs. */
   resultTitle?: string;
+  /** A result or summary card that is the result so far: drawn neutral, not done. */
+  resultWaiting?: boolean;
 }
 
 /** One tool call on a card: its kind (command, read, edit, search, web, agent, turn, tool), its state and its words. */
