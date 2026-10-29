@@ -52,6 +52,16 @@ public sealed partial class MainWindow
         if (pane.Kind != "claude" || service.IsRemoteWorkspace(pane.WorkspaceId)) return null;
         // A child whose last run's end is still being recorded (the app's commit of its work among it) starts nothing yet.
         if (service.Delegation?.EndingRuns.Contains(pane.Id) == true) return Locale.Get("delegation.child.recordingEnd");
+        return ManualUpdateReason(pane);
+    }
+
+    /// <summary>
+    /// The CLI update or plugin change the user started on this PC that holds the pane's runs, or null (M/AppStore.swift
+    /// manualUpdateHolds). 바로 실행 reads it as held for an update, also in a child still recording its last run's end.
+    /// </summary>
+    private string? ManualUpdateReason(RunSession pane)
+    {
+        if (pane.Kind != "claude" || service.IsRemoteWorkspace(pane.WorkspaceId)) return null;
         if (manuallyUpdatingProvider == pane.Provider)
             return Locale.Get("windows.updates.manualProvider", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(pane.Provider) });
         return pane.Provider is "claude" or "codex" && pluginOperations.IsRunning && !(automaticUpdateRunning && automaticallyUpdatingPlugins)

@@ -290,10 +290,11 @@ public sealed partial class MainWindow
         private QueueRunNow.Pane RunNowPane()
         {
             var pane = Session; var second = owner.service.SecondSend(pane);
-            // A manual CLI update or plugin change holds the pane's start as a background update does (StartNextQueuedInput passes), and a
-            // child whose last run's end is still being recorded starts nothing yet: neither offers a here that would do nothing.
-            var blocked = owner.ManualMutationBlockReason(pane) is not null; var recording = blocked && owner.service.Delegation?.EndingRuns.Contains(id) == true;
-            var holds = owner.BackgroundUpdateHolds(pane) || blocked && !recording;
+            // A manual CLI update or plugin change holds the pane's start as a background update does (StartNextQueuedInput passes), also
+            // in a child recording its last run's end; such a child is otherwise a busy pane, which starts nothing yet. Neither offers a
+            // here that would do nothing (M/AppStore.swift queueRunNowPane).
+            var holds = owner.BackgroundUpdateHolds(pane) || owner.ManualUpdateReason(pane) is not null;
+            var recording = !holds && owner.ManualMutationBlockReason(pane) is not null;
             return new(pane.Status == "running" || starting || queueStarting || holds || recording, holds, second,
                 second == ComposerSecondSend.Queue && owner.service.WorktreeMenuOnly(pane, LaunchesInPlanMode),
                 pane.Kind == "claude" && pane.Provider == "claude" && Workspace.Remote is null && !stopping && !recording && pane.BackgroundWork?.WaitingOnBackground == true
@@ -364,8 +365,8 @@ public sealed partial class MainWindow
             switch (await owner.service.RunNextAsync(id))
             {
                 case DelegationRelease.NotStarted: throw new InvalidOperationException(Locale.Get("remote.error.startFailed"));
-                // Taken meanwhile by another run: the first queued row runs now, as run next did.
-                case DelegationRelease.NothingHeld: await StartNextQueuedInput(); break;
+                // Taken meanwhile by another run: the first queued row runs now, as run next did, and only a run that took it counts (M/AppStore.swift runNextHeld).
+                case DelegationRelease.NothingHeld: if (!await StartNextQueuedInput()) return false; break;
             }
             if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); }
             return true;

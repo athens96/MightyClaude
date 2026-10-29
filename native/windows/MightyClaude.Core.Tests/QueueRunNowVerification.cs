@@ -87,7 +87,8 @@ internal static class QueueRunNowVerification
     /// What the window does with 바로 실행, read from the WinUI source (WinUI does not build here), as the Mac's AppStore does: the phone is
     /// never told a failed start ran, the queue's start says whether it took the row, a pane held by a manual update or plugin change (or
     /// recording a child's end) never offers a here that does nothing, no steer goes into a running notice turn, a put-back row leaves a
-    /// queue an error paused alone, and a stop draws its rows as stopping.
+    /// queue an error paused alone, a stop draws its rows as stopping, run next with nothing held counts only a run that took the row,
+    /// and delegation's held items wait for a notice turn instead of steering into it.
     /// </summary>
     internal static Task TheWindowRunsNowOnlyWhatCanRun()
     {
@@ -109,8 +110,12 @@ internal static class QueueRunNowVerification
         var take = Member(queue, "private async Task<bool> TakeNextQueuedInput(");
         Check(!take.Contains("return;", StringComparison.Ordinal) && take.Contains("return true;", StringComparison.Ordinal), "every way the queue's start ends says whether it took the row");
         var pane = Member(queue, "private QueueRunNow.Pane RunNowPane(");
-        Check(pane.Contains("owner.ManualMutationBlockReason(pane) is not null", StringComparison.Ordinal) && pane.Contains("EndingRuns.Contains(id)", StringComparison.Ordinal)
+        Check(pane.Contains("var holds = owner.BackgroundUpdateHolds(pane) || owner.ManualUpdateReason(pane) is not null;", StringComparison.Ordinal)
+            && pane.Contains("var recording = !holds && owner.ManualMutationBlockReason(pane) is not null;", StringComparison.Ordinal)
             && pane.Contains("MightyGraphSupport.NoticeTurnRunning(pane.GraphRuns ?? [])", StringComparison.Ordinal), "a held, recording or notice-answering pane offers no here or steer that would not run");
+        Check(Member(queue, "private async Task<bool> ReleaseHeldNow(").Contains("case DelegationRelease.NothingHeld: if (!await StartNextQueuedInput()) return false;", StringComparison.Ordinal), "run next with nothing held is true only when a run took the first row");
+        var deliver = File.ReadAllText(Path.Combine(Path.GetDirectoryName(folder)!, "MightyClaude.Core", "DesktopService.Delegation.cs"));
+        Check(Member(deliver, "async Task<string?> IDelegationHost.Deliver(").Contains("!MightyGraphSupport.NoticeTurnRunning(s.GraphRuns ?? [])", StringComparison.Ordinal), "delegation never steers into a running notice turn");
         Check(Member(queue, "private async Task<bool> SteerQueuedInput(").Contains("MightyGraphSupport.NoticeTurnRunning(Session.GraphRuns ?? [])", StringComparison.Ordinal), "no row steers into a running notice turn");
         Check(Member(queue, "internal async Task PutBackQueuedRow(").Contains("Session.Status is not (\"running\" or \"error\")", StringComparison.Ordinal), "a put-back row leaves a queue an error paused");
         var stop = Member(queue, "private Task StopActiveRun(");

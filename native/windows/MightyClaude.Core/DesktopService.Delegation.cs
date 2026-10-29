@@ -267,7 +267,9 @@ public sealed partial class DesktopService : IDelegationHost
     {
         if (route == DeliveryRoute.Queue) return await StartDelegatedRun(sessionId, input);
         bool steerable;
-        lock (sync) steerable = !closing && snapshot.Sessions.Any(s => s.Id == sessionId && s.Status == "running" && DelegationProviders.CanSteer(s.Kind, s.Provider)) && delegationRuns.RunId(sessionId) is not null;
+        // Claude answering finished background work takes no steer: what comes now waits for that turn instead (M/AppStore+Delegation.swift deliver).
+        lock (sync) steerable = !closing && snapshot.Sessions.Any(s => s.Id == sessionId && s.Status == "running" && DelegationProviders.CanSteer(s.Kind, s.Provider)
+            && !MightyGraphSupport.NoticeTurnRunning(s.GraphRuns ?? [])) && delegationRuns.RunId(sessionId) is not null;
         if (!steerable || !await TrySteerAsync(sessionId, input)) return null;
         // The receipt names the run that took it, read once it has.
         lock (sync) return delegationRuns.RunId(sessionId);
