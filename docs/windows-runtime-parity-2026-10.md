@@ -10,7 +10,7 @@
 | 긴 실행 | 누적 4,096개 이벤트 이후 그 실행의 관측이 영구 차단됐다. | 누적 차단을 없애고 실행별 초당 120건 제한과 토큰 폐기를 유지한다. |
 | 하위 에이전트 활동 | 파서에서 그래프로 도구 ID가 전달되지 않고 Mods 소유권 등록도 늦었다. | 소유권을 먼저 등록하고 원래 도구 ID로 자식 블록에 활동을 전달한다. |
 | 승인 상태 | 늦게 도착한 도구 시작·대기 이벤트가 사용자의 승인 상태를 되돌렸다. | 표준 입력/출력 승인 채널의 상태를 우선하고 완료된 활동을 다시 열지 않는다. |
-| 대화 재개 | 자식 세션의 Mods 이벤트가 루트 재개 ID를 덮어쓸 수 있었다. | 루트 CLI 출력만 재개 ID를 갱신한다. |
+| 대화 재개 | 자식 세션의 Mods 이벤트가 루트 재개 ID를 덮어쓸 수 있었다(macOS도 같음). | 두 플랫폼 모두 루트 CLI 출력만 재개 ID를 갱신한다. |
 | 하위 에이전트 이미지 | 자식 이미지를 파서가 버리고 그래프의 정규화·저장 경로도 이미지 항목을 제외했다. | 자식 블록과 기존 갤러리에 이미지 참조를 전달하고, 크기 제한을 적용해 저장·복원한다. |
 | 계획 기록 | 그래프에서 결정 결과·시각·수정 의견·잘림 안내가 빠지고 기록의 확대 보기가 없었다. | 기록과 그래프에 같은 계획 정보를 보여 주고 확대 문서 창을 제공한다. |
 | 계획 수정 의견 | 16,384 UTF-8 바이트를 넘는 의견도 전송 단추가 켜져 있어 호스트에서만 거절됐다. | 입력 중 한도를 안내하고 전송을 막는다. 한글도 바이트 기준으로 계산한다. |
@@ -18,7 +18,7 @@
 
 주요 근거는 macOS의 `ModBridge.swift`, `CLIStreamParser.swift`, `ExecutionGraphTracker.swift`, `PlanApprovalCard.swift`와 Windows의 대응 Core 실행기 및 `web/src/cards`, `web/src/composer`, `web/src/mighty`다. 회귀 검사는 수신기 HTTP 경계뿐 아니라 파서·그래프·실행기 연결을 함께 확인한다.
 
-재개 ID 처리는 Windows의 별도 개선이다. macOS 파서는 Mods로 ID를 바꾸지 않지만 `ProcessRunner.receiveMod`는 여전히 이를 전달하므로 두 플랫폼에 공통 위험이 있었다. 이번 변경은 Windows 실행기만 수정한다.
+재개 ID 처리는 두 플랫폼에서 같다. macOS 파서는 원래 Mods로 ID를 바꾸지 않았지만 `ProcessRunner.receiveMod`가 모든 Mods 이벤트의 세션 ID를 재개 이벤트로 전달해 같은 위험이 있었다. 이제 macOS 실행기도 이 전달을 하지 않으므로, macOS와 Windows 모두 루트 CLI 출력만 재개 ID를 갱신한다(macOS `ModGraphTests.modsNeverReplaceRootResume`, Windows `RuntimeParityVerification.ModsNeverReplaceRootResume`).
 
 ## 기존에 연결된 기능
 

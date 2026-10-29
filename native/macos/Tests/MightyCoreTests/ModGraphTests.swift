@@ -9,6 +9,13 @@ private final class ModGraphRecorder: @unchecked Sendable {
     func values() -> [ModMetadata] { lock.lock(); defer { lock.unlock() }; return entries }
 }
 
+private final class ModRunEventRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [RunEvent] = []
+    func append(_ entry: RunEvent) { lock.lock(); entries.append(entry); lock.unlock() }
+    func values() -> [RunEvent] { lock.lock(); defer { lock.unlock() }; return entries }
+}
+
 struct ModGraphTests {
     private func body(_ environment: [String: String], event: String = "agent.spawn", graph: [String: Any]) -> [String: Any] {
         ["version": 1, "runId": environment["MIGHTY_CLAUDE_RUN_ID"]!, "claudeSessionId": "graph-session", "event": event, "sequence": 1, "graph": graph]
@@ -86,5 +93,61 @@ struct ModGraphTests {
             #expect(recorder.values().isEmpty)
         } catch { await bridge.stop(); throw error }
         await bridge.stop()
+    }
+
+    /// Only the root CLI stream owns resume identity: a Mods event naming a
+    /// child's Claude session must not replace the pane's resume ID.
+    @Test func modsNeverReplaceRootResume() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-mod-resume-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let binary = directory.appendingPathComponent("claude")
+        let source = #"""
+        #!/bin/sh
+        if [ "$1" = "--version" ]; then printf '2.1.273\n'; exit 0; fi
+        for argument in "$@"; do
+          if [ "$argument" = "--safe-mode" ]; then
+            IFS= read -r initialize || exit 21
+            request_id=$(printf '%s' "$initialize" | /usr/bin/sed -E 's/.*"request_id":"([^"]+)".*/\1/')
+            printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"models":[]}}}\n' "$request_id"
+            /bin/cat >/dev/null; exit 0
+          fi
+        done
+        /bin/cat >/dev/null
+        printf '%s\n' '{"type":"assistant","uuid":"root","session_id":"root-session","message":{"content":[{"type":"text","text":"Root answer"}]}}'
+        post() {
+          /usr/bin/curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $MIGHTY_CLAUDE_BRIDGE_TOKEN" --data "$1" "$MIGHTY_CLAUDE_BRIDGE_URL" >> mod-status
+        }
+        post "{\"version\":1,\"runId\":\"$MIGHTY_CLAUDE_RUN_ID\",\"claudeSessionId\":\"child-session\",\"event\":\"session.start\",\"sequence\":1}"
+        post "{\"version\":1,\"runId\":\"$MIGHTY_CLAUDE_RUN_ID\",\"claudeSessionId\":\"child-session\",\"event\":\"tool.call\",\"tool\":\"Read\",\"toolUseId\":\"child-read\",\"agentId\":\"child-agent\",\"sequence\":2}"
+        sleep 1
+        printf '%s\n' '{"type":"result","session_id":"root-session","is_error":false,"result":"Root answer"}'
+        """#
+        try Data(source.utf8).write(to: binary)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
+        let plugin = directory.appendingPathComponent("plugin")
+        try FileManager.default.createDirectory(at: plugin.appendingPathComponent(".claude-plugin"), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: plugin.appendingPathComponent(".claude-plugin/plugin.json"))
+        let providers = ProviderService(binaryOverrides: ["claude": binary])
+        let events = ModRunEventRecorder()
+        let runner = ProcessRunner(providerService: providers, pluginDirectory: plugin) { events.append($0) }
+        do {
+            try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "No model execution"), workspace: Workspace(id: "workspace", name: "Fixture", path: directory.path))
+            let deadline = Date().addingTimeInterval(30)
+            while !events.values().contains(where: { $0.type == "status" && ["completed", "error", "stopped"].contains($0.status ?? "") }) {
+                guard Date() < deadline else { throw MightyError("Mods resume fixture timed out") }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let values = events.values()
+            #expect(values.last?.status == "completed")
+            // The Mods events really reached the runner, so the check below is not vacuous.
+            #expect(try String(contentsOf: directory.appendingPathComponent("mod-status"), encoding: .utf8) == "200\n200\n")
+            // Other suites switch the app language while this runs: accept the notice in any language.
+            let connected = Set(AppLanguage.allCases.map { language in LocaleOverride.$language.withValue(language) { L("run.log.modsConnected") } })
+            #expect(values.contains { $0.entry.map { connected.contains($0.text) } == true })
+            let resumes = values.filter { $0.type == "resume" }.map(\.resumeId)
+            #expect(!resumes.isEmpty && resumes.allSatisfy { $0 == "root-session" })
+            await runner.shutdown(); await providers.shutdown()
+        } catch { await runner.shutdown(); await providers.shutdown(); throw error }
     }
 }

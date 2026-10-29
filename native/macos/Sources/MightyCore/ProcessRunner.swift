@@ -924,7 +924,7 @@ public actor ProcessRunner {
     }
     private func receiveMod(_ metadata: ModMetadata, run: ManagedProcess) {
         guard !run.finished, !run.stopping, !shuttingDown else { return }
-        onEvent(RunEvent(sessionId: run.request.sessionId, type: "resume", resumeId: metadata.claudeSessionId))
+        // Only the root CLI stream owns resume identity; a Mod may describe a child's session.
         if metadata.event == "session.start" { emitLog(run, kind: "system", text: L("run.log.modsConnected")) }
         run.parser?.receiveMod(metadata)
     }
