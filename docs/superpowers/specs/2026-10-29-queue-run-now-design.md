@@ -59,19 +59,20 @@
 | `here` | 이 창의 다음 실행으로 지금 시작한다. 보류된 항목이 있으면 그 실행의 앞에 붙는다 | 재생, 활성 | `queue.runNowHereHelp` |
 | `steer` | 백그라운드 작업만 기다리는 이 창의 실행에 새 턴으로 넣는다(중간 요청) | 재생, 활성 | `queue.runNowSteerHelp` |
 | `held` | (첫 보류된 행) 이 창에 보류된 항목을 모두 함께 지금 이 창에 보낸다 | 재생, 활성 | `queue.runNowHeldHelp`(`{count}`) |
-| `waitsForTurn` | 지금 실행할 수 없다. 지금 작업이 끝나면 차례대로 실행된다 | 재생, 비활성 | `queue.runNowUnavailableHelp` |
+| `waitsForTurn` | 지금 실행할 수 없다. 지금 작업이 끝나면 차례대로 실행된다(알림 턴이 도는 동안의 첫 보류된 행도) | 재생, 비활성 | `queue.runNowUnavailableHelp` |
 | `waitsForHeld` | 백그라운드 작업만 기다리는 실행에 넣을 수 있지만, 보류된 항목이 먼저 가야 한다 | 재생, 비활성 | `queue.runNowAfterHeldHelp` |
 | `waitsForUpdate` | 창이 CLI 업데이트로 붙잡혀 있다 | 재생, 비활성 | `queue.runNowUpdateHelp` |
 | `hidden` | (첫 보류된 행이 아닌 보류된 행) 단추 없음 | – | – |
 
 판단 순서:
 1. **보류된 행:** 첫 보류된 행(`heldIndex == 0`)이면 `held`, 나머지는 `hidden`. 보류된 항목은 언제나 함께 가므로 단추는 하나면 된다.
+   - 바쁜 창은 보류된 항목을 중간 요청으로만 받는다. 그래서 창이 바쁘고 **알림 턴이 돌고 있으면**(Claude가 끝난 백그라운드 작업에 답하는 중: 창의 사실 `noticeTurnRunning`, `MightyGraphSupport.noticeTurnRunning`) 첫 보류된 행도 `waitsForTurn`이다. 그 턴에는 아무것도 끼워 넣지 않는다. 창이 쉬거나 알림 턴이 없으면 `held` 그대로다.
 2. **창이 쉬고 있으면**(실행 중도, 시작 중도, CLI 업데이트로 붙잡힌 것도 아님. 오류로 멈춘 대기열이 그렇다) `here`. 돌고 있는 작업이 없으니 worktree로 나눌 까닭이 없다.
 3. **CLI 업데이트로 붙잡힌 창**이면 `waitsForUpdate`. ⌘Enter도 그때는 worktree를 열지 않는다. 사용자가 시작한 CLI 업데이트나 플러그인 변경도 같다(맥 `manualUpdateHolds`, 윈도우 `ManualMutationBlockReason`). 마지막 실행의 끝을 아직 기록하는 자식 창은 바쁜 창으로 읽는다.
    - **Antigravity 권한 카드의 이어짐**(허용한 카드가 대기열에 넣은 후속 요청, 맥 `QueuedInput.antigravityGrant`/`antigravityCard`, `isContinuation`)이면 `waitsForTurn`. 그 허용 규칙과 카드는 이 창의 다음 실행 몫이라 worktree 자식, 에이전트 메뉴, steer 어느 길로도 가지 않는다. 창이 쉬면 2번에서 `here`다. 픽스처 행의 `continuation`.
 4. 행에 **글**이 있고 `ComposerSecondSend.choose`가 `.worktree`면 `worktree`.
 5. 행에 글이 있고 `menuOnly`면 `agentMenu`.
-6. 창이 **백그라운드 작업만 기다리고**(로컬 Claude, 중지 중 아님, 턴이 끝남, 알림 턴이 돌고 있지 않음: `MightyGraphSupport.noticeTurnRunning`), 행에 첨부가 없으면, 보류된 항목이 없을 때 `steer`, 있을 때 `waitsForHeld`.
+6. 창이 **백그라운드 작업만 기다리고**(로컬 Claude, 중지 중 아님, 턴이 끝남), 알림 턴이 돌고 있지 않고(`noticeTurnRunning` 거짓), 행에 첨부가 없으면, 보류된 항목이 없을 때 `steer`, 있을 때 `waitsForHeld`.
 7. 나머지는 `waitsForTurn`.
 
 - 4~5는 이유를 따로 받지 않는다. 이유는 모두 `choose`와 `menuOnly`의 입력에 들어 있다.

@@ -1124,8 +1124,8 @@ final class AppStore: ObservableObject, DelegationHost {
         return QueueRunNow.Pane(busy: session.status == "running" || pendingRuns.contains(id) || holds || recording, heldForUpdate: holds,
                                 secondSend: composerSecondSend(session), menuOnly: worktreeMenuOnly(session),
                                 waitsOnBackgroundOnly: session.kind == "claude" && session.provider == "claude" && !isRemoteSession(session) && !stopping && !recording
-                                    && session.backgroundWork?.waitingOnBackground == true && !MightyGraphSupport.noticeTurnRunning(session.graphRuns ?? []),
-                                held: (delegationHeld[id] ?? []).count)
+                                    && session.backgroundWork?.waitingOnBackground == true,
+                                held: (delegationHeld[id] ?? []).count, noticeTurnRunning: MightyGraphSupport.noticeTurnRunning(session.graphRuns ?? []))
     }
 
     /// A CLI update or plugin change the user started on this Mac holds the pane's runs (``runBlockedReason(_:checkRuntime:)``);

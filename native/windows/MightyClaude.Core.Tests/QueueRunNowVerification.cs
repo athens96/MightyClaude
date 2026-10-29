@@ -24,7 +24,7 @@ internal static class QueueRunNowVerification
             var second = ComposerSecondSends.Choose(Text("kind"), Text("provider"), Text("mode"), Flag("isChild"), Flag("delegationOn"), Flag("canHostWorktree"));
             DelegationChildChoice[] choices = Flag("otherAgentReady") ? [new(Text("provider") == "claude" ? "codex" : "claude", "acceptEdits", null)] : [];
             var menuOnly = ComposerSecondSends.MenuOnly(Text("kind"), Text("provider"), Text("mode"), Flag("isChild"), Flag("delegationOn"), Flag("canHostWorktree"), choices);
-            var pane = new QueueRunNow.Pane(Flag("busy"), Flag("heldForUpdate"), second, menuOnly, Flag("waitsOnBackgroundOnly"), p.GetProperty("held").GetInt32());
+            var pane = new QueueRunNow.Pane(Flag("busy"), Flag("heldForUpdate"), second, menuOnly, Flag("waitsOnBackgroundOnly"), p.GetProperty("held").GetInt32(), Flag("noticeTurnRunning"));
             int? heldIndex = row.GetProperty("heldIndex") is { ValueKind: JsonValueKind.Number } index ? index.GetInt32() : null;
             var path = QueueRunNow.Decide(heldIndex, row.GetProperty("text").GetString() ?? "", row.GetProperty("attachments").GetInt32(), pane,
                 row.GetProperty("continuation").GetBoolean());
@@ -77,9 +77,13 @@ internal static class QueueRunNowVerification
         Check(!MightyGraphSupport.NoticeTurnRunning([request]) && !MightyGraphSupport.NoticeTurnRunning([]), "no notice run, no notice turn");
         // An older request's notice run left running never holds the newest request's queue.
         Check(!MightyGraphSupport.NoticeTurnRunning([request, running, new MightyGraphRun { Id = "r2", Status = "completed" }]), "only the newest request's notice runs count");
-        // The pane reads it as not only waiting on background work: the row waits for its turn instead of steering.
-        var pane = new QueueRunNow.Pane(true, false, ComposerSecondSend.Queue, false, !MightyGraphSupport.NoticeTurnRunning([request, running]), 0);
+        // The pane carries it: a human row waits for its turn instead of steering, and so do the held items, which a busy pane takes
+        // only as a steer. Idle, or with no notice turn, the held items go as before.
+        var pane = new QueueRunNow.Pane(true, false, ComposerSecondSend.Queue, false, true, 0, MightyGraphSupport.NoticeTurnRunning([request, running]));
         Check(QueueRunNow.Decide(null, "Next", 0, pane) == QueueRunNowPath.WaitsForTurn, "a row waits for its turn while a notice turn runs");
+        Check(QueueRunNow.Decide(0, "", 0, pane) == QueueRunNowPath.WaitsForTurn && QueueRunNow.Decide(1, "", 0, pane) == QueueRunNowPath.Hidden, "the held items wait for a running notice turn too");
+        Check(QueueRunNow.Decide(null, "Next", 0, pane with { NoticeTurnRunning = false }) == QueueRunNowPath.Steer && QueueRunNow.Decide(0, "", 0, pane with { NoticeTurnRunning = false }) == QueueRunNowPath.Held
+            && QueueRunNow.Decide(0, "", 0, pane with { Busy = false }) == QueueRunNowPath.Held, "with no notice turn, or idle, the held items go as before");
         return Task.CompletedTask;
     }
 

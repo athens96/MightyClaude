@@ -18,7 +18,7 @@ public enum QueueRunNowPath
     Steer,
     /// <summary>The first held row: every item held for the pane goes to it now, together.</summary>
     Held,
-    /// <summary>Disabled: a turn runs and neither a new worktree nor a steer can take the row; it runs in its turn.</summary>
+    /// <summary>Disabled: a turn runs and neither a new worktree nor a steer can take the row (or the held items, while a notice turn runs); it runs in its turn.</summary>
     WaitsForTurn,
     /// <summary>Disabled: the row could go into the run that only waits on background work, but items held for the pane go first.</summary>
     WaitsForHeld,
@@ -35,9 +35,10 @@ public static class QueueRunNow
     /// <param name="HeldForUpdate">Held for a CLI update or plugin change, automatic or by hand.</param>
     /// <param name="SecondSend"><see cref="ComposerSecondSends.Choose"/>: <see cref="ComposerSecondSend.Worktree"/> where a new child of the pane's agent can be made now.</param>
     /// <param name="MenuOnly"><see cref="ComposerSecondSends.MenuOnly"/>.</param>
-    /// <param name="WaitsOnBackgroundOnly">A local Claude pane, not stopping, whose turn ended and whose background work still runs, with no notice turn running (<see cref="MightyGraphSupport.NoticeTurnRunning"/>).</param>
+    /// <param name="WaitsOnBackgroundOnly">A local Claude pane, not stopping, whose turn ended and whose background work still runs.</param>
     /// <param name="Held">Items delegation holds for the pane.</param>
-    public sealed record Pane(bool Busy, bool HeldForUpdate, ComposerSecondSend SecondSend, bool MenuOnly, bool WaitsOnBackgroundOnly, int Held);
+    /// <param name="NoticeTurnRunning">Claude is answering finished background work (<see cref="MightyGraphSupport.NoticeTurnRunning"/>): nothing steers into that turn, neither a human row nor the held items.</param>
+    public sealed record Pane(bool Busy, bool HeldForUpdate, ComposerSecondSend SecondSend, bool MenuOnly, bool WaitsOnBackgroundOnly, int Held, bool NoticeTurnRunning = false);
 
     /// <summary>
     /// Nothing a person sends joins a running turn, so a busy pane that can make no worktree and is not only waiting on background
@@ -45,11 +46,12 @@ public static class QueueRunNow
     /// them. <paramref name="heldIndex"/>: the row's place among the held rows, null for a human row. <paramref name="continuation"/>:
     /// the row continues an Antigravity permission card (<see cref="QueuedComposerInput.AntigravityGrant"/> or
     /// <see cref="QueuedComposerInput.AntigravityCard"/>); its allow rules and card belong to this pane's next run, so it never goes
-    /// to a worktree child nor into a running turn: here when idle, else it waits.
+    /// to a worktree child nor into a running turn: here when idle, else it waits. A busy pane takes its held items only as a steer,
+    /// which a running notice turn refuses: then they wait for that turn (M/QueueRunNow.swift decide).
     /// </summary>
     public static QueueRunNowPath Decide(int? heldIndex, string text, int attachments, Pane pane, bool continuation = false)
     {
-        if (heldIndex is { } index) return index == 0 ? QueueRunNowPath.Held : QueueRunNowPath.Hidden;
+        if (heldIndex is { } index) return index != 0 ? QueueRunNowPath.Hidden : pane.Busy && pane.NoticeTurnRunning ? QueueRunNowPath.WaitsForTurn : QueueRunNowPath.Held;
         if (!pane.Busy && !pane.HeldForUpdate) return QueueRunNowPath.Here;
         if (pane.HeldForUpdate) return QueueRunNowPath.WaitsForUpdate;
         if (continuation) return QueueRunNowPath.WaitsForTurn;
@@ -57,7 +59,7 @@ public static class QueueRunNow
         var words = !string.IsNullOrWhiteSpace(text);
         if (words && pane.SecondSend == ComposerSecondSend.Worktree) return QueueRunNowPath.Worktree;
         if (words && pane.MenuOnly) return QueueRunNowPath.AgentMenu;
-        if (pane.WaitsOnBackgroundOnly && attachments == 0) return pane.Held == 0 ? QueueRunNowPath.Steer : QueueRunNowPath.WaitsForHeld;
+        if (pane.WaitsOnBackgroundOnly && !pane.NoticeTurnRunning && attachments == 0) return pane.Held == 0 ? QueueRunNowPath.Steer : QueueRunNowPath.WaitsForHeld;
         return QueueRunNowPath.WaitsForTurn;
     }
 

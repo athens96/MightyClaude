@@ -297,9 +297,8 @@ public sealed partial class MainWindow
             var recording = !holds && owner.ManualMutationBlockReason(pane) is not null;
             return new(pane.Status == "running" || starting || queueStarting || holds || recording, holds, second,
                 second == ComposerSecondSend.Queue && owner.service.WorktreeMenuOnly(pane, LaunchesInPlanMode),
-                pane.Kind == "claude" && pane.Provider == "claude" && Workspace.Remote is null && !stopping && !recording && pane.BackgroundWork?.WaitingOnBackground == true
-                    && !MightyGraphSupport.NoticeTurnRunning(pane.GraphRuns ?? []),
-                owner.service.HeldItems(id).Count);
+                pane.Kind == "claude" && pane.Provider == "claude" && Workspace.Remote is null && !stopping && !recording && pane.BackgroundWork?.WaitingOnBackground == true,
+                owner.service.HeldItems(id).Count, MightyGraphSupport.NoticeTurnRunning(pane.GraphRuns ?? []));
         }
 
         /// <summary>What 바로 실행 does on each row of the pane (held first, then the human's), by row id, the pane read once (M/AppStore.swift queueRunNowRows).</summary>

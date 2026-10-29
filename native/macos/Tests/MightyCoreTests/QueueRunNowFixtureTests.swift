@@ -21,7 +21,7 @@ import Testing
             // Every case lists every field, so no reader ever falls back on a default.
             #expect(Set(row.keys) == ["heldIndex", "text", "attachments", "continuation"], "\(name): row fields")
             #expect(Set(p.keys) == ["busy", "heldForUpdate", "kind", "provider", "mode", "isChild", "delegationOn", "canHostWorktree", "otherAgentReady",
-                                    "waitsOnBackgroundOnly", "held"], "\(name): pane fields")
+                                    "waitsOnBackgroundOnly", "noticeTurnRunning", "held"], "\(name): pane fields")
             #expect(item.keys.contains("wire"), "\(name): wire")
             func flag(_ key: String) -> Bool { p[key] as? Bool ?? false }
             let kind = p["kind"] as? String ?? "", provider = p["provider"] as? String ?? "", mode = p["mode"] as? String ?? ""
@@ -31,7 +31,7 @@ import Testing
             let menuOnly = ComposerSecondSend.menuOnly(kind: kind, provider: provider, mode: mode, isChild: flag("isChild"), delegationOn: flag("delegationOn"),
                                                        canHostWorktree: flag("canHostWorktree"), choices: choices)
             let pane = QueueRunNow.Pane(busy: flag("busy"), heldForUpdate: flag("heldForUpdate"), secondSend: second, menuOnly: menuOnly,
-                                        waitsOnBackgroundOnly: flag("waitsOnBackgroundOnly"), held: p["held"] as? Int ?? 0)
+                                        waitsOnBackgroundOnly: flag("waitsOnBackgroundOnly"), held: p["held"] as? Int ?? 0, noticeTurnRunning: flag("noticeTurnRunning"))
             let path = QueueRunNow.decide(heldIndex: row["heldIndex"] as? Int, text: row["text"] as? String ?? "", attachments: row["attachments"] as? Int ?? 0,
                                           continuation: row["continuation"] as? Bool ?? false, pane: pane)
             #expect(path.rawValue == item["expect"] as? String, "\(name)")
@@ -95,9 +95,17 @@ import Testing
         #expect(!MightyGraphSupport.noticeTurnRunning([request]) && !MightyGraphSupport.noticeTurnRunning([]))
         // An older request's notice run left running never holds the newest request's queue.
         #expect(!MightyGraphSupport.noticeTurnRunning([request, running, MightyGraphRun(id: "r2", status: "completed")]))
-        // The pane reads it as not only waiting on background work: the row waits for its turn instead of steering.
-        let pane = QueueRunNow.Pane(busy: true, heldForUpdate: false, secondSend: .queue, menuOnly: false,
-                                    waitsOnBackgroundOnly: !MightyGraphSupport.noticeTurnRunning([request, running]), held: 0)
+        // The pane carries it: a human row waits for its turn instead of steering, and so do the held items, which a busy pane
+        // takes only as a steer. Idle, or with no notice turn, the held items go as before.
+        let pane = QueueRunNow.Pane(busy: true, heldForUpdate: false, secondSend: .queue, menuOnly: false, waitsOnBackgroundOnly: true, held: 0,
+                                    noticeTurnRunning: MightyGraphSupport.noticeTurnRunning([request, running]))
         #expect(QueueRunNow.decide(heldIndex: nil, text: "Next", attachments: 0, pane: pane) == .waitsForTurn)
+        #expect(QueueRunNow.decide(heldIndex: 0, text: "", attachments: 0, pane: pane) == .waitsForTurn)
+        #expect(QueueRunNow.decide(heldIndex: 1, text: "", attachments: 0, pane: pane) == .hidden)
+        var calm = pane; calm.noticeTurnRunning = false
+        #expect(QueueRunNow.decide(heldIndex: nil, text: "Next", attachments: 0, pane: calm) == .steer)
+        #expect(QueueRunNow.decide(heldIndex: 0, text: "", attachments: 0, pane: calm) == .held)
+        var idle = pane; idle.busy = false
+        #expect(QueueRunNow.decide(heldIndex: 0, text: "", attachments: 0, pane: idle) == .held)
     }
 }

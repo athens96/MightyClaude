@@ -13,7 +13,7 @@ public enum QueueRunNow: String, Sendable, CaseIterable {
     case steer
     /// The first held row: every item held for the pane goes to it now, together.
     case held
-    /// Disabled: a turn runs and neither a new worktree nor a steer can take the row; it runs in its turn.
+    /// Disabled: a turn runs and neither a new worktree nor a steer can take the row (or the held items, while a notice turn runs); it runs in its turn.
     case waitsForTurn
     /// Disabled: the row could go into the run that only waits on background work, but items held for the pane go first.
     case waitsForHeld
@@ -31,14 +31,17 @@ public enum QueueRunNow: String, Sendable, CaseIterable {
         public var secondSend: ComposerSecondSend
         /// `ComposerSecondSend.menuOnly(…)`.
         public var menuOnly: Bool
-        /// A local Claude pane, not stopping, whose turn ended and whose background work still runs, with no notice turn running
-        /// (`MightyGraphSupport.noticeTurnRunning`).
+        /// A local Claude pane, not stopping, whose turn ended and whose background work still runs.
         public var waitsOnBackgroundOnly: Bool
         /// Items delegation holds for the pane.
         public var held: Int
-        public init(busy: Bool, heldForUpdate: Bool, secondSend: ComposerSecondSend, menuOnly: Bool, waitsOnBackgroundOnly: Bool, held: Int) {
+        /// Claude is answering finished background work (`MightyGraphSupport.noticeTurnRunning`): nothing steers into that
+        /// turn, neither a human row nor the held items.
+        public var noticeTurnRunning: Bool
+        public init(busy: Bool, heldForUpdate: Bool, secondSend: ComposerSecondSend, menuOnly: Bool, waitsOnBackgroundOnly: Bool, held: Int,
+                    noticeTurnRunning: Bool = false) {
             self.busy = busy; self.heldForUpdate = heldForUpdate; self.secondSend = secondSend; self.menuOnly = menuOnly
-            self.waitsOnBackgroundOnly = waitsOnBackgroundOnly; self.held = held
+            self.waitsOnBackgroundOnly = waitsOnBackgroundOnly; self.held = held; self.noticeTurnRunning = noticeTurnRunning
         }
     }
 
@@ -47,8 +50,12 @@ public enum QueueRunNow: String, Sendable, CaseIterable {
     /// never steered past them. `heldIndex`: the row's place among the held rows, nil for a human row. `continuation`: the
     /// row continues an Antigravity permission card (``QueuedInput/isContinuation``); its allow rules and card belong to
     /// this pane's next run, so it never goes to a worktree child nor into a running turn: here when idle, else it waits.
+    /// A busy pane takes its held items only as a steer, which a running notice turn refuses: then they wait for that turn.
     public static func decide(heldIndex: Int?, text: String, attachments: Int, continuation: Bool = false, pane: Pane) -> QueueRunNow {
-        if let heldIndex { return heldIndex == 0 ? .held : .hidden }
+        if let heldIndex {
+            guard heldIndex == 0 else { return .hidden }
+            return pane.busy && pane.noticeTurnRunning ? .waitsForTurn : .held
+        }
         if !pane.busy, !pane.heldForUpdate { return .here }
         if pane.heldForUpdate { return .waitsForUpdate }
         if continuation { return .waitsForTurn }
@@ -56,7 +63,7 @@ public enum QueueRunNow: String, Sendable, CaseIterable {
         let words = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if words, pane.secondSend == .worktree { return .worktree }
         if words, pane.menuOnly { return .agentMenu }
-        if pane.waitsOnBackgroundOnly, attachments == 0 { return pane.held == 0 ? .steer : .waitsForHeld }
+        if pane.waitsOnBackgroundOnly, !pane.noticeTurnRunning, attachments == 0 { return pane.held == 0 ? .steer : .waitsForHeld }
         return .waitsForTurn
     }
 
