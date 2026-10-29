@@ -300,8 +300,6 @@ struct AppSettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("settings-status-line")
-                Toggle(L("settings.display.backgroundWorkToggle"), isOn: Binding(get: { store.showsBackgroundWork }, set: { store.setShowsBackgroundWork($0) }))
-                    .accessibilityIdentifier("settings-background-work")
                 // Agent delegation is on unless turned off here (or by its defaults key).
                 Toggle(isOn: Binding(
                     get: { DelegationSwitch.isOn() },

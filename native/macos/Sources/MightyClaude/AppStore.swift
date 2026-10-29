@@ -1508,15 +1508,6 @@ final class AppStore: ObservableObject, DelegationHost {
 
     func toggleSidebar() { setSidebarCollapsed(!sidebarCollapsed) }
 
-    /// The background work line above every agent pane's composer is drawn; Settings → General →
-    /// Display, the line's hide button and the pane's … menu all set this one saved value.
-    var showsBackgroundWork: Bool { snapshot.showsBackgroundWork != false }
-
-    func setShowsBackgroundWork(_ shown: Bool) {
-        guard shown != showsBackgroundWork else { return }
-        snapshot.showsBackgroundWork = shown
-    }
-
     /// The text size and fonts every pane, sheet and terminal draws with (Settings → General →
     /// 글자 and View → ⌘= / ⌘− / ⌘0); saved in the app's defaults by `TextSettings`.
     var textAppearance: TextAppearance { TextSettings.shared.appearance }
@@ -1531,7 +1522,7 @@ final class AppStore: ObservableObject, DelegationHost {
         TextSettings.shared.set(value)
     }
 
-    /// That line is open on its task rows; saved, so it opens the same way next time.
+    /// The background strip is open on its task rows; saved, so it opens the same way next time.
     var backgroundWorkOpen: Bool { snapshot.backgroundWorkOpen == true }
 
     func setBackgroundWorkOpen(_ open: Bool) {
@@ -1937,30 +1928,21 @@ final class AppStore: ObservableObject, DelegationHost {
         return result
     }
 
-    /// The background work line through the calls its hide button, the pane's … menu and the Settings switch
-    /// make (no clicks: CI has no accessibility client, so the state decides): hiding is saved and the line's
-    /// rule then draws nothing in either view, its open state is saved, and showing it again is saved. Both
-    /// values are put back after.
+    /// The background strip through the calls its fold makes (no clicks: CI has no accessibility client, so the
+    /// state decides): it is drawn in both views with no switch to hide it, its open state is saved, and the
+    /// saved file never carries the removed hide switch. The open value is put back after.
     private func runBackgroundWorkLineSmoke() async -> [String: Any] {
-        let originalShown = snapshot.showsBackgroundWork, originalOpen = snapshot.backgroundWorkOpen
+        let originalOpen = snapshot.backgroundWorkOpen
         var result: [String: Any] = ["passed": false]
         func savedState() async throws -> AppSnapshot {
             try await flush()
             return try await StateRepository(directory: dataDirectory, legacyStateURL: nil).load()
         }
         let work = BackgroundWork(tasks: [BackgroundTask(id: "smoke-bg-1", kind: "agent", description: "smoke background agent", startedAt: "2026-01-01T00:00:00Z")], turnEnded: true)
-        func drawn(mighty: Bool) -> Bool { PlanCardSupport.showsBackgroundStrip(work, mighty: mighty, styleDrawsTasks: false, enabled: showsBackgroundWork) }
         do {
-            setShowsBackgroundWork(true)
-            setBackgroundWorkOpen(false)
-            let drawnBefore = drawn(mighty: false) && drawn(mighty: true)
-            result["drawnWhenShown"] = drawnBefore
-
-            setShowsBackgroundWork(false)
-            let hidden = try await savedState()
-            let hideSaved = !showsBackgroundWork && hidden.showsBackgroundWork == false && !drawn(mighty: false) && !drawn(mighty: true)
-            result["hideSaved"] = hideSaved
-
+            let drawn = PlanCardSupport.showsBackgroundStrip(work, mighty: false, styleDrawsTasks: false)
+                && PlanCardSupport.showsBackgroundStrip(work, mighty: true, styleDrawsTasks: false)
+            result["drawnInBothViews"] = drawn
             setBackgroundWorkOpen(true)
             let opened = try await savedState()
             let openRemembered = backgroundWorkOpen && opened.backgroundWorkOpen == true
@@ -1968,18 +1950,14 @@ final class AppStore: ObservableObject, DelegationHost {
             let folded = try await savedState()
             let foldRemembered = !backgroundWorkOpen && folded.backgroundWorkOpen == false
             result["openRemembered"] = openRemembered && foldRemembered
-
-            setShowsBackgroundWork(true)
-            let shown = try await savedState()
-            let showSaved = showsBackgroundWork && shown.showsBackgroundWork == true && drawn(mighty: false)
-            result["showSaved"] = showSaved
-
-            result["passed"] = drawnBefore && hideSaved && openRemembered && foldRemembered && showSaved
+            let raw = String(decoding: try Data(contentsOf: dataDirectory.appendingPathComponent("workspace-state.json")), as: UTF8.self)
+            let noHideSwitch = !raw.contains("showsBackgroundWork")
+            result["noHideSwitch"] = noHideSwitch
+            result["passed"] = drawn && openRemembered && foldRemembered && noHideSwitch
         } catch { result["error"] = error.localizedDescription }
-        snapshot.showsBackgroundWork = originalShown
         snapshot.backgroundWorkOpen = originalOpen
         do { try await flush() } catch { result["restoreError"] = error.localizedDescription }
-        result["restored"] = snapshot.showsBackgroundWork == originalShown && snapshot.backgroundWorkOpen == originalOpen
+        result["restored"] = snapshot.backgroundWorkOpen == originalOpen
         return result
     }
 

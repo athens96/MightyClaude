@@ -37,7 +37,7 @@ describe('the shared background output contract', () => {
 
 describe('backgroundLabel', () => {
   it('says a running task waits for its notice', () => {
-    expect(backgroundLabel({ kind: 'task', background: true, status: 'running' })).toBe('백그라운드 실행 · 알림으로 확인');
+    expect(backgroundLabel({ kind: 'task', background: true, status: 'running' })).toBe('백그라운드 실행 · 실행 중');
   });
 
   it('says how an ended task ended', () => {

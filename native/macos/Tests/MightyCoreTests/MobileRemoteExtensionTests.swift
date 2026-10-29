@@ -382,11 +382,21 @@ struct MobileRemoteExtensionTests {
         #expect(try encoded(MobileSessionDetail(revision: 1, session: summary, entries: [], backgroundWork: []))["backgroundWork"] == nil)
     }
 
+    @Test func theFinishedCountTravelsWheneverTheStripShows() throws {
+        let summary = MobileSessionSummary(id: "s1", workspaceId: "w1", title: "Claude", kind: "claude", provider: "claude", model: "default",
+                                           status: "running", revision: 1, updatedAt: "2026-09-17T00:00:00Z")
+        #expect(try encoded(MobileSessionDetail(revision: 1, session: summary, entries: [], backgroundDone: 0))["backgroundDone"] as? Int == 0)
+        #expect(try encoded(MobileSessionDetail(revision: 1, session: summary, entries: [], backgroundDone: 3))["backgroundDone"] as? Int == 3)
+        #expect(try encoded(MobileSessionDetail(revision: 1, session: summary, entries: []))["backgroundDone"] == nil)
+        let data = try JSONEncoder().encode(MobileSessionDetail(revision: 1, session: summary, entries: [], backgroundDone: 2))
+        #expect(try JSONDecoder().decode(MobileSessionDetail.self, from: data).backgroundDone == 2)
+    }
+
     @Test func backgroundLabelsNameTheKindAndHowItEnded() {
         LocaleOverride.$language.withValue(.ko) {
             let task = MightyGraphAgent(id: "t", status: "running", kind: "task", background: true)
             let sub = MightyGraphAgent(id: "a", status: "completed", background: true)
-            #expect(MightyGraphSupport.backgroundLabel(task) == "백그라운드 실행 · 알림으로 확인")
+            #expect(MightyGraphSupport.backgroundLabel(task) == "백그라운드 실행 · 실행 중")
             #expect(MightyGraphSupport.backgroundLabel(sub) == "하위 에이전트 · 완료")
             #expect(MightyGraphSupport.backgroundLabel(MightyGraphAgent(id: "f", status: "running")) == nil)
             #expect(MightyGraphSupport.backgroundLabel(run: false, status: "running") == "하위 에이전트 · 응답 대기")
@@ -410,10 +420,10 @@ struct MobileRemoteExtensionTests {
             let rows = PlanCardSupport.backgroundStripRows(work, run: run, output: [shellID: ["a", "b"], agentID: ["x"]])
             // Running work first, as the task list orders it.
             #expect(rows.map(\.task.text) == ["npm test", "기타", "make", "조사"])
-            #expect(rows[0].kindText == "백그라운드 실행 · 알림으로 확인" && rows[0].tail == "b")
+            #expect(rows[0].kindText == "백그라운드 실행 · 실행 중" && rows[0].tail == "b")
             #expect(rows[1].kindText == nil && rows[1].tail == nil)
             // No block: the CLI's kind decides, with no output line.
-            #expect(rows[2].kindText == "백그라운드 실행 · 알림으로 확인" && rows[2].tail == nil)
+            #expect(rows[2].kindText == "백그라운드 실행 · 실행 중" && rows[2].tail == nil)
             #expect(rows[3].kindText == "하위 에이전트 · 완료" && rows[3].tail == nil)
         }
     }

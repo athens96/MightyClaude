@@ -2,8 +2,7 @@ import SwiftUI
 import MightyCore
 
 /// Background tasks, one row each: a status dot, what the task is doing, and
-/// its kind · status · elapsed time · whether the agent hears of it when it
-/// ends or has heard (`PlanCardSupport.backgroundNotice`). The plan style's task-list widget and
+/// its kind · status · elapsed time. The plan style's task-list widget and
 /// the pane's own background strip both draw this, so they read the same.
 struct BackgroundTaskRows: View {
     /// The background strip's rows carry the diagram's kind words and a run's last
@@ -34,9 +33,8 @@ struct BackgroundTaskRows: View {
 
     private func row(_ item: PlanCardSupport.BackgroundStripRow, now: Date) -> some View {
         let task = item.task
-        // The kind words already say waiting or how it ended: only a delivered notice is added.
-        let parts = item.kindText.map { [$0, task.elapsed(now: now), PlanCardSupport.noticeDelivered(task.status) ? L("plan.background.noticeDelivered") : ""] }
-            ?? [task.kindTitle, task.statusTitle, task.elapsed(now: now), PlanCardSupport.backgroundNotice(task.status) ?? ""]
+        // The kind words already say waiting or how it ended.
+        let parts = item.kindText.map { [$0, task.elapsed(now: now)] } ?? [task.kindTitle, task.statusTitle, task.elapsed(now: now)]
         let detail = parts.filter { !$0.isEmpty }.joined(separator: " · ")
         let id = item.opens ? item.id : nil
         let open = id.map(opened.contains) ?? false
@@ -92,9 +90,9 @@ struct BackgroundTaskRows: View {
 }
 
 /// The pane's background work outside a style: one folded line above the
-/// composer that opens to the task rows. Whether it is open and whether it is
-/// drawn at all are app-wide and saved (`AppStore.backgroundWorkOpen`,
-/// `AppStore.showsBackgroundWork`); the eye button hides it.
+/// composer, headed by how many tasks ended and how many still run, that opens
+/// to the task rows. Whether it is open is app-wide and saved
+/// (`AppStore.backgroundWorkOpen`); it cannot be hidden.
 struct BackgroundWorkStrip: View {
     @EnvironmentObject private var store: AppStore
     let sessionId: String
@@ -108,30 +106,21 @@ struct BackgroundWorkStrip: View {
     var body: some View {
         let rows = PlanCardSupport.backgroundStripRows(work, run: run, output: output.lines)
         let open = store.backgroundWorkOpen
+        let counts = PlanCardSupport.backgroundCounts(work)
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Button { store.setBackgroundWorkOpen(!open) } label: {
-                    HStack(spacing: DesignMetrics.Spacing.sm) {
-                        Image(systemName: "square.stack.3d.up").foregroundStyle(Palette.accent)
-                        Text(L("plan.background.listTitle", ["count": "\(work.tasks.count)"])).font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
-                        Text(verbatim: PlanCardSupport.backgroundStripSummary(work)).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
-                        Spacer(minLength: 0)
-                        Image(systemName: open ? "chevron.up" : "chevron.down").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
-                    }.contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("plan.background.listTitle", ["count": "\(work.tasks.count)"]))
-                .accessibilityValue(open ? L("plan.background.hide") : L("plan.background.show"))
-                .accessibilityIdentifier("background-work-\(sessionId)")
-                Button { store.setShowsBackgroundWork(false) } label: {
-                    Image(systemName: "eye.slash").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
-                        .frame(width: 18, height: 16).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(L("plan.background.hideStripHelp"))
-                .accessibilityLabel(L("plan.background.hideStrip"))
-                .accessibilityIdentifier("background-work-hide-\(sessionId)")
+            Button { store.setBackgroundWorkOpen(!open) } label: {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    Image(systemName: "square.stack.3d.up").foregroundStyle(Palette.accent)
+                    Text(L("plan.background.title")).font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
+                    Text(verbatim: counts).font(.ui(size: 11).monospacedDigit()).foregroundStyle(Palette.ink2).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                }.contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("plan.background.title") + " · " + counts)
+            .accessibilityValue(open ? L("plan.background.hide") : L("plan.background.show"))
+            .accessibilityIdentifier("background-work-\(sessionId)")
             if open { BackgroundTaskRows(strip: rows) }
         }
         .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)

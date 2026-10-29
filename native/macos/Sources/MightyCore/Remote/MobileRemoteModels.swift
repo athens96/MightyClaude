@@ -327,16 +327,19 @@ public struct MobileSessionDetail: Codable, Sendable, Equatable {
     public var askTarget: String?
     /// Background work still running, as the Mac's strip lists it; absent when none runs.
     public var backgroundWork: [MobileBackgroundWork]?
+    /// How many of the strip's tasks ended, sent with the strip (0 included); absent when it does not show.
+    public var backgroundDone: Int?
     public static let maximumEntries = 80
     public init(revision: Int, session: MobileSessionSummary, entries: [LogEntry], permissions: [MobilePermission] = [], queued: [MobileQueuedItem] = [], usage: MobileUsage? = nil, elapsedSeconds: Double? = nil,
                 hasOlder: Bool? = nil, settings: MobileSettings? = nil, mighty: MobileMighty? = nil, statusLine: MobileStatusLine? = nil, rateLimits: [MobileRateLimit]? = nil,
-                askTargets: [MobileAskTarget]? = nil, askTarget: String? = nil, backgroundWork: [MobileBackgroundWork]? = nil) {
+                askTargets: [MobileAskTarget]? = nil, askTarget: String? = nil, backgroundWork: [MobileBackgroundWork]? = nil, backgroundDone: Int? = nil) {
         self.revision = revision; self.session = session; self.entries = MobileRemoteSupport.phoneEntries(entries); self.permissions = permissions; self.queued = queued; self.usage = usage; self.elapsedSeconds = elapsedSeconds
         self.hasOlder = hasOlder; self.settings = settings; self.mighty = mighty; self.statusLine = statusLine; self.rateLimits = rateLimits
         // No targets: neither field is sent, so the phone draws no switch.
         let offered = askTargets?.isEmpty == false ? askTargets : nil
         self.askTargets = offered; self.askTarget = offered == nil ? nil : askTarget
         self.backgroundWork = backgroundWork?.isEmpty == false ? backgroundWork : nil
+        self.backgroundDone = backgroundDone
     }
 }
 

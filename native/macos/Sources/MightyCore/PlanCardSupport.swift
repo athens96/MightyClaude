@@ -184,42 +184,35 @@ public enum PlanCardSupport {
         return items.isEmpty ? nil : items
     }
 
-    /// The expandable background list outside a style: in any view once the
-    /// turn is over, and in the Mighty view all along, while background work
-    /// runs or after it ended and the agent was told. A style that draws its own
-    /// task list keeps it, and nothing is drawn while the user hid the line
-    /// (`AppSnapshot.showsBackgroundWork`). It stays until the next request
-    /// starts a run and clears the work.
-    public static func showsBackgroundStrip(_ work: BackgroundWork?, mighty: Bool, styleDrawsTasks: Bool, enabled: Bool = true) -> Bool {
-        guard enabled, !styleDrawsTasks, let work, work.turnEnded || mighty else { return false }
+    /// The expandable background list outside a style: in any view once the turn is over, and in the Mighty
+    /// view all along, while background work runs or after it ended with its report. A style that draws its own
+    /// task list keeps it. It stays until the next request starts a run and clears the work; nothing hides it.
+    public static func showsBackgroundStrip(_ work: BackgroundWork?, mighty: Bool, styleDrawsTasks: Bool) -> Bool {
+        guard !styleDrawsTasks, let work, work.turnEnded || mighty else { return false }
         return work.tasks.contains { $0.status == "running" || noticeDelivered($0.status) }
     }
 
-    /// The strip's folded line: the header's "turn done" word while waiting,
-    /// else how many still run.
-    public static func backgroundSummary(_ work: BackgroundWork) -> String {
-        backgroundStatus(work) ?? L("styles.state.backgroundRunning", ["count": "\(work.running.count)"])
-    }
-
-    /// A task that ended with the CLI's own end report; the same report
-    /// reaches the agent as its task notification. An `unknown` task ended
-    /// with the process, so no notification went out.
+    /// A task that ended with the CLI's own end report (completed, failed, stopped); an `unknown` one ended
+    /// with the process.
     public static func noticeDelivered(_ status: String) -> Bool {
         ["completed", "failed", "stopped"].contains(status)
     }
 
-    /// What the agent hears of a background task: a running one tells it when
-    /// it ends (the runner keeps the CLI's input open while background work
-    /// runs), an ended one has told it; nil for one that ended without telling.
-    public static func backgroundNotice(_ status: String) -> String? {
-        if status == "running" { return L("plan.background.awaitingNotice") }
-        return noticeDelivered(status) ? L("plan.background.noticeDelivered") : nil
+    /// The strip's tasks that no longer run (ended with a report, or with the process): the current run's, so
+    /// what ended since the request that started it.
+    public static func backgroundFinished(_ work: BackgroundWork) -> Int { work.tasks.count - work.running.count }
+
+    /// The strip's header counts, "끝남 N개 · 작업 중 N개", over every task it holds (not only the rows it lists).
+    public static func backgroundCounts(_ work: BackgroundWork) -> String {
+        L("plan.background.doneCount", ["count": "\(backgroundFinished(work))"]) + " · "
+            + L("plan.background.runningCount", ["count": "\(work.running.count)"])
     }
 
-    /// The strip's folded line: `backgroundSummary` and that the agent hears
-    /// when each ends, or once all ended, that it was told.
-    public static func backgroundStripSummary(_ work: BackgroundWork) -> String {
-        work.running.isEmpty ? L("plan.background.allNotified") : backgroundSummary(work) + " · " + L("plan.background.awaitingNotice")
+    /// The phone's `backgroundDone`: the finished count whenever the Mighty view's strip shows, 0 included (its
+    /// presence tells the phone the host counts); nil otherwise.
+    public static func mobileBackgroundDone(_ work: BackgroundWork?) -> Int? {
+        guard let work, showsBackgroundStrip(work, mighty: true, styleDrawsTasks: false) else { return nil }
+        return backgroundFinished(work)
     }
 
     /// Whether a style draws a background task list of its own (§1.17).

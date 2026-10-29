@@ -36,7 +36,7 @@ struct MobileRemoteTracking {
         /// guided panel's state. Not the streamed
         /// text — see `AppStore.mobileMightyDigest`.
         var mighty: Int
-        /// The running background work the phone lists (`MobileSessionDetail.backgroundWork`).
+        /// The background work the phone lists and its finished count (`backgroundWork`, `backgroundDone`).
         var background: Int
         init(_ session: RunSession, editable: Bool, options: Int, mighty: Int, background: Int = 0) {
             status = session.status; title = session.title; provider = session.provider; model = session.model; resumeId = session.resumeId
@@ -479,7 +479,7 @@ extension AppStore {
                                    statusLine: mobileStatusLine(id), rateLimits: MobileRemoteSupport.rateLimits(session.sessionUsage?.rateLimits ?? []),
                                    askTargets: targets.map { MobileAskTarget(id: $0.id, label: $0.label) },
                                    askTarget: AskTargets.effective(saved: session.askTarget, available: targets)?.id,
-                                   backgroundWork: mobileBackgroundWork(session))
+                                   backgroundWork: mobileBackgroundWork(session), backgroundDone: mobileBackgroundDone(session))
     }
 
     /// The pane's running background work as its strip lists it, joined to the newest request's blocks for the
@@ -490,8 +490,14 @@ extension AppStore {
                                                     output: backgroundOutput.lines(forPane: session.id))
     }
 
-    /// What wakes a phone watching the pane's `backgroundWork`: the running tasks and, while any runs, its output
-    /// lines' phone revision (moved at most once per `BackgroundOutputModel.phoneInterval`).
+    /// How many of the pane's strip tasks ended (`MobileSessionDetail.backgroundDone`), while the strip shows.
+    func mobileBackgroundDone(_ session: RunSession) -> Int? {
+        session.kind == SessionKind.claude ? PlanCardSupport.mobileBackgroundDone(session.backgroundWork) : nil
+    }
+
+    /// What wakes a phone watching the pane's `backgroundWork` and `backgroundDone`: the running tasks, the
+    /// finished count while the strip shows and, while any runs, its output lines' phone revision (moved at most
+    /// once per `BackgroundOutputModel.phoneInterval`).
     func mobileBackgroundDigest(_ session: RunSession) -> Int {
         guard session.kind == SessionKind.claude, let tasks = session.backgroundWork?.tasks else { return 0 }
         var hasher = Hasher()
@@ -500,8 +506,10 @@ extension AppStore {
             running = true
             hasher.combine(task.id); hasher.combine(task.description); hasher.combine(task.toolUseId)
         }
-        guard running else { return 0 }
-        hasher.combine(backgroundOutput.phoneRevision(forPane: session.id))
+        let done = mobileBackgroundDone(session)
+        guard running || done != nil else { return 0 }
+        hasher.combine(done)
+        if running { hasher.combine(backgroundOutput.phoneRevision(forPane: session.id)) }
         return hasher.finalize()
     }
 

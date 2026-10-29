@@ -110,28 +110,25 @@ struct SnapshotPreferencesTests {
         }
     }
 
-    @Test func backgroundWorkLineSwitchesPersistAndOlderStateShowsItFolded() async throws {
-        // Older state has neither field: the line is shown, folded.
-        let legacy = Data(#"{"version":1,"workspaces":[],"sessions":[],"layout":"grid","theme":"dark","sidebarWidth":300}"#.utf8)
-        let old = StateRepository.decodeSnapshot(legacy)
-        #expect(old.showsBackgroundWork == nil && old.backgroundWorkOpen == nil)
-        #expect(AppSnapshot().showsBackgroundWork == nil && AppSnapshot().backgroundWorkOpen == nil)
-        let normalized = StateRepository.normalize(AppSnapshot(showsBackgroundWork: false, backgroundWorkOpen: true), restoring: true)
-        #expect(normalized.showsBackgroundWork == false && normalized.backgroundWorkOpen == true)
+    @Test func backgroundWorkOpenPersistsAndTheOldHideSwitchIsDropped() async throws {
+        // Older state may still carry the removed hide switch: it loads, and no save writes it again.
+        let legacy = Data(#"{"version":1,"workspaces":[],"sessions":[],"layout":"grid","theme":"dark","sidebarWidth":300,"showsBackgroundWork":false,"backgroundWorkOpen":true}"#.utf8)
+        #expect(StateRepository.decodeSnapshot(legacy).backgroundWorkOpen == true)
+        #expect(AppSnapshot().backgroundWorkOpen == nil)
+        #expect(StateRepository.normalize(AppSnapshot(backgroundWorkOpen: true), restoring: true).backgroundWorkOpen == true)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-background-line-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        for (shown, open) in [(false, true), (true, false), (false, false), (true, true)] {
-            try await StateRepository(directory: directory, legacyStateURL: nil).save(AppSnapshot(showsBackgroundWork: shown, backgroundWorkOpen: open))
-            let restored = try await StateRepository(directory: directory, legacyStateURL: nil).load()
-            #expect(restored.showsBackgroundWork == shown)
-            #expect(restored.backgroundWorkOpen == open)
+        for open in [true, false] {
+            try await StateRepository(directory: directory, legacyStateURL: nil).save(AppSnapshot(backgroundWorkOpen: open))
+            #expect(try await StateRepository(directory: directory, legacyStateURL: nil).load().backgroundWorkOpen == open)
+            let raw = String(decoding: try Data(contentsOf: directory.appendingPathComponent("workspace-state.json")), as: UTF8.self)
+            #expect(!raw.contains("showsBackgroundWork"))
         }
-        // Only a JSON boolean counts; anything else reads as the default.
+        // Only a JSON boolean counts; anything else reads as folded.
         var object = try #require(JSONSerialization.jsonObject(with: legacy) as? [String: Any])
         for invalid: Any in [0, "false", NSNull()] {
-            object["showsBackgroundWork"] = invalid; object["backgroundWorkOpen"] = invalid
-            let decoded = StateRepository.decodeSnapshot(try JSONSerialization.data(withJSONObject: object))
-            #expect(decoded.showsBackgroundWork == nil && decoded.backgroundWorkOpen == nil)
+            object["backgroundWorkOpen"] = invalid
+            #expect(StateRepository.decodeSnapshot(try JSONSerialization.data(withJSONObject: object)).backgroundWorkOpen == nil)
         }
     }
 

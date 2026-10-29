@@ -113,34 +113,38 @@ struct PlanCardTests {
         }
     }
 
-    @Test func aHiddenBackgroundLineDrawsNothingInEitherView() {
+    @Test func theBackgroundLineAlwaysShowsInBothViewsWhileItHasWork() {
         let task = BackgroundTask(id: "a", kind: "agent", description: "look", startedAt: "2027-01-15T08:00:00.000Z")
-        let waiting = BackgroundWork(tasks: [task], turnEnded: true)
         for mighty in [false, true] {
-            #expect(PlanCardSupport.showsBackgroundStrip(waiting, mighty: mighty, styleDrawsTasks: false))
-            #expect(PlanCardSupport.showsBackgroundStrip(waiting, mighty: mighty, styleDrawsTasks: false, enabled: true))
-            #expect(!PlanCardSupport.showsBackgroundStrip(waiting, mighty: mighty, styleDrawsTasks: false, enabled: false))
+            #expect(PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [task], turnEnded: true), mighty: mighty, styleDrawsTasks: false))
         }
-        #expect(!PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [task], turnEnded: false), mighty: true, styleDrawsTasks: false, enabled: false))
+        #expect(PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [task], turnEnded: false), mighty: true, styleDrawsTasks: false))
     }
 
-    @Test func theBackgroundLineSaysTheAgentIsToldAndStaysOnceItWas() {
+    @Test func theBackgroundLineCountsWhatEndedAndWhatRunsAndStaysOnceAllEnded() {
         let running = BackgroundTask(id: "a", kind: "shell", description: "build", startedAt: "2027-01-15T08:00:00.000Z")
-        var told = running; told.status = "completed"; told.endedAt = "2027-01-15T08:01:00.000Z"
-        var lost = told; lost.status = "unknown"
-        let waiting = BackgroundWork(tasks: [running], turnEnded: true)
+        var told = running; told.id = "b"; told.status = "completed"; told.endedAt = "2027-01-15T08:01:00.000Z"
+        var lost = told; lost.id = "c"; lost.status = "unknown"
+        let mixed = BackgroundWork(tasks: [running, told, lost], turnEnded: true)
         let ended = BackgroundWork(tasks: [told], turnEnded: true)
+        #expect(PlanCardSupport.backgroundFinished(mixed) == 2)
         #expect(PlanCardSupport.showsBackgroundStrip(ended, mighty: false, styleDrawsTasks: false))
         #expect(PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [told], turnEnded: false), mighty: true, styleDrawsTasks: false))
         #expect(!PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [told], turnEnded: false), mighty: false, styleDrawsTasks: false))
         for mighty in [false, true] { #expect(!PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [lost], turnEnded: true), mighty: mighty, styleDrawsTasks: false)) }
         LocaleOverride.$language.withValue(.ko) {
-            #expect(PlanCardSupport.backgroundNotice("running") == "끝나면 알림")
-            #expect(PlanCardSupport.backgroundNotice("failed") == "알림 전달됨")
-            #expect(PlanCardSupport.backgroundNotice("unknown") == nil)
-            #expect(PlanCardSupport.backgroundStripSummary(waiting) == "턴 완료 · 백그라운드 1개 실행 중 · 끝나면 알림")
-            #expect(PlanCardSupport.backgroundStripSummary(ended) == "모두 끝남 · 알림 전달됨")
+            #expect(PlanCardSupport.backgroundCounts(BackgroundWork(tasks: [running], turnEnded: true)) == "끝남 0개 · 작업 중 1개")
+            #expect(PlanCardSupport.backgroundCounts(mixed) == "끝남 2개 · 작업 중 1개")
+            #expect(PlanCardSupport.backgroundCounts(ended) == "끝남 1개 · 작업 중 0개")
+            // No row says what the agent hears.
+            let rows = PlanCardSupport.backgroundStripRows(mixed, run: nil)
+            #expect(!rows.isEmpty)
+            for word in ["끝나면 알림", "알림 전달됨"] { #expect(!rows.contains { $0.kindText?.contains(word) == true }) }
         }
+        #expect(PlanCardSupport.mobileBackgroundDone(mixed) == 2)
+        #expect(PlanCardSupport.mobileBackgroundDone(BackgroundWork(tasks: [running], turnEnded: false)) == 0)
+        #expect(PlanCardSupport.mobileBackgroundDone(BackgroundWork(tasks: [lost], turnEnded: true)) == nil)
+        #expect(PlanCardSupport.mobileBackgroundDone(nil) == nil)
     }
 
     @Test func thePlanCardTakesTheResultsPlaceAndRecordsHangBesideTheRequest() throws {

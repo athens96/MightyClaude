@@ -280,10 +280,6 @@ struct StylesClaudePlanTests {
         #expect(!PlanCardSupport.showsBackgroundStrip(waiting, mighty: true, styleDrawsTasks: true))
         #expect(!PlanCardSupport.showsBackgroundStrip(nil, mighty: true, styleDrawsTasks: false))
         #expect(PlanCardSupport.backgroundTasks(waiting).map(\.text) == ["x"])
-        LocaleOverride.$language.withValue(.ko) {
-            #expect(PlanCardSupport.backgroundSummary(waiting) == "턴 완료 · 백그라운드 1개 실행 중")
-            #expect(PlanCardSupport.backgroundSummary(running) == "백그라운드 1개 실행 중")
-        }
     }
 
     // MARK: Validation (§1.17)

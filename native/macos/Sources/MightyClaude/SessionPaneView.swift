@@ -169,22 +169,6 @@ struct SessionPaneView: View {
         .accessibilityLabel(L("composer.statusLine.name")).accessibilityValue(on ? L("accessibility.on") : L("accessibility.off"))
         .accessibilityIdentifier("status-line-toggle-\(session.id)")
     }
-    /// Claude panes list their background work above the composer; the button
-    /// flips the same preference as the line's own hide button, Settings ›
-    /// Display and the pane's … menu, for every pane at once, so a hidden line
-    /// can always be brought back from here.
-    private var showsBackgroundWorkToggle: Bool { session.kind == "claude" && session.provider == "claude" }
-    private var backgroundWorkToggle: some View {
-        let on = store.showsBackgroundWork
-        return Button { store.setShowsBackgroundWork(!on) } label: {
-            Image(systemName: on ? "rectangle.stack.fill" : "rectangle.stack").font(.ui(size: 12)).frame(width: 16, height: DesignMetrics.Layout.toolbar)
-                .foregroundStyle(on ? Palette.accent : Palette.ink2)
-        }
-        .buttonStyle(.plain)
-        .help(on ? L("composer.backgroundWork.hide") : L("composer.backgroundWork.show"))
-        .accessibilityLabel(L("composer.backgroundWork.name")).accessibilityValue(on ? L("accessibility.on") : L("accessibility.off"))
-        .accessibilityIdentifier("background-work-toggle-\(session.id)")
-    }
     private var statusLine: AppStore.StatusLineState? {
         guard let state = store.statusLines[session.id] else { return nil }
         let hasOutput = state.config != nil && (state.result?.lines.isEmpty == false || state.result?.error != nil)
@@ -213,12 +197,11 @@ struct SessionPaneView: View {
                    session.kind == "claude", let plans = session.planHistory, !plans.isEmpty {
                     PlanHistoryStrip(sessionId: session.id, records: plans)
                 }
-                // Background agents, while they run and after they ended and told
-                // the agent: in any view once the turn is over, and in the Mighty
-                // view all along — unless the pane's style draws its own task
-                // list or the user hid the line.
+                // Background work, while it runs and after it ended with its report:
+                // in any view once the turn is over, and in the Mighty view all
+                // along — unless the pane's style draws its own task list.
                 if session.kind == "claude", let work = session.backgroundWork,
-                   PlanCardSupport.showsBackgroundStrip(work, mighty: showsMightyGraph, styleDrawsTasks: PlanCardSupport.styleDrawsTasks(style?.manifest), enabled: store.showsBackgroundWork) {
+                   PlanCardSupport.showsBackgroundStrip(work, mighty: showsMightyGraph, styleDrawsTasks: PlanCardSupport.styleDrawsTasks(style?.manifest)) {
                     BackgroundWorkStrip(sessionId: session.id, work: work, run: MightyGraphSupport.newestRequestRun(session.graphRuns ?? []), output: store.backgroundOutput.pane(session.id))
                 }
                 ToolPermissionBar(sessionId: session.id)
@@ -356,9 +339,6 @@ struct SessionPaneView: View {
             }.disabled(session.logs.isEmpty)
             if session.kind != "shell" {
                 Button(L("pane.menu.newConversation")) { store.resetConversation(session.id) }.disabled(running || session.resumeId == nil)
-            }
-            if session.kind == "claude" {
-                Toggle(L("pane.menu.backgroundWork"), isOn: Binding(get: { store.showsBackgroundWork }, set: { store.setShowsBackgroundWork($0) }))
             }
             Divider()
             Button(L("menu.closePane"), role: .destructive) { store.requestCloseSession(session.id) }
@@ -879,9 +859,9 @@ struct SessionPaneView: View {
     private var composerToolbar: some View {
         GeometryReader { geometry in
             // Stop beside the second send (new worktree) and queue, or send alone; the resume mark; the context ring;
-            // the background-work and status-line toggles of Claude panes.
+            // the status-line toggle of Claude panes.
             let height = ComposerToolbarMetrics.height, gap = ComposerToolbarMetrics.spacing
-            let actionsWidth = (running && canSend ? Self.compactStop + gap + height + (offersSecondSend ? height + gap : 0) : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap) + (showsBackgroundWorkToggle ? 16 + gap : 0) + (showsStatusLineToggle ? 16 + gap : 0)
+            let actionsWidth = (running && canSend ? Self.compactStop + gap + height + (offersSecondSend ? height + gap : 0) : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap) + (showsStatusLineToggle ? 16 + gap : 0)
             let width = max(0, geometry.size.width - actionsWidth - ComposerToolbarMetrics.spacing)
             let targets = askTargets
             let current = AskTargets.effective(saved: session.askTarget, available: targets)
@@ -912,7 +892,6 @@ struct SessionPaneView: View {
                         Image(systemName: "arrow.triangle.branch").font(.ui(size: 11)).frame(width: 16, height: ComposerToolbarMetrics.height).foregroundStyle(Palette.ink2).help(L("composer.resume.help")).accessibilityLabel(L("composer.resume.name"))
                     }
                     if session.kind != "shell" { SessionContextButton(sessionID: session.id) }
-                    if showsBackgroundWorkToggle { backgroundWorkToggle }
                     if showsStatusLineToggle { statusLineToggle }
                     if running {
                         // With text waiting, stop shrinks beside the second send and

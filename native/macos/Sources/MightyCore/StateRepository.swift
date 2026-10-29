@@ -216,7 +216,7 @@ public actor StateRepository {
             guard let bytes = try? JSONSerialization.data(withJSONObject: value) else { return nil }
             return try? decoder.decode(MobileRemoteSettings.self, from: bytes)
         }
-        var snapshot = AppSnapshot(workspaces: workspaces, sessions: sessions, activeWorkspaceId: object["activeWorkspaceId"] as? String, activeSessionId: object["activeSessionId"] as? String, layout: object["layout"] as? String ?? "grid", theme: object["theme"] as? String ?? "dark", sidebarWidth: object["sidebarWidth"] as? Double ?? SidebarFold.defaultWidth, paneLayouts: paneLayouts, paneLayoutModes: workspaceStrings("paneLayoutModes"), paneLayoutActiveSessionIds: workspaceStrings("paneLayoutActiveSessionIds"), autoUpdateCLIs: autoUpdateCLIs, expandedWorkspaceIds: object["expandedWorkspaceIds"] as? [String], mobileRemote: mobileRemote, autoUpdatePlugins: jsonBool("autoUpdatePlugins"), sidebarCollapsed: jsonBool("sidebarCollapsed"), autoLoginCLIs: jsonBool("autoLoginCLIs"), showsBackgroundWork: jsonBool("showsBackgroundWork"), backgroundWorkOpen: jsonBool("backgroundWorkOpen"), lastCreateLocation: object["lastCreateLocation"] as? String)
+        var snapshot = AppSnapshot(workspaces: workspaces, sessions: sessions, activeWorkspaceId: object["activeWorkspaceId"] as? String, activeSessionId: object["activeSessionId"] as? String, layout: object["layout"] as? String ?? "grid", theme: object["theme"] as? String ?? "dark", sidebarWidth: object["sidebarWidth"] as? Double ?? SidebarFold.defaultWidth, paneLayouts: paneLayouts, paneLayoutModes: workspaceStrings("paneLayoutModes"), paneLayoutActiveSessionIds: workspaceStrings("paneLayoutActiveSessionIds"), autoUpdateCLIs: autoUpdateCLIs, expandedWorkspaceIds: object["expandedWorkspaceIds"] as? [String], mobileRemote: mobileRemote, autoUpdatePlugins: jsonBool("autoUpdatePlugins"), sidebarCollapsed: jsonBool("sidebarCollapsed"), autoLoginCLIs: jsonBool("autoLoginCLIs"), backgroundWorkOpen: jsonBool("backgroundWorkOpen"), lastCreateLocation: object["lastCreateLocation"] as? String)
         snapshot.antigravityMigrated = migrating ? true : jsonBool("antigravityMigrated")
         return normalize(snapshot, restoring: restoring)
     }
@@ -341,7 +341,6 @@ public actor StateRepository {
         output.autoUpdatePlugins = value.autoUpdatePlugins
         output.sidebarCollapsed = value.sidebarCollapsed
         output.autoLoginCLIs = value.autoLoginCLIs
-        output.showsBackgroundWork = value.showsBackgroundWork
         output.backgroundWorkOpen = value.backgroundWorkOpen
         output.lastCreateLocation = value.lastCreateLocation
         output.antigravityMigrated = value.antigravityMigrated
