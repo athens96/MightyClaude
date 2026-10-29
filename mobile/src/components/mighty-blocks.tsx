@@ -31,7 +31,7 @@ import {
   blockPrompt,
   blockTitle,
   resultPreview,
-  resultTitle,
+  resultCardHeading,
   runHeading,
   runFold,
   runPreview,
@@ -280,16 +280,6 @@ function BlockDetails({ block, runInput, runHead }: { block: MobileBlock; runInp
       ) : null}
     </View>
   );
-}
-
-/**
- * The result card's heading: "✓ 최종 결과" once a run finished, the result so far (no "✓") while background
- * work it started still runs, else plain 최종 결과.
- */
-function resultCardHeading(run: MobileMightyRun): string {
-  if (run.status !== 'completed') return t('phone.blocks.finalResult');
-  if (run.backgroundWaiting !== undefined && run.backgroundWaiting > 0) return resultTitle(run.status, run.backgroundWaiting);
-  return `✓ ${t('phone.blocks.finalResult')}`;
 }
 
 /**

@@ -123,12 +123,25 @@ export function noticeHeading(title: string | undefined): string {
 
 /**
  * The result card's title: how the run ended, or the result so far while background work it started still
- * runs (the Mac's `MightyGraphSupport.resultTitle`). `waiting` is the host's `backgroundWaiting`.
+ * runs (the Mac's `MightyGraphSupport.resultTitle`). `waiting` is the host's `backgroundWaiting`. Statuses
+ * arrive bucketed by the host (`running`, `waiting`, `completed`, `error`, `stopped`): a failed or cancelled
+ * run is already `error` or `stopped` here, so the Mac's other words for them need no case of their own.
  */
 export function resultTitle(status: string, waiting: number | undefined): string {
   if (status === 'error') return t('graph.block.resultError');
   if (status === 'stopped') return t('graph.block.resultStopped');
   return waiting !== undefined && waiting > 0 ? t('graph.block.resultSoFar', { count: waiting }) : t('graph.block.result');
+}
+
+/**
+ * The heading of a run's result card in the Mighty view: "✓ 최종 결과" once the run finished, the result so far
+ * (no "✓", it is not over) while background work it started still runs, and plain 최종 결과 for a run that failed
+ * or stopped, whose header strip already says so in its colour. Statuses arrive bucketed by the host (`resultTitle`).
+ */
+export function resultCardHeading(run: Pick<MobileMightyRun, 'status' | 'backgroundWaiting'>): string {
+  if (run.status !== 'completed') return t('phone.blocks.finalResult');
+  if (run.backgroundWaiting !== undefined && run.backgroundWaiting > 0) return resultTitle(run.status, run.backgroundWaiting);
+  return `✓ ${t('phone.blocks.finalResult')}`;
 }
 
 /** The most background work a count shows; the host never sends that many. */

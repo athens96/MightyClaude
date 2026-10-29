@@ -21,8 +21,10 @@ import {
   followRunIndex,
   isQuietNotice,
   newestRequestIndex,
+  MAX_BACKGROUND_WAITING,
   normalizeMighty,
   requestOrdinals,
+  resultCardHeading,
   resultPreview,
   resultTitle,
   runHeading,
@@ -641,6 +643,19 @@ describe('a result still waiting on background work', () => {
     for (const bad of [0, -1, 1.5, '2', null]) expect(run(bad).backgroundWaiting).toBeUndefined();
     // An older host sends none.
     expect(normalizeMighty({ style: 'cli', runs: [{ id: 'r1', input: 'x', status: 'completed', blocks: [] }] })!.runs[0]!.backgroundWaiting).toBeUndefined();
+    // A count past the cap shows the cap.
+    expect(MAX_BACKGROUND_WAITING).toBe(999);
+    expect(run(5000).backgroundWaiting).toBe(MAX_BACKGROUND_WAITING);
+    expect(run(999).backgroundWaiting).toBe(999);
+  });
+
+  it('heads the result card: ✓ 최종 결과 when done, the result so far without ✓ while waiting, a failed run its own', () => {
+    expect(resultCardHeading({ status: 'completed' })).toBe(`✓ ${t('phone.blocks.finalResult')}`);
+    expect(resultCardHeading({ status: 'completed', backgroundWaiting: 2 })).toBe(t('graph.block.resultSoFar', { count: 2 }));
+    expect(resultCardHeading({ status: 'completed', backgroundWaiting: 2 }).startsWith('✓')).toBe(false);
+    // A failed or stopped run keeps the plain heading its strip's colour goes with, waiting count or not.
+    expect(resultCardHeading({ status: 'error', backgroundWaiting: 2 })).toBe(t('phone.blocks.finalResult'));
+    expect(resultCardHeading({ status: 'stopped' })).toBe(t('phone.blocks.finalResult'));
   });
 
   it('titles the result so far while background work waits', () => {
