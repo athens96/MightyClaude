@@ -390,7 +390,7 @@ internal static class AntigravityPermissionVerification
         Check(folder.Text() == Real && !File.Exists(folder.Ledger), "taken out once they can");
     }
 
-    internal static Task QuitReleasesEverythingAndALinkedFileStaysLinked()
+    internal static async Task QuitReleasesEverythingAndALinkedFileStaysLinked()
     {
         using var folder = new Folder(); folder.Make(null);
         var target = Path.Combine(folder.Root, "dotfiles", "agy-settings.json");
@@ -411,7 +411,10 @@ internal static class AntigravityPermissionVerification
         }
         leases.ReleaseAll();
         Check(File.ReadAllText(target) == Real && leases.Held().Count == 0, "quit takes every temporary rule out");
-        return Task.CompletedTask;
+        // Quit's look-again then deletes the ledger on a background task: wait for it, or the folder's removal below races that
+        // delete on Windows and one of the two is refused (access denied on a file already being deleted).
+        await leases.Settled();
+        Check(!File.Exists(folder.Ledger), "then no ledger");
     }
 
     // The card
