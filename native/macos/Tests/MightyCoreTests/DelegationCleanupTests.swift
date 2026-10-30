@@ -413,8 +413,13 @@ struct DelegationCleanupTests {
         #expect(await coordinator.file.children.first?.state == .creating)
 
         // No pane was made, so the start failed and left its worktree and branch for a human to discard.
+        // The record turns failed before the start ends (its notice still goes to the parent), so wait for the end itself.
         await gate.open()
-        #expect(await eventually { await coordinator.file.children.first?.state == .failed })
+        #expect(await eventually {
+            let ended = await !coordinator.starting.contains(id)
+            let state = await coordinator.file.children.first?.state
+            return ended && state == .failed
+        })
         #expect(FileManager.default.fileExists(atPath: ChildWorktree.taskFile(worktreePath: place.root.appendingPathComponent(id).path)))
         #expect(try await place.git(["rev-parse", "-q", "--verify", "refs/heads/mighty/\(id)"]).count == 40)
         #expect(await coordinator.discardChild(id) == .discarded)
