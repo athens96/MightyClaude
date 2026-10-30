@@ -683,7 +683,16 @@ internal static class MobileDirectVerification
             thread = new Thread(() => { SetSynchronizationContext(this); foreach (var (callback, state) in queue.GetConsumingEnumerable()) callback(state); }) { IsBackground = true };
             thread.Start();
         }
-        public override void Post(SendOrPostCallback d, object? state) => queue.Add((d, state));
+        /// <summary>
+        /// After <see cref="Dispose"/> a post is dropped, as the app's DispatcherQueue drops one once the window is gone (TryEnqueue is
+        /// false). A loop started from this thread, such as the direct listener's accept loop, resumes here when the host closes it,
+        /// which can be after the test returned; throwing then would take down the whole test process from a pool thread.
+        /// </summary>
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            try { queue.Add((d, state)); }
+            catch (InvalidOperationException) when (queue.IsAddingCompleted) { }
+        }
         public override void Send(SendOrPostCallback d, object? state) => throw new NotSupportedException();
         public override SynchronizationContext CreateCopy() => this;
         /// <summary>Starts <paramref name="action"/> on this thread; the task ends when it does.</summary>
