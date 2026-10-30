@@ -187,24 +187,36 @@ struct LongRunningProcessTests {
     @Test func realPTYProcessIgnoringSIGINTAndSIGTERMIsStoppedWithinTenSeconds() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
         let pane = PTYAgentTerminalPane(workingDirectory: folder)
-        let runner = AgentTerminalRunner(pane: pane, clock: SkipInitialWaitClock())
+        let clock = EscalationTimingClock()
+        let runner = AgentTerminalRunner(pane: pane, clock: clock)
         let run = try await runner.runInTerminal(command: "trap '' INT TERM; echo stubborn; while :; do sleep 1; done")
         #expect(run.status == .running)
         // Stop only once the traps are in place, or SIGINT would beat them.
         let armed = Date().addingTimeInterval(30)
         while !pane.readOutput(handle: run.handle, fromOffset: 0, maxBytes: 64).output.contains("stubborn"), Date() < armed { try await Task.sleep(nanoseconds: 20_000_000) }
+        clock.mark()
         let began = Date()
-        let stopped = try #require(await runner.stop(handle: run.handle))
+        var stopped = try #require(await runner.stop(handle: run.handle))
         let elapsed = Date().timeIntervalSince(began)
+        // Stop reports by its deadline whatever the process does. When a busy runner
+        // wakes the poll that sends SIGKILL at or past that deadline, the kill has not
+        // been reaped yet and stop honestly says .running (CI run 40802433316). So
+        // wait for the outcome itself: the run must end, and by SIGKILL.
+        let settled = Date().addingTimeInterval(30)
+        while stopped.status == .running, Date() < settled {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            stopped = try #require(await runner.readLatestOutput(handle: run.handle))
+        }
         #expect(stopped.status == .done)
         #expect(stopped.signal == SIGKILL)
-        // The escalation itself keeps to its 10 s deadline (the fake-clock test above
-        // checks that exactly). Here the wall clock also counts how late a busy CI
-        // runner wakes each 50 ms poll, which has added up to a second; what matters
-        // is that SIGKILL ended it, not a timeout, so the bound allows that slack.
-        #expect(elapsed < AgentTerminalRunner.stopDeadlineSeconds + 3)
-        #expect(elapsed >= AgentTerminalRunner.sigintToSIGTERMSeconds + AgentTerminalRunner.sigtermToSIGKILLSeconds - 0.5)
         #expect(!pane.isRunning(handle: run.handle))
+        // The escalation keeps to its 10 s deadline on its own clock, once the time a
+        // busy runner spent waking its polls late is left out (the fake-clock test
+        // above pins the exact schedule). It never skips ahead to SIGKILL early.
+        #expect(clock.escalationSeconds <= 10)
+        #expect(elapsed >= AgentTerminalRunner.sigintToSIGTERMSeconds + AgentTerminalRunner.sigtermToSIGKILLSeconds - 0.5)
+        // Only catches a stop that hangs.
+        #expect(elapsed < 30)
     }
 
     @Test func realPTYCooperativeProcessStopsOnSIGINTQuickly() async throws {

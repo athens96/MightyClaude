@@ -20,6 +20,39 @@ final class SkipInitialWaitClock: AgentTerminalClock, @unchecked Sendable {
     func sleep(for interval: TimeInterval) async { try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000)) }
 }
 
+/// Like ``SkipInitialWaitClock``, and it also measures, in real time, how long
+/// the runner's own timing took apart from the scheduler: `escalationSeconds`
+/// is the span between the first and last `now()` since `mark()`, less every
+/// wait from a poll's due time to the runner reading the clock again. A busy
+/// runner wakes polls and resumes the actor late; that lateness is left out.
+final class EscalationTimingClock: AgentTerminalClock, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private var first: Date?
+    private var last: Date?
+    private var due: Date?
+    private var late: TimeInterval = 0
+    var escalationSeconds: TimeInterval {
+        lock.withLock { first.flatMap { start in last.map { $0.timeIntervalSince(start) - late } } ?? 0 }
+    }
+    func mark() { lock.withLock { first = nil; last = nil; due = nil; late = 0 } }
+    func now() -> Date {
+        let real = Date()
+        return lock.withLock {
+            calls += 1
+            if first == nil { first = real }
+            last = real
+            if let due { late += max(0, real.timeIntervalSince(due)) }
+            due = nil
+            return real.addingTimeInterval(calls == 1 ? 0 : 3600)
+        }
+    }
+    func sleep(for interval: TimeInterval) async {
+        lock.withLock { due = Date().addingTimeInterval(interval) }
+        try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+    }
+}
+
 /// Poll `condition` every 20 ms until it holds or `seconds` pass; true once it holds.
 /// The default only bounds a condition that never comes: every caller expects it
 /// to hold, and it returns as soon as it does, so a busy CI runner gets room.
