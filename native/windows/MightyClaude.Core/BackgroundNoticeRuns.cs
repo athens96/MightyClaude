@@ -52,6 +52,60 @@ public static class BackgroundNoticeRuns
     public static string ExecutionTitle(bool notice, int ordinal) => notice ? Locale.Get("graph.block.execution")
         : Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = ordinal.ToString(CultureInfo.InvariantCulture) });
 
+    /// <summary>The run id <paramref name="noticeRun"/> is a notice run of: the request whose tracker opened it, or null for a request.</summary>
+    public static string? OriginalRunID(string noticeRun) => noticeRun.IndexOf(Marker, StringComparison.Ordinal) is var at and >= 0 ? noticeRun[..at] : null;
+
+    /// <summary>One background task or sub-agent of a request awaiting its notices: its block, title and status (running, or how it ended).</summary>
+    public sealed record AwaitedTask(string Id, string Title, string Status)
+    {
+        /// <summary>Its notice is in: the work ended (and told Claude so), whatever its outcome.</summary>
+        public bool Delivered => MightyGraphSupport.Terminal(Status);
+        /// <summary>What its row says: 끝나면 알림 while it runs, 알림 전달됨 once it ended, 실패 or 중단됨 when it ended so (macOS AwaitedTask.word).</summary>
+        public string Word => Status switch
+        {
+            "error" => Locale.Get("graph.block.taskNotice.failed"),
+            "stopped" => Locale.Get("graph.block.taskNotice.stopped"),
+            "completed" => Locale.Get("plan.background.noticeDelivered"),
+            _ => Locale.Get("plan.background.awaitingNotice"),
+        };
+    }
+    /// <summary>A request awaiting the notices of the background work it started (<see cref="AwaitingNotice"/>): every such task, in block order.</summary>
+    public sealed record Awaiting(IReadOnlyList<AwaitedTask> Tasks)
+    {
+        public int Delivered => Tasks.Count(task => task.Delivered);
+        /// <summary>"알림 {delivered}/{total}".</summary>
+        public string Progress => Locale.Get("graph.block.awaitingNotice.progress", new Dictionary<string, string>
+            { ["delivered"] = Delivered.ToString(CultureInfo.InvariantCulture), ["total"] = Tasks.Count.ToString(CultureInfo.InvariantCulture) });
+        public bool Equals(Awaiting? other) => other is not null && Tasks.SequenceEqual(other.Tasks);
+        public override int GetHashCode() => Tasks.Count;
+    }
+    /// <summary>
+    /// The one awaiting-notice rule (macOS BackgroundNoticeRuns.awaitingNotice): a request whose own turn ended completed while background work it
+    /// started (its tasks and background sub-agents) still runs, or ended with a notice turn not answered yet: a notice run of this request that
+    /// copies the block has not ended. It ends when every notice turn was answered; a failed or stopped request, or one whose process ended
+    /// (its blocks and notice runs stopped), is not awaiting. Null otherwise and for a notice run. <paramref name="runs"/> are the pane's runs, for
+    /// the notice runs; a run <see cref="MightyGraphRun.Shown"/> made carries what it read of the run it was made from.
+    /// </summary>
+    public static Awaiting? AwaitingNotice(MightyGraphRun run, IReadOnlyList<MightyGraphRun> runs)
+    {
+        if (run.ShownBackgroundWaiting is not null) return run.ShownAwaiting;
+        if (run.NoticeRun == true || run.Status != "completed") return null;
+        var tasks = run.Agents.Where(agent => agent.IsTask || agent.IsBackgroundAgent).ToList();
+        if (tasks.Count == 0) return null;
+        var answering = runs.Where(notice => notice.NoticeRun == true && !MightyGraphSupport.Terminal(notice.Status) && OriginalRunID(notice.Id) == run.Id)
+            .SelectMany(notice => notice.Agents).Select(copy => copy.SourceBlockId).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        if (!tasks.Any(task => !MightyGraphSupport.Terminal(task.Status) || answering.Contains(task.Id))) return null;
+        return new(tasks.Select(task => new AwaitedTask(task.Id, MightyGraphSupport.BlockTitle(task), task.Status)).ToList());
+    }
+
+    /// <summary>The pane is alive only for the notices its newest request awaits (<see cref="AwaitingNotice"/>): the pet, its status list and the
+    /// pane header show it waiting, 알림 대기, instead of running. Its status stays running, so the completion notification still comes once,
+    /// when the process ends (macOS BackgroundNoticeRuns.awaitsNotice).</summary>
+    public static bool AwaitsNotice(RunSession pane) => pane.Status == "running" && pane.GraphRuns is { } runs
+        && MightyGraphSupport.NewestRequestRun(runs) is { } newest && AwaitingNotice(newest, runs) is not null;
+    /// <summary>The word for a pane that <see cref="AwaitsNotice"/>.</summary>
+    public static string StateWord => Locale.Get("graph.state.awaitingNotice");
+
     /// <summary>Agents a view draws for a run: background blocks only inside a notice run. Blocks under a hidden background block are
     /// hidden with it. The run's own list when nothing is hidden.</summary>
     public static List<MightyGraphAgent> ShownAgents(MightyGraphRun run)

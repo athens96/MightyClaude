@@ -323,8 +323,8 @@ internal static class MightyStructureVerification
         Check(third.SequenceEqual([MightyStructure.ItemFor(trimmed[0], 0)]) && third[0].Ordinal == 1, "a kept card takes its new number after a trim");
         Check(MightyStructure.Make(trimmed, null, null, items: third) == MightyStructure.Make(trimmed, null, null), "the shape built from cached cards is the shape built from scratch");
 
-        // Views sign the shown runs, which no longer hold the background block: its ending moves only the waiting count, and the card
-        // is built again so its answer goes from 현재까지의 결과 to 최종 결과 (macOS aShownRunsCardRebuildsWhenItsBackgroundWorkEnds).
+        // Views sign the shown runs, which no longer hold the background block: its ending moves only the waiting count and the awaiting,
+        // and the card is built again so its answer goes from 알림 대기 중 to 최종 결과 (macOS aShownRunsCardRebuildsWhenItsBackgroundWorkEnds).
         MightyGraphRun Shown(string taskStatus)
         {
             var task = Agent("t", status: taskStatus, kind: "task"); task.Background = true;
@@ -335,7 +335,15 @@ internal static class MightyStructureVerification
         var waitingSignature = new MightyStructure.Signature([waiting], null, null); var endedSignature = new MightyStructure.Signature([ended], null, null);
         Check(waitingSignature != endedSignature, "the waiting count moves the signature");
         var shownCache = new MightyStructure.ItemCache();
-        Check(shownCache.Items([waiting], waitingSignature)[0].BackgroundWaiting == 1 && shownCache.Items([ended], endedSignature)[0].BackgroundWaiting == 0, "the card is built again when the count moves");
+        Check(shownCache.Items([waiting], waitingSignature)[0] is { BackgroundWaiting: 1, Awaiting: true } && shownCache.Items([ended], endedSignature)[0] is { BackgroundWaiting: 0, Awaiting: false }, "the card is built again when the count moves");
+        // A notice turn answered moves no field of the request, yet ends its awaiting: the signature, read with the pane's runs, moves.
+        var request = Run("r", agents: [Agent("t", status: "completed", kind: "task")], final: "Built."); request.Agents[0].Background = true;
+        var notice = new MightyGraphRun { Id = "r:notice:1", Status = "running", NoticeRun = true, Agents = [new() { Id = "r:notice:1:t", Kind = "task", Status = "completed", Background = true, SourceBlockId = "t" }] };
+        var answering = new MightyStructure.Signature([request, notice], null, null);
+        Check(shownCache.Items([request, notice], answering)[0].Awaiting, "awaiting while the notice turn runs");
+        notice.Status = "completed";
+        var answered = new MightyStructure.Signature([request, notice], null, null);
+        Check(answering != answered && !shownCache.Items([request, notice], answered)[0].Awaiting, "the answered notice ends the card's awaiting");
 
         // A block without a title is named in the app's language: a live language switch moves the signature and reads the cards again.
         var saved = Locale.LanguagePreference;

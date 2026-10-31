@@ -31,8 +31,9 @@ public sealed record MobileStructure(int V, string Shape, IReadOnlyList<MobileSt
     /// <param name="OmittedNodes">Sub-agent rows left out past <see cref="MaximumNodes"/>; absent when none were.</param>
     /// <param name="NoticeRun"><c>true</c> for Claude's reply to finished background work (<see cref="MightyGraphRun.NoticeRun"/>); absent otherwise.</param>
     /// <param name="BackgroundWaiting">Background work the request still waits on, as <see cref="MobileMightyRun"/>'s; absent when none.</param>
+    /// <param name="AwaitingNotice"><c>true</c> while the request awaits its background work's notices (<see cref="MightyStructure.Item.Awaiting"/>): its answer reads 알림 대기 중; absent otherwise.</param>
     public sealed record Item(string RunId, int Ordinal, string? Title, string Status, bool Finished, string? Request, string? Message, IReadOnlyList<Activity> Activity,
-        string? Answer, Tally Tally, IReadOnlyList<Cluster> Clusters, int? OmittedNodes, bool? NoticeRun = null, int? BackgroundWaiting = null);
+        string? Answer, Tally Tally, IReadOnlyList<Cluster> Clusters, int? OmittedNodes, bool? NoticeRun = null, int? BackgroundWaiting = null, bool? AwaitingNotice = null);
     public sealed record Activity(string Kind, string State, string Text);
     /// <summary>What the request holds now, counted over all of it even when nodes were left out.</summary>
     public sealed record Tally(int Agents, int Tools);
@@ -169,7 +170,7 @@ public sealed record MobileStructure(int V, string Shape, IReadOnlyList<MobileSt
         return new(item.RunId, item.Ordinal, named is { Length: > 0 } ? named : null, item.Status, item.Finished, item.Request is { } request ? Capped(request.Text, RequestBytes) : null,
             item.Message is { } message ? Capped(message.Text, MessageBytes) : null, item.Activity.TakeLast(MaximumActivity).Select(ActivityFor).ToList(),
             item.Answer is { } answer ? Capped(answer.Text, AnswerBytes, markdown: true) : null, new(item.Tally.Agents, item.Tally.Tools), clusters, total > nodes ? total - nodes : null,
-            item.NoticeRun ? true : null, item.BackgroundWaiting > 0 ? item.BackgroundWaiting : null);
+            item.NoticeRun ? true : null, item.BackgroundWaiting > 0 ? item.BackgroundWaiting : null, item.Awaiting ? true : null);
     }
 
     private static Activity ActivityFor(MightyStructure.ActivityLine line) =>

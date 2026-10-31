@@ -26,11 +26,11 @@ internal static class MightyTimelineVerification
         Check(groups[0].Result is { Text: "done", Tone: DesignTone.Done } result && diagram.Nodes.Any(n => n.Id == result.NodeId), "result identity and final answer are shared");
         Check(MightyTimeline.Groups([Run("pending-child", "completed", "premature", new MightyGraphAgent { Id = "still-running" })])[0].Result is null, "an unfinished child prevents a premature result");
         Check(MightyTimeline.Groups([Run("failure", "failed")])[0].Result is { Tone: DesignTone.Err, Text: null } && MightyTimeline.Groups([Run("stop", "interrupted")])[0].Result?.Tone == DesignTone.Stop, "terminal aliases match diagram result states");
-        // While background work the request started runs, the 기록 result head is neutral, then done once it ends (macOS theResultSoFarHasANeutralHeader).
+        // While the request awaits the notices of background work it started, the 기록 result head waits, then is done once they are in (macOS theAwaitingNoticeHeadWaits).
         MightyGraphRun Shown(string taskStatus, string status = "completed") =>
             Run("so-far", status, "Built.", new MightyGraphAgent { Id = "t", Kind = "task", Status = taskStatus, Background = true }).Shown;
-        Check(MightyTimeline.Groups([Shown("running")])[0].Result?.Tone == DesignTone.Idle && MightyTimeline.Groups([Shown("completed")])[0].Result?.Tone == DesignTone.Done
-            && MightyTimeline.Groups([Shown("running", "error")])[0].Result?.Tone == DesignTone.Err, "the result so far has a neutral 기록 head");
+        Check(MightyTimeline.Groups([Shown("running")])[0].Result is { Tone: DesignTone.Wait, Awaiting: true } && MightyTimeline.Groups([Shown("completed")])[0].Result is { Tone: DesignTone.Done, Awaiting: false }
+            && MightyTimeline.Groups([Shown("running", "error")])[0].Result?.Tone == DesignTone.Err, "the awaiting head waits in 기록");
         // A steer delegation sent is a 위임 알림; one a person sent stays a 중간 요청, and only those are counted in the toolbar.
         var notice = new MightyGraphAgent { Id = "notice", Kind = "steer", Status = "completed", Input = "[Mighty Claude notice n-1] Your child c-1 reported revision 1." };
         var followUp = new MightyGraphAgent { Id = "follow", Kind = "steer", Status = "completed", Input = "[Mighty Claude follow-up f-1] Your parent sent you this follow-up:" };

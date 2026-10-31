@@ -18,7 +18,9 @@ public static class MightyTimeline
     /// <summary>The request row's status and node: neither running nor settled, so it is the neutral one whatever became of the work (macOS requestStatus).</summary>
     public const string RequestStatus = "idle";
     public static readonly Node RequestNode = new(DesignTone.Idle, false, null);
-    public sealed record Result(string NodeId, DesignTone Tone, string? Text);
+    /// <summary>A request's result head. <paramref name="Awaiting"/>: the request awaits the notices of its background work
+    /// (<see cref="BackgroundNoticeRuns.AwaitingNotice"/>): the head reads 알림 대기 중 in the wait tone, not done (macOS MightyTimeline.Result.awaiting).</summary>
+    public sealed record Result(string NodeId, DesignTone Tone, string? Text, bool Awaiting = false);
     /// <summary>One request's group. <paramref name="Ordinal"/> is the request's number (<see cref="MightyGraphSupport.RequestOrdinals"/>);
     /// <paramref name="NoticeRun"/>: Claude's reply to finished background work (<see cref="MightyGraphRun.NoticeRun"/>), titled as such, not a request;
     /// <paramref name="NoticeTitle"/>: a notice run's own title (<see cref="MightyGraphRun.NoticeTitle"/>), null for a request and an older notice run.</summary>
@@ -58,7 +60,7 @@ public static class MightyTimeline
     public static List<Group> Groups(IReadOnlyList<MightyGraphRun> runs)
     {
         var ordinals = MightyGraphSupport.RequestOrdinals(runs);
-        return runs.Select((run, index) => Project(run.Shown, index, ordinals[index])).ToList();
+        return runs.Select((run, index) => Project(run.ShownIn(runs), index, ordinals[index])).ToList();
     }
 
     private static Group Project(MightyGraphRun run, int index, int ordinal)
@@ -85,10 +87,11 @@ public static class MightyTimeline
         if (MightyGraphLayout.HasResult(run))
         {
             var status = StatusGlyph.Tone(Status(run.Status));
-            // The result so far is neutral, as the diagram's result card is (macOS MightyTimeline.group).
-            var tone = run.Status == "completed" && MightyGraphSupport.BackgroundWaiting(run) > 0 ? DesignTone.Idle : status == DesignTone.Run ? DesignTone.Done : status;
+            // Awaiting notices, the head takes the wait tone, as the diagram's 알림 대기 block does (macOS MightyTimeline.group).
+            var awaiting = BackgroundNoticeRuns.AwaitingNotice(run, [run]) is not null;
+            var tone = awaiting ? DesignTone.Wait : status == DesignTone.Run ? DesignTone.Done : status;
             result = new(MightyGraphLayout.NodeID(run, "result"), tone,
-                run.ResultEntries.LastOrDefault(e => e.Kind == "assistant" && e.Text.Length > 0)?.Text);
+                run.ResultEntries.LastOrDefault(e => e.Kind == "assistant" && e.Text.Length > 0)?.Text, awaiting);
         }
         var blocks = rows.Skip(1).ToList();
         return new(index, run.Id, ordinal, Status(run.Status), run.Input, rows,

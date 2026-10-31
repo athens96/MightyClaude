@@ -60,14 +60,15 @@ public static partial class MightyStructure
     /// (<see cref="MightyGraphRun.NoticeRun"/>), titled as such, not a request; <see cref="Quiet"/>: a notice run taken into a running turn,
     /// without a reply (<see cref="MightyGraphRun.QuietNotice"/>), never followed. <see cref="NoticeTitle"/>: a notice run's own title
     /// (<see cref="MightyGraphRun.NoticeTitle"/>), null for a request and an older notice run; <see cref="BackgroundWaiting"/>: background work the
-    /// request still waits on (<see cref="MightyGraphSupport.BackgroundWaiting"/>), whose answer reads 현재까지의 결과 meanwhile.
+    /// request still waits on (<see cref="MightyGraphSupport.BackgroundWaiting"/>); <see cref="Awaiting"/>: the request awaits the notices of its
+    /// background work (<see cref="BackgroundNoticeRuns.AwaitingNotice"/>), whose answer reads 알림 대기 중 in the wait tone meanwhile.
     /// </summary>
     public sealed record Item(int RunIndex, string RunId, int Ordinal, string NodeId, string ExecutionNodeId, string Input, string Status, bool Finished, string? Result,
         Excerpt? Request, Excerpt? Message, IReadOnlyList<ActivityLine> Activity, Excerpt? Answer, Tally Tally, IReadOnlyList<Cluster> Clusters, bool NoticeRun = false, bool Quiet = false,
-        string? NoticeTitle = null, int BackgroundWaiting = 0)
+        string? NoticeTitle = null, int BackgroundWaiting = 0, bool Awaiting = false)
     {
         public bool Equals(Item? other) => ReferenceEquals(this, other) || other is not null && RunIndex == other.RunIndex && RunId == other.RunId && Ordinal == other.Ordinal && NodeId == other.NodeId
-            && NoticeRun == other.NoticeRun && Quiet == other.Quiet && NoticeTitle == other.NoticeTitle && BackgroundWaiting == other.BackgroundWaiting
+            && NoticeRun == other.NoticeRun && Quiet == other.Quiet && NoticeTitle == other.NoticeTitle && BackgroundWaiting == other.BackgroundWaiting && Awaiting == other.Awaiting
             && ExecutionNodeId == other.ExecutionNodeId && Input == other.Input && Status == other.Status && Finished == other.Finished && Result == other.Result && Request == other.Request
             && Message == other.Message && Answer == other.Answer && Tally == other.Tally && Activity.SequenceEqual(other.Activity) && Clusters.SequenceEqual(other.Clusters);
         public override int GetHashCode() => HashCode.Combine(RunId, RunIndex, Status, Finished, Activity.Count, Clusters.Count);
@@ -108,11 +109,12 @@ public static partial class MightyStructure
         internal readonly record struct Block(string Id, string Title, string Status, string? ParentId, string? Kind, int Input, int Entries, int Tail, int Records, int Notice);
         /// <summary>One request's part, which is all its card reads (<see cref="ItemCache"/> keys on it). <c>NoticeTitle</c>: a notice run's title, which can move with no other change its card reads. <c>BackgroundWaiting</c>:
         /// background work the request still waits on (<see cref="MightyGraphSupport.BackgroundWaiting"/>); a shown run no longer holds its
-        /// background blocks, so their ending moves nothing else here, yet its answer's title goes from 현재까지의 결과 to 최종 결과.</summary>
-        internal sealed record Request(string Id, string Status, string? SourceRunId, int Input, int RootEntries, int RootTail, int ResultEntries, int Result, int? FinalOutput, string? NoticeTitle, int BackgroundWaiting, Block[] Blocks)
+        /// background blocks, so their ending moves nothing else here. <c>Awaiting</c>: it awaits notices (<see cref="BackgroundNoticeRuns.AwaitingNotice"/>), which a
+        /// notice run's answer ends with no change to this run, yet its answer's title goes from 알림 대기 중 to 최종 결과.</summary>
+        internal sealed record Request(string Id, string Status, string? SourceRunId, int Input, int RootEntries, int RootTail, int ResultEntries, int Result, int? FinalOutput, string? NoticeTitle, int BackgroundWaiting, bool Awaiting, Block[] Blocks)
         {
             public bool Equals(Request? other) => other is not null && Id == other.Id && Status == other.Status && SourceRunId == other.SourceRunId && NoticeTitle == other.NoticeTitle
-                && BackgroundWaiting == other.BackgroundWaiting && Input == other.Input && RootEntries == other.RootEntries
+                && BackgroundWaiting == other.BackgroundWaiting && Awaiting == other.Awaiting && Input == other.Input && RootEntries == other.RootEntries
                 && RootTail == other.RootTail && ResultEntries == other.ResultEntries && Result == other.Result && FinalOutput == other.FinalOutput && Blocks.AsSpan().SequenceEqual(other.Blocks);
             public override int GetHashCode() => HashCode.Combine(Id, Status, Input, RootEntries, RootTail, Blocks.Length);
         }
@@ -126,7 +128,7 @@ public static partial class MightyStructure
             IReadOnlyList<PlanRecord>? planHistory = null, string? pendingPlanRunID = null)
         {
             Requests = runs.Select(run => new Request(run.Id, run.Status, run.SourceRunID, Bytes(run.Input), run.RootEntries.Count, Tail(run.RootEntries), run.ResultEntries.Count,
-                Bytes(run.ResultEntries.LastOrDefault()?.Text), run.FinalOutput is { } final ? Bytes(final) : null, run.NoticeTitle, MightyGraphSupport.BackgroundWaiting(run),
+                Bytes(run.ResultEntries.LastOrDefault()?.Text), run.FinalOutput is { } final ? Bytes(final) : null, run.NoticeTitle, MightyGraphSupport.BackgroundWaiting(run), BackgroundNoticeRuns.AwaitingNotice(run, runs) is not null,
                 run.Agents.Select(a => new Block(a.Id, a.Title, a.Status, a.ParentID, a.Kind, Bytes(a.Input), a.Entries.Count, Tail(a.Entries), a.ResponseRecords?.Count ?? 0, Bytes(a.NoticeReply))).ToArray())).ToArray();
             phases = style is null ? [] : Ordered(style.Manifest).Select(p => p.Id).ToArray();
             recognition = style?.Manifest.Id; this.currentPhase = currentPhase?.Id; this.startingNew = startingNew;
@@ -161,7 +163,7 @@ public static partial class MightyStructure
                 // A trim of older requests moves a kept card's number, nothing else; a card that kept its place is the same card.
                 var item = request is not null && built.TryGetValue(run.Id, out var kept) && kept.Request == request
                     ? kept.Item.RunIndex == index && kept.Item.Ordinal == ordinals[index] ? kept.Item : kept.Item with { RunIndex = index, Ordinal = ordinals[index] }
-                    : ItemFor(run, index, ordinals[index]);
+                    : ItemFor(run, index, ordinals[index], runs);
                 if (request is not null) next[run.Id] = (request, item);
                 items.Add(item);
             }
@@ -229,7 +231,7 @@ public static partial class MightyStructure
         IReadOnlyList<PlanRecord>? planHistory = null, string? pendingPlanRunID = null, IReadOnlyList<Item>? items = null)
     {
         var ordinals = items is not null && items.Count == runs.Count ? null : MightyGraphSupport.RequestOrdinals(runs);
-        var cards = ordinals is null ? items! : runs.Select((run, index) => ItemFor(run, index, ordinals[index])).ToList();
+        var cards = ordinals is null ? items! : runs.Select((run, index) => ItemFor(run, index, ordinals[index], runs)).ToList();
         if (style is null || style.Manifest.Phases.Length == 0) return Shape.Free(cards.Select(RowFor).ToList());
         var ordered = Ordered(style.Manifest);
         var pane = currentPhase is not null && ordered.Any(p => p.Id == currentPhase.Id) ? currentPhase : null;
@@ -345,10 +347,11 @@ public static partial class MightyStructure
     }
 
     /// <summary>One card. <paramref name="ordinal"/>: the request's number (<see cref="MightyGraphSupport.RequestOrdinals"/>); null counts every
-    /// run before it. The card reads the run as views draw it (<see cref="MightyGraphRun.Shown"/>): background blocks only in a notice run.</summary>
-    public static Item ItemFor(MightyGraphRun raw, int index, int? ordinal = null)
+    /// run before it. The card reads the run as views draw it (<see cref="MightyGraphRun.Shown"/>): background blocks only in a notice run;
+    /// <paramref name="runs"/>, the pane's, say whether it awaits notices (<see cref="MightyGraphRun.ShownIn"/>).</summary>
+    public static Item ItemFor(MightyGraphRun raw, int index, int? ordinal = null, IReadOnlyList<MightyGraphRun>? runs = null)
     {
-        var run = raw.Shown;
+        var run = raw.ShownIn(runs ?? [raw]);
         var finished = MightyGraphLayout.Finished(run);
         var answer = run.ResultEntries.LastOrDefault(e => e.Kind == "assistant" && e.Text.Length > 0)?.Text ?? run.FinalOutput;
         var result = finished && answer is not null && Preview(answer) is { Length: > 0 } line ? line : null;
@@ -362,7 +365,7 @@ public static partial class MightyStructure
         return new(index, run.Id, ordinal ?? index + 1, MightyGraphLayout.NodeID(run, "request"), MightyGraphLayout.NodeID(run, ExecutionSuffix), Preview(run.Input), MightyTimeline.Status(run.Status),
             finished, result, ExcerptOf(run.Input, RequestBytes, RequestLines), message, Activity(run.RootEntries, RequestActivity), full,
             new(blocks.Count(block => MightyGraphSupport.BlockKind(block) == "agent"), tools), Clusters(run), run.NoticeRun == true, run.QuietNotice,
-            run.NoticeRun == true ? run.NoticeTitle : null, MightyGraphSupport.BackgroundWaiting(run));
+            run.NoticeRun == true ? run.NoticeTitle : null, MightyGraphSupport.BackgroundWaiting(run), BackgroundNoticeRuns.AwaitingNotice(run, [run]) is not null);
     }
 
     /// <summary>The request is always there; the run goes on until every block settled, unless the request failed or was stopped; the result waits until the request finished.</summary>

@@ -35,6 +35,7 @@ internal static class AgentNoticeVerification
         AMixedTurnLeavesTheEarlierRunInItsOwnState();
         NoticeTitlesFollowTheFixture();
         ResultTitlesFollowTheFixture();
+        AwaitingNoticeFollowsTheFixture();
         return Task.CompletedTask;
     }
 
@@ -178,7 +179,7 @@ internal static class AgentNoticeVerification
         }
     });
 
-    /// <summary>The result title rule: how the request ended, or 현재까지의 결과 with the count while background work runs
+    /// <summary>The result title rule: how the request ended, or 알림 대기 중 while it awaits its background work's notices
     /// (macOS AgentNoticeTests.resultTitlesFollowTheFixture).</summary>
     private static void ResultTitlesFollowTheFixture() => InKorean(() =>
     {
@@ -186,14 +187,32 @@ internal static class AgentNoticeVerification
         Check(cases.Count >= 4, "the fixture has result title cases");
         foreach (var item in cases)
         {
-            var expect = MetadataJson.Property(item, "expect");
-            var count = MetadataJson.Property(expect, "count");
-            var wanted = Locale.Get(expect.Text("key") ?? "", count.ValueKind == JsonValueKind.Number
-                ? new Dictionary<string, string> { ["count"] = count.GetInt32().ToString(System.Globalization.CultureInfo.InvariantCulture) } : null);
-            var waiting = MetadataJson.Property(item, "waiting") is { ValueKind: JsonValueKind.Number } number ? number.GetInt32() : 0;
-            Same(MightyGraphBlockModel.ResultTitle(item.Text("status") ?? "", waiting), wanted, "result title: " + item.Text("name"));
+            var wanted = Locale.Get(MetadataJson.Property(item, "expect").Text("key") ?? "");
+            var awaiting = MetadataJson.Property(item, "awaiting").ValueKind == JsonValueKind.True;
+            Same(MightyGraphBlockModel.ResultTitle(item.Text("status") ?? "", awaiting), wanted, "result title: " + item.Text("name"));
         }
     });
+
+    /// <summary>The awaiting-notice rule over the shared runs: a request awaits while its background work runs or ended with its notice turn
+    /// not answered yet, and not once each was answered, nor when it failed or was stopped (macOS AgentNoticeTests.awaitingNoticeFollowsTheFixture).</summary>
+    private static void AwaitingNoticeFollowsTheFixture()
+    {
+        var cases = Items(Fixture.Value, "awaitingNotice");
+        Check(cases.Count >= 8, "the fixture has awaiting-notice cases");
+        foreach (var item in cases)
+        {
+            var name = item.Text("name");
+            var runs = Items(item, "runs").Select(run => JsonSerializer.Deserialize<MightyGraphRun>(run.GetRawText(), Wire.Json)!).ToList();
+            var awaiting = BackgroundNoticeRuns.AwaitingNotice(runs[0], runs);
+            var expect = MetadataJson.Property(item, "expect");
+            if (expect.ValueKind == JsonValueKind.Null) { Check(awaiting is null, "awaits nothing: " + name); continue; }
+            Check(awaiting is not null, "awaits notices: " + name);
+            Same(awaiting!.Delivered, expect.GetProperty("delivered").GetInt32(), "delivered: " + name);
+            SameList(awaiting.Tasks.Select(task => task.Status), Items(expect, "statuses").Select(status => status.GetString() ?? ""), "statuses: " + name);
+            // The shown run says the same, read with the pane's runs.
+            Check(BackgroundNoticeRuns.AwaitingNotice(MightyGraphSupport.ShownRuns(runs)[0], []) == awaiting, "the shown run carries it: " + name);
+        }
+    }
 
     /// <summary>A turn that would answer in an earlier notice run but brings new work opens a run for that work; the earlier run ends as it
     /// was before the turn, an error included (macOS AgentNoticeTests.aMixedTurnLeavesTheEarlierRunInItsOwnState).</summary>

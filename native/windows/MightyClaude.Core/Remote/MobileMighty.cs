@@ -36,9 +36,20 @@ public sealed record MobileBlock(string Id, string Kind, string Title, string St
 /// settled. <c>NoticeRun</c> is <c>true</c> for Claude's reply to finished background work (<see cref="MightyGraphRun.NoticeRun"/>): not a
 /// request, so it takes no request number; its <c>Title</c> and its <c>main</c> block's are its heading (<see cref="BackgroundNoticeRuns.Heading(MightyGraphRun)"/>).
 /// Absent otherwise. <c>BackgroundWaiting</c> is the background work a request started that still runs after its own turn
-/// (<see cref="MightyGraphSupport.BackgroundWaiting"/>): its result card reads 현재까지의 결과 meanwhile. Absent when none (and from older hosts).</summary>
+/// (<see cref="MightyGraphSupport.BackgroundWaiting"/>), which an older phone reads as 현재까지의 결과. <c>AwaitingNotice</c>: the request awaits the notices of
+/// its background work (<see cref="BackgroundNoticeRuns.AwaitingNotice"/>): its result card is the 알림 대기 block. Each absent when none (and from older hosts).</summary>
 public sealed record MobileMightyRun(string Id, string Input, string? Title, string Status, IReadOnlyList<MobileBlock> Blocks, string? Result = null, bool? NoticeRun = null,
-    int? BackgroundWaiting = null);
+    int? BackgroundWaiting = null, MobileAwaitingNotice? AwaitingNotice = null);
+/// <summary>A request's 알림 대기 block as a phone draws it (<see cref="BackgroundNoticeRuns.Awaiting"/>): how many of its background tasks' notices
+/// are in, of how many, and each task (its first <see cref="MaximumTasks"/>) by title and status; the phone names the status itself.</summary>
+public sealed record MobileAwaitingNotice(int Delivered, int Total, IReadOnlyList<MobileAwaitedTask> Tasks)
+{
+    public const int MaximumTasks = 16;
+    public const int MaximumTitle = 200;
+    public static MobileAwaitingNotice? From(BackgroundNoticeRuns.Awaiting? awaiting) => awaiting is null ? null : new(awaiting.Delivered, awaiting.Tasks.Count,
+        awaiting.Tasks.Take(MaximumTasks).Select(task => new MobileAwaitedTask(ActivitySupport.Clean(task.Title, MaximumTitle, true), MightyTimeline.Status(task.Status))).ToList());
+}
+public sealed record MobileAwaitedTask(string Title, string Status);
 
 /// <summary>
 /// One background task still running in a pane (the detail's <c>backgroundWork</c>): a row of the background strip. Its output file's
@@ -151,7 +162,8 @@ public static class MobileMightySupport
         {
             var run = values[index]; var state = Status(run.Status); var notice = run.NoticeRun == true; var waiting = MightyGraphSupport.BackgroundWaiting(run);
             result.Add(new(run.Id, ActivitySupport.Clean(run.Input, MobileWire.MaximumText), notice ? BackgroundNoticeRuns.Heading(run) : title?.Invoke(run.Input), state, Blocks(run, ordinals[index], outputTails),
-                index >= carried && Settled(state) ? Output(run.FinalOutput, MobileWire.MaximumRunResult) : null, notice ? true : null, waiting > 0 ? waiting : null));
+                index >= carried && Settled(state) ? Output(run.FinalOutput, MobileWire.MaximumRunResult) : null, notice ? true : null, waiting > 0 ? waiting : null,
+                MobileAwaitingNotice.From(BackgroundNoticeRuns.AwaitingNotice(run, values))));
         }
         return result;
     }

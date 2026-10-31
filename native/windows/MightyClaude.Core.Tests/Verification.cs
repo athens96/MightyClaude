@@ -215,7 +215,7 @@ internal static class Verification
         await Test("background notice runs: the pane keeps the notice run apart with its own lines, and the phone and the strip get theirs", BackgroundNoticeRunsVerification.ThePaneKeepsTheNoticeRunApart);
         await Test("background notice runs: an absorbed or ended notice run leaves the request its place", BackgroundNoticeRunsVerification.AbsorbedAndEndedNoticeRunsLeaveTheRequestItsPlace);
         await Test("background notice runs: the heading is the run's own title or the generic one, and the title is saved", BackgroundNoticeRunsVerification.TheHeadingIsTheRunsTitleOrTheGenericOne);
-        await Test("background notice runs: a request waiting on background work reads 현재까지의 결과, on the phone too", BackgroundNoticeRunsVerification.ARequestWaitingOnBackgroundWorkReadsTheResultSoFar);
+        await Test("background notice runs: a request awaiting notices is the 알림 대기 block, in 기록, the pipeline, on the phone and the pane, until its notice turns are answered", BackgroundNoticeRunsVerification.ARequestAwaitingNoticesIsTheAwaitingNoticeBlock);
         await Test("MightyTimelineVerification TheRequestRowHoldsTheInputAndTheExecutionRowTheWork", MightyTimelineVerification.TheRequestRowHoldsTheInputAndTheExecutionRowTheWork);
         await Test("MightyTimelineVerification StatusRailsCountsAndDurationStayHonest", MightyTimelineVerification.StatusRailsCountsAndDurationStayHonest);
         await Test("mighty execution block: a stable node id", MightyGraphExecutionBlockVerification.TheExecutionBlockHasAStableNodeID);

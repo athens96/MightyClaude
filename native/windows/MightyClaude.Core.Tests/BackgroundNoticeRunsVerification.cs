@@ -247,52 +247,87 @@ internal static class BackgroundNoticeRunsVerification
         Check(run.Copy().NoticeTitle == run.NoticeTitle && run.Shown.NoticeTitle == run.NoticeTitle, "a copy and the shown run keep it");
     }
 
-    /// <summary>A request whose background command still runs titles its result 현재까지의 결과 with the count, and 최종 결과 once the command
-    /// ended; the phone gets the count only while it is above 0, its digest moves with the count and a notice run's title, and a pipeline
-    /// card carries both (macOS BackgroundNoticeRunsTests.aRequestWaitingOnBackgroundWorkReadsTheResultSoFar, MobileRemoteExtensionTests,
+    /// <summary>A request whose background command still runs, or ended with its notice turn not answered yet, awaits notices: its result is the
+    /// 알림 대기 block (titled 알림 대기 중, waiting, with the command's row and "알림 n/m") in the diagram, 기록, the pipeline and on the phone, and the
+    /// pane reads 알림 대기; once the notice turn is answered it is 최종 결과 again. A failed or stopped request awaits nothing. The phone still gets the
+    /// running count for older phones (macOS BackgroundNoticeRunsTests.aRequestAwaitingNoticesIsTheAwaitingNoticeBlock, MobileRemoteExtensionTests,
     /// MobileRemoteStructureTests.anItemCarriesTheWaitingCountAndANoticeRunsTitle).</summary>
-    internal static Task ARequestWaitingOnBackgroundWorkReadsTheResultSoFar() { InKorean(ResultSoFar); return Task.CompletedTask; }
-    private static void ResultSoFar()
+    internal static Task ARequestAwaitingNoticesIsTheAwaitingNoticeBlock() { InKorean(AwaitingNotices); return Task.CompletedTask; }
+    private static void AwaitingNotices()
     {
-        var all = Runs();
-        var shown = MightyGraphSupport.ShownRuns(all)[0];
-        Same(MightyGraphBlockModel.ResultTitle(shown.Status, MightyGraphSupport.BackgroundWaiting(shown)), "현재까지의 결과 · 백그라운드 작업 1개 기다리는 중", "a request waiting on its command");
-        Same(MightyGraphBlockModel.ResultTitle("completed"), "최종 결과", "no waiting count is the final result");
-        // The diagram's result card, 기록's group and the pipeline card read it too.
-        var layout = MightyGraphLayout.Make(all, "", false, new HashSet<string>(), splitsExecution: true);
-        var card = MightyGraphBlockModel.Blocks(layout, all, "", "Claude", false).First(b => b.Id == Node("r", "result"));
-        Same(card.Title, "현재까지의 결과 · 백그라운드 작업 1개 기다리는 중", "the diagram's result card");
-        var rows = MightyStructure.Make(all, null, null).Rows!;
-        Check(rows.Select(r => r.Item.BackgroundWaiting).SequenceEqual([1, 0, 0]), "pipeline cards carry the waiting count");
-        // The phone: the count only while it is above 0, absent from the JSON otherwise.
+        var all = Runs(answered: false);
+        Same(BackgroundNoticeRuns.OriginalRunID("r:notice:2"), "r", "a notice run names its request"); Check(BackgroundNoticeRuns.OriginalRunID("r") is null, "a request names none");
+        var awaiting = BackgroundNoticeRuns.AwaitingNotice(all[0], all);
+        Check(awaiting is { Delivered: 0 } && awaiting.Tasks.Single() is { Id: "t", Title: "Build", Status: "running" }, "the running command is awaited");
+        Same(awaiting!.Tasks[0].Word, "끝나면 알림", "its row's word"); Same(awaiting.Progress, "알림 0/1", "the progress line");
+        Same(MightyGraphBlockModel.ResultTitle("completed", true), "알림 대기 중", "the title while awaiting");
+        Same(MightyGraphBlockModel.ResultTitle("completed"), "최종 결과", "not awaiting is the final result");
+        Same(MightyGraphBlockModel.ResultTitle("error", true), Locale.Get("graph.block.resultError"), "a failed request keeps its title");
+        // The diagram's result block is the 알림 대기 block; the shown run carries what it read of the notice runs.
+        MightyGraphBlock Card()
+        {
+            var layout = MightyGraphLayout.Make(all, "", false, new HashSet<string>(), splitsExecution: true);
+            return MightyGraphBlockModel.Blocks(layout, all, "", "Claude", true).First(b => b.Id == Node("r", "result"));
+        }
+        var card = Card();
+        Check(card is { Kind: "result", Title: "알림 대기 중", Status: "waiting", Outline: MightyGraphActivity.Marching } && card.Awaiting == awaiting && card.State == "알림 대기"
+            && MightyGraphBlockModel.Tone(card) == DesignTone.Wait, "the diagram's 알림 대기 block: " + card);
+        Check(BackgroundNoticeRuns.AwaitingNotice(MightyGraphSupport.ShownRuns(all)[0], []) == awaiting, "a shown run carries its awaiting");
+        Check(MightyTimeline.Groups(all)[0].Result is { Awaiting: true, Tone: DesignTone.Wait }, "기록's result head waits");
+        Check(MightyStructure.Make(all, null, null).Rows!.Select(r => r.Item.Awaiting).SequenceEqual([true, false, false]), "the pipeline card awaits");
+        // The phone: the block's rows, and the running count for an older phone.
         var mobile = MobileMightySupport.Runs(all);
-        Check(mobile[0].BackgroundWaiting == 1 && mobile[1].BackgroundWaiting is null && mobile[2].BackgroundWaiting is null, "the phone gets the request's count");
-        Check(JsonSerializer.Serialize(mobile[0], Wire.Json).Contains("\"backgroundWaiting\":1", StringComparison.Ordinal)
-            && !JsonSerializer.Serialize(mobile[1], Wire.Json).Contains("backgroundWaiting", StringComparison.Ordinal), "the count reaches the wire only when there is one");
-        // An untitled notice run (an older save) is headed generically in its title and its main block; a titled one carries its own.
-        Check(mobile[1].Title == BackgroundNoticeRuns.GenericTitle && mobile[1].Blocks[0].Title == BackgroundNoticeRuns.GenericTitle, "an untitled notice run on the phone");
-        var named = Runs(); named[2].NoticeTitle = "백그라운드 작업 완료 · npm run build";
-        var titled = MobileMightySupport.Runs(named);
-        Check(titled[2].Title == "백그라운드 작업 완료 · npm run build" && titled[2].Blocks[0].Title == "백그라운드 작업 완료 · npm run build", "a titled notice run on the phone");
-        // The pipeline for the phone: the count, and a notice run's own title (none from an older save: the phone reads the generic one).
-        var wire = MobileStructure.Make(MightyStructure.Make(named, null, null), named.Count, title: _ => "style name")!;
-        var items = wire.Rows!.Select(r => r.Item).ToList();
-        Check(items.Select(i => i.BackgroundWaiting).SequenceEqual([1, (int?)null, null]), "the phone's pipeline counts");
-        Check(items.Select(i => i.Title).SequenceEqual(["style name", null, "백그라운드 작업 완료 · npm run build"]), "the phone's pipeline titles: " + string.Join(" | ", items.Select(i => i.Title)));
-        // The command ended: the count goes, the result is final, and the digest moved.
+        Check(mobile[0].AwaitingNotice is { Delivered: 0, Total: 1 } wire && wire.Tasks.Single() == new MobileAwaitedTask("Build", "running") && mobile[0].BackgroundWaiting == 1
+            && mobile[1].AwaitingNotice is null && mobile[2].AwaitingNotice is null, "the phone gets the 알림 대기 block");
+        Check(JsonSerializer.Serialize(mobile[0], Wire.Json).Contains("\"awaitingNotice\":{\"delivered\":0,\"total\":1,\"tasks\":[{\"title\":\"Build\",\"status\":\"running\"}]}", StringComparison.Ordinal)
+            && !JsonSerializer.Serialize(mobile[1], Wire.Json).Contains("awaitingNotice", StringComparison.Ordinal), "the wire form: " + JsonSerializer.Serialize(mobile[0], Wire.Json));
+        var structure = MobileStructure.Make(MightyStructure.Make(all, null, null), all.Count)!.Rows!.Select(r => r.Item).ToList();
+        Check(structure.Select(i => i.AwaitingNotice).SequenceEqual([true, (bool?)null, null]) && structure.Select(i => i.BackgroundWaiting).SequenceEqual([1, (int?)null, null]), "the phone's pipeline awaits");
+        // The pane is alive only for the notice: the pet and the header say 알림 대기.
+        var pane = new RunSession { Id = "p", Kind = "claude", Provider = "claude", Status = "running", GraphRuns = all };
+        Check(BackgroundNoticeRuns.AwaitsNotice(pane) && !BackgroundNoticeRuns.AwaitsNotice(pane with { Status = "completed" }) && BackgroundNoticeRuns.StateWord == "알림 대기", "the pane awaits notices");
+        // The command ended and its notice turn runs: still awaiting, its notice delivered.
         var digest = MobileMightySupport.Digest(all);
         all[0].Agents[1].Status = "completed";
-        var settled = MightyGraphSupport.ShownRuns(all)[0];
-        Check(MightyGraphSupport.BackgroundWaiting(settled) == 0 && MightyGraphBlockModel.ResultTitle(settled.Status, MightyGraphSupport.BackgroundWaiting(settled)) == "최종 결과", "the result is final once the command ended");
-        Check(MobileMightySupport.Runs(all)[0].BackgroundWaiting is null && MobileMightySupport.Digest(all) != digest, "the phone's count goes and its digest moves");
+        Check(BackgroundNoticeRuns.AwaitingNotice(all[0], all) is { Delivered: 1, Progress: "알림 1/1" } delivered && delivered.Tasks[0].Word == "알림 전달됨"
+            && MightyGraphSupport.BackgroundWaiting(all[0]) == 0 && Card().Title == "알림 대기 중", "an unanswered notice turn keeps it awaiting");
+        Check(MobileMightySupport.Runs(all)[0] is { BackgroundWaiting: null, AwaitingNotice.Delivered: 1 } && MobileMightySupport.Digest(all) != digest, "the phone sees the notice delivered");
+        // The notice turn answered: the normal 최종 결과.
+        digest = MobileMightySupport.Digest(all);
+        all[2].Status = "completed"; all[2].FinalOutput = "The build passed.";
+        Check(BackgroundNoticeRuns.AwaitingNotice(all[0], all) is null && Card() is { Title: "최종 결과", Status: "completed", Awaiting: null, Outline: MightyGraphActivity.None }
+            && MightyTimeline.Groups(all)[0].Result is { Awaiting: false, Tone: DesignTone.Done } && !BackgroundNoticeRuns.AwaitsNotice(pane), "answered, it is the final result");
+        Check(MobileMightySupport.Runs(all)[0].AwaitingNotice is null && MobileMightySupport.Digest(all) != digest, "the phone's block goes and its digest moves");
+        // Failed or stopped work keeps its word; a failed or stopped request, or a notice run, awaits nothing.
+        all[0].Agents[1].Status = "error"; all[2].Status = "running";
+        Same(BackgroundNoticeRuns.AwaitingNotice(all[0], all)!.Tasks[0].Word, "실패", "a failed command's word");
+        all[0].Agents[1].Status = "stopped";
+        Same(BackgroundNoticeRuns.AwaitingNotice(all[0], all)!.Tasks[0].Word, "중단됨", "a stopped command's word");
+        Check(BackgroundNoticeRuns.AwaitingNotice(all[2], all) is null, "a notice run awaits nothing");
+        foreach (var status in new[] { "error", "stopped", "running" })
+        {
+            var other = Runs(answered: false, requestStatus: status);
+            Check(BackgroundNoticeRuns.AwaitingNotice(other[0], other) is null, "a " + status + " request awaits nothing");
+        }
+        // A notice run of another request never keeps this one awaiting.
+        all[0].Agents[1].Status = "completed";
+        Check(BackgroundNoticeRuns.AwaitingNotice(all[0], [all[0], new MightyGraphRun { Id = "other:notice:1", Status = "running", NoticeRun = true, Agents = [new() { Id = "c", SourceBlockId = "t" }] }]) is null, "another request's notice run");
         // A notice run's title moves the digest with no new record.
         var notice = new MightyGraphRun { Id = "r:notice:1", Status = "running", NoticeRun = true };
         var untitled = MobileMightySupport.Digest([notice]);
         notice.NoticeTitle = "하위 에이전트 메시지 · scout";
         Check(MobileMightySupport.Digest([notice]) != untitled, "a notice run's title moves the digest");
-        // A pane without a saved graph digests as its legacy runs do, with no waiting count and no title.
-        var pane = new RunSession { Id = "legacy", Kind = "claude", Provider = "claude", Status = "idle", Logs = [new("u1", "user", "hi", Wire.Now(), "claude"), new("a1", "assistant", "hello", Wire.Now(), "claude")] };
-        Same(MobileMightySupport.Digest(pane), MobileMightySupport.Digest(MobileMightySupport.LegacyRuns(pane)), "the legacy digest hashes what the run digest does");
+        // An untitled notice run (an older save) is headed generically on the phone; a titled one carries its own.
+        var named = Runs(); var old = MobileMightySupport.Runs(named);
+        Check(old[1].Title == BackgroundNoticeRuns.GenericTitle && old[1].Blocks[0].Title == BackgroundNoticeRuns.GenericTitle, "an untitled notice run on the phone");
+        named[2].NoticeTitle = "백그라운드 작업 완료 · npm run build";
+        var titled = MobileMightySupport.Runs(named);
+        Check(titled[2].Title == "백그라운드 작업 완료 · npm run build" && titled[2].Blocks[0].Title == "백그라운드 작업 완료 · npm run build", "a titled notice run on the phone");
+        var items = MobileStructure.Make(MightyStructure.Make(named, null, null), named.Count, title: _ => "style name")!.Rows!.Select(r => r.Item).ToList();
+        Check(items.Select(i => i.Title).SequenceEqual(["style name", null, "백그라운드 작업 완료 · npm run build"]), "the phone's pipeline titles: " + string.Join(" | ", items.Select(i => i.Title)));
+        // A pane without a saved graph digests as its legacy runs do.
+        var legacy = new RunSession { Id = "legacy", Kind = "claude", Provider = "claude", Status = "idle", Logs = [new("u1", "user", "hi", Wire.Now(), "claude"), new("a1", "assistant", "hello", Wire.Now(), "claude")] };
+        Same(MobileMightySupport.Digest(legacy), MobileMightySupport.Digest(MobileMightySupport.LegacyRuns(legacy)), "the legacy digest hashes what the run digest does");
     }
 
     /// <summary>A notice taken into the request's own turn: its finished notice run comes last while the request still runs, yet the
