@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canCreateFromGit, canMakeFolder, fill, nextName, shownProblem } from './workspaceCreateRules';
+import { canCreateFromGit, canMakeFolder, fill, nextName, shownProblem, type CreateCheck } from './workspaceCreateRules';
 
 const ok = { problem: null, exists: false, locationMissing: false };
 
@@ -16,6 +16,13 @@ describe('workspace create helpers', () => {
     expect(canMakeFolder({ ...ok, locationMissing: true }, false)).toBe(false);
     expect(canMakeFolder(ok, true)).toBe(false);
     expect(canMakeFolder(null, false)).toBe(false);
+  });
+  it('takes a check without problem and message (the bridge leaves out nulls) as a name that can be made', () => {
+    const wire = JSON.parse('{"target":"C:/a/Hello-World","exists":false,"locationMissing":false}') as CreateCheck;
+    expect(canMakeFolder(wire, false)).toBe(true);
+    expect(canCreateFromGit(wire, { state: 'reachable' }, false)).toBe(true);
+    expect(canCreateFromGit(wire, { state: 'idle' }, false)).toBe(false);
+    expect(shownProblem(wire, 'Hello-World', false)).toBeNull();
   });
   it('enables 생성 only after a reachable probe', () => {
     expect(canCreateFromGit(ok, { state: 'reachable' }, false)).toBe(true);
