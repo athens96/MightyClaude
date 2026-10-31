@@ -670,6 +670,8 @@ public sealed partial class MainWindow
             }
             return new(!MobileBusy, options.ToHashCode(), mighty.ToHashCode());
         }
+        /// <summary>The runs' resultFiles as last looked through, kept until a result changes; it goes with the pane.</summary>
+        private readonly MobileResultFilesMemo mobileResultFiles = new();
         internal MobilePaneExtras MobileSnapshot()
         {
             var pane = Session; var style = MobileActiveStyle; var styleId = style?.Id ?? MobileWire.CliStyle; var options = MobileOptions(pane);
@@ -678,7 +680,9 @@ public sealed partial class MainWindow
             // style's own names on its requests (M/MightyClaude/AppStore+MobileRemote.swift:410-439).
             var styles = style is null ? null : styleRegistry?.Styles;
             var legacy = style is null ? null : MobileLegacyStyleAdapter.Payload(style, GuidedPhase(style), stylePrerequisites?.Ready ?? false);
-            var mighty = new { style = MobileRemoteSupport.Style(styleId), styleId, runs = MobileMightySupport.Runs(MobileMightySupport.SavedRuns(pane), styles is null ? null : input => StylePresentation.RequestPrefix(styles, input), owner.BackgroundOutputFor(pane.Id)), panel = MobileStylePanel(style), ouroboros = legacy };
+            // A run's resultFiles are looked for in the pane's own folder, as the desktop's 결과에 나온 파일 panel: none for a remote workspace.
+            // Each result is looked through once (mobileResultFiles), not on every long poll.
+            var mighty = new { style = MobileRemoteSupport.Style(styleId), styleId, runs = MobileMightySupport.Runs(MobileMightySupport.SavedRuns(pane), styles is null ? null : input => StylePresentation.RequestPrefix(styles, input), owner.BackgroundOutputFor(pane.Id), LocalPath(Workspace), mobileResultFiles), panel = MobileStylePanel(style), ouroboros = legacy };
             var statusLine = Refresher?.Result is { } statusResult ? new { lines = statusResult.Lines.Select(line => line.Select(s => new { s.Text, fg = Terminal(s.Foreground) is { } color ? $"#{color.R:X2}{color.G:X2}{color.B:X2}" : null, bold = s.Bold })) } : null;
             // The 보낼 대상 switch needs the pane's catalogue, which a pane only ever read from the phone has not scanned (M/AppStore+MobileRemote.swift mobileSession).
             owner.RefreshAskCatalog(pane);

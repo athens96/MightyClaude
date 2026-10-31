@@ -538,6 +538,7 @@
   "phone.blocks.nothing": "Nothing to show yet.",
   "phone.blocks.prompt": "Request",
   "phone.blocks.result": "Result",
+  "phone.blocks.resultFilesMore": "Show {count} more",
   "phone.blocks.resultLess": "Show less",
   "phone.blocks.resultMore": "Show all",
   "phone.connect.scan": "Scan QR or Paste Link",

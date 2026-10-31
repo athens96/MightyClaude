@@ -205,6 +205,11 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 않으므로 `3 / 5` 같은 진행률로 그리지 않습니다.
 **계약에 없는 종류·상태는 중립 색으로, 호스트가 보낸 단어 그대로** 그립니다.
 
+끝난 요청의 결과 카드 아래에는 호스트가 실행의 `resultFiles`로 보낸 **결과에 나온 파일** 목록이 붙습니다.
+Mac·Windows의 결과 옆 패널과 같은 함수로 호스트가 찾은 워크스페이스 파일이며, 폰은 경로를 글에서 읽지 않습니다.
+행은 파일 이름(`:줄`)과 흐린 상대 폴더이고, 처음 5개 뒤로는 `{count}개 더 보기`로 펼칩니다.
+누르면 워크스페이스 파일 미리보기(`files` 기능, `workspace/[workspaceId]/file`)를 엽니다(`lib/result-files.ts`, `components/result-files.tsx`).
+
 보기 방식(`plain`/`mighty`)과 스타일(`cli`/`ouroboros`; 그 밖의 스타일은 `styleId`)은 헤더의 설정 칩에서
 고릅니다. 스타일이 두 가지 이상일 때는 보기 방식을 먼저 고른 뒤 스타일을 고르고, 둘은
 **한 번의 `POST …/settings`** 로 함께 나갑니다.
@@ -366,7 +371,7 @@ src/
              sheets.tsx(선택·입력·확인·본문·목록 모달), permission-card.tsx(한 번에 한 질문)
              antigravity-permission-card.tsx(Antigravity 권한 카드)
              push-root.tsx(푸시 시작·동기화·알림 탭 열기·세션 보는 중 알림)
-             mighty-blocks.tsx(요청·블록 타임라인), structure-view.tsx(파이프라인 보드), guided-panel.tsx
+             mighty-blocks.tsx(요청·블록 타임라인), result-files.tsx(결과에 나온 파일), structure-view.tsx(파이프라인 보드), guided-panel.tsx
   hooks/     use-long-poll.ts (AbortController + 포커스 + notify 연동)
              use-capabilities.ts (호스트별 /m1/info 캐시)
              use-attachments.ts (picker → 한도 → 청크 업로드 → uploadId)
@@ -374,7 +379,7 @@ src/
              dashboard.ts(현황 타일·알림 목록·카드 숫자), timeline.ts(노드 색·레일·블록 수),
              status-tone.ts(상태 → 다섯 색 + 중립)
              capabilities.ts, history.ts, questionnaire.ts, status-line.ts, commands.ts
-             mighty.ts(블록·패널 파싱과 라벨), uploads.ts(한도·청크 계획·업로드 진행)
+             mighty.ts(블록·패널 파싱과 라벨), result-files.ts(resultFiles 읽기·행·열 화면), uploads.ts(한도·청크 계획·업로드 진행)
              file-slices.ts(expo-file-system 범위 읽기), device-token.ts, host-secrets.ts
              provider-marks.ts(프로바이더 마크 24×24 아웃라인)
              antigravity-permission.ts(Antigravity 카드 읽기·답 본문)

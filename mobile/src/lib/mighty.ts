@@ -10,6 +10,7 @@ import {
 import { parseBackground } from '@/lib/background-output';
 import { shownBlocks } from '@/lib/background-work';
 import { t } from '@/lib/i18n';
+import { parseResultFiles } from '@/lib/result-files';
 import {
   blockText,
   inlineText,
@@ -351,6 +352,8 @@ function parseRun(raw: unknown, filtering: boolean): MobileMightyRun | undefined
   if (title.length > 0) run.title = title;
   const result = blockText(raw.result, MAX_RUN_RESULT);
   if (result.trim().length > 0) run.result = result;
+  const resultFiles = parseResultFiles(raw.resultFiles);
+  if (resultFiles) run.resultFiles = resultFiles;
   return run;
 }
 

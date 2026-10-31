@@ -525,17 +525,22 @@ extension AppStore {
         // copies every entry of every run to stamp the provider on it, which a
         // phone's payload never reads and a poll must not pay for.
         let saved = session.graphRuns ?? MightyGraphSupport.legacyRuns(session)
+        // A run's resultFiles are looked for in the pane's own folder, as the
+        // desktop's 결과에 나온 파일 panel (`SessionPaneView`): none for a remote workspace.
+        let root = snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+        // Each result is looked through once (`mobileResultFiles`), not on every long poll.
+        let memo = mobileResultFilesMemo(session.id)
         // Only a pane that really runs an approved style carries a panel (§7.3)
         // — and only such a pane gets style prefixes on its request blocks, so
         // the registry sweep is behind the same gate (§1.10).
         guard let registered = guidedStyle(session) else {
             let built = structure ? mobileStructure(session, runs: saved, style: nil) : nil
-            return MobileMighty(style: style, runs: MobileMightySupport.runs(saved, outputTails: backgroundOutput.lines(forPane: session.id)) { _ in nil },
+            return MobileMighty(style: style, runs: MobileMightySupport.runs(saved, outputTails: backgroundOutput.lines(forPane: session.id), workspaceRoot: root, resultFiles: memo) { _ in nil },
                                 structure: built?.value, structureTag: built?.tag)
         }
         let runnable = styleRegistry.runnableInPrecedence(workspace: styleWorkspaceRef(session))
         let titles = StyleRequestTitles(styles: runnable)
-        let runs = MobileMightySupport.runs(saved, outputTails: backgroundOutput.lines(forPane: session.id)) { titles.prefix($0) }
+        let runs = MobileMightySupport.runs(saved, outputTails: backgroundOutput.lines(forPane: session.id), workspaceRoot: root, resultFiles: memo) { titles.prefix($0) }
         // The Mac reads these when the style is chosen; a pane only ever
         // watched from a phone has never triggered that read.
         if stylePrerequisite(registered, for: session) == nil { refreshStylePrerequisites(registered, for: session) }
@@ -545,6 +550,19 @@ extension AppStore {
         return MobileMighty(style: style, styleId: registered.id, runs: runs, panel: panel,
                             ouroboros: MobileLegacyStyleAdapter.payload(style: registered, panel: panel),
                             structure: built?.value, structureTag: built?.tag)
+    }
+
+    /// The pane's `resultFiles` memo, made on first use. A pane closed some way
+    /// that skipped its cleanup is dropped here, so the memos follow the panes.
+    private func mobileResultFilesMemo(_ id: String) -> MobileResultFilesMemo {
+        if let kept = mobileResultFiles[id] { return kept }
+        if mobileResultFiles.count >= snapshot.sessions.count {
+            let alive = Set(snapshot.sessions.map(\.id))
+            mobileResultFiles = mobileResultFiles.filter { alive.contains($0.key) }
+        }
+        let memo = MobileResultFilesMemo()
+        mobileResultFiles[id] = memo
+        return memo
     }
 
     /// The structure view the Mac pane draws (`MightyGraphView.structureShape`), from the

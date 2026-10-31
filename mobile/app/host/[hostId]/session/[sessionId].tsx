@@ -26,6 +26,7 @@ import {
   type MessageCommandAction,
   type MobileCommand,
   type MobilePermission,
+  type MobileResultFile,
   type MobileSessionDetail,
   type PlanDecisionKind,
   type QueuedItem,
@@ -87,6 +88,7 @@ import { answeredToast, isPlanRequest, pendingPlan, planAnswerBody } from '@/lib
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
 import { hostFiltersBackground, parseBackgroundDone, parseBackgroundWork } from '@/lib/background-work';
 import { defaultView, isQuietNotice, normalizeMighty } from '@/lib/mighty';
+import { resultFileRoute } from '@/lib/result-files';
 import {
   receiveStructure,
   structureQuery,
@@ -1175,6 +1177,14 @@ export default function SessionScreen() {
     const held = blockHeld ? blockHeld.split('\n') : [];
     return mighty && held.length > 0 ? mighty.runs.filter((run) => !held.includes(run.id)) : (mighty?.runs ?? []);
   }, [mighty, blockHeld]);
+  // A file a result names opens in the workspace's file preview, as a tap in the files browser does.
+  const resultFilesWorkspace = hasCapability(capabilities, 'files') ? session?.workspaceId : undefined;
+  const openResultFile = useCallback(
+    (file: MobileResultFile) => {
+      if (hostId && resultFilesWorkspace) router.push(resultFileRoute(hostId, resultFilesWorkspace, file));
+    },
+    [hostId, resultFilesWorkspace],
+  );
   const structureHeld = heldRuns(structureStandIn).join('\n');
   const shownStructureState = useMemo<StructureState>(
     () =>
@@ -1431,6 +1441,7 @@ export default function SessionScreen() {
               footer={footerNode}
               listRef={blockFollow.attach}
               follow={blockFollow.props}
+              onOpenFile={resultFilesWorkspace ? openResultFile : undefined}
             />
           ) : (
             <FlatList

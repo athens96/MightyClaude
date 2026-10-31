@@ -476,6 +476,117 @@ struct MobileRemoteExtensionTests {
         #expect(encodedRun?.keys.contains("result") == false)
     }
 
+    /// Mirrors Windows Core `MobileHostVerification.RunsCarryTheResultFilesTheDesktopLists`.
+    @Test func runsCarryTheResultFilesTheDesktopLists() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent("mobile-result-files-" + UUID().uuidString, isDirectory: true)
+        let outside = manager.temporaryDirectory.appendingPathComponent("mobile-result-files-outside-" + UUID().uuidString + ".txt")
+        defer { try? manager.removeItem(at: root); try? manager.removeItem(at: outside) }
+        try manager.createDirectory(at: root.appendingPathComponent("docs"), withIntermediateDirectories: true)
+        try manager.createDirectory(at: root.appendingPathComponent("src"), withIntermediateDirectories: true)
+        try Data("note".utf8).write(to: root.appendingPathComponent("docs/note.md"))
+        try Data("app".utf8).write(to: root.appendingPathComponent("src/app.ts"))
+        try Data("outside".utf8).write(to: outside)
+
+        let named = "wrote docs/note.md, see src/app.ts:12 and docs/note.md:3 again; not docs/missing.md or https://example.com/src/app.ts"
+        func run(_ id: String, _ status: String, _ output: String?, notice: Bool = false) -> MightyGraphRun {
+            var value = MightyGraphRun(id: id, input: "q", status: status, finalOutput: output)
+            value.noticeRun = notice ? true : nil
+            // As every saved and live run is (`MightyGraphSupport.normalized`, `RunSession.recordGraph`): a settled,
+            // completed run's result entry is its final output.
+            value.refreshResult()
+            return value
+        }
+        let runs = [run("old", "completed", "older named docs/note.md"), run("new", "completed", named + " and " + outside.path)]
+        let wire = MobileMightySupport.runs(runs, workspaceRoot: root)
+        // A run that does not carry its result carries no files either.
+        #expect(wire[0].resultFiles == nil)
+        // The desktop panel's list: real workspace files only, in order, once each, a line where the text gave one.
+        #expect(wire[1].resultFiles == [MobileResultFile(path: "docs/note.md"), MobileResultFile(path: "src/app.ts", line: 12)])
+        // The desktop panel's own input (`MightyGraphResultFilesModel.Request`): a settled run's result entries, not the user's.
+        let desktopInput = runs[1].resultEntries.filter { $0.kind != "user" }.map(\.text)
+        #expect(desktopInput == [named + " and " + outside.path])
+        let desktop = ReferenceLinkSupport.resultFiles(in: desktopInput, root: root).map { MobileResultFile(path: $0.path, line: $0.line) }
+        #expect(wire[1].resultFiles == desktop)
+        // A run without result entries draws no list on the desktop, so none travels.
+        var unrefreshed = runs[1]
+        unrefreshed.resultEntries = []
+        #expect(MobileMightySupport.runs([unrefreshed], workspaceRoot: root)[0].resultFiles == nil)
+        // With result entries, they are what is read; the final output is not read a second time.
+        var entries = run("entries", "completed", "src/app.ts")
+        entries.resultEntries = [LogEntry(id: "entries-result", kind: "assistant", text: "docs/note.md", timestamp: "2026-11-01T00:00:00Z"),
+                                 LogEntry(id: "entries-user", kind: "user", text: "src/app.ts", timestamp: "2026-11-01T00:00:00Z")]
+        #expect(MobileMightySupport.runs([entries], workspaceRoot: root)[0].resultFiles == [MobileResultFile(path: "docs/note.md")])
+        // No folder on this computer (a remote workspace): the result travels, its files do not.
+        let remote = MobileMightySupport.runs(runs)[1]
+        #expect(remote.resultFiles == nil && remote.result != nil)
+
+        // Read from the full answer, not the 20,000-character result the phone gets.
+        let tail = MobileMightySupport.runs([run("long", "completed", String(repeating: "가", count: 25_000) + " then src/app.ts")], workspaceRoot: root)[0]
+        #expect(tail.result?.count == MobileWire.maximumRunResult && tail.resultFiles == [MobileResultFile(path: "src/app.ts")])
+
+        // Only a successful, finished result.
+        let failed = MobileMightySupport.runs([run("failed", "failed", named)], workspaceRoot: root)[0]
+        #expect(failed.result != nil && failed.resultFiles == nil)
+        let stopped = MobileMightySupport.runs([run("stopped", "stopped", named)], workspaceRoot: root)[0]
+        #expect(stopped.result != nil && stopped.resultFiles == nil)
+        #expect(MobileMightySupport.runs([run("running", "running", named)], workspaceRoot: root)[0].resultFiles == nil)
+        var unfinished = run("open", "completed", named)
+        unfinished.agents = [MightyGraphAgent(id: "a", status: "running")]
+        #expect(MobileMightySupport.runs([unfinished], workspaceRoot: root)[0].resultFiles == nil)
+        #expect(MobileMightySupport.runs([run("none", "completed", "nothing to open here")], workspaceRoot: root)[0].resultFiles == nil)
+
+        // A notice run after the newest request carries its own, as it carries its result.
+        let notices = MobileMightySupport.runs([run("request", "completed", "docs/note.md"), run("request:notice:1", "completed", "src/app.ts", notice: true)], workspaceRoot: root)
+        #expect(notices[0].resultFiles == [MobileResultFile(path: "docs/note.md")] && notices[1].resultFiles == [MobileResultFile(path: "src/app.ts")])
+
+        // The cap: the first 50 of the desktop's list.
+        try manager.createDirectory(at: root.appendingPathComponent("many"), withIntermediateDirectories: true)
+        let names = (0..<60).map { "many/f" + ($0 < 10 ? "0" : "") + String($0) + ".txt" }
+        for name in names { try Data().write(to: root.appendingPathComponent(name)) }
+        let crowded = MobileMightySupport.runs([run("crowded", "completed", names.joined(separator: " "))], workspaceRoot: root)[0].resultFiles
+        #expect(crowded?.count == MobileWire.maximumRunResultFiles)
+        #expect(crowded?.first?.path == "many/f00.txt" && crowded?.last?.path == "many/f49.txt")
+
+        // A pane's memo looks a result through once: a second reply for the same result reads the kept list.
+        var looks = 0
+        let memo = MobileResultFilesMemo { run, folder in
+            looks += 1
+            return MobileMightySupport.lookThrough(run, workspaceRoot: folder)
+        }
+        var memoRuns = runs
+        #expect(MobileMightySupport.runs(memoRuns, workspaceRoot: root, resultFiles: memo)[1].resultFiles == wire[1].resultFiles)
+        #expect(looks == 1 && memo.count == 1)
+        #expect(MobileMightySupport.runs(memoRuns, workspaceRoot: root, resultFiles: memo)[1].resultFiles == wire[1].resultFiles)
+        #expect(looks == 1)
+        let cached = MobileResultFilesMemo()
+        _ = MobileMightySupport.runs(memoRuns, workspaceRoot: root, resultFiles: cached)
+        try manager.moveItem(at: root.appendingPathComponent("src/app.ts"), to: root.appendingPathComponent("src/moved.ts"))
+        // A kept list is sent as it was, without the workspace being read.
+        #expect(MobileMightySupport.runs(memoRuns, workspaceRoot: root, resultFiles: cached)[1].resultFiles?.last == MobileResultFile(path: "src/app.ts", line: 12))
+        try manager.moveItem(at: root.appendingPathComponent("src/moved.ts"), to: root.appendingPathComponent("src/app.ts"))
+        memoRuns[1].finalOutput = (memoRuns[1].finalOutput ?? "") + " and docs/note.md once more"
+        memoRuns[1].refreshResult()
+        _ = MobileMightySupport.runs(memoRuns, workspaceRoot: root, resultFiles: memo)
+        #expect(looks == 2)
+        _ = MobileMightySupport.runs(memoRuns, workspaceRoot: root.appendingPathComponent("docs"), resultFiles: memo)
+        #expect(looks == 3)
+        memoRuns[1].status = "running"
+        _ = MobileMightySupport.runs(memoRuns, workspaceRoot: root, resultFiles: memo)
+        // A run that no longer carries a result is dropped from the memo.
+        #expect(memo.count == 0)
+
+        // The wire shape is resultFiles: [{ path, line? }], absent when there are none.
+        let encodedRun = try encoded(wire[1])
+        let list = encodedRun["resultFiles"] as? [[String: Any]]
+        #expect(list?.count == 2)
+        #expect(list?.first?.keys.sorted() == ["path"])
+        #expect(list?.last?["path"] as? String == "src/app.ts")
+        #expect(list?.last?["line"] as? Int == 12)
+        let bare = try encoded(wire[0])
+        #expect(bare.keys.contains("resultFiles") == false)
+    }
+
     @Test func theMightyDigestMovesWhenTheNewestRunsResultLands() {
         var run = MightyGraphRun(id: "run-1", input: "안녕", status: "running")
         let running = MobileMightySupport.digest([run])

@@ -538,6 +538,7 @@
   "phone.blocks.nothing": "아직 보여 줄 내용이 없습니다.",
   "phone.blocks.prompt": "요청 내용",
   "phone.blocks.result": "결과",
+  "phone.blocks.resultFilesMore": "{count}개 더 보기",
   "phone.blocks.resultLess": "접기",
   "phone.blocks.resultMore": "전체 보기",
   "phone.connect.scan": "QR 스캔 또는 링크 붙여넣기",

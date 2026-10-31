@@ -538,6 +538,7 @@
   "phone.blocks.nothing": "まだ表示する内容はありません。",
   "phone.blocks.prompt": "リクエスト",
   "phone.blocks.result": "結果",
+  "phone.blocks.resultFilesMore": "さらに{count}件を表示",
   "phone.blocks.resultLess": "折りたたむ",
   "phone.blocks.resultMore": "すべて表示",
   "phone.connect.scan": "QRをスキャンまたはリンクを貼り付け",

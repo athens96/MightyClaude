@@ -16,6 +16,8 @@ public static class MobileWire
     public const int DefaultPageLimit = 50, MaximumPageLimit = 100;
     /// <summary>A block's <c>output</c> and the newest settled run's <c>result</c>, counted in characters.</summary>
     public const int MaximumBlockOutput = 2_000, MaximumRunResult = 20_000;
+    /// <summary>The most entries a run's <c>resultFiles</c> carries: the first ones of the desktop panel's list (up to <see cref="ResultFiles.MaximumResultFiles"/>).</summary>
+    public const int MaximumRunResultFiles = 50;
     /// <summary>A block's own prompt, and each of its activity lines, in bytes.</summary>
     public const int MaximumBlockSummary = 1_000;
     public const int MaximumBlockActivity = 8;
@@ -36,9 +38,62 @@ public sealed record MobileBlock(string Id, string Kind, string Title, string St
 /// settled. <c>NoticeRun</c> is <c>true</c> for Claude's reply to finished background work (<see cref="MightyGraphRun.NoticeRun"/>): not a
 /// request, so it takes no request number; its <c>Title</c> and its <c>main</c> block's are its heading (<see cref="BackgroundNoticeRuns.Heading(MightyGraphRun)"/>).
 /// Absent otherwise. <c>BackgroundWaiting</c> is the background work a request started that still runs after its own turn
-/// (<see cref="MightyGraphSupport.BackgroundWaiting"/>): its result card reads 현재까지의 결과 meanwhile. Absent when none (and from older hosts).</summary>
+/// (<see cref="MightyGraphSupport.BackgroundWaiting"/>): its result card reads 현재까지의 결과 meanwhile. Absent when none (and from older hosts).
+/// <c>ResultFiles</c> is the desktop's 결과에 나온 파일 list for a run that carries <c>Result</c> and completed (<see cref="MobileMightySupport.RunResultFiles"/>).
+/// Absent when it names none, on a workspace of another computer, and from older hosts.</summary>
 public sealed record MobileMightyRun(string Id, string Input, string? Title, string Status, IReadOnlyList<MobileBlock> Blocks, string? Result = null, bool? NoticeRun = null,
-    int? BackgroundWaiting = null);
+    int? BackgroundWaiting = null, IReadOnlyList<MobileResultFile>? ResultFiles = null);
+/// <summary>One file a run's final result names: <c>Path</c> relative to the workspace root, joined with "/" — what
+/// <c>GET /m1/workspaces/{id}/file?path=</c> takes — and the line the result pointed at, if any.</summary>
+public sealed record MobileResultFile(string Path, int? Line = null);
+
+/// <summary>
+/// One pane's <c>resultFiles</c>, kept per run until that run's result or the workspace folder changes, so a session reply built
+/// for every long poll does not look through the workspace again (the desktop panel keeps its list the same way,
+/// MainWindow.MightyGraph.cs <c>graphResultFilesByRun</c>). <see cref="MobileMightySupport.Runs"/> drops the runs it no longer looks up,
+/// so the memo never holds more than the runs that carry a result; it goes with its pane.
+/// </summary>
+public sealed class MobileResultFilesMemo(Func<MightyGraphRun, string, IReadOnlyList<MobileResultFile>?>? lookThrough = null)
+{
+    private readonly Func<MightyGraphRun, string, IReadOnlyList<MobileResultFile>?> lookThrough = lookThrough ?? MobileMightySupport.LookThrough;
+    private readonly Dictionary<string, (int Key, IReadOnlyList<MobileResultFile>? Files)> byRun = new(StringComparer.Ordinal);
+    private readonly HashSet<string> used = new(StringComparer.Ordinal);
+
+    /// <summary>The runs whose list is kept.</summary>
+    public int Count { get { lock (byRun) return byRun.Count; } }
+
+    /// <summary>What a result is read from, as the desktop panel's key: the folder, the result entries and the whole final answer.</summary>
+    private static int Key(MightyGraphRun run, string root)
+    {
+        var hash = new HashCode(); hash.Add(root); hash.Add(run.ResultEntries.Count); hash.Add(run.ResultEntries.LastOrDefault()?.Id);
+        foreach (var entry in run.ResultEntries) hash.Add(entry.Text);
+        hash.Add(run.FinalOutput);
+        return hash.ToHashCode();
+    }
+
+    internal IReadOnlyList<MobileResultFile>? Files(MightyGraphRun run, string root)
+    {
+        var key = Key(run, root);
+        lock (byRun)
+        {
+            used.Add(run.Id);
+            if (byRun.TryGetValue(run.Id, out var kept) && kept.Key == key) return kept.Files;
+        }
+        var files = lookThrough(run, root);
+        lock (byRun) byRun[run.Id] = (key, files);
+        return files;
+    }
+
+    /// <summary>Drops every run not looked up since the last prune.</summary>
+    internal void Prune()
+    {
+        lock (byRun)
+        {
+            foreach (var id in byRun.Keys.Where(id => !used.Contains(id)).ToArray()) byRun.Remove(id);
+            used.Clear();
+        }
+    }
+}
 
 /// <summary>
 /// One background task still running in a pane (the detail's <c>backgroundWork</c>): a row of the background strip. Its output file's
@@ -142,18 +197,47 @@ public static class MobileMightySupport
     /// The pane's newest runs, oldest first. <paramref name="title"/> is the guided style's own name for a request; only the
     /// newest request and the notice runs after it carry their full result, each once it has settled. Requests are numbered with
     /// <see cref="MightyGraphSupport.RequestOrdinals"/>: a notice run takes none. A notice run's <c>Title</c> is its heading (<see cref="BackgroundNoticeRuns.Heading(MightyGraphRun)"/>).
+    /// <paramref name="workspaceRoot"/> is the pane's workspace folder on this computer (null for a workspace of another computer):
+    /// a run that carries its result gets the files it names from it (<see cref="RunResultFiles"/>). With the pane's
+    /// <paramref name="resultFiles"/> memo a result is looked through once, and the memo drops the runs this call no longer looks up.
     /// </summary>
-    public static IReadOnlyList<MobileMightyRun> Runs(IReadOnlyList<MightyGraphRun> values, Func<string, string?>? title = null, IReadOnlyDictionary<string, IReadOnlyList<string>>? outputTails = null)
+    public static IReadOnlyList<MobileMightyRun> Runs(IReadOnlyList<MightyGraphRun> values, Func<string, string?>? title = null, IReadOnlyDictionary<string, IReadOnlyList<string>>? outputTails = null, string? workspaceRoot = null,
+        MobileResultFilesMemo? resultFiles = null)
     {
         var offset = Math.Max(0, values.Count - MobileWire.MightyRuns); var result = new List<MobileMightyRun>();
         var ordinals = MightyGraphSupport.RequestOrdinals(values); var carried = FirstCarried(values, offset);
         for (var index = offset; index < values.Count; index++)
         {
             var run = values[index]; var state = Status(run.Status); var notice = run.NoticeRun == true; var waiting = MightyGraphSupport.BackgroundWaiting(run);
+            var output = index >= carried && Settled(state) ? Output(run.FinalOutput, MobileWire.MaximumRunResult) : null;
             result.Add(new(run.Id, ActivitySupport.Clean(run.Input, MobileWire.MaximumText), notice ? BackgroundNoticeRuns.Heading(run) : title?.Invoke(run.Input), state, Blocks(run, ordinals[index], outputTails),
-                index >= carried && Settled(state) ? Output(run.FinalOutput, MobileWire.MaximumRunResult) : null, notice ? true : null, waiting > 0 ? waiting : null));
+                output, notice ? true : null, waiting > 0 ? waiting : null, output is null ? null : RunResultFiles(run, workspaceRoot, resultFiles)));
         }
+        resultFiles?.Prune();
         return result;
+    }
+
+    /// <summary>
+    /// The files a run's final result names, as the desktop's 결과에 나온 파일 panel lists them (<see cref="MightyGraphBlockModel.FilesFor"/>,
+    /// read from the full result, not the clipped <c>result</c>): only for a run that completed with every block it draws ended
+    /// (<see cref="MightyGraphLayout.Finished"/>), only files inside <paramref name="workspaceRoot"/>, the first
+    /// <see cref="MobileWire.MaximumRunResultFiles"/>. Null when there is no root or nothing was named. With <paramref name="memo"/> the
+    /// workspace is looked through once per result (<see cref="MobileResultFilesMemo"/>), never on every poll.
+    /// </summary>
+    public static IReadOnlyList<MobileResultFile>? RunResultFiles(MightyGraphRun run, string? workspaceRoot, MobileResultFilesMemo? memo = null)
+    {
+        if (workspaceRoot is null || run.Status != "completed" || !MightyGraphLayout.Finished(run)) return null;
+        return memo is null ? LookThrough(run, workspaceRoot) : memo.Files(run, workspaceRoot);
+    }
+
+    /// <summary>The look through the workspace itself: the desktop panel's <see cref="MightyGraphBlockModel.FilesFor"/>, cut to the wire's cap.</summary>
+    public static IReadOnlyList<MobileResultFile>? LookThrough(MightyGraphRun run, string workspaceRoot)
+    {
+        List<ResultFiles.ResultFile> files;
+        try { files = MightyGraphBlockModel.FilesFor(run, workspaceRoot); }
+        // A result that cannot be looked through names nothing, as on the desktop (LookThroughResultFiles); the session reply still goes.
+        catch (Exception ex) when (ex is not OutOfMemoryException) { return null; }
+        return files.Count == 0 ? null : files.Take(MobileWire.MaximumRunResultFiles).Select(file => new MobileResultFile(file.Path, file.Line)).ToArray();
     }
 
     /// <summary>The first run of the window from <paramref name="offset"/> that carries its result once settled: the newest request, after
