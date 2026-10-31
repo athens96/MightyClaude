@@ -306,6 +306,9 @@ public sealed partial class MainWindow
             // Settings, the setup screen, the plugin browser and the dialogs drawn by the page (MainWindow.WebShell.Settings.cs).
             var set = await RunWebSettingsSmoke(core, workspace, sessions[2].Id, result); Save();
             shown = shown && set;
+            // The Git sheet: a local bare repository's address typed in, checked reachable, 생성 enabled (MainWindow.WebShell.Create.cs).
+            var gitSheet = await RunWebGitCreateSmoke(core, result); Save();
+            shown = shown && gitSheet;
             await core.ExecuteScriptAsync($"document.querySelector('[data-session-id=\"{sessions[1].Id}\"]')?.click()");
             var selected = await WaitFor(page => page.Text("selected") == titles[1]);
             result["afterClick"] = selected.Clone(); result["hostActiveSession"] = service.Snapshot.ActiveSessionId == sessions[1].Id;
