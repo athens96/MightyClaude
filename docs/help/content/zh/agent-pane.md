@@ -141,6 +141,6 @@ Claude、Codex 和 Antigravity 窗格的标题栏中有{{ui:graph.view.default}}
 ![[agent-structure]]
 
 ### 结果卡片 {#result}
-请求结束后，结果卡片会整理出结果。Claude 的回答结束后请求即变为完成。如果它启动的后台任务仍在运行，卡片标题会显示“目前的结果 · 正在等待 N 个后台任务”，告诉你还剩几个；最后一个任务结束后，标题变为{{ui:graph.block.result}}。Claude 收到后台任务的通知后再次回答时，这段回答不会接在请求的结果后面，每一次回答都会打开一个新的图表（[后台任务](approvals.md#background)）。如果结果中提到了文件，可以用{{ui:graph.resultFiles.openButton}}按钮打开文件列表。点击块中的文件路径会弹出预览。最新的结果卡片会适应窗格大小；如果你手动调整过大小，会出现{{ui:graph.result.fitToWindow}}按钮。
+请求结束后，结果卡片会整理出结果。Claude 的回答结束后请求即变为完成。如果它启动的后台任务仍在运行，或已结束但 Claude 还没有回答它的通知，结果卡片会变成等待色的{{ui:graph.block.awaitingNotice}}块：在目前的回答下面，每个任务显示{{ui:plan.background.awaitingNotice}}或{{ui:plan.background.noticeDelivered}}，并显示“通知 1/2”这样的已收到通知数。在此期间，宠物和窗格标题显示{{ui:graph.state.awaitingNotice}}。所有通知都得到回答后，它会变为{{ui:graph.block.result}}。Claude 收到后台任务的通知后再次回答时，这段回答不会接在请求的结果后面，每一次回答都会打开一个新的图表（[后台任务](approvals.md#background)）。如果结果中提到了文件，可以用{{ui:graph.resultFiles.openButton}}按钮打开文件列表。点击块中的文件路径会弹出预览。最新的结果卡片会适应窗格大小；如果你手动调整过大小，会出现{{ui:graph.result.fitToWindow}}按钮。
 
 ![[result-card]]

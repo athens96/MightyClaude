@@ -196,8 +196,10 @@ MobileMighty {
                                              // title은 요청에서는 스타일이 붙인 이름이고, 알림 실행에서는 그 실행의 제목("백그라운드 작업 완료 · lint")이다.
                                              //   main 블록의 title도 같은 제목이다. 제목이 없던 예전 저장은 일반 제목 "백그라운드 작업 완료"를 싣는다.
                                              // backgroundWaiting(선택, 추가 필드, 양의 정수)은 요청이 시작한 백그라운드 작업 중 그 턴이 끝난 뒤에도
-                                             //   아직 도는 것의 수다. 0이면 싣지 않는다. 이 동안 결과 카드는 "현재까지의 결과 · 백그라운드 작업 {count}개
-                                             //   기다리는 중"(`graph.block.resultSoFar`)이다. 아래 "백그라운드 작업과 알림 실행" 절
+                                             //   아직 도는 것의 수다. 0이면 싣지 않는다. awaitingNotice를 모르는 예전 휴대폰은 이 동안 결과 카드를
+                                             //   "현재까지의 결과 · 백그라운드 작업 {count}개 기다리는 중"(`graph.block.resultSoFar`)으로 보인다.
+                                             // awaitingNotice(선택, 추가 필드)는 요청이 백그라운드 작업의 알림을 기다리는 동안의 알림 대기 블록이다:
+                                             //   {delivered, total, tasks: [{title, status}]}(tasks는 16개까지, status는 버킷된 상태). 아래 "백그라운드 작업과 알림 실행" 절
                                              // result(선택, 추가 필드)는 그 요청의 최종 결과(run.finalOutput)를 블록 output과 같은 규칙으로
                                              //   정리해 20 000자까지 담는다. 창의 **가장 최근 요청 하나와 그 뒤의 알림 실행**이 끝났을 때(completed·error·stopped)만,
                                              //   결과가 비어 있지 않을 때만 실린다 — 롱 폴 페이로드를 작게 두려는 것이다. 그 밖의 요청은
@@ -298,12 +300,13 @@ MobileBackgroundWork { id, kind: "agent" | "run", title, status: "running", star
 
   휴대폰의 작업 중 수는 `other` 종류(하위 에이전트도 명령도 아닌 CLI 작업)를 세지 않는다. 그런 행은 원래 보내지 않는다. Mac 머리는 센다. 드물어서 맞추지 않는다.
 - **알림 실행**은 루트에서 `<task-notification>`(또는 백그라운드 하위 에이전트의 최종 보고)이 Claude 턴을 열 때 생기는 실행이다. 일반 `MobileMightyRun`과 구조 `Item`으로 가고, 다른 점은 `noticeRun: true`와 `title`이다. 이 실행은 요청이 아니다. 휴대폰은 `title`(그 실행을 연 작업의 이름이 붙은 제목, 예: "백그라운드 작업 완료 · 코드 검토 에이전트", "하위 에이전트 메시지 · scout")을 앞뒤 공백을 지우고 제목으로 보이며, 없거나 비어 있으면 **백그라운드 작업 완료**(`graph.background.noticeRun`)를 보인다(Mac의 `BackgroundNoticeRuns.heading(title:)`, 휴대폰의 `noticeHeading`). 요청 번호를 세지 않으며(알림 실행은 앞 요청의 번호를 따른다), 파이프라인 보드도 "요청 n"으로 세지 않는다. main 블록의 `summary`는 끝난 작업(`<제목> · 완료|실패|중단됨` 줄들)이고 `output`이 Claude의 답이다. 나머지 블록은 끝난 백그라운드 블록의 사본(`background: true`, `outputTail`, `noticeReply`)이다.
-- **기다리는 결과.** 요청의 턴이 끝났는데 그 요청이 시작한 백그라운드 작업이 아직 돌면, 호스트는 그 수를 실행과 구조 `Item`의 `backgroundWaiting`에 싣는다(롱 폴을 깨우는 mighty 요약값에도 이 수와 알림 실행의 제목이 들어간다). 휴대폰은 `resultTitle(status, backgroundWaiting)`로 결과 제목을 고른다: error면 "요청 실패", stopped면 "요청 중단", 그 밖에 수가 0보다 크면 "현재까지의 결과 · 백그라운드 작업 {count}개 기다리는 중"(`graph.block.resultSoFar`), 아니면 "최종 결과". 흐름의 결과 카드는 기다리는 동안 "✓"를 붙이지 않는다. 작업이 다 끝나면 필드가 빠지고 "✓ 최종 결과"로 돌아온다. 휴대폰은 양의 정수만 읽는다(0, 음수, 소수, 문자열은 없는 것으로 본다).
+- **기다리는 결과.** 요청의 턴이 끝났는데 그 요청이 시작한 백그라운드 작업이 아직 돌면, 호스트는 그 수를 실행과 구조 `Item`의 `backgroundWaiting`에 싣는다(롱 폴을 깨우는 mighty 요약값에도 이 수와 알림 실행의 제목이 들어간다). 휴대폰은 `resultTitle(status, backgroundWaiting, awaiting)`로 결과 제목을 고른다: error면 "요청 실패", stopped면 "요청 중단", 알림 대기면 "알림 대기 중"(`graph.block.awaitingNotice`), 예전 호스트처럼 수만 오면 "현재까지의 결과 · 백그라운드 작업 {count}개 기다리는 중"(`graph.block.resultSoFar`), 아니면 "최종 결과". 흐름의 결과 카드는 기다리는 동안 "✓"를 붙이지 않는다. 작업이 다 끝나면 필드가 빠지고 "✓ 최종 결과"로 돌아온다. 휴대폰은 양의 정수만 읽는다(0, 음수, 소수, 문자열은 없는 것으로 본다).
+- **알림 대기.** 요청이 끝났는데 그 요청의 백그라운드 작업이 아직 돌거나, 끝났지만 알림 턴이 아직 답하지 않았으면 호스트는 실행에 `awaitingNotice`(`{delivered, total, tasks}`)를, 구조 `Item`에 `awaitingNotice: true`를 싣는다(규칙은 `docs/mighty-mode.md`). 휴대폰의 결과 카드는 대기 색 띠의 "알림 대기 중"이고, 지금까지의 답 아래에 작업마다 이름과 상태말(끝나면 알림, 알림 전달됨, 실패, 중단됨)과 "알림 {delivered}/{total}"을 보인다(`parseAwaitingNotice`, `awaitedTaskWord`, `awaitingProgress`). 파이프라인 답 제목도 대기 색의 "알림 대기 중"이다. delivered가 total보다 크거나 total이 0이면 없는 것으로 본다. 알림 실행의 상태가 바뀌면 이미 다이제스트가 바뀌므로 롱 폴이 깬다.
 - **호스트와 휴대폰 버전이 어긋날 때**
 
   | 호스트 | 휴대폰 | 결과 카드 | 알림 실행 제목 |
   | --- | --- | --- | --- |
-  | 새 | 새 | 기다리는 동안 "현재까지의 결과 · …"를 보인다. | 이름 붙은 제목을 보인다. |
+  | 새 | 새 | 기다리는 동안 알림 대기 블록("알림 대기 중")을 보인다. | 이름 붙은 제목을 보인다. |
   | 새 | 예전 | `backgroundWaiting`을 모른다. 0.4.46처럼 "최종 결과"다. | `noticeRun`을 먼저 보고 "백그라운드 작업 완료"를 쓴다. `title`은 무시한다. `main` 블록 제목에는 새 제목이 보인다. |
   | 예전 | 새 | 필드가 없으니 "최종 결과"다. | `title`이 없으니 "백그라운드 작업 완료"다. |
 

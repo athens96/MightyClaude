@@ -141,6 +141,6 @@ Mighty表示の上部にある{{ui:graph.view.diagram}} | {{ui:graph.view.timeli
 ![[agent-structure]]
 
 ### 結果カード {#result}
-リクエストが終わると、結果カードに結果がまとめられます。Claudeの応答が終わるとリクエストは完了になります。そのリクエストが始めたバックグラウンドタスクがまだ実行中のあいだは、カードのタイトルが「これまでの結果 · バックグラウンド作業 N 件を待機中」となって残りの数を示し、最後の1件が終わると{{ui:graph.block.result}}に変わります。バックグラウンドタスクの通知を受けてClaudeがまた応答すると、その応答はリクエストの結果には続かず、応答ごとに新しい図が開きます([バックグラウンドタスク](approvals.md#background))。結果にファイルが含まれていれば、{{ui:graph.resultFiles.openButton}}ボタンで一覧を開きます。ブロック内のファイルパスをクリックするとプレビューが表示されます。最新の結果カードはウインドウのサイズに合わせて表示され、サイズを手動で変更した場合は{{ui:graph.result.fitToWindow}}ボタンが表示されます。
+リクエストが終わると、結果カードに結果がまとめられます。Claudeの応答が終わるとリクエストは完了になります。そのリクエストが始めたバックグラウンドタスクがまだ実行中か、終わってもClaudeがその通知にまだ応答していないあいだは、結果カードが待機色の{{ui:graph.block.awaitingNotice}}ブロックになります。これまでの応答の下に、タスクごとに{{ui:plan.background.awaitingNotice}}または{{ui:plan.background.noticeDelivered}}と、「通知 1/2」のような受け取った通知の数が表示されます。このあいだペットとペインのヘッダーは{{ui:graph.state.awaitingNotice}}を表示します。すべての通知に応答すると{{ui:graph.block.result}}に変わります。バックグラウンドタスクの通知を受けてClaudeがまた応答すると、その応答はリクエストの結果には続かず、応答ごとに新しい図が開きます([バックグラウンドタスク](approvals.md#background))。結果にファイルが含まれていれば、{{ui:graph.resultFiles.openButton}}ボタンで一覧を開きます。ブロック内のファイルパスをクリックするとプレビューが表示されます。最新の結果カードはウインドウのサイズに合わせて表示され、サイズを手動で変更した場合は{{ui:graph.result.fitToWindow}}ボタンが表示されます。
 
 ![[result-card]]
