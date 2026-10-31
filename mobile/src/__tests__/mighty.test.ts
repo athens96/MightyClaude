@@ -21,8 +21,12 @@ import {
   followRunIndex,
   isQuietNotice,
   newestRequestIndex,
+  MAX_AWAITED_TASKS,
   MAX_BACKGROUND_WAITING,
+  awaitedTaskWord,
+  awaitingProgress,
   normalizeMighty,
+  parseAwaitingNotice,
   requestOrdinals,
   resultCardHeading,
   resultPreview,
@@ -656,6 +660,33 @@ describe('a result still waiting on background work', () => {
     // A failed or stopped run keeps the plain heading its strip's colour goes with, waiting count or not.
     expect(resultCardHeading({ status: 'error', backgroundWaiting: 2 })).toBe(t('phone.blocks.finalResult'));
     expect(resultCardHeading({ status: 'stopped' })).toBe(t('phone.blocks.finalResult'));
+  });
+
+  it('reads the 알림 대기 block the host sends and nothing malformed', () => {
+    const run = (awaitingNotice: unknown) => normalizeMighty({ style: 'cli', runs: [{ id: 'r1', input: 'x', status: 'completed', awaitingNotice, blocks: [] }] })!.runs[0]!;
+    const sent = { delivered: 1, total: 2, tasks: [{ title: 'npm run build', status: 'completed' }, { title: 'docs-surveyor', status: 'running' }] };
+    expect(run(sent).awaitingNotice).toEqual(sent);
+    for (const bad of [null, 1, 'x', { delivered: 3, total: 2, tasks: [] }, { delivered: 0, total: 0, tasks: [] }, { delivered: -1, total: 2 }, { delivered: 1.5, total: 2 }]) {
+      expect(run(bad).awaitingNotice).toBeUndefined();
+    }
+    // Untitled rows are dropped, a row without a status awaits, and at most MAX_AWAITED_TASKS rows are kept.
+    expect(parseAwaitingNotice({ delivered: 0, total: 2, tasks: [{ title: '' }, { title: 'lint' }] })).toEqual({ delivered: 0, total: 2, tasks: [{ title: 'lint', status: 'running' }] });
+    const many = Array.from({ length: 40 }, (_, i) => ({ title: 'task ' + i, status: 'running' }));
+    expect(parseAwaitingNotice({ delivered: 0, total: 40, tasks: many })!.tasks).toHaveLength(MAX_AWAITED_TASKS);
+    // An older host sends none.
+    expect(normalizeMighty({ style: 'cli', runs: [{ id: 'r1', input: 'x', status: 'completed', blocks: [] }] })!.runs[0]!.awaitingNotice).toBeUndefined();
+  });
+
+  it('heads the 알림 대기 block without ✓, over the older host\'s count, and names each task and the progress', () => {
+    const awaitingNotice = { delivered: 1, total: 2, tasks: [{ title: 'npm run build', status: 'completed' }] };
+    expect(resultCardHeading({ status: 'completed', awaitingNotice, backgroundWaiting: 1 })).toBe(t('graph.block.awaitingNotice'));
+    expect(resultCardHeading({ status: 'error', awaitingNotice })).toBe(t('phone.blocks.finalResult'));
+    expect(resultTitle('completed', 1, true)).toBe(t('graph.block.awaitingNotice'));
+    expect(resultTitle('stopped', undefined, true)).toBe(t('graph.block.resultStopped'));
+    expect(['running', 'completed', 'error', 'stopped'].map(awaitedTaskWord)).toEqual([
+      t('plan.background.awaitingNotice'), t('plan.background.noticeDelivered'), t('graph.block.taskNotice.failed'), t('graph.block.taskNotice.stopped'),
+    ]);
+    expect(awaitingProgress(awaitingNotice)).toBe(t('graph.block.awaitingNotice.progress', { delivered: 1, total: 2 }));
   });
 
   it('titles the result so far while background work waits', () => {

@@ -257,6 +257,14 @@ describe('notice runs in the structure', () => {
     expect(resultHeading({ ...waiting(2), status: 'error' })).toBe('Request failed');
     expect(resultHeading({ ...waiting(2), status: 'stopped' })).toBe('Request stopped');
   });
+
+  it('titles the answer 알림 대기 중 while the request awaits its notices, and reads only true', () => {
+    const awaiting = (awaitingNotice: unknown) => read([rawItem('r1', { awaitingNotice, backgroundWaiting: 1 })])[0]!;
+    expect(awaiting(true).awaitingNotice).toBe(true);
+    for (const bad of [false, 1, 'true', null]) expect(awaiting(bad).awaitingNotice).toBeUndefined();
+    expect(resultHeading(awaiting(true))).toBe('Awaiting notices');
+    expect(resultHeading({ ...awaiting(true), status: 'error' })).toBe('Request failed');
+  });
 });
 
 describe('what the phone holds', () => {

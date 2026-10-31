@@ -5,6 +5,7 @@ import {
   MAX_RUN_RESULT,
   type MobileBlock,
   type MobileMighty,
+  type MobileAwaitingNotice,
   type MobileMightyRun,
 } from '@/api/types';
 import { parseBackground } from '@/lib/background-output';
@@ -122,26 +123,62 @@ export function noticeHeading(title: string | undefined): string {
 }
 
 /**
- * The result card's title: how the run ended, or the result so far while background work it started still
- * runs (the Mac's `MightyGraphSupport.resultTitle`). `waiting` is the host's `backgroundWaiting`. Statuses
- * arrive bucketed by the host (`running`, `waiting`, `completed`, `error`, `stopped`): a failed or cancelled
- * run is already `error` or `stopped` here, so the Mac's other words for them need no case of their own.
+ * The result card's title: how the run ended, 알림 대기 중 while it awaits the notices of background work it started
+ * (`awaiting`, the host's `awaitingNotice`), or, from an older host that sends only the count, the result so far
+ * (`waiting`, its `backgroundWaiting`) (the Mac's `MightyGraphSupport.resultTitle`). Statuses arrive bucketed by the
+ * host (`running`, `waiting`, `completed`, `error`, `stopped`): a failed or cancelled run is already `error` or
+ * `stopped` here, so the Mac's other words for them need no case of their own.
  */
-export function resultTitle(status: string, waiting: number | undefined): string {
+export function resultTitle(status: string, waiting: number | undefined, awaiting = false): string {
   if (status === 'error') return t('graph.block.resultError');
   if (status === 'stopped') return t('graph.block.resultStopped');
+  if (awaiting) return t('graph.block.awaitingNotice');
   return waiting !== undefined && waiting > 0 ? t('graph.block.resultSoFar', { count: waiting }) : t('graph.block.result');
 }
 
 /**
- * The heading of a run's result card in the Mighty view: "✓ 최종 결과" once the run finished, the result so far
- * (no "✓", it is not over) while background work it started still runs, and plain 최종 결과 for a run that failed
- * or stopped, whose header strip already says so in its colour. Statuses arrive bucketed by the host (`resultTitle`).
+ * The heading of a run's result card in the Mighty view: "✓ 최종 결과" once the run finished, 알림 대기 중 (no "✓",
+ * it is not over) while it awaits its background work's notices, the result so far from an older host, and plain
+ * 최종 결과 for a run that failed or stopped, whose header strip already says so in its colour (`resultTitle`).
  */
-export function resultCardHeading(run: Pick<MobileMightyRun, 'status' | 'backgroundWaiting'>): string {
+export function resultCardHeading(run: Pick<MobileMightyRun, 'status' | 'backgroundWaiting' | 'awaitingNotice'>): string {
   if (run.status !== 'completed') return t('phone.blocks.finalResult');
+  if (run.awaitingNotice) return resultTitle(run.status, undefined, true);
   if (run.backgroundWaiting !== undefined && run.backgroundWaiting > 0) return resultTitle(run.status, run.backgroundWaiting);
   return `✓ ${t('phone.blocks.finalResult')}`;
+}
+
+/** The most tasks a 알림 대기 block lists; the host sends at most 16. */
+export const MAX_AWAITED_TASKS = 16;
+
+/** `awaitingNotice` as the host sent it: whole counts (delivered at most total) and its tasks' titles and statuses, or undefined. */
+export function parseAwaitingNotice(raw: unknown): MobileAwaitingNotice | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const value = raw as { delivered?: unknown; total?: unknown; tasks?: unknown };
+  const whole = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 ? Math.min(n, MAX_BACKGROUND_WAITING) : undefined);
+  const total = whole(value.total), delivered = whole(value.delivered);
+  if (total === undefined || delivered === undefined || total === 0 || delivered > total) return undefined;
+  const tasks = (Array.isArray(value.tasks) ? value.tasks : []).slice(0, MAX_AWAITED_TASKS).flatMap((task: unknown) => {
+    const entry = task && typeof task === 'object' ? (task as { title?: unknown; status?: unknown }) : undefined;
+    const title = inlineText(entry?.title, 200);
+    return entry && title.length > 0 ? [{ title, status: inlineText(entry.status, 40) || 'running' }] : [];
+  });
+  return { delivered, total, tasks };
+}
+
+/** An awaited task's word: 끝나면 알림 while it runs, 알림 전달됨 once it ended, 실패 or 중단됨 when it ended so (the host's `AwaitedTask.word`). */
+export function awaitedTaskWord(status: string): string {
+  switch (status) {
+    case 'error': return t('graph.block.taskNotice.failed');
+    case 'stopped': return t('graph.block.taskNotice.stopped');
+    case 'completed': return t('plan.background.noticeDelivered');
+    default: return t('plan.background.awaitingNotice');
+  }
+}
+
+/** The 알림 대기 block's progress line, "알림 delivered/total". */
+export function awaitingProgress(awaiting: MobileAwaitingNotice): string {
+  return t('graph.block.awaitingNotice.progress', { delivered: awaiting.delivered, total: awaiting.total });
 }
 
 /** The most background work a count shows; the host never sends that many. */
@@ -347,6 +384,8 @@ function parseRun(raw: unknown, filtering: boolean): MobileMightyRun | undefined
   if (notice) run.noticeRun = true;
   const waiting = parseBackgroundWaiting(raw.backgroundWaiting);
   if (waiting !== undefined) run.backgroundWaiting = waiting;
+  const awaiting = parseAwaitingNotice(raw.awaitingNotice);
+  if (awaiting) run.awaitingNotice = awaiting;
   const title = inlineText(raw.title, 160);
   if (title.length > 0) run.title = title;
   const result = blockText(raw.result, MAX_RUN_RESULT);

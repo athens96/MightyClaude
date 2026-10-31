@@ -342,11 +342,13 @@ const ResultCard = memo(function ResultCard({ item, tone }: { item: StructureIte
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const ended = item.status === 'error' || item.status === 'stopped';
+  // Awaiting its background work's notices, the answer is titled 알림 대기 중 in the wait ink.
+  const awaiting = !ended && item.awaitingNotice === true;
   return (
     <View style={[styles.card, cardTint(palette, tone)]}>
       <CardBar tone={tone} />
-      {ended ? (
-        <Text style={[styles.partLabel, { color: toneColors(palette, toneOf(item.status)).ink }]}>{resultHeading(item)}</Text>
+      {ended || awaiting ? (
+        <Text style={[styles.partLabel, { color: toneColors(palette, awaiting ? 'wait' : toneOf(item.status)).ink }]}>{resultHeading(item)}</Text>
       ) : null}
       <Outcome item={item} />
     </View>

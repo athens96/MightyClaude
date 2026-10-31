@@ -31,6 +31,8 @@ import {
   blockPrompt,
   blockTitle,
   resultPreview,
+  awaitedTaskWord,
+  awaitingProgress,
   resultCardHeading,
   runHeading,
   runFold,
@@ -293,7 +295,9 @@ function ResultCard({ run, text }: { run: MobileMightyRun; text: string }) {
   const styles = useStyles(makeStyles);
   const [full, setFull] = useState(false);
   const { preview, folded } = resultPreview(text);
-  const colors = toneColors(palette, toneOf(run.status));
+  // Awaiting its background work's notices, the card is the 알림 대기 block: the wait strip, and the work's rows under the answer so far.
+  const awaiting = run.status === 'completed' ? run.awaitingNotice : undefined;
+  const colors = toneColors(palette, awaiting ? 'wait' : toneOf(run.status));
 
   return (
     <View style={styles.resultCard}>
@@ -316,6 +320,17 @@ function ResultCard({ run, text }: { run: MobileMightyRun; text: string }) {
               {full ? t('phone.blocks.resultLess') : t('phone.blocks.resultMore')}
             </Text>
           </Pressable>
+        ) : null}
+        {awaiting ? (
+          <View style={styles.awaiting} testID="mighty-awaiting">
+            {awaiting.tasks.map((task, index) => (
+              <View key={index} style={styles.awaitingRow}>
+                <Text style={styles.awaitingTitle} numberOfLines={1}>{task.title}</Text>
+                <Text style={styles.awaitingWord}>{awaitedTaskWord(task.status)}</Text>
+              </View>
+            ))}
+            <Text style={[styles.awaitingProgress, { color: toneColors(palette, 'wait').ink }]}>{awaitingProgress(awaiting)}</Text>
+          </View>
         ) : null}
       </View>
     </View>
@@ -532,5 +547,10 @@ const makeStyles = (palette: Palette) =>
     resultHead: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
     resultHeading: { fontSize: 12.5, fontWeight: '800' },
     resultBody: { gap: spacing.xs, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+    awaiting: { gap: spacing.xs, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: palette.border },
+    awaitingRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
+    awaitingTitle: { flex: 1, color: palette.text, fontSize: 12.5 },
+    awaitingWord: { color: palette.textMuted, fontSize: 11 },
+    awaitingProgress: { fontSize: 11, fontWeight: '700' },
     pressed: { opacity: 0.6 },
   });
