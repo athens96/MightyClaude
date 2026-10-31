@@ -5,6 +5,7 @@ import type { Capability, MobileCommand, MobileSessionDetail, MobileState } from
 import { KEY_SEPARATOR } from '@/lib/keys';
 import type { HostIdentity } from '@/lib/provider-host';
 import { mergeSessionDetail, mergeState } from '@/lib/merge';
+import { workspaceMute } from '@/lib/push/workspace-mute';
 import { hostLeaseOptions, useHostsStore } from '@/store/hosts';
 
 function detailKey(hostId: string, sessionId: string): string {
@@ -49,12 +50,20 @@ export const useLiveStore = create<LiveStore>((set) => ({
   hostIdentity: {},
   commands: {},
 
-  applyState: (hostId, incoming, fresh) =>
+  applyState: (hostId, incoming, fresh) => {
+    let applied = undefined as MobileState | undefined;
     set((prev) => {
       const merged = mergeState(prev.states[hostId], incoming, fresh);
       if (merged === prev.states[hostId]) return prev;
+      applied = merged;
       return { ...prev, states: { ...prev.states, [hostId]: merged } };
-    }),
+    });
+    // Notifications place a push in its workspace from the latest state (workspace-mute.ts);
+    // a pairing removed while its poll was in flight is not written back.
+    if (applied && useHostsStore.getState().hosts.some((host) => host.id === hostId)) {
+      void workspaceMute.learn(hostId, applied);
+    }
+  },
 
   applyDetail: (hostId, sessionId, incoming, fresh) =>
     set((prev) => {

@@ -73,6 +73,7 @@ Mac에서 [마이티 오케스트레이션](delegation.md)으로 만든 자식 �
 - 처음 앱을 열 때 알림을 허용할지 한 번 묻습니다(Android 13 이상). 종류별로 끄려면 {{ui:phone.tabs.hosts}} 탭의 {{ui:phone.settings.title}}에서 {{ui:phone.settings.notifications}} 스위치를 바꿉니다. 시스템 설정에서 이 앱의 알림이 꺼져 있으면 {{ui:phone.settings.title}} 화면이 그렇다고 알려 줍니다.
 - 권한 요청 알림에서 바로 {{ui:permission.allow}} 또는 {{ui:permission.deny}}를 누를 수 있습니다. Antigravity 카드는 {{ui:permission.allowOnce}}·{{ui:antigravity.permission.allowAlways}}·{{ui:antigravity.permission.deny}}입니다. 명령이 이어 붙거나 지울 수 있는 것처럼 이번만 허용할 수 있는 카드에는 {{ui:antigravity.permission.allowAlways}} 버튼이 없습니다. 질문과 계획 알림에는 버튼이 없고, 누르면 앱에서 답합니다. 규칙으로 허용할 수 있는 작업이 하나도 없는 Antigravity 카드도 버튼 없이 오니, 눌러서 앱에서 답하세요.
 - 버튼은 휴대폰 잠금을 푼 뒤에만 동작합니다. 잠겨 있을 때 누르면 알림이 "{{ui:phone.push.outcome.locked}}"로 바뀌고 버튼은 남습니다. 컴퓨터에서 먼저 답했다면 "{{ui:phone.push.outcome.already}}"로, 답을 보내지 못했다면 "{{ui:phone.push.outcome.failed}}"로 바뀝니다. 마지막 경우는 알림을 눌러 앱에서 답하세요.
+- 워크스페이스마다 알림을 끌 수 있습니다. 워크스페이스 이름 옆의 종을 누르면 그 워크스페이스의 알림이 꺼지고, 종에 빗금이 그어집니다. 다시 누르면 켜집니다. 처음에는 모두 켜져 있고, 이 휴대폰에만 적용되므로 같은 컴퓨터에 연결한 다른 휴대폰에는 그대로 옵니다. 앱이 그 워크스페이스를 아직 본 적이 없거나 하루 넘게 호스트의 목록을 받지 못했으면 알림이 올 수 있습니다.
 - 알림을 누르면 그 세션이 열립니다. 휴대폰에서 그 세션을 보고 있는 동안에는 그 세션의 알림이 오지 않습니다.
 - 알림은 잠금 화면에서 비공개로 표시됩니다. 잠금 화면에서 민감한 내용을 숨기도록 정해 두었다면 제목과 내용이 보이지 않습니다.
 - 알림 내용은 컴퓨터가 이 휴대폰만 열 수 있게 암호화합니다. 릴레이와 Google은 읽지 못합니다. 알림은 릴레이를 거치므로 Tailscale로 직접 연결해도 컴퓨터가 인터넷에 닿아야 옵니다.

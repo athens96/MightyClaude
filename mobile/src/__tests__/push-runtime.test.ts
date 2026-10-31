@@ -32,6 +32,35 @@ jest.mock('expo-secure-store', () => {
     deleteItemAsync: jest.fn(async (key: string) => void items.delete(key)),
   };
 });
+jest.mock('expo-file-system', () => {
+  const files = new Map<string, string>();
+  class File {
+    private readonly uri: string;
+    constructor(...parts: string[]) {
+      this.uri = parts.join('/');
+    }
+    get exists(): boolean {
+      return files.has(this.uri);
+    }
+    create(): void {
+      files.set(this.uri, '');
+    }
+    write(text: string): void {
+      files.set(this.uri, text);
+    }
+    async text(): Promise<string> {
+      return files.get(this.uri) ?? '';
+    }
+    delete(): void {
+      files.delete(this.uri);
+    }
+    moveSync(to: File): void {
+      files.set(to.uri, files.get(this.uri) ?? '');
+      files.delete(this.uri);
+    }
+  }
+  return { files, File, Paths: { document: 'document' } };
+});
 jest.mock('@/lib/push/device-lock', () => ({ isDeviceLocked: jest.fn(() => false) }));
 jest.mock('@/lib/push/host-lease', () => {
   const fake = {
@@ -49,6 +78,7 @@ jest.mock('@/lib/push/host-lease', () => {
   };
 });
 
+import type { MobileState } from '@/api/types';
 import { PUSH_HANDLE_PREFIX } from '@/lib/push/registry';
 
 type Runtime = typeof import('@/lib/push/runtime');
@@ -127,6 +157,42 @@ describe('showPush', () => {
     await pushSettings.update((now) => ({ ...now, kinds: { ...now.kinds, permission: false } }));
     await runtime.showPush({ data: { v: '1', h: seal.handle, p: seal.envelope } });
     expect(m.notifee.displayNotification).not.toHaveBeenCalled();
+  });
+
+  it('drops a push from a workspace muted on this phone, placed by its session or its one name', async () => {
+    const { runtime, m } = load();
+    (jest.requireMock('expo-file-system') as { files: Map<string, string> }).files.clear();
+    const { withHostClient } = jest.requireMock('@/lib/push/host-lease') as { withHostClient: jest.Mock };
+    withHostClient.mockClear();
+    pair(m, 'pair-b', true);
+    const { workspaceMute } = require('@/lib/push/workspace-mute') as typeof import('@/lib/push/workspace-mute');
+    const workspaces = [
+      { id: 'ws-demo', name: 'demo', path: '/demo' },
+      { id: 'ws-api', name: 'api', path: '/api' },
+    ];
+    const pane = (workspaceId: string) => ({ id: 'pane-1', workspaceId }) as MobileState['sessions'][number];
+    const push = { data: { v: '1', h: seal.handle, p: seal.envelope } };
+
+    // The fixture's push is pane-1 in "demo"; the phone last saw pane-1 in "api".
+    await workspaceMute.learn('pair-b', { protocol: 1, revision: 1, hostName: 'Mac', workspaces, sessions: [pane('ws-api')] });
+    await workspaceMute.setMuted('pair-b', 'ws-demo', true);
+    await runtime.showPush(push);
+    expect(m.notifee.displayNotification).toHaveBeenCalledTimes(1);
+
+    await workspaceMute.setMuted('pair-b', 'ws-api', true);
+    await runtime.showPush(push);
+    expect(m.notifee.displayNotification).toHaveBeenCalledTimes(1);
+
+    // The pane is gone from the host's list: the name "demo" places it.
+    await workspaceMute.learn('pair-b', { protocol: 1, revision: 2, hostName: 'Mac', workspaces, sessions: [] });
+    await runtime.showPush(push);
+    expect(m.notifee.displayNotification).toHaveBeenCalledTimes(1);
+
+    await workspaceMute.setMuted('pair-b', 'ws-demo', false);
+    await runtime.showPush(push);
+    expect(m.notifee.displayNotification).toHaveBeenCalledTimes(2);
+    // Muting is the phone's alone: no host was called.
+    expect(withHostClient).not.toHaveBeenCalled();
   });
 
   it('shows host text as written, never as markup', () => {

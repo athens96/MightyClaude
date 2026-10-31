@@ -176,7 +176,7 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 | `mighty` | 헤더의 `대화`/`블록` 전환, 요청별 블록 목록, 스타일 패널(Ouroboros 등) |
 | `attachments` | 입력창의 `＋` 버튼(사진·파일), 첨부 칩, 청크 업로드 |
 | `files` | 호스트 화면의 워크스페이스마다 `파일` 버튼 → 읽기 전용 폴더 목록과 미리보기 |
-| `push` | 호스트에 푸시 핸들과 켠 종류를 주고(`/m1/push/register`), 세션 화면을 보는 동안 `viewing`을 알림. 설정 화면의 알림 스위치 |
+| `push` | 호스트에 푸시 핸들과 켠 종류를 주고(`/m1/push/register`), 세션 화면을 보는 동안 `viewing`을 알림. 설정 화면의 알림 스위치, 워크스페이스마다 알림 종 (Android) |
 
 - 이전 기록은 호스트가 `hasOlder`라고 말할 때만 더 불러오고, `hasMore: false`이거나
   빈 배열(= `before`가 밀려남)이 오면 멈춥니다. 불러오는 동안 롱폴로 들어온 항목과
@@ -322,7 +322,8 @@ Android 앱은 연결된 컴퓨터가 보내는 푸시를 받습니다: 작업 �
 호스트가 `push` 기능을 알리는 페어링마다 앱이 릴레이에서 핸들을 받아 호스트에 주고, 호스트는 내용을
 이 휴대폰만 열 수 있게 봉인해 릴레이로 보냅니다. 권한 알림의 버튼은 휴대폰이 잠겨 있으면 동작하지 않고,
 설정 화면(`app/settings.tsx`)에서 종류별로 끌 수 있으며 충돌 보고(Crashlytics, 대화·명령·경로 없이 오류
-위치만)도 끌 수 있습니다. 빌드에는 저장소 밖의 `google-services.json`을 가리키는 환경 변수
+위치만)도 끌 수 있습니다. 작업 공간 머리글의 종 버튼은 그 작업 공간의 알림을 이 휴대폰에서만 끄고 켭니다
+(기본 켬, 호스트에는 알리지 않음, `lib/push/workspace-mute.ts`). 빌드에는 저장소 밖의 `google-services.json`을 가리키는 환경 변수
 `GOOGLE_SERVICES_JSON`이 필요합니다(`app.config.js`). 규칙 전체는 `docs/mobile-remote.md`의 "푸시 알림"입니다.
 
 ---
@@ -381,6 +382,7 @@ src/
   lib/push/  푸시: seal.ts(봉투 열기), message.ts(평문 검사), notification.ts(알림 모양·버튼·결과 문구),
              runtime.ts(표시·버튼 응답·핸들 동기화), registry.ts(페어링별 릴레이 핸들), actions.ts(권한 답),
              device-lock.ts(잠금 확인), viewing.ts(보는 세션 알림), settings.ts(알림·충돌 보고 설정),
+             workspace-mute.ts(작업 공간별 알림 끄기와 푸시의 작업 공간 찾기),
              crash.ts(내용 없는 충돌 보고), host-lease.ts(앱이 닫혀 있을 때의 호스트 연결), background.ts
   store/     hosts.ts(secure store), live.ts(상태·기능·명령 캐시), toast.ts,
              dashboard.ts(현황이 보는 호스트, 탭 롱폴 상태)

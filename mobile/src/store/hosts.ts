@@ -28,6 +28,7 @@ import { t } from '@/lib/i18n';
 import { createKeyedMutex } from '@/lib/keyed-mutex';
 import { describeRelayTarget, type PairingPayload } from '@/lib/pairing';
 import { forgetPushHandle, globalPushFetch } from '@/lib/push/registry';
+import { workspaceMute } from '@/lib/push/workspace-mute';
 import { forgetControlKey } from '@/lib/screen-share/control-key';
 import { nativeControlKey } from '@/lib/screen-share/native-control-key';
 
@@ -303,6 +304,8 @@ export const useHostsStore = create<HostsState>((set, get) => ({
     const directEndpoints = info.direct ?? payload.directEndpoints ?? [];
     if (directEndpoints.length > 0) host.directEndpoints = directEndpoints;
     const hosts = [...get().hosts.filter((entry) => entry.id !== id), host];
+    // Removed earlier under the same id: its states are learned for notifications again.
+    workspaceMute.resume(id);
     // A host that issued a token during pairing never keeps the key it was paired with.
     const secrets: HostSecrets = info.deviceToken
       ? { deviceToken: info.deviceToken }
@@ -391,6 +394,8 @@ export const useHostsStore = create<HostsState>((set, get) => ({
     // after that; the host drops it on its next push (404). Not awaited: neither may hold
     // up the removal.
     void forgetPushHandle({ store: SecureStore, fetch: globalPushFetch }, id).catch(() => undefined);
+    // So are its muted workspaces and what the phone learned of its sessions.
+    void workspaceMute.forget(id).catch(() => undefined);
     await forgetHost(SecureStore, id);
     // The screen-share control key belongs to this pairing and goes with it.
     await forgetControlKey({ hostId: id, native: nativeControlKey() });
