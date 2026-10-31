@@ -73,6 +73,11 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     public var noticeTitle: String?
     /// `backgroundWaiting` of the run `shown` was made from, whose background blocks it no longer holds. Never saved.
     private var shownBackgroundWaiting: Int?
+    /// `BackgroundNoticeRuns.awaitingNotice` of the run `shown` was made from, read with the pane's notice runs when
+    /// `shown(in:)` made it. Never saved.
+    fileprivate var shownAwaiting: BackgroundNoticeRuns.Awaiting?
+    /// What a shown run carries of its awaiting (`BackgroundNoticeRuns.awaitingNotice`), nil for a run that is not one.
+    var carriedAwaiting: BackgroundNoticeRuns.Awaiting?? { shownBackgroundWaiting == nil ? nil : .some(shownAwaiting) }
     private enum CodingKeys: String, CodingKey {
         case id, input, status, rootEntries, agents, resultEntries, sourceRunID, finalOutput, usage, responseRecords, provider, nodeModelLabel, configuredModel, noticeRun, noticeTitle
     }
@@ -95,7 +100,14 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
         guard agents.count != self.agents.count else { return self }
         var run = self
         run.shownBackgroundWaiting = backgroundWaiting
+        run.shownAwaiting = BackgroundNoticeRuns.awaitingNotice(self, in: [self])
         run.agents = agents
+        return run
+    }
+    /// `shown`, awaiting notices as the pane's `runs` (its notice runs among them) say it does.
+    public func shown(in runs: [MightyGraphRun]) -> MightyGraphRun {
+        var run = shown
+        if run.agents.count != agents.count { run.shownAwaiting = BackgroundNoticeRuns.awaitingNotice(self, in: runs) }
         return run
     }
     /// A notice run taken into a running turn: it opens complete and has no reply of its own. No view follows it or
@@ -209,13 +221,13 @@ public enum MightyGraphSupport {
         (result.map { $0.isEmpty ? "**" : $0 + noticeSectionMark } ?? "**") + header + "**\n\n" + answer
     }
     public static func isTaskNotice(_ input: String) -> Bool { input.hasPrefix(taskNoticePrefix) }
-    /// The result card's title in every view and on the phone: how the request ended, or the result so far while
-    /// background work it started still runs (`MightyGraphRun.backgroundWaiting`).
-    public static func resultTitle(status: String, waiting: Int) -> String {
+    /// The result card's title in every view and on the phone: how the request ended, or 알림 대기 중 while it awaits the
+    /// notices of background work it started (`BackgroundNoticeRuns.awaitingNotice`).
+    public static func resultTitle(status: String, awaiting: Bool = false) -> String {
         switch status {
         case "error", "failed": L("graph.block.resultError")
         case "stopped", "cancelled", "interrupted": L("graph.block.resultStopped")
-        default: waiting > 0 ? L("graph.block.resultSoFar", ["count": "\(waiting)"]) : L("graph.block.result")
+        default: awaiting ? L("graph.block.awaitingNotice") : L("graph.block.result")
         }
     }
     /// Whether `event` is the first sign of the run a "starting" request (`status`) waits
@@ -440,7 +452,7 @@ extension MightyGraphSupport {
     /// The runs as views draw them (`MightyGraphRun.shown`).
     public static func shownRuns(_ runs: [MightyGraphRun]) -> [MightyGraphRun] {
         guard runs.contains(where: { $0.agents.contains { $0.background == true } }) else { return runs }
-        return runs.map(\.shown)
+        return runs.map { $0.shown(in: runs) }
     }
     /// The run the process's lines, statuses and usage belong to (`RunSession.recordGraph`): a notice run that ended
     /// takes none (they are the request's before it), and a running notice turn's never reach a request still waiting

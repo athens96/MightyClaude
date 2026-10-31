@@ -632,14 +632,17 @@ struct MightyGraphView: View {
             let failed = ["error", "failed"].contains(run.status)
             let stopped = ["stopped", "cancelled", "interrupted"].contains(run.status)
             let status = failed ? "error" : stopped ? "stopped" : "completed"
-            // While background work the request started still runs, its result is the result so far: a neutral clock, not the done seal.
-            let soFar = !failed && !stopped && run.backgroundWaiting > 0
-            transcriptCard(node, title: MightyGraphSupport.resultTitle(status: run.status, waiting: run.backgroundWaiting),
-                           icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : soFar ? Self.resultSoFarIcon : "checkmark.seal",
-                           status: status, input: "", entries: run.resultEntries, tint: soFar ? Palette.ink2 : Palette.text(status),
+            // While the request awaits the notices of background work it started, its result is the 알림 대기 block (awaitingNoticeCard):
+            // the wait strip, an hourglass, a marching outline, and the work's rows under the answer so far.
+            let awaiting = failed || stopped ? nil : BackgroundNoticeRuns.awaitingNotice(run, in: runs)
+            let rows = awaiting.map { CGFloat($0.tasks.count + 1) * Self.awaitingRowHeight + 2 * DesignMetrics.Inset.graphBlockBodyV } ?? 0
+            transcriptCard(node, title: MightyGraphSupport.resultTitle(status: run.status, awaiting: awaiting != nil),
+                           icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : awaiting != nil ? Self.awaitingNoticeIcon : "checkmark.seal",
+                           status: awaiting != nil ? "waiting" : status, input: "", entries: run.resultEntries, tint: Palette.text(status),
                            usage: run.totalUsage, usageLabel: L("graph.block.totalUsageLabel"), resultFilesRunID: run.status == "completed" ? run.id : nil,
-                           headerFill: Palette.heroFill(soFar ? .idle : DesignTone(status: status)),
-                           onContentHeight: node.id == MightyGraphLayout.latestResultID(runs: runs) ? { resultMeasured(node.id, $0) } : nil)
+                           headerFill: Palette.heroFill(awaiting != nil ? .wait : DesignTone(status: status)), headerInk: awaiting != nil ? Palette.heroInk(.wait) : Palette.onStatus,
+                           onContentHeight: node.id == MightyGraphLayout.latestResultID(runs: runs) ? { resultMeasured(node.id, $0 + rows) } : nil,
+                           outlineTone: awaiting != nil ? .run : nil, awaiting: awaiting)
         case .resultFiles(let index):
             MightyGraphResultFilesView(nodeID: node.id, files: resultFiles.files(for: runs[index].id),
                                        onOpen: { openReference($0.path, line: $0.line) }, onClose: { resultFiles.close() })
@@ -683,8 +686,10 @@ struct MightyGraphView: View {
 
     /// The 실행 block's glyph, in the diagram and on its timeline row.
     static let executionIcon = "gearshape.2"
-    /// A result's glyph while it is the result so far (현재까지의 결과): neutral, for the request is not done with its background work.
-    static let resultSoFarIcon = "clock"
+    /// The 알림 대기 block's glyph: the request is not done until its background work's notices are in.
+    static let awaitingNoticeIcon = "hourglass"
+    /// One row of the 알림 대기 block's rows (a task, or the progress line), as the result's measured height counts it.
+    static let awaitingRowHeight: CGFloat = 18
 
     /// `headerFill` paints the header as a strip (the result card's outcome colour) with
     /// white words on it; the other blocks keep a plain header on the white card.
@@ -694,20 +699,22 @@ struct MightyGraphView: View {
                                 usage: GraphTokenUsage? = nil, usageLabel: String = L("graph.block.blockUsageLabel"), resultFilesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
                                 childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil,
+                                headerInk: Color = Palette.onStatus,
                                 inputOnly: Bool = false, onContentHeight: ((CGFloat) -> Void)? = nil, pending: PendingState? = nil,
-                                kindLine: String? = nil, backgroundRun: BackgroundRunBody? = nil) -> some View {
+                                kindLine: String? = nil, backgroundRun: BackgroundRunBody? = nil,
+                                outlineTone: DesignTone? = nil, awaiting: BackgroundNoticeRuns.Awaiting? = nil) -> some View {
         let content = entries.filter { $0.kind != "user" }
         // A background run shows its live lines in place of the wait for a reply.
         let showsTail = backgroundRun.map { !$0.tail.isEmpty && !MightyGraphLayout.terminal(status) } ?? false
         let onStrip = headerFill != nil
-        let quiet = onStrip ? Palette.onStatus : Palette.ink2
+        let quiet = onStrip ? headerInk : Palette.ink2
         return VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: icon).foregroundStyle(onStrip ? Palette.onStatus : tint)
+                Image(systemName: icon).foregroundStyle(onStrip ? headerInk : tint)
                 // A request block's title ends with its agent's name; its mark goes before it.
                 (titleProvider.map { ProviderBadgeIcon.labelled(title, provider: $0, font: .ui(ofSize: 12, weight: .bold)) } ?? Text(title))
                     .font(.ui(size: 12, weight: .bold)).lineLimit(1).help(title)
-                    .foregroundStyle(onStrip ? Palette.onStatus : Palette.ink)
+                    .foregroundStyle(onStrip ? headerInk : Palette.ink)
                 if fromRecord {
                     // Read back from the CLI's own session record, not kept by the app.
                     Image(systemName: "clock.arrow.circlepath").font(.ui(size: 10)).foregroundStyle(quiet)
@@ -716,7 +723,7 @@ struct MightyGraphView: View {
                         .accessibilityIdentifier("mighty-record-\(node.id)")
                 }
                 Spacer(minLength: 3)
-                if selectedNodeID == node.id { blockScrollLabel(node.id, ink: onStrip ? Palette.onStatus : Palette.accent) }
+                if selectedNodeID == node.id { blockScrollLabel(node.id, ink: onStrip ? headerInk : Palette.accent) }
                 if !onStrip && !inputOnly {
                     MightyStatusMark(status: status, text: statusText ?? Self.statusLabel(status), tone: DesignTone(blockStatus: status), pending: pending)
                 }
@@ -735,7 +742,7 @@ struct MightyGraphView: View {
                             Image(systemName: resultFiles.selectedRunID == resultFilesRunID ? "doc.on.doc.fill" : "doc.on.doc")
                             Text("\(resultFiles.files(for: resultFilesRunID).count)").font(.ui(size: 10)).monospacedDigit()
                         }
-                        .foregroundStyle(onStrip ? Palette.onStatus : resultFiles.selectedRunID == resultFilesRunID ? Palette.accent : Palette.ink2)
+                        .foregroundStyle(onStrip ? headerInk : resultFiles.selectedRunID == resultFilesRunID ? Palette.accent : Palette.ink2)
                     }
                     .buttonStyle(.plain).help(resultFiles.selectedRunID == resultFilesRunID ? L("graph.resultFiles.closeButton") : L("graph.resultFiles.openButton"))
                     .accessibilityLabel(L("graph.resultFiles.countLabel", ["count": "\(resultFiles.files(for: resultFilesRunID).count)"]))
@@ -752,7 +759,7 @@ struct MightyGraphView: View {
                     }
                         .buttonStyle(.plain)
                         .font(.ui(size: 10, weight: onStrip ? .bold : .regular))
-                        .foregroundStyle(onStrip ? Palette.onStatus : Palette.accent)
+                        .foregroundStyle(onStrip ? headerInk : Palette.accent)
                         .accessibilityIdentifier("mighty-fit-result-\(node.id)")
                 }
                 if !isFittedResult {
@@ -802,10 +809,33 @@ struct MightyGraphView: View {
                                 onContentHeight: onContentHeight)
             }
             if let reply = backgroundRun?.reply, !reply.isEmpty { backgroundReply(reply, nodeID: node.id) }
+            if let awaiting { awaitingNoticeRows(awaiting, nodeID: node.id) }
         }
         .mightyBlockCard()
-        .overlay { if !inputOnly { MightyGraphActivityOutline(tone: DesignTone(blockStatus: status)) } }
+        .overlay { if !inputOnly { MightyGraphActivityOutline(tone: outlineTone ?? DesignTone(blockStatus: status)) } }
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
+    }
+
+    /// Under a 알림 대기 result's answer so far (awaitingNoticeCard): each background task the request awaits, its title in
+    /// `ink` and its word (끝나면 알림, 알림 전달됨, 실패, 중단됨) in `ink2`, then "알림 delivered/total" in the wait ink, over a rule.
+    private func awaitingNoticeRows(_ awaiting: BackgroundNoticeRuns.Awaiting, nodeID: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(awaiting.tasks.enumerated()), id: \.offset) { _, task in
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    Text(verbatim: task.title).font(.ui(size: 12)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: DesignMetrics.Spacing.sm)
+                    Text(verbatim: task.word).font(.ui(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
+                }
+                .frame(height: Self.awaitingRowHeight)
+            }
+            Text(verbatim: awaiting.progress).font(.ui(size: 10, weight: .bold)).foregroundStyle(Palette.waitText)
+                .frame(height: Self.awaitingRowHeight)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
+        .overlay(alignment: .top) { Divider().overlay(Palette.border) }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("mighty-awaiting-\(nodeID)")
     }
 
     /// A background block's kind under its head: a sub-agent or a background run,
@@ -1173,8 +1203,8 @@ struct MightyGraphView: View {
     }
 
     private func timelineResult(_ result: MightyTimeline.Result, group: MightyTimeline.Group, run: MightyGraphRun) -> some View {
-        // How the request ended, or the result so far while its background work runs (`MightyGraphSupport.resultTitle`).
-        let title = MightyGraphSupport.resultTitle(status: run.status, waiting: run.backgroundWaiting)
+        // How the request ended, or 알림 대기 중 while it awaits its background work's notices (`MightyGraphSupport.resultTitle`).
+        let title = MightyGraphSupport.resultTitle(status: run.status, awaiting: result.awaiting)
         let tokens = run.totalUsage.map { GraphTokenUsage.compact($0.total) }
         let caption = ([Self.timelineRequestName(group)] + [tokens].compactMap { $0 }).joined(separator: " · ")
         let files = run.status == "completed" ? resultFiles.files(for: run.id) : []

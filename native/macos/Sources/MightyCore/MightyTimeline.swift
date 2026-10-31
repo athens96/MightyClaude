@@ -74,11 +74,13 @@ public enum MightyTimeline {
     /// The card under a request once the diagram draws its result card.
     public struct Result: Equatable, Sendable {
         public var nodeID: String
-        /// done, err or stop: the header strip's fill; idle while it is the result so far (현재까지의 결과), its request's
-        /// background work still running (`MightyGraphRun.backgroundWaiting`).
+        /// done, err or stop: the header strip's fill; wait while the request awaits its background work's notices.
         public var tone: DesignTone
         /// The final answer the diagram's result card shows; nil when there is none.
         public var text: String?
+        /// The request awaits the notices of its background work (`BackgroundNoticeRuns.awaitingNotice`): the head reads
+        /// 알림 대기 중 in the wait tone, not done.
+        public var awaiting = false
     }
 
     public struct Group: Equatable, Sendable, Identifiable {
@@ -124,7 +126,7 @@ public enum MightyTimeline {
     /// Every request the diagram draws, oldest first, numbered as the diagram numbers them.
     public static func groups(_ runs: [MightyGraphRun]) -> [Group] {
         let ordinals = MightyGraphSupport.requestOrdinals(runs)
-        return runs.enumerated().map { group($1, index: $0, ordinal: ordinals[$0]) }
+        return runs.enumerated().map { group($1.shown(in: runs), index: $0, ordinal: ordinals[$0]) }
     }
 
     /// The rows index the agents a view draws (`MightyGraphRun.shown`): a view must draw the same runs.
@@ -156,10 +158,11 @@ public enum MightyTimeline {
         var result: Result?
         if MightyGraphLayout.hasResult(run) {
             let status = DesignTone(blockStatus: run.status)
-            // The result so far is neutral, as the diagram's result card is (`MightyGraphView.resultSoFarIcon`).
-            let tone: DesignTone = run.status == "completed" && run.backgroundWaiting > 0 ? .idle : status == .run ? .done : status
+            // Awaiting notices, the head takes the wait tone, as the diagram's 알림 대기 block does.
+            let awaiting = BackgroundNoticeRuns.awaitingNotice(run, in: [run]) != nil
+            let tone: DesignTone = awaiting ? .wait : status == .run ? .done : status
             let text = run.resultEntries.last(where: { $0.kind == "assistant" && !$0.text.isEmpty })?.text
-            result = Result(nodeID: MightyGraphLayout.nodeID(run, suffix: "result"), tone: tone, text: text)
+            result = Result(nodeID: MightyGraphLayout.nodeID(run, suffix: "result"), tone: tone, text: text, awaiting: awaiting)
         }
         return Group(runIndex: index, runID: run.id, ordinal: ordinal, status: MobileMightySupport.status(run.status),
                      input: run.input, rows: rows, tally: tally(Array(blocks.dropFirst())), result: result, noticeRun: notice,

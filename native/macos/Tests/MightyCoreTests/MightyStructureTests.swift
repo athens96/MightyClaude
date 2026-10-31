@@ -539,8 +539,9 @@ struct MightyStructureTests {
         #expect(before != after)
         var cache = MightyStructure.ItemCache()
         #expect(cache.items([waiting], signature: before).first?.backgroundWaiting == 1)
-        // The card is built again, so its answer goes from 현재까지의 결과 to 최종 결과.
+        // The card is built again, so its answer goes from 알림 대기 중 to 최종 결과.
         #expect(cache.items([ended], signature: after).first?.backgroundWaiting == 0)
+        #expect(cache.items([waiting], signature: before).first?.awaiting == true && cache.items([ended], signature: after).first?.awaiting == false)
     }
 
     // MARK: Empty pane and the saved choice

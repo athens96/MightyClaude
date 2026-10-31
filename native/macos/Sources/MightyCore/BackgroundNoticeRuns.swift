@@ -49,6 +49,62 @@ public enum BackgroundNoticeRuns {
     public static func executionTitle(notice: Bool, ordinal: Int) -> String {
         notice ? L("graph.block.execution") : L("graph.block.executionOf", ["n": "\(ordinal)"])
     }
+    /// The run id `noticeRun` is a notice run of: the request whose tracker opened it, or nil for a request.
+    public static func originalRunID(_ noticeRun: String) -> String? {
+        noticeRun.range(of: marker).map { String(noticeRun[..<$0.lowerBound]) }
+    }
+
+    /// One background task or sub-agent of a request awaiting its notices: its block, title and status (running, or how it ended).
+    public struct AwaitedTask: Sendable, Equatable {
+        public var id: String
+        public var title: String
+        public var status: String
+        public init(id: String, title: String, status: String) { self.id = id; self.title = title; self.status = status }
+        /// Its notice is in: the work ended (and told Claude so), whatever its outcome.
+        public var delivered: Bool { MightyGraphSupport.terminal(status) }
+        /// What its row says: 끝나면 알림 while it runs, 알림 전달됨 once it ended, 실패 or 중단됨 when it ended so.
+        public var word: String {
+            switch status {
+            case "error": L("graph.block.taskNotice.failed")
+            case "stopped": L("graph.block.taskNotice.stopped")
+            case "completed": L("plan.background.noticeDelivered")
+            default: L("plan.background.awaitingNotice")
+            }
+        }
+    }
+    /// A request awaiting the notices of the background work it started (`awaitingNotice`): every such task, in block order.
+    public struct Awaiting: Sendable, Equatable {
+        public var tasks: [AwaitedTask]
+        public init(tasks: [AwaitedTask]) { self.tasks = tasks }
+        public var delivered: Int { tasks.filter(\.delivered).count }
+        /// "알림 {delivered}/{total}".
+        public var progress: String { L("graph.block.awaitingNotice.progress", ["delivered": "\(delivered)", "total": "\(tasks.count)"]) }
+    }
+    /// The one awaiting-notice rule: a request whose own turn ended completed while background work it started (its tasks and
+    /// background sub-agents) still runs, or ended with a notice turn not answered yet: a notice run of this request that copies
+    /// the block has not ended. It ends when every notice turn was answered; a failed or stopped request, or one whose process
+    /// ended (its blocks and notice runs stopped), is not awaiting. Nil otherwise and for a notice run. `runs` are the pane's
+    /// runs, for the notice runs; a run `shownRuns` made carries what it read of the run it was made from.
+    public static func awaitingNotice(_ run: MightyGraphRun, in runs: [MightyGraphRun]) -> Awaiting? {
+        if let carried = run.carriedAwaiting { return carried }
+        guard run.noticeRun != true, run.status == "completed" else { return nil }
+        let tasks = run.agents.filter { $0.isTask || $0.isBackgroundAgent }
+        guard !tasks.isEmpty else { return nil }
+        let answering = Set(runs.filter { $0.noticeRun == true && !MightyGraphSupport.terminal($0.status) && originalRunID($0.id) == run.id }
+            .flatMap(\.agents).compactMap(\.sourceBlockId))
+        guard tasks.contains(where: { !MightyGraphSupport.terminal($0.status) || answering.contains($0.id) }) else { return nil }
+        return Awaiting(tasks: tasks.map { AwaitedTask(id: $0.id, title: MightyGraphSupport.blockTitle($0), status: $0.status) })
+    }
+    /// The pane is alive only for the notices its newest request awaits (`awaitingNotice`): the pet, its status list and the
+    /// pane header show it waiting, 알림 대기, instead of running. Its status stays running, so the completion notification
+    /// still comes once, when the process ends.
+    public static func awaitsNotice(_ pane: RunSession) -> Bool {
+        guard pane.status == "running", let runs = pane.graphRuns, let newest = MightyGraphSupport.newestRequestRun(runs) else { return false }
+        return awaitingNotice(newest, in: runs) != nil
+    }
+    /// The word for a pane that `awaitsNotice`.
+    public static var stateWord: String { L("graph.state.awaitingNotice") }
+
     /// Agents a view draws for a run: background blocks only inside a notice run.
     /// Blocks under a hidden background block are hidden with it.
     public static func shownAgents(_ run: MightyGraphRun) -> [MightyGraphAgent] {

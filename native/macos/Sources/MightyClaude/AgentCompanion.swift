@@ -56,6 +56,10 @@ struct AgentPresence: Identifiable {
     var input: String?
     var activity: AgentActivity?
     var timing: AgentRunTiming?
+    /// Alive only for the notices its request awaits (`BackgroundNoticeRuns.awaitsNotice`): waiting, its word 알림 대기.
+    var awaitingNotice = false
+    /// The state word the pet's bubble and its status list show.
+    var stateLabel: String { awaitingNotice ? BackgroundNoticeRuns.stateWord : presenceLabel(status) }
 }
 
 /// Consumes the same live events as the conversation, never provider log files.
@@ -169,14 +173,18 @@ final class AgentCompanion: ObservableObject {
         agents = snapshot.sessions.filter { $0.kind != "shell" && !FilePaneKind.isFilePane($0.kind) }.map { session in
             let activity = activities[session.id]
             let live = session.status == "running"
-            let state = live && activity?.state == "waiting" ? "waiting" : session.status
+            // A pane alive only for the notices its request awaits waits too, its words 알림 대기.
+            let awaiting = live && activity?.state != "waiting" && BackgroundNoticeRuns.awaitsNotice(session)
+            let state = live && activity?.state == "waiting" || awaiting ? "waiting" : session.status
             let text: String
-            if live, let activity, !activity.summary.isEmpty { text = activity.summary }
+            if awaiting { text = L("companion.status.awaitingNotice") }
+            else if live, let activity, !activity.summary.isEmpty { text = activity.summary }
             else { text = state == "completed" ? L("companion.status.completed") : state == "error" ? L("companion.status.error") : state == "stopped" ? L("companion.status.stopped") : live ? L("companion.status.running") : L("companion.status.idle") }
             return AgentPresence(id: session.id, title: session.title,
                 workspace: snapshot.workspaces.first { $0.id == session.workspaceId }?.name ?? "",
                 provider: session.provider, status: state, summary: text,
-                input: submittedInputs[session.id] ?? session.logs.last(where: { $0.kind == "user" }).map { Self.inputPreview($0.text) }, activity: activity, timing: session.runTiming)
+                input: submittedInputs[session.id] ?? session.logs.last(where: { $0.kind == "user" }).map { Self.inputPreview($0.text) }, activity: activity, timing: session.runTiming,
+                awaitingNotice: awaiting)
         }
         if let pinnedAgent, !activeAgents.contains(where: { $0.id == pinnedAgent }) {
             self.pinnedAgent = nil

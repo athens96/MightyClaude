@@ -126,8 +126,11 @@ public enum MightyStructure {
         public var quiet = false
         /// A notice run's own title (`MightyGraphRun.noticeTitle`); nil for a request and an older notice run.
         public var noticeTitle: String? = nil
-        /// Background work the request still waits on (`MightyGraphRun.backgroundWaiting`): its answer reads 현재까지의 결과.
+        /// Background work the request still waits on (`MightyGraphRun.backgroundWaiting`).
         public var backgroundWaiting: Int = 0
+        /// The request awaits the notices of its background work (`BackgroundNoticeRuns.awaitingNotice`): its answer reads
+        /// 알림 대기 중 in the wait tone meanwhile.
+        public var awaiting = false
         public var id: String { runID }
     }
 
@@ -181,9 +184,11 @@ public enum MightyStructure {
             /// A notice run's title, which can move with no other change its card reads.
             var noticeTitle: String?
             /// Background work the request still waits on (`MightyGraphRun.backgroundWaiting`). A shown run no longer holds
-            /// its background blocks, so their ending moves nothing else here, yet its answer's title goes from 현재까지의 결과
-            /// to 최종 결과.
+            /// its background blocks, so their ending moves nothing else here.
             var backgroundWaiting = 0
+            /// It awaits notices (`BackgroundNoticeRuns.awaitingNotice`), which a notice run's answer ends with no change to
+            /// this run, yet its answer's title goes from 알림 대기 중 to 최종 결과.
+            var awaiting = false
             var blocks: [Block]
         }
         var requests: [Request]
@@ -200,7 +205,7 @@ public enum MightyStructure {
                 Request(id: run.id, status: run.status, sourceRunID: run.sourceRunID, input: run.input.utf8.count,
                         rootEntries: run.rootEntries.count, rootTail: MightyStructure.tail(run.rootEntries), resultEntries: run.resultEntries.count,
                         result: run.resultEntries.last?.text.utf8.count ?? 0, finalOutput: run.finalOutput?.utf8.count, noticeTitle: run.noticeTitle,
-                        backgroundWaiting: run.backgroundWaiting, blocks: run.agents.map {
+                        backgroundWaiting: run.backgroundWaiting, awaiting: BackgroundNoticeRuns.awaitingNotice(run, in: runs) != nil, blocks: run.agents.map {
                             Block(id: $0.id, title: $0.title, status: $0.status, parentID: $0.parentID, kind: $0.kind, input: $0.input.utf8.count,
                                   entries: $0.entries.count, tail: MightyStructure.tail($0.entries), records: $0.responseRecords?.count ?? 0,
                                   notice: $0.noticeReply?.utf8.count ?? 0)
@@ -236,7 +241,7 @@ public enum MightyStructure {
                     item.runIndex = index
                     item.ordinal = ordinals[index]
                 } else {
-                    item = MightyStructure.item(run, index: index, ordinal: ordinals[index])
+                    item = MightyStructure.item(run, index: index, ordinal: ordinals[index], in: runs)
                 }
                 if let request { next[run.id] = (request, item) }
                 return item
@@ -311,7 +316,7 @@ public enum MightyStructure {
                             planHistory: [PlanRecord] = [], pendingPlanRunID: String? = nil, items built: [Item]? = nil) -> Shape {
         let items = built.flatMap { $0.count == runs.count ? $0 : nil } ?? {
             let ordinals = MightyGraphSupport.requestOrdinals(runs)
-            return runs.enumerated().map { item($1, index: $0, ordinal: ordinals[$0]) }
+            return runs.enumerated().map { item($1, index: $0, ordinal: ordinals[$0], in: runs) }
         }()
         guard let style, !style.manifest.phases.isEmpty else { return .free(items.map(row)) }
         let ordered = style.manifest.orderedPhases
@@ -428,9 +433,10 @@ public enum MightyStructure {
     }
 
     /// `ordinal`: the request's number (`MightyGraphSupport.requestOrdinals`); nil counts every run before it.
-    /// The card reads the run as views draw it (`MightyGraphRun.shown`): background blocks only in a notice run.
-    public static func item(_ raw: MightyGraphRun, index: Int, ordinal: Int? = nil) -> Item {
-        let run = raw.shown
+    /// The card reads the run as views draw it (`MightyGraphRun.shown`): background blocks only in a notice run; `runs`,
+    /// the pane's, say whether it awaits notices (`MightyGraphRun.shown(in:)`).
+    public static func item(_ raw: MightyGraphRun, index: Int, ordinal: Int? = nil, in runs: [MightyGraphRun]? = nil) -> Item {
+        let run = raw.shown(in: runs ?? [raw])
         let finished = MightyGraphLayout.finished(run)
         let answer = run.resultEntries.last(where: { $0.kind == "assistant" && !$0.text.isEmpty })?.text ?? run.finalOutput
         let result = finished ? answer.map(preview).flatMap { $0.isEmpty ? nil : $0 } : nil
@@ -449,7 +455,8 @@ public enum MightyStructure {
                     result: result, request: excerpt(run.input, maximumBytes: requestBytes, lines: requestLines), message: message,
                     activity: activity(run.rootEntries, limit: requestActivity), answer: full, tally: tally, clusters: clusters(run),
                     noticeRun: run.noticeRun == true, quiet: run.quietNotice,
-                    noticeTitle: run.noticeRun == true ? run.noticeTitle : nil, backgroundWaiting: run.backgroundWaiting)
+                    noticeTitle: run.noticeRun == true ? run.noticeTitle : nil, backgroundWaiting: run.backgroundWaiting,
+                    awaiting: BackgroundNoticeRuns.awaitingNotice(run, in: [run]) != nil)
     }
 
     /// 요청 is always there; 실행 runs until every block settled, unless the request

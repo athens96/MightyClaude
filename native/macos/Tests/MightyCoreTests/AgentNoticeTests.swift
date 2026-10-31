@@ -145,16 +145,36 @@ struct AgentNoticeTests {
         }
     }
 
-    /// The result title rule: how the request ended, or 현재까지의 결과 with the count while background work runs.
+    /// The result title rule: how the request ended, or 알림 대기 중 while it awaits its background work's notices.
     @Test func resultTitlesFollowTheFixture() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             let cases = try #require(try Self.load()["resultTitles"] as? [[String: Any]])
             #expect(cases.count >= 4)
             for item in cases {
                 let expect = try #require(item["expect"] as? [String: Any])
-                let wanted = L(expect["key"] as? String ?? "", (expect["count"] as? Int).map { ["count": "\($0)"] } ?? [:])
-                #expect(MightyGraphSupport.resultTitle(status: item["status"] as? String ?? "", waiting: item["waiting"] as? Int ?? 0) == wanted, "\(item["name"] ?? "")")
+                let wanted = L(expect["key"] as? String ?? "")
+                #expect(MightyGraphSupport.resultTitle(status: item["status"] as? String ?? "", awaiting: item["awaiting"] as? Bool ?? false) == wanted, "\(item["name"] ?? "")")
             }
+        }
+    }
+
+    /// The awaiting-notice rule over the shared runs: a request awaits while its background work runs or ended with its
+    /// notice turn not answered yet, and not once each was answered, nor when it failed or was stopped
+    /// (Windows AgentNoticeVerification.AwaitingNoticeFollowsTheFixture).
+    @Test func awaitingNoticeFollowsTheFixture() throws {
+        let cases = try #require(try Self.load()["awaitingNotice"] as? [[String: Any]])
+        #expect(cases.count >= 8)
+        for item in cases {
+            let name = item["name"] as? String ?? ""
+            let raw = try #require(item["runs"] as? [[String: Any]])
+            let runs = try raw.map { try JSONDecoder().decode(MightyGraphRun.self, from: JSONSerialization.data(withJSONObject: $0)) }
+            let awaiting = BackgroundNoticeRuns.awaitingNotice(runs[0], in: runs)
+            guard let expect = item["expect"] as? [String: Any] else { #expect(awaiting == nil, "awaits nothing: \(name)"); continue }
+            let found = try #require(awaiting, "awaits notices: \(name)")
+            #expect(found.delivered == expect["delivered"] as? Int, "delivered: \(name)")
+            #expect(found.tasks.map(\.status) == expect["statuses"] as? [String], "statuses: \(name)")
+            // The shown run says the same, read with the pane's runs.
+            #expect(BackgroundNoticeRuns.awaitingNotice(MightyGraphSupport.shownRuns(runs)[0], in: []) == found, "the shown run carries it: \(name)")
         }
     }
 

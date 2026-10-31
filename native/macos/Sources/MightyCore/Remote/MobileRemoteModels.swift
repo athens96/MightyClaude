@@ -454,13 +454,39 @@ public struct MobileMightyRun: Codable, Sendable, Equatable, Identifiable {
     /// `true` for Claude's reply to finished background work (`MightyGraphRun.noticeRun`): not a request,
     /// so it takes no request number; its `main` block is titled as such. Absent otherwise.
     public var noticeRun: Bool?
-    /// Background work a request started that still runs after its own turn (`MightyGraphRun.backgroundWaiting`): its
-    /// result card reads 현재까지의 결과 meanwhile. Absent when none (and from older hosts).
+    /// Background work a request started that still runs after its own turn (`MightyGraphRun.backgroundWaiting`), which an
+    /// older phone reads as 현재까지의 결과. Absent when none (and from older hosts).
     public var backgroundWaiting: Int?
+    /// The request awaits the notices of its background work (`BackgroundNoticeRuns.awaitingNotice`): its result card is
+    /// the 알림 대기 block. Absent otherwise (and from older hosts).
+    public var awaitingNotice: MobileAwaitingNotice?
     public init(id: String, input: String, title: String? = nil, status: String, blocks: [MobileBlock], result: String? = nil, noticeRun: Bool? = nil) {
         self.id = id; self.input = input; self.title = title; self.status = status; self.blocks = blocks; self.result = result
         self.noticeRun = noticeRun == true ? true : nil
     }
+}
+
+/// A request's 알림 대기 block as a phone draws it (`BackgroundNoticeRuns.Awaiting`): how many of its background tasks'
+/// notices are in, of how many, and each task (its first `maximumTasks`) by title and status; the phone names the status.
+public struct MobileAwaitingNotice: Codable, Sendable, Equatable {
+    public static let maximumTasks = 16
+    public static let maximumTitle = 200
+    public var delivered: Int
+    public var total: Int
+    public var tasks: [MobileAwaitedTask]
+    public init(delivered: Int, total: Int, tasks: [MobileAwaitedTask]) { self.delivered = delivered; self.total = total; self.tasks = tasks }
+    public init?(_ awaiting: BackgroundNoticeRuns.Awaiting?) {
+        guard let awaiting else { return nil }
+        self.init(delivered: awaiting.delivered, total: awaiting.tasks.count, tasks: awaiting.tasks.prefix(Self.maximumTasks).map {
+            MobileAwaitedTask(title: ActivitySupport.clean($0.title, maximumBytes: Self.maximumTitle, singleLine: true), status: MobileMightySupport.status($0.status))
+        })
+    }
+}
+
+public struct MobileAwaitedTask: Codable, Sendable, Equatable {
+    public var title: String
+    public var status: String
+    public init(title: String, status: String) { self.title = title; self.status = status }
 }
 
 /// One background task still running in a pane (`MobileSessionDetail.backgroundWork`): a row of the Mac's

@@ -737,19 +737,19 @@ struct MightyStructureView: View {
         }
     }
 
-    /// The result card's header words, in the outcome's colour once there is one: the result so far while
-    /// background work the request started still runs (`MightyGraphSupport.resultTitle`).
+    /// The result card's header words, in the outcome's colour once there is one: 알림 대기 중 while the request
+    /// awaits its background work's notices (`MightyGraphSupport.resultTitle`).
     private func resultTitle(_ item: MightyStructure.Item) -> some View {
-        // The result so far is neutral: a clock in the secondary ink, not the done seal.
-        let soFar = item.backgroundWaiting > 0 && !["error", "stopped"].contains(item.status)
+        // Awaiting notices: an hourglass in the wait ink, not the done seal.
+        let awaiting = item.awaiting && !["error", "stopped"].contains(item.status)
         let icon = switch item.status {
         case "error": "exclamationmark.triangle"
         case "stopped": "stop.circle"
-        default: soFar ? MightyGraphView.resultSoFarIcon : "checkmark.seal"
+        default: awaiting ? MightyGraphView.awaitingNoticeIcon : "checkmark.seal"
         }
         return Label(Self.resultName(item), systemImage: icon)
             .font(.ui(size: Self.outputSize, weight: .bold)).lineLimit(1)
-            .foregroundStyle(item.finished && !soFar ? Palette.text(item.status) : Palette.ink2)
+            .foregroundStyle(awaiting ? Palette.text(.wait) : item.finished ? Palette.text(item.status) : Palette.ink2)
     }
 
     /// The answer as the transcript renders a reply; without one, its state (the last
@@ -953,9 +953,9 @@ struct MightyStructureView: View {
         .accessibilityIdentifier("mighty-structure-reveal-\(nodeID)")
     }
 
-    /// The answer's name: how the request ended, or the result so far while its background work runs.
+    /// The answer's name: how the request ended, or 알림 대기 중 while it awaits its background work's notices.
     private static func resultName(_ item: MightyStructure.Item) -> String {
-        MightyGraphSupport.resultTitle(status: item.status, waiting: item.backgroundWaiting)
+        MightyGraphSupport.resultTitle(status: item.status, awaiting: item.awaiting)
     }
 
     private func heading(_ item: MightyStructure.Item) -> String {

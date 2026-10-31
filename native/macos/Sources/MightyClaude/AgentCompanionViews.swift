@@ -44,7 +44,7 @@ struct AgentStatusPopover: View {
                                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
                                     PresenceIndicator(status: agent.status).padding(.top, DesignMetrics.Spacing.xxs)
                                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                                        HStack { Text(agent.title).font(.ui(size: 12, weight: .medium)); Spacer(); Text(presenceLabel(agent.status)).font(.ui(size: 10)).foregroundStyle(.secondary) }
+                                        HStack { Text(agent.title).font(.ui(size: 12, weight: .medium)); Spacer(); Text(agent.stateLabel).font(.ui(size: 10)).foregroundStyle(.secondary) }
                                         HStack {
                                             Text(agent.workspace).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                                             Spacer(minLength: 0)
@@ -57,7 +57,7 @@ struct AgentStatusPopover: View {
                                     }
                                     Image(systemName: "arrow.up.forward").font(.ui(size: 9)).foregroundStyle(.tertiary)
                                 }.padding(DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 10))
-                            }.buttonStyle(.plain).accessibilityLabel(L("companion.status.rowAccessibility", ["title": agent.title, "status": presenceLabel(agent.status)]))
+                            }.buttonStyle(.plain).accessibilityLabel(L("companion.status.rowAccessibility", ["title": agent.title, "status": agent.stateLabel]))
                         }
                     }
                 }.frame(maxHeight: 330)
@@ -227,7 +227,7 @@ struct CompanionTaskBubble: View {
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: DesignMetrics.Spacing.xxs) {
-                    Text(presenceLabel(current.status)).font(.ui(size: 9)).foregroundStyle(.secondary)
+                    Text(current.stateLabel).font(.ui(size: 9)).foregroundStyle(.secondary)
                     if let timing = current.timing { AgentElapsedView(timing: timing).accessibilityIdentifier("pet-elapsed-\(current.id)") }
                 }
             }

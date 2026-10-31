@@ -328,6 +328,7 @@ public enum MobileMightySupport {
                                          result: carried(index) && settled(state) ? output(run.finalOutput, maximum: MobileWire.maximumRunResult) : nil)
             mobile.noticeRun = notice ? true : nil
             mobile.backgroundWaiting = run.backgroundWaiting > 0 ? run.backgroundWaiting : nil
+            mobile.awaitingNotice = MobileAwaitingNotice(BackgroundNoticeRuns.awaitingNotice(run, in: values))
             return mobile
         }
     }
