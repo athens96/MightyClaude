@@ -141,6 +141,6 @@ Claude, Codex, Antigravity 창 머리에는 {{ui:graph.view.default}} | {{ui:gra
 ![[agent-structure]]
 
 ### 결과 카드 {#result}
-요청이 끝나면 결과 카드에 결과가 정리됩니다. 요청은 Claude의 답이 끝나면 완료로 바뀝니다. 그 요청이 띄운 백그라운드 작업이 아직 돌고 있으면 카드 제목이 "현재까지의 결과 · 백그라운드 작업 N개 기다리는 중"으로 남은 작업 수를 보여 주고, 마지막 작업이 끝나면 {{ui:graph.block.result}}로 바뀝니다. 백그라운드 작업의 알림을 받고 Claude가 다시 답하면 그 답은 요청의 결과에 붙지 않고, 답 하나마다 새 다이어그램이 열립니다([백그라운드 작업](approvals.md#background)). 결과에 파일이 나오면 {{ui:graph.resultFiles.openButton}} 단추로 목록을 엽니다. 블록 안의 파일 경로를 누르면 미리보기가 뜹니다. 가장 최근 결과 카드는 창 크기에 맞춰지고, 크기를 직접 바꿨다면 {{ui:graph.result.fitToWindow}} 단추가 생깁니다.
+요청이 끝나면 결과 카드에 결과가 정리됩니다. 요청은 Claude의 답이 끝나면 완료로 바뀝니다. 그 요청이 띄운 백그라운드 작업(이미 끝난 하위 에이전트에 메시지를 보내 다시 깨운 것도 포함)이 아직 돌고 있으면 카드 제목이 "현재까지의 결과 · 백그라운드 작업 N개 기다리는 중"으로 남은 작업 수를 보여 주고, 마지막 작업이 끝나면 {{ui:graph.block.result}}로 바뀝니다. 백그라운드 작업의 알림을 받고 Claude가 다시 답하면 그 답은 요청의 결과에 붙지 않고, 답 하나마다 새 다이어그램이 열립니다([백그라운드 작업](approvals.md#background)). 결과에 파일이 나오면 {{ui:graph.resultFiles.openButton}} 단추로 목록을 엽니다. 블록 안의 파일 경로를 누르면 미리보기가 뜹니다. 가장 최근 결과 카드는 창 크기에 맞춰지고, 크기를 직접 바꿨다면 {{ui:graph.result.fitToWindow}} 단추가 생깁니다.
 
 ![[result-card]]

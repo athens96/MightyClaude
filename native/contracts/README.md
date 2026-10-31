@@ -546,7 +546,10 @@ minimum number of cases each must hold, are:
 
 A tracker case is `{ runId, input, provider, configuredModel, steps[] }`; a step
 is `frame`, `mod`, `steer`, `activity` or `finish`. Its expectation is the latest
-snapshot of every emitted node, in first-emission order. Wall-clock fields
+snapshot of every emitted node, in first-emission order. A case with
+`waiting: true` also expects the request's `backgroundWaiting` and its result
+card's `resultTitle` (`MightyGraphSupport.resultTitle`), read from the request
+run built out of those nodes. Wall-clock fields
 (`updatedAt`, entry `timestamp`) are never part of an expectation. Frames compare
 within 0.001 and result paths compare with forward slashes.
 

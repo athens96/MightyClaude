@@ -52,6 +52,15 @@ final class ExecutionGraphTracker {
     private var agentNames: [String: String] = [:]
     /// The notification summary an agent block's result holds until its hand-back's report replaces it.
     private var agentSummaries: [String: String] = [:]
+    /// A `SendMessage` call waiting for its result: who sent it and what it said.
+    private struct SentMessage {
+        let owner: Owner
+        let to: String?
+        let summary: String?
+        let message: String?
+    }
+    /// SendMessage calls by tool-use ID until their result says whether the message resumed an agent that had ended.
+    private var sentMessages: [String: SentMessage] = [:]
     private var messageUsage: [String: GraphTokenUsage] = [:]
     private var messageModel: [String: String] = [:]
     private var messageActivityIds: [String: [String]] = [:]
@@ -324,12 +333,18 @@ final class ExecutionGraphTracker {
                         if let title = input?["description"] as? String, !title.isEmpty { node.title = title }
                         else if let command, !command.isEmpty { node.title = command }
                     }
+                } else if block["name"] as? String == "SendMessage", sentMessages[toolID] != nil || sentMessages.count < 512 {
+                    // A message to a background agent that already ended resumes it in the background. No block yet: only the result
+                    // says so (`resumeAgent`); a message delivered to a running agent adds no work.
+                    sentMessages[toolID] = SentMessage(owner: owner, to: Self.key(input?["to"]), summary: input?["summary"] as? String,
+                                                       message: input?["message"] as? String)
                 }
             }
         } else if type == "user", let message = value["message"] as? [String: Any] {
             for block in message["content"] as? [[String: Any]] ?? [] where block["type"] as? String == "tool_result" {
                 guard let toolID = Self.key(block["tool_use_id"]) else { continue }
                 rememberTool(toolID, owner: owner)
+                if let sent = sentMessages.removeValue(forKey: toolID) { resumeAgent(toolID: toolID, sent: sent, block: block, frame: value); continue }
                 let child = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: toolID)
                 guard let node = nodes[child] else { continue }
                 if node.kind == "task" { acknowledgeTask(child, block: block); continue }
@@ -755,6 +770,41 @@ final class ExecutionGraphTracker {
         let agent = String(match.agent)
         if taskAliases[agent] != nil || taskAliases.count < 512 { taskAliases[agent] = id }
     }
+    /// A SendMessage's result. One that resumed a background agent that had ended (`resumedAgentId`) is new background work of this
+    /// request: a background agent block under the sender, settled by that agent's notification or hand-back as an Agent launch is. The
+    /// agent ID, the names that named its earlier block in this run and the name it was sent to now name this block. A Mods route to an
+    /// earlier block that ended moves here too. A message delivered to a running agent, or one that failed, makes no block.
+    private func resumeAgent(toolID: String, sent: SentMessage, block: [String: Any], frame: [String: Any]) {
+        guard block["is_error"] as? Bool != true, let agent = Self.resumedAgent(block: block, frame: frame),
+              let child = ensureAgent(toolID: toolID) else { return }
+        setParent(child, owner: sent.owner)
+        backgroundTools.insert(toolID)
+        let earlier: ExecutionGraphNode? = taskAliases[agent].flatMap { $0 == child ? nil : nodes[$0] }
+        if taskAliases[agent] != nil || taskAliases.count < 512 { taskAliases[agent] = child }
+        if let earlier {
+            for (name, target) in agentNames where target == earlier.id { agentNames[name] = child }
+        }
+        if let to = sent.to, to != agent, agentNames[to] != nil || agentNames.count < 512 { agentNames[to] = child }
+        if let routed = aliases[agent], routed != child, let route = nodes[routed], ExecutionGraphSupport.terminal(route.state) { aliases[agent] = child }
+        update(child) { node in
+            node.background = true
+            // Without a summary the agent's earlier block in this run names it better than an ID.
+            if let summary = sent.summary, !summary.isEmpty { node.title = summary }
+            else if let title = earlier?.title, !title.isEmpty { node.title = title }
+            else if let to = sent.to { node.title = to }
+            if let message = sent.message { node.input = message }
+        }
+    }
+    /// The agent a SendMessage result says it resumed: the result's JSON text, else the event's `toolUseResult` (a transcript's).
+    private static func resumedAgent(block: [String: Any], frame: [String: Any]) -> String? {
+        var result: [String: Any]?
+        if let text = Self.text(block["content"]), text.drop(while: { $0.isWhitespace }).hasPrefix("{") {
+            result = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any]
+        }
+        if result == nil { result = frame["toolUseResult"] as? [String: Any] }
+        guard let result, result["success"] as? Bool == true else { return nil }
+        return Self.key(result["resumedAgentId"])
+    }
     private static func tag(_ body: Substring, _ name: String) -> String? {
         guard let start = body.range(of: "<\(name)>"), let end = body.range(of: "</\(name)>", range: start.upperBound..<body.endIndex) else { return nil }
         let value = body[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -766,7 +816,12 @@ final class ExecutionGraphTracker {
             let body = remaining[start.upperBound..<end.lowerBound]
             remaining = remaining[end.upperBound...]
             let byTool = Self.tag(body, "tool-use-id").map { ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: $0) }.flatMap { nodes[$0] != nil ? $0 : nil }
-            guard let id = byTool ?? Self.tag(body, "task-id").flatMap({ taskAliases[$0] }), let kind = nodes[id]?.kind, ["task", "agent"].contains(kind) else {
+            // The tool use's block while it is open; once it ended, the task ID's: a resumed agent's notification may still name its first
+            // launch's tool use, while a first run's notification that comes after the resume still ends that first block.
+            let aliased = Self.tag(body, "task-id").flatMap { taskAliases[$0] }
+            var openByTool: String?
+            if let byTool, let launched = nodes[byTool], !ExecutionGraphSupport.terminal(launched.state) { openByTool = byTool }
+            guard let id = openByTool ?? aliased ?? byTool, let kind = nodes[id]?.kind, ["task", "agent"].contains(kind) else {
                 // Work this run never started (an earlier process's) has no block to copy: its line names the turn's run.
                 if notice { joinTurn(.work, name: nil, line: Self.tag(body, "summary") ?? Self.tag(body, "status")) }
                 continue
