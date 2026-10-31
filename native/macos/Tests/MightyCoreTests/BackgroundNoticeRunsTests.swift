@@ -339,6 +339,11 @@ struct BackgroundNoticeRunsTests {
             if case .free(let rows) = MightyStructure.make(runs: all, style: nil, currentPhase: nil) {
                 #expect(rows.map(\.item.awaiting) == [true, false, false])
             } else { Issue.record("a free pane makes rows") }
+            func resultColumn() -> DesignTone? {
+                let board = MightyStructure.boards(MightyStructure.make(runs: all, style: nil, currentPhase: nil))[0]
+                return MightyStructure.Tone.column(board.columns[2])
+            }
+            #expect(resultColumn() == .wait)
             // The phone: the block's rows, and the running count for an older phone.
             let mobile = MobileMightySupport.runs(all)
             #expect(mobile[0].awaitingNotice == MobileAwaitingNotice(delivered: 0, total: 1, tasks: [MobileAwaitedTask(title: "Build", status: "running")]))
@@ -363,6 +368,7 @@ struct BackgroundNoticeRunsTests {
             #expect(BackgroundNoticeRuns.awaitingNotice(all[0], in: all) == nil)
             #expect(MightyTimeline.groups(all)[0].result?.awaiting == false && MightyTimeline.groups(all)[0].result?.tone == .done)
             #expect(MobileMightySupport.runs(all)[0].awaitingNotice == nil)
+            #expect(resultColumn() == .done)
             // Failed or stopped work keeps its word; a failed or stopped request, or a notice run, awaits nothing.
             all[0].agents[1].status = "error"; all[2].status = "running"
             #expect(BackgroundNoticeRuns.awaitingNotice(all[0], in: all)?.tasks.first?.word == "실패")

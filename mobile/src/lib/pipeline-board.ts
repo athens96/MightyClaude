@@ -228,6 +228,8 @@ export function boardCurrentStep(board: Board): number {
  * while the column holds no request yet.
  */
 export function columnTone(column: BoardColumn): Tone | undefined {
+  // A free board's 결과 whose request awaits its background work's notices waits, as its 알림 대기 중 title does.
+  if (column.step.step === 'done' && column.cards.some((card) => card.kind === 'result' && card.item.awaitingNotice)) return 'wait';
   if (column.step.step !== 'current') return stepTone(column.step.step);
   let newest: StructureItem | undefined;
   for (const card of column.cards) if (card.kind !== 'agent') newest = card.item;

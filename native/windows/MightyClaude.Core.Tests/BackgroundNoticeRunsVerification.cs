@@ -275,6 +275,8 @@ internal static class BackgroundNoticeRunsVerification
         Check(BackgroundNoticeRuns.AwaitingNotice(MightyGraphSupport.ShownRuns(all)[0], []) == awaiting, "a shown run carries its awaiting");
         Check(MightyTimeline.Groups(all)[0].Result is { Awaiting: true, Tone: DesignTone.Wait }, "기록's result head waits");
         Check(MightyStructure.Make(all, null, null).Rows!.Select(r => r.Item.Awaiting).SequenceEqual([true, false, false]), "the pipeline card awaits");
+        DesignTone? ResultColumn() { var board = MightyStructure.Boards(MightyStructure.Make(all, null, null))[0]; return MightyStructure.Tone.OfCard(board.Columns[2].Cards[0], board.Columns[2]); }
+        Same(ResultColumn(), DesignTone.Wait, "the pipeline's 결과 waits");
         // The phone: the block's rows, and the running count for an older phone.
         var mobile = MobileMightySupport.Runs(all);
         Check(mobile[0].AwaitingNotice is { Delivered: 0, Total: 1 } wire && wire.Tasks.Single() == new MobileAwaitedTask("Build", "running") && mobile[0].BackgroundWaiting == 1
@@ -296,7 +298,7 @@ internal static class BackgroundNoticeRunsVerification
         digest = MobileMightySupport.Digest(all);
         all[2].Status = "completed"; all[2].FinalOutput = "The build passed.";
         Check(BackgroundNoticeRuns.AwaitingNotice(all[0], all) is null && Card() is { Title: "최종 결과", Status: "completed", Awaiting: null, Outline: MightyGraphActivity.None }
-            && MightyTimeline.Groups(all)[0].Result is { Awaiting: false, Tone: DesignTone.Done } && !BackgroundNoticeRuns.AwaitsNotice(pane), "answered, it is the final result");
+            && MightyTimeline.Groups(all)[0].Result is { Awaiting: false, Tone: DesignTone.Done } && !BackgroundNoticeRuns.AwaitsNotice(pane) && ResultColumn() == DesignTone.Done, "answered, it is the final result");
         Check(MobileMightySupport.Runs(all)[0].AwaitingNotice is null && MobileMightySupport.Digest(all) != digest, "the phone's block goes and its digest moves");
         // Failed or stopped work keeps its word; a failed or stopped request, or a notice run, awaits nothing.
         all[0].Agents[1].Status = "error"; all[2].Status = "running";
