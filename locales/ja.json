@@ -2723,6 +2723,7 @@
   "phone.attachments.sizeChanged": "読み込み中にファイルのサイズが変わりました。",
   "phone.attachments.sizeMismatch": "ホストが受信したサイズが送信したサイズと異なります。",
   "phone.attachments.sendFailed": "添付を送信できませんでした。",
+  "phone.attachments.pickFailed": "選んだ項目を読み込めませんでした。もう一度選んでください。",
   "phone.guided.runOnMac": "このコマンドはMacで自分で実行してください。",
   "phone.guided.running": "実行中です。終了すると次のアクションが表示されます。",
   "phone.guided.noActions": "今選べるアクションはありません。下に入力してそのまま送信してください。",

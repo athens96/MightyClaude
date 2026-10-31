@@ -2723,6 +2723,7 @@
   "phone.attachments.sizeChanged": "파일을 읽는 중 크기가 달라졌습니다.",
   "phone.attachments.sizeMismatch": "호스트가 받은 크기가 보낸 크기와 다릅니다.",
   "phone.attachments.sendFailed": "첨부를 보내지 못했습니다.",
+  "phone.attachments.pickFailed": "고른 항목을 읽지 못했습니다. 다시 골라 주세요.",
   "phone.guided.runOnMac": "이 명령은 Mac에서 직접 실행하세요.",
   "phone.guided.running": "실행 중입니다. 끝나면 다음 행동이 나옵니다.",
   "phone.guided.noActions": "지금은 고를 행동이 없습니다. 아래에 적어 그대로 보내세요.",

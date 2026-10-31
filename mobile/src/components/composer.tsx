@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type Ref } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Icon, type IconName } from '@/components/icons';
@@ -8,6 +8,7 @@ import { Pending, PendingBars, usePendingShown } from '@/components/pending';
 import { Sheet } from '@/components/sheets';
 import { byteLength } from '@/api/client';
 import { MAX_TEXT_BYTES, type MobileCommand, type SubmitMode } from '@/api/types';
+import { pickAfterSheet, type PickKind } from '@/lib/attach-picks';
 import { draftIsEmpty } from '@/lib/ask-targets';
 import { commandInsertion, commandQuery, filterCommands } from '@/lib/commands';
 import { t } from '@/lib/i18n';
@@ -85,6 +86,20 @@ export function Composer({
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // A system picker opens only after the sheet has gone: Android's Modal has no onDismiss,
+  // and an Activity launched while its dialog is still being torn down can lose its result.
+  const launchPick = useRef<(kind: PickKind) => void>(() => undefined);
+  useEffect(() => {
+    launchPick.current = (kind) => {
+      if (!attachments) return;
+      void (kind === 'images' ? attachments.pickImages() : attachments.pickDocuments());
+    };
+  });
+  const [afterSheet] = useState(() => pickAfterSheet((kind) => launchPick.current(kind)));
+  useEffect(() => {
+    if (!pickerOpen) afterSheet.sheetClosed();
+  }, [afterSheet, pickerOpen]);
+  useEffect(() => afterSheet.dispose, [afterSheet]);
   // Which round button sent last, so only that one spins while the host answers.
   const [pressedMode, setPressedMode] = useState<SubmitMode | undefined>(undefined);
   const tooLong = byteLength(text) > MAX_TEXT_BYTES;
@@ -319,16 +334,16 @@ export function Composer({
             label={t('phone.composer.pickPhotos')}
             tone="neutral"
             onPress={() => {
+              afterSheet.choose('images');
               setPickerOpen(false);
-              void attachments.pickImages();
             }}
           />
           <Button
             label={t('phone.composer.pickFiles')}
             tone="neutral"
             onPress={() => {
+              afterSheet.choose('documents');
               setPickerOpen(false);
-              void attachments.pickDocuments();
             }}
           />
           <Button label={t('common.cancel')} tone="ghost" onPress={() => setPickerOpen(false)} />
