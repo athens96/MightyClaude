@@ -171,12 +171,14 @@ public sealed partial class MainWindow
         /// Redraws the header's word for the pane's status and its pending requests, and its accessible
         /// name for the pane's title, from the session the caller already read (no snapshot copy per call).
         /// The word takes its tone's ink, <c>text(tone)</c> (M/SessionPaneView.swift:252-253); on a terminal's slim bar it
-        /// is the bar's <c>onStatus</c> ink inside its capsule (M/PaneChrome.swift:111).
+        /// is the bar's <c>onStatus</c> ink inside its capsule (M/PaneChrome.swift:111). A pane alive only for the notices its request awaits
+        /// reads 알림 대기 in the wait ink (<see cref="BackgroundNoticeRuns.AwaitsNotice"/>).
         /// </summary>
         internal void RefreshHeaderStatus(RunSession pane)
         {
-            var pending = PendingRequests; var shown = StatusGlyph.DisplayStatus(pane.Status, pending);
-            label.Text = StateLabel(shown); label.Foreground = slimHeader ? owner.brushes.Brush(DesignToken.OnStatus) : owner.brushes.Text(StatusGlyph.Tone(shown));
+            var pending = PendingRequests; var awaiting = pending == 0 && BackgroundNoticeRuns.AwaitsNotice(pane);
+            var shown = awaiting ? "waiting" : StatusGlyph.DisplayStatus(pane.Status, pending);
+            label.Text = awaiting ? BackgroundNoticeRuns.StateWord : StateLabel(shown); label.Foreground = slimHeader ? owner.brushes.Brush(DesignToken.OnStatus) : owner.brushes.Text(StatusGlyph.Tone(shown));
             if (paneHeader is not null && AutomationProperties.GetName(paneHeader) != pane.Title) AutomationProperties.SetName(paneHeader, pane.Title);
             RefreshHeaderLine(pane);
         }

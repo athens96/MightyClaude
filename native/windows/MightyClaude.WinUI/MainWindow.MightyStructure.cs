@@ -1062,21 +1062,21 @@ public sealed partial class MainWindow
             ["agents"] = item.Tally.Agents.ToString(CultureInfo.InvariantCulture), ["tools"] = item.Tally.Tools.ToString(CultureInfo.InvariantCulture),
         }), StructureOutputSize, owner.brushes.Brush(DesignToken.Ink2), FontWeights.SemiBold);
 
-        /// <summary>The result's header words and symbol (11 bold), in the outcome's ink once there is one (M/MightyStructureView.swift:652-662): the
-        /// result so far while background work the request started still runs (<see cref="StructureResultName"/>).</summary>
+        /// <summary>The result's header words and symbol (11 bold), in the outcome's ink once there is one (M/MightyStructureView.swift:652-662):
+        /// 알림 대기 중 while the request awaits its background work's notices (<see cref="StructureResultName"/>).</summary>
         private StackPanel StructureResultTitle(MightyStructure.Item item)
         {
-            // The result so far is neutral: a clock in the secondary ink, not the done seal (M/MightyStructureView.swift resultTitle).
-            var soFar = item.BackgroundWaiting > 0 && item.Status is not ("error" or "stopped");
-            var b = owner.brushes; var ink = item.Finished && !soFar ? b.Text(StatusGlyph.Tone(item.Status)) : b.Brush(DesignToken.Ink2);
+            // Awaiting notices: an hourglass in the wait ink, not the done seal (M/MightyStructureView.swift resultTitle).
+            var awaiting = item.Awaiting && item.Status is not ("error" or "stopped");
+            var b = owner.brushes; var ink = awaiting ? b.Text(DesignTone.Wait) : item.Finished ? b.Text(StatusGlyph.Tone(item.Status)) : b.Brush(DesignToken.Ink2);
             var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
-            label.Children.Add(MightySymbols.Create(item.Status switch { "error" => "exclamationmark.triangle", "stopped" => "stop.circle", _ => soFar ? "clock" : "checkmark.seal" }, StructureOutputSize, ink, MightySymbols.Weight.Bold));
+            label.Children.Add(MightySymbols.Create(item.Status switch { "error" => "exclamationmark.triangle", "stopped" => "stop.circle", _ => awaiting ? "hourglass" : "checkmark.seal" }, StructureOutputSize, ink, MightySymbols.Weight.Bold));
             label.Children.Add(StructureWords(StructureResultName(item), StructureOutputSize, ink, FontWeights.Bold));
             return label;
         }
 
-        /// <summary>The answer's name: how the request ended, or the result so far while its background work runs (M/MightyStructureView.swift resultName).</summary>
-        private static string StructureResultName(MightyStructure.Item item) => MightyGraphBlockModel.ResultTitle(item.Status, item.BackgroundWaiting);
+        /// <summary>The answer's name: how the request ended, or 알림 대기 중 while it awaits notices (M/MightyStructureView.swift resultName).</summary>
+        private static string StructureResultName(MightyStructure.Item item) => MightyGraphBlockModel.ResultTitle(item.Status, item.Awaiting);
 
         /// <summary>
         /// A free board's 결과 card (M/MightyStructureView.swift:548-562, 664-673): its header words, then the answer as the transcript

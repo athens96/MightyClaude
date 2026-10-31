@@ -25,8 +25,14 @@ export interface MightyBlockCopy {
   noticeReply?: string;
   /** A notice run's request block (notice.ts): titled 백그라운드 작업 완료, with the task's terminal symbol and no provider mark. */
   notice?: boolean;
-  /** A result that is the result so far (Core MightyGraphBlock.SoFar): its strip and symbol are neutral, its tone stays the request's. */
-  soFar?: boolean;
+  /** A result whose request awaits its background work's notices (Core MightyGraphBlock.Awaiting): the 알림 대기 block, its rows under the answer so far. */
+  awaiting?: MightyAwaiting;
+}
+
+/** The 알림 대기 block's rows (Core BackgroundNoticeRuns.Awaiting): each awaited task's title, status and word, and "알림 n/m". */
+export interface MightyAwaiting {
+  tasks: { title: string; status: string; word: string }[];
+  progress: string;
 }
 
 export interface MightyFile { path: string; line?: number }
@@ -108,7 +114,7 @@ export interface TimelineGroup {
   resultCaption?: string;
   /** Claude's reply to finished background work (notice.ts), not a request: it takes no request number. */
   noticeRun?: boolean;
-  /** The result head's title (Core MightyGraphBlockModel.ResultTitle): 현재까지의 결과 with the count while background work runs. */
+  /** The result head's title (Core MightyGraphBlockModel.ResultTitle): 알림 대기 중 while the request awaits its background work's notices. */
   resultTitle?: string;
 }
 
@@ -143,10 +149,10 @@ export interface StructureCard {
   background?: boolean;
   outputTail?: string[];
   noticeReply?: string;
-  /** A result or summary card's result title (Core MightyGraphBlockModel.ResultTitle): 현재까지의 결과 with the count while background work runs. */
+  /** A result or summary card's result title (Core MightyGraphBlockModel.ResultTitle): 알림 대기 중 while the request awaits notices. */
   resultTitle?: string;
-  /** A result or summary card that is the result so far: drawn neutral, not done. */
-  resultWaiting?: boolean;
+  /** A result or summary card whose request awaits its background work's notices: drawn in the wait tone, not done. */
+  resultAwaiting?: boolean;
 }
 
 /** One tool call on a card: its kind (command, read, edit, search, web, agent, turn, tool), its state and its words. */

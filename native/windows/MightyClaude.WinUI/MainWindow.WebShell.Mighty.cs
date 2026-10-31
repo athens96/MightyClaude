@@ -15,11 +15,15 @@ namespace MightyClaude.WinUI;
 /// A background sub-agent's or a task's block says so (<c>Background</c>); a task's block carries its run's last output lines
 /// (<c>OutputTail</c>, from the host's memory, at most <see cref="BackgroundOutputTail.MaxLines"/>) and Claude's reply to its notice
 /// (<c>NoticeReply</c>). Its output file never reaches the page's copy. A notice run's request block (BackgroundNoticeRuns) says so (<c>Notice</c>):
-/// it wears the task's terminal symbol and no provider mark. Each is absent otherwise.
+/// it wears the task's terminal symbol and no provider mark. A result whose request awaits notices carries its rows (<c>Awaiting</c>): the page
+/// draws it as the 알림 대기 block. Each is absent otherwise.
 /// </summary>
 internal sealed record WebMightyBlock(string Kind, string Title, string State, string? Capsule, string Help, string Indicator, string Outline, string Status, string Tone,
     string? FilesRunId, string? RecordId, bool FromRecord, string? Provider, bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, bool? Notice = null,
-    bool? SoFar = null);
+    WebMightyAwaiting? Awaiting = null);
+/// <summary>A 알림 대기 result's rows (<see cref="BackgroundNoticeRuns.Awaiting"/>): each awaited task's title, status and word, and the progress line.</summary>
+internal sealed record WebMightyAwaiting(IReadOnlyList<WebMightyAwaitedTask> Tasks, string Progress);
+internal sealed record WebMightyAwaitedTask(string Title, string Status, string Word);
 
 internal sealed record WebMightyFile(string Path, int? Line);
 internal sealed record WebMightyExecution(string Status, string StatusWord, string? Goal, string? Progress, IReadOnlyList<string> Counts, string? Line, string? Note, string Footer, string? Dashboard,
@@ -36,19 +40,19 @@ internal sealed record WebMightyInputs(string? PlanRunID, IReadOnlyList<object> 
 internal sealed record WebTimelineRow(string NodeId, string Kind, string KindLabel, string Title, string Status, string StatusWord, string Tone, bool Ring, string? Rail,
     string? Latest, string? Duration, string? Capsule, string? Input, int? AgentIndex);
 /// <summary>One 기록 group; <c>NoticeRun</c> marks Claude's reply to finished background work (BackgroundNoticeRuns), absent for a request.
-/// <c>ResultTitle</c> is its result head's title (<see cref="MightyGraphBlockModel.ResultTitle"/>): the result so far while background work runs.</summary>
+/// <c>ResultTitle</c> is its result head's title (<see cref="MightyGraphBlockModel.ResultTitle"/>): 알림 대기 중 while the request awaits notices.</summary>
 internal sealed record WebTimelineGroup(string RunId, int Ordinal, string Title, string Status, string StatusWord, string Tone, string Input, string Tally, bool Open, bool Older,
     IReadOnlyList<WebTimelineRow> Rows, string? ResultNodeId, string? ResultTone, string? Result, bool ResultFolds, string? ResultCaption, bool? NoticeRun = null, string? ResultTitle = null);
 
 internal sealed record WebStructureActivity(string Kind, string State, string Text);
 /// <summary>A structure card for the page; an agent card adds its kind, "kind · model", its depth and its prompt apart from its output; <c>RevealId</c> is the block its reveal shows.
 /// <c>Background</c>, <c>OutputTail</c> and <c>NoticeReply</c> are an agent card's as on <see cref="WebMightyBlock"/>. <c>ResultTitle</c> is a result or summary
-/// card's result title (<see cref="MightyGraphBlockModel.ResultTitle"/>), absent on the others; <c>ResultWaiting</c> marks such a card that is the result
-/// so far, drawn neutral.</summary>
+/// card's result title (<see cref="MightyGraphBlockModel.ResultTitle"/>), absent on the others; <c>ResultAwaiting</c> marks such a card whose request
+/// awaits notices (알림 대기 중), drawn in the wait tone.</summary>
 internal sealed record WebStructureCard(string Id, string Kind, string RunId, string NodeId, string Title, string Status, string StatusWord, string Tone, string? Parent,
     string? Text, string? Message, string? Answer, IReadOnlyList<WebStructureActivity> Activity, string? Tally, bool Finished, string? ResultLine,
     string? NodeKind = null, string? Meta = null, int Depth = 0, string? Prompt = null, string? ExecutionNodeId = null, string? ResultNodeId = null, string? Tint = null,
-    bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, string? ResultTitle = null, bool? ResultWaiting = null);
+    bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, string? ResultTitle = null, bool? ResultAwaiting = null);
 internal sealed record WebStructureColumn(string Id, string Title, string Step, string StepWord, int Count, IReadOnlyList<WebStructureCard> Cards, string? Tone);
 /// <summary>One 파이프라인 board; <c>Quiet</c>: it holds only notice runs taken into a running turn (MightyStructure.Board.Quiet), which the view never moves on to by itself.</summary>
 internal sealed record WebStructureBoard(string Id, string Kind, int Ordinal, string? Headline, string Status, string StatusWord, string Tone, IReadOnlyList<string> RunIds, IReadOnlyList<WebStructureColumn> Columns, string? StyleName, bool? Quiet = null);
@@ -168,7 +172,9 @@ public sealed partial class MainWindow
     /// The Mighty part of the web smoke: the fixture pane gets three finished requests and one running (no CLI, no AI request)
     /// and is put in Mighty mode. The page must draw every block, the edges (one into a running block) and the activity
     /// outline; a streamed change of one sub-agent's entry must draw that block again and no other (each block counts its draws
-    /// in data-renders) with a small delta; the log and the pipeline views must draw the requests.
+    /// in data-renders) with a small delta; the log and the pipeline views must draw the requests. Then a request whose background
+    /// command runs, and then ended with its notice turn not answered yet, must draw its result as the 알림 대기 block, and as the
+    /// plain result once the notice run answered (BackgroundNoticeRuns.AwaitingNotice).
     /// </summary>
     private async Task<bool> RunWebMightySmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, string paneId, Dictionary<string, object?> result)
     {
@@ -239,7 +245,32 @@ public sealed partial class MainWindow
             var revealed = revealClicked && await Wait("(() => { if (document.querySelector('[data-testid=mighty]')?.dataset.presentation !== 'diagram') return false; const v = document.querySelector('[data-testid=mighty-diagram] .mighty-viewport')?.getBoundingClientRect(); const b = document.querySelector('[data-testid=mighty-diagram] .mighty-block.selected')?.getBoundingClientRect(); "
                 + "return !!v && !!b && b.bottom > v.top && b.top < v.bottom && b.right > v.left && b.left < v.right; })()");
             result["mightyViews"] = new { timeline, structure, revealClicked, revealed, mode = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId)?.GraphViewMode };
-            return drawn && onlyChanged && timeline && structure && revealed;
+            // The 알림 대기 block: the request's own answer is in while its background command runs, then the command ended and its
+            // notice turn runs, then that turn answered. Only the first two await notices; the third is the 최종 결과 again.
+            MightyGraphRun Awaited(string task) => new()
+            {
+                Id = "smoke-run-5", Input = "fixture request 5", Status = "completed", Provider = "claude", FinalOutput = "started the build",
+                RootEntries = [Line("smoke-5-root", "started the build")], ResultEntries = [Line("smoke-5-result", "started the build")],
+                Agents = [new() { Id = "build", Title = "Build", Input = "npm run build", Status = task, Kind = "task", Background = true }],
+            };
+            MightyGraphRun Notice(string status) => new()
+            {
+                Id = BackgroundNoticeRuns.RunID("smoke-run-5", 1), Input = "Build", Status = status, Provider = "claude", NoticeRun = true, FinalOutput = status == "completed" ? "the build passed" : null,
+                ResultEntries = status == "completed" ? [Line("smoke-5-notice", "the build passed")] : [],
+                Agents = [new() { Id = BackgroundNoticeRuns.RunID("smoke-run-5", 1) + ":build", Title = "Build", Input = "npm run build", Status = "completed", Kind = "task", Background = true, SourceBlockId = "build" }],
+            };
+            async Task Show(params MightyGraphRun[] runs) => await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { GraphRuns = [.. runs] }).ToList() });
+            var resultBlock = $"document.querySelector('[data-testid=mighty-diagram] [data-block-id=\"{MightyGraphBlockSize.NodeId("smoke-run-5", "result")}\"]')";
+            string Kind(string kind, string rows) => $"(() => {{ const e = {resultBlock}; return !!e && e.dataset.kind === '{kind}' && e.classList.contains('kind-{kind}') && (e.dataset.visible !== '1' || {rows}); }})()";
+            await Show(Awaited("running"));
+            var awaitingRunning = await Wait(Kind("awaitingNotice", "!!e.querySelector('[data-testid=mighty-awaiting] [data-status=running]') && !!e.querySelector('[data-testid=mighty-awaiting-progress]')"));
+            await Show(Awaited("completed"), Notice("running"));
+            var awaitingAnswer = await Wait(Kind("awaitingNotice", "!!e.querySelector('[data-testid=mighty-awaiting] [data-status=completed]')"));
+            await Show(Awaited("completed"), Notice("completed"));
+            var settledResult = await Wait(Kind("result", "!e.querySelector('[data-testid=mighty-awaiting]')"));
+            var awaitingLook = await Read($"(() => {{ const e = {resultBlock}; return JSON.stringify({{ kind: e?.dataset.kind ?? null, className: e?.className ?? null }}); }})()");
+            result["mightyAwaiting"] = new { awaitingRunning, awaitingAnswer, settledResult, after = awaitingLook };
+            return drawn && onlyChanged && timeline && structure && revealed && awaitingRunning && awaitingAnswer && settledResult;
         }
         finally
         {
@@ -311,7 +342,8 @@ public sealed partial class MainWindow
                 copy[block.Id] = new(block.Kind, block.Title, block.State, block.Capsule, block.CapsuleHelp, block.Indicator, block.Outline, block.Status,
                     MightyGraphBlockModel.Tone(block).ToString().ToLowerInvariant(), block.ResultFilesRunId, block.RecordId, fromRecord, notice ? null : MightyGraphBlockModel.TitleProvider(block, pane.Provider),
                     held is null ? (bool?)null : true, held is { IsTask: true } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(held.Id)) : null,
-                    held?.NoticeReply is { Length: > 0 } reply ? reply : null, notice ? true : null, block.SoFar ? true : null);
+                    held?.NoticeReply is { Length: > 0 } reply ? reply : null, notice ? true : null,
+                    block.Awaiting is { } awaiting ? new WebMightyAwaiting(awaiting.Tasks.Select(task => new WebMightyAwaitedTask(task.Title, task.Status, task.Word)).ToList(), awaiting.Progress) : null);
             }
             WebMightyHistory? history = null;
             if (ShowsHistoryBlock(pane, retained))
@@ -384,7 +416,7 @@ public sealed partial class MainWindow
             var groups = new List<WebTimelineGroup>();
             foreach (var group in MightyTimeline.Groups(runs))
             {
-                var run = runs[group.RunIndex].Shown;
+                var run = runs[group.RunIndex].ShownIn(runs);
                 var rows = group.Rows.Select(row =>
                 {
                     var agent = row.AgentIndex is { } at && at < run.Agents.Count ? run.Agents[at] : null;
@@ -402,8 +434,8 @@ public sealed partial class MainWindow
                     Tone(StatusGlyph.Tone(group.Status)), group.Input, tally, MightyTimeline.GroupOpen(group, runs, webTimelineFlipped), group.RunIndex < older, rows,
                     group.Result?.NodeId, group.Result is { } r ? Tone(r.Tone) : null, group.Result?.Text, group.Result?.Text is { } text && MightyTimeline.Folds(text), group.Result is null ? null : caption,
                     group.NoticeRun ? true : null,
-                    // How the request ended, or the result so far while its background work runs.
-                    group.Result is null ? null : MightyGraphBlockModel.ResultTitle(run.Status, MightyGraphSupport.BackgroundWaiting(run))));
+                    // How the request ended, or 알림 대기 중 while it awaits its background work's notices.
+                    group.Result is null ? null : MightyGraphBlockModel.ResultTitle(run.Status, group.Result.Awaiting)));
             }
             return groups;
         }
@@ -445,8 +477,8 @@ public sealed partial class MainWindow
                     node?.Kind, node is null ? null : string.Join(" · ", new[] { node.Kind == "steer" ? null : MightyTimeline.KindLabel(node.Kind, null), model }.Where(p => !string.IsNullOrEmpty(p))),
                     node?.Depth ?? 0, node?.Prompt?.Preview, item.ExecutionNodeId, MightyGraphLayout.NodeID(runs[item.RunIndex], "result"), ToneWord(MightyStructure.Tone.OfCard(card, column)),
                     node is { Background: true } ? true : (bool?)null, node is { Kind: "task" } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(node.AgentId)) : null, node?.NoticeReply?.Text,
-                    card.Kind is MightyStructure.CardKind.Result or MightyStructure.CardKind.Summary ? MightyGraphBlockModel.ResultTitle(item.Status, item.BackgroundWaiting) : null,
-                    card.Kind is MightyStructure.CardKind.Result or MightyStructure.CardKind.Summary && item.BackgroundWaiting > 0 && item.Status is not ("error" or "stopped") ? true : (bool?)null);
+                    card.Kind is MightyStructure.CardKind.Result or MightyStructure.CardKind.Summary ? MightyGraphBlockModel.ResultTitle(item.Status, item.Awaiting) : null,
+                    card.Kind is MightyStructure.CardKind.Result or MightyStructure.CardKind.Summary && item.Awaiting && item.Status is not ("error" or "stopped") ? true : (bool?)null);
             }
             var styleName = activeStyle?.Manifest.Name;
             return boards.Select(board => new WebStructureBoard(board.Id, board.Kind.ToString().ToLowerInvariant(), board.Ordinal, board.Headline, board.Status, MightyGraphBlockModel.StateLabel(board.Status), Tone(board.Status), board.RunIds,

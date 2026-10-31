@@ -143,7 +143,8 @@ public sealed partial class MainWindow
         { companionPermissions.Remove(key); companionQuestions.Remove(key); if (companionQuestionWindowKey == key) companionQuestionWindow?.Close(); }
         RefreshCompanionControls();
         if (companionOverlay is null || !companionPreferences.Enabled) return;
-        string Status(RunSession s) => companionPermissions.Values.Any(p => p.RunId == s.Id) || s.CurrentActivity?.State == "waiting" ? "waiting" : s.Status;
+        // A pane alive only for the notices its request awaits waits too, its words 알림 대기 (BackgroundNoticeRuns.AwaitsNotice).
+        string Status(RunSession s) => companionPermissions.Values.Any(p => p.RunId == s.Id) || s.CurrentActivity?.State == "waiting" || BackgroundNoticeRuns.AwaitsNotice(s) ? "waiting" : s.Status;
         var agents = snapshot.Sessions.Where(s => s.Kind == "claude").ToArray();
         var active = agents.Where(s => Status(s) is "running" or "waiting" or "starting" or "queued").Select(s => s.Id).ToArray();
         var automatic = agents.OrderByDescending(s => CompanionAnimation.Priority(Status(s))).ThenByDescending(s => s.RunTiming?.LastObservedAt ?? DateTimeOffset.MinValue).FirstOrDefault();
@@ -182,8 +183,9 @@ public sealed partial class MainWindow
     {
         var workspace = snapshot.Workspaces.FirstOrDefault(w => w.Id == current?.WorkspaceId)?.Name ?? "";
         // The bubble's own word for waiting; every other state takes the pane's (M/AgentCompanionViews.swift:117-119).
-        var state = status == "waiting" ? Locale.Get("graph.state.waiting") : StateLabel(status);
-        var work = current?.CurrentActivity?.Summary is { Length: > 0 } summary ? summary : status switch {
+        var awaiting = status == "waiting" && permission is null && current is not null && current.CurrentActivity?.State != "waiting" && BackgroundNoticeRuns.AwaitsNotice(current);
+        var state = awaiting ? BackgroundNoticeRuns.StateWord : status == "waiting" ? Locale.Get("graph.state.waiting") : StateLabel(status);
+        var work = awaiting ? Locale.Get("companion.status.awaitingNotice") : current?.CurrentActivity?.Summary is { Length: > 0 } summary ? summary : status switch {
             "running" => Locale.Get("companion.status.running"), "waiting" => Locale.Get("companion.status.waiting"),
             "completed" => Locale.Get("companion.status.completed"), "error" => Locale.Get("companion.status.error"),
             "stopped" => Locale.Get("companion.status.stopped"), _ => Locale.Get("companion.status.idle") };

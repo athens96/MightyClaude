@@ -88,6 +88,8 @@ public sealed partial class MainWindow
             internal Button? Expand;
             /// <summary>The words an answerless block shows in place of its transcript (M/MightyGraphView.swift:557-560).</summary>
             internal TextBlock? Placeholder;
+            /// <summary>A 알림 대기 result's rows under its answer so far: each awaited task and its word, then the progress line.</summary>
+            internal StackPanel? Awaiting;
             /// <summary>The corner handle and its two arrows (M/MightyGraphView.swift:929-942).</summary>
             internal Border? Grip;
             internal FrameworkElement? GripSymbol;
@@ -866,7 +868,7 @@ public sealed partial class MainWindow
             var fingerprint = JsonSerializer.Serialize(new
             {
                 block.Kind, block.Title, block.Request, block.Entries, block.State, block.Status, block.Indicator,
-                block.Capsule, block.CapsuleHelp, block.ResultFilesRunId,
+                block.Capsule, block.CapsuleHelp, block.ResultFilesRunId, block.Awaiting,
                 Files = block.Kind is "result" or "resultFiles" ? files : [], Pictures = pictures.Select(picture => picture.Id), Execution = ExecutionState(block),
                 FilesOpen = graphResultFilesRunId, FromRecord = fromRecord,
                 Latest = graphLatestResultId == block.Id, SavedResult = pane.GraphResultSize is not null,
@@ -956,7 +958,33 @@ public sealed partial class MainWindow
             // A block with no answer says so: it has none, or it is still waiting for one (M/MightyGraphView.swift:557-560).
             view.Placeholder!.Visibility = block.Entries.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
             view.Placeholder.Text = MightyGraphLayout.Terminal(block.Status) ? Locale.Get("graph.block.noResponse") : Locale.Get("graph.block.waitingResponse");
+            if (view.Awaiting is not null) { view.Content!.Children.Remove(view.Awaiting); view.Awaiting = null; }
+            if (block.Awaiting is { } awaiting) view.Content!.Children.Add(view.Awaiting = AwaitingRows(awaiting, block.Id));
             return view.Card;
+        }
+
+        /// <summary>
+        /// Under a 알림 대기 result's answer so far (M/MightyGraphView.swift awaitingNoticeRows): each background task the request awaits, its
+        /// title in <c>ink</c> and its word (끝나면 알림, 알림 전달됨, 실패, 중단됨) in <c>ink2</c>, then "알림 delivered/total" in the wait ink, over a
+        /// <c>line</c> rule, padded by <c>Inset.GraphBlockBodyH</c>.
+        /// </summary>
+        private StackPanel AwaitingRows(BackgroundNoticeRuns.Awaiting awaiting, string blockId)
+        {
+            var b = owner.brushes;
+            var rows = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyH + 22),
+                BorderThickness = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0), BorderBrush = b.Brush(DesignToken.Line) };
+            AutomationProperties.SetAutomationId(rows, "mighty-awaiting-" + blockId);
+            foreach (var task in awaiting.Tasks)
+            {
+                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.Children.Add(new TextBlock { Text = task.Title, TextSize = DesignMetrics.Type.Block, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis });
+                var word = new TextBlock { Text = task.Word, TextSize = DesignMetrics.Type.Small, Foreground = b.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetColumn(word, 1); row.Children.Add(word);
+                rows.Children.Add(row);
+            }
+            rows.Children.Add(new TextBlock { Text = awaiting.Progress, TextSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Bold, Foreground = b.Text(DesignTone.Wait) });
+            return rows;
         }
 
         /// <summary>
@@ -1110,8 +1138,7 @@ public sealed partial class MainWindow
         {
             var b = owner.brushes;
             var strip = block.Kind == "result";
-            // The result so far's strip and symbol are neutral; its status tone is the request's (MightyGraphBlockModel.StripTone).
-            var tone = strip ? MightyGraphBlockModel.StripTone(block) : MightyGraphBlockModel.Tone(block);
+            var tone = MightyGraphBlockModel.Tone(block);
             var ink = strip ? b.FillInk(tone) : b.Brush(DesignToken.Ink);
             var quiet = strip ? b.FillInk(tone) : b.Brush(DesignToken.Ink2);
             var header = new Grid
@@ -1131,7 +1158,7 @@ public sealed partial class MainWindow
             var symbol = block.Kind switch
             {
                 "request" => look.Symbol,
-                "result" => tone == DesignTone.Err ? "exclamationmark.triangle" : tone == DesignTone.Stop ? "stop.circle" : block.SoFar ? "clock" : "checkmark.seal",
+                "result" => tone == DesignTone.Err ? "exclamationmark.triangle" : tone == DesignTone.Stop ? "stop.circle" : block.Awaiting is not null ? "hourglass" : "checkmark.seal",
                 _ => BlockSymbol(block.Kind),
             };
             header.Children.Add(view.Symbol = MightySymbols.Create(symbol, 13, strip ? ink : b.Brush(BlockTint(block, look.Tint)), cut: b.Brush(DesignToken.Card)));

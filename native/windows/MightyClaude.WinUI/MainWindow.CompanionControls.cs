@@ -121,7 +121,7 @@ public sealed partial class MainWindow
         RefreshCompanionControls(); await ReloadCompanionPets(); RefreshCompanionControls();
     });
 
-    private string CompanionStatus(RunSession session) => companionPermissions.Values.Any(p => p.RunId == session.Id) || session.CurrentActivity?.State == "waiting" ? "waiting" : session.Status;
+    private string CompanionStatus(RunSession session) => companionPermissions.Values.Any(p => p.RunId == session.Id) || session.CurrentActivity?.State == "waiting" || BackgroundNoticeRuns.AwaitsNotice(session) ? "waiting" : session.Status;
     private void RefreshCompanionControls()
     {
         if (companionToggleControl is null || companionStatusControl is null || closing) return;
@@ -157,12 +157,14 @@ public sealed partial class MainWindow
             if (!companionStatusItems.TryGetValue(session.Id, out var row)) { row = BuildCompanionStatusRow(session.Id); companionStatusItems[session.Id] = row; companionStatusRows.Children.Add(row.Button); }
             var state = CompanionStatus(session);
             row.Mark.Update(state, session.Kind, 0, dark);
-            row.Heading.Text = session.Title; row.State.Text = StateLabel(state);
+            // Alive only for the notices its request awaits: 알림 대기, not the user's 응답 대기 (BackgroundNoticeRuns.AwaitsNotice).
+            var awaiting = state == "waiting" && session.CurrentActivity?.State != "waiting" && companionPermissions.Values.All(p => p.RunId != session.Id) && BackgroundNoticeRuns.AwaitsNotice(session);
+            row.Heading.Text = session.Title; row.State.Text = awaiting ? BackgroundNoticeRuns.StateWord : StateLabel(state);
             row.Detail.Text = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId)?.Name ?? "";
             row.Elapsed.Text = session.RunTiming?.Label() ?? ""; row.Elapsed.Visibility = row.Elapsed.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             row.Prompt.Text = Wire.Clean(session.Logs.LastOrDefault(l => l.Kind == "user")?.Text ?? "", 400);
             row.PromptRow.Visibility = row.Prompt.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-            row.Activity.Text = Wire.Clean(session.CurrentActivity?.Summary ?? StateLabel(state), 400);
+            row.Activity.Text = Wire.Clean(awaiting ? Locale.Get("companion.status.awaitingNotice") : session.CurrentActivity?.Summary ?? StateLabel(state), 400);
             AutomationProperties.SetName(row.Button, string.Join(". ", new[] { row.Heading.Text + " · " + row.State.Text, string.Join(" · ", new[] { row.Detail.Text, ProviderCatalog.Name(session.Provider), row.Elapsed.Text }.Where(text => text.Length > 0)), row.Prompt.Text, row.Activity.Text }.Where(text => text.Length > 0)));
         }
         if (companionStatusEmpty is not null)

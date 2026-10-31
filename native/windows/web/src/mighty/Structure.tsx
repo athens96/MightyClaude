@@ -178,11 +178,11 @@ const Card = memo(function Card({ card, onFold, onReveal }: { card: StructureCar
   }
 });
 
-/** The result's title in the outcome's ink once there is one: the host's, the result so far while background work runs (resultTitle.ts). */
+/** The result's title in the outcome's ink once there is one: the host's, 알림 대기 중 in the wait ink while the request awaits notices (resultTitle.ts). */
 function ResultTitle({ card }: { card: StructureCard }) {
   const { t } = useServices();
-  const { title, icon, soFar } = structureResultLook(card, t);
-  return <span className={'structure-result-title' + (card.finished && !soFar ? ' tone-' + card.tone : '')}><Icon name={icon} size={11} weight={2} />{title}</span>;
+  const { title, icon, awaiting } = structureResultLook(card, t);
+  return <span className={'structure-result-title' + (awaiting ? ' tone-wait' : card.finished ? ' tone-' + card.tone : '')} data-awaiting={awaiting ? '' : undefined}><Icon name={icon} size={11} weight={2} />{title}</span>;
 }
 
 /** A column's step as the pipeline's chip (M/MightyStructureView.swift chip): done green with a check, current the accent with a dot, pending grey with a ring. */

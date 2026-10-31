@@ -38,8 +38,15 @@
 .mighty-block.kind-result .mighty-head { background: var(--done); color: var(--on-status); border-bottom-color: transparent; border-radius: calc(var(--radius-block) - 1px) calc(var(--radius-block) - 1px) 0 0; }
 .mighty-block.kind-result.tone-err .mighty-head { background: var(--err); }
 .mighty-block.kind-result.tone-stop .mighty-head { background: var(--stop); }
-/* The result so far (현재까지의 결과): a neutral strip; its tone stays the request's. */
-.mighty-block.kind-result.so-far .mighty-head { background: var(--idle); }
+/* The 알림 대기 block (Core MightyGraphBlock.Awaiting): the wait strip, its words and symbol in the wait ink on it. */
+.mighty-block.kind-awaitingNotice .mighty-head { background: var(--wait); color: var(--on-wait); border-bottom-color: transparent; border-radius: calc(var(--radius-block) - 1px) calc(var(--radius-block) - 1px) 0 0; }
+.mighty-block.kind-awaitingNotice .mighty-head .mighty-icon, .mighty-block.kind-awaitingNotice .mighty-head .mighty-capsule, .mighty-symbol.kind-awaitingNotice { color: var(--on-wait); }
+.mighty-block.kind-awaitingNotice .mighty-head .mighty-capsule { background: rgba(0, 0, 0, .12); }
+.mighty-awaiting { display: flex; flex-direction: column; gap: var(--space-xs); padding: var(--inset-graph-block-body-v) var(--inset-graph-block-body-h) var(--space-md); border-top: var(--stroke-line) solid var(--line); }
+.mighty-awaiting-row { display: flex; align-items: baseline; gap: var(--space-sm); min-width: 0; }
+.mighty-awaiting-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.mighty-awaiting-word { flex: none; font-size: 11px; color: var(--ink2); }
+.mighty-awaiting-progress { font-size: 11px; font-weight: 700; color: var(--wait-text); }
 .mighty-block.kind-result .mighty-head .mighty-icon, .mighty-block.kind-result .mighty-head .mighty-capsule { color: var(--on-status); }
 .mighty-block.kind-result .mighty-head .mighty-capsule { background: rgba(0, 0, 0, .18); }
 .mighty-symbol { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; color: var(--accent); }
@@ -215,8 +222,8 @@
 .timeline-result-head { display: flex; align-items: center; gap: var(--space-sm); padding: var(--inset-graph-block-body-v) var(--inset-graph-block-body-h); background: var(--done); color: var(--on-status); }
 .timeline-result.tone-err .timeline-result-head { background: var(--err); }
 .timeline-result.tone-stop .timeline-result-head { background: var(--stop); }
-/* The result so far (현재까지의 결과) comes idle from the host: a neutral strip. */
-.timeline-result.tone-idle .timeline-result-head { background: var(--idle); }
+/* Awaiting notices (알림 대기 중) comes in the wait tone from the host: the wait strip, its words in the wait ink on it. */
+.timeline-result.tone-wait .timeline-result-head { background: var(--wait); color: var(--on-wait); }
 .timeline-result-title { font-size: 12px; font-weight: 800; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .timeline-result-caption { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
 .timeline-result-body { display: flex; flex-direction: column; gap: 4px; padding: var(--space-sm) var(--inset-graph-block-body-h) var(--space-md); }
@@ -299,6 +306,7 @@
 .structure-result-title.tone-done { color: var(--done-text); }
 .structure-result-title.tone-err { color: var(--err-text); }
 .structure-result-title.tone-stop { color: var(--stop-text); }
+.structure-result-title.tone-wait { color: var(--wait-text); }
 .structure-line { min-width: 0; font-size: 11px; color: var(--ink2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .structure-activity { display: flex; flex-direction: column; gap: var(--space-xxs); }
 .structure-activity-row { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
