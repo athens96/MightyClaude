@@ -13,8 +13,8 @@ to it as latest.unsigned.json. The version defaults to the VERSION file and
 must match the app's rule: N(.N){0,3} with optional -prerelease/+build.
 Signing uses scripts/update-manifest-sign.swift (compiled with swiftc on
 first use), so it runs on macOS/CI without extra Python packages. Where there
-is no swiftc (Windows) it signs with Python's `cryptography` package
-(`pip install cryptography`), from the same key file. Key generation needs swiftc.
+is no swiftc (Windows), or with MIGHTY_SIGNER=cryptography, it signs with Python's
+`cryptography` package (`pip install cryptography`), from the same key file. Key generation needs swiftc.
 """
 import argparse, base64, datetime, hashlib, json, os, re, shutil, subprocess, sys
 
@@ -41,8 +41,9 @@ def signer():
     return binary
 
 def sign(key_path, path):
-    """The base64 Ed25519 signature over the file's bytes: the Swift signer where swiftc exists, else `cryptography`."""
-    if shutil.which("swiftc"):
+    """The base64 Ed25519 signature over the file's bytes: the Swift signer where swiftc exists, else `cryptography`.
+    MIGHTY_SIGNER=cryptography always uses `cryptography` (CI on Linux, whose swiftc has no CryptoKit)."""
+    if os.environ.get("MIGHTY_SIGNER") != "cryptography" and shutil.which("swiftc"):
         return subprocess.run([signer(), "sign", key_path, path], capture_output=True, text=True, check=True).stdout.strip()
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     with open(key_path, encoding="utf-8") as f: seed = base64.b64decode(f.read().strip(), validate=True)
@@ -71,7 +72,7 @@ def main():
         try: build = int(subprocess.run(["git", "-C", ROOT, "rev-list", "--count", "HEAD"], capture_output=True, text=True, check=True).stdout.strip())
         except Exception: build = 0
     manifest = {"version": version.lstrip("vV"), "build": build, "publishedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "minimumSystemVersion": a.minimum_system_version}
-    if a.notes_file: manifest["notes"] = open(a.notes_file, encoding="utf-8").read().strip()
+    if a.notes_file: manifest["notes"] = open(a.notes_file, encoding="utf-8-sig").read().strip()  # no BOM from Windows editors
     if a.macos: manifest["macos"] = asset(a.macos, a.base_url)
     windows = {k: asset(v, a.base_url) for k, v in (("x64", a.windows_x64), ("arm64", a.windows_arm64)) if v}
     if windows: manifest["windows"] = windows

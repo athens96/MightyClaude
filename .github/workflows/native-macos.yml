@@ -383,34 +383,3 @@ jobs:
           name: MightyClaude-native-macos
           path: release/MightyClaude-macos.zip
           if-no-files-found: error
-
-  sign-manifest:
-    needs: macos
-    runs-on: macos-latest
-    if: vars.MIGHTY_DOWNLOAD_BASE != ''
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: MightyClaude-native-macos
-          path: release/
-      - name: Write the signed update manifest for the package
-        env:
-          MIGHTY_DOWNLOAD_BASE: ${{ vars.MIGHTY_DOWNLOAD_BASE }}
-          MIGHTY_UPDATE_SIGNING_KEY: ${{ secrets.MIGHTY_UPDATE_SIGNING_KEY }}
-        run: |
-          set -euo pipefail
-          VERSION="$(tr -d '[:space:]' < VERSION)"
-          KEY_ARGS=()
-          if [ -n "${MIGHTY_UPDATE_SIGNING_KEY:-}" ]; then
-            printf '%s' "$MIGHTY_UPDATE_SIGNING_KEY" > "$RUNNER_TEMP/update-signing.key"
-            KEY_ARGS=(--sign-key "$RUNNER_TEMP/update-signing.key")
-          fi
-          python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip --base-url "$MIGHTY_DOWNLOAD_BASE/$VERSION" --out release/latest.json "${KEY_ARGS[@]}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MightyClaude-signed-manifest
-          path: |
-            release/latest.json
-            release/latest.unsigned.json
-          if-no-files-found: warn

@@ -69,10 +69,14 @@
 
 `latest.json`이 신뢰의 뿌리이므로 Ed25519로 서명한다. 배포 빌드에는 공개 키를 넣고(`MIGHTY_UPDATE_PUBLIC_KEY`, Info.plist `MightyUpdatePublicKey`), 그 앱은 **서명된 봉투만** 받는다. **공개 키가 없는 빌드는 업데이트 확인을 전혀 하지 않는다** — `check()`가 즉시 오류를 반환하고, 자동 확인은 예약되지 않으며, 설정 화면에 "이 빌드는 업데이트 확인을 지원하지 않습니다"가 표시되고 확인 버튼은 비활성화된다. 우회 경로는 없다.
 
+배포 중인 키 쌍의 공개 키는 `ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=`(앱, `.github/workflows/native-windows.yml`, `scripts/release.py`)이고, **개인 키는 GitHub 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`(main 전용 환경 `release`로 옮기는 중 — [release.md](release.md#서명-키와-github-설정))에만 있다** — 어느 PC에도 사본이 없다. 그래서 릴리스의 `latest.json`은 CI가 서명한다: `scripts/release.py manifest`가 `.github/workflows/release-manifest.yml`(`workflow_dispatch` 전용, main에서 `release` 환경으로만 도는 잡)을 부르면, 그 잡이 두 실행이 main push로 만든 같은 커밋의 성공 실행인지 확인한 뒤 그 CI 패키지를 받아 시크릿으로 서명하고 공개 키로 확인한 `latest.json`·`latest.unsigned.json`을 아티팩트 `MightyClaude-release-manifest`로 남긴다([release.md](release.md)의 manifest). **새 키를 만들지 않는다** — 이미 설치된 앱은 박혀 있는 공개 키로만 확인하므로, 다른 키로 서명한 `latest.json`을 받으면 업데이트가 멈춘다. 시크릿을 잃으면 기존 설치본은 수동으로 새 빌드를 깔아야 한다.
+
+아래 `--generate-key`는 처음 키를 만들 때 쓴 명령이고, `--sign-key`는 키 파일이 있는 곳(CI 잡, 테스트의 일회용 키)에서 쓰는 형태다.
+
 ```bash
-# 한 번만: 키 쌍 생성 (개인 키는 CI 시크릿 MIGHTY_UPDATE_SIGNING_KEY로, 공개 키는 빌드 변수로)
+# (처음 한 번 썼던) 키 쌍 생성 — 지금 키를 바꾸지 말 것. 개인 키는 시크릿 MIGHTY_UPDATE_SIGNING_KEY로, 공개 키는 빌드 변수로
 python3 scripts/make-update-manifest.py --generate-key ~/.config/mightyclaude/update-signing.key
-# 릴리스마다: 서명된 latest.json (+ 사람이 읽을 latest.unsigned.json)
+# 서명된 latest.json (+ 사람이 읽을 latest.unsigned.json)
 python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
   --base-url https://<cloudflare>/mightyclaude/0.2.0 --out release/latest.json \
   --sign-key ~/.config/mightyclaude/update-signing.key
@@ -84,7 +88,7 @@ python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
 { "format": "mightyclaude-update-v1", "version": "0.2.0", "payload": "<base64 JSON>", "signature": "<base64 Ed25519>" }
 ```
 
-서명은 `scripts/update-manifest-sign.swift`(CryptoKit)로 하며 처음 쓸 때 `swiftc`로 컴파일된다. 별도 Python 패키지가 필요 없다.
+서명은 `scripts/update-manifest-sign.swift`(CryptoKit)로 하며 처음 쓸 때 `swiftc`로 컴파일된다. 별도 Python 패키지가 필요 없다. `swiftc`가 없거나(Windows) `MIGHTY_SIGNER=cryptography`이면(swiftc에 CryptoKit이 없는 `release-manifest.yml`의 ubuntu 잡, `scripts/requirements-sign.txt`로 해시 고정) Python `cryptography`로 같은 키 파일에서 서명한다. `--notes-file`은 BOM이 있어도 읽는다.
 
 ## latest.json 형식
 
@@ -116,7 +120,7 @@ python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
 
 - 저장소 루트 `VERSION` 파일이 앱 버전이다(또는 `MIGHTY_APP_VERSION`). 빌드 번호는 커밋 수(또는 `MIGHTY_BUILD_NUMBER`). `scripts/build-macos.sh`가 Info.plist에 써 넣는다.
 - `MIGHTY_UPDATE_URL`을 주면 `MightyUpdateManifestURL`로 Info.plist에 들어가 **유일한** 주소가 된다. 빌드에 이 값이 있으면 설정 화면에 읽기 전용으로 표시되며, 사용자 입력 칸은 나타나지 않는다. 빌드에 없을 때만 설정 화면에서 주소를 입력할 수 있다.
-- GitHub Actions는 저장소 변수 `MIGHTY_UPDATE_URL`(앱이 확인할 latest.json 주소), `MIGHTY_UPDATE_PUBLIC_KEY`(공개 키), `MIGHTY_DOWNLOAD_BASE`(패키지를 올릴 폴더의 루트 주소, 여기에 `/<버전>`이 붙는다)와 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`(개인 키 파일 내용)를 읽는다. `MIGHTY_DOWNLOAD_BASE`가 없으면 manifest 단계를 건너뛰고, 있으면 macOS 아티팩트에 `MightyClaude-macos.zip`, `latest.json`, `latest.unsigned.json`을 담는다.
+- GitHub Actions의 `native-macos.yml`은 저장소 변수 `MIGHTY_UPDATE_URL`(앱이 확인할 latest.json 주소)과 `MIGHTY_UPDATE_PUBLIC_KEY`(공개 키)를 읽는다(`native-windows.yml`은 두 값을 직접 적는다). 서명 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`(개인 키 파일 내용)는 `release-manifest.yml`의 서명 단계만 읽는다 — 예전에 branch push마다 맥 패키지 하나로 `latest.json`을 만들던 `native-macos.yml`의 `sign-manifest` 잡(`MIGHTY_DOWNLOAD_BASE` 변수로 켜졌다)은 지웠으므로 `MIGHTY_DOWNLOAD_BASE`는 더 쓰지 않는다.
 
 ## 크기 게이트
 

@@ -118,11 +118,198 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, "macos sha256"):
             self.verify()
 
+    def test_notes_with_a_bom_are_signed_without_it(self):
+        with open(self.notes, "w", encoding="utf-8-sig") as f:
+            f.write("- 바뀐 점\n")
+        release.make_manifest("0.4.48", 1360, self.folder, self.key, self.notes, self.out)
+        with open(self.out, encoding="utf-8") as f:
+            self.assertEqual(self.verify(json.load(f))["notes"], "- 바뀐 점")
+
+    def test_mighty_signer_cryptography_skips_swiftc(self):
+        # A swiftc that cannot sign (as on Linux, without CryptoKit) comes first on PATH.
+        tools = os.path.join(self.folder, "tools")
+        os.makedirs(tools)
+        fake = os.path.join(tools, "swiftc.cmd" if os.name == "nt" else "swiftc")
+        with open(fake, "w", encoding="ascii") as f:
+            f.write("@exit /b 1\n" if os.name == "nt" else "#!/bin/sh\nexit 1\n")
+        os.chmod(fake, 0o755)
+        path = tools + os.pathsep + os.environ.get("PATH", "")
+        with patch.dict(os.environ, {"PATH": path}):
+            os.environ.pop("MIGHTY_SIGNER", None)
+            with self.assertRaisesRegex(release.ReleaseError, "make-update-manifest.py"):
+                release.make_manifest("0.4.48", 1360, self.folder, self.key, self.notes, self.out)
+        with patch.dict(os.environ, {"PATH": path, "MIGHTY_SIGNER": "cryptography"}):
+            release.make_manifest("0.4.48", 1360, self.folder, self.key, self.notes, self.out)
+        with open(self.out, encoding="utf-8") as f:
+            self.assertEqual(self.verify(json.load(f))["build"], 1360)
+
     def test_wrong_version_or_build_fails(self):
         with self.assertRaisesRegex(release.ReleaseError, "버전"):
             self.verify(version="0.4.49")
         with self.assertRaisesRegex(release.ReleaseError, "build"):
             self.verify(build=1)
+
+
+class CiManifestTests(unittest.TestCase):
+    """manifest without --sign-key: gh is a fake that dispatches, lists runs and 'downloads' a manifest signed with a throwaway key."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        patcher = patch.object(release, "RELEASE_ROOT", self.temp.name)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.temp.cleanup)
+        self.folder = release.release_dir("0.4.48")
+        os.makedirs(self.folder)
+        files = {}
+        for index, name in enumerate(release.MANIFEST_ROLES.values()):
+            path = os.path.join(self.folder, name)
+            with open(path, "wb") as f:
+                f.write(bytes([index]) * (1000 + index))
+            files[name] = {"sha256": release.digest(path), "size": os.path.getsize(path)}
+        self.notes = "- 바뀐 점\n- 둘째 줄 \"따옴표\" $HOME `x`\n"
+        with open(release.update_notes_path("0.4.48"), "w", encoding="utf-8-sig") as f:  # a BOM, as Notepad writes
+            f.write(self.notes)
+        with open(release.notes_path("0.4.48"), "w", encoding="utf-8") as f:
+            f.write("{{DATE}} · Mac build {{MAC_BUILD}}\n")
+        private = Ed25519PrivateKey.generate()
+        seed = private.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption())
+        self.key = os.path.join(self.temp.name, "throwaway.key")
+        with open(self.key, "w", encoding="utf-8") as f:
+            f.write(base64.b64encode(seed).decode())
+        self.public = base64.b64encode(private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
+        self.state = {"version": "0.4.48", "done": {s: "x" for s in release.STEPS[:5]},
+                      "data": {"build": 1360, "buildCommit": "fix", "runs": {"macos": 7, "windows": 8}, "files": files}}
+        self.calls, self.dispatches = [], []
+        fetch = patch.object(release, "fetch", return_value=LIVE_PAGE.encode("utf-8"))
+        sleep = patch.object(release.time, "sleep")
+        fetch.start(), sleep.start()
+        self.addCleanup(fetch.stop)
+        self.addCleanup(sleep.stop)
+
+    def fake_gh(self, conclusion="success", signed_notes=None, ci_build=1360, extra=lambda token: []):
+        """extra(token): more listed runs, e.g. a same-token run on another branch."""
+        listed = []
+
+        def sh(args, **_):
+            self.calls.append(list(args))
+            if args[:3] == ["gh", "workflow", "run"]:
+                fields = dict(args[i + 1].split("=", 1) for i, x in enumerate(args) if x == "-f")
+                self.dispatches.append(fields)
+                return ""
+            if args[:3] == ["gh", "run", "list"]:
+                self.assertEqual(args[args.index("--workflow") + 1], "release-manifest.yml")
+                self.assertEqual(args[args.index("--event") + 1], "workflow_dispatch")
+                self.assertEqual(args[args.index("--branch") + 1], "main")
+                token = self.dispatches[-1]["request"]
+                other = {"databaseId": 98, "displayTitle": "Release manifest 0.4.48 [0.4.48-earlier]", "status": "completed",
+                         "conclusion": "success", "url": "u98", "createdAt": "t", "headBranch": "main", "headSha": "s98"}
+                listed.append(token)
+                if len(listed) == 1:  # the dispatched run is not listed yet
+                    return json.dumps([other])
+                mine = {"databaseId": 99 + len(self.dispatches), "displayTitle": f"Release manifest 0.4.48 [{token}]",
+                        "status": "in_progress" if len(listed) == 2 else "completed",
+                        "conclusion": "" if len(listed) == 2 else conclusion, "url": "u", "createdAt": "t",
+                        "headBranch": "main", "headSha": "a1b2"}
+                return json.dumps([other] + extra(token) + [mine])
+            if args[:3] == ["gh", "run", "download"]:
+                self.assertEqual(args[args.index("-n") + 1], "MightyClaude-release-manifest")
+                target = args[args.index("-D") + 1]
+                os.makedirs(target, exist_ok=True)
+                notes_file = os.path.join(self.temp.name, "ci-notes.md")
+                with open(notes_file, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(signed_notes or base64.b64decode(self.dispatches[-1]["notes_b64"]).decode("utf-8"))
+                fields = self.dispatches[-1]
+                release.make_manifest(fields["version"], ci_build, self.folder, self.key, notes_file,
+                                      os.path.join(target, "latest.json"))
+                return ""
+            raise AssertionError(args)
+        return patch.object(release, "sh", side_effect=sh)
+
+    def manifest(self, *flags):
+        release.step_manifest(self.state, release.parser().parse_args(["manifest"] + list(flags)))
+
+    def test_dispatches_finds_its_run_downloads_and_checks_with_the_public_key(self):
+        with self.fake_gh():
+            with self.assertRaisesRegex(release.ReleaseError, "서명"):  # the real public key did not sign a throwaway manifest
+                self.manifest()
+        self.assertNotIn("manifest", self.state["done"])
+        dispatch = next(c for c in self.calls if c[:3] == ["gh", "workflow", "run"])
+        self.assertEqual(dispatch[3:6], ["release-manifest.yml", "--ref", "main"])
+        fields = self.dispatches[0]
+        self.assertEqual({k: fields[k] for k in ("version", "macos_run", "windows_run")},
+                         {"version": "0.4.48", "macos_run": "7", "windows_run": "8"})
+        self.assertNotIn("build", fields)  # the workflow counts it from the runs' commit
+        self.assertEqual(base64.b64decode(fields["notes_b64"]).decode("utf-8"), self.notes)  # no BOM, quotes intact
+        self.assertEqual(self.state["data"]["manifestRun"], 100)  # not the earlier completed run 98
+        self.assertEqual(self.state["data"]["manifestRunSha"], "a1b2")
+        self.calls, self.dispatches = [], []
+        with self.fake_gh(), patch.object(release, "PUBLIC_KEY", self.public):
+            self.manifest()
+        self.assertIn("manifest", self.state["done"])
+        with open(os.path.join(self.folder, "latest.json"), encoding="utf-8") as f:
+            payload = release.envelope_payload(json.load(f))
+        self.assertEqual(payload["notes"], self.notes.strip())
+        self.assertEqual(payload["windows"]["arm64"]["url"], f"{release.PUBLIC_BASE}/0.4.48/MightyClaude-windows-arm64.zip")
+        self.assertEqual([c[3] for c in self.calls if c[:3] == ["gh", "run", "download"]], ["100"])
+        self.assertFalse(os.path.exists(os.path.join(self.folder, "_download")))
+
+    def test_a_failed_run_stops_without_downloading(self):
+        with self.fake_gh(conclusion="failure"), patch.object(release, "PUBLIC_KEY", self.public):
+            with self.assertRaisesRegex(release.ReleaseError, "failure.*gh run view 100 --log-failed"):
+                self.manifest()
+        self.assertFalse([c for c in self.calls if c[:3] == ["gh", "run", "download"]])
+        self.assertNotIn("manifest", self.state["done"])
+        self.assertEqual(self.state["data"]["manifestRun"], 100)
+
+    def test_a_build_number_other_than_the_recorded_one_fails(self):
+        with self.fake_gh(ci_build=1361), patch.object(release, "PUBLIC_KEY", self.public):
+            with self.assertRaisesRegex(release.ReleaseError, "build 1361"):
+                self.manifest()
+        self.assertNotIn("manifest", self.state["done"])
+
+    def test_runs_on_other_branches_are_ignored_and_duplicates_stop(self):
+        def other_branch(token):
+            return [{"databaseId": 50, "displayTitle": f"Release manifest 0.4.48 [{token}]", "status": "completed",
+                     "conclusion": "success", "url": "u50", "createdAt": "t", "headBranch": "feature", "headSha": "f"}]
+        with self.fake_gh(extra=other_branch), patch.object(release, "PUBLIC_KEY", self.public):
+            self.manifest()
+        self.assertEqual(self.state["data"]["manifestRun"], 100)
+        self.assertEqual([c[3] for c in self.calls if c[:3] == ["gh", "run", "download"]], ["100"])
+
+        def duplicate(token):
+            return [dict(other_branch(token)[0], headBranch="main")]
+        self.calls = []
+        with self.fake_gh(extra=duplicate), patch.object(release, "PUBLIC_KEY", self.public):
+            with self.assertRaisesRegex(release.ReleaseError, "실행이 2개"):
+                self.manifest()
+        self.assertFalse([c for c in self.calls if c[:3] == ["gh", "run", "download"]])
+
+    def test_notes_that_differ_from_update_notes_fail(self):
+        with self.fake_gh(signed_notes="- 다른 내용\n"), patch.object(release, "PUBLIC_KEY", self.public):
+            with self.assertRaisesRegex(release.ReleaseError, "notes"):
+                self.manifest()
+        self.assertNotIn("manifest", self.state["done"])
+
+    def test_new_ci_runs_dispatch_again_with_the_new_run_ids(self):
+        with self.fake_gh(), patch.object(release, "PUBLIC_KEY", self.public):
+            self.manifest()
+            self.state["data"]["runs"] = {"macos": 3, "windows": 4}
+            release.mark_done(self.state, "ci")
+            self.assertNotIn("manifest", self.state["done"])
+            self.manifest()
+        self.assertEqual([(d["macos_run"], d["windows_run"]) for d in self.dispatches], [("7", "8"), ("3", "4")])
+        self.assertNotEqual(self.dispatches[0]["request"], self.dispatches[1]["request"])
+        self.assertEqual(self.state["data"]["manifestRun"], 101)
+        self.assertIn("manifest", self.state["done"])
+
+    def test_a_local_sign_key_signs_without_ci(self):
+        with self.fake_gh(), patch.object(release, "PUBLIC_KEY", self.public):
+            self.manifest("--sign-key", self.key)
+        self.assertEqual(self.calls, [])
+        self.assertIn("manifest", self.state["done"])
+        with self.assertRaisesRegex(release.ReleaseError, "서명 키 파일이 없습니다"):
+            self.manifest("--sign-key", self.key + ".missing")
 
 
 class StateTests(unittest.TestCase):

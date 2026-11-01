@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Release Mighty Claude one step at a time (docs/release.md).
 
-    release.py check --version 0.4.48 --sign-key ~/.config/mightyclaude/update-signing.key
+    release.py check --version 0.4.48
     release.py version --summary "<한 줄 요약>"
     release.py push --yes
     release.py ci [--commit <later CI-fix sha on main>]
     release.py download
-    release.py manifest [--sign-key PATH] [--apk PATH]
+    release.py manifest [--apk PATH]      (CI signs: release-manifest.yml; --sign-key PATH signs locally instead)
     release.py page
     release.py upload --dry-run | --yes
     release.py github --yes
@@ -15,7 +15,8 @@
 
 State lives in release/<ver>/state.json (release/ is gitignored). Every step needs the steps
 before it (unless --force). Steps that publish (push, upload, github) do nothing without --yes.
-The signing key is only a path handed to make-update-manifest.py; this script never reads it.
+latest.json is signed by the release-manifest.yml workflow with the repository secret MIGHTY_UPDATE_SIGNING_KEY
+(the only copy of the key). With --sign-key the key is only a path handed to make-update-manifest.py; this script never reads it.
 """
 import argparse, base64, datetime, difflib, hashlib, json, os, re, shutil, subprocess, sys, time, urllib.request
 
@@ -36,6 +37,9 @@ MAX_UPLOAD_BYTES = 300 * 1024 * 1024
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 PLACEHOLDER = "(채워 주세요)"
 WORKFLOWS = {"macos": "native-macos.yml", "windows": "native-windows.yml"}
+# Signs latest.json with the repository secret MIGHTY_UPDATE_SIGNING_KEY, the only copy of the private key.
+MANIFEST_WORKFLOW = "release-manifest.yml"
+MANIFEST_ARTIFACT = "MightyClaude-release-manifest"
 ARTIFACTS = {  # artifact name -> (workflow, files inside)
     "MightyClaude-native-macos": ("macos", ["MightyClaude-macos.zip"]),
     "MightyClaude-native-windows-x64": ("windows", ["MightyClaude-windows-x64.zip", "MightyClaude-windows-x64.zip.sha256",
@@ -448,9 +452,13 @@ def step_check(state, a):
     except ImportError:
         item(False, "python cryptography", "pip install cryptography")
     key = a.sign_key or state["data"].get("signKey")
-    item(bool(key) and os.path.isfile(os.path.expanduser(key)), f"서명 키 경로 {key or '(없음)'}", "--sign-key PATH")
-    if key and os.path.isfile(os.path.expanduser(key)):
-        state["data"]["signKey"] = os.path.abspath(os.path.expanduser(key))
+    if key:
+        item(os.path.isfile(os.path.expanduser(key)), f"로컬 서명 키 경로 {key}", "--sign-key PATH (빼면 CI가 서명합니다)")
+        if os.path.isfile(os.path.expanduser(key)):
+            state["data"]["signKey"] = os.path.abspath(os.path.expanduser(key))
+    else:
+        item(sh_ok(["gh", "workflow", "view", MANIFEST_WORKFLOW]), f"CI 서명 워크플로 {MANIFEST_WORKFLOW} (기본 브랜치에 있어야 함)",
+             "main에 .github/workflows/release-manifest.yml이 있어야 합니다")
     current = read_version_file()
     try:
         version_tuple(version)
@@ -603,11 +611,62 @@ def step_download(state, a):
     say("다음: release.py manifest [--apk PATH]")
 
 
+def ci_manifest(state, a, notes):
+    """Dispatch release-manifest.yml for this release, wait for it, and put its latest.json(+unsigned) in the release folder."""
+    version, folder, data = state["version"], release_dir(state["version"]), state["data"]
+    token = f"{version}-{os.urandom(4).hex()}"  # the run name carries it, so the run found is this dispatch's
+    # No build input: the workflow counts it from the runs' commit, and the signed payload must match data["build"].
+    inputs = {"version": version, "macos_run": str(data["runs"]["macos"]),
+              "windows_run": str(data["runs"]["windows"]), "notes_b64": base64.b64encode(notes.encode("utf-8")).decode("ascii"),
+              "request": token}
+    command = ["gh", "workflow", "run", MANIFEST_WORKFLOW, "--ref", "main"]
+    for name, value in inputs.items():
+        command += ["-f", f"{name}={value}"]
+    shown = [f"notes_b64=<update-notes.md, base64 {len(inputs['notes_b64'])}자>" if c.startswith("notes_b64=") else c for c in command]
+    say("CI가 release 환경의 시크릿 키로 latest.json에 서명합니다 (아무것도 내보내지 않음):")
+    say("  " + " ".join(shown))
+    for name in ("latest.json", "latest.unsigned.json"):  # never verify a manifest left from an earlier run
+        if os.path.exists(os.path.join(folder, name)):
+            os.remove(os.path.join(folder, name))
+    sh(command)
+    deadline = time.time() + a.timeout_min * 60
+    seen = None
+    while True:
+        runs = json.loads(sh(["gh", "run", "list", "--workflow", MANIFEST_WORKFLOW, "--event", "workflow_dispatch", "--branch", "main",
+                              "--json", "databaseId,displayTitle,status,conclusion,url,createdAt,headBranch,headSha",
+                              "--limit", "20"]) or "[]")
+        mine = [r for r in runs if r.get("headBranch") == "main" and f"[{token}]" in r.get("displayTitle", "")]
+        if len(mine) > 1:
+            raise ReleaseError(f"요청 {token}의 실행이 {len(mine)}개입니다: " + ", ".join(str(r["databaseId"]) for r in mine))
+        run = mine[0] if mine else None
+        status = (run or {}).get("status", "아직 없음")
+        if status != seen:
+            say(f"  {MANIFEST_WORKFLOW}: {status}" + (f"  {run['url']}" if run else ""))
+            seen = status
+        if run and run["status"] == "completed":
+            break
+        if time.time() > deadline:
+            raise ReleaseError(f"{MANIFEST_WORKFLOW} 실행이 시간 안에 끝나지 않았습니다 (요청 {token}). 다시 `release.py manifest`")
+        time.sleep(min(a.poll_sec, 15))
+    data["manifestRun"], data["manifestRunSha"] = run["databaseId"], run.get("headSha")
+    save_state(state)
+    if run["conclusion"] != "success":
+        raise ReleaseError(f"{MANIFEST_WORKFLOW}: {run['conclusion']} {run['url']}  (로그: gh run view {run['databaseId']} --log-failed)")
+    temp = os.path.join(folder, "_download", MANIFEST_ARTIFACT)
+    shutil.rmtree(temp, ignore_errors=True)
+    sh(["gh", "run", "download", str(run["databaseId"]), "-n", MANIFEST_ARTIFACT, "-D", temp])
+    for name in ("latest.json", "latest.unsigned.json"):
+        if not os.path.exists(os.path.join(temp, name)):
+            raise ReleaseError(f"{MANIFEST_ARTIFACT}에 {name}이(가) 없습니다")
+        os.replace(os.path.join(temp, name), os.path.join(folder, name))
+    shutil.rmtree(os.path.join(folder, "_download"), ignore_errors=True)
+
+
 def step_manifest(state, a):
     version, folder, data = state["version"], release_dir(state["version"]), state["data"]
-    key = a.sign_key or data.get("signKey")
-    if not key or not os.path.isfile(os.path.expanduser(key)):
-        raise ReleaseError("--sign-key PATH가 필요합니다 (파일이 없습니다)")
+    key = a.sign_key or data.get("signKey")  # a local key file is the alternative; without one CI signs
+    if key and not os.path.isfile(os.path.expanduser(key)):
+        raise ReleaseError(f"서명 키 파일이 없습니다: {key} (CI가 서명하게 하려면 --sign-key 없이, state.json의 signKey를 지우세요)")
     short = read_text(update_notes_path(version)) if os.path.exists(update_notes_path(version)) else ""
     if not short.strip() or unfinished_notes(short):
         raise ReleaseError(f"{rel(update_notes_path(version))}을(를) 먼저 채우세요 (앱의 업데이트 안내)")
@@ -631,9 +690,14 @@ def step_manifest(state, a):
     if "apk" not in data:
         say("  APK 없음 — 폰 APK는 그대로 둡니다")
     out = os.path.join(folder, "latest.json")
-    make_manifest(version, data["build"], folder, os.path.expanduser(key), update_notes_path(version), out)
+    if key:
+        make_manifest(version, data["build"], folder, os.path.expanduser(key), update_notes_path(version), out)
+    else:
+        ci_manifest(state, a, short)
     with open(out, encoding="utf-8") as f:
-        payload = verify_envelope(json.load(f), version, data["build"], folder)
+        payload = verify_envelope(json.load(f), version, data["build"], folder, public_key=PUBLIC_KEY)
+    if not key and payload.get("notes") != short.strip():
+        raise ReleaseError(f"CI가 서명한 notes가 {rel(update_notes_path(version))}과(와) 다릅니다")
     say(f"  latest.json 서명·버전·build {payload['build']}·3개 패키지의 url/sha256/size 확인")
     data["date"] = datetime.date.today().isoformat()
     if "apk" not in data:
@@ -867,7 +931,7 @@ def parser():
     p.add_argument("--version", help="릴리스 버전 x.y.z (check에서 정하면 이후 단계는 기억합니다)")
     p.add_argument("--summary", help="version: 릴리스 커밋 제목의 한 줄 요약")
     p.add_argument("--co-author", help="version: 커밋에 붙일 Co-Authored-By 값")
-    p.add_argument("--sign-key", help="update 서명 키 파일 경로 (내용은 make-update-manifest.py만 읽습니다)")
+    p.add_argument("--sign-key", help="로컬 서명 키 파일 경로 — 주면 CI 대신 로컬에서 서명 (내용은 make-update-manifest.py만 읽습니다)")
     p.add_argument("--apk", help="manifest: 이번에 함께 낼 Android APK")
     p.add_argument("--apk-version", help="manifest: APK 버전 (기본: 릴리스 버전)")
     p.add_argument("--no-apk", action="store_true", help="manifest: 전에 고른 APK를 빼기")

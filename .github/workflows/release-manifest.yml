@@ -1,0 +1,214 @@
+name: Release manifest
+# Signs the update manifest (latest.json) for a release with MIGHTY_UPDATE_SIGNING_KEY, the only copy of the private key,
+# kept as a secret of the `release` environment (main only). Dispatched by `scripts/release.py manifest` (docs/release.md);
+# publishes nothing. It signs only packages built by a successful push run of native-macos.yml/native-windows.yml on main.
+run-name: Release manifest ${{ inputs.version }} [${{ inputs.request }}]
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version x.y.z (must equal VERSION of the build commit and of the dispatched ref)
+        required: true
+      macos_run:
+        description: Run id of "Native clients — macOS" (push on main) for the build commit
+        required: true
+      windows_run:
+        description: Run id of "Native clients — Windows" (push on main) for the same commit
+        required: true
+      notes_b64:
+        description: Short update notes (release/<ver>/update-notes.md), UTF-8, base64
+        required: true
+      request:
+        description: Token release.py puts in the run name to find this run
+        required: false
+        default: manual
+permissions:
+  actions: read
+  contents: read
+jobs:
+  sign:
+    if: github.ref == 'refs/heads/main'
+    environment: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERSION_INPUT: ${{ inputs.version }}
+      MACOS_RUN: ${{ inputs.macos_run }}
+      WINDOWS_RUN: ${{ inputs.windows_run }}
+      NOTES_B64: ${{ inputs.notes_b64 }}
+      # The public half of the key, as native-windows.yml and the apps carry it.
+      MIGHTY_UPDATE_PUBLIC_KEY: ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the inputs and the VERSION file
+        run: |
+          python3 - <<'PY'
+          import base64, binascii, os, re, sys
+          bad = False
+          for name, env, pattern in (("version", "VERSION_INPUT", r"[0-9]+\.[0-9]+\.[0-9]+"),
+                                     ("macos_run", "MACOS_RUN", r"[0-9]{1,20}"), ("windows_run", "WINDOWS_RUN", r"[0-9]{1,20}")):
+              if not re.fullmatch(pattern, os.environ[env]):
+                  print(f"::error::input {name} is not {pattern}: {os.environ[env]!r}")
+                  bad = True
+          try:
+              notes = base64.b64decode(os.environ["NOTES_B64"], validate=True).decode("utf-8-sig")
+          except (binascii.Error, ValueError) as error:
+              print(f"::error::input notes_b64 is not base64 of UTF-8 text: {error}")
+              sys.exit(1)
+          if not notes.strip():
+              print("::error::input notes_b64 holds empty notes")
+              bad = True
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "update-notes.md"), "w", encoding="utf-8", newline="\n") as f:
+              f.write(notes)
+          with open("VERSION", encoding="utf-8") as f:
+              file_version = f.read().strip()
+          if not bad and file_version != os.environ["VERSION_INPUT"]:
+              print(f"::error::VERSION on {os.environ['GITHUB_REF']} is {file_version!r}, not the input version")
+              bad = True
+          sys.exit(1 if bad else 0)
+          PY
+          # The notes are input text: show them with workflow commands switched off.
+          STOP="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+          echo "::stop-commands::$STOP"
+          echo "Notes:"
+          cat "$RUNNER_TEMP/update-notes.md"
+          echo "::$STOP::"
+      - name: Check where the packages come from
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$MACOS_RUN" > "$RUNNER_TEMP/run-macos.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$WINDOWS_RUN" > "$RUNNER_TEMP/run-windows.json"
+          python3 - <<'PY'
+          import json, os, sys
+          expected = {"macos": ".github/workflows/native-macos.yml", "windows": ".github/workflows/native-windows.yml"}
+          repo, bad, shas = os.environ["GITHUB_REPOSITORY"], False, set()
+          for kind, path in expected.items():
+              with open(os.path.join(os.environ["RUNNER_TEMP"], f"run-{kind}.json"), encoding="utf-8") as f:
+                  run = json.load(f)
+              got = {"path": run.get("path"), "event": run.get("event"), "head_branch": run.get("head_branch"),
+                     "head_repository": (run.get("head_repository") or {}).get("full_name"),
+                     "status": run.get("status"), "conclusion": run.get("conclusion")}
+              want = {"path": path, "event": "push", "head_branch": "main", "head_repository": repo,
+                      "status": "completed", "conclusion": "success"}
+              for key, value in want.items():
+                  if got[key] != value:
+                      print(f"::error::{kind} run {run.get('id')}: {key} is {got[key]!r}, not {value!r}")
+                      bad = True
+              shas.add(run.get("head_sha"))
+              print(f"{kind}: run {run.get('id')} {got} at {run.get('head_sha')}")
+          if len(shas) != 1:
+              print(f"::error::the macOS and Windows runs built different commits: {sorted(map(str, shas))}")
+              bad = True
+          if bad:
+              sys.exit(1)
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "build-sha"), "w", encoding="ascii") as f:
+              f.write(str(shas.pop()))
+          PY
+          BUILD_SHA="$(cat "$RUNNER_TEMP/build-sha")"
+          [[ "$BUILD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::build commit is not a sha"; exit 1; }
+          git merge-base --is-ancestor "$BUILD_SHA" "$GITHUB_SHA" || { echo "::error::build commit $BUILD_SHA is not in the history of $GITHUB_SHA (main)"; exit 1; }
+          BUILD_VERSION="$(git show "$BUILD_SHA:VERSION" | tr -d '[:space:]')"
+          [ "$BUILD_VERSION" = "$VERSION_INPUT" ] || { echo "::error::VERSION at $BUILD_SHA is not the input version"; exit 1; }
+          # The Mac build number, as release.py ci and build-macos.sh count it.
+          BUILD="$(git rev-list --count "$BUILD_SHA")"
+          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
+          echo "BUILD_SHA=$BUILD_SHA" >> "$GITHUB_ENV"
+          echo "build commit $BUILD_SHA, build $BUILD"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install cryptography (hash-pinned)
+        run: |
+          python3 -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r scripts/requirements-sign.txt
+      - name: Download the macOS package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: MightyClaude-native-macos
+          path: packages/
+          run-id: ${{ inputs.macos_run }}
+          github-token: ${{ github.token }}
+      - name: Download the Windows x64 packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: MightyClaude-native-windows-x64
+          path: packages/
+          run-id: ${{ inputs.windows_run }}
+          github-token: ${{ github.token }}
+      - name: Download the Windows ARM64 packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: MightyClaude-native-windows-arm64
+          path: packages/
+          run-id: ${{ inputs.windows_run }}
+          github-token: ${{ github.token }}
+      - name: Check the Windows .sha256 files
+        run: |
+          python3 - <<'PY'
+          import hashlib, pathlib, sys
+          bad = False
+          sums_files = sorted(pathlib.Path("packages").glob("*.sha256"))
+          for sums in sums_files:
+              target = sums.with_suffix("")
+              expected = sums.read_text(encoding="ascii").split()[0].lower()
+              actual = hashlib.sha256(target.read_bytes()).hexdigest()
+              print(f"{target.name}: {actual} {'ok' if actual == expected else 'MISMATCH'}")
+              bad |= actual != expected
+          if len(sums_files) != 4:
+              print("::error::expected four .sha256 files from the Windows artifacts")
+              bad = True
+          sys.exit(1 if bad else 0)
+          PY
+      - name: Sign latest.json with the release key
+        env:
+          MIGHTY_UPDATE_SIGNING_KEY: ${{ secrets.MIGHTY_UPDATE_SIGNING_KEY }}
+          # ubuntu-latest's swiftc has no CryptoKit; sign with the hash-pinned cryptography.
+          MIGHTY_SIGNER: cryptography
+        run: |
+          set -euo pipefail
+          if [ -z "${MIGHTY_UPDATE_SIGNING_KEY:-}" ]; then
+            echo "::error::secret MIGHTY_UPDATE_SIGNING_KEY is empty or not available to this run (environment release)"
+            exit 1
+          fi
+          (umask 077 && printf '%s' "$MIGHTY_UPDATE_SIGNING_KEY" > "$RUNNER_TEMP/update-signing.key")
+          python3 scripts/make-update-manifest.py \
+            --macos packages/MightyClaude-macos.zip \
+            --windows-x64 packages/MightyClaude-windows-x64.zip \
+            --windows-arm64 packages/MightyClaude-windows-arm64.zip \
+            --base-url "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/$VERSION_INPUT" \
+            --out out/latest.json --version "$VERSION_INPUT" --build "$BUILD" \
+            --notes-file "$RUNNER_TEMP/update-notes.md" --sign-key "$RUNNER_TEMP/update-signing.key"
+      - name: Delete the key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/update-signing.key"
+      - name: Verify the envelope with the public key and the packages
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          sys.path.insert(0, "scripts")
+          import release  # verify_envelope: signature, version, build, notes, url/sha256/size of the three zips
+          with open("out/latest.json", encoding="utf-8") as f:
+              envelope = json.load(f)
+          try:
+              payload = release.verify_envelope(envelope, os.environ["VERSION_INPUT"], int(os.environ["BUILD"]), "packages",
+                                                public_key=os.environ["MIGHTY_UPDATE_PUBLIC_KEY"])
+          except release.ReleaseError as error:
+              print(f"::error::{error}")
+              sys.exit(1)
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "update-notes.md"), encoding="utf-8-sig") as f:
+              if payload["notes"] != f.read().strip():
+                  print("::error::notes in latest.json differ from the input")
+                  sys.exit(1)
+          print(f"latest.json {payload['version']} build {payload['build']} ({os.environ['BUILD_SHA']}) verified with {os.environ['MIGHTY_UPDATE_PUBLIC_KEY']}")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: MightyClaude-release-manifest
+          path: |
+            out/latest.json
+            out/latest.unsigned.json
+          if-no-files-found: error

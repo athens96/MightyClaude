@@ -15,15 +15,16 @@ check → version → push → ci → download → manifest → page → upload 
 | main 브랜치, 깨끗한 작업 트리 | `check`, `version` |
 | `gh auth login` | `ci`, `download`, `github`, `verify` |
 | `wrangler` (npm 전역 설치)와 그 OAuth 로그인 | `upload` — 스크립트는 로그인 상태를 묻지 않으므로 올리기 전에 `wrangler login`이 되어 있어야 한다 |
-| `pip install cryptography` | 서명(`make-update-manifest.py`)과 서명 확인 |
-| 업데이트 서명 키 파일 경로 | `check --sign-key`로 한 번 주면 `manifest`가 기억한다. 스크립트는 경로만 넘기고 내용은 `make-update-manifest.py`만 읽는다 |
+| `pip install cryptography` | 서명 확인 (로컬 서명을 고르면 서명에도) |
+| main에 있는 `.github/workflows/release-manifest.yml`과 환경 `release`의 시크릿 `MIGHTY_UPDATE_SIGNING_KEY` | `manifest` — CI가 서명한다. 개인 키는 이 시크릿에만 있고 어느 PC에도 없다. `workflow_dispatch` 워크플로라 기본 브랜치(main)에 있어야 부를 수 있다. 설정은 아래 [서명 키와 GitHub 설정](#서명-키와-github-설정) |
+| (대안) 업데이트 서명 키 파일 경로 | 키 파일이 있을 때만: `check --sign-key`나 `manifest --sign-key`로 주면 CI 대신 로컬에서 서명한다. 스크립트는 경로만 넘기고 내용은 `make-update-manifest.py`만 읽는다 |
 | (폰 앱을 바꿨다면) EAS `preview` 프로필로 만든 APK | `manifest --apk` |
 
 ## 단계
 
 ```bash
-# 1. 준비 확인 (main·깨끗함·origin/main·gh·wrangler·cryptography·서명 키·버전). 노트 템플릿을 만든다.
-python scripts/release.py check --version 0.4.48 --sign-key <서명 키 경로>
+# 1. 준비 확인 (main·깨끗함·origin/main·gh·wrangler·cryptography·서명 워크플로·버전). 노트 템플릿을 만든다.
+python scripts/release.py check --version 0.4.48
 #    → release/0.4.48-notes.md            GitHub 릴리스 본문 (한국어·English, 필요하면 简体中文·日本語)
 #    → release/0.4.48/update-notes.md     앱의 업데이트 안내에 보일 짧은 한국어 목록
 #    "(채워 주세요)"를 지우고 내용을 쓴다. {{…}} 자리는 그대로 둔다 — manifest·github 단계가
@@ -43,7 +44,7 @@ python scripts/release.py ci --commit <고친 커밋 sha>
 # 5. 아티팩트 세 개를 release/0.4.48/로 받고 Windows .sha256을 맞춰 본다.
 python scripts/release.py download
 
-# 6. 서명된 latest.json을 만들고 공개 키로 서명·버전·build·url·sha256·크기를 확인한다.
+# 6. CI(release-manifest.yml)에 서명을 맡겨 latest.json을 받고, 공개 키로 서명·버전·build·notes·url·sha256·크기를 확인한다.
 python scripts/release.py manifest [--apk <APK 경로>]
 
 # 7. 공개 내려받기 페이지를 받아 버전만 바꾼 release/0.4.48/index.html을 만들고 차이를 보여 준다.
@@ -64,7 +65,7 @@ python scripts/release.py verify
 
 ### check
 
-`--version`으로 정한 버전을 `release/.current`에 적어 두므로, 이후 단계는 버전을 다시 주지 않아도 된다. 버전은 `x.y.z`이어야 하고 공개 `latest.json`의 버전보다 커야 한다. origin/main보다 뒤처져 있거나 push 안 된 로컬 커밋이 있어도 멈춘다. wrangler는 설치만 보고 로그인은 확인하지 않는다(`wrangler whoami`를 부르지 않는다) — `upload` 전에 `wrangler login`이 되어 있어야 한다. 확인하지 못한 항목이 있으면 끝나지 않은 것으로 남고, 고친 뒤 다시 돌리면 된다. 노트 파일이 이미 있으면 건드리지 않는다.
+`--version`으로 정한 버전을 `release/.current`에 적어 두므로, 이후 단계는 버전을 다시 주지 않아도 된다. 버전은 `x.y.z`이어야 하고 공개 `latest.json`의 버전보다 커야 한다. origin/main보다 뒤처져 있거나 push 안 된 로컬 커밋이 있어도 멈춘다. wrangler는 설치만 보고 로그인은 확인하지 않는다(`wrangler whoami`를 부르지 않는다) — `upload` 전에 `wrangler login`이 되어 있어야 한다. 서명은 기본이 CI라 `gh workflow view release-manifest.yml`로 워크플로가 보이는지 확인하고, `--sign-key`를 주면 대신 그 파일이 있는지 본다. 확인하지 못한 항목이 있으면 끝나지 않은 것으로 남고, 고친 뒤 다시 돌리면 된다. 노트 파일이 이미 있으면 건드리지 않는다.
 
 ### version
 
@@ -78,11 +79,26 @@ python scripts/release.py verify
 
 ### download
 
-`gh run download`로 `MightyClaude-native-macos`, `MightyClaude-native-windows-x64`, `MightyClaude-native-windows-arm64`를 받는다. 아티팩트마다 어느 실행에서 받았는지 `state.json`에 적어 두고, 파일이 있고 같은 실행에서 받은 것일 때만 다시 받지 않는다(`--redownload`로 강제로 다시 받기). 실행이 바뀌었으면(`ci --commit`) 새로 받는다. 300 MiB(`wrangler r2 object put` 한도)보다 큰 파일이 있으면 여기서 멈춘다 — 크기 게이트(480 MiB)는 통과해도 이 스크립트로는 올릴 수 없다. CI의 `MightyClaude-signed-manifest`(맥 전용)는 쓰지 않는다.
+`gh run download`로 `MightyClaude-native-macos`, `MightyClaude-native-windows-x64`, `MightyClaude-native-windows-arm64`를 받는다. 아티팩트마다 어느 실행에서 받았는지 `state.json`에 적어 두고, 파일이 있고 같은 실행에서 받은 것일 때만 다시 받지 않는다(`--redownload`로 강제로 다시 받기). 실행이 바뀌었으면(`ci --commit`) 새로 받는다. 300 MiB(`wrangler r2 object put` 한도)보다 큰 파일이 있으면 여기서 멈춘다 — 크기 게이트(480 MiB)는 통과해도 이 스크립트로는 올릴 수 없다. 서명된 `latest.json`은 `manifest` 단계가 따로 받는다.
 
 ### manifest
 
-`scripts/make-update-manifest.py`를 세 zip, `--base-url https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/<버전>`, `--build <빌드 번호>`, `--notes-file release/<버전>/update-notes.md`로 부른다. swiftc가 없는 Windows에서는 `cryptography`로 서명한다. 만든 봉투를 공개 키(`ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=`, 앱과 `.github/workflows/native-windows.yml`의 값)로 확인하고, 버전·build·세 패키지의 url/sha256/크기가 받은 파일과 같지 않으면 멈춘다. `upload`도 올리기 전에 같은 확인을 다시 한다.
+업데이트 서명 개인 키는 GitHub 환경 `release`의 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`에만 있으므로, 기본으로 CI가 서명한다. 이것은 아무것도 내보내지 않으므로 `--yes`가 필요 없고, 부르는 명령을 먼저 보여 준다.
+
+```bash
+gh workflow run release-manifest.yml --ref main -f version=<버전> \
+  -f macos_run=<ci의 macOS 실행 id> -f windows_run=<ci의 Windows 실행 id> \
+  -f notes_b64=<update-notes.md의 UTF-8 base64> -f request=<버전>-<무작위 8자>
+```
+
+1. 실행 id는 `ci` 단계가 `state.json`의 `runs`에 적어 둔 값이다. 노트는 `release/<버전>/update-notes.md`(BOM은 뺀다)를 base64로 넘긴다 — 여러 줄, 따옴표, `$`가 `-f` 인자와 워크플로 셸을 그대로 지나가게 하려는 것이다. build 번호는 넘기지 않는다: 워크플로가 빌드 커밋에서 직접 센다.
+2. 워크플로의 실행 이름이 `Release manifest <버전> [<request>]`라서, `gh run list --workflow release-manifest.yml --event workflow_dispatch --branch main`에서 main 실행 중 이번 `request` 값이 든 것만 고른다(전에 부른 실행이나 다른 사람이 부른 실행을 잡지 않는다). 같은 값의 실행이 둘 이상이면 멈춘다. 끝날 때까지 보고, 실행 id와 그 커밋을 `state.json`의 `manifestRun`·`manifestRunSha`에 적는다. 실패하면 `gh run view <id> --log-failed`를 알려 주고 멈춘다.
+3. 워크플로(ubuntu, 잡은 `github.ref == refs/heads/main`일 때만, 환경 `release`)는 아무것도 받기 전에 두 실행의 출처를 `gh api repos/<저장소>/actions/runs/<id>`로 확인한다: 워크플로 파일이 `native-macos.yml`·`native-windows.yml`, 이벤트 `push`, 브랜치 `main`, 이 저장소(포크 아님), 완료·성공, 두 실행이 같은 커밋. 그 커밋이 디스패치한 main 커밋의 조상인지, 그 커밋의 `VERSION`이 입력 버전인지 보고, build 번호를 `git rev-list --count <커밋>`으로 센다(`ci` 단계와 같은 셈). 그다음 `run-id`로 아티팩트 세 개를 받아 Windows `.sha256`을 맞춰 보고, 해시를 고정한 `scripts/requirements-sign.txt`의 `cryptography`로(`MIGHTY_SIGNER=cryptography`) 서명한다. 시크릿은 `$RUNNER_TEMP`에 umask 077로 쓰고(비었으면 실패) `always()` 단계에서 지운다. 만든 봉투를 이 스크립트의 `verify_envelope`로 공개 키와 패키지에 대해 확인한 뒤 `latest.json`·`latest.unsigned.json`을 아티팩트 `MightyClaude-release-manifest`로 남긴다. 액션은 모두 커밋 SHA로 고정했다.
+4. 스크립트는 그 아티팩트를 `gh run download <id> -n MightyClaude-release-manifest`로 `release/<버전>/`에 받아, 공개 키(`ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=`, 앱과 `.github/workflows/native-windows.yml`의 값)로 다시 확인한다. 버전·build(워크플로가 센 값이 `ci`가 적은 값과 같아야 한다)·notes·세 패키지의 url/sha256/크기가 **이 PC가 받은** 파일·노트와 같지 않으면 멈춘다. `upload`도 올리기 전에 같은 확인을 다시 한다.
+
+`manifest`를 다시 돌리면 매번 새로 부른다 — `ci`를 다시 해 실행이 바뀌었으면 새 실행 id로 서명한다.
+
+- `--sign-key <경로>`(또는 `check --sign-key`로 기억한 경로): 키 파일이 있을 때만 쓰는 대안. CI를 부르지 않고 `make-update-manifest.py`로 로컬에서 서명한다(swiftc가 없는 Windows에서는 `cryptography`). 확인은 같다. **새 키를 만들어 쓰지 않는다** — 설치된 앱은 지금 공개 키로만 확인하므로 업데이트가 멈춘다.
 
 - `--apk <경로>`: 그 APK를 `release/<버전>/MightyClaude-<버전>.apk`로 복사해 올리기·GitHub 첨부에 넣는다. APK 버전이 릴리스 버전과 다르면 `--apk-version`. 빼려면 `--no-apk`.
 - `--apk`가 없으면 폰 APK(`mightyclaude/android/MightyClaude-android.apk`)는 그대로 두고, 노트의 Android 줄은 공개 페이지의 이전 APK 버전과 그 GitHub 릴리스 링크로 채운다. 노트에 폰 APK가 그대로라고 적어 둔다.
@@ -127,7 +143,19 @@ python scripts/release.py verify
 
 공개 `latest.json`을 다시 받아 서명·버전·파일과의 일치를 확인하고, 각 패키지(와 APK) 주소의 `Content-Length`가 받은 파일 크기와 같은지, 페이지가 새 버전인지, GitHub 릴리스가 초안이 아니고 첨부가 다 있는지 본다. 주소 하나를 읽지 못해도 나머지를 계속 보고, 실패한 항목을 모아 마지막에 알려 준다.
 
+## 서명 키와 GitHub 설정
+
+업데이트 서명 개인 키(공개 키 `ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=`의 짝)는 GitHub 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`로만 남아 있다. 설치된 앱은 이 공개 키로만 `latest.json`을 확인하므로, 키를 새로 만들면 기존 앱이 업데이트를 받지 못한다. 그래서 키를 지키는 설정이 릴리스의 일부다. 저장소 Settings에서 한 번:
+
+1. **Environments → New environment `release`.**
+   - Deployment branches and tags: **Selected branches and tags**, 규칙 `main` 하나만.
+   - (선택) Required reviewers에 본인을 넣으면 실행마다 승인을 한 번 누른 뒤에야 시크릿이 풀린다.
+2. **`release` 환경에 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`를 둔다.** 저장소 시크릿의 값은 GitHub에서 읽어 낼 수 없으므로 옮기려면 원래 키 파일 내용(한 줄 base64 시드)이 필요하다. 값을 넣은 뒤 저장소 시크릿(Settings → Secrets and variables → Actions → Repository secrets)의 `MIGHTY_UPDATE_SIGNING_KEY`는 지운다. 그 사본이 없으면 저장소 시크릿을 그대로 두고, `release` 환경에는 빈 값이나 다른 값을 넣지 않는다(환경 시크릿이 없으면 잡은 저장소 시크릿을 쓴다). 이 상태에서는 이 워크플로 자체는 `main`·`release` 환경으로만 돌지만, 쓰기 권한이 있는 사람이 다른 브랜치에 올린 워크플로는 여전히 저장소 시크릿을 읽을 수 있다 — 환경 시크릿으로 옮겨야 막힌다.
+3. **다른 워크플로가 시크릿을 쓰지 않게 둔다.** `native-macos.yml`의 옛 `sign-manifest` 잡은 지웠다(어느 브랜치 push든 시크릿을 받을 수 있었다). 이제 `secrets.MIGHTY_UPDATE_SIGNING_KEY`를 부르는 곳은 `release-manifest.yml`의 서명 단계 하나다.
+4. (권장) Settings → Actions → General: 포크의 pull request 워크플로에 승인 요구, 기본 `GITHUB_TOKEN` 권한은 읽기 전용.
+5. **키를 다시 손에 넣게 되면 오프라인 암호화 백업을 만든다** — 예: 암호로 잠근 `age`/`gpg` 파일을 USB 두 개에 따로, 암호는 비밀번호 관리자에. 백업 없이 시크릿이 지워지면(저장소 삭제·이전 등) 기존 앱은 수동 재설치 말고는 업데이트할 길이 없다.
+
 ## 그 밖
 
 - 도움말 사이트를 바꿨다면 따로 올린다: `node scripts/help/build.mjs --shots <dir>` 후 `scripts/help/upload.sh --dry-run`, 그다음 `scripts/help/upload.sh`.
-- 테스트: `python -m unittest scripts/tests/test_release.py` (네트워크·실제 키 없이 페이지 치환, 매니페스트 서명 확인, 단계 순서, wrangler 명령을 본다).
+- 테스트: `python -m unittest scripts/tests/test_release.py` (네트워크·실제 키 없이 페이지 치환, 매니페스트 서명 확인, CI 서명 호출·실행 찾기·받기(가짜 gh와 일회용 키), 단계 순서, wrangler 명령을 본다).

@@ -90,7 +90,7 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 
 3. **페어링 키 재생성 시 기기 목록 전체 삭제.** `MobileDeviceRegistry.swift`에 `clearAll()` 메서드를 추가하고, `MobileRemoteService.swift`의 `regenerateKey()`가 키를 새로 쓰고 키 의존 클라이언트를 닫는 것에 더해 기기 레지스트리 전체를 원자적으로 비운다(`devices.json` 빈 배열로 대체). 재생성 후 설정 화면의 기기 목록은 비어 있다. `docs/mobile-remote.md`에 새 키를 생성하면 모든 기기가 다시 페어링해야 한다고 명시했다.
 
-4. **CI 서명 작업 분리.** `.github/workflows/native-macos.yml`의 서명 스텝을 `sign-manifest`라는 별도 잡으로 옮겼다. `sign-manifest`는 `macos` 잡에 `needs`로 의존하고, `secrets.MIGHTY_UPDATE_SIGNING_KEY`를 참조하는 유일한 잡이다. `macos` 잡은 더 이상 그 시크릿을 참조하지 않는다.
+4. **CI 서명 작업 분리.** `.github/workflows/native-macos.yml`의 서명 스텝을 `sign-manifest`라는 별도 잡으로 옮겼다. `sign-manifest`는 `macos` 잡에 `needs`로 의존하고, `secrets.MIGHTY_UPDATE_SIGNING_KEY`를 참조하는 유일한 잡이다. `macos` 잡은 더 이상 그 시크릿을 참조하지 않는다. (나중에 `sign-manifest` 잡은 지웠다 — 지금은 main 전용 `release` 환경에서만 도는 `.github/workflows/release-manifest.yml`이 그 시크릿을 쓰는 유일한 곳이다. [release.md](release.md#서명-키와-github-설정))
 
 ### v4의 나머지 단계 (2026-09-22)
 
