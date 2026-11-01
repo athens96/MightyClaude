@@ -125,6 +125,10 @@ public sealed partial class ExecutionGraphTracker
     private readonly Dictionary<string, string> agentNames = [];
     /// The notification summary an agent block's result holds until its hand-back's report replaces it.
     private readonly Dictionary<string, string> agentSummaries = [];
+    /// <summary>A <c>SendMessage</c> call waiting for its result: who sent it and what it said (macOS SentMessage).</summary>
+    private sealed record SentMessage(Owner Owner, string? To, string? Summary, string? Message);
+    /// <summary>SendMessage calls by tool-use ID until their result says whether the message resumed an agent that had ended.</summary>
+    private readonly Dictionary<string, SentMessage> sentMessages = [];
     private readonly Dictionary<string, GraphTokenUsage> messageUsage = [];
     private readonly Dictionary<string, string> messageModel = [];
     private readonly Dictionary<string, IReadOnlyList<string>> messageActivityIds = [];
@@ -438,6 +442,12 @@ public sealed partial class ExecutionGraphTracker
                         return node;
                     });
                 }
+                else if (block.Text("name") == "SendMessage" && (sentMessages.ContainsKey(toolID) || sentMessages.Count < 512))
+                {
+                    // A message to a background agent that already ended resumes it in the background. No block yet: only the result
+                    // says so (ResumeAgent); a message delivered to a running agent adds no work.
+                    sentMessages[toolID] = new(owner, Key(MetadataJson.Property(input, "to")), input.Text("summary"), input.Text("message"));
+                }
             }
         }
         else if (type == "user" && message.ValueKind == JsonValueKind.Object)
@@ -446,6 +456,7 @@ public sealed partial class ExecutionGraphTracker
             {
                 if (Key(MetadataJson.Property(block, "tool_use_id")) is not { } toolID) continue;
                 RememberTool(toolID, owner);
+                if (sentMessages.Remove(toolID, out var sent)) { ResumeAgent(toolID, sent, block, value); continue; }
                 var child = ExecutionGraphSupport.AgentNodeID(runID, toolID);
                 if (!nodes.TryGetValue(child, out var node)) continue;
                 var output = Text(MetadataJson.Property(block, "content"));
@@ -728,6 +739,43 @@ public sealed partial class ExecutionGraphTracker
         var agent = match.Groups["agent"].Value;
         if (taskAliases.ContainsKey(agent) || taskAliases.Count < 512) taskAliases[agent] = id;
     }
+    /// <summary>
+    /// A SendMessage's result. One that resumed a background agent that had ended (<c>resumedAgentId</c>) is new background work of this
+    /// request: a background agent block under the sender, settled by that agent's notification or hand-back as an Agent launch is. The
+    /// agent ID, the names that named its earlier block in this run and the name it was sent to now name this block. A Mods route to an
+    /// earlier block that ended moves here too. A message delivered to a running agent, or one that failed, makes no block (macOS resumeAgent).
+    /// </summary>
+    private void ResumeAgent(string toolID, SentMessage sent, JsonElement block, JsonElement frame)
+    {
+        if (IsTrue(block, "is_error") || ResumedAgent(block, frame) is not { } agent || EnsureAgent(toolID) is not { } child) return;
+        SetParent(child, sent.Owner);
+        backgroundTools.Add(toolID);
+        var earlier = taskAliases.GetValueOrDefault(agent) is { } old && old != child ? nodes.GetValueOrDefault(old) : null;
+        if (taskAliases.ContainsKey(agent) || taskAliases.Count < 512) taskAliases[agent] = child;
+        if (earlier is not null)
+            foreach (var name in agentNames.Where(p => p.Value == earlier.Id).Select(p => p.Key).ToList()) agentNames[name] = child;
+        if (sent.To is { } to && to != agent && (agentNames.ContainsKey(to) || agentNames.Count < 512)) agentNames[to] = child;
+        if (aliases.TryGetValue(agent, out var routed) && routed != child && nodes.TryGetValue(routed, out var route) && ExecutionGraphSupport.Terminal(route.State)) aliases[agent] = child;
+        Update(child, node => node with
+        {
+            Background = true,
+            // Without a summary the agent's earlier block in this run names it better than an ID.
+            Title = sent.Summary is { Length: > 0 } summary ? summary : earlier?.Title is { Length: > 0 } title ? title : sent.To ?? node.Title,
+            Input = sent.Message ?? node.Input,
+        });
+    }
+    /// <summary>The agent a SendMessage result says it resumed: the result's JSON text, else the event's <c>toolUseResult</c> (a transcript's).</summary>
+    private static string? ResumedAgent(JsonElement block, JsonElement frame)
+    {
+        var result = default(JsonElement);
+        if (Text(MetadataJson.Property(block, "content")) is { } text && text.TrimStart().StartsWith('{'))
+        {
+            try { using var document = JsonDocument.Parse(text); result = document.RootElement.Clone(); }
+            catch (JsonException) { }
+        }
+        if (result.ValueKind != JsonValueKind.Object) result = MetadataJson.Property(frame, "toolUseResult");
+        return result.ValueKind == JsonValueKind.Object && IsTrue(result, "success") ? Key(MetadataJson.Property(result, "resumedAgentId")) : null;
+    }
     private static string? Tag(string body, string name)
     {
         var open = "<" + name + ">"; var start = body.IndexOf(open, StringComparison.Ordinal);
@@ -746,7 +794,10 @@ public sealed partial class ExecutionGraphTracker
             var body = remaining[(start + open.Length)..end];
             remaining = remaining[(end + close.Length)..];
             var byTool = Tag(body, "tool-use-id") is { } tool && ExecutionGraphSupport.AgentNodeID(runID, tool) is var toolNode && nodes.ContainsKey(toolNode) ? toolNode : null;
-            var id = byTool ?? (Tag(body, "task-id") is { } task ? taskAliases.GetValueOrDefault(task) : null);
+            // The tool use's block while it is open; once it ended, the task ID's: a resumed agent's notification may still name its first
+            // launch's tool use, while a first run's notification that comes after the resume still ends that first block.
+            var aliased = Tag(body, "task-id") is { } task ? taskAliases.GetValueOrDefault(task) : null;
+            var id = byTool is { } launched && !ExecutionGraphSupport.Terminal(nodes[launched].State) ? launched : aliased ?? byTool;
             if (id is null || nodes.GetValueOrDefault(id)?.Kind is not { } kind || kind is not ("task" or "agent"))
             {
                 // Work this run never started (an earlier process's) has no block to copy: its line names the turn's run.

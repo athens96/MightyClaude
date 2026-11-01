@@ -192,7 +192,21 @@ enum GraphVectors {
             if latest[node.id] == nil { order.append(node.id) }
             latest[node.id] = node
         }
-        return ["nodes": order.compactMap { latest[$0] }.map(nodeJSON)]
+        let nodes = order.compactMap { latest[$0] }
+        var result: [String: Any] = ["nodes": nodes.map(nodeJSON)]
+        // A case marked `waiting` also pins what the request's result card reads: the background work its run still waits on.
+        let runID = value["runId"] as? String ?? "run-1"
+        let mainID = ExecutionGraphSupport.mainNodeID(runId: runID)
+        if value["waiting"] as? Bool == true, let main = nodes.first(where: { $0.id == mainID }) {
+            let agents = nodes.filter { $0.runId == runID && $0.id != mainID }.map { node in
+                MightyGraphAgent(id: node.id, title: node.title, input: node.input ?? "", status: node.state,
+                                 kind: ["task", "steer", "compact", "question"].contains(node.kind) ? node.kind : nil, background: node.background)
+            }
+            let run = MightyGraphRun(id: runID, status: main.state, agents: agents)
+            result["backgroundWaiting"] = run.backgroundWaiting
+            result["resultTitle"] = MightyGraphSupport.resultTitle(status: run.status, waiting: run.backgroundWaiting)
+        }
+        return result
     }
 
     static func runBounds(_ value: [String: Any]) -> [String: Any] {

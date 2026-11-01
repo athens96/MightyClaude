@@ -240,7 +240,15 @@ internal static class GraphVectorVerification
             if (!latest.ContainsKey(node.Id)) order.Add(node.Id);
             latest[node.Id] = node;
         }
-        return Map(("nodes", order.Select(id => NodeJson(latest[id])).ToList()));
+        var result = Map(("nodes", order.Select(id => NodeJson(latest[id])).ToList()));
+        // A case marked `waiting` also pins what the request's result card reads: the background work its run still waits on.
+        if (Flag(value, "waiting") && tracker.BuildRun(includeRunning: true) is { } run)
+        {
+            var waiting = MightyGraphSupport.BackgroundWaiting(run);
+            result["backgroundWaiting"] = waiting;
+            result["resultTitle"] = MightyGraphBlockModel.ResultTitle(run.Status, waiting);
+        }
+        return result;
     }
 
     private static object RunBounds(JsonElement value)

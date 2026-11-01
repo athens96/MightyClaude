@@ -11682,6 +11682,1310 @@
           "state" : "completed"
         }
       ]
+    },
+    {
+      "expected" : {
+        "backgroundWaiting" : 1,
+        "nodes" : [
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-4b007e8553c2e21fc746f5250697b1f9fec20c4e560feaaf",
+            "input" : "Fix the review findings",
+            "kind" : "main",
+            "output" : "The reviewer is fixing them.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-8",
+            "state" : "completed",
+            "title" : "Claude",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-937bf55d6fa4872a137e58c632b159a2dcfdcda39d80b715",
+            "input" : "Address the review findings on workspace mute.",
+            "kind" : "agent",
+            "output" : null,
+            "parentId" : "graph-4b007e8553c2e21fc746f5250697b1f9fec20c4e560feaaf",
+            "responseRecords" : null,
+            "runId" : "vec-cs-8",
+            "state" : "running",
+            "title" : "Fix review findings",
+            "usage" : null
+          }
+        ],
+        "resultTitle" : "현재까지의 결과 · 백그라운드 작업 1개 기다리는 중"
+      },
+      "input" : "Fix the review findings",
+      "name" : "send-message-resume-waits-for-the-agent",
+      "provider" : "claude",
+      "runId" : "vec-cs-8",
+      "steps" : [
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "id" : "send-1",
+                  "input" : {
+                    "message" : "Address the review findings on workspace mute.",
+                    "summary" : "Fix review findings",
+                    "to" : "a7e100cfa629de872"
+                  },
+                  "name" : "SendMessage",
+                  "type" : "tool_use"
+                }
+              ],
+              "id" : "m-send-1"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m-send-1"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "content" : [
+                    {
+                      "text" : "{\"success\":true,\"message\":\"Resuming agent a7e100c\",\"resumedAgentId\":\"a7e100cfa629de872\",\"pin\":{\"id\":\"a7e100cfa629de872\",\"name\":\"a7e100cfa629de872\",\"ref\":\"d50a98\"}}",
+                      "type" : "text"
+                    }
+                  ],
+                  "tool_use_id" : "send-1",
+                  "type" : "tool_result"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "The reviewer is fixing them.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m2"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m2"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "The reviewer is fixing them.",
+            "type" : "result"
+          }
+        }
+      ],
+      "waiting" : true
+    },
+    {
+      "expected" : {
+        "backgroundWaiting" : 0,
+        "nodes" : [
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-49b970bb070f69edfb62a157eff2337b1a048cb0df427fea",
+            "input" : "Fix the review findings",
+            "kind" : "main",
+            "output" : "The reviewer is fixing them.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-9",
+            "state" : "completed",
+            "title" : "Claude",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-d67cd40b3f3c56f98b569a9714bd3285d865b09a71e06feb",
+            "input" : "Address the review findings on workspace mute.",
+            "kind" : "agent",
+            "output" : "Agent \"Fix review findings\" completed",
+            "parentId" : "graph-49b970bb070f69edfb62a157eff2337b1a048cb0df427fea",
+            "responseRecords" : null,
+            "runId" : "vec-cs-9",
+            "state" : "completed",
+            "title" : "a7e100cfa629de872",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-b70002d9ca1e2d74262bf2ce173253a1f2af97c2bb37e496",
+            "input" : "a7e100cfa629de872 · 완료",
+            "kind" : "main",
+            "output" : "The findings are fixed.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-9:notice:1",
+            "state" : "completed",
+            "title" : "백그라운드 작업 완료 · a7e100cfa629de872",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "vec-cs-9:notice:1:graph-d67cd40b3f3c56f98b569a9714bd3285d865b09a71e06feb",
+            "input" : "Address the review findings on workspace mute.",
+            "kind" : "agent",
+            "output" : "Agent \"Fix review findings\" completed",
+            "parentId" : "graph-b70002d9ca1e2d74262bf2ce173253a1f2af97c2bb37e496",
+            "responseRecords" : null,
+            "runId" : "vec-cs-9:notice:1",
+            "state" : "completed",
+            "title" : "a7e100cfa629de872",
+            "usage" : null
+          }
+        ],
+        "resultTitle" : "최종 결과"
+      },
+      "input" : "Fix the review findings",
+      "name" : "send-message-resume-ends-on-the-agent-notification",
+      "provider" : "claude",
+      "runId" : "vec-cs-9",
+      "steps" : [
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "id" : "send-1",
+                  "input" : {
+                    "message" : "Address the review findings on workspace mute.",
+                    "summary" : "",
+                    "to" : "a7e100cfa629de872"
+                  },
+                  "name" : "SendMessage",
+                  "type" : "tool_use"
+                }
+              ],
+              "id" : "m-send-1"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m-send-1"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "content" : "Resuming agent a7e100c",
+                  "tool_use_id" : "send-1",
+                  "type" : "tool_result"
+                }
+              ]
+            },
+            "toolUseResult" : {
+              "message" : "Resuming agent a7e100c",
+              "pin" : {
+                "id" : "a7e100cfa629de872",
+                "name" : "a7e100cfa629de872",
+                "ref" : "d50a98"
+              },
+              "resumedAgentId" : "a7e100cfa629de872",
+              "success" : true
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "The reviewer is fixing them.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m2"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m2"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "The reviewer is fixing them.",
+            "type" : "result"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "<task-notification>\n<task-id>a7e100cfa629de872</task-id>\n<status>completed</status>\n<summary>Agent \"Fix review findings\" completed</summary>\n</task-notification>",
+                  "type" : "text"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "The findings are fixed.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m3"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m3"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "The findings are fixed.",
+            "type" : "result"
+          }
+        }
+      ],
+      "waiting" : true
+    },
+    {
+      "expected" : {
+        "backgroundWaiting" : 0,
+        "nodes" : [
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-6e9a7c763077f4e220e4e5f642701a7dfff6cc6a0d250ffe",
+            "input" : "Tell the reviewer",
+            "kind" : "main",
+            "output" : "Sent.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-10",
+            "state" : "completed",
+            "title" : "Claude",
+            "usage" : null
+          }
+        ],
+        "resultTitle" : "최종 결과"
+      },
+      "input" : "Tell the reviewer",
+      "name" : "send-message-to-a-running-agent-adds-no-block",
+      "provider" : "claude",
+      "runId" : "vec-cs-10",
+      "steps" : [
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "id" : "send-1",
+                  "input" : {
+                    "message" : "Also check the Windows side.",
+                    "summary" : "Extra context",
+                    "to" : "reviewer"
+                  },
+                  "name" : "SendMessage",
+                  "type" : "tool_use"
+                }
+              ],
+              "id" : "m-send-1"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m-send-1"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "content" : [
+                    {
+                      "text" : "{\"success\":true,\"message\":\"Message queued for delivery to reviewer at its next tool round.\"}",
+                      "type" : "text"
+                    }
+                  ],
+                  "tool_use_id" : "send-1",
+                  "type" : "tool_result"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "Sent.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m2"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m2"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "Sent.",
+            "type" : "result"
+          }
+        }
+      ],
+      "waiting" : true
+    },
+    {
+      "expected" : {
+        "backgroundWaiting" : 0,
+        "nodes" : [
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-c2c4a1abaff9394d22e4b74af6d6331e2855532d2e0c3372",
+            "input" : "Review and fix",
+            "kind" : "main",
+            "output" : "Asked the reviewer to fix it.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-11",
+            "state" : "completed",
+            "title" : "Claude",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-f3749deb259747ae3e8783636ab93c0d9451e3cf288906dd",
+            "input" : "Review the change",
+            "kind" : "agent",
+            "output" : "Review done",
+            "parentId" : "graph-c2c4a1abaff9394d22e4b74af6d6331e2855532d2e0c3372",
+            "responseRecords" : null,
+            "runId" : "vec-cs-11",
+            "state" : "completed",
+            "title" : "Review",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-b1f70dd0d47776e638edf908d78629cab697d5cf906e40a2",
+            "input" : "Review · 완료",
+            "kind" : "main",
+            "output" : null,
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-11:notice:1",
+            "state" : "completed",
+            "title" : "백그라운드 작업 완료 · Review",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "vec-cs-11:notice:1:graph-f3749deb259747ae3e8783636ab93c0d9451e3cf288906dd",
+            "input" : "Review the change",
+            "kind" : "agent",
+            "output" : "Review done",
+            "parentId" : "graph-b1f70dd0d47776e638edf908d78629cab697d5cf906e40a2",
+            "responseRecords" : null,
+            "runId" : "vec-cs-11:notice:1",
+            "state" : "completed",
+            "title" : "Review",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-14d5fbaa71d4173338dc13ab7e08659bc711b148ed831e32",
+            "input" : "Fix what you found.",
+            "kind" : "agent",
+            "output" : "Fixes done",
+            "parentId" : "graph-c2c4a1abaff9394d22e4b74af6d6331e2855532d2e0c3372",
+            "responseRecords" : null,
+            "runId" : "vec-cs-11",
+            "state" : "completed",
+            "title" : "Fix review findings",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-e3dadd56c65208058396ec917133445f5d1449d549d4c7ea",
+            "input" : "Fix review findings · 완료",
+            "kind" : "main",
+            "output" : "All fixed.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-11:notice:2",
+            "state" : "completed",
+            "title" : "백그라운드 작업 완료 · Fix review findings",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "vec-cs-11:notice:2:graph-14d5fbaa71d4173338dc13ab7e08659bc711b148ed831e32",
+            "input" : "Fix what you found.",
+            "kind" : "agent",
+            "output" : "Fixes done",
+            "parentId" : "graph-e3dadd56c65208058396ec917133445f5d1449d549d4c7ea",
+            "responseRecords" : null,
+            "runId" : "vec-cs-11:notice:2",
+            "state" : "completed",
+            "title" : "Fix review findings",
+            "usage" : null
+          }
+        ],
+        "resultTitle" : "최종 결과"
+      },
+      "input" : "Review and fix",
+      "name" : "send-message-resume-settles-the-new-block-not-the-first-launch",
+      "provider" : "claude",
+      "runId" : "vec-cs-11",
+      "steps" : [
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "id" : "launch-1",
+                  "input" : {
+                    "description" : "Review",
+                    "prompt" : "Review the change",
+                    "run_in_background" : true
+                  },
+                  "name" : "Agent",
+                  "type" : "tool_use"
+                }
+              ],
+              "id" : "m1"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m1"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "content" : [
+                    {
+                      "text" : "Async agent launched successfully.\nagentId: a7e100cfa629de872",
+                      "type" : "text"
+                    }
+                  ],
+                  "tool_use_id" : "launch-1",
+                  "type" : "tool_result"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "<task-notification>\n<task-id>a7e100cfa629de872</task-id>\n<tool-use-id>launch-1</tool-use-id>\n<status>completed</status>\n<summary>Review done</summary>\n</task-notification>",
+                  "type" : "text"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "id" : "send-1",
+                  "input" : {
+                    "message" : "Fix what you found.",
+                    "summary" : "Fix review findings",
+                    "to" : "a7e100cfa629de872"
+                  },
+                  "name" : "SendMessage",
+                  "type" : "tool_use"
+                }
+              ],
+              "id" : "m-send-1"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m-send-1"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "content" : [
+                    {
+                      "text" : "{\"success\":true,\"message\":\"Resuming agent a7e100c\",\"resumedAgentId\":\"a7e100cfa629de872\",\"pin\":{\"id\":\"a7e100cfa629de872\",\"name\":\"a7e100cfa629de872\",\"ref\":\"d50a98\"}}",
+                      "type" : "text"
+                    }
+                  ],
+                  "tool_use_id" : "send-1",
+                  "type" : "tool_result"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "Asked the reviewer to fix it.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m2"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m2"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "Asked the reviewer to fix it.",
+            "type" : "result"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "<task-notification>\n<task-id>a7e100cfa629de872</task-id>\n<tool-use-id>launch-1</tool-use-id>\n<status>completed</status>\n<summary>Fixes done</summary>\n</task-notification>",
+                  "type" : "text"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "All fixed.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m3"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m3"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "All fixed.",
+            "type" : "result"
+          }
+        }
+      ],
+      "waiting" : true
+    },
+    {
+      "expected" : {
+        "backgroundWaiting" : 0,
+        "nodes" : [
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-e7382091a87fe893906349e576660f08f875f627e43af0ef",
+            "input" : "Review and fix",
+            "kind" : "main",
+            "output" : "Asked the reviewer to fix it.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-12",
+            "state" : "completed",
+            "title" : "Claude",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-e6a250a91c3280abbd13a5686788d427e933111d5ff46204",
+            "input" : "Review the change",
+            "kind" : "agent",
+            "output" : "Review done",
+            "parentId" : "graph-e7382091a87fe893906349e576660f08f875f627e43af0ef",
+            "responseRecords" : null,
+            "runId" : "vec-cs-12",
+            "state" : "completed",
+            "title" : "Review",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-b1947f2d0e9241308ba63560def473af19cd60c706aa7da4",
+            "input" : "Fix what you found.",
+            "kind" : "agent",
+            "output" : "Fixes done",
+            "parentId" : "graph-e7382091a87fe893906349e576660f08f875f627e43af0ef",
+            "responseRecords" : null,
+            "runId" : "vec-cs-12",
+            "state" : "completed",
+            "title" : "Fix review findings",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-c172a3a959a5661abea9ae9e3095a138cf347d9e5b2afc6f",
+            "input" : "Review · 완료",
+            "kind" : "main",
+            "output" : "The review is in.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-12:notice:1",
+            "state" : "completed",
+            "title" : "백그라운드 작업 완료 · Review",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "vec-cs-12:notice:1:graph-e6a250a91c3280abbd13a5686788d427e933111d5ff46204",
+            "input" : "Review the change",
+            "kind" : "agent",
+            "output" : "Review done",
+            "parentId" : "graph-c172a3a959a5661abea9ae9e3095a138cf347d9e5b2afc6f",
+            "responseRecords" : null,
+            "runId" : "vec-cs-12:notice:1",
+            "state" : "completed",
+            "title" : "Review",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-12fa4615b461036b734cdc8e5014420a88f4470f30b757f7",
+            "input" : "Fix review findings · 완료",
+            "kind" : "main",
+            "output" : "All fixed.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-12:notice:2",
+            "state" : "completed",
+            "title" : "백그라운드 작업 완료 · Fix review findings",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "vec-cs-12:notice:2:graph-b1947f2d0e9241308ba63560def473af19cd60c706aa7da4",
+            "input" : "Fix what you found.",
+            "kind" : "agent",
+            "output" : "Fixes done",
+            "parentId" : "graph-12fa4615b461036b734cdc8e5014420a88f4470f30b757f7",
+            "responseRecords" : null,
+            "runId" : "vec-cs-12:notice:2",
+            "state" : "completed",
+            "title" : "Fix review findings",
+            "usage" : null
+          }
+        ],
+        "resultTitle" : "최종 결과"
+      },
+      "input" : "Review and fix",
+      "name" : "send-message-resume-before-the-first-notification-leaves-it-to-the-first-launch",
+      "provider" : "claude",
+      "runId" : "vec-cs-12",
+      "steps" : [
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "id" : "launch-1",
+                  "input" : {
+                    "description" : "Review",
+                    "prompt" : "Review the change",
+                    "run_in_background" : true
+                  },
+                  "name" : "Agent",
+                  "type" : "tool_use"
+                }
+              ],
+              "id" : "m1"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m1"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "content" : [
+                    {
+                      "text" : "Async agent launched successfully.\nagentId: a7e100cfa629de872",
+                      "type" : "text"
+                    }
+                  ],
+                  "tool_use_id" : "launch-1",
+                  "type" : "tool_result"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "id" : "send-1",
+                  "input" : {
+                    "message" : "Fix what you found.",
+                    "summary" : "Fix review findings",
+                    "to" : "a7e100cfa629de872"
+                  },
+                  "name" : "SendMessage",
+                  "type" : "tool_use"
+                }
+              ],
+              "id" : "m-send-1"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m-send-1"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "content" : [
+                    {
+                      "text" : "{\"success\":true,\"message\":\"Resuming agent a7e100c\",\"resumedAgentId\":\"a7e100cfa629de872\",\"pin\":{\"id\":\"a7e100cfa629de872\",\"name\":\"a7e100cfa629de872\",\"ref\":\"d50a98\"}}",
+                      "type" : "text"
+                    }
+                  ],
+                  "tool_use_id" : "send-1",
+                  "type" : "tool_result"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "Asked the reviewer to fix it.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m2"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m2"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "Asked the reviewer to fix it.",
+            "type" : "result"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "<task-notification>\n<task-id>a7e100cfa629de872</task-id>\n<tool-use-id>launch-1</tool-use-id>\n<status>completed</status>\n<summary>Review done</summary>\n</task-notification>",
+                  "type" : "text"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "The review is in.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m3"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m3"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "The review is in.",
+            "type" : "result"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "<task-notification>\n<task-id>a7e100cfa629de872</task-id>\n<tool-use-id>launch-1</tool-use-id>\n<status>completed</status>\n<summary>Fixes done</summary>\n</task-notification>",
+                  "type" : "text"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "All fixed.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m4"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m4"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "All fixed.",
+            "type" : "result"
+          }
+        }
+      ],
+      "waiting" : true
+    },
+    {
+      "expected" : {
+        "backgroundWaiting" : 0,
+        "nodes" : [
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-dcd17fee135c3322f4128e73a55f3e2fffcbd89fc2578c75",
+            "input" : "Review and fix",
+            "kind" : "main",
+            "output" : "Asked the reviewer to fix it.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-13",
+            "state" : "completed",
+            "title" : "Claude",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-5d5f5def3c8a6421a4b2772ed975fc23dac69f8b100599f7",
+            "input" : "Review the change",
+            "kind" : "agent",
+            "output" : "Review done",
+            "parentId" : "graph-dcd17fee135c3322f4128e73a55f3e2fffcbd89fc2578c75",
+            "responseRecords" : null,
+            "runId" : "vec-cs-13",
+            "state" : "completed",
+            "title" : "reviewer",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-9310ac6c93768182140cf602460764bb1d53c1a2e807cad7",
+            "input" : "reviewer · 완료",
+            "kind" : "main",
+            "output" : null,
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-13:notice:1",
+            "state" : "completed",
+            "title" : "백그라운드 작업 완료 · reviewer",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "vec-cs-13:notice:1:graph-5d5f5def3c8a6421a4b2772ed975fc23dac69f8b100599f7",
+            "input" : "Review the change",
+            "kind" : "agent",
+            "output" : "Review done",
+            "parentId" : "graph-9310ac6c93768182140cf602460764bb1d53c1a2e807cad7",
+            "responseRecords" : null,
+            "runId" : "vec-cs-13:notice:1",
+            "state" : "completed",
+            "title" : "reviewer",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-95c9589f3ff5107be2dc03246fa4af8d22d5616e0a3b40fa",
+            "input" : "Fix what you found.",
+            "kind" : "agent",
+            "output" : "Fixed both findings.",
+            "parentId" : "graph-dcd17fee135c3322f4128e73a55f3e2fffcbd89fc2578c75",
+            "responseRecords" : null,
+            "runId" : "vec-cs-13",
+            "state" : "completed",
+            "title" : "reviewer",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "graph-35362d91fb5a766ac4900bf15a101b88a5f4027c90851b4a",
+            "input" : "reviewer · 완료",
+            "kind" : "main",
+            "output" : "All fixed.",
+            "parentId" : null,
+            "responseRecords" : null,
+            "runId" : "vec-cs-13:notice:2",
+            "state" : "completed",
+            "title" : "백그라운드 작업 완료 · reviewer",
+            "usage" : null
+          },
+          {
+            "activityGeneration" : null,
+            "entries" : [
+
+            ],
+            "id" : "vec-cs-13:notice:2:graph-95c9589f3ff5107be2dc03246fa4af8d22d5616e0a3b40fa",
+            "input" : "Fix what you found.",
+            "kind" : "agent",
+            "output" : "Fixed both findings.",
+            "parentId" : "graph-35362d91fb5a766ac4900bf15a101b88a5f4027c90851b4a",
+            "responseRecords" : null,
+            "runId" : "vec-cs-13:notice:2",
+            "state" : "completed",
+            "title" : "reviewer",
+            "usage" : null
+          }
+        ],
+        "resultTitle" : "최종 결과"
+      },
+      "input" : "Review and fix",
+      "name" : "send-message-resume-takes-the-hand-back-sent-by-the-agent-name",
+      "provider" : "claude",
+      "runId" : "vec-cs-13",
+      "steps" : [
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "id" : "launch-1",
+                  "input" : {
+                    "description" : "Review",
+                    "name" : "reviewer",
+                    "prompt" : "Review the change",
+                    "run_in_background" : true
+                  },
+                  "name" : "Agent",
+                  "type" : "tool_use"
+                }
+              ],
+              "id" : "m1"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m1"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "content" : [
+                    {
+                      "text" : "Async agent launched successfully.\nagentId: a7e100cfa629de872",
+                      "type" : "text"
+                    }
+                  ],
+                  "tool_use_id" : "launch-1",
+                  "type" : "tool_result"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "<task-notification>\n<task-id>a7e100cfa629de872</task-id>\n<tool-use-id>launch-1</tool-use-id>\n<status>completed</status>\n<summary>Review done</summary>\n</task-notification>",
+                  "type" : "text"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "id" : "send-1",
+                  "input" : {
+                    "message" : "Fix what you found.",
+                    "summary" : "",
+                    "to" : "a7e100cfa629de872"
+                  },
+                  "name" : "SendMessage",
+                  "type" : "tool_use"
+                }
+              ],
+              "id" : "m-send-1"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m-send-1"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "content" : [
+                    {
+                      "text" : "{\"success\":true,\"message\":\"Resuming agent a7e100c\",\"resumedAgentId\":\"a7e100cfa629de872\",\"pin\":{\"id\":\"a7e100cfa629de872\",\"name\":\"a7e100cfa629de872\",\"ref\":\"d50a98\"}}",
+                      "type" : "text"
+                    }
+                  ],
+                  "tool_use_id" : "send-1",
+                  "type" : "tool_result"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "Asked the reviewer to fix it.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m2"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m2"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "Asked the reviewer to fix it.",
+            "type" : "result"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "<agent-message from=\"reviewer\">\n[Subagent hand-back]\nThe report follows:\n  Fixed both findings.\n</agent-message>",
+                  "type" : "text"
+                }
+              ]
+            },
+            "type" : "user"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "message" : {
+              "content" : [
+                {
+                  "text" : "All fixed.",
+                  "type" : "text"
+                }
+              ],
+              "id" : "m3"
+            },
+            "session_id" : "s1",
+            "type" : "assistant",
+            "uuid" : "m3"
+          }
+        },
+        {
+          "kind" : "frame",
+          "value" : {
+            "is_error" : false,
+            "result" : "All fixed.",
+            "type" : "result"
+          }
+        }
+      ],
+      "waiting" : true
     }
   ],
   "codexStream" : [
