@@ -4,6 +4,7 @@ import base64
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -25,6 +26,49 @@ LIVE_PAGE = """<body>
   <p>0.4.35 이후 설치한 앱 위에 그대로 업데이트됩니다.</p>
 </body>"""
 
+
+
+def make_mac_zip(path, version, marker="", key=None, url=None, engine=True):
+    """A Mac release zip as far as check_mac_package reads it: Info.plist and, optionally, the engine framework."""
+    import plistlib, zipfile
+    info = {"CFBundleShortVersionString": version, "MarkerForTests": marker,
+            "MightyUpdatePublicKey": release.PUBLIC_KEY if key is None else key,
+            "MightyUpdateManifestURL": f"{release.PUBLIC_BASE}/latest.json" if url is None else url}
+    info = {k: v for k, v in info.items() if v != ""} | {"MarkerForTests": marker or "-"}
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("MightyClaude.app/Contents/Info.plist", plistlib.dumps(info))
+        if engine:
+            z.writestr(release.MAC_ENGINE + "Chromium Embedded Framework", b"engine")
+
+
+class MacPackageTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "MightyClaude-macos.zip")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_a_release_grade_zip_passes(self):
+        make_mac_zip(self.path, "0.4.48")
+        with patch.object(release, "say"):
+            release.check_mac_package(self.path, "0.4.48")
+
+    def test_a_zip_without_engine_key_or_address_is_refused(self):
+        for kwargs, words in [({"engine": False}, "브라우저 엔진"), ({"key": ""}, "공개 키"), ({"url": ""}, "업데이트 주소")]:
+            make_mac_zip(self.path, "0.4.48", **kwargs)
+            with self.assertRaises(release.ReleaseError) as caught:
+                release.check_mac_package(self.path, "0.4.48")
+            self.assertIn(words, str(caught.exception))
+
+    def test_another_version_or_not_a_zip_is_refused(self):
+        make_mac_zip(self.path, "0.4.47")
+        with self.assertRaises(release.ReleaseError):
+            release.check_mac_package(self.path, "0.4.48")
+        with open(self.path, "wb") as f:
+            f.write(b"x")
+        with self.assertRaises(release.ReleaseError):
+            release.check_mac_package(self.path, "0.4.48")
 
 class PageTests(unittest.TestCase):
     def test_moves_only_the_version_line_and_folder_links(self):
@@ -409,7 +453,9 @@ class StateTests(unittest.TestCase):
                 target = args[args.index("-D") + 1]
                 os.makedirs(target, exist_ok=True)
                 for name in release.ARTIFACTS[args[args.index("-n") + 1]][1]:
-                    if not name.endswith(".sha256"):
+                    if name == "MightyClaude-macos.zip":
+                        make_mac_zip(os.path.join(target, name), "0.4.48", marker=run_id)
+                    elif not name.endswith(".sha256"):
                         with open(os.path.join(target, name), "w", encoding="utf-8") as f:
                             f.write(f"{name} from run {run_id}")
                         if "windows" in name:
@@ -445,8 +491,9 @@ class StateTests(unittest.TestCase):
                 release.step_download(state, release.parser().parse_args(["download"]))
         self.assertEqual(downloads[3:], ["3", "4", "4"])
         self.assertNotEqual(state["data"]["files"]["MightyClaude-macos.zip"]["sha256"], old)
-        with open(os.path.join(folder, "MightyClaude-macos.zip"), encoding="utf-8") as f:
-            self.assertIn("from run B", f.read())
+        import plistlib, zipfile
+        with zipfile.ZipFile(os.path.join(folder, "MightyClaude-macos.zip")) as z:
+            self.assertEqual(plistlib.loads(z.read("MightyClaude.app/Contents/Info.plist"))["MarkerForTests"], "B")
 
     def test_publishing_steps_refuse_force(self):
         state = release.load_state("0.4.48")

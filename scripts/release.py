@@ -576,6 +576,33 @@ def read_sha256_file(path):
         return f.read().split()[0].lower()
 
 
+MAC_ENGINE = "MightyClaude.app/Contents/Frameworks/Chromium Embedded Framework.framework/"
+
+
+def check_mac_package(path, version):
+    """A Mac zip a release can ship: this version, the update channel's key and address, and the bundled browser engine."""
+    import plistlib, zipfile
+    try:
+        with zipfile.ZipFile(path) as z:
+            info = plistlib.loads(z.read("MightyClaude.app/Contents/Info.plist"))
+            engine = any(n.startswith(MAC_ENGINE) for n in z.namelist())
+    except (OSError, KeyError, zipfile.BadZipFile, plistlib.InvalidFileException) as e:
+        raise ReleaseError(f"Mac zip을 읽지 못했습니다: {e}")
+    problems = []
+    if info.get("CFBundleShortVersionString") != version:
+        problems.append(f"버전 {info.get('CFBundleShortVersionString')!r} (기대 {version})")
+    if info.get("MightyUpdatePublicKey") != PUBLIC_KEY:
+        problems.append("업데이트 공개 키가 없거나 다름 (이 앱은 업데이트를 확인하지 못함)")
+    if info.get("MightyUpdateManifestURL") != f"{PUBLIC_BASE}/latest.json":
+        problems.append("업데이트 주소가 없거나 다름")
+    if not engine:
+        problems.append("브라우저 엔진(Chromium Embedded Framework)이 들어 있지 않음")
+    if problems:
+        raise ReleaseError("Mac zip을 릴리스할 수 없습니다: " + "; ".join(problems)
+                           + " — main push의 native-macos.yml 빌드인지 확인하세요")
+    say("  Mac zip: 버전·업데이트 키·주소·브라우저 엔진 확인")
+
+
 def step_download(state, a):
     folder, runs = release_dir(state["version"]), state["data"]["runs"]
     sources = state["data"].setdefault("sources", {})  # artifact -> the run its files came from
@@ -606,6 +633,7 @@ def step_download(state, a):
             raise ReleaseError(f"{name}의 sha256이 .sha256 파일과 다릅니다")
         say(f"  {name:<38} {files[name]['size']:>13,} B  {files[name]['sha256'][:16]}…" + ("  (.sha256 일치)" if compared else ""))
         check_upload_size(path)
+    check_mac_package(os.path.join(folder, "MightyClaude-macos.zip"), state["version"])
     state["data"]["files"] = files
     mark_done(state, "download")
     say("다음: release.py manifest [--apk PATH]")

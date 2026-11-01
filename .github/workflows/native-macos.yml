@@ -56,13 +56,26 @@ jobs:
             echo "::endgroup::"
           done
           exit $status
+      # A push to main builds the package a release ships, so it carries the pinned browser engine
+      # (CEF and Node, BrowserEngine.lock) as the Mac release zips always have; other runs build without it.
+      - name: Restore the pinned browser engine (main)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/MightyClaude/browser-engine
+          key: browser-engine-${{ hashFiles('native/macos/BrowserEngine.lock') }}
+      - name: Fetch the pinned browser engine (main)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: bash scripts/fetch-browser-engine.sh
       - name: Build SwiftUI application
         id: build-app
         # Runs even when the Swift tests failed, so one CI run reports both.
         if: success() || failure()
         env:
-          MIGHTY_UPDATE_URL: ${{ vars.MIGHTY_UPDATE_URL }}
-          MIGHTY_UPDATE_PUBLIC_KEY: ${{ vars.MIGHTY_UPDATE_PUBLIC_KEY }}
+          # The update channel's address and public key, as native-windows.yml stamps them; repository variables override.
+          MIGHTY_UPDATE_URL: ${{ vars.MIGHTY_UPDATE_URL || 'https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/latest.json' }}
+          MIGHTY_UPDATE_PUBLIC_KEY: ${{ vars.MIGHTY_UPDATE_PUBLIC_KEY || 'ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=' }}
+          MIGHTY_BROWSER_ENGINE: ${{ (github.ref == 'refs/heads/main' && github.event_name != 'pull_request') && '1' || '' }}
         run: bash scripts/build-macos.sh
       - name: Delegation server lists its six tools headlessly; mighty-terminal keeps its four tools
         # The app binary as the two stdio MCP servers a run can launch. Only a Claude
