@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
-import { describeError, type MobileClient } from '@/api/client';
-import { fileNameOf, fileSizeOf, readFileSlice } from '@/lib/file-slices';
-import { t } from '@/lib/i18n';
+import type { MobileClient } from '@/api/client';
+import { pickDocuments as pickDocumentsInto, pickImages as pickImagesInto, recoverPendingImages } from '@/lib/attach-picks';
+import { readFileSlice } from '@/lib/file-slices';
 import {
   acceptFiles,
   uploadAttachments,
@@ -32,23 +30,6 @@ export interface AttachmentsController {
  * failed or cancelled run cancels every upload it opened and keeps the files on screen
  * so the user can try again without picking them a second time.
  */
-/**
- * What the host will be told about a picked file. The size on disk is what the chunks
- * will actually carry, so it wins; a picker's own number is only a fallback for a file
- * the file system would not measure, and 0 means the pick is refused by name.
- */
-function pickedFile(
-  uri: string,
-  name: string,
-  reported: number | undefined,
-  mimeType: string | undefined,
-): PickedFile {
-  const onDisk = fileSizeOf(uri);
-  const file: PickedFile = { uri, name, size: onDisk > 0 ? onDisk : (reported ?? 0) };
-  if (mimeType) file.mimeType = mimeType;
-  return file;
-}
-
 export function useAttachments(onError: (message: string) => void): AttachmentsController {
   const [files, setFiles] = useState<PickedFile[]>([]);
   const [progress, setProgress] = useState<Record<number, UploadProgress>>({});
@@ -75,44 +56,15 @@ export function useAttachments(onError: (message: string) => void): AttachmentsC
     [onError],
   );
 
-  // The system photo picker (PHPicker on iOS, the Android photo picker) hands back the
-  // chosen items without any library permission, so none is asked for.
-  const pickImages = useCallback(async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        allowsMultipleSelection: true,
-        mediaTypes: ['images'],
-        quality: 1,
-      });
-      if (result.canceled) return;
-      add(
-        result.assets.map((asset, index) => {
-          const name = asset.fileName?.trim() || fileNameOf(asset.uri, t('phone.attachments.photoName', { index: index + 1 }));
-          return pickedFile(asset.uri, name, asset.fileSize, asset.mimeType);
-        }),
-      );
-    } catch (error) {
-      onError(describeError(error));
-    }
-  }, [add, onError]);
+  const pickImages = useCallback(() => pickImagesInto(add, onError), [add, onError]);
+  const pickDocuments = useCallback(() => pickDocumentsInto(add, onError), [add, onError]);
 
-  const pickDocuments = useCallback(async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        multiple: true,
-        type: '*/*',
-        // Without a local copy a provider-backed document has no readable `file://`.
-        copyToCacheDirectory: true,
-      });
-      if (result.canceled) return;
-      add(
-        result.assets.map((asset) =>
-          pickedFile(asset.uri, asset.name || fileNameOf(asset.uri, t('phone.attachments.fileName')), asset.size, asset.mimeType),
-        ),
-      );
-    } catch (error) {
-      onError(describeError(error));
-    }
+  // Photos picked while Android destroyed the activity come back here, once per mount.
+  const recovered = useRef(false);
+  useEffect(() => {
+    if (recovered.current) return;
+    recovered.current = true;
+    void recoverPendingImages(add, onError);
   }, [add, onError]);
 
   const remove = useCallback((uri: string) => {

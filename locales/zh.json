@@ -2723,6 +2723,7 @@
   "phone.attachments.sizeChanged": "读取文件期间其大小发生了变化。",
   "phone.attachments.sizeMismatch": "主机接收的大小与发送的大小不一致。",
   "phone.attachments.sendFailed": "无法发送附件。",
+  "phone.attachments.pickFailed": "无法读取所选内容。请重新选择。",
   "phone.guided.runOnMac": "请直接在 Mac 上运行此命令。",
   "phone.guided.running": "正在运行。完成后会显示后续操作。",
   "phone.guided.noActions": "目前没有可选的操作。请在下方输入并直接发送。",

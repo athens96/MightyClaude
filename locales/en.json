@@ -2723,6 +2723,7 @@
   "phone.attachments.sizeChanged": "The file changed size while it was being read.",
   "phone.attachments.sizeMismatch": "The size the host received differs from the size sent.",
   "phone.attachments.sendFailed": "Could not send the attachments.",
+  "phone.attachments.pickFailed": "Could not read what was picked. Try picking it again.",
   "phone.guided.runOnMac": "Run this command on the Mac yourself.",
   "phone.guided.running": "Running. The next actions appear when it finishes.",
   "phone.guided.noActions": "There are no actions to pick right now. Type below and send it as it is.",
