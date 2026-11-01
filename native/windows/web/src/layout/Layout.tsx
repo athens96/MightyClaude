@@ -2,7 +2,7 @@
 // (EffectiveLayout, focus showing one group) as splits with draggable dividers and tab groups with their strips. A group keeps
 // every pane it has shown mounted, hidden behind the selected one, so a tab switch draws no pane again. Every change of the
 // tree is the host's: SelectLayoutSession, ActivatePane, ResizeSplit / ResetSplit, DockSession, CloseSession.
-import { memo, useLayoutEffect, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react';
 import { useServices, useStoreState } from '../app/context';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { PaneView } from '../pane/PaneView';
@@ -12,14 +12,124 @@ import { useChoosePane } from '../shell/Sidebar';
 import type { LayoutModel, PaneInfo } from '../shell/types';
 import { activeSessionId } from '../store/store';
 import type { PaneLayoutNode, RunSession } from '../store/models';
-import { clampRatio, dropZone, layoutMetrics, layoutMinimum, type DropEdge } from './geometry';
+import { usePageOverlay } from '../shell/overlay';
+import { clampRatio, dragSlack, layoutMetrics, layoutMinimum, type DropEdge } from './geometry';
+import { dockArguments, resolveTabDrop, startTabPress, stepTabPress, stripScroll, type TabDragHit, type TabDragTarget, type TabPress } from './tabDrag';
 
-/** The drag format of the WinUI tabs; the tab being dragged and its workspace, since a drag's data cannot be read while it hovers. */
-export const paneDragFormat = 'application/x-dev.mightyclaude.pane-tab';
-let dragged: { id: string; workspaceId: string } | null = null;
+/** The tab being moved (tabDrag.ts): its press, and the pointer's spot and target once past the slack. One at a time. */
+interface TabDrag { id: string; workspaceId: string; title: string; press: TabPress }
+let tabDrag: TabDrag | null = null;
+/** A press that became a drag still ends in a click on its handle; that click is not a choice. */
+let swallowClick = false;
+const dragListeners = new Set<() => void>();
+const subscribeDrag = (listener: () => void) => { dragListeners.add(listener); return () => { dragListeners.delete(listener); }; };
+const dragging = () => (tabDrag?.press.phase === 'dragging' ? tabDrag : null);
+function setTabDrag(next: TabDrag | null) {
+  const was = dragging();
+  tabDrag = next;
+  if (was || dragging()) for (const listener of dragListeners) listener();
+}
 
-/** How far a press on a divider moves before it is a drag (MainWindow.Layout.cs DividerSlack). */
-const dividerSlack = 3;
+const boxOf = (element: Element) => { const r = element.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; };
+
+/** The tab handle, the rest of a strip or the tab group under the pointer (the ghost, its cover and the hints take no pointer). */
+function hitAt(x: number, y: number): TabDragHit {
+  const under = document.elementFromPoint(x, y);
+  const group = under?.closest<HTMLElement>('.tab-group[data-group-id]');
+  if (!under || !group) return null;
+  const workspaceId = group.dataset.workspaceId ?? '';
+  const groupId = group.dataset.groupId!;
+  const handle = under.closest<HTMLElement>('.tab-handle');
+  const tab = handle?.closest<HTMLElement>('.tab[data-tab-id]');
+  if (handle && tab && group.contains(tab)) return { kind: 'tab', workspaceId, groupId, tabId: tab.dataset.tabId!, index: Number(tab.dataset.tabIndex), box: boxOf(handle) };
+  const strip = under.closest('.tab-strip');
+  if (strip && group.contains(strip)) return { kind: 'strip', workspaceId, groupId };
+  return { kind: 'group', workspaceId, groupId, box: boxOf(group) };
+}
+
+/** An overflowing strip under a dragging pointer near its end scrolls toward it. */
+function scrollStripAt(x: number, y: number) {
+  const strip = document.elementFromPoint(x, y)?.closest<HTMLElement>('.tab-strip');
+  if (!strip || strip.scrollWidth <= strip.clientWidth) return;
+  const r = strip.getBoundingClientRect();
+  strip.scrollLeft += stripScroll(x, r.left, r.right);
+}
+
+/** A left press on a tab handle: window listeners follow it until release, Esc or a cancel; past the slack it holds the pointer.
+ *  Every end runs `finish` once, which takes every listener, the capture, the drag class and the drag itself away. */
+function pressTab(event: ReactPointerEvent<HTMLElement>, id: string, workspaceId: string, title: string, dock: (target: TabDragTarget) => void) {
+  if (event.button !== 0 || !event.isPrimary || tabDrag) return;
+  swallowClick = false;
+  const handle = event.currentTarget;
+  const pointerId = event.pointerId;
+  setTabDrag({ id, workspaceId, title, press: startTabPress(event.clientX, event.clientY) });
+  const finish = (dragged: boolean) => {
+    window.removeEventListener('pointermove', move, true);
+    window.removeEventListener('pointerup', up, true);
+    window.removeEventListener('pointercancel', cancel, true);
+    window.removeEventListener('lostpointercapture', cancel, true);
+    window.removeEventListener('keydown', key, true);
+    window.removeEventListener('blur', cancel);
+    document.documentElement.classList.remove('tab-dragging');
+    if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+    setTabDrag(null);
+    // Only the click that ends this very press is not a choice; a later one (a key's Enter or Space included) is.
+    swallowClick = dragged;
+    if (dragged) setTimeout(() => { swallowClick = false; }, 0);
+  };
+  const move = (e: PointerEvent) => {
+    if (e.pointerId !== pointerId || !tabDrag) return;
+    const target = resolveTabDrop(hitAt(e.clientX, e.clientY), e.clientX, e.clientY, workspaceId);
+    const step = stepTabPress(tabDrag.press, { type: 'move', x: e.clientX, y: e.clientY, buttons: e.buttons, target });
+    // The button came up where the page did not hear it: the drag ends as a cancel, never as a later click's landing.
+    if (!step.press) { finish(tabDrag.press.phase === 'dragging'); return; }
+    if (step.press.phase === 'dragging' && tabDrag.press.phase === 'pressed') {
+      if (handle.isConnected) handle.setPointerCapture(pointerId);
+      document.documentElement.classList.add('tab-dragging');
+    }
+    setTabDrag({ ...tabDrag, press: step.press });
+    if (step.press.phase === 'dragging') scrollStripAt(e.clientX, e.clientY);
+  };
+  const up = (e: PointerEvent) => {
+    if (e.pointerId !== pointerId || !tabDrag) return;
+    const step = stepTabPress(tabDrag.press, { type: 'up', target: resolveTabDrop(hitAt(e.clientX, e.clientY), e.clientX, e.clientY, workspaceId) });
+    finish(step.end !== 'click');
+    if (step.end === 'drop') dock(step.target);
+  };
+  const cancel = (e: Event) => {
+    if (e instanceof PointerEvent && e.pointerId !== pointerId) return;
+    if (!tabDrag) return;
+    finish(tabDrag.press.phase === 'dragging');
+  };
+  const key = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || !dragging()) return;
+    e.preventDefault(); e.stopPropagation();
+    cancel(e);
+  };
+  window.addEventListener('pointermove', move, true);
+  window.addEventListener('pointerup', up, true);
+  window.addEventListener('pointercancel', cancel, true);
+  // The handle losing the pointer (taken away, or the handle drawn again) ends the drag as a cancel.
+  window.addEventListener('lostpointercapture', cancel, true);
+  window.addEventListener('keydown', key, true);
+  window.addEventListener('blur', cancel);
+}
+
+/** The moving tab's title beside the pointer, so the drag shows what it carries; dimmed where it cannot land. While it drags,
+ *  a page overlay over the dock (shell/overlay.ts) steps the browser panes' native controls aside, so the ghost and the hints
+ *  show over them too and the pointer stays the page's. */
+function TabDragGhost() {
+  const drag = useSyncExternalStore(subscribeDrag, dragging);
+  usePageOverlay(drag !== null);
+  if (!drag) return null;
+  return (
+    <>
+      <div className="tab-drag-cover" data-page-overlay aria-hidden="true" />
+      <div className={'tab-drag-ghost' + (drag.press.target ? '' : ' nowhere')} data-testid="tab-drag-ghost" aria-hidden="true"
+        style={{ transform: `translate(${drag.press.x}px, ${drag.press.y}px)` }}>{drag.title}</div>
+    </>
+  );
+}
 
 function KindIcon({ info }: { info: PaneInfo }) {
   if (info.kind === 'claude') return <ProviderMark provider={info.provider} size={11.5} />;
@@ -32,36 +142,26 @@ interface TabProps {
   info: PaneInfo;
   selected: boolean;
   workspaceId: string;
-  groupId: string;
   index: number;
 }
 
-const Tab = memo(function Tab({ info, selected, workspaceId, groupId, index }: TabProps) {
+const Tab = memo(function Tab({ info, selected, workspaceId, index }: TabProps) {
   const { t } = useServices();
   const call = useCall();
   const menu = useMenu();
   const choose = useChoosePane();
-  const [landing, setLanding] = useState<'left' | 'right' | null>(null);
+  const landing = useSyncExternalStore(subscribeDrag, () => { const target = dragging()?.press.target; return target?.tabId === info.id ? target.side ?? null : null; });
   const items: MenuItem[] = [
     { label: t('menu.rename'), action: () => call('renameSession', { id: info.id }) },
     { label: t('menu.focusPane'), action: () => call('focusPane', { id: info.id }) },
     { label: t('menu.closeTab'), action: () => call('closeSession', { id: info.id }) },
   ];
-  const side = (event: DragEvent) => (event.clientX - event.currentTarget.getBoundingClientRect().left > event.currentTarget.clientWidth / 2 ? 'right' : 'left');
   return (
-    <div className={'tab' + (selected ? ' selected' : '')} data-tab-id={info.id} data-testid="tab">
-      <button type="button" className="tab-handle" draggable title={t('layout.tab.dragTooltip', { title: info.title })} aria-selected={selected} role="tab"
-        onClick={() => choose(info.id)} onDoubleClick={() => call('renameSession', { id: info.id })} onContextMenu={(event) => menu.atPointer(event, items)}
-        onDragStart={(event) => { dragged = { id: info.id, workspaceId }; event.dataTransfer.setData(paneDragFormat, info.id); event.dataTransfer.effectAllowed = 'move'; }}
-        onDragEnd={() => { dragged = null; }}
-        onDragOver={(event) => { if (dragged?.workspaceId !== workspaceId) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; setLanding(side(event)); }}
-        onDragLeave={() => setLanding(null)}
-        onDrop={(event) => {
-          if (dragged?.workspaceId !== workspaceId) return;
-          event.preventDefault(); event.stopPropagation(); setLanding(null);
-          const moved = dragged.id; dragged = null;
-          call('dockSession', { sessionId: moved, workspaceId, groupId, edge: 'center', index: index + (side(event) === 'right' ? 1 : 0) });
-        }}>
+    <div className={'tab' + (selected ? ' selected' : '')} data-tab-id={info.id} data-tab-index={index} data-testid="tab">
+      <button type="button" className="tab-handle" title={t('layout.tab.dragTooltip', { title: info.title })} aria-selected={selected} role="tab"
+        onClick={(event) => { if (swallowClick && event.detail > 0) { swallowClick = false; return; } choose(info.id); }}
+        onDoubleClick={() => call('renameSession', { id: info.id })} onContextMenu={(event) => menu.atPointer(event, items)}
+        onPointerDown={(event) => pressTab(event, info.id, workspaceId, info.title, (target) => call('dockSession', dockArguments(info.id, workspaceId, target)))}>
         <KindIcon info={info} />
         <span className="tab-title" title={info.help}>{info.title}</span>
         {info.beta && <BetaBadge />}
@@ -82,7 +182,8 @@ function TabGroup({ node, workspaceId, sessions, activeId }: { node: PaneLayoutN
   const choose = useChoosePane();
   const panes = usePaneInfo();
   const strip = useRef<HTMLDivElement>(null);
-  const [hint, setHint] = useState<DropEdge | null>(null);
+  // Over a tab the landing mark shows instead of the group's hint.
+  const hint = useSyncExternalStore(subscribeDrag, () => { const target = dragging()?.press.target; return target?.groupId === node.id && target.tabId === undefined ? target.edge : null; });
   // The pane the click chose shows at once; otherwise the group's own selection.
   const selected = activeId && node.sessionIds.includes(activeId) ? activeId : node.selectedSessionId ?? node.sessionIds[0];
   // Every pane this group has shown stays mounted while it is one of its tabs.
@@ -107,24 +208,12 @@ function TabGroup({ node, workspaceId, sessions, activeId }: { node: PaneLayoutN
     if (sessions.get(id)?.kind === 'shell') items.splice(2, 0, { label: t('terminal.history.title'), action: () => call('terminalHistory', { paneId: id }) });
     return items;
   };
-  const zone = (event: DragEvent<HTMLElement>): DropEdge => {
-    const box = event.currentTarget.getBoundingClientRect();
-    return dropZone(event.clientX - box.left, event.clientY - box.top, box.width, box.height);
-  };
   return (
-    <div className={'tab-group' + (holdsActive ? ' holds-active' : '')} data-group-id={node.id} data-testid="tab-group"
-      onDragOver={(event) => { if (dragged?.workspaceId !== workspaceId) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setHint(zone(event)); }}
-      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHint(null); }}
-      onDrop={(event) => {
-        if (dragged?.workspaceId !== workspaceId) return;
-        event.preventDefault(); setHint(null);
-        const moved = dragged.id; dragged = null;
-        call('dockSession', { sessionId: moved, workspaceId, groupId: node.id, edge: zone(event) });
-      }}>
+    <div className={'tab-group' + (holdsActive ? ' holds-active' : '')} data-group-id={node.id} data-workspace-id={workspaceId} data-testid="tab-group">
       <div className="tab-strip" ref={strip} role="tablist">
         {node.sessionIds.map((id, index) => {
           const info = panes.get(id);
-          return info ? <Tab key={id} info={info} selected={id === selected} workspaceId={workspaceId} groupId={node.id} index={index} /> : null;
+          return info ? <Tab key={id} info={info} selected={id === selected} workspaceId={workspaceId} index={index} /> : null;
         })}
       </div>
       <div className="tab-body">
@@ -168,7 +257,7 @@ function Split({ node, workspaceId, sessions, activeId }: { node: PaneLayoutNode
     const drag = press.current; const box = element.current?.getBoundingClientRect();
     if (!drag || !box) return;
     const change = (horizontal ? event.clientX : event.clientY) - drag.start;
-    if (!drag.moved && Math.abs(change) < dividerSlack) return;
+    if (!drag.moved && Math.abs(change) < dragSlack) return;
     drag.moved = true;
     const size = (horizontal ? box.width : box.height) - layoutMetrics.splitDivider;
     if (size > 0) setLive(clampRatio(drag.ratio + change / size));
@@ -214,6 +303,7 @@ export function Layout({ layout }: { layout: LayoutModel }) {
       <div className="dock-content" style={{ minWidth: minimum.width, minHeight: minimum.height }}>
         <LayoutNode node={layout.root} workspaceId={layout.workspaceId} sessions={sessions.current.map} activeId={activeSessionId(state)} />
       </div>
+      <TabDragGhost />
     </div>
   );
 }

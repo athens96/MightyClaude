@@ -9,6 +9,9 @@ export const layoutMetrics = tokens.metrics.layout;
 export const dropMergeStrip = 36;
 export const dropEdgeShare = 0.24;
 
+/** How far a press on a divider, the sidebar grip or a tab moves before it is a drag (MainWindow.Layout.cs DividerSlack). */
+export const dragSlack = 3;
+
 export type DropEdge = 'center' | 'left' | 'right' | 'top' | 'bottom';
 
 /** PaneLayout.DropZone: the strip on top merges; else the nearest edge within the share (ties: left, right, top, bottom). */

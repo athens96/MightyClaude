@@ -8,15 +8,12 @@ import { Dialogs } from '../dialogs/Dialogs';
 import { Surfaces } from '../native/Surfaces';
 import { Layout } from '../layout/Layout';
 import { PictureViewer } from '../pictures/PictureViewer';
-import { layoutMetrics } from '../layout/geometry';
+import { dragSlack, layoutMetrics } from '../layout/geometry';
 import { Banners, StatusBar, WorkspaceHeader } from './Chrome';
 import { MenuHost } from './parts';
 import { shortcutAction } from './shortcuts';
 import { Sidebar, sidebarSearchId } from './Sidebar';
 import type { AppSnapshot } from '../store/models';
-
-/** How far a press on the grip moves before it is a drag (DividerSlack). */
-const gripSlack = 3;
 
 function Grip({ width, setLive }: { width: number; setLive: (width: number | null) => void }) {
   const { t, bridge } = useServices();
@@ -29,7 +26,7 @@ function Grip({ width, setLive }: { width: number; setLive: (width: number | nul
     const drag = press.current;
     if (!drag) return;
     const travel = event.clientX - drag.start;
-    if (!drag.moved && Math.abs(travel) < gripSlack) return;
+    if (!drag.moved && Math.abs(travel) < dragSlack) return;
     drag.moved = true;
     const proposed = drag.width + travel;
     // Below the fold threshold the sidebar folds; the saved width stays the one from before the drag.
