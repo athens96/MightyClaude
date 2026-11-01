@@ -59,13 +59,15 @@ jobs:
       # A push to main builds the package a release ships, so it carries the pinned browser engine
       # (CEF and Node, BrowserEngine.lock) as the Mac release zips always have; other runs build without it.
       - name: Restore the pinned browser engine (main)
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        # Like the build step below, also after a failed test step, so the build never lacks the engine.
+        if: (success() || failure()) && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/MightyClaude/browser-engine
           key: browser-engine-${{ hashFiles('native/macos/BrowserEngine.lock') }}
       - name: Fetch the pinned browser engine (main)
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        # Like the build step below, also after a failed test step, so the build never lacks the engine.
+        if: (success() || failure()) && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: bash scripts/fetch-browser-engine.sh
       - name: Build SwiftUI application
         id: build-app
