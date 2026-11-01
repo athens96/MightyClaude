@@ -138,7 +138,7 @@ mightyclaude/latest.json                      ← MIGHTY_UPDATE_URL
 mightyclaude/0.2.0/MightyClaude-macos.zip     ← latest.json의 macos.url
 ```
 
-새 버전을 낼 때: `VERSION`을 올리고 → 빌드·패키징 → `scripts/check-release-size.sh`로 크기 게이트 통과 → `make-update-manifest.py`로 `latest.json` 생성 → 패키지를 버전 폴더에, `latest.json`을 고정 위치에 업로드. `latest.json`은 캐시가 길게 잡히지 않도록 `Cache-Control: no-cache` 정도로 둔다.
+새 버전을 낼 때: `VERSION`을 올리고 → 빌드·패키징 → `scripts/check-release-size.sh`로 크기 게이트 통과 → `make-update-manifest.py`로 `latest.json` 생성 → 패키지를 버전 폴더에, `latest.json`을 고정 위치에 업로드. `latest.json`은 캐시가 길게 잡히지 않도록 `Cache-Control: no-cache` 정도로 둔다. 실제 릴리스(CI 패키지 받기부터 서명·R2·GitHub 릴리스까지)는 [release.md](release.md)의 `scripts/release.py` 단계를 따른다.
 
 ## 한계
 
