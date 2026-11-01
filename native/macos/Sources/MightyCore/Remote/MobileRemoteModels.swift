@@ -98,6 +98,9 @@ public enum MobileWire {
     public static let maximumBlockOutput = 2_000
     /// The ceiling on the newest settled run's `result`, counted in characters.
     public static let maximumRunResult = 20_000
+    /// The most entries a run's `resultFiles` carries: the first ones of the
+    /// desktop panel's list (up to `ReferenceLinkSupport.maximumResultFiles`).
+    public static let maximumRunResultFiles = 50
     /// A block's own prompt, bounded like an activity summary.
     public static let maximumBlockSummary = 1_000
     /// How many recent step lines a block still in motion carries.
@@ -457,9 +460,88 @@ public struct MobileMightyRun: Codable, Sendable, Equatable, Identifiable {
     /// Background work a request started that still runs after its own turn (`MightyGraphRun.backgroundWaiting`): its
     /// result card reads 현재까지의 결과 meanwhile. Absent when none (and from older hosts).
     public var backgroundWaiting: Int?
+    /// The desktop's 결과에 나온 파일 list for a run that carries `result` and
+    /// completed (`MobileMightySupport.runResultFiles`). Absent when it names
+    /// none, on a workspace of another computer, and from older hosts.
+    public var resultFiles: [MobileResultFile]?
     public init(id: String, input: String, title: String? = nil, status: String, blocks: [MobileBlock], result: String? = nil, noticeRun: Bool? = nil) {
         self.id = id; self.input = input; self.title = title; self.status = status; self.blocks = blocks; self.result = result
         self.noticeRun = noticeRun == true ? true : nil
+    }
+}
+
+/// One file a run's final result names: `path` relative to the workspace root,
+/// joined with "/" — what `GET /m1/workspaces/{id}/file?path=` takes — and the
+/// line the result pointed at, if any.
+public struct MobileResultFile: Codable, Sendable, Equatable {
+    public var path: String
+    public var line: Int?
+    public init(path: String, line: Int? = nil) {
+        self.path = path; self.line = line
+    }
+}
+
+/// One pane's `resultFiles`, kept per run until that run's result or the
+/// workspace folder changes, so a session reply built for every long poll does
+/// not look through the workspace again (the desktop panel keeps its list the
+/// same way, `MightyGraphResultFilesModel`). `MobileMightySupport.runs` drops
+/// the runs it no longer looks up, so the memo never holds more than the runs
+/// that carry a result; the host drops it with its pane. Windows Core keeps the
+/// same memo (`MobileResultFilesMemo`).
+public final class MobileResultFilesMemo: @unchecked Sendable {
+    public typealias LookThrough = (MightyGraphRun, URL) -> [MobileResultFile]?
+    private struct Kept {
+        let key: Int
+        let files: [MobileResultFile]?
+    }
+    private let lookThrough: LookThrough
+    private let lock = NSLock()
+    private var byRun: [String: Kept] = [:]
+    private var used = Set<String>()
+
+    public init(lookThrough: @escaping LookThrough = { MobileMightySupport.lookThrough($0, workspaceRoot: $1) }) {
+        self.lookThrough = lookThrough
+    }
+
+    /// The runs whose list is kept.
+    public var count: Int {
+        lock.lock(); defer { lock.unlock() }
+        return byRun.count
+    }
+
+    /// What a result is read from: the folder, the result entries and the whole final answer.
+    private static func key(_ run: MightyGraphRun, root: URL) -> Int {
+        var hasher = Hasher()
+        hasher.combine(root.path)
+        hasher.combine(run.resultEntries.count)
+        hasher.combine(run.resultEntries.last?.id)
+        for entry in run.resultEntries {
+            hasher.combine(entry.kind)
+            hasher.combine(entry.text)
+        }
+        hasher.combine(run.finalOutput)
+        return hasher.finalize()
+    }
+
+    func files(_ run: MightyGraphRun, root: URL) -> [MobileResultFile]? {
+        let key = Self.key(run, root: root)
+        lock.lock()
+        used.insert(run.id)
+        let kept = byRun[run.id]
+        lock.unlock()
+        if let kept, kept.key == key { return kept.files }
+        let files = lookThrough(run, root)
+        lock.lock()
+        byRun[run.id] = Kept(key: key, files: files)
+        lock.unlock()
+        return files
+    }
+
+    /// Drops every run not looked up since the last prune.
+    func prune() {
+        lock.lock(); defer { lock.unlock() }
+        byRun = byRun.filter { used.contains($0.key) }
+        used.removeAll()
     }
 }
 

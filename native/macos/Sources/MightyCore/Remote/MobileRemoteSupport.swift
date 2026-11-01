@@ -313,23 +313,59 @@ public enum MobileMightySupport {
     /// is the registry's prefix rule: a pane keeps blocks it made under an
     /// earlier style, so every runnable style is asked, not just this one
     /// (§1.10). A notice run's `title` is its heading (`BackgroundNoticeRuns.heading`). The phone adds its own
-    /// number and provider.
-    public static func runs(_ values: [MightyGraphRun], outputTails: [String: [String]] = [:], title: (String) -> String? = { _ in nil }) -> [MobileMightyRun] {
+    /// number and provider. `workspaceRoot` is the pane's workspace folder on
+    /// this computer (nil for a workspace of another computer): a run that
+    /// carries its result gets the files it names from it (`runResultFiles`).
+    /// With the pane's `resultFiles` memo a result is looked through once, and
+    /// the memo drops the runs this call no longer looks up.
+    public static func runs(_ values: [MightyGraphRun], outputTails: [String: [String]] = [:], workspaceRoot: URL? = nil, resultFiles memo: MobileResultFilesMemo? = nil,
+                            title: (String) -> String? = { _ in nil }) -> [MobileMightyRun] {
         let window = values.suffix(MobileWire.mightyRuns)
         let offset = values.count - window.count
         let ordinals = MightyGraphSupport.requestOrdinals(values)
         let carried = carriesResult(Array(window))
-        return window.enumerated().map { index, run in
+        let projected: [MobileMightyRun] = window.enumerated().map { index, run in
             let state = status(run.status)
             let notice = run.noticeRun == true
+            let result: String? = carried(index) && settled(state) ? output(run.finalOutput, maximum: MobileWire.maximumRunResult) : nil
             var mobile = MobileMightyRun(id: run.id, input: ActivitySupport.clean(run.input, maximumBytes: MobileWire.maximumText),
                                          title: notice ? BackgroundNoticeRuns.heading(run) : title(run.input),
                                          status: state, blocks: blocks(run, ordinal: ordinals[offset + index], outputTails: outputTails),
-                                         result: carried(index) && settled(state) ? output(run.finalOutput, maximum: MobileWire.maximumRunResult) : nil)
+                                         result: result)
             mobile.noticeRun = notice ? true : nil
             mobile.backgroundWaiting = run.backgroundWaiting > 0 ? run.backgroundWaiting : nil
+            mobile.resultFiles = result == nil ? nil : runResultFiles(run, workspaceRoot: workspaceRoot, memo: memo)
             return mobile
         }
+        memo?.prune()
+        return projected
+    }
+
+    /// The files a run's final result names, as the desktop's 결과에 나온 파일
+    /// panel lists them (`lookThrough`, read from the full result, not the
+    /// clipped `result`): only for a run that completed with every block it
+    /// draws ended (`MightyGraphLayout.finished`), only files inside
+    /// `workspaceRoot`, the first `maximumRunResultFiles`. Nil when there is no
+    /// root or nothing was named. With `memo` the workspace is looked through
+    /// once per result, never on every poll. Windows Core reads it the same way
+    /// (`MobileMightySupport.RunResultFiles`).
+    public static func runResultFiles(_ run: MightyGraphRun, workspaceRoot: URL?, memo: MobileResultFilesMemo? = nil) -> [MobileResultFile]? {
+        guard let workspaceRoot, run.status == "completed", MightyGraphLayout.finished(run) else { return nil }
+        if let memo { return memo.files(run, root: workspaceRoot) }
+        return lookThrough(run, workspaceRoot: workspaceRoot)
+    }
+
+    /// The look through the workspace itself, over exactly the desktop panel's
+    /// input (`MightyGraphResultFilesModel.Request`): the run's result entries
+    /// that are not the user's, and none when it has no result entries. A
+    /// settled, completed run's result entry is its whole final output
+    /// (`MightyGraphRun.refreshResult`, run on every saved and live run).
+    public static func lookThrough(_ run: MightyGraphRun, workspaceRoot: URL) -> [MobileResultFile]? {
+        let texts = run.resultEntries.filter { $0.kind != "user" }.map(\.text)
+        guard !texts.isEmpty else { return nil }
+        let files = ReferenceLinkSupport.resultFiles(in: texts, root: workspaceRoot)
+        guard !files.isEmpty else { return nil }
+        return files.prefix(MobileWire.maximumRunResultFiles).map { MobileResultFile(path: $0.path, line: $0.line) }
     }
 
     /// Which runs of `window` carry their full result once settled: the newest request and the notice runs

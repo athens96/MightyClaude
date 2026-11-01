@@ -19,6 +19,8 @@ export const MAX_STATUS_LINES = 6;
 export const MAX_BLOCK_OUTPUT = 2000;
 /** Longest `result` the newest settled Mighty run carries. */
 export const MAX_RUN_RESULT = 20_000;
+/** Most `resultFiles` a Mighty run carries (the host's own cap). */
+export const MAX_RUN_RESULT_FILES = 50;
 /** Longest `summary`, and longest `activity` line, a Mighty block carries. */
 export const MAX_BLOCK_SUMMARY = 1000;
 /** Most `activity` lines a Mighty block carries. */
@@ -418,6 +420,18 @@ export interface MobileMightyRun {
    * 현재까지의 결과 with this count meanwhile. A positive integer; absent when none (and from older hosts).
    */
   backgroundWaiting?: number;
+  /**
+   * The workspace files the run's final result names, as the Mac's 결과에 나온 파일 panel lists them: only on a
+   * run that carries `result` and completed, at most `MAX_RUN_RESULT_FILES`. Absent when none (and from older hosts).
+   */
+  resultFiles?: MobileResultFile[];
+}
+
+/** One file a run's result names: `path` is workspace-relative, `/`-joined — what the file preview route takes. */
+export interface MobileResultFile {
+  path: string;
+  /** The line the result pointed at, when it gave one. */
+  line?: number;
 }
 
 /**

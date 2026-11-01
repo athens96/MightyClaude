@@ -10,9 +10,10 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import type { MobileBlock, MobileMightyRun } from '@/api/types';
+import type { MobileBlock, MobileMightyRun, MobileResultFile } from '@/api/types';
 import { AssistantMarkdown } from '@/components/assistant-markdown';
 import { NoticeReply, RunHead } from '@/components/background-run';
+import { ResultFiles } from '@/components/result-files';
 import { StatusChip } from '@/components/status-chip';
 import { EmptyState } from '@/components/ui';
 import { formatDuration } from '@/components/log-entry-view';
@@ -322,12 +323,14 @@ function ResultCard({ run, text }: { run: MobileMightyRun; text: string }) {
   );
 }
 
-function RunGroup({ run, ordinal, newest }: {
+function RunGroup({ run, ordinal, newest, onOpenFile }: {
   run: MobileMightyRun;
   /** The request's number; a notice run (Claude's reply to finished background work) has none to show. */
   ordinal: number;
   /** The newest request starts open while it runs; see `runFold`. */
   newest: boolean;
+  /** Opens a file the result names; absent when the host serves no files. */
+  onOpenFile?: (file: MobileResultFile) => void;
 }) {
   const styles = useStyles(makeStyles);
   // The fold follows the run (a request that just finished folds its steps away)
@@ -404,6 +407,7 @@ function RunGroup({ run, ordinal, newest }: {
             </>
           )}
           {result ? <ResultCard run={run} text={result} /> : null}
+          {result && run.resultFiles ? <ResultFiles files={run.resultFiles} onOpen={onOpenFile} /> : null}
         </View>
       ) : null}
     </View>
@@ -424,6 +428,7 @@ export function MightyRunList({
   headerStyle,
   listRef,
   follow,
+  onOpenFile,
 }: {
   runs: MobileMightyRun[];
   header?: ReactElement | null;
@@ -433,6 +438,8 @@ export function MightyRunList({
   headerStyle?: StyleProp<ViewStyle>;
   listRef?: (list: EndScrollable | null) => void;
   follow?: FollowBottomProps;
+  /** Opens a file a result names in the workspace file preview; absent when the host serves no files. */
+  onOpenFile?: (file: MobileResultFile) => void;
 }) {
   const styles = useStyles(makeStyles);
   // The run followed as newest: the newest request, or a notice run after it that is a turn of its own.
@@ -447,7 +454,7 @@ export function MightyRunList({
       keyExtractor={(run) => run.id}
       renderItem={({ item, index }) => (
         <View style={styles.listItem}>
-          <RunGroup run={item} ordinal={ordinals[index] ?? index + 1} newest={index === followed} />
+          <RunGroup run={item} ordinal={ordinals[index] ?? index + 1} newest={index === followed} onOpenFile={onOpenFile} />
         </View>
       )}
       contentContainerStyle={contentContainerStyle}

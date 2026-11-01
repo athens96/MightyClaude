@@ -145,6 +145,9 @@ final class AppStore: ObservableObject, DelegationHost {
     var askProbeInFlight = false
     var askProbedAt: Date?
     @Published var statusLines: [String: StatusLineState] = [:]
+    /// Each pane's phone `resultFiles` as last looked through (`MobileResultFilesMemo`): a
+    /// result is looked through once, not on every long poll. Dropped with the pane.
+    var mobileResultFiles: [String: MobileResultFilesMemo] = [:]
     @Published var appUpdate = AppUpdateState()
     /// Mighty styles (AppStore+Styles.swift): what was found, what was said
     /// yes to, and the per-pane state the guided panel draws from.
@@ -786,7 +789,7 @@ final class AppStore: ObservableObject, DelegationHost {
             delegationRuns.forget(id)
             if let closing, FilePaneKind.isFilePane(closing.kind) { filePaneModels[closing.workspaceId]?.releasePreview() }
             drafts.removeValue(forKey: id)
-            statusLines.removeValue(forKey: id)
+            statusLines.removeValue(forKey: id); mobileResultFiles.removeValue(forKey: id)
             pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); forgetLoginRecovery(id); guidedProgress.removeValue(forKey: id)
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id)
@@ -847,7 +850,7 @@ final class AppStore: ObservableObject, DelegationHost {
             for session in snapshot.sessions where session.workspaceId == workspace.id {
                 await runner.revokePaneMCPBinding(agentPaneId: session.id)
                 drafts.removeValue(forKey: session.id)
-                statusLines.removeValue(forKey: session.id)
+                statusLines.removeValue(forKey: session.id); mobileResultFiles.removeValue(forKey: session.id)
                 pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id); forgetLoginRecovery(session.id); guidedProgress.removeValue(forKey: session.id)
                 discardAttachments(session.id)
                 queuedInputs.removeValue(forKey: session.id)

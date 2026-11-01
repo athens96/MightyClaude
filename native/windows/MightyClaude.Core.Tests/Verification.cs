@@ -370,6 +370,7 @@ internal static class Verification
         await Test("Mobile structure: rebuilt only when the structure moves", MobileStructureVerification.CacheRebuildsOnlyWhenTheStructureMoves);
         await Test("Mobile structure: sent only when asked and changed, shed first", MobileStructureVerification.RouteSendsTheStructureOnlyWhenAskedAndChanged);
         await Test("Mobile host: runs carry the Mac's shape and caps", MobileHostVerification.RunsCarryTheMacsShapeAndCaps);
+        await Test("Mobile host: runs carry the result files the desktop lists", MobileHostVerification.RunsCarryTheResultFilesTheDesktopLists);
         await Test("Mobile host: a pane without a graph is grouped from its transcript", MobileHostVerification.APaneWithoutAGraphIsGroupedFromItsTranscript);
         await Test("Mobile host: a phone is told only of what changed", MobileHostVerification.APhoneIsToldOnlyOfWhatChanged);
         await Test("Mobile host: a session reply reads as the desktop does", MobileHostVerification.ASessionReplyReadsAsTheDesktopDoes);

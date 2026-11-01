@@ -190,7 +190,8 @@ MobileCommand { name, description, source, argumentHint?, action? }
 MobileMighty {
   style: "cli" | "ouroboros",
   styleId: string,                                                       // 아래 "스타일" 절
-  runs: [{ id, input, title?, status, blocks: [MobileBlock], result?, noticeRun?: true, backgroundWaiting?: number }], // 최근 20개 요청, 시간순
+  runs: [{ id, input, title?, status, blocks: [MobileBlock], result?, noticeRun?: true, backgroundWaiting?: number,
+           resultFiles?: [{ path, line?: number }] }],                // 최근 20개 요청, 시간순
                                              // noticeRun(선택, 추가 필드)은 끝난 백그라운드 작업에 Claude가 답한 실행(알림 실행)에만 실리는 `true`.
                                              //   요청이 아니므로 요청 번호를 세지 않는다. 아래 "백그라운드 작업과 알림 실행" 절
                                              // title은 요청에서는 스타일이 붙인 이름이고, 알림 실행에서는 그 실행의 제목("백그라운드 작업 완료 · lint")이다.
@@ -204,6 +205,26 @@ MobileMighty {
                                              //   main 블록의 output(2 000자)을 쓴다. 롱 폴을 깨우는 mighty 요약값에는 이 요청이 끝난 뒤
                                              //   결과 길이도 들어가므로 상태가 바뀐 뒤 늦게 도착한 결과도 휴대폰을 깨운다.
                                              //   구버전 휴대폰은 무시하고, 신버전 휴대폰은 없으면 main 블록 output으로 "최종 결과" 카드를 그린다.
+                                             // resultFiles(선택, 추가 필드)는 데스크톱 결과 카드 옆 **결과에 나온 파일** 패널과 같은 목록이다(docs/mighty-mode.md "링크와 말풍선").
+                                             //   호스트가 데스크톱과 같은 Core 함수(Mac `ReferenceLinkSupport.resultFiles`, Windows `MightyGraphBlockModel.FilesFor` →
+                                             //   `ResultFiles.In`)로 그 실행 창의 워크스페이스 폴더에서 찾는다. 입구는 Mac `MobileMightySupport.runResultFiles`,
+                                             //   Windows `MobileMightySupport.RunResultFiles`. `result`가 실린 실행 중 **completed로 끝나고 그 실행이 그리는 블록이
+                                             //   모두 끝난 것**(`MightyGraphLayout.finished`)에만 실린다: error·stopped의 결과, 중간 출력, 웹 주소는 넣지 않는다.
+                                             //   20 000자로 자른 `result`가 아니라 **전체** 최종 결과에서 찾는다: 데스크톱 패널이 읽는 그대로, Mac은 사용자 것이 아닌
+                                             //   run.resultEntries(그 실행의 전체 최종 결과 하나)만 읽고(비었으면 데스크톱처럼 목록 없음), Windows는 `FilesFor`가 읽는 것을 읽는다.
+                                             //   폴더 안에 실제로 있는 일반 파일만, 결과에 나온 순서대로 중복 없이(같은 파일의 줄 번호 링크는 처음 것 하나로),
+                                             //   처음 50개까지. 빈 목록이면 싣지 않는다. 다른 컴퓨터의 워크스페이스(원격 워크스페이스)는 데스크톱도 찾지 않으므로 싣지 않는다.
+                                             //   path는 워크스페이스 루트 기준 "/"로 이은 상대 경로로, 아래 "파일" 절의 `GET /m1/workspaces/{id}/file?path=`에
+                                             //   그대로 넘긴다. line은 결과가 `경로:줄`로 가리킨 양의 정수 줄 번호(없으면 뺀다)다.
+                                             //   목록은 결과 글과 그 폴더의 파일로 정해지는데, 롱 폴을 깨우는 mighty 요약값에는 넣지 않는다(파일 시스템을 요약값마다
+                                             //   읽지 않으려는 것이다): 결과가 실리거나 바뀌면 상태와 결과 길이가 이미 요약값을 움직이고, 에이전트가 쓴 파일은 그때
+                                             //   이미 디스크에 있다. 결과는 그대로인데 파일만 나중에 생기거나 지워진 것은 데스크톱 패널처럼 결과가 바뀔 때까지 목록에
+                                             //   반영되지 않는다. 세션 상세는 롱 폴마다 만들어지므로 호스트는 실행 창마다 메모(Mac·Windows `MobileResultFilesMemo`)를 두어
+                                             //   결과 하나를 **한 번만** 찾는다: 실행 id별로, 워크스페이스 폴더·결과 항목·전체 최종 결과가 그대로인 동안은 지난 목록을 그대로 싣고,
+                                             //   결과가 바뀌면 다시 찾는다. 이번 응답에서 결과를 싣지 않은 실행은 메모에서 빠지고, 메모는 실행 창과 함께 사라진다.
+                                             //   휴대폰은 `parseResultFiles`로 읽고(미리보기 라우트가 거절할 경로·같은 경로 반복은 버리고, 50개까지),
+                                             //   결과 카드 **아래**에 "결과에 나온 파일 n" 목록(처음 5개 + "{count}개 더 보기")으로 그린다. 행을 누르면 그 파일의
+                                             //   미리보기 화면을 연다(줄 위치로 스크롤하지는 않는다). 구버전 휴대폰은 무시하고, 구버전 호스트는 보내지 않아 아무것도 더 그리지 않는다.
   panel?: MobileStylePanel,                                              // 아래 "스타일" 절
   ouroboros?: { phase, ready: boolean, takesText: [skill], next: [{ skill, title, help }], all: [{ skill, title, help }] },
   structure?: MobileStructure,                                           // 아래 "구조 보기" 절 — ?structure=로 물었을 때만, 바뀌었을 때만

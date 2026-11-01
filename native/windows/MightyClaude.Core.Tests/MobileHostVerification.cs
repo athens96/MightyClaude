@@ -82,6 +82,81 @@ internal static class MobileHostVerification
         return Task.CompletedTask;
     }
 
+    internal static Task RunsCarryTheResultFilesTheDesktopLists()
+    {
+        var root = Verification.Temp();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "docs")); Directory.CreateDirectory(Path.Combine(root, "src"));
+            File.WriteAllText(Path.Combine(root, "docs", "note.md"), "note"); File.WriteAllText(Path.Combine(root, "src", "app.ts"), "app");
+            var outside = Path.Combine(Path.GetDirectoryName(root)!, Path.GetFileName(root) + "-outside.txt"); File.WriteAllText(outside, "outside");
+            try
+            {
+                const string named = "wrote docs/note.md, see src/app.ts:12 and docs/note.md:3 again; not docs/missing.md or https://example.com/src/app.ts";
+                MightyGraphRun Run(string id, string status, string? output, bool notice = false) => new() { Id = id, Input = "q", Status = status, FinalOutput = output, NoticeRun = notice ? true : null };
+                var runs = new[] { Run("old", "completed", "older named docs/note.md"), Run("new", "completed", named + " and " + outside) };
+                var wire = MobileMightySupport.Runs(runs, workspaceRoot: root);
+                Check(wire[0].ResultFiles is null, "a run that does not carry its result carries no files either");
+                Check(wire[1].ResultFiles is { } files && files.SequenceEqual([new MobileResultFile("docs/note.md"), new MobileResultFile("src/app.ts", 12)]),
+                    "the desktop panel's list: real workspace files only, in order, once each, a line where the text gave one; got " + string.Join(", ", wire[1].ResultFiles?.Select(f => f.Path + ":" + f.Line) ?? []));
+                Check(wire[1].ResultFiles!.SequenceEqual(MightyGraphBlockModel.FilesFor(runs[1], root).Select(f => new MobileResultFile(f.Path, f.Line))), "the very list the desktop's 결과에 나온 파일 panel draws");
+                Check(MobileMightySupport.Runs(runs)[1].ResultFiles is null && MobileMightySupport.Runs(runs, workspaceRoot: null)[1].Result is not null, "no folder on this computer (a remote workspace): the result travels, its files do not");
+
+                // Read from the full answer, not the 20,000-character result the phone gets.
+                var tail = MobileMightySupport.Runs([Run("long", "completed", new string('가', 25_000) + " then src/app.ts")], workspaceRoot: root)[0];
+                Check(tail.Result is { Length: MobileWire.MaximumRunResult } && tail.ResultFiles is [{ Path: "src/app.ts", Line: null }], "a file named past the clipped result is still listed");
+
+                // Only a successful, finished result.
+                Check(MobileMightySupport.Runs([Run("failed", "failed", named)], workspaceRoot: root)[0] is { Result: not null, ResultFiles: null }, "a failed run's result names no files");
+                Check(MobileMightySupport.Runs([Run("stopped", "stopped", named)], workspaceRoot: root)[0] is { Result: not null, ResultFiles: null }, "a stopped run's result names no files");
+                Check(MobileMightySupport.Runs([Run("running", "running", named)], workspaceRoot: root)[0].ResultFiles is null, "a run in motion names none");
+                var open = Run("open", "completed", named); open.Agents = [new() { Id = "a", Status = "running" }];
+                Check(MobileMightySupport.Runs([open], workspaceRoot: root)[0].ResultFiles is null, "a run with a block still running is not finished");
+                Check(MobileMightySupport.Runs([Run("none", "completed", "nothing to open here")], workspaceRoot: root)[0].ResultFiles is null, "a result that names none carries no list");
+
+                // A notice run after the newest request carries its own, as it carries its result.
+                var notices = MobileMightySupport.Runs([Run("request", "completed", "docs/note.md"), Run("request:notice:1", "completed", "src/app.ts", notice: true)], workspaceRoot: root);
+                Check(notices[0].ResultFiles is [{ Path: "docs/note.md" }] && notices[1].ResultFiles is [{ Path: "src/app.ts" }], "the newest request and its notice runs each list their own files");
+
+                // The cap: the first 50 of the desktop's list.
+                Directory.CreateDirectory(Path.Combine(root, "many"));
+                for (var i = 0; i < 60; i++) File.WriteAllText(Path.Combine(root, "many", $"f{i:D2}.txt"), "");
+                var crowded = MobileMightySupport.Runs([Run("crowded", "completed", string.Join(" ", Enumerable.Range(0, 60).Select(i => $"many/f{i:D2}.txt")))], workspaceRoot: root)[0].ResultFiles;
+                Check(crowded is { Count: MobileWire.MaximumRunResultFiles } && crowded[0].Path == "many/f00.txt" && crowded[^1].Path == "many/f49.txt", "at most 50 files travel, the first ones");
+
+                // A pane's memo looks a result through once: a second reply for the same result reads the kept list.
+                var looks = 0;
+                var memo = new MobileResultFilesMemo((run, folder) => { looks++; return MobileMightySupport.LookThrough(run, folder); });
+                var first = MobileMightySupport.Runs(runs, workspaceRoot: root, resultFiles: memo);
+                Check(looks == 1 && first[1].ResultFiles!.SequenceEqual(wire[1].ResultFiles!) && memo.Count == 1, "the first reply looks the result through");
+                var second = MobileMightySupport.Runs(runs, workspaceRoot: root, resultFiles: memo);
+                Check(looks == 1 && second[1].ResultFiles!.SequenceEqual(wire[1].ResultFiles!), "the next reply for the same result does not look again");
+                var cached = new MobileResultFilesMemo(); MobileMightySupport.Runs(runs, workspaceRoot: root, resultFiles: cached);
+                File.Move(Path.Combine(root, "src", "app.ts"), Path.Combine(root, "src", "moved.ts"));
+                try { Check(MobileMightySupport.Runs(runs, workspaceRoot: root, resultFiles: cached)[1].ResultFiles is [_, { Path: "src/app.ts" }], "a kept list is sent as it was, without the workspace being read"); }
+                finally { File.Move(Path.Combine(root, "src", "moved.ts"), Path.Combine(root, "src", "app.ts")); }
+                runs[1].FinalOutput += " and docs/note.md once more";
+                MobileMightySupport.Runs(runs, workspaceRoot: root, resultFiles: memo);
+                Check(looks == 2, "a result that changed is looked through again");
+                MobileMightySupport.Runs(runs, workspaceRoot: Path.Combine(root, "docs"), resultFiles: memo);
+                Check(looks == 3, "another folder is looked through again");
+                runs[1].Status = "running"; MobileMightySupport.Runs(runs, workspaceRoot: root, resultFiles: memo);
+                Check(memo.Count == 0, "a run that no longer carries a result is dropped from the memo");
+                runs[1].Status = "completed"; runs[1].FinalOutput = named + " and " + outside;
+
+                using var json = JsonDocument.Parse(JsonSerializer.Serialize(wire[1], Wire.Json));
+                var list = json.RootElement.GetProperty("resultFiles");
+                Check(list.GetArrayLength() == 2 && list[0].EnumerateObject().Select(p => p.Name).SequenceEqual(["path"]) && list[1].GetProperty("path").GetString() == "src/app.ts" && list[1].GetProperty("line").GetInt32() == 12,
+                    "the wire shape is resultFiles: [{ path, line? }]");
+                using var bare = JsonDocument.Parse(JsonSerializer.Serialize(wire[0], Wire.Json));
+                Check(!bare.RootElement.TryGetProperty("resultFiles", out _), "a run without files has no resultFiles on the wire");
+            }
+            finally { File.Delete(outside); }
+        }
+        finally { Directory.Delete(root, true); }
+        return Task.CompletedTask;
+    }
+
     internal static Task APaneWithoutAGraphIsGroupedFromItsTranscript()
     {
         var pane = new RunSession { Id = "p", Status = "running", Logs = [new("o1", "assistant", "an old reply", Stamp(0)), new("u1", "user", "first request", Stamp(1)), new("r1", "assistant", "first answer", Stamp(2)), new("u2", "user", "second request", Stamp(3)), new("r2", "assistant", "working", Stamp(4))] };

@@ -538,6 +538,7 @@
   "phone.blocks.nothing": "暂无可显示的内容。",
   "phone.blocks.prompt": "请求",
   "phone.blocks.result": "结果",
+  "phone.blocks.resultFilesMore": "再显示 {count} 个",
   "phone.blocks.resultLess": "收起",
   "phone.blocks.resultMore": "显示全部",
   "phone.connect.scan": "扫描二维码或粘贴链接",
