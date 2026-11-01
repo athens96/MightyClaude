@@ -542,7 +542,10 @@ struct MobileRemoteExtensionTests {
 
         // The cap: the first 50 of the desktop's list.
         try manager.createDirectory(at: root.appendingPathComponent("many"), withIntermediateDirectories: true)
-        let names = (0..<60).map { "many/f" + ($0 < 10 ? "0" : "") + String($0) + ".txt" }
+        let names: [String] = (0..<60).map { (index: Int) -> String in
+            let pad = index < 10 ? "0" : ""
+            return "many/f\(pad)\(index).txt"
+        }
         for name in names { try Data().write(to: root.appendingPathComponent(name)) }
         let crowded = MobileMightySupport.runs([run("crowded", "completed", names.joined(separator: " "))], workspaceRoot: root)[0].resultFiles
         #expect(crowded?.count == MobileWire.maximumRunResultFiles)
