@@ -66,7 +66,7 @@ jobs:
         # build stamps them; the signing key itself never leaves the release machine.
         env:
           MIGHTY_UPDATE_URL: https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/latest.json
-          MIGHTY_UPDATE_PUBLIC_KEY: ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=
+          MIGHTY_UPDATE_PUBLIC_KEY: C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4=
         run: ./scripts/build-windows.ps1 -Architecture ${{ matrix.architecture }} -Configuration Release -Installer
       # The WinUI screens are the ui-winui escape hatch and the window without WebView2: a short smoke that they start,
       # show a Claude and a shell pane and open Settings. Everything else is the web smoke's.

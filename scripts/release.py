@@ -25,7 +25,7 @@ RELEASE_ROOT = os.path.join(ROOT, "release")
 PUBLIC_BASE = "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude"
 BUCKET = "mightyclaude"
 # The public half of the update signing key (also in .github/workflows/native-windows.yml).
-PUBLIC_KEY = "ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c="
+PUBLIC_KEY = "C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4="
 FORMAT = "mightyclaude-update-v1"
 REPO = "athens96/MightyClaude"
 STEPS = ["check", "version", "push", "ci", "download", "manifest", "page", "upload", "github", "verify"]

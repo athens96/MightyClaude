@@ -37,7 +37,7 @@ jobs:
       WINDOWS_RUN: ${{ inputs.windows_run }}
       NOTES_B64: ${{ inputs.notes_b64 }}
       # The public half of the key, as native-windows.yml and the apps carry it.
-      MIGHTY_UPDATE_PUBLIC_KEY: ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=
+      MIGHTY_UPDATE_PUBLIC_KEY: C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4=
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:

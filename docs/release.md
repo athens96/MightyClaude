@@ -94,7 +94,7 @@ gh workflow run release-manifest.yml --ref main -f version=<버전> \
 1. 실행 id는 `ci` 단계가 `state.json`의 `runs`에 적어 둔 값이다. 노트는 `release/<버전>/update-notes.md`(BOM은 뺀다)를 base64로 넘긴다 — 여러 줄, 따옴표, `$`가 `-f` 인자와 워크플로 셸을 그대로 지나가게 하려는 것이다. build 번호는 넘기지 않는다: 워크플로가 빌드 커밋에서 직접 센다.
 2. 워크플로의 실행 이름이 `Release manifest <버전> [<request>]`라서, `gh run list --workflow release-manifest.yml --event workflow_dispatch --branch main`에서 main 실행 중 이번 `request` 값이 든 것만 고른다(전에 부른 실행이나 다른 사람이 부른 실행을 잡지 않는다). 같은 값의 실행이 둘 이상이면 멈춘다. 끝날 때까지 보고, 실행 id와 그 커밋을 `state.json`의 `manifestRun`·`manifestRunSha`에 적는다. 실패하면 `gh run view <id> --log-failed`를 알려 주고 멈춘다.
 3. 워크플로(ubuntu, 잡은 `github.ref == refs/heads/main`일 때만, 환경 `release`)는 아무것도 받기 전에 두 실행의 출처를 `gh api repos/<저장소>/actions/runs/<id>`로 확인한다: 워크플로 파일이 `native-macos.yml`·`native-windows.yml`, 이벤트 `push`, 브랜치 `main`, 이 저장소(포크 아님), 완료·성공, 두 실행이 같은 커밋. 그 커밋이 디스패치한 main 커밋의 조상인지, 그 커밋의 `VERSION`이 입력 버전인지 보고, build 번호를 `git rev-list --count <커밋>`으로 센다(`ci` 단계와 같은 셈). 그다음 `run-id`로 아티팩트 세 개를 받아 Windows `.sha256`을 맞춰 보고, 해시를 고정한 `scripts/requirements-sign.txt`의 `cryptography`로(`MIGHTY_SIGNER=cryptography`) 서명한다. 시크릿은 `$RUNNER_TEMP`에 umask 077로 쓰고(비었으면 실패) `always()` 단계에서 지운다. 만든 봉투를 이 스크립트의 `verify_envelope`로 공개 키와 패키지에 대해 확인한 뒤 `latest.json`·`latest.unsigned.json`을 아티팩트 `MightyClaude-release-manifest`로 남긴다. 액션은 모두 커밋 SHA로 고정했다.
-4. 스크립트는 그 아티팩트를 `gh run download <id> -n MightyClaude-release-manifest`로 `release/<버전>/`에 받아, 공개 키(`ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=`, 앱과 `.github/workflows/native-windows.yml`의 값)로 다시 확인한다. 버전·build(워크플로가 센 값이 `ci`가 적은 값과 같아야 한다)·notes·세 패키지의 url/sha256/크기가 **이 PC가 받은** 파일·노트와 같지 않으면 멈춘다. `upload`도 올리기 전에 같은 확인을 다시 한다.
+4. 스크립트는 그 아티팩트를 `gh run download <id> -n MightyClaude-release-manifest`로 `release/<버전>/`에 받아, 공개 키(`C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4=`, 앱과 `.github/workflows/native-windows.yml`의 값)로 다시 확인한다. 버전·build(워크플로가 센 값이 `ci`가 적은 값과 같아야 한다)·notes·세 패키지의 url/sha256/크기가 **이 PC가 받은** 파일·노트와 같지 않으면 멈춘다. `upload`도 올리기 전에 같은 확인을 다시 한다.
 
 `manifest`를 다시 돌리면 매번 새로 부른다 — `ci`를 다시 해 실행이 바뀌었으면 새 실행 id로 서명한다.
 
@@ -145,7 +145,7 @@ gh workflow run release-manifest.yml --ref main -f version=<버전> \
 
 ## 서명 키와 GitHub 설정
 
-업데이트 서명 개인 키(공개 키 `ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=`의 짝)는 GitHub 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`로만 남아 있다. 설치된 앱은 이 공개 키로만 `latest.json`을 확인하므로, 키를 새로 만들면 기존 앱이 업데이트를 받지 못한다. 그래서 키를 지키는 설정이 릴리스의 일부다. 저장소 Settings에서 한 번:
+업데이트 서명 개인 키(공개 키 `C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4=`의 짝, 0.4.48부터)는 GitHub 환경 `release`의 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`와 소유자의 오프라인 백업에 있다. 0.4.47까지의 키는 잃었다([app-update.md](app-update.md#서명)). 설치된 앱은 이 공개 키로만 `latest.json`을 확인하므로, 키를 새로 만들면 기존 앱이 업데이트를 받지 못한다. 그래서 키를 지키는 설정이 릴리스의 일부다. 저장소 Settings에서 한 번:
 
 1. **Environments → New environment `release`.**
    - Deployment branches and tags: **Selected branches and tags**, 규칙 `main` 하나만.
