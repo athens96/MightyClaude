@@ -106,7 +106,9 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
   action is the window's own method. A click shows its pane at once (the store's `chosen`) until the host's state follows. The
   dialogs of the window's flows (remove workspace, delegation, parent close, rename, resume) are pushed as `{kind:'dialog'}` and
   answered with `dialogAnswer`; the flow itself stays the host's. Ported here only for the drag preview and the scroll area:
-  PaneLayout's drop zone, share bounds and minimums (`layout/geometry.ts`) and the sidebar search (`shell/filter.ts`). Host
+  PaneLayout's drop zone, share bounds and minimums (`layout/geometry.ts`) and the sidebar search (`shell/filter.ts`). A tab
+  moves on pointer events, not HTML5 drag-and-drop, whose OS drag finds no drop target in the WinUI window's WebView2
+  (`layout/tabDrag.ts`: slack, target under the pointer, release docks, Esc / no target cancels). Host
   methods: `shellState`, `selectWorkspace`, `selectSession`, `activatePane`, `showDashboard`, `hideDashboard`, `toggleDisclosure`,
   `setSidebarWidth`, `setSidebarCollapsed`, `applyLayoutPreset`, `resizeSplit`, `resetSplit`, `dockSession`, `closeSession`,
   `renameSession`, `renameWorkspace`, `renameCheck`, `removeWorkspace`, `showInExplorer`, `openFiles`, `focusPane`, `childAction`,

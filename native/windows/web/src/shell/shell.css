@@ -238,6 +238,7 @@ button { font: inherit; color: inherit; }
 .tab-handle {
   position: relative; display: flex; align-items: center; gap: var(--space-sm); min-width: 56px; height: 100%;
   padding: 0 var(--inset-tab-trailing) 0 var(--inset-tab-leading); border: 0; background: transparent; color: var(--ink2); font-size: var(--type-pill); cursor: default;
+  touch-action: none;
 }
 .tab.selected .tab-handle { color: var(--ink); font-weight: 600; }
 .tab-title { max-width: 125px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -247,6 +248,17 @@ button { font: inherit; color: inherit; }
 .tab-landing { position: absolute; top: 2px; bottom: 2px; width: 2px; border-radius: 1px; background: var(--accent); pointer-events: none; }
 .tab-landing.left { left: 0; }
 .tab-landing.right { right: 0; }
+/* A tab's move (layout/tabDrag.ts): its title follows the pointer, dimmed where it cannot land; no text selects meanwhile. */
+.tab-drag-ghost {
+  position: fixed; left: var(--space-md); top: var(--space-md); z-index: 60; max-width: 240px; pointer-events: none;
+  padding: var(--space-xs) var(--space-sm); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-segment);
+  background: var(--card); color: var(--ink); font-size: var(--type-pill); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .18);
+}
+.tab-drag-ghost.nowhere { opacity: .55; }
+/* The page overlay a drag counts (shell/overlay.ts): browser panes' native controls step aside under it. */
+.tab-drag-cover { position: fixed; inset: 0; pointer-events: none; }
+.tab-dragging, .tab-dragging * { cursor: grabbing !important; user-select: none; }
 .tab-body { position: relative; flex: 1; min-height: 0; }
 .pane-slot { position: absolute; inset: 0; }
 .pane-slot.hidden { visibility: hidden; content-visibility: hidden; pointer-events: none; }
