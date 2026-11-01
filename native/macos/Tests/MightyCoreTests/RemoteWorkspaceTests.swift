@@ -621,7 +621,8 @@ struct RemoteWorkspaceServerTests {
     }
 
     @Test func onePeerHoldsAtMostItsShareOfConnections() async throws {
-        let server = HTTPServer(address: "127.0.0.1", port: 0, maximumConnectionsPerPeer: 2) { _ in HTTPResponse(status: 200, body: Data("{}".utf8)) }
+        // The held connections must outlast a slow runner, not the 15 s idle close, which this test is not about.
+        let server = HTTPServer(address: "127.0.0.1", port: 0, maximumConnectionsPerPeer: 2, idleTimeout: 300) { _ in HTTPResponse(status: 200, body: Data("{}".utf8)) }
         let port = Int(try await server.start())
         let held = try (0..<2).map { _ in try openSocket(port: port) }
         try await Task.sleep(for: .milliseconds(200))
