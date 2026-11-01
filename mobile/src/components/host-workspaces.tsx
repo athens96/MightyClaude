@@ -1,18 +1,20 @@
-import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { describeError } from '@/api/client';
 import { isAgentIOPane, type MobileSessionSummary, type MobileState } from '@/api/types';
 import { NewSessionSheet, type NewSessionChoice } from '@/components/new-session-sheet';
+import { Icon } from '@/components/icons';
 import { SessionRow } from '@/components/session-card';
 import { Button, EmptyState } from '@/components/ui';
 import { useCapabilities, useRunsAntigravity } from '@/hooks/use-capabilities';
 import { hasCapability } from '@/lib/capabilities';
 import { t } from '@/lib/i18n';
 import { groupSessionsByWorkspace } from '@/lib/merge';
+import { workspaceMute } from '@/lib/push/workspace-mute';
 import { useHostClient } from '@/store/live';
 import { showToast } from '@/store/toast';
-import { cardShadow, headingFontFamily, monoFontFamily, spacing, useStyles, type Palette } from '@/theme';
+import { cardShadow, headingFontFamily, monoFontFamily, radius, spacing, usePalette, useStyles, type Palette } from '@/theme';
 
 /** Opens a pane, or says why an agent's own terminal or browser stays on the Mac. */
 export function openSession(hostId: string, session: MobileSessionSummary): void {
@@ -24,7 +26,8 @@ export function openSession(hostId: string, session: MobileSessionSummary): void
 
 /**
  * One host's workspaces as sections: the workspace name in bold with its path in mono,
- * 파일 and 새 창 beside it, then one plain list with a row per pane. Used by the "현황" tab
+ * the notification bell (Android, a host that pushes), 파일 and 새 창 beside it, then one
+ * plain list with a row per pane. Used by the "현황" tab
  * (with `glance`, so rows may show context and elapsed time), the "세션" tab and the
  * host screen. Creating a pane opens it; `onCreated` lets a screen read the host again.
  */
@@ -43,8 +46,16 @@ export function HostWorkspaces({
 }) {
   const styles = useStyles(makeStyles);
   const client = useHostClient(hostId);
+  const capabilities = useCapabilities(hostId, client);
   // A Mac older than the files routes never shows the button.
-  const canBrowseFiles = hasCapability(useCapabilities(hostId, client), 'files');
+  const canBrowseFiles = hasCapability(capabilities, 'files');
+  // Only the Android app gets notifications, and only from a host that sends them.
+  const canMute = Platform.OS === 'android' && hasCapability(capabilities, 'push');
+  // Muted on this phone only (workspace-mute.ts): the host is not asked or told.
+  const muted = useSyncExternalStore(workspaceMute.subscribe, () => workspaceMute.mutedNow(hostId));
+  useEffect(() => {
+    void workspaceMute.load(hostId);
+  }, [hostId]);
   const antigravity = useRunsAntigravity(hostId);
   const [creatingFor, setCreatingFor] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
@@ -89,6 +100,14 @@ export function HostWorkspaces({
                   {group.workspace.path}
                 </Text>
               </View>
+              {canMute ? (
+                <WorkspaceBell
+                  hostId={hostId}
+                  workspaceId={group.workspace.id}
+                  name={group.workspace.name}
+                  off={muted.includes(group.workspace.id)}
+                />
+              ) : null}
               {canBrowseFiles ? (
                 <Button
                   label={t('phone.files.open')}
@@ -140,6 +159,28 @@ export function HostWorkspaces({
   );
 }
 
+/** A workspace's notifications on this phone: a bell when on, a slashed bell when off. */
+function WorkspaceBell({ hostId, workspaceId, name, off }: { hostId: string; workspaceId: string; name: string; off: boolean }) {
+  const styles = useStyles(makeStyles);
+  const palette = usePalette();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={off ? t('phone.workspaces.notifyUnmute', { name }) : t('phone.workspaces.notifyMute', { name })}
+      hitSlop={4}
+      onPress={() => {
+        void workspaceMute.setMuted(hostId, workspaceId, !off).then((saved) => {
+          if (!saved) showToast(t('phone.workspaces.notifyFailed'), 'error');
+          else showToast(off ? t('phone.workspaces.notifyUnmuted', { name }) : t('phone.workspaces.notifyMuted', { name }));
+        });
+      }}
+      style={({ pressed }) => [styles.bell, pressed && styles.pressed]}
+    >
+      <Icon name={off ? 'alertsOff' : 'alerts'} color={off ? palette.textFaint : palette.text} size={17} strokeWidth={2.2} />
+    </Pressable>
+  );
+}
+
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     groups: { gap: spacing.lg },
@@ -161,6 +202,17 @@ const makeStyles = (palette: Palette) =>
       maxWidth: '60%',
     },
     workspacePath: { color: palette.textFaint, flex: 1, fontFamily: monoFontFamily, fontSize: 12 },
+    // As tall as the compact buttons beside it.
+    bell: {
+      alignItems: 'center',
+      borderColor: palette.border,
+      borderRadius: radius.round,
+      borderWidth: StyleSheet.hairlineWidth,
+      height: 32,
+      justifyContent: 'center',
+      width: 32,
+    },
+    pressed: { opacity: 0.75 },
     // The shadow on the outside, the clip on the inside: a clipped view casts no iOS shadow.
     list: { ...cardShadow, backgroundColor: palette.surface, borderRadius: 18 },
     listClip: { borderRadius: 18, overflow: 'hidden' },

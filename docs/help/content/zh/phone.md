@@ -73,6 +73,7 @@ Windows 电脑也一样，只是需要一条 Windows 防火墙规则，以免连
 - 第一次打开应用时（Android 13 及以上）会询问一次是否允许通知。要按类型关闭，请在 {{ui:phone.tabs.hosts}} 标签页打开 {{ui:phone.settings.title}}，修改 {{ui:phone.settings.notifications}} 下的开关。如果系统设置里该应用的通知被关闭，{{ui:phone.settings.title}} 会提示。
 - 收到权限请求通知时，可以直接点 {{ui:permission.allow}} 或 {{ui:permission.deny}}。Antigravity 卡片提供 {{ui:permission.allowOnce}}、{{ui:antigravity.permission.allowAlways}} 和 {{ui:antigravity.permission.deny}}。只能允许一次的卡片（例如串联命令或可能删除数据的命令）没有 {{ui:antigravity.permission.allowAlways}}。问题和计划的通知没有按钮，点开后在应用里回答。没有任何可允许操作的 Antigravity 卡片同样不带按钮，点开后在应用里回答。
 - 按钮只有在手机解锁后才起作用。锁屏时点按，通知会变为“{{ui:phone.push.outcome.locked}}”，按钮仍保留。如果已在电脑上回答，通知会变为 {{ui:phone.push.outcome.already}}；如果答复没能发出，会变为 {{ui:phone.push.outcome.failed}}。最后这种情况请点开通知，在应用里回答。
+- 可以按工作区关闭通知。点按工作区名称旁的铃铛，该工作区的通知就会关闭，铃铛上会出现斜线。再点一次即可重新开启。所有工作区一开始都是开启的，这个设置只对这部手机有效，连接同一台电脑的其他手机照常收到。应用还没见过该工作区，或超过一天没有收到电脑的列表时，通知仍可能送达。
 - 点按通知会打开对应的会话。手机正在显示某个会话时，不会收到关于它的通知。
 - 通知在锁屏上以私密方式显示：如果你设置了在锁屏上隐藏敏感内容，标题和正文就不会显示。
 - 电脑会加密每条通知，只有这部手机能读取，中继和 Google 无法读取。通知经由中继发送，因此通过 Tailscale 直接连接时，只要电脑能上网也会收到。

@@ -4,7 +4,8 @@ import Svg, { Path, Rect } from 'react-native-svg';
 /**
  * The few line glyphs concept D draws: the four tab marks, the composer's plus, send,
  * queue (lines with a plus) and stop, the next-action arrow, and the remote
- * screen's full-screen expand and collapse, and the session view switch.
+ * screen's full-screen expand and collapse, the session view switch, and the slashed bell of a
+ * workspace whose notifications are off.
  * 24×24 strokes, round caps, coloured by the caller.
  * Decorative: whatever carries them holds the accessible label.
  */
@@ -12,6 +13,7 @@ export type IconName =
   | 'dashboard'
   | 'sessions'
   | 'alerts'
+  | 'alertsOff'
   | 'hosts'
   | 'plus'
   | 'send'
@@ -67,6 +69,8 @@ export function Icon({
         </>
       ) : name === 'alerts' ? (
         <Path {...stroke} d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4" />
+      ) : name === 'alertsOff' ? (
+        <Path {...stroke} d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4M3 3l18 18" />
       ) : name === 'hosts' ? (
         <>
           <Rect {...stroke} height={12} rx={2} width={18} x={3} y={6} />

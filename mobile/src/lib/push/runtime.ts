@@ -36,6 +36,7 @@ import { findHostByHandle, globalPushFetch, syncHostPush } from '@/lib/push/regi
 import { openPush, pushKey } from '@/lib/push/seal';
 import { enabledKinds, pushSettings } from '@/lib/push/settings';
 import { createViewingReporter } from '@/lib/push/viewing';
+import { workspaceMute } from '@/lib/push/workspace-mute';
 
 const ASKED_KEY = 'mightyclaude.push.asked.v1';
 /** Quick switch flips and host changes within this long send one registration. */
@@ -103,7 +104,8 @@ function toNotification(spec: PushNotificationSpec): Notification {
 /**
  * An FCM data message → the host's sealed message → a local notification. The pairing is the
  * one whose handle (`h`) the push came through and whose key opens it; the sealed `hostId` never
- * picks it. Anything else is dropped without a word.
+ * picks it. Anything else, a kind switched off or a workspace muted on this phone, is dropped
+ * without a word.
  */
 export async function showPush(remote: { data?: Record<string, unknown> }): Promise<void> {
   try {
@@ -122,6 +124,8 @@ export async function showPush(remote: { data?: Record<string, unknown> }): Prom
     if (message === null) return;
     await pushSettings.ready;
     if (!pushSettings.get().kinds[message.kind]) return;
+    // A workspace muted on this phone drops every kind; one the phone cannot place is shown.
+    if (!(await workspaceMute.shouldShow(storageId, message))) return;
     await ensureChannels();
     await notifee.displayNotification(toNotification(notificationFor(message, storageId, handle)));
   } catch {
