@@ -46,6 +46,8 @@ public final class HTTPServer: @unchecked Sendable {
     private let maximumConnectionsPerPeer: Int?
     /// The interface the listener is pinned to (a tunnel's, `utun…`); nil binds by address only.
     private let requiredInterfaceName: String?
+    /// How long a connection may wait for its request before it is closed.
+    private let idleTimeout: TimeInterval
     private var peerConnections: [String: Int] = [:]
     private var listener: NWListener?
     private var clients: [ObjectIdentifier: Client] = [:]
@@ -58,9 +60,10 @@ public final class HTTPServer: @unchecked Sendable {
     /// read at all: the handler answers the head with an empty body.
     public init(address: String, port: UInt16, requestBodyLimit: (@Sendable (HTTPRequest) -> Int)? = nil,
                 acceptPeer: (@Sendable (String) -> Bool)? = nil, maximumConnectionsPerPeer: Int? = nil, requiredInterfaceName: String? = nil,
-                handler: @escaping @Sendable (HTTPRequest) async -> HTTPResponse) {
+                idleTimeout: TimeInterval = 15, handler: @escaping @Sendable (HTTPRequest) async -> HTTPResponse) {
         self.address = address; self.port = port; self.handler = handler; self.requestBodyLimit = requestBodyLimit
         self.acceptPeer = acceptPeer; self.maximumConnectionsPerPeer = maximumConnectionsPerPeer; self.requiredInterfaceName = requiredInterfaceName
+        self.idleTimeout = idleTimeout
     }
 
     /// True while the listener is open; long-poll callers check it first.
@@ -123,7 +126,7 @@ public final class HTTPServer: @unchecked Sendable {
         clients[ObjectIdentifier(connection)] = client
         let timeout = DispatchWorkItem { [weak self, weak client] in if let client { self?.remove(client) } }
         client.timer = timeout
-        queue.asyncAfter(deadline: .now() + 15, execute: timeout)
+        queue.asyncAfter(deadline: .now() + idleTimeout, execute: timeout)
         connection.stateUpdateHandler = { [weak self, weak client] state in
             guard let client else { return }
             if case .failed = state { self?.remove(client) }
