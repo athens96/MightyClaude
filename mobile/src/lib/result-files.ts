@@ -70,10 +70,13 @@ export function shownResultFiles(files: readonly MobileResultFile[], all: boolea
   return { shown: files.slice(0, RESULT_FILES_FOLDED), hidden: files.length - RESULT_FILES_FOLDED };
 }
 
-/** The workspace file preview a row opens: the same screen the files browser opens a file in. */
-export function resultFileRoute(hostId: string, workspaceId: string, file: MobileResultFile) {
+/**
+ * The workspace file preview a row opens: the same screen the files browser opens a file in. `origin` is the pane
+ * (`session`) and the Mighty run (`run`, the `MobileMightyRun` the list belongs to) whose originals its 변경사항 compare with.
+ */
+export function resultFileRoute(hostId: string, workspaceId: string, file: MobileResultFile, origin?: { session: string; run: string }) {
   return {
     pathname: '/host/[hostId]/workspace/[workspaceId]/file' as const,
-    params: { hostId, workspaceId, path: file.path },
+    params: origin ? { hostId, workspaceId, path: file.path, session: origin.session, run: origin.run } : { hostId, workspaceId, path: file.path },
   };
 }

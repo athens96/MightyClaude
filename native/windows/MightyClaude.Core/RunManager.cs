@@ -74,6 +74,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     public Func<bool> DelegationEnabled { get; set; } = DelegationSwitch.IsOn;
     /// <summary>The app's side of the delegation server, which each run's binding is connected to; null leaves every delegation call unanswered.</summary>
     public IDelegationRequestHandler? DelegationHandler { get; set; }
+    /// <summary>Where a Claude run's file originals are kept (<see cref="FileOriginalStore"/>); null keeps none.</summary>
+    public FileOriginalStore? FileOriginals { get; set; }
     /// <summary>Every execution-graph node of a run as it changes, by session id: a sharing host sends them as the Mac's "graph" events
     /// (M/ProcessRunner.swift's graph callback). A node is handed over only before the run's last status is emitted, never after it.
     /// The callback is called under a per-run lock: it must not throw, block, or call back into this runner. One that throws loses
@@ -262,6 +264,13 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             // A delegated child's run, its terminal tool and its MCP binding work in its worktree folder, never in its parent's checkout (M/AppStore.swift:1001-1002).
             if (request.WorkingFolder is { } folder) workspace = Directory.Exists(folder) ? workspace with { Path = folder } : throw new DirectoryNotFoundException(Locale.Get("run.blocked.worktreeMissing"));
             parser.ImageRoot = workspace.Path;
+            // A Claude run's Edit, Write and MultiEdit results name each file's content before the run changed it; the first of each
+            // file is kept under the run's graph id for the source preview's 변경사항 (FileChanges.cs).
+            if (request.Provider == "claude" && request.Kind == "claude" && tracker is not null && FileOriginals is { } originals)
+            {
+                var originalsRoot = workspace.Path; var graphRunId = tracker.RunID;
+                parser.FileOriginal = (path, original) => originals.Capture(request.SessionId, graphRunId, originalsRoot, path, original);
+            }
             await providers.RefreshEnvironmentAsync(true, token);
             var environment = ProviderCatalog.QuietEnvironment();
             codexHome = request.Provider == "codex" ? CliAccountSupport.CodexHome(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment) : null;

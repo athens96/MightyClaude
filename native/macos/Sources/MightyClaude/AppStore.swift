@@ -318,6 +318,9 @@ final class AppStore: ObservableObject, DelegationHost {
     let repository: StateRepository
     /// Pictures agents showed, by hash, under the data directory.
     let imageCache: AgentImageCache
+    /// What files were before a Claude run changed them, under the data
+    /// directory (`FileOriginalStore`), for the source preview's 변경사항.
+    let fileOriginals: FileOriginalStore
     let fileStore = ModelSettingsFileStore()
     let providers = ProviderService(binaryOverrides: AppStore.delegationSmokeBinaryOverrides())
     let pluginDirectory: URL
@@ -462,7 +465,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// batch, so a flood of output never queues ahead of a click.
     private let runEvents = RunEventBatcher(batchLimit: 32)
 
-    private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings, imageCache: imageCache, liveRuns: liveRuns, delegationEnabled: { DelegationSwitch.isOn() }) { [weak self, runEvents] event in
+    private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings, imageCache: imageCache, liveRuns: liveRuns, delegationEnabled: { DelegationSwitch.isOn() }, fileOriginals: fileOriginals) { [weak self, runEvents] event in
         if runEvents.push(event) { Task { @MainActor in self?.applyRunEvents() } }
     }
 
@@ -505,6 +508,7 @@ final class AppStore: ObservableObject, DelegationHost {
         repository = StateRepository(directory: dataDirectory, legacyStateURL: profile == nil ? StateRepository.defaultLegacyStateURL() : nil)
         imageCache = AgentImageCache(directory: dataDirectory.appendingPathComponent("image-cache", isDirectory: true))
         AgentImageLibrary.shared.cache = imageCache
+        fileOriginals = FileOriginalStore(directory: dataDirectory.appendingPathComponent(FileOriginalStore.folderName, isDirectory: true))
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("mods/mighty-bridge", isDirectory: true)
         pluginDirectory = bundled.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil } ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("mods/mighty-bridge")
     }
@@ -531,7 +535,13 @@ final class AppStore: ObservableObject, DelegationHost {
         startDelegation()
         // Before anything can touch the lazy runners, which capture the server location once.
         startAgentIO()
-        do { snapshot = try await repository.load(); preparePaneLayouts(); canSave = true }
+        do {
+            snapshot = try await repository.load(); preparePaneLayouts(); canSave = true
+            // Originals of panes and runs the saved state no longer has go before anything reads them.
+            let kept = FileOriginalStore.keptRuns(snapshot.sessions)
+            let originals = fileOriginals
+            await Task.detached(priority: .utility) { originals.prune(sessions: kept) }.value
+        }
         catch { self.error = L("store.error.loadFailed", ["error": error.localizedDescription]) }
         // Temporary Antigravity rules a crash left in agy's settings go first.
         await antigravityRules.removeLeftovers()
@@ -787,6 +797,8 @@ final class AppStore: ObservableObject, DelegationHost {
             await runner.revokePaneMCPBinding(agentPaneId: id)
             snapshot.sessions.removeAll { $0.id == id }
             delegationRuns.forget(id)
+            let originals = fileOriginals
+            Task.detached(priority: .utility) { originals.forget(sessionId: id) }
             if let closing, FilePaneKind.isFilePane(closing.kind) { filePaneModels[closing.workspaceId]?.releasePreview() }
             drafts.removeValue(forKey: id)
             statusLines.removeValue(forKey: id); mobileResultFiles.removeValue(forKey: id)
@@ -857,6 +869,8 @@ final class AppStore: ObservableObject, DelegationHost {
                 draftRevisions.removeValue(forKey: session.id)
                 forgetGraphHistory(session.id)
                 forgetStyleState(session.id)
+                let originals = fileOriginals, closed = session.id
+                Task.detached(priority: .utility) { originals.forget(sessionId: closed) }
             }
             snapshot.sessions.removeAll { $0.workspaceId == workspace.id }
             snapshot.workspaces.removeAll { $0.id == workspace.id }
@@ -1518,6 +1532,14 @@ final class AppStore: ObservableObject, DelegationHost {
             }
         }
         receiveLoginSignal(event)
+        // The graph keeps a bounded number of runs: a run it let go takes its file originals with it.
+        if event.type == "graph", let after = snapshot.sessions.first(where: { $0.id == event.sessionId }) {
+            let kept = FileOriginalStore.keptRuns(after)
+            if runsBefore.contains(where: { !kept.contains($0.id) }) {
+                let originals = fileOriginals, sessionId = event.sessionId
+                Task.detached(priority: .utility) { originals.retain(sessionId: sessionId, keep: kept) }
+            }
+        }
         // A notice turn's answer came: delegation's items that waited for it rather than steer in are offered again now.
         if MightyGraphSupport.noticeTurnEnded(before: runsBefore, after: snapshot.sessions.first { $0.id == event.sessionId }?.graphRuns ?? []) { offerDelegationPending() }
         if event.type == "resume", let id = event.resumeId { rememberSessionID(id) }

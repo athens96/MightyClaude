@@ -53,6 +53,26 @@
 .files-lines { flex: none; position: sticky; left: 0; padding: var(--space-md) 8px var(--space-md) var(--space-md) !important; text-align: right; color: var(--ink3); background: var(--card); user-select: none; }
 .files-code { flex: 1; padding: var(--space-md) 11px !important; white-space: pre; tab-size: 4; user-select: text; }
 .files-source.wraps .files-code { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 변경사항 (DiffView.tsx): the base and counts over a unified diff in the source's monospace; added rows on the done wash,
+   removed rows on the error wash, the hunk heads in the second ink. */
+.files-diff { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.files-diff-caption { flex: none; display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-md); border-bottom: var(--stroke-line) solid var(--line); color: var(--ink2); font-size: var(--type-small); }
+.files-diff-caption > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files-diff-count { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.files-diff-count.added { color: var(--done-text); }
+.files-diff-count.removed { color: var(--err-text); }
+.files-diff-rows { flex: 1; min-height: 0; overflow: auto; padding: var(--space-xs) 0; font-family: var(--font-mono); font-size: 12px; line-height: 17px; color: var(--ink); }
+.files-diff-row { display: flex; min-width: max-content; }
+.files-diff-number { flex: none; padding: 0 var(--space-xs); text-align: right; color: var(--ink3); user-select: none; box-sizing: content-box; }
+.files-diff-op { flex: none; width: 2ch; text-align: center; user-select: none; }
+.files-diff-text { flex: 1; padding-right: var(--space-md); white-space: pre; tab-size: 4; }
+.files-diff-row.added { background: var(--done-soft); }
+.files-diff-row.added .files-diff-op, .files-diff-row.added .files-diff-number { color: var(--done-text); }
+.files-diff-row.removed { background: var(--err-soft); }
+.files-diff-row.removed .files-diff-op, .files-diff-row.removed .files-diff-number { color: var(--err-text); }
+.files-diff-row.hunk { margin-top: var(--space-xs); background: var(--card-raised); color: var(--ink2); }
+.files-diff-row.hunk:first-child { margin-top: 0; }
+.files-diff-row.noNewline .files-diff-text { color: var(--ink2); font-style: italic; }
 .syntax-keyword { color: var(--syntax-keyword); }
 .syntax-string { color: var(--syntax-string); }
 .syntax-number { color: var(--syntax-number); }

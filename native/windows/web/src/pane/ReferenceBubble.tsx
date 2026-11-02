@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import { useServices, useStoreState } from '../app/context';
 import { Markdown } from '../conversation/MarkdownView';
 import type { ReferenceTarget } from '../conversation/references';
+import { DiffView } from '../panes/files/DiffView';
+import { showsChanges } from '../panes/files/diff';
 import { ImageView, SourceView } from '../panes/files/FilesView';
-import type { FilePreview } from '../panes/files/types';
+import type { FileChanges, FilePreview } from '../panes/files/types';
 import { BubbleTail, bubbleDrag, bubbleFrame, lineScrollTop, referenceName, referenceSymbol, tailTop, wantedBubbleSize, type BubbleSize } from './reference';
 
 /** What `referencePreview` answers (MainWindow.WebShell.cs): null for a pane the page offers no bubble in. */
@@ -50,7 +52,9 @@ function Notice({ text }: { text: string }) {
  * for) over its path, with flip, show in Explorer, open in its default app and close; the body is the files pane's preview
  * of it (source with line numbers scrolled to the line, rendered Markdown, a picture) or the reason there is none. The
  * host resolves the path inside the workspace (ReferencePreview.Resolve) and reads it (FilePreviewLoader); the size a drag
- * leaves is saved for every pane (ReferenceBubbleWidth/Height), a double click on the grip forgets it.
+ * leaves is saved for every pane (ReferenceBubbleWidth/Height), a double click on the grip forgets it. A source or Markdown
+ * file the request changed gets 변경사항 | 전체 보기 in the head (referenceChanges, against the request's run when the click
+ * came from a run), opening on 변경사항; the choice is this bubble's only.
  */
 export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: string; request: ReferenceRequest; top: number; onClose: () => void }) {
   const { bridge, t } = useServices();
@@ -59,6 +63,8 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
   const body = useRef<HTMLDivElement>(null);
   const [roomSize, setRoomSize] = useState({ width: 0, height: 0 });
   const [answer, setAnswer] = useState<ReferenceAnswer | 'loading' | 'failed'>('loading');
+  const [changes, setChanges] = useState<FileChanges | null>(null);
+  const [showFull, setShowFull] = useState(false);
   const [onLeft, setOnLeft] = useState(false);
   const [live, setLive] = useState<BubbleSize | null>(null);
   const drag = useRef<{ x: number; y: number; start: { width: number; height: number }; moved: boolean } | null>(null);
@@ -83,6 +89,16 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
     return () => { current = false; };
   }, [bridge, paneId, request, onClose]);
 
+  // What the request changed in the file, asked beside the preview; none (or a failure) leaves the full view alone.
+  useEffect(() => {
+    let current = true;
+    setChanges(null);
+    setShowFull(false);
+    bridge.call<FileChanges | null>('referenceChanges', { paneId, path: request.path, ...(request.runId ? { runId: request.runId } : {}) })
+      .then((value) => { if (current) setChanges(value ?? null); }, () => {});
+    return () => { current = false; };
+  }, [bridge, paneId, request]);
+
   // Escape closes it while the focus is in its pane.
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -98,13 +114,16 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
   const found = typeof answer === 'object' && answer.found ? answer : null;
   const preview = found?.preview;
   const line = found ? found.line ?? null : request.line;
+  // 변경사항 | 전체 보기 for a source or Markdown file the request changed; 변경사항 until the toggle says otherwise.
+  const diffable = !preview?.failure && (preview?.kind === 'source' || preview?.kind === 'markdown') && showsChanges(changes) ? changes : null;
+  const showsDiff = !!diffable && !showFull;
   // The source scrolled to the line asked for once it is drawn.
   useLayoutEffect(() => {
     const source = body.current?.querySelector<HTMLElement>('.files-source');
     if (!source || !line) return;
     const height = parseFloat(getComputedStyle(source).lineHeight) || 17;
     source.scrollTop = lineScrollTop(line, height);
-  }, [preview, line]);
+  }, [preview, line, showsDiff]);
 
   const wanted = live ?? wantedBubbleSize(snapshot?.referenceBubbleWidth, snapshot?.referenceBubbleHeight);
   const frame = bubbleFrame(roomSize.width, roomSize.height, wanted);
@@ -134,12 +153,13 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
   const title = line ? t('reference.line', { title: name, line }) : name;
   const symbol = answer === 'loading' || answer === 'failed' || found ? referenceSymbol(request.path) : 'missing';
   const markdownRendered = preview?.kind === 'markdown' && preview.markdown;
-  const banners = preview && !preview.failure ? (markdownRendered ? preview.renderedBanners ?? [] : preview.banners) : [];
+  const banners = preview && !preview.failure && !showsDiff ? (markdownRendered ? preview.renderedBanners ?? [] : preview.banners) : [];
   let content;
   if (answer === 'loading') content = <div className="files-progress" />;
   else if (answer === 'failed') content = <Notice text={t('files.preview.failed')} />;
   else if (!found || !preview) content = <Notice text={t('files.preview.missing')} />;
   else if (preview.failure) content = <Notice text={preview.failure} />;
+  else if (diffable && showsDiff) content = <DiffView changes={diffable} />;
   else if (markdownRendered) content = <div className="files-markdown"><Markdown text={preview.text ?? ''} /></div>;
   else if (preview.kind === 'source' || preview.kind === 'markdown') content = <SourceView preview={preview} />;
   else if (preview.kind === 'image' && preview.image) content = <ImageView preview={preview} zoom={null} />;
@@ -165,6 +185,12 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
               <span className="reference-path" title={request.path}>{request.path}</span>
             </div>
             <div className="reference-tools">
+              {diffable && (
+                <div className="files-segment" role="group" aria-label={t('files.changes.view')} data-testid="reference-changes-toggle">
+                  <button type="button" className={showsDiff ? 'chosen' : ''} aria-pressed={showsDiff} onClick={() => setShowFull(false)}>{t('files.changes.show')}</button>
+                  <button type="button" className={showsDiff ? '' : 'chosen'} aria-pressed={!showsDiff} onClick={() => setShowFull(true)}>{t('files.changes.full')}</button>
+                </div>
+              )}
               <button type="button" className="files-tool" data-testid="reference-flip" aria-label={t(onLeft ? 'reference.flipRight' : 'reference.flipLeft')} title={t(onLeft ? 'reference.flipRight' : 'reference.flipLeft')} onClick={() => setOnLeft((v) => !v)}>
                 <svg viewBox="0 0 14 14" aria-hidden="true">{onLeft ? <path d="M1.5 2.5h11v9h-11zM9 2.5v9M4 7h3M5.5 5.5 7 7 5.5 8.5" /> : <path d="M1.5 2.5h11v9h-11zM5 2.5v9M10 7H7M8.5 5.5 7 7 8.5 8.5" />}</svg>
               </button>

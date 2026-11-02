@@ -141,6 +141,6 @@ Claude、Codex 和 Antigravity 窗格的标题栏中有{{ui:graph.view.default}}
 ![[agent-structure]]
 
 ### 结果卡片 {#result}
-请求结束后，结果卡片会整理出结果。Claude 的回答结束后请求即变为完成。如果它启动的后台任务（包括给已结束的子智能体发消息而重新唤醒的）仍在运行，卡片标题会显示“目前的结果 · 正在等待 N 个后台任务”，告诉你还剩几个；最后一个任务结束后，标题变为{{ui:graph.block.result}}。Claude 收到后台任务的通知后再次回答时，这段回答不会接在请求的结果后面，每一次回答都会打开一个新的图表（[后台任务](approvals.md#background)）。如果结果中提到了文件，可以用{{ui:graph.resultFiles.openButton}}按钮打开文件列表。点击块中的文件路径会弹出预览。最新的结果卡片会适应窗格大小；如果你手动调整过大小，会出现{{ui:graph.result.fitToWindow}}按钮。
+请求结束后，结果卡片会整理出结果。Claude 的回答结束后请求即变为完成。如果它启动的后台任务（包括给已结束的子智能体发消息而重新唤醒的）仍在运行，卡片标题会显示“目前的结果 · 正在等待 N 个后台任务”，告诉你还剩几个；最后一个任务结束后，标题变为{{ui:graph.block.result}}。Claude 收到后台任务的通知后再次回答时，这段回答不会接在请求的结果后面，每一次回答都会打开一个新的图表（[后台任务](approvals.md#background)）。如果结果中提到了文件，可以用{{ui:graph.resultFiles.openButton}}按钮打开文件列表。点击块中的文件路径会弹出预览。最新的结果卡片会适应窗格大小；如果你手动调整过大小，会出现{{ui:graph.result.fitToWindow}}按钮。 如果是请求更改过的源代码或 Markdown 文件，预览标题处会出现 {{ui:files.changes.show}} | {{ui:files.changes.full}} 切换，并先显示{{ui:files.changes.show}}：只显示更改的行及其前后 3 行，旁边标有旧行号和新行号，添加的行为绿色背景，删除的行为红色背景。上方一行说明比较的对象：从结果文件列表或区块中打开时，是该请求第一次更改文件之前的内容（{{ui:files.changes.baseRun}}），没有该原始内容时则是最后一次提交。没有更改时不显示切换，只显示整个文件。
 
 ![[result-card]]

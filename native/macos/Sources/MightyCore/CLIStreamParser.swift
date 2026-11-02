@@ -298,6 +298,47 @@ public final class CLIStreamParser {
         if graphTracker?.activity(value, toolID: rawID) != true { activity?(value) }
     }
 
+    /// Hears what each Edit, Write or MultiEdit of the run (or a sub-agent of
+    /// it) says about a file before it changed it: the path as the tool named
+    /// it and the `FileEdit` (Windows OutputParser.FileOriginal).
+    public var fileOriginal: ((String, FileEdit) -> Void)?
+
+    /// A Claude `user` line's `tool_use_result` (`toolUseResult` in
+    /// transcripts), read only when a tool result of the line answers an Edit,
+    /// Write or MultiEdit call and did not fail. `originalFile` as text is the
+    /// original (its `structuredPatch` travels with it, to follow the run's
+    /// later edits). Without it a Write of `type: "create"`, or an Edit with an
+    /// empty `oldString` whose patch is there and only adds, made the file; an
+    /// Edit's or a Write update's `structuredPatch` is undone against the file
+    /// on disk (the CLI leaves `originalFile` null for most edits); anything
+    /// else is unknown, which still settles the path for the run.
+    private func editedOriginal(_ value: [String: Any], blocks: [[String: Any]]) {
+        guard let fileOriginal,
+              let result = (value["tool_use_result"] as? [String: Any]) ?? (value["toolUseResult"] as? [String: Any]),
+              let path = result["filePath"] as? String, !path.isEmpty else { return }
+        var tool: String?
+        for block in blocks {
+            guard block["type"] as? String == "tool_result", block["is_error"] as? Bool != true,
+                  let id = block["tool_use_id"] as? String, !id.isEmpty, id.utf8.count <= 512,
+                  let name = toolActivities[ActivitySupport.id(namespace: activityNamespace, key: id)]?.toolName,
+                  ["Edit", "Write", "MultiEdit"].contains(name) else { continue }
+            tool = name; break
+        }
+        guard let tool else { return }
+        let patch = FilePatch.parse(result["structuredPatch"])
+        let edit: FileEdit
+        let type = result["type"] as? String
+        if let text = result["originalFile"] as? String { edit = FileEdit(original: text, patch: patch) }
+        else if tool == "Write", type == "create" { edit = FileEdit(created: true) }
+        else if tool == "Write", type != "update" { edit = .unknown }
+        else if tool != "Write", result["oldString"] as? String == "" {
+            let adds = patch.map { !$0.isEmpty && $0.allSatisfy { hunk in hunk.lines.allSatisfy { $0.hasPrefix("+") || $0.hasPrefix("\\") } } } ?? false
+            edit = adds ? FileEdit(created: true) : .unknown
+        }
+        else { edit = patch.map { FileEdit(patch: $0) } ?? .unknown }
+        fileOriginal(path, edit)
+    }
+
     private func finishDuration(id: String, previous: AgentActivity?) -> Double? {
         if let value = previous?.durationMs { return value }
         guard let started = activityStarts.removeValue(forKey: id) else { return nil }
@@ -433,6 +474,7 @@ public final class CLIStreamParser {
                 images(AgentImageSupport.payloads(in: blocks.filter { $0["type"] as? String == "image" }), key: (value["uuid"] as? String) ?? (message["id"] as? String) ?? "message",
                        toolID: nil, parentToolID: ExecutionGraphTracker.parentToolID(value), child: claudeChild)
             } else if type == "user", let message = value["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
+                if fileOriginal != nil { editedOriginal(value, blocks: blocks) }
                 for block in blocks where block["type"] as? String == "tool_result" {
                     tool(id: block["tool_use_id"] as? String, state: block["is_error"] as? Bool == true ? "error" : "completed", output: ActivitySupport.output(block["content"]))
                     if let toolID = block["tool_use_id"] as? String, !toolID.isEmpty, toolID.utf8.count <= 512 {

@@ -32,10 +32,16 @@ public struct WorkspaceGitInfo: Equatable, Sendable {
         return WorkspaceGitInfo(branch: branch, revision: revision, isDirty: dirty, ahead: ahead, behind: behind)
     }
 
+    /// The git this probe runs, and every other read-only git read of a
+    /// workspace (`GitHeadFile`): the first installed of these, in this order.
+    public static func gitExecutable() -> String? {
+        let candidates = ["/Library/Developer/CommandLineTools/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"]
+        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+    }
+
     public static func read(path: String) async -> WorkspaceGitInfo? {
         guard !Task.isCancelled, path.hasPrefix("/"), !path.contains("\0") else { return nil }
-        let candidates = ["/Library/Developer/CommandLineTools/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"]
-        guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return nil }
+        guard let executable = gitExecutable() else { return nil }
         var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
         environment["GIT_OPTIONAL_LOCKS"] = "0"; environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["LC_ALL"] = "C"

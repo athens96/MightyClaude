@@ -57,6 +57,9 @@ public struct MobileFilePreview: Codable, Sendable, Equatable {
     public var data: String?
     /// `binary`, `notRegularFile`, `tooLarge` or `undecodable`.
     public var reason: String?
+    /// What the request changed in the file (capability `fileChanges`, asked
+    /// with `changes=1`); `source`/`markdown` only, absent when there is no diff.
+    public var changes: FileChangeSet?
 
     init(workspaceId: String, path: String, name: String, size: Int64, modified: String?, type: String) {
         self.workspaceId = workspaceId; self.path = path; self.name = name; self.size = size; self.modified = modified; self.type = type
@@ -255,17 +258,26 @@ public enum MobileWorkspaceFiles {
         return preview
     }
 
-    /// The preview as JSON under `maximumReplyBytes`: text that escaping would
-    /// take over is cut by a quarter at a time (and marked truncated).
+    /// The preview as JSON under `maximumReplyBytes`: text and the changes'
+    /// lines that escaping would take over are cut by a quarter at a time
+    /// together (and each marked truncated).
     public static func encoded(_ preview: MobileFilePreview) -> Data {
         var preview = preview
         while true {
             let data = (try? JSONEncoder().encode(preview)) ?? Data("{}".utf8)
-            guard data.count > maximumReplyBytes, let text = preview.text, !text.isEmpty else { return data }
-            let kept = String(text.prefix(text.count * 3 / 4))
-            preview.text = kept
-            preview.truncated = true
-            preview.lineCount = SourceLines.scan(kept).starts.count
+            let hasText = !(preview.text ?? "").isEmpty, hasChanges = !(preview.changes?.hunks.isEmpty ?? true)
+            guard data.count > maximumReplyBytes, hasText || hasChanges else { return data }
+            if let text = preview.text, !text.isEmpty {
+                let kept = String(text.prefix(text.count * 3 / 4))
+                preview.text = kept
+                preview.truncated = true
+                preview.lineCount = SourceLines.scan(kept).starts.count
+            }
+            if var changes = preview.changes, !changes.hunks.isEmpty {
+                changes.hunks = FileDiff.cut(changes.hunks, lines: changes.hunks.reduce(0) { $0 + $1.lines.count } * 3 / 4)
+                changes.truncated = true
+                preview.changes = changes
+            }
         }
     }
 

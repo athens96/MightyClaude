@@ -28,6 +28,7 @@ import {
   type CompletedUpload,
   type CreateSessionResponse,
   type EntriesPage,
+  type FileChangesRequest,
   type FileListing,
   type FilePreview,
   type GuidedRequest,
@@ -309,8 +310,11 @@ export interface MobileClient {
   ): Promise<CreateSessionResponse>;
   /** One folder of a workspace, read-only ("files"); `""` is the workspace root. */
   listFiles(workspaceId: string, path: string, signal?: AbortSignal): Promise<FileListing>;
-  /** One file's preview, read-only ("files"). */
-  filePreview(workspaceId: string, path: string, signal?: AbortSignal): Promise<FilePreview>;
+  /**
+   * One file's preview, read-only ("files"). With `changes` (only against a host listing "fileChanges") a source or
+   * markdown preview also carries what the request changed in it (`changes=1`, with `session` and `run` when given).
+   */
+  filePreview(workspaceId: string, path: string, signal?: AbortSignal, changes?: FileChangesRequest): Promise<FilePreview>;
   /** This phone's allow-list flag, grant, displays and TURN servers ("screenShare"). */
   screenShareState(signal?: AbortSignal): Promise<ScreenShareState>;
   /** Asks the Mac for a session; it refuses with a `ScreenRejectReason` ("screenShare"). */
@@ -644,10 +648,16 @@ export function createClient(channel: RelayChannel): MobileClient {
         signal,
       ),
 
-    filePreview: (workspaceId, path, signal) =>
+    filePreview: (workspaceId, path, signal, changes) =>
       request<FilePreview>(
         'GET',
-        `/m1/workspaces/${encodeURIComponent(workspaceId)}/file?path=${encodeURIComponent(path)}`,
+        `/m1/workspaces/${encodeURIComponent(workspaceId)}/file?path=${encodeURIComponent(path)}${
+          changes
+            ? `&changes=1${changes.session ? `&session=${encodeURIComponent(changes.session)}` : ''}${
+                changes.run ? `&run=${encodeURIComponent(changes.run)}` : ''
+              }`
+            : ''
+        }`,
         undefined,
         signal,
       ),

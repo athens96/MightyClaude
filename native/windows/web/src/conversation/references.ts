@@ -5,6 +5,8 @@
 export interface ReferenceTarget {
   path: string;
   line: number | null;
+  /** The Mighty run the click came from (a result's files, a block's words): its 변경사항 compare with that run's originals. */
+  runId?: string;
 }
 
 const referencePattern = /(?<![\p{L}\p{N}_])((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|\/)?(?:[\p{L}\p{N}_.@-]+[\\/])*[\p{L}\p{N}_.@-]+\.[A-Za-z0-9]{1,12})(?::(\d{1,6}))?/gu;

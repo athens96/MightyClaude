@@ -63,6 +63,33 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
     private weak var store: AppStore?
     init(store: AppStore) { self.store = store }
 
+    /// A pane of another workspace never lends this one its originals; a
+    /// delegated child's are read in its worktree folder, where they were
+    /// captured. The phone names a run by its graph run's id (the request's
+    /// entry here); the originals are kept under the process's run, its
+    /// `sourceRunID`, so the id is mapped on this side and the wire stays as it is.
+    func mobileFileChanges(workspaceId: String, workspaceRoot: URL, path: String, sessionId: String?, runId: String?) async -> FileChangeSet? {
+        let found: (originals: FileOriginalStore, pane: String?, run: String?, root: URL)? = await MainActor.run {
+            guard let store else { return nil }
+            let session = sessionId.flatMap { id in store.snapshot.sessions.first { $0.id == id && $0.workspaceId == workspaceId } }
+            let workspace = store.snapshot.workspaces.first { $0.id == workspaceId }
+            let root = session.flatMap { pane in workspace.map { URL(fileURLWithPath: DelegationPanes.runWorkspace(for: pane, in: $0).path, isDirectory: true) } } ?? workspaceRoot
+            let run = runId.map { FileOriginalStore.originalsRun($0, in: session) }
+            return (store.fileOriginals, session?.id, run, root)
+        }
+        guard let found else { return nil }
+        return await FileChanges.read(store: found.originals, workspaceRoot: found.root, relativePath: path,
+                                      sessionId: found.pane, runId: found.pane == nil ? nil : found.run)
+    }
+
+    func mobileRunFolder(workspaceId: String, sessionId: String) async -> URL? {
+        await MainActor.run {
+            guard let store, let session = store.snapshot.sessions.first(where: { $0.id == sessionId && $0.workspaceId == workspaceId }),
+                  let workspace = store.snapshot.workspaces.first(where: { $0.id == workspaceId }) else { return nil }
+            return URL(fileURLWithPath: DelegationPanes.runWorkspace(for: session, in: workspace).path, isDirectory: true)
+        }
+    }
+
     func mobileState() async -> MobileState {
         await MainActor.run { store?.mobileState() ?? MobileState(revision: 0, hostName: "", workspaces: [], sessions: []) }
     }

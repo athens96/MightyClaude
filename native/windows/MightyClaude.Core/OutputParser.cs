@@ -243,6 +243,7 @@ public sealed class OutputParser
                     foreach (var block in blocks.EnumerateArray().Where(b => b.Text("type") == "tool_use")) Tool(block.Text("id"), block.Text("name") == "AskUserQuestion" ? "waiting" : "running", block.Text("name"), MetadataJson.Property(block, "input"));
                     Images(blocks.EnumerateArray().Where(b => b.Text("type") == "image").SelectMany(b => AgentImageSupport.Payloads(b)).ToList(), root.Text("uuid") ?? message.Text("id") ?? "message", null, child, parentToolId);
                 }
+                if (type == "user" && blocks.ValueKind == JsonValueKind.Array && FileOriginal is not null) EditedOriginal(root, blocks);
                 if (type == "user" && blocks.ValueKind == JsonValueKind.Array)
                     foreach (var block in blocks.EnumerateArray().Where(b => b.Text("type") == "tool_result"))
                     {
@@ -303,6 +304,40 @@ public sealed class OutputParser
         }
         catch (JsonException) { log("output", line); }
         catch (InvalidOperationException) { log("system", Locale.Get("run.notice.unsupportedRecord")); }
+    }
+    /// <summary>
+    /// Hears what each Edit, Write or MultiEdit of the run (or a sub-agent of it) says about a file before it changed it: the
+    /// path as the tool named it and the <see cref="FileEdit"/> (M/MightyCore/CLIStreamParser.swift fileOriginal).
+    /// </summary>
+    public Action<string, FileEdit>? FileOriginal { get; set; }
+    /// <summary>
+    /// A Claude <c>user</c> line's <c>tool_use_result</c> (<c>toolUseResult</c> in transcripts), read only when a tool result of
+    /// the line answers an Edit, Write or MultiEdit call and did not fail. <c>originalFile</c> as text is the original (its
+    /// <c>structuredPatch</c> travels with it, to follow the run's later edits). Without it a Write of <c>type: "create"</c>, or
+    /// an Edit with an empty <c>oldString</c> whose patch is there and only adds, made the file; an Edit's or a Write update's
+    /// <c>structuredPatch</c> is undone against the file on disk (the CLI leaves <c>originalFile</c> null for most edits);
+    /// anything else is unknown, which still settles the path for the run.
+    /// </summary>
+    private void EditedOriginal(JsonElement root, JsonElement blocks)
+    {
+        var result = MetadataJson.Property(root, "tool_use_result");
+        if (result.ValueKind != JsonValueKind.Object) result = MetadataJson.Property(root, "toolUseResult");
+        if (result.ValueKind != JsonValueKind.Object || result.Text("filePath") is not { Length: > 0 } path) return;
+        string? tool = null;
+        foreach (var block in blocks.EnumerateArray())
+            if (block.Text("type") == "tool_result" && !MetadataJson.Flag(block, "is_error") && block.Text("tool_use_id") is { Length: > 0 } id && Encoding.UTF8.GetByteCount(id) <= 512
+                && activities.TryGetValue(ActivitySupport.Id(activityNamespace, id), out var call) && call.ToolName is "Edit" or "Write" or "MultiEdit") { tool = call.ToolName; break; }
+        if (tool is null) return;
+        var original = MetadataJson.Property(result, "originalFile");
+        var patch = FilePatch.Parse(MetadataJson.Property(result, "structuredPatch"));
+        FileEdit edit;
+        if (original.ValueKind == JsonValueKind.String) edit = new(original.GetString(), false, patch);
+        else if (tool == "Write" && result.Text("type") == "create") edit = new(null, true, null);
+        else if (tool == "Write" && result.Text("type") != "update") edit = FileEdit.Unknown;
+        else if (tool != "Write" && result.Text("oldString") == "")
+            edit = patch is { Count: > 0 } && patch.All(h => h.Lines.All(l => l.StartsWith('+') || l.StartsWith('\\'))) ? new(null, true, null) : FileEdit.Unknown;
+        else edit = patch is not null ? new(null, false, patch) : FileEdit.Unknown;
+        FileOriginal!(path, edit);
     }
     private static bool Decodes(string base64)
     {

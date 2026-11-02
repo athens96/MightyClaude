@@ -59,3 +59,39 @@ export interface FilePreview {
   modified?: string;
   reason?: string;
 }
+
+/** One line of a hunk (Core FileDiff.cs): `" "` context, `"+"` added, `"-"` removed; `noNewline` marks a last line without a line break. */
+export interface FileDiffLine {
+  op: ' ' | '+' | '-';
+  text: string;
+  noNewline?: boolean;
+}
+
+/** A unified-diff hunk; a side with no lines starts at the line before it (0 at the top of the file). */
+export interface FileDiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: FileDiffLine[];
+}
+
+/**
+ * What `referenceChanges` answers (MainWindow.WebShell.cs, args `{ paneId, path, runId? }`): what the request changed in the
+ * file, against the original its run kept (`base: 'run'`) or the repository's HEAD (`base: 'head'`); null when there is no
+ * diff to show. `added`/`removed` count the whole change even when `truncated` cut the hunks (5,000 lines).
+ */
+export interface FileChanges {
+  base: 'run' | 'head';
+  hunks: FileDiffHunk[];
+  added: number;
+  removed: number;
+  truncated: boolean;
+  unchanged: boolean;
+  /** The run whose original was the base (`run`). */
+  runId?: string;
+  /** HEAD's short commit (`head`); absent in a repository with no commit yet. */
+  headSha?: string;
+  /** The run created the file, or HEAD does not have it: every line is added. */
+  created?: boolean;
+}

@@ -88,7 +88,8 @@ export type Capability =
   | 'files'
   | 'screenShare'
   | 'structure'
-  | 'push';
+  | 'push'
+  | 'fileChanges';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -105,6 +106,7 @@ export const CAPABILITIES: readonly Capability[] = [
   'screenShare',
   'structure',
   'push',
+  'fileChanges',
 ] as const;
 
 export interface HostInfo {
@@ -898,6 +900,52 @@ export interface FilePreview {
   /** The thumbnail, base64 (at most 2048 px on its long side and 512 KiB). */
   data?: string;
   reason?: UnsupportedReason;
+  /**
+   * `source`/`markdown`, asked with `changes: true` ("fileChanges"): what the request changed in the file; absent when
+   * there is no diff to show.
+   */
+  changes?: FileChanges;
+}
+
+/** One line of a hunk: `" "` context, `"+"` added, `"-"` removed; `noNewline` marks a last line without a line break. */
+export interface FileDiffLine {
+  op: ' ' | '+' | '-';
+  text: string;
+  noNewline?: boolean;
+}
+
+/** A unified-diff hunk; a side with no lines starts at the line before it (0 at the top of the file). */
+export interface FileDiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: FileDiffLine[];
+}
+
+/**
+ * A preview's `changes`: against the original the run kept before it first changed the file (`run`) or the
+ * repository's HEAD (`head`). `added`/`removed` count the whole change even when `truncated` cut the hunks.
+ */
+export interface FileChanges {
+  base: 'run' | 'head';
+  hunks: FileDiffHunk[];
+  added: number;
+  removed: number;
+  truncated: boolean;
+  unchanged: boolean;
+  /** The run whose original was the base (`run`). */
+  runId?: string;
+  /** HEAD's short commit (`head`); absent in a repository with no commit yet. */
+  headSha?: string;
+  /** The run created the file, or HEAD does not have it: every line is added. */
+  created?: boolean;
+}
+
+/** `filePreview`'s `changes=1` ("fileChanges"): the pane and run whose kept originals count, each optional. */
+export interface FileChangesRequest {
+  session?: string;
+  run?: string;
 }
 
 /** The `code` a refused file request carries beside its message. */

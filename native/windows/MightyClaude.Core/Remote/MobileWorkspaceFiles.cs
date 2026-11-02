@@ -27,7 +27,12 @@ public sealed record MobileFilePreview(int Protocol, string WorkspaceId, string 
     public string? Data { get; init; }
     /// <summary><c>binary</c>, <c>notRegularFile</c>, <c>tooLarge</c> or <c>undecodable</c>.</summary>
     public string? Reason { get; init; }
+    /// <summary>What the request changed in the file (capability <c>fileChanges</c>, asked with <c>changes=1</c>); <c>source</c>/<c>markdown</c> only, absent when there is no diff.</summary>
+    public FileChangeSet? Changes { get; init; }
 }
+
+/// <summary>A preview's <c>changes=1</c>: the pane (<c>session</c>) and run (<c>run</c>) whose captured originals count, each optional.</summary>
+public sealed record MobileFileChangesQuery(string? Session, string? Run);
 
 /// <summary>
 /// The phone's read-only view of a workspace folder (M/MightyCore/Remote/MobileWorkspaceFiles.swift): the files pane's listing
@@ -121,10 +126,16 @@ public static class MobileWorkspaceFiles
     /// <summary>The preview under <see cref="MaximumReplyBytes"/>: text that escaping would take over is cut by a quarter at a time (and marked truncated).</summary>
     public static MobileFilePreview Fitted(MobileFilePreview preview)
     {
-        while (Bytes(preview) > MaximumReplyBytes && preview.Text is { Length: > 0 } text)
+        // The text and the changes' lines are cut by a quarter together, each marked truncated.
+        while (Bytes(preview) > MaximumReplyBytes && (preview.Text is { Length: > 0 } || preview.Changes is { Hunks.Count: > 0 }))
         {
-            var cut = text.Length * 3 / 4; if (cut > 0 && char.IsHighSurrogate(text[cut - 1])) cut--;
-            var kept = text[..cut]; preview = preview with { Text = kept, Truncated = true, LineCount = SourceLines.Scan(kept).Starts.Count };
+            if (preview.Text is { Length: > 0 } text)
+            {
+                var cut = text.Length * 3 / 4; if (cut > 0 && char.IsHighSurrogate(text[cut - 1])) cut--;
+                var kept = text[..cut]; preview = preview with { Text = kept, Truncated = true, LineCount = SourceLines.Scan(kept).Starts.Count };
+            }
+            if (preview.Changes is { Hunks.Count: > 0 } changes)
+                preview = preview with { Changes = changes with { Hunks = FileDiff.Cut(changes.Hunks, changes.Hunks.Sum(h => h.Lines.Count) * 3 / 4), Truncated = true } };
         }
         return preview;
     }
