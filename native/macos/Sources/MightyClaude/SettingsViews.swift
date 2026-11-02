@@ -181,6 +181,22 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .about: "info.circle"
         }
     }
+    /// The entry's icon tile in the One UI list, in one of the palette's own fills.
+    var tone: Color {
+        switch self {
+        case .general: Palette.stop
+        case .models: Palette.token(\.agent)
+        case .styles: Palette.err
+        case .tools: Palette.wait
+        case .cli: Palette.token(\.ink3)
+        case .mobile: Palette.done
+        case .remote: Palette.token(\.task)
+        case .companion: Palette.run
+        case .about: Palette.accent
+        }
+    }
+    /// The One UI list's cards: related entries share one rounded card.
+    static let groups: [[SettingsPane]] = [[.general, .models, .styles], [.tools, .cli], [.mobile, .remote], [.companion, .about]]
 }
 
 struct AppSettingsView: View {
@@ -188,35 +204,83 @@ struct AppSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("settingsPane") private var pane: SettingsPane = .general
 
+    /// Two One UI panes (Windows' web Settings draws the same): the entries grouped into rounded cards with a tile each,
+    /// and the entry's page, each opening on a large title that gives way to a small one in its bar as it scrolls.
     var body: some View {
-        VStack(spacing: 0) {
-            SheetHeading(title: L("settings.title"), subtitle: "macOS · SwiftUI", systemImage: "gearshape") { dismiss() }
-            HStack(spacing: 0) {
-                sidebar
-                Divider()
-                SettingsPage { detail(pane) }
-                    // A fresh page per entry starts at its top.
-                    .id(pane)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+        HStack(spacing: 0) {
+            sidebar.frame(width: 288)
             Divider()
-            HStack { Spacer(); Button(L("settings.closeButton")) { dismiss() }.keyboardShortcut(.cancelAction) }
-                .padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md)
+            SettingsPage(title: pane.title) {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.ui(size: 15, weight: .medium)).foregroundStyle(Palette.ink)
+                        .frame(width: 34, height: 34).contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help(L("settings.closeButton"))
+                .accessibilityLabel(L("settings.closeButton"))
+                .accessibilityIdentifier("settings-close")
+            } content: { detail(pane) }
+                // A fresh page per entry starts at its top.
+                .id(pane)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(Palette.canvas)
         .frame(width: 800, height: 700)
         // Opening Settings is one of the four moments the sources are re-read.
         .task { store.rescanStyles() }
     }
 
     private var sidebar: some View {
-        List(SettingsPane.allCases, selection: Binding(get: { pane }, set: { if let value = $0 { pane = value } })) { item in
-            Label(item.title, systemImage: item.symbol)
-                .padding(.vertical, DesignMetrics.Spacing.xxs)
-                .tag(item)
-                .accessibilityIdentifier("settings-nav-\(item.rawValue)")
+        OneUIPane(title: L("settings.title"), subtitle: "macOS · SwiftUI") {
+            VStack(spacing: 14) {
+                ForEach(Array(SettingsPane.groups.enumerated()), id: \.offset) { _, group in
+                    VStack(spacing: 0) {
+                        ForEach(Array(group.enumerated()), id: \.element) { index, item in
+                            navRow(item, divided: index > 0)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Palette.panel))
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                }
+            }
         }
-        .listStyle(.sidebar)
-        .frame(width: 200)
+        // ↑ and ↓ step through the entries in the cards' order, as the sidebar list's selection did.
+        .focusable()
+        .focusEffectDisabled()
+        .onMoveCommand { direction in
+            let order = SettingsPane.groups.flatMap { $0 }
+            guard let index = order.firstIndex(of: pane) else { return }
+            switch direction {
+            case .up: pane = order[max(0, index - 1)]
+            case .down: pane = order[min(order.count - 1, index + 1)]
+            default: break
+            }
+        }
+    }
+
+    private func navRow(_ item: SettingsPane, divided: Bool) -> some View {
+        let selected = item == pane
+        return Button { pane = item } label: {
+            HStack(spacing: 14) {
+                Image(systemName: item.symbol).font(.ui(size: 15, weight: .medium)).foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(item.tone))
+                    .accessibilityHidden(true)
+                Text(item.title).font(.ui(size: 14)).lineLimit(1).foregroundStyle(selected ? Palette.accent : Palette.ink)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18).frame(minHeight: 52)
+            .background(selected ? Palette.accentSoft : Color.clear)
+            .overlay(alignment: .top) {
+                if divided { Rectangle().fill(Palette.border).frame(height: 0.5).padding(.leading, 64).padding(.trailing, 18) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("settings-nav-\(item.rawValue)")
     }
 
     /// The text size and fonts of the whole app (`TextSettings`); View → ⌘= / ⌘− / ⌘0 step the same size.
@@ -400,22 +464,6 @@ struct AppSettingsView: View {
                 Text(store.dataDirectory.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
             }
         }
-    }
-}
-
-struct SheetHeading: View {
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    let dismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: DesignMetrics.Spacing.md) {
-            Image(systemName: systemImage).font(.ui(size: 19, weight: .light)).foregroundStyle(Palette.accent).frame(width: 26)
-            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) { Text(title).font(.ui(size: 17, weight: .semibold)); Text(subtitle).font(.ui(size: 11)).foregroundStyle(.secondary) }
-            Spacer()
-            Button(action: dismiss) { Image(systemName: "xmark.circle.fill").font(.ui(size: 17)).foregroundStyle(.tertiary) }.buttonStyle(.plain).accessibilityLabel(L("settings.closeButton"))
-        }.padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading).overlay(alignment: .bottom) { Divider() }
     }
 }
 
