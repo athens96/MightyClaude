@@ -57,9 +57,12 @@ struct ToolkitProcessTests {
         let pidFile = root.appendingPathComponent("child.pid")
         // A child of the command, in the same group, must not outlive the stop.
         try script("slow", in: root, body: "/bin/sleep 60 & echo $! > '\(pidFile.path)'; wait")
-        let started = Date()
-        let output = await offThePool { ToolkitProcess.run(["slow"], environment: ["PATH": root.path + ":/usr/bin:/bin"], timeout: 3) }
-        #expect(Date().timeIntervalSince(started) < 15)
+        // Timed on the thread that runs it: the await around it adds however long the pool takes to resume this test.
+        let (output, took) = await offThePool { () -> (ToolkitCommandOutput, TimeInterval) in
+            let started = Date()
+            return (ToolkitProcess.run(["slow"], environment: ["PATH": root.path + ":/usr/bin:/bin"], timeout: 3), Date().timeIntervalSince(started))
+        }
+        #expect(took < 15)
         #expect(output.exitCode != 0)
         let pid = try #require(Int32(String(decoding: try Data(contentsOf: pidFile), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
         // The group is stopped by then; give the child's end a moment to land without holding a pool thread.
@@ -70,9 +73,11 @@ struct ToolkitProcessTests {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         // The command ends at once; what it left behind keeps stdout open.
         try script("leaves-child", in: root, body: "/bin/sleep 30 & echo done")
-        let started = Date()
-        let output = await offThePool { ToolkitProcess.run(["leaves-child"], environment: ["PATH": root.path + ":/usr/bin:/bin"], timeout: 60) }
-        #expect(Date().timeIntervalSince(started) < 10)
+        let (output, took) = await offThePool { () -> (ToolkitCommandOutput, TimeInterval) in
+            let started = Date()
+            return (ToolkitProcess.run(["leaves-child"], environment: ["PATH": root.path + ":/usr/bin:/bin"], timeout: 60), Date().timeIntervalSince(started))
+        }
+        #expect(took < 10)
         #expect(output.exitCode == 0 && output.output.hasPrefix("done"))
     }
 }
