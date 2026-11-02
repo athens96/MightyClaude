@@ -538,7 +538,7 @@ final class AppStore: ObservableObject, DelegationHost {
         do {
             snapshot = try await repository.load(); preparePaneLayouts(); canSave = true
             // Originals of panes and runs the saved state no longer has go before anything reads them.
-            let kept = Dictionary(snapshot.sessions.map { ($0.id, FileOriginalStore.keptRuns($0)) }, uniquingKeysWith: { first, _ in first })
+            let kept = FileOriginalStore.keptRuns(snapshot.sessions)
             let originals = fileOriginals
             await Task.detached(priority: .utility) { originals.prune(sessions: kept) }.value
         }
@@ -797,7 +797,8 @@ final class AppStore: ObservableObject, DelegationHost {
             await runner.revokePaneMCPBinding(agentPaneId: id)
             snapshot.sessions.removeAll { $0.id == id }
             delegationRuns.forget(id)
-            fileOriginals.forget(sessionId: id)
+            let originals = fileOriginals
+            Task.detached(priority: .utility) { originals.forget(sessionId: id) }
             if let closing, FilePaneKind.isFilePane(closing.kind) { filePaneModels[closing.workspaceId]?.releasePreview() }
             drafts.removeValue(forKey: id)
             statusLines.removeValue(forKey: id); mobileResultFiles.removeValue(forKey: id)
@@ -868,7 +869,8 @@ final class AppStore: ObservableObject, DelegationHost {
                 draftRevisions.removeValue(forKey: session.id)
                 forgetGraphHistory(session.id)
                 forgetStyleState(session.id)
-                fileOriginals.forget(sessionId: session.id)
+                let originals = fileOriginals, closed = session.id
+                Task.detached(priority: .utility) { originals.forget(sessionId: closed) }
             }
             snapshot.sessions.removeAll { $0.workspaceId == workspace.id }
             snapshot.workspaces.removeAll { $0.id == workspace.id }
@@ -1533,7 +1535,10 @@ final class AppStore: ObservableObject, DelegationHost {
         // The graph keeps a bounded number of runs: a run it let go takes its file originals with it.
         if event.type == "graph", let after = snapshot.sessions.first(where: { $0.id == event.sessionId }) {
             let kept = FileOriginalStore.keptRuns(after)
-            if runsBefore.contains(where: { !kept.contains($0.id) }) { fileOriginals.retain(sessionId: event.sessionId, keep: kept) }
+            if runsBefore.contains(where: { !kept.contains($0.id) }) {
+                let originals = fileOriginals, sessionId = event.sessionId
+                Task.detached(priority: .utility) { originals.retain(sessionId: sessionId, keep: kept) }
+            }
         }
         // A notice turn's answer came: delegation's items that waited for it rather than steer in are offered again now.
         if MightyGraphSupport.noticeTurnEnded(before: runsBefore, after: snapshot.sessions.first { $0.id == event.sessionId }?.graphRuns ?? []) { offerDelegationPending() }

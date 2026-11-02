@@ -11,7 +11,7 @@ import { PlanDocument, PlanRecordDetails } from '../cards/PlanDocument';
 import { planRecordPresentation } from '../cards/plan';
 import { backgroundLabel, shownTail } from './background';
 import { dashForCard, dashOffset } from './camera';
-import { isResizable, terminal, visibleImages } from './layout';
+import { isResizable, runOf, terminal, visibleImages } from './layout';
 import type { MightyBlockCopy, MightyExecutionCard, MightyFile } from './types';
 import type { PlanRecord as PresentedPlanRecord } from '../cards/types';
 import { BottomRight, type Edges } from './resize';
@@ -27,7 +27,8 @@ export interface BlockActions {
   resetSize(id: string): void;
   toggleFiles(runId: string): void;
   fitResult(id: string): void;
-  openFile(file: MightyFile): void;
+  /** A result file opened in the pane's reference bubble, its 변경사항 against the run the files list belongs to. */
+  openFile(file: MightyFile, runId: string | null): void;
   loadOlder(): void;
   measured(id: string, height: number): void;
 }
@@ -303,7 +304,7 @@ function Body({ recorded, ...props }: BlockProps & { recorded?: PresentedPlanRec
         <div className="mighty-body">
           {(extra.files ?? []).map((file) => (
             // M/MightyGraphResultFiles.swift: a row per file, its glyph, its name over its path in mono.
-            <button key={file.path + ':' + (file.line ?? '')} className="mighty-file" title={t('graph.resultFiles.openFile', { path: file.path })} onClick={() => actions.openFile(file)}>
+            <button key={file.path + ':' + (file.line ?? '')} className="mighty-file" title={t('graph.resultFiles.openFile', { path: file.path })} onClick={() => actions.openFile(file, runOf(id))}>
               <Icon name="file-text" size={13} weight={1.6} className="mighty-file-glyph" />
               <span className="mighty-file-words">
                 <span className="mighty-file-name">{file.path.split(/[\\/]/).pop()}{file.line ? ':' + file.line : ''}</span>

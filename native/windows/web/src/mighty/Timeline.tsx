@@ -49,11 +49,14 @@ function RequestTitle({ title, provider }: { title: string; provider: string }) 
   return <>{title.slice(0, at)}<span className="timeline-mark"><ProviderMark provider={provider} size={15} /></span>{title.slice(at)}</>;
 }
 
+/** The run of the request group a click landed in, for the reference bubble's 변경사항. */
+const groupRun = (target: Element) => target.closest<HTMLElement>('[data-run-id]')?.dataset.runId ?? null;
+
 /** A row's transcript, newest entries, drawn only while the row is open (UI/MightyTimeline.cs: a 260-tall body). */
 function RowBody({ entries, paneId, provider, input }: { entries: readonly LogEntry[]; paneId: string; provider: string; input?: string }) {
   const shown = useMemo(() => entries.filter((e) => e.kind !== 'user').slice(-40), [entries]);
   const toggle = useMemo(() => () => {}, []);
-  const onClick = useReferenceClick();
+  const onClick = useReferenceClick(groupRun);
   return (
     <div className="timeline-body" onClick={onClick}>
       {input && <div className="mighty-band">{input}</div>}

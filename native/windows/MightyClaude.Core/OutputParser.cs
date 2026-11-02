@@ -306,26 +306,35 @@ public sealed class OutputParser
         catch (InvalidOperationException) { log("system", Locale.Get("run.notice.unsupportedRecord")); }
     }
     /// <summary>
-    /// Hears a file's content before an Edit, Write or MultiEdit of the run (or a sub-agent of it) changed it: the path as
-    /// the tool named it and the original, null for a file the tool created (M/MightyCore/CLIStreamParser.swift fileOriginal).
+    /// Hears what each Edit, Write or MultiEdit of the run (or a sub-agent of it) says about a file before it changed it: the
+    /// path as the tool named it and the <see cref="FileEdit"/> (M/MightyCore/CLIStreamParser.swift fileOriginal).
     /// </summary>
-    public Action<string, string?>? FileOriginal { get; set; }
+    public Action<string, FileEdit>? FileOriginal { get; set; }
     /// <summary>
-    /// A Claude <c>user</c> line's <c>tool_use_result</c> (<c>toolUseResult</c> in transcripts): <c>filePath</c> and
-    /// <c>originalFile</c>, read only when a tool result of the line answers an Edit, Write or MultiEdit call and did not fail.
-    /// <c>originalFile</c> null, or a <c>type</c> of <c>create</c> without it, is a created file; neither is no original.
+    /// A Claude <c>user</c> line's <c>tool_use_result</c> (<c>toolUseResult</c> in transcripts), read only when a tool result of
+    /// the line answers an Edit, Write or MultiEdit call and did not fail. <c>originalFile</c> as text is the original. Without
+    /// it a Write of <c>type: "create"</c>, or an Edit with an empty <c>oldString</c> whose patch only adds, made the file; an
+    /// Edit's <c>structuredPatch</c> is undone against the file on disk (the CLI leaves <c>originalFile</c> null for most
+    /// edits); anything else is unknown, which still settles the path for the run.
     /// </summary>
     private void EditedOriginal(JsonElement root, JsonElement blocks)
     {
         var result = MetadataJson.Property(root, "tool_use_result");
         if (result.ValueKind != JsonValueKind.Object) result = MetadataJson.Property(root, "toolUseResult");
         if (result.ValueKind != JsonValueKind.Object || result.Text("filePath") is not { Length: > 0 } path) return;
-        var edit = blocks.EnumerateArray().Any(b => b.Text("type") == "tool_result" && !MetadataJson.Flag(b, "is_error") && b.Text("tool_use_id") is { Length: > 0 } id
-            && Encoding.UTF8.GetByteCount(id) <= 512 && activities.TryGetValue(ActivitySupport.Id(activityNamespace, id), out var call) && call.ToolName is "Edit" or "Write" or "MultiEdit");
-        if (!edit) return;
+        string? tool = null;
+        foreach (var block in blocks.EnumerateArray())
+            if (block.Text("type") == "tool_result" && !MetadataJson.Flag(block, "is_error") && block.Text("tool_use_id") is { Length: > 0 } id && Encoding.UTF8.GetByteCount(id) <= 512
+                && activities.TryGetValue(ActivitySupport.Id(activityNamespace, id), out var call) && call.ToolName is "Edit" or "Write" or "MultiEdit") { tool = call.ToolName; break; }
+        if (tool is null) return;
         var original = MetadataJson.Property(result, "originalFile");
-        if (original.ValueKind == JsonValueKind.String) FileOriginal!(path, original.GetString());
-        else if (original.ValueKind == JsonValueKind.Null || original.ValueKind == JsonValueKind.Undefined && result.Text("type") == "create") FileOriginal!(path, null);
+        var patch = FilePatch.Parse(MetadataJson.Property(result, "structuredPatch"));
+        FileEdit edit;
+        if (original.ValueKind == JsonValueKind.String) edit = new(original.GetString(), false, null);
+        else if (tool == "Write") edit = result.Text("type") == "create" ? new(null, true, null) : FileEdit.Unknown;
+        else if (result.Text("oldString") == "" && (patch is null || patch.All(h => h.Lines.All(l => l.StartsWith('+'))))) edit = new(null, true, null);
+        else edit = patch is not null ? new(null, false, patch) : FileEdit.Unknown;
+        FileOriginal!(path, edit);
     }
     private static bool Decodes(string base64)
     {

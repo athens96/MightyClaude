@@ -12,6 +12,9 @@ struct MightyGraphView: View {
     var onSaveBlockSize: (String, MightyGraphBlockSize?) -> Void = { _, _ in }
     /// Local project folder for resolving file references; nil disables links.
     var workspaceRoot: URL? = nil
+    /// What files were before this pane's Claude runs changed them, for the
+    /// reference bubble's 변경사항 (AppStore.fileOriginals).
+    var fileOriginals: FileOriginalStore? = nil
     /// Request-block titles, icons and colours come from every style this pane
     /// may run, not only the one it is in: a pane keeps blocks it made under an
     /// earlier style (§1.10). Empty for a pane that runs no style at all.
@@ -482,14 +485,26 @@ struct MightyGraphView: View {
     /// `MightyGraphReferenceBubble.frame` from the canvas's own bounds.
     private func referenceOverlay(_ reference: MightyGraphReference) -> some View {
         MightyGraphReferenceBubble(sessionID: sessionID, reference: reference, onLeft: referenceOnLeft,
-                                   onFlip: { referenceOnLeft.toggle() }, onClose: { self.reference = nil })
+                                   onFlip: { referenceOnLeft.toggle() }, onClose: { self.reference = nil },
+                                   workspaceRoot: workspaceRoot, fileOriginals: fileOriginals)
     }
 
     /// A clicked path resolves inside the workspace only. Unresolved paths
-    /// still open the bubble so the user sees why nothing was shown.
-    private func openReference(_ path: String, line: Int?) {
+    /// still open the bubble so the user sees why nothing was shown. `runID`
+    /// is the graph run the click came from, whose originals 변경사항 compare with.
+    private func openReference(_ path: String, line: Int?, runID: String? = nil) {
         onFocus()
-        reference = MightyGraphReference(path: path, line: line, url: ReferenceLinkSupport.resolve(path, root: workspaceRoot))
+        reference = MightyGraphReference(path: path, line: line, url: ReferenceLinkSupport.resolve(path, root: workspaceRoot), runID: runID)
+    }
+
+    /// The run a block belongs to, for the files its words name.
+    private func runID(of content: MightyGraphLayout.Content) -> String? {
+        switch content {
+        case .request(let index), .work(let index), .result(let index), .plan(let index), .agent(let index, _), .resultFiles(let index):
+            return runs.indices.contains(index) ? runs[index].id : nil
+        default:
+            return nil
+        }
     }
 
     /// `graph` is the layout the drag started on: its viewport limit and
@@ -642,7 +657,7 @@ struct MightyGraphView: View {
                            onContentHeight: node.id == MightyGraphLayout.latestResultID(runs: runs) ? { resultMeasured(node.id, $0) } : nil)
         case .resultFiles(let index):
             MightyGraphResultFilesView(nodeID: node.id, files: resultFiles.files(for: runs[index].id),
-                                       onOpen: { openReference($0.path, line: $0.line) }, onClose: { resultFiles.close() })
+                                       onOpen: { openReference($0.path, line: $0.line, runID: runs[index].id) }, onClose: { resultFiles.close() })
         case .images(let index, let step):
             MightyGraphImagesCard(nodeID: node.id, items: MightyGraphImages.items(runs[index], step: step, root: workspaceRoot),
                                   expanded: expanded.contains(node.id),
@@ -799,7 +814,7 @@ struct MightyGraphView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(DesignMetrics.Inset.graphBlockBodyH)
             } else {
                 blockTranscript(id: "graph-\(sessionID)-\(node.id)", status: status, entries: content, records: records, childBlocks: childBlocks,
-                                onContentHeight: onContentHeight)
+                                runID: runID(of: node.content), onContentHeight: onContentHeight)
             }
             if let reply = backgroundRun?.reply, !reply.isEmpty { backgroundReply(reply, nodeID: node.id) }
         }
@@ -871,10 +886,10 @@ struct MightyGraphView: View {
     /// `inTimeline`: the transcript sits in the timeline's scroll view and hands the
     /// wheel on to the timeline at its edges.
     private func blockTranscript(id: String, status: String, entries: [LogEntry], records: [GraphResponseRecord], childBlocks: [String: GraphChildBlock], inTimeline: Bool = false,
-                                 onContentHeight: ((CGFloat) -> Void)? = nil) -> some View {
+                                 runID: String? = nil, onContentHeight: ((CGFloat) -> Void)? = nil) -> some View {
         AgentTranscriptView(sessionId: id, provider: provider,
             running: !MightyGraphLayout.terminal(status), entries: entries, onFocus: onFocus,
-            onReference: workspaceRoot == nil ? nil : { path, line in openReference(path, line: line) },
+            onReference: workspaceRoot == nil ? nil : { path, line in openReference(path, line: line, runID: runID) },
             records: records, childBlocks: childBlocks, catalog: catalog, clearsCornerHandle: true, imageRoot: workspaceRoot,
             passesScrollAtEdges: inTimeline, onContentHeight: onContentHeight)
     }
@@ -1165,7 +1180,7 @@ struct MightyGraphView: View {
                 Text(L("phone.blocks.nothing")).font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Inset.graphBlockBodyH)
             } else {
-                blockTranscript(id: "timeline-\(sessionID)-\(row.nodeID)", status: status, entries: entries, records: records, childBlocks: childBlocks, inTimeline: true)
+                blockTranscript(id: "timeline-\(sessionID)-\(row.nodeID)", status: status, entries: entries, records: records, childBlocks: childBlocks, inTimeline: true, runID: run.id)
                     .frame(height: 260)
             }
         }
@@ -1184,7 +1199,7 @@ struct MightyGraphView: View {
             if !files.isEmpty {
                 Menu {
                     ForEach(files) { file in
-                        Button(file.path + (file.line.map { ":\($0)" } ?? "")) { openReference(file.path, line: file.line) }
+                        Button(file.path + (file.line.map { ":\($0)" } ?? "")) { openReference(file.path, line: file.line, runID: run.id) }
                     }
                 } label: {
                     HStack(spacing: 3) {

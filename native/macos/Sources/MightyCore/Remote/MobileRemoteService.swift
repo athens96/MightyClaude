@@ -1375,6 +1375,10 @@ extension MobileRemoteService {
             }.value
             if let body = prepared.body { return MobileReply(status: 200, body: body) }
             if case .done(var preview) = prepared.stage {
+                // The diff (a git read, a file read, Myers) takes the preview slot, so a phone cannot pile them up.
+                guard await acquirePreviewSlot(deviceId: deviceId) else { throw MobileFileError.superseded }
+                defer { releasePreviewSlot() }
+                try Task.checkCancellation()
                 preview.changes = await delegate.mobileFileChanges(workspaceId: workspaceId, workspaceRoot: root, path: path, sessionId: session, runId: run)
                 let finished = preview
                 let body = await Task.detached(priority: .userInitiated) { MobileWorkspaceFiles.encoded(finished) }.value

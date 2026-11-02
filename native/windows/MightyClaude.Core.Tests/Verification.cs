@@ -1031,7 +1031,8 @@ internal static class Verification
         await Test("files pane svg size is read from its root element and checked like pdf", FilesPaneVerification.SvgSizeIsReadFromItsRootElement);
         await Test("files pane on Windows draws at most 2,000 rows and 256 KB of source", FilesPaneVerification.TheWindowsPaneDrawsAtMostTwoThousandRowsAnd256KB);
         await Test("file changes: the diff follows native/contracts/fixtures/file-diff.json and its caps", FileChangesVerification.TheSharedCasesHold);
-        await Test("file changes: a run keeps each file's first original, a created file reads as all added", FileChangesVerification.TheParserKeepsEachFilesFirstOriginalOfTheRun);
+        await Test("file changes: cuts and reversed structured patches follow native/contracts/fixtures/file-diff.json", FileChangesVerification.TheCutsAndReversePatchesFollowTheFixture);
+        await Test("file changes: a run keeps each file's first original, a created file reads as all added",FileChangesVerification.TheParserKeepsEachFilesFirstOriginalOfTheRun);
         await Test("file changes: the originals keep their caps, prune with the graph and survive a restart; paths stay in the workspace", FileChangesVerification.TheStoreKeepsItsCapsAndSurvivesARestart);
         await Test("file changes: without a run original HEAD is the base, untracked all added, no repository no diff", FileChangesVerification.WithoutARunOriginalGitsHeadIsTheBase);
         await Test("file changes: the phone gets changes only with changes=1, under the file route's checks", FileChangesVerification.ThePhoneAsksForChangesOnlyWithTheCapabilitysArguments);

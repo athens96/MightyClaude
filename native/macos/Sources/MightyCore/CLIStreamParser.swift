@@ -298,31 +298,39 @@ public final class CLIStreamParser {
         if graphTracker?.activity(value, toolID: rawID) != true { activity?(value) }
     }
 
-    /// Hears a file's content before an Edit, Write or MultiEdit of the run (or
-    /// a sub-agent of it) changed it: the path as the tool named it and the
-    /// original, nil for a file the tool created (Windows OutputParser.FileOriginal).
-    public var fileOriginal: ((String, String?) -> Void)?
+    /// Hears what each Edit, Write or MultiEdit of the run (or a sub-agent of
+    /// it) says about a file before it changed it: the path as the tool named
+    /// it and the `FileEdit` (Windows OutputParser.FileOriginal).
+    public var fileOriginal: ((String, FileEdit) -> Void)?
 
     /// A Claude `user` line's `tool_use_result` (`toolUseResult` in
-    /// transcripts): `filePath` and `originalFile`, read only when a tool
-    /// result of the line answers an Edit, Write or MultiEdit call and did not
-    /// fail. `originalFile` null, or a `type` of `create` without it, is a
-    /// created file; neither is no original.
+    /// transcripts), read only when a tool result of the line answers an Edit,
+    /// Write or MultiEdit call and did not fail. `originalFile` as text is the
+    /// original. Without it a Write of `type: "create"`, or an Edit with an
+    /// empty `oldString` whose patch only adds, made the file; an Edit's
+    /// `structuredPatch` is undone against the file on disk (the CLI leaves
+    /// `originalFile` null for most edits); anything else is unknown, which
+    /// still settles the path for the run.
     private func editedOriginal(_ value: [String: Any], blocks: [[String: Any]]) {
         guard let fileOriginal,
               let result = (value["tool_use_result"] as? [String: Any]) ?? (value["toolUseResult"] as? [String: Any]),
               let path = result["filePath"] as? String, !path.isEmpty else { return }
-        let edit = blocks.contains { block in
+        var tool: String?
+        for block in blocks {
             guard block["type"] as? String == "tool_result", block["is_error"] as? Bool != true,
                   let id = block["tool_use_id"] as? String, !id.isEmpty, id.utf8.count <= 512,
-                  let name = toolActivities[ActivitySupport.id(namespace: activityNamespace, key: id)]?.toolName else { return false }
-            return ["Edit", "Write", "MultiEdit"].contains(name)
+                  let name = toolActivities[ActivitySupport.id(namespace: activityNamespace, key: id)]?.toolName,
+                  ["Edit", "Write", "MultiEdit"].contains(name) else { continue }
+            tool = name; break
         }
-        guard edit else { return }
-        let original = result["originalFile"]
-        if let text = original as? String { fileOriginal(path, text) }
-        else if original is NSNull { fileOriginal(path, nil) }
-        else if original == nil, result["type"] as? String == "create" { fileOriginal(path, nil) }
+        guard let tool else { return }
+        let patch = FilePatch.parse(result["structuredPatch"])
+        let edit: FileEdit
+        if let text = result["originalFile"] as? String { edit = FileEdit(original: text) }
+        else if tool == "Write" { edit = result["type"] as? String == "create" ? FileEdit(created: true) : .unknown }
+        else if result["oldString"] as? String == "", patch?.allSatisfy({ hunk in hunk.lines.allSatisfy { $0.hasPrefix("+") } }) ?? true { edit = FileEdit(created: true) }
+        else { edit = patch.map { FileEdit(patch: $0) } ?? .unknown }
+        fileOriginal(path, edit)
     }
 
     private func finishDuration(id: String, previous: AgentActivity?) -> Double? {

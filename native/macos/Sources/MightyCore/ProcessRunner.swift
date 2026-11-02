@@ -653,8 +653,8 @@ public actor ProcessRunner {
                 // the first of each file is kept under the run's graph id for the source preview's 변경사항 (FileChanges.swift).
                 if request.provider == "claude", request.kind == "claude", let originals = fileOriginals {
                     let root = URL(fileURLWithPath: workspace.path, isDirectory: true), runId = run.activityId, sessionId = request.sessionId
-                    run.parser?.fileOriginal = { path, original in
-                        _ = originals.capture(sessionId: sessionId, runId: runId, workspaceRoot: root, filePath: path, original: original)
+                    run.parser?.fileOriginal = { path, edit in
+                        _ = originals.capture(sessionId: sessionId, runId: runId, workspaceRoot: root, filePath: path, edit: edit)
                     }
                 }
                 if codexApprovals {

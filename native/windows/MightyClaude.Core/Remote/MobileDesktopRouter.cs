@@ -441,21 +441,21 @@ public sealed class MobileDesktopRouter : IDisposable
         {
             if (listing) return Reply(MobileWorkspaceFiles.Fitted(await Task.Run(() => MobileWorkspaceFiles.Listing(workspace.Id, relative, workspace.Path), token)));
             stage = await Task.Run(() => MobileWorkspaceFiles.Prepare(workspace.Id, relative, workspace.Path), token);
+            // Only text has changes, worked out in the same two slots. A pane of another workspace never lends this one its
+            // originals; a delegated child's are read in its worktree folder, where they were captured.
+            if (changes is not null && stage.Image is null && stage.Preview.Type is "source" or "markdown")
+            {
+                var pane = changes.Session is { } id && service.Snapshot.Sessions.Any(s => s.Id == id && s.WorkspaceId == workspace.Id) ? id : null;
+                var root = pane is not null && service.RunFolder(pane) is { } folder ? folder : workspace.Path;
+                try { stage = stage with { Preview = stage.Preview with { Changes = await service.FileChangesAsync(root, relative, pane, pane is null ? null : changes.Run, token) } }; }
+                catch { stage.Dispose(); throw; }
+            }
         }
         finally { fileSlots.Release(); }
         using (stage)
         {
             var preview = stage.Preview;
-            if (stage.Image is not { } file)
-            {
-                // Only text has changes; a pane of another workspace never lends this one its originals.
-                if (changes is not null && preview.Type is "source" or "markdown")
-                {
-                    var pane = changes.Session is { } id && service.Snapshot.Sessions.Any(s => s.Id == id && s.WorkspaceId == workspace.Id) ? id : null;
-                    preview = preview with { Changes = await service.FileChangesAsync(workspace.Path, relative, pane, pane is null ? null : changes.Run, token) };
-                }
-                return Reply(MobileWorkspaceFiles.Fitted(preview));
-            }
+            if (stage.Image is not { } file) return Reply(MobileWorkspaceFiles.Fitted(preview));
             if (!await previews.Acquire(device, token)) throw MobileWorkspaceFiles.Superseded;
             try
             {

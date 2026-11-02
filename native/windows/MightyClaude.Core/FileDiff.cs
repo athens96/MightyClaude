@@ -84,14 +84,15 @@ public static class FileDiff
             i = end;
         }
         var hunks = new List<FileDiffHunk>(); var written = 0; var truncated = false;
+        // Lines of each side before the next hunk, carried from one hunk to the next.
+        int scanned = 0, oldBefore = 0, newBefore = 0;
         foreach (var (first, last) in groups)
         {
             var start = Math.Max(0, first - Context); var stop = Math.Min(ordered.Count - 1, last + Context);
             var count = stop - start + 1;
             if (written + count > MaximumOutputLines) { count = MaximumOutputLines - written; truncated = true; }
             if (count <= 0) break;
-            int oldBefore = 0, newBefore = 0;
-            for (var i = 0; i < start; i++) { if (ordered[i].Op != '+') oldBefore++; if (ordered[i].Op != '-') newBefore++; }
+            for (; scanned < start; scanned++) { if (ordered[scanned].Op != '+') oldBefore++; if (ordered[scanned].Op != '-') newBefore++; }
             var lines = new List<FileDiffLine>(count); int oldLines = 0, newLines = 0;
             for (var i = start; i < start + count; i++)
             {

@@ -61,8 +61,9 @@ export const ReferenceContext = createContext<((target: ReferenceTarget) => void
 /**
  * A click handler for a view that draws transcripts (a diagram block, a timeline row): a link opens in the browser, a file
  * named under the pointer in the pane's reference bubble. A click on a button, or where no bubble is offered, does nothing.
+ * `runAt` names the run the clicked element belongs to (the diagram's blocks), which the bubble's 변경사항 compare with.
  */
-export function useReferenceClick(): (event: MouseEvent<HTMLElement>) => void {
+export function useReferenceClick(runAt?: (target: Element) => string | null): (event: MouseEvent<HTMLElement>) => void {
   const { bridge } = useServices();
   const show = useContext(ReferenceContext);
   return useCallback((event: MouseEvent<HTMLElement>) => {
@@ -71,6 +72,9 @@ export function useReferenceClick(): (event: MouseEvent<HTMLElement>) => void {
     const clicked = clickedAt(target, event.clientX, event.clientY, event.currentTarget);
     if (!clicked) return;
     if ('url' in clicked) void bridge.call('openUrl', { url: clicked.url }).catch(() => {});
-    else show?.(clicked);
-  }, [bridge, show]);
+    else {
+      const runId = runAt?.(target);
+      show?.(runId ? { ...clicked, runId } : clicked);
+    }
+  }, [bridge, show, runAt]);
 }

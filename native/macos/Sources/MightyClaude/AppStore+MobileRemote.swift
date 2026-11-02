@@ -63,15 +63,18 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
     private weak var store: AppStore?
     init(store: AppStore) { self.store = store }
 
-    /// A pane of another workspace never lends this one its originals.
+    /// A pane of another workspace never lends this one its originals; a
+    /// delegated child's are read in its worktree folder, where they were captured.
     func mobileFileChanges(workspaceId: String, workspaceRoot: URL, path: String, sessionId: String?, runId: String?) async -> FileChangeSet? {
-        let found: (originals: FileOriginalStore, pane: String?)? = await MainActor.run {
+        let found: (originals: FileOriginalStore, pane: String?, root: URL)? = await MainActor.run {
             guard let store else { return nil }
-            let pane = sessionId.flatMap { id in store.snapshot.sessions.contains { $0.id == id && $0.workspaceId == workspaceId } ? id : nil }
-            return (store.fileOriginals, pane)
+            let session = sessionId.flatMap { id in store.snapshot.sessions.first { $0.id == id && $0.workspaceId == workspaceId } }
+            let workspace = store.snapshot.workspaces.first { $0.id == workspaceId }
+            let root = session.flatMap { pane in workspace.map { URL(fileURLWithPath: DelegationPanes.runWorkspace(for: pane, in: $0).path, isDirectory: true) } } ?? workspaceRoot
+            return (store.fileOriginals, session?.id, root)
         }
         guard let found else { return nil }
-        return await FileChanges.read(store: found.originals, workspaceRoot: workspaceRoot, relativePath: path,
+        return await FileChanges.read(store: found.originals, workspaceRoot: found.root, relativePath: path,
                                       sessionId: found.pane, runId: found.pane == nil ? nil : runId)
     }
 

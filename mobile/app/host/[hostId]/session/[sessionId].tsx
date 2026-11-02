@@ -1179,11 +1179,14 @@ export default function SessionScreen() {
   }, [mighty, blockHeld]);
   // A file a result names opens in the workspace's file preview, as a tap in the files browser does.
   const resultFilesWorkspace = hasCapability(capabilities, 'files') ? session?.workspaceId : undefined;
+  // The run the list belongs to rides along, so the preview's 변경사항 compare with that request's originals.
   const openResultFile = useCallback(
-    (file: MobileResultFile) => {
-      if (hostId && resultFilesWorkspace) router.push(resultFileRoute(hostId, resultFilesWorkspace, file));
+    (file: MobileResultFile, runId: string) => {
+      if (hostId && resultFilesWorkspace) {
+        router.push(resultFileRoute(hostId, resultFilesWorkspace, file, sessionId ? { session: sessionId, run: runId } : undefined));
+      }
     },
-    [hostId, resultFilesWorkspace],
+    [hostId, resultFilesWorkspace, sessionId],
   );
   const structureHeld = heldRuns(structureStandIn).join('\n');
   const shownStructureState = useMemo<StructureState>(

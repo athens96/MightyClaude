@@ -19,9 +19,35 @@ struct FileChangesTests {
         return url
     }
 
+    /// `generate.old`/`new`: segments `[count, line, first]`, each `count` lines with `{n}` from `first`.
     private func generated(_ spec: [String: Any], _ side: String) -> String {
-        let count = spec[side] as? Int ?? 0, pattern = spec["line"] as? String ?? ""
-        return (0..<count).map { pattern.replacingOccurrences(of: "{n}", with: String($0 + 1)) + "\n" }.joined()
+        var text = ""
+        for segment in spec[side] as? [[Any]] ?? [] {
+            guard segment.count == 3, let count = segment[0] as? Int, let pattern = segment[1] as? String, let first = segment[2] as? Int else { continue }
+            for n in first..<(first + count) { text += pattern.replacingOccurrences(of: "{n}", with: String(n)) + "\n" }
+        }
+        return text
+    }
+
+    private func decodedHunks(_ value: Any) throws -> [FileDiffHunk] {
+        try JSONDecoder().decode([FileDiffHunk].self, from: JSONSerialization.data(withJSONObject: value))
+    }
+
+    @Test func theCutsAndReversePatchesFollowTheFixture() throws {
+        let root = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: Self.fixture)) as? [String: Any])
+        for item in try #require(root["cuts"] as? [[String: Any]]) {
+            let name = item["name"] as? String ?? "?"
+            let diff = try #require(FileDiff.compute(old: item["old"] as? String ?? "", new: item["new"] as? String ?? ""))
+            let cut = FileDiff.cut(diff.hunks, lines: item["lines"] as? Int ?? 0)
+            #expect(cut == (try decodedHunks(item["expect"] ?? [])), "cut \(name): \(cut)")
+        }
+        for item in try #require(root["reversePatch"] as? [[String: Any]]) {
+            let name = item["name"] as? String ?? "?"
+            let hunks = try #require(FilePatch.parse(item["hunks"]), "\(name): hunks parse")
+            let original = FilePatch.reverseApply(item["current"] as? String ?? "", hunks: hunks)
+            #expect(original == item["expect"] as? String, "reverse patch \(name): \(String(describing: original))")
+        }
+        #expect(FilePatch.parse([["oldStart": 1]]) == nil && FilePatch.parse("x") == nil, "a malformed structuredPatch is none")
     }
 
     @Test func theSharedCasesHold() throws {
@@ -52,6 +78,9 @@ struct FileChangesTests {
                 #expect([hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines] == [first["oldStart"], first["oldLines"], first["newStart"], first["newLines"]].map { $0 ?? -1 }, "\(name)")
                 let last = try #require(diff.hunks.last?.lines.last), lastWanted = try #require(expect["lastLine"] as? [String: String])
                 #expect(last.op == lastWanted["op"] && last.text == lastWanted["text"], "\(name)")
+                if let context = expect["contextLines"] as? Int {
+                    #expect(diff.hunks.reduce(0) { $0 + $1.lines.filter { $0.op == " " }.count } == context, "\(name): context lines")
+                }
             }
         }
         // Beyond the fixture: the caps, and an edit script too long for Myers' trace.
@@ -60,8 +89,6 @@ struct FileChangesTests {
         let many = try #require(FileDiff.compute(old: (0..<3000).map { "a\($0)\n" }.joined(), new: (0..<3000).map { "b\($0)\n" }.joined()))
         #expect(many.removed == 3000 && many.added == 3000 && many.truncated && many.hunks.reduce(0) { $0 + $1.lines.count } == FileDiff.maximumOutputLines)
         #expect(many.hunks[0].lines.prefix(3000).allSatisfy { $0.op == "-" }, "past the edit distance the middle reads as removed then added")
-        let cut = FileDiff.cut(try #require(FileDiff.compute(old: "a\nb\nc\n", new: "a\nB\nc\n")).hunks, lines: 2)
-        #expect(cut.count == 1 && cut[0].oldStart == 1 && cut[0].oldLines == 2 && cut[0].newStart == 1 && cut[0].newLines == 1 && cut[0].lines.count == 2)
     }
 
     private func line(_ value: [String: Any]) throws -> Data {
@@ -84,7 +111,7 @@ struct FileChangesTests {
         let file = try touch("a.txt", "v3\n")
         let store = FileOriginalStore(directory: directory.appendingPathComponent("originals", isDirectory: true))
         let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in })
-        parser.fileOriginal = { path, original in _ = store.capture(sessionId: "pane", runId: "run-1", workspaceRoot: root, filePath: path, original: original) }
+        parser.fileOriginal = { path, edit in _ = store.capture(sessionId: "pane", runId: "run-1", workspaceRoot: root, filePath: path, edit: edit) }
         parser.push(try assistant("t1", "Edit", file))
         parser.push(try result("t1", ["filePath": file, "originalFile": "v1\n", "structuredPatch": []]))
         parser.push(try assistant("t2", "Edit", file))
@@ -104,6 +131,34 @@ struct FileChangesTests {
         parser.push(try assistant("t6", "Write", created))
         parser.push(try result("t6", ["type": "create", "filePath": created, "content": "one\ntwo\n", "originalFile": NSNull()]))
         #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "new.txt") == FileOriginal(runId: "run-1", path: "new.txt", text: "", created: true))
+        // What the CLI really sends for most edits: no originalFile, a structuredPatch to undo against the file on disk.
+        func patched(_ path: String, _ hunks: [[String: Any]], oldString: String = "two") -> [String: Any] {
+            ["filePath": path, "oldString": oldString, "newString": "TWO", "originalFile": NSNull(), "contentNotInModelContext": true,
+             "structuredPatch": hunks, "userModified": false, "replaceAll": false]
+        }
+        let twoToTWO: [[String: Any]] = [["oldStart": 1, "oldLines": 3, "newStart": 1, "newLines": 3, "lines": [" one", "-two", "+TWO", " three"]]]
+        let e = try touch("e.txt", "one\r\nTWO\r\nthree\r\n")
+        parser.push(try assistant("t7", "Edit", e))
+        parser.push(try result("t7", patched(e, twoToTWO)))
+        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "e.txt") == FileOriginal(runId: "run-1", path: "e.txt", text: "one\r\ntwo\r\nthree\r\n", created: false), "a structuredPatch is undone against the CRLF file on disk")
+        parser.push(try assistant("t8", "Edit", e))
+        parser.push(try result("t8", patched(e, [["oldStart": 1, "oldLines": 1, "newStart": 1, "newLines": 1, "lines": ["-one", "+ONE"]]])))
+        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "e.txt")?.text == "one\r\ntwo\r\nthree\r\n", "a later patch never replaces the first original")
+        let f = try touch("f.txt")
+        parser.push(try assistant("t9", "Edit", f))
+        parser.push(try result("t9", patched(f, twoToTWO)))
+        parser.push(try assistant("t10", "Edit", f))
+        parser.push(try result("t10", ["filePath": f, "originalFile": "later\n"]))
+        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "f.txt") == nil, "a patch that does not fit is refused, and the path stays refused")
+        let g = try touch("g.txt")
+        parser.push(try assistant("t11", "Write", g))
+        parser.push(try result("t11", ["type": "update", "filePath": g, "content": "x\n", "originalFile": NSNull()]))
+        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "g.txt") == nil, "a Write update without its original is no created file")
+        let h = try touch("h.txt", "made\n")
+        parser.push(try assistant("t12", "Edit", h))
+        parser.push(try result("t12", patched(h, [["oldStart": 0, "oldLines": 0, "newStart": 1, "newLines": 1, "lines": ["+made"]]], oldString: "")))
+        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "h.txt") == FileOriginal(runId: "run-1", path: "h.txt", text: "", created: true), "an Edit with an empty oldString made its file")
+        #expect(!FileOriginalStore(directory: directory.appendingPathComponent("originals", isDirectory: true)).capture(sessionId: "pane", runId: "run-1", workspaceRoot: root, filePath: f, original: "again\n"), "a refused path stays refused after a restart")
         let made = try #require(await FileChanges.read(store: store, workspaceRoot: root, relativePath: "new.txt", sessionId: "pane"))
         #expect(made.base == "run" && made.runId == "run-1" && made.created == true && made.added == 2 && made.removed == 0)
         let changed = try #require(await FileChanges.read(store: store, workspaceRoot: root, relativePath: "a.txt", sessionId: "pane", runId: "run-1"))
@@ -147,6 +202,32 @@ struct FileChangesTests {
         #expect(!reopened.capture(sessionId: "pane", runId: "run-6", workspaceRoot: root, filePath: "../outside.txt", original: "x"))
         #expect(!reopened.capture(sessionId: "pane", runId: "run-6", workspaceRoot: root, filePath: root.appendingPathComponent("missing.txt").path, original: "x"))
         #expect(!reopened.capture(sessionId: "../pane", runId: "run-6", workspaceRoot: root, filePath: touch("a.txt"), original: "x"))
+        // An original is read only under the folder it was captured in (a delegated child's worktree is another folder).
+        let worktree = directory.appendingPathComponent("worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        try Data("x\n".utf8).write(to: worktree.appendingPathComponent("b.txt"))
+        #expect(reopened.find(sessionId: "pane", runId: "run-4", relativePath: "a.txt", root: root) != nil)
+        #expect(reopened.find(sessionId: "pane", runId: "run-4", relativePath: "a.txt", root: worktree) == nil, "an original captured under another root never counts")
+        #expect(!reopened.capture(sessionId: "pane", runId: "run-4", workspaceRoot: worktree, filePath: worktree.appendingPathComponent("b.txt").path, original: "x"), "a run never mixes roots")
+        // A notice run's id stands for the run it came from.
+        #expect(reopened.find(sessionId: "pane", runId: BackgroundNoticeRuns.runID(original: "run-4", index: 1), relativePath: "a.txt")?.runId == "run-4")
+        reopened.retain(sessionId: "pane", keep: [BackgroundNoticeRuns.runID(original: "run-4", index: 2)])
+        #expect(reopened.runs(sessionId: "pane") == ["run-4"], "a kept notice run keeps the run it came from")
+        // Each pane keeps the originals of its newest 20 runs.
+        for n in 0..<(FileOriginalStore.maximumRunsPerPane + 2) {
+            #expect(reopened.capture(sessionId: "many", runId: "r\(n)", workspaceRoot: root, filePath: touch("a.txt"), original: "o\n"))
+        }
+        let many = reopened.runs(sessionId: "many")
+        #expect(many.count == FileOriginalStore.maximumRunsPerPane && many.first == "r\(FileOriginalStore.maximumRunsPerPane + 1)" && !many.contains("r0") && !many.contains("r1"))
+        // The whole store keeps its budget, the oldest runs going first.
+        let small = FileOriginalStore(directory: directory.appendingPathComponent("small", isDirectory: true), budget: 3_000)
+        for n in 0..<5 { #expect(small.capture(sessionId: "p\(n)", runId: "run", workspaceRoot: root, filePath: touch("a.txt"), original: String(repeating: "z", count: 1_000))) }
+        #expect(small.runs(sessionId: "p0").isEmpty && small.runs(sessionId: "p1").isEmpty && small.runs(sessionId: "p2").count == 1 && small.runs(sessionId: "p4").count == 1)
+        // A crash's temporary files go at the next start.
+        let stale = originals.appendingPathComponent("x.tmp"); try Data("x".utf8).write(to: stale)
+        reopened.prune(sessions: ["pane": ["run-4"]])
+        #expect(!FileManager.default.fileExists(atPath: stale.path))
+        #expect(FileOriginalStore.keptRuns([RunSession(id: "twice", workspaceId: "w", title: "t"), RunSession(id: "twice", workspaceId: "w", title: "t")])["twice"] != nil, "a pane id that appears twice does not stop the start")
     }
 
     private func git(_ folder: URL, _ arguments: [String]) throws {
@@ -184,6 +265,8 @@ struct FileChangesTests {
         let store = FileOriginalStore(directory: directory.appendingPathComponent("originals", isDirectory: true))
         let head = try #require(await FileChanges.read(store: store, workspaceRoot: root, relativePath: "tracked.txt", sessionId: "pane"))
         #expect(head.base == "head" && head.created == nil && head.headSha?.count == 7 && head.hunks[0].lines.map { $0.op + $0.text } == [" one", "-two", "+TWO", " three"])
+        #expect(GitHeadFile.notInHead("fatal: path 'app/a.txt' does not exist in 'HEAD'") && GitHeadFile.notInHead("fatal: path 'a.txt' exists on disk, but not in 'HEAD'"))
+        #expect(!GitHeadFile.notInHead("fatal: not a valid object name") && !GitHeadFile.notInHead(""), "only git's not-in-HEAD words make a file untracked")
         let untracked = try #require(await FileChanges.read(store: store, workspaceRoot: root, relativePath: "untracked.txt"))
         #expect(untracked.base == "head" && untracked.created == true && untracked.added == 2)
         #expect(await FileChanges.read(store: store, workspaceRoot: root, relativePath: "binary.dat") == nil)

@@ -5,9 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isAbortError } from '@/api/client';
 import type { FilePreview } from '@/api/types';
 import { AssistantMarkdown } from '@/components/assistant-markdown';
+import { DiffView } from '@/components/diff-view';
 import { SourceView, previewNotices } from '@/components/source-view';
 import { Button, Card, Chip, ErrorBanner } from '@/components/ui';
 import { ZoomableImage } from '@/components/zoomable-image';
+import { useCapabilities } from '@/hooks/use-capabilities';
+import { hasCapability } from '@/lib/capabilities';
+import { changesRequest, showsChanges } from '@/lib/file-changes';
 import {
   baseName,
   describeFileError,
@@ -24,22 +28,30 @@ import { spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme
 /**
  * One file of the paired Mac's workspace, read-only, previewed the way the Mac files
  * pane shows it: numbered highlighted source, rendered markdown with its source a tap
- * away, a zoomable image, or the file's details when there is nothing to preview.
+ * away, a zoomable image, or the file's details when there is nothing to preview. A host
+ * listing "fileChanges" also says what the request changed in a source or markdown file
+ * (against the run of the result's files row it was opened from, `session` and `run`):
+ * 변경사항 | 전체 보기 then opens on 변경사항.
  */
 export default function FileScreen() {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
-  const { hostId, workspaceId, path } = useLocalSearchParams<{
+  const { hostId, workspaceId, path, session, run } = useLocalSearchParams<{
     hostId: string;
     workspaceId: string;
     path: string;
+    session?: string;
+    run?: string;
   }>();
   const client = useHostClient(hostId);
+  const capabilities = useCapabilities(hostId, client);
+  const canAskChanges = hasCapability(capabilities, 'fileChanges');
   const [preview, setPreview] = useState<FilePreview | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [reload, setReload] = useState(0);
   const [showSource, setShowSource] = useState(false);
+  const [showFull, setShowFull] = useState(false);
   const failed = useRef(false);
   const title = displayName(baseName(path ?? ''));
 
@@ -49,7 +61,7 @@ export default function FileScreen() {
     setError(undefined);
     failed.current = false;
     client
-      .filePreview(workspaceId, path, controller.signal)
+      .filePreview(workspaceId, path, controller.signal, changesRequest(canAskChanges, { session, run }))
       .then((data) => {
         if (!controller.signal.aborted) setPreview(data);
       })
@@ -59,7 +71,7 @@ export default function FileScreen() {
         setError(describeFileError(reason));
       });
     return () => controller.abort();
-  }, [client, path, reload, workspaceId]);
+  }, [canAskChanges, client, path, reload, run, session, workspaceId]);
 
   // A read that failed while the tunnel was down is tried again once it is back.
   useEffect(
@@ -71,6 +83,8 @@ export default function FileScreen() {
   );
 
   const view = useMemo(() => (preview ? viewFor(preview) : undefined), [preview]);
+  const changes = (view?.kind === 'source' || view?.kind === 'markdown') && showsChanges(preview?.changes) ? preview?.changes : undefined;
+  const showsDiff = changes !== undefined && !showFull;
 
   const details = preview
     ? [
@@ -90,6 +104,8 @@ export default function FileScreen() {
         <ActivityIndicator color={palette.accent} accessibilityLabel={t('phone.files.loading')} />
       </View>
     );
+  } else if (changes && showsDiff) {
+    body = <DiffView changes={changes} />;
   } else if (view.kind === 'source') {
     body = <SourceView text={view.text} language={view.language} />;
   } else if (view.kind === 'markdown') {
@@ -133,7 +149,7 @@ export default function FileScreen() {
 
   // Memoized: the source notices split the whole text into lines.
   const truncated = preview?.truncated === true;
-  const notices = useMemo(() => previewNotices(view, truncated, showSource), [showSource, truncated, view]);
+  const notices = useMemo(() => (showsDiff ? [] : previewNotices(view, truncated, showSource)), [showSource, showsDiff, truncated, view]);
 
   return (
     <View style={styles.screen}>
@@ -157,8 +173,24 @@ export default function FileScreen() {
             <Text style={styles.detail} accessibilityRole="text">
               {details.join(' · ')}
             </Text>
-            {view.kind === 'markdown' && view.renderable ? (
+            {changes ? (
               <View style={styles.toggle}>
+                <Chip
+                  label={t('files.changes.show')}
+                  selected={showsDiff}
+                  color={palette.accent}
+                  onPress={() => setShowFull(false)}
+                />
+                <Chip
+                  label={t('files.changes.full')}
+                  selected={!showsDiff}
+                  color={palette.accent}
+                  onPress={() => setShowFull(true)}
+                />
+              </View>
+            ) : null}
+            {view.kind === 'markdown' && view.renderable && !showsDiff ? (
+              <View style={changes ? styles.toggleNext : styles.toggle}>
                 <Chip
                   label={t('phone.files.markdown.rendered')}
                   selected={!showSource}
@@ -202,6 +234,7 @@ const makeStyles = (palette: Palette) =>
     },
     headerRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
     toggle: { flexDirection: 'row', gap: spacing.xs, marginLeft: 'auto' },
+    toggleNext: { flexDirection: 'row', gap: spacing.xs },
     detail: { color: palette.textMuted, fontSize: 12 },
     notice: { color: palette.warning, fontSize: 12 },
     body: { flex: 1 },

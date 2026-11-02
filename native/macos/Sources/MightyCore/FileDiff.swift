@@ -121,15 +121,17 @@ public enum FileDiff {
         }
         var hunks: [FileDiffHunk] = []
         var written = 0, truncated = false
+        // Lines of each side before the next hunk, carried from one hunk to the next.
+        var scanned = 0, oldBefore = 0, newBefore = 0
         for group in groups {
             let start = max(0, group.start - context), stop = min(ordered.count - 1, group.end + context)
             var count = stop - start + 1
             if written + count > maximumOutputLines { count = maximumOutputLines - written; truncated = true }
             if count <= 0 { break }
-            var oldBefore = 0, newBefore = 0
-            for op in ordered[0..<start] {
-                if op.op != "+" { oldBefore += 1 }
-                if op.op != "-" { newBefore += 1 }
+            while scanned < start {
+                if ordered[scanned].op != "+" { oldBefore += 1 }
+                if ordered[scanned].op != "-" { newBefore += 1 }
+                scanned += 1
             }
             var lines: [FileDiffLine] = []
             lines.reserveCapacity(count)

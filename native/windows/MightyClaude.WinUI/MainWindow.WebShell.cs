@@ -80,7 +80,9 @@ public sealed partial class MainWindow
         // that captured one) kept, else git's HEAD; null when there is no diff to show.
         bridge.Register("referenceChanges", async args =>
         {
-            if (WebReferenceRoot(args) is not { } root || args.Text("paneId") is not { } paneId || args.Text("path") is not { Length: > 0 and <= 4096 } path) return null;
+            if (WebReferenceRoot(args) is null || args.Text("paneId") is not { } paneId || args.Text("path") is not { Length: > 0 and <= 4096 } path) return null;
+            // Where the pane's runs work, and its originals were captured: a delegated child's worktree folder.
+            if (service.RunFolder(paneId) is not { } root) return null;
             var target = await Task.Run(() => ReferencePreview.Resolve(path, root));
             if (target is null) return null;
             var runId = args.Text("runId") is { } run && Wire.Identifier(run) ? run : null;

@@ -24,38 +24,59 @@ public sealed record FileOriginal(string RunId, string Path, string Text, bool C
 
 /// <summary>
 /// The contents files had before a Claude run first changed them (M/MightyCore/FileChanges.swift FileOriginalStore), from the
-/// <c>tool_use_result</c> of the run's Edit, Write and MultiEdit results. Kept apart from the state file, under
+/// run's Edit, Write and MultiEdit results (<see cref="FileEdit"/>). Kept apart from the state file, under
 /// <c>&lt;data&gt;/file-originals/&lt;sha(session)&gt;/&lt;sha(run)&gt;/</c>: <c>run.json</c> (<see cref="Manifest"/>) and one
-/// <c>&lt;n&gt;.txt</c> per file (UTF-8), each written to a temporary name and moved over. A path is the workspace-relative
-/// real path (inside the run's folder). Only a run's first original of a path counts, at most 1 MiB each, 64 files and
-/// 16 MiB per run; one past a cap is refused, and later originals of that path in that run are refused too. Only runs the
-/// pane's graph keeps are kept (<see cref="Retain"/>), a closed pane's go (<see cref="Forget"/>), and a start drops whatever
-/// the saved state no longer names (<see cref="Prune"/>).
+/// <c>&lt;n&gt;.txt</c> per file (UTF-8), each written to a temporary name and moved over.
+/// <para>
+/// A path is the real path relative to the run's folder (its <c>root</c>, recorded: an original is never read under another
+/// root). Only a run's first edit of a path counts: an original that is unknown (no text, no patch that fits the file), over
+/// 1 MiB, or past the run's 64 files or 16 MiB is recorded as refused, and the path's later edits in that run never pose as
+/// its first. Each pane keeps the originals of its newest 20 runs, and the whole store at most 512 MiB, the oldest runs going
+/// first. Only runs the pane's graph keeps are kept (<see cref="Retain"/>), a closed pane's go (<see cref="Forget"/>), and a
+/// start drops whatever the saved state no longer names (<see cref="Prune"/>).
+/// </para>
 /// </summary>
 public sealed class FileOriginalStore
 {
     public const int MaximumOriginalBytes = 1_048_576;
     public const int MaximumFilesPerRun = 64;
     public const long MaximumBytesPerRun = 16L * 1_048_576;
+    public const long MaximumBytes = 512L * 1_048_576;
+    public const int MaximumRunsPerPane = 20;
+    public const int MaximumRefusedPerRun = 1_024;
     public const string FolderName = "file-originals";
 
     public sealed record Entry([property: JsonPropertyName("path")] string Path, [property: JsonPropertyName("blob")] string Blob, [property: JsonPropertyName("bytes")] long Bytes, [property: JsonPropertyName("created")] bool Created);
     public sealed record Manifest([property: JsonPropertyName("version")] int Version, [property: JsonPropertyName("sessionId")] string SessionId, [property: JsonPropertyName("runId")] string RunId,
-        [property: JsonPropertyName("sequence")] long Sequence, [property: JsonPropertyName("files")] List<Entry> Files);
+        [property: JsonPropertyName("sequence")] long Sequence, [property: JsonPropertyName("files")] List<Entry> Files)
+    {
+        /// <summary>The real path of the run's folder its paths are relative to.</summary>
+        [JsonPropertyName("root")] public string? Root { get; init; }
+        /// <summary>Paths the run edited whose original is not kept.</summary>
+        [JsonPropertyName("refused")] public List<string>? Refused { get; init; }
+    }
+    private sealed record Indexed(string SessionId, string RunId, long Sequence, long Bytes, int Files);
 
     private readonly object sync = new();
     private readonly string directory;
-    /// <summary>Paths of a run (session, run, path) that were refused or already taken: a later original of them never counts.</summary>
+    /// <summary>Paths of a run (session, run, path) already settled — kept or refused — in this process.</summary>
     private readonly HashSet<(string, string, string)> settled = [];
+    /// <summary>Every run folder's manifest summary, read once from disk and kept up to date.</summary>
+    private Dictionary<string, Indexed>? index;
     private long lastSequence;
     public string DirectoryPath => directory;
 
-    public FileOriginalStore(string directory) { this.directory = directory; }
+    private readonly long budget;
+    /// <param name="budget">The store's whole size (<see cref="MaximumBytes"/>; checks pass a smaller one).</param>
+    public FileOriginalStore(string directory, long budget = MaximumBytes) { this.directory = directory; this.budget = budget; }
 
     private static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..32].ToLowerInvariant();
     private string SessionFolder(string sessionId) => Path.Combine(directory, Hash(sessionId));
     private string RunFolder(string sessionId, string runId) => Path.Combine(SessionFolder(sessionId), Hash(runId));
+    private static (string, string, string) Key(string sessionId, string runId, string path) => (sessionId, runId, OperatingSystem.IsWindows() ? path.ToLowerInvariant() : path);
+    /// <summary>A background notice run's id (<see cref="BackgroundNoticeRuns.RunID"/>) stands for the run it came from.</summary>
+    public static string SourceRun(string runId) => runId.IndexOf(BackgroundNoticeRuns.Marker, StringComparison.Ordinal) is var at and > 0 ? runId[..at] : runId;
 
     private static Manifest? ReadManifest(string folder)
     {
@@ -74,70 +95,124 @@ public sealed class FileOriginalStore
         finally { try { if (File.Exists(temporary)) File.Delete(temporary); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
 
+    /// <summary>Under <see cref="sync"/>: the run folders' summaries, read from disk the first time.</summary>
+    private Dictionary<string, Indexed> Index()
+    {
+        if (index is not null) return index;
+        index = new(PathComparer);
+        try
+        {
+            if (Directory.Exists(directory))
+                foreach (var session in Directory.GetDirectories(directory))
+                    foreach (var run in Directory.GetDirectories(session))
+                        if (ReadManifest(run) is { } manifest) { index[run] = Summary(manifest); lastSequence = Math.Max(lastSequence, manifest.Sequence); }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return index;
+    }
+    private static Indexed Summary(Manifest manifest) => new(manifest.SessionId, manifest.RunId, manifest.Sequence, manifest.Files.Sum(f => f.Bytes), manifest.Files.Count);
+
+    /// <summary>Records what the run's edit says about <paramref name="filePath"/> before it (the convenience form: text, or null for a created file).</summary>
+    public bool Capture(string sessionId, string runId, string workspaceRoot, string filePath, string? original) =>
+        Capture(sessionId, runId, workspaceRoot, filePath, original is null ? new FileEdit(null, true, null) : new FileEdit(original, false, null));
+
     /// <summary>
-    /// Records <paramref name="filePath"/>'s content before the run changed it (null: the run created it). The path may be
-    /// absolute or relative to <paramref name="workspaceRoot"/>; one that does not resolve to an existing file inside it is
-    /// refused. True when this original was kept.
+    /// Records what an edit of the run says about <paramref name="filePath"/> before it. The path may be absolute or relative
+    /// to <paramref name="workspaceRoot"/>; one that does not resolve to an existing file inside it is ignored. A patch is
+    /// undone against the file as it is now (<see cref="FilePatch.ReverseApply"/>). True when an original was kept; an edit
+    /// whose original cannot be kept settles the path as refused.
     /// </summary>
-    public bool Capture(string sessionId, string runId, string workspaceRoot, string filePath, string? original)
+    public bool Capture(string sessionId, string runId, string workspaceRoot, string filePath, FileEdit edit)
     {
         if (!Wire.Identifier(sessionId) || !Wire.Identifier(runId)) return false;
-        if (ReferencePreview.Resolve(filePath, workspaceRoot) is not { } target) return false;
+        if (ReferencePreview.Resolve(filePath, workspaceRoot) is not { } target || WorkspaceFiles.RealPath(workspaceRoot) is not { } realRoot) return false;
         var relative = target.RelativePath;
-        var key = (sessionId, runId, OperatingSystem.IsWindows() ? relative.ToLowerInvariant() : relative);
         lock (sync)
         {
-            if (!settled.Add(key)) return false;
-            var text = original ?? "";
-            var bytes = Encoding.UTF8.GetBytes(text);
-            if (bytes.Length > MaximumOriginalBytes) return false;
+            if (!settled.Add(Key(sessionId, runId, relative))) return false;
             try
             {
                 var folder = RunFolder(sessionId, runId);
-                var manifest = ReadManifest(folder) ?? new(1, sessionId, runId, NextSequence(), []);
-                if (manifest.Files.Any(f => PathComparer.Equals(f.Path, relative))) return false;
-                if (manifest.Files.Count >= MaximumFilesPerRun || manifest.Files.Sum(f => f.Bytes) + bytes.Length > MaximumBytesPerRun) return false;
+                var manifest = ReadManifest(folder) ?? new(1, sessionId, runId, NextSequence(), []) { Root = realRoot, Refused = [] };
+                if (manifest.Files.Any(f => PathComparer.Equals(f.Path, relative)) || (manifest.Refused ?? []).Contains(relative, PathComparer)) return false;
+                if (manifest.Root is not { } root || !PathComparer.Equals(root, realRoot)) return false;
+                var text = edit.Original ?? (edit.Created ? "" : edit.Patch is { } patch && FileChanges.Current(relative, realRoot) is { } current ? FilePatch.ReverseApply(current, patch) : null);
+                var bytes = text is null ? null : Encoding.UTF8.GetBytes(text);
                 Directory.CreateDirectory(folder);
+                if (bytes is null || bytes.Length > MaximumOriginalBytes || manifest.Files.Count >= MaximumFilesPerRun || manifest.Files.Sum(f => f.Bytes) + bytes.Length > MaximumBytesPerRun)
+                {
+                    var refused = manifest.Refused ?? [];
+                    if (refused.Count < MaximumRefusedPerRun) Save(folder, manifest with { Refused = [.. refused, relative] });
+                    return false;
+                }
                 var blob = manifest.Files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".txt";
                 WriteAtomically(Path.Combine(folder, blob), bytes);
-                var next = manifest with { Files = [.. manifest.Files, new(relative, blob, bytes.Length, original is null)] };
-                WriteAtomically(Path.Combine(folder, "run.json"), JsonSerializer.SerializeToUtf8Bytes(next));
+                Save(folder, manifest with { Files = [.. manifest.Files, new(relative, blob, bytes.Length, edit.Original is null && edit.Created)] });
+                Evict(folder);
                 return true;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
         }
     }
 
-    /// <summary>A sequence later than every run's so far, also across restarts (the clock's ticks, never going back).</summary>
-    private long NextSequence() => lastSequence = Math.Max(lastSequence + 1, DateTime.UtcNow.Ticks);
+    private void Save(string folder, Manifest manifest)
+    {
+        WriteAtomically(Path.Combine(folder, "run.json"), JsonSerializer.SerializeToUtf8Bytes(manifest));
+        Index()[folder] = Summary(manifest);
+    }
 
     /// <summary>
-    /// The original of <paramref name="relativePath"/> that <paramref name="runId"/> captured, or with no run the newest run of
-    /// the session that captured it; null when there is none.
+    /// Under <see cref="sync"/>: each pane keeps the originals of its newest <see cref="MaximumRunsPerPane"/> runs and the store
+    /// at most <see cref="MaximumBytes"/>; the oldest runs go first, never <paramref name="keep"/> (the run just written).
     /// </summary>
-    public FileOriginal? Find(string sessionId, string? runId, string relativePath)
+    private void Evict(string? keep)
     {
+        var all = Index();
+        foreach (var pane in all.Where(e => e.Value.Files > 0).GroupBy(e => e.Value.SessionId))
+            foreach (var old in pane.OrderByDescending(e => e.Value.Sequence).Skip(MaximumRunsPerPane).Where(e => !PathComparer.Equals(e.Key, keep ?? "")).ToList()) Drop(old.Key);
+        var total = all.Values.Sum(v => v.Bytes);
+        foreach (var old in all.OrderBy(e => e.Value.Sequence).Where(e => !PathComparer.Equals(e.Key, keep ?? "")).ToList())
+        {
+            if (total <= budget) break;
+            total -= old.Value.Bytes; Drop(old.Key);
+        }
+    }
+
+    /// <summary>Under <see cref="sync"/>: removes one run folder, its summary and what this process settled for it.</summary>
+    private void Drop(string folder)
+    {
+        if (Index().Remove(folder, out var gone)) settled.RemoveWhere(k => k.Item1 == gone.SessionId && k.Item2 == gone.RunId);
+        Delete(folder);
+    }
+
+    /// <summary>A sequence later than every run's so far, also across restarts (the clock's ticks, never going back).</summary>
+    private long NextSequence() { Index(); return lastSequence = Math.Max(lastSequence + 1, DateTime.UtcNow.Ticks); }
+
+    /// <summary>
+    /// The original of <paramref name="relativePath"/> that <paramref name="runId"/> (a notice run: the run it came from)
+    /// captured, or with no run the one of the session's newest run that edited the path; null when that run refused it, it was
+    /// captured under another root than <paramref name="root"/> (when given), or there is none.
+    /// </summary>
+    public FileOriginal? Find(string sessionId, string? runId, string relativePath, string? root = null)
+    {
+        if (runId is not null) runId = SourceRun(runId);
         if (!Wire.Identifier(sessionId) || runId is not null && !Wire.Identifier(runId)) return null;
+        var realRoot = root is null ? null : WorkspaceFiles.RealPath(root);
+        if (root is not null && realRoot is null) return null;
         lock (sync)
         {
-            IEnumerable<string> folders;
-            if (runId is not null) folders = [RunFolder(sessionId, runId)];
-            else
+            IEnumerable<string> folders = runId is not null ? [RunFolder(sessionId, runId)]
+                : Index().Where(e => e.Value.SessionId == sessionId).OrderByDescending(e => e.Value.Sequence).Select(e => e.Key).ToList();
+            foreach (var folder in folders)
             {
-                var session = SessionFolder(sessionId);
-                try { folders = Directory.Exists(session) ? Directory.GetDirectories(session) : []; }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
-            }
-            var candidates = folders.Select(ReadManifest).OfType<Manifest>()
-                .Where(m => m.SessionId == sessionId && (runId is null || m.RunId == runId))
-                .OrderByDescending(m => m.Sequence);
-            foreach (var manifest in candidates)
-            {
+                if (ReadManifest(folder) is not { } manifest || manifest.SessionId != sessionId || runId is not null && manifest.RunId != runId) continue;
+                if ((manifest.Refused ?? []).Contains(relativePath, PathComparer)) return null;
                 if (manifest.Files.FirstOrDefault(f => PathComparer.Equals(f.Path, relativePath)) is not { } entry) continue;
+                if (realRoot is not null && (manifest.Root is not { } kept || !PathComparer.Equals(kept, realRoot))) return null;
                 if (entry.Blob.Contains('/') || entry.Blob.Contains('\\') || entry.Blob.Contains("..")) return null;
                 try
                 {
-                    var path = Path.Combine(RunFolder(sessionId, manifest.RunId), entry.Blob);
+                    var path = Path.Combine(folder, entry.Blob);
                     if (new FileInfo(path).Length > MaximumOriginalBytes) return null;
                     return new(manifest.RunId, entry.Path, Encoding.UTF8.GetString(File.ReadAllBytes(path)), entry.Created);
                 }
@@ -151,27 +226,19 @@ public sealed class FileOriginalStore
     public IReadOnlyList<string> Runs(string sessionId)
     {
         if (!Wire.Identifier(sessionId)) return [];
-        lock (sync)
-        {
-            var session = SessionFolder(sessionId);
-            try { return Directory.Exists(session) ? Directory.GetDirectories(session).Select(ReadManifest).OfType<Manifest>().OrderByDescending(m => m.Sequence).Select(m => m.RunId).ToList() : []; }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
-        }
+        lock (sync) return Index().Values.Where(v => v.SessionId == sessionId).OrderByDescending(v => v.Sequence).Select(v => v.RunId).ToList();
     }
 
-    /// <summary>Drops the session's runs that are not in <paramref name="keep"/>.</summary>
+    /// <summary>Drops the session's runs that are not in <paramref name="keep"/> (a notice run keeps the run it came from).</summary>
     public void Retain(string sessionId, IReadOnlySet<string> keep)
     {
         if (!Wire.Identifier(sessionId)) return;
+        var kept = keep.Select(SourceRun).ToHashSet(StringComparer.Ordinal);
         lock (sync)
         {
-            var session = SessionFolder(sessionId);
-            try
-            {
-                if (!Directory.Exists(session)) return;
-                foreach (var folder in Directory.GetDirectories(session))
-                    if (ReadManifest(folder) is not { } manifest || !keep.Contains(manifest.RunId)) Delete(folder);
-            }
+            foreach (var run in Index().Where(e => e.Value.SessionId == sessionId && !kept.Contains(e.Value.RunId)).Select(e => e.Key).ToList()) Drop(run);
+            // A folder with no readable manifest is no run.
+            try { if (Directory.Exists(SessionFolder(sessionId))) foreach (var run in Directory.GetDirectories(SessionFolder(sessionId))) if (!Index().ContainsKey(run)) Delete(run); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
     }
@@ -180,10 +247,17 @@ public sealed class FileOriginalStore
     public void Forget(string sessionId)
     {
         if (!Wire.Identifier(sessionId)) return;
-        lock (sync) { Delete(SessionFolder(sessionId)); settled.RemoveWhere(k => k.Item1 == sessionId); }
+        lock (sync)
+        {
+            foreach (var run in Index().Where(e => e.Value.SessionId == sessionId).Select(e => e.Key).ToList()) Index().Remove(run);
+            Delete(SessionFolder(sessionId)); settled.RemoveWhere(k => k.Item1 == sessionId);
+        }
     }
 
-    /// <summary>Keeps only the sessions named, each with only the runs named for it; everything else in the folder goes.</summary>
+    /// <summary>
+    /// Keeps only the sessions named, each with only the runs named for it (a notice run keeps the run it came from); everything
+    /// else in the folder goes, temporary files left by a crash included, and then the budget holds.
+    /// </summary>
     public void Prune(IReadOnlyDictionary<string, IReadOnlySet<string>> sessions)
     {
         lock (sync)
@@ -191,22 +265,39 @@ public sealed class FileOriginalStore
             try
             {
                 if (!Directory.Exists(directory)) return;
-                var known = sessions.Keys.Where(Wire.Identifier).ToDictionary(Hash, id => id);
+                var known = new Dictionary<string, string>();
+                foreach (var id in sessions.Keys.Where(Wire.Identifier)) known[Hash(id)] = id;
                 foreach (var folder in Directory.GetDirectories(directory))
                 {
                     if (!known.TryGetValue(Path.GetFileName(folder), out var id)) { Delete(folder); continue; }
+                    var runs = sessions[id].Select(SourceRun).ToHashSet(StringComparer.Ordinal);
                     foreach (var run in Directory.GetDirectories(folder))
-                        if (ReadManifest(run) is not { } manifest || manifest.SessionId != id || !sessions[id].Contains(manifest.RunId)) Delete(run);
+                        if (ReadManifest(run) is not { } manifest || manifest.SessionId != id || !runs.Contains(manifest.RunId)) Delete(run);
                 }
                 foreach (var file in Directory.GetFiles(directory)) File.Delete(file);
+                foreach (var file in Directory.EnumerateFiles(directory, "*.tmp", SearchOption.AllDirectories).ToList()) File.Delete(file);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            index = null; settled.Clear();
+            Evict(null);
         }
     }
 
     /// <summary>The runs a pane's graph keeps: its runs' ids and the ids they were made from.</summary>
     public static IReadOnlySet<string> KeptRuns(RunSession session) =>
         (session.GraphRuns ?? []).SelectMany(r => new[] { r.Id, r.SourceRunID }).OfType<string>().Where(Wire.Identifier).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>The kept runs of every pane; a pane id that appears twice keeps the runs of both.</summary>
+    public static IReadOnlyDictionary<string, IReadOnlySet<string>> KeptRuns(IEnumerable<RunSession> sessions)
+    {
+        var kept = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var session in sessions)
+        {
+            if (!kept.TryGetValue(session.Id, out var runs)) kept[session.Id] = runs = new(StringComparer.Ordinal);
+            runs.UnionWith(KeptRuns(session));
+        }
+        return kept.ToDictionary(p => p.Key, p => (IReadOnlySet<string>)p.Value);
+    }
 
     private static void Delete(string folder)
     {
@@ -240,8 +331,8 @@ public static class GitHeadFile
             .Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => Path.Combine(p.Trim('"'), name)).FirstOrDefault(File.Exists);
     }
 
-    /// <summary>The command's exit code and its first <paramref name="limit"/> bytes, plus whether there were more; null when it did not finish in time.</summary>
-    private static async Task<(int Exit, byte[] Output, bool Over)?> Run(string binary, string root, string[] arguments, int limit, CancellationToken cancellation)
+    /// <summary>The command's exit code, its first <paramref name="limit"/> bytes (and whether there were more) and the start of its stderr; null when it did not finish in time.</summary>
+    private static async Task<(int Exit, byte[] Output, bool Over, string Error)?> Run(string binary, string root, string[] arguments, int limit, CancellationToken cancellation)
     {
         await using var process = ChildProcess.Start(Command(binary, root, arguments)); process.Input.Close();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(2));
@@ -249,8 +340,8 @@ public static class GitHeadFile
         try
         {
             var exit = await process.Completion.WaitAsync(timeout.Token);
-            var (data, over) = await stdout; await stderr;
-            return (exit, data, over);
+            var (data, over) = await stdout; var (error, _) = await stderr;
+            return (exit, data, over, Encoding.UTF8.GetString(error));
         }
         catch (OperationCanceledException) when (!cancellation.IsCancellationRequested) { return null; }
         finally
@@ -272,9 +363,14 @@ public static class GitHeadFile
         return (result.ToArray(), over);
     }
 
+    /// <summary>git's own words (LC_ALL=C) for a path HEAD does not have; any other failure is no base at all.</summary>
+    public static bool NotInHead(string error) =>
+        error.Contains("does not exist in 'HEAD'", StringComparison.Ordinal) || error.Contains("exists on disk, but not in 'HEAD'", StringComparison.Ordinal);
+
     /// <summary>
     /// HEAD's copy of <paramref name="relativePath"/> (relative to the real <paramref name="root"/>, '/' separated): null when
-    /// the folder is in no repository, git is missing or fails, or the copy is over <paramref name="maximumBytes"/>.
+    /// the folder is in no repository, git is missing or fails for any reason but the path not being in HEAD, or the copy is
+    /// over <paramref name="maximumBytes"/>.
     /// </summary>
     public static async Task<Content?> ReadAsync(string root, string relativePath, int maximumBytes = FileDiff.MaximumSideBytes, CancellationToken cancellation = default)
     {
@@ -289,8 +385,9 @@ public static class GitHeadFile
             // A repository with no commit yet: nothing is in HEAD.
             if (head.Value.Exit != 0 || !System.Text.RegularExpressions.Regex.IsMatch(sha, "^[0-9a-f]{40,64}$")) return new([], null, true);
             var blob = await Run(binary, root, ["cat-file", "blob", "HEAD:./" + relativePath], maximumBytes, cancellation);
-            if (blob is null || blob.Value.Over) return null;
-            return blob.Value.Exit == 0 ? new(blob.Value.Output, sha[..7], false) : new([], sha[..7], true);
+            if (blob is not { } read || read.Over) return null;
+            if (read.Exit == 0) return new(read.Output, sha[..7], false);
+            return NotInHead(read.Error) ? new([], sha[..7], true) : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception) { return null; }
     }
@@ -303,30 +400,49 @@ public static class GitHeadFile
 public static class FileChanges
 {
     /// <summary>
-    /// The change set of <paramref name="relativePath"/> under <paramref name="workspaceRoot"/>, null when there is no diff to
-    /// show (the path leaves the workspace or is no regular file, a side is binary, undecodable or over the caps, or there is
-    /// no run original and no git base). With <paramref name="runId"/> only that run's original counts; without it the newest
-    /// run of <paramref name="sessionId"/> that captured the file.
+    /// The change set of <paramref name="relativePath"/> under <paramref name="workspaceRoot"/> (for a delegated child, its
+    /// worktree folder), null when there is no diff to show (the path leaves the folder or is no regular file, a side is
+    /// binary, undecodable or over the caps, or there is no run original and no git base). With <paramref name="runId"/> (a
+    /// notice run: the run it came from) only that run's original counts; without it the newest run of
+    /// <paramref name="sessionId"/> that edited the file. An original captured under another folder never counts.
     /// </summary>
     public static async Task<FileChangeSet?> ReadAsync(FileOriginalStore? store, string workspaceRoot, string relativePath, string? sessionId = null, string? runId = null, CancellationToken cancellation = default)
     {
         if (WorkspaceFiles.Resolve(relativePath, workspaceRoot) is not { } real || WorkspaceFiles.RealPath(workspaceRoot) is not { } realRoot || Directory.Exists(real)) return null;
-        var relative = Path.GetRelativePath(realRoot, real).Replace('\\', '/');
-        var current = await Task.Run(() => Current(relativePath, workspaceRoot), cancellation);
+        var relative = OnDiskCase(realRoot, Path.GetRelativePath(realRoot, real).Replace('\\', '/'));
+        var current = Current(relativePath, workspaceRoot);
         if (current is null) return null;
-        if (store is not null && sessionId is not null && store.Find(sessionId, runId, relative) is { } original)
+        if (store is not null && sessionId is not null && store.Find(sessionId, runId, relative, workspaceRoot) is { } original)
             return FileDiff.Compute(original.Text, current) is { } diff
                 ? new FileChangeSet("run", diff.Hunks, diff.Added, diff.Removed, diff.Truncated, diff.Unchanged) { RunId = original.RunId, Created = original.Created ? true : null }
                 : null;
-        if (await GitHeadFile.ReadAsync(realRoot, relative, FileDiff.MaximumSideBytes, cancellation) is not { } head) return null;
+        if (await GitHeadFile.ReadAsync(realRoot, relative, FileDiff.MaximumSideBytes, cancellation).ConfigureAwait(false) is not { } head) return null;
         if (FilePreviewClassifier.DecodeText(head.Data, sample: false) is not { } decoded) return null;
         return FileDiff.Compute(decoded.Text, current) is { } headDiff
             ? new FileChangeSet("head", headDiff.Hunks, headDiff.Added, headDiff.Removed, headDiff.Truncated, headDiff.Unchanged) { HeadSha = head.ShortSha, Created = head.Untracked ? true : null }
             : null;
     }
 
+    /// <summary>
+    /// <paramref name="relative"/> with each component as the disk spells it: git compares paths by case, Windows does not, so
+    /// a link written <c>src/app.cs</c> still finds HEAD's <c>Src/App.cs</c>. Elsewhere the path is already the disk's.
+    /// </summary>
+    public static string OnDiskCase(string realRoot, string relative)
+    {
+        if (!OperatingSystem.IsWindows()) return relative;
+        var current = realRoot; var parts = new List<string>();
+        foreach (var part in relative.Split('/'))
+        {
+            string? found = null;
+            try { found = new DirectoryInfo(current).EnumerateFileSystemInfos(part).Select(i => i.Name).FirstOrDefault(n => string.Equals(n, part, StringComparison.OrdinalIgnoreCase)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { }
+            parts.Add(found ?? part); current = Path.Combine(current, found ?? part);
+        }
+        return string.Join('/', parts);
+    }
+
     /// <summary>The file as it is now, through the files pane's open (<see cref="WorkspaceFiles.OpenFile"/>): null when over 1 MiB, binary or undecodable.</summary>
-    private static string? Current(string relativePath, string root)
+    public static string? Current(string relativePath, string root)
     {
         try
         {

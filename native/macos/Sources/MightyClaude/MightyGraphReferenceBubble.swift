@@ -9,18 +9,30 @@ struct MightyGraphReference: Equatable {
     let path: String
     let line: Int?
     let url: URL?
+    /// The graph run the click came from (a result's files, a block's words):
+    /// the 변경사항 view compares with that run's originals.
+    var runID: String? = nil
     var title: String { url?.lastPathComponent ?? (path as NSString).lastPathComponent }
 }
 
 /// A speech bubble docked beside the diagram. It previews Markdown, HTML,
 /// images and text without leaving the graph; other files open externally.
+/// Text or Markdown the request changed gets 변경사항 | 전체 보기 in the head
+/// (`FileChanges.read`, against the reference's run when it names one),
+/// opening on 변경사항; the choice is this bubble's only.
 struct MightyGraphReferenceBubble: View {
     let sessionID: String
     let reference: MightyGraphReference
     let onLeft: Bool
     let onFlip: () -> Void
     let onClose: () -> Void
+    /// The pane's local workspace and the store of its runs' originals; either
+    /// nil leaves the bubble without 변경사항 (HEAD needs the workspace).
+    var workspaceRoot: URL? = nil
+    var fileOriginals: FileOriginalStore? = nil
     @ViewState private var content: Content = .loading
+    @ViewState private var changes: FileChangeSet?
+    @ViewState private var showsFull = false
     static let defaultWidth: Double = 420
     static let minimumWidth: CGFloat = 300
     static let minimumHeight: CGFloat = 200
@@ -64,7 +76,11 @@ struct MightyGraphReferenceBubble: View {
         .padding(.leading, onLeft ? 0 : MightyBubbleShape.tailLength)
         .padding(.trailing, onLeft ? MightyBubbleShape.tailLength : 0)
         .onExitCommand(perform: onClose)
-        .task(id: reference) { content = await Self.load(reference) }
+        .task(id: reference) {
+            changes = nil; showsFull = false
+            content = await Self.load(reference)
+            changes = await Self.loadChanges(reference, sessionID: sessionID, root: workspaceRoot, store: fileOriginals)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("reference.bubbleAccessibility", ["title": reference.title]))
         .accessibilityIdentifier("mighty-reference-bubble-\(sessionID)")
@@ -90,6 +106,14 @@ struct MightyGraphReferenceBubble: View {
                 Text(reference.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(reference.path)
             }
             Spacer(minLength: 4)
+            if diffable != nil {
+                Picker("", selection: $showsFull) {
+                    Text(L("files.changes.show")).tag(false)
+                    Text(L("files.changes.full")).tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .accessibilityIdentifier("mighty-reference-changes-\(sessionID)")
+            }
             Button(action: onFlip) { Image(systemName: onLeft ? "rectangle.righthalf.inset.filled.arrow.right" : "rectangle.lefthalf.inset.filled.arrow.left") }
                 .help(onLeft ? L("reference.flipRight") : L("reference.flipLeft")).accessibilityLabel(onLeft ? L("reference.moveRight") : L("reference.moveLeft"))
                 .accessibilityIdentifier("mighty-reference-flip-\(sessionID)")
@@ -117,7 +141,24 @@ struct MightyGraphReferenceBubble: View {
         }
     }
 
+    /// The change set the toggle offers: text or Markdown that changed.
+    private var diffable: FileChangeSet? {
+        guard let changes, !changes.unchanged, !changes.hunks.isEmpty else { return nil }
+        switch content {
+        case .text(_), .markdown(_): return changes
+        default: return nil
+        }
+    }
+
     @ViewBuilder private var preview: some View {
+        if let diffable, !showsFull {
+            FileDiffView(changes: diffable, bottomClearance: Self.handleClearance)
+        } else {
+            fullPreview
+        }
+    }
+
+    @ViewBuilder private var fullPreview: some View {
         switch content {
         case .loading:
             ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -160,6 +201,17 @@ struct MightyGraphReferenceBubble: View {
         if kind == "image" { return NSImage(data: data).map(Content.image) ?? .unreadable }
         guard let text = String(data: data, encoding: .utf8) else { return .unreadable }
         return kind == "markdown" ? .markdown(text) : .text(text)
+    }
+
+    /// What the request changed in the file, by its path inside the workspace;
+    /// nil when there is no workspace or nothing to show.
+    private static func loadChanges(_ reference: MightyGraphReference, sessionID: String, root: URL?, store: FileOriginalStore?) async -> FileChangeSet? {
+        guard let url = reference.url, let root else { return nil }
+        let base = WorkspaceFiles.realRoot(root).path
+        let prefix = base.hasSuffix("/") ? base : base + "/"
+        let real = url.standardizedFileURL.resolvingSymlinksInPath().path
+        guard real.hasPrefix(prefix) else { return nil }
+        return await FileChanges.read(store: store, workspaceRoot: root, relativePath: String(real.dropFirst(prefix.count)), sessionId: sessionID, runId: reference.runID)
     }
 }
 

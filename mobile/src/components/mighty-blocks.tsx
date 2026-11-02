@@ -329,8 +329,8 @@ function RunGroup({ run, ordinal, newest, onOpenFile }: {
   ordinal: number;
   /** The newest request starts open while it runs; see `runFold`. */
   newest: boolean;
-  /** Opens a file the result names; absent when the host serves no files. */
-  onOpenFile?: (file: MobileResultFile) => void;
+  /** Opens a file the result names, with the run it belongs to; absent when the host serves no files. */
+  onOpenFile?: (file: MobileResultFile, runId: string) => void;
 }) {
   const styles = useStyles(makeStyles);
   // The fold follows the run (a request that just finished folds its steps away)
@@ -407,7 +407,7 @@ function RunGroup({ run, ordinal, newest, onOpenFile }: {
             </>
           )}
           {result ? <ResultCard run={run} text={result} /> : null}
-          {result && run.resultFiles ? <ResultFiles files={run.resultFiles} onOpen={onOpenFile} /> : null}
+          {result && run.resultFiles ? <ResultFiles files={run.resultFiles} onOpen={onOpenFile ? (file) => onOpenFile(file, run.id) : undefined} /> : null}
         </View>
       ) : null}
     </View>
@@ -438,8 +438,8 @@ export function MightyRunList({
   headerStyle?: StyleProp<ViewStyle>;
   listRef?: (list: EndScrollable | null) => void;
   follow?: FollowBottomProps;
-  /** Opens a file a result names in the workspace file preview; absent when the host serves no files. */
-  onOpenFile?: (file: MobileResultFile) => void;
+  /** Opens a file a result names in the workspace file preview, with its run; absent when the host serves no files. */
+  onOpenFile?: (file: MobileResultFile, runId: string) => void;
 }) {
   const styles = useStyles(makeStyles);
   // The run followed as newest: the newest request, or a notice run after it that is a turn of its own.

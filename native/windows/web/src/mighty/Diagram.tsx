@@ -24,6 +24,12 @@ import type { Translate } from '../i18n/locale';
 
 const Overscan = 300;
 
+/** The run of the block a click landed in, for the reference bubble's 변경사항. */
+const blockRun = (target: Element) => {
+  const id = target.closest<HTMLElement>('[data-block-id]')?.dataset.blockId;
+  return id ? runOf(id) : null;
+};
+
 /** A block the diagram opens on (MightyGraphCamera.Anchor.Reaim): selected, the camera on it; its request when it is not drawn. */
 export interface Aim { nodeId: string; fallbackNodeId?: string }
 
@@ -108,7 +114,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
   const referenceShown = useContext(ReferenceContext);
   const showReference = useRef(referenceShown);
   showReference.current = referenceShown;
-  const onReferenceClick = useReferenceClick();
+  const onReferenceClick = useReferenceClick(blockRun);
   const loadingOlder = useRef<unknown>(null);
 
   const hostRuns = useMemo(() => {
@@ -417,7 +423,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     },
     toggleFiles(runId) { void bridge.call('mightyResultFiles', { paneId, runId }); },
     fitResult() { void bridge.call('mightySaveSize', { paneId, nodeId: latestResultID(shared.current) ?? '', target: 'result' }); },
-    openFile(file: MightyFile) { showReference.current?.({ path: file.path, line: file.line ?? null }); },
+    openFile(file: MightyFile, runId: string | null) { showReference.current?.({ path: file.path, line: file.line ?? null, ...(runId ? { runId } : {}) }); },
     loadOlder() { void bridge.call('mightyLoadOlder', { paneId }); },
     measured(id, height) { setMeasured((m) => (Math.abs((m[id] ?? -1) - height) < 1 ? m : { ...m, [id]: height })); },
   }), [bridge, paneId]);

@@ -21,8 +21,38 @@ internal static class FileChangesVerification
 
     private static string Generated(JsonElement spec, string side)
     {
-        var count = spec.GetProperty(side).GetInt32(); var pattern = spec.GetProperty("line").GetString()!;
-        return string.Concat(Enumerable.Range(1, count).Select(n => pattern.Replace("{n}", n.ToString(System.Globalization.CultureInfo.InvariantCulture)) + "\n"));
+        var text = new StringBuilder();
+        foreach (var segment in spec.GetProperty(side).EnumerateArray())
+        {
+            var count = segment[0].GetInt32(); var pattern = segment[1].GetString()!; var first = segment[2].GetInt32();
+            for (var n = first; n < first + count; n++) text.Append(pattern.Replace("{n}", n.ToString(System.Globalization.CultureInfo.InvariantCulture))).Append('\n');
+        }
+        return text.ToString();
+    }
+
+    private static string Hunks(IEnumerable<FileDiffHunk> hunks) => JsonSerializer.Serialize(hunks, Wire.Json);
+    private static string Hunks(JsonElement hunks) => JsonSerializer.Serialize(JsonSerializer.Deserialize<List<FileDiffHunk>>(hunks.GetRawText(), Wire.Json), Wire.Json);
+
+    private static IReadOnlyList<FilePatchHunk> PatchHunks(JsonElement hunks) => FilePatch.Parse(hunks) ?? throw new InvalidOperationException("the fixture's hunks parse");
+
+    internal static Task TheCutsAndReversePatchesFollowTheFixture()
+    {
+        var fixture = Fixture.Value;
+        foreach (var item in fixture.GetProperty("cuts").EnumerateArray())
+        {
+            var name = item.GetProperty("name").GetString()!;
+            var cut = FileDiff.Cut(FileDiff.Compute(item.GetProperty("old").GetString()!, item.GetProperty("new").GetString()!)!.Hunks, item.GetProperty("lines").GetInt32());
+            Check(Hunks(cut) == Hunks(item.GetProperty("expect")), $"cut {name}: {Hunks(cut)}");
+        }
+        foreach (var item in fixture.GetProperty("reversePatch").EnumerateArray())
+        {
+            var name = item.GetProperty("name").GetString()!;
+            var original = FilePatch.ReverseApply(item.GetProperty("current").GetString()!, PatchHunks(item.GetProperty("hunks")));
+            var expect = item.GetProperty("expect");
+            Check(expect.ValueKind == JsonValueKind.Null ? original is null : original == expect.GetString(), $"reverse patch {name}: {(original is null ? "null" : JsonSerializer.Serialize(original))}");
+        }
+        Check(FilePatch.Parse(JsonDocument.Parse("[{\"oldStart\":1}]").RootElement) is null && FilePatch.Parse(JsonDocument.Parse("\"x\"").RootElement) is null, "a malformed structuredPatch is none");
+        return Task.CompletedTask;
     }
 
     internal static Task TheSharedCasesHold()
@@ -57,6 +87,8 @@ internal static class FileChangesVerification
                     && hunk.NewStart == first.GetProperty("newStart").GetInt32() && hunk.NewLines == first.GetProperty("newLines").GetInt32(), $"{name}: first hunk @@ -{hunk.OldStart},{hunk.OldLines} +{hunk.NewStart},{hunk.NewLines}");
                 var last = result.Hunks[^1].Lines[^1]; var lastWanted = expect.GetProperty("lastLine");
                 Check(last.Op == lastWanted.GetProperty("op").GetString() && last.Text == lastWanted.GetProperty("text").GetString(), $"{name}: last line {last.Op}{last.Text}");
+                if (expect.TryGetProperty("contextLines", out var context))
+                    Check(result.Hunks.Sum(h => h.Lines.Count(l => l.Op == " ")) == context.GetInt32(), $"{name}: {result.Hunks.Sum(h => h.Lines.Count(l => l.Op == " "))} context lines");
             }
         }
         // Beyond the fixture: the caps, and an edit script too long for Myers' trace.
@@ -104,6 +136,35 @@ internal static class FileChangesVerification
             parser.Parse(Assistant("t6", "Write", Path.Combine(root, "new.txt")));
             parser.Parse(Result("t6", new Dictionary<string, object?> { ["type"] = "create", ["filePath"] = Path.Combine(root, "new.txt"), ["content"] = "one\ntwo\n", ["originalFile"] = null }));
             Check(store.Find("pane", "run-1", "new.txt") is { Text: "", Created: true }, "a created file's original is empty and marked created");
+            // What the CLI really sends for most edits: no originalFile, a structuredPatch to undo against the file on disk.
+            File.WriteAllText(Path.Combine(root, "e.txt"), "one\r\nTWO\r\nthree\r\n");
+            object Patched(string path, object[] hunks, string oldString = "two") => new Dictionary<string, object?> { ["filePath"] = path, ["oldString"] = oldString, ["newString"] = "TWO", ["originalFile"] = null, ["contentNotInModelContext"] = true, ["structuredPatch"] = hunks, ["userModified"] = false, ["replaceAll"] = false };
+            var twoToTWO = new object[] { new { oldStart = 1, oldLines = 3, newStart = 1, newLines = 3, lines = new[] { " one", "-two", "+TWO", " three" } } };
+            parser.Parse(Assistant("t7", "Edit", Path.Combine(root, "e.txt")));
+            parser.Parse(Result("t7", Patched(Path.Combine(root, "e.txt"), twoToTWO)));
+            Check(store.Find("pane", "run-1", "e.txt") is { Text: "one\r\ntwo\r\nthree\r\n", Created: false }, "a structuredPatch is undone against the CRLF file on disk");
+            parser.Parse(Assistant("t8", "Edit", Path.Combine(root, "e.txt")));
+            parser.Parse(Result("t8", Patched(Path.Combine(root, "e.txt"), [new { oldStart = 1, oldLines = 1, newStart = 1, newLines = 1, lines = new[] { "-one", "+ONE" } }])));
+            Check(store.Find("pane", "run-1", "e.txt")?.Text == "one\r\ntwo\r\nthree\r\n", "a later patch of the path never replaces the first original");
+            // A patch that does not fit the file settles the path: a later edit with the text never poses as its first original.
+            File.WriteAllText(Path.Combine(root, "f.txt"), "x\n");
+            parser.Parse(Assistant("t9", "Edit", Path.Combine(root, "f.txt")));
+            parser.Parse(Result("t9", Patched(Path.Combine(root, "f.txt"), twoToTWO)));
+            parser.Parse(Assistant("t10", "Edit", Path.Combine(root, "f.txt")));
+            parser.Parse(Result("t10", new { filePath = Path.Combine(root, "f.txt"), originalFile = "later\n" }));
+            Check(store.Find("pane", "run-1", "f.txt") is null, "a patch that does not fit is refused, and the path stays refused");
+            // A Write that updated a file without its original is unknown, never a created file.
+            File.WriteAllText(Path.Combine(root, "g.txt"), "g\n");
+            parser.Parse(Assistant("t11", "Write", Path.Combine(root, "g.txt")));
+            parser.Parse(Result("t11", new Dictionary<string, object?> { ["type"] = "update", ["filePath"] = Path.Combine(root, "g.txt"), ["content"] = "g\n", ["originalFile"] = null }));
+            Check(store.Find("pane", "run-1", "g.txt") is null, "a Write update without its original is no created file");
+            // An Edit with an empty oldString made its file.
+            File.WriteAllText(Path.Combine(root, "h.txt"), "made\n");
+            parser.Parse(Assistant("t12", "Edit", Path.Combine(root, "h.txt")));
+            parser.Parse(Result("t12", Patched(Path.Combine(root, "h.txt"), [new { oldStart = 0, oldLines = 0, newStart = 1, newLines = 1, lines = new[] { "+made" } }], oldString: "")));
+            Check(store.Find("pane", "run-1", "h.txt") is { Text: "", Created: true }, "an Edit with an empty oldString made its file");
+            // Refusals are kept with the run: a restart does not forget them.
+            Check(!new FileOriginalStore(Path.Combine(directory, "originals")).Capture("pane", "run-1", root, Path.Combine(root, "f.txt"), "again\n"), "a refused path stays refused after a restart");
             var created = await FileChanges.ReadAsync(store, root, "new.txt", "pane");
             Check(created is { Base: "run", RunId: "run-1", Created: true, Added: 2, Removed: 0 } && created.Hunks.Single().Lines.All(l => l.Op == "+"), "a created file reads as all added against its run");
             var changed = await FileChanges.ReadAsync(store, root, "a.txt", "pane", "run-1");
@@ -146,6 +207,28 @@ internal static class FileChangesVerification
             var outside = Path.Combine(directory, "outside.txt"); File.WriteAllText(outside, "x");
             Check(!reopened.Capture("pane", "run-6", root, outside, "x") && !reopened.Capture("pane", "run-6", root, "../outside.txt", "x") && !reopened.Capture("pane", "run-6", root, Path.Combine(root, "missing.txt"), "x"), "a path outside the workspace, or no file, is refused");
             Check(!reopened.Capture("../pane", "run-6", root, Touch("a.txt"), "x"), "a malformed pane id is refused");
+            // An original is read only under the folder it was captured in (a delegated child's worktree is another folder).
+            var worktree = Path.Combine(directory, "worktree"); Directory.CreateDirectory(worktree); File.WriteAllText(Path.Combine(worktree, "a.txt"), "x\n");
+            Check(reopened.Find("pane", "run-4", "a.txt", root) is not null && reopened.Find("pane", "run-4", "a.txt", worktree) is null, "an original captured under another root never counts");
+            File.WriteAllText(Path.Combine(worktree, "b.txt"), "x\n");
+            Check(!reopened.Capture("pane", "run-4", worktree, Path.Combine(worktree, "b.txt"), "x"), "a run never mixes roots");
+            // A notice run's id stands for the run it came from.
+            Check(reopened.Find("pane", BackgroundNoticeRuns.RunID("run-4", 1), "a.txt")?.RunId == "run-4", "a notice run reads its source run's originals");
+            reopened.Retain("pane", new HashSet<string> { BackgroundNoticeRuns.RunID("run-4", 2) });
+            Check(reopened.Runs("pane").SequenceEqual(["run-4"]), "a kept notice run keeps the run it came from");
+            // Each pane keeps the originals of its newest 20 runs.
+            for (var n = 0; n < FileOriginalStore.MaximumRunsPerPane + 2; n++) Check(reopened.Capture("many", $"r{n}", root, Touch("a.txt"), "o\n"), $"run {n} kept");
+            var many = reopened.Runs("many");
+            Check(many.Count == FileOriginalStore.MaximumRunsPerPane && many[0] == $"r{FileOriginalStore.MaximumRunsPerPane + 1}" && !many.Contains("r0") && !many.Contains("r1"), "a pane keeps its newest 20 runs");
+            // The whole store keeps its budget, the oldest runs going first.
+            var small = new FileOriginalStore(Path.Combine(directory, "small"), budget: 3 * 1_000);
+            for (var n = 0; n < 5; n++) Check(small.Capture($"p{n}", "run", root, Touch("a.txt"), new string('z', 1_000)), $"pane {n} kept");
+            Check(small.Runs("p0").Count == 0 && small.Runs("p1").Count == 0 && small.Runs("p4").Count == 1 && small.Runs("p2").Count == 1, "past the budget the oldest runs go");
+            // A crash's temporary files go at the next start.
+            var stale = Path.Combine(originals, "x.tmp"); File.WriteAllText(stale, "x");
+            reopened.Prune(new Dictionary<string, IReadOnlySet<string>> { ["pane"] = new HashSet<string> { "run-4" } });
+            Check(!File.Exists(stale) && Directory.EnumerateFiles(originals, "*.tmp", SearchOption.AllDirectories).FirstOrDefault() is null, "a start removes stale temporary files");
+            Check(FileOriginalStore.KeptRuns([new RunSession { Id = "twice" }, new RunSession { Id = "twice" }]).ContainsKey("twice"), "a pane id that appears twice does not stop the start");
         }
         finally { Directory.Delete(directory, true); }
         return Task.CompletedTask;
@@ -175,6 +258,10 @@ internal static class FileChangesVerification
             var store = new FileOriginalStore(Path.Combine(directory, "originals"));
             var head = await FileChanges.ReadAsync(store, root, "tracked.txt", "pane");
             Check(head is { Base: "head", Added: 1, Removed: 1, Created: null } && head.HeadSha is { Length: 7 } && head.Hunks[0].Lines.Select(l => l.Op + l.Text).SequenceEqual([" one", "-two", "+TWO", " three"]), "a workspace in a subfolder of a repository diffs against HEAD, CRLF read as LF");
+            if (OperatingSystem.IsWindows())
+                Check(await FileChanges.ReadAsync(store, root, "TRACKED.txt") is { Base: "head", Created: null, Added: 1 }, "a path in another case reads HEAD's file by the disk's spelling");
+            Check(GitHeadFile.NotInHead("fatal: path 'app/a.txt' does not exist in 'HEAD'") && GitHeadFile.NotInHead("fatal: path 'a.txt' exists on disk, but not in 'HEAD'")
+                && !GitHeadFile.NotInHead("fatal: not a valid object name") && !GitHeadFile.NotInHead(""), "only git's not-in-HEAD words make a file untracked");
             var untracked = await FileChanges.ReadAsync(store, root, "untracked.txt");
             Check(untracked is { Base: "head", Created: true, Added: 2, Removed: 0 }, "an untracked file reads as all added");
             Check(await FileChanges.ReadAsync(store, root, "binary.dat") is null, "a binary file has no diff");
@@ -220,7 +307,11 @@ internal static class FileChangesVerification
             await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory); await service.InitializeAsync();
             var workspace = await service.AddWorkspaceAsync(workspacePath);
             var other = await service.AddWorkspaceAsync(Directory.CreateDirectory(Path.Combine(directory, "other")).FullName);
-            await service.UpdateAsync(s => s with { Sessions = [new RunSession { Id = "pane", WorkspaceId = workspace.Id }, new RunSession { Id = "elsewhere", WorkspaceId = other.Id }] });
+            var worktree = Directory.CreateDirectory(Path.Combine(directory, "worktree")).FullName; File.WriteAllText(Path.Combine(worktree, "a.txt"), "child\nNOW\n");
+            await service.UpdateAsync(s => s with { Sessions = [new RunSession { Id = "pane", WorkspaceId = workspace.Id }, new RunSession { Id = "elsewhere", WorkspaceId = other.Id },
+                new RunSession { Id = "child", WorkspaceId = workspace.Id, ParentSessionId = "pane", WorkingFolder = worktree }] });
+            service.FileOriginals.Capture("child", "run-c", worktree, Path.Combine(worktree, "a.txt"), "child\nthen\n");
+            Check(service.RunFolder("child") == worktree && service.RunFolder("pane") == workspacePath, "a child's runs work in its worktree");
             service.FileOriginals.Capture("pane", "run-1", workspacePath, Path.Combine(workspacePath, "a.txt"), "one\ntwo\n");
             service.FileOriginals.Capture("elsewhere", "run-1", workspacePath, Path.Combine(workspacePath, "a.txt"), "x\n");
             using var router = new MobileDesktopRouter(service, Path.Combine(directory, "mobile"), "Fixture", (_, _) => Task.FromResult<object?>(null), _ => new([]));
@@ -234,6 +325,10 @@ internal static class FileChangesVerification
                 && run.Body.GetProperty("text").GetString() == "one\nTWO\n", "changes=1 with the pane and run carries the run's diff beside the text");
             var newest = await Route($"/m1/workspaces/{workspace.Id}/file?path=a.txt&changes=1&session=pane");
             Check(newest.Body.GetProperty("changes").GetProperty("runId").GetString() == "run-1", "without a run the pane's newest run answers");
+            var child = await Route($"/m1/workspaces/{workspace.Id}/file?path=a.txt&changes=1&session=child");
+            Check(child.Body.GetProperty("changes").GetProperty("runId").GetString() == "run-c"
+                && child.Body.GetProperty("changes").GetProperty("hunks")[0].GetProperty("lines").EnumerateArray().Select(l => l.GetProperty("op").GetString() + l.GetProperty("text").GetString()).SequenceEqual([" child", "-then", "+NOW"]),
+                "a delegated child's changes are read in its worktree, where they were captured");
             var foreign = await Route($"/m1/workspaces/{workspace.Id}/file?path=a.txt&changes=1&session=elsewhere");
             Check(foreign.Status == 200 && !foreign.Body.TryGetProperty("changes", out _), "a pane of another workspace lends no original (and this folder is no repository)");
             var image = await Route($"/m1/workspaces/{workspace.Id}/file?path=image.png&changes=1&session=pane");

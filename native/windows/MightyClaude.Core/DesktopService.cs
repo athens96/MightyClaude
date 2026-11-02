@@ -128,7 +128,7 @@ public sealed partial class DesktopService : IAsyncDisposable
         StartDelegation();
         var loaded = await store.LoadAsync(); lock (sync) snapshot = loaded;
         // Originals of panes and runs the saved state no longer has go before anything reads them.
-        await Task.Run(() => FileOriginals.Prune(loaded.Sessions.ToDictionary(s => s.Id, FileOriginalStore.KeptRuns)));
+        await Task.Run(() => FileOriginals.Prune(FileOriginalStore.KeptRuns(loaded.Sessions)));
         // Temporary Antigravity rules a crash left in agy's settings go first (M/AppStore.swift:433-434).
         await Task.Run(AntigravityRules.RemoveLeftovers);
         // Children whose runs quitting killed come back interrupted, before any pane runs again (M/AppStore.swift:373-374).
@@ -273,7 +273,17 @@ public sealed partial class DesktopService : IAsyncDisposable
     /// there is no diff to show.
     /// </summary>
     public Task<FileChangeSet?> FileChangesAsync(string workspaceRoot, string relativePath, string? sessionId = null, string? runId = null, CancellationToken cancellation = default) =>
-        FileChanges.ReadAsync(FileOriginals, workspaceRoot, relativePath, sessionId, runId, cancellation);
+        Task.Run(() => FileChanges.ReadAsync(FileOriginals, workspaceRoot, relativePath, sessionId, runId, cancellation), cancellation);
+    /// <summary>
+    /// The folder a pane's runs work in, where its file originals were captured: a delegated child's worktree folder, any other
+    /// pane's workspace folder (<see cref="DelegationPanes.RunWorkspace"/>); null for no such pane or a remote workspace's.
+    /// </summary>
+    public string? RunFolder(string sessionId)
+    {
+        lock (sync)
+            return snapshot.Sessions.FirstOrDefault(s => s.Id == sessionId) is { } session && snapshot.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId) is { Remote: null } workspace
+                ? DelegationPanes.RunWorkspace(session, workspace).Path : null;
+    }
     /// <summary>Starts a run and returns once its process is up with its input open (a remote one: once its host took it), or throws why it never got that far.</summary>
     public Task StartReachedAsync(StartRunRequest value) => Launch(value, null, true);
     /// <summary>

@@ -116,6 +116,13 @@ describe('result file rows', () => {
       params: { hostId: 'h1', workspaceId: 'w1', path: 'docs/note.md' },
     });
   });
+
+  it('carry the pane and the run the list belongs to, for the preview 변경사항', () => {
+    expect(resultFileRoute('h1', 'w1', { path: 'docs/note.md' }, { session: 's1', run: 'r1' })).toEqual({
+      pathname: '/host/[hostId]/workspace/[workspaceId]/file',
+      params: { hostId: 'h1', workspaceId: 'w1', path: 'docs/note.md', session: 's1', run: 'r1' },
+    });
+  });
 });
 
 describe('the result files list', () => {
@@ -192,6 +199,6 @@ describe('the result files list', () => {
     expect(shown.indexOf('결과에 나온 파일')).toBeGreaterThan(card);
     const row = renderer!.root.findAll((node) => node.props.accessibilityLabel === 'docs/note.md 열기' && typeof node.props.onPress === 'function');
     act(() => row[row.length - 1]!.props.onPress());
-    expect(onOpenFile).toHaveBeenCalledWith({ path: 'docs/note.md' });
+    expect(onOpenFile).toHaveBeenCalledWith({ path: 'docs/note.md' }, 'r1');
   });
 });
