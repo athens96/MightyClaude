@@ -5,6 +5,7 @@ import type { ReferenceTarget } from '../conversation/references';
 import { DiffView } from '../panes/files/DiffView';
 import { showsChanges } from '../panes/files/diff';
 import { ImageView, SourceView } from '../panes/files/FilesView';
+import { HtmlFrame, HtmlToggle, isHtmlPreview } from '../panes/files/HtmlView';
 import type { FileChanges, FilePreview } from '../panes/files/types';
 import { BubbleTail, bubbleDrag, bubbleFrame, lineScrollTop, referenceName, referenceSymbol, tailTop, wantedBubbleSize, type BubbleSize } from './reference';
 
@@ -65,6 +66,7 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
   const [answer, setAnswer] = useState<ReferenceAnswer | 'loading' | 'failed'>('loading');
   const [changes, setChanges] = useState<FileChanges | null>(null);
   const [showFull, setShowFull] = useState(false);
+  const [htmlSource, setHtmlSource] = useState(false);
   const [onLeft, setOnLeft] = useState(false);
   const [live, setLive] = useState<BubbleSize | null>(null);
   const drag = useRef<{ x: number; y: number; start: { width: number; height: number }; moved: boolean } | null>(null);
@@ -94,6 +96,7 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
     let current = true;
     setChanges(null);
     setShowFull(false);
+    setHtmlSource(false);
     bridge.call<FileChanges | null>('referenceChanges', { paneId, path: request.path, ...(request.runId ? { runId: request.runId } : {}) })
       .then((value) => { if (current) setChanges(value ?? null); }, () => {});
     return () => { current = false; };
@@ -117,6 +120,8 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
   // 변경사항 | 전체 보기 for a source or Markdown file the request changed; 변경사항 until the toggle says otherwise.
   const diffable = !preview?.failure && (preview?.kind === 'source' || preview?.kind === 'markdown') && showsChanges(changes) ? changes : null;
   const showsDiff = !!diffable && !showFull;
+  // An HTML file is a page on 전체 보기 unless 소스 was chosen.
+  const htmlPage = isHtmlPreview(preview) && !showsDiff && !htmlSource;
   // The source scrolled to the line asked for once it is drawn.
   useLayoutEffect(() => {
     const source = body.current?.querySelector<HTMLElement>('.files-source');
@@ -153,7 +158,7 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
   const title = line ? t('reference.line', { title: name, line }) : name;
   const symbol = answer === 'loading' || answer === 'failed' || found ? referenceSymbol(request.path) : 'missing';
   const markdownRendered = preview?.kind === 'markdown' && preview.markdown;
-  const banners = preview && !preview.failure && !showsDiff ? (markdownRendered ? preview.renderedBanners ?? [] : preview.banners) : [];
+  const banners = preview && !preview.failure && !showsDiff && !htmlPage ? (markdownRendered ? preview.renderedBanners ?? [] : preview.banners) : [];
   let content;
   if (answer === 'loading') content = <div className="files-progress" />;
   else if (answer === 'failed') content = <Notice text={t('files.preview.failed')} />;
@@ -161,6 +166,7 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
   else if (preview.failure) content = <Notice text={preview.failure} />;
   else if (diffable && showsDiff) content = <DiffView changes={diffable} />;
   else if (markdownRendered) content = <div className="files-markdown"><Markdown text={preview.text ?? ''} /></div>;
+  else if (htmlPage && found.relativePath) content = <HtmlFrame paneId={paneId} path={found.relativePath} name={preview.name} reference />;
   else if (preview.kind === 'source' || preview.kind === 'markdown') content = <SourceView preview={preview} />;
   else if (preview.kind === 'image' && preview.image) content = <ImageView preview={preview} zoom={null} />;
   else content = <Notice text={preview.reason ?? t('files.preview.unsupported')} />;
@@ -191,6 +197,7 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
                   <button type="button" className={showsDiff ? '' : 'chosen'} aria-pressed={!showsDiff} onClick={() => setShowFull(true)}>{t('files.changes.full')}</button>
                 </div>
               )}
+              {isHtmlPreview(preview) && !showsDiff && <HtmlToggle source={htmlSource} onChoose={setHtmlSource} />}
               <button type="button" className="files-tool" data-testid="reference-flip" aria-label={t(onLeft ? 'reference.flipRight' : 'reference.flipLeft')} title={t(onLeft ? 'reference.flipRight' : 'reference.flipLeft')} onClick={() => setOnLeft((v) => !v)}>
                 <svg viewBox="0 0 14 14" aria-hidden="true">{onLeft ? <path d="M1.5 2.5h11v9h-11zM9 2.5v9M4 7h3M5.5 5.5 7 7 5.5 8.5" /> : <path d="M1.5 2.5h11v9h-11zM5 2.5v9M10 7H7M8.5 5.5 7 7 8.5 8.5" />}</svg>
               </button>

@@ -78,6 +78,18 @@ public sealed partial class MainWindow
         });
         // The same file's 변경사항 (DesktopService.FileChangesAsync): against the original the pane's run (runId, else its newest run
         // that captured one) kept, else git's HEAD; null when there is no diff to show.
+        // An HTML file as a page: its folder served under a name of its own (WebShell.HtmlHostSuffix) for the sandboxed frame the
+        // page draws, so its css, scripts and pictures beside it load. `reference` says the file is a reference bubble's (the
+        // pane's run folder) and not a files pane's. Answers the file's address, or null when it does not resolve.
+        bridge.Register("htmlFrame", async args =>
+        {
+            var reference = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("reference", out var flag) && flag.ValueKind == JsonValueKind.True;
+            var root = reference ? WebReferenceRoot(args) : WebFiles(args)?.Root;
+            if (root is null || args.Text("path") is not { Length: > 0 and <= 4096 } path) return null;
+            var file = await Task.Run(() => WorkspaceFiles.Resolve(path, root));
+            if (file is null || Directory.Exists(file) || Path.GetExtension(file).ToLowerInvariant() is not (".html" or ".htm")) return null;
+            return WebHtmlAddress(file);
+        });
         bridge.Register("referenceChanges", async args =>
         {
             // Where the pane's runs work, and its originals were captured: a delegated child's worktree folder.
@@ -217,6 +229,31 @@ public sealed partial class MainWindow
             return opened && closed;
         }
         finally { await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { Logs = s.Logs.Where(e => e.Id != entryId).ToList() }).ToList() }); }
+    }
+
+    /// <summary>Folder to its virtual host: a frame's page may reach only the folder it is served from, and the names cannot be guessed.</summary>
+    private readonly OrderedDictionary<string, string> htmlHosts = new(StringComparer.OrdinalIgnoreCase);
+    private const int MaximumHtmlHosts = 8;
+
+    /// <summary>
+    /// The address of an HTML file served from its own folder under a random name, mapped DenyCors so no other page can read
+    /// it. Past eight folders the oldest mapping is dropped, so a mapping lives while its folder is among the recently previewed ones.
+    /// </summary>
+    private string? WebHtmlAddress(string file)
+    {
+        if (webShell?.View.CoreWebView2 is not { } core || Path.GetDirectoryName(file) is not { } folder) return null;
+        if (!htmlHosts.TryGetValue(folder, out var host))
+        {
+            if (htmlHosts.Count >= MaximumHtmlHosts)
+            {
+                core.ClearVirtualHostNameToFolderMapping(htmlHosts.GetAt(0).Value);
+                htmlHosts.RemoveAt(0);
+            }
+            host = "h" + Guid.NewGuid().ToString("N") + WebShell.HtmlHostSuffix;
+            core.SetVirtualHostNameToFolderMapping(host, folder, Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.DenyCors);
+            htmlHosts[folder] = host;
+        }
+        return "https://" + host + "/" + Uri.EscapeDataString(Path.GetFileName(file));
     }
 
     /// <summary>The folder of the pane a reference names a file in; null for a remote pane (its files are on its host) or an unknown one.</summary>

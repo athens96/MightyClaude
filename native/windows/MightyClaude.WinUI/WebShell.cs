@@ -33,6 +33,14 @@ internal sealed class WebShell : Grid
         Enabled = wanted && runtimeInstalled;
     }
 
+    /// <summary>The names an HTML file's folder is served under (MainWindow.WebShell.cs, <c>htmlFrame</c>): <c>h&lt;random&gt;.html.mighty.invalid</c>, one per folder.</summary>
+    internal const string HtmlHostSuffix = ".html.mighty.invalid";
+
+    /// <summary>A page inside a mapped folder, where a sandboxed frame may navigate; the page itself is never allowed there.</summary>
+    internal static bool HtmlFrame(string? uri) =>
+        uri is not null && uri.StartsWith("https://h", StringComparison.OrdinalIgnoreCase) && Uri.TryCreate(uri, UriKind.Absolute, out var parsed)
+        && parsed.Scheme == Uri.UriSchemeHttps && parsed.Host.EndsWith(HtmlHostSuffix, StringComparison.OrdinalIgnoreCase);
+
     internal static bool Trusted(string? uri) => uri is not null && uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase);
 
     internal WebView2 View { get; } = new();
@@ -69,7 +77,7 @@ internal sealed class WebShell : Grid
             core.Settings.IsZoomControlEnabled = false;
             core.SetVirtualHostNameToFolderMapping(Host, Path.Combine(AppContext.BaseDirectory, "Assets", "Web"), CoreWebView2HostResourceAccessKind.DenyCors);
             core.NavigationStarting += (_, args) => args.Cancel = !Trusted(args.Uri);
-            core.FrameNavigationStarting += (_, args) => args.Cancel = !Trusted(args.Uri);
+            core.FrameNavigationStarting += (_, args) => args.Cancel = !Trusted(args.Uri) && !HtmlFrame(args.Uri);
             core.NewWindowRequested += (_, args) => args.Handled = true;
             core.DownloadStarting += (_, args) => args.Cancel = true;
             core.PermissionRequested += (_, args) => args.State = CoreWebView2PermissionState.Deny;
