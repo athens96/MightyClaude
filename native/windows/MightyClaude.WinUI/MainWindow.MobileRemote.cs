@@ -77,13 +77,14 @@ public sealed partial class MainWindow
         mobileNotify.Stop(); mobilePush?.Dispose(); mobilePush = null; if (mobileWatchesPower) { mobileWatchesPower = false; try { Microsoft.Windows.System.Power.PowerManager.SystemSuspendStatusChanged -= MobilePowerChanged; } catch (Exception ex) when (ex is not OutOfMemoryException) { } }
         await ShutdownScreenShare(); if (mobileHost is not null) await mobileHost.DisposeAsync(); mobileHost = null; mobileRouter?.Dispose(); mobileRouter = null;
     }
-    // 모바일 리모트 (M/MobileRemoteSettingsView.swift:17-110): the allow switch over its explanation; the
-    // relay's label, the address used while the field is empty, the field and the apply button; the four
-    // steps; the state dot and words beside the reconnect button, and under them what the host is doing (the
-    // retry it waits for, why the relay refused it, no network); the pairing QR (160) beside the host id
-    // under its label, the key and the link and key buttons; the legacy-apps switch; then the paired
-    // phones, a row each with its "connected" and "new device" marks. The switches take effect as they are
-    // switched and the apply button is the address's own, as on the Mac.
+    // 모바일 리모트, the Mac's controls (M/MobileRemoteSettingsView.swift:17-110) in Windows' own order, in groups under small
+    // headings: the allow switch over its explanation, and under it the state dot and words beside the reconnect button over what
+    // the host is doing (the retry it waits for, why the relay refused it, no network); 연결 방법: the relay (the default path) with
+    // its field and apply button, the default address as the field's placeholder and a dim line under it, then the Tailscale switch
+    // with its port, status and firewall rows indented under it while it is on, the two blocks' controls on the same indent;
+    // 휴대폰 연결: the pairing QR (about 200, whole screen pixels per module) beside the four steps, the host id and the key each
+    // under its label, and the link and key buttons; the paired phones, a row each with its "connected" and "new device" marks;
+    // 고급: the legacy-apps switch. The switches take effect as they are switched and the apply button is the address's own, as on the Mac.
     private StackPanel BuildMobileRemoteSection()
     {
         var rows = new StackPanel(); const string deviceRow = "mobile-device";
@@ -110,7 +111,7 @@ public sealed partial class MainWindow
         AutomationProperties.SetAutomationId(detail, "settings-mobile-detail");
         var dot = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
         var qr = new Image { Width = MobileQrSize, Height = MobileQrSize }; AutomationProperties.SetName(qr, Locale.Get("settings.mobileRemote.qrAccessibility")); AutomationProperties.SetAutomationId(qr, "settings-mobile-qr");
-        Button reconnect = null!; Border identityRow = null!, devicesTitleRow = null!;
+        Button reconnect = null!; Border identityRow = null!, pairingTitleRow = null!, devicesTitleRow = null!, advancedTitleRow = null!;
         var showsKey = false;
         var hostIdLabel = Locale.Get("settings.mobileRemote.hostIdLabel"); var keyLabel = Locale.Get("settings.mobileRemote.keyLabel");
         var hostId = SettingsText("", 11, mono: true, selectable: true); var pairingKey = SettingsText("", 11, mono: true, selectable: true);
@@ -236,18 +237,57 @@ public sealed partial class MainWindow
         // Enter in the field applies the address, as the Mac's field does on submit (M/MobileRemoteSettingsView.swift:31).
         relay.KeyDown += async (_, args) => { if (args.Key != Windows.System.VirtualKey.Enter || !apply.IsEnabled) return; args.Handled = true; await ApplyRelay(); };
 
+        // A group's heading: the paired phones' title's own words (11, medium, ink2), a row of its own.
+        Border Heading(string title) => SettingsRow(rows, SettingsText(title, 11, DesignToken.Ink2, medium: true));
+        // What a path's switch or title governs sits this far in, the relay's field and the Tailscale rows alike, so the two line up.
+        var indent = new Thickness(MobileRemoteIndent, 0, 0, 0);
+
+        // A. The allow switch, and under it how the connection stands and what the host is doing.
         SettingsRow(rows, SettingsLabeled(SettingsTitled(allowLabel, Locale.Get("windows.mobile.relayDescription")), enabled, top: true));
-        // The form draws the field's own title — the address used while the field is empty — as a label before it,
-        // and gives the field 0.54 of what the row's label and button leave (screens/10-settings-mobile-redacted-dark.webp).
-        var relayRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
-        relayRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); relayRow.ColumnDefinitions.Add(new() { Width = new(1 - MobileRelayFieldShare, GridUnitType.Star) });
-        relayRow.ColumnDefinitions.Add(new() { Width = new(MobileRelayFieldShare, GridUnitType.Star) }); relayRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var relayDefault = SettingsText(MobileRelayHost.DefaultRelay, 11, mono: true); relayDefault.TextWrapping = TextWrapping.NoWrap; relayDefault.TextTrimming = TextTrimming.CharacterEllipsis;
-        relayRow.Children.Add(SettingsText(relayLabel)); Grid.SetColumn(relayDefault, 1); relayRow.Children.Add(relayDefault);
-        Grid.SetColumn(relay, 2); relayRow.Children.Add(relay); Grid.SetColumn(apply, 3); relayRow.Children.Add(apply);
-        SettingsRow(rows, relayRow);
+        var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        state.Children.Add(dot); state.Children.Add(status);
+        var stateWords = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
+        stateWords.Children.Add(state); stateWords.Children.Add(detail);
+        SettingsRow(rows, SettingsLabeled(stateWords, reconnect, top: true));
+
+        // B. 연결 방법: the relay, the default path, then the Tailscale path.
+        Heading(Locale.Get("windows.mobile.connectionTitle"));
+        // The relay's title over its line, then the field and its apply button on the paths' indent, the address used while the field
+        // is empty as its placeholder and as a dim line under it.
+        relay.PlaceholderText = MobileRelayHost.DefaultRelay;
+        var relayLine = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Margin = indent };
+        relayLine.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); relayLine.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        relayLine.Children.Add(relay); Grid.SetColumn(apply, 1); relayLine.Children.Add(apply);
+        var relayDefault = SettingsText(Locale.Get("windows.mobile.relayDefaultTemplate", new Dictionary<string, string> { ["address"] = MobileRelayHost.DefaultRelay }), 11, DesignToken.Ink2);
+        relayDefault.Margin = indent;
+        var relayBlock = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+        relayBlock.Children.Add(SettingsTitled(Locale.Get("windows.mobile.relayTitle"), Locale.Get("windows.mobile.relayExplanation")));
+        relayBlock.Children.Add(relayLine); relayBlock.Children.Add(relayDefault);
+        SettingsRow(rows, relayBlock);
+        // The Tailscale switch over its words, and while it is on its port, status and firewall rows on the same indent, in the switch's
+        // own row (ShowDirect shows and hides them).
+        var directBlock = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+        directBlock.Children.Add(SettingsLabeled(SettingsTitled(directLabel, MobileDirectStrings.Description), direct, top: true));
+        var portLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        portLine.Children.Add(SettingsText(portLabel)); portLine.Children.Add(port); portLine.Children.Add(applyPort);
+        portRow = new Border { Child = portLine, Margin = indent }; directBlock.Children.Add(portRow);
+        var directLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        directLine.Children.Add(directDot); directLine.Children.Add(directStatus);
+        directStatusRow = new Border { Child = directLine, Margin = indent }; directBlock.Children.Add(directStatusRow);
+        var firewallWords = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
+        firewallWords.Children.Add(firewallText);
+        firewallWords.Children.Add(SettingsText(MobileDirectStrings.FirewallDescription, 11, DesignToken.Ink2));
+        firewallWords.Children.Add(SettingsText(MobileDirectStrings.PortHint, 11, DesignToken.Ink2));
+        firewallWords.Children.Add(SettingsText(RemoteWindowsStrings.FirewallRemoveClosesBoth, 11, DesignToken.Ink2));
+        var firewallButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        firewallButtons.Children.Add(firewallUpdate); firewallButtons.Children.Add(firewallButton);
+        firewallRow = new Border { Child = SettingsLabeled(firewallWords, firewallButtons, top: true), Margin = indent }; directBlock.Children.Add(firewallRow);
+        SettingsRow(rows, directBlock);
+
+        // C. 휴대폰 연결, while the remote is on and the host has been read (Refresh): the QR beside the steps, the host id and the key
+        // each under its label, and the link and key buttons.
         // The four steps (M/MobileRemoteSettingsView.swift:175-191): the number in a 14-wide column, right-aligned, 5 from its sentence.
-        var guide = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs) };
+        var guide = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
         AutomationProperties.SetAutomationId(guide, "settings-mobile-guide");
         var steps = new[] { Locale.Get("settings.mobileRemote.guide.step1"), Locale.Get("settings.mobileRemote.guide.step2"), Locale.Get("settings.mobileRemote.guide.step3"), Locale.Get("settings.mobileRemote.guide.step4") };
         for (var step = 0; step < steps.Length; step++)
@@ -259,51 +299,39 @@ public sealed partial class MainWindow
             var sentence = SettingsText(steps[step], 11, DesignToken.Ink2); Grid.SetColumn(sentence, 1); line.Children.Add(sentence);
             guide.Children.Add(line);
         }
-        SettingsRow(rows, guide);
-        var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-        state.Children.Add(dot); state.Children.Add(status);
-        SettingsRow(rows, SettingsLabeled(state, reconnect));
-        SettingsRow(rows, detail);
-        SettingsRow(rows, SettingsLabeled(SettingsTitled(directLabel, MobileDirectStrings.Description), direct, top: true));
-        var portLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-        portLine.Children.Add(SettingsText(portLabel)); portLine.Children.Add(port); portLine.Children.Add(applyPort);
-        portRow = SettingsRow(rows, portLine);
-        var directLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-        directLine.Children.Add(directDot); directLine.Children.Add(directStatus);
-        directStatusRow = SettingsRow(rows, directLine);
-        var firewallWords = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
-        firewallWords.Children.Add(firewallText);
-        firewallWords.Children.Add(SettingsText(MobileDirectStrings.FirewallDescription, 11, DesignToken.Ink2));
-        firewallWords.Children.Add(SettingsText(MobileDirectStrings.PortHint, 11, DesignToken.Ink2));
-        firewallWords.Children.Add(SettingsText(RemoteWindowsStrings.FirewallRemoveClosesBoth, 11, DesignToken.Ink2));
-        var firewallButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-        firewallButtons.Children.Add(firewallUpdate); firewallButtons.Children.Add(firewallButton);
-        firewallRow = SettingsRow(rows, SettingsLabeled(firewallWords, firewallButtons, top: true));
-
         var copy = SettingsPush(Button(Locale.Get("settings.mobileRemote.copyLinkButton"), () => { if (mobileHost is not null && service.Snapshot.MobileRemote.Enabled) { var package = new DataPackage(); package.SetText(mobileHost.PairingUrl); Clipboard.SetContent(package); } return Task.CompletedTask; }), SettingsControlSize.Small);
         copy.Content = SettingsGlyphLabel("", Locale.Get("settings.mobileRemote.copyLinkButton"), 11);
         var regenerate = SettingsPush(SafeButton(Locale.Get("settings.mobileRemote.regenerateKeyButton"), () => Revoke(null)), SettingsControlSize.Small, destructive: true);
         regenerate.Content = SettingsGlyphLabel("", Locale.Get("settings.mobileRemote.regenerateKeyButton"), 11);
         // On Windows a new key unpairs every phone; the button says so before it asks.
         ToolTipService.SetToolTip(regenerate, Locale.Get("windows.mobile.rotationDescription"));
-        var pairing = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-        pairing.Children.Add(SettingsText(Locale.Get("settings.mobileRemote.scanInstruction"), 11, DesignToken.Ink2));
-        // The host id is too long for its label's line, so the form sets it under the label; the key stays beside its own.
-        pairing.Children.Add(SettingsText(hostIdLabel)); pairing.Children.Add(hostId);
+        // The steps, then the host id and the key each under its label (the host id is too long for a label's line), then the buttons.
+        var pairing = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
+        pairing.Children.Add(guide);
+        var hostIdWords = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
+        hostIdWords.Children.Add(SettingsText(hostIdLabel, 11, DesignToken.Ink2)); hostIdWords.Children.Add(hostId);
+        pairing.Children.Add(hostIdWords);
         var key = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         key.Children.Add(pairingKey); key.Children.Add(showKey);
-        pairing.Children.Add(SettingsLabeled(SettingsText(keyLabel), key));
+        var keyWords = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
+        keyWords.Children.Add(SettingsText(keyLabel, 11, DesignToken.Ink2)); keyWords.Children.Add(key);
+        pairing.Children.Add(keyWords);
         var pairingButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         pairingButtons.Children.Add(copy); pairingButtons.Children.Add(regenerate);
         pairing.Children.Add(pairingButtons);
-        // The QR on white at radius 8, 16 from the pairing words (M/MobileRemoteSettingsView.swift:61-65).
-        var identity = new Grid { ColumnSpacing = DesignMetrics.Spacing.Lg, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs) };
+        // The QR on white at radius 8, 16 from the pairing words (M/MobileRemoteSettingsView.swift:61-65); its PNG carries the quiet zone.
+        var identity = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xl };
         identity.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); identity.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         identity.Children.Add(new Border { Child = qr, Background = brushes.Brush(DesignToken.OnStatus), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), VerticalAlignment = VerticalAlignment.Top });
         Grid.SetColumn(pairing, 1); identity.Children.Add(pairing);
+        pairingTitleRow = Heading(Locale.Get("windows.mobile.pairingTitle"));
         identityRow = SettingsRow(rows, identity);
+
+        // D. The paired phones (Refresh puts their rows under this title, before E's heading).
+        devicesTitleRow = Heading(Locale.Get("settings.mobileRemote.connectedDevicesTitle"));
+        // E. 고급: the legacy-apps switch.
+        advancedTitleRow = Heading(Locale.Get("windows.mobile.advancedTitle"));
         SettingsRow(rows, SettingsLabeled(SettingsTitled(legacyLabel, Locale.Get("settings.mobileRemote.legacyAppsDescription")), legacy, top: true));
-        devicesTitleRow = SettingsRow(rows, SettingsText(Locale.Get("settings.mobileRemote.connectedDevicesTitle"), 11, DesignToken.Ink2, medium: true));
         async Task Revoke(string? id)
         {
             if (mobileHost is null || options.SmokeTest || id is not null && !mobileHost.Devices.Any(device => device.Id == id)) return;
@@ -355,18 +383,27 @@ public sealed partial class MainWindow
             var mark = new Border { Child = SettingsText(text, 9, ink, medium: true), Background = brushes.Brush(fill), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Padding = new Thickness(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1), VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetAutomationId(mark, id); return mark;
         }
-        void HidePairing() { identityRow.Visibility = devicesTitleRow.Visibility = Visibility.Collapsed; ReplaceSettingsRows(rows, deviceRow, []); qr.Source = null; }
+        void HidePairing() { identityRow.Visibility = pairingTitleRow.Visibility = devicesTitleRow.Visibility = Visibility.Collapsed; ReplaceSettingsRows(rows, deviceRow, [], advancedTitleRow); qr.Source = null; }
+        // The screen scale the QR was last drawn for: drawn again when the window moves to a screen of another scale.
+        var qrScale = 0d;
         async Task Refresh()
         {
             var showsIdentity = service.Snapshot.MobileRemote.Enabled && mobileHost is not null;
-            identityRow.Visibility = showsIdentity ? Visibility.Visible : Visibility.Collapsed;
+            identityRow.Visibility = pairingTitleRow.Visibility = showsIdentity ? Visibility.Visible : Visibility.Collapsed;
             reconnect.Visibility = service.Snapshot.MobileRemote.Enabled ? Visibility.Visible : Visibility.Collapsed; reconnect.IsEnabled = mobileHost is not null && !options.SmokeTest;
             if (!showsIdentity) showsKey = false;
             RefreshPairingText(); ShowState(); ShowDirect();
             if (!showsIdentity) { HidePairing(); return; }
-            var link = mobileHost!.PairingUrl; var png = PngByteQRCodeHelper.GetQRCode(link, QRCodeGenerator.ECCLevel.M, 6);
+            // The QR in the screen's own pixels: a whole number of them per module (the quiet zone's four a side included), the number
+            // that brings the side nearest MobileQrSize, and the image exactly that many pixels on screen, so nothing resamples it
+            // (here, and in the page, which draws it at these DIPs as CSS pixels). M keeps the link (about 220 characters, 300 with direct endpoints) at version 11 to 13.
+            var link = mobileHost!.PairingUrl; var scale = rows.XamlRoot?.RasterizationScale is double known and > 0 ? known : 1;
+            using var code = QRCodeGenerator.GenerateQrCode(link, QRCodeGenerator.ECCLevel.M);
+            var modules = code.ModuleMatrix.Count; var perModule = Math.Max(2, (int)Math.Round(MobileQrSize * scale / modules));
+            var png = new PngByteQRCode(code).GetGraphic(perModule);
             using var stream = new InMemoryRandomAccessStream(); using (var writer = new DataWriter(stream)) { writer.WriteBytes(png); await writer.StoreAsync(); writer.DetachStream(); } stream.Seek(0);
-            var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(stream); WebNativeReader.RememberImage(bitmap, "image/png", png); if (mobileHost?.PairingUrl != link) return; qr.Source = bitmap;
+            var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(stream); WebNativeReader.RememberImage(bitmap, "image/png", png); if (mobileHost?.PairingUrl != link) return;
+            qr.Width = qr.Height = modules * perModule / scale; qr.Source = bitmap; qrScale = scale;
             // The paired phones, a row each (M/MobileRemoteSettingsView.swift:128-148): the symbol, the name over when it was seen, the unpair button.
             var contents = new List<FrameworkElement>();
             foreach (var device in mobileHost.Devices)
@@ -389,21 +426,27 @@ public sealed partial class MainWindow
                 contents.Add(row);
             }
             devicesTitleRow.Visibility = contents.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            ReplaceSettingsRows(rows, deviceRow, contents);
+            ReplaceSettingsRows(rows, deviceRow, contents, advancedTitleRow);
         }
-        void Updated(MobileRelayStatus _) => DispatcherQueue.TryEnqueue(async () => { if (!closing && rows.IsLoaded) await Act(Refresh); });
+        void RefreshSoon() => DispatcherQueue.TryEnqueue(async () => { if (!closing && rows.IsLoaded) await Act(Refresh); });
+        void Updated(MobileRelayStatus _) => RefreshSoon();
+        XamlRoot? watchedRoot = null;
+        void ScaleChanged(XamlRoot root, XamlRootChangedEventArgs _) { if (qr.Source is not null && root.RasterizationScale != qrScale) RefreshSoon(); }
         // Until the host has been read (and for the whole of a smoke run) the section shows its switches and the saved state only.
         HidePairing(); reconnect.Visibility = service.Snapshot.MobileRemote.Enabled ? Visibility.Visible : Visibility.Collapsed; RefreshPairingText(); ShowState(); ShowControls();
         void FirewallUpdated() { if (!closing && rows.IsLoaded) ShowDirect(); }
-        rows.Loaded += async (_, _) => { if (options.SmokeTest) { enabled.IsEnabled = relay.IsEnabled = legacy.IsEnabled = apply.IsEnabled = reconnect.IsEnabled = direct.IsEnabled = port.IsEnabled = applyPort.IsEnabled = firewallButton.IsEnabled = firewallUpdate.IsEnabled = false; HidePairing(); RefreshPairingText(); return; } FirewallChanged -= FirewallUpdated; FirewallChanged += FirewallUpdated; await Act(async () => { await InitializeMobileRemote(); if (!firewallBusy) await RefreshFirewallState(); if (closing || !rows.IsLoaded || mobileHost is null) return; mobileHost.StatusChanged += Updated; await Refresh(); }); };
-        rows.Unloaded += (_, _) => { if (!rows.IsLoaded) FirewallChanged -= FirewallUpdated; if (mobileHost is not null) mobileHost.StatusChanged -= Updated; qr.Source = null; showsKey = false; pairingKey.Text = ""; hostId.Text = ""; };
+        rows.Loaded += async (_, _) => { if (options.SmokeTest) { enabled.IsEnabled = relay.IsEnabled = legacy.IsEnabled = apply.IsEnabled = reconnect.IsEnabled = direct.IsEnabled = port.IsEnabled = applyPort.IsEnabled = firewallButton.IsEnabled = firewallUpdate.IsEnabled = false; HidePairing(); RefreshPairingText(); return; } FirewallChanged -= FirewallUpdated; FirewallChanged += FirewallUpdated; if (watchedRoot is not null) watchedRoot.Changed -= ScaleChanged; watchedRoot = rows.XamlRoot; if (watchedRoot is not null) watchedRoot.Changed += ScaleChanged; await Act(async () => { await InitializeMobileRemote(); if (!firewallBusy) await RefreshFirewallState(); if (closing || !rows.IsLoaded || mobileHost is null) return; mobileHost.StatusChanged += Updated; await Refresh(); }); };
+        rows.Unloaded += (_, _) => { if (!rows.IsLoaded) FirewallChanged -= FirewallUpdated; if (!rows.IsLoaded && watchedRoot is not null) { watchedRoot.Changed -= ScaleChanged; watchedRoot = null; } if (mobileHost is not null) mobileHost.StatusChanged -= Updated; qr.Source = null; showsKey = false; pairingKey.Text = ""; hostId.Text = ""; };
         return rows;
     }
 
-    /// <summary>The pairing QR's side (M/MobileRemoteSettingsView.swift:63).</summary>
-    internal const double MobileQrSize = 160;
-    /// <summary>The relay field's share of its row beside the default address (the Mac draws it 242 wide of 449).</summary>
-    private const double MobileRelayFieldShare = 0.54;
+    /// <summary>
+    /// The side the pairing QR is drawn nearest to, in DIPs (the Mac's is 160, M/MobileRemoteSettingsView.swift:63): its real side is a
+    /// whole number of screen pixels per module, so it lands within half a module's pixels of this.
+    /// </summary>
+    internal const double MobileQrSize = 200;
+    /// <summary>How far in a connection path's own controls sit under its title or switch (the relay's field, the Tailscale rows).</summary>
+    private const double MobileRemoteIndent = DesignMetrics.Spacing.Xl;
     /// <summary>The direct port field's width (the Mac's is 80).</summary>
     private const double MobileDirectPortWidth = 80;
     private PaneView MobilePane(string id)
