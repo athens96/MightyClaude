@@ -23,6 +23,8 @@ public sealed partial class DesktopService : IAsyncDisposable
     public ProviderCatalog Providers { get; }
     /// <summary>Pictures agents showed, under the app data folder (macOS <c>image-cache</c>); transcripts hold only references.</summary>
     public AgentImageCache Images { get; }
+    /// <summary>What files were before a Claude run changed them, under the app data folder (<see cref="FileOriginalStore"/>), for <see cref="FileChangesAsync"/>.</summary>
+    public FileOriginalStore FileOriginals { get; }
     /// <summary>A run event, as applied. Subscribers may be called under <c>sync</c> (SayIfOwned): they must hand work on (TryEnqueue) and never call into RemoteClientService synchronously.</summary>
     public event Action<RunEvent>? RunEventReceived;
     public event Action<StartRunRequest>? RequestStarting;
@@ -57,6 +59,7 @@ public sealed partial class DesktopService : IAsyncDisposable
         // No Antigravity file rule may reach this folder (it holds that ledger).
         AntigravityRuleSafety.AppDataFolder = directory;
         local = new(ResolveLocal, Providers, pluginDirectory, Receive, ReceiveToolPermission, Images);
+        FileOriginals = new(Path.Combine(directory, FileOriginalStore.FolderName)); local.FileOriginals = FileOriginals;
         this.delegationEnabled = delegationEnabled ?? DelegationSwitch.IsOn; this.worktrees = worktrees; local.DelegationEnabled = this.delegationEnabled;
         // A save already asked for is still written while the app closes: closing only stops new work.
         saveTimer = new(_ => { lock (sync) if (pendingSaveSince is not null) _ = QueueSave(); });
@@ -124,6 +127,8 @@ public sealed partial class DesktopService : IAsyncDisposable
     {
         StartDelegation();
         var loaded = await store.LoadAsync(); lock (sync) snapshot = loaded;
+        // Originals of panes and runs the saved state no longer has go before anything reads them.
+        await Task.Run(() => FileOriginals.Prune(loaded.Sessions.ToDictionary(s => s.Id, FileOriginalStore.KeptRuns)));
         // Temporary Antigravity rules a crash left in agy's settings go first (M/AppStore.swift:433-434).
         await Task.Run(AntigravityRules.RemoveLeftovers);
         // Children whose runs quitting killed come back interrupted, before any pane runs again (M/AppStore.swift:373-374).
@@ -179,7 +184,7 @@ public sealed partial class DesktopService : IAsyncDisposable
             var next = StateStore.Normalize(update(snapshot), false); var open = next.Sessions.Select(s => s.Id).ToHashSet();
             closed = snapshot.Sessions.Where(s => !open.Contains(s.Id)).ToList(); snapshot = next; save = QueueSave();
         }
-        foreach (var pane in closed) { ForgetAntigravity(pane.Id); PaneClosed(pane); }
+        foreach (var pane in closed) { ForgetAntigravity(pane.Id); PaneClosed(pane); FileOriginals.Forget(pane.Id); }
         return save;
     }
     /// <summary>
@@ -218,17 +223,21 @@ public sealed partial class DesktopService : IAsyncDisposable
     private void Receive(RunEvent value)
     {
         if (!value.Valid()) return;
-        var ended = false; var noticeTurnEnded = false;
+        var ended = false; var noticeTurnEnded = false; IReadOnlySet<string>? keptRuns = null;
         lock (sync)
         {
             var before = snapshot.Sessions.FirstOrDefault(s => s.Id == value.SessionId)?.GraphRuns ?? [];
             snapshot = snapshot.Apply(value);
+            // The graph keeps a bounded number of runs: a run it let go takes its file originals with it.
+            if (value.Type == "graph_run" && snapshot.Sessions.FirstOrDefault(s => s.Id == value.SessionId) is { } changed && FileOriginalStore.KeptRuns(changed) is var kept
+                && before.Any(r => !kept.Contains(r.Id))) keptRuns = kept;
             noticeTurnEnded = MightyGraphSupport.NoticeTurnEnded(before, snapshot.Sessions.FirstOrDefault(s => s.Id == value.SessionId)?.GraphRuns ?? []);
             if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") { if (routes.Remove(value.SessionId, out var route)) route.Ended.TrySetResult(); ended = DelegationRunEnded(value.SessionId, value.Status!); }
             // A streaming run sends many events a second: each asks for a save, which starts at most every 1.5 s (M/AppStore.swift
             // scheduleSave). A run's end is saved at once.
             if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") _ = QueueSave(); else ScheduleSave();
         }
+        if (keptRuns is not null) FileOriginals.Retain(value.SessionId, keptRuns);
         ReceiveAntigravity(value);
         // A remote pane's id is remembered too, as the Mac's apply() does.
         if (value.Type == "resume" && value.ResumeId is { } resumed) RememberSession(resumed);
@@ -258,6 +267,13 @@ public sealed partial class DesktopService : IAsyncDisposable
         }
     }
     public Task StartAsync(StartRunRequest value) => Launch(value, null, false);
+    /// <summary>
+    /// What a request changed in one file of a workspace (<see cref="FileChanges.ReadAsync"/>): against the original the pane's
+    /// run captured (<paramref name="runId"/>, or the newest run of the pane that did), else against git's HEAD; null when
+    /// there is no diff to show.
+    /// </summary>
+    public Task<FileChangeSet?> FileChangesAsync(string workspaceRoot, string relativePath, string? sessionId = null, string? runId = null, CancellationToken cancellation = default) =>
+        FileChanges.ReadAsync(FileOriginals, workspaceRoot, relativePath, sessionId, runId, cancellation);
     /// <summary>Starts a run and returns once its process is up with its input open (a remote one: once its host took it), or throws why it never got that far.</summary>
     public Task StartReachedAsync(StartRunRequest value) => Launch(value, null, true);
     /// <summary>

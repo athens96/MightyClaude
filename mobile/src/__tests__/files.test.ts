@@ -71,6 +71,29 @@ describe('file routes on the client', () => {
     expect(result.language).toBe('swift');
   });
 
+  it('asks for the changes only when told to, with the pane and run when given', async () => {
+    const changes = {
+      base: 'run',
+      runId: 'run-1',
+      hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: [{ op: '-', text: 'a' }, { op: '+', text: 'b' }] }],
+      added: 1,
+      removed: 1,
+      truncated: false,
+      unchanged: false,
+    };
+    const fake = fakeChannel({ status: 200, body: preview({ type: 'source', text: 'b\n', changes } as Partial<FilePreview>) });
+    const client = createClient(fake.channel);
+    const result = await client.filePreview('ws-1', 'a.ts', undefined, { session: 'pane 1', run: 'run-1' });
+    await client.filePreview('ws-1', 'a.ts', undefined, {});
+    expect(fake.calls.map((call) => call.path)).toEqual([
+      '/m1/workspaces/ws-1/file?path=a.ts&changes=1&session=pane%201&run=run-1',
+      '/m1/workspaces/ws-1/file?path=a.ts&changes=1',
+    ]);
+    expect(result.changes?.base).toBe('run');
+    expect(result.changes?.hunks[0]?.lines.map((line) => line.op)).toEqual(['-', '+']);
+    expect(hasCapability(parseCapabilities({ capabilities: ['files', 'fileChanges'] }), 'fileChanges')).toBe(true);
+  });
+
   it('keeps the host’s error code beside its message', async () => {
     const fake = fakeChannel({ status: 403, body: { protocol: 1, error: '워크스페이스 밖의 경로입니다.', code: 'outsideWorkspace' } });
     const failure = await createClient(fake.channel).filePreview('ws-1', 'link').catch((error: unknown) => error);

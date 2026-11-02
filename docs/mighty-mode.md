@@ -75,6 +75,16 @@ Claude 또는 Codex 실행 창 상단에서 **기본 / 마이티**를 선택한�
 - 경로는 현재 워크스페이스 폴더 안의 실제 파일로만 해석한다. 폴더 밖을 가리키거나(`..`, 절대 경로, 심볼릭 링크 포함) 없는 파일이면 말풍선에 그 이유를 표시하고 아무것도 읽지 않는다. 2 MiB보다 큰 파일과 텍스트가 아닌 파일은 기본 앱으로 열도록 안내한다.
 - 링크는 마이티 모드에서만 만들어지며 기본 화면의 대화 표시는 바뀌지 않는다.
 
+### 변경사항 | 전체 보기 (계약)
+
+결과 파일 패널·참조 링크·파일 경로에서 연 소스 미리보기는 **전체 보기**(지금 파일 전체) 외에 **변경사항**(이 요청이 그 파일에서 바꾼 것만, 앞뒤 3줄 문맥의 줄 단위 diff)을 보일 수 있다. 이 절은 화면 밑의 Core와 계약이다(화면은 다음 단계).
+
+- **기준(base).** ① `run`: Claude 창의 실행이 그 파일을 **처음 바꾸기 전** 내용. Claude Code의 stream-json `user` 줄에서 Edit·Write·MultiEdit 도구 결과(그 줄의 `tool_result`가 그 도구 호출에 답하고 실패하지 않았을 때)에 붙는 `tool_use_result`(대화 기록에서는 `toolUseResult`)의 `filePath`·`originalFile`을 읽는다. 하위 에이전트의 편집도 그 요청의 것이다. 한 실행에서 같은 파일의 원본은 **처음 것만** 남고 뒤 편집이 덮지 않는다. `originalFile`이 null이거나 `type: "create"`인데 없으면 그 실행이 만든 파일이다(원본 "", `created: true`). ② `head`: 실행 원본이 없을 때 — Codex·Gemini/Antigravity 창, 예전 실행, 원본을 못 잡은 실행, 한도를 넘은 파일 — `git cat-file blob HEAD:./<경로>`(필터 없음). HEAD에 없는 파일(추적 안 함, 커밋이 아직 없는 저장소)은 전부 추가로(`created: true`) 본다. 저장소가 아니거나 git이 없거나 실패하면 diff가 없고 전체 보기만 된다. git은 상태 줄과 같은 방식으로만 부른다: 훅·fsmonitor·선택적 잠금 없음, 앱 환경의 `GIT_*` 제거, 출력 한도, 명령마다 2초.
+- **diff.** 기준과 **지금 디스크의 파일**을 비교한다. CRLF는 LF로 보고 비교하며(줄 끝만 다르면 `unchanged`), 줄은 글자 그대로(유니코드 정규화 없음)와 줄바꿈 유무로 비교한다. 공통 앞뒤를 덜어 낸 뒤 Myers 최단 편집으로 찾고, 바뀐 묶음마다 지운 줄을 먼저 쓴다. 문맥 3줄, 바뀐 곳 사이가 6줄 이하면 한 덩어리. 덩어리는 `{oldStart, oldLines, newStart, newLines, lines: [{op: " "|"+"|"-", text, noNewline?}]}`이고 줄이 없는 쪽의 시작은 그 앞 줄 번호(맨 위면 0, git과 같음)다. 한쪽이 1 MiB(UTF-8)·20,000줄을 넘거나 NUL이 있거나 미리보기 디코더(BOM → UTF-8 → CP949)로 풀리지 않으면 diff가 없다. 편집 거리가 2,000을 넘으면 가운데 전체를 지우고 더한 것으로 본다. 덩어리 줄은 5,000줄까지 쓰고 `truncated: true`; `added`·`removed`는 잘려도 전체 수다. 두 플랫폼이 `native/contracts/fixtures/file-diff.json`으로 같은 결과를 검사한다.
+- **원본 보관.** 상태 파일이 아닌 앱 데이터 폴더의 `file-originals/<sha(창 id)>/<sha(실행 id)>/`에 `run.json`(경로·blob·크기·created, 실행 순서)과 파일마다 `<n>.txt`를 원자적으로(임시 이름에 쓰고 옮겨) 쓴다. 경로는 실행 폴더 안으로 풀리는 실제 파일의 워크스페이스 상대 경로만(파일 창과 같은 경로 검사). 한도: 원본 하나 1 MiB, 실행당 64개·16 MiB. 한도를 넘은 경로는 그 실행에서 다시 받지 않는다(뒤의 작은 원본이 "처음 원본"인 척하지 않게). 그래프가 실행을 덜어 내면 그 실행의 원본도, 창을 닫거나 워크스페이스를 지우면 그 창의 원본도 지운다. 앱을 다시 켜도 남고, 시작할 때 저장된 상태에 없는 창·실행의 것은 지운다. 실행 id는 그 요청의 그래프 실행 id다(Mac은 `ProcessRunner`의 `activityId`, Windows는 `ExecutionGraphTracker.RunID` = `StartRunRequest.GraphRunId`).
+- **고르는 규칙.** 실행 id를 주면 그 실행의 원본만, 없으면 그 창에서 그 파일을 잡은 가장 최근 실행의 원본, 그것도 없으면 `head`. 응답은 어느 기준을 썼는지 `base`(`run`이면 `runId`, `head`면 `headSha` 7자리)로 말한다.
+- **API.** Mac `FileChanges.read(store:workspaceRoot:relativePath:sessionId:runId:)`, Windows `DesktopService.FileChangesAsync(workspaceRoot, relativePath, sessionId?, runId?)` → `{base, hunks, added, removed, truncated, unchanged, runId?, headSha?, created?}` 또는 null. Windows 웹 셸은 `referencePreview` 옆 `referenceChanges`(`{paneId, path, runId?}`, 같은 모양), 휴대폰은 `GET …/file?changes=1`([mobile-remote.md](mobile-remote.md) "파일").
+
 ### 그림 미리보기 블록
 
 에이전트가 그림을 보여 준 단계(요청 블록 또는 하위 에이전트 블록) 옆에 분홍색 **그림 미리보기** 블록이 붙는다. 그림의 출처와 안전 규칙은 [docs/agent-images.md](agent-images.md)와 같다: 도구 결과의 그림(Claude `Read`·MCP 스크린샷, Codex MCP 결과·`image_view`·`image_generation`)과, 그 단계의 Markdown 그림 중 작업 폴더·임시 폴더 안의 파일이나 `data:` URI만 들어간다. 원격 주소의 그림은 넣지 않는다.

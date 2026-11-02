@@ -298,6 +298,33 @@ public final class CLIStreamParser {
         if graphTracker?.activity(value, toolID: rawID) != true { activity?(value) }
     }
 
+    /// Hears a file's content before an Edit, Write or MultiEdit of the run (or
+    /// a sub-agent of it) changed it: the path as the tool named it and the
+    /// original, nil for a file the tool created (Windows OutputParser.FileOriginal).
+    public var fileOriginal: ((String, String?) -> Void)?
+
+    /// A Claude `user` line's `tool_use_result` (`toolUseResult` in
+    /// transcripts): `filePath` and `originalFile`, read only when a tool
+    /// result of the line answers an Edit, Write or MultiEdit call and did not
+    /// fail. `originalFile` null, or a `type` of `create` without it, is a
+    /// created file; neither is no original.
+    private func editedOriginal(_ value: [String: Any], blocks: [[String: Any]]) {
+        guard let fileOriginal,
+              let result = (value["tool_use_result"] as? [String: Any]) ?? (value["toolUseResult"] as? [String: Any]),
+              let path = result["filePath"] as? String, !path.isEmpty else { return }
+        let edit = blocks.contains { block in
+            guard block["type"] as? String == "tool_result", block["is_error"] as? Bool != true,
+                  let id = block["tool_use_id"] as? String, !id.isEmpty, id.utf8.count <= 512,
+                  let name = toolActivities[ActivitySupport.id(namespace: activityNamespace, key: id)]?.toolName else { return false }
+            return ["Edit", "Write", "MultiEdit"].contains(name)
+        }
+        guard edit else { return }
+        let original = result["originalFile"]
+        if let text = original as? String { fileOriginal(path, text) }
+        else if original is NSNull { fileOriginal(path, nil) }
+        else if original == nil, result["type"] as? String == "create" { fileOriginal(path, nil) }
+    }
+
     private func finishDuration(id: String, previous: AgentActivity?) -> Double? {
         if let value = previous?.durationMs { return value }
         guard let started = activityStarts.removeValue(forKey: id) else { return nil }
@@ -433,6 +460,7 @@ public final class CLIStreamParser {
                 images(AgentImageSupport.payloads(in: blocks.filter { $0["type"] as? String == "image" }), key: (value["uuid"] as? String) ?? (message["id"] as? String) ?? "message",
                        toolID: nil, parentToolID: ExecutionGraphTracker.parentToolID(value), child: claudeChild)
             } else if type == "user", let message = value["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
+                if fileOriginal != nil { editedOriginal(value, blocks: blocks) }
                 for block in blocks where block["type"] as? String == "tool_result" {
                     tool(id: block["tool_use_id"] as? String, state: block["is_error"] as? Bool == true ? "error" : "completed", output: ActivitySupport.output(block["content"]))
                     if let toolID = block["tool_use_id"] as? String, !toolID.isEmpty, toolID.utf8.count <= 512 {

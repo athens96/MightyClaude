@@ -33,7 +33,7 @@ public sealed record MobileDesktopAction(string SessionId, string Action, JsonEl
 public sealed class MobileDesktopRouter : IDisposable
 {
     public Func<string[]>? ExtraCapabilities { get; set; }
-    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push"];
+    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push", "fileChanges"];
     /// <summary>The direct path's endpoints for /m1/info (docs/mobile-remote.md, "direct"); empty when there is no host or it does not listen.</summary>
     public Func<IReadOnlyList<string>>? DirectEndpoints { get; set; }
     /// <summary>The largest reply body the host sends; a session detail over it sheds its structure first (<see cref="SessionReply"/>).</summary>
@@ -210,8 +210,12 @@ public sealed class MobileDesktopRouter : IDisposable
                 }
                 if (files)
                 {
-                    if (query.Keys.Any(k => k != "path")) throw new MobileRequestException(400, "Unexpected file argument.");
-                    return await Files(workspace, MobileWorkspaceFiles.ValidatedPath(query.GetValueOrDefault("path"), route[3] == "files"), route[3] == "files", device, token);
+                    // "fileChanges": the preview's changes=1, with the pane and run whose originals count, each optional.
+                    var changes = route[3] == "file" && query.TryGetValue("changes", out var flag) ? flag == "1" ? true : throw new MobileRequestException(400, "Unexpected file argument.") : false;
+                    if (query.Keys.Any(k => k != "path" && !(changes && k is "changes" or "session" or "run"))) throw new MobileRequestException(400, "Unexpected file argument.");
+                    if (query.TryGetValue("session", out var paneId) && !Wire.Identifier(paneId) || query.TryGetValue("run", out var runId) && !Wire.Identifier(runId)) throw new MobileRequestException(400, "Unexpected file argument.");
+                    return await Files(workspace, MobileWorkspaceFiles.ValidatedPath(query.GetValueOrDefault("path"), route[3] == "files"), route[3] == "files", device, token,
+                        changes ? new MobileFileChangesQuery(query.GetValueOrDefault("session"), query.GetValueOrDefault("run")) : null);
                 }
             }
             if (route.Length >= 4 && route[1] == "uploads" && method == "POST")
@@ -429,7 +433,7 @@ public sealed class MobileDesktopRouter : IDisposable
     /// off the caller's thread, two at a time. Only an image's decode waits for the preview slot, one at a time, and a newer
     /// preview from the same phone takes an older one's place in that queue.
     /// </summary>
-    private async Task<MobileReply> Files(Workspace workspace, string relative, bool listing, string device, CancellationToken token)
+    private async Task<MobileReply> Files(Workspace workspace, string relative, bool listing, string device, CancellationToken token, MobileFileChangesQuery? changes = null)
     {
         token.ThrowIfCancellationRequested(); MobileWorkspaceFiles.Stage stage;
         await fileSlots.WaitAsync(token);
@@ -442,7 +446,16 @@ public sealed class MobileDesktopRouter : IDisposable
         using (stage)
         {
             var preview = stage.Preview;
-            if (stage.Image is not { } file) return Reply(MobileWorkspaceFiles.Fitted(preview));
+            if (stage.Image is not { } file)
+            {
+                // Only text has changes; a pane of another workspace never lends this one its originals.
+                if (changes is not null && preview.Type is "source" or "markdown")
+                {
+                    var pane = changes.Session is { } id && service.Snapshot.Sessions.Any(s => s.Id == id && s.WorkspaceId == workspace.Id) ? id : null;
+                    preview = preview with { Changes = await service.FileChangesAsync(workspace.Path, relative, pane, pane is null ? null : changes.Run, token) };
+                }
+                return Reply(MobileWorkspaceFiles.Fitted(preview));
+            }
             if (!await previews.Acquire(device, token)) throw MobileWorkspaceFiles.Superseded;
             try
             {

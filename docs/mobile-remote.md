@@ -107,7 +107,9 @@ MobilePermission {
 
 기존 라우트와 필드는 그대로다. 아래는 모두 **추가**이며, 새 필드는 전부 선택(optional)이다. 업데이트하지 않은 휴대폰 앱은 모르는 필드를 무시하고 지금처럼 동작한다. 휴대폰은 `/m1/info`의 `capabilities`에 이름이 있을 때만 해당 기능을 보여 준다(없으면 구버전 호스트).
 
-`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`, `"push"`.
+`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`, `"push"`, `"fileChanges"`.
+
+`"fileChanges"`는 호스트의 `GET /m1/workspaces/{id}/file`이 `changes=1`(과 `session`·`run`)을 받아 미리보기에 `changes`를 붙인다는 뜻이다(Mac·Windows, 아래 "파일"). 이 이름이 없는 호스트에 `changes=1`을 보내면 400이다.
 
 `"direct"`는 호스트가 Tailscale 직접 연결을 아는 빌드라는 뜻이다(Mac·Windows). 이 이름이 있으면 `MobileInfo.direct`와 `auth_ok.direct`가 그 순간의 끝점 목록이다(위 "Tailscale 직접 연결").
 
@@ -439,7 +441,22 @@ MobileFilePreview {
   width?, height?,                                     // 원본 크기: 비트맵은 픽셀(회전 반영), svg·pdf는 포인트
   thumbnailWidth?, thumbnailHeight?, data?: base64,
   // unsupported
-  reason?: "binary" | "notRegularFile" | "tooLarge" | "undecodable"
+  reason?: "binary" | "notRegularFile" | "tooLarge" | "undecodable",
+  // source·markdown, changes=1일 때만 ("fileChanges")
+  changes?: FileChanges
+}
+
+GET /m1/workspaces/{id}/file?path=<상대 경로>&changes=1[&session=<창 id>&run=<실행 id>]
+FileChanges {
+  base: "run" | "head",     // run: 그 실행이 파일을 처음 바꾸기 전 원본, head: git HEAD
+  runId?: string,           // base가 run일 때 그 실행
+  headSha?: string,         // base가 head일 때 HEAD 커밋 7자리(커밋이 없는 저장소면 없음)
+  created?: true,           // 실행이 만든 파일, 또는 HEAD에 없는 파일: 전부 추가
+  hunks: [{ oldStart, oldLines, newStart, newLines,
+            lines: [{ op: " " | "+" | "-", text, noNewline?: true }] }],
+  added: number, removed: number,                      // 잘려도 전체 수
+  truncated: boolean,                                  // 덩어리 줄 5,000줄(또는 응답 한도)에서 잘렸다
+  unchanged: boolean                                   // 기준과 같다(CRLF/LF 차이만 있어도)
 }
 ```
 
@@ -468,6 +485,8 @@ MobileFilePreview {
 **존재 여부를 흘리지 않는다.** 루트 밖으로 나가는 링크 **아래**의 경로(`outdir/secret.txt`처럼 부모 폴더가 루트 안으로 풀리지 않는 경로)는 거기에 무엇이 있든 없든 똑같이 404 `notFound`다. `outsideWorkspace`는 루트 안으로 풀리는 폴더에 바로 들어 있는 항목(그 링크 자체)에만 쓴다 — 그 폴더의 목록으로 이미 보이는 것이다.
 
 `files` capability가 없는 호스트에는 두 라우트가 없으므로(404) 휴대폰은 `파일` 버튼을 보이지 않는다.
+
+**변경사항 (`fileChanges`).** `capabilities`에 `"fileChanges"`가 있는 호스트(Mac·Windows)만 `file`에 `changes=1`을 받는다. 그때 `source`·`markdown` 미리보기에 `changes`가 붙고(diff가 없으면 — 저장소 밖, 바이너리, 한도 초과 — 붙지 않는다), 이미지·`unsupported`에는 붙지 않는다. `session`(창 id)과 `run`(그 창 그래프의 실행 id)은 선택이고 `changes=1`과만 쓴다: `run`이 있으면 그 실행의 원본만, 없으면 그 창에서 그 파일을 잡은 가장 최근 실행의 원본, 원본이 없으면 HEAD다. `session`이 그 워크스페이스의 창이 아니면 원본을 쓰지 않는다(HEAD만). 경로 검사·오류 코드는 위 `file`과 같다. `changes`가 `1`이 아니거나, `changes=1` 없이 `session`·`run`이 오거나, 둘이 id 형식이 아니거나, `files`에 오면 400. 응답 한도 768 KiB를 넘으면 텍스트와 `changes`의 덩어리 줄을 4분의 1씩 함께 잘라 둘 다 `truncated: true`로 보낸다. 기준·diff 규칙과 원본 보관은 [mighty-mode.md](mighty-mode.md) "변경사항 | 전체 보기", 같은 diff를 `native/contracts/fixtures/file-diff.json`으로 검사한다. 휴대폰은 `filePreview(workspaceId, path, signal, { session?, run? })`로 묻는다(`mobile/src/api/client.ts`, 화면은 다음 단계).
 
 ### 보낼 대상 (askTargets)
 

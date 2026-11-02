@@ -1,0 +1,244 @@
+{
+  "context": 3,
+  "maximumSideBytes": 1048576,
+  "maximumSideLines": 20000,
+  "maximumOutputLines": 5000,
+  "cases": [
+    {
+      "name": "insert",
+      "old": "a\nb\nc\n",
+      "new": "a\nb\nX\nc\n",
+      "expect": {
+        "added": 1, "removed": 0, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 3, "newStart": 1, "newLines": 4, "lines": [
+            { "op": " ", "text": "a" }, { "op": " ", "text": "b" }, { "op": "+", "text": "X" }, { "op": " ", "text": "c" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "delete",
+      "old": "a\nb\nc\nd\n",
+      "new": "a\nc\nd\n",
+      "expect": {
+        "added": 0, "removed": 1, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 4, "newStart": 1, "newLines": 3, "lines": [
+            { "op": " ", "text": "a" }, { "op": "-", "text": "b" }, { "op": " ", "text": "c" }, { "op": " ", "text": "d" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "replace writes the removal before the addition",
+      "old": "one\ntwo\nthree\n",
+      "new": "one\n2\nthree\n",
+      "expect": {
+        "added": 1, "removed": 1, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 3, "newStart": 1, "newLines": 3, "lines": [
+            { "op": " ", "text": "one" }, { "op": "-", "text": "two" }, { "op": "+", "text": "2" }, { "op": " ", "text": "three" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "context stops at the top and the bottom of the file",
+      "old": "a\nb\n",
+      "new": "A\nb\n",
+      "expect": {
+        "added": 1, "removed": 1, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 2, "newStart": 1, "newLines": 2, "lines": [
+            { "op": "-", "text": "a" }, { "op": "+", "text": "A" }, { "op": " ", "text": "b" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "near hunks merge (6 equal lines between the changes)",
+      "old": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14\nl15\nl16\nl17\nl18\nl19\nl20\n",
+      "new": "l1\nl2\nl3\nl4\nL5\nl6\nl7\nl8\nl9\nl10\nl11\nL12\nl13\nl14\nl15\nl16\nl17\nl18\nl19\nl20\n",
+      "expect": {
+        "added": 2, "removed": 2, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 2, "oldLines": 14, "newStart": 2, "newLines": 14, "lines": [
+            { "op": " ", "text": "l2" }, { "op": " ", "text": "l3" }, { "op": " ", "text": "l4" },
+            { "op": "-", "text": "l5" }, { "op": "+", "text": "L5" },
+            { "op": " ", "text": "l6" }, { "op": " ", "text": "l7" }, { "op": " ", "text": "l8" }, { "op": " ", "text": "l9" }, { "op": " ", "text": "l10" }, { "op": " ", "text": "l11" },
+            { "op": "-", "text": "l12" }, { "op": "+", "text": "L12" },
+            { "op": " ", "text": "l13" }, { "op": " ", "text": "l14" }, { "op": " ", "text": "l15" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "far hunks split (7 equal lines between the changes)",
+      "old": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14\nl15\nl16\nl17\nl18\nl19\nl20\n",
+      "new": "l1\nl2\nl3\nl4\nL5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nL13\nl14\nl15\nl16\nl17\nl18\nl19\nl20\n",
+      "expect": {
+        "added": 2, "removed": 2, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 2, "oldLines": 7, "newStart": 2, "newLines": 7, "lines": [
+            { "op": " ", "text": "l2" }, { "op": " ", "text": "l3" }, { "op": " ", "text": "l4" },
+            { "op": "-", "text": "l5" }, { "op": "+", "text": "L5" },
+            { "op": " ", "text": "l6" }, { "op": " ", "text": "l7" }, { "op": " ", "text": "l8" }
+          ] },
+          { "oldStart": 10, "oldLines": 7, "newStart": 10, "newLines": 7, "lines": [
+            { "op": " ", "text": "l10" }, { "op": " ", "text": "l11" }, { "op": " ", "text": "l12" },
+            { "op": "-", "text": "l13" }, { "op": "+", "text": "L13" },
+            { "op": " ", "text": "l14" }, { "op": " ", "text": "l15" }, { "op": " ", "text": "l16" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "CRLF reads as LF",
+      "old": "a\r\nb\r\nc\r\n",
+      "new": "a\nB\nc\n",
+      "expect": {
+        "added": 1, "removed": 1, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 3, "newStart": 1, "newLines": 3, "lines": [
+            { "op": " ", "text": "a" }, { "op": "-", "text": "b" }, { "op": "+", "text": "B" }, { "op": " ", "text": "c" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "line endings alone are no change",
+      "old": "a\r\nb\r\n",
+      "new": "a\nb\n",
+      "expect": { "added": 0, "removed": 0, "truncated": false, "unchanged": true, "hunks": [] }
+    },
+    {
+      "name": "a lone CR stays part of its line",
+      "old": "a\rb\n",
+      "new": "a\nb\n",
+      "expect": {
+        "added": 2, "removed": 1, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 1, "newStart": 1, "newLines": 2, "lines": [
+            { "op": "-", "text": "a\rb" }, { "op": "+", "text": "a" }, { "op": "+", "text": "b" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "trailing newline added",
+      "old": "a\nb",
+      "new": "a\nb\n",
+      "expect": {
+        "added": 1, "removed": 1, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 2, "newStart": 1, "newLines": 2, "lines": [
+            { "op": " ", "text": "a" }, { "op": "-", "text": "b", "noNewline": true }, { "op": "+", "text": "b" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "trailing newline removed",
+      "old": "a\nb\n",
+      "new": "a\nb",
+      "expect": {
+        "added": 1, "removed": 1, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 2, "newStart": 1, "newLines": 2, "lines": [
+            { "op": " ", "text": "a" }, { "op": "-", "text": "b" }, { "op": "+", "text": "b", "noNewline": true }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "empty to content (a file the run created)",
+      "old": "",
+      "new": "x\ny\n",
+      "expect": {
+        "added": 2, "removed": 0, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 0, "oldLines": 0, "newStart": 1, "newLines": 2, "lines": [
+            { "op": "+", "text": "x" }, { "op": "+", "text": "y" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "content to empty",
+      "old": "x\ny\n",
+      "new": "",
+      "expect": {
+        "added": 0, "removed": 2, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 2, "newStart": 0, "newLines": 0, "lines": [
+            { "op": "-", "text": "x" }, { "op": "-", "text": "y" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "identical",
+      "old": "same\ntext\n",
+      "new": "same\ntext\n",
+      "expect": { "added": 0, "removed": 0, "truncated": false, "unchanged": true, "hunks": [] }
+    },
+    {
+      "name": "insert at the end keeps the line numbers of what follows",
+      "old": "a\nb\nc\nd\ne\n",
+      "new": "a\nb\nc\nd\ne\nf\n",
+      "expect": {
+        "added": 1, "removed": 0, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 3, "oldLines": 3, "newStart": 3, "newLines": 4, "lines": [
+            { "op": " ", "text": "c" }, { "op": " ", "text": "d" }, { "op": " ", "text": "e" }, { "op": "+", "text": "f" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "unicode lines compare by their exact characters, not their normalized form",
+      "old": "caf\u00e9\n\ud55c\uae00 \ud83d\ude00\n",
+      "new": "cafe\u0301\n\ud55c\uae00 \ud83d\ude00\n",
+      "expect": {
+        "added": 1, "removed": 1, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 2, "newStart": 1, "newLines": 2, "lines": [
+            { "op": "-", "text": "caf\u00e9" }, { "op": "+", "text": "cafe\u0301" }, { "op": " ", "text": "\ud55c\uae00 \ud83d\ude00" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "a moved block keeps the longest common run",
+      "old": "a\nb\nc\nd\ne\n",
+      "new": "c\nd\ne\na\nb\n",
+      "expect": {
+        "added": 2, "removed": 2, "truncated": false, "unchanged": false,
+        "hunks": [
+          { "oldStart": 1, "oldLines": 5, "newStart": 1, "newLines": 5, "lines": [
+            { "op": "-", "text": "a" }, { "op": "-", "text": "b" },
+            { "op": " ", "text": "c" }, { "op": " ", "text": "d" }, { "op": " ", "text": "e" },
+            { "op": "+", "text": "a" }, { "op": "+", "text": "b" }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "large output stops at 5000 lines",
+      "generate": { "old": 0, "new": 6000, "line": "line {n}" },
+      "expect": {
+        "added": 6000, "removed": 0, "truncated": true, "unchanged": false,
+        "hunkCount": 1, "lineCount": 5000,
+        "firstHunk": { "oldStart": 0, "oldLines": 0, "newStart": 1, "newLines": 5000 },
+        "lastLine": { "op": "+", "text": "line 5000" }
+      }
+    },
+    {
+      "name": "a NUL byte means no diff",
+      "old": "a\n",
+      "new": "a\u0000b\n",
+      "expect": null
+    }
+  ]
+}

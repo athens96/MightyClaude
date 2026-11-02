@@ -54,6 +54,10 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileSetAskTarget(sessionId: String, target: String?) async throws
     /// Draws an svg for a file preview; MightyCore has no AppKit to do it.
     var mobileSVGRasterizer: MobileWorkspaceFiles.SVGRasterizer? { get }
+    /// What the request changed in a workspace file for a preview's
+    /// `changes=1` (`FileChanges.read`): the pane's originals count only when
+    /// `sessionId` is a pane of `workspaceId`. nil when there is no diff.
+    func mobileFileChanges(workspaceId: String, workspaceRoot: URL, path: String, sessionId: String?, runId: String?) async -> FileChangeSet?
 }
 
 public extension MobileHostDelegate {
@@ -68,6 +72,10 @@ public extension MobileHostDelegate {
     func mobileSession(id: String, structure: Bool) async -> MobileSessionDetail? { await mobileSession(id: id) }
     /// No drawing: an svg preview is `unsupported` ("undecodable").
     var mobileSVGRasterizer: MobileWorkspaceFiles.SVGRasterizer? { nil }
+    /// A host without run originals diffs against git's HEAD alone.
+    func mobileFileChanges(workspaceId: String, workspaceRoot: URL, path: String, sessionId: String?, runId: String?) async -> FileChangeSet? {
+        await FileChanges.read(store: nil, workspaceRoot: workspaceRoot, relativePath: path)
+    }
     /// A host without Antigravity cards answers like before, and has nothing to always allow.
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool, always: Bool) async throws {
         guard !always else { throw MightyError(L("remote.error.notAntigravityPermission")) }
@@ -1332,11 +1340,20 @@ extension MobileRemoteService {
     /// preview slot, and checks between its steps whether the phone gave up.
     private func workspaceFile(listing: Bool, workspaceId: String, url: URLComponents, deviceId: String, delegate: MobileHostDelegate) async throws -> MobileReply {
         guard CoreValidation.identifier(workspaceId) else { throw Failure(MobileFileError.workspaceNotFound) }
-        var raw: String?
+        var raw: String?, changes: String?, session: String?, run: String?
         for item in url.queryItems ?? [] {
-            guard item.name == "path", raw == nil else { throw Failure(400, L("remote.error.unknownQuery")) }
-            raw = item.value ?? ""
+            // "fileChanges": a preview's changes=1, with the pane and run whose originals count, each optional.
+            switch item.name {
+            case "path" where raw == nil: raw = item.value ?? ""
+            case "changes" where !listing && changes == nil: changes = item.value ?? ""
+            case "session" where !listing && session == nil: session = item.value ?? ""
+            case "run" where !listing && run == nil: run = item.value ?? ""
+            default: throw Failure(400, L("remote.error.unknownQuery"))
+            }
         }
+        guard changes == nil || changes == "1", changes != nil || (session == nil && run == nil),
+              session.map(CoreValidation.identifier) ?? true, run.map(CoreValidation.identifier) ?? true else { throw Failure(400, L("remote.error.unknownQuery")) }
+        let wantsChanges = changes != nil
         do {
             let path = try MobileWorkspaceFiles.validatedPath(raw, allowRoot: listing)
             guard let workspace = await delegate.mobileState().workspaces.first(where: { $0.id == workspaceId }) else { throw MobileFileError.workspaceNotFound }
@@ -1352,9 +1369,17 @@ extension MobileRemoteService {
             let prepared = try await Task.detached(priority: .userInitiated) { () throws -> (body: Data?, stage: MobileWorkspaceFiles.PreviewStage) in
                 let stage = try MobileWorkspaceFiles.prepare(workspaceId: workspaceId, path: path, root: root)
                 guard case .done(let preview) = stage else { return (nil, stage) }
+                // Text asked with changes=1 is encoded once its changes are in.
+                if wantsChanges, ["source", "markdown"].contains(preview.type) { return (nil, stage) }
                 return (MobileWorkspaceFiles.encoded(preview), stage)
             }.value
             if let body = prepared.body { return MobileReply(status: 200, body: body) }
+            if case .done(var preview) = prepared.stage {
+                preview.changes = await delegate.mobileFileChanges(workspaceId: workspaceId, workspaceRoot: root, path: path, sessionId: session, runId: run)
+                let finished = preview
+                let body = await Task.detached(priority: .userInitiated) { MobileWorkspaceFiles.encoded(finished) }.value
+                return MobileReply(status: 200, body: body)
+            }
             guard case .image(let preview, let file) = prepared.stage else { throw MobileFileError.notReadable }
             guard await acquirePreviewSlot(deviceId: deviceId) else { throw MobileFileError.superseded }
             defer { releasePreviewSlot() }

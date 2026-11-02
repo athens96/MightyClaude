@@ -504,8 +504,10 @@ public actor ProcessRunner {
     /// stdin before the runner closes it (a follow-up turn's own result or
     /// `session_state_changed: idle` normally closes it first).
     private let backgroundIdleClose: Double
+    /// Where a Claude run's file originals are kept (`FileOriginalStore`); nil keeps none.
+    private let fileOriginals: FileOriginalStore?
 
-    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), imageCache: AgentImageCache? = nil, liveRuns: LiveRunRegistry = LiveRunRegistry(), backgroundIdleClose: Double = 120, delegationEnabled: @escaping @Sendable () -> Bool = { false }, onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.imageCache = imageCache; self.liveRuns = liveRuns; self.backgroundIdleClose = backgroundIdleClose; self.delegationEnabled = delegationEnabled; self.onEvent = onEvent }
+    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), imageCache: AgentImageCache? = nil, liveRuns: LiveRunRegistry = LiveRunRegistry(), backgroundIdleClose: Double = 120, delegationEnabled: @escaping @Sendable () -> Bool = { false }, fileOriginals: FileOriginalStore? = nil, onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.imageCache = imageCache; self.liveRuns = liveRuns; self.backgroundIdleClose = backgroundIdleClose; self.delegationEnabled = delegationEnabled; self.fileOriginals = fileOriginals; self.onEvent = onEvent }
 
     /// Ends the pane's child right away, without waiting for this actor; the
     /// run's bookkeeping still needs `stop(id:)`. False when nothing ran.
@@ -647,6 +649,14 @@ public actor ProcessRunner {
                         guard let run, !run.finalized else { return }
                         onEvent(RunEvent(sessionId: run.request.sessionId, type: "antigravityPermission", antigravityPermission: card))
                     })
+                // A Claude run's Edit, Write and MultiEdit results name each file's content before the run changed it;
+                // the first of each file is kept under the run's graph id for the source preview's 변경사항 (FileChanges.swift).
+                if request.provider == "claude", request.kind == "claude", let originals = fileOriginals {
+                    let root = URL(fileURLWithPath: workspace.path, isDirectory: true), runId = run.activityId, sessionId = request.sessionId
+                    run.parser?.fileOriginal = { path, original in
+                        _ = originals.capture(sessionId: sessionId, runId: runId, workspaceRoot: root, filePath: path, original: original)
+                    }
+                }
                 if codexApprovals {
                     run.codexPermissions = CodexApprovalChannel(runId: run.activityId, request: request, workspacePath: workspace.path, attachments: attachments,
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },

@@ -63,6 +63,18 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
     private weak var store: AppStore?
     init(store: AppStore) { self.store = store }
 
+    /// A pane of another workspace never lends this one its originals.
+    func mobileFileChanges(workspaceId: String, workspaceRoot: URL, path: String, sessionId: String?, runId: String?) async -> FileChangeSet? {
+        let found: (originals: FileOriginalStore, pane: String?)? = await MainActor.run {
+            guard let store else { return nil }
+            let pane = sessionId.flatMap { id in store.snapshot.sessions.contains { $0.id == id && $0.workspaceId == workspaceId } ? id : nil }
+            return (store.fileOriginals, pane)
+        }
+        guard let found else { return nil }
+        return await FileChanges.read(store: found.originals, workspaceRoot: workspaceRoot, relativePath: path,
+                                      sessionId: found.pane, runId: found.pane == nil ? nil : runId)
+    }
+
     func mobileState() async -> MobileState {
         await MainActor.run { store?.mobileState() ?? MobileState(revision: 0, hostName: "", workspaces: [], sessions: []) }
     }

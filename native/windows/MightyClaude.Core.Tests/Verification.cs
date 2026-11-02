@@ -1030,6 +1030,11 @@ internal static class Verification
         await Test("files pane links to another machine are refused on paper", FilesPaneVerification.LinksToAnotherMachineAreRefusedOnPaper);
         await Test("files pane svg size is read from its root element and checked like pdf", FilesPaneVerification.SvgSizeIsReadFromItsRootElement);
         await Test("files pane on Windows draws at most 2,000 rows and 256 KB of source", FilesPaneVerification.TheWindowsPaneDrawsAtMostTwoThousandRowsAnd256KB);
+        await Test("file changes: the diff follows native/contracts/fixtures/file-diff.json and its caps", FileChangesVerification.TheSharedCasesHold);
+        await Test("file changes: a run keeps each file's first original, a created file reads as all added", FileChangesVerification.TheParserKeepsEachFilesFirstOriginalOfTheRun);
+        await Test("file changes: the originals keep their caps, prune with the graph and survive a restart; paths stay in the workspace", FileChangesVerification.TheStoreKeepsItsCapsAndSurvivesARestart);
+        await Test("file changes: without a run original HEAD is the base, untracked all added, no repository no diff", FileChangesVerification.WithoutARunOriginalGitsHeadIsTheBase);
+        await Test("file changes: the phone gets changes only with changes=1, under the file route's checks", FileChangesVerification.ThePhoneAsksForChangesOnlyWithTheCapabilitysArguments);
         await Test("status glyph design A: each state has its own glyph", StatusGlyphVerification.EachStateHasItsOwnGlyph);
         await Test("status glyph design A: a pane that is not an agent's shows its own symbol only while idle", StatusGlyphVerification.APaneThatIsNotAnAgentsShowsItsOwnSymbolOnlyWhileIdle);
         await Test("status glyph design A: status strings and pending requests reach their glyphs", StatusGlyphVerification.StatusStringsReachTheirGlyphs);

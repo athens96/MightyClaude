@@ -76,6 +76,16 @@ public sealed partial class MainWindow
             if (target is null) return new { found = false };
             return new { found = true, relativePath = target.RelativePath, line = target.Line, preview = await WebFilePreview(root, target.RelativePath) };
         });
+        // The same file's 변경사항 (DesktopService.FileChangesAsync): against the original the pane's run (runId, else its newest run
+        // that captured one) kept, else git's HEAD; null when there is no diff to show.
+        bridge.Register("referenceChanges", async args =>
+        {
+            if (WebReferenceRoot(args) is not { } root || args.Text("paneId") is not { } paneId || args.Text("path") is not { Length: > 0 and <= 4096 } path) return null;
+            var target = await Task.Run(() => ReferencePreview.Resolve(path, root));
+            if (target is null) return null;
+            var runId = args.Text("runId") is { } run && Wire.Identifier(run) ? run : null;
+            return await service.FileChangesAsync(root, target.RelativePath, paneId, runId);
+        });
         // Resolved again at the click: the workspace or the file may have changed while the bubble was open.
         bridge.Register("referenceOpen", async args =>
         {

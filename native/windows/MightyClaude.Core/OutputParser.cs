@@ -243,6 +243,7 @@ public sealed class OutputParser
                     foreach (var block in blocks.EnumerateArray().Where(b => b.Text("type") == "tool_use")) Tool(block.Text("id"), block.Text("name") == "AskUserQuestion" ? "waiting" : "running", block.Text("name"), MetadataJson.Property(block, "input"));
                     Images(blocks.EnumerateArray().Where(b => b.Text("type") == "image").SelectMany(b => AgentImageSupport.Payloads(b)).ToList(), root.Text("uuid") ?? message.Text("id") ?? "message", null, child, parentToolId);
                 }
+                if (type == "user" && blocks.ValueKind == JsonValueKind.Array && FileOriginal is not null) EditedOriginal(root, blocks);
                 if (type == "user" && blocks.ValueKind == JsonValueKind.Array)
                     foreach (var block in blocks.EnumerateArray().Where(b => b.Text("type") == "tool_result"))
                     {
@@ -303,6 +304,28 @@ public sealed class OutputParser
         }
         catch (JsonException) { log("output", line); }
         catch (InvalidOperationException) { log("system", Locale.Get("run.notice.unsupportedRecord")); }
+    }
+    /// <summary>
+    /// Hears a file's content before an Edit, Write or MultiEdit of the run (or a sub-agent of it) changed it: the path as
+    /// the tool named it and the original, null for a file the tool created (M/MightyCore/CLIStreamParser.swift fileOriginal).
+    /// </summary>
+    public Action<string, string?>? FileOriginal { get; set; }
+    /// <summary>
+    /// A Claude <c>user</c> line's <c>tool_use_result</c> (<c>toolUseResult</c> in transcripts): <c>filePath</c> and
+    /// <c>originalFile</c>, read only when a tool result of the line answers an Edit, Write or MultiEdit call and did not fail.
+    /// <c>originalFile</c> null, or a <c>type</c> of <c>create</c> without it, is a created file; neither is no original.
+    /// </summary>
+    private void EditedOriginal(JsonElement root, JsonElement blocks)
+    {
+        var result = MetadataJson.Property(root, "tool_use_result");
+        if (result.ValueKind != JsonValueKind.Object) result = MetadataJson.Property(root, "toolUseResult");
+        if (result.ValueKind != JsonValueKind.Object || result.Text("filePath") is not { Length: > 0 } path) return;
+        var edit = blocks.EnumerateArray().Any(b => b.Text("type") == "tool_result" && !MetadataJson.Flag(b, "is_error") && b.Text("tool_use_id") is { Length: > 0 } id
+            && Encoding.UTF8.GetByteCount(id) <= 512 && activities.TryGetValue(ActivitySupport.Id(activityNamespace, id), out var call) && call.ToolName is "Edit" or "Write" or "MultiEdit");
+        if (!edit) return;
+        var original = MetadataJson.Property(result, "originalFile");
+        if (original.ValueKind == JsonValueKind.String) FileOriginal!(path, original.GetString());
+        else if (original.ValueKind == JsonValueKind.Null || original.ValueKind == JsonValueKind.Undefined && result.Text("type") == "create") FileOriginal!(path, null);
     }
     private static bool Decodes(string base64)
     {
