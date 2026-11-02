@@ -184,7 +184,8 @@ public sealed partial class DesktopService : IAsyncDisposable
             var next = StateStore.Normalize(update(snapshot), false); var open = next.Sessions.Select(s => s.Id).ToHashSet();
             closed = snapshot.Sessions.Where(s => !open.Contains(s.Id)).ToList(); snapshot = next; save = QueueSave();
         }
-        foreach (var pane in closed) { ForgetAntigravity(pane.Id); PaneClosed(pane); FileOriginals.Forget(pane.Id); }
+        // A closed pane's file originals go off the caller's (the UI) thread: deleting its folders can take a while.
+        foreach (var pane in closed) { ForgetAntigravity(pane.Id); PaneClosed(pane); var id = pane.Id; _ = Task.Run(() => FileOriginals.Forget(id)); }
         return save;
     }
     /// <summary>
@@ -283,6 +284,16 @@ public sealed partial class DesktopService : IAsyncDisposable
         lock (sync)
             return snapshot.Sessions.FirstOrDefault(s => s.Id == sessionId) is { } session && snapshot.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId) is { Remote: null } workspace
                 ? DelegationPanes.RunWorkspace(session, workspace).Path : null;
+    }
+    /// <summary>
+    /// The run id the originals store keys a pane's run by: a graph run's <c>SourceRunID</c>, the process's run (here the same as
+    /// its id; M/MightyCore/FileChanges.swift FileOriginalStore.originalsRun, where it is not); an id no graph run of the pane has stays as it is.
+    /// </summary>
+    public string? OriginalsRun(string sessionId, string? runId)
+    {
+        if (runId is null) return null;
+        lock (sync)
+            return snapshot.Sessions.FirstOrDefault(s => s.Id == sessionId)?.GraphRuns?.FirstOrDefault(r => r.Id == runId) is { } run ? run.SourceRunID ?? run.Id : runId;
     }
     /// <summary>Starts a run and returns once its process is up with its input open (a remote one: once its host took it), or throws why it never got that far.</summary>
     public Task StartReachedAsync(StartRunRequest value) => Launch(value, null, true);

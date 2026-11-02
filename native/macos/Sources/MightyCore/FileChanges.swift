@@ -45,7 +45,13 @@ public struct FileOriginal: Equatable, Sendable {
 /// first edit of a path counts: an original that is unknown (no text, no patch
 /// that fits the file), over 1 MiB, or past the run's 64 files or 16 MiB is
 /// recorded as refused, and the path's later edits in that run never pose as
-/// its first. Each pane keeps the originals of its newest 20 runs, and the
+/// its first. An original rebuilt from a patch holds only while each later
+/// edit of the path in the run confirms it: the CLI may write the next edit
+/// before this one's result is read, and undoing a patch on that file keeps
+/// the next edit in. So the file the run's last edit left is remembered (its
+/// hash, in this process), each later edit's patch undone on the file now must
+/// give it (or its `originalFile` must be it), and an edit that does not drops
+/// the original as refused. Each pane keeps the originals of its newest 20 runs, and the
 /// whole store at most 512 MiB, the oldest runs going first. Only runs the
 /// pane's graph keeps are kept (`retain`), a closed pane's go (`forget`), and a
 /// start drops whatever the saved state no longer names (`prune`).
@@ -73,6 +79,8 @@ public final class FileOriginalStore: @unchecked Sendable {
     private let lock = NSLock()
     /// Paths of a run already settled — kept or refused — in this process.
     private var settled = Set<String>()
+    /// For an original rebuilt from a patch: the hash of the file as the run's last confirmed edit of it left it.
+    private var following: [String: String] = [:]
     /// Every run folder's manifest summary (by folder path), read once from disk and kept up to date.
     private var index: [String: Indexed]?
     private var lastSequence: Int64 = 0
@@ -144,15 +152,25 @@ public final class FileOriginalStore: @unchecked Sendable {
         guard resolved.path.hasPrefix(prefix) else { return false }
         let relative = String(resolved.path.dropFirst(prefix.count))
         lock.lock(); defer { lock.unlock() }
-        guard settled.insert(Self.key(sessionId, runId, relative)).inserted else { return false }
+        let key = Self.key(sessionId, runId, relative)
+        guard settled.insert(key).inserted else {
+            if let expected = following[key] {
+                if let next = Self.follow(expected, edit: edit, relative: relative, root: realRoot) { following[key] = next }
+                else { following[key] = nil; withdraw(sessionId: sessionId, runId: runId, relative: relative) }
+            }
+            return false
+        }
         let folder = runFolder(sessionId, runId)
         var manifest = Self.manifest(in: folder) ?? Manifest(version: 1, sessionId: sessionId, runId: runId, sequence: nextSequence(), files: [], root: realRoot.path, refused: [])
         guard !manifest.files.contains(where: { $0.path == relative }), !(manifest.refused ?? []).contains(relative),
               manifest.root == realRoot.path else { return false }
+        // The files are read without a byte order mark, so an original is kept without one too.
         let text: String?
-        if let original = edit.original { text = original }
+        var after: String?
+        if let original = edit.original { text = FilePatch.withoutByteOrderMark(original) }
         else if edit.created { text = "" }
-        else if let patch = edit.patch, let current = FileChanges.current(relative, root: realRoot) { text = FilePatch.reverseApply(current, hunks: patch) }
+        else if let patch = edit.patch, let current = FileChanges.current(relative, root: realRoot),
+                let before = FilePatch.reverseApply(current, hunks: patch) { text = before; after = Self.hash(current) }
         else { text = nil }
         let bytes = text.map { Data($0.utf8) }
         do {
@@ -163,13 +181,44 @@ public final class FileOriginalStore: @unchecked Sendable {
                 if refused.count < Self.maximumRefusedPerRun { refused.append(relative); manifest.refused = refused; try save(manifest, in: folder) }
                 return false
             }
-            let blob = "\(manifest.files.count).txt"
+            // A withdrawn original leaves a gap in the numbers: the next blob takes the first free one.
+            var number = manifest.files.count
+            while manifest.files.contains(where: { $0.blob == "\(number).txt" }) { number += 1 }
+            let blob = "\(number).txt"
             try bytes.write(to: folder.appendingPathComponent(blob), options: .atomic)
             manifest.files.append(Entry(path: relative, blob: blob, bytes: bytes.count, created: edit.original == nil && edit.created))
             try save(manifest, in: folder)
+            if let after { following[key] = after }
             evict(keeping: folder.path)
             return true
         } catch { return false }
+    }
+
+    /// The hash of the file after a later edit of a path whose original was
+    /// rebuilt from a patch, when the edit confirms the file the run's last
+    /// edit left (`expected`); nil when it does not or cannot.
+    private static func follow(_ expected: String, edit: FileEdit, relative: String, root: URL) -> String? {
+        guard let patch = edit.patch else { return nil }
+        if let given = edit.original {
+            let before = FilePatch.withoutByteOrderMark(given)
+            guard hash(before) == expected, let then = FilePatch.reverseApply(before, hunks: FilePatch.inverted(patch)) else { return nil }
+            return hash(then)
+        }
+        guard let current = FileChanges.current(relative, root: root), let undone = FilePatch.reverseApply(current, hunks: patch),
+              hash(undone) == expected else { return nil }
+        return hash(current)
+    }
+
+    /// Under `lock`: drops a kept original of the run, settling its path as refused.
+    private func withdraw(sessionId: String, runId: String, relative: String) {
+        let folder = runFolder(sessionId, runId)
+        guard var manifest = Self.manifest(in: folder), let entry = manifest.files.first(where: { $0.path == relative }) else { return }
+        if !entry.blob.contains("/"), !entry.blob.contains("..") { try? FileManager.default.removeItem(at: folder.appendingPathComponent(entry.blob)) }
+        manifest.files.removeAll { $0 == entry }
+        var refused = manifest.refused ?? []
+        if refused.count < Self.maximumRefusedPerRun { refused.append(relative) }
+        manifest.refused = refused
+        try? save(manifest, in: folder)
     }
 
     /// Under `lock`.
@@ -200,6 +249,7 @@ public final class FileOriginalStore: @unchecked Sendable {
         if let gone = value.removeValue(forKey: folder) {
             let prefix = Self.key(gone.sessionId, gone.runId, "")
             settled = settled.filter { !$0.hasPrefix(prefix) }
+            following = following.filter { !$0.key.hasPrefix(prefix) }
         }
         index = value
         try? FileManager.default.removeItem(atPath: folder)
@@ -260,6 +310,7 @@ public final class FileOriginalStore: @unchecked Sendable {
         index = loadedIndex().filter { $0.value.sessionId != sessionId }
         try? FileManager.default.removeItem(at: sessionFolder(sessionId))
         settled = settled.filter { !$0.hasPrefix(sessionId + "\u{1F}") }
+        following = following.filter { !$0.key.hasPrefix(sessionId + "\u{1F}") }
     }
 
     /// Keeps only the sessions named, each with only the runs named for it (a
@@ -287,8 +338,17 @@ public final class FileOriginalStore: @unchecked Sendable {
                 }
             }
         }
-        index = nil; settled = []
+        index = nil; settled = []; following = [:]
         evict(keeping: nil)
+    }
+
+    /// The run id the originals are kept under for `runId` as a pane's graph
+    /// names it: a graph run (on the Mac its id is the request's entry id)
+    /// stands for the process's run, its `sourceRunID`; an id no graph run of
+    /// the pane has stays as it is.
+    public static func originalsRun(_ runId: String, in session: RunSession?) -> String {
+        guard let graph = session?.graphRuns?.first(where: { $0.id == runId }) else { return runId }
+        return graph.sourceRunID ?? graph.id
     }
 
     /// The runs a pane's graph keeps: its runs' ids and the ids they were made from.

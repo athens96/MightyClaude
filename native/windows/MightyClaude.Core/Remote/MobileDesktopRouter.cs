@@ -440,14 +440,15 @@ public sealed class MobileDesktopRouter : IDisposable
         try
         {
             if (listing) return Reply(MobileWorkspaceFiles.Fitted(await Task.Run(() => MobileWorkspaceFiles.Listing(workspace.Id, relative, workspace.Path), token)));
-            stage = await Task.Run(() => MobileWorkspaceFiles.Prepare(workspace.Id, relative, workspace.Path), token);
-            // Only text has changes, worked out in the same two slots. A pane of another workspace never lends this one its
-            // originals; a delegated child's are read in its worktree folder, where they were captured.
+            // A pane of another workspace never lends this one its originals; a delegated child's file and its originals are read
+            // in its worktree folder, where they were captured, so the full view and the changes are the same file.
+            var pane = changes?.Session is { } id && service.Snapshot.Sessions.Any(s => s.Id == id && s.WorkspaceId == workspace.Id) ? id : null;
+            var root = pane is not null && service.RunFolder(pane) is { } folder ? folder : workspace.Path;
+            stage = await Task.Run(() => MobileWorkspaceFiles.Prepare(workspace.Id, relative, root), token);
+            // Only text has changes, worked out in the same two slots.
             if (changes is not null && stage.Image is null && stage.Preview.Type is "source" or "markdown")
             {
-                var pane = changes.Session is { } id && service.Snapshot.Sessions.Any(s => s.Id == id && s.WorkspaceId == workspace.Id) ? id : null;
-                var root = pane is not null && service.RunFolder(pane) is { } folder ? folder : workspace.Path;
-                try { stage = stage with { Preview = stage.Preview with { Changes = await service.FileChangesAsync(root, relative, pane, pane is null ? null : changes.Run, token) } }; }
+                try { stage = stage with { Preview = stage.Preview with { Changes = await service.FileChangesAsync(root, relative, pane, pane is null ? null : service.OriginalsRun(pane, changes.Run), token) } }; }
                 catch { stage.Dispose(); throw; }
             }
         }

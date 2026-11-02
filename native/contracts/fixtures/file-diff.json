@@ -1231,7 +1231,7 @@
    "expect": null
   },
   {
-   "name": "no newline at the end of a side is not undone",
+   "name": "no newline at the end of the new side: the removed line had one",
    "current": "a\nB",
    "hunks": [
     {
@@ -1244,6 +1244,273 @@
       "-b",
       "+B",
       "\\ No newline at end of file"
+     ]
+    }
+   ],
+   "expect": "a\nb\n"
+  },
+  {
+   "name": "no newline at the end of the old side: the removed line comes back without one",
+   "current": "a\nB\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 2,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      " a",
+      "-b",
+      "\\ No newline at end of file",
+      "+B"
+     ]
+    }
+   ],
+   "expect": "a\nb"
+  },
+  {
+   "name": "no newline at the end of both sides",
+   "current": "a\nB",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 2,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      " a",
+      "-b",
+      "\\ No newline at end of file",
+      "+B",
+      "\\ No newline at end of file"
+     ]
+    }
+   ],
+   "expect": "a\nb"
+  },
+  {
+   "name": "a last context line without a newline",
+   "current": "A\nb",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 2,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      "-a",
+      "+A",
+      " b",
+      "\\ No newline at end of file"
+     ]
+    }
+   ],
+   "expect": "a\nb"
+  },
+  {
+   "name": "a last context line marked without a newline that has one on disk",
+   "current": "A\nb\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 2,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      "-a",
+      "+A",
+      " b",
+      "\\ No newline at end of file"
+     ]
+    }
+   ],
+   "expect": null
+  },
+  {
+   "name": "an added last line marked without a newline that has one on disk",
+   "current": "a\nB\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 2,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      " a",
+      "-b",
+      "+B",
+      "\\ No newline at end of file"
+     ]
+    }
+   ],
+   "expect": null
+  },
+  {
+   "name": "a marker before any line",
+   "current": "a\nB\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 2,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      "\\ No newline at end of file",
+      " a",
+      "-b",
+      "+B"
+     ]
+    }
+   ],
+   "expect": null
+  },
+  {
+   "name": "a removed line without a newline before others",
+   "current": "a\nB\nc\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 3,
+     "newStart": 1,
+     "newLines": 3,
+     "lines": [
+      " a",
+      "-b",
+      "\\ No newline at end of file",
+      "+B",
+      " c"
+     ]
+    }
+   ],
+   "expect": null
+  },
+  {
+   "name": "a file without a final newline edited away from its end",
+   "current": "A\nb\nc\nd\ne",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 4,
+     "newStart": 1,
+     "newLines": 4,
+     "lines": [
+      "-a",
+      "+A",
+      " b",
+      " c",
+      " d"
+     ]
+    }
+   ],
+   "expect": "a\nb\nc\nd\ne"
+  },
+  {
+   "name": "mixed line endings: a removed line takes its nearest context line's",
+   "current": "x\r\ny\r\nz\r\na\nB\nc\n",
+   "hunks": [
+    {
+     "oldStart": 3,
+     "oldLines": 4,
+     "newStart": 3,
+     "newLines": 4,
+     "lines": [
+      " z",
+      " a",
+      "-b",
+      "+B",
+      " c"
+     ]
+    }
+   ],
+   "expect": "x\r\ny\r\nz\r\na\nb\nc\n"
+  },
+  {
+   "name": "mixed line endings: on a tie the context line before wins",
+   "current": "a\r\nc\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 3,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      " a",
+      "-b",
+      " c"
+     ]
+    }
+   ],
+   "expect": "a\r\nb\r\nc\n"
+  },
+  {
+   "name": "an empty context line",
+   "current": "a\n\nB\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 3,
+     "newStart": 1,
+     "newLines": 3,
+     "lines": [
+      " a",
+      " ",
+      "-b",
+      "+B"
+     ]
+    }
+   ],
+   "expect": "a\n\nb\n"
+  },
+  {
+   "name": "a byte order mark on line 1 of the file",
+   "current": "\ufeffA\nb\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 2,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      "-a",
+      "+A",
+      " b"
+     ]
+    }
+   ],
+   "expect": "\ufeffa\nb\n"
+  },
+  {
+   "name": "a byte order mark on line 1 of the file and the patch",
+   "current": "\ufeffA\nb\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 2,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      "-\ufeffa",
+      "+\ufeffA",
+      " b"
+     ]
+    }
+   ],
+   "expect": "\ufeffa\nb\n"
+  },
+  {
+   "name": "an old side that does not start at its oldStart",
+   "current": "a\nB\nc\n",
+   "hunks": [
+    {
+     "oldStart": 2,
+     "oldLines": 3,
+     "newStart": 1,
+     "newLines": 3,
+     "lines": [
+      " a",
+      "-b",
+      "+B",
+      " c"
      ]
     }
    ],

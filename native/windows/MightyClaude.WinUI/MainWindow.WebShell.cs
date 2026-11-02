@@ -80,12 +80,11 @@ public sealed partial class MainWindow
         // that captured one) kept, else git's HEAD; null when there is no diff to show.
         bridge.Register("referenceChanges", async args =>
         {
-            if (WebReferenceRoot(args) is null || args.Text("paneId") is not { } paneId || args.Text("path") is not { Length: > 0 and <= 4096 } path) return null;
             // Where the pane's runs work, and its originals were captured: a delegated child's worktree folder.
-            if (service.RunFolder(paneId) is not { } root) return null;
+            if (WebReferenceRoot(args) is not { } root || args.Text("paneId") is not { } paneId || args.Text("path") is not { Length: > 0 and <= 4096 } path) return null;
             var target = await Task.Run(() => ReferencePreview.Resolve(path, root));
             if (target is null) return null;
-            var runId = args.Text("runId") is { } run && Wire.Identifier(run) ? run : null;
+            var runId = args.Text("runId") is { } run && Wire.Identifier(run) ? service.OriginalsRun(paneId, run) : null;
             return await service.FileChangesAsync(root, target.RelativePath, paneId, runId);
         });
         // Resolved again at the click: the workspace or the file may have changed while the bubble was open.
@@ -224,7 +223,9 @@ public sealed partial class MainWindow
     private string? WebReferenceRoot(JsonElement args)
     {
         var snapshot = service.Snapshot;
-        return snapshot.Sessions.FirstOrDefault(s => s.Id == args.Text("paneId")) is { } pane ? LocalPath(snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)) : null;
+        // Where the pane's runs work (a delegated child's worktree folder), so the full view and 변경사항 read the same file.
+        return snapshot.Sessions.FirstOrDefault(s => s.Id == args.Text("paneId")) is { } pane && snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId) is { } workspace
+            ? LocalPath(DelegationPanes.RunWorkspace(pane, workspace)) : null;
     }
 
     /// <summary>

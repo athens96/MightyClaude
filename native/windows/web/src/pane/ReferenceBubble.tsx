@@ -186,7 +186,7 @@ export function ReferenceBubble({ paneId, request, top, onClose }: { paneId: str
             </div>
             <div className="reference-tools">
               {diffable && (
-                <div className="files-segment" role="group" data-testid="reference-changes-toggle">
+                <div className="files-segment" role="group" aria-label={t('files.changes.view')} data-testid="reference-changes-toggle">
                   <button type="button" className={showsDiff ? 'chosen' : ''} aria-pressed={showsDiff} onClick={() => setShowFull(false)}>{t('files.changes.show')}</button>
                   <button type="button" className={showsDiff ? '' : 'chosen'} aria-pressed={!showsDiff} onClick={() => setShowFull(true)}>{t('files.changes.full')}</button>
                 </div>

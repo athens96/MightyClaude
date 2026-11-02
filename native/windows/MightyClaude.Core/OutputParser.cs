@@ -312,10 +312,11 @@ public sealed class OutputParser
     public Action<string, FileEdit>? FileOriginal { get; set; }
     /// <summary>
     /// A Claude <c>user</c> line's <c>tool_use_result</c> (<c>toolUseResult</c> in transcripts), read only when a tool result of
-    /// the line answers an Edit, Write or MultiEdit call and did not fail. <c>originalFile</c> as text is the original. Without
-    /// it a Write of <c>type: "create"</c>, or an Edit with an empty <c>oldString</c> whose patch only adds, made the file; an
-    /// Edit's <c>structuredPatch</c> is undone against the file on disk (the CLI leaves <c>originalFile</c> null for most
-    /// edits); anything else is unknown, which still settles the path for the run.
+    /// the line answers an Edit, Write or MultiEdit call and did not fail. <c>originalFile</c> as text is the original (its
+    /// <c>structuredPatch</c> travels with it, to follow the run's later edits). Without it a Write of <c>type: "create"</c>, or
+    /// an Edit with an empty <c>oldString</c> whose patch is there and only adds, made the file; an Edit's or a Write update's
+    /// <c>structuredPatch</c> is undone against the file on disk (the CLI leaves <c>originalFile</c> null for most edits);
+    /// anything else is unknown, which still settles the path for the run.
     /// </summary>
     private void EditedOriginal(JsonElement root, JsonElement blocks)
     {
@@ -330,9 +331,11 @@ public sealed class OutputParser
         var original = MetadataJson.Property(result, "originalFile");
         var patch = FilePatch.Parse(MetadataJson.Property(result, "structuredPatch"));
         FileEdit edit;
-        if (original.ValueKind == JsonValueKind.String) edit = new(original.GetString(), false, null);
-        else if (tool == "Write") edit = result.Text("type") == "create" ? new(null, true, null) : FileEdit.Unknown;
-        else if (result.Text("oldString") == "" && (patch is null || patch.All(h => h.Lines.All(l => l.StartsWith('+'))))) edit = new(null, true, null);
+        if (original.ValueKind == JsonValueKind.String) edit = new(original.GetString(), false, patch);
+        else if (tool == "Write" && result.Text("type") == "create") edit = new(null, true, null);
+        else if (tool == "Write" && result.Text("type") != "update") edit = FileEdit.Unknown;
+        else if (tool != "Write" && result.Text("oldString") == "")
+            edit = patch is { Count: > 0 } && patch.All(h => h.Lines.All(l => l.StartsWith('+') || l.StartsWith('\\'))) ? new(null, true, null) : FileEdit.Unknown;
         else edit = patch is not null ? new(null, false, patch) : FileEdit.Unknown;
         FileOriginal!(path, edit);
     }

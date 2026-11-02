@@ -141,9 +141,10 @@ struct FileChangesTests {
         parser.push(try assistant("t7", "Edit", e))
         parser.push(try result("t7", patched(e, twoToTWO)))
         #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "e.txt") == FileOriginal(runId: "run-1", path: "e.txt", text: "one\r\ntwo\r\nthree\r\n", created: false), "a structuredPatch is undone against the CRLF file on disk")
+        _ = try touch("e.txt", "ONE\r\nTWO\r\nthree\r\n")
         parser.push(try assistant("t8", "Edit", e))
         parser.push(try result("t8", patched(e, [["oldStart": 1, "oldLines": 1, "newStart": 1, "newLines": 1, "lines": ["-one", "+ONE"]]])))
-        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "e.txt")?.text == "one\r\ntwo\r\nthree\r\n", "a later patch never replaces the first original")
+        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "e.txt")?.text == "one\r\ntwo\r\nthree\r\n", "a later patch that confirms the first original never replaces it")
         let f = try touch("f.txt")
         parser.push(try assistant("t9", "Edit", f))
         parser.push(try result("t9", patched(f, twoToTWO)))
@@ -153,10 +154,24 @@ struct FileChangesTests {
         let g = try touch("g.txt")
         parser.push(try assistant("t11", "Write", g))
         parser.push(try result("t11", ["type": "update", "filePath": g, "content": "x\n", "originalFile": NSNull()]))
-        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "g.txt") == nil, "a Write update without its original is no created file")
+        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "g.txt") == nil, "a Write update without its original or a patch is no created file")
+        // A Write update with a structuredPatch and no original is undone like an Edit.
+        let w = try touch("w.txt", "w1\nW2\n")
+        parser.push(try assistant("t13", "Write", w))
+        parser.push(try result("t13", ["type": "update", "filePath": w, "content": "w1\nW2\n", "originalFile": NSNull(),
+                                        "structuredPatch": [["oldStart": 1, "oldLines": 2, "newStart": 1, "newLines": 2, "lines": [" w1", "-w2", "+W2"]]]]))
+        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "w.txt") == FileOriginal(runId: "run-1", path: "w.txt", text: "w1\nw2\n", created: false), "a Write update's structuredPatch is undone against the file on disk")
+        // An Edit with an empty oldString and no patch, or one that does more than add, is unknown.
+        let i = try touch("i.txt", "i\n"), j = try touch("j.txt", "J\n")
+        parser.push(try assistant("t14", "Edit", i))
+        parser.push(try result("t14", ["filePath": i, "oldString": "", "newString": "i", "originalFile": NSNull()]))
+        parser.push(try assistant("t15", "Edit", j))
+        parser.push(try result("t15", patched(j, [["oldStart": 1, "oldLines": 1, "newStart": 1, "newLines": 1, "lines": ["-j", "+J"]]], oldString: "")))
+        #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "i.txt") == nil && store.find(sessionId: "pane", runId: "run-1", relativePath: "j.txt") == nil,
+                "an empty oldString without a patch that only adds is no created file")
         let h = try touch("h.txt", "made\n")
         parser.push(try assistant("t12", "Edit", h))
-        parser.push(try result("t12", patched(h, [["oldStart": 0, "oldLines": 0, "newStart": 1, "newLines": 1, "lines": ["+made"]]], oldString: "")))
+        parser.push(try result("t12", patched(h, [["oldStart": 0, "oldLines": 0, "newStart": 1, "newLines": 2, "lines": ["+made", "+more", "\\ No newline at end of file"]]], oldString: "")))
         #expect(store.find(sessionId: "pane", runId: "run-1", relativePath: "h.txt") == FileOriginal(runId: "run-1", path: "h.txt", text: "", created: true), "an Edit with an empty oldString made its file")
         #expect(!FileOriginalStore(directory: directory.appendingPathComponent("originals", isDirectory: true)).capture(sessionId: "pane", runId: "run-1", workspaceRoot: root, filePath: f, original: "again\n"), "a refused path stays refused after a restart")
         let made = try #require(await FileChanges.read(store: store, workspaceRoot: root, relativePath: "new.txt", sessionId: "pane"))
@@ -165,6 +180,92 @@ struct FileChangesTests {
         #expect(changed.base == "run" && changed.hunks[0].lines.map { $0.op + $0.text } == ["-v1", "+v3"])
         let wire = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(changed)) as? [String: Any])
         #expect(wire["base"] as? String == "run" && wire["runId"] as? String == "run-1" && wire["headSha"] == nil)
+    }
+
+    /// The CLI may write a file's next edit before the result of the one
+    /// before is read: the patch undone then keeps the next edit in. Whatever
+    /// order the results come in, the original kept is the file before the
+    /// run's first edit, or none (Windows ALaterEditAlreadyOnDiskNeverLeavesAWrongOriginal).
+    @Test func aLaterEditAlreadyOnDiskNeverLeavesAWrongOriginal() throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let store = FileOriginalStore(directory: directory.appendingPathComponent("originals", isDirectory: true))
+        let file = root.appendingPathComponent("a.txt")
+        func write(_ text: String) throws { try Data(text.utf8).write(to: file) }
+        let original = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\n"
+        func swapped(_ pairs: [(String, String)]) -> String { pairs.reduce(original) { $0.replacingOccurrences(of: $1.0 + "\n", with: $1.1 + "\n") } }
+        func edit(_ oldStart: Int, _ newStart: Int, _ lines: [String]) -> FileEdit {
+            FileEdit(patch: [FilePatchHunk(oldStart: oldStart, oldLines: lines.filter { !$0.hasPrefix("+") }.count, newStart: newStart,
+                                           newLines: lines.filter { !$0.hasPrefix("-") }.count, lines: lines)])
+        }
+        func capture(_ run: String, _ value: FileEdit) { store.capture(sessionId: "pane", runId: run, workspaceRoot: root, filePath: file.path, edit: value) }
+        func kept(_ run: String) -> String? { store.find(sessionId: "pane", runId: run, relativePath: "a.txt")?.text }
+        let line2 = edit(1, 1, [" l1", "-l2", "+L2", " l3", " l4", " l5"])
+        let line11 = edit(8, 8, [" l8", " l9", " l10", "-l11", "+L11", " l12"])
+
+        // In order: each result read before the next edit is written.
+        try write(swapped([("l2", "L2")])); capture("in-order", line2)
+        try write(swapped([("l2", "L2"), ("l11", "L11")])); capture("in-order", line11)
+        #expect(kept("in-order") == original, "edits read in order keep the first original")
+
+        // Below: edit 2 (line 11) is on disk when edit 1's result is read.
+        try write(swapped([("l2", "L2"), ("l11", "L11")]))
+        capture("below", line2); capture("below", line11)
+        #expect(kept("below") == nil, "a later edit below, already on disk, never leaves a wrong original")
+
+        // Above: edit 1 made line 11 two lines, edit 2 changed line 2; both on disk when edit 1's result is read.
+        try write(swapped([("l2", "M2"), ("l11", "L11a\nL11b")]))
+        capture("above", edit(8, 8, [" l8", " l9", " l10", "-l11", "+L11a", "+L11b", " l12"]))
+        capture("above", edit(1, 1, [" l1", "-l2", "+M2", " l3", " l4", " l5"]))
+        #expect(kept("above") == nil || kept("above") == original, "a later edit above, already on disk, never leaves a wrong original")
+
+        // Above, the lines shifted: a line inserted above edit 1's hunk before its result is read.
+        try write(("l0\n" + original).replacingOccurrences(of: "l11\n", with: "L11\n")); capture("shifted", line11)
+        #expect(kept("shifted") == nil, "a patch whose lines moved is refused at once")
+
+        // A later edit given with its originalFile confirms (or not) the file the run's last edit left.
+        try write(swapped([("l2", "L2"), ("l11", "L11")]))
+        capture("with-text", line2)
+        capture("with-text", FileEdit(original: swapped([("l2", "L2")]), patch: line11.patch))
+        #expect(kept("with-text") == nil, "an originalFile that is not the file the last edit left drops an original rebuilt from a patch")
+        try write(swapped([("l2", "L2")])); capture("text-ok", line2)
+        try write(swapped([("l2", "M2")])); capture("text-ok", FileEdit(original: swapped([("l2", "L2")]), patch: edit(1, 1, [" l1", "-L2", "+M2", " l3", " l4", " l5"]).patch))
+        try write(swapped([("l2", "N2")])); capture("text-ok", edit(1, 1, [" l1", "-M2", "+N2", " l3", " l4", " l5"]))
+        #expect(kept("text-ok") == original, "edits confirmed by their originalFile and their patches keep the first original")
+
+        // A later edit that cannot be confirmed (no patch) drops it too, and the path stays refused; the blob number it
+        // frees is never taken over a kept original's.
+        try write(swapped([("l2", "L2")]))
+        let second = root.appendingPathComponent("b.txt"), third = root.appendingPathComponent("c.txt")
+        try Data("b\n".utf8).write(to: second); try Data("c\n".utf8).write(to: third)
+        #expect(store.capture(sessionId: "pane", runId: "unknown", workspaceRoot: root, filePath: file.path, edit: line2)
+                && store.capture(sessionId: "pane", runId: "unknown", workspaceRoot: root, filePath: second.path, original: "b-kept\n"))
+        capture("unknown", .unknown)
+        #expect(kept("unknown") == nil && !store.capture(sessionId: "pane", runId: "unknown", workspaceRoot: root, filePath: file.path, edit: line2), "an unconfirmed later edit leaves the path refused")
+        #expect(store.capture(sessionId: "pane", runId: "unknown", workspaceRoot: root, filePath: third.path, original: "c-kept\n")
+                && store.find(sessionId: "pane", runId: "unknown", relativePath: "b.txt")?.text == "b-kept\n"
+                && store.find(sessionId: "pane", runId: "unknown", relativePath: "c.txt")?.text == "c-kept\n", "each kept original keeps its own blob")
+    }
+
+    /// On the Mac a graph run's id is the request's entry id while the
+    /// originals are captured under the process's run (`run.activityId`, the
+    /// graph run's `sourceRunID`): a click or the phone names the graph run,
+    /// and the originals are read under the run it stands for.
+    @Test func aGraphRunsIdReadsTheOriginalsOfItsProcessRun() throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("a.txt"); try Data("now\n".utf8).write(to: file)
+        let store = FileOriginalStore(directory: directory.appendingPathComponent("originals", isDirectory: true))
+        #expect(store.capture(sessionId: "pane", runId: "activity-1", workspaceRoot: root, filePath: file.path, original: "then\n"))
+        var session = RunSession(id: "pane", workspaceId: "workspace-1", title: "Pane")
+        session.graphRuns = [MightyGraphRun(id: "entry-1", status: "completed", sourceRunID: "activity-1"), MightyGraphRun(id: "entry-2", status: "running")]
+        #expect(store.find(sessionId: "pane", runId: "entry-1", relativePath: "a.txt") == nil, "the graph run's own id names no capture")
+        #expect(FileOriginalStore.originalsRun("entry-1", in: session) == "activity-1" && FileOriginalStore.originalsRun("entry-2", in: session) == "entry-2"
+                && FileOriginalStore.originalsRun("other", in: session) == "other" && FileOriginalStore.originalsRun("entry-1", in: nil) == "entry-1")
+        #expect(store.find(sessionId: "pane", runId: FileOriginalStore.originalsRun("entry-1", in: session), relativePath: "a.txt")?.text == "then\n",
+                "the graph run's id, mapped to its sourceRunID, reads the originals captured under the activity id")
     }
 
     @Test func theStoreKeepsItsCapsAndSurvivesARestart() throws {

@@ -78,8 +78,13 @@ struct MightyGraphReferenceBubble: View {
         .onExitCommand(perform: onClose)
         .task(id: reference) {
             changes = nil; showsFull = false
-            content = await Self.load(reference)
-            changes = await Self.loadChanges(reference, sessionID: sessionID, root: workspaceRoot, store: fileOriginals)
+            // A newer reference cancels this load: what it read never lands over the newer one's.
+            let loaded = await Self.load(reference)
+            guard !Task.isCancelled else { return }
+            content = loaded
+            let read = await Self.loadChanges(reference, sessionID: sessionID, root: workspaceRoot, store: fileOriginals)
+            guard !Task.isCancelled else { return }
+            changes = read
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("reference.bubbleAccessibility", ["title": reference.title]))
@@ -112,6 +117,7 @@ struct MightyGraphReferenceBubble: View {
                     Text(L("files.changes.full")).tag(true)
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .accessibilityLabel(L("files.changes.view"))
                 .accessibilityIdentifier("mighty-reference-changes-\(sessionID)")
             }
             Button(action: onFlip) { Image(systemName: onLeft ? "rectangle.righthalf.inset.filled.arrow.right" : "rectangle.lefthalf.inset.filled.arrow.left") }

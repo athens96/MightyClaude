@@ -143,9 +143,10 @@ internal static class FileChangesVerification
             parser.Parse(Assistant("t7", "Edit", Path.Combine(root, "e.txt")));
             parser.Parse(Result("t7", Patched(Path.Combine(root, "e.txt"), twoToTWO)));
             Check(store.Find("pane", "run-1", "e.txt") is { Text: "one\r\ntwo\r\nthree\r\n", Created: false }, "a structuredPatch is undone against the CRLF file on disk");
+            File.WriteAllText(Path.Combine(root, "e.txt"), "ONE\r\nTWO\r\nthree\r\n");
             parser.Parse(Assistant("t8", "Edit", Path.Combine(root, "e.txt")));
             parser.Parse(Result("t8", Patched(Path.Combine(root, "e.txt"), [new { oldStart = 1, oldLines = 1, newStart = 1, newLines = 1, lines = new[] { "-one", "+ONE" } }])));
-            Check(store.Find("pane", "run-1", "e.txt")?.Text == "one\r\ntwo\r\nthree\r\n", "a later patch of the path never replaces the first original");
+            Check(store.Find("pane", "run-1", "e.txt")?.Text == "one\r\ntwo\r\nthree\r\n", "a later patch of the path that confirms the first original never replaces it");
             // A patch that does not fit the file settles the path: a later edit with the text never poses as its first original.
             File.WriteAllText(Path.Combine(root, "f.txt"), "x\n");
             parser.Parse(Assistant("t9", "Edit", Path.Combine(root, "f.txt")));
@@ -157,11 +158,24 @@ internal static class FileChangesVerification
             File.WriteAllText(Path.Combine(root, "g.txt"), "g\n");
             parser.Parse(Assistant("t11", "Write", Path.Combine(root, "g.txt")));
             parser.Parse(Result("t11", new Dictionary<string, object?> { ["type"] = "update", ["filePath"] = Path.Combine(root, "g.txt"), ["content"] = "g\n", ["originalFile"] = null }));
-            Check(store.Find("pane", "run-1", "g.txt") is null, "a Write update without its original is no created file");
+            Check(store.Find("pane", "run-1", "g.txt") is null, "a Write update without its original or a patch is no created file");
+            // A Write update with a structuredPatch and no original is undone like an Edit.
+            File.WriteAllText(Path.Combine(root, "w.txt"), "w1\nW2\n");
+            parser.Parse(Assistant("t13", "Write", Path.Combine(root, "w.txt")));
+            parser.Parse(Result("t13", new Dictionary<string, object?> { ["type"] = "update", ["filePath"] = Path.Combine(root, "w.txt"), ["content"] = "w1\nW2\n", ["originalFile"] = null,
+                ["structuredPatch"] = new object[] { new { oldStart = 1, oldLines = 2, newStart = 1, newLines = 2, lines = new[] { " w1", "-w2", "+W2" } } } }));
+            Check(store.Find("pane", "run-1", "w.txt") is { Text: "w1\nw2\n", Created: false }, "a Write update's structuredPatch is undone against the file on disk");
+            // An Edit with an empty oldString and no patch, or one that does more than add, is unknown.
+            File.WriteAllText(Path.Combine(root, "i.txt"), "i\n"); File.WriteAllText(Path.Combine(root, "j.txt"), "J\n");
+            parser.Parse(Assistant("t14", "Edit", Path.Combine(root, "i.txt")));
+            parser.Parse(Result("t14", new Dictionary<string, object?> { ["filePath"] = Path.Combine(root, "i.txt"), ["oldString"] = "", ["newString"] = "i", ["originalFile"] = null }));
+            parser.Parse(Assistant("t15", "Edit", Path.Combine(root, "j.txt")));
+            parser.Parse(Result("t15", Patched(Path.Combine(root, "j.txt"), [new { oldStart = 1, oldLines = 1, newStart = 1, newLines = 1, lines = new[] { "-j", "+J" } }], oldString: "")));
+            Check(store.Find("pane", "run-1", "i.txt") is null && store.Find("pane", "run-1", "j.txt") is null, "an empty oldString without a patch that only adds is no created file");
             // An Edit with an empty oldString made its file.
             File.WriteAllText(Path.Combine(root, "h.txt"), "made\n");
             parser.Parse(Assistant("t12", "Edit", Path.Combine(root, "h.txt")));
-            parser.Parse(Result("t12", Patched(Path.Combine(root, "h.txt"), [new { oldStart = 0, oldLines = 0, newStart = 1, newLines = 1, lines = new[] { "+made" } }], oldString: "")));
+            parser.Parse(Result("t12", Patched(Path.Combine(root, "h.txt"), [new { oldStart = 0, oldLines = 0, newStart = 1, newLines = 2, lines = new[] { "+made", "+more", "\\ No newline at end of file" } }], oldString: "")));
             Check(store.Find("pane", "run-1", "h.txt") is { Text: "", Created: true }, "an Edit with an empty oldString made its file");
             // Refusals are kept with the run: a restart does not forget them.
             Check(!new FileOriginalStore(Path.Combine(directory, "originals")).Capture("pane", "run-1", root, Path.Combine(root, "f.txt"), "again\n"), "a refused path stays refused after a restart");
@@ -173,6 +187,78 @@ internal static class FileChangesVerification
             Check(wire.GetProperty("base").GetString() == "run" && wire.GetProperty("runId").GetString() == "run-1" && !wire.TryGetProperty("headSha", out _) && wire.GetProperty("hunks")[0].GetProperty("lines")[0].GetProperty("op").GetString() == "-", "the change set's wire shape");
         }
         finally { Directory.Delete(directory, true); }
+    }
+
+    /// <summary>
+    /// The CLI may write a file's next edit before the result of the one before is read: the patch undone then keeps the next
+    /// edit in. Whatever order the results come in, the original kept is the file before the run's first edit, or none.
+    /// </summary>
+    internal static Task ALaterEditAlreadyOnDiskNeverLeavesAWrongOriginal()
+    {
+        var directory = Temp();
+        try
+        {
+            var root = Path.Combine(directory, "workspace"); Directory.CreateDirectory(root);
+            var store = new FileOriginalStore(Path.Combine(directory, "originals"));
+            var file = Path.Combine(root, "a.txt");
+            const string original = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\n";
+            // Edit 1 changes line 2; edit 2 changes line 11 (below) or line 2 again after edit 1 changed line 11 (above).
+            FileEdit Edit(int oldStart, int newStart, string[] lines) => new(null, false, [new(oldStart, lines.Count(l => l[0] != '+'), newStart, lines.Count(l => l[0] != '-'), lines)]);
+            var line2 = Edit(1, 1, [" l1", "-l2", "+L2", " l3", " l4", " l5"]);
+            var line11 = Edit(8, 8, [" l8", " l9", " l10", "-l11", "+L11", " l12"]);
+            var line11Twice = Edit(8, 8, [" l8", " l9", " l10", "-l11", "+L11a", "+L11b", " l12"]);
+            var line2Again = Edit(1, 1, [" l1", "-L2", "+M2", " l3", " l4", " l5"]);
+
+            // In order: each result read before the next edit is written.
+            File.WriteAllText(file, original.Replace("l2\n", "L2\n"));
+            store.Capture("pane", "in-order", root, file, line2);
+            File.WriteAllText(file, original.Replace("l2\n", "L2\n").Replace("l11\n", "L11\n"));
+            store.Capture("pane", "in-order", root, file, line11);
+            Check(store.Find("pane", "in-order", "a.txt")?.Text == original, "edits read in order keep the first original");
+
+            // Below: edit 2 (line 11) is on disk when edit 1's result is read.
+            File.WriteAllText(file, original.Replace("l2\n", "L2\n").Replace("l11\n", "L11\n"));
+            store.Capture("pane", "below", root, file, line2);
+            store.Capture("pane", "below", root, file, line11);
+            Check(store.Find("pane", "below", "a.txt") is not { } below || below.Text == original, "a later edit below, already on disk, never leaves a wrong original");
+            Check(store.Find("pane", "below", "a.txt") is null, "the original that took the later edit in is dropped");
+
+            // Above: edit 1 changed line 11 into two lines, edit 2 changes line 2 again; both on disk when edit 1's result is read.
+            File.WriteAllText(file, original.Replace("l2\n", "M2\n").Replace("l11\n", "L11a\nL11b\n"));
+            store.Capture("pane", "above", root, file, line11Twice);
+            store.Capture("pane", "above", root, file, Edit(1, 1, [" l1", "-l2", "+M2", " l3", " l4", " l5"]));
+            Check(store.Find("pane", "above", "a.txt") is not { } above || above.Text == original, "a later edit above, already on disk, never leaves a wrong original");
+
+            // Above, with the lines shifted: edit 2 inserted a line above edit 1's hunk before edit 1's result is read.
+            File.WriteAllText(file, ("l0\n" + original).Replace("l11\n", "L11\n"));
+            store.Capture("pane", "shifted", root, file, line11);
+            Check(store.Find("pane", "shifted", "a.txt") is null, "a patch whose lines moved is refused at once");
+
+            // A later edit given with its originalFile confirms (or not) the file the run's last edit left.
+            File.WriteAllText(file, original.Replace("l2\n", "L2\n").Replace("l11\n", "L11\n"));
+            store.Capture("pane", "with-text", root, file, line2);
+            store.Capture("pane", "with-text", root, file, line11 with { Original = original.Replace("l2\n", "L2\n") });
+            Check(store.Find("pane", "with-text", "a.txt") is null, "an originalFile that is not the file the last edit left drops an original rebuilt from a patch");
+            File.WriteAllText(file, original.Replace("l2\n", "L2\n"));
+            store.Capture("pane", "text-ok", root, file, line2);
+            File.WriteAllText(file, original.Replace("l2\n", "M2\n"));
+            store.Capture("pane", "text-ok", root, file, line2Again with { Original = original.Replace("l2\n", "L2\n") });
+            File.WriteAllText(file, original.Replace("l2\n", "N2\n"));
+            store.Capture("pane", "text-ok", root, file, Edit(1, 1, [" l1", "-M2", "+N2", " l3", " l4", " l5"]));
+            Check(store.Find("pane", "text-ok", "a.txt")?.Text == original, "edits confirmed by their originalFile and their patches keep the first original");
+
+            // A later edit that cannot be confirmed (no patch) drops it too, and the path stays refused; the blob number it
+            // frees is never taken over a kept original's.
+            File.WriteAllText(file, original.Replace("l2\n", "L2\n"));
+            var second = Path.Combine(root, "b.txt"); File.WriteAllText(second, "b\n");
+            var third = Path.Combine(root, "c.txt"); File.WriteAllText(third, "c\n");
+            Check(store.Capture("pane", "unknown", root, file, line2) && store.Capture("pane", "unknown", root, second, "b-kept\n"), "two originals kept");
+            store.Capture("pane", "unknown", root, file, FileEdit.Unknown);
+            Check(store.Find("pane", "unknown", "a.txt") is null && !store.Capture("pane", "unknown", root, file, line2), "an unconfirmed later edit leaves the path refused");
+            Check(store.Capture("pane", "unknown", root, third, "c-kept\n") && store.Find("pane", "unknown", "b.txt")?.Text == "b-kept\n" && store.Find("pane", "unknown", "c.txt")?.Text == "c-kept\n", "each kept original keeps its own blob");
+        }
+        finally { Directory.Delete(directory, true); }
+        return Task.CompletedTask;
     }
 
     internal static Task TheStoreKeepsItsCapsAndSurvivesARestart()
@@ -308,7 +394,7 @@ internal static class FileChangesVerification
             var workspace = await service.AddWorkspaceAsync(workspacePath);
             var other = await service.AddWorkspaceAsync(Directory.CreateDirectory(Path.Combine(directory, "other")).FullName);
             var worktree = Directory.CreateDirectory(Path.Combine(directory, "worktree")).FullName; File.WriteAllText(Path.Combine(worktree, "a.txt"), "child\nNOW\n");
-            await service.UpdateAsync(s => s with { Sessions = [new RunSession { Id = "pane", WorkspaceId = workspace.Id }, new RunSession { Id = "elsewhere", WorkspaceId = other.Id },
+            await service.UpdateAsync(s => s with { Sessions = [new RunSession { Id = "pane", WorkspaceId = workspace.Id, GraphRuns = [new MightyGraphRun { Id = "entry-1", SourceRunID = "run-1", Status = "completed" }] }, new RunSession { Id = "elsewhere", WorkspaceId = other.Id },
                 new RunSession { Id = "child", WorkspaceId = workspace.Id, ParentSessionId = "pane", WorkingFolder = worktree }] });
             service.FileOriginals.Capture("child", "run-c", worktree, Path.Combine(worktree, "a.txt"), "child\nthen\n");
             Check(service.RunFolder("child") == worktree && service.RunFolder("pane") == workspacePath, "a child's runs work in its worktree");
@@ -323,12 +409,15 @@ internal static class FileChangesVerification
             var run = await Route($"/m1/workspaces/{workspace.Id}/file?path=a.txt&changes=1&session=pane&run=run-1");
             Check(run.Status == 200 && run.Body.GetProperty("changes").GetProperty("base").GetString() == "run" && run.Body.GetProperty("changes").GetProperty("added").GetInt32() == 1
                 && run.Body.GetProperty("text").GetString() == "one\nTWO\n", "changes=1 with the pane and run carries the run's diff beside the text");
+            var byEntry = await Route($"/m1/workspaces/{workspace.Id}/file?path=a.txt&changes=1&session=pane&run=entry-1");
+            Check(byEntry.Body.GetProperty("changes").GetProperty("runId").GetString() == "run-1", "a graph run's id reads the originals of the run it stands for (its sourceRunID)");
             var newest = await Route($"/m1/workspaces/{workspace.Id}/file?path=a.txt&changes=1&session=pane");
             Check(newest.Body.GetProperty("changes").GetProperty("runId").GetString() == "run-1", "without a run the pane's newest run answers");
             var child = await Route($"/m1/workspaces/{workspace.Id}/file?path=a.txt&changes=1&session=child");
             Check(child.Body.GetProperty("changes").GetProperty("runId").GetString() == "run-c"
                 && child.Body.GetProperty("changes").GetProperty("hunks")[0].GetProperty("lines").EnumerateArray().Select(l => l.GetProperty("op").GetString() + l.GetProperty("text").GetString()).SequenceEqual([" child", "-then", "+NOW"]),
                 "a delegated child's changes are read in its worktree, where they were captured");
+            Check(child.Body.GetProperty("text").GetString() == "child\nNOW\n", "a delegated child's full view reads the same worktree file as its changes");
             var foreign = await Route($"/m1/workspaces/{workspace.Id}/file?path=a.txt&changes=1&session=elsewhere");
             Check(foreign.Status == 200 && !foreign.Body.TryGetProperty("changes", out _), "a pane of another workspace lends no original (and this folder is no repository)");
             var image = await Route($"/m1/workspaces/{workspace.Id}/file?path=image.png&changes=1&session=pane");

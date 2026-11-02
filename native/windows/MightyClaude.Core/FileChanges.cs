@@ -31,7 +31,11 @@ public sealed record FileOriginal(string RunId, string Path, string Text, bool C
 /// A path is the real path relative to the run's folder (its <c>root</c>, recorded: an original is never read under another
 /// root). Only a run's first edit of a path counts: an original that is unknown (no text, no patch that fits the file), over
 /// 1 MiB, or past the run's 64 files or 16 MiB is recorded as refused, and the path's later edits in that run never pose as
-/// its first. Each pane keeps the originals of its newest 20 runs, and the whole store at most 512 MiB, the oldest runs going
+/// its first. An original rebuilt from a patch holds only while each later edit of the path in the run confirms it: the CLI
+/// may write the next edit before this one's result is read, and undoing a patch on that file keeps the next edit in. So the
+/// file the run's last edit left is remembered (its hash, in this process), each later edit's patch undone on the file now
+/// must give it (or its <c>originalFile</c> must be it), and an edit that does not drops the original as refused.
+/// Each pane keeps the originals of its newest 20 runs, and the whole store at most 512 MiB, the oldest runs going
 /// first. Only runs the pane's graph keeps are kept (<see cref="Retain"/>), a closed pane's go (<see cref="Forget"/>), and a
 /// start drops whatever the saved state no longer names (<see cref="Prune"/>).
 /// </para>
@@ -61,6 +65,8 @@ public sealed class FileOriginalStore
     private readonly string directory;
     /// <summary>Paths of a run (session, run, path) already settled — kept or refused — in this process.</summary>
     private readonly HashSet<(string, string, string)> settled = [];
+    /// <summary>For an original rebuilt from a patch: the hash of the file as the run's last confirmed edit of it left it.</summary>
+    private readonly Dictionary<(string, string, string), string> following = [];
     /// <summary>Every run folder's manifest summary, read once from disk and kept up to date.</summary>
     private Dictionary<string, Indexed>? index;
     private long lastSequence;
@@ -129,14 +135,28 @@ public sealed class FileOriginalStore
         var relative = target.RelativePath;
         lock (sync)
         {
-            if (!settled.Add(Key(sessionId, runId, relative))) return false;
+            var key = Key(sessionId, runId, relative);
+            if (!settled.Add(key))
+            {
+                if (following.TryGetValue(key, out var expected))
+                {
+                    if (Follow(expected, edit, relative, realRoot) is { } next) following[key] = next;
+                    else { following.Remove(key); Withdraw(sessionId, runId, relative); }
+                }
+                return false;
+            }
             try
             {
                 var folder = RunFolder(sessionId, runId);
                 var manifest = ReadManifest(folder) ?? new(1, sessionId, runId, NextSequence(), []) { Root = realRoot, Refused = [] };
                 if (manifest.Files.Any(f => PathComparer.Equals(f.Path, relative)) || (manifest.Refused ?? []).Contains(relative, PathComparer)) return false;
                 if (manifest.Root is not { } root || !PathComparer.Equals(root, realRoot)) return false;
-                var text = edit.Original ?? (edit.Created ? "" : edit.Patch is { } patch && FileChanges.Current(relative, realRoot) is { } current ? FilePatch.ReverseApply(current, patch) : null);
+                // The files are read without a byte order mark, so an original is kept without one too.
+                string? text, after = null;
+                if (edit.Original is { } given) text = FilePatch.WithoutByteOrderMark(given);
+                else if (edit.Created) text = "";
+                else if (edit.Patch is { } patch && FileChanges.Current(relative, realRoot) is { } current && FilePatch.ReverseApply(current, patch) is { } before) { text = before; after = Hash(current); }
+                else text = null;
                 var bytes = text is null ? null : Encoding.UTF8.GetBytes(text);
                 Directory.CreateDirectory(folder);
                 if (bytes is null || bytes.Length > MaximumOriginalBytes || manifest.Files.Count >= MaximumFilesPerRun || manifest.Files.Sum(f => f.Bytes) + bytes.Length > MaximumBytesPerRun)
@@ -145,14 +165,49 @@ public sealed class FileOriginalStore
                     if (refused.Count < MaximumRefusedPerRun) Save(folder, manifest with { Refused = [.. refused, relative] });
                     return false;
                 }
-                var blob = manifest.Files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".txt";
+                // A withdrawn original leaves a gap in the numbers: the next blob takes the first free one.
+                var number = manifest.Files.Count;
+                while (manifest.Files.Any(f => f.Blob == Blob(number))) number++;
+                var blob = Blob(number);
                 WriteAtomically(Path.Combine(folder, blob), bytes);
                 Save(folder, manifest with { Files = [.. manifest.Files, new(relative, blob, bytes.Length, edit.Original is null && edit.Created)] });
+                if (after is not null) following[key] = after;
                 Evict(folder);
                 return true;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
         }
+    }
+
+    private static string Blob(int number) => number.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".txt";
+
+    /// <summary>
+    /// The hash of the file after a later edit of a path whose original was rebuilt from a patch, when the edit confirms the
+    /// file the run's last edit left (<paramref name="expected"/>); null when it does not or cannot.
+    /// </summary>
+    private static string? Follow(string expected, FileEdit edit, string relative, string realRoot)
+    {
+        if (edit.Patch is not { } patch) return null;
+        if (edit.Original is { } given)
+        {
+            var before = FilePatch.WithoutByteOrderMark(given);
+            return Hash(before) == expected && FilePatch.ReverseApply(before, FilePatch.Inverted(patch)) is { } then ? Hash(then) : null;
+        }
+        return FileChanges.Current(relative, realRoot) is { } current && FilePatch.ReverseApply(current, patch) is { } undone && Hash(undone) == expected ? Hash(current) : null;
+    }
+
+    /// <summary>Under <see cref="sync"/>: drops a kept original of the run, settling its path as refused.</summary>
+    private void Withdraw(string sessionId, string runId, string relative)
+    {
+        var folder = RunFolder(sessionId, runId);
+        try
+        {
+            if (ReadManifest(folder) is not { } manifest || manifest.Files.FirstOrDefault(f => PathComparer.Equals(f.Path, relative)) is not { } entry) return;
+            if (!entry.Blob.Contains('/') && !entry.Blob.Contains('\\') &&!entry.Blob.Contains("..")) File.Delete(Path.Combine(folder, entry.Blob));
+            var refused = manifest.Refused ?? [];
+            Save(folder, manifest with { Files = manifest.Files.Where(f => f != entry).ToList(), Refused = refused.Count < MaximumRefusedPerRun ? [.. refused, relative] : refused });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     private void Save(string folder, Manifest manifest)
@@ -181,7 +236,11 @@ public sealed class FileOriginalStore
     /// <summary>Under <see cref="sync"/>: removes one run folder, its summary and what this process settled for it.</summary>
     private void Drop(string folder)
     {
-        if (Index().Remove(folder, out var gone)) settled.RemoveWhere(k => k.Item1 == gone.SessionId && k.Item2 == gone.RunId);
+        if (Index().Remove(folder, out var gone))
+        {
+            settled.RemoveWhere(k => k.Item1 == gone.SessionId && k.Item2 == gone.RunId);
+            foreach (var key in following.Keys.Where(k => k.Item1 == gone.SessionId && k.Item2 == gone.RunId).ToList()) following.Remove(key);
+        }
         Delete(folder);
     }
 
@@ -251,6 +310,7 @@ public sealed class FileOriginalStore
         {
             foreach (var run in Index().Where(e => e.Value.SessionId == sessionId).Select(e => e.Key).ToList()) Index().Remove(run);
             Delete(SessionFolder(sessionId)); settled.RemoveWhere(k => k.Item1 == sessionId);
+            foreach (var key in following.Keys.Where(k => k.Item1 == sessionId).ToList()) following.Remove(key);
         }
     }
 
@@ -274,11 +334,12 @@ public sealed class FileOriginalStore
                     foreach (var run in Directory.GetDirectories(folder))
                         if (ReadManifest(run) is not { } manifest || manifest.SessionId != id || !runs.Contains(manifest.RunId)) Delete(run);
                 }
-                foreach (var file in Directory.GetFiles(directory)) File.Delete(file);
-                foreach (var file in Directory.EnumerateFiles(directory, "*.tmp", SearchOption.AllDirectories).ToList()) File.Delete(file);
+                // A file that cannot go (open elsewhere, read-only) leaves the rest to go.
+                foreach (var file in Directory.GetFiles(directory).Concat(Directory.EnumerateFiles(directory, "*.tmp", SearchOption.AllDirectories)).ToList())
+                    try { File.Delete(file); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-            index = null; settled.Clear();
+            index = null; settled.Clear(); following.Clear();
             Evict(null);
         }
     }

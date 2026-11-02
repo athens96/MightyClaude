@@ -306,11 +306,12 @@ public final class CLIStreamParser {
     /// A Claude `user` line's `tool_use_result` (`toolUseResult` in
     /// transcripts), read only when a tool result of the line answers an Edit,
     /// Write or MultiEdit call and did not fail. `originalFile` as text is the
-    /// original. Without it a Write of `type: "create"`, or an Edit with an
-    /// empty `oldString` whose patch only adds, made the file; an Edit's
-    /// `structuredPatch` is undone against the file on disk (the CLI leaves
-    /// `originalFile` null for most edits); anything else is unknown, which
-    /// still settles the path for the run.
+    /// original (its `structuredPatch` travels with it, to follow the run's
+    /// later edits). Without it a Write of `type: "create"`, or an Edit with an
+    /// empty `oldString` whose patch is there and only adds, made the file; an
+    /// Edit's or a Write update's `structuredPatch` is undone against the file
+    /// on disk (the CLI leaves `originalFile` null for most edits); anything
+    /// else is unknown, which still settles the path for the run.
     private func editedOriginal(_ value: [String: Any], blocks: [[String: Any]]) {
         guard let fileOriginal,
               let result = (value["tool_use_result"] as? [String: Any]) ?? (value["toolUseResult"] as? [String: Any]),
@@ -326,9 +327,14 @@ public final class CLIStreamParser {
         guard let tool else { return }
         let patch = FilePatch.parse(result["structuredPatch"])
         let edit: FileEdit
-        if let text = result["originalFile"] as? String { edit = FileEdit(original: text) }
-        else if tool == "Write" { edit = result["type"] as? String == "create" ? FileEdit(created: true) : .unknown }
-        else if result["oldString"] as? String == "", patch?.allSatisfy({ hunk in hunk.lines.allSatisfy { $0.hasPrefix("+") } }) ?? true { edit = FileEdit(created: true) }
+        let type = result["type"] as? String
+        if let text = result["originalFile"] as? String { edit = FileEdit(original: text, patch: patch) }
+        else if tool == "Write", type == "create" { edit = FileEdit(created: true) }
+        else if tool == "Write", type != "update" { edit = .unknown }
+        else if tool != "Write", result["oldString"] as? String == "" {
+            let adds = patch.map { !$0.isEmpty && $0.allSatisfy { hunk in hunk.lines.allSatisfy { $0.hasPrefix("+") || $0.hasPrefix("\\") } } } ?? false
+            edit = adds ? FileEdit(created: true) : .unknown
+        }
         else { edit = patch.map { FileEdit(patch: $0) } ?? .unknown }
         fileOriginal(path, edit)
     }

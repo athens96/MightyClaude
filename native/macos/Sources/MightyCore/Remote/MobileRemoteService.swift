@@ -58,6 +58,10 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     /// `changes=1` (`FileChanges.read`): the pane's originals count only when
     /// `sessionId` is a pane of `workspaceId`. nil when there is no diff.
     func mobileFileChanges(workspaceId: String, workspaceRoot: URL, path: String, sessionId: String?, runId: String?) async -> FileChangeSet?
+    /// The folder `sessionId`'s runs work in when it is a pane of
+    /// `workspaceId` (a delegated child's worktree folder), so a preview asked
+    /// with changes reads the same file its changes do; nil for no such pane.
+    func mobileRunFolder(workspaceId: String, sessionId: String) async -> URL?
 }
 
 public extension MobileHostDelegate {
@@ -76,6 +80,8 @@ public extension MobileHostDelegate {
     func mobileFileChanges(workspaceId: String, workspaceRoot: URL, path: String, sessionId: String?, runId: String?) async -> FileChangeSet? {
         await FileChanges.read(store: nil, workspaceRoot: workspaceRoot, relativePath: path)
     }
+    /// A host without delegated panes reads every pane's files in the workspace.
+    func mobileRunFolder(workspaceId: String, sessionId: String) async -> URL? { nil }
     /// A host without Antigravity cards answers like before, and has nothing to always allow.
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool, always: Bool) async throws {
         guard !always else { throw MightyError(L("remote.error.notAntigravityPermission")) }
@@ -1357,8 +1363,11 @@ extension MobileRemoteService {
         do {
             let path = try MobileWorkspaceFiles.validatedPath(raw, allowRoot: listing)
             guard let workspace = await delegate.mobileState().workspaces.first(where: { $0.id == workspaceId }) else { throw MobileFileError.workspaceNotFound }
-            // The root the Mac's own files pane uses (`AppStore.filePaneModel`).
-            let root = URL(fileURLWithPath: workspace.path, isDirectory: true)
+            // The root the Mac's own files pane uses (`AppStore.filePaneModel`); a
+            // preview asked for a delegated child's changes reads its worktree folder.
+            var runFolder: URL?
+            if !listing, let session { runFolder = await delegate.mobileRunFolder(workspaceId: workspaceId, sessionId: session) }
+            let root = runFolder ?? URL(fileURLWithPath: workspace.path, isDirectory: true)
             if listing {
                 let body = try await Task.detached(priority: .userInitiated) {
                     MobileWorkspaceFiles.encoded(try MobileWorkspaceFiles.listing(workspaceId: workspaceId, path: path, root: root))

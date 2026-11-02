@@ -12,6 +12,10 @@ struct MightyGraphView: View {
     var onSaveBlockSize: (String, MightyGraphBlockSize?) -> Void = { _, _ in }
     /// Local project folder for resolving file references; nil disables links.
     var workspaceRoot: URL? = nil
+    /// Where a clicked file reference resolves and the bubble reads it and its
+    /// 변경사항: the folder this pane's runs work in (a delegated child's
+    /// worktree, where its originals were captured); nil: `workspaceRoot`.
+    var referenceRoot: URL? = nil
     /// What files were before this pane's Claude runs changed them, for the
     /// reference bubble's 변경사항 (AppStore.fileOriginals).
     var fileOriginals: FileOriginalStore? = nil
@@ -486,22 +490,23 @@ struct MightyGraphView: View {
     private func referenceOverlay(_ reference: MightyGraphReference) -> some View {
         MightyGraphReferenceBubble(sessionID: sessionID, reference: reference, onLeft: referenceOnLeft,
                                    onFlip: { referenceOnLeft.toggle() }, onClose: { self.reference = nil },
-                                   workspaceRoot: workspaceRoot, fileOriginals: fileOriginals)
+                                   workspaceRoot: referenceRoot ?? workspaceRoot, fileOriginals: fileOriginals)
     }
 
     /// A clicked path resolves inside the workspace only. Unresolved paths
     /// still open the bubble so the user sees why nothing was shown. `runID`
-    /// is the graph run the click came from, whose originals 변경사항 compare with.
+    /// is the run the click came from as the originals store keys it (the graph
+    /// run's `sourceRunID`, the process's run, else its id), whose originals 변경사항 compare with.
     private func openReference(_ path: String, line: Int?, runID: String? = nil) {
         onFocus()
-        reference = MightyGraphReference(path: path, line: line, url: ReferenceLinkSupport.resolve(path, root: workspaceRoot), runID: runID)
+        reference = MightyGraphReference(path: path, line: line, url: ReferenceLinkSupport.resolve(path, root: referenceRoot ?? workspaceRoot), runID: runID)
     }
 
     /// The run a block belongs to, for the files its words name.
     private func runID(of content: MightyGraphLayout.Content) -> String? {
         switch content {
         case .request(let index), .work(let index), .result(let index), .plan(let index), .agent(let index, _), .resultFiles(let index):
-            return runs.indices.contains(index) ? runs[index].id : nil
+            return runs.indices.contains(index) ? runs[index].sourceRunID ?? runs[index].id : nil
         default:
             return nil
         }
@@ -657,7 +662,7 @@ struct MightyGraphView: View {
                            onContentHeight: node.id == MightyGraphLayout.latestResultID(runs: runs) ? { resultMeasured(node.id, $0) } : nil)
         case .resultFiles(let index):
             MightyGraphResultFilesView(nodeID: node.id, files: resultFiles.files(for: runs[index].id),
-                                       onOpen: { openReference($0.path, line: $0.line, runID: runs[index].id) }, onClose: { resultFiles.close() })
+                                       onOpen: { openReference($0.path, line: $0.line, runID: runs[index].sourceRunID ?? runs[index].id) }, onClose: { resultFiles.close() })
         case .images(let index, let step):
             MightyGraphImagesCard(nodeID: node.id, items: MightyGraphImages.items(runs[index], step: step, root: workspaceRoot),
                                   expanded: expanded.contains(node.id),
@@ -1180,7 +1185,7 @@ struct MightyGraphView: View {
                 Text(L("phone.blocks.nothing")).font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Inset.graphBlockBodyH)
             } else {
-                blockTranscript(id: "timeline-\(sessionID)-\(row.nodeID)", status: status, entries: entries, records: records, childBlocks: childBlocks, inTimeline: true, runID: run.id)
+                blockTranscript(id: "timeline-\(sessionID)-\(row.nodeID)", status: status, entries: entries, records: records, childBlocks: childBlocks, inTimeline: true, runID: runID)
                     .frame(height: 260)
             }
         }
@@ -1199,7 +1204,7 @@ struct MightyGraphView: View {
             if !files.isEmpty {
                 Menu {
                     ForEach(files) { file in
-                        Button(file.path + (file.line.map { ":\($0)" } ?? "")) { openReference(file.path, line: file.line, runID: run.id) }
+                        Button(file.path + (file.line.map { ":\($0)" } ?? "")) { openReference(file.path, line: file.line, runID: run.sourceRunID ?? run.id) }
                     }
                 } label: {
                     HStack(spacing: 3) {

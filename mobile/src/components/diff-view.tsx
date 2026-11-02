@@ -30,6 +30,8 @@ export function DiffView({ changes }: { changes: FileChanges }) {
   const renderRow = ({ item }: { item: DiffRow }) => {
     const tone = item.kind === 'added' ? styles.added : item.kind === 'removed' ? styles.removed : item.kind === 'hunk' ? styles.hunk : undefined;
     const ink = item.kind === 'added' ? styles.addedInk : item.kind === 'removed' ? styles.removedInk : styles.faint;
+    // The +/− mark is not read; a screen reader hears the line's kind before its text instead.
+    const kind = item.kind === 'added' ? t('files.changes.added') : item.kind === 'removed' ? t('files.changes.removed') : null;
     return (
       <View style={[styles.row, tone]}>
         <Text style={[styles.number, ink, { width: gutterWidth }]} accessible={false}>
@@ -45,6 +47,7 @@ export function DiffView({ changes }: { changes: FileChanges }) {
           selectable
           numberOfLines={1}
           ellipsizeMode="clip"
+          accessibilityLabel={kind ? `${kind} ${item.text}` : undefined}
           style={[styles.code, item.kind === 'hunk' && styles.faint, item.kind === 'noNewline' && styles.noNewline]}
         >
           {item.kind === 'noNewline' ? `\\ ${t('files.changes.noNewline')}` : item.text}
