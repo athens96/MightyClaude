@@ -88,6 +88,7 @@ export function formatModified(iso: string | undefined, locale?: string): string
 export type FileView =
   | { kind: 'source'; text: string; language: string }
   | { kind: 'markdown'; text: string; renderable: boolean }
+  | { kind: 'html'; text: string }
   | { kind: 'image'; uri: string }
   | { kind: 'unsupported' };
 
@@ -98,6 +99,7 @@ export type FileView =
 export function viewFor(preview: FilePreview): FileView {
   switch (preview.type) {
     case 'source':
+      if (typeof preview.text === 'string' && preview.language === 'html') return { kind: 'html', text: preview.text };
       return typeof preview.text === 'string'
         ? { kind: 'source', text: preview.text, language: preview.language ?? 'plain' }
         : { kind: 'unsupported' };

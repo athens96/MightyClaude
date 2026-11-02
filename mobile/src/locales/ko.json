@@ -583,6 +583,8 @@
   "phone.files.loading": "불러오는 중…",
   "phone.files.markdown.rendered": "미리보기",
   "phone.files.markdown.source": "원본",
+  "phone.files.html.rendered": "미리보기",
+  "phone.files.html.source": "소스",
   "phone.files.markdown.tooLarge": "너무 커서 렌더링하지 않고 원본을 보여 줍니다.",
   "phone.files.modified": "수정일",
   "phone.files.noiseHint": "생성 파일이나 의존성 폴더",
