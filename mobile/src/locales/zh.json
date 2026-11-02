@@ -583,6 +583,8 @@
   "phone.files.loading": "正在加载…",
   "phone.files.markdown.rendered": "预览",
   "phone.files.markdown.source": "源码",
+  "phone.files.html.rendered": "预览",
+  "phone.files.html.source": "源码",
   "phone.files.markdown.tooLarge": "文件过大，无法渲染，因此显示源码。",
   "phone.files.modified": "修改时间",
   "phone.files.noiseHint": "生成文件或依赖文件夹",

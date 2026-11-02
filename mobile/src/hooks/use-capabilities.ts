@@ -9,7 +9,9 @@ import { useLiveStore } from '@/store/live';
 const NONE: Capability[] = [];
 
 /**
- * Asks `/m1/info` once per host and caches the answer. Until it arrives — and on a host
+ * Asks `/m1/info` once per host and caches the answer, and asks again whenever the tunnel comes back after
+ * being down: a host updated while the app kept running (a PC app restart drops the tunnel) then shows what it
+ * now offers instead of the list it had when the app first met it. Until it arrives — and on a host
  * that never answers, or one older than the extension — the list stays empty and every
  * new feature stays hidden, so the app looks exactly like it did before.
  */
@@ -34,6 +36,37 @@ export function useCapabilities(
       .catch(() => undefined);
     return () => controller.abort();
   }, [cached, client, hostId, setCapabilities]);
+
+  useEffect(() => {
+    if (!client || !hostId) return undefined;
+    let controller: AbortController | undefined;
+    let down = false;
+    const unsubscribe = client.onStateChange((state) => {
+      if (state !== 'ready') {
+        down = true;
+        return;
+      }
+      if (!down) return;
+      down = false;
+      controller?.abort();
+      const asking = new AbortController();
+      controller = asking;
+      void client
+        .info(asking.signal)
+        .then((info) => {
+          if (asking.signal.aborted) return;
+          const next = parseCapabilities(info);
+          const known = useLiveStore.getState().capabilities[hostId];
+          if (known && known.length === next.length && known.every((name, index) => name === next[index])) return;
+          setCapabilities(hostId, next, { platform: info.platform, appVersion: info.appVersion });
+        })
+        .catch(() => undefined);
+    });
+    return () => {
+      unsubscribe();
+      controller?.abort();
+    };
+  }, [client, hostId, setCapabilities]);
 
   return cached ?? NONE;
 }

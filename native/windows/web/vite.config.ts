@@ -11,7 +11,7 @@ const contentSecurityPolicy: Plugin = {
   apply: 'build',
   transformIndexHtml: () => [{
     tag: 'meta',
-    attrs: { 'http-equiv': 'Content-Security-Policy', content: "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'" },
+    attrs: { 'http-equiv': 'Content-Security-Policy', content: "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://*.html.mighty.invalid; object-src 'none'; base-uri 'none'; form-action 'none'" },
     injectTo: 'head-prepend',
   }],
 };

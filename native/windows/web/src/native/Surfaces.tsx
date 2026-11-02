@@ -1,7 +1,7 @@
 // The host's WinUI views drawn over the page (MainWindow.WebShell.Settings.cs): Settings with its categories, the setup screen,
 // the dialogs and sheets of the window's flows (plugins, style approval, terminal history, model id, confirmations) and the
 // companion popover. The newest is on top and takes Esc; every input goes to the host through `nativeAction`.
-import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { useServices, useStoreState } from '../app/context';
 import { BetaBadge } from '../shell/parts';
 import { ActContext, NativeNode, SettingsFormContext, type Act } from './NativeNode';
@@ -26,36 +26,91 @@ function Sections({ sections, framed }: { sections: readonly NativeSection[]; fr
   );
 }
 
+/**
+ * The categories' cards in the One UI list: related categories share one rounded card (setup and models, the
+ * workspace's tools, the connections, the rest); a category none of them names joins the last card.
+ */
+const categoryGroups: readonly (readonly string[])[] = [['general', 'models', 'styles'], ['tools', 'cli'], ['mobile', 'remote'], ['companion', 'about']];
+
+/** Each category's icon tile, in one of the palette's own tones (no colour outside the design tokens). */
+const categoryTone: Record<string, string> = {
+  general: 'var(--stop)', models: 'var(--agent)', styles: 'var(--err)', tools: 'var(--wait)', cli: 'var(--ink3)',
+  mobile: 'var(--done)', remote: 'var(--task)', companion: 'var(--run)', about: 'var(--accent)',
+};
+
+export function groupCategories<T extends { id: string }>(items: readonly T[]): T[][] {
+  const known = new Set(categoryGroups.flat());
+  const groups = categoryGroups.map((ids) => items.filter((item) => ids.includes(item.id)));
+  const rest = items.filter((item) => !known.has(item.id));
+  if (rest.length) groups[groups.length - 1] = [...groups[groups.length - 1]!, ...rest];
+  return groups.filter((group) => group.length > 0);
+}
+
+/** How far a pane has scrolled under its large title: 0 at the top, 1 once the title has gone under the bar. */
+function useCollapse(element: RefObject<HTMLDivElement | null>, reset: unknown): number {
+  const [progress, setProgress] = useState(0);
+  useEffect(() => {
+    const scroller = element.current;
+    if (!scroller) return undefined;
+    const update = () => setProgress(Math.min(1, scroller.scrollTop / 120));
+    update();
+    scroller.addEventListener('scroll', update, { passive: true });
+    return () => scroller.removeEventListener('scroll', update);
+  }, [element, reset]);
+  return progress;
+}
+
+/**
+ * Settings in the One UI layout: two panes, each opening on a large title that gives way to a small one in its bar as the
+ * pane scrolls. The list groups the categories into rounded cards with a tile per category; the page shows each section
+ * as a rounded card under its title in the accent. Every control is the host's (NativeNode), restyled only.
+ */
 function Settings({ open, view, call }: { open: NativeOpen; view: NativeView; call: (method: string, args?: object) => void }) {
   const form = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
   // A new category starts at its top, as the WinUI form's scroll does.
   useEffect(() => { form.current?.scrollTo({ top: 0 }); }, [view.selected]);
+  const formScrolled = useCollapse(form, view.selected);
+  const listScrolled = useCollapse(list, null);
+  const current = view.nav?.find((item) => item.id === view.selected);
+  const close = () => call('nativeClose', { view: open.id });
   return (
     <div className="native-settings" data-testid="native-settings" style={{ width: view.width ?? 800, height: view.height ?? 700 }}>
-      <header className="native-settings-head">
-        <span className="native-settings-gear" aria-hidden="true"><Icon name="settings" size={22} weight={1.6} /></span>
-        <div><h2 className="native-settings-title">{view.title}</h2>{view.subtitle && <div className="native-settings-subtitle">{view.subtitle}</div>}</div>
-        <span className="spacer" />
-        <button type="button" className="native-close" aria-label={view.close} title={view.close} onClick={() => call('nativeClose', { view: open.id })}><Icon name="x" size={10} weight={3.4} /></button>
-      </header>
-      <div className="native-settings-body">
-        <nav className="native-settings-nav" data-testid="settings-nav">
-          {view.nav?.map((item) => (
-            <button key={item.id} type="button" className={'native-nav-row' + (item.id === view.selected ? ' selected' : '')} aria-current={item.id === view.selected ? 'page' : undefined}
-              data-category={item.id} onClick={() => call('nativeNav', { view: open.id, id: item.id })}>
-              {categorySymbol[item.id] ? <span className="native-nav-symbol" aria-hidden="true"><Icon name={categorySymbol[item.id]!} size={15} weight={1.6} /></span>
-                : <span className="native-glyph" aria-hidden="true">{item.glyph}</span>}{item.title}
-            </button>
-          ))}
-        </nav>
+      <div className="native-settings-list">
+        <div className="native-settings-bar"><span className="native-settings-bar-title" style={{ opacity: listScrolled > 0.85 ? 1 : 0 }}>{view.title}</span></div>
+        <div className="native-settings-scroll" ref={list}>
+          <header className="native-settings-hero" style={{ opacity: 1 - listScrolled }}>
+            <h2 className="native-settings-title">{view.title}</h2>
+            {view.subtitle && <div className="native-settings-subtitle">{view.subtitle}</div>}
+          </header>
+          <nav className="native-settings-nav" data-testid="settings-nav">
+            {groupCategories(view.nav ?? []).map((group, index) => (
+              <div key={index} className="native-settings-card">
+                {group.map((item) => (
+                  <button key={item.id} type="button" className={'native-nav-row' + (item.id === view.selected ? ' selected' : '')} aria-current={item.id === view.selected ? 'page' : undefined}
+                    data-category={item.id} onClick={() => call('nativeNav', { view: open.id, id: item.id })}>
+                    <span className="native-nav-tile" aria-hidden="true" style={{ background: categoryTone[item.id] ?? 'var(--accent)' }}>
+                      {categorySymbol[item.id] ? <Icon name={categorySymbol[item.id]!} size={17} weight={2} /> : <span className="native-glyph">{item.glyph}</span>}
+                    </span>
+                    <span className="native-nav-title">{item.title}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+        </div>
+      </div>
+      <div className="native-settings-page">
+        <div className="native-settings-bar">
+          <span className="native-settings-bar-title" style={{ opacity: formScrolled > 0.85 ? 1 : 0 }}>{current?.title}</span>
+          <span className="spacer" />
+          <button type="button" className="native-settings-close" data-testid="settings-close" aria-label={view.close} title={view.close} onClick={close}><Icon name="x" size={18} weight={1.8} /></button>
+        </div>
         <div className="native-settings-form" ref={form} data-testid="settings-form" data-category={view.selected}>
+          <header className="native-settings-hero" style={{ opacity: 1 - formScrolled }}><h2 className="native-settings-title">{current?.title}</h2></header>
           <SettingsFormContext.Provider value={true}><Sections sections={view.sections} framed /></SettingsFormContext.Provider>
         </div>
       </div>
-      <footer className="native-settings-foot">
-        <span className="spacer" />
-        <button type="button" className="plain-button" data-testid="settings-close" onClick={() => call('nativeClose', { view: open.id })}>{view.close}</button>
-      </footer>
     </div>
   );
 }

@@ -77,6 +77,7 @@
 .syntax-string { color: var(--syntax-string); }
 .syntax-number { color: var(--syntax-number); }
 .syntax-comment { color: var(--ink2); }
+.files-html { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
 .files-markdown { flex: 1; min-height: 0; overflow: auto; padding: var(--space-lg); }
 .files-markdown > * { max-width: 860px; }
 .files-image { flex: 1; min-height: 0; overflow: auto; padding: 12px; background: var(--page); }

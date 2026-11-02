@@ -6,6 +6,7 @@ import { isAbortError } from '@/api/client';
 import type { FilePreview } from '@/api/types';
 import { AssistantMarkdown } from '@/components/assistant-markdown';
 import { DiffView } from '@/components/diff-view';
+import { HtmlView } from '@/components/html-view';
 import { SourceView, previewNotices } from '@/components/source-view';
 import { Button, Card, Chip, ErrorBanner } from '@/components/ui';
 import { ZoomableImage } from '@/components/zoomable-image';
@@ -27,9 +28,9 @@ import { spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme
 
 /**
  * One file of the paired Mac's workspace, read-only, previewed the way the Mac files
- * pane shows it: numbered highlighted source, rendered markdown with its source a tap
+ * pane shows it: numbered highlighted source, rendered markdown or an HTML page with its source a tap
  * away, a zoomable image, or the file's details when there is nothing to preview. A host
- * listing "fileChanges" also says what the request changed in a source or markdown file
+ * listing "fileChanges" also says what the request changed in a source, markdown or HTML file
  * (against the run of the result's files row it was opened from, `session` and `run`):
  * 변경사항 | 전체 보기 then opens on 변경사항.
  */
@@ -83,7 +84,7 @@ export default function FileScreen() {
   );
 
   const view = useMemo(() => (preview ? viewFor(preview) : undefined), [preview]);
-  const changes = (view?.kind === 'source' || view?.kind === 'markdown') && showsChanges(preview?.changes) ? preview?.changes : undefined;
+  const changes = (view?.kind === 'source' || view?.kind === 'markdown' || view?.kind === 'html') && showsChanges(preview?.changes) ? preview?.changes : undefined;
   const showsDiff = changes !== undefined && !showFull;
 
   const details = preview
@@ -108,6 +109,8 @@ export default function FileScreen() {
     body = <DiffView changes={changes} />;
   } else if (view.kind === 'source') {
     body = <SourceView text={view.text} language={view.language} />;
+  } else if (view.kind === 'html') {
+    body = showSource ? <SourceView text={view.text} language="html" /> : <HtmlView html={view.text} />;
   } else if (view.kind === 'markdown') {
     body =
       view.renderable && !showSource ? (
@@ -186,6 +189,22 @@ export default function FileScreen() {
                   selected={!showsDiff}
                   color={palette.accent}
                   onPress={() => setShowFull(true)}
+                />
+              </View>
+            ) : null}
+            {view.kind === 'html' && !showsDiff ? (
+              <View style={changes ? styles.toggleNext : styles.toggle}>
+                <Chip
+                  label={t('phone.files.html.rendered')}
+                  selected={!showSource}
+                  color={palette.accent}
+                  onPress={() => setShowSource(false)}
+                />
+                <Chip
+                  label={t('phone.files.html.source')}
+                  selected={showSource}
+                  color={palette.accent}
+                  onPress={() => setShowSource(true)}
                 />
               </View>
             ) : null}

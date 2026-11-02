@@ -1,26 +1,90 @@
 import SwiftUI
 import MightyCore
 
-/// The Settings sheet's page: its sections stacked on the spacing scale inside one scroll view.
-/// A grouped `Form` pads every section by about 20pt and every row by about 10pt, and on macOS 14
-/// neither `contentMargins` nor `listRowInsets` reaches into it, so Settings lays its sections
-/// out itself (`SettingsGroup`), with switches and labelled values drawn as dense rows.
-struct SettingsPage<Content: View>: View {
+/// The Settings sheet's page in the One UI layout: a large title over its sections, given way to a small title in the
+/// pane's bar as the page scrolls (`OneUIPane`). A grouped `Form` pads every section by about 20pt and every row by about
+/// 10pt, and on macOS 14 neither `contentMargins` nor `listRowInsets` reaches into it, so Settings lays its sections out
+/// itself (`SettingsGroup`), with switches and labelled values drawn as dense rows.
+struct SettingsPage<Content: View, Trailing: View>: View {
+    let title: String
+    @ViewBuilder let trailing: Trailing
     @ViewBuilder let content: Content
 
     var body: some View {
-        ScrollView {
+        OneUIPane(title: title, subtitle: nil, trailing: { trailing }) {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) { content }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(DesignMetrics.Inset.sheet)
         }
         .toggleStyle(SettingsSwitchStyle())
         .labeledContentStyle(SettingsLabeledStyle())
     }
 }
 
-/// One settings section: its title over a card of rows. Stands in for `Section` on a `SettingsPage`
-/// and keeps its two initialisers (a title, or a header view).
+/// How far a One UI pane's content has scrolled under its large title.
+private struct OneUIScrollKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// One pane of the One UI Settings: on the page colour, a 56pt bar on top (its small title shown once the large one has
+/// scrolled under it, and `trailing` at its end), then a scroll view that opens on the large title.
+struct OneUIPane<Content: View, Trailing: View>: View {
+    let title: String
+    let subtitle: String?
+    @ViewBuilder let trailing: Trailing
+    @ViewBuilder let content: Content
+    /// 0 at rest, 1 once the large title has gone under the bar; written only when it changes.
+    @ViewState private var progress: CGFloat = 0
+
+    static var barHeight: CGFloat { 56 }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+                    Text(title).font(.ui(size: 28, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.8)
+                        .accessibilityAddTraits(.isHeader)
+                    if let subtitle { Text(subtitle).font(.ui(size: 12)).foregroundStyle(.secondary) }
+                }
+                .frame(maxWidth: .infinity, minHeight: 120, alignment: .bottomLeading)
+                .padding(.horizontal, 10).padding(.bottom, 8)
+                .opacity(1 - progress)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: OneUIScrollKey.self, value: Self.barHeight - proxy.frame(in: .named("oneUIPane")).minY)
+                })
+                content
+            }
+            .padding(.horizontal, 14).padding(.top, Self.barHeight).padding(.bottom, 24)
+        }
+        .coordinateSpace(name: "oneUIPane")
+        .onPreferenceChange(OneUIScrollKey.self) { offset in
+            let next = min(1, max(0, offset / 120))
+            if next != progress { progress = next }
+        }
+        .overlay(alignment: .top) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Text(title).font(.ui(size: 15, weight: .semibold)).lineLimit(1)
+                    .opacity(progress > 0.85 ? 1 : 0).animation(.easeOut(duration: 0.12), value: progress > 0.85)
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
+                trailing
+            }
+            .padding(.leading, 24).padding(.trailing, 10)
+            .frame(height: Self.barHeight)
+            .background(Palette.canvas)
+        }
+        .background(Palette.canvas)
+    }
+}
+
+extension OneUIPane where Trailing == EmptyView {
+    init(title: String, subtitle: String?, @ViewBuilder content: () -> Content) {
+        self.init(title: title, subtitle: subtitle, trailing: { EmptyView() }, content: content)
+    }
+}
+
+/// One settings section in the One UI layout: its title in the accent over a rounded card of rows. Stands in for
+/// `Section` on a `SettingsPage` and keeps its two initialisers (a title, or a header view).
 struct SettingsGroup<Content: View, Header: View>: View {
     private let content: Content
     private let header: Header
@@ -33,14 +97,13 @@ struct SettingsGroup<Content: View, Header: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             header
-                .font(.ui(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                .padding(.leading, DesignMetrics.Spacing.xs)
+                .font(.ui(size: 12, weight: .semibold)).foregroundStyle(Palette.accent)
+                .padding(.leading, 18).padding(.top, DesignMetrics.Spacing.sm)
                 .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) { content }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.subtle))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
+                .padding(.horizontal, 18).padding(.vertical, DesignMetrics.Spacing.md)
+                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Palette.panel))
         }
     }
 }
@@ -70,13 +133,35 @@ private struct SettingsSwitchRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { if isEnabled { configuration.isOn.toggle() } }
-            Toggle(isOn: configuration.$isOn) { configuration.label }
-                .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+            OneUISwitch(isOn: configuration.$isOn)
         }
         .frame(minHeight: DesignMetrics.Layout.hitTarget)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isToggle)
         .accessibilityAction { if isEnabled { configuration.isOn.toggle() } }
+    }
+}
+
+/// One UI's switch: a 42×24 track, ringed with a small knob when off, filled in the accent with a larger knob when on.
+struct OneUISwitch: View {
+    @Binding var isOn: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        ZStack(alignment: isOn ? .trailing : .leading) {
+            Capsule().fill(isOn ? Palette.accent : Color.clear)
+            Capsule().strokeBorder(Palette.token(\.ink3), lineWidth: isOn ? 0 : 2)
+            Circle().fill(isOn ? Palette.onAccent : Palette.token(\.ink3))
+                .frame(width: isOn ? 18 : 14, height: isOn ? 18 : 14)
+                .padding(.horizontal, isOn ? 3 : 5)
+        }
+        .frame(width: 42, height: 24)
+        .opacity(isEnabled ? 1 : 0.5)
+        .contentShape(Capsule())
+        .onTapGesture { if isEnabled { isOn.toggle() } }
+        .animation(.easeOut(duration: 0.15), value: isOn)
+        // Read out as the platform switch it stands in for, so the combined row keeps its on/off value.
+        .accessibilityRepresentation { Toggle("", isOn: $isOn).toggleStyle(.switch) }
     }
 }
 

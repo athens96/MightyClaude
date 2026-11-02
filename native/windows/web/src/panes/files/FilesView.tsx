@@ -4,6 +4,7 @@ import { useServices } from '../../app/context';
 import { Markdown } from '../../conversation/MarkdownView';
 import { MiddlePath } from '../../shell/parts';
 import { Icon, type IconName } from '../../icons/Icon';
+import { HtmlFrame, HtmlToggle, isHtmlPreview } from './HtmlView';
 import { lineNumbers, sourceSpans, treeKey } from './tree';
 import type { FilePreview, FileRow, FilesModel } from './types';
 
@@ -167,7 +168,8 @@ export function FilesView({ session }: { session: RunSession }) {
   if (model && !model.available) return <div className="files-pane files-unavailable" data-testid="files-pane" />;
   const shows = preview && !preview.failure;
   const markdownRendered = preview?.kind === 'markdown' && preview.markdown && !showSource;
-  const banners = markdownRendered ? preview.renderedBanners ?? [] : preview?.banners ?? [];
+  const htmlPage = isHtmlPreview(preview) && !showSource;
+  const banners = markdownRendered ? preview.renderedBanners ?? [] : htmlPage ? [] : preview?.banners ?? [];
   const image = preview?.kind === 'image' ? preview.image : undefined;
   const step = (factor: number) => setZoom((current) => Math.min(8, Math.max(0.05, (current ?? 1) * factor)));
   return (
@@ -208,6 +210,7 @@ export function FilesView({ session }: { session: RunSession }) {
                   <button type="button" className={showSource ? 'chosen' : ''} aria-pressed={showSource} onClick={() => setShowSource(true)}>{t('files.markdown.source')}</button>
                 </div>
               )}
+              {isHtmlPreview(preview) && <HtmlToggle source={showSource} onChoose={setShowSource} />}
               <button type="button" className="files-tool" aria-label={t('graph.resultFiles.openFile', { path: preview.name })} title={t('graph.resultFiles.openFile', { path: preview.name })} onClick={open}>
                 <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M8 2h4v4M12 2 6.5 7.5M10.5 8.5V12h-8.5V3.5H5.5" /></svg>
               </button>
@@ -222,7 +225,7 @@ export function FilesView({ session }: { session: RunSession }) {
           {loading && !preview && <div className="files-progress" />}
           {!preview && !loading && <div className="files-placeholder">{t('files.preview.placeholder')}</div>}
           {preview?.failure && <div className="files-placeholder" data-testid="files-failure">{preview.failure}</div>}
-          {shows && preview.kind === 'source' && <SourceView preview={preview} />}
+          {shows && preview.kind === 'source' && (htmlPage ? <HtmlFrame paneId={paneId} path={preview.path} name={preview.name} reference={false} /> : <SourceView preview={preview} />)}
           {shows && preview.kind === 'markdown' && (markdownRendered ? <div className="files-markdown"><Markdown text={preview.text ?? ''} /></div> : <SourceView preview={preview} />)}
           {shows && preview.kind === 'image' && (image ? <ImageView preview={preview} zoom={zoom} /> : <Unsupported preview={preview} reveal={reveal} />)}
           {shows && preview.kind === 'unsupported' && <Unsupported preview={preview} reveal={reveal} />}

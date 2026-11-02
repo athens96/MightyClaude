@@ -3,31 +3,54 @@
 .native-backdrop.dialog { z-index: 45; }
 .native-backdrop.popover { z-index: 35; background: transparent; place-items: end; padding: 0 var(--space-md) 34px 0; }
 .native-frame { display: contents; }
-.native-settings { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); border-radius: var(--radius-pane); overflow: hidden; background: var(--card); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); }
-.native-settings-head { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-lg); border-bottom: var(--stroke-line) solid var(--line); }
-/* M/SettingsViews.swift: the gear in the accent, the title in the heading font at 17 over the platform line, a 17pt grey close disc. */
-.native-settings-gear { display: inline-grid; place-items: center; width: 31px; color: var(--accent); }
-.native-settings-title { margin: 0; font-family: var(--font-heading); font-size: 17px; font-weight: 700; }
-.native-settings-subtitle { font-size: 11px; color: var(--ink2); }
-.native-close { display: inline-grid; place-items: center; width: 17px; height: 17px; border: 0; border-radius: 50%; padding: 0; background: var(--ink3); color: var(--card); cursor: pointer; }
-.native-settings-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: 0; }
-.native-settings-nav { display: flex; flex-direction: column; padding: var(--space-md); overflow: auto; background: var(--sidebar); border-right: var(--stroke-line) solid var(--line); }
-.native-nav-row { display: flex; align-items: center; gap: var(--space-xs); height: 30px; padding: 0 var(--space-sm); border: 0; border-radius: var(--radius-file-row); background: none; color: var(--ink); font: inherit; font-size: var(--type-title); text-align: left; cursor: pointer; }
-.native-nav-row .native-glyph { width: 18px; color: var(--accent); text-align: center; }
-.native-nav-symbol { display: inline-grid; place-items: center; width: 20px; margin-right: var(--space-xs); color: var(--ink); }
-.native-nav-row.selected .native-nav-symbol { color: var(--on-accent); }
+/* Settings in the One UI layout (Surfaces.tsx Settings): two panes on the page colour, each opening on a large title that a
+   small one in its bar replaces as the pane scrolls; the categories and every section in rounded cards; the colours are the
+   design tokens' own. */
+.native-settings { display: grid; grid-template-columns: 288px minmax(0, 1fr); max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); border-radius: 26px; overflow: hidden; background: var(--page); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); }
+.native-settings-list, .native-settings-page { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.native-settings-list { border-right: var(--stroke-line) solid var(--line); }
+.native-settings-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 1; display: flex; align-items: center; gap: var(--space-sm); height: 56px; padding: 0 10px 0 24px; background: var(--page); }
+.native-settings-bar-title { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity var(--motion-quick) var(--motion-easing); }
+.native-settings-close { display: inline-grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 50%; padding: 0; background: none; color: var(--ink); cursor: pointer; }
+.native-settings-close:hover { background: var(--subtle); }
+.native-settings-scroll, .native-settings-form { flex: 1; min-height: 0; overflow: auto; padding: 56px 14px 24px; scrollbar-width: thin; }
+.native-settings-hero { display: flex; flex-direction: column; justify-content: flex-end; height: 150px; padding: 0 10px 22px; }
+.native-settings-title { margin: 0; font-family: var(--font-heading); font-size: 32px; font-weight: 600; letter-spacing: -.2px; }
+.native-settings-list .native-settings-title { font-size: 26px; }
+.native-settings-subtitle { margin-top: 6px; font-size: 13px; color: var(--ink2); }
+.native-settings-nav { display: flex; flex-direction: column; gap: 14px; }
+.native-settings-card { display: flex; flex-direction: column; padding: 6px 0; border-radius: 22px; background: var(--card); overflow: hidden; }
+.native-nav-row { position: relative; display: flex; align-items: center; gap: 14px; min-height: 54px; padding: 8px 18px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+.native-nav-row + .native-nav-row::before { content: ""; position: absolute; top: 0; left: 66px; right: 18px; height: var(--stroke-line); background: var(--line); }
 .native-nav-row:hover { background: var(--subtle); }
-.native-nav-row.selected { background: var(--accent); color: var(--on-accent); }
-.native-nav-row.selected .native-glyph { color: var(--on-accent); }
-.native-settings-form { display: flex; flex-direction: column; gap: var(--space-xl); padding: var(--space-lg); overflow: auto; }
-.native-settings-foot { display: flex; padding: var(--space-lg); border-top: var(--stroke-line) solid var(--line); }
+.native-nav-row.selected { background: var(--accent-soft); color: var(--accent); }
+.native-nav-tile { display: inline-grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 12px; color: #fff; }
+.native-nav-tile .native-glyph { color: #fff; font-size: 16px; }
+.native-nav-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.native-settings-form { display: flex; flex-direction: column; gap: 14px; }
+.native-settings-form > .native-settings-hero { margin-bottom: -14px; }
 .native-section { display: flex; flex-direction: column; gap: var(--space-sm); }
 .native-section-title { display: flex; align-items: center; gap: var(--space-sm); margin: 0 var(--space-md); font-size: var(--type-title); font-weight: 600; }
-.native-settings-form .native-section-title { color: var(--ink2); font-size: 13px; font-weight: 600; margin: 0 var(--space-xs); }
+.native-settings-form .native-section-title { color: var(--accent); font-size: 13px; font-weight: 600; margin: 12px 18px 0; }
 .native-fill > .native-select, .native-fill > .native-segmented, .native-fill > .native-grid, .native-fill > .native-box, .native-fill > .native-stack { width: 100%; }
 .native-settings-form select.native-select { width: 100%; }
 .native-fill .native-n-select, .native-fill select.native-select { width: 100% !important; max-width: none !important; justify-self: stretch !important; }
 .native-section-box { border: var(--stroke-line) solid var(--line); border-radius: 6px; background: var(--card-raised); }
+.native-settings-form .native-section-box { padding: 10px 18px; border: 0; border-radius: 22px; background: var(--card); }
+/* One UI's controls inside Settings: the larger switch with its ring when off, pill pickers, buttons and fields. */
+.native-settings .native-switch { width: 42px; height: 24px; border-radius: 12px; background: transparent; box-shadow: inset 0 0 0 2px var(--ink3); transition: background var(--motion-quick), box-shadow var(--motion-quick); }
+.native-settings .native-switch .native-knob { top: 5px; left: 5px; width: 14px; height: 14px; background: var(--ink3); transition: left var(--motion-quick), top var(--motion-quick), width var(--motion-quick), height var(--motion-quick); }
+.native-settings .native-switch.on { background: var(--accent); box-shadow: none; }
+.native-settings .native-switch.on .native-knob { top: 3px; left: 21px; width: 18px; height: 18px; background: var(--on-accent); }
+.native-settings .native-n-segmented { height: auto !important; }
+.native-settings .native-segmented { padding: 2px; border-radius: 999px; background: var(--card-raised); }
+.native-settings .native-segmented button { height: 26px; border-radius: 999px; }
+.native-settings .native-select { height: 30px; padding: 0 10px; border-radius: 10px; background: var(--card-raised); }
+.native-settings .native-button { min-height: 28px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--card-raised); color: var(--accent); font-weight: 600; }
+.native-settings .native-button.accent { background: var(--accent); color: var(--on-accent); }
+.native-settings .native-button.destructive { color: var(--err-text); }
+.native-settings .native-field { min-height: 28px; padding: 4px 10px; border-radius: 10px; background: var(--card-raised); }
+.native-settings .native-info { padding: 10px 14px; border-radius: 14px; }
 .native-sheet { display: flex; flex-direction: column; gap: var(--space-md); max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); padding: var(--inset-sheet); border-radius: var(--radius-pane); background: var(--card); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); box-sizing: border-box; }
 .native-sheet.popover { padding: var(--inset-popover); max-height: calc(100vh - 80px); }
 .native-sheet-body { display: flex; flex-direction: column; gap: var(--space-md); min-height: 0; overflow: auto; }

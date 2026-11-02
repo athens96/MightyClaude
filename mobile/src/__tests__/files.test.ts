@@ -200,6 +200,7 @@ describe('choosing the viewer', () => {
   it('shows source and markdown only with their text', () => {
     expect(viewFor(preview({ type: 'source', text: 'let x', language: 'swift' }))).toEqual({ kind: 'source', text: 'let x', language: 'swift' });
     expect(viewFor(preview({ type: 'source', text: '' }))).toEqual({ kind: 'source', text: '', language: 'plain' });
+    expect(viewFor(preview({ type: 'source', text: '<p>x</p>', language: 'html' }))).toEqual({ kind: 'html', text: '<p>x</p>' });
     expect(viewFor(preview({ type: 'source' }))).toEqual({ kind: 'unsupported' });
     expect(viewFor(preview({ type: 'markdown', text: '# Hi' }))).toEqual({ kind: 'markdown', text: '# Hi', renderable: true });
     expect(viewFor(preview({ type: 'markdown' }))).toEqual({ kind: 'unsupported' });

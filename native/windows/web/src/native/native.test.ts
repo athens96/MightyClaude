@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { emptyState, reduce } from '../store/store';
 import { textStyleSheet } from '../theme/text';
 import { NativeNode } from './NativeNode';
+import { groupCategories } from './Surfaces';
 import { applyNative, boxStyle, edges, nodeText, type NativeNode as Node, type NativeView } from './types';
 
 const view = (title: string): NativeView => ({ kind: 'dialog', title, sections: [] });
@@ -65,5 +66,14 @@ describe('text setting', () => {
     expect(sheet).toMatch(/--type-body:\d+(\.5)?px;/);
     expect(sheet).toContain('--font-body:"Aptos", var(--font-design-body);');
     expect(sheet).toContain('--font-mono:"Fira Code", var(--font-design-mono);');
+  });
+
+  it('groups the settings categories into One UI cards, an unknown one in the last', () => {
+    const ids = ['general', 'models', 'styles', 'tools', 'cli', 'mobile', 'remote', 'companion', 'about', 'labs'].map((id) => ({ id }));
+    expect(groupCategories(ids).map((group) => group.map((item) => item.id))).toEqual([
+      ['general', 'models', 'styles'], ['tools', 'cli'], ['mobile', 'remote'], ['companion', 'about', 'labs'],
+    ]);
+    // A host without a category leaves no empty card.
+    expect(groupCategories([{ id: 'about' }]).map((group) => group.map((item) => item.id))).toEqual([['about']]);
   });
 });

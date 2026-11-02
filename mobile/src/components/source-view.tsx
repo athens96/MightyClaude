@@ -128,6 +128,10 @@ export function previewNotices(view: FileView | undefined, truncated: boolean, s
     if (!view.renderable || showSource) notices.push(...sourceNotices(view.text, truncated));
     else if (truncated) notices.push(t('phone.files.source.truncated'));
   }
+  if (view?.kind === 'html') {
+    if (showSource) notices.push(...sourceNotices(view.text, truncated));
+    else if (truncated) notices.push(t('phone.files.source.truncated'));
+  }
   if (view?.kind === 'image') notices.push(t('phone.files.image.hint'));
   return notices;
 }
