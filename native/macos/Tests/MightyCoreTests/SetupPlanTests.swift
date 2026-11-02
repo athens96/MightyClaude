@@ -138,7 +138,7 @@ struct SetupPlanTests {
 
     /// Control-C during the wait for a system window ends that wait only: the
     /// script goes on to the next step and still leaves its end marker.
-    @Test func controlCDuringTheWaitEndsOnlyTheWait() throws {
+    @Test func controlCDuringTheWaitEndsOnlyTheWait() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("setup-wait-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -153,10 +153,9 @@ struct SetupPlanTests {
         // Its own process group, as a terminal's foreground job is, so Control-C reaches all of it.
         let child = try NativeChildProcess(executable: URL(fileURLWithPath: "/bin/bash"), arguments: [scriptURL.path], environment: ["PATH": "/usr/bin:/bin", "HOME": root.path],
                                            cwd: root, stdout: { _ in }, stderr: { _ in }, exited: { _ in ended.signal() })
-        for _ in 0..<100 where !FileManager.default.fileExists(atPath: waiting.path) { Thread.sleep(forTimeInterval: 0.05) }
-        #expect(FileManager.default.fileExists(atPath: waiting.path))
+        #expect(await holds(within: 15) { FileManager.default.fileExists(atPath: waiting.path) })
         #expect(Darwin.kill(-child.pid, SIGINT) == 0)
-        #expect(ended.wait(timeout: .now() + 15) == .success)
+        #expect(await signalled(ended, within: 15))
         #expect(FileManager.default.fileExists(atPath: next.path))
         #expect(SetupScriptFiles.markerExists(done))
     }

@@ -244,7 +244,11 @@ struct AntigravityTests {
         let signedOut = CLIAccountStatus(provider: "gemini", loggedIn: false, methodId: CLIAccountMethod.geminiGoogle, canSignOut: false)
         let signedIn = CLIAccountStatus(provider: "gemini", loggedIn: true, methodId: CLIAccountMethod.geminiGoogle, canSignOut: false)
         let reads = Counter()
-        let outcome = await CLIAntigravityLogin.wait(status: { reads.next() >= 3 ? signedIn : signedOut }, isOpen: { true }, interval: 0, limit: 20, tick: 0.01)
+        // Its own clock, a step per reading, so the 20 s limit is the wait's and not the runner's: a loaded runner that
+        // resumes each tick late must not turn three readings into a time-out.
+        let clock = SteppingClock(step: 0.01)
+        let outcome = await CLIAntigravityLogin.wait(status: { reads.next() >= 3 ? signedIn : signedOut }, isOpen: { true }, interval: 0, limit: 20, tick: 0.01,
+                                                     now: { clock.next() })
         #expect(outcome == .loggedIn(signedIn))
         let closed = await CLIAntigravityLogin.wait(status: { signedOut }, isOpen: { false }, interval: 60, limit: 20, tick: 0.01)
         #expect(closed == .exited(signedOut))
@@ -310,6 +314,13 @@ struct AntigravityTests {
         #expect(commands.map(\.invocation) == ["model", "permissions", "clear", "usage", "config", "rename", "help"])
         #expect(commands.allSatisfy { $0.origin == .app && ($0.action != nil || $0.argument != nil) })
     }
+}
+
+/// A clock that moves `step` seconds each time it is read.
+private final class SteppingClock: @unchecked Sendable {
+    private let lock = NSLock(); private var time = Date(timeIntervalSince1970: 0); private let step: TimeInterval
+    init(step: TimeInterval) { self.step = step }
+    func next() -> Date { lock.lock(); defer { lock.unlock() }; time = time.addingTimeInterval(step); return time }
 }
 
 private final class Counter: @unchecked Sendable {

@@ -72,7 +72,7 @@ struct ShellActivityTests {
     /// (`bash --noprofile --norc -c "exec -l <command>"`, without `login`) and
     /// plainly: the pid file holds the pid that stays alive as the login zsh, and
     /// the variable never reaches that zsh.
-    @Test(arguments: [true, false]) func thePaneCommandNamesTheShellItBecomes(ghosttyWrapper: Bool) throws {
+    @Test(arguments: [true, false]) func thePaneCommandNamesTheShellItBecomes(ghosttyWrapper: Bool) async throws {
         let parent = FileManager.default.temporaryDirectory.appendingPathComponent("shell-activity-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: parent) }
@@ -93,7 +93,7 @@ struct ShellActivityTests {
         }
         // The zsh reads commands from the pipe and stays alive until it closes.
         input.fileHandleForWriting.write(Data("{ print -r -- $$; print -r -- $0; print -r -- ${options[login]}; env; } > '\(seen.path)'\n".utf8))
-        let report = try #require(Self.poll { (try? String(contentsOf: seen, encoding: .utf8)).flatMap { $0.contains("PATH=") ? $0 : nil } })
+        let report = try #require(await Self.poll { (try? String(contentsOf: seen, encoding: .utf8)).flatMap { $0.contains("PATH=") ? $0 : nil } })
         let lines = report.split(separator: "\n").map(String.init)
         #expect(lines.first == "\(shell.processIdentifier)")
         #expect(lines.dropFirst().first == "-/bin/zsh")
@@ -131,12 +131,8 @@ struct ShellActivityTests {
             for child in children.prefix(Int(max(0, count))) where child > 1 { kill(child, SIGTERM) }
             shell.terminate(); shell.waitUntilExit()
         }
-        var found = false
-        for _ in 0..<40 where !found {
-            found = ShellProcessProbe.hasChildren(pid: shell.processIdentifier)
-            if !found { try await Task.sleep(for: .milliseconds(50)) }
-        }
-        #expect(found)
+        // The shell forks its job at its own pace; on a loaded runner that can take seconds.
+        #expect(await holds(within: 15, every: 0.05) { ShellProcessProbe.hasChildren(pid: shell.processIdentifier) })
         #expect(!ShellProcessProbe.hasChildren(pid: lone.processIdentifier))
         #expect(!ShellProcessProbe.hasChildren(pid: 0))
         #expect(!ShellProcessProbe.hasChildren(pid: 1))
@@ -172,11 +168,13 @@ struct ShellActivityTests {
         return String(cString: buffer)
     }
 
-    private static func poll<T>(_ read: () -> T?) -> T? {
-        for _ in 0..<60 {
+    /// The first value `read` gives within 10 s, polled with Task.sleep so the wait holds no pool thread (TestBlocking.swift).
+    private static func poll<T>(_ read: () -> T?) async -> T? {
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
             if let value = read() { return value }
-            Thread.sleep(forTimeInterval: 0.05)
+            try? await Task.sleep(for: .milliseconds(50))
         }
-        return nil
+        return read()
     }
 }

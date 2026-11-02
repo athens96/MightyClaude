@@ -34,11 +34,9 @@ private final class Blocking: @unchecked Sendable {
         startBlockingThread("blocking-call") { [self] in body(); lock.lock(); done = true; lock.unlock() }
     }
     var returned: Bool { lock.lock(); defer { lock.unlock() }; return done }
-    /// Whether it returned within `seconds`.
-    func returns(within seconds: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(seconds)
-        while !returned, Date() < deadline { usleep(5_000) }
-        return returned
+    /// Whether it returned within `seconds`, polled with Task.sleep so the wait holds no pool thread (TestBlocking.swift).
+    func returns(within seconds: TimeInterval) async -> Bool {
+        await holds(within: seconds, every: 0.005) { returned }
     }
 }
 
@@ -96,38 +94,38 @@ struct RunnerBackpressureTests {
         await Task(priority: .userInitiated) { await runner.stop(id: "pane") }.value
     }
 
-    @Test func theBudgetBlocksAtItsLimitAndResumesOnRelease() {
+    @Test func theBudgetBlocksAtItsLimitAndResumesOnRelease() async {
         let budget = ChildOutputBudget(limit: 100, allowance: ChildOutputAllowance(limit: 1_000))
         budget.acquire(60)
         let reader = Blocking { budget.acquire(50) }
-        #expect(!reader.returns(within: 0.3))
+        #expect(await reader.returns(within: 0.3) == false)
         budget.release(60)
-        #expect(reader.returns(within: 5))
+        #expect(await reader.returns(within: 5))
     }
 
-    @Test func closingTheBudgetFreesABlockedReaderForGood() {
+    @Test func closingTheBudgetFreesABlockedReaderForGood() async {
         let budget = ChildOutputBudget(limit: 100, allowance: ChildOutputAllowance(limit: 1_000))
         budget.acquire(100)
         let reader = Blocking { budget.acquire(1) }
-        #expect(!reader.returns(within: 0.3))
+        #expect(await reader.returns(within: 0.3) == false)
         budget.close()
-        #expect(reader.returns(within: 5))
+        #expect(await reader.returns(within: 5))
         // Closed, it never waits again.
-        #expect(Blocking { budget.acquire(1_000) }.returns(within: 5))
+        #expect(await Blocking { budget.acquire(1_000) }.returns(within: 5))
     }
 
-    @Test func aChunkLargerThanTheBudgetPassesWhenNothingIsPending() {
+    @Test func aChunkLargerThanTheBudgetPassesWhenNothingIsPending() async {
         let budget = ChildOutputBudget(limit: 100, allowance: ChildOutputAllowance(limit: 1_000))
-        #expect(Blocking { budget.acquire(500) }.returns(within: 5))
+        #expect(await Blocking { budget.acquire(500) }.returns(within: 5))
         let next = Blocking { budget.acquire(1) }
-        #expect(!next.returns(within: 0.3))
+        #expect(await next.returns(within: 0.3) == false)
         budget.release(500)
-        #expect(next.returns(within: 5))
+        #expect(await next.returns(within: 5))
     }
 
     /// Unfinished lines of every run share one allowance: past it a run that
     /// holds part of a line waits, unless it holds the most.
-    @Test func theSharedAllowanceBlocksAndResumes() {
+    @Test func theSharedAllowanceBlocksAndResumes() async {
         let allowance = ChildOutputAllowance(limit: 100)
         let large = ChildOutputBudget(limit: 1_000, allowance: allowance)
         let small = ChildOutputBudget(limit: 1_000, allowance: allowance)
@@ -136,16 +134,16 @@ struct RunnerBackpressureTests {
         small.acquire(10); small.release(10, held: 30)
         #expect(allowance.heldBytes == 110)
         let waiting = Blocking { small.acquire(5) }
-        #expect(!waiting.returns(within: 0.3))
+        #expect(await waiting.returns(within: 0.3) == false)
         // The largest holder goes on, so its line can end; a run holding
         // nothing is not held back either.
-        #expect(Blocking { large.acquire(5) }.returns(within: 5))
-        #expect(Blocking { idle.acquire(5) }.returns(within: 5))
+        #expect(await Blocking { large.acquire(5) }.returns(within: 5))
+        #expect(await Blocking { idle.acquire(5) }.returns(within: 5))
         #expect(!waiting.returned)
         // The long line ended: back under the allowance.
         large.release(15, held: 0)
         #expect(allowance.heldBytes == 30)
-        #expect(waiting.returns(within: 5))
+        #expect(await waiting.returns(within: 5))
         // A run that stops lets go of what it held.
         small.close()
         #expect(allowance.heldBytes == 0)
@@ -342,7 +340,7 @@ struct RunnerBackpressureTests {
 
     /// Pushes from several threads, delivered on one serial queue as on the
     /// main actor: nothing is lost and each thread's events stay in order.
-    @Test func theEventBatcherIsSafeAcrossThreads() {
+    @Test func theEventBatcherIsSafeAcrossThreads() async {
         let batcher = RunEventBatcher(batchLimit: 32)
         let consumer = DispatchQueue(label: "batcher-consumer")
         let received = BackpressureRecorder()
@@ -358,9 +356,8 @@ struct RunnerBackpressureTests {
                 }
             }
         }
-        #expect(pushing.returns(within: 20))
-        let deadline = Date().addingTimeInterval(20)
-        while received.values().count < 8_000, Date() < deadline { usleep(5_000) }
+        #expect(await pushing.returns(within: 20))
+        _ = await holds(within: 20, every: 0.005) { received.values().count >= 8_000 }
         let values = received.values()
         #expect(values.count == 8_000)
         for thread in 0..<4 { #expect(values.filter { $0.sessionId == "t\(thread)" }.map { $0.entry?.text } == (0..<2_000).map { "\($0)" }) }

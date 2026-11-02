@@ -126,10 +126,10 @@ struct PipedMCPServer {
 
     func sendRaw(_ text: String) { input.fileHandleForWriting.write(Data(text.utf8)) }
 
-    /// Close stdin and report whether the server loop returned.
-    func close() -> Bool {
+    /// Close stdin and report whether the server loop returned (waited for off the pool).
+    func close() async -> Bool {
         try? input.fileHandleForWriting.close()
-        return finished.wait(timeout: .now() + 25) == .success
+        return await signalled(finished, within: 25)
     }
 }
 
@@ -179,7 +179,7 @@ func toolText(_ response: [String: Any]?) -> (text: String, isError: Bool)? {
         #expect(run.text.contains("exit code: 0"))
         #expect(run.text.contains("status: done"))
         #expect(!run.text.contains(binding.token))
-        #expect(mcp.close())
+        #expect(await mcp.close())
 
         // 4. a call with a bad token is rejected, and so is a revoked one.
         let forged = PipedMCPServer(environment: [PaneMCPBinding.tokenEnvironmentKey: String(repeating: "0", count: 64), PaneMCPBinding.socketEnvironmentKey: socketPath])
@@ -187,14 +187,14 @@ func toolText(_ response: [String: Any]?) -> (text: String, isError: Bool)? {
         let rejected = try #require(toolText(await forged.reader.next()))
         #expect(rejected.isError)
         #expect(rejected.text == AgentIOSocketServer.unknownTokenMessage)
-        #expect(forged.close())
+        #expect(await forged.close())
 
         bindings.revoke(agentPaneId: "pane-a")
         let revoked = PipedMCPServer(environment: binding.environment)
         try revoked.send(["jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": ["name": "run_in_terminal", "arguments": ["command": "echo late"]]])
         let late = try #require(toolText(await revoked.reader.next()))
         #expect(late.isError)
-        #expect(revoked.close())
+        #expect(await revoked.close())
         await processes.terminateAll(graceSeconds: 0.2)
     }
 }

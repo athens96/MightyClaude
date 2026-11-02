@@ -141,7 +141,7 @@ struct AgentTerminalToolProtocolTests {
         try mcp.send(["jsonrpc": "2.0", "id": 9, "method": "ping"])
         let pong = try #require(await mcp.reader.next())
         #expect(pong["id"] as? Int == 9 && pong["result"] != nil)
-        #expect(mcp.close())
+        #expect(await mcp.close())
     }
 
     @Test func handlerRejectsAHandleThatBelongsToAnotherPane() async throws {
