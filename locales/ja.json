@@ -583,6 +583,8 @@
   "phone.files.loading": "読み込み中…",
   "phone.files.markdown.rendered": "プレビュー",
   "phone.files.markdown.source": "ソース",
+  "phone.files.html.rendered": "プレビュー",
+  "phone.files.html.source": "ソース",
   "phone.files.markdown.tooLarge": "大きすぎるためレンダリングせず、ソースを表示しています。",
   "phone.files.modified": "更新日",
   "phone.files.noiseHint": "生成ファイルまたは依存関係のフォルダ",

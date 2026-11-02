@@ -20,6 +20,20 @@ struct SettingsPage<Content: View, Trailing: View>: View {
     }
 }
 
+/// The One UI Settings' own metrics (Windows' native.css draws the same): the gap between cards, a card's row inset,
+/// a pane's side inset, the large title's inset and the bar's leading inset, and the switch knob's inset off and on.
+enum OneUIMetrics {
+    static let cardGap: CGFloat = 14
+    static let rowInset: CGFloat = 18
+    static let paneInset: CGFloat = 14
+    static let titleInset: CGFloat = 10
+    static let barLeading: CGFloat = 24
+    static let bottomInset: CGFloat = 24
+    static let dividerLeading: CGFloat = 64
+    static let knobInsetOff: CGFloat = 5
+    static let knobInsetOn: CGFloat = 3
+}
+
 /// How far a One UI pane's content has scrolled under its large title.
 private struct OneUIScrollKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
@@ -40,21 +54,21 @@ struct OneUIPane<Content: View, Trailing: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: OneUIMetrics.cardGap) {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     Text(title).font(.ui(size: 28, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.8)
                         .accessibilityAddTraits(.isHeader)
                     if let subtitle { Text(subtitle).font(.ui(size: 12)).foregroundStyle(.secondary) }
                 }
                 .frame(maxWidth: .infinity, minHeight: 120, alignment: .bottomLeading)
-                .padding(.horizontal, 10).padding(.bottom, 8)
+                .padding(.horizontal, OneUIMetrics.titleInset).padding(.bottom, DesignMetrics.Spacing.md)
                 .opacity(1 - progress)
                 .background(GeometryReader { proxy in
                     Color.clear.preference(key: OneUIScrollKey.self, value: Self.barHeight - proxy.frame(in: .named("oneUIPane")).minY)
                 })
                 content
             }
-            .padding(.horizontal, 14).padding(.top, Self.barHeight).padding(.bottom, 24)
+            .padding(.horizontal, OneUIMetrics.paneInset).padding(.top, Self.barHeight).padding(.bottom, OneUIMetrics.bottomInset)
         }
         .coordinateSpace(name: "oneUIPane")
         .onPreferenceChange(OneUIScrollKey.self) { offset in
@@ -69,7 +83,7 @@ struct OneUIPane<Content: View, Trailing: View>: View {
                 Spacer(minLength: 0)
                 trailing
             }
-            .padding(.leading, 24).padding(.trailing, 10)
+            .padding(.leading, OneUIMetrics.barLeading).padding(.trailing, OneUIMetrics.titleInset)
             .frame(height: Self.barHeight)
             .background(Palette.canvas)
         }
@@ -98,11 +112,11 @@ struct SettingsGroup<Content: View, Header: View>: View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             header
                 .font(.ui(size: 12, weight: .semibold)).foregroundStyle(Palette.accent)
-                .padding(.leading, 18).padding(.top, DesignMetrics.Spacing.sm)
+                .padding(.leading, OneUIMetrics.rowInset).padding(.top, DesignMetrics.Spacing.sm)
                 .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) { content }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 18).padding(.vertical, DesignMetrics.Spacing.md)
+                .padding(.horizontal, OneUIMetrics.rowInset).padding(.vertical, DesignMetrics.Spacing.md)
                 .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Palette.panel))
         }
     }
@@ -153,7 +167,7 @@ struct OneUISwitch: View {
             Capsule().strokeBorder(Palette.token(\.ink3), lineWidth: isOn ? 0 : 2)
             Circle().fill(isOn ? Palette.onAccent : Palette.token(\.ink3))
                 .frame(width: isOn ? 18 : 14, height: isOn ? 18 : 14)
-                .padding(.horizontal, isOn ? 3 : 5)
+                .padding(.horizontal, isOn ? OneUIMetrics.knobInsetOn : OneUIMetrics.knobInsetOff)
         }
         .frame(width: 42, height: 24)
         .opacity(isEnabled ? 1 : 0.5)

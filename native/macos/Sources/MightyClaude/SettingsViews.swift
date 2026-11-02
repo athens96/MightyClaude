@@ -233,14 +233,14 @@ struct AppSettingsView: View {
 
     private var sidebar: some View {
         OneUIPane(title: L("settings.title"), subtitle: "macOS · SwiftUI") {
-            VStack(spacing: 14) {
+            VStack(spacing: OneUIMetrics.cardGap) {
                 ForEach(Array(SettingsPane.groups.enumerated()), id: \.offset) { _, group in
                     VStack(spacing: 0) {
                         ForEach(Array(group.enumerated()), id: \.element) { index, item in
                             navRow(item, divided: index > 0)
                         }
                     }
-                    .padding(.vertical, 6)
+                    .padding(.vertical, DesignMetrics.Spacing.sm)
                     .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Palette.panel))
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 }
@@ -263,7 +263,7 @@ struct AppSettingsView: View {
     private func navRow(_ item: SettingsPane, divided: Bool) -> some View {
         let selected = item == pane
         return Button { pane = item } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: OneUIMetrics.cardGap) {
                 Image(systemName: item.symbol).font(.ui(size: 15, weight: .medium)).foregroundStyle(.white)
                     .frame(width: 32, height: 32)
                     .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(item.tone))
@@ -271,10 +271,10 @@ struct AppSettingsView: View {
                 Text(item.title).font(.ui(size: 14)).lineLimit(1).foregroundStyle(selected ? Palette.accent : Palette.ink)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 18).frame(minHeight: 52)
+            .padding(.horizontal, OneUIMetrics.rowInset).frame(minHeight: 52)
             .background(selected ? Palette.accentSoft : Color.clear)
             .overlay(alignment: .top) {
-                if divided { Rectangle().fill(Palette.border).frame(height: 0.5).padding(.leading, 64).padding(.trailing, 18) }
+                if divided { Rectangle().fill(Palette.border).frame(height: 0.5).padding(.leading, OneUIMetrics.dividerLeading).padding(.trailing, OneUIMetrics.rowInset) }
             }
             .contentShape(Rectangle())
         }

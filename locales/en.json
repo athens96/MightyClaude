@@ -583,6 +583,8 @@
   "phone.files.loading": "Loading…",
   "phone.files.markdown.rendered": "Preview",
   "phone.files.markdown.source": "Source",
+  "phone.files.html.rendered": "Preview",
+  "phone.files.html.source": "Source",
   "phone.files.markdown.tooLarge": "Too large to render, so the source is shown.",
   "phone.files.modified": "Modified",
   "phone.files.noiseHint": "Generated or dependency folder",
