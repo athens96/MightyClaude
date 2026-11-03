@@ -17,7 +17,7 @@ struct ToolkitProcessTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
 
-    @Test func executablesAreFoundOnTheGivenPathOnly() throws {
+    @Test func executablesAreFoundOnTheGivenPathOnly() async throws {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let name = "mighty-toolkit-fixture-" + UUID().uuidString.prefix(8)
         try script(String(name), in: root, body: "echo found")
@@ -27,52 +27,57 @@ struct ToolkitProcessTests {
         #expect(ToolkitProcess.resolveExecutable(String(name), environment: [:]) == nil)
         // A relative path is never resolved against the working folder.
         #expect(ToolkitProcess.resolveExecutable("./" + name, environment: ["PATH": root.path]) == nil)
-        let output = ToolkitProcess.run([String(name)], environment: ["PATH": root.path])
+        let output = await offThePool { ToolkitProcess.run([String(name)], environment: ["PATH": root.path]) }
         #expect(output.exitCode == 0 && output.output == "found\n")
     }
 
-    @Test func theCommandRunsWithTheGivenEnvironment() throws {
+    @Test func theCommandRunsWithTheGivenEnvironment() async throws {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         try script("show-env", in: root, body: "printf '%s' \"$MIGHTY_FIXTURE\"")
-        let output = ToolkitProcess.run(["show-env"], environment: ["PATH": root.path + ":/usr/bin:/bin", "MIGHTY_FIXTURE": "login-shell"])
+        let output = await offThePool { ToolkitProcess.run(["show-env"], environment: ["PATH": root.path + ":/usr/bin:/bin", "MIGHTY_FIXTURE": "login-shell"]) }
         #expect(output.output == "login-shell")
     }
 
-    @Test func largeOutputIsDrainedWhileTheCommandRuns() throws {
+    @Test func largeOutputIsDrainedWhileTheCommandRuns() async throws {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         // 2 MB on stdout and stderr together, far past a pipe's 64 KB buffer.
         try script("chatty", in: root, body: "/usr/bin/head -c 1048576 /dev/zero; /usr/bin/head -c 1048576 /dev/zero >&2; exit 3")
-        let output = ToolkitProcess.run(["chatty"], environment: ["PATH": root.path + ":/usr/bin:/bin"])
+        let output = await offThePool { ToolkitProcess.run(["chatty"], environment: ["PATH": root.path + ":/usr/bin:/bin"]) }
         #expect(output.exitCode == 3)
         #expect(output.output.utf8.count == 2 * 1_048_576)
     }
 
-    @Test func aMissingExecutableIsAFailureNotACrash() {
-        let output = ToolkitProcess.run(["mighty-no-such-tool"], environment: ["PATH": "/nonexistent"])
+    @Test func aMissingExecutableIsAFailureNotACrash() async {
+        let output = await offThePool { ToolkitProcess.run(["mighty-no-such-tool"], environment: ["PATH": "/nonexistent"]) }
         #expect(output.exitCode != 0)
     }
 
-    @Test func aCommandPastItsDeadlineIsStoppedWithItsGroup() throws {
+    @Test func aCommandPastItsDeadlineIsStoppedWithItsGroup() async throws {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let pidFile = root.appendingPathComponent("child.pid")
         // A child of the command, in the same group, must not outlive the stop.
         try script("slow", in: root, body: "/bin/sleep 60 & echo $! > '\(pidFile.path)'; wait")
-        let started = Date()
-        let output = ToolkitProcess.run(["slow"], environment: ["PATH": root.path + ":/usr/bin:/bin"], timeout: 3)
-        #expect(Date().timeIntervalSince(started) < 15)
+        // Timed on the thread that runs it: the await around it adds however long the pool takes to resume this test.
+        let (output, took) = await offThePool { () -> (ToolkitCommandOutput, TimeInterval) in
+            let started = Date()
+            return (ToolkitProcess.run(["slow"], environment: ["PATH": root.path + ":/usr/bin:/bin"], timeout: 3), Date().timeIntervalSince(started))
+        }
+        #expect(took < 15)
         #expect(output.exitCode != 0)
         let pid = try #require(Int32(String(decoding: try Data(contentsOf: pidFile), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
-        Thread.sleep(forTimeInterval: 0.5)
-        #expect(Darwin.kill(pid, 0) != 0)
+        // The group is stopped by then; give the child's end a moment to land without holding a pool thread.
+        #expect(await holds(within: 5) { Darwin.kill(pid, 0) != 0 })
     }
 
-    @Test func aBackgroundProcessHoldingThePipeIsNotWaitedFor() throws {
+    @Test func aBackgroundProcessHoldingThePipeIsNotWaitedFor() async throws {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         // The command ends at once; what it left behind keeps stdout open.
         try script("leaves-child", in: root, body: "/bin/sleep 30 & echo done")
-        let started = Date()
-        let output = ToolkitProcess.run(["leaves-child"], environment: ["PATH": root.path + ":/usr/bin:/bin"], timeout: 60)
-        #expect(Date().timeIntervalSince(started) < 10)
+        let (output, took) = await offThePool { () -> (ToolkitCommandOutput, TimeInterval) in
+            let started = Date()
+            return (ToolkitProcess.run(["leaves-child"], environment: ["PATH": root.path + ":/usr/bin:/bin"], timeout: 60), Date().timeIntervalSince(started))
+        }
+        #expect(took < 10)
         #expect(output.exitCode == 0 && output.output.hasPrefix("done"))
     }
 }

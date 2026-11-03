@@ -498,6 +498,6 @@ private final class RecordingDelegationTransport: @unchecked Sendable {
         let pong = try #require(await reader.next())
         #expect(pong["id"] as? Int == 3 && pong["result"] != nil)
         try input.fileHandleForWriting.close()
-        #expect(finished.wait(timeout: .now() + 25) == .success)
+        #expect(await signalled(finished, within: 25))
     }
 }
