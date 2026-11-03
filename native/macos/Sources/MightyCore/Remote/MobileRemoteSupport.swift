@@ -318,8 +318,9 @@ public enum MobileMightySupport {
     /// carries its result gets the files it names from it (`runResultFiles`).
     /// With the pane's `resultFiles` memo a result is looked through once, and
     /// the memo drops the runs this call no longer looks up.
-    public static func runs(_ values: [MightyGraphRun], outputTails: [String: [String]] = [:], workspaceRoot: URL? = nil, resultFiles memo: MobileResultFilesMemo? = nil,
+    public static func runs(_ source: [MightyGraphRun], outputTails: [String: [String]] = [:], workspaceRoot: URL? = nil, resultFiles memo: MobileResultFilesMemo? = nil,
                             title: (String) -> String? = { _ in nil }) -> [MobileMightyRun] {
+        let values = MightyGraphSupport.withBackgroundWaiting(source)
         let window = values.suffix(MobileWire.mightyRuns)
         let offset = values.count - window.count
         let ordinals = MightyGraphSupport.requestOrdinals(values)
@@ -386,8 +387,9 @@ public enum MobileMightySupport {
     /// Hashed rather than joined: this runs on every snapshot publish, which
     /// during a stream is every token, so it allocates nothing but the shown
     /// blocks of a run that holds background work.
-    public static func digest(_ values: [MightyGraphRun]) -> Int {
+    public static func digest(_ source: [MightyGraphRun]) -> Int {
         var hasher = Hasher()
+        let values = MightyGraphSupport.withBackgroundWaiting(source)
         let window = values.suffix(MobileWire.mightyRuns)
         // The runs `runs` gives their result (`carriesResult`), read on the slice itself: nothing is copied.
         let firstCarried = window.lastIndex { $0.noticeRun != true } ?? window.endIndex - 1

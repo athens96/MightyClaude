@@ -72,7 +72,10 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     /// request runs and in older saves, whose notice runs read `BackgroundNoticeRuns.genericTitle` (`heading`).
     public var noticeTitle: String?
     /// `backgroundWaiting` of the run `shown` was made from, whose background blocks it no longer holds. Never saved.
-    private var shownBackgroundWaiting: Int?
+    fileprivate var shownBackgroundWaiting: Int?
+    /// The background work of the whole request this run belongs to (`MightyGraphSupport.withBackgroundWaiting`), which a notice run
+    /// reads as its own count. Never saved.
+    fileprivate var requestBackgroundWaiting: Int?
     private enum CodingKeys: String, CodingKey {
         case id, input, status, rootEntries, agents, resultEntries, sourceRunID, finalOutput, usage, responseRecords, provider, nodeModelLabel, configuredModel, noticeRun, noticeTitle
     }
@@ -94,7 +97,7 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
         let agents = BackgroundNoticeRuns.shownAgents(self)
         guard agents.count != self.agents.count else { return self }
         var run = self
-        run.shownBackgroundWaiting = backgroundWaiting
+        run.shownBackgroundWaiting = held
         run.agents = agents
         return run
     }
@@ -110,7 +113,12 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     /// Background tasks and sub-agents still running after the request's own turn ended: it reads completed and waits on them.
     public var backgroundWaiting: Int {
         guard status == "completed" else { return 0 }
-        return shownBackgroundWaiting ?? agents.filter { ($0.isTask || $0.isBackgroundAgent) && !MightyGraphSupport.terminal($0.status) }.count
+        return requestBackgroundWaiting ?? held
+    }
+    /// The unfinished task and background-agent blocks the run holds itself (or held before `shown` took them out): a notice run's
+    /// copy of a request's block is that block, counted there.
+    fileprivate var held: Int {
+        shownBackgroundWaiting ?? agents.filter { $0.sourceBlockId == nil && ($0.isTask || $0.isBackgroundAgent) && !MightyGraphSupport.terminal($0.status) }.count
     }
 
     /// The owning session is authoritative, including pre-provider graph saves.
@@ -437,8 +445,31 @@ extension MightyGraphSupport {
             return max(1, count)
         }
     }
+    /// The runs with each completed one's `backgroundWaiting` counted over its whole request: the request run and the notice runs
+    /// after it up to the next request. Work started during a notice turn is recorded on the request, and a request's other background
+    /// work still runs while a notice run answers one of its blocks, so a notice run reads 현재까지의 결과 as long as any of it is
+    /// unfinished (Windows MightyGraphSupport.WithBackgroundWaiting). Counting runs already counted changes nothing.
+    public static func withBackgroundWaiting(_ runs: [MightyGraphRun]) -> [MightyGraphRun] {
+        guard runs.contains(where: { $0.noticeRun == true }), runs.contains(where: { $0.agents.contains { $0.isTask || $0.isBackgroundAgent } }) else { return runs }
+        var counted: [MightyGraphRun] = []
+        counted.reserveCapacity(runs.count)
+        var start = 0
+        while start < runs.count {
+            var end = start + 1
+            while end < runs.count, runs[end].noticeRun == true { end += 1 }
+            let total = runs[start..<end].reduce(0) { $0 + $1.held }
+            for var run in runs[start..<end] {
+                let waiting = run.status == "completed" ? total : 0
+                if run.backgroundWaiting != waiting { run.requestBackgroundWaiting = waiting }
+                counted.append(run)
+            }
+            start = end
+        }
+        return counted
+    }
     /// The runs as views draw them (`MightyGraphRun.shown`).
-    public static func shownRuns(_ runs: [MightyGraphRun]) -> [MightyGraphRun] {
+    public static func shownRuns(_ source: [MightyGraphRun]) -> [MightyGraphRun] {
+        let runs = withBackgroundWaiting(source)
         guard runs.contains(where: { $0.agents.contains { $0.background == true } }) else { return runs }
         return runs.map(\.shown)
     }

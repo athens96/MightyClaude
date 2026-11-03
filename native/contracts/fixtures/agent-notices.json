@@ -5018,6 +5018,300 @@
           "Ack 8.\n\nAck 9."
         ]
       }
+    },
+    {
+      "name": "notice run: the live stream's task_notification event (no user message) settles the command and opens the run",
+      "agentToolUseId": "toolu_FAKEcommand0090",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-60",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-60",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEcommand0090",
+                "name": "Bash",
+                "input": {
+                  "command": "npm run lint",
+                  "description": "Lint the code",
+                  "run_in_background": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEcommand0090",
+                "type": "tool_result",
+                "content": "Command running in background with ID: a3b4c5d6e. Output is being written to: /tmp/example/tasks/a3b4c5d6e.output"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-61",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-61",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Linting."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Linting."
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "a3b4c5d6e",
+          "tool_use_id": "toolu_FAKEcommand0090",
+          "status": "completed",
+          "output_file": "/tmp/example/tasks/a3b4c5d6e.output",
+          "summary": "Background command \"Lint the code\" completed (exit code 0)"
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-62",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-62",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "The lint is clean."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "The lint is clean.",
+          "origin": {
+            "kind": "task-notification"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "task",
+        "agentState": "completed",
+        "agentOutput": "Background command \"Lint the code\" completed (exit code 0)",
+        "noticeBlocks": 0,
+        "agentBackground": true,
+        "agentOutputFile": "/tmp/example/tasks/a3b4c5d6e.output",
+        "agentNoticeReply": null,
+        "noticeReplyBlocks": 0,
+        "mainOutputContains": [
+          "Linting."
+        ],
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": "The lint is clean.",
+        "noticeRunInput": "Lint the code · 완료",
+        "noticeRunTitles": [
+          "백그라운드 작업 완료 · Lint the code"
+        ]
+      }
+    },
+    {
+      "name": "an Agent call without run_in_background whose result says it launched asynchronously is a background agent until its notification",
+      "agentToolUseId": "toolu_FAKEagent0091",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0091",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0091",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0091",
+                "name": "Agent",
+                "input": {
+                  "description": "Rename the labels",
+                  "prompt": "Rename the old label everywhere.",
+                  "subagent_type": "general-purpose"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0091",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Async agent launched successfully.\nagentId: a3b4c5d6e7f8a9b0c (internal ID - do not mention to user. Use SendMessage with to: 'a3b4c5d6e7f8a9b0c' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-6",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-6",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Renaming in the background."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Renaming in the background."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a3b4c5d6e7f8a9b0c</task-id>\n<tool-use-id>toolu_FAKEagent0091</tool-use-id>\n<output-file>/tmp/example/tasks/a3b4c5d6e7f8a9b0c.output</output-file>\n<status>failed</status>\n<summary>Agent \"Rename the labels\" failed: the tool limit was reached</summary>\n</task-notification>"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "error",
+        "agentOutput": "Agent \"Rename the labels\" failed: the tool limit was reached",
+        "noticeBlocks": 0,
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "Rename the labels · 실패",
+        "agentBackground": true
+      }
+    },
+    {
+      "name": "an async launch acknowledgement the transcript marks structurally (toolUseResult.status async_launched) is a background agent too",
+      "agentToolUseId": "toolu_FAKEagent0092",
+      "events": [
+        {
+          "type": "assistant",
+          "uuid": "m-toolu_FAKEagent0092",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-toolu_FAKEagent0092",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_FAKEagent0092",
+                "name": "Agent",
+                "input": {
+                  "description": "Rename the labels",
+                  "prompt": "Rename the old label everywhere.",
+                  "subagent_type": "general-purpose"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_FAKEagent0092",
+                "type": "tool_result",
+                "content": "Launched."
+              }
+            ]
+          },
+          "toolUseResult": {
+            "isAsync": true,
+            "status": "async_launched",
+            "agentId": "a3b4c5d6e7f8a9b0c"
+          }
+        },
+        {
+          "type": "assistant",
+          "uuid": "m-6",
+          "session_id": "session-main",
+          "message": {
+            "id": "m-6",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Renaming in the background."
+              }
+            ]
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "result": "Renaming in the background."
+        },
+        {
+          "type": "user",
+          "origin": {
+            "kind": "task-notification"
+          },
+          "message": {
+            "role": "user",
+            "content": "<task-notification>\n<task-id>a3b4c5d6e7f8a9b0c</task-id>\n<tool-use-id>toolu_FAKEagent0092</tool-use-id>\n<output-file>/tmp/example/tasks/a3b4c5d6e7f8a9b0c.output</output-file>\n<status>failed</status>\n<summary>Agent \"Rename the labels\" failed: the tool limit was reached</summary>\n</task-notification>"
+          }
+        }
+      ],
+      "expect": {
+        "agentKind": "agent",
+        "agentState": "error",
+        "agentOutput": "Agent \"Rename the labels\" failed: the tool limit was reached",
+        "noticeBlocks": 0,
+        "noticeRuns": 1,
+        "noticeRunChildren": [
+          1
+        ],
+        "noticeRunOutput": null,
+        "noticeRunInput": "Rename the labels · 실패",
+        "agentBackground": true
+      }
     }
   ],
   "handbacks": [

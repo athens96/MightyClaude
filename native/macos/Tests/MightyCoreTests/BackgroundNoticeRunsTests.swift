@@ -400,4 +400,108 @@ struct BackgroundNoticeRunsTests {
         runs = box.session.mightyGraphRuns
         #expect(runs[2].status == "running" && runs[2].rootEntries.contains { $0.text == "Linting." })
     }
+
+    // MARK: the request's waiting count, a notice turn's commands and an async launch (Windows BackgroundNoticeRunsVerification)
+
+    private final class NodeBox { var nodes: [String: ExecutionGraphNode] = [:] }
+    private func notification(_ task: String, tool: String, summary: String) -> [String: Any] {
+        ["type": "user", "origin": ["kind": "task-notification"],
+         "message": ["content": "<task-notification>\n<task-id>\(task)</task-id>\n<tool-use-id>\(tool)</tool-use-id>\n<output-file>/tmp/\(task).output</output-file>\n<status>completed</status>\n<summary>\(summary)</summary>\n</task-notification>"]]
+    }
+    /// The live stream's form of the same notification (the app does not ask the CLI to replay user messages).
+    private func systemNotification(_ task: String, tool: String?, summary: String, status: String = "completed") -> [String: Any] {
+        var event: [String: Any] = ["type": "system", "subtype": "task_notification", "task_id": task, "status": status, "output_file": "/tmp/\(task).output", "summary": summary]
+        if let tool { event["tool_use_id"] = tool }
+        return event
+    }
+    private func agentCall(_ id: String, name: String, background: Bool?) -> [String: Any] {
+        var input: [String: Any] = ["prompt": "survey", "description": name]
+        if let background { input["run_in_background"] = background }
+        return assistant([["type": "tool_use", "id": id, "name": "Agent", "input": input]], id: "call-" + id)
+    }
+    private func agentAck(_ tool: String, agent: String) -> [String: Any] {
+        ["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": tool, "content": "Async agent launched successfully.\nagentId: \(agent) (internal ID)"]]]]
+    }
+    private func state(_ box: NodeBox, _ tool: String) -> String? { box.nodes[ExecutionGraphSupport.agentNodeID(runId: "proc-1", toolUseId: tool)]?.state }
+
+    /// A background command a notice turn started is settled by its own notification, which names its tool use and its task; the live
+    /// stream's `task_notification` system event does the same, and the process's end leaves it completed.
+    @Test func aCommandStartedInANoticeTurnIsSettledByItsNotification() {
+        let box = NodeBox()
+        let tracker = ExecutionGraphTracker(runID: "proc-1", input: "survey it", emit: { box.nodes[$0.id] = $0 })
+        for event in [agentCall("a1", name: "First", background: true), agentAck("a1", agent: "ag1"), agentCall("a2", name: "Second", background: true), agentAck("a2", agent: "ag2"), result("Started two.")] { tracker.consume(event) }
+        tracker.consume(notification("ag1", tool: "a1", summary: "First done"))
+        for event in [command("build", "npm run build", description: "Build the app"), launched("build", task: "bt1"), text("Building.", id: "m2"), result("Building.", notice: true)] { tracker.consume(event) }
+        #expect(state(box, "build") == "running")
+        tracker.consume(notification("bt1", tool: "build", summary: "Build done"))
+        #expect(state(box, "build") == "completed")
+        for event in [text("The build passed.", id: "m3"), result("The build passed.", notice: true)] { tracker.consume(event) }
+        tracker.finish(state: "completed")
+        #expect(state(box, "build") == "completed" && state(box, "a1") == "completed" && state(box, "a2") == "stopped")
+        // The live stream carries the end as a system event, no user message: it settles the block and opens the notice run the same way.
+        let live = NodeBox()
+        let streamed = ExecutionGraphTracker(runID: "proc-1", input: "build it", emit: { live.nodes[$0.id] = $0 })
+        for event in [command("build", "npm run build", description: "Build the app"), launched("build", task: "bt1"), result("Started.")] { streamed.consume(event) }
+        streamed.consume(systemNotification("bt1", tool: "build", summary: "Build done"))
+        #expect(state(live, "build") == "completed")
+        streamed.consume(text("The build passed.", id: "m2")); streamed.consume(result("The build passed.", notice: true))
+        streamed.finish(state: "completed")
+        let notices = live.nodes.values.filter { $0.runId == "proc-1:notice:1" }
+        #expect(state(live, "build") == "completed")
+        #expect(notices.contains { $0.sourceBlockId == ExecutionGraphSupport.agentNodeID(runId: "proc-1", toolUseId: "build") } && notices.contains { $0.output == "The build passed." })
+        // A command whose end the stream names by its task alone settles by the task ID the launch gave.
+        let bare = NodeBox()
+        let named = ExecutionGraphTracker(runID: "proc-1", input: "build it", emit: { bare.nodes[$0.id] = $0 })
+        for event in [command("build", "npm run build", description: "Build the app"), launched("build", task: "bt1"), systemNotification("bt1", tool: nil, summary: "Build failed", status: "failed")] { named.consume(event) }
+        #expect(state(bare, "build") == "error")
+    }
+
+    /// A notice run reads the request's count: 현재까지의 결과 while any background work of the request is unfinished, in the diagram,
+    /// 기록, the pipeline and on the phone.
+    @Test func aNoticeRunReadsTheRequestsWaitingCount() {
+        LocaleOverride.$language.withValue(.ko) {
+            func task(_ id: String, _ status: String, source: String? = nil) -> MightyGraphAgent { MightyGraphAgent(id: id, title: "Job", status: status, kind: "task", background: true, sourceBlockId: source) }
+            func agent(_ id: String, _ status: String, source: String? = nil) -> MightyGraphAgent { MightyGraphAgent(id: id, title: "Survey", status: status, background: true, sourceBlockId: source) }
+            var request = MightyGraphRun(id: "r", input: "go", status: "completed", agents: [agent("a1", "completed"), agent("a2", "running"), agent("a3", "running"), task("t1", "running")], finalOutput: "Started.")
+            var first = MightyGraphRun(id: "r:notice:1", status: "completed", agents: [agent("r:notice:1:a1", "completed", source: "a1")], finalOutput: "First done.", noticeRun: true)
+            var second = MightyGraphRun(id: "r:notice:2", status: "completed", agents: [task("r:notice:2:t0", "completed", source: "t0")], finalOutput: "Task step.", noticeRun: true)
+            var next = MightyGraphRun(id: "n", input: "again", status: "completed", agents: [task("n-t", "running")], finalOutput: "Done.")
+            request.refreshResult(); first.refreshResult(); second.refreshResult(); next.refreshResult()
+            var all = [request, first, second, next]
+            // Three unfinished blocks of the request count once for each of its runs; a copy of a finished block adds nothing; the next request counts its own.
+            #expect(MightyGraphSupport.shownRuns(all).map(\.backgroundWaiting) == [3, 3, 3, 1])
+            #expect(MightyGraphSupport.withBackgroundWaiting(MightyGraphSupport.shownRuns(all)).map(\.backgroundWaiting) == [3, 3, 3, 1])
+            #expect(MightyGraphSupport.followRunIndex(Array(all.prefix(3))) == 2)
+            #expect(MightyGraphSupport.resultTitle(status: "completed", waiting: MightyGraphSupport.shownRuns(all)[2].backgroundWaiting) == "현재까지의 결과 · 백그라운드 작업 3개 기다리는 중")
+            if case .free(let rows) = MightyStructure.make(runs: all, style: nil, currentPhase: nil) { #expect(rows.map(\.item.backgroundWaiting) == [3, 3, 3, 1]) } else { Issue.record("a free pane makes rows") }
+            #expect(MightyTimeline.groups(all).map { $0.result?.tone == .idle } == [true, true, true, true])
+            #expect(MobileMightySupport.runs(all).map(\.backgroundWaiting) == [3, 3, 3, 1])
+            // The work ends one by one; the notice run goes on reading the count until the last one.
+            let digest = MobileMightySupport.digest(all)
+            all[0].agents[1].status = "completed"; all[0].agents[3].status = "completed"
+            #expect(MightyGraphSupport.shownRuns(all).map(\.backgroundWaiting) == [1, 1, 1, 1] && MobileMightySupport.digest(all) != digest)
+            all[0].agents[2].status = "stopped"
+            #expect(MightyGraphSupport.shownRuns(all).map(\.backgroundWaiting) == [0, 0, 0, 1])
+            #expect(MightyGraphSupport.resultTitle(status: "completed", waiting: 0) == "최종 결과")
+        }
+    }
+
+    /// An Agent call without run_in_background is a background launch when its result says so (Claude Code runs sub-agents in the
+    /// background by default): the launch result does not end its block.
+    @Test func anAsyncLaunchResultKeepsTheAgentRunning() {
+        let box = NodeBox()
+        let tracker = ExecutionGraphTracker(runID: "proc-1", input: "survey it", emit: { box.nodes[$0.id] = $0 })
+        let structured: [String: Any] = ["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": "a1", "content": "Launched."]]],
+                                         "toolUseResult": ["isAsync": true, "status": "async_launched", "agentId": "ag1"]]
+        let plain: [String: Any] = ["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": "a3", "content": "The survey: 3 files."]]]]
+        for event in [agentCall("a1", name: "One", background: nil), structured, agentCall("a2", name: "Two", background: nil), agentAck("a2", agent: "ag2"), agentCall("a3", name: "Three", background: nil), plain] { tracker.consume(event) }
+        func block(_ tool: String) -> ExecutionGraphNode? { box.nodes[ExecutionGraphSupport.agentNodeID(runId: "proc-1", toolUseId: tool)] }
+        #expect(block("a1")?.state == "running" && block("a1")?.background == true && block("a2")?.state == "running" && block("a2")?.background == true)
+        #expect(block("a3")?.state == "completed" && block("a3")?.background != true)
+        // Its hand-back settles it by the agent ID the launch named.
+        tracker.consume(notification("ag1", tool: "a1", summary: "One done"))
+        tracker.consume(["type": "user", "origin": ["kind": "task-notification"],
+                         "message": ["content": "<task-notification>\n<task-id>ag2</task-id>\n<status>completed</status>\n<summary>Two done</summary>\n</task-notification>"]])
+        #expect(block("a1")?.state == "completed" && block("a2")?.state == "completed")
+    }
 }

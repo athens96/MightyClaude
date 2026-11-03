@@ -357,7 +357,12 @@ final class ExecutionGraphTracker {
                 }
                 // Background Agent tool results acknowledge launch; they are
                 // not the agent's answer. Its turn.complete, notification or hand-back is.
-                guard !backgroundTools.contains(toolID) else { rememberAgentID(child, block: block); continue }
+                // Claude Code runs a sub-agent in the background by default: a call without run_in_background says so in its result.
+                if node.kind == "agent", !backgroundTools.contains(toolID), block["is_error"] as? Bool != true, Self.asyncLaunch(block: block, frame: value) {
+                    backgroundTools.insert(toolID)
+                    update(child) { $0.background = true }
+                }
+                guard !backgroundTools.contains(toolID) else { rememberAgentID(child, block: block, frame: value); continue }
                 update(child) { node in
                     guard !ExecutionGraphSupport.terminal(node.state) else { return }
                     node.state = block["is_error"] as? Bool == true ? "error" : "completed"
@@ -370,6 +375,16 @@ final class ExecutionGraphTracker {
                 if text.contains("<task-notification>") { settleTasks(in: text, notice: parentTool == nil) }
                 if text.contains(AgentHandback.opening) { settleHandbacks(in: text, origin: value["origin"] as? [String: Any], notice: parentTool == nil) }
             }
+        } else if type == "system", value["subtype"] as? String == "task_notification", let task = Self.key(value["task_id"]) {
+            // The live stream (no --replay-user-messages) carries a task's end as this event, not as the injected user message: the same
+            // notification, so it settles the block the same way.
+            var body = "<task-notification><task-id>\(task)</task-id>"
+            if let tool = Self.key(value["tool_use_id"]) { body += "<tool-use-id>\(tool)</tool-use-id>" }
+            if let file = value["output_file"] as? String, !file.isEmpty { body += "<output-file>\(file)</output-file>" }
+            let status = value["status"] as? String ?? "completed"
+            body += "<status>\(status)</status>"
+            if let summary = value["summary"] as? String, !summary.isEmpty { body += "<summary>\(summary)</summary>" }
+            settleTasks(in: body + "</task-notification>", notice: parentTool == nil)
         } else if type == "result", ClaudeStream.isNotificationResult(value) || (parentTool == nil && (noticeTurn != nil || mergeTurn != nil)) {
             guard parentTool == nil else { return }
             let run = noticeTurn, merged = mergeTurn, absorbed = absorbedRun, lines = turnLines
@@ -765,10 +780,18 @@ final class ExecutionGraphTracker {
     }
     /// A background Agent's launch result names its agent ID, which its
     /// notification's `task-id` and its hand-back's `from` carry.
-    private func rememberAgentID(_ id: String, block: [String: Any]) {
-        guard let text = Self.text(block["content"]), let match = text.firstMatch(of: #/agentId: (?<agent>[A-Za-z0-9_-]+)/#) else { return }
-        let agent = String(match.agent)
+    private func rememberAgentID(_ id: String, block: [String: Any], frame: [String: Any]) {
+        let agent: String
+        if let text = Self.text(block["content"]), let match = text.firstMatch(of: #/agentId: (?<agent>[A-Za-z0-9_-]+)/#) { agent = String(match.agent) }
+        else if let structured = Self.key((frame["toolUseResult"] as? [String: Any])?["agentId"]) { agent = structured }
+        else { return }
         if taskAliases[agent] != nil || taskAliases.count < 512 { taskAliases[agent] = id }
+    }
+    /// Whether an Agent call's result is the acknowledgement of an asynchronous launch: the event's structured `toolUseResult`
+    /// (a transcript's) says `async_launched`, else the result's text opens with "Async agent launched successfully.".
+    private static func asyncLaunch(block: [String: Any], frame: [String: Any]) -> Bool {
+        if let result = frame["toolUseResult"] as? [String: Any], result["status"] as? String == "async_launched" || result["isAsync"] as? Bool == true { return true }
+        return Self.text(block["content"])?.drop(while: { $0.isWhitespace }).hasPrefix("Async agent launched successfully.") ?? false
     }
     /// A SendMessage's result. One that resumed a background agent that had ended (`resumedAgentId`) is new background work of this
     /// request: a background agent block under the sender, settled by that agent's notification or hand-back as an Agent launch is. The

@@ -80,7 +80,7 @@ internal static class AgentNoticeVerification
     private static void StreamsSettleTheBlockAndOpenNoticeRuns() => InKorean(() =>
     {
         var cases = Items(Fixture.Value, "streams");
-        Check(cases.Count >= 25, "the fixture has every stream case; got " + cases.Count);
+        Check(cases.Count >= 37, "the fixture has every stream case; got " + cases.Count);
         foreach (var item in cases)
         {
             var name = item.Text("name") ?? "";

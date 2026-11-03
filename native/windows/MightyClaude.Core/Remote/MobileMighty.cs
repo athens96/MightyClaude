@@ -204,6 +204,7 @@ public static class MobileMightySupport
     public static IReadOnlyList<MobileMightyRun> Runs(IReadOnlyList<MightyGraphRun> values, Func<string, string?>? title = null, IReadOnlyDictionary<string, IReadOnlyList<string>>? outputTails = null, string? workspaceRoot = null,
         MobileResultFilesMemo? resultFiles = null)
     {
+        values = MightyGraphSupport.WithBackgroundWaiting(values);
         var offset = Math.Max(0, values.Count - MobileWire.MightyRuns); var result = new List<MobileMightyRun>();
         var ordinals = MightyGraphSupport.RequestOrdinals(values); var carried = FirstCarried(values, offset);
         for (var index = offset; index < values.Count; index++)
@@ -288,6 +289,7 @@ public static class MobileMightySupport
     public static int Digest(IReadOnlyList<MightyGraphRun> values)
     {
         // The output lines of a background run are hashed beside this by the host (they live in its memory, not in the runs).
+        values = MightyGraphSupport.WithBackgroundWaiting(values);
         var hash = new HashCode(); var offset = Math.Max(0, values.Count - MobileWire.MightyRuns);
         // The runs Runs gives their result: the newest request and the notice runs after it.
         for (var index = FirstCarried(values, offset); index >= 0 && index < values.Count; index++)

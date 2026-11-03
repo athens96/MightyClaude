@@ -216,6 +216,9 @@ internal static class Verification
         await Test("background notice runs: an absorbed or ended notice run leaves the request its place", BackgroundNoticeRunsVerification.AbsorbedAndEndedNoticeRunsLeaveTheRequestItsPlace);
         await Test("background notice runs: the heading is the run's own title or the generic one, and the title is saved", BackgroundNoticeRunsVerification.TheHeadingIsTheRunsTitleOrTheGenericOne);
         await Test("background notice runs: a request waiting on background work reads 현재까지의 결과, on the phone too", BackgroundNoticeRunsVerification.ARequestWaitingOnBackgroundWorkReadsTheResultSoFar);
+        await Test("background notice runs: a command started in a notice turn is settled by its notification", BackgroundNoticeRunsVerification.ACommandStartedInANoticeTurnIsSettledByItsNotification);
+        await Test("background notice runs: a notice run reads the request's waiting count", BackgroundNoticeRunsVerification.ANoticeRunReadsTheRequestsWaitingCount);
+        await Test("background notice runs: an async launch result keeps the agent running", BackgroundNoticeRunsVerification.AnAsyncLaunchResultKeepsTheAgentRunning);
         await Test("MightyTimelineVerification TheRequestRowHoldsTheInputAndTheExecutionRowTheWork", MightyTimelineVerification.TheRequestRowHoldsTheInputAndTheExecutionRowTheWork);
         await Test("MightyTimelineVerification StatusRailsCountsAndDurationStayHonest", MightyTimelineVerification.StatusRailsCountsAndDurationStayHonest);
         await Test("mighty execution block: a stable node id", MightyGraphExecutionBlockVerification.TheExecutionBlockHasAStableNodeID);
