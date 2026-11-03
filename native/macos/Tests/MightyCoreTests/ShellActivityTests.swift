@@ -122,9 +122,10 @@ struct ShellActivityTests {
     }
 
     @Test func aShellHoldingABackgroundJobHasChildrenAndALoneProcessDoesNot() async throws {
-        let lone = try Self.spawn("/bin/sleep", ["20"], environment: [:])
+        let lone = try Self.spawn("/bin/sleep", ["120"], environment: [:])
         defer { lone.terminate(); lone.waitUntilExit() }
-        let shell = try Self.spawn("/bin/sh", ["-c", "/bin/sleep 20 & wait"], environment: [:])
+        // The job outlives any wait for it (it is stopped below): a resume delayed past its end would find no child.
+        let shell = try Self.spawn("/bin/sh", ["-c", "/bin/sleep 120 & wait"], environment: [:])
         defer {
             var children = [pid_t](repeating: 0, count: 16)
             let count = children.withUnsafeMutableBytes { proc_listchildpids(shell.processIdentifier, $0.baseAddress, Int32($0.count)) }

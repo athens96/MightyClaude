@@ -1420,12 +1420,18 @@ extension MobileRemoteService {
             defer { releasePreviewSlot() }
             try Task.checkCancellation()
             let svg = delegate.mobileSVGRasterizer
-            let decode = Task.detached(priority: .userInitiated) { () throws -> Data? in
-                try MobileWorkspaceFiles.finish(preview, file: file, svg: svg, isCancelled: { Task.isCancelled }).map(MobileWorkspaceFiles.encoded)
-            }
-            guard let body = try await withTaskCancellationHandler(operation: { try await decode.value }, onCancel: { decode.cancel() }) else {
-                throw CancellationError()
-            }
+            // Decoding (and the host's svg drawing) blocks while it runs, so it gets a thread of its own instead of holding
+            // one of the few cooperative threads every other request, submit included, resumes on.
+            let stop = PreviewDecodeStop()
+            let decoded: Data? = try await withTaskCancellationHandler(operation: {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, Error>) in
+                    startBlockingThread("mobile-preview-decode", qualityOfService: .userInitiated) {
+                        do { continuation.resume(returning: try MobileWorkspaceFiles.finish(preview, file: file, svg: svg, isCancelled: { stop.isSet }).map(MobileWorkspaceFiles.encoded)) }
+                        catch { continuation.resume(throwing: error) }
+                    }
+                }
+            }, onCancel: { stop.set() })
+            guard let body = decoded else { throw CancellationError() }
             return MobileReply(status: 200, body: body)
         } catch let error as MobileFileError { throw Failure(error) }
     }
@@ -1850,6 +1856,14 @@ actor RelayClientConnection {
         (socket ?? pendingSocket).close(reason: reason)
         socket = nil
     }
+}
+
+/// A preview decode's stop: set when the phone's request is cancelled, read between the decode's steps.
+final class PreviewDecodeStop: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopped = false
+    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return stopped }
+    func set() { lock.lock(); stopped = true; lock.unlock() }
 }
 
 /// Lets a callback that may fire more than once resume a continuation exactly once.
