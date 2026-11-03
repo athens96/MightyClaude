@@ -168,7 +168,7 @@ private struct PaneDockGroup: View {
         node.sessionIds.compactMap { id in store.snapshot.sessions.first { $0.id == id && $0.workspaceId == workspaceId } }
     }
     private var selected: RunSession? { sessions.first { $0.id == node.selectedSessionId } ?? sessions.first }
-    static let slimHeaderKinds: Set<String> = [SessionKind.browser, AgentIOPaneKind.terminal, AgentIOPaneKind.browser, FilePaneKind.kind]
+    static let slimHeaderKinds: Set<String> = [SessionKind.browser, AgentIOPaneKind.terminal, AgentIOPaneKind.browser, FilePaneKind.kind, WorkMapPaneKind.kind]
 
     var body: some View {
         GeometryReader { geometry in
@@ -182,6 +182,7 @@ private struct PaneDockGroup: View {
                     else if selected.kind == AgentIOPaneKind.terminal { AgentTerminalPaneView(session: selected).id(selected.id) }
                     else if selected.kind == AgentIOPaneKind.browser { AgentBrowserPaneView(session: selected).id(selected.id) }
                     else if selected.kind == FilePaneKind.kind { FilePaneView(session: selected).id(selected.id) }
+                    else if selected.kind == WorkMapPaneKind.kind { WorkMapView(session: selected).id(selected.id) }
                     else { SessionPaneView(session: selected).id(selected.id) }
                 } else { Color.clear }
             }
@@ -242,6 +243,7 @@ private struct PaneDockTab: View {
                     if session.kind == "shell" || session.kind == AgentIOPaneKind.terminal { Image(systemName: "terminal").font(.ui(size: 10)) }
                     else if session.kind == "browser" || session.kind == AgentIOPaneKind.browser { Image(systemName: "globe").font(.ui(size: 10)) }
                     else if session.kind == FilePaneKind.kind { Image(systemName: "folder").font(.ui(size: 10)) }
+                    else if session.kind == WorkMapPaneKind.kind { Image(systemName: "map").font(.ui(size: 10)) }
                     else { ProviderIcon(provider: session.provider, size: 10) }
                 }
                 // The shown pane's name lives only here (its header has the status), so its tab gives it more room.

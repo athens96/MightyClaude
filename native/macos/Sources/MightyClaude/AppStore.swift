@@ -263,6 +263,10 @@ final class AppStore: ObservableObject, DelegationHost {
     /// until quit so a closed files pane reopens as it was. Its preview is
     /// released when the pane closes and read again when it reopens.
     var filePaneModels: [String: FilePaneModel] = [:]
+    /// Each workspace's work map window state, kept until quit (see `WorkMapPaneModel`).
+    var workMapPanes: [String: WorkMapPaneModel] = [:]
+    /// The saved topic summaries of the work map, under the data directory.
+    lazy var workMapSummaries = WorkMapSummaryStore(directory: dataDirectory.appendingPathComponent(WorkMapSummaryStore.folderName, isDirectory: true))
     /// URL choice dialogs waiting for an answer, each shown in the agent pane that asked.
     @Published var webOpenRequests: [WebOpenPromptRequest] = []
     /// The dialog's model: the open_url service presents to it and polls it.
@@ -595,6 +599,7 @@ final class AppStore: ObservableObject, DelegationHost {
         else if arguments.contains("--usage-reset-smoke-test") { Task { await runUsageResetSmokeTest() } }
         else if arguments.contains("--setup-smoke-test") { Task { await runSetupSmokeTest() } }
         else if arguments.contains("--files-smoke-test") { Task { await runFilesSmokeTest() } }
+        else if arguments.contains("--workmap-smoke-test") { Task { await runWorkMapSmokeTest() } }
         else if arguments.contains("--delegation-smoke-test") { Task { await runDelegationSmokeTest() } }
         else if terminalSmokeMode { Task { await runTerminalSmokeTest() } }
         else if arguments.contains("--smoke-test") { Task { await runSmokeTest() } }
@@ -876,6 +881,7 @@ final class AppStore: ObservableObject, DelegationHost {
             snapshot.workspaces.removeAll { $0.id == workspace.id }
             forgetWorkspaceStyles(workspace)
             filePaneModels.removeValue(forKey: workspace.id)
+            workMapPanes.removeValue(forKey: workspace.id)?.summaryTask?.cancel()
             snapshot.paneLayouts?.removeValue(forKey: workspace.id)
             snapshot.paneLayoutModes?.removeValue(forKey: workspace.id)
             snapshot.paneLayoutActiveSessionIds?.removeValue(forKey: workspace.id)

@@ -47,6 +47,7 @@ import {
   type SubmitOptions,
   type SubmitResponse,
   type UploadTicket,
+  type WorkMap,
   SCREEN_REJECT_REASONS,
   type ScreenControlKeyResponse,
   type ScreenRejectReason,
@@ -315,6 +316,10 @@ export interface MobileClient {
    * markdown preview also carries what the request changed in it (`changes=1`, with `session` and `run` when given).
    */
   filePreview(workspaceId: string, path: string, signal?: AbortSignal, changes?: FileChangesRequest): Promise<FilePreview>;
+  /** The workspace's work map: versions, topics, commits and requests, read-only ("workMap"). */
+  workMap(workspaceId: string, signal?: AbortSignal): Promise<WorkMap>;
+  /** Asks the host to group one version's commits into topics (202); rejects with 409 while another runs ("workMap"). */
+  summarizeWorkMap(workspaceId: string, key: string, signal?: AbortSignal): Promise<OkResponse>;
   /** This phone's allow-list flag, grant, displays and TURN servers ("screenShare"). */
   screenShareState(signal?: AbortSignal): Promise<ScreenShareState>;
   /** Asks the Mac for a session; it refuses with a `ScreenRejectReason` ("screenShare"). */
@@ -661,6 +666,25 @@ export function createClient(channel: RelayChannel): MobileClient {
         undefined,
         signal,
       ),
+
+    workMap: (workspaceId, signal) =>
+      request<WorkMap>('GET', `/m1/workspaces/${encodeURIComponent(workspaceId)}/workmap`, undefined, signal),
+
+    summarizeWorkMap: async (workspaceId, key, signal) => {
+      try {
+        return await request<OkResponse>(
+          'POST',
+          `/m1/workspaces/${encodeURIComponent(workspaceId)}/workmap/summarize`,
+          { key },
+          signal,
+        );
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409) {
+          throw new ApiError(409, t('workMap.error.busy'), error.code);
+        }
+        throw error;
+      }
+    },
 
     screenShareState: async (signal) => {
       const response = await request<ScreenShareStateResponse>(

@@ -11,11 +11,24 @@ public enum FilePaneKind {
     public static func paneId(workspaceId: String) -> String { kind + ":" + workspaceId }
     public static func isFilePane(_ kind: String) -> Bool { kind == Self.kind }
 
-    /// The panes the relay pane list may carry: everything but files panes,
-    /// which the phone cannot show and has no command for.
+    /// A pane that is no agent and never runs: the files pane or the work map. Not counted, not listed
+    /// for a model, not saved.
+    public static func isReadOnlyPane(_ kind: String) -> Bool { isFilePane(kind) || WorkMapPaneKind.isWorkMapPane(kind) }
+
+    /// The panes the relay pane list may carry: everything but the files and work map panes,
+    /// which the phone cannot show as panes and has no command for.
     public static func phoneVisible(_ sessions: [RunSession]) -> [RunSession] {
-        sessions.filter { !isFilePane($0.kind) }
+        sessions.filter { !isReadOnlyPane($0.kind) }
     }
+}
+
+/// The Mac's work map pane (docs/work-map.md): one per workspace, held in the pane list like the files pane,
+/// of its own kind, never saved (`SessionKind.stored` leaves it out).
+public enum WorkMapPaneKind {
+    public static let kind = "workmap"
+
+    public static func paneId(workspaceId: String) -> String { kind + ":" + workspaceId }
+    public static func isWorkMapPane(_ kind: String) -> Bool { kind == Self.kind }
 }
 
 /// One row of the workspace tree. `relativePath` is the path under the

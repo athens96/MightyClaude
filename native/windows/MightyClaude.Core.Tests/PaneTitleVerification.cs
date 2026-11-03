@@ -52,7 +52,7 @@ internal static class PaneTitleVerification
         Check(renamed.TitleMode == PaneTitle.Fixed, "a rename must fix the title");
         Check(PaneTitle.Requested(renamed, "a later request").Title == "내 실행 창", "a fixed title must survive a new request");
 
-        foreach (var kind in new[] { "shell", "browser", FilePaneKind.Kind })
+        foreach (var kind in new[] { "shell", "browser", FilePaneKind.Kind, WorkMapPaneKind.Kind })
         {
             var other = new RunSession { WorkspaceId = "ws", Kind = kind, Title = "터미널" };
             Check(PaneTitle.Requested(other, "ls -la").Title == "터미널", kind + " panes must keep their titles");

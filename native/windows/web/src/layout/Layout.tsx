@@ -134,7 +134,7 @@ function TabDragGhost() {
 function KindIcon({ info }: { info: PaneInfo }) {
   if (info.kind === 'claude') return <ProviderMark provider={info.provider} size={11.5} />;
   const path = info.kind === 'shell' || info.kind === 'agent-terminal' ? 'M2 3h12v10H2zM4 6l2 2-2 2M8 10h4'
-    : info.kind === 'files' ? 'M1.5 4h4.5l1.2 1.6h7.3V13h-13z' : 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12';
+    : info.kind === 'files' ? 'M1.5 4h4.5l1.2 1.6h7.3V13h-13z' : info.kind === 'workmap' ? 'M1.5 3.5 5.5 2v10.5l-4 1.5zM5.5 2l5 1.5V14l-5-1.5zM10.5 3.5l4-1.5v10.5l-4 1.5z' : 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12';
   return <svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true"><path d={path} fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>;
 }
 

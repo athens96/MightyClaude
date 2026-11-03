@@ -416,6 +416,8 @@ export function reduce(state: StoreState, message: StoreMessage): StoreState {
       return message.paneId === state.chosen ? state : settle({ ...state, chosen: message.paneId });
     case 'terminal':
     case 'browser':
+    case 'workmap':
+    case 'files':
       return state;
     case 'overlay':
       return { ...state, overlays: Math.max(0, state.overlays + (message.open ? 1 : -1)) };

@@ -71,6 +71,7 @@ public sealed partial class MainWindow
         bridge.Register("removeWorkspace", async args => { if (args.Text("id") is { } id) await ConfirmRemoveWorkspace(id); return null; });
         bridge.Register("showInExplorer", async args => { if (args.Text("id") is { } id) await ShowWorkspaceInExplorer(id); return null; });
         bridge.Register("openFiles", async args => { if (!dialogOpen) { HideDashboard(); await OpenFilePane(args.Text("workspaceId")); } return null; });
+        RegisterWorkMapMethods(bridge);
         bridge.Register("focusPane", async args =>
         {
             if (args.Text("id") is not { } id) return null;
@@ -490,6 +491,7 @@ public sealed partial class MainWindow
             header = active is null ? null : new
             {
                 id = active.Id, name = active.Name, path = active.Path, git = WebGit(activeGit), remoteHost = active.Remote is null ? null : RemoteHostLabel(active),
+                workMapEnabled = WorkMapButton(active, activeGit is not null).Enabled, workMapHelp = WorkMapButton(active, activeGit is not null).Help,
                 filesEnabled = RemoteWorkspaceFeatures.AllowsLocalOnly(active), filesHelp = active.Remote is null ? Locale.Get("menu.showFiles") + " (" + FilePaneKind.Shortcut + ")" : RemoteWindowsStrings.PaneUnavailable,
             },
             layout,

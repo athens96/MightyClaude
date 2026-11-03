@@ -95,6 +95,7 @@ internal sealed class StatusMark
     {
         "browser" or AgentIOPaneKind.Browser => "",
         FilePaneKind.Kind => "",
+        WorkMapPaneKind.Kind => "",
         _ => "",
     };
 

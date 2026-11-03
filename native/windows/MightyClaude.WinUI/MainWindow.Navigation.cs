@@ -135,6 +135,7 @@ public sealed partial class MainWindow
         AgentIOPaneKind.Terminal => Locale.Get("dashboard.kind.agentTerminal"),
         AgentIOPaneKind.Browser => Locale.Get("dashboard.kind.agentBrowser"),
         FilePaneKind.Kind => Locale.Get("files.pane.title"),
+        WorkMapPaneKind.Kind => Locale.Get("workMap.title"),
         "claude" => Locale.Get("dashboard.kind.agent"),
         _ => kind,
     };
@@ -146,7 +147,7 @@ public sealed partial class MainWindow
     /// in a frame 1.15 times its size (M/ProviderIcon.swift:18).
     /// </summary>
     private static FrameworkElement TabKindIcon(RunSession session, Brush ink) =>
-        session.Kind is "shell" or "browser" or FilePaneKind.Kind || AgentIOPaneKind.IsAgentIO(session.Kind) ? PaneSymbol(session.Kind, 10, ink) : ProviderMarkView.Create(session.Provider, 10 * 1.15);
+        session.Kind is "shell" or "browser" or FilePaneKind.Kind or WorkMapPaneKind.Kind || AgentIOPaneKind.IsAgentIO(session.Kind) ? PaneSymbol(session.Kind, 10, ink) : ProviderMarkView.Create(session.Provider, 10 * 1.15);
     /// <summary>The kind line of each sidebar row that is not an agent's, by session id.</summary>
     private readonly Dictionary<string, TextBlock> sidebarKindLines = [];
     /// <summary>A sidebar title's weight: medium once the pane is done, stopped or idle, semibold while it runs, waits or failed.</summary>
@@ -322,6 +323,7 @@ public sealed partial class MainWindow
         menu.Items.Add(MenuItem(Locale.Get("menu.showInExplorer"), () => ShowWorkspaceInExplorer(id)));
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(OpenFilesMenuItem(id));
+        menu.Items.Add(OpenWorkMapMenuItem(id));
         return menu;
     }
     /// <summary>Opens a local workspace's folder in File Explorer; a remote workspace's folder is on its host, so Explorer never opens its path here.</summary>

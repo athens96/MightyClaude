@@ -66,6 +66,7 @@ it('keeps every link the app and the Mac hand out', () => {
       '/host/[hostId]/session/[sessionId]',
       '/host/[hostId]/workspace/[workspaceId]/files',
       '/host/[hostId]/workspace/[workspaceId]/file',
+      '/host/[hostId]/workspace/[workspaceId]/workmap',
     ]),
   );
 });
@@ -84,6 +85,7 @@ it('keeps a pane and its files above the tabs, not inside them', () => {
       'host/[hostId]/session/[sessionId]',
       'host/[hostId]/workspace/[workspaceId]/files',
       'host/[hostId]/workspace/[workspaceId]/file',
+      'host/[hostId]/workspace/[workspaceId]/workmap',
     ]),
   );
   // Only one screen answers "/": the old host list moved to the 호스트 tab.

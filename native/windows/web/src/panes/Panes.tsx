@@ -4,9 +4,10 @@ import type { Translate } from '../i18n/locale';
 import { BrowserView } from './browser/BrowserView';
 import { FilesView } from './files/FilesView';
 import { TerminalView } from './terminal/TerminalView';
+import { WorkMapView } from './workmap/WorkMapView';
 
 /** The kinds whose pane shows the slim bar and no header of its own (WinUI MainWindow.PaneHeader.cs GroupSlimHeaderKinds). */
-export const slimKinds: ReadonlySet<string> = new Set(['browser', 'agent-terminal', 'agent-browser', 'files']);
+export const slimKinds: ReadonlySet<string> = new Set(['browser', 'agent-terminal', 'agent-browser', 'files', 'workmap']);
 
 /** A pane's kind in words, as its slim bar says it (WinUI PaneKindWords, the Mac's DashboardText.kind). */
 export function paneKindWords(kind: string, t: Translate): string {
@@ -17,6 +18,7 @@ export function paneKindWords(kind: string, t: Translate): string {
     case 'agent-terminal': return t('dashboard.kind.agentTerminal');
     case 'agent-browser': return t('dashboard.kind.agentBrowser');
     case 'files': return t('files.pane.title');
+    case 'workmap': return t('workMap.title');
     default: return kind;
   }
 }
@@ -35,6 +37,7 @@ export function SlimPane({ session }: { session: RunSession }) {
       </header>
       <div className="pane-slim-body">
         {session.kind === 'files' && <FilesView session={session} />}
+        {session.kind === 'workmap' && <WorkMapView session={session} />}
         {(session.kind === 'browser' || session.kind === 'agent-browser') && <BrowserView session={session} />}
         {session.kind === 'agent-terminal' && <TerminalView session={session} />}
       </div>

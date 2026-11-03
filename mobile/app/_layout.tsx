@@ -84,6 +84,10 @@ export default function RootLayout() {
               name="host/[hostId]/workspace/[workspaceId]/file"
               options={{ title: t('phone.files.title') }}
             />
+            <Stack.Screen
+              name="host/[hostId]/workspace/[workspaceId]/workmap"
+              options={{ title: t('workMap.title') }}
+            />
           </Stack>
           <PushRoot />
           <ToastHost />

@@ -73,7 +73,7 @@ public sealed partial class MainWindow
         element.Resources.TryGetValue(key, out var value) ? value : null;
 
     /// <summary>The kinds whose tab group draws the slim bar over the pane, which then shows no header of its own (M/PaneDockView.swift:171, 178-180).</summary>
-    private static readonly HashSet<string> GroupSlimHeaderKinds = ["browser", AgentIOPaneKind.Terminal, AgentIOPaneKind.Browser, FilePaneKind.Kind];
+    private static readonly HashSet<string> GroupSlimHeaderKinds = ["browser", AgentIOPaneKind.Terminal, AgentIOPaneKind.Browser, FilePaneKind.Kind, WorkMapPaneKind.Kind];
     /// <summary>A slim bar's place in its pane card: <c>Spacing.Xs</c> at the sides and top, <c>Spacing.Xxs</c> under it (M/PaneChrome.swift:119).</summary>
     internal static readonly Thickness SlimBarMargin = new(DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs);
     /// <summary>The least room between a slim bar's words and what trails them (M/PaneChrome.swift:112).</summary>
@@ -96,6 +96,7 @@ public sealed partial class MainWindow
         {
             "browser" or AgentIOPaneKind.Browser => ("\uE774", 1.04, 1.27),
             FilePaneKind.Kind => ("\uE8B7", 1.12, 1.36),
+            WorkMapPaneKind.Kind => ("\uE707", 1.12, 1.36),
             _ => ("\uE756", 1.2, 1.4),
         };
         var icon = new FontIcon { Glyph = glyph, TextSize = Math.Round(macSize * scale * 2) / 2, TextWidth = Math.Round(macSize * slot), Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
@@ -112,6 +113,7 @@ public sealed partial class MainWindow
         AgentIOPaneKind.Terminal => Locale.Get("dashboard.kind.agentTerminal"),
         AgentIOPaneKind.Browser => Locale.Get("dashboard.kind.agentBrowser"),
         FilePaneKind.Kind => Locale.Get("files.pane.title"),
+        WorkMapPaneKind.Kind => Locale.Get("workMap.title"),
         _ => kind,
     };
 

@@ -49,6 +49,8 @@ export function HostWorkspaces({
   const capabilities = useCapabilities(hostId, client);
   // A Mac older than the files routes never shows the button.
   const canBrowseFiles = hasCapability(capabilities, 'files');
+  // The work map is read like the files, from the same kind of workspace, and only on a host that lists it.
+  const canOpenWorkMap = canBrowseFiles && hasCapability(capabilities, 'workMap');
   // Only the Android app gets notifications, and only from a host that sends them.
   const canMute = Platform.OS === 'android' && hasCapability(capabilities, 'push');
   // Muted on this phone only (workspace-mute.ts): the host is not asked or told.
@@ -114,6 +116,14 @@ export function HostWorkspaces({
                   accessibilityLabel={t('phone.files.openLabel', { name: group.workspace.name })}
                   compact
                   onPress={() => router.push(`/host/${hostId}/workspace/${group.workspace.id}/files`)}
+                />
+              ) : null}
+              {canOpenWorkMap ? (
+                <Button
+                  label={t('workMap.title')}
+                  accessibilityLabel={t('workMap.open')}
+                  compact
+                  onPress={() => router.push(`/host/${hostId}/workspace/${group.workspace.id}/workmap`)}
                 />
               ) : null}
               <Button

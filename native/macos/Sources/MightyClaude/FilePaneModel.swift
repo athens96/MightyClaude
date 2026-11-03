@@ -218,6 +218,16 @@ final class FilePaneModel: ObservableObject {
         if !entry.isDirectory { showPreview(entry.relativePath, name: entry.name) }
     }
 
+    /// Shows `relativePath` as if it were picked in the tree: its folders open, the filter clears (the work map's file list).
+    func open(relativePath: String) {
+        let components = relativePath.split(separator: "/").map(String.init)
+        guard let name = components.last else { return }
+        filter = ""
+        for count in 1..<components.count { expand(components.prefix(count).joined(separator: "/")) }
+        selectedPath = relativePath
+        showPreview(relativePath, name: name, debounce: false)
+    }
+
     func moveSelection(by offset: Int) {
         guard !rows.isEmpty else { return }
         let current = selectedPath.flatMap { path in rows.firstIndex { $0.id == path } }

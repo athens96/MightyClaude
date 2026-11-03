@@ -5,6 +5,7 @@ import type { AppSnapshot, LogEntry, RunSession } from '../store/models';
 import type { HostPort } from './bridge';
 import type { CallMessage, HostMessage } from './protocol';
 import type { ShellModel } from '../shell/types';
+import { devWorkMap } from './devWorkMap';
 
 const noCounts = { questions: 0, permissions: 0, errors: 0, running: 0, done: 0, stopped: 0, idle: 0 };
 
@@ -20,7 +21,7 @@ export function devShell(snapshot: AppSnapshot): ShellModel {
       settled: s.status !== 'running', agent: s.provider, agentLabel: s.provider, meta: '· now', tabMark: s.status !== 'idle', waiting: 0, dashMeta: '· now', activityError: false,
     })),
     workspaces: snapshot.workspaces.map((w) => ({ id: w.id, name: w.name, path: w.path, local: true, counts, expanded: true, items: snapshot.sessions.filter((s) => s.workspaceId === w.id).map((s) => ({ type: 'pane' as const, id: s.id, depth: 0 })) })),
-    header: snapshot.workspaces[0] && { id: snapshot.workspaces[0].id, name: snapshot.workspaces[0].name, path: snapshot.workspaces[0].path, filesEnabled: true, filesHelp: 'Files (Ctrl+Shift+E)' },
+    header: snapshot.workspaces[0] && { id: snapshot.workspaces[0].id, name: snapshot.workspaces[0].name, path: snapshot.workspaces[0].path, filesEnabled: true, filesHelp: 'Files (Ctrl+Shift+E)', workMapEnabled: true, workMapHelp: 'Open Work Map' },
     layout: snapshot.activeWorkspaceId ? { workspaceId: snapshot.activeWorkspaceId, mode: 'tabs', root: { id: 'g1', kind: 'tabs', sessionIds: ids, selectedSessionId: snapshot.activeSessionId, ratio: 0.5, children: [] } } : undefined,
     status: { machine: 'This PC', panes: ids.length + ' panes', running: counts.running + ' running', updateHelp: '', setup: false, chipsTitle: 'Usage', chipsTooltip: 'Usage' },
   };
@@ -97,7 +98,12 @@ export function devHost(): HostPort {
       const args = (call.args ?? {}) as Record<string, string | undefined>;
       if (call.method === 'selectSession') snapshot = { ...snapshot, activeSessionId: args.id };
       if (call.method === 'setTheme') snapshot = { ...snapshot, theme: args.theme ?? snapshot.theme };
-      const value = call.method === 'getLocale' ? { preference: 'system', language: navigator.language.split('-')[0] ?? 'en' } : call.method === 'shellState' ? devShell(snapshot) : null;
+      if (call.method === 'openWorkMap') {
+        const id = 'workmap:w1';
+        const opened = snapshot.sessions.some((session) => session.id === id) ? snapshot.sessions : [...snapshot.sessions, { ...pane(id, 'w1', 'Work map', 'idle', 0), kind: 'workmap' }];
+        snapshot = { ...snapshot, sessions: opened, activeSessionId: id };
+      }
+      const value = call.method === 'getLocale' ? { preference: 'system', language: navigator.language.split('-')[0] ?? 'en' } : call.method === 'shellState' ? devShell(snapshot) : call.method === 'workMapState' ? devWorkMap() : null;
       send({ kind: 'result', id: call.id, ok: true, value });
       if (call.method === 'ready') {
         sent = snapshot;
@@ -107,7 +113,7 @@ export function devHost(): HostPort {
           setInterval(stream, 250);
         }
       }
-      if (call.method === 'selectSession' || call.method === 'setTheme') flush();
+      if (call.method === 'selectSession' || call.method === 'setTheme' || call.method === 'openWorkMap') flush();
     },
   };
 }

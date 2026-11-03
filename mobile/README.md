@@ -176,6 +176,7 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 | `mighty` | 헤더의 `대화`/`블록` 전환, 요청별 블록 목록, 스타일 패널(Ouroboros 등) |
 | `attachments` | 입력창의 `＋` 버튼(사진·파일), 첨부 칩, 청크 업로드 |
 | `files` | 호스트 화면의 워크스페이스마다 `파일` 버튼 → 읽기 전용 폴더 목록과 미리보기 |
+| `workMap` | 파일을 볼 수 있는 워크스페이스마다 `작업 지도` 버튼 → 버전 칩, 주제 카드, 상세 시트, 주제 요약 만들기 ([docs/work-map.md](../docs/work-map.md), `workspace/[workspaceId]/workmap.tsx`) |
 | `push` | 호스트에 푸시 핸들과 켠 종류를 주고(`/m1/push/register`), 세션 화면을 보는 동안 `viewing`을 알림. 설정 화면의 알림 스위치, 워크스페이스마다 알림 종 (Android) |
 
 - 이전 기록은 호스트가 `hasOlder`라고 말할 때만 더 불러오고, `hasMore: false`이거나

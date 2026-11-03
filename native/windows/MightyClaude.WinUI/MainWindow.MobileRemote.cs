@@ -26,6 +26,8 @@ public sealed partial class MainWindow
             Catalog = pane => Runtime(pane.Provider)?.ModelCatalog, Digest = pane => pane.Kind == "claude" && views.TryGetValue(pane.Id, out var view) ? view.MobileDigest() : null, ActiveStyle = MobileRunningStyle };
         mobileHost = new(directory, Environment.MachineName, MobileDesktopRouter.Capabilities, MobileRoute) { AppVersion = AppVersionText };
         mobileRouter.HostId = mobileHost.HostId;
+        // The work map (docs/work-map.md) is the one the page shows: same model, same one-at-a-time summary.
+        mobileRouter.WorkMapRead = WorkMaps.ModelAsync; mobileRouter.WorkMapSummarize = WorkMaps.StartAsync;
         mobileRouter.DirectEndpoints = () => mobileHost?.DirectEndpoints ?? [];
         // Phone notifications (M/MightyClaude/AppStore+MobilePush.swift), routed before the host starts so the "push" it advertises always
         // has its routes. A confirmed lost sign-in is the login recovery's remembered request, read on this (the UI) thread.

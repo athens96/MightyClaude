@@ -94,6 +94,7 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
     { label: t('menu.showInExplorer'), action: () => call('showInExplorer', { id: workspace.id }) },
     { separator: true },
     { label: t('menu.showFiles'), action: () => call('openFiles', { workspaceId: workspace.id }) },
+    { label: t('workMap.open'), action: () => call('openWorkMap', { workspaceId: workspace.id }) },
   );
   const disclosure = t(workspace.expanded ? 'workspace.collapseAccessibility' : 'workspace.expandAccessibility', { workspace: workspace.name });
   return (

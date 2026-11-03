@@ -1,0 +1,100 @@
+{
+  "doc": "docs/work-map.md — the work map's rules, held by MightyCore WorkMap.swift and Core WorkMap.cs (and the phone's display rules).",
+  "maximumVersions": 12,
+  "maximumCommitsPerVersion": 400,
+  "maximumFilesPerCommit": 50,
+  "maximumRequests": 200,
+  "maximumCommitsPerRequest": 20,
+  "requestTextLength": 200,
+  "maximumTopics": 8,
+  "titleLength": 40,
+  "summaryLength": 160,
+  "notesLength": 8000,
+  "summaryTimeoutSeconds": 120,
+  "lanes": ["mac", "windows", "phone", "ci", "etc"],
+  "releaseSteps": ["check", "version", "push", "ci", "download", "manifest", "page", "upload", "github", "verify"],
+  "tagPattern": "^v\\d+\\.\\d+\\.\\d+$",
+  "laneCases": [
+    { "subject": "(mac, windows, phone) source changes: review fixes", "scope": "mac, windows, phone", "text": "source changes: review fixes", "lanes": ["mac", "windows", "phone"] },
+    { "subject": "(phone, mac, windows) the phone shows result files", "scope": "phone, mac, windows", "text": "the phone shows result files", "lanes": ["mac", "windows", "phone"] },
+    { "subject": "(mac tests) no test blocks the cooperative pool", "scope": "mac tests", "text": "no test blocks the cooperative pool", "lanes": ["mac"] },
+    { "subject": "(mac, windows, phone contract) phase 1", "scope": "mac, windows, phone contract", "text": "phase 1", "lanes": ["mac", "windows", "phone"] },
+    { "subject": "(mac,web,docs) the notes on own sends", "scope": "mac,web,docs", "text": "the notes on own sends", "lanes": ["mac", "windows"] },
+    { "subject": "(release) 0.4.49: One UI settings", "scope": "release", "text": "0.4.49: One UI settings", "lanes": ["ci"] },
+    { "subject": "(ci) the Mac browser engine is fetched", "scope": "ci", "text": "the Mac browser engine is fetched", "lanes": ["ci"] },
+    { "subject": "(docs) plan: three tasks", "scope": "docs", "text": "plan: three tasks", "lanes": ["etc"] },
+    { "subject": "(locales,help) the notice words are gone", "scope": "locales,help", "text": "the notice words are gone", "lanes": ["etc"] },
+    { "subject": "fix(windows): keep Mods usage sequences consistent", "scope": "windows", "text": "keep Mods usage sequences consistent", "lanes": ["windows"] },
+    { "subject": "docs(windows): record verified x64 and ARM64 parity results", "scope": "windows", "text": "record verified x64 and ARM64 parity results", "lanes": ["windows"] },
+    { "subject": "Merge branch 'feat/source-diff'", "scope": null, "text": "Merge branch 'feat/source-diff'", "lanes": ["etc"] },
+    { "subject": "(macos, android) both ends", "scope": "macos, android", "text": "both ends", "lanes": ["mac", "phone"] },
+    { "subject": "(MOBILE) upper case scope", "scope": "MOBILE", "text": "upper case scope", "lanes": ["phone"] },
+    { "subject": "() empty scope", "scope": "", "text": "empty scope", "lanes": ["etc"] }
+  ],
+  "tagCases": [
+    { "tags": ["v0.4.47", "mighty-style-engine-v3", "v0.4.48", "v0.4.9", "v1.0", "v0.4.10"], "kept": ["v0.4.48", "v0.4.47", "v0.4.10", "v0.4.9"] }
+  ],
+  "versionNameCases": [
+    { "file": "0.4.49\n", "newestTag": "v0.4.48", "version": "0.4.49" },
+    { "file": "0.4.48", "newestTag": "v0.4.48", "version": null },
+    { "file": "0.4.10", "newestTag": "v0.4.9", "version": "0.4.10" },
+    { "file": "next", "newestTag": "v0.4.48", "version": null },
+    { "file": null, "newestTag": "v0.4.48", "version": null },
+    { "file": "0.1.0", "newestTag": null, "version": "0.1.0" }
+  ],
+  "releaseStatusCases": [
+    { "state": null, "status": "unreleased", "step": null },
+    { "state": { "done": { "check": true, "version": true } }, "status": "unreleased", "step": null },
+    { "state": { "done": { "check": true, "version": true, "push": true } }, "status": "releasing", "step": "ci" },
+    { "state": { "done": { "check": true, "version": true, "push": true, "ci": true, "download": true, "manifest": true } }, "status": "releasing", "step": "page" },
+    { "state": { "done": { "check": true, "version": true, "push": true, "ci": false } }, "status": "releasing", "step": "ci" },
+    { "state": { "done": { "check": true, "version": true, "push": true, "ci": true, "download": true, "manifest": true, "page": true, "upload": true, "github": true, "verify": true } }, "status": "unreleased", "step": null },
+    { "state": "not json", "status": "unreleased", "step": null }
+  ],
+  "dotSize": { "minimum": 6, "range": 14, "cases": [ { "count": 0, "largest": 61, "size": 0 }, { "count": 61, "largest": 61, "size": 20 }, { "count": 1, "largest": 61, "size": 8 }, { "count": 9, "largest": 61, "size": 11 } ] },
+  "prompt": "You group one software version's commits into topics for a project overview.\nAnswer in {language}. Reply with JSON only, no prose: {\"topics\":[{\"title\":\"…\",\"summary\":\"…\",\"commits\":[\"sha8\"],\"requests\":[\"id\"]}]}\nRules: 3 to 6 topics; a title of at most 6 words names a user-visible feature or fix; a summary of one sentence says what changed for the user; every commit sha8 belongs to exactly one topic; put a request id under the topic it asked for.\nVersion: {version}\nCommits (sha8 [lanes] scope: subject):\n{commits}\nRequests the user sent (id: text):\n{requests}\nRelease notes:\n{notes}",
+  "summaryCases": [
+    {
+      "name": "plain JSON",
+      "commits": [ { "sha": "aaaaaaa1", "lanes": ["mac"] }, { "sha": "bbbbbbb2", "lanes": ["windows"] }, { "sha": "ccccccc3", "lanes": ["phone"] } ],
+      "requests": ["p1/r1"],
+      "answer": "{\"topics\":[{\"title\":\"Settings\",\"summary\":\"New layout.\",\"commits\":[\"aaaaaaa1\",\"bbbbbbb2\"],\"requests\":[\"p1/r1\"]},{\"title\":\"Phone\",\"summary\":\"Fix.\",\"commits\":[\"ccccccc3\"]}]}",
+      "topics": [
+        { "title": "Settings", "summary": "New layout.", "lanes": ["mac", "windows"], "commits": ["aaaaaaa1", "bbbbbbb2"], "requests": ["p1/r1"] },
+        { "title": "Phone", "summary": "Fix.", "lanes": ["phone"], "commits": ["ccccccc3"], "requests": [] }
+      ]
+    },
+    {
+      "name": "a fenced answer with prose around it; unknown shas and ids dropped; leftover commits go to the other topic",
+      "commits": [ { "sha": "aaaaaaa1", "lanes": ["mac"] }, { "sha": "bbbbbbb2", "lanes": ["ci"] }, { "sha": "ccccccc3", "lanes": ["etc"] } ],
+      "requests": ["p1/r1"],
+      "answer": "Here you go:\n```json\n{\"topics\":[{\"title\":\"Tests\",\"summary\":\"Stable {tests}.\",\"commits\":[\"aaaaaaa1\",\"deadbeef\"],\"requests\":[\"p9/r9\"]}]}\n```\nDone.",
+      "topics": [
+        { "title": "Tests", "summary": "Stable {tests}.", "lanes": ["mac"], "commits": ["aaaaaaa1"], "requests": [] },
+        { "title": "@other", "summary": "", "lanes": ["ci", "etc"], "commits": ["bbbbbbb2", "ccccccc3"], "requests": [] }
+      ]
+    },
+    {
+      "name": "a topic left with no commit is dropped, a blank title is dropped, long text is cut",
+      "commits": [ { "sha": "aaaaaaa1", "lanes": ["windows"] } ],
+      "requests": [],
+      "answer": "{\"topics\":[{\"title\":\"Ghost\",\"summary\":\"x\",\"commits\":[\"ffffffff\"]},{\"title\":\"  \",\"summary\":\"y\",\"commits\":[\"aaaaaaa1\"]},{\"title\":\"0123456789012345678901234567890123456789EXTRA\",\"summary\":\"short\",\"commits\":[\"aaaaaaa1\"]}]}",
+      "topics": [
+        { "title": "0123456789012345678901234567890123456789", "summary": "short", "lanes": ["windows"], "commits": ["aaaaaaa1"], "requests": [] }
+      ]
+    },
+    {
+      "name": "a commit named twice stays with the first topic",
+      "commits": [ { "sha": "aaaaaaa1", "lanes": ["mac"] }, { "sha": "bbbbbbb2", "lanes": ["phone"] } ],
+      "requests": [],
+      "answer": "{\"topics\":[{\"title\":\"A\",\"summary\":\"a\",\"commits\":[\"aaaaaaa1\",\"bbbbbbb2\"]},{\"title\":\"B\",\"summary\":\"b\",\"commits\":[\"bbbbbbb2\"]}]}",
+      "topics": [
+        { "title": "A", "summary": "a", "lanes": ["mac", "phone"], "commits": ["aaaaaaa1", "bbbbbbb2"], "requests": [] }
+      ]
+    },
+    { "name": "no JSON", "commits": [ { "sha": "aaaaaaa1", "lanes": ["mac"] } ], "requests": [], "answer": "I could not do it.", "error": true },
+    { "name": "no topic keeps a commit", "commits": [ { "sha": "aaaaaaa1", "lanes": ["mac"] } ], "requests": [], "answer": "{\"topics\":[]}", "error": true },
+    { "name": "broken JSON", "commits": [ { "sha": "aaaaaaa1", "lanes": ["mac"] } ], "requests": [], "answer": "{\"topics\":[{\"title\":\"A\"", "error": true }
+  ],
+  "summaryNotes": "A topic title \"@other\" in the expectations stands for the localized workMap.topic.other title with an empty summary. Titles and summaries are trimmed and cut by characters (UTF-16 code units are not used: count Unicode scalar values / text elements as each platform's String does for these ASCII cases)."
+}

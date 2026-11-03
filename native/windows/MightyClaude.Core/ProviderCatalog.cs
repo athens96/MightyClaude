@@ -224,6 +224,14 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         }
         return null;
     }
+    /// <summary>The headless Claude launch the model list and the work map's topic summary share: one stream-json message in, no tools, no MCP, no saved session.</summary>
+    public static readonly IReadOnlyList<string> ClaudeHeadlessArguments = ["--print", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json", "--no-session-persistence", "--permission-mode", "dontAsk", "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--tools", "", "--safe-mode"];
+    public static Dictionary<string, string> ClaudeHeadlessEnvironment()
+    {
+        var env = QuietEnvironment();
+        env["CLAUDE_CODE_SAFE_MODE"] = "1"; env["CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL"] = "1"; env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"; env["CLAUDE_CODE_SKIP_PROMPT_HISTORY"] = "1";
+        return env;
+    }
     public static Dictionary<string, string> QuietEnvironment()
     {
         var environment = CliEnvironment.Current();
@@ -242,9 +250,8 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(limit ?? TimeSpan.FromSeconds(7));
         var token = timeout.Token;
-        var args = provider == "codex" ? new List<string> { "app-server", "--listen", "stdio://" } : ["--print", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json", "--no-session-persistence", "--permission-mode", "dontAsk", "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--tools", "", "--safe-mode"];
-        var env = QuietEnvironment();
-        if (provider == "claude") { env["CLAUDE_CODE_SAFE_MODE"] = "1"; env["CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL"] = "1"; env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"; env["CLAUDE_CODE_SKIP_PROMPT_HISTORY"] = "1"; }
+        var args = provider == "codex" ? new List<string> { "app-server", "--listen", "stdio://" } : [.. ClaudeHeadlessArguments];
+        var env = provider == "claude" ? ClaudeHeadlessEnvironment() : QuietEnvironment();
         try
         {
             await using var child = ChildProcess.Start(ChildProcess.StartInfo(command.Binary, command.Prefix.Concat(args), workingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), env));

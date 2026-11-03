@@ -64,6 +64,7 @@ public sealed partial class MainWindow
         if (kind == "shell") return Locale.Get("dashboard.kind.shell") + " ·";
         if (kind == "browser") return Locale.Get("browser.tab.title");
         if (FilePaneKind.IsFilePane(kind)) return Locale.Get("files.pane.title");
+        if (WorkMapPaneKind.IsWorkMap(kind)) return Locale.Get("workMap.title");
         if (AgentIOPaneKind.IsAgentIO(kind)) return Locale.Get(kind == AgentIOPaneKind.Terminal ? "dashboard.kind.agentTerminal" : "dashboard.kind.agentBrowser") + " · " + ProviderMark.Label(card.Session.Provider);
         if (kind != "claude") return kind;
         var parts = new List<string>();

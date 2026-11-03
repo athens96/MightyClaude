@@ -33,7 +33,7 @@ public sealed record MobileDesktopAction(string SessionId, string Action, JsonEl
 public sealed class MobileDesktopRouter : IDisposable
 {
     public Func<string[]>? ExtraCapabilities { get; set; }
-    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push", "fileChanges"];
+    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push", "fileChanges", "workMap"];
     /// <summary>The direct path's endpoints for /m1/info (docs/mobile-remote.md, "direct"); empty when there is no host or it does not listen.</summary>
     public Func<IReadOnlyList<string>>? DirectEndpoints { get; set; }
     /// <summary>The largest reply body the host sends; a session detail over it sheds its structure first (<see cref="SessionReply"/>).</summary>
@@ -67,6 +67,10 @@ public sealed class MobileDesktopRouter : IDisposable
     public MobilePushHub? Push { get; set; }
     /// <summary>The model list this PC's CLI gave for the pane's provider, for the summary's <c>resolvedModel</c> (phone summaries cover local panes only, <see cref="RemoteWorkspacePhone"/>); null (or none) reads the provider's fallback list.</summary>
     public Func<RunSession, ModelCatalog?>? Catalog { get; set; }
+    /// <summary>The work map of one of this PC's workspaces (docs/work-map.md), as <see cref="WorkMapService.ModelAsync"/> reads it; without it the work map routes answer 404.</summary>
+    public Func<Workspace, Task<WorkMapModel>>? WorkMapRead { get; set; }
+    /// <summary>Starts the topic summary of one version of a workspace (<see cref="WorkMapService.StartAsync"/>).</summary>
+    public Func<Workspace, string, Task<WorkMapStart>>? WorkMapSummarize { get; set; }
     public string HostId { get; set; } = "";
     public string HostName { get; }
     public string AppVersion { get; init; } = "0.0.0";
@@ -91,7 +95,7 @@ public sealed class MobileDesktopRouter : IDisposable
         {
             // A remote workspace and its panes are another computer's: the phone is never told of them (M/AppStore+MobileRemote.swift mobilePane).
             var snapshot = service.Snapshot;
-            var readings = RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).Where(s => s.Kind != "files").Select(pane =>
+            var readings = RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).Where(s => s.Kind is not ("files" or "workmap")).Select(pane =>
             {
                 MobilePaneDigest digest;
                 try { digest = Digest?.Invoke(pane) ?? Unread(pane); } catch (Exception ex) when (ex is not OutOfMemoryException) { digest = Unread(pane); }
@@ -120,12 +124,21 @@ public sealed class MobileDesktopRouter : IDisposable
     private RunSession Session(string id)
     {
         var snapshot = service.Snapshot;
-        return RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).FirstOrDefault(p => p.Id == id && p.Kind != "files") ?? throw new MobileRequestException(404, "Session not found.");
+        return RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).FirstOrDefault(p => p.Id == id && p.Kind is not ("files" or "workmap")) ?? throw new MobileRequestException(404, "Session not found.");
     }
     private static void Agent(RunSession pane) { if (pane.Kind != "claude") throw new MobileRequestException(409, "Use the desktop for this pane."); }
     private static object Error(int status, string text, string? code = null) => new { protocol = 1, error = text, code };
     private static MobileReply Reply(object body, int status = 200)
         => JsonSerializer.SerializeToUtf8Bytes(body, Wire.Json).Length <= MaximumReplyBytes ? new(status, body) : new(413, Error(413, "Response exceeds the mobile display limit."));
+    /// <summary>The phone's work map: the model without each commit's file list (its count stays), as docs/work-map.md says.</summary>
+    internal static object PhoneWorkMap(WorkMapModel model)
+    {
+        var node = JsonSerializer.SerializeToNode(model, WorkMap.Json)!.AsObject();
+        foreach (var version in node["versions"]!.AsArray())
+            foreach (var commit in version!["commits"]!.AsArray()) commit!.AsObject().Remove("files");
+        node["protocol"] = 1;
+        return node;
+    }
     private static object OK() => new { protocol = 1, ok = true };
     /// <summary>
     /// A submit's or guided action's reply (natural submit B5): a <see cref="SubmitReceipt"/> answers with the outcome word in
@@ -197,6 +210,21 @@ public sealed class MobileDesktopRouter : IDisposable
                 token.ThrowIfCancellationRequested(); return state ? Reply(State()) : SessionReply(Session(route[2]), asked);
             }
             if (route.Length == 3 && route[1] == "screen-share") { if (ScreenRoute is not null) return await ScreenRoute(method, route[2], body, device, token); throw new MobileRequestException(503, "Screen sharing is not available on this host."); }
+            if (route.Length is 4 or 5 && route[1] == "workspaces" && route[3] == "workmap")
+            {
+                // Only this PC's workspaces: a remote one's history is on its host.
+                var mapped = RemoteWorkspacePhone.Workspaces(service.Snapshot.Workspaces).FirstOrDefault(w => w.Id == route[2]);
+                if (mapped is null || WorkMapRead is null || WorkMapSummarize is null) throw new MobileRequestException(404, "Workspace not found.");
+                if (method == "GET" && route.Length == 4 && query.Count == 0) return Reply(PhoneWorkMap(await WorkMapRead(mapped)));
+                if (method == "POST" && route.Length == 5 && route[4] == "summarize")
+                    return await WorkMapSummarize(mapped, Required(Object(body), "key")) switch
+                    {
+                        WorkMapStart.Started => Reply(OK(), 202),
+                        WorkMapStart.Busy => throw new MobileRequestException(409, Locale.Get("workMap.error.busy")),
+                        WorkMapStart.UnknownKey => throw new MobileRequestException(400, "Unknown version."),
+                        _ => throw new MobileRequestException(404, "Workspace not found."),
+                    };
+            }
             if (route.Length == 4 && route[1] == "workspaces")
             {
                 var files = method == "GET" && route[3] is "files" or "file";
@@ -376,7 +404,7 @@ public sealed class MobileDesktopRouter : IDisposable
     {
         var snapshot = service.Snapshot;
         return new { protocol = 1, revision = StateRevision, hostName = HostName, workspaces = RemoteWorkspacePhone.Workspaces(snapshot.Workspaces).Select(w => new { w.Id, w.Name, w.Path }),
-            sessions = RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).Where(s => s.Kind != "files").Select(s => Summary(s, SessionRevision(s.Id))).ToArray() };
+            sessions = RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).Where(s => s.Kind is not ("files" or "workmap")).Select(s => Summary(s, SessionRevision(s.Id))).ToArray() };
     }
     private object Summary(RunSession pane, long revision)
     {

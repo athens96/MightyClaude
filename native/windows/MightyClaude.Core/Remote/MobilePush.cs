@@ -124,7 +124,7 @@ public sealed record MobilePushPane(string SessionId, string Workspace, string T
     {
         var names = new Dictionary<string, string>();
         foreach (var workspace in workspaces) names.TryAdd(workspace.Id, workspace.Name);
-        return RemoteWorkspacePhone.Sessions(sessions, workspaces).Where(session => session.Kind != "files").Select(session =>
+        return RemoteWorkspacePhone.Sessions(sessions, workspaces).Where(session => session.Kind is not ("files" or "workmap")).Select(session =>
         {
             var requests = permissions.GetValueOrDefault(session.Id, []).Where(p => p.State == "pending" && !autoAllowed(session.Id, p))
                 .Select(p => MobilePushRequest.From(p)).ToList();

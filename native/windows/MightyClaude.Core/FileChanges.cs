@@ -281,6 +281,19 @@ public sealed class FileOriginalStore
         }
     }
 
+    /// <summary>The paths (relative to the run's folder, '/') the run's manifest records as edited, kept or refused; empty when the run is unknown or was recorded under another root than <paramref name="root"/>.</summary>
+    public IReadOnlyList<string> Paths(string sessionId, string runId, string root)
+    {
+        runId = SourceRun(runId);
+        if (!Wire.Identifier(sessionId) || !Wire.Identifier(runId) || WorkspaceFiles.RealPath(root) is not { } realRoot) return [];
+        lock (sync)
+        {
+            if (ReadManifest(RunFolder(sessionId, runId)) is not { } manifest || manifest.SessionId != sessionId || manifest.RunId != runId
+                || manifest.Root is not { } kept || !PathComparer.Equals(kept, realRoot)) return [];
+            return manifest.Files.Select(f => f.Path).Concat(manifest.Refused ?? []).Distinct(PathComparer).ToList();
+        }
+    }
+
     /// <summary>The run ids the store holds for a session, newest first.</summary>
     public IReadOnlyList<string> Runs(string sessionId)
     {

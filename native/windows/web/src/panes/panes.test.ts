@@ -92,9 +92,10 @@ describe('browser slot', () => {
 describe('slim panes', () => {
   const t = (key: string) => key;
   it('names the kinds the slim bar stands over', () => {
-    expect([...slimKinds]).toEqual(['browser', 'agent-terminal', 'agent-browser', 'files']);
+    expect([...slimKinds]).toEqual(['browser', 'agent-terminal', 'agent-browser', 'files', 'workmap']);
     expect(paneKindWords('agent-terminal', t)).toBe('dashboard.kind.agentTerminal');
     expect(paneKindWords('files', t)).toBe('files.pane.title');
+    expect(paneKindWords('workmap', t)).toBe('workMap.title');
     expect(paneKindWords('browser', t)).toBe('browser.tab.title');
   });
 

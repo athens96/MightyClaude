@@ -71,6 +71,8 @@ try {
         if ($result.webShell -ne $true) { Write-SmokeAnnotation 'The web smoke ran without the web shell (no WebView2 runtime?)'; throw "웹 셸 검증이 웹 셸 없이 실행됐습니다: $resultPath" }
         # The page's browser pane goes back through its own button and refuses window.open() (MainWindow.WebShell.Panes.cs).
         Require-Keys $result.panes 'panes' @('browserNavigated', 'browserBack', 'browserPopupBlocked')
+        # The work map's page over a fixture repository: the overview, one card per version, a platform chip, the header button.
+        Require-Keys $result.panes 'panes' @('workMapOverview', 'workMapVersions', 'workMapChips', 'workMapButton', 'workMap')
         # The live steps beside the page (MainWindow.WebShell.LiveSmoke.cs): every one ran and passed.
         foreach ($key in @('settingsSections', 'phaseModelsSection', 'phaseModelsActions', 'componentsSection', 'setupTools', 'mobileDirect', 'accountUsage', 'appUpdateSection', 'claudePluginList', 'codexPluginList', 'pluginMarketplace', 'automaticUpdates', 'remoteWorkspaces', 'companion', 'screenCapture', 'screenTransport', 'screenTapMarkerNoFocus', 'completionNotification', 'pictureDecode', 'delegation', 'localeKeyLeakScan')) {
             if ($result.live.$key -ne $true) { Fail "Windows web smoke live step failed: $key $($result."${key}Error")" }

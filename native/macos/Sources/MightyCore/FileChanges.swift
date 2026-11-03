@@ -286,6 +286,15 @@ public final class FileOriginalStore: @unchecked Sendable {
         return nil
     }
 
+    /// The paths the run's originals were kept for, the files it edited, in the order they were recorded.
+    public func files(sessionId: String, runId: String) -> [String] {
+        let runId = Self.sourceRun(runId)
+        guard CoreValidation.identifier(sessionId), CoreValidation.identifier(runId) else { return [] }
+        lock.lock(); defer { lock.unlock() }
+        guard let manifest = Self.manifest(in: runFolder(sessionId, runId)), manifest.sessionId == sessionId, manifest.runId == runId else { return [] }
+        return manifest.files.map(\.path)
+    }
+
     /// The run ids the store holds for a session, newest first.
     public func runs(sessionId: String) -> [String] {
         guard CoreValidation.identifier(sessionId) else { return [] }

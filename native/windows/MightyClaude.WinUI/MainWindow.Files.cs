@@ -62,20 +62,23 @@ public sealed partial class MainWindow
     /// left of the current pane (or as a tab when there is no room for a split). It is never
     /// saved, so it does not come back after a restart.
     /// </summary>
-    internal Task OpenFilePane(string? workspaceId = null) => Act(async () =>
+    internal Task OpenFilePane(string? workspaceId = null) => OpenSlimPane(workspaceId, FilePaneKind.PaneId, FilePaneKind.Kind, "files.pane.title");
+
+    /// <summary>The files pane's way in for a workspace's other one-per-workspace pane, the work map (MainWindow.WorkMap.cs).</summary>
+    private Task OpenSlimPane(string? workspaceId, Func<string, string> paneId, string kind, string titleKey) => Act(async () =>
     {
         var state = service.Snapshot;
         var workspace = state.Workspaces.FirstOrDefault(w => w.Id == (workspaceId ?? state.ActiveWorkspaceId))
             ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst"));
         // A remote workspace's folder is on its host: no files pane reads it here (M/AppStore+FilePane.swift).
         if (!RemoteWorkspaceFeatures.AllowsLocalOnly(workspace)) throw new InvalidOperationException(RemoteWindowsStrings.PaneUnavailable);
-        var id = FilePaneKind.PaneId(workspace.Id);
+        var id = paneId(workspace.Id);
         if (state.Sessions.Any(s => s.Id == id)) { await SelectLayoutSession(id); return; }
         if (!PaneLayout.HasRoom(state)) throw new InvalidOperationException(Locale.Get("files.error.noRoom"));
         var current = state.ActiveWorkspaceId == workspace.Id ? state.ActiveSessionId : state.PaneLayoutActiveSessionIds?.GetValueOrDefault(workspace.Id);
         await service.UpdateAsync(s =>
         {
-            var pane = new RunSession { Id = id, WorkspaceId = workspace.Id, Kind = FilePaneKind.Kind, Title = Locale.Get("files.pane.title") };
+            var pane = new RunSession { Id = id, WorkspaceId = workspace.Id, Kind = kind, Title = Locale.Get(titleKey) };
             // The pane joins the tree before it becomes the active one, as a new pane does (AddToLayout): placed as the
             // active pane it would first be shown in the first group, and moving it out would reset the tab shown there.
             var joined = s with { Sessions = s.Sessions.Append(pane).ToList() };

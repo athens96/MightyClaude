@@ -47,7 +47,7 @@ public enum WorkDashboard {
     /// A pane the user opened and the counts include: not an agent's own terminal or
     /// browser (the phone skips those too), not the read-only files pane, which never runs.
     public static func isCounted(_ kind: String) -> Bool {
-        !AgentIOPaneKind.isAgentIOPane(kind) && !FilePaneKind.isFilePane(kind)
+        !AgentIOPaneKind.isAgentIOPane(kind) && !FilePaneKind.isReadOnlyPane(kind)
     }
 
     /// Only requests still `pending` count; a question is one the user answers in a
