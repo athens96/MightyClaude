@@ -89,7 +89,8 @@ export type Capability =
   | 'screenShare'
   | 'structure'
   | 'push'
-  | 'fileChanges';
+  | 'fileChanges'
+  | 'workMap';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -107,6 +108,7 @@ export const CAPABILITIES: readonly Capability[] = [
   'structure',
   'push',
   'fileChanges',
+  'workMap',
 ] as const;
 
 export interface HostInfo {
@@ -1118,3 +1120,63 @@ export const SCREEN_BACKGROUND_GRACE_SECONDS = 30;
 export const SCREEN_SIGNAL_MAX_BYTES = 64 * 1024;
 /** Clipboard limit, both directions, before compression. */
 export const SCREEN_CLIPBOARD_MAX_BYTES = 1024 * 1024;
+
+/** The work map's lanes, in the order the host lists them (docs/work-map.md). */
+export type WorkMapLane = 'mac' | 'windows' | 'phone' | 'ci' | 'etc';
+export type WorkMapStatus = 'released' | 'releasing' | 'unreleased';
+
+/** A commit; the phone gets `filesCount` and never the file list. */
+export interface WorkMapCommit {
+  sha: string;
+  date: string;
+  lanes: WorkMapLane[];
+  scope: string | null;
+  subject: string;
+  filesCount: number;
+}
+
+/** A request the user sent from an open run window of this workspace. */
+export interface WorkMapRequest {
+  id: string;
+  paneId: string;
+  text: string;
+  date: string | null;
+  commits: string[];
+}
+
+export interface WorkMapTopic {
+  title: string;
+  summary: string;
+  lanes: WorkMapLane[];
+  commits: string[];
+  requests: string[];
+}
+
+export interface WorkMapVersion {
+  /** A tag name ("v0.4.48") or "next"; the key of the summary cache. */
+  key: string;
+  version: string | null;
+  tag: string | null;
+  date: string | null;
+  status: WorkMapStatus;
+  releaseStep: string | null;
+  rangeEnd: string;
+  total: number;
+  truncated: boolean;
+  counts: Partial<Record<WorkMapLane, number>>;
+  commits: WorkMapCommit[];
+  topics: WorkMapTopic[] | null;
+  topicsStale: boolean;
+  summaryError: string | null;
+  requests: WorkMapRequest[];
+}
+
+/** `GET /m1/workspaces/{id}/workmap` ("workMap"); `reason` explains `available: false`. */
+export interface WorkMap {
+  available: boolean;
+  reason: 'notGit' | 'remote' | 'gitFailed' | null;
+  head: string | null;
+  lanes: WorkMapLane[];
+  summarizing: string | null;
+  versions: WorkMapVersion[];
+}

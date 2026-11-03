@@ -107,9 +107,11 @@ MobilePermission {
 
 기존 라우트와 필드는 그대로다. 아래는 모두 **추가**이며, 새 필드는 전부 선택(optional)이다. 업데이트하지 않은 휴대폰 앱은 모르는 필드를 무시하고 지금처럼 동작한다. 휴대폰은 `/m1/info`의 `capabilities`에 이름이 있을 때만 해당 기능을 보여 준다(없으면 구버전 호스트).
 
-`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`, `"push"`, `"fileChanges"`.
+`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`, `"push"`, `"fileChanges"`, `"workMap"`.
 
 `"fileChanges"`는 호스트의 `GET /m1/workspaces/{id}/file`이 `changes=1`(과 `session`·`run`)을 받아 미리보기에 `changes`를 붙인다는 뜻이다(Mac·Windows, 아래 "파일"). 이 이름이 없는 호스트에 `changes=1`을 보내면 400이다.
+
+`"workMap"`은 호스트가 `GET /m1/workspaces/{id}/workmap`과 `POST /m1/workspaces/{id}/workmap/summarize`를 안다는 뜻이다(Mac·Windows). 모델과 규칙은 [work-map.md](work-map.md)의 "휴대폰", 휴대폰 화면은 `app/host/[hostId]/workspace/[workspaceId]/workmap.tsx`다.
 
 `"direct"`는 호스트가 Tailscale 직접 연결을 아는 빌드라는 뜻이다(Mac·Windows). 이 이름이 있으면 `MobileInfo.direct`와 `auth_ok.direct`가 그 순간의 끝점 목록이다(위 "Tailscale 직접 연결").
 
