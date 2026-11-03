@@ -61,13 +61,16 @@ public sealed class MightyGraphRun
     [JsonPropertyName("noticeTitle")] public string? NoticeTitle { get; set; }
     /// <summary><see cref="BackgroundWaiting"/> of the run <see cref="Shown"/> was made from, whose background blocks it no longer holds. Never saved.</summary>
     [JsonIgnore] internal int? ShownBackgroundWaiting { get; set; }
+    /// <summary>The background work of the whole request this run belongs to (<see cref="MightyGraphSupport.WithBackgroundWaiting"/>), which a notice run reads
+    /// as its own count. Never saved.</summary>
+    [JsonIgnore] internal int? RequestBackgroundWaiting { get; set; }
 
     public MightyGraphRun Copy() => new()
     {
         Id = Id, Input = Input, Status = Status, RootEntries = [.. RootEntries], Agents = [.. Agents.Select(a => a.Copy())],
         ResultEntries = [.. ResultEntries], SourceRunID = SourceRunID, FinalOutput = FinalOutput, Usage = Usage,
         ResponseRecords = ResponseRecords is null ? null : [.. ResponseRecords], Provider = Provider,
-        NodeModelLabel = NodeModelLabel, ConfiguredModel = ConfiguredModel, NoticeRun = NoticeRun, NoticeTitle = NoticeTitle, ShownBackgroundWaiting = ShownBackgroundWaiting,
+        NodeModelLabel = NodeModelLabel, ConfiguredModel = ConfiguredModel, NoticeRun = NoticeRun, NoticeTitle = NoticeTitle, ShownBackgroundWaiting = ShownBackgroundWaiting, RequestBackgroundWaiting = RequestBackgroundWaiting,
     };
     /// Tokens of the main block alone; this adds every child block.
     [JsonIgnore] public GraphTokenUsage? TotalUsage
@@ -91,10 +94,17 @@ public sealed class MightyGraphRun
             var agents = BackgroundNoticeRuns.ShownAgents(this);
             if (agents.Count == Agents.Count) return this;
             var run = (MightyGraphRun)MemberwiseClone();
-            run.ShownBackgroundWaiting = MightyGraphSupport.BackgroundWaiting(this);
+            run.ShownBackgroundWaiting = MightyGraphSupport.Held(this);
             run.Agents = agents;
             return run;
         }
+    }
+    /// <summary>A shallow copy that says it waits on <paramref name="waiting"/> background blocks (<see cref="MightyGraphSupport.WithBackgroundWaiting"/>).</summary>
+    internal MightyGraphRun WithRequestBackgroundWaiting(int waiting)
+    {
+        var run = (MightyGraphRun)MemberwiseClone();
+        run.RequestBackgroundWaiting = waiting;
+        return run;
     }
     /// <summary>A notice run taken into a running turn: it opens complete and has no reply of its own. No view follows it or gives it a
     /// result card. A notice turn that failed or was stopped before its reply is not one: its card says so.</summary>
@@ -148,7 +158,35 @@ public static class MightyGraphSupport
     /// <summary>Background tasks and sub-agents still running after the request's own turn ended: it reads completed and waits on them (macOS MightyGraphRun.backgroundWaiting).</summary>
     /// A <see cref="MightyGraphRun.Shown"/> run keeps the count of the run it was made from.
     public static int BackgroundWaiting(MightyGraphRun run) =>
-        run.Status == "completed" ? run.ShownBackgroundWaiting ?? run.Agents.Count(a => (a.IsTask || a.IsBackgroundAgent) && !Terminal(a.Status)) : 0;
+        run.Status == "completed" ? run.RequestBackgroundWaiting ?? Held(run) : 0;
+    /// <summary>The unfinished task and background-agent blocks a run holds itself: a notice run's copy of a request's block is that block, counted there.</summary>
+    internal static int Held(MightyGraphRun run) => run.ShownBackgroundWaiting ?? Unfinished(run);
+    private static int Unfinished(MightyGraphRun run) => run.Agents.Count(a => a.SourceBlockId is null && (a.IsTask || a.IsBackgroundAgent) && !Terminal(a.Status));
+    /// <summary>
+    /// The runs with each completed one's <see cref="BackgroundWaiting(MightyGraphRun)"/> counted over its whole request: the request run and the
+    /// notice runs after it up to the next request. Work started during a notice turn is recorded on the request, and a request's other background
+    /// work still runs while a notice run answers one of its blocks, so a notice run reads 현재까지의 결과 as long as any of it is unfinished.
+    /// Take the raw runs, not <see cref="MightyGraphRun.Shown"/> ones (macOS MightyGraphSupport.withBackgroundWaiting).
+    /// </summary>
+    public static IReadOnlyList<MightyGraphRun> WithBackgroundWaiting(IReadOnlyList<MightyGraphRun> runs)
+    {
+        if (!runs.Any(run => run.NoticeRun == true) || !runs.Any(run => run.Agents.Any(a => a.IsTask || a.IsBackgroundAgent))) return runs;
+        var counted = new List<MightyGraphRun>(runs.Count);
+        for (var start = 0; start < runs.Count;)
+        {
+            var end = start + 1;
+            while (end < runs.Count && runs[end].NoticeRun == true) end++;
+            var total = 0;
+            for (var index = start; index < end; index++) total += Held(runs[index]);
+            for (var index = start; index < end; index++)
+            {
+                var run = runs[index]; var waiting = run.Status == "completed" ? total : 0;
+                counted.Add(BackgroundWaiting(run) == waiting ? run : run.WithRequestBackgroundWaiting(waiting));
+            }
+            start = end;
+        }
+        return counted;
+    }
 
     /// <summary>The runs the user asked for: every run but the notice runs (<see cref="BackgroundNoticeRuns"/>).</summary>
     public static List<MightyGraphRun> RequestRuns(IEnumerable<MightyGraphRun> runs) => runs.Where(run => run.NoticeRun != true).ToList();
@@ -200,8 +238,11 @@ public static class MightyGraphSupport
     public static RunSession WithoutNoticeRuns(RunSession session) =>
         session.GraphRuns?.Any(run => run.NoticeRun == true) == true ? session with { GraphRuns = RequestRuns(session.GraphRuns) } : session;
     /// <summary>The runs as views draw them (<see cref="MightyGraphRun.Shown"/>); the same list when no run holds a background block.</summary>
-    public static IReadOnlyList<MightyGraphRun> ShownRuns(IReadOnlyList<MightyGraphRun> runs) =>
-        runs.Any(run => run.Agents.Any(agent => agent.Background == true)) ? runs.Select(run => run.Shown).ToList() : runs;
+    public static IReadOnlyList<MightyGraphRun> ShownRuns(IReadOnlyList<MightyGraphRun> runs)
+    {
+        runs = WithBackgroundWaiting(runs);
+        return runs.Any(run => run.Agents.Any(agent => agent.Background == true)) ? runs.Select(run => run.Shown).ToList() : runs;
+    }
     /// <summary>The run the process's lines belong to (<see cref="RunSession"/>'s log events): a notice run that ended takes none (they are
     /// the request's before it), and a running notice turn's never reach a request still waiting for its own run. -1 without runs.</summary>
     public static int RoutedIndex(IReadOnlyList<MightyGraphRun> runs)

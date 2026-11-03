@@ -57,6 +57,7 @@ public static class MightyTimeline
     /// (<see cref="MightyGraphRun.Shown"/>): a view must draw the same runs.</summary>
     public static List<Group> Groups(IReadOnlyList<MightyGraphRun> runs)
     {
+        runs = MightyGraphSupport.WithBackgroundWaiting(runs);
         var ordinals = MightyGraphSupport.RequestOrdinals(runs);
         return runs.Select((run, index) => Project(run.Shown, index, ordinals[index])).ToList();
     }

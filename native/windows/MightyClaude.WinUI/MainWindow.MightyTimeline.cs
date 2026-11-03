@@ -243,9 +243,10 @@ public sealed partial class MainWindow
                     desired.Add(timelineHistoryCard);
                 }
                 var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
+                var shownRuns = MightyGraphSupport.ShownRuns(runs);
                 foreach (var group in groups)
                 {
-                    var run = runs[group.RunIndex].Shown;
+                    var run = shownRuns[group.RunIndex];
                     // The shown run keeps its background waiting count outside its JSON: the status pill reads it, so it is part of the key.
                     var fingerprint = JsonSerializer.Serialize(new { run, waiting = MightyGraphSupport.BackgroundWaiting(run), group.Ordinal, older = group.RunIndex < older.Count, open = MightyTimeline.GroupOpen(group, runs, timelineFlipped), rows = group.Rows.Where(r => timelineOpen.Contains(r.NodeId)).Select(r => r.NodeId), full = group.Result is { } result && timelineFull.Contains(result.NodeId), title = GraphRequestTitle(run, group.Ordinal), language = Locale.LanguagePreference, catalog });
                     if (!timelineGroups.TryGetValue(group.RunId, out var known) || known.Fingerprint != fingerprint)

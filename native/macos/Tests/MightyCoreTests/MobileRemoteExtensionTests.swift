@@ -323,9 +323,9 @@ struct MobileRemoteExtensionTests {
             let titled = MobileMightySupport.runs([request, named])
             #expect(titled[1].title == BackgroundNoticeRuns.heading(named) && titled[1].blocks[0].title == "백그라운드 작업 완료 · npm test")
             // The request still waits on its background command: it says how many, and only then.
-            #expect(runs[0].backgroundWaiting == 1 && runs[1].backgroundWaiting == nil && runs[2].backgroundWaiting == nil)
+            #expect(runs[0].backgroundWaiting == 1 && runs[1].backgroundWaiting == 1 && runs[2].backgroundWaiting == nil)
             #expect(try encoded(runs[0])["backgroundWaiting"] as? Int == 1)
-            #expect(try encoded(runs[1])["backgroundWaiting"] == nil)
+            #expect(try encoded(runs[1])["backgroundWaiting"] as? Int == 1 && encoded(runs[2])["backgroundWaiting"] == nil)
             var ended = request; ended.agents[0].status = "completed"
             #expect(MobileMightySupport.runs([ended])[0].backgroundWaiting == nil)
             // A notice run takes no request number: the next request is 요청 2.

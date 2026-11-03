@@ -122,7 +122,8 @@ public enum MightyTimeline {
     }
 
     /// Every request the diagram draws, oldest first, numbered as the diagram numbers them.
-    public static func groups(_ runs: [MightyGraphRun]) -> [Group] {
+    public static func groups(_ source: [MightyGraphRun]) -> [Group] {
+        let runs = MightyGraphSupport.withBackgroundWaiting(source)
         let ordinals = MightyGraphSupport.requestOrdinals(runs)
         return runs.enumerated().map { group($1, index: $0, ordinal: ordinals[$0]) }
     }

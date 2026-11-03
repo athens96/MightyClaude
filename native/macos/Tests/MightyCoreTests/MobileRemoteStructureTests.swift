@@ -385,15 +385,15 @@ struct MobileRemoteStructureTests {
         let runs = [request, notice, older]
         let items = MightyStructure.make(runs: runs, style: nil, currentPhase: nil)
         if case .free(let rows) = items {
-            #expect(rows.map(\.item.backgroundWaiting) == [1, 0, 0])
+            #expect(rows.map(\.item.backgroundWaiting) == [1, 1, 1])
             #expect(rows.map(\.item.noticeTitle) == [nil, "백그라운드 작업 완료 · npm test", nil])
         } else { Issue.record("a free pane makes rows") }
         let wire = try #require(MobileStructure.make(items, runCount: runs.count, title: { _ in "style name" }))
         let wired = try #require(wire.rows).map(\.item)
-        #expect(wired.map(\.backgroundWaiting) == [1, nil, nil])
+        #expect(wired.map(\.backgroundWaiting) == [1, 1, 1])
         #expect(wired.map(\.title) == ["style name", "백그라운드 작업 완료 · npm test", nil])
         let json = try Self.encoded(wired[1])
-        #expect(json["backgroundWaiting"] == nil && json["title"] as? String == "백그라운드 작업 완료 · npm test")
+        #expect(json["backgroundWaiting"] as? Int == 1 && json["title"] as? String == "백그라운드 작업 완료 · npm test")
         // The command ended: the count goes, and the cached card is built again.
         task.status = "completed"
         let cache = MobileStructureCache()

@@ -196,7 +196,7 @@ public enum MightyStructure {
 
         public init(runs: [MightyGraphRun], style: StyleEvaluator?, currentPhase: StylePhase?, startingNew: Bool = false,
                     planHistory: [PlanRecord] = [], pendingPlanRunID: String? = nil) {
-            requests = runs.map { run in
+            requests = MightyGraphSupport.withBackgroundWaiting(runs).map { run in
                 Request(id: run.id, status: run.status, sourceRunID: run.sourceRunID, input: run.input.utf8.count,
                         rootEntries: run.rootEntries.count, rootTail: MightyStructure.tail(run.rootEntries), resultEntries: run.resultEntries.count,
                         result: run.resultEntries.last?.text.utf8.count ?? 0, finalOutput: run.finalOutput?.utf8.count, noticeTitle: run.noticeTitle,
@@ -223,7 +223,8 @@ public enum MightyStructure {
         public init() {}
 
         /// The cards of `runs`, which `signature` was taken of.
-        public mutating func items(_ runs: [MightyGraphRun], signature: Signature) -> [Item] {
+        public mutating func items(_ source: [MightyGraphRun], signature: Signature) -> [Item] {
+            let runs = MightyGraphSupport.withBackgroundWaiting(source)
             var next: [String: (request: Signature.Request, item: Item)] = [:]
             next.reserveCapacity(runs.count)
             let ordinals = MightyGraphSupport.requestOrdinals(runs)
@@ -307,8 +308,9 @@ public enum MightyStructure {
     /// that holds a card is never pending: any card outside the current column is a
     /// request that is over with that phase. An empty column is done before the current
     /// one and pending after it.
-    public static func make(runs: [MightyGraphRun], style: StyleEvaluator?, currentPhase: StylePhase?, startingNew: Bool = false,
+    public static func make(runs source: [MightyGraphRun], style: StyleEvaluator?, currentPhase: StylePhase?, startingNew: Bool = false,
                             planHistory: [PlanRecord] = [], pendingPlanRunID: String? = nil, items built: [Item]? = nil) -> Shape {
+        let runs = MightyGraphSupport.withBackgroundWaiting(source)
         let items = built.flatMap { $0.count == runs.count ? $0 : nil } ?? {
             let ordinals = MightyGraphSupport.requestOrdinals(runs)
             return runs.enumerated().map { item($1, index: $0, ordinal: ordinals[$0]) }

@@ -468,7 +468,13 @@ public sealed partial class ExecutionGraphTracker
                 }
                 // Background Agent tool results acknowledge launch; they are
                 // not the agent's answer. Its turn.complete, notification or hand-back is.
-                if (backgroundTools.Contains(toolID)) { RememberAgentID(child, block); continue; }
+                // Claude Code runs a sub-agent in the background by default: a call without run_in_background says so in its result.
+                if (node.Kind == "agent" && !backgroundTools.Contains(toolID) && !IsTrue(block, "is_error") && AsyncLaunch(block, value))
+                {
+                    backgroundTools.Add(toolID);
+                    Update(child, n => n with { Background = true });
+                }
+                if (backgroundTools.Contains(toolID)) { RememberAgentID(child, block, value); continue; }
                 Update(child, n => ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = IsTrue(block, "is_error") ? "error" : "completed", Output = output });
             }
             // Task completion arrives as an injected user message, not a tool event; so does a sub-agent's final report.
@@ -478,6 +484,17 @@ public sealed partial class ExecutionGraphTracker
                 if (text.Contains("<task-notification>", StringComparison.Ordinal)) SettleTasks(text, parentTool is null);
                 if (text.Contains(AgentHandback.Opening, StringComparison.Ordinal)) SettleHandbacks(text, MetadataJson.Property(value, "origin"), parentTool is null);
             }
+        }
+        else if (type == "system" && value.Text("subtype") == "task_notification" && Key(MetadataJson.Property(value, "task_id")) is { } notifiedTask)
+        {
+            // The live stream (no --replay-user-messages) carries a task's end as this event, not as the injected user message: the same
+            // notification, so it settles the block the same way (macOS the `task_notification` system event).
+            var summary = value.Text("summary");
+            var tool = Key(MetadataJson.Property(value, "tool_use_id"));
+            var file = value.Text("output_file");
+            SettleTasks("<task-notification><task-id>" + notifiedTask + "</task-id>" + (tool is null ? "" : "<tool-use-id>" + tool + "</tool-use-id>")
+                + (file is { Length: > 0 } ? "<output-file>" + file + "</output-file>" : "") + "<status>" + (value.Text("status") ?? "completed") + "</status>"
+                + (summary is { Length: > 0 } ? "<summary>" + summary + "</summary>" : "") + "</task-notification>", parentTool is null);
         }
         else if (type == "result" && (ClaudeStream.IsNotificationResult(value) || parentTool is null && (noticeTurn is not null || mergeTurn is not null)))
         {
@@ -733,12 +750,22 @@ public sealed partial class ExecutionGraphTracker
     }
     /// A background Agent's launch result names its agent ID, which its
     /// notification's <c>task-id</c> and its hand-back's <c>from</c> carry.
-    private void RememberAgentID(string id, JsonElement block)
+    private void RememberAgentID(string id, JsonElement block, JsonElement frame)
     {
-        if (Text(MetadataJson.Property(block, "content")) is not { } text || AgentLaunch.Match(text) is not { Success: true } match) return;
-        var agent = match.Groups["agent"].Value;
+        var agent = Text(MetadataJson.Property(block, "content")) is { } text && AgentLaunch.Match(text) is { Success: true } match ? match.Groups["agent"].Value
+            : Key(MetadataJson.Property(MetadataJson.Property(frame, "toolUseResult"), "agentId"));
+        if (agent is null) return;
         if (taskAliases.ContainsKey(agent) || taskAliases.Count < 512) taskAliases[agent] = id;
     }
+    /// <summary>Whether an Agent call's result is the acknowledgement of an asynchronous launch: the event's structured <c>toolUseResult</c>
+    /// (a transcript's) says <c>async_launched</c>, else the result's text opens with <see cref="AsyncLaunchText"/>.</summary>
+    private static bool AsyncLaunch(JsonElement block, JsonElement frame)
+    {
+        var result = MetadataJson.Property(frame, "toolUseResult");
+        if (result.ValueKind == JsonValueKind.Object && (result.Text("status") == "async_launched" || IsTrue(result, "isAsync"))) return true;
+        return Text(MetadataJson.Property(block, "content")) is { } text && text.TrimStart().StartsWith(AsyncLaunchText, StringComparison.Ordinal);
+    }
+    private const string AsyncLaunchText = "Async agent launched successfully.";
     /// <summary>
     /// A SendMessage's result. One that resumed a background agent that had ended (<c>resumedAgentId</c>) is new background work of this
     /// request: a background agent block under the sender, settled by that agent's notification or hand-back as an Agent launch is. The

@@ -382,9 +382,10 @@ public sealed partial class MainWindow
         {
             static string Tone(DesignTone tone) => tone.ToString().ToLowerInvariant();
             var groups = new List<WebTimelineGroup>();
+            var shownRuns = MightyGraphSupport.ShownRuns(runs);
             foreach (var group in MightyTimeline.Groups(runs))
             {
-                var run = runs[group.RunIndex].Shown;
+                var run = shownRuns[group.RunIndex];
                 var rows = group.Rows.Select(row =>
                 {
                     var agent = row.AgentIndex is { } at && at < run.Agents.Count ? run.Agents[at] : null;

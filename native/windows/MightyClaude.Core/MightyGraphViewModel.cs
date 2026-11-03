@@ -332,6 +332,7 @@ public static class MightyGraphBlockModel
         IReadOnlyList<ModelOption>? catalog = null)
     {
         var blocks = new List<MightyGraphBlock>();
+        runs = MightyGraphSupport.WithBackgroundWaiting(runs);
         // Laid out with its 실행 blocks (MightyGraphLayout.Make splitsExecution), a request block holds what was asked alone.
         var split = layout.Nodes.Any(n => n.Kind == MightyGraphLayout.WorkKind);
         // Request numbers: a notice run (BackgroundNoticeRuns) takes none and is titled after the work it reports on.

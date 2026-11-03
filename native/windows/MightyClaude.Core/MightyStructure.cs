@@ -125,7 +125,7 @@ public static partial class MightyStructure
         public Signature(IReadOnlyList<MightyGraphRun> runs, StyleEvaluator? style, StylePhase? currentPhase, bool startingNew = false,
             IReadOnlyList<PlanRecord>? planHistory = null, string? pendingPlanRunID = null)
         {
-            Requests = runs.Select(run => new Request(run.Id, run.Status, run.SourceRunID, Bytes(run.Input), run.RootEntries.Count, Tail(run.RootEntries), run.ResultEntries.Count,
+            Requests = MightyGraphSupport.WithBackgroundWaiting(runs).Select(run => new Request(run.Id, run.Status, run.SourceRunID, Bytes(run.Input), run.RootEntries.Count, Tail(run.RootEntries), run.ResultEntries.Count,
                 Bytes(run.ResultEntries.LastOrDefault()?.Text), run.FinalOutput is { } final ? Bytes(final) : null, run.NoticeTitle, MightyGraphSupport.BackgroundWaiting(run),
                 run.Agents.Select(a => new Block(a.Id, a.Title, a.Status, a.ParentID, a.Kind, Bytes(a.Input), a.Entries.Count, Tail(a.Entries), a.ResponseRecords?.Count ?? 0, Bytes(a.NoticeReply))).ToArray())).ToArray();
             phases = style is null ? [] : Ordered(style.Manifest).Select(p => p.Id).ToArray();
@@ -153,6 +153,7 @@ public static partial class MightyStructure
         {
             // A card names an untitled block in the app's language: in another language every card is read again.
             if (language != Locale.LanguagePreference) { built = []; language = Locale.LanguagePreference; }
+            runs = MightyGraphSupport.WithBackgroundWaiting(runs);
             var next = new Dictionary<string, (Signature.Request, Item)>(runs.Count); var items = new List<Item>(runs.Count);
             var ordinals = MightyGraphSupport.RequestOrdinals(runs);
             for (var index = 0; index < runs.Count; index++)
@@ -228,6 +229,7 @@ public static partial class MightyStructure
     public static Shape Make(IReadOnlyList<MightyGraphRun> runs, StyleEvaluator? style, StylePhase? currentPhase, bool startingNew = false,
         IReadOnlyList<PlanRecord>? planHistory = null, string? pendingPlanRunID = null, IReadOnlyList<Item>? items = null)
     {
+        runs = MightyGraphSupport.WithBackgroundWaiting(runs);
         var ordinals = items is not null && items.Count == runs.Count ? null : MightyGraphSupport.RequestOrdinals(runs);
         var cards = ordinals is null ? items! : runs.Select((run, index) => ItemFor(run, index, ordinals[index])).ToList();
         if (style is null || style.Manifest.Phases.Length == 0) return Shape.Free(cards.Select(RowFor).ToList());

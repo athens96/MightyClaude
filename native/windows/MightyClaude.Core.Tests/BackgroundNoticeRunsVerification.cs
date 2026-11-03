@@ -18,6 +18,16 @@ internal static class BackgroundNoticeRunsVerification
         Json(new { type = "user", message = new { content = new object[] { new { type = "tool_result", tool_use_id = tool, content = $"Command running in background with ID: {task}. Output is being written to: /tmp/{task}.output" } } } });
     private static JsonElement Notification(string task, string summary) =>
         Json(new { type = "user", origin = new { kind = "task-notification" }, message = new { content = $"<task-notification>\n<task-id>{task}</task-id>\n<output-file>/tmp/{task}.output</output-file>\n<status>completed</status>\n<summary>{summary}</summary>\n</task-notification>" } });
+    /// <summary>The notification a real stream carries: it names the tool use that started the work beside the task's ID.</summary>
+    private static JsonElement NotificationOf(string task, string tool, string summary, string status = "completed") =>
+        Json(new { type = "user", origin = new { kind = "task-notification" }, message = new { content = $"<task-notification>\n<task-id>{task}</task-id>\n<tool-use-id>{tool}</tool-use-id>\n<output-file>/tmp/{task}.output</output-file>\n<status>{status}</status>\n<summary>{summary}</summary>\n</task-notification>" } });
+    /// <summary>The live stream's form of the same notification (the app does not ask the CLI to replay user messages).</summary>
+    private static JsonElement SystemNotification(string task, string tool, string summary, string status = "completed") =>
+        Json(new { type = "system", subtype = "task_notification", task_id = task, tool_use_id = tool, status, output_file = $"/tmp/{task}.output", summary });
+    private static JsonElement AgentCall(string id, string name, bool? background) =>
+        Json(new { type = "assistant", uuid = "call-" + id, message = new { id = "call-" + id, content = new object[] { new { type = "tool_use", id, name = "Agent", input = background is { } flag ? (object)new { prompt = "survey", description = name, run_in_background = flag } : new { prompt = "survey", description = name } } } } });
+    private static JsonElement AgentAck(string tool, string agent) =>
+        Json(new { type = "user", message = new { content = new object[] { new { type = "tool_result", tool_use_id = tool, content = $"Async agent launched successfully.\nagentId: {agent} (internal ID)" } } } });
     private static JsonElement Result(string value, bool notice = false) => notice
         ? Json(new { type = "result", subtype = "success", is_error = false, result = value, origin = new { kind = "task-notification" } })
         : Json(new { type = "result", subtype = "success", is_error = false, result = value });
@@ -263,12 +273,12 @@ internal static class BackgroundNoticeRunsVerification
         var card = MightyGraphBlockModel.Blocks(layout, all, "", "Claude", false).First(b => b.Id == Node("r", "result"));
         Same(card.Title, "현재까지의 결과 · 백그라운드 작업 1개 기다리는 중", "the diagram's result card");
         var rows = MightyStructure.Make(all, null, null).Rows!;
-        Check(rows.Select(r => r.Item.BackgroundWaiting).SequenceEqual([1, 0, 0]), "pipeline cards carry the waiting count");
+        Check(rows.Select(r => r.Item.BackgroundWaiting).SequenceEqual([1, 1, 1]), "pipeline cards carry the request's waiting count, notice runs included");
         // The phone: the count only while it is above 0, absent from the JSON otherwise.
         var mobile = MobileMightySupport.Runs(all);
-        Check(mobile[0].BackgroundWaiting == 1 && mobile[1].BackgroundWaiting is null && mobile[2].BackgroundWaiting is null, "the phone gets the request's count");
+        Check(mobile.All(r => r.BackgroundWaiting == 1), "the phone gets the request's count on its notice runs too");
         Check(JsonSerializer.Serialize(mobile[0], Wire.Json).Contains("\"backgroundWaiting\":1", StringComparison.Ordinal)
-            && !JsonSerializer.Serialize(mobile[1], Wire.Json).Contains("backgroundWaiting", StringComparison.Ordinal), "the count reaches the wire only when there is one");
+            && !JsonSerializer.Serialize(MobileMightySupport.Runs([new MightyGraphRun { Id = "x", Status = "completed" }])[0], Wire.Json).Contains("backgroundWaiting", StringComparison.Ordinal), "the count reaches the wire only when there is one");
         // An untitled notice run (an older save) is headed generically in its title and its main block; a titled one carries its own.
         Check(mobile[1].Title == BackgroundNoticeRuns.GenericTitle && mobile[1].Blocks[0].Title == BackgroundNoticeRuns.GenericTitle, "an untitled notice run on the phone");
         var named = Runs(); named[2].NoticeTitle = "백그라운드 작업 완료 · npm run build";
@@ -277,7 +287,7 @@ internal static class BackgroundNoticeRunsVerification
         // The pipeline for the phone: the count, and a notice run's own title (none from an older save: the phone reads the generic one).
         var wire = MobileStructure.Make(MightyStructure.Make(named, null, null), named.Count, title: _ => "style name")!;
         var items = wire.Rows!.Select(r => r.Item).ToList();
-        Check(items.Select(i => i.BackgroundWaiting).SequenceEqual([1, (int?)null, null]), "the phone's pipeline counts");
+        Check(items.Select(i => i.BackgroundWaiting).SequenceEqual([1, (int?)1, 1]), "the phone's pipeline counts");
         Check(items.Select(i => i.Title).SequenceEqual(["style name", null, "백그라운드 작업 완료 · npm run build"]), "the phone's pipeline titles: " + string.Join(" | ", items.Select(i => i.Title)));
         // The command ended: the count goes, the result is final, and the digest moved.
         var digest = MobileMightySupport.Digest(all);
@@ -320,5 +330,100 @@ internal static class BackgroundNoticeRunsVerification
         foreach (var notice in second.TakeNoticeRuns()) later = later.Apply(new RunEvent(later.Id, "graph_run", GraphRun: notice));
         Check(later.GraphRuns![1] is { Status: "stopped", QuietNotice: false }, "the process's end stops the notice run");
         Same(MightyGraphSupport.RoutedIndex(later.GraphRuns!), 0, "an ended notice run takes no more lines");
+    }
+
+    private static MightyGraphAgent Block(ExecutionGraphTracker tracker, string tool) =>
+        tracker.BuildRun(includeRunning: true)!.Agents.Single(a => a.Id == ExecutionGraphSupport.AgentNodeID("proc-1", tool));
+
+    /// <summary>A background command a notice turn started is settled by its own notification, which names its tool use and its task
+    /// (macOS BackgroundNoticeRunsTests.aCommandStartedInANoticeTurnIsSettledByItsNotification).</summary>
+    internal static Task ACommandStartedInANoticeTurnIsSettledByItsNotification() { InKorean(CommandStartedInANoticeTurn); return Task.CompletedTask; }
+    private static void CommandStartedInANoticeTurn()
+    {
+        var tracker = new ExecutionGraphTracker("proc-1", "survey it", "claude", null, _ => { });
+        // The request starts two sub-agents in the background, answers, and the first one's hand-back opens a notice turn.
+        foreach (var value in new[] { AgentCall("a1", "First", true), AgentAck("a1", "ag1"), AgentCall("a2", "Second", true), AgentAck("a2", "ag2"), Result("Started two.") }) tracker.Consume(value);
+        tracker.Consume(NotificationOf("ag1", "a1", "First done"));
+        // Inside that notice turn it starts a background command, which the turn's end leaves running.
+        foreach (var value in new[] { Command("build", "npm run build", "Build the app"), Launched("build", "bt1"), Text("Building.", "m2"), Result("Building.", notice: true) }) tracker.Consume(value);
+        Same(Block(tracker, "build").Status, "running", "the command runs after the notice turn");
+        // Its own notification arrives later, as a notice turn of its own.
+        tracker.Consume(NotificationOf("bt1", "build", "Build done"));
+        Same(Block(tracker, "build").Status, "completed", "the notification settles the command");
+        foreach (var value in new[] { Text("The build passed.", "m3"), Result("The build passed.", notice: true) }) tracker.Consume(value);
+        tracker.Finish("completed");
+        var run = tracker.BuildRun()!;
+        Same(run.Agents.Single(a => a.Id == ExecutionGraphSupport.AgentNodeID("proc-1", "build")).Status, "completed", "the command stays completed when the process ends");
+        Same(run.Agents.Single(a => a.Id == ExecutionGraphSupport.AgentNodeID("proc-1", "a1")).Status, "completed", "the first sub-agent");
+        Same(run.Agents.Single(a => a.Id == ExecutionGraphSupport.AgentNodeID("proc-1", "a2")).Status, "stopped", "the second one never reported");
+        // The live stream carries the end as a system event, no user message: it settles the block and opens the notice run the same way.
+        var live = new ExecutionGraphTracker("proc-1", "build it", "claude", null, _ => { });
+        foreach (var value in new[] { Command("build", "npm run build", "Build the app"), Launched("build", "bt1"), Result("Started.") }) live.Consume(value);
+        live.Consume(SystemNotification("bt1", "build", "Build done"));
+        Same(Block(live, "build").Status, "completed", "the system event settles the command");
+        live.Consume(Text("The build passed.", "m2")); live.Consume(Result("The build passed.", notice: true));
+        live.Finish("completed");
+        var ended = live.BuildRun()!; var notices = live.TakeNoticeRuns();
+        Same(ended.Agents.Single().Status, "completed", "it stays completed when the process ends");
+        Check(notices.Count == 1 && notices[0].Agents.Single().SourceBlockId == ended.Agents.Single().Id && notices[0].FinalOutput == "The build passed.", "the notice run holds its copy and Claude's reply");
+        // A command whose end the stream names by its task alone settles by the task ID the launch gave.
+        var bare = new ExecutionGraphTracker("proc-1", "build it", "claude", null, _ => { });
+        foreach (var value in new[] { Command("build", "npm run build", "Build the app"), Launched("build", "bt1"), SystemNotification("bt1", "", "Build failed", "failed") }) bare.Consume(value);
+        Same(Block(bare, "build").Status, "error", "a failed command by its task ID");
+    }
+
+    /// <summary>A notice run reads the request's count: 현재까지의 결과 while any background work of the request is unfinished, in the diagram,
+    /// 기록, the pipeline and on the phone (macOS BackgroundNoticeRunsTests.aNoticeRunReadsTheRequestsWaitingCount).</summary>
+    internal static Task ANoticeRunReadsTheRequestsWaitingCount() { InKorean(NoticeRunReadsTheRequestsCount); return Task.CompletedTask; }
+    private static void NoticeRunReadsTheRequestsCount()
+    {
+        MightyGraphAgent Task(string id, string status, string? source = null) => new() { Id = id, Title = "Job", Status = status, Kind = "task", Background = true, SourceBlockId = source };
+        MightyGraphAgent Agent(string id, string status) => new() { Id = id, Title = "Survey", Status = status, Background = true };
+        var request = new MightyGraphRun { Id = "r", Input = "go", Status = "completed", FinalOutput = "Started.", Agents = [Agent("a1", "completed"), Agent("a2", "running"), Agent("a3", "running"), Task("t1", "running")] };
+        var first = new MightyGraphRun { Id = "r:notice:1", Status = "completed", NoticeRun = true, FinalOutput = "First done.", Agents = [Agent("r:notice:1:a1", "completed")] };
+        first.Agents[0].SourceBlockId = "a1";
+        var second = new MightyGraphRun { Id = "r:notice:2", Status = "completed", NoticeRun = true, FinalOutput = "Task step.", Agents = [Task("r:notice:2:t0", "completed", "t0")] };
+        var next = new MightyGraphRun { Id = "n", Input = "again", Status = "completed", FinalOutput = "Done.", Agents = [Task("n-t", "running")] };
+        foreach (var run in new[] { request, first, second, next }) MightyGraphSupport.RefreshResult(run);
+        List<MightyGraphRun> all = [request, first, second, next];
+        // Three unfinished blocks of the request count once for each of its runs; a copy of a finished block adds nothing; the next request counts its own.
+        var counts = MightyGraphSupport.ShownRuns(all).Select(MightyGraphSupport.BackgroundWaiting).ToArray();
+        Check(counts.SequenceEqual([3, 3, 3, 1]), "waiting counts: " + string.Join(",", counts));
+        Check(MightyGraphSupport.WithBackgroundWaiting(MightyGraphSupport.ShownRuns(all)).Select(MightyGraphSupport.BackgroundWaiting).SequenceEqual([3, 3, 3, 1]), "counting runs already counted changes nothing");
+        Same(MightyGraphSupport.FollowRunIndex(all.Take(3).ToList()), 2, "the newest notice run is followed");
+        Same(MightyGraphBlockModel.ResultTitle("completed", counts[2]), "현재까지의 결과 · 백그라운드 작업 3개 기다리는 중", "the title");
+        var shown = all.Take(3).ToList();
+        var layout = MightyGraphLayout.Make(shown, "", false, new HashSet<string>(), splitsExecution: true);
+        var cards = MightyGraphBlockModel.Blocks(layout, shown, "", "Claude", false).Where(b => b.Kind == "result").ToList();
+        Check(cards.Count >= 2 && cards.All(c => c.Title == "현재까지의 결과 · 백그라운드 작업 3개 기다리는 중" && c.SoFar), "every result card: " + string.Join(" | ", cards.Select(c => c.Title)));
+        Check(MightyStructure.Make(all, null, null).Rows!.Select(r => r.Item.BackgroundWaiting).SequenceEqual([3, 3, 3, 1]), "pipeline cards");
+        var groups = MightyTimeline.Groups(all);
+        Check(groups.Select(g => g.Result?.Tone == DesignTone.Idle).SequenceEqual([true, true, true, true]), "기록's results read so far");
+        Check(MobileMightySupport.Runs(all).Select(r => r.BackgroundWaiting).SequenceEqual([3, 3, 3, 1]), "the phone's counts");
+        // The work ends one by one; the notice run goes on reading the count until the last one.
+        var digest = MobileMightySupport.Digest(all);
+        request.Agents[1].Status = "completed"; request.Agents[3].Status = "completed";
+        Check(MightyGraphSupport.ShownRuns(all).Select(MightyGraphSupport.BackgroundWaiting).SequenceEqual([1, 1, 1, 1]) && MobileMightySupport.Digest(all) != digest, "one left");
+        request.Agents[2].Status = "stopped";
+        Check(MightyGraphSupport.ShownRuns(all).Select(MightyGraphSupport.BackgroundWaiting).SequenceEqual([0, 0, 0, 1]), "none left: the final result");
+        Same(MightyGraphBlockModel.ResultTitle("completed", 0), "최종 결과", "the final title");
+    }
+
+    /// <summary>An Agent call without run_in_background is a background launch when its result says so (Claude Code runs sub-agents in the
+    /// background by default): the launch result does not end its block (macOS BackgroundNoticeRunsTests.anAsyncLaunchResultKeepsTheAgentRunning).</summary>
+    internal static Task AnAsyncLaunchResultKeepsTheAgentRunning() { AsyncLaunch(); return Task.CompletedTask; }
+    private static void AsyncLaunch()
+    {
+        var tracker = new ExecutionGraphTracker("proc-1", "survey it", "claude", null, _ => { });
+        var structured = Json(new { type = "user", message = new { content = new object[] { new { type = "tool_result", tool_use_id = "a1", content = "Launched." } } }, toolUseResult = new { isAsync = true, status = "async_launched", agentId = "ag1" } });
+        var textual = Json(new { type = "user", message = new { content = new object[] { new { type = "tool_result", tool_use_id = "a2", content = "Async agent launched successfully.\nagentId: ag2 (internal ID)" } } } });
+        var plain = Json(new { type = "user", message = new { content = new object[] { new { type = "tool_result", tool_use_id = "a3", content = "The survey: 3 files." } } } });
+        foreach (var value in new[] { AgentCall("a1", "One", null), structured, AgentCall("a2", "Two", null), textual, AgentCall("a3", "Three", null), plain }) tracker.Consume(value);
+        Check(Block(tracker, "a1") is { Status: "running", Background: true } && Block(tracker, "a2") is { Status: "running", Background: true }, "an async launch result leaves the agent running in the background");
+        Check(Block(tracker, "a3") is { Status: "completed" } && Block(tracker, "a3").Background != true, "an agent that answered is not a background launch");
+        // Its hand-back settles it by the agent ID the launch named.
+        tracker.Consume(NotificationOf("ag1", "a1", "One done"));
+        tracker.Consume(Json(new { type = "user", origin = new { kind = "task-notification" }, message = new { content = "<task-notification>\n<task-id>ag2</task-id>\n<status>completed</status>\n<summary>Two done</summary>\n</task-notification>" } }));
+        Check(Block(tracker, "a1").Status == "completed" && Block(tracker, "a2").Status == "completed", "the notifications settle them");
     }
 }

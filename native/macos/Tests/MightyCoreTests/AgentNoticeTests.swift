@@ -56,7 +56,7 @@ struct AgentNoticeTests {
     @Test func streamsSettleTheBlockAndOpenNoticeRuns() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             let cases = try #require(try Self.load()["streams"] as? [[String: Any]])
-            #expect(cases.count >= 25)
+            #expect(cases.count >= 37)
             for item in cases {
                 let name = item["name"] as? String ?? ""
                 let runID = "agent-notices"
