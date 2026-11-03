@@ -58,7 +58,7 @@ public sealed class AccountUsageStatus : IAsyncDisposable
     {
         var ids = snapshot.Workspaces.Select(w => w.Id).ToHashSet();
         return snapshot.Sessions
-            .Where(s => s.Kind != "shell" && !FilePaneKind.IsFilePane(s.Kind) && ids.Contains(s.WorkspaceId) && Wire.Providers.Contains(s.Provider))
+            .Where(s => s.Kind != "shell" && !FilePaneKind.IsFilePane(s.Kind) && !WorkMapPaneKind.IsWorkMap(s.Kind) && ids.Contains(s.WorkspaceId) && Wire.Providers.Contains(s.Provider))
             .Select(s => s.Provider).Distinct()
             .OrderBy(p => Array.IndexOf(Wire.Providers, p)).ToList();
     }

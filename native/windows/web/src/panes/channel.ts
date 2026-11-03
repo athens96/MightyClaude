@@ -3,6 +3,7 @@
 // the view writes straight into xterm, and a browser's state is only its own toolbar's.
 import type { BrowserState } from './browser/types';
 import type { TerminalMessage } from './terminal/types';
+import type { WorkMapModel } from './workmap/model';
 
 export interface TerminalPush {
   kind: 'terminal';
@@ -16,13 +17,26 @@ export interface BrowserPush {
   state: BrowserState;
 }
 
-export type PanePush = TerminalPush | BrowserPush;
+export interface WorkMapPush {
+  kind: 'workmap';
+  paneId: string;
+  state: WorkMapModel;
+}
+
+/** The host asks an open files pane to show a file (the work map's changed files). */
+export interface FilesPush {
+  kind: 'files';
+  paneId: string;
+  path: string;
+}
+
+export type PanePush = TerminalPush | BrowserPush | WorkMapPush | FilesPush;
 
 type Listener = (message: PanePush) => void;
 const listeners = new Map<string, Set<Listener>>();
 
 export function isPanePush(message: { kind: string }): message is PanePush {
-  return message.kind === 'terminal' || message.kind === 'browser';
+  return message.kind === 'terminal' || message.kind === 'browser' || message.kind === 'workmap' || message.kind === 'files';
 }
 
 /** Listens for one pane's pushes of one kind until the returned function is called. */

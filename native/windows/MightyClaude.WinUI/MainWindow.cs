@@ -505,7 +505,7 @@ public sealed partial class MainWindow : Window
         internal void ShowActive(bool active)
         {
             var b = owner.brushes;
-            if (paneKind is "browser" or AgentIOPaneKind.Browser or FilePaneKind.Kind)
+            if (paneKind is "browser" or AgentIOPaneKind.Browser or FilePaneKind.Kind or WorkMapPaneKind.Kind)
             {
                 Container.BorderBrush = b.Transparent; Container.BorderThickness = new Thickness(0);
                 Container.CornerRadius = new CornerRadius(0, 0, DesignMetrics.Radius.Pane, DesignMetrics.Radius.Pane);
@@ -948,6 +948,8 @@ public sealed partial class MainWindow : Window
             if (owner.service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { } pane) return false;
             // A files pane runs nothing: it draws its tree and preview instead (MainWindow.Files.cs).
             if (FilePaneKind.IsFilePane(pane.Kind)) { EnsureFilesView(); RethemeFilesMarkdown(); return true; }
+            // The work map is drawn by the page alone (MainWindow.WorkMap.cs).
+            if (WorkMapPaneKind.IsWorkMap(pane.Kind)) return true;
             RefreshTerminalTheme(); RethemeMightyTranscripts(owner.service.Snapshot.Theme == "light"); RethemePlanViews(); RethemeStructureAnswers(); FitReferencePreview();
             updating = true; var runtime = PaneRuntime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var state = owner.service.Snapshot; RefreshHeaderStatus(pane); if (owner.webShell is not null) { /* The page draws the conversation; a never-shown view keeps only its composer. */ } else output.Update(pane, state.Theme == "light", owner.pictures, LocalPath(state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId))); RefreshEmptyOutput(pane); RefreshElapsed(pane); RefreshPlanHistory(pane); RefreshBackgroundWork(pane); RedecidePlanPlace();

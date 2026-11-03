@@ -13,7 +13,7 @@ public static class WorkDashboard
         public AgentRunTiming? Timing => Session.RunTiming is { IsValid: true } timing ? timing : null;
         public string? Model => string.IsNullOrWhiteSpace(Session.Model) || Session.Model.Trim() == "default" ? null : Session.Model.Trim();
     }
-    public static bool IsCounted(string kind) => kind is not ("files" or "agent-terminal" or "agent-browser");
+    public static bool IsCounted(string kind) => kind is not ("files" or "workmap" or "agent-terminal" or "agent-browser");
     public static Attention Pending(IEnumerable<ToolPermissionRequest> requests) => new(requests.Count(r => r.State == "pending" && r.CanAnswerQuestions), requests.Count(r => r.State == "pending" && !r.CanAnswerQuestions));
     /// <summary>A pane's Antigravity card is one more permission request, as the phone's pendingPermissions counts it (M/MightyCore/WorkDashboard.swift attention).</summary>
     public static Attention Pending(IEnumerable<ToolPermissionRequest> requests, AntigravityPermissionRequest? antigravity)

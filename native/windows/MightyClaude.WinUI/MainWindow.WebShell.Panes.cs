@@ -453,6 +453,14 @@ public sealed partial class MainWindow
         catch (Exception ex) when (ex is TimeoutException or System.Runtime.InteropServices.COMException or IOException or UnauthorizedAccessException or InvalidOperationException) { return false; }
     }
 
+    /// <summary>A tiny repository in the smoke folder for the work map step: one commit, a release tag, one more commit. False when git does not do it.</summary>
+    private static async Task<bool> SmokeRepository(string folder)
+    {
+        async Task<bool> Git(params string[] arguments) => await DelegationGit.Run(["-c", "user.name=Smoke", "-c", "user.email=smoke@example.com", "-c", "commit.gpgsign=false", .. arguments], folder, 30) is { ExitCode: 0 };
+        return await Git("init", "-q") && await Git("add", "--", "smoke-folder") && await Git("commit", "-q", "-m", "(windows) smoke first") && await Git("tag", "v0.0.1")
+            && await Git("commit", "-q", "--allow-empty", "-m", "(mac) smoke second");
+    }
+
     /// <summary>Closes the browser of every pane that is gone (all of them while the window closes).</summary>
     private void CloseWebBrowsers(AppSnapshot? state)
     {
@@ -498,6 +506,26 @@ public sealed partial class MainWindow
         var previewed = opened && await Until(() => True("(() => { const p = " + Slot(filesId) + "?.querySelector('" + Preview + "'); return !!p && (p.querySelector('[data-testid=files-source]')?.textContent ?? '').includes('smokeMarker') && !!p.querySelector('.syntax-keyword') && (p.querySelector('.files-lines')?.textContent ?? '').startsWith('1'); })()"));
         checks["filesTree"] = listed; checks["filesFolderOpened"] = opened; checks["filesPreview"] = previewed;
         await CloseSession(filesId);
+
+        // Work map: a fixture repository in the folder (one tag, one commit past it) draws the overview and one card per version; a
+        // platform chip switches off and on; the pane is closed afterwards.
+        var mapOverview = false; var mapVersions = false; var mapChip = false; var mapButton = false;
+        if (DelegationGit.Executable is not null && await SmokeRepository(folder))
+        {
+            await OpenWorkMapPane(workspace.Id);
+            var mapId = WorkMapPaneKind.PaneId(workspace.Id);
+            string Map(string selector) => Slot(mapId) + "?.querySelector('" + selector + "')";
+            mapOverview = await Until(() => True("!!" + Map("[data-testid=workmap-overview] .workmap-cell") + " && !" + Slot(mapId) + ".classList.contains('hidden')"));
+            mapVersions = mapOverview && await Until(() => True(Slot(mapId) + ".querySelectorAll('[data-testid=workmap-version]').length === 2 && !!" + Map("[data-testid=workmap-summarize]")));
+            if (mapVersions) await core.ExecuteScriptAsync(Map("[data-lane=mac]") + ".click()");
+            var mapOff = mapVersions && await Until(() => True(Map("[data-lane=mac]") + "?.getAttribute('aria-pressed') === 'false'"));
+            if (mapOff) await core.ExecuteScriptAsync(Map("[data-lane=mac]") + ".click()");
+            mapChip = mapOff && await Until(() => True(Map("[data-lane=mac]") + "?.getAttribute('aria-pressed') === 'true'"));
+            mapButton = await True("!!document.querySelector('[data-testid=open-workmap]')");
+            await CloseSession(mapId);
+        }
+        checks["workMapOverview"] = mapOverview; checks["workMapVersions"] = mapVersions; checks["workMapChips"] = mapChip; checks["workMapButton"] = mapButton;
+        checks["workMap"] = mapOverview && mapVersions && mapChip && mapButton;
 
         // Terminal: the page's xterm types a command that writes a marker in two halves; the joined marker must come back in its buffer.
         var terminalId = Wire.Id(); PaneView? terminal = null; var echoed = false; var started = false;

@@ -18,7 +18,7 @@ internal static class ProviderMarkVerification
             Check(ProviderMark.SidebarProvider(agent) == provider, provider + " row must carry its own mark");
             Check(ProviderMark.MarkedProvider(agent.Provider) == provider, provider + " must be a marked provider");
         }
-        foreach (var kind in new[] { "shell", "browser", FilePaneKind.Kind })
+        foreach (var kind in new[] { "shell", "browser", FilePaneKind.Kind, WorkMapPaneKind.Kind })
         {
             var pane = new RunSession { Kind = kind, Provider = "codex", Status = "running" };
             Check(ProviderMark.SidebarProvider(pane) is null, kind + " row must carry no mark");

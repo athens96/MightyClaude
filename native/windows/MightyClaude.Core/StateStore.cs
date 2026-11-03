@@ -243,8 +243,8 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         RunSession NormalizeSessionFully(RunSession s)
         {
             // A files pane runs nothing and keeps nothing but its title (docs/file-pane.md).
-            if (FilePaneKind.IsFilePane(s.Kind))
-                return new RunSession { Id = s.Id, WorkspaceId = s.WorkspaceId, Kind = FilePaneKind.Kind, Title = RenameSupport.ClampTitle(s.Title) };
+            if (FilePaneKind.IsFilePane(s.Kind) || WorkMapPaneKind.IsWorkMap(s.Kind))
+                return new RunSession { Id = s.Id, WorkspaceId = s.WorkspaceId, Kind = s.Kind, Title = RenameSupport.ClampTitle(s.Title) };
             if (s.Kind is "browser" or AgentIOPaneKind.Browser)
                 return s with { Title = RenameSupport.ClampTitle(s.Title), Status = "idle", Logs = [], Draft = "", RunTiming = null, SessionUsage = null, CurrentActivity = null, AgentViewMode = null, GraphRuns = null, GraphResultSize = null, GraphPlanSize = null, GraphBlockSizes = null, GraphViewMode = null, PlanHistory = null, TodoProgress = null, BackgroundWork = null, ResumeId = null, WorkspaceProfileKey = Wire.Clean(s.WorkspaceProfileKey, 128) is { Length: > 0 } wpk ? wpk : null, OwnerSessionId = Wire.Identifier(s.OwnerSessionId) ? s.OwnerSessionId : null, ParentSessionId = null, WorkingFolder = null, AskTarget = null };
             var provider = Wire.Providers.Contains(s.Provider) ? s.Provider : "claude";
@@ -269,7 +269,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
                 AskTarget = planMode && !remoteIds.Contains(s.WorkspaceId) ? s.AskTarget : null };
             return restoring ? PaneTitle.Restored(normalized) : normalized;
         }
-        var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && (s.Kind is "claude" or "shell" or "browser" || !restoring && FilePaneKind.IsFilePane(s.Kind) && s.Id == FilePaneKind.PaneId(s.WorkspaceId) || !restoring && AgentIOPaneKind.IsAgentIO(s.Kind) && s.OwnerSessionId is { } owner && s.Id == AgentIOPaneKind.PaneId(owner, s.Kind) && (value.Sessions ?? []).Any(parent => parent.Id == owner && parent.Kind == "claude" && parent.WorkspaceId == s.WorkspaceId))).DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();
+        var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && (s.Kind is "claude" or "shell" or "browser" || !restoring && FilePaneKind.IsFilePane(s.Kind) && s.Id == FilePaneKind.PaneId(s.WorkspaceId) || !restoring && WorkMapPaneKind.IsWorkMap(s.Kind) && s.Id == WorkMapPaneKind.PaneId(s.WorkspaceId) || !restoring && AgentIOPaneKind.IsAgentIO(s.Kind) && s.OwnerSessionId is { } owner && s.Id == AgentIOPaneKind.PaneId(owner, s.Kind) && (value.Sessions ?? []).Any(parent => parent.Id == owner && parent.Kind == "claude" && parent.WorkspaceId == s.WorkspaceId))).DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();
         var workspaceId = ids.Contains(value.ActiveWorkspaceId ?? "") ? value.ActiveWorkspaceId : workspaces.FirstOrDefault()?.Id;
         value = value with { ExpandedWorkspaceIds = value.ExpandedWorkspaceIds?.Where(ids.Contains).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList() };
         var activeSessionId = sessions.FirstOrDefault(s => s.WorkspaceId == workspaceId && s.Id == value.ActiveSessionId)?.Id ?? sessions.FirstOrDefault(s => s.WorkspaceId == workspaceId)?.Id;

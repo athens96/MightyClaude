@@ -13,9 +13,9 @@ internal static class WindowsParityVerification
     // M/WorkspaceView.swift:580, M/MightyCore/WorkDashboard.swift:47-49, 69-77.
     internal static Task RunningCountLeavesOutAgentAndFilePanes()
     {
-        var sessions = new[] { Pane("agent", "claude"), Pane("shell", "shell"), Pane("web", "browser"), Pane("io-terminal", AgentIOPaneKind.Terminal), Pane("io-browser", AgentIOPaneKind.Browser), Pane("files", FilePaneKind.Kind), Pane("prompt", "shell", "idle") };
+        var sessions = new[] { Pane("agent", "claude"), Pane("shell", "shell"), Pane("web", "browser"), Pane("io-terminal", AgentIOPaneKind.Terminal), Pane("io-browser", AgentIOPaneKind.Browser), Pane("files", FilePaneKind.Kind), Pane("workmap", WorkMapPaneKind.Kind), Pane("prompt", "shell", "idle") };
         Check(WorkDashboard.Count(sessions, _ => new()).Running == 3, "the running count is the agent, the shell and the browser pane: an agent's own terminal and browser and the files pane are left out");
-        Check(sessions.Count(s => s.Status == "running") == 6, "the fixture must hold running panes the count leaves out");
+        Check(sessions.Count(s => s.Status == "running") == 7, "the fixture must hold running panes the count leaves out");
         return Task.CompletedTask;
     }
 

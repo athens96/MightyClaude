@@ -29,6 +29,7 @@ export function useCall(): (method: string, args?: unknown) => void {
 function paneSymbol(kind: string): IconName {
   if (kind === 'browser' || kind === 'agent-browser') return 'globe';
   if (kind === 'files') return 'folder';
+  if (kind === 'workmap') return 'map';
   return 'square-terminal';
 }
 

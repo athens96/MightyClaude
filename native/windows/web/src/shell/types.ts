@@ -86,6 +86,8 @@ export interface HeaderModel {
   remoteHost?: string;
   filesEnabled: boolean;
   filesHelp: string;
+  workMapEnabled: boolean;
+  workMapHelp: string;
 }
 
 export interface LayoutModel {

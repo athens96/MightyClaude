@@ -6,6 +6,7 @@ import { MiddlePath } from '../../shell/parts';
 import { Icon, type IconName } from '../../icons/Icon';
 import { HtmlFrame, HtmlToggle, isHtmlPreview } from './HtmlView';
 import { lineNumbers, sourceSpans, treeKey } from './tree';
+import { listenPane } from '../channel';
 import type { FilePreview, FileRow, FilesModel } from './types';
 
 /** The symbols of the tree and the head (M/FilePaneView.swift, WinUI FileSymbol): folder, page, picture, source as </>. */
@@ -131,6 +132,12 @@ export function FilesView({ session }: { session: RunSession }) {
     }, () => {});
     return () => { live = false; };
   }, [call, show]);
+
+  // The work map opens one of its changed files here: the host has revealed and selected it, the pane reads the tree again and previews it.
+  useEffect(() => listenPane('files', paneId, (message) => {
+    void call<FilesModel>('filesState').then((value) => { apply(value); if (value) setFilter(value.filter); }, () => {});
+    void show(message.path, false);
+  }), [call, apply, show, paneId]);
 
   const choose = (row: FileRow) => {
     void call<FilesModel>('filesSelect', { path: row.path }).then(apply, () => {});

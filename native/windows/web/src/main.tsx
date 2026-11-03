@@ -17,6 +17,7 @@ import './cards/cards.css';
 import './mighty/mighty.css';
 import './shell/shell.css';
 import './panes/panes.css';
+import './panes/workmap/workmap.css';
 import './pane/reference.css';
 import './native/native.css';
 import './pictures/pictures.css';

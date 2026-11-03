@@ -74,6 +74,8 @@ export function WorkspaceHeader({ header, counts, layoutMode }: { header: Header
         onClick={(event) => menu.under(event.currentTarget, presets)}><Icon name="layout-grid" size={15} weight={1.5} /></button>
       <button type="button" className="icon-button header-icon-button" disabled={!header.filesEnabled} title={header.filesHelp} aria-label={t('menu.showFiles')} data-testid="open-files"
         onClick={() => call('openFiles', { workspaceId: header.id })}><Icon name="folder" size={16} weight={1.5} /></button>
+      <button type="button" className="icon-button header-icon-button" disabled={!header.workMapEnabled} title={header.workMapHelp} aria-label={t('workMap.open')} data-testid="open-workmap"
+        onClick={() => call('openWorkMap', { workspaceId: header.id })}><Icon name="map" size={16} weight={1.5} /></button>
     </header>
   );
 }
