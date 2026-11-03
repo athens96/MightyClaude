@@ -58,6 +58,9 @@ public actor ProviderService {
         return !numbers.lexicographicallyPrecedes([0, 153, 4])
     }
 
+    /// The environment of a headless Claude CLI run that must stay quiet: the model-list probe and the work map's summary.
+    static let quietClaudeEnvironment: [String: String] = ["CLAUDE_CODE_SAFE_MODE": "1", "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1", "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1", "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1", "DISABLE_AUTOUPDATER": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1", "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1"]
+
     public nonisolated static func capabilities(provider: String, version: String?) -> ProviderCapabilities {
         var value = ProviderOptions.fallbackRuntime(provider).capabilities
         // Keep the app's existing Mods minimum. This advertises CLI syntax
@@ -406,7 +409,7 @@ private final class CLIModelProbe: @unchecked Sendable {
                 let claude = command.provider == "claude"
                 let arguments = claude ? ["--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-prompts", "none", "--tools", "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence", "--safe-mode"] : ["app-server", "--listen", "stdio://"]
                 var env = environment
-                if claude { env.merge(["CLAUDE_CODE_SAFE_MODE": "1", "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1", "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1", "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1", "DISABLE_AUTOUPDATER": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1", "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1"]) { _, new in new } }
+                if claude { env.merge(ProviderService.quietClaudeEnvironment) { _, new in new } }
                 let child = try NativeChildProcess(executable: command.executable, arguments: arguments, environment: env, cwd: workspace ?? FileManager.default.temporaryDirectory, stdout: { state.consume($0) }, stderr: { _ in }, exited: { _ in state.complete(nil) })
                 state.attach(child)
                 if claude { state.send(["type": "control_request", "request_id": state.requestId, "request": ["subtype": "initialize", "hooks": [:], "sdkMcpServers": []]]) }

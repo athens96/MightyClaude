@@ -63,7 +63,7 @@ public struct MobileInfo: Codable, Sendable, Equatable {
 /// its name is listed, so a name appears here once the route behind it works.
 public enum MobileCapability {
     public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files",
-                             "structure", "direct", "push", "fileChanges"]
+                             "structure", "direct", "push", "fileChanges", "workMap"]
     /// Listed on top of `all` only by a host whose screen-share engine is
     /// running (`MobileRemoteService.capabilities`).
     public static let screenShare = "screenShare"
@@ -774,6 +774,11 @@ public struct MobileOK: Codable, Sendable, Equatable {
     public var `protocol`: Int = 1
     public var ok: Bool = true
     public init() {}
+}
+/// `POST /m1/workspaces/{id}/workmap/summarize`: the version to summarize, `next` or a release tag's name.
+public struct MobileWorkMapSummarizeRequest: Codable, Sendable, Equatable {
+    public var key: String
+    public init(key: String) { self.key = key }
 }
 /// `POST /m1/sessions/{id}/queue/{itemId}/run-now`: where the row ran, "worktree" or "here".
 public struct MobileRunNowReply: Codable, Sendable, Equatable {

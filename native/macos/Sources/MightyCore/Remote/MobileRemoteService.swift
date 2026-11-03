@@ -62,6 +62,12 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     /// `workspaceId` (a delegated child's worktree folder), so a preview asked
     /// with changes reads the same file its changes do; nil for no such pane.
     func mobileRunFolder(workspaceId: String, sessionId: String) async -> URL?
+    /// The work map of a workspace (docs/work-map.md) as the phone gets it: the JSON body, without the commits'
+    /// files (`WorkMapModel.phoneBody`). nil for a workspace this host does not have or that is remote.
+    func mobileWorkMap(workspaceId: String) async -> Data?
+    /// Starts the topic summary of the version `key` of a workspace. Throws `notFound` for no such workspace,
+    /// `badRequest` for a key the map does not have and `conflict` while another version is being summarized.
+    func mobileWorkMapSummarize(workspaceId: String, key: String) async throws
 }
 
 public extension MobileHostDelegate {
@@ -82,6 +88,11 @@ public extension MobileHostDelegate {
     }
     /// A host without delegated panes reads every pane's files in the workspace.
     func mobileRunFolder(workspaceId: String, sessionId: String) async -> URL? { nil }
+    /// A host without a work map has none to show.
+    func mobileWorkMap(workspaceId: String) async -> Data? { nil }
+    func mobileWorkMapSummarize(workspaceId: String, key: String) async throws {
+        throw MobileHostError.notFound(L("remote.error.routeNotFound"))
+    }
     /// A host without Antigravity cards answers like before, and has nothing to always allow.
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool, always: Bool) async throws {
         guard !always else { throw MightyError(L("remote.error.notAntigravityPermission")) }
@@ -1330,6 +1341,17 @@ public actor MobileRemoteService {
             }
             if route.count == 2, route[0] == "screen-share", url.query == nil {
                 return try await screenShareRoute(method: method, leaf: route[1], body: body, deviceId: deviceId)
+            }
+            if method == "GET", route.count == 3, route[0] == "workspaces", route[2] == "workmap", url.query == nil {
+                guard CoreValidation.identifier(route[1]), let workMap = await delegate.mobileWorkMap(workspaceId: route[1]) else { throw Failure(404, L("remote.error.workspaceNotFound")) }
+                return MobileReply(status: 200, body: workMap)
+            }
+            if method == "POST", route.count == 4, route[0] == "workspaces", route[2] == "workmap", route[3] == "summarize", url.query == nil {
+                guard CoreValidation.identifier(route[1]) else { throw Failure(404, L("remote.error.workspaceNotFound")) }
+                let request = try decode(body, as: MobileWorkMapSummarizeRequest.self)
+                guard request.key == WorkMap.nextKey || WorkMap.keptTags([request.key]) == [request.key] else { throw Failure(400, L("remote.error.badBody")) }
+                try await perform { try await delegate.mobileWorkMapSummarize(workspaceId: route[1], key: request.key) }
+                return reply(202, MobileOK())
             }
             if method == "GET", route.count == 3, route[0] == "workspaces", ["files", "file"].contains(route[2]) {
                 return try await workspaceFile(listing: route[2] == "files", workspaceId: route[1], url: url, deviceId: deviceId, delegate: delegate)

@@ -220,6 +220,13 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
     func mobileClose(sessionId: String) async throws {
         try await MainActor.run { try store.orClosing().mobileClose(sessionId) }
     }
+    func mobileWorkMap(workspaceId: String) async -> Data? {
+        guard let store = try? self.store.orClosing() else { return nil }
+        return await store.mobileWorkMap(workspaceId: workspaceId)
+    }
+    func mobileWorkMapSummarize(workspaceId: String, key: String) async throws {
+        try await store.orClosing().mobileWorkMapSummarize(workspaceId: workspaceId, key: key)
+    }
     func mobileSetAskTarget(sessionId: String, target: String?) async throws {
         try await MainActor.run { try store.orClosing().mobileSetAskTarget(sessionId, target: target) }
     }
@@ -476,7 +483,7 @@ extension AppStore {
 
     /// A pane the phone may see and act on by id; files panes are Mac-only.
     func mobilePane(_ id: String) -> RunSession? {
-        snapshot.sessions.first { $0.id == id && !FilePaneKind.isFilePane($0.kind) && !isRemoteWorkspace($0.workspaceId) }
+        snapshot.sessions.first { $0.id == id && !FilePaneKind.isReadOnlyPane($0.kind) && !isRemoteWorkspace($0.workspaceId) }
     }
 
     /// `structure`: the phone asked for the structure view (`?structure=`); only then is it built.

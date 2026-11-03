@@ -58,6 +58,7 @@ enum DashboardText {
         case AgentIOPaneKind.terminal: L("dashboard.kind.agentTerminal")
         case AgentIOPaneKind.browser: L("dashboard.kind.agentBrowser")
         case FilePaneKind.kind: L("files.pane.title")
+        case WorkMapPaneKind.kind: L("workMap.title")
         default: card.kind
         }
     }
@@ -83,6 +84,7 @@ func paneSymbol(_ kind: String) -> String {
     switch kind {
     case SessionKind.browser, AgentIOPaneKind.browser: "globe"
     case FilePaneKind.kind: "folder"
+    case WorkMapPaneKind.kind: "map"
     default: "terminal"
     }
 }

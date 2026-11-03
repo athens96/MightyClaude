@@ -26,17 +26,23 @@ extension AppStore {
         guard workspace.remote == nil else { error = L("remote.workspace.paneUnavailable"); return }
         let id = FilePaneKind.paneId(workspaceId: workspace.id)
         guard CoreValidation.identifier(id), filePaneModel(for: workspace.id) != nil else { return }
+        insertReadOnlyPane(id: id, title: L("files.pane.title"), kind: FilePaneKind.kind, in: workspace)
+    }
+
+    /// Focuses the pane `id` when it is open, otherwise puts it left of the current pane (or as a tab when the
+    /// layout has no room for a split; `placement` "tab" always makes a tab). The files pane and the work map are opened this way.
+    func insertReadOnlyPane(id: String, title: String, kind: String, in workspace: Workspace, placement: String = "left") {
         if snapshot.sessions.contains(where: { $0.id == id }) { selectSession(id); return }
         guard snapshot.sessions.count < PaneLayouts.maximumSessions else { error = L("files.error.noRoom"); return }
         reconcilePaneLayout(workspace.id)
         let root = layoutForWorkspace(workspace.id)
         let current = snapshot.activeWorkspaceId == workspace.id ? snapshot.activeSessionId : snapshot.paneLayoutActiveSessionIds?[workspace.id]
         let group = current.flatMap { root?.group(containing: $0) }
-        var next = PaneLayouts.inserting(root: root, sessionId: id, targetGroupId: group?.id, placement: root == nil ? "tab" : "left")
+        var next = PaneLayouts.inserting(root: root, sessionId: id, targetGroupId: group?.id, placement: root == nil ? "tab" : placement)
         if next?.group(containing: id) == nil { next = PaneLayouts.inserting(root: root, sessionId: id, targetGroupId: group?.id, placement: "tab") }
         guard let next, next.group(containing: id) != nil else { error = L("files.error.noRoom"); return }
         let mode = paneLayoutMode(workspace.id)
-        snapshot.sessions.append(RunSession(id: id, workspaceId: workspace.id, title: L("files.pane.title"), kind: FilePaneKind.kind))
+        snapshot.sessions.append(RunSession(id: id, workspaceId: workspace.id, title: title, kind: kind))
         savePaneLayout(next, workspaceId: workspace.id)
         if mode != "focus" { setPaneLayoutMode(next.kind == "split" ? "custom" : "tabs", workspaceId: workspace.id) }
         selectSession(id)

@@ -511,6 +511,11 @@ struct WorkspaceView: View {
             .frame(minHeight: 15)
     }
 
+    /// Why the work map button is off for `workspace`, or nil when it opens.
+    private func workMapReason(_ workspace: Workspace) -> String? {
+        store.workMapUnavailableReason(workspace, isGit: gitState.info(for: workspace) != nil)
+    }
+
     private func workspaceHeader(_ workspace: Workspace) -> some View {
         HStack(spacing: DesignMetrics.Spacing.lg) {
             HStack(spacing: DesignMetrics.Spacing.md) {
@@ -543,6 +548,15 @@ struct WorkspaceView: View {
             .help(workspace.remote == nil ? L("menu.showFiles") + " (⇧⌘E)" : L("remote.workspace.paneUnavailable"))
             .accessibilityLabel(L("menu.showFiles"))
             .accessibilityIdentifier("workspace-open-files-\(workspace.id)")
+            Button { store.openWorkMapPane(workspaceId: workspace.id) } label: {
+                Image(systemName: "map").font(.ui(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            // The work map reads this Mac's git history; a remote workspace's is on its host, and a folder without git has none.
+            .disabled(store.hasModal || workMapReason(workspace) != nil)
+            .help(workMapReason(workspace) ?? L("workMap.open"))
+            .accessibilityLabel(L("workMap.open"))
+            .accessibilityIdentifier("workspace-open-workmap-\(workspace.id)")
         }.leadingPastTrafficLights(DesignMetrics.Inset.workspaceHeaderH).padding(.trailing, DesignMetrics.Inset.workspaceHeaderH)
             .padding(.top, DesignMetrics.Inset.workspaceHeaderT).padding(.bottom, DesignMetrics.Inset.workspaceHeaderB)
             .accessibilityElement(children: .contain)
