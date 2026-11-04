@@ -17,6 +17,13 @@ describe('workspace create helpers', () => {
     expect(canMakeFolder(ok, true)).toBe(false);
     expect(canMakeFolder(null, false)).toBe(false);
   });
+  it('reads a check the host sent without its null problem and message (Wire.Json leaves nulls out) as a valid one', () => {
+    // The host's own answer for a name that can be made: {"target":…,"exists":false,"locationMissing":false}.
+    const sent = JSON.parse('{"target":"C:/Users/a/Hello-World","exists":false,"locationMissing":false}');
+    expect(canMakeFolder(sent, false)).toBe(true);
+    expect(canCreateFromGit(sent, { state: 'reachable' }, false)).toBe(true);
+    expect(shownProblem(sent, 'Hello-World', false)).toBeNull();
+  });
   it('enables 생성 only after a reachable probe', () => {
     expect(canCreateFromGit(ok, { state: 'reachable' }, false)).toBe(true);
     expect(canCreateFromGit(ok, { state: 'checking' }, false)).toBe(false);
