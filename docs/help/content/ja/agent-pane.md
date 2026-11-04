@@ -101,10 +101,8 @@ CodexとAntigravityでは名前が少し異なります(例: Codexの`/new`、`/
 
 ![[session-info]]
 
-## 標準表示とMighty表示 {#views}
-Claude、Codex、Antigravityのペインのヘッダーには、{{ui:graph.view.default}} | {{ui:graph.view.mighty}}の切り替えがあります。切り替えても、会話と入力中の文章はそのまま残ります。ペインごとに別々に記憶されます。
-- {{ui:graph.view.default}}: 会話を上から下へ読む記録です。
-- {{ui:graph.view.mighty}}: リクエスト、サブエージェント、バックグラウンドタスク、結果をブロックのフローで表示します。
+## Mighty表示 {#views}
+Claude、Codex、Antigravityのペインは{{ui:graph.view.mighty}}表示で表示されます。リクエスト、サブエージェント、バックグラウンドタスク、結果をブロックのフローで表示します。切り替える操作はありません。
 
 ### Mightyフロー {#diagram}
 リクエストごとにリクエストブロックができ、そのすぐ下に{{ui:graph.block.execution}}ブロックが付きます。リクエストブロックには送ったリクエストだけが入り、エージェントがそのリクエストで行ったこと（メッセージ、ツール呼び出し、進み具合）は{{ui:graph.block.execution}}ブロックに表示されます。サブエージェントとバックグラウンドタスクは{{ui:graph.block.execution}}ブロックの下に枝分かれして表示されます。終わると{{ui:graph.block.result}}カードが付きます。

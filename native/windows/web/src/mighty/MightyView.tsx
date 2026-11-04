@@ -12,9 +12,6 @@ import { Timeline } from './Timeline';
 import { emptyMighty } from './types';
 import { Icon } from '../icons/Icon';
 
-/** Panes that offer the Default | Mighty switch (MightyGraphViewModel.ShowsModeSwitch). */
-export const showsModeSwitch = (session: RunSession) => session.kind === 'claude' && ['claude', 'codex', 'gemini'].includes(session.provider);
-
 /** The view the pane is saved in (MightyTimeline.Mode): an unknown word is the diagram. */
 export const presentationOf = (session: RunSession) =>
   session.graphViewMode === 'timeline' || session.graphViewMode === 'structure' ? session.graphViewMode : 'diagram';
@@ -27,36 +24,19 @@ export function useShownSession(session: RunSession): RunSession {
   const choice = useStoreState().views[session.id];
   return useMemo(() => {
     if (!choice) return session;
-    return { ...session, ...(choice.mode !== undefined ? { agentViewMode: choice.mode } : {}), ...(choice.presentation !== undefined ? { graphViewMode: choice.presentation } : {}) };
+    return { ...session, ...(choice.presentation !== undefined ? { graphViewMode: choice.presentation } : {}) };
   }, [session, choice]);
 }
 
-/** A view switch: drawn at once, saved by the host (SetAgentViewMode, the Mighty view's mode), taken back if the call fails or the host did not take it. */
+/** A view switch: drawn at once, saved by the host (the Mighty view's presentation), taken back if the call fails or the host did not take it. */
 export function useViewSwitch(paneId: string): (choice: ViewChoice) => void {
   const { bridge, store } = useServices();
   return useCallback((choice: ViewChoice) => {
     store.dispatch({ kind: 'view', paneId, choice });
-    const saved = choice.mode !== undefined ? bridge.call('mightySetMode', { paneId, mode: choice.mode }) : bridge.call('mightySetPresentation', { paneId, mode: choice.presentation });
+    const saved = bridge.call('mightySetPresentation', { paneId, mode: choice.presentation });
     // Answered: the next delta decides (a choice the host did not take goes back to its view); failed: back at once.
     saved.then(() => store.dispatch({ kind: 'view', paneId, choice, saved: true }), () => store.dispatch({ kind: 'view', paneId, choice, revert: true }));
   }, [bridge, store, paneId]);
-}
-
-/** The pane header's Default | Mighty switch; the host saves the choice the way the WinUI switch does (SetAgentViewMode). */
-export function ModeSwitch({ session }: { session: RunSession }) {
-  const { t } = useServices();
-  const choose = useViewSwitch(session.id);
-  const mighty = session.agentViewMode === 'mighty';
-  return (
-    <span className="mighty-switch" role="group" aria-label={t('graph.view.switch')} data-testid="mighty-mode-switch">
-      {(['default', 'mighty'] as const).map((mode) => (
-        <button key={mode} className={(mode === 'mighty') === mighty ? 'on' : ''} data-mode={mode}
-          onClick={() => { if ((mode === 'mighty') !== mighty) choose({ mode }); }}>
-          <Icon name={mode === 'mighty' ? 'share-2' : 'text-align-start'} size={12} weight={2} />{t('graph.view.' + mode)}
-        </button>
-      ))}
-    </span>
-  );
 }
 
 /**

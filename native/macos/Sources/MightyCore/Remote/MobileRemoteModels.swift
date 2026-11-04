@@ -74,11 +74,11 @@ public enum MobileCapability {
 public enum MobileWire {
     public static let submitModes = ["steer", "queue"]
     public static let agentViewModes = ["plain", "mighty"]
+    /// The word an older phone may still send for the plain view; a pane stays in the Mighty view whatever it asks for.
+    public static let plainViewMode = "plain"
     public static let mightyStyles = ["cli", "ouroboros"]
     /// What `POST …/command` performs; the other actions the phone handles itself.
     public static let performedActions = ["clear", "usage", "help"]
-    /// The Mac's `agentViewMode` is nil or "default" where the wire says "plain".
-    public static let plainViewMode = "plain"
     /// The Mac's `mightyStyle` is nil where the wire says "cli".
     public static let cliStyle = "cli"
     public static let maximumTitle = 80

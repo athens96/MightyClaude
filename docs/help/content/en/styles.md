@@ -6,10 +6,9 @@ section: styles
 A style is a ready-made way of working: it comes with phases and buttons, so a long task follows a set order. Without a style you send requests freely, as usual (CLI).
 
 ## Pick a style {#pick}
-Styles work in Claude panes on this Mac, in the Mighty view.
-1. Switch the Claude pane to the {{ui:graph.view.mighty}} view.
-2. Open the style menu ({{ui:guidedPanel.stylesMenuAccessibility}}) above the composer.
-3. Pick a style. Pick CLI to go back to free requests.
+Styles work in Claude panes on this Mac.
+1. Open the style menu ({{ui:guidedPanel.stylesMenuAccessibility}}) above the composer.
+2. Pick a style. Pick CLI to go back to free requests.
 
 Each pane remembers its style. It can't be changed while a task runs. If the style needs a plugin or tool you don't have, an {{ui:guidedPanel.installButton}} button appears. It fills the install command into a new terminal pane; you press {{kbd:Enter}} yourself.
 

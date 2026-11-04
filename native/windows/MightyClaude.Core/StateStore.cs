@@ -289,7 +289,8 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             var timing = s.Kind == "shell" ? null : s.RunTiming is { IsValid: true } ? s.RunTiming : AgentRunTiming.Infer(logs);
             if (timing is not null) timing = restoring ? timing.Interrupt() : s.Status == "running" ? timing.Observe() : timing;
             var usage = s.Kind == "claude" && s.SessionUsage?.Provider == provider ? SessionUsageSupport.Normalize(s.SessionUsage) : null;
-            var viewMode = s.AgentViewMode is "default" or "mighty" ? s.AgentViewMode : null;
+            // Mighty is the one view an agent pane has: a saved "default" (or nothing) loads as "mighty" (macOS StateRepository.normalize).
+            var viewMode = MightyGraphViewModel.ViewMode(s.Kind, provider);
             var graphBudget = MightyGraphSupport.LiveHistoryLimit;
             var graphRuns = s.GraphRuns is { Count: > 0 } ? MightyGraphSupport.Normalized(s.GraphRuns, restoring, budget: ref graphBudget) : null;
             if (graphRuns is { Count: 0 }) graphRuns = null;

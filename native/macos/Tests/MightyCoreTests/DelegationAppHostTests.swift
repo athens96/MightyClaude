@@ -78,7 +78,7 @@ private func waitUntil(timeout: TimeInterval = 60, _ condition: () async -> Bool
         #expect(child.kind == SessionKind.claude && child.provider == "claude")
         // Exactly the mode asked for; nothing comes from the last-used pane.
         #expect(child.settings == RunSettings(permissionMode: "plan"))
-        #expect(child.model == "default" && child.agentViewMode == nil && child.resumeId == nil && child.logs.isEmpty)
+        #expect(child.model == "default" && child.agentViewMode == "mighty" && child.resumeId == nil && child.logs.isEmpty)
         #expect(child.parentSessionId == "parent-1" && child.workingFolder == "/tmp/mighty-worktrees/child-1")
         for mode in DelegationCoordinator.startingModes {
             var asked = Self.pane; asked.mode = mode

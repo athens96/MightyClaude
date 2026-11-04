@@ -10,7 +10,6 @@ import { statusWord } from '@/lib/status-glyph';
 import { toneOf } from '@/lib/status-tone';
 import { styleOptions } from '@/lib/styles';
 import {
-  agentViewModes,
   optionLabel,
   spacing,
   toneColors,
@@ -24,7 +23,6 @@ export type SettingField =
   | 'model'
   | 'permissionMode'
   | 'effort'
-  | 'agentViewMode'
   | 'mightyStyle'
   /** The open style list a host with "style" sends, in place of `mightyStyle`. */
   | 'styleId';
@@ -32,7 +30,6 @@ export type SettingField =
 /** The host may leave an option list out; an absent list simply hides its chip. */
 export function optionsFor(settings: MobileSettings | undefined, field: SettingField): SettingOption[] {
   if (!settings) return [];
-  if (field === 'agentViewMode') return agentViewModes();
   const options = settings.options as Partial<MobileSettings['options']> | undefined;
   if (field === 'styleId') return styleOptions(options?.styles);
   const list =
@@ -55,8 +52,6 @@ export function valueFor(settings: MobileSettings, field: SettingField): string 
       return settings.permissionMode ?? '';
     case 'effort':
       return settings.effort ?? '';
-    case 'agentViewMode':
-      return settings.agentViewMode ?? '';
     case 'mightyStyle':
       return settings.mightyStyle ?? '';
     case 'styleId':
@@ -68,7 +63,6 @@ const settingTitleKeys: Record<SettingField, string> = {
   model: 'composer.label.model',
   permissionMode: 'remote.slashHint.permission',
   effort: 'composer.effort.label',
-  agentViewMode: 'phone.session.setting.viewMode',
   mightyStyle: 'phone.session.setting.mightyStyle',
   styleId: 'phone.session.setting.mightyStyle',
 };
@@ -157,7 +151,6 @@ export function settingFields(settings: MobileSettings | undefined, styleAware: 
       'model',
       'permissionMode',
       'effort',
-      'agentViewMode',
       styleAware ? 'styleId' : 'mightyStyle',
     ] as const
   ).filter((field) => optionsFor(settings, field).length > 0 && valueFor(settings, field).length > 0);

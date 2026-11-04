@@ -168,6 +168,11 @@ public sealed partial class MainWindow
         return data.Length > WebPictureBytes || type is not ("image/png" or "image/jpeg" or "image/gif" or "image/webp") ? null : "data:" + type + ";base64," + Convert.ToBase64String(data);
     }
 
+    private const string WebSmokeRunId = "web-smoke-run";
+
+    /// <summary>The smoke run with its root entries made by <paramref name="make"/>.</summary>
+    private static MightyGraphRun WebSmokeRun(MightyGraphRun run, Func<List<LogEntry>, List<LogEntry>> make) { var copy = run.Copy(); copy.RootEntries = make(copy.RootEntries); return copy; }
+
     /// <summary>
     /// The reference bubble's web smoke: a fixture file under the smoke project, the reply's <c>src/a.ts:3</c> clicked where it is
     /// drawn (the caret under the point, as a person's click finds it), and the bubble must show the file's source with its line
@@ -185,7 +190,7 @@ public sealed partial class MainWindow
             return false;
         }
         const string Room = "(document.querySelector('.pane-slot.active:not(.hidden)') ?? document)";
-        const string Click = "(() => { const c = " + Room + ".querySelector('[data-testid=conversation]'); if (!c) return false; const w = document.createTreeWalker(c, NodeFilter.SHOW_TEXT); let n; "
+        const string Click = "(() => { const c = " + Room + ".querySelector('.timeline-transcript'); if (!c) return false; const w = document.createTreeWalker(c, NodeFilter.SHOW_TEXT); let n; "
             + "while ((n = w.nextNode())) { const i = n.textContent.indexOf('src/a.ts:3'); if (i < 0) continue; n.parentElement.scrollIntoView({ block: 'center' }); const r = document.createRange(); r.setStart(n, i + 2); r.setEnd(n, i + 3); const b = r.getBoundingClientRect(); "
             + "n.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, clientX: b.left + b.width / 2, clientY: b.top + b.height / 2 })); return true; } return false; })()";
         const string Bubble = Room + ".querySelector('[data-testid=reference-bubble]')";
@@ -198,7 +203,7 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The picture viewer's web smoke (src/pictures/PictureViewer.tsx): an image entry holding a stored PNG and a stored SVG goes
-    /// into the pane's log; both thumbnails must come as PNG data URLs (the SVG drawn by NativeSvgRaster), a click on the first
+    /// into the smoke run's root entries, so the diagram draws them as picture tiles under the request; both thumbnails must come as PNG data URLs (the SVG drawn by NativeSvgRaster), a click on the first
     /// must open the viewer as a dialog with focus inside it and the picture as a data URL, and Esc must close it and give focus
     /// back to the thumbnail. None of the viewer's buttons is pressed (copy would touch the clipboard). The entry goes again after.
     /// </summary>
@@ -214,21 +219,21 @@ public sealed partial class MainWindow
         var png = service.Images.Store(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGPQqDgBRww4OQBBxhDhzXmo9QAAAABJRU5ErkJggg=="), "image/png", "smoke-picture.png");
         var svg = service.Images.Store(System.Text.Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" height=\"30\"><rect width=\"40\" height=\"30\" fill=\"#c33\"/></svg>"), "image/svg+xml", "smoke-picture.svg");
         var entryId = Wire.Id();
-        await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { Logs = [.. s.Logs, new(entryId, "image", "Read · smoke-picture", Wire.Now(), Images: [png, svg])] }).ToList() });
+        await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { GraphViewMode = null, GraphRuns = s.GraphRuns!.Select(g => g.Id != WebSmokeRunId ? g : WebSmokeRun(g, e => [.. e, new(entryId, "image", "Read · smoke-picture", Wire.Now(), Images: [png, svg])])).ToList() }).ToList() });
         try
         {
             const string Room = "(document.querySelector('.pane-slot.active:not(.hidden)') ?? document)";
-            const string Thumbs = "[..." + Room + ".querySelectorAll('[data-testid=thumbnail] img')]";
+            const string Thumbs = "[..." + Room + ".querySelectorAll('[data-testid=mighty-image-tile] img')]";
             const string Viewer = "document.querySelector('[data-testid=picture-viewer]')";
             var thumbnails = await Until(() => True("(() => { const t = " + Thumbs + "; return t.length === 2 && t.every(i => i.src.startsWith('data:image/png;base64,')); })()"));
-            var clicked = thumbnails && await True("(() => { const b = " + Room + ".querySelector('[data-testid=thumbnail]'); if (!b) return false; b.scrollIntoView({ block: 'center' }); b.focus(); b.click(); return true; })()");
+            var clicked = thumbnails && await True("(() => { const b = " + Room + ".querySelector('[data-testid=mighty-image-tile]'); if (!b) return false; b.scrollIntoView({ block: 'center' }); b.focus(); b.click(); return true; })()");
             var opened = clicked && await Until(() => True("(() => { const v = " + Viewer + "; const i = v?.querySelector('[data-testid=picture-viewer-image]'); return !!i && i.src.startsWith('data:image/') && !!v.querySelector('[role=dialog][aria-modal=true]') && v.contains(document.activeElement) && i.style.visibility !== 'hidden'; })()"));
             var closed = opened && await True("(() => { (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); return true; })()")
-                && await Until(() => True("!" + Viewer + " && document.activeElement?.dataset.testid === 'thumbnail'"));
+                && await Until(() => True("!" + Viewer + " && document.activeElement?.dataset.testid === 'mighty-image-tile'"));
             result["pictureChecks"] = new { thumbnails, clicked, opened, closed };
             return opened && closed;
         }
-        finally { await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { Logs = s.Logs.Where(e => e.Id != entryId).ToList() }).ToList() }); }
+        finally { await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { GraphRuns = s.GraphRuns?.Select(g => g.Id != WebSmokeRunId ? g : WebSmokeRun(g, e => e.Where(x => x.Id != entryId).ToList())).ToList() }).ToList() }); }
     }
 
     /// <summary>Folder to its virtual host: a frame's page may reach only the folder it is served from, and the names cannot be guessed.</summary>
@@ -300,13 +305,20 @@ public sealed partial class MainWindow
                 Logs = index == 0 ? claude : [new(Wire.Id(), "user", "fixture request " + index, Wire.Now()), new(Wire.Id(), "assistant", "fixture answer " + index, Wire.Now())],
             }).ToList();
             // One tab group, the workspace open in the sidebar: the frame's smoke clicks its rows and tabs (MainWindow.WebShell.Shell.cs).
+            // The agent pane draws the Mighty view only: the same entries (all but the request, which is the group's prompt) are the 로그 view's
+            // execution row, opened below, and every Conversation check reads them there.
+            sessions[0] = sessions[0] with
+            {
+                AgentViewMode = "mighty", GraphViewMode = "timeline",
+                GraphRuns = [new MightyGraphRun { Id = WebSmokeRunId, Input = "fixture request 0", Status = "completed", Provider = "claude", RootEntries = [.. claude.Skip(1)] }],
+            };
             await service.UpdateAsync(state => state with { Sessions = sessions, ActiveWorkspaceId = workspace.Id, ActiveSessionId = sessions[0].Id, Layout = "tabs", ExpandedWorkspaceIds = [workspace.Id] });
             var shell = webShell ?? throw new InvalidOperationException("web shell missing");
             var core = await shell.Started ?? throw new InvalidOperationException("WebView2 did not start");
             // Counted inside the active pane slot: the page keeps panes it has shown mounted (hidden), so the document holds them all.
             const string Probe = "(() => { const R = document.querySelector('.pane-slot.active:not(.hidden)') ?? document; return JSON.stringify({ mounted: !!document.querySelector('[data-testid=shell]'), titles: [...document.querySelectorAll('.sidebar-pane-title')].map(e => e.textContent), selected: (document.querySelector('.pane-slot.active:not(.hidden) [data-testid=pane-title]') ?? document.querySelector('[data-testid=pane-title]'))?.textContent ?? null, theme: document.documentElement.dataset.theme ?? null, "
-                + "entries: R.querySelector('[data-testid=conversation]')?.dataset.entryCount ?? null, kinds: Object.fromEntries(['user', 'assistant', 'tool', 'output', 'system', 'error', 'image'].map(k => [k, R.querySelectorAll('[data-entry-kind=' + k + ']').length])), "
-                + "tables: R.querySelectorAll('[data-md=table]').length, code: R.querySelectorAll('[data-code-block]').length, last: [...R.querySelectorAll('[data-entry-id]')].slice(-2).map(e => e.textContent) }); })()";
+                + "entries: R.querySelectorAll('.timeline-transcript [data-entry-kind]').length || null, kinds: Object.fromEntries(['user', 'assistant', 'tool', 'output', 'system', 'error', 'image'].map(k => [k, R.querySelectorAll('[data-entry-kind=' + k + ']').length])), "
+                + "tables: R.querySelectorAll('[data-md=table]').length, code: R.querySelectorAll('[data-code-block]').length, last: [...R.querySelectorAll('.timeline-transcript [data-entry-kind]')].slice(-2).map(e => e.textContent) }); })()";
             async Task<JsonElement> Read() => JsonDocument.Parse(JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync(Probe)) ?? "{}").RootElement;
             async Task<JsonElement> WaitFor(Func<JsonElement, bool> done)
             {
@@ -322,13 +334,21 @@ public sealed partial class MainWindow
             static int Number(JsonElement page, string name) => page.TryGetProperty(name, out var n) && n.ValueKind == JsonValueKind.Number && n.TryGetInt32(out var value) ? value : 0;
             static List<string> Last(JsonElement page) => page.TryGetProperty("last", out var list) && list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().Select(t => t.GetString() ?? "").ToList() : [];
             // Every kind drawn: the request, both tool calls, the reply with its table and its code, the output (a code block too) and the note.
-            static bool Drawn(JsonElement page) => page.Text("entries") == "6" && Count(page, "user") == 1 && Count(page, "tool") == 2 && Count(page, "assistant") == 1
+            static bool Drawn(JsonElement page) => Number(page, "entries") == 5 && Count(page, "user") == 0 && Count(page, "tool") == 2 && Count(page, "assistant") == 1
                 && Count(page, "output") == 1 && Count(page, "system") == 1 && Number(page, "tables") == 1 && Number(page, "code") == 2;
+            // The 로그 view's rows with a transcript, opened as a person opens them.
+            var rowOpened = false;
+            for (var tries = 0; tries < 100 && !rowOpened; tries++)
+            {
+                rowOpened = await core.ExecuteScriptAsync("(() => { const bs = [...document.querySelectorAll('.pane-slot.active:not(.hidden) .timeline-card-head')].filter(x => !x.disabled); if (bs.length === 0) return false; for (const b of bs) b.click(); return true; })()") == "true";
+                if (!rowOpened) await Task.Delay(100);
+            }
+            result["timelineRowOpened"] = rowOpened;
             var drawn = await WaitFor(Drawn);
             result["conversation"] = drawn.Clone(); Save();
             // A streamed change: the last entry replaced and one appended, as a run's events do; the page gets them as a delta.
-            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != sessions[0].Id ? s : s with { Logs = [.. s.Logs.SkipLast(1), s.Logs[^1] with { Text = "fixture note replaced-marker" }, new(Wire.Id(), "assistant", "appended-marker", Wire.Now(), "claude")] }).ToList() });
-            static bool Streamed(JsonElement page) => page.Text("entries") == "7" && Last(page) is [var replaced, var appended] && replaced.Contains("replaced-marker", StringComparison.Ordinal) && appended.Contains("appended-marker", StringComparison.Ordinal);
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != sessions[0].Id ? s : s with { GraphRuns = s.GraphRuns!.Select(g => g.Id != WebSmokeRunId ? g : WebSmokeRun(g, e => [.. e.SkipLast(1), e[^1] with { Text = "fixture note replaced-marker" }, new(Wire.Id(), "assistant", "appended-marker", Wire.Now(), "claude")])).ToList() }).ToList() });
+            static bool Streamed(JsonElement page) => Number(page, "entries") == 6 && Last(page) is [var replaced, var appended] && replaced.Contains("replaced-marker", StringComparison.Ordinal) && appended.Contains("appended-marker", StringComparison.Ordinal);
             var streamed = await WaitFor(Streamed);
             result["streamed"] = streamed.Clone(); result["lastDeltaBytes"] = shell.Bridge.LastDeltaBytes; Save();
             shown = shown && Drawn(drawn) && Streamed(streamed);
@@ -338,6 +358,8 @@ public sealed partial class MainWindow
             // The picture viewer: a PNG and an SVG picture in the conversation, the SVG drawn as PNG, the first opened and closed with Esc.
             var pictured = await RunWebPictureSmoke(core, sessions[0].Id, result); result["pictures"] = pictured; Save();
             shown = shown && pictured;
+            // The Mighty fixture goes; the diagram is the pane's view again for the composer and the cards.
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != sessions[0].Id ? s : s with { GraphRuns = null, GraphViewMode = null }).ToList() });
             // The composer: a typed draft reaches the service, and Enter answers with what the send did (MainWindow.WebShell.Composer.cs).
             var composed = await RunWebComposerSmoke(core, sessions[0].Id, result); result["composer"] = composed; Save();
             shown = shown && composed;

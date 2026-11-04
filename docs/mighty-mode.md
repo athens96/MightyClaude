@@ -1,6 +1,6 @@
 # 마이티 모드 (Claude · Codex)
 
-Claude 또는 Codex 실행 창 상단에서 **기본 / 마이티**를 선택한다. 기본은 기존 대화 화면이며, 마이티는 같은 실행과 대화를 요청별 그래프로 표시한다. 전환해도 대화를 새로 시작하거나 입력 중인 내용을 지우지 않는다. 선택은 실행 창별로 저장된다.
+Claude·Codex·Antigravity 실행 창은 마이티 보기로 보인다. 같은 실행과 대화를 요청별 그래프로 표시하며, 따로 고를 것은 없다. 예전에 있던 기본(대화 로그) 보기는 없어졌고, 저장된 `agentViewMode`가 `default`이거나 비어 있어도 마이티로 불러온다(`agentViewMode`는 호환을 위해 저장·전송 형식에 남아 있다).
 
 ## 화면 흐름
 
@@ -140,11 +140,9 @@ Codex 실행 창은 `codex exec --json`이 내보내는 JSONL을 사용한다. �
 - **스트림의 한계**: 하위 스레드 내부의 도구 활동·중간 출력·중첩 생성은 현재 exec 스트림에서 항상 전달되지 않는다. 전달되지 않은 작업은 표시하거나 추측하지 않는다. 최신 내부 동작인 `FollowupTask`·`SendMessage`·`Interrupt`·`ListAgents`도 exec가 내보내지 않으면 볼 수 없다. `Resume`이 `wait`로만 전달되는 경우에는 그것만으로 새 활동을 추측하지 않는다.
 - 확인 기준은 Codex CLI 0.153.4와 openai/codex의 exec 이벤트 정의다. `collab_tool_call`과 이전 이름 `collab_agent_tool_call`을 허용하며, 보고되지 않은 이름·역할·시간·토큰 수를 만들어 내지 않는다. 백그라운드 명령 작업 블록은 Claude 전용이다. 플러그인 브라우저·참조 링크·말풍선·블록 크기 조절은 Claude와 Codex 모두 지원한다.
 
-이번 화면은 네이티브 Mac의 Claude·Codex 실행 창에 적용된다. Gemini CLI 스트림에는 에이전트 구조가 없어 기본 화면만 제공한다.
-
 ## Windows
 
-Windows 앱에서도 Claude·Codex 실행 창 머리에 **기본 / 마이티** 스위치가 붙는다. Gemini·셸·브라우저 창에는 붙지 않는다. 선택은 실행 창별로 저장되며(`RunSession.AgentViewMode`), 전환해도 실행을 다시 시작하거나 입력창 초안을 지우지 않고 기본 화면의 대화 표시도 그대로다.
+Windows 앱에서도 Claude·Codex·Antigravity 실행 창은 마이티 보기로 보인다. 셸·브라우저·파일·작업 지도 창은 그대로다. 실행 창의 `RunSession.AgentViewMode`는 지원하는 에이전트 창에서 늘 `mighty`이며, 저장된 `default`·빈 값은 불러올 때 `mighty`가 된다. 구버전 휴대폰이 `agentViewMode`로 `plain`을 요청해도 받아들이되 실행 창은 마이티에 머문다.
 
 **macOS와 같은 것**
 

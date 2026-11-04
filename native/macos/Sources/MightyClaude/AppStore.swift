@@ -903,14 +903,6 @@ final class AppStore: ObservableObject, DelegationHost {
         if let previous { followGraphHistory(snapshot.sessions[index], previous: previous) }
     }
 
-    func setAgentViewMode(_ id: String, mode: String) {
-        guard ["default", "mighty"].contains(mode) else { return }
-        updateSession(id) { session in
-            guard session.kind == "claude", MightyGraphSupport.providers.contains(session.provider) else { return }
-            session.agentViewMode = mode
-        }
-    }
-
     func changeProvider(_ id: String, to provider: String) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id), session.provider != provider else { return }
         updateSession(id) {

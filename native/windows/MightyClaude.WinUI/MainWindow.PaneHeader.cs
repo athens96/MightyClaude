@@ -268,8 +268,8 @@ public sealed partial class MainWindow
             RefreshHeaderFigures(pane);
             if (pluginButton is not null)
             {
-                // Plugins: the Mighty view of a Claude or Codex pane (M/SessionPaneView.swift:258-267).
-                var shown = MightyGraphViewModel.ShowsModeSwitch(pane) && pane.AgentViewMode == "mighty" && pane.Provider is "claude" or "codex";
+                // Plugins: a Claude or Codex pane (M/SessionPaneView.swift:258-267).
+                var shown = MightyGraphViewModel.SupportsMighty(pane) && pane.Provider is "claude" or "codex";
                 pluginButton.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
                 var name = PluginStrings.TitleTemplate.Replace("{provider}", CliUpdateService.ProviderLabel(pane.Provider));
                 if (shown && AutomationProperties.GetName(pluginButton) != name) { AutomationProperties.SetName(pluginButton, name); ToolTipService.SetToolTip(pluginButton, name); }

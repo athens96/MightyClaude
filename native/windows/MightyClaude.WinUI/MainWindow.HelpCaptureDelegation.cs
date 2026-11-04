@@ -74,7 +74,7 @@ public sealed partial class MainWindow
         {
             Kind = (string?)pane["kind"] ?? "claude", Provider = (string?)pane["provider"] ?? "claude", Model = (string?)pane["model"] ?? "default",
             Title = (string?)pane["title"] ?? HelpText(pane["role"]), TitleMode = "fixed",
-            Settings = new((string?)pane["effort"] ?? "default", (string?)pane["permissionMode"] ?? "manual"), AgentViewMode = (string?)pane["view"] == "mighty" ? "mighty" : null,
+            Settings = new((string?)pane["effort"] ?? "default", (string?)pane["permissionMode"] ?? "manual"), AgentViewMode = "mighty",
         };
 
         // The parents' panes.

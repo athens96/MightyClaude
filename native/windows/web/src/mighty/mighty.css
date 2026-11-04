@@ -1,7 +1,7 @@
 /* The Mighty views (UI/MightyGraph.cs, MightyTimeline.cs, MightyStructure.cs): colours only from the token variables. */
 .mighty { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--page); }
 /* M/MightyGraphView.swift: the bar (graphBar inset): the view switch, the header in 12 bold, the totals in 10, the zoom at the right. */
-.mighty { position: relative; }
+.mighty { position: relative; overflow: hidden; }
 .mighty-bar { display: flex; align-items: center; gap: var(--space-md); padding: var(--inset-graph-bar-v) 110px var(--inset-graph-bar-v) var(--inset-graph-bar-h); border-bottom: var(--stroke-line) solid var(--line); background: var(--card); min-width: 0; }
 .mighty-header { font-size: var(--type-row); font-weight: 700; color: var(--ink); white-space: nowrap; }
 .mighty-summary { flex: 1; min-width: 0; font-size: var(--type-small); color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -31,13 +31,12 @@ describe('settingFields', () => {
       'model',
       'permissionMode',
       'effort',
-      'agentViewMode',
       'mightyStyle',
     ]);
   });
 
   it('uses the open style list on a host with "style"', () => {
-    expect(settingFields(settings(), true)).toEqual(['model', 'permissionMode', 'effort', 'agentViewMode', 'styleId']);
+    expect(settingFields(settings(), true)).toEqual(['model', 'permissionMode', 'effort', 'styleId']);
   });
 
   it('leaves out a field with no value or no options', () => {

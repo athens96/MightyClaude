@@ -96,7 +96,7 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
   transcript is windowed as the conversation is. Blocks resize from any border (`resize.ts`, Core ResizeEdgeRules) with the
   opposite corner pinned. The structure view's pan, wheel tracker, column follow and board navigation are ported in
   `structureMotion.ts`; a revealed structure card or an opened timeline row aims the diagram (`Aim` in `Diagram.tsx`). Host
-  methods: `mightyVisible`, `mightySetMode`, `mightySetPresentation`, `mightySaveSize`, `mightyExpand`, `mightyResultFiles`,
+  methods: `mightyVisible`, `mightySetPresentation`, `mightySaveSize`, `mightyExpand`, `mightyResultFiles`,
   `mightyLoadOlder`, `mightyImages`, `mightyTimelineFlip`, `mightyOpenDashboard`.
 - `src/shell/`, `src/layout/`, `src/dashboard/`, `src/dialogs/` — the frame (spec: `.omc/plans/shell-spec.md`): sidebar, banners,
   workspace header, status bar and usage popover, the layout of splits and tab groups (each group keeps the panes it has shown

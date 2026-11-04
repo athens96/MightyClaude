@@ -24,7 +24,7 @@ extension Palette {
         tone == .wait ? onWait : onStatus
     }
 
-    /// The header's 기본 | 마이티 switch: its track and its chosen side (`DesignPalette`).
+    /// A segmented switch's track and its chosen side (`DesignPalette`).
     static let segmentTrack = token(\.segmentTrack)
     static let segmentOn = token(\.segmentOn)
 }

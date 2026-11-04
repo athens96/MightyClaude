@@ -101,10 +101,8 @@ Codex 和 Antigravity 的命令名称略有不同（例如 Codex 的 `/new`、`/
 
 ![[session-info]]
 
-## 默认视图与 Mighty 视图 {#views}
-Claude、Codex 和 Antigravity 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.view.mighty}}切换开关。切换后，对话和正在输入的内容保持不变。每个窗格会各自记住选择。
-- {{ui:graph.view.default}}：从上到下阅读的对话记录。
-- {{ui:graph.view.mighty}}：以块状流程显示请求、子智能体、后台任务和结果。
+## Mighty 视图 {#views}
+Claude、Codex 和 Antigravity 窗格都以{{ui:graph.view.mighty}}视图显示：以块状流程显示请求、子智能体、后台任务和结果。没有需要切换的地方。
 
 ### Mighty 流程 {#diagram}
 每个请求生成一个请求块，其正下方是{{ui:graph.block.execution}}块。请求块只包含发出的请求；智能体因该请求所做的事（消息、工具调用、进度）显示在{{ui:graph.block.execution}}块中。子智能体和后台任务从{{ui:graph.block.execution}}块下方分支出来。请求结束后，会附上{{ui:graph.block.result}}卡片。

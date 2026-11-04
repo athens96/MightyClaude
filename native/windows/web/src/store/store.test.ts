@@ -215,11 +215,11 @@ describe('sent requests and view choices (natural submit)', () => {
   it('shows a view choice at once, keeps it until the host holds it, and takes it back on failure', () => {
     const state = loaded();
     const session = selectedSession(state.snapshot)!;
-    const other = session.agentViewMode === 'mighty' ? 'default' : 'mighty';
-    const chosen = reduce(state, { kind: 'view', paneId: session.id, choice: { mode: other } });
-    expect(chosen.views[session.id]).toEqual({ mode: other });
-    expect(reduce(chosen, { kind: 'view', paneId: session.id, choice: { mode: other }, revert: true }).views[session.id]).toBeUndefined();
-    const saved = reduce(chosen, { kind: 'delta', sessions: [{ id: session.id, set: { agentViewMode: other } }], removed: [] });
+    const other = session.graphViewMode === 'timeline' ? 'structure' : 'timeline';
+    const chosen = reduce(state, { kind: 'view', paneId: session.id, choice: { presentation: other } });
+    expect(chosen.views[session.id]).toEqual({ presentation: other });
+    expect(reduce(chosen, { kind: 'view', paneId: session.id, choice: { presentation: other }, revert: true }).views[session.id]).toBeUndefined();
+    const saved = reduce(chosen, { kind: 'delta', sessions: [{ id: session.id, set: { graphViewMode: other } }], removed: [] });
     expect(saved.views[session.id]).toBeUndefined();
     // A choice the host already holds is never kept.
     expect(reduce(state, { kind: 'view', paneId: session.id, choice: { presentation: session.graphViewMode ?? 'never-saved' } }).views[session.id]).toEqual(

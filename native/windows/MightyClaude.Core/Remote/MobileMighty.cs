@@ -412,8 +412,8 @@ public static class MobileRemoteSupport
         return (entries.Skip(index - count).Take(count).ToArray(), index > count);
     }
 
-    /// <summary>The desktop stores nothing or "default" for the plain transcript; the wire says "plain".</summary>
-    public static string ViewMode(string? raw) => raw == "mighty" ? "mighty" : "plain";
+    /// <summary>An agent pane is always in the Mighty view; the wire field stays for older phones, which read "mighty" whatever the pane stored.</summary>
+    public static string ViewMode(string? raw) => "mighty";
     /// <summary>The line a pane's preview shows in a push (M/MobileRemoteSupport.previewLine): the newest entry with text that is not a tool activity.</summary>
     public static LogEntry? PreviewLine(RunSession session) => session.Logs.LastOrDefault(entry => entry.Activity is null && entry.Text.Length > 0);
     /// <summary>The old two-word field: only the bundled Ouroboros has a word of its own, every other style travels as "cli" and carries its truth in <c>styleId</c>.</summary>

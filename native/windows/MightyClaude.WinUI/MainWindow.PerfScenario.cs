@@ -136,12 +136,6 @@ public sealed partial class MainWindow
             + "await __perf.until(() => { const s = document.querySelector('.pane-slot[data-pane-id=\"' + id + '\"]'); return !!s && !s.classList.contains('hidden') && !!s.querySelector('.pane') && !!s.querySelector('[data-testid=conversation], [data-testid=mighty]'); }, t0);";
         static string TypeDraft(string text) => "const text = " + Literal(text) + "; const e = __perf.slot()?.querySelector('[data-testid=composer-input]') ?? document.querySelector('[data-testid=composer-input]'); if (!e) throw new Error('no composer'); "
             + "Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(e, text); e.dispatchEvent(new Event('input', { bubbles: true })); await __perf.until(() => e.value === text, t0);";
-        async Task SetViews(IEnumerable<string> ids, string mode)
-        {
-            var set = ids.ToHashSet();
-            await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => set.Contains(p.Id) ? MightyGraphViewModel.ApplyViewMode(p, mode) : p).ToList() });
-            await SettledAsync();
-        }
         async Task SwitchTabs(List<double> ops)
         {
             var at = tabs.IndexOf(service.Snapshot.ActiveSessionId ?? active);
@@ -149,18 +143,7 @@ public sealed partial class MainWindow
             await PageOp([], ClickTab(active)); await SettledAsync();
         }
 
-        await SetViews(agents, "default");
-        await Phase("switchTabsBasic", (ops, _) => SwitchTabs(ops));
-        await SetViews(agents, "mighty");
         await Phase("switchTabsMighty", (ops, _) => SwitchTabs(ops));
-        await Phase("toggleView", async (ops, _) =>
-        {
-            // The pane header's Default | Mighty switch: the click, the host's save, and the page drawing the other view.
-            const string Toggle = "const s = __perf.slot(); const next = s?.querySelector('[data-testid=mighty-mode-switch] button.on')?.dataset.mode === 'mighty' ? 'default' : 'mighty'; "
-                + "const b = s?.querySelector('[data-testid=mighty-mode-switch] button[data-mode=' + next + ']'); if (!b) throw new Error('no view switch'); b.click(); "
-                + "await __perf.until(() => { const c = __perf.slot(); return next === 'mighty' ? !!c?.querySelector('[data-testid=mighty]') : !!c?.querySelector('[data-testid=conversation]') && !c.querySelector('[data-testid=mighty]'); }, t0);";
-            for (var turn = 0; turn < PerfToggles; turn++) await PageOp(ops, Toggle);
-        });
         await Phase("addPane", async (ops, extra) =>
         {
             var before = service.Snapshot.Sessions.Select(s => s.Id).ToHashSet();
@@ -178,9 +161,8 @@ public sealed partial class MainWindow
             await PageOp([], ClickTab(active));
             await SettledAsync();
         });
-        foreach (var (name, mode) in new[] { ("streamBasic", "default"), ("streamMighty", "mighty") })
+        foreach (var name in new[] { "streamMighty" })
         {
-            await SetViews([active], mode);
             await Phase(name, (ops, extra) => StreamPerfAnswer(active, name, extra, text => PageOp(ops, TypeDraft(text))));
             await PageOp([], TypeDraft(""));
         }
@@ -192,9 +174,8 @@ public sealed partial class MainWindow
             + "const drawn = () => [...(__perf.slot() ?? document).querySelectorAll('[data-pending-request]')].map(x => x.dataset.pendingRequest); const before = new Set(drawn()); "
             + "e.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true })); "
             + "await __perf.until(() => drawn().some(id => !before.has(id)), t0);";
-        foreach (var (name, mode) in new[] { ("sendBlockBasic", "default"), ("sendBlockMighty", "mighty") })
+        foreach (var name in new[] { "sendBlockMighty" })
         {
-            await SetViews([active], mode);
             var standIn = smokeStart;
             smokeStart = async request =>
             {

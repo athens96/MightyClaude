@@ -304,7 +304,7 @@ internal static class MobileHostVerification
             Check(newest.GetProperty("entries").EnumerateArray().Single().Text("id") == "i1" && newest.GetProperty("hasMore").GetBoolean() && gone.GetProperty("entries").GetArrayLength() == 0 && !gone.GetProperty("hasMore").GetBoolean(), "without a cursor the page is the newest entries; a cursor the host no longer holds answers empty");
             Check(!detail.TryGetProperty("rateLimits", out _) && !detail.TryGetProperty("usage", out _), "a pane that reported no account window sends no limits");
             var session = detail.GetProperty("session");
-            Check(session.Text("styleId") == "cli" && session.Text("mightyStyle") == "cli" && session.Text("agentViewMode") == "plain", "an agent pane that runs no style says cli");
+            Check(session.Text("styleId") == "cli" && session.Text("mightyStyle") == "cli" && session.Text("agentViewMode") == "mighty", "an agent pane that runs no style says cli, in the Mighty view");
             var shell = Json((await router.RouteAsync("GET", "/m1/state", null, "phone", CancellationToken.None)).Body).GetProperty("sessions")[1];
             Check(shell.GetProperty("terminal").GetBoolean() && !shell.TryGetProperty("styleId", out _) && !shell.TryGetProperty("agentViewMode", out _) && !shell.TryGetProperty("mightyStyle", out _), "a pane that is not an agent's has no view and no style");
         }
@@ -371,7 +371,7 @@ internal static class MobileHostVerification
         try { StyleManifestDecoder.Decode(reserved, "user"); throw new InvalidOperationException("a user style claimed the reserved id paperthin"); }
         catch (StyleManifestException e) { Check(e.Code == "E_RESERVED_ID", "paperthin stays a reserved id: " + e.Code); }
         Check(MobileRemoteSupport.GuidedStylesAvailable("claude", "claude", "mighty") && !MobileRemoteSupport.GuidedStylesAvailable("claude", "claude", "plain") && !MobileRemoteSupport.GuidedStylesAvailable("claude", "codex", "mighty") && !MobileRemoteSupport.GuidedStylesAvailable("shell", "claude", "mighty"), "guided styles need a Claude pane in the Mighty view");
-        Check(MobileRemoteSupport.ViewMode("mighty") == "mighty" && MobileRemoteSupport.ViewMode(null) == "plain" && MobileRemoteSupport.ViewMode("default") == "plain" && MobileRemoteSupport.Style("ouroboros") == "ouroboros" && MobileRemoteSupport.Style("gstack") == "cli" && MobileRemoteSupport.Style(null) == "cli", "the wire words for the view and the old style field");
+        Check(MobileRemoteSupport.ViewMode("mighty") == "mighty" && MobileRemoteSupport.ViewMode(null) == "mighty" && MobileRemoteSupport.ViewMode("default") == "mighty" && MobileRemoteSupport.Style("ouroboros") == "ouroboros" && MobileRemoteSupport.Style("gstack") == "cli" && MobileRemoteSupport.Style(null) == "cli", "the wire words for the view and the old style field");
 
         Check(MobileRemoteSupport.EffortOptions(false, ["low", "high"]) is null, "a provider with no effort setting sends no effort options");
         var efforts = MobileRemoteSupport.EffortOptions(true, ["low", "xhigh"])!;
