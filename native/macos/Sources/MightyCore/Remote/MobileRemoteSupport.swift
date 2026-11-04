@@ -336,6 +336,7 @@ public enum MobileMightySupport {
             mobile.noticeRun = notice ? true : nil
             mobile.backgroundWaiting = run.backgroundWaiting > 0 ? run.backgroundWaiting : nil
             mobile.resultFiles = result == nil ? nil : runResultFiles(run, workspaceRoot: workspaceRoot, memo: memo)
+            mobile.awaitingNotice = MobileAwaitingNotice(BackgroundNoticeRuns.awaitingNotice(run, in: values))
             return mobile
         }
         memo?.prune()

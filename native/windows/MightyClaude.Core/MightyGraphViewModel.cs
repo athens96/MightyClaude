@@ -215,9 +215,12 @@ public static class MightyGraphViewModel
 /// state, request and output text, the usage capsule and its tooltip, the
 /// running/waiting indicator choice, the card's activity outline
 /// (<see cref="MightyGraphActivity"/>) and the status its colours follow (empty for the
-/// draft, the files panel and a request over its 실행 block). <c>SoFar</c>: a result that is the result so far (현재까지의 결과) while
-/// background work its request started still runs: its strip is neutral (<see cref="MightyGraphBlockModel.StripTone"/>) with a clock rather
-/// than done; its status tone stays the request's, as on the Mac. WinUI renders these and decides nothing.
+/// draft, the files panel and a request over its 실행 block). <c>Awaiting</c>: a result whose request awaits the notices of background work it
+/// started (<see cref="BackgroundNoticeRuns.AwaitingNotice"/>): the 알림 대기 block, waiting in status with a marching outline and an hourglass,
+/// its work's rows and progress under the answer so far, as on the Mac. <c>SoFar</c>: a result that is the result so far (현재까지의 결과) while
+/// background work of its request still runs and it does not await notices itself (a notice run of that request): its strip is neutral
+/// (<see cref="MightyGraphBlockModel.StripTone"/>) with a clock rather than done; its status tone stays the request's, as on the Mac. WinUI
+/// renders these and decides nothing.
 /// </summary>
 public sealed record MightyGraphBlock(
     string Id,
@@ -234,6 +237,7 @@ public sealed record MightyGraphBlock(
     string Outline = MightyGraphActivity.None,
     string Status = "",
     string? RecordId = null,
+    BackgroundNoticeRuns.Awaiting? Awaiting = null,
     bool SoFar = false);
 
 public static class MightyGraphBlockModel
@@ -284,12 +288,15 @@ public static class MightyGraphBlockModel
     /// else its <see cref="Tone"/>. Only the strip and symbol change, as on the Mac (macOS MightyGraphView result card headerFill).</summary>
     public static DesignTone StripTone(MightyGraphBlock block) => block.SoFar ? DesignTone.Idle : Tone(block);
 
-    /// <summary>The result card's title in every view and on the phone: how the request ended, or the result so far while background
-    /// work it started still runs (<paramref name="waiting"/>, <see cref="MightyGraphSupport.BackgroundWaiting"/>) (macOS MightyGraphSupport.resultTitle).</summary>
-    public static string ResultTitle(string runStatus, int waiting = 0) => runStatus switch
+    /// <summary>The result card's title in every view and on the phone: how the request ended, 알림 대기 중 while it awaits the notices of
+    /// background work it started (<paramref name="awaiting"/>, <see cref="BackgroundNoticeRuns.AwaitingNotice"/>), else the result so far while
+    /// background work of its request still runs (<paramref name="waiting"/>, <see cref="MightyGraphSupport.BackgroundWaiting"/>)
+    /// (macOS MightyGraphSupport.resultTitle).</summary>
+    public static string ResultTitle(string runStatus, int waiting = 0, bool awaiting = false) => runStatus switch
     {
         "error" or "failed" => Locale.Get("graph.block.resultError"),
         "stopped" or "cancelled" or "interrupted" => Locale.Get("graph.block.resultStopped"),
+        _ when awaiting => Locale.Get("graph.block.awaitingNotice"),
         _ when waiting > 0 => Locale.Get("graph.block.resultSoFar", new Dictionary<string, string> { ["count"] = waiting.ToString(System.Globalization.CultureInfo.InvariantCulture) }),
         _ => Locale.Get("graph.block.result"),
     };
@@ -372,14 +379,20 @@ public static class MightyGraphBlockModel
                         MightyGraphActivity.Outline(agent.Status, animationsEnabled), agent.Status));
                     break;
                 case "result" when run is not null:
-                    // While background work the request started still runs, its result is the result so far.
-                    blocks.Add(new(node.Id, "result", node.Frame, ResultTitle(run.Status, MightyGraphSupport.BackgroundWaiting(run)),
-                        StateLabel(ResultState(run.Status)), "", run.ResultEntries.Where(e => e.Kind != "user").ToList(),
+                    // While the request awaits the notices of background work it started, its result is the 알림 대기 block: the wait tone,
+                    // a marching outline, and the work's rows under the answer so far (macOS MightyGraphView awaitingNoticeCard). Else, while
+                    // background work of its request still runs (a notice run's), it is the result so far.
+                    var awaiting = BackgroundNoticeRuns.AwaitingNotice(run, runs);
+                    var waiting = MightyGraphSupport.BackgroundWaiting(run);
+                    blocks.Add(new(node.Id, "result", node.Frame, ResultTitle(run.Status, waiting, awaiting is not null),
+                        awaiting is null ? StateLabel(ResultState(run.Status)) : Locale.Get("graph.state.awaitingNotice"), "", run.ResultEntries.Where(e => e.Kind != "user").ToList(),
                         ModelUsageFormat.BlockCapsule(run.TotalUsage, [], null, catalog, versioned: true),
                         Help(run.TotalUsage, [], Locale.Get("graph.block.totalUsageLabel"), catalog),
-                        "none", run.Status == "completed" ? run.Id : null, Status: ResultState(run.Status),
+                        "none", run.Status == "completed" ? run.Id : null,
+                        awaiting is null ? MightyGraphActivity.None : MightyGraphActivity.Outline("running", animationsEnabled), Status: awaiting is null ? ResultState(run.Status) : "waiting",
+                        Awaiting: awaiting,
                         // The result so far is neutral, not the done strip (macOS resultSoFarIcon).
-                        SoFar: ResultState(run.Status) == "completed" && MightyGraphSupport.BackgroundWaiting(run) > 0));
+                        SoFar: awaiting is null && ResultState(run.Status) == "completed" && waiting > 0));
                     break;
                 case "plan" when run is not null:
                     blocks.Add(new(node.Id, "plan", node.Frame, Locale.Get("plan.card.title"), StateLabel("waiting"), "", [], null, "", "none", null, Status: "waiting"));

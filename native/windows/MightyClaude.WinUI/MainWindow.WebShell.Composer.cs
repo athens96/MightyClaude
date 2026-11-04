@@ -536,14 +536,15 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// The pane header's word and figures (spec section 1), as the WinUI header writes them: what waits on the user ("waiting 2"),
-        /// else the turn's background agents while it runs, else the status word; then the figures after the clock and the tooltip
+        /// else 알림 대기 while its request awaits notices (<see cref="BackgroundNoticeRuns.AwaitsNotice"/>), else the turn's background agents while it runs, else the status word; then the figures after the clock and the tooltip
         /// (<see cref="HeaderFigures"/>). The clock itself ticks in the page from the pane's runTiming.
         /// </summary>
         private object WebHeader(RunSession pane)
         {
-            var pending = PendingRequests; var shown = StatusGlyph.DisplayStatus(pane.Status, pending);
+            var pending = PendingRequests; var awaiting = pending == 0 && BackgroundNoticeRuns.AwaitsNotice(pane);
+            var shown = awaiting ? "waiting" : StatusGlyph.DisplayStatus(pane.Status, pending);
             var word = pending > 0 ? Locale.Get("phone.card.attention", new Dictionary<string, string> { ["count"] = pending.ToString(System.Globalization.CultureInfo.InvariantCulture) })
-                : pane.Status == "running" && PlanCardSupport.BackgroundStatus(pane.BackgroundWork) is { } waiting ? waiting : StateLabel(shown);
+                : awaiting ? BackgroundNoticeRuns.StateWord : pane.Status == "running" && PlanCardSupport.BackgroundStatus(pane.BackgroundWork) is { } waiting ? waiting : StateLabel(shown);
             var (rest, _, help) = HeaderFigures(pane);
             return new { word, tone = StatusGlyph.Tone(shown).ToString().ToLowerInvariant(), timed = pane.Kind != "shell" && pane.RunTiming is not null, rest, help };
         }

@@ -247,8 +247,8 @@ public sealed partial class MainWindow
                 foreach (var group in groups)
                 {
                     var run = shownRuns[group.RunIndex];
-                    // The shown run keeps its background waiting count outside its JSON: the status pill reads it, so it is part of the key.
-                    var fingerprint = JsonSerializer.Serialize(new { run, waiting = MightyGraphSupport.BackgroundWaiting(run), group.Ordinal, older = group.RunIndex < older.Count, open = MightyTimeline.GroupOpen(group, runs, timelineFlipped), rows = group.Rows.Where(r => timelineOpen.Contains(r.NodeId)).Select(r => r.NodeId), full = group.Result is { } result && timelineFull.Contains(result.NodeId), title = GraphRequestTitle(run, group.Ordinal), language = Locale.LanguagePreference, catalog });
+                    // The shown run keeps its background waiting count and its awaiting notices outside its JSON: the status pill and the result head read them, so they are part of the key.
+                    var fingerprint = JsonSerializer.Serialize(new { run, waiting = MightyGraphSupport.BackgroundWaiting(run), awaiting = group.Result?.Awaiting, group.Ordinal, older = group.RunIndex < older.Count, open = MightyTimeline.GroupOpen(group, runs, timelineFlipped), rows = group.Rows.Where(r => timelineOpen.Contains(r.NodeId)).Select(r => r.NodeId), full = group.Result is { } result && timelineFull.Contains(result.NodeId), title = GraphRequestTitle(run, group.Ordinal), language = Locale.LanguagePreference, catalog });
                     if (!timelineGroups.TryGetValue(group.RunId, out var known) || known.Fingerprint != fingerprint)
                     {
                         var view = BuildTimelineGroup(group, run, pane, group.RunIndex < older.Count, MightyTimeline.GroupOpen(group, runs, timelineFlipped));
@@ -484,11 +484,12 @@ public sealed partial class MainWindow
             return transcript.View;
         }
 
-        /// <summary>The symbol on a result's strip, by how the request ended, or a clock while it is the result so far (M/MightyGraphTimelineView.swift icon).</summary>
+        /// <summary>The symbol on a result's strip, by how the request ended, an hourglass while it awaits notices, or a clock while it is the result
+        /// so far (M/MightyGraphTimelineView.swift icon).</summary>
         private static string TimelineResultSymbol(DesignTone tone) => tone switch
         {
-            // The result so far (현재까지의 결과): a neutral clock, not the done seal.
-            DesignTone.Err => "exclamationmark.triangle.fill", DesignTone.Stop => "stop.circle.fill", DesignTone.Idle => "clock", _ => "checkmark.seal.fill",
+            // Awaiting notices (알림 대기 중): an hourglass; the result so far (현재까지의 결과): a neutral clock; not the done seal.
+            DesignTone.Err => "exclamationmark.triangle.fill", DesignTone.Stop => "stop.circle.fill", DesignTone.Wait => "hourglass", DesignTone.Idle => "clock", _ => "checkmark.seal.fill",
         };
 
         /// <summary>
@@ -512,8 +513,8 @@ public sealed partial class MainWindow
             var named = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             named.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); named.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
             named.Children.Add(MightySymbols.Create(TimelineResultSymbol(result.Tone), 11, ink, MightySymbols.Weight.Bold, fill));
-            // How the request ended, or the result so far while its background work runs.
-            var titleText = MightyGraphBlockModel.ResultTitle(run.Status, MightyGraphSupport.BackgroundWaiting(run));
+            // How the request ended, 알림 대기 중 while it awaits its background work's notices, or the result so far while that work runs.
+            var titleText = MightyGraphBlockModel.ResultTitle(run.Status, MightyGraphSupport.BackgroundWaiting(run), result.Awaiting);
             var title = new TextBlock
             {
                 Text = titleText, TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.ExtraBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center,

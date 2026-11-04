@@ -53,6 +53,13 @@ function phases(held: Record<string, StructureItem[]>, current = 2): MobileStruc
 }
 
 describe('pipeline tones', () => {
+  it("waits on a free board's 결과 while its request awaits its notices, and is done once they are in", () => {
+    const board = (awaitingNotice?: true) => structureBoards(free([row(item(1, awaitingNotice ? { awaitingNotice } : {}), 'done', 'done', 'done')]))[0]!;
+    expect(columnTones(board(true))).toEqual(['done', 'done', 'wait']);
+    expect(cardTone(board(true).columns[2]!.cards[0]!, board(true).columns[2]!)).toBe('wait');
+    expect(columnTones(board())).toEqual(['done', 'done', 'done']);
+  });
+
   it('gives a status the block bucket, done its own and pending none', () => {
     const words = ['running', 'starting', 'queued', 'waiting', 'completed', 'done', 'error', 'failed', 'stopped', 'cancelled', 'interrupted'];
     expect(words.map((word) => pipelineTone(word))).toEqual(['run', 'run', 'run', 'wait', 'done', 'done', 'err', 'err', 'stop', 'stop', 'stop']);

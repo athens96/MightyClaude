@@ -32,10 +32,12 @@ public static partial class MightyStructure
         /// A column's: a done, error, stopped or pending step's own; the current step's follows the column's newest request (its last
         /// card that is not a sub-agent's): once that request finished (<see cref="Item.Finished"/>: it and every sub-agent and task
         /// ended) its status's, completed done, failed an error, cancelled or interrupted a stop; until then it runs, or waits while its
-        /// status waits; no request at all runs.
+        /// status waits; no request at all runs. A free board's 결과 whose request awaits its background work's notices
+        /// (<see cref="Item.Awaiting"/>) waits, as its 알림 대기 중 title does (macOS Tone.column).
         /// </summary>
         public static DesignTone? OfColumn(BoardColumn column) =>
-            column.Step.Step == Step.Current ? Current(column.Cards.LastOrDefault(card => card.Kind != CardKind.Agent)?.Item) : OfStep(column.Step.Step);
+            column.Step.Step == Step.Done && column.Cards.Any(card => card.Kind == CardKind.Result && card.Item.Awaiting) ? DesignTone.Wait
+            : column.Step.Step == Step.Current ? Current(column.Cards.LastOrDefault(card => card.Kind != CardKind.Agent)?.Item) : OfStep(column.Step.Step);
 
         /// <summary>The current step's tone for its newest request: its status's once it finished, else running or waiting.</summary>
         private static DesignTone Current(Item? newest)

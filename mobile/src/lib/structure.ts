@@ -169,6 +169,7 @@ function parseItem(raw: unknown, filtering: boolean): StructureItem | undefined 
   if (notice) item.noticeRun = true;
   const waiting = parseBackgroundWaiting(raw.backgroundWaiting);
   if (waiting !== undefined) item.backgroundWaiting = waiting;
+  if (raw.awaitingNotice === true) item.awaitingNotice = true;
   return item;
 }
 
@@ -401,9 +402,9 @@ export function itemHeading(item: StructureItem): string {
   return item.title ? `${item.title} · ${request}` : request;
 }
 
-/** The result part's heading, by how the request ended, or the result so far while its background work runs (`resultTitle`). */
+/** The result part's heading, by how the request ended, or 알림 대기 중 while it awaits its background work's notices (`resultTitle`). */
 export function resultHeading(item: StructureItem): string {
-  return resultTitle(item.status, item.backgroundWaiting);
+  return resultTitle(item.status, item.backgroundWaiting, item.awaitingNotice === true);
 }
 
 // ------------------------------------------------------------------ folding

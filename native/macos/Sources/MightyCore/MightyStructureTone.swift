@@ -35,8 +35,10 @@ extension MightyStructure {
         /// its newest request: once that request finished (`Item.finished`: it and every
         /// sub-agent and task ended) its status's (done, an error or a stop), until then
         /// running, or waiting while its status waits; it runs while the column holds no
-        /// request yet.
+        /// request yet. A free board's 결과 whose request awaits its background work's notices
+        /// (`Item.awaiting`) waits, as its 알림 대기 중 title does.
         public static func column(_ column: BoardColumn) -> DesignTone? {
+            if column.step.step == .done, column.cards.contains(where: { if case .result(let item) = $0 { item.awaiting } else { false } }) { return .wait }
             guard column.step.step == .current else { return step(column.step.step) }
             guard let newest = newestRequest(column) else { return .run }
             if newest.finished { return status(newest.status) ?? .run }

@@ -420,8 +420,9 @@ export interface MobileMightyRun {
    */
   noticeRun?: true;
   /**
-   * Background work the request started that still runs after its own turn: its result card reads
-   * 현재까지의 결과 with this count meanwhile. A positive integer; absent when none (and from older hosts).
+   * Background work of the request that still runs after its own turn (a notice run carries its request's): unless
+   * the run awaits notices (`awaitingNotice`, which an older host never sends), its result card reads 현재까지의 결과
+   * with this count meanwhile. A positive integer; absent when none (and from older hosts).
    */
   backgroundWaiting?: number;
   /**
@@ -429,6 +430,11 @@ export interface MobileMightyRun {
    * run that carries `result` and completed, at most `MAX_RUN_RESULT_FILES`. Absent when none (and from older hosts).
    */
   resultFiles?: MobileResultFile[];
+  /**
+   * The request awaits the notices of background work it started (the host's `BackgroundNoticeRuns.awaitingNotice`):
+   * its result card is the 알림 대기 block. Absent otherwise (and from older hosts).
+   */
+  awaitingNotice?: MobileAwaitingNotice;
 }
 
 /** One file a run's result names: `path` is workspace-relative, `/`-joined — what the file preview route takes. */
@@ -436,6 +442,14 @@ export interface MobileResultFile {
   path: string;
   /** The line the result pointed at, when it gave one. */
   line?: number;
+}
+
+/** A request's 알림 대기 block: how many of its background tasks' notices are in, of how many, and each task. */
+export interface MobileAwaitingNotice {
+  delivered: number;
+  total: number;
+  /** Each task by title and its bucketed status: `running` until its notice came, then how it ended. */
+  tasks: { title: string; status: string }[];
 }
 
 /**
@@ -649,6 +663,8 @@ export interface StructureItem {
   noticeRun?: true;
   /** Background work the request still waits on, as `MobileMightyRun.backgroundWaiting`; absent when none. */
   backgroundWaiting?: number;
+  /** `true` while the request awaits its background work's notices: its answer reads 알림 대기 중. */
+  awaitingNotice?: true;
 }
 
 export interface StructureColumn {

@@ -264,10 +264,12 @@ struct SessionPaneView: View {
         let modelText = card.model != nil ? store.modelLabel(for: session) : usageModel.map { ModelLabel.text($0) }
         let figures = PaneHero.figures(session)
         let ticking = running && figures.contains { if case .elapsed(let timing) = $0 { timing.finishedAt == nil } else { false } }
+        let awaiting = card.attention.total == 0 && BackgroundNoticeRuns.awaitsNotice(session)
         return HStack(spacing: DesignMetrics.Spacing.sm) {
-            // A turn that is over while its background agents still run says so.
-            Text(card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : (session.status == "running" ? PlanCardSupport.backgroundStatus(session.backgroundWork) : nil) ?? Palette.word(card.tone))
-                .font(.ui(size: 11.5, weight: .semibold)).foregroundStyle(Palette.text(card.tone)).lineLimit(1).fixedSize()
+            // A request awaiting its background work's notices reads 알림 대기 in the wait ink; a turn that is over while its
+            // background agents still run says so.
+            Text(card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : awaiting ? BackgroundNoticeRuns.stateWord : (session.status == "running" ? PlanCardSupport.backgroundStatus(session.backgroundWork) : nil) ?? Palette.word(card.tone))
+                .font(.ui(size: 11.5, weight: .semibold)).foregroundStyle(Palette.text(awaiting ? .wait : card.tone)).lineLimit(1).fixedSize()
                 .accessibilityIdentifier("pane-status-\(session.id)")
             Group {
                 if ticking {

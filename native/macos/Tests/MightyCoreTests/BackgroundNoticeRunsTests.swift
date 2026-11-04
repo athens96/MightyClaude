@@ -319,18 +319,67 @@ struct BackgroundNoticeRunsTests {
         #expect(MightyGraphSupport.newestRequestOwns(line, runs: []))
     }
 
-    /// A request whose background command still runs titles its result 현재까지의 결과 with the count, and 최종 결과
-    /// once the command ended; the count is the one the shown run still carries.
-    @Test func aRequestWaitingOnBackgroundWorkReadsTheResultSoFar() {
-        LocaleOverride.$language.withValue(.ko) {
-            var all = Self.runs()
-            let shown = MightyGraphSupport.shownRuns(all)[0]
-            #expect(MightyGraphSupport.resultTitle(status: shown.status, waiting: shown.backgroundWaiting) == L("graph.block.resultSoFar", ["count": "1"]))
-            #expect(L("graph.block.resultSoFar", ["count": "1"]) == "현재까지의 결과 · 백그라운드 작업 1개 기다리는 중")
+    /// A request whose background command still runs, or ended with its notice turn not answered yet, awaits notices: its
+    /// result is the 알림 대기 block (알림 대기 중, the command's row and "알림 n/m") in the diagram, 기록, the pipeline and on
+    /// the phone, and the pane reads 알림 대기; once the notice turn is answered it is 최종 결과 again. A failed or stopped
+    /// request awaits nothing (Windows BackgroundNoticeRunsVerification.ARequestAwaitingNoticesIsTheAwaitingNoticeBlock).
+    @Test func aRequestAwaitingNoticesIsTheAwaitingNoticeBlock() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var all = Self.runs(answered: false)
+            #expect(BackgroundNoticeRuns.originalRunID("r:notice:2") == "r" && BackgroundNoticeRuns.originalRunID("r") == nil)
+            let awaiting = try #require(BackgroundNoticeRuns.awaitingNotice(all[0], in: all))
+            #expect(awaiting.tasks == [BackgroundNoticeRuns.AwaitedTask(id: "t", title: "Build", status: "running")] && awaiting.delivered == 0)
+            #expect(awaiting.tasks[0].word == "끝나면 알림" && awaiting.progress == "알림 0/1")
+            #expect(MightyGraphSupport.resultTitle(status: "completed", awaiting: true) == "알림 대기 중")
+            #expect(MightyGraphSupport.resultTitle(status: "completed") == "최종 결과")
+            #expect(MightyGraphSupport.resultTitle(status: "error", awaiting: true) == L("graph.block.resultError"))
+            // The shown run carries what it read of the notice runs.
+            #expect(BackgroundNoticeRuns.awaitingNotice(MightyGraphSupport.shownRuns(all)[0], in: []) == awaiting)
+            #expect(MightyTimeline.groups(all)[0].result?.awaiting == true && MightyTimeline.groups(all)[0].result?.tone == .wait)
+            if case .free(let rows) = MightyStructure.make(runs: all, style: nil, currentPhase: nil) {
+                #expect(rows.map(\.item.awaiting) == [true, false, false])
+            } else { Issue.record("a free pane makes rows") }
+            func resultColumn() -> DesignTone? {
+                let board = MightyStructure.boards(MightyStructure.make(runs: all, style: nil, currentPhase: nil))[0]
+                return MightyStructure.Tone.column(board.columns[2])
+            }
+            #expect(resultColumn() == .wait)
+            // The phone: the block's rows, and the running count for an older phone.
+            let mobile = MobileMightySupport.runs(all)
+            #expect(mobile[0].awaitingNotice == MobileAwaitingNotice(delivered: 0, total: 1, tasks: [MobileAwaitedTask(title: "Build", status: "running")]))
+            // A finished notice run reads the request's count instead (현재까지의 결과).
+            #expect(mobile[0].backgroundWaiting == 1 && mobile[1].awaitingNotice == nil && mobile[1].backgroundWaiting == 1 && mobile[2].awaitingNotice == nil)
+            let json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(mobile[0])) as? [String: Any])
+            let wire = try #require(json["awaitingNotice"] as? [String: Any])
+            #expect(wire["delivered"] as? Int == 0 && wire["total"] as? Int == 1 && (wire["tasks"] as? [[String: Any]])?.first?["status"] as? String == "running")
+            // The pane is alive only for the notice: the pet and the header say 알림 대기.
+            var pane = RunSession(id: "pane", workspaceId: "space", title: "Claude", provider: "claude")
+            pane.status = "running"; pane.graphRuns = all
+            #expect(BackgroundNoticeRuns.awaitsNotice(pane) && BackgroundNoticeRuns.stateWord == "알림 대기")
+            pane.status = "completed"
+            #expect(!BackgroundNoticeRuns.awaitsNotice(pane))
+            // The command ended and its notice turn runs: still awaiting, its notice delivered.
+            let digest = MobileMightySupport.digest(all)
             all[0].agents[1].status = "completed"
-            let settled = MightyGraphSupport.shownRuns(all)[0]
-            #expect(settled.backgroundWaiting == 0)
-            #expect(MightyGraphSupport.resultTitle(status: settled.status, waiting: settled.backgroundWaiting) == L("graph.block.result"))
+            let delivered = try #require(BackgroundNoticeRuns.awaitingNotice(all[0], in: all))
+            #expect(delivered.delivered == 1 && delivered.progress == "알림 1/1" && delivered.tasks[0].word == "알림 전달됨" && all[0].backgroundWaiting == 0)
+            #expect(MobileMightySupport.runs(all)[0].awaitingNotice?.delivered == 1 && MobileMightySupport.digest(all) != digest)
+            // The notice turn answered: the normal 최종 결과.
+            all[2].status = "completed"; all[2].finalOutput = "The build passed."
+            #expect(BackgroundNoticeRuns.awaitingNotice(all[0], in: all) == nil)
+            #expect(MightyTimeline.groups(all)[0].result?.awaiting == false && MightyTimeline.groups(all)[0].result?.tone == .done)
+            #expect(MobileMightySupport.runs(all)[0].awaitingNotice == nil)
+            #expect(resultColumn() == .done)
+            // Failed or stopped work keeps its word; a failed or stopped request, or a notice run, awaits nothing.
+            all[0].agents[1].status = "error"; all[2].status = "running"
+            #expect(BackgroundNoticeRuns.awaitingNotice(all[0], in: all)?.tasks.first?.word == "실패")
+            all[0].agents[1].status = "stopped"
+            #expect(BackgroundNoticeRuns.awaitingNotice(all[0], in: all)?.tasks.first?.word == "중단됨")
+            #expect(BackgroundNoticeRuns.awaitingNotice(all[2], in: all) == nil)
+            for status in ["error", "stopped", "running"] {
+                let other = Self.runs(answered: false, requestStatus: status)
+                #expect(BackgroundNoticeRuns.awaitingNotice(other[0], in: other) == nil, "\(status)")
+            }
         }
     }
 
@@ -457,7 +506,7 @@ struct BackgroundNoticeRunsTests {
     }
 
     /// A notice run reads the request's count: 현재까지의 결과 while any background work of the request is unfinished, in the diagram,
-    /// 기록, the pipeline and on the phone.
+    /// 기록, the pipeline and on the phone, while the request itself awaits its notices (the 알림 대기 block).
     @Test func aNoticeRunReadsTheRequestsWaitingCount() {
         LocaleOverride.$language.withValue(.ko) {
             func task(_ id: String, _ status: String, source: String? = nil) -> MightyGraphAgent { MightyGraphAgent(id: id, title: "Job", status: status, kind: "task", background: true, sourceBlockId: source) }
@@ -474,7 +523,9 @@ struct BackgroundNoticeRunsTests {
             #expect(MightyGraphSupport.followRunIndex(Array(all.prefix(3))) == 2)
             #expect(MightyGraphSupport.resultTitle(status: "completed", waiting: MightyGraphSupport.shownRuns(all)[2].backgroundWaiting) == "현재까지의 결과 · 백그라운드 작업 3개 기다리는 중")
             if case .free(let rows) = MightyStructure.make(runs: all, style: nil, currentPhase: nil) { #expect(rows.map(\.item.backgroundWaiting) == [3, 3, 3, 1]) } else { Issue.record("a free pane makes rows") }
-            #expect(MightyTimeline.groups(all).map { $0.result?.tone == .idle } == [true, true, true, true])
+            // The requests await their notices; the notice runs read so far.
+            #expect(MightyTimeline.groups(all).compactMap { $0.result?.tone } == [.wait, .idle, .idle, .wait])
+            #expect(BackgroundNoticeRuns.awaitingNotice(all[0], in: all) != nil && BackgroundNoticeRuns.awaitingNotice(all[1], in: all) == nil)
             #expect(MobileMightySupport.runs(all).map(\.backgroundWaiting) == [3, 3, 3, 1])
             // The work ends one by one; the notice run goes on reading the count until the last one.
             let digest = MobileMightySupport.digest(all)

@@ -101,14 +101,16 @@ struct MightyTimelineTests {
         #expect(MightyTimeline.group(Self.run("r", status: "stopped"), index: 0).result?.tone == .stop)
     }
 
-    @Test func theResultSoFarHasANeutralHeader() {
+    @Test func theAwaitingNoticeHeadWaits() {
         func shown(_ taskStatus: String, run status: String = "completed") -> MightyGraphRun {
             let task = MightyGraphAgent(id: "t", status: taskStatus, kind: "task", background: true)
             return Self.run("r", status: status, agents: [task], final: "Built.").shown
         }
-        // While background work the request started runs, the 기록 result head is neutral, then done once it ends.
-        #expect(MightyTimeline.group(shown("running"), index: 0).result?.tone == .idle)
+        // While the request awaits the notices of background work it started, the 기록 result head waits, then is done once they are in.
+        #expect(MightyTimeline.group(shown("running"), index: 0).result?.tone == .wait)
+        #expect(MightyTimeline.group(shown("running"), index: 0).result?.awaiting == true)
         #expect(MightyTimeline.group(shown("completed"), index: 0).result?.tone == .done)
+        #expect(MightyTimeline.group(shown("completed"), index: 0).result?.awaiting == false)
         // A failed request says so whatever still runs.
         #expect(MightyTimeline.group(shown("running", run: "error"), index: 0).result?.tone == .err)
     }

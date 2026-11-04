@@ -66,7 +66,7 @@ internal static class MightySymbols
         "point.3.connected.trianglepath.dotted", "list.bullet.indent", "arrow.up.message", "checkmark.seal", "checkmark.seal.fill",
         "stop.circle", "stop.circle.fill", "pause.circle", "arrow.up.circle", "rectangle.expand.vertical", "rectangle.compress.vertical",
         "arrow.up.left.and.arrow.down.right", "doc.on.doc", "doc.on.doc.fill", "rectangle.split.3x1", "circle", "circle.fill", "stop.fill",
-        "arrow.turn.down.right",
+        "arrow.turn.down.right", "hourglass",
     ];
 
     /// <summary>Whether <see cref="Create"/> can make this symbol; a style manifest's icon is asked before it is drawn.</summary>
@@ -187,6 +187,8 @@ internal static class MightySymbols
             case "stop.fill": return Fill("M 3.2 3.2 L 12.8 3.2 L 12.8 12.8 L 3.2 12.8 Z", ink);
             // arrow.turn.down.right: a nested sub-agent's line to the block it runs under, down and round to an arrow pointing right.
             case "arrow.turn.down.right": return Stroke("M 3.4 2.4 L 3.4 7.6 A 3 3 0 0 6.4 10.6 L 13.4 10.6 M 10.6 7.8 L 13.4 10.6 L 10.6 13.4");
+            // hourglass: a 알림 대기 result's mark, two bulbs meeting at the waist between a top and a bottom bar (the web's Lucide hourglass at 16).
+            case "hourglass": return Stroke("M 3.3 14.7 L 12.7 14.7 M 3.3 1.3 L 12.7 1.3 M 11.3 14.7 L 11.3 11.9 L 8 8 L 4.7 11.9 L 4.7 14.7 M 4.7 1.3 L 4.7 4.1 L 8 8 L 11.3 4.1 L 11.3 1.3");
             default: throw new ArgumentOutOfRangeException(nameof(symbol), symbol, "no Mighty symbol by that name");
         }
     }

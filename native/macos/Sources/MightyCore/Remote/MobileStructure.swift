@@ -66,6 +66,9 @@ public struct MobileStructure: Codable, Sendable, Equatable {
         public var noticeRun: Bool?
         /// Background work the request still waits on, as `MobileMightyRun.backgroundWaiting`; absent when none.
         public var backgroundWaiting: Int?
+        /// `true` while the request awaits its background work's notices (`MightyStructure.Item.awaiting`): its answer reads
+        /// 알림 대기 중; absent otherwise.
+        public var awaitingNotice: Bool?
     }
 
     public struct Activity: Codable, Sendable, Equatable {
@@ -276,7 +279,7 @@ public struct MobileStructure: Codable, Sendable, Equatable {
                     answer: item.answer.map { capped($0.text, answerBytes, markdown: true) },
                     tally: Tally(agents: item.tally.agents, tools: item.tally.tools), clusters: clusters,
                     omittedNodes: total > nodes ? total - nodes : nil, noticeRun: item.noticeRun ? true : nil,
-                    backgroundWaiting: item.backgroundWaiting > 0 ? item.backgroundWaiting : nil)
+                    backgroundWaiting: item.backgroundWaiting > 0 ? item.backgroundWaiting : nil, awaitingNotice: item.awaiting ? true : nil)
     }
 
     static func activity(_ line: MightyStructure.ActivityLine) -> Activity {
