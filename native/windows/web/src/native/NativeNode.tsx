@@ -2,39 +2,42 @@
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { boxStyle, edges, ink, nodeText, type MenuItem, type NativeNode as Node } from './types';
 import { Pending } from '../pending/Pending';
+import { DialogLoading } from '../dialogs/DialogShell';
 
 /** What a node's input does: `nativeAction` on the view it belongs to. */
 export type Act = (id: number, op: 'invoke' | 'toggle' | 'select' | 'text' | 'value', value?: unknown) => void;
 
 export const ActContext = createContext<Act>(() => {});
 
-/** True inside Settings' form, where a labelled picker row is laid out as the Mac's (the label at its width, the picker filling the rest). */
-export const SettingsFormContext = createContext(false);
+/** True inside a row's name and caption, whose sizes and inks are the settings standard's, not the form's. */
+const RowLabelContext = createContext(false);
 
-/**
- * A row of Settings that is a label and a picker (SettingsLabeled with a segmented control or a pop-up): the Mac's LabeledContent
- * gives the label its own width and the picker the rest of the row (M/SettingsViews.swift), where the WinUI form keeps a share or
- * the picker's own width at the right. Null for any other grid.
- */
-const fixedColumn = (track: string | undefined) => !!track && /^\d+(\.\d+)?px$/.test(track.trim());
-const sized = (n: Node): boolean => n.w !== undefined || ((n.t === 'grid' || n.t === 'box' || n.t === 'stack') && n.c.length === 1 && sized(n.c[0]!));
+/** A pop-up, however many plain frames the form put around it. */
 const framedSelect = (n: Node): boolean => n.t === 'select' || ((n.t === 'grid' || n.t === 'box' || n.t === 'stack') && n.c.length === 1 && framedSelect(n.c[0]!));
 
-/** The children of a Settings grid that fill their cell: a pop-up in a column of fixed width takes all of it, as the Mac's do. */
-export function fillsFixedCell(node: Extract<Node, { t: 'grid' }>, child: Node): boolean {
-  return framedSelect(child) && !sized(child) && fixedColumn(node.cols?.[child.col ?? 0]);
+/**
+ * The parts of a row the host marked (`row`, `wideRow`): its name and caption first, its controls after, in the order the form
+ * laid them out (a grid by its rows and columns). A pair of pop-ups (the phase models' model and effort) is drawn as one pair.
+ */
+export function rowParts(node: Node): { label: Node | null; controls: Node[]; pair: boolean } {
+  const children = node.t === 'grid' ? [...node.c].sort((a, b) => (a.row ?? 0) - (b.row ?? 0) || (a.col ?? 0) - (b.col ?? 0))
+    : node.t === 'stack' || node.t === 'box' ? node.c : [];
+  const [label = null, ...rest] = children;
+  // Controls the form grouped in a horizontal stack (the phase pickers, a line of buttons) are drawn as their parts.
+  const only = rest.length === 1 ? rest[0]! : null;
+  const controls = only && only.t === 'stack' && only.dir === 'h' ? only.c : rest;
+  return { label, controls, pair: controls.length === 2 && controls.every(framedSelect) };
 }
 
-export function labelledPickerRow(node: Extract<Node, { t: 'grid' }>): number | null {
-  if (node.cols?.length !== 2 || node.c.length !== 2) return null;
-  const control = node.c.findIndex((child) => (child.col ?? 0) === 1);
-  const label = node.c.findIndex((child) => (child.col ?? 0) === 0);
-  if (control < 0 || label < 0) return null;
-  const picker = node.c[control]!;
-  // A picker the form gives a column of its own width keeps it, as the Mac's fixed-width pickers do (the phase models' 220).
-  if (fixedColumn(node.cols[1]) || sized(picker)) return null;
-  const pickerLike = picker.t === 'segmented' || framedSelect(picker) || (picker.t === 'grid' && picker.c.length > 1 && picker.c.every((c) => c.t === 'button' || c.t === 'box' || c.t === 'rule'));
-  return pickerLike && node.c[label]!.t === 'text' ? control : null;
+function Row({ node }: { node: Node }) {
+  const { label, controls, pair } = rowParts(node);
+  const wide = node.role === 'wideRow';
+  return (
+    <div className={'settings-row' + (wide ? ' wide' : '')}>
+      {label && <div className="settings-row-label"><RowLabelContext.Provider value={true}><NativeNode node={label} placed={false} /></RowLabelContext.Provider></div>}
+      {controls.length > 0 && <div className={'settings-row-control' + (pair ? ' pair' : '')}>{controls.map((child, index) => <NativeNode key={index} node={child} placed={false} />)}</div>}
+    </div>
+  );
 }
 
 function Menu({ node }: { node: Extract<Node, { t: 'menu' }> }) {
@@ -90,10 +93,11 @@ function Children({ nodes }: { nodes: readonly Node[] | null | undefined }) {
 
 function Inner({ node }: { node: Node }) {
   const act = useContext(ActContext);
-  const settingsForm = useContext(SettingsFormContext);
+  const rowLabel = useContext(RowLabelContext);
+  if ((node.role === 'row' || node.role === 'wideRow') && (node.t === 'grid' || node.t === 'stack' || node.t === 'box')) return <Row node={node} />;
   switch (node.t) {
     case 'text': {
-      const style: CSSProperties = { fontSize: node.size ? `calc(${node.size}px * var(--text-scale, 1))` : undefined, color: ink(node.ink), fontWeight: node.weight === 'bold' ? 600 : node.weight === 'medium' ? 500 : undefined };
+      const style: CSSProperties = rowLabel ? { fontWeight: node.weight === 'bold' ? 600 : undefined } : { fontSize: node.size ? `calc(${node.size}px * var(--text-scale, 1))` : undefined, color: ink(node.ink), fontWeight: node.weight === 'bold' ? 600 : node.weight === 'medium' ? 500 : undefined };
       return <span className={'native-text' + (node.mono ? ' mono' : '') + (node.nowrap ? ' nowrap' : '') + (node.selectable ? ' selectable' : '')} style={style}>{node.text}</span>;
     }
     case 'glyph':
@@ -104,6 +108,8 @@ function Inner({ node }: { node: Node }) {
       return <span className="native-dot" style={{ width: node.size, height: node.size, background: ink(node.fill) }} />;
     case 'spinner':
       return <Pending busy showsLabel={false} />;
+    case 'loading':
+      return <DialogLoading rows={node.rows ?? 3} />;
     case 'progress':
       return node.indeterminate ? <progress className="native-progress" /> : <progress className="native-progress" value={node.value} max={node.max || 1} />;
     case 'rule':
@@ -174,18 +180,19 @@ function Inner({ node }: { node: Node }) {
         </div>
       );
     case 'stack': {
-      const style: CSSProperties = { gap: node.gap, padding: node.pad ? edges(node.pad) : undefined, background: ink(node.fill) };
+      const style: CSSProperties = { gap: rowLabel ? undefined : node.gap, padding: node.pad ? edges(node.pad) : undefined, background: ink(node.fill) };
       return <div className={'native-stack ' + node.dir} style={style}><Children nodes={node.c} /></div>;
     }
     case 'grid': {
-      const fill = settingsForm ? labelledPickerRow(node) : null;
       const style: CSSProperties = {
-        gridTemplateColumns: fill !== null ? 'auto minmax(0, 1fr)' : node.cols?.join(' '), gridTemplateRows: node.rows?.join(' '), rowGap: node.gap[0],
-        columnGap: fill !== null ? 'var(--space-md)' : node.gap[1], padding: node.pad ? edges(node.pad) : undefined, background: ink(node.fill),
+        gridTemplateColumns: node.cols?.join(' '), gridTemplateRows: node.rows?.join(' '), rowGap: node.gap[0],
+        columnGap: node.gap[1], padding: node.pad ? edges(node.pad) : undefined, background: ink(node.fill),
       };
-      return <div className="native-grid" style={style}>{node.c.map((child, index) => <NativeNode key={index} node={child} fill={index === fill || (settingsForm && fillsFixedCell(node, child))} />)}</div>;
+      return <div className="native-grid" style={style}><Children nodes={node.c} /></div>;
     }
     case 'box': {
+      // A settings card's row takes the standard's insets and rule (native.css), not the form's.
+      if (node.role === 'settingsRow') return <div className="native-box"><Children nodes={node.c} /></div>;
       const style: CSSProperties = {
         background: ink(node.fill), padding: node.pad ? edges(node.pad) : undefined, borderRadius: node.radius,
         borderStyle: node.line ? 'solid' : undefined, borderColor: node.line ? ink(node.lineInk) ?? 'var(--line)' : undefined,
@@ -196,13 +203,18 @@ function Inner({ node }: { node: Node }) {
   }
 }
 
-/** One node with its placement (margin, alignment, size, grid cell). */
-export function NativeNode({ node, fill = false }: { node: Node; fill?: boolean }) {
-  const style = boxStyle(node) as CSSProperties;
-  // A picker filling its labelled row (labelledPickerRow): the whole cell, whatever width or side the WinUI control kept.
-  if (fill) { style.width = undefined; style.maxWidth = undefined; style.justifySelf = 'stretch'; style.alignSelf = 'center'; }
+/**
+ * One node with its placement (margin, alignment, size, grid cell). A node a row places (`placed` false) or one the host marked
+ * leaves its margin, side and cell to the standard's row pattern (native.css).
+ */
+export function NativeNode({ node, placed = true }: { node: Node; placed?: boolean }) {
+  const style = (placed && !node.role ? boxStyle(node) : node.dim ? { opacity: 0.5 } : {}) as CSSProperties;
+  // The switch is the standard's 42 × 24 wherever it stands, not the WinUI form's 26 × 15.
+  if (node.t === 'switch') { style.width = undefined; style.height = undefined; }
+  // A negative margin is a WinUI alignment trick (a chip over a pop-up's edge); in the page it only pushes a control off its card.
+  if (typeof style.margin === 'string' && style.margin.includes('-')) style.margin = style.margin.split(' ').map((part) => part.startsWith('-') ? '0px' : part).join(' ');
   return (
-    <div className={'native-node native-n-' + node.t + (fill ? ' native-fill' : '')} style={style} title={node.t === 'button' ? undefined : node.help} data-aid={node.aid}>
+    <div className={'native-node native-n-' + node.t + (node.role ? ' native-role-' + node.role : '')} style={style} title={node.t === 'button' ? undefined : node.help} data-aid={node.aid}>
       <Inner node={node} />
     </div>
   );

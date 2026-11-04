@@ -112,18 +112,17 @@ public sealed partial class MainWindow
                 var available = screenPlatform?.Available == true && service.Snapshot.MobileRemote.Enabled;
                 var row = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs) };
                 AutomationProperties.SetAutomationId(row, "settings-screen-share-device-" + device.Id);
-                var head = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
-                head.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); head.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); head.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-                head.Children.Add(SettingsSymbol("", 14, sessions.Count > 0 ? DesignToken.DoneText : DesignToken.Ink2));
-                var name = SettingsText(device.Name, 12); Grid.SetColumn(name, 1); head.Children.Add(name);
+                // The phone's row (the settings row pattern): its mark and name at the left, the allow switch at the right.
+                var named = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+                named.Children.Add(SettingsSymbol("", 14, sessions.Count > 0 ? DesignToken.DoneText : DesignToken.Ink2));
+                named.Children.Add(SettingsText(device.Name, 12));
                 var allowLabel = Locale.Get("settings.screenShare.allowToggle");
                 var toggle = SettingsSwitch(allowLabel, grant.Allowed, "settings-screen-share-allow-" + device.Id); toggle.IsEnabled = available;
                 void Toggled() => _ = Act(() => Change(device.Id, toggle.IsChecked == true, grant.Grant, grant.Grant));
                 toggle.Checked += (_, _) => Toggled(); toggle.Unchecked += (_, _) => Toggled();
                 var allow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 allow.Children.Add(SettingsText(allowLabel, 11)); allow.Children.Add(toggle);
-                Grid.SetColumn(allow, 2); head.Children.Add(allow);
-                row.Children.Add(head);
+                row.Children.Add(SettingsLabeled(named, allow));
                 if (grant.Allowed)
                 {
                     // Control is the one access that needs the key ceremony explained before it is given.
@@ -131,7 +130,7 @@ public sealed partial class MainWindow
                     var picker = SettingsSegmented(grantLabel, "settings-screen-share-grant-" + device.Id,
                         [("none", Locale.Get("settings.screenShare.grantNone")), ("view", Locale.Get("settings.screenShare.grantView")), ("control", Locale.Get("settings.screenShare.grantControl"))],
                         grant.Grant is "view" or "control" ? grant.Grant : "none", value => Act(() => Change(device.Id, toggle.IsChecked == true, value, grant.Grant)), small: true, enabled: available);
-                    row.Children.Add(SettingsLabeled(SettingsText(grantLabel, 11), picker, share: true));
+                    row.Children.Add(SettingsLabeled(SettingsText(grantLabel, 11), picker));
                 }
                 if (grant.ControlKeyPublic is { } key)
                 {
@@ -143,7 +142,7 @@ public sealed partial class MainWindow
                     var removeKey = SettingsPush(SafeButton(Locale.Get("settings.screenShare.removeKeyButton"), async () =>
                     {
                         if (screenHub is not { } hub || closing) return;
-                        var dialog = StyledDialog(new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get("settings.screenShare.removeKeyTitle"), Content = Locale.Get("settings.screenShare.removeKeyBody", new Dictionary<string, string> { ["device"] = device.Name }), PrimaryButtonText = Locale.Get("settings.screenShare.removeKeyConfirm"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close });
+                        var dialog = StyledDialog(new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get("settings.screenShare.removeKeyTitle"), Content = Locale.Get("settings.screenShare.removeKeyBody", new Dictionary<string, string> { ["device"] = device.Name }), PrimaryButtonText = Locale.Get("settings.screenShare.removeKeyConfirm"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close }, chrome: new DialogChrome { Danger = true });
                         if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary || closing || !ReferenceEquals(hub, screenHub) || mobileHost?.Devices.Any(phone => phone.Id == device.Id) != true || hub.Grants.FirstOrDefault(current => current.DeviceId == device.Id)?.ControlKeyPublic != key) return;
                         await hub.RemoveControlKeyAsync(device.Id); if (rows.IsLoaded) Refresh();
                     }), SettingsControlSize.Small);

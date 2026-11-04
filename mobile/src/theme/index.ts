@@ -35,7 +35,7 @@ export interface Palette {
   onAccent: string;
   /** Text drawn on top of a filled badge (the attention count). */
   onBadge: string;
-  /** Dimming behind modals. */
+  /** Dimming behind modals: black at the popup standard's backdrop opacity (`dialog`). */
   overlay: string;
   /**
    * Status fills — stat tiles, timeline nodes, filled pills and the wait/error glyph discs.
@@ -73,6 +73,65 @@ export interface Palette {
 }
 
 /**
+ * The shared dense scale from `native/contracts/fixtures/design-tokens.json`
+ * (`metrics.spacing`: xxs 2, xs 4, sm 6, md 8, lg 12, xl 16). The phone keeps its own
+ * names one step up, so each name here is the contract's next-smaller step:
+ * xs = xxs, sm = xs, md = sm, lg = md, xl = lg, xxl = xl. `design-spacing.test.ts`
+ * holds the two together.
+ */
+export const spacing = {
+  xs: 2,
+  sm: 4,
+  md: 6,
+  lg: 8,
+  xl: 12,
+  xxl: 16,
+} as const;
+
+/**
+ * The popup standard on the phone (`.omc/plans/popup-standard.md`), from
+ * `native/contracts/fixtures/design-tokens.json` `metrics.dialog`: the touch sizes of its
+ * `phone` block, and the shared padding, button gap, icon size, alert width (the phone's
+ * cap, for a tablet), dark-theme border and black backdrop opacities. An alert is a centred
+ * card; a form, a menu and a picker are a bottom sheet (handle, top corners, at most
+ * `sheetMaxHeightRatio` of the screen); a panel is full screen under a `headerHeight` head
+ * with its ✕ on the left. `design-dialog.test.ts` holds them to the contract.
+ */
+export const dialog = {
+  padding: spacing.xxl,
+  buttonGap: 8,
+  iconSize: 20,
+  alertWidth: 400,
+  darkBorder: 1,
+  backdropOpacityLight: 0.28,
+  backdropOpacityDark: 0.5,
+  buttonHeight: 40,
+  headerHeight: 56,
+  closeHit: 40,
+  closeGlyph: 24,
+  alertRadius: 24,
+  sheetRadius: 24,
+  handleWidth: 36,
+  handleHeight: 4,
+  sheetMaxHeightRatio: 0.85,
+  rowHeight: 52,
+} as const;
+
+/**
+ * The settings page, from the same file's `metrics.settings`: an accent section title above
+ * each card, and one row (name and caption on the left, the control on the right) with a
+ * hairline between rows. The phone's row is `dialog.rowHeight` tall.
+ */
+export const settingsLayout = {
+  sectionTitle: 12,
+  cardRadius: 16,
+  cardPaddingX: 16,
+  rowName: 14,
+  rowCaption: 12,
+  rowDividerInset: 16,
+} as const;
+
+/**
  * "card dashboard" (concept D): status first. A cool grey page with white cards by day,
  * deep ink navy with slate cards by night; every state owns a bold fill — run blue, wait
  * amber, done green, error red, stop slate — with a soft tint and a text-safe ink. The
@@ -101,7 +160,7 @@ export const lightPalette: Palette = {
   onBubbleUser: '#FFFFFF',
   onAccent: '#FFFFFF',
   onBadge: '#2B1B00',
-  overlay: 'rgba(14,19,32,0.36)',
+  overlay: `rgba(0,0,0,${dialog.backdropOpacityLight})`,
   run: '#2A5FEE',
   runSoft: '#E6EDFF',
   wait: '#FFA81F',
@@ -151,7 +210,7 @@ export const darkPalette: Palette = {
   onBubbleUser: '#0E1320',
   onAccent: '#0B0F19',
   onBadge: '#2B1B00',
-  overlay: 'rgba(0,0,0,0.55)',
+  overlay: `rgba(0,0,0,${dialog.backdropOpacityDark})`,
   run: '#2A5FEE',
   runSoft: '#1A2750',
   wait: '#FFA81F',
@@ -207,22 +266,6 @@ export function useStyles<T>(factory: (palette: Palette) => T): T {
     return created;
   }, [factory, palette]);
 }
-
-/**
- * The shared dense scale from `native/contracts/fixtures/design-tokens.json`
- * (`metrics.spacing`: xxs 2, xs 4, sm 6, md 8, lg 12, xl 16). The phone keeps its own
- * names one step up, so each name here is the contract's next-smaller step:
- * xs = xxs, sm = xs, md = sm, lg = md, xl = lg, xxl = xl. `design-spacing.test.ts`
- * holds the two together.
- */
-export const spacing = {
-  xs: 2,
-  sm: 4,
-  md: 6,
-  lg: 8,
-  xl: 12,
-  xxl: 16,
-} as const;
 
 /** Moulded, not cut: pills are round, rows and fields 12–14, cards 20, sheets 24. */
 export const radius = {

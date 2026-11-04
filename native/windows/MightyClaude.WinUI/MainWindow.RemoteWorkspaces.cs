@@ -22,8 +22,6 @@ public sealed partial class MainWindow
     /// <summary>Whether the page last showed sharing on: a sharing that ended without Stop (a listener that died) is said on the page.</summary>
     private bool remoteSharingShown;
     private readonly List<Action> remoteViews = [];
-    /// <summary>The label column of the connect fields (the Mac's 90).</summary>
-    private const double RemoteFieldLabelWidth = 90;
 
     /// <summary>
     /// Builds the client and the host once the service is up. Every callback of theirs hands its work to the window (TryEnqueue) and never
@@ -283,7 +281,7 @@ public sealed partial class MainWindow
         firewallButtons.Children.Add(firewallAdd); firewallButtons.Children.Add(firewallRemove);
         SettingsRow(rows, SettingsLabeled(firewallWords, firewallButtons, top: true));
 
-        // Connect to another computer: the address, the key and a name, a label column beside each (the Mac's).
+        // Connect to another computer: the address, the key and a name, each a wide row (its name over the field, the row's width).
         var connect = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
         connect.Children.Add(SettingsText(Locale.Get("settings.remote.connectTitle"), 13, medium: true));
         var address = SettingsField(new TextBox { PlaceholderText = Locale.Get("settings.remote.addressPlaceholder"), MaxLength = 300 });
@@ -306,13 +304,13 @@ public sealed partial class MainWindow
             await client.ConnectAsync(name.Text, address.Text, typed);
         })), SettingsControlSize.Small, prominent: true);
         AutomationProperties.SetAutomationId(connectButton, "settings-remote-connect");
-        Grid Field(string label, FrameworkElement field, FrameworkElement? after = null)
+        FrameworkElement Field(string label, FrameworkElement field, FrameworkElement? after = null)
         {
+            if (after is null) return SettingsWide(SettingsText(label, 12), field);
             var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
-            line.ColumnDefinitions.Add(new() { Width = new(RemoteFieldLabelWidth) }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            line.Children.Add(SettingsText(label, 12)); Grid.SetColumn(field, 1); line.Children.Add(field);
-            if (after is not null) { Grid.SetColumn(after, 2); line.Children.Add(after); }
-            return line;
+            line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            line.Children.Add(field); Grid.SetColumn(after, 1); line.Children.Add(after);
+            return SettingsWide(SettingsText(label, 12), line);
         }
         connect.Children.Add(Field(Locale.Get("settings.remote.addressField"), address));
         connect.Children.Add(Field(Locale.Get("settings.remote.keyField"), key));

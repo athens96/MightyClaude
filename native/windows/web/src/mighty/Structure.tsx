@@ -11,6 +11,7 @@ import type { StructureActivity, StructureBoard, StructureCard } from './types';
 import { chipClass, edgeClass, tintClass } from './structureTone';
 import { structureResultLook } from './resultTitle';
 import { usePageOverlay } from '../shell/overlay';
+import { usePopover } from '../shell/popover';
 import { Icon, type IconName } from '../icons/Icon';
 import { Pending } from '../pending/Pending';
 import { holding, pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
@@ -413,15 +414,8 @@ export function Structure({ boards, onReveal, pending: sent, session, own = 0 }:
     if (column) follow.current.stop(column);
   }, []);
 
-  // The list closes on a press outside it or Escape.
-  useEffect(() => {
-    if (!listOpen) return undefined;
-    const close = (event: Event) => { if (!(event.target as Element).closest?.('.structure-list, .structure-place')) setListOpen(false); };
-    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setListOpen(false); };
-    window.addEventListener('pointerdown', close);
-    window.addEventListener('keydown', key);
-    return () => { window.removeEventListener('pointerdown', close); window.removeEventListener('keydown', key); };
-  }, [listOpen]);
+  // The list closes on a press outside it (and its button) or Escape (the standard's popover, shell/popover.ts).
+  const place = usePopover<HTMLSpanElement>(() => setListOpen(false), listOpen);
 
   const position = (b: StructureBoard, at: number) => t(b.kind === 'pipeline' ? 'graph.structure.board.pipeline' : 'graph.structure.board.request', { n: at + 1, count: list.length });
   const title = (b: StructureBoard, at: number) => b.headline ?? b.styleName ?? position(b, at);
@@ -434,12 +428,12 @@ export function Structure({ boards, onReveal, pending: sent, session, own = 0 }:
       data-pending-request={pending && board.id === pendingRunId(pending) ? board.id : undefined}>
       <nav className="structure-nav">
         <button className="structure-step" title={t('graph.structure.board.previous')} aria-label={t('graph.structure.board.previous')} disabled={index <= 0} onClick={() => move(() => navigation.step(-1, list))}><Icon name="chevron-left" size={13} weight={2.4} /></button>
-        <span className="structure-place">
+        <span className="structure-place" ref={place}>
           <button className="structure-position" data-testid="structure-list-button" title={t('graph.structure.board.list')} aria-haspopup="listbox" aria-expanded={listOpen} onClick={() => setListOpen((o) => !o)}>
             {position(board, index)}<Icon name="chevron-down" size={9} weight={2.6} />
           </button>
           {listOpen && (
-            <div className="structure-list popover" role="listbox" data-page-overlay="" aria-label={t('graph.structure.board.list')} data-testid="structure-list">
+            <div className="structure-list popover width-s" role="listbox" data-page-overlay="" aria-label={t('graph.structure.board.list')} data-testid="structure-list">
               {list.map((b, at) => (
                 <button key={b.id} role="option" aria-selected={at === index} className={'structure-entry' + (at === index ? ' chosen' : '')} data-board-id={b.id}
                   onClick={() => { setListOpen(false); move(() => navigation.select(b.id, list)); }}>

@@ -64,7 +64,7 @@ struct AgentStatusPopover: View {
             }
             Divider()
             Toggle(L("companion.status.petSwitch"), isOn: $companion.preferences.enabled).toggleStyle(.switch).controlSize(.mini)
-        }.padding(DesignMetrics.Inset.popover).frame(width: 350)
+        }.padding(DesignMetrics.Inset.popover).frame(width: DesignMetrics.Dialog.popoverWidthL)
     }
 }
 
@@ -73,32 +73,32 @@ struct CompanionSettingsSection: View {
     var body: some View {
         SettingsGroup(L("companion.settings.sectionTitle")) {
             Toggle(L("companion.settings.enabled"), isOn: $companion.preferences.enabled)
-            HStack {
+            HStack(spacing: DesignMetrics.Spacing.lg) {
                 if let pet = companion.selectedPet, let image = pet.frames.first?.first {
                     Image(nsImage: image).resizable().scaledToFit().frame(width: 58, height: 64)
                 }
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+                SettingsRowLabel(L("companion.settings.pet"), caption: L("companion.settings.petsNote"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .trailing, spacing: DesignMetrics.Spacing.sm) {
                     Picker(L("companion.settings.pet"), selection: $companion.preferences.selectedPet) {
                         ForEach(companion.pets) { pet in Text(pet.name).tag(pet.id) }
                     }
-                    HStack {
+                    .settingsSelect()
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         Button(L("companion.settings.import")) { companion.importPet() }
                         Button(L("companion.settings.reload")) { companion.reloadPets() }
-                    }.controlSize(.small)
+                    }
                 }
             }
-            Text(L("companion.settings.petsNote"))
-                .font(.ui(size: 10)).foregroundStyle(.secondary)
+            .settingsRowFrame()
             Toggle(L("companion.settings.task"), isOn: $companion.preferences.showsTask)
             Toggle(L("companion.settings.motion"), isOn: $companion.preferences.reducedMotion)
             Toggle(L("companion.settings.macNotifications"), isOn: $companion.preferences.notifications)
                 .onChange(of: companion.preferences.notifications) { _, enabled in Task { await companion.refreshNotificationStatus(request: enabled) } }
-            HStack {
-                Text(companion.notificationStatus).font(.ui(size: 11)).foregroundStyle(.secondary)
-                Spacer()
+            SettingsRow(L("windows.notifications.settingsButton"), caption: companion.notificationStatus) {
                 Button(L("windows.notifications.settingsButton")) {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
-                }.controlSize(.small)
+                }
             }
             if let message = companion.message { Text(message).font(.ui(size: 11)).foregroundStyle(.secondary) }
         }

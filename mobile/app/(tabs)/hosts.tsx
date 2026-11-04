@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
-import { Alert, FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LiveDot, RouteBadge, reachabilityColor, reachabilityKeys } from '@/components/host-status';
+import { ConfirmDialog } from '@/components/sheets';
 import { Badge, Button, EmptyState, ScreenTitle } from '@/components/ui';
 import { hostAddress, useHostsStore, type PairedHost } from '@/store/hosts';
 import { useLiveStore } from '@/store/live';
@@ -36,40 +37,48 @@ function HostRow({ host }: { host: PairedHost }) {
   const removeHost = useHostsStore((state) => state.removeHost);
   const color = reachabilityColor(palette, status);
 
-  const confirmRemove = useCallback(() => {
-    Alert.alert(t('phone.hosts.remove.title'), t('phone.hosts.remove.message', { name: host.name }), [
-      { text: t('phone.hosts.remove.cancel'), style: 'cancel' },
-      {
-        text: t('phone.hosts.remove.confirm'),
-        style: 'destructive',
-        onPress: () => void removeHost(host.id),
-      },
-    ]);
-  }, [host.id, host.name, removeHost]);
+  const [removing, setRemoving] = useState(false);
+  const remove = useCallback(() => {
+    setRemoving(false);
+    void removeHost(host.id);
+  }, [host.id, removeHost]);
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={() => router.push(`/host/${host.id}`)}
-      onLongPress={confirmRemove}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-    >
-      <View style={styles.rowTop}>
-        <LiveDot palette={palette} reachability={status} />
-        <Text numberOfLines={1} style={styles.hostName}>
-          {host.name}
+    <>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push(`/host/${host.id}`)}
+        onLongPress={() => setRemoving(true)}
+        style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+      >
+        <View style={styles.rowTop}>
+          <LiveDot palette={palette} reachability={status} />
+          <Text numberOfLines={1} style={styles.hostName}>
+            {host.name}
+          </Text>
+          <Badge count={attention} />
+        </View>
+        <Text numberOfLines={1} style={styles.address}>
+          {hostAddress(host)}
         </Text>
-        <Badge count={attention} />
-      </View>
-      <Text numberOfLines={1} style={styles.address}>
-        {hostAddress(host)}
-      </Text>
-      <View style={styles.rowBottom}>
-        <Text style={[styles.status, { color }]}>{t(reachabilityKeys[status])}</Text>
-        {status === 'online' && route ? <RouteBadge palette={palette} route={route} /> : null}
-        {host.appVersion ? <Text style={styles.meta}>· v{host.appVersion}</Text> : null}
-      </View>
-    </Pressable>
+        <View style={styles.rowBottom}>
+          <Text style={[styles.status, { color }]}>{t(reachabilityKeys[status])}</Text>
+          {status === 'online' && route ? <RouteBadge palette={palette} route={route} /> : null}
+          {host.appVersion ? <Text style={styles.meta}>· v{host.appVersion}</Text> : null}
+        </View>
+      </Pressable>
+      <ConfirmDialog
+        visible={removing}
+        title={t('phone.hosts.remove.title')}
+        description={t('phone.hosts.remove.message', { name: host.name })}
+        cancelLabel={t('phone.hosts.remove.cancel')}
+        confirmLabel={t('phone.hosts.remove.confirm')}
+        destructive
+        busy={false}
+        onConfirm={remove}
+        onCancel={() => setRemoving(false)}
+      />
+    </>
   );
 }
 

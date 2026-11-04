@@ -148,8 +148,8 @@ public sealed partial class MainWindow
         open.Activate();
         return true;
     }
-    /// <summary>The settings sheet's content size in points and its side list's width (M/SettingsViews.swift:201, 214).</summary>
-    internal const double SettingsWindowWidth = 800, SettingsWindowHeight = 700, SettingsNavigationWidth = 200;
+    /// <summary>The settings window's size and its side list's width: the settings standard's (metrics.settings, the same as the Mac's).</summary>
+    internal const double SettingsWindowWidth = DesignMetrics.Settings.Width, SettingsWindowHeight = DesignMetrics.Settings.Height, SettingsNavigationWidth = DesignMetrics.Settings.ListWidth;
 
     /// <summary>A side-list row's height: the sidebar list's 22 plus the label's 2 above and below (M/SettingsViews.swift:209).</summary>
     internal const double SettingsNavigationRowHeight = 22 + 2 * DesignMetrics.Spacing.Xxs;
@@ -295,8 +295,6 @@ public sealed partial class MainWindow
     internal const double SettingsSwitchWidth = 26, SettingsSwitchHeight = 15, SettingsSwitchKnob = 13;
     /// <summary>The corner of a push button and of a segmented picker.</summary>
     internal const double SettingsControlRadius = 5;
-    /// <summary>The share of a row a segmented picker takes (the Mac draws it 295 wide in a 538 row).</summary>
-    internal const double SettingsControlShare = 0.55;
 
     internal enum SettingsControlSize { Regular, Small, Mini }
 
@@ -335,23 +333,34 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// A row's content the form's way: the words at the left taking what is left, the control at the right
-    /// (at the top beside a label with an explanation). A segmented picker takes <see cref="SettingsControlShare"/> of the row.
+    /// The settings row pattern (metrics.settings, .omc/plans/popup-standard.md section 2): the name (and its caption under it) at
+    /// the left taking what is left, the control at the right at its own width (at the top beside a label with an explanation).
+    /// Marked <c>row</c> for the page, which draws the standard's sizes for both (web/src/native/native.css).
     /// </summary>
-    internal Grid SettingsLabeled(FrameworkElement label, FrameworkElement control, bool share = false, bool top = false)
+    internal Grid SettingsLabeled(FrameworkElement label, FrameworkElement control, bool top = false)
     {
-        var line = new Grid { ColumnSpacing = share ? 0 : DesignMetrics.Spacing.Md };
-        line.ColumnDefinitions.Add(new() { Width = new(share ? 1 - SettingsControlShare : 1, GridUnitType.Star) });
-        line.ColumnDefinitions.Add(new() { Width = share ? new(SettingsControlShare, GridUnitType.Star) : GridLength.Auto });
+        var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
+        line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         line.Children.Add(label);
-        if (!share) control.HorizontalAlignment = HorizontalAlignment.Right;
+        control.HorizontalAlignment = HorizontalAlignment.Right;
         // Beside two lines the Mac sets the switch on the label's own line, a point under its top.
         control.VerticalAlignment = top ? VerticalAlignment.Top : VerticalAlignment.Center;
         if (top) control.Margin = new Thickness(0, 1, 0, 0);
-        // A 20-high picker stands a point into the row's top padding, as on the Mac.
-        else if (share) control.Margin = new Thickness(0, -1, 0, 0);
         Grid.SetColumn(control, 1); line.Children.Add(control);
-        return line;
+        return WebNativeReader.Mark(line, "row");
+    }
+
+    /// <summary>
+    /// The settings "wide row" (a long field such as an address): the name over the control, which takes the row's whole width.
+    /// Marked <c>wideRow</c> for the page.
+    /// </summary>
+    internal StackPanel SettingsWide(FrameworkElement label, FrameworkElement control)
+    {
+        var line = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+        control.HorizontalAlignment = HorizontalAlignment.Stretch;
+        line.Children.Add(label); line.Children.Add(control);
+        return WebNativeReader.Mark(line, "wideRow");
     }
 
     /// <summary>
@@ -361,11 +370,11 @@ public sealed partial class MainWindow
     /// </summary>
     internal Border SettingsRow(StackPanel rows, FrameworkElement content, int? index = null, object? tag = null)
     {
-        var row = new Border
+        var row = WebNativeReader.Mark(new Border
         {
             Child = content, Tag = tag, Margin = SettingsRowMargin, Padding = new Thickness(0, SettingsRowInset, 0, SettingsRowInset),
             BorderBrush = brushes.Brush(DesignToken.Line),
-        };
+        }, "settingsRow");
         if (index is { } at && at >= 0 && at <= rows.Children.Count) rows.Children.Insert(at, row); else rows.Children.Add(row);
         row.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => RuleSettingsRows(rows));
         RuleSettingsRows(rows);

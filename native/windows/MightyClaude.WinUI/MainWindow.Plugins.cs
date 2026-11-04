@@ -77,6 +77,9 @@ public sealed partial class MainWindow
         // scope beside the marketplace refresh, what the read and the last operation said, the note, a rule and
         // the rows; then the progress, the cancel and the close buttons on the last line.
         var rows = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
+        // In the page the browser is the popup standard's panel (below); the WinUI sheet keeps the Mac's heading and last line.
+        // The smoke's drivers (smokePluginDialog) walk the WinUI sheet's own controls; the web settings smoke opens the page's panel.
+        var paged = webShell is not null && (provider == ClaudePluginBrowser.CodexProvider ? smokeCodexPluginDialog : smokePluginDialog) is null;
         var status = SettingsText("", 11, DesignToken.WaitText, selectable: true); status.Visibility = Visibility.Collapsed;
         AutomationProperties.SetAutomationId(status, PluginAutomationId(provider, "load-status"));
         // The command's own output, 80 high behind its disclosure (M/ClaudePluginView.swift:277-282).
@@ -280,7 +283,15 @@ public sealed partial class MainWindow
             {
                 foreach (var row in browser.Rows()) rows.Children.Add(PluginRow(provider, row));
             }
-            if (rows.Children.Count == 0)
+            if (rows.Children.Count == 0 && browser.Loading && !browser.IsMutating)
+            {
+                // The popup standard's wait (dialog.loading): a centred ring and its words; the page draws it with three row places.
+                var wait = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Xl, 0, DesignMetrics.Spacing.Xl) };
+                wait.Children.Add(new ProgressRing { Width = 16, Height = 16, MinWidth = 0, MinHeight = 0, IsActive = true, Foreground = brushes.Brush(DesignToken.Accent) });
+                wait.Children.Add(SettingsText(Locale.Get("dialog.loading"), 12, DesignToken.Ink2));
+                rows.Children.Add(WebNativeReader.Mark(wait, "loading"));
+            }
+            else if (rows.Children.Count == 0)
             {
                 // M/ClaudePluginView.swift:349-362: the sentence, and under it the way to add a marketplace, centred with 28 above and below.
                 var empty = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Margin = new Thickness(0, DesignMetrics.Spacing.Xl, 0, DesignMetrics.Spacing.Xl) };
@@ -355,14 +366,19 @@ public sealed partial class MainWindow
         header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var piece = new FontIcon { Glyph = PluginGlyph, TextSize = 25, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top };
         AutomationProperties.SetAccessibilityView(piece, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        header.Children.Add(piece); Grid.SetColumn(named, 1); header.Children.Add(named); Grid.SetColumn(version, 2); header.Children.Add(version);
+        header.Children.Add(piece); Grid.SetColumn(named, 1); header.Children.Add(named);
+        if (!paged) { Grid.SetColumn(version, 2); header.Children.Add(version); }
 
-        // The tabs, 6 apart, and the reload button at the trailing edge.
+        // In the page the window is the popup standard's panel (.omc/plans/popup-standard.md, kind C): the title and the workspace in
+        // its header with the CLI's version and the reload as its tools, its ✕ for the close button, and the ring, what is being
+        // done and the cancel in its footer only while they show. The WinUI sheet keeps the Mac's own heading and last line.
+        // The tabs, 6 apart, and the reload button at the trailing edge (in the page: in the header).
         var tabs = new Grid();
         tabs.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); tabs.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var tabLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         tabLine.Children.Add(installedTab); tabLine.Children.Add(marketplaceTab);
-        tabs.Children.Add(tabLine); Grid.SetColumn(reload, 1); tabs.Children.Add(reload);
+        tabs.Children.Add(tabLine);
+        if (!paged) { Grid.SetColumn(reload, 1); tabs.Children.Add(reload); }
 
         // The search box takes what the 230-wide marketplace filter leaves (M/ClaudePluginView.swift:226-237).
         var searchLine = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
@@ -391,24 +407,39 @@ public sealed partial class MainWindow
         Grid.SetRow(scroller, 2); list.Children.Add(scroller);
 
         // The last line (M/ClaudePluginView.swift:197-210): the ring and what is being done, then the cancel and close buttons.
-        var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
-        footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-        footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var doing = new Grid(); doing.Children.Add(progress); doing.Children.Add(operationProgress);
-        footer.Children.Add(working); Grid.SetColumn(doing, 1); footer.Children.Add(doing);
-        Grid.SetColumn(cancelBtn, 2); footer.Children.Add(cancelBtn); Grid.SetColumn(close, 3); footer.Children.Add(close);
-
-        var body = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
-        body.RowDefinitions.Add(new() { Height = GridLength.Auto }); body.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); body.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        body.Children.Add(header); Grid.SetRow(list, 1); body.Children.Add(list); Grid.SetRow(footer, 2); body.Children.Add(footer);
+        FrameworkElement body;
+        DialogChrome? chrome = null;
+        if (paged)
+        {
+            // The header's tools: the CLI's version, then the reload. The footer's status: the ring and what it does; its action: the cancel.
+            version.VerticalAlignment = VerticalAlignment.Center;
+            var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md, Children = { version, reload } };
+            var working2 = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Children = { working, doing } };
+            var subtitle = workspaceName.Text + " · " + workspacePath.Text;
+            chrome = new DialogChrome { Panel = "plugins", Icon = "puzzle", Subtitle = () => subtitle, Tools = tools, Status = working2, Actions = cancelBtn, Busy = () => !browser.CanClose, MinWidth = PluginSheetMinWidth, MinHeight = PluginSheetMinHeight };
+            body = list;
+        }
+        else
+        {
+            var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
+            footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+            footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            footer.Children.Add(working); Grid.SetColumn(doing, 1); footer.Children.Add(doing);
+            Grid.SetColumn(cancelBtn, 2); footer.Children.Add(cancelBtn); Grid.SetColumn(close, 3); footer.Children.Add(close);
+            var sheetBody = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
+            sheetBody.RowDefinitions.Add(new() { Height = GridLength.Auto }); sheetBody.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sheetBody.RowDefinitions.Add(new() { Height = GridLength.Auto });
+            sheetBody.Children.Add(header); Grid.SetRow(list, 1); sheetBody.Children.Add(list); Grid.SetRow(footer, 2); sheetBody.Children.Add(footer);
+            body = sheetBody;
+        }
         RenderPlugins();
 
-        // The sheet has no title or buttons of its own: the heading and the last line are its content, as on the Mac.
+        // The WinUI sheet has no title or buttons of its own: the heading and the last line are its content, as on the Mac.
         var dialog = StyledDialog(new ContentDialog
         {
-            Content = body,
+            Content = body, Title = paged ? browser.Title : null,
             XamlRoot = root.XamlRoot,
-        }, PluginSheetWidth, PluginSheetHeight);
+        }, PluginSheetWidth, PluginSheetHeight, chrome: chrome);
         sheet = dialog;
         AutomationProperties.SetAutomationId(dialog, PluginAutomationId(provider, "browser"));
         AutomationProperties.SetName(dialog, browser.Title);
@@ -441,6 +472,8 @@ public sealed partial class MainWindow
 
     /// <summary>The plugin sheet's size and its marketplace filter's width (M/ClaudePluginView.swift:212, 236).</summary>
     internal const double PluginSheetWidth = 760, PluginSheetHeight = 620, PluginFilterWidth = 230;
+    /// <summary>The least the page's plugin panel shrinks to: the search beside the 230 filter, and a few rows.</summary>
+    internal const double PluginSheetMinWidth = 560, PluginSheetMinHeight = 420;
     /// <summary>The chosen tab's tint: accent at 0.17 (M/ClaudePluginView.swift:309).</summary>
     private const double PluginTabTint = 0.17;
     /// <summary>The Mac's symbols in Segoe Fluent Icons: puzzlepiece.extension, arrow.clockwise, magnifyingglass, the disclosure's chevrons, checkmark.circle.fill and info.circle.</summary>

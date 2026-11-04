@@ -23,6 +23,7 @@ struct StyleSettingsSection: View {
                     .accessibilityIdentifier("settings-style-rescan")
                 Spacer(minLength: 0)
             }
+            .settingsRowFrame()
             if let registerError {
                 Label(registerError, systemImage: "exclamationmark.triangle").font(.ui(size: 11)).foregroundStyle(Palette.waitText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -70,7 +71,7 @@ struct StyleSettingsSection: View {
                 .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
             buttons(row)
         }
-        .padding(.vertical, DesignMetrics.Spacing.xxs)
+        .settingsRowFrame()
         .accessibilityElement(children: .contain).accessibilityIdentifier("settings-style-\(row.styleId)")
     }
 
@@ -80,18 +81,18 @@ struct StyleSettingsSection: View {
             Button(L("settings.styles.viewButton")) {
                 guard let style else { return }
                 candidate = StyleApprovalCandidate(style: style, data: store.styleBytes(for: style), readOnly: true)
-            }.controlSize(.small).disabled(style == nil)
+            }.disabled(style == nil)
             if row.canApprove {
                 Button(L("settings.styles.allowButton")) {
                     guard let style else { return }
                     candidate = StyleApprovalCandidate(style: style, data: nil)
-                }.controlSize(.small)
+                }
             }
-            if row.canRevoke { Button(L("settings.styles.revokeButton")) { style.map { store.revokeStyle($0) } }.controlSize(.small) }
+            if row.canRevoke { Button(L("settings.styles.revokeButton")) { style.map { store.revokeStyle($0) } } }
             // The button drops the refusal; the style then goes back through
             // the approval card like any other pending one (§4.2).
-            if row.canAllowAgain { Button(L("settings.styles.unblockButton")) { style.map { store.allowStyleAgain($0) } }.controlSize(.small) }
-            if row.canRemove { Button(L("settings.styles.removeButton"), role: .destructive) { style.map { store.removeStyle($0) } }.controlSize(.small) }
+            if row.canAllowAgain { Button(L("settings.styles.unblockButton")) { style.map { store.allowStyleAgain($0) } } }
+            if row.canRemove { Button(L("settings.styles.removeButton"), role: .destructive) { style.map { store.removeStyle($0) } } }
             Spacer(minLength: 0)
         }
     }

@@ -341,7 +341,7 @@ public sealed partial class MainWindow
             // The note names the phone being unpaired (M/MobileRemoteSettingsView.swift:104-124); what follows is Windows' own
             // rule, where a new key unpairs every phone.
             var named = id is null ? null : host.Devices.FirstOrDefault(device => device.Id == id)?.Name;
-            var dialog = StyledDialog(new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get(id is null ? "settings.mobileRemote.regenerateKeyButton" : "settings.mobileRemote.revokeDialogTitle"), Content = (named is null ? "" : named + "\n\n") + Locale.Get("windows.mobile.rotationConfirm"), PrimaryButtonText = Locale.Get("settings.mobileRemote.revokeConfirmButton"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close });
+            var dialog = StyledDialog(new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get(id is null ? "settings.mobileRemote.regenerateKeyButton" : "settings.mobileRemote.revokeDialogTitle"), Content = (named is null ? "" : named + "\n\n") + Locale.Get("windows.mobile.rotationConfirm"), PrimaryButtonText = Locale.Get("settings.mobileRemote.revokeConfirmButton"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close }, chrome: new DialogChrome { Danger = true });
             if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
             if (closing || !ReferenceEquals(host, mobileHost) || id is not null && !host.Devices.Any(device => device.Id == id)) return;
             if (screenHub is not null) await screenHub.ResetAsync("rekey-pairing"); await host.RotateKeyAsync(id); mobileRouter?.ResetUploads(); showsKey = false; await Refresh();

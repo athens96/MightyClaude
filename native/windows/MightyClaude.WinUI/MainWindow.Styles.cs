@@ -112,7 +112,7 @@ public sealed partial class MainWindow
                 {
                     var remove = SettingsPush(Button(Locale.Get("settings.styles.removeButton"), () => Act(async () =>
                     {
-                        var confirm = StyledDialog(new ContentDialog { Title = Locale.Get("settings.styles.removeButton"), Content = new TextBlock { Text = style.Path, TextWrapping = TextWrapping.Wrap }, XamlRoot = SettingsXamlRoot, PrimaryButtonText = Locale.Get("settings.styles.removeButton"), CloseButtonText = Locale.Get("guidedPanel.cancelButton"), DefaultButton = ContentDialogButton.Close });
+                        var confirm = StyledDialog(new ContentDialog { Title = Locale.Get("settings.styles.removeButton"), Content = new TextBlock { Text = style.Path, TextWrapping = TextWrapping.Wrap }, XamlRoot = SettingsXamlRoot, PrimaryButtonText = Locale.Get("settings.styles.removeButton"), CloseButtonText = Locale.Get("guidedPanel.cancelButton"), DefaultButton = ContentDialogButton.Close }, chrome: new DialogChrome { Danger = true });
                         if (await ShowDialogAsync(confirm) != ContentDialogResult.Primary) return;
                         await Task.Run(() =>
                         {

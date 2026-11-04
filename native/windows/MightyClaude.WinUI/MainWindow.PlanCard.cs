@@ -399,7 +399,7 @@ public sealed partial class MainWindow
             var document = PlanMarkdown(plan, "plan-document");
             var page = new Border { Child = document, MinHeight = 420, Background = owner.brushes.Brush(DesignToken.Card) };
             Grid.SetRow(page, 1); content.Children.Add(page);
-            var dialog = owner.StyledDialog(new ContentDialog { Title = title, Content = content, CloseButtonText = Locale.Get("plan.card.close"), XamlRoot = owner.root.XamlRoot, RequestedTheme = owner.root.RequestedTheme }, 860, 680);
+            var dialog = owner.StyledDialog(new ContentDialog { Title = title, Content = content, CloseButtonText = Locale.Get("plan.card.close"), XamlRoot = owner.root.XamlRoot, RequestedTheme = owner.root.RequestedTheme }, 860, 680, chrome: new DialogChrome { Panel = "plan", Icon = "clipboard-list" });
             AutomationProperties.SetAutomationId(dialog, "plan-document-sheet");
             owner.dialogOpen = true;
             try { await owner.ShowDialogAsync(dialog); }

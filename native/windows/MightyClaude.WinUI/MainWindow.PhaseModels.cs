@@ -36,15 +36,17 @@ public sealed partial class MainWindow
     private ModelCatalog PhaseCatalog(string provider) => Runtime(provider)?.ModelCatalog ?? ProviderCatalog.Fallback(provider);
     private List<RegisteredModelEntry> PhaseRegistered(string provider) => provider == "codex" ? service.Snapshot.ModelDefaults?.Codex.RegisteredModels ?? [] : service.Snapshot.ModelDefaults?.Claude.RegisteredModels ?? [];
 
-    /// <summary>The widths of a phase row's two trailing columns: the model pop-up and the effort pop-up (M/PhaseModelSettingsView.swift:139, 149).</summary>
-    internal const double PhaseModelColumn = 220, PhaseEffortColumn = 110;
+    /// <summary>A phase row's pop-up, one of its pair: the settings standard's pair width (<c>Settings.PairSelectWidth</c>, 160).</summary>
+    private Grid PhasePair(ComboBox picker)
+    {
+        picker.Margin = new Thickness(0);
+        var frame = SettingsPopupFrame(picker); frame.Width = DesignMetrics.Settings.PairSelectWidth;
+        return frame;
+    }
 
-    /// <summary>A rule between the parts of a provider's block (the Mac's <c>Divider()</c> in the block's stack).</summary>
-    private Border PhaseRule() => new() { Height = DesignMetrics.Stroke.Line, Background = brushes.Brush(DesignToken.Line) };
-
-    // M/PhaseModelSettingsView.swift:9-67: the two explanations, then a block per provider — its name
-    // (12 medium) and 베타 capsule, the phase rows (label | model pop-up | effort pop-up, in columns),
-    // a rule, the alias rows (label | pop-up), a rule, the registered names and the row that adds one.
+    // M/PhaseModelSettingsView.swift:9-67: the two explanations, then per provider its name (12 medium) and 베타 capsule,
+    // a row per phase (name | the model and effort pop-ups as a pair), a row per alias (name | pop-up), and the registered
+    // names with the row that adds one — each a row of the card with its rule (the standard's row pattern).
     private void FillPhaseModelsSection(StackPanel panel, PhaseModelsSnapshot config, PhaseModelTools tools)
     {
         panel.Children.Clear();
@@ -52,52 +54,40 @@ public sealed partial class MainWindow
         SettingsRow(panel, SettingsText(Locale.Get("settings.phaseModels.effortNote"), 11, DesignToken.Ink2));
         foreach (var provider in new[] { "claude", "codex" })
         {
-            var block = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs) };
-            AutomationProperties.SetAutomationId(block, "phaseModels-provider-" + provider);
+            // The provider's name (12 medium) and 베타 capsule head its rows.
             var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+            AutomationProperties.SetAutomationId(header, "phaseModels-provider-" + provider);
             header.Children.Add(SettingsText(ProviderMark.Label(provider), 12, medium: true));
             if (ProviderCatalog.IsBeta(provider)) header.Children.Add(BetaBadgeView.Create(brushes));
-            block.Children.Add(header);
+            SettingsRow(panel, header);
+            // A phase is one settings row: its name at the left, the model and effort pop-ups at the right as one pair (160 each).
             foreach (var phase in PhaseModelSection.Phases.Where(p => provider != "claude" || p != Phase.Review))
             {
-                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, MinHeight = SettingsControlHeight };
-                row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseModelColumn) });
-                row.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseEffortColumn) });
                 var state = provider == "claude" ? PhaseModelRouting.ClaudeRowState(phase, config) : PhaseModelRouting.CodexRowState(phase, config);
                 var title = PhaseModelSection.PhaseLabel(phase);
                 var phaseId = phase.ToString().ToLowerInvariant();
-                row.Children.Add(SettingsText(title, 11));
+                var pickers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 // A phase with no knob for one of the two says so instead of offering a choice the CLI would ignore.
-                FrameworkElement modelCell;
-                if (state is not null) modelCell = SettingsPopupFrame(PhaseModelPicker(provider, title, state.Value ?? PhaseModelSection.MixedSentinel, "phaseModels-model-" + provider + "-" + phaseId, value => ApplyProviderPhaseRow(provider, phase, value)));
-                else { modelCell = SettingsText(Locale.Get("settings.phaseModels.paneModel"), 11, DesignToken.Ink2); modelCell.HorizontalAlignment = HorizontalAlignment.Right; }
-                Grid.SetColumn(modelCell, 1); row.Children.Add(modelCell);
+                if (state is not null) pickers.Children.Add(PhasePair(PhaseModelPicker(provider, title, state.Value ?? PhaseModelSection.MixedSentinel, "phaseModels-model-" + provider + "-" + phaseId, value => ApplyProviderPhaseRow(provider, phase, value))));
+                else pickers.Children.Add(SettingsText(Locale.Get("settings.phaseModels.paneModel"), 12, DesignToken.Ink2));
                 var effort = (provider, phase) switch { ("claude", Phase.Execution) => config.ClaudeMainEffort ?? "default", ("codex", Phase.Planning) => config.CodexPlanModeReasoningEffort, ("codex", Phase.Execution) => config.CodexMainEffort ?? "default", ("codex", Phase.Subagents) => config.CodexSubagentEffort ?? "default", _ => null };
-                FrameworkElement effortCell;
                 // The word for a phase with no effort setting is the tertiary ink (M/PhaseModelSettingsView.swift:152).
-                if (effort is null) effortCell = SettingsTertiary(Locale.Get("settings.phaseModels.effortUnsupported"));
+                if (effort is null) pickers.Children.Add(SettingsTertiary(Locale.Get("settings.phaseModels.effortUnsupported"), 12));
                 else
                 {
                     var effortPicker = PhasePicker(title, PhaseModelPreferences.Efforts(provider, PhaseCatalog(provider), effort).Select(v => new PhaseModelVersion(v, v)), effort, "phaseModels-effort-" + provider + "-" + phaseId, value => ApplyPhaseEffort(provider, phase, value));
                     AutomationProperties.SetName(effortPicker, title + " · " + Locale.Get("composer.label.effort"));
-                    effortCell = SettingsPopupFrame(effortPicker);
+                    pickers.Children.Add(PhasePair(effortPicker));
                 }
-                Grid.SetColumn(effortCell, 2); row.Children.Add(effortCell); block.Children.Add(row);
+                SettingsRow(panel, SettingsLabeled(SettingsText(title), pickers));
             }
-            block.Children.Add(PhaseRule());
             foreach (var knob in PhaseModelSection.ToolBlocks(config, tools).Single(b => b.Tool == provider).Knobs.Where(k => !k.IsEffort))
             {
-                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, MinHeight = SettingsControlHeight };
-                row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseModelColumn) });
-                row.Children.Add(SettingsText(knob.Label, 11, DesignToken.Ink2));
                 var picker = SettingsPopupFrame(PhaseModelPicker(provider, knob.Label, knob.Value, "phase-models-knob-" + knob.KnobId, value => ApplyPhaseModelKnob(knob.KnobId, value)));
-                Grid.SetColumn(picker, 1); row.Children.Add(picker); block.Children.Add(row);
+                SettingsRow(panel, SettingsLabeled(SettingsText(knob.Label), picker));
             }
-            block.Children.Add(PhaseRule());
+            var block = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
             AddRegisteredModels(block, provider);
-            // The Mac's form draws the rule between the two blocks as an empty row of its own (M/PhaseModelSettingsView.swift:18).
-            if (panel.Children.Count > 2) SettingsRow(panel, new Border());
             SettingsRow(panel, block);
         }
         if (tools.Error is { } error) SettingsRow(panel, PhaseModelErrorText(error));

@@ -86,39 +86,29 @@ struct ScreenSharePermissionsView: View {
     @ViewState private var statuses: [ScreenSharePermission: ScreenSharePermissionStatus] = [:]
     @ViewState private var checking = false
 
+    /// A panel (kind C): the ✕ in the header, 다시 확인 the footer's one button.
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "lock.shield").foregroundStyle(.secondary)
-                Text(L("settings.screenShare.permissions.title")).font(.ui(size: 14, weight: .semibold))
-                BetaBadge()
-                Spacer()
-            }
-            .padding(DesignMetrics.Inset.sheet)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-                    Text(L("settings.screenShare.permissions.intro"))
-                        .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    ForEach(ScreenSharePermission.allCases, id: \.self) { permission in
-                        row(permission)
-                    }
-                    Label(L("settings.screenShare.permissions.signingNote"), systemImage: "info.circle")
-                        .font(.ui(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("screen-share-permissions-signing-note")
+        DialogScaffold(L("settings.screenShare.permissions.title"), systemImage: "lock.shield",
+                       close: DialogClose(identifier: "screen-share-permissions-close") { dismiss() }, scrolls: true) {
+            BetaBadge()
+        } content: {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
+                Text(L("settings.screenShare.permissions.intro"))
+                    .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                ForEach(ScreenSharePermission.allCases, id: \.self) { permission in
+                    row(permission)
                 }
-                .padding(DesignMetrics.Inset.sheet)
+                Label(L("settings.screenShare.permissions.signingNote"), systemImage: "info.circle")
+                    .font(.ui(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("screen-share-permissions-signing-note")
             }
-            Divider()
-            HStack {
+        } footer: {
+            DialogFooter {
                 Button(L("settings.screenShare.permissions.recheck")) { Task { await refresh(includeLocalNetwork: true) } }
                     .disabled(checking)
-                Spacer()
-                Button(L("settings.screenShare.permissions.close")) { dismiss() }.keyboardShortcut(.cancelAction)
             }
-            .padding(DesignMetrics.Inset.sheet)
         }
-        .frame(width: 520, height: 560)
+        .dialogPanelFrame(id: "screenSharePermissions", ideal: CGSize(width: 520, height: 560), minimum: CGSize(width: 440, height: 400))
         .accessibilityIdentifier("screen-share-permissions")
         .task {
             await refresh(includeLocalNetwork: true)
@@ -147,12 +137,10 @@ struct ScreenSharePermissionsView: View {
                                 await refresh(includeLocalNetwork: false)
                             }
                         }
-                        .controlSize(.small)
                     } else {
                         Button(L("settings.screenShare.permissions.openSettings")) {
                             NSWorkspace.shared.open(permission.settingsURL(bundleIdentifier: Bundle.main.bundleIdentifier))
                         }
-                        .controlSize(.small)
                     }
                 }
                 .accessibilityIdentifier("screen-share-permission-open-\(permission.rawValue)")

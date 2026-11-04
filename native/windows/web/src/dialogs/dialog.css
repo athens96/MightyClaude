@@ -1,0 +1,76 @@
+/* The popup standard (.omc/plans/popup-standard.md; numbers from design-tokens.json metrics.dialog as --dialog-*): one dialog for
+   kinds A alert, B sheet and C panel (DialogShell.tsx), one popover look for kind D (.popover, shell/popover.ts) and the common
+   buttons both use. The backdrop is black (28% light, 50% dark); in the dark theme every popup has a 1px line, since its shadow
+   does not show there. */
+:root[data-theme="light"] { --dialog-gray: var(--track); }
+:root[data-theme="dark"] { --dialog-gray: var(--line); }
+
+.dialog-backdrop { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; background: var(--dialog-backdrop); }
+.dialog-backdrop.surface { z-index: 30; }
+.dialog {
+  position: relative; display: flex; flex-direction: column; box-sizing: border-box; min-height: 0;
+  max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); overflow: hidden;
+  border: var(--dialog-border) solid var(--line); border-radius: var(--dialog-radius); background: var(--card); color: var(--ink);
+  box-shadow: var(--dialog-shadow); font-size: var(--type-body); text-align: left;
+}
+.dialog:focus { outline: none; }
+.dialog-header { display: flex; align-items: center; gap: 10px; height: var(--dialog-header-height); flex: none; padding: 0 var(--dialog-padding); user-select: none; min-width: 0; }
+.dialog-icon { display: inline-grid; place-items: center; width: var(--dialog-icon-size); height: var(--dialog-icon-size); flex: none; color: var(--accent); }
+.dialog-heading { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.dialog-title { font-size: var(--dialog-title-size); font-weight: 600; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dialog-subtitle { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--dialog-subtitle-size); line-height: 15px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dialog-tools { display: flex; align-items: center; gap: var(--space-sm); flex: none; margin-left: auto; }
+.dialog-close {
+  display: inline-grid; place-items: center; width: var(--dialog-close-hit); height: var(--dialog-close-hit); flex: none; padding: 0;
+  border: 0; border-radius: var(--dialog-close-radius); background: transparent; color: var(--ink2); cursor: default;
+}
+.dialog-close:hover:not(.busy) { background: var(--dialog-gray); color: var(--ink); }
+.dialog-close.busy { opacity: .38; cursor: not-allowed; }
+.dialog-close:focus-visible { outline: var(--stroke-focus) solid var(--accent); outline-offset: 1px; }
+.dialog-body { flex: 1; min-height: 0; overflow: auto; padding: var(--space-xs) var(--dialog-padding) var(--dialog-padding); display: flex; flex-direction: column; gap: var(--space-md); }
+.dialog.kind-alert .dialog-body, .dialog.kind-sheet .dialog-body { flex: 0 1 auto; }
+.dialog-footer { display: flex; align-items: center; gap: var(--dialog-button-gap); height: var(--dialog-footer-height); flex: none; padding: 0 var(--dialog-padding); border-top: var(--stroke-line) solid var(--line); }
+.dialog-status { display: flex; align-items: center; gap: var(--space-sm); flex: 1; min-width: 0; font-size: var(--type-row); color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dialog-grip { position: absolute; right: 0; bottom: 0; z-index: 2; display: grid; place-items: end; width: var(--dialog-grip-size); height: var(--dialog-grip-size); padding: 0 3px 3px 0; box-sizing: border-box; color: var(--ink3); cursor: nwse-resize; touch-action: none; }
+.dialog-grip:focus-visible { outline: var(--stroke-focus) solid var(--accent); border-radius: 4px; }
+.dialog-loading { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 28px 0 0; color: var(--ink2); font-size: var(--type-body); }
+.dialog-loading-line { display: flex; align-items: center; justify-content: center; gap: var(--space-sm); padding-bottom: 18px; }
+.dialog-spinner { width: 16px; height: 16px; flex: none; box-sizing: border-box; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent); border-top-color: var(--accent); animation: dialog-spin .9s linear infinite; }
+@keyframes dialog-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dialog-spinner { animation-duration: 2.4s; } }
+.dialog-skeleton { display: flex; align-items: center; gap: var(--space-lg); padding: 10px 0; border-top: var(--stroke-line) solid var(--line); }
+.dialog-skeleton i { display: block; height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.dialog-skeleton i:nth-child(1) { width: 32px; height: 32px; border-radius: 8px; flex: none; }
+.dialog-skeleton i:nth-child(2) { flex: 1; }
+.dialog-skeleton i:nth-child(3) { width: 64px; height: 24px; border-radius: 7px; flex: none; }
+.dialog-message { margin: 0; white-space: pre-wrap; color: var(--ink2); }
+.dialog-field { height: var(--dialog-button-height); box-sizing: border-box; padding: 0 10px; border: var(--stroke-line) solid var(--line); border-radius: var(--dialog-button-radius); background: var(--card); color: var(--ink); font: inherit; }
+.dialog-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* The common buttons (28 high, 12 at the sides, radius 7): the primary filled in the accent, the rest on the grey, a dangerous
+   one filled in err. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-sm); height: var(--dialog-button-height); flex: none;
+  padding: 0 var(--dialog-button-padding-x); border: 0; border-radius: var(--dialog-button-radius); background: var(--dialog-gray); color: var(--ink);
+  font: inherit; font-size: var(--type-body); font-weight: 500; white-space: nowrap; cursor: default;
+}
+.btn:hover:not(:disabled) { background: color-mix(in srgb, var(--dialog-gray) 82%, var(--ink)); }
+.btn.primary { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 90%, var(--ink)); }
+.btn.danger { background: var(--err); color: var(--on-status); font-weight: 600; }
+.btn.text { background: transparent; color: var(--accent); padding: 0 var(--space-md); }
+.btn.icon { width: var(--dialog-button-height); padding: 0; }
+.btn:disabled { opacity: .45; }
+.btn:focus-visible { outline: var(--stroke-focus) solid var(--accent); outline-offset: 1px; }
+
+/* Kind D: radius 10, the popover shadow, outside click and Esc close (or cancel). Widths 320 / 360, at most 60% of the window. */
+.popover {
+  box-sizing: border-box; max-height: var(--dialog-popover-max-height); overflow: auto;
+  border: var(--dialog-border) solid var(--line); border-radius: var(--dialog-popover-radius); background: var(--card); color: var(--ink);
+  box-shadow: var(--dialog-popover-shadow);
+}
+.popover.width-s { width: var(--dialog-popover-width-s); }
+.popover.width-l { width: var(--dialog-popover-width-l); }
+.popover-head { display: flex; align-items: center; gap: 10px; min-height: var(--dialog-header-height); padding: 0 var(--dialog-padding); box-sizing: border-box; }
+.popover-head .dialog-heading strong { font-size: var(--dialog-title-size); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.popover-foot { display: flex; align-items: center; gap: var(--dialog-button-gap); height: var(--dialog-footer-height); padding: 0 var(--dialog-padding); border-top: var(--stroke-line) solid var(--line); box-sizing: border-box; }

@@ -22,14 +22,15 @@ struct SettingsPage<Content: View, Trailing: View>: View {
 
 /// The One UI Settings' own metrics (Windows' native.css draws the same): the gap between cards, a card's row inset,
 /// a pane's side inset, the large title's inset and the bar's leading inset, and the switch knob's inset off and on.
+/// The sizes the popup standard names come from `DesignMetrics.Settings` (fixture `metrics.settings`).
 enum OneUIMetrics {
     static let cardGap: CGFloat = 14
-    static let rowInset: CGFloat = 18
+    static let rowInset = DesignMetrics.Settings.cardPaddingX
     static let paneInset: CGFloat = 14
     static let titleInset: CGFloat = 10
     static let barLeading: CGFloat = 24
     static let bottomInset: CGFloat = 24
-    static let dividerLeading: CGFloat = 64
+    static let dividerLeading = DesignMetrics.Settings.navDividerInset
     static let knobInsetOff: CGFloat = 5
     static let knobInsetOn: CGFloat = 3
 }
@@ -40,7 +41,7 @@ private struct OneUIScrollKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
-/// One pane of the One UI Settings: on the page colour, a 56pt bar on top (its small title shown once the large one has
+/// One pane of the One UI Settings: on the page colour, a 48pt bar on top (its small title shown once the large one has
 /// scrolled under it, and `trailing` at its end), then a scroll view that opens on the large title.
 struct OneUIPane<Content: View, Trailing: View>: View {
     let title: String
@@ -50,17 +51,18 @@ struct OneUIPane<Content: View, Trailing: View>: View {
     /// 0 at rest, 1 once the large title has gone under the bar; written only when it changes.
     @ViewState private var progress: CGFloat = 0
 
-    static var barHeight: CGFloat { 56 }
+    static var barHeight: CGFloat { DesignMetrics.Dialog.headerHeight }
+    static var heroHeight: CGFloat { DesignMetrics.Settings.heroHeight }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: OneUIMetrics.cardGap) {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                    Text(title).font(.ui(size: 28, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.8)
+                    Text(title).font(.ui(size: DesignMetrics.Settings.largeTitle, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.8)
                         .accessibilityAddTraits(.isHeader)
                     if let subtitle { Text(subtitle).font(.ui(size: 12)).foregroundStyle(.secondary) }
                 }
-                .frame(maxWidth: .infinity, minHeight: 120, alignment: .bottomLeading)
+                .frame(maxWidth: .infinity, minHeight: Self.heroHeight, alignment: .bottomLeading)
                 .padding(.horizontal, OneUIMetrics.titleInset).padding(.bottom, DesignMetrics.Spacing.md)
                 .opacity(1 - progress)
                 .background(GeometryReader { proxy in
@@ -72,12 +74,12 @@ struct OneUIPane<Content: View, Trailing: View>: View {
         }
         .coordinateSpace(name: "oneUIPane")
         .onPreferenceChange(OneUIScrollKey.self) { offset in
-            let next = min(1, max(0, offset / 120))
+            let next = min(1, max(0, offset / Self.heroHeight))
             if next != progress { progress = next }
         }
         .overlay(alignment: .top) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(title).font(.ui(size: 15, weight: .semibold)).lineLimit(1)
+                Text(title).font(.ui(size: DesignMetrics.Settings.barTitle, weight: .semibold)).lineLimit(1)
                     .opacity(progress > 0.85 ? 1 : 0).animation(.easeOut(duration: 0.12), value: progress > 0.85)
                     .accessibilityHidden(true)
                 Spacer(minLength: 0)
@@ -111,13 +113,17 @@ struct SettingsGroup<Content: View, Header: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             header
-                .font(.ui(size: 12, weight: .semibold)).foregroundStyle(Palette.accent)
-                .padding(.leading, OneUIMetrics.rowInset).padding(.top, DesignMetrics.Spacing.sm)
+                .font(.ui(size: DesignMetrics.Settings.sectionTitle, weight: .semibold)).foregroundStyle(Palette.accent)
+                .padding(.leading, DesignMetrics.Settings.cardPaddingX).padding(.top, DesignMetrics.Spacing.sm)
                 .accessibilityAddTraits(.isHeader)
-            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) { content }
+            // Each row draws the line over itself (`SettingsRow`); the card's top hides the first one's.
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) { content }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, OneUIMetrics.rowInset).padding(.vertical, DesignMetrics.Spacing.md)
-                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Palette.panel))
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Palette.panel).frame(height: 1).allowsHitTesting(false).accessibilityHidden(true)
+                }
+                .padding(.horizontal, DesignMetrics.Settings.cardPaddingX).padding(.vertical, DesignMetrics.Spacing.sm)
+                .background(RoundedRectangle(cornerRadius: DesignMetrics.Settings.cardRadius, style: .continuous).fill(Palette.panel))
         }
     }
 }
@@ -128,8 +134,8 @@ extension SettingsGroup where Header == Text {
     }
 }
 
-/// A settings switch: its label on the leading side, the switch at the trailing edge, and the
-/// whole row (at least `Layout.hitTarget` tall) a place to click. The row is one accessibility
+/// A settings switch: its label on the leading side (a `SettingsRowLabel` for a name and caption),
+/// the switch at the trailing edge, and the whole row (a `SettingsRow`'s height and line) a place to click. The row is one accessibility
 /// element that toggles when pressed, so the identifier and label put on the `Toggle` name the switch.
 struct SettingsSwitchStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -142,14 +148,15 @@ private struct SettingsSwitchRow: View {
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
-        HStack(alignment: .center, spacing: DesignMetrics.Spacing.md) {
+        HStack(alignment: .center, spacing: DesignMetrics.Spacing.lg) {
             configuration.label
+                .font(.ui(size: DesignMetrics.Settings.rowName))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { if isEnabled { configuration.isOn.toggle() } }
             OneUISwitch(isOn: configuration.$isOn)
         }
-        .frame(minHeight: DesignMetrics.Layout.hitTarget)
+        .settingsRowFrame()
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isToggle)
         .accessibilityAction { if isEnabled { configuration.isOn.toggle() } }
@@ -169,7 +176,7 @@ struct OneUISwitch: View {
                 .frame(width: isOn ? 18 : 14, height: isOn ? 18 : 14)
                 .padding(.horizontal, isOn ? OneUIMetrics.knobInsetOn : OneUIMetrics.knobInsetOff)
         }
-        .frame(width: 42, height: 24)
+        .frame(width: DesignMetrics.Settings.switchWidth, height: DesignMetrics.Settings.switchHeight)
         .opacity(isEnabled ? 1 : 0.5)
         .contentShape(Capsule())
         .onTapGesture { if isEnabled { isOn.toggle() } }
@@ -179,14 +186,102 @@ struct OneUISwitch: View {
     }
 }
 
-/// A labelled value or control (and a labelled picker) on one line: the label leading, the value
-/// trailing in the secondary ink, like a grouped form's row.
+/// A labelled value or control on one row: the label leading, the value trailing in the secondary
+/// ink, with a `SettingsRow`'s height and line.
 struct SettingsLabeledStyle: LabeledContentStyle {
     func makeBody(configuration: Configuration) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.md) {
-            configuration.label
+        HStack(alignment: .center, spacing: DesignMetrics.Spacing.lg) {
+            configuration.label.font(.ui(size: DesignMetrics.Settings.rowName))
             Spacer(minLength: DesignMetrics.Spacing.md)
             configuration.content.foregroundStyle(.secondary)
         }
+        .settingsRowFrame()
+    }
+}
+
+/// The one settings row (popup standard §2): the name (14) and an optional caption (12) on the
+/// leading side, the control on the trailing side; `wide` puts the name over a control as wide as
+/// the row (an address). At least 48pt tall, with a line over it that the card hides on its first row.
+struct SettingsRow<Control: View>: View {
+    let name: String
+    var caption: String?
+    var wide = false
+    private let control: Control
+
+    init(_ name: String, caption: String? = nil, wide: Bool = false, @ViewBuilder control: () -> Control) {
+        self.name = name
+        self.caption = caption
+        self.wide = wide
+        self.control = control()
+    }
+
+    var body: some View {
+        Group {
+            if wide {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+                    SettingsRowLabel(name, caption: caption)
+                    control.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(alignment: .center, spacing: DesignMetrics.Spacing.lg) {
+                    SettingsRowLabel(name, caption: caption).frame(maxWidth: .infinity, alignment: .leading)
+                    control
+                }
+            }
+        }
+        .settingsRowFrame()
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A row's name and, under it, its caption in the secondary ink.
+struct SettingsRowLabel: View {
+    let name: String
+    var caption: String?
+
+    init(_ name: String, caption: String? = nil) {
+        self.name = name
+        self.caption = caption
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+            Text(name).font(.ui(size: DesignMetrics.Settings.rowName)).foregroundStyle(Palette.ink)
+            if let caption, !caption.isEmpty {
+                Text(caption).font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// The line over a row: a hairline in `border`, as wide as the row (the card's 16pt side is its inset).
+private struct SettingsRowLine: ViewModifier {
+    @Environment(\.displayScale) private var displayScale
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            Rectangle().fill(Palette.border).frame(height: 1 / max(1, displayScale)).allowsHitTesting(false).accessibilityHidden(true)
+        }
+    }
+}
+
+extension View {
+    /// A settings row's height and the line over it.
+    func settingsRowFrame() -> some View {
+        padding(.vertical, DesignMetrics.Spacing.sm)
+            .frame(maxWidth: .infinity, minHeight: DesignMetrics.Settings.rowMinHeight, alignment: .leading)
+            .modifier(SettingsRowLine())
+    }
+
+    /// A select (a menu picker) in a settings row: no label of its own, 160 to 240 wide.
+    func settingsSelect() -> some View {
+        labelsHidden().frame(minWidth: DesignMetrics.Settings.selectMinWidth, maxWidth: DesignMetrics.Settings.selectMaxWidth)
+    }
+
+    /// A text field in a settings row: 240 wide (an address takes a wide row instead).
+    func settingsField() -> some View {
+        frame(width: DesignMetrics.Settings.fieldWidth)
     }
 }

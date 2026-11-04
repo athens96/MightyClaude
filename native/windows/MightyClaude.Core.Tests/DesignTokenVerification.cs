@@ -149,10 +149,11 @@ internal static class DesignTokenVerification
     internal static Task MetricsAndOpacitiesMatchTheFixture()
     {
         var metrics = Fixture.Value.GetProperty("metrics");
-        foreach (var (section, type) in new[] { ("radius", typeof(DesignMetrics.Radius)), ("stroke", typeof(DesignMetrics.Stroke)), ("type", typeof(DesignMetrics.Type)), ("spacing", typeof(DesignMetrics.Spacing)), ("inset", typeof(DesignMetrics.Inset)), ("layout", typeof(DesignMetrics.Layout)) })
+        foreach (var (section, type) in new[] { ("radius", typeof(DesignMetrics.Radius)), ("stroke", typeof(DesignMetrics.Stroke)), ("type", typeof(DesignMetrics.Type)), ("spacing", typeof(DesignMetrics.Spacing)), ("inset", typeof(DesignMetrics.Inset)), ("layout", typeof(DesignMetrics.Layout)), ("dialog", typeof(DesignMetrics.Dialog)), ("settings", typeof(DesignMetrics.Settings)) })
         {
             var constants = type.GetFields(BindingFlags.Public | BindingFlags.Static).Where(f => f.IsLiteral).ToDictionary(f => Camel(f.Name), f => (double)f.GetRawConstantValue()!);
-            var table = metrics.GetProperty(section).EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble());
+            // The numbers only: the dialog group also holds its note, its shadows and the phone's touch sizes, which the desktop does not use.
+            var table = metrics.GetProperty(section).EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.Number).ToDictionary(p => p.Name, p => p.Value.GetDouble());
             Check(constants.Keys.ToHashSet().SetEquals(table.Keys), $"metrics.{section}: C# [{string.Join(", ", constants.Keys.Order())}] vs fixture [{string.Join(", ", table.Keys.Order())}]");
             foreach (var (name, value) in table) Check(Near(constants[name], value), $"metrics.{section}.{name}: expected {value}, got {constants[name]}");
         }

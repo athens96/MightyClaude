@@ -88,7 +88,7 @@ public sealed partial class MainWindow
             [("dark", Locale.Get("settings.display.themeDarkWindows")), ("light", Locale.Get("settings.display.themeLightWindows"))],
             service.Snapshot.Theme == "light" ? "light" : "dark",
             value => Act(async () => { await service.UpdateAsync(s => s with { Theme = value }); Render(); }));
-        SettingsRow(rows, SettingsLabeled(SettingsText(themeLabel), theme, share: true));
+        SettingsRow(rows, SettingsLabeled(SettingsText(themeLabel), theme));
         // The sidebar's own theme button may change the theme while this window is open; the picker follows it.
         rows.ActualThemeChanged += (_, _) => ShowSegment(theme, service.Snapshot.Theme == "light" ? "light" : "dark");
 
@@ -98,7 +98,7 @@ public sealed partial class MainWindow
             Locale.PickerChoices.Select(choice => (choice.Value, Locale.Get(choice.LabelKey))).ToList(),
             Locale.Languages.Contains(service.Snapshot.LanguagePreference) ? service.Snapshot.LanguagePreference : "system",
             value => Act(async () => await service.UpdateAsync(s => s with { LanguagePreference = value })));
-        SettingsRow(rows, SettingsLabeled(SettingsText(languageLabel), language, share: true));
+        SettingsRow(rows, SettingsLabeled(SettingsText(languageLabel), language));
         SettingsRow(rows, SettingsText(Locale.Get("settings.display.languageRestartNote"), 11, DesignToken.Ink2));
 
         var statusLineLabel = Locale.Get("settings.display.statusLineToggle");
@@ -137,7 +137,7 @@ public sealed partial class MainWindow
                 if (value == "ask") choices.Remove(workspace); else choices[workspace] = value;
                 return state with { AgentWebOpenChoices = choices };
             })), enabled: workspace is not null);
-        SettingsRow(rows, SettingsLabeled(SettingsText(title), picker, share: true));
+        SettingsRow(rows, SettingsLabeled(SettingsText(title), picker));
         return rows;
     }
 

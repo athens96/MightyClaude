@@ -181,7 +181,7 @@ export interface AddMenu {
 
 /** A dialog one of the window's flows asked the page to draw; the page answers it with `dialogAnswer`. */
 export type DialogRequest =
-  | { type: 'confirm'; title: string; message: string; primary?: string; close: string; defaultPrimary: boolean }
+  | { type: 'confirm'; title: string; message: string; primary?: string; close: string; defaultPrimary: boolean; destructive?: boolean }
   | { type: 'rename'; title: string; hint: string; current: string; field: string; save: string; cancel: string; automatic?: string }
   | { type: 'resumeChoice'; provider: string; title: string; message: string; checking: boolean }
   | { type: 'resumeList'; provider: string; title: string; path: string }

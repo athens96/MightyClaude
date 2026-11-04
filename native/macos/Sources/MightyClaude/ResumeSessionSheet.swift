@@ -12,39 +12,33 @@ struct ResumeChoiceSheet: View {
 
     var body: some View {
         let agent = ProviderOptions.label(provider)
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-            HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
-                ProviderIcon(provider: provider, size: 18).foregroundStyle(.secondary).frame(width: 22).padding(.top, 1)
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                    Text(L("resume.choice.title", ["provider": agent])).font(.ui(size: 13, weight: .bold))
-                    if checking {
-                        HStack(spacing: DesignMetrics.Spacing.sm) {
-                            ProgressView().controlSize(.small)
-                            Text(L("resume.loading")).font(.ui(size: 12)).foregroundStyle(.secondary)
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityIdentifier("add-pane-choice-checking")
-                    } else {
-                        Text(L("resume.choice.message", ["provider": agent])).font(.ui(size: 12)).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+        DialogScaffold(L("resume.choice.title", ["provider": agent])) {
+            if checking {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    ProgressView().controlSize(.small)
+                    Text(L("resume.loading")).font(.ui(size: 12)).foregroundStyle(.secondary)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("add-pane-choice-checking")
+            } else {
+                Text(L("resume.choice.message", ["provider": agent])).font(.ui(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Button(L("resume.cancel")) { store.closeResumeChoice() }
-                    .keyboardShortcut(.cancelAction)
-                    .accessibilityIdentifier("add-pane-choice-cancel")
-                Spacer()
+        } footer: {
+            DialogFooter {
                 Button(L("resume.choice.resume")) { store.showResumeList() }
                     .disabled(checking)
                     .accessibilityIdentifier("add-pane-choice-resume")
+                Button(L("resume.cancel")) { store.closeResumeChoice() }
+                    .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("add-pane-choice-cancel")
                 Button(L("resume.choice.startNew")) { store.startNewFromResumeChoice() }
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("add-pane-choice-new")
             }
         }
-        .padding(DesignMetrics.Inset.sheet)
-        .frame(width: 400)
+        .dialogSheetWidth(DesignMetrics.Dialog.sheetWidthM)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("add-pane-choice")
     }
@@ -72,39 +66,34 @@ struct ResumeSessionSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+        DialogScaffold(L("resume.title"), subtitle: workspace.path) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    ProviderIcon(provider: provider, size: 14).foregroundStyle(.secondary)
-                    Text(L("resume.title")).font(.ui(size: 13, weight: .bold))
+                    Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+                    TextField(L("resume.search"), text: $search).textFieldStyle(.plain).font(.ui(size: 12))
+                        .focused($searchFocused)
+                        .accessibilityIdentifier("resume-search")
                 }
-                Text(workspace.path).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-            }
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
-                TextField(L("resume.search"), text: $search).textFieldStyle(.plain).font(.ui(size: 12))
-                    .focused($searchFocused)
-                    .accessibilityIdentifier("resume-search")
-            }
-            .padding(DesignMetrics.Spacing.sm).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
-            content.frame(maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
-            HStack(spacing: DesignMetrics.Spacing.md) {
-                Toggle(L("resume.showAll"), isOn: $showAll).toggleStyle(.checkbox).font(.ui(size: 10))
-                    .accessibilityIdentifier("resume-show-all")
-                if !showAll, let hidden = listing?.hidden, hidden > 0 {
-                    Text(L("resume.hiddenCount", ["count": "\(hidden)"])).font(.ui(size: 10)).foregroundStyle(.secondary)
+                .padding(DesignMetrics.Spacing.sm).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
+                content.frame(maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
+                HStack(spacing: DesignMetrics.Spacing.md) {
+                    Toggle(L("resume.showAll"), isOn: $showAll).toggleStyle(.checkbox).font(.ui(size: 11))
+                        .accessibilityIdentifier("resume-show-all")
+                    if !showAll, let hidden = listing?.hidden, hidden > 0 {
+                        Text(L("resume.hiddenCount", ["count": "\(hidden)"])).font(.ui(size: 11)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
                 }
-                Spacer()
             }
-            HStack {
-                Text(L("resume.note")).font(.ui(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Spacer()
+            .frame(maxHeight: .infinity, alignment: .top)
+        } footer: {
+            DialogFooter {
+                Text(L("resume.note")).foregroundStyle(.secondary)
+            } buttons: {
                 Button(L("resume.cancel")) { store.resumePicker = nil }.keyboardShortcut(.cancelAction)
             }
         }
-        .padding(DesignMetrics.Inset.sheet)
-        .frame(width: 560, height: 520)
+        .frame(width: DesignMetrics.Dialog.sheetWidthL, height: 520)
         .task(id: showAll) {
             listing = await store.resumableSessions(for: workspace, provider: provider, includeAutomated: showAll)
             searchFocused = true
@@ -113,7 +102,7 @@ struct ResumeSessionSheet: View {
 
     @ViewBuilder private var content: some View {
         if listing == nil {
-            ProgressView(L("resume.loading")).frame(maxWidth: .infinity, maxHeight: .infinity)
+            DialogLoading(skeletonRows: 3).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else if shown.isEmpty {
             VStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "clock.arrow.circlepath").font(.ui(size: 26, weight: .light)).foregroundStyle(.tertiary)

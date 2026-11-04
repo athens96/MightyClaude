@@ -9,40 +9,46 @@ struct SetupSheetView: View {
     let request: SetupSheetRequest
     @ViewState private var neverShow = false
 
+    /// A panel (kind C): the ✕ is 나중에 (with 다시 보지 않기 at the bottom), and 다시 확인 and 설치 are the footer's buttons.
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "shippingbox").font(.ui(size: 15)).foregroundStyle(Palette.accent)
-                Text(L("setup.title")).font(.ui(size: 15, weight: .semibold))
-                Spacer()
-            }
-            Text(L("setup.subtitle")).font(.ui(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            ScrollViewReader { proxy in
-                ScrollView {
-                    SetupToolsList(focus: request.focus).padding(.trailing, DesignMetrics.Spacing.md)
+        DialogScaffold(L("setup.title"), systemImage: "shippingbox",
+                       close: DialogClose(identifier: "setup-later") { store.dismissSetup(neverShowAgain: neverShow) }) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+                Text(L("setup.subtitle")).font(.ui(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        SetupToolsList(focus: request.focus).padding(.trailing, DesignMetrics.Spacing.md)
+                    }
+                    .frame(maxHeight: .infinity)
+                    .task {
+                        guard let focus = request.focus else { return }
+                        try? await Task.sleep(for: .milliseconds(150))
+                        withAnimation { proxy.scrollTo(focus, anchor: .center) }
+                    }
                 }
-                .frame(minHeight: 320, maxHeight: 520)
-                .task {
-                    guard let focus = request.focus else { return }
-                    try? await Task.sleep(for: .milliseconds(150))
-                    withAnimation { proxy.scrollTo(focus, anchor: .center) }
-                }
+                SetupToolsFooter(onRecheck: recheck, showsActions: false)
             }
-            SetupToolsFooter(onRecheck: { Task { await store.refreshSetup(forceEnvironment: true) } })
-            Divider()
-            HStack(spacing: DesignMetrics.Spacing.md) {
-                Toggle(L("setup.button.neverShow"), isOn: $neverShow).toggleStyle(.checkbox).font(.ui(size: 11))
-                    .accessibilityIdentifier("setup-never-show")
-                Spacer()
-                Button(L("setup.button.later")) { store.dismissSetup(neverShowAgain: neverShow) }
-                    .keyboardShortcut(.cancelAction).accessibilityIdentifier("setup-later")
+            .frame(maxHeight: .infinity, alignment: .top)
+        } footer: {
+            DialogFooter {
+                HStack(spacing: DesignMetrics.Spacing.md) {
+                    Toggle(L("setup.button.neverShow"), isOn: $neverShow).toggleStyle(.checkbox)
+                        .accessibilityIdentifier("setup-never-show")
+                    if store.setupRunning {
+                        ProgressView().controlSize(.small)
+                        Text(L("setup.running")).foregroundStyle(.secondary)
+                    }
+                }
+            } buttons: {
+                SetupToolsActions(onRecheck: recheck)
             }
         }
-        .padding(DesignMetrics.Inset.sheet)
-        .frame(width: 600)
+        .dialogPanelFrame(id: "setupTools", ideal: CGSize(width: 600, height: 640), minimum: CGSize(width: 520, height: 440))
         .setupPolling()
         .sheet(item: $store.setupConfirmation) { SetupConfirmationView(confirmation: $0).environmentObject(store) }
     }
+
+    private func recheck() { Task { await store.refreshSetup(forceEnvironment: true) } }
 }
 
 /// Settings → 도구 → 구성 요소 hosts the same list in place of the old copy-only rows.
@@ -198,18 +204,18 @@ private struct SetupItemRow: View {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 if signIn, let provider {
                     Button(L("setup.button.signIn")) { store.signInFromSetup(provider) }
-                        .controlSize(.small).buttonStyle(.borderedProminent)
+                        .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("setup-signin-\(item.id)")
                 }
                 if update, let provider {
                     Button(store.isUpdatingCLIs ? L("settings.components.inProgressLabel") : L("setup.button.update")) { store.updateFromSetup(provider) }
-                        .controlSize(.small).buttonStyle(.borderedProminent).disabled(store.isUpdatingCLIs)
+                        .buttonStyle(.borderedProminent).disabled(store.isUpdatingCLIs)
                         .accessibilityIdentifier("setup-update-\(item.id)")
                         .background(AccessibilityStateProbe(identifier: "setup-update-\(item.id)", enabled: !store.isUpdatingCLIs))
                 }
                 if page {
                     Button(L("setup.button.openPage")) { store.openSetupVendorPage(item) }
-                        .controlSize(.small).buttonStyle(.bordered)
+                        .buttonStyle(.bordered)
                         .accessibilityIdentifier("setup-page-\(item.id)")
                         .background(AccessibilityStateProbe(identifier: "setup-page-\(item.id)", enabled: true))
                 }
@@ -235,10 +241,12 @@ private struct SetupItemRow: View {
     }
 }
 
-/// Re-check, install the picked items, and what is going on.
+/// Re-check, install the picked items, and what is going on. The 필요한 도구 panel draws the
+/// buttons in its own footer (`showsActions` off) and keeps the notes here.
 private struct SetupToolsFooter: View {
     @EnvironmentObject private var store: AppStore
     let onRecheck: () -> Void
+    var showsActions = true
 
     private var running: Bool { store.setupRunning }
 
@@ -256,27 +264,39 @@ private struct SetupToolsFooter: View {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.waitText).padding(.top, 1)
                     Text(L("setup.run.checkTerminal")).font(.ui(size: 11)).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: DesignMetrics.Spacing.sm)
-                    Button(L("setup.run.end")) { store.abandonSetupRun() }.controlSize(.small)
+                    Button(L("setup.run.end")) { store.abandonSetupRun() }
                         .accessibilityIdentifier("setup-run-end")
                 }
                 .accessibilityIdentifier("setup-run-not-started")
             }
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                if running {
-                    ProgressView().controlSize(.mini)
-                    Text(L("setup.running")).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if showsActions {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    if running {
+                        ProgressView().controlSize(.small)
+                        Text(L("setup.running")).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    SetupToolsActions(onRecheck: onRecheck)
                 }
-                Spacer()
-                Button(store.setupProbing ? L("setup.button.checking") : L("setup.button.recheck"), action: onRecheck)
-                    .disabled(store.setupProbing)
-                    .accessibilityIdentifier("setup-recheck")
-                Button(L("setup.button.install")) { store.requestSetupInstall() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(store.setupPlanIds.isEmpty || running)
-                    .accessibilityIdentifier("setup-install")
-                    .background(AccessibilityStateProbe(identifier: "setup-install", enabled: !store.setupPlanIds.isEmpty && !running))
             }
         }
+    }
+}
+
+/// 다시 확인 and 설치 (the primary), in the order a footer puts them.
+private struct SetupToolsActions: View {
+    @EnvironmentObject private var store: AppStore
+    let onRecheck: () -> Void
+
+    var body: some View {
+        Button(store.setupProbing ? L("setup.button.checking") : L("setup.button.recheck"), action: onRecheck)
+            .disabled(store.setupProbing)
+            .accessibilityIdentifier("setup-recheck")
+        Button(L("setup.button.install")) { store.requestSetupInstall() }
+            .buttonStyle(.borderedProminent)
+            .disabled(store.setupPlanIds.isEmpty || store.setupRunning)
+            .accessibilityIdentifier("setup-install")
+            .background(AccessibilityStateProbe(identifier: "setup-install", enabled: !store.setupPlanIds.isEmpty && !store.setupRunning))
     }
 }
 
@@ -287,31 +307,32 @@ struct SetupConfirmationView: View {
     let confirmation: SetupConfirmation
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-            Text(L("setup.confirm.title")).font(.ui(size: 13, weight: .bold))
-            Text(L("setup.confirm.body")).font(.ui(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                        Text(L("setup.confirm.preamble")).font(.ui(size: 12, weight: .medium))
-                        Text(confirmation.preamble.joined(separator: "\n")).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.primary)
-                            .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                    }
-                    .accessibilityIdentifier("setup-confirm-preamble")
-                    ForEach(Array(confirmation.steps.enumerated()), id: \.element.id) { index, step in
+        DialogScaffold(L("setup.confirm.title")) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+                Text(L("setup.confirm.body")).font(.ui(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                            Text("\(index + 1). \(step.title)").font(.ui(size: 12, weight: .medium))
-                            Text(step.body).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.primary)
+                            Text(L("setup.confirm.preamble")).font(.ui(size: 12, weight: .medium))
+                            Text(confirmation.preamble.joined(separator: "\n")).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.primary)
                                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                         }
-                        .accessibilityIdentifier("setup-confirm-step-\(step.itemId)")
+                        .accessibilityIdentifier("setup-confirm-preamble")
+                        ForEach(Array(confirmation.steps.enumerated()), id: \.element.id) { index, step in
+                            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+                                Text("\(index + 1). \(step.title)").font(.ui(size: 12, weight: .medium))
+                                Text(step.body).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.primary)
+                                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            }
+                            .accessibilityIdentifier("setup-confirm-step-\(step.itemId)")
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxHeight: 340)
             }
-            .frame(maxHeight: 340)
-            HStack {
-                Spacer()
+        } footer: {
+            DialogFooter {
                 Button(L("setup.confirm.cancel")) { store.setupConfirmation = nil }
                     .keyboardShortcut(.cancelAction).accessibilityIdentifier("setup-confirm-cancel")
                 Button(L("setup.confirm.run")) { Task { await store.startSetupInstall() } }
@@ -319,7 +340,6 @@ struct SetupConfirmationView: View {
                     .accessibilityIdentifier("setup-confirm-run")
             }
         }
-        .padding(DesignMetrics.Inset.sheet)
-        .frame(minWidth: 520, maxWidth: 680)
+        .dialogSheetWidth(DesignMetrics.Dialog.sheetWidthL)
     }
 }

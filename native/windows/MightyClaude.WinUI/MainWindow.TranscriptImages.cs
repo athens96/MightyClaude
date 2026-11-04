@@ -103,7 +103,7 @@ public sealed partial class MainWindow
                     controls.Children.Add(Button(Locale.Get(key), () => owner.Act(() => TranscriptImageAction(action, shown, name))));
                 var actionsScroll = new ScrollViewer { Content = controls, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
                 Grid.SetRow(actionsScroll, 1); body.Children.Add(actionsScroll);
-                await owner.ShowDialogAsync(owner.StyledDialog(new ContentDialog { Title = Locale.Get("images.open"), Content = body, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = owner.root.XamlRoot }));
+                await owner.ShowDialogAsync(owner.StyledDialog(new ContentDialog { Title = Locale.Get("images.open"), Content = body, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = owner.root.XamlRoot }, chrome: new DialogChrome { Panel = "pictures", Icon = "image" }));
             }
             finally { owner.dialogOpen = false; }
         });

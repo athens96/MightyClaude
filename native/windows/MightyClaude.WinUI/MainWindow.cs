@@ -713,7 +713,7 @@ public sealed partial class MainWindow : Window
             if (file.MediaType.StartsWith("image/", StringComparison.Ordinal)) content.Children.Add(new Image { Source = await AttachmentInput.PreviewAsync(file), MaxHeight = 420, Stretch = Stretch.Uniform });
             else if (file.MediaType == "text/plain") { var text = System.Text.Encoding.UTF8.GetString(AttachmentSupport.Decode(file)); content.Children.Add(new TextBox { AcceptsReturn = true, Text = text[..Math.Min(text.Length, 20000)], IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 350 }); }
             else content.Children.Add(new TextBlock { Text = Locale.Get("composer.attachment.sentAsFile"), TextWrapping = TextWrapping.Wrap });
-            await owner.ShowDialogAsync(owner.StyledDialog(new ContentDialog { Title = file.Name, Content = content, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = owner.root.XamlRoot }));
+            await owner.ShowDialogAsync(owner.StyledDialog(new ContentDialog { Title = file.Name, Content = content, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = owner.root.XamlRoot }, chrome: new DialogChrome { Panel = "attachment", Icon = "file" }));
         });
         private Task Change(Func<RunSession, RunSession> update) => owner.service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? update(p) : p).ToList() });
         private Task ChangeSettings(Func<RunSettings, RunSettings> update) => owner.Act(async () => { if (Session.Status == "running") return; await Change(p => p with { Settings = update(p.Settings) }); Refresh(); input.Focus(FocusState.Programmatic); });

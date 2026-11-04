@@ -271,6 +271,69 @@ public static class DesignMetrics
         public const double CardBarWidth = 3;
     }
 
+    /// <summary>The popup standard (fixture metrics.dialog, .omc/plans/popup-standard.md): kinds A alert, B sheet, C panel, D popover; the desktop numbers.</summary>
+    public static class Dialog
+    {
+        public const double Radius = 12;
+        public const double PopoverRadius = 10;
+        public const double HeaderHeight = 48;
+        public const double FooterHeight = 52;
+        public const double Padding = 16;
+        public const double TitleSize = 15;
+        public const double SubtitleSize = 12;
+        public const double IconSize = 20;
+        public const double CloseHit = 28;
+        public const double CloseGlyph = 14;
+        public const double CloseRadius = 8;
+        public const double ButtonHeight = 28;
+        public const double ButtonPaddingX = 12;
+        public const double ButtonRadius = 7;
+        public const double ButtonGap = 8;
+        public const double GripSize = 16;
+        public const double AlertWidth = 400;
+        public const double SheetWidthS = 360;
+        public const double SheetWidthM = 460;
+        public const double SheetWidthL = 560;
+        public const double PopoverWidthS = 320;
+        public const double PopoverWidthL = 360;
+        public const double PopoverMaxHeightRatio = 0.6;
+        public const double BackdropOpacityLight = 0.28;
+        public const double BackdropOpacityDark = 0.5;
+        public const double DarkBorder = 1;
+    }
+
+    /// <summary>The settings window and its one row pattern (fixture metrics.settings), the same numbers as the Mac's.</summary>
+    public static class Settings
+    {
+        public const double Width = 860;
+        public const double Height = 640;
+        public const double MinWidth = 720;
+        public const double MinHeight = 520;
+        public const double ListWidth = 260;
+        public const double LargeTitle = 28;
+        public const double HeroHeight = 104;
+        public const double BarTitle = 15;
+        public const double NavRowHeight = 48;
+        public const double NavTile = 30;
+        public const double NavTileRadius = 9;
+        public const double NavGlyph = 15;
+        public const double NavText = 14;
+        public const double NavDividerInset = 56;
+        public const double SectionTitle = 12;
+        public const double CardRadius = 16;
+        public const double CardPaddingX = 16;
+        public const double RowMinHeight = 48;
+        public const double RowName = 14;
+        public const double RowCaption = 12;
+        public const double RowDividerInset = 16;
+        public const double SwitchWidth = 42;
+        public const double SwitchHeight = 24;
+        public const double SelectMinWidth = 160;
+        public const double SelectMaxWidth = 240;
+        public const double FieldWidth = 240;
+        public const double PairSelectWidth = 160;
+    }
+
     /// <summary>Dashed outlines, in pt as the Mac draws them.</summary>
     public static class Dash
     {

@@ -17,6 +17,22 @@ describe('tokens', () => {
     expect(sheet).toContain(`--space-md:${tokens.metrics.spacing.md}px;`);
   });
 
+  it('carries the popup standard and the settings window from the fixture', () => {
+    const sheet = tokenStyleSheet();
+    const { dialog, settings } = tokens.metrics;
+    expect(sheet).toContain(`--dialog-radius:${dialog.radius}px;`);
+    expect(sheet).toContain(`--dialog-close-hit:${dialog.closeHit}px;`);
+    expect(sheet).toContain(`--dialog-sheet-width-l:${dialog.sheetWidthL}px;`);
+    expect(sheet).toContain(`--dialog-shadow:${dialog.shadow};`);
+    expect(sheet).toContain(`--dialog-popover-max-height:60vh;`);
+    expect(sheet).toContain(`--settings-list-width:${settings.listWidth}px;`);
+    expect(sheet).toContain(`--settings-switch-width:${settings.switchWidth}px;`);
+    // The ratios are not lengths, and the phone's touch sizes stay the phone's.
+    expect(sheet).not.toMatch(/--dialog-backdrop-opacity|--dialog-popover-max-height-ratio|--dialog-phone/);
+    expect(sheet).toMatch(/:root\[data-theme="light"\]\{[^}]*--dialog-backdrop:rgba\(0,0,0,0\.28\);--dialog-border:0px;/);
+    expect(sheet).toMatch(/:root\[data-theme="dark"\]\{[^}]*--dialog-backdrop:rgba\(0,0,0,0\.5\);--dialog-border:1px;/);
+  });
+
   it('reads any theme but light as dark, as the host does', () => {
     expect(themeName('light')).toBe('light');
     expect(themeName('dark')).toBe('dark');

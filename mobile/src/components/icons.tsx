@@ -4,8 +4,9 @@ import Svg, { Path, Rect } from 'react-native-svg';
 /**
  * The few line glyphs concept D draws: the four tab marks, the composer's plus, send,
  * queue (lines with a plus) and stop, the next-action arrow, and the remote
- * screen's full-screen expand and collapse, the session view switch, and the slashed bell of a
- * workspace whose notifications are off.
+ * screen's full-screen expand and collapse, the session view switch, the slashed bell of a
+ * workspace whose notifications are off, and a popup's ✕, a picked row's check and a
+ * settings row's chevron.
  * 24×24 strokes, round caps, coloured by the caller.
  * Decorative: whatever carries them holds the accessible label.
  */
@@ -21,6 +22,9 @@ export type IconName =
   | 'stop'
   | 'arrow'
   | 'chevronDown'
+  | 'chevronRight'
+  | 'close'
+  | 'check'
   | 'terminal'
   | 'globe'
   | 'log'
@@ -88,6 +92,12 @@ export function Icon({
         <Path {...stroke} d="M5 12h14M13 6l6 6-6 6" />
       ) : name === 'chevronDown' ? (
         <Path {...stroke} d="M6 9l6 6 6-6" />
+      ) : name === 'chevronRight' ? (
+        <Path {...stroke} d="M9 6l6 6-6 6" />
+      ) : name === 'close' ? (
+        <Path {...stroke} d="M6 6l12 12M18 6L6 18" />
+      ) : name === 'check' ? (
+        <Path {...stroke} d="M5 12l5 5L19 7" />
       ) : name === 'terminal' ? (
         <Path {...stroke} d="M5 7l5 5-5 5M12 18h7" />
       ) : name === 'log' ? (

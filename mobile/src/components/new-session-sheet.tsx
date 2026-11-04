@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Modal, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { Provider, SessionKind } from '@/api/types';
-import { Button, Chip } from '@/components/ui';
+import { BottomSheet, DialogButton } from '@/components/sheets';
+import { Chip } from '@/components/ui';
 import { t } from '@/lib/i18n';
-import { kindLabel, providerIsBeta, providerLabel, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
+import { kindLabel, providerIsBeta, providerLabel, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 const PROVIDERS: Provider[] = ['claude', 'codex', 'gemini'];
 
@@ -37,83 +38,64 @@ export function NewSessionSheet({
   const chosenKind = kinds.includes(kind) ? kind : 'claude';
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          <Text style={styles.title}>
-            {t('phone.workspaces.newPane')} · {workspaceName}
-          </Text>
-
-          {kinds.length > 1 ? (
-            <>
-              <Text style={styles.label}>{t('phone.newPane.kind')}</Text>
-              <View style={styles.chips}>
-                {kinds.map((value) => (
-                  <Chip
-                    key={value}
-                    label={kindLabel(value)}
-                    color={palette.accent}
-                    selected={chosenKind === value}
-                    onPress={() => setKind(value)}
-                  />
-                ))}
-              </View>
-            </>
-          ) : null}
-
-          {chosenKind === 'claude' ? (
-            <>
-              <Text style={styles.label}>{t('phone.newPane.provider')}</Text>
-              <View style={styles.chips}>
-                {PROVIDERS.map((value) => (
-                  <Chip
-                    key={value}
-                    label={providerLabel(value, antigravity)}
-                    beta={providerIsBeta(value)}
-                    color={palette.accent}
-                    selected={provider === value}
-                    onPress={() => setProvider(value)}
-                  />
-                ))}
-              </View>
-            </>
-          ) : null}
-
-          <View style={styles.actions}>
-            <Button label={t('common.cancel')} tone="ghost" onPress={onCancel} style={styles.action} />
-            <Button
-              label={t('phone.newPane.create')}
-              tone="primary"
-              busy={busy}
-              style={styles.action}
-              onPress={() =>
-                onCreate(chosenKind === 'claude' ? { kind: chosenKind, provider } : { kind: chosenKind })
-              }
-            />
+    <BottomSheet
+      visible={visible}
+      onClose={onCancel}
+      title={`${t('phone.workspaces.newPane')} · ${workspaceName}`}
+      footer={
+        <>
+          <DialogButton label={t('common.cancel')} onPress={onCancel} />
+          <DialogButton
+            label={t('phone.newPane.create')}
+            kind="primary"
+            busy={busy}
+            onPress={() =>
+              onCreate(chosenKind === 'claude' ? { kind: chosenKind, provider } : { kind: chosenKind })
+            }
+          />
+        </>
+      }
+    >
+      {kinds.length > 1 ? (
+        <>
+          <Text style={styles.label}>{t('phone.newPane.kind')}</Text>
+          <View style={styles.chips}>
+            {kinds.map((value) => (
+              <Chip
+                key={value}
+                label={kindLabel(value)}
+                color={palette.accent}
+                selected={chosenKind === value}
+                onPress={() => setKind(value)}
+              />
+            ))}
           </View>
-        </View>
-      </View>
-    </Modal>
+        </>
+      ) : null}
+
+      {chosenKind === 'claude' ? (
+        <>
+          <Text style={styles.label}>{t('phone.newPane.provider')}</Text>
+          <View style={styles.chips}>
+            {PROVIDERS.map((value) => (
+              <Chip
+                key={value}
+                label={providerLabel(value, antigravity)}
+                beta={providerIsBeta(value)}
+                color={palette.accent}
+                selected={provider === value}
+                onPress={() => setProvider(value)}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
+    </BottomSheet>
   );
 }
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
-    backdrop: {
-      backgroundColor: palette.overlay,
-      flex: 1,
-      justifyContent: 'center',
-      padding: spacing.lg,
-    },
-    sheet: {
-      backgroundColor: palette.surface,
-      borderRadius: radius.lg,
-      gap: spacing.md,
-      padding: spacing.xl,
-    },
-    title: { ...typeScale.heading, color: palette.text, fontSize: 20, lineHeight: 26 },
     label: { color: palette.textMuted, fontSize: 13, fontWeight: '500' },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-    action: { flex: 1 },
   });

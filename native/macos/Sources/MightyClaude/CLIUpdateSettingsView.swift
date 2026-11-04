@@ -6,20 +6,20 @@ struct CLIUpdateSettingsSection: View {
 
     var body: some View {
         SettingsGroup(L("settings.cliUpdate.sectionTitle")) {
-            Toggle(L("settings.cliUpdate.autoUpdateToggle"), isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { store.snapshot.autoUpdateCLIs == true },
                 set: { store.snapshot.autoUpdateCLIs = $0 }
-            ))
+            )) {
+                SettingsRowLabel(L("settings.cliUpdate.autoUpdateToggle"), caption: L("settings.cliUpdate.sectionDescriptionMac"))
+            }
             .accessibilityIdentifier("cli-auto-update")
-            Text(L("settings.cliUpdate.sectionDescriptionMac"))
-                .font(.ui(size: 11)).foregroundStyle(.secondary)
-            Toggle(L("settings.cliUpdate.autoUpdatePluginsToggle"), isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { store.snapshot.autoUpdatePlugins != false },
                 set: { store.snapshot.autoUpdatePlugins = $0 }
-            ))
+            )) {
+                SettingsRowLabel(L("settings.cliUpdate.autoUpdatePluginsToggle"), caption: L("settings.cliUpdate.autoUpdatePluginsDescription"))
+            }
             .accessibilityIdentifier("plugin-auto-update")
-            Text(L("settings.cliUpdate.autoUpdatePluginsDescription"))
-                .font(.ui(size: 11)).foregroundStyle(.secondary)
             HStack(spacing: DesignMetrics.Spacing.md) {
                 if store.isUpdatingCLIs {
                     ProgressView().controlSize(.small)
@@ -36,6 +36,7 @@ struct CLIUpdateSettingsSection: View {
                     .disabled(store.isUpdatingCLIs || store.isManagingPlugins || !store.canManageCLIUpdates)
                     .accessibilityIdentifier("cli-update-now")
             }
+            .settingsRowFrame()
             ForEach(ProviderOptions.ids, id: \.self) { provider in
                 if let result = store.cliUpdateResults[provider] {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {

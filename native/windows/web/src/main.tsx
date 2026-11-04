@@ -20,6 +20,7 @@ import './panes/panes.css';
 import './panes/workmap/workmap.css';
 import './pane/reference.css';
 import './native/native.css';
+import './dialogs/dialog.css';
 import './pictures/pictures.css';
 import './pending/pending.css';
 

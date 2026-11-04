@@ -28,12 +28,10 @@ struct ScreenShareSettingsSection: View {
                 Button { showsPermissions = true } label: {
                     Label(L("settings.screenShare.permissions.openButton"), systemImage: "lock.shield")
                 }
-                .controlSize(.small)
                 .accessibilityIdentifier("settings-screen-share-permissions")
                 Button { store.playScreenShareReferenceScene() } label: {
                     Label(L("settings.screenShare.scene.button"), systemImage: "play.rectangle")
                 }
-                .controlSize(.small)
                 .accessibilityIdentifier("settings-screen-share-scene")
                 Spacer()
             }
@@ -105,32 +103,34 @@ struct ScreenShareSettingsSection: View {
     private func phoneRow(_ device: MobileDeviceInfo) -> some View {
         let row = rows[device.id] ?? ScreenShareDeviceSettings(deviceId: device.id)
         let live = sessions.filter { $0.deviceId == device.id }
-        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "iphone").foregroundStyle(live.isEmpty ? Color.secondary : Palette.doneText)
-                Text(device.name).font(.ui(size: 12))
-                Spacer(minLength: 8)
-                Toggle(L("settings.screenShare.allowToggle"), isOn: Binding(
-                    get: { row.allowed },
-                    set: { setAllowed(device.id, $0) }))
-                    .toggleStyle(.switch).controlSize(.small)
-                    .accessibilityIdentifier("settings-screen-share-allow-\(device.id)")
-            }
-            if row.allowed {
-                Picker(L("settings.screenShare.grantLabel"), selection: Binding(
-                    get: { row.grant },
-                    set: { grant in
-                        // Control is the one grant that needs the key ceremony
-                        // explained before it is given.
-                        if grant == .control, row.grant != .control { grantingControl = device }
-                        else { setGrant(device.id, grant) }
-                    })) {
-                    Text(L("settings.screenShare.grantNone")).tag(ScreenShareGrant.none)
-                    Text(L("settings.screenShare.grantView")).tag(ScreenShareGrant.view)
-                    Text(L("settings.screenShare.grantControl")).tag(ScreenShareGrant.control)
+        // The settings switch (`OneUISwitch`, 42×24) like every other row, not the system's small one.
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+            Toggle(isOn: Binding(
+                get: { row.allowed },
+                set: { setAllowed(device.id, $0) })) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    Image(systemName: "iphone").foregroundStyle(live.isEmpty ? Color.secondary : Palette.doneText)
+                    SettingsRowLabel(device.name, caption: L("settings.screenShare.allowToggle"))
                 }
-                .pickerStyle(.segmented).controlSize(.small)
-                .accessibilityIdentifier("settings-screen-share-grant-\(device.id)")
+            }
+            .accessibilityIdentifier("settings-screen-share-allow-\(device.id)")
+            if row.allowed {
+                SettingsRow(L("settings.screenShare.grantLabel")) {
+                    Picker(L("settings.screenShare.grantLabel"), selection: Binding(
+                        get: { row.grant },
+                        set: { grant in
+                            // Control is the one grant that needs the key ceremony
+                            // explained before it is given.
+                            if grant == .control, row.grant != .control { grantingControl = device }
+                            else { setGrant(device.id, grant) }
+                        })) {
+                        Text(L("settings.screenShare.grantNone")).tag(ScreenShareGrant.none)
+                        Text(L("settings.screenShare.grantView")).tag(ScreenShareGrant.view)
+                        Text(L("settings.screenShare.grantControl")).tag(ScreenShareGrant.control)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .accessibilityIdentifier("settings-screen-share-grant-\(device.id)")
+                }
                 if row.grant == .control { keyLine(device, row: row) }
             }
             if live.isEmpty {
@@ -148,12 +148,10 @@ struct ScreenShareSettingsSection: View {
                         store.stopScreenShareSession(sessionId: session.sessionId)
                         sessions.removeAll { $0.sessionId == session.sessionId }
                     }
-                    .controlSize(.small)
                     .accessibilityIdentifier("settings-screen-share-stop-\(session.sessionId)")
                 }
             }
         }
-        .padding(.vertical, DesignMetrics.Spacing.xxs)
         .accessibilityIdentifier("settings-screen-share-device-\(device.id)")
     }
 
@@ -165,7 +163,6 @@ struct ScreenShareSettingsSection: View {
                     .font(.ui(size: 11, design: .monospaced)).textSelection(.enabled)
                 Spacer(minLength: 8)
                 Button(L("settings.screenShare.removeKeyButton")) { removingKey = device }
-                    .controlSize(.small)
                     .accessibilityIdentifier("settings-screen-share-remove-key-\(device.id)")
             }
         } else {

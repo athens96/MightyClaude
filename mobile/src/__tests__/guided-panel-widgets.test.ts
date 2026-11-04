@@ -7,6 +7,9 @@ import type { StylePanel } from '@/api/types';
 import { GuidedPanel, StateWidget } from '@/components/guided-panel';
 import { normalizeStylePanel } from '@/lib/styles';
 
+// The panel's sheets pad by the safe area, which the app's root provides.
+jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
+
 /**
  * §1.16.4 at render level: the same golden `withState` panel the Mac's
  * StyleWidgetPresentationTests reads, drawn by the real component. The bundled style

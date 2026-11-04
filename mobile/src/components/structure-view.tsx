@@ -27,9 +27,9 @@ import {
 } from 'react-native';
 import type { MobileStructure, StructureActivity, StructureItem, StructureNode, StructureRow } from '@/api/types';
 import { AssistantMarkdown } from '@/components/assistant-markdown';
-import { Sheet } from '@/components/sheets';
+import { BottomSheet } from '@/components/sheets';
 import { StatusChip } from '@/components/status-chip';
-import { Button, EmptyState } from '@/components/ui';
+import { EmptyState } from '@/components/ui';
 import type { EndScrollable, FollowBottomProps } from '@/hooks/use-follow-bottom';
 import { t } from '@/lib/i18n';
 import { blockKindLabel } from '@/lib/mighty';
@@ -80,6 +80,7 @@ import {
 } from '@/lib/structure';
 import {
   cardShadow,
+  dialog,
   monoText,
   pipeline,
   radius,
@@ -908,44 +909,45 @@ function BoardListSheet({
   );
   if (!visible) return null;
   return (
-    <Sheet visible onClose={onClose}>
-      <Text style={styles.sheetTitle}>{t('graph.structure.board.list')}</Text>
-      {omitted ? <Text style={styles.note}>{t('phone.structure.omitted', { count: omitted })}</Text> : null}
-      <ScrollView style={styles.boardList}>
-        {rows.map(({ board, title, steps, position }, index) => {
-          const selected = index === shown;
-          return (
-            <Pressable
-              key={board.id}
-              accessibilityRole="button"
-              accessibilityLabel={`${position}, ${title}`}
-              accessibilityValue={{ text: `${statusLabel(board.status)}, ${steps}` }}
-              accessibilityState={{ selected }}
-              onPress={() => onSelect(board.id)}
-              style={({ pressed }) => [
-                styles.boardRow,
-                selected && { backgroundColor: palette.accentMuted },
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.boardNumber}>{board.kind === 'request' ? (omitted ?? 0) + index + 1 : index + 1}</Text>
-              <View style={styles.boardTexts}>
-                <View style={styles.partHead}>
-                  <StatusChip status={board.status} />
-                  <Text numberOfLines={1} style={[styles.boardTitle, selected && { color: palette.accent }]}>
-                    {title}
-                  </Text>
-                </View>
-                <Text numberOfLines={1} style={styles.mutedText}>
-                  {steps}
+    <BottomSheet
+      visible
+      onClose={onClose}
+      title={t('graph.structure.board.list')}
+      note={omitted ? t('phone.structure.omitted', { count: omitted }) : undefined}
+      inset={false}
+    >
+      {rows.map(({ board, title, steps, position }, index) => {
+        const selected = index === shown;
+        return (
+          <Pressable
+            key={board.id}
+            accessibilityRole="button"
+            accessibilityLabel={`${position}, ${title}`}
+            accessibilityValue={{ text: `${statusLabel(board.status)}, ${steps}` }}
+            accessibilityState={{ selected }}
+            onPress={() => onSelect(board.id)}
+            style={({ pressed }) => [
+              styles.boardRow,
+              selected && { backgroundColor: palette.accentMuted },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.boardNumber}>{board.kind === 'request' ? (omitted ?? 0) + index + 1 : index + 1}</Text>
+            <View style={styles.boardTexts}>
+              <View style={styles.partHead}>
+                <StatusChip status={board.status} />
+                <Text numberOfLines={1} style={[styles.boardTitle, selected && { color: palette.accent }]}>
+                  {title}
                 </Text>
               </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-      <Button label={t('common.close')} tone="ghost" onPress={onClose} />
-    </Sheet>
+              <Text numberOfLines={1} style={styles.mutedText}>
+                {steps}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      })}
+    </BottomSheet>
   );
 }
 
@@ -1195,16 +1197,13 @@ const makeStyles = (palette: Palette) =>
     nodeBody: { flex: 1, gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
     nodeTitle: { color: palette.text, fontSize: 12.5, fontWeight: '700' },
     nodeMeta: { color: palette.textMuted, fontSize: 11 },
-    sheetTitle: { ...typeScale.title, color: palette.text },
-    boardList: { maxHeight: 420 },
+    // A picker row of the shared bottom sheet: edge to edge, `dialog.rowHeight` tall.
     boardRow: {
-      alignItems: 'flex-start',
-      backgroundColor: palette.surfaceRaised,
-      borderRadius: radius.md,
+      alignItems: 'center',
       flexDirection: 'row',
-      gap: spacing.md,
-      marginBottom: spacing.xs,
-      paddingHorizontal: spacing.md,
+      gap: spacing.xl,
+      minHeight: dialog.rowHeight,
+      paddingHorizontal: dialog.padding,
       paddingVertical: spacing.md,
     },
     boardNumber: { color: palette.textMuted, fontSize: 12, fontVariant: ['tabular-nums'], fontWeight: '700', minWidth: 18 },

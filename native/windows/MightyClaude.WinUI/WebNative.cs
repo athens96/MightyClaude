@@ -24,6 +24,19 @@ internal sealed class WebNativeReader(Func<Windows.UI.Color, string?> token)
 {
     private static readonly ConditionalWeakTable<object, StrongBox<int>> ids = new();
     private static readonly ConditionalWeakTable<ImageSource, string> images = new();
+    /// <summary>
+    /// A builder's mark (<see cref="Mark"/>), kept on the element itself: a managed table keyed by the element would lose it when
+    /// the projection's wrapper is collected and the tree hands back a new one.
+    /// </summary>
+    private static readonly DependencyProperty RoleProperty = DependencyProperty.RegisterAttached("MightyWebRole", typeof(string), typeof(WebNativeReader), new PropertyMetadata(null));
+
+    /// <summary>
+    /// What a builder made <paramref name="element"/>, for the page's standard patterns (web/src/native/types.ts <c>role</c>):
+    /// <c>row</c> (a settings row: its first child the name and caption, the rest the controls), <c>wideRow</c> (the name over a
+    /// control the row's full width), <c>settingsRow</c> (one row of a settings card) and <c>loading</c> (a list being read:
+    /// the page draws the standard's centred wait in its place). Returns the element.
+    /// </summary>
+    internal static T Mark<T>(T element, string role) where T : FrameworkElement { element.SetValue(RoleProperty, role); return element; }
     private static int nextId;
     private readonly Dictionary<int, object> elements = [];
 
@@ -164,8 +177,11 @@ internal sealed class WebNativeReader(Func<Windows.UI.Color, string?> token)
         if (element is string text) return text.Length == 0 ? null : new() { ["t"] = "text", ["text"] = text };
         if (element is not FrameworkElement e || e.Visibility != Visibility.Visible || e.Opacity == 0) return null;
         enabled = enabled && (e is not Control c || c.IsEnabled);
+        var role = e.GetValue(RoleProperty) as string;
+        if (role == "loading") return new() { ["t"] = "loading" };
         var node = Read(e, enabled);
         if (node is null) return null;
+        if (role is not null) node["role"] = role;
         if (AutomationProperties.GetAutomationId(e) is { Length: > 0 } aid) node["aid"] = aid;
         if (ToolTipService.GetToolTip(e) is string help && help.Length > 0) node["help"] = help;
         if (!Zero(e.Margin)) node["margin"] = Edges(e.Margin);

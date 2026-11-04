@@ -18,14 +18,14 @@ public sealed partial class MainWindow
     /// <summary>A popover's padding (<c>Inset.Popover</c>; M/StatusBarUsage.swift:76).</summary>
     internal const double PopoverPadding = DesignMetrics.Inset.Popover;
 
-    /// <summary>The corner of a sheet, as macOS rounds its own (measured on docs/design-system/crops/sheet-choice-light.webp; no Swift line sets it).</summary>
-    internal const double SheetRadius = 12;
+    /// <summary>The corner of a sheet: the popup standard's (<c>Dialog.Radius</c>, as macOS rounds its own sheet).</summary>
+    internal const double SheetRadius = DesignMetrics.Dialog.Radius;
     /// <summary>What a fixed-size sheet leaves clear of the window's edges when the window is smaller than it, and the least it shrinks to.</summary>
     internal const double SheetMargin = DesignMetrics.Spacing.Xl, SheetMinimum = 240;
     /// <summary>A fixed sheet's side as it is drawn in a window with this much room: the side itself, or what the window leaves it.</summary>
     internal static double SheetFit(double side, double room) => room > 0 ? Math.Min(side, Math.Max(SheetMinimum, room - 2 * SheetMargin)) : side;
-    /// <summary>A push button as the Mac draws its standard one: 20 high around 13pt words set in 8 (measured on the same crop).</summary>
-    internal const double PushButtonHeight = 20;
+    /// <summary>A push button: the popup standard's common button, 28 high around 13pt words (<c>Dialog.ButtonHeight</c>).</summary>
+    internal const double PushButtonHeight = DesignMetrics.Dialog.ButtonHeight;
     /// <summary>A button on the pane's question, permission and plan cards (M/PaneChrome.swift:165): 24 high, padded <c>Spacing.Lg</c> at the sides.</summary>
     internal const double CardButtonHeight = 24;
     internal static readonly Thickness CardButtonPadding = new(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, 0);
@@ -43,8 +43,9 @@ public sealed partial class MainWindow
     /// under the content, and without a fixed height it is as high as its content.
     /// </para>
     /// </summary>
-    internal ContentDialog StyledDialog(ContentDialog dialog, double? width = null, double? height = null, bool bare = false)
+    internal ContentDialog StyledDialog(ContentDialog dialog, double? width = null, double? height = null, bool bare = false, DialogChrome? chrome = null)
     {
+        if (chrome is not null) dialogChromes.AddOrUpdate(dialog, chrome);
         var card = brushes.Brush(DesignToken.Card); var line = brushes.Brush(DesignToken.Line);
         var values = new List<(string Key, object Value)>
         {
@@ -84,6 +85,34 @@ public sealed partial class MainWindow
         ToneSecondaryText(dialog.Content as DependencyObject, paintButtons: true);
         return dialog;
     }
+
+    /// <summary>
+    /// What the page draws around a dialog's form (the popup standard, .omc/plans/popup-standard.md): a <see cref="Panel"/> makes it
+    /// kind C (✕ in the header, the corner grip, its size kept under that name); without one it is an alert (a sentence) or a form
+    /// sheet. The header's icon, subtitle and tools and the footer's status and actions are the window's own controls, read live
+    /// like the form; <see cref="Busy"/> dims the ✕ and refuses Esc. The WinUI dialog keeps them in its content instead.
+    /// </summary>
+    internal sealed class DialogChrome
+    {
+        public string? Panel { get; init; }
+        /// <summary>A Lucide icon name (web/src/icons/lucide.ts) for the header.</summary>
+        public string? Icon { get; init; }
+        public Func<string?>? Subtitle { get; init; }
+        /// <summary>The primary button is a dangerous action: filled in err.</summary>
+        public bool Danger { get; init; }
+        public double? MinWidth { get; init; }
+        public double? MinHeight { get; init; }
+        public FrameworkElement? Tools { get; init; }
+        public FrameworkElement? Status { get; init; }
+        /// <summary>Buttons of the form shown at the footer's right, before the dialog's own (an operation's Cancel).</summary>
+        public FrameworkElement? Actions { get; init; }
+        public Func<bool>? Busy { get; init; }
+    }
+
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ContentDialog, DialogChrome> dialogChromes = new();
+
+    /// <summary>The chrome <see cref="StyledDialog"/> was given for <paramref name="dialog"/>, if any.</summary>
+    internal DialogChrome? ChromeOf(ContentDialog dialog) => dialogChromes.TryGetValue(dialog, out var chrome) ? chrome : null;
 
     /// <summary>A sheet's title in its content: the Mac's <c>.headline</c>, 13pt bold <c>ink</c> on a 16-high line.</summary>
     internal TextBlock SheetTitle(string text) => new()

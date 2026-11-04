@@ -11,7 +11,7 @@ struct CLIAccountsSettingsSection: View {
         SettingsGroup(L("settings.cliAccounts.sectionTitle")) {
             ForEach(ProviderOptions.ids, id: \.self) { provider in row(provider) }
             Text(L("settings.cliAccounts.sectionDescriptionMac"))
-                .font(.ui(size: 11)).foregroundStyle(.secondary)
+                .font(.ui(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .task { store.refreshCLIAccounts() }
                 .confirmationDialog(confirming.map { title($0) } ?? "", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), presenting: confirming) { pending in
                     Button(pending.relogin ? L("settings.cliAccounts.macReloginButton") : L("settings.cliAccounts.buttonLogout"), role: .destructive) {
@@ -21,13 +21,13 @@ struct CLIAccountsSettingsSection: View {
                 } message: { pending in
                     Text(L("settings.cliAccounts.confirmMessageTemplate", ["provider": ProviderOptions.label(pending.provider)]))
                 }
-            Toggle(L("settings.cliAccounts.autoLoginToggle"), isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { store.snapshot.autoLoginCLIs != false },
                 set: { store.snapshot.autoLoginCLIs = $0 }
-            ))
+            )) {
+                SettingsRowLabel(L("settings.cliAccounts.autoLoginToggle"), caption: L("settings.cliAccounts.autoLoginDescriptionMac"))
+            }
             .accessibilityIdentifier("cli-auto-login")
-            Text(L("settings.cliAccounts.autoLoginDescriptionMac"))
-                .font(.ui(size: 11)).foregroundStyle(.secondary)
         }
     }
 
@@ -44,7 +44,7 @@ struct CLIAccountsSettingsSection: View {
             ProviderIcon(provider: provider, size: 14).frame(width: 18).padding(.top, 1)
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    Text(ProviderOptions.label(provider)).font(.ui(size: 12, weight: .medium))
+                    Text(ProviderOptions.label(provider)).font(.ui(size: DesignMetrics.Settings.rowName))
                     if ProviderOptions.isBeta(provider) { BetaBadge() }
                 }
                 Text(status?.summary ?? L("settings.cliAccounts.statusChecking")).font(.ui(size: 11)).foregroundStyle(status?.loggedIn == false ? Palette.waitText : Color.secondary).lineLimit(1).textSelection(.enabled)
@@ -89,5 +89,6 @@ struct CLIAccountsSettingsSection: View {
             }
             Button { store.cliAccountMessages[provider] = nil; store.refreshCLIAccounts([provider]) } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).disabled(busy).help(L("settings.cliAccounts.refreshTooltip"))
         }
+        .settingsRowFrame()
     }
 }

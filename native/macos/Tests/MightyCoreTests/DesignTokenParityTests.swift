@@ -81,6 +81,28 @@ struct DesignTokenParityTests {
         }
     }
 
+    /// `metrics.dialog` and `metrics.settings` (the popup standard): every number in the fixture has
+    /// its constant on the Mac and the other way round. The CSS shadows, the notes and the dialog's
+    /// `phone` sizes are not numbers the Mac draws.
+    @Test(arguments: ["dialog", "settings"])
+    func popupMetricsMatchTheFixture(_ section: String) throws {
+        let metrics = try #require(try Self.load()["metrics"] as? [String: Any])
+        let group = try #require(metrics[section] as? [String: Any], "metrics.\(section)")
+        let skipped: Set<String> = ["note", "shadow", "popoverShadow", "phone"]
+        var table: [String: Double] = [:]
+        for (name, value) in group where !skipped.contains(name) {
+            table[name] = try #require(value as? Double, "metrics.\(section).\(name) is not a number")
+        }
+        let mac: [String: CGFloat] = section == "dialog" ? DesignMetrics.Dialog.all : DesignMetrics.Settings.all
+        #expect(Set(mac.keys) == Set(table.keys), "\(section): Mac-only \(Set(mac.keys).subtracting(table.keys).sorted()), fixture-only \(Set(table.keys).subtracting(mac.keys).sorted())")
+        for (name, value) in table {
+            #expect(mac[name].map(Double.init) == value, "metrics.\(section).\(name): fixture \(value), Mac \(mac[name].map { "\($0)" } ?? "missing")")
+        }
+        // The named constants are the table's.
+        #expect(DesignMetrics.Dialog.all["closeHit"] == DesignMetrics.Dialog.closeHit && DesignMetrics.Dialog.all["sheetWidthM"] == DesignMetrics.Dialog.sheetWidthM)
+        #expect(DesignMetrics.Settings.all["heroHeight"] == DesignMetrics.Settings.heroHeight && DesignMetrics.Settings.all["switchWidth"] == DesignMetrics.Settings.switchWidth)
+    }
+
     /// The constants the views read and the tables above are the same numbers.
     @Test func metricTablesListTheirConstants() {
         #expect(DesignMetrics.Spacing.all["md"] == DesignMetrics.Spacing.md && DesignMetrics.Spacing.all.count == 6)

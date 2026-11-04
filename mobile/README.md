@@ -118,6 +118,12 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 - **대화 화면**: 위에 상태 색 히어로(제목·메타·숫자 줄), `대화`/`블록` 세그먼트, 사용자 말은
   잉크 말풍선, 답은 흰 카드, 도구 호출은 상태 색 사각형(✓ ✕) 칩, 다음 작업 제안은 파란 화살표가 있는
   흰 줄, 입력창은 흰 둥근 칸 안의 둥근 파란 전송 단추(실행 중이면 빨간 중지).
+- **팝업** (`components/sheets.tsx`, 표준은 `.omc/plans/popup-standard.md`, 수치는 `design-tokens.json`의
+  `metrics.dialog.phone`): 확인은 가운데 카드(모서리 24, 오른쪽 글자 단추 [취소] [확인]), 입력·메뉴·선택
+  목록은 아래 시트(손잡이 36×4, 위 모서리 24, 최대 85%, 바깥 탭·아래로 끌기·뒤로 = 취소, 고르면 바로 닫힘),
+  긴 본문(`/usage`·`/help`)은 전체 화면 패널(머리 56, 왼쪽 ✕). 단추 높이 40, 줄 52, 배경 막은 검정 28%/50%.
+- **설정** (`components/settings-rows.tsx`): 카드 위 accent 섹션 제목, 모서리 16 카드, 한 가지 줄 틀
+  (최소 52, 왼쪽 이름·설명, 오른쪽 스위치·값·›).
 
 ### 숫자는 어디서 오나
 
@@ -370,7 +376,7 @@ src/
              session-header.tsx(상태 색 히어로 + 설정 칩), status-line-view.tsx, provider-mark.tsx
              session-card.tsx(세션 카드), host-workspaces.tsx(작업 공간 묶음), host-poller.tsx
              host-status.tsx(연결 점), icons.tsx(탭·전송·중지 선 아이콘)
-             sheets.tsx(선택·입력·확인·본문·목록 모달), permission-card.tsx(한 번에 한 질문)
+             sheets.tsx(팝업 세 가지: 확인 카드 · 아래 시트 · 전체 화면 패널), settings-rows.tsx(설정 섹션·줄), permission-card.tsx(한 번에 한 질문)
              antigravity-permission-card.tsx(Antigravity 권한 카드)
              push-root.tsx(푸시 시작·동기화·알림 탭 열기·세션 보는 중 알림)
              mighty-blocks.tsx(요청·블록 타임라인), result-files.tsx(결과에 나온 파일), structure-view.tsx(파이프라인 보드), guided-panel.tsx

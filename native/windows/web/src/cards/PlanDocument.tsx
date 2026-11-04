@@ -1,9 +1,10 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useServices } from '../app/context';
 import { Markdown } from '../conversation/MarkdownView';
 import { Icon } from '../icons/Icon';
 import { usePageOverlay } from '../shell/overlay';
+import { DialogShell } from '../dialogs/DialogShell';
 import type { PlanRecord } from './types';
 
 /** One answered plan's meaning, kept with its text in both the history strip and the diagram. */
@@ -29,8 +30,9 @@ export interface PlanDocumentProps {
 
 /**
  * A pending or answered plan opened over the whole window: its title, when it was received and the plan text only
- * (M/PlanApprovalCard.swift PlanDocumentSheet), outside the graph's transformed/clipped layer. Like the picture
- * viewer it hides overlapping native browser panes, owns Escape/Tab, and returns focus to its Expand button on close.
+ * (M/PlanApprovalCard.swift PlanDocumentSheet), outside the graph's transformed/clipped layer: the popup standard's panel
+ * (kind C, 860 × 677, its size kept as "plan"), ✕ in the header and no footer. Like the picture viewer it hides overlapping
+ * native browser panes, owns Escape/Tab, and returns focus to its Expand button on close.
  */
 export function PlanDocument(props: PlanDocumentProps) {
   return createPortal(<PlanDocumentDialog {...props} />, document.body);
@@ -39,7 +41,7 @@ export function PlanDocument(props: PlanDocumentProps) {
 /** Exported separately so the document's content and metadata can be checked without a browser. */
 export function PlanDocumentDialog({ title, subtitle, plan, onClose }: PlanDocumentProps) {
   const { t } = useServices();
-  const card = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLDivElement | null>(null);
   const close = useRef(onClose);
   close.current = onClose;
   usePageOverlay(true);
@@ -62,20 +64,16 @@ export function PlanDocumentDialog({ title, subtitle, plan, onClose }: PlanDocum
     if (event.shiftKey && (document.activeElement === first || !card.current.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
+  const stop = (event: { stopPropagation(): void }) => event.stopPropagation();
   return (
-    <div className="card-dialog" data-page-overlay="" onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}
-      onClick={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }} onKeyDown={key}>
-      <div className="card-dialog-body" data-testid="plan-document" ref={card} role="dialog" aria-modal="true" aria-label={title}>
-        <div className="card-dialog-title">
-          <Icon name="clipboard-list" size={15} weight={1.8} className="card-dialog-mark" />
-          <div className="card-dialog-heading"><strong>{title}</strong>{subtitle && <span className="plan-record-time">{subtitle}</span>}</div>
-          <span className="card-spacer" />
-          <button type="button" className="card-dialog-close" data-testid="plan-document-close" onClick={onClose}>{t('plan.card.close')}</button>
-        </div>
-        <div className="card-dialog-document">
-          <Markdown text={plan} />
-        </div>
-      </div>
-    </div>
+    <DialogShell kind="panel" panel="plan" width={860} height={677} minWidth={480} minHeight={320} label={title} testId="plan-document" frameRef={card}
+      icon={<Icon name="clipboard-list" size={18} weight={1.8} />} title={title} subtitle={subtitle && <span className="plan-record-time">{subtitle}</span>}
+      closeTestId="plan-document-close" onCancel={onClose} bodyClassName="card-dialog-document" onKeyDown={key} focus="none"
+      backdrop={{
+        'data-page-overlay': '', 'data-close-label': t('plan.card.close'), onPointerDown: stop, onWheel: stop,
+        onClick: (event: MouseEvent<HTMLDivElement>) => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); },
+      }}>
+      <Markdown text={plan} />
+    </DialogShell>
   );
 }

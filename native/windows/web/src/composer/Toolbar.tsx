@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { usePopover } from '../shell/popover';
 import { useServices } from '../app/context';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { clearUnsupported, contextLabel, unsupportedSettings, type MenuName, type MenuRow, type Pills, type RunSettingsInfo, type RunSettingsValues, type SessionInfo } from './menus';
@@ -14,18 +15,7 @@ const narrowToolbar = 420;
 
 type Open = { kind: 'menu'; name: MenuName; rows: MenuRow[] } | { kind: 'runSettings'; info: RunSettingsInfo } | { kind: 'sessionInfo'; info: SessionInfo } | null;
 
-/** Closes a popover on a press outside it or on Esc. */
-export function usePopover(close: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const press = (event: PointerEvent) => { if (ref.current && !ref.current.contains(event.target as Node)) close(); };
-    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
-    document.addEventListener('pointerdown', press, true);
-    document.addEventListener('keydown', key);
-    return () => { document.removeEventListener('pointerdown', press, true); document.removeEventListener('keydown', key); };
-  }, [close]);
-  return ref;
-}
+export { usePopover };
 
 /** A popover menu's rows (the WinUI MenuFlyout's, read row by row): headers, separators, choices, actions and submenus. */
 export function MenuList({ rows, path, choose }: { rows: MenuRow[]; path: number[]; choose: (path: number[], row: MenuRow) => void }) {
@@ -86,14 +76,17 @@ export function RunSettingsPopover({ paneId, info, busy = info.held, close }: { 
     }
   };
   return (
-    <div ref={ref} className="composer-popover run-settings" data-testid="run-settings" data-page-overlay="" role="dialog" aria-label={t('settings.run.title')} onKeyDown={(event) => {
+    <div ref={ref} className="composer-popover popover width-l run-settings" data-testid="run-settings" data-page-overlay="" role="dialog" aria-label={t('settings.run.title')} onKeyDown={(event) => {
       if (event.key !== 'Enter' || event.target instanceof HTMLButtonElement || event.target instanceof HTMLSelectElement) return;
       const action = runSettingsEnter({ ...event, keyCode: event.nativeEvent.keyCode, isComposing: event.nativeEvent.isComposing });
       if (action === 'pass') return;
       event.preventDefault();
       if (action === 'apply' && !held) void apply();
     }}>
-      <div className="popover-header"><strong>{t('settings.run.title')}</strong><span>{info.provider}</span>{info.beta && <span className="beta-badge">Beta</span>}</div>
+      <div className="popover-head popover-header">
+        <span className="dialog-icon" aria-hidden="true"><Icon name="sliders-horizontal" size={18} weight={1.8} /></span>
+        <div className="dialog-heading"><strong>{t('settings.run.title')}</strong><span className="dialog-subtitle">{info.provider}{info.beta && <BetaBadge />}</span></div>
+      </div>
       <fieldset className="popover-body run-settings-fields" disabled={held}>
         <section>
           <div className="popover-strong">{info.model}</div>
@@ -143,10 +136,10 @@ export function RunSettingsPopover({ paneId, info, busy = info.held, close }: { 
       </fieldset>
       {busy && <div className="popover-quiet run-settings-held" role="status">{t('phone.session.settingsLocked')}</div>}
       {problem && <div className="popover-problem" role="alert">{problem}</div>}
-      <div className="popover-footer">
-        <span className="popover-quiet">{t('settings.run.appliesNextRequest')}</span>
-        <button type="button" className="popover-button" onClick={close}>{t('settings.run.cancelButton')}</button>
-        <button type="button" className="popover-button prominent" data-testid="run-settings-apply" disabled={held} onClick={() => void apply()}>{t('settings.run.applyButton')}</button>
+      <div className="popover-foot popover-footer">
+        <span className="dialog-status">{t('settings.run.appliesNextRequest')}</span>
+        <button type="button" className="btn" data-testid="run-settings-cancel" onClick={close}>{t('settings.run.cancelButton')}</button>
+        <button type="button" className="btn primary" data-testid="run-settings-apply" disabled={held} onClick={() => void apply()}>{t('settings.run.applyButton')}</button>
       </div>
     </div>
   );
@@ -172,7 +165,7 @@ function SessionInfoPopover({ info, close }: { info: SessionInfo; close: () => v
   const [shown, setShown] = useState(false);
   const ref = usePopover(close);
   return (
-    <div ref={ref} className="composer-popover session-info" data-testid="session-info" data-page-overlay="" role="dialog" aria-label={t('composer.sessionInfo.title')}>
+    <div ref={ref} className="composer-popover popover width-l session-info" data-testid="session-info" data-page-overlay="" role="dialog" aria-label={t('composer.sessionInfo.title')}>
       {/* M/SessionInfoViews.swift SessionInfoView: the mark, the title over the agent, the state at the right. */}
       <div className="session-info-header">
         <ProviderMark provider={info.provider} size={20} />
@@ -226,7 +219,7 @@ export function StyleRow({ paneId, style }: { paneId: string; style: { label: st
       </button>
       <span className="composer-style-hint">{style.hint}</span>
       {rows && (
-        <div ref={ref} className="composer-popover composer-menu" role="menu" data-menu="style" data-page-overlay="">
+        <div ref={ref} className="composer-popover popover composer-menu" role="menu" data-menu="style" data-page-overlay="">
           <MenuList rows={rows} path={[]} choose={(path) => choose(path)} />
         </div>
       )}
@@ -285,7 +278,7 @@ export function AskPill({ paneId, targets, current, compact = false }: { paneId:
       </button>
       {problem && <span className="composer-pill-problem" role="alert">{problem}</span>}
       {open && (
-        <div ref={ref} className="composer-popover composer-menu" role="menu" data-menu="ask" data-page-overlay="">
+        <div ref={ref} className="composer-popover popover composer-menu" role="menu" data-menu="ask" data-page-overlay="">
           {askRows(targets, asked?.id ?? null, t).map((row, index) => row.kind === 'separator' ? <div key={index} className="menu-separator" role="separator" /> : (
             <button key={index} type="button" role="menuitemradio" aria-checked={row.checked} className="menu-row" data-ask-target={row.id ?? 'claude'} onClick={() => choose(row.id)}>
               <span className="menu-check">{row.checked ? '✓' : ''}</span>{row.text}
@@ -376,7 +369,7 @@ export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown, resumed 
       </span>
       {problem && <span className="composer-pill-problem" role="alert">{problem}</span>}
       {open?.kind === 'menu' && (
-        <div ref={menuRef} className="composer-popover composer-menu" role="menu" data-menu={open.name} data-page-overlay="">
+        <div ref={menuRef} className="composer-popover popover composer-menu" role="menu" data-menu={open.name} data-page-overlay="">
           <MenuList rows={open.rows} path={[]} choose={choose(open.name)} />
         </div>
       )}

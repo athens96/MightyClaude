@@ -116,9 +116,9 @@ private struct SessionInfoPopoverAnchor: NSViewRepresentable {
                 controller.sizingOptions = []
                 hosting = controller
                 popover.contentViewController = controller
-                popover.contentSize = NSSize(width: 370, height: 480)
+                popover.contentSize = NSSize(width: DesignMetrics.Dialog.popoverWidthL, height: 480)
             }
-            let size = measuredSize ?? NSSize(width: 370, height: 480)
+            let size = measuredSize ?? NSSize(width: DesignMetrics.Dialog.popoverWidthL, height: 480)
             let changed = abs(popover.contentSize.width - size.width) > 0.5 || abs(popover.contentSize.height - size.height) > 0.5
             if changed { popover.contentSize = size }
             if !popover.isShown || changed {
@@ -186,7 +186,7 @@ struct SessionInfoView: View {
     @ViewState private var contentHeight: CGFloat = 410
     @ViewState private var showsIdentifiers = false
 
-    private let width: CGFloat = 370
+    private let width = DesignMetrics.Dialog.popoverWidthL
     private let padding: CGFloat = 14
     private let headerHeight: CGFloat = 32
     private let sectionSpacing: CGFloat = 10

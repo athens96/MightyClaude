@@ -79,7 +79,7 @@ struct RunSettingsView: View {
                     }
                     if runtime.capabilities.networkAccess {
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                            Toggle(L("settings.run.shellNetworkToggle"), isOn: $networkAccess).toggleStyle(.switch).controlSize(.small)
+                            Toggle(L("settings.run.shellNetworkToggle"), isOn: $networkAccess).toggleStyle(.switch)
                                 .disabled(!["acceptEdits", "onRequest"].contains(currentSession.settings.permissionMode)).accessibilityLabel(L("settings.run.shellNetworkToggle"))
                             Text(currentSession.settings.permissionMode == "fullAccess" ? L("settings.run.shellNetworkFullAccess") : ["acceptEdits", "onRequest"].contains(currentSession.settings.permissionMode) ? L("settings.run.shellNetworkAcceptEdits") : L("settings.run.shellNetworkLocked"))
                                 .font(.ui(size: 11)).foregroundStyle(.secondary)
@@ -123,8 +123,8 @@ struct RunSettingsView: View {
                 Spacer()
                 Button(L("settings.run.cancelButton")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(L("settings.run.applyButton")) { save() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(running)
-            }.controlSize(.small).padding(.horizontal, DesignMetrics.Inset.popover).padding(.vertical, DesignMetrics.Spacing.md)
-        }.frame(width: 360, height: runtime.capabilities.webSearch ? 440 : 390)
+            }.padding(.horizontal, DesignMetrics.Inset.popover).padding(.vertical, DesignMetrics.Spacing.md)
+        }.frame(width: DesignMetrics.Dialog.popoverWidthL, height: runtime.capabilities.webSearch ? 440 : 390)
     }
 
     private func save() {
@@ -206,27 +206,21 @@ struct AppSettingsView: View {
 
     /// Two One UI panes (Windows' web Settings draws the same): the entries grouped into rounded cards with a tile each,
     /// and the entry's page, each opening on a large title that gives way to a small one in its bar as it scrolls.
+    /// A panel (kind C): the page's ✕ (28pt, Esc), resizable from its corner and opening at its last size.
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 288)
+            sidebar.frame(width: DesignMetrics.Settings.listWidth)
             Divider()
             SettingsPage(title: pane.title) {
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark").font(.ui(size: 15, weight: .medium)).foregroundStyle(Palette.ink)
-                        .frame(width: 34, height: 34).contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
-                .help(L("settings.closeButton"))
-                .accessibilityLabel(L("settings.closeButton"))
-                .accessibilityIdentifier("settings-close")
+                DialogCloseButton(close: DialogClose(identifier: "settings-close") { dismiss() })
             } content: { detail(pane) }
                 // A fresh page per entry starts at its top.
                 .id(pane)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Palette.canvas)
-        .frame(width: 800, height: 700)
+        .dialogPanelFrame(id: "settings", ideal: CGSize(width: DesignMetrics.Settings.width, height: DesignMetrics.Settings.height),
+                          minimum: CGSize(width: DesignMetrics.Settings.minWidth, height: DesignMetrics.Settings.minHeight))
         // Opening Settings is one of the four moments the sources are re-read.
         .task { store.rescanStyles() }
     }
@@ -240,9 +234,9 @@ struct AppSettingsView: View {
                             navRow(item, divided: index > 0)
                         }
                     }
-                    .padding(.vertical, DesignMetrics.Spacing.sm)
-                    .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Palette.panel))
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .padding(.vertical, DesignMetrics.Spacing.xs)
+                    .background(RoundedRectangle(cornerRadius: DesignMetrics.Settings.cardRadius, style: .continuous).fill(Palette.panel))
+                    .clipShape(RoundedRectangle(cornerRadius: DesignMetrics.Settings.cardRadius, style: .continuous))
                 }
             }
         }
@@ -263,15 +257,15 @@ struct AppSettingsView: View {
     private func navRow(_ item: SettingsPane, divided: Bool) -> some View {
         let selected = item == pane
         return Button { pane = item } label: {
-            HStack(spacing: OneUIMetrics.cardGap) {
-                Image(systemName: item.symbol).font(.ui(size: 15, weight: .medium)).foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(item.tone))
+            HStack(spacing: DesignMetrics.Spacing.lg) {
+                Image(systemName: item.symbol).font(.ui(size: DesignMetrics.Settings.navGlyph, weight: .medium)).foregroundStyle(.white)
+                    .frame(width: DesignMetrics.Settings.navTile, height: DesignMetrics.Settings.navTile)
+                    .background(RoundedRectangle(cornerRadius: DesignMetrics.Settings.navTileRadius, style: .continuous).fill(item.tone))
                     .accessibilityHidden(true)
-                Text(item.title).font(.ui(size: 14)).lineLimit(1).foregroundStyle(selected ? Palette.accent : Palette.ink)
+                Text(item.title).font(.ui(size: DesignMetrics.Settings.navText)).lineLimit(1).foregroundStyle(selected ? Palette.accent : Palette.ink)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, OneUIMetrics.rowInset).frame(minHeight: 52)
+            .padding(.horizontal, OneUIMetrics.rowInset).frame(minHeight: DesignMetrics.Settings.navRowHeight)
             .background(selected ? Palette.accentSoft : Color.clear)
             .overlay(alignment: .top) {
                 if divided { Rectangle().fill(Palette.border).frame(height: 0.5).padding(.leading, OneUIMetrics.dividerLeading).padding(.trailing, OneUIMetrics.rowInset) }
@@ -288,18 +282,21 @@ struct AppSettingsView: View {
         let text = store.textAppearance
         let families = TextSettings.families
         return SettingsGroup(L("settings.text.sectionTitle")) {
-            Picker(L("settings.text.sizeLabel"), selection: Binding(
-                get: { text.scale },
-                set: { store.setTextAppearance(store.textAppearance.with(scale: $0)) }
-            )) {
-                ForEach(TextAppearance.scales, id: \.self) { scale in
-                    let percent = "\(Int((scale * 100).rounded()))"
-                    Text(scale == 1 ? L("settings.text.sizeStandard", ["percent": percent]) : "\(percent)%").tag(scale)
+            SettingsRow(L("settings.text.sizeLabel")) {
+                Picker(L("settings.text.sizeLabel"), selection: Binding(
+                    get: { text.scale },
+                    set: { store.setTextAppearance(store.textAppearance.with(scale: $0)) }
+                )) {
+                    ForEach(TextAppearance.scales, id: \.self) { scale in
+                        let percent = "\(Int((scale * 100).rounded()))"
+                        Text(scale == 1 ? L("settings.text.sizeStandard", ["percent": percent]) : "\(percent)%").tag(scale)
+                    }
                 }
+                .settingsSelect()
+                .accessibilityIdentifier("settings-text-size")
             }
-            .accessibilityIdentifier("settings-text-size")
             // The three fonts, read out as one "Font" group.
-            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                 fontPicker(L("settings.text.uiFontLabel"), standard: L("settings.text.fontSystem"), families: families, selected: text.family,
                            preview: .ui(size: 13), identifier: "settings-text-font") { store.textAppearance.with(family: $0) }
                 fontPicker(L("settings.text.transcriptFontLabel"), standard: L("settings.text.sameAsInterface"), families: families, selected: text.transcriptFamily,
@@ -309,9 +306,7 @@ struct AppSettingsView: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel(L("settings.text.fontLabel"))
-            HStack(alignment: .firstTextBaseline) {
-                Text(L("settings.text.note")).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Spacer()
+            SettingsRow(L("settings.text.reset"), caption: L("settings.text.note")) {
                 Button(L("settings.text.reset")) { store.setTextAppearance(.standard) }
                     .disabled(text.isStandard)
                     .accessibilityIdentifier("settings-text-reset")
@@ -319,11 +314,18 @@ struct AppSettingsView: View {
         }
     }
 
-    /// One of the text group's font pickers, `standard` (nil) first, then `families`,
-    /// and a one-line preview in the font it picks.
+    /// One of the text group's font pickers, `standard` (nil) first, then `families`: a row whose
+    /// caption is a one-line preview in the font it picks.
     private func fontPicker(_ label: String, standard: String, families: [String], selected: String?, preview: Font, identifier: String,
                             change: @escaping (String?) -> TextAppearance) -> some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+        HStack(alignment: .center, spacing: DesignMetrics.Spacing.lg) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                Text(label).font(.ui(size: DesignMetrics.Settings.rowName)).foregroundStyle(Palette.ink)
+                Text(L("settings.text.preview"))
+                    .font(preview).foregroundStyle(Palette.ink2).lineLimit(2).truncationMode(.tail)
+                    .accessibilityIdentifier(identifier + "-preview")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Picker(label, selection: Binding(
                 get: { selected ?? "" },
                 set: { store.setTextAppearance(change($0.isEmpty ? nil : $0)) }
@@ -333,14 +335,10 @@ struct AppSettingsView: View {
                 // A saved family that is no longer installed stays listed; it draws as the standard font.
                 ForEach(families + (selected.map { families.contains($0) ? [] : [$0] } ?? []), id: \.self) { Text(verbatim: $0).tag($0) }
             }
+            .settingsSelect()
             .accessibilityIdentifier(identifier)
-            Text(L("settings.text.preview"))
-                .font(preview).lineLimit(1).truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(DesignMetrics.Spacing.sm)
-                .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
-                .accessibilityIdentifier(identifier + "-preview")
         }
+        .settingsRowFrame()
     }
 
     @ViewBuilder
@@ -348,20 +346,21 @@ struct AppSettingsView: View {
         switch pane {
         case .general:
             SettingsGroup(L("settings.display.sectionTitle")) {
-                Picker(L("settings.display.themeLabel"), selection: $store.snapshot.theme) { Text(L("settings.display.themeDarkMac")).tag("dark"); Text(L("settings.display.themeLightMac")).tag("light") }.pickerStyle(.segmented)
-                Picker(L("settings.display.languageLabel"), selection: Binding(
-                    get: { AppLanguage(rawValue: UserDefaults.standard.string(forKey: "language") ?? "system") ?? .system },
-                    set: { UserDefaults.standard.set($0.rawValue, forKey: "language"); AppLanguage.applyToSystemInterface() }
-                )) {
-                    ForEach(AppLanguage.pickerChoices, id: \.self) { Text(L($0.labelKey)).tag($0) }
-                }.pickerStyle(.segmented).accessibilityIdentifier("settings-language")
-                Text(L("settings.display.languageMenuNote")).font(.ui(size: 11)).foregroundStyle(.secondary)
-                Toggle(isOn: Binding(get: { store.statusLineEnabled }, set: { store.statusLineEnabled = $0 })) {
-                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                        Text(L("settings.display.statusLineToggle"))
-                        Text(L("settings.display.statusLineDescription"))
-                            .font(.ui(size: 11)).foregroundStyle(.secondary)
+                SettingsRow(L("settings.display.themeLabel")) {
+                    Picker(L("settings.display.themeLabel"), selection: $store.snapshot.theme) { Text(L("settings.display.themeDarkMac")).tag("dark"); Text(L("settings.display.themeLightMac")).tag("light") }
+                        .pickerStyle(.segmented).labelsHidden().fixedSize()
+                }
+                SettingsRow(L("settings.display.languageLabel"), caption: L("settings.display.languageMenuNote")) {
+                    Picker(L("settings.display.languageLabel"), selection: Binding(
+                        get: { AppLanguage(rawValue: UserDefaults.standard.string(forKey: "language") ?? "system") ?? .system },
+                        set: { UserDefaults.standard.set($0.rawValue, forKey: "language"); AppLanguage.applyToSystemInterface() }
+                    )) {
+                        ForEach(AppLanguage.pickerChoices, id: \.self) { Text(L($0.labelKey)).tag($0) }
                     }
+                    .pickerStyle(.menu).settingsSelect().accessibilityIdentifier("settings-language")
+                }
+                Toggle(isOn: Binding(get: { store.statusLineEnabled }, set: { store.statusLineEnabled = $0 })) {
+                    SettingsRowLabel(L("settings.display.statusLineToggle"), caption: L("settings.display.statusLineDescription"))
                 }
                 .accessibilityIdentifier("settings-status-line")
                 // Agent delegation is on unless turned off here (or by its defaults key).
@@ -369,22 +368,14 @@ struct AppSettingsView: View {
                     get: { DelegationSwitch.isOn() },
                     set: { store.objectWillChange.send(); UserDefaults.standard.set($0, forKey: DelegationSwitch.defaultsKey) }
                 )) {
-                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                        Text(L("settings.delegation.toggle"))
-                        Text(L("settings.delegation.description"))
-                            .font(.ui(size: 11)).foregroundStyle(.secondary)
-                    }
+                    SettingsRowLabel(L("settings.delegation.toggle"), caption: L("settings.delegation.description"))
                 }
                 .accessibilityIdentifier("settings-delegation")
                 Toggle(isOn: Binding(
                     get: { CefBrowserEngine.isEnabledInSettings },
                     set: { store.objectWillChange.send(); CefBrowserEngine.isEnabledInSettings = $0 }
                 )) {
-                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                        Text(L("settings.display.browserToggle"))
-                        Text(L("settings.display.browserDescription"))
-                            .font(.ui(size: 11)).foregroundStyle(.secondary)
-                    }
+                    SettingsRowLabel(L("settings.display.browserToggle"), caption: L("settings.display.browserDescription"))
                 }
                 .accessibilityIdentifier("settings-browser-engine")
             }
@@ -394,19 +385,21 @@ struct AppSettingsView: View {
             // "remember" writes), so a change here is in force on their very
             // next open_url call and survives a restart.
             SettingsGroup(WebOpenChoiceCopy.settingTitle) {
-                Picker(WebOpenChoiceCopy.settingTitle, selection: Binding(
-                    get: { WebOpenChoiceStore.shared.setting(forWorkspace: store.snapshot.activeWorkspaceId ?? "") },
-                    set: { choice in
-                        store.objectWillChange.send()
-                        WebOpenChoiceStore.shared.applySetting(choice, forWorkspace: store.snapshot.activeWorkspaceId ?? "")
+                SettingsRow(WebOpenChoiceCopy.settingTitle) {
+                    Picker(WebOpenChoiceCopy.settingTitle, selection: Binding(
+                        get: { WebOpenChoiceStore.shared.setting(forWorkspace: store.snapshot.activeWorkspaceId ?? "") },
+                        set: { choice in
+                            store.objectWillChange.send()
+                            WebOpenChoiceStore.shared.applySetting(choice, forWorkspace: store.snapshot.activeWorkspaceId ?? "")
+                        }
+                    )) {
+                        ForEach(WebOpenSetting.allCases, id: \.self) { option in
+                            Text(WebOpenChoiceCopy.settingLabel(option)).tag(option)
+                        }
                     }
-                )) {
-                    ForEach(WebOpenSetting.allCases, id: \.self) { option in
-                        Text(WebOpenChoiceCopy.settingLabel(option)).tag(option)
-                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .accessibilityIdentifier("settings-web-open-choice")
                 }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("settings-web-open-choice")
             }
         case .models:
             PhaseModelSettingsSection().environmentObject(store)
@@ -419,27 +412,33 @@ struct AppSettingsView: View {
             SettingsGroup {
                 ForEach(ProviderOptions.ids, id: \.self) { id in
                     let provider = store.runtime?.providers?.first { $0.id == id } ?? ProviderOptions.fallbackRuntime(id)
-                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                        HStack {
-                            HStack(spacing: DesignMetrics.Spacing.sm) { ProviderIcon(provider: id, size: 13); Text(provider.name); if ProviderOptions.isBeta(id) { BetaBadge() } }.font(.ui(size: 13, weight: .medium))
-                            Spacer()
-                            Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup")).font(.ui(size: 10)).foregroundStyle(provider.available ? Palette.doneText : Palette.waitText)
+                    HStack(alignment: .center, spacing: DesignMetrics.Spacing.lg) {
+                        ProviderIcon(provider: id, size: 14)
+                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                            HStack(spacing: DesignMetrics.Spacing.sm) {
+                                Text(provider.name).font(.ui(size: DesignMetrics.Settings.rowName))
+                                if ProviderOptions.isBeta(id) { BetaBadge() }
+                                if let version = provider.version { Text(version).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary) }
+                            }
+                            Text(provider.detail).font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
+                                .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         }
-                        if let version = provider.version { Text(version).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
-                        Text(provider.detail).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup"))
+                            .font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(provider.available ? Palette.doneText : Palette.waitText)
                     }
+                    .settingsRowFrame()
                 }
-                HStack {
-                    Text(L("settings.providers.loginNote")).font(.ui(size: 11)).foregroundStyle(.secondary)
-                    Spacer()
+                SettingsRow(L("settings.providers.checkButton"), caption: L("settings.providers.loginNote")) {
                     Button(store.isRefreshingRuntime ? L("settings.providers.checkingButton") : L("settings.providers.checkButton")) { Task { await store.refreshRuntime() } }.disabled(store.isRefreshingRuntime)
                 }
             } header: { Text(L("settings.providers.sectionTitleMac")) }
             CLIAccountsSettingsSection()
             if let mods = store.runtime?.mods {
                 SettingsGroup("Claude Mods") {
-                    Text(mods.detail).font(.ui(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
-                    LabeledContent(L("settings.claudeMods.compatLabel"), value: mods.minimumVersion)
+                    SettingsRow(L("settings.claudeMods.compatLabel"), caption: mods.detail) {
+                        Text(mods.minimumVersion).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
                 }
             }
             CLIUpdateSettingsSection().environmentObject(store)
@@ -453,15 +452,15 @@ struct AppSettingsView: View {
         case .about:
             AppUpdateSettingsSection()
             SettingsGroup(L("settings.appInfo.sectionTitle")) {
-                LabeledContent(L("settings.appInfo.versionLabel"), value: store.runtime?.appVersion ?? "0.2.0")
-                Text(L("settings.appInfo.runtimeNote")).font(.ui(size: 11)).foregroundStyle(.secondary)
+                SettingsRow(L("settings.appInfo.versionLabel"), caption: L("settings.appInfo.runtimeNote")) {
+                    Text(store.runtime?.appVersion ?? "0.2.0").foregroundStyle(.secondary)
+                }
                 LabeledContent(L("menu.help")) {
                     Button(L("settings.appInfo.openHelpButton")) { NSWorkspace.shared.open(HelpSite.current) }
                 }
-                LabeledContent(L("settings.appInfo.stateLocationLabel")) {
+                SettingsRow(L("settings.appInfo.stateLocationLabel"), caption: store.dataDirectory.path) {
                     Button(L("settings.appInfo.openFinderButton")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.dataDirectory.path) }
                 }
-                Text(store.dataDirectory.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
             }
         }
     }

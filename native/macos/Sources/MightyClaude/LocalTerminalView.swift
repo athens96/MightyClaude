@@ -181,13 +181,17 @@ struct LegacyTerminalHistory: View {
     let session: RunSession
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-            HStack { Text(L("terminal.history.title")).font(.ui(size: 13, weight: .bold)); Spacer(); Button(L("settings.closeButton")) { dismiss() }.keyboardShortcut(.cancelAction) }
-            Text(L("terminal.history.helpMac")).font(.ui(size: 12)).foregroundStyle(.secondary)
-            ScrollView {
-                Text(session.logs.isEmpty ? L("terminal.history.empty") : session.logs.map { "[\($0.kind)] \($0.text)" }.joined(separator: "\n\n"))
-                    .font(.code(size: 11)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.md)
-            }.background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
-        }.padding(DesignMetrics.Inset.sheet).frame(width: 630, height: 450)
+        DialogScaffold(L("terminal.history.title"), systemImage: "terminal",
+                       close: DialogClose(identifier: "terminal-history-close") { dismiss() }) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
+                Text(L("terminal.history.helpMac")).font(.ui(size: 12)).foregroundStyle(.secondary)
+                ScrollView {
+                    Text(session.logs.isEmpty ? L("terminal.history.empty") : session.logs.map { "[\($0.kind)] \($0.text)" }.joined(separator: "\n\n"))
+                        .font(.code(size: 11)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.md)
+                }.background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+        } footer: { EmptyView() }
+        .dialogPanelFrame(id: "terminalHistory", ideal: CGSize(width: 630, height: 450), minimum: CGSize(width: 480, height: 320))
     }
 }
