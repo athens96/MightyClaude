@@ -123,8 +123,8 @@ public enum MobileRemoteSupport {
         guard options.contains(where: { $0.id == value }) else { throw MobileHostError.badRequest(L("remote.settings.notAnOption", ["field": field])) }
     }
 
-    /// The Mac stores nil or "default" for the plain transcript; the wire says "plain".
-    public static func viewMode(_ raw: String?) -> String { raw == "mighty" ? "mighty" : MobileWire.plainViewMode }
+    /// An agent pane is always in the Mighty view; the wire field stays for older phones, which read "mighty" whatever the pane stored.
+    public static func viewMode(_ raw: String?) -> String { "mighty" }
 
     /// The wire word for the style a pane actually runs. Only the bundled
     /// Ouroboros has one of its own; every other registered style, the bundled

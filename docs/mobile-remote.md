@@ -129,7 +129,7 @@ MobilePermission {
 | `LogEntry.kind` | `user` `assistant` `system` `output` `error` |
 | `activity.state` | `running` `waiting` `completed` `error` `stopped` |
 | `permissionMode` | 호스트가 `settings.options.permissionModes`로 알려 주는 id (프로바이더마다 다름) |
-| `agentViewMode` | `plain` `mighty` |
+| `agentViewMode` | `plain` `mighty` — 호스트는 에이전트 창에 늘 `mighty`를 보내고, 구버전 폰이 `plain`을 요청해도 받아들이되 창은 마이티에 머문다 |
 | `mightyStyle` | `cli` `ouroboros` — 둘 고정(v6까지는 `paperthin`도 있었고 v7에서 그 스타일과 함께 뺐다). `ouroboros`가 아닌 스타일(번들 클러드 플랜 포함)에는 언제나 `cli`가 실린다(진짜 값은 `styleId`, 아래 "스타일" 절) |
 | 블록 `kind` | `main` `agent` `task` `steer` `compact` `question` |
 | 블록 `status` | `running` `waiting` `completed` `error` `stopped` |

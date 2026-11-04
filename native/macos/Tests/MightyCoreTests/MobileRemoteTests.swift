@@ -19,8 +19,8 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
     /// What a send to the busy pane finally reported: queued, as the store
     /// does whatever `mode` says, unless a test makes it something else.
     var busyEffect = SubmitOutcome.queued
-    /// The pane's view mode; guided styles exist only inside Mighty view.
-    var viewMode = MobileWire.plainViewMode
+    /// The pane's view mode: an agent pane is always in Mighty view, whatever a request asks for.
+    let viewMode = "mighty"
     /// The guided style this pane is in; a `guided` request for another one 409s.
     var paneStyle = MightyStyleIDs.ouroboros
     /// Non-nil when the pane cannot run at all (CLI updating, no connection).
@@ -171,12 +171,10 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         try known(sessionId)
         // Shape before state, as the host does, and the style is judged against
-        // the view mode this same request asks for.
-        let mode = request.agentViewMode ?? viewMode
-        let guided = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "claude", viewMode: mode)
+        // the pane's view, which is always Mighty.
+        let guided = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "claude", viewMode: viewMode)
         try MobileRemoteSupport.validate(request, options: Self.options(guidedStyles: guided))
         if running { throw MobileHostError.conflict("실행 중에는 설정을 바꿀 수 없습니다.") }
-        if let value = request.agentViewMode { viewMode = value }
         commands.append("settings:\(request.model ?? "-"):\(request.agentViewMode ?? "-"):\(request.mightyStyle ?? "-")")
     }
     func mobileCommands(sessionId: String) async throws -> [MobileCommand] {
@@ -684,18 +682,17 @@ struct MobileRemoteTests {
         host.running = false
         let (service, directory) = await service(host)
         defer { try? FileManager.default.removeItem(at: directory) }
-        // A plain pane offers only the CLI style, so a guided one is outside its options.
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["mightyStyle": "ouroboros"]).0 == 400)
-        // One POST may turn Mighty on and pick a style: the style is judged
-        // against the view the same request asks for, not the one it replaces.
+        // The pane is always in Mighty view, so a guided style is among its options.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["mightyStyle": "ouroboros"]).0 == 200)
+        // A request that still names the view is heard; the pane stays in Mighty.
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["agentViewMode": "mighty", "mightyStyle": "ouroboros"]).0 == 200)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["mightyStyle": "cli"]).0 == 200)
         // The old field's vocabulary lost the removed style's word in v7, so
         // an older phone that still offers it is refused, not obeyed.
         #expect(MobileWire.mightyStyles == ["cli", "ouroboros"])
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["mightyStyle": MightyStyleIDs.paperthin]).0 == 400)
-        // Going back to plain takes the guided styles with it.
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["agentViewMode": "plain", "mightyStyle": "ouroboros"]).0 == 400)
+        // An older phone asking for the plain view is heard and the pane stays in Mighty, so its style stays pickable.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["agentViewMode": "plain", "mightyStyle": "ouroboros"]).0 == 200)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["model": "gpt-5"]).0 == 400)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["agentViewMode": "graph"]).0 == 400)
         #expect(try await call(service, "POST", "/m1/sessions/missing/settings", body: ["model": "opus"]).0 == 404)

@@ -230,7 +230,7 @@ enum HelpCapture {
             session.titleMode = "fixed"
             session.model = pane.model
             session.settings = RunSettings(effort: pane.effort, permissionMode: pane.permissionMode)
-            session.agentViewMode = pane.view == "mighty" ? "mighty" : nil
+            session.agentViewMode = "mighty"
         }
         for (index, run) in pane.runs.enumerated() {
             let events = HelpDemoReplay.events(sessionId: id, provider: pane.provider, model: pane.model, permissionMode: pane.permissionMode,
@@ -375,7 +375,7 @@ enum HelpCapture {
         for pane in demo.profile.panes {
             guard let id = demo.panes[pane.role], let session = store.snapshot.sessions.first(where: { $0.id == id }) else { continue }
             if let draft = pane.draft, store.drafts[id] != draft { store.drafts[id] = draft }
-            let mode = pane.view == "mighty" ? "mighty" : nil
+            let mode = "mighty"
             if session.agentViewMode != mode || session.graphViewMode != nil {
                 store.updateSession(id) { $0.agentViewMode = mode; $0.graphViewMode = nil }
             }
@@ -541,7 +541,6 @@ enum HelpCapture {
             try check(screen, id: id, demo: demo, store: store)
             if screen == .agentTimeline { store.updateSession(id) { $0.graphViewMode = .timeline } }
             if screen == .agentStructure { store.updateSession(id) { $0.graphViewMode = .structure } }
-            if screen == .backgroundWork { store.setAgentViewMode(id, mode: "default") }
             // The diagram aims at the next-request block while a draft is typed; these
             // screens show the requests themselves.
             if [.agentMighty, .agentTimeline, .agentStructure, .backgroundWork].contains(screen) { store.drafts[id] = "" }
@@ -552,7 +551,6 @@ enum HelpCapture {
             try await Task.sleep(for: .milliseconds(screen == .resultCard || screen == .agentMighty ? 1_500 : 800))
             return Target(window: main) {
                 if screen == .agentTimeline || screen == .agentStructure { store.updateSession(id) { $0.graphViewMode = nil } }
-                if screen == .backgroundWork { store.setAgentViewMode(id, mode: "mighty") }
             }
         case .agentMightyOverview:
             // The whole diagram: the same pane in the taller window shots.json gives it.

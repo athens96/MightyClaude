@@ -171,7 +171,7 @@ public sealed partial class MainWindow
                 WorkspaceId = demo.Workspaces[HelpText(pane["workspace"])], Kind = (string?)pane["kind"] ?? "claude", Provider = (string?)pane["provider"] ?? "claude",
                 Model = (string?)pane["model"] ?? "default", Title = (string?)pane["title"] ?? role, TitleMode = "fixed",
                 Settings = new((string?)pane["effort"] ?? "default", (string?)pane["permissionMode"] ?? "manual"),
-                AgentViewMode = (string?)pane["view"] == "mighty" ? "mighty" : null, Draft = (string?)pane["draft"] ?? "",
+                AgentViewMode = "mighty", Draft = (string?)pane["draft"] ?? "",
             };
             demo.Panes[role] = session.Id; sessions.Add(session);
         }
@@ -306,7 +306,7 @@ public sealed partial class MainWindow
         {
             if (!demo.Panes.TryGetValue(HelpText(pane["role"]), out var id) || service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { } session) continue;
             var draft = (string?)pane["draft"] ?? "";
-            var mode = (string?)pane["view"] == "mighty" ? "mighty" : null;
+            const string mode = "mighty";
             if (session.AgentViewMode != mode || session.GraphViewMode is not null)
                 await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { AgentViewMode = mode, GraphViewMode = null } : p).ToList() });
             if (session.Draft != draft) await HelpDraft(id, draft);
@@ -390,10 +390,10 @@ public sealed partial class MainWindow
                 var role = screen switch { "agent-basic" => "codex", "plan-card" => "plan", "question-card" => "question", "permission-card" => "permission", "terminal-pane" => "shell", "result-card" => "result", _ => "mighty" };
                 var id = demo.Pane(role);
                 CheckHelpScreen(screen, id, demo);
-                // As the Mac's capture: the timeline or the structure view, or the Default view while the background work runs.
+                // As the Mac's capture: the timeline or the structure view.
                 var view = screen switch { "agent-timeline" => "timeline", "agent-structure" => "structure", _ => null };
-                if (view is not null || screen == "background-work")
-                    await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { GraphViewMode = view ?? p.GraphViewMode, AgentViewMode = screen == "background-work" ? "default" : p.AgentViewMode } : p).ToList() });
+                if (view is not null)
+                    await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { GraphViewMode = view ?? p.GraphViewMode } : p).ToList() });
                 await SelectLayoutSession(id); await ApplyLayoutPreset("focus");
                 // The diagram aims at the next-request block while a draft is typed; the Mac's capture empties it for the screens that show the requests.
                 var showsRequests = screen is "agent-mighty" or "agent-mighty-overview" or "agent-timeline" or "agent-structure" or "background-work";

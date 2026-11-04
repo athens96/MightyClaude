@@ -5,7 +5,7 @@ import { Conversation } from '../conversation/Conversation';
 import { Composer } from '../composer/Composer';
 import { Cards } from '../cards/Cards';
 import { clockLabel } from '../composer/clock';
-import { MightyView, ModeSwitch, showsModeSwitch, useShownSession } from '../mighty/MightyView';
+import { MightyView, useShownSession } from '../mighty/MightyView';
 import { SlimPane, slimKinds } from '../panes/Panes';
 import { TerminalView } from '../panes/terminal/TerminalView';
 import { ReferenceContext } from '../conversation/referenceClick';
@@ -13,6 +13,7 @@ import type { ReferenceTarget } from '../conversation/references';
 import { ReferenceBubble, type ReferenceRequest } from './ReferenceBubble';
 import { Icon } from '../icons/Icon';
 import { providerLabel } from '../conversation/format';
+import { drawsDiagram } from '../pending/requests';
 import { useCall, useMenu, type MenuItem } from '../shell/parts';
 
 /** The header's clock, redrawn each second while the run is not finished (MW.Composer.cs RefreshElapsed). */
@@ -59,8 +60,8 @@ export const PaneView = memo(function PaneView({ session: saved }: { session: Ru
   const store = useStoreState();
   const header = store.composers[session.id]?.header;
   const agent = session.kind === 'claude' || session.kind === 'shell';
-  const switchable = showsModeSwitch(session);
-  const mighty = switchable && session.agentViewMode === 'mighty';
+  // An agent pane with a Mighty view always shows it; the conversation stays for the panes that have none.
+  const mighty = drawsDiagram(session);
   // A remote pane's files are on its host: no bubble opens there.
   const remote = !!store.snapshot?.workspaces.find((w) => w.id === session.workspaceId)?.remote;
   const [reference, setReference] = useState<ReferenceRequest | null>(null);
@@ -99,7 +100,7 @@ export const PaneView = memo(function PaneView({ session: saved }: { session: Ru
     </section>
   );
   // An agent's header (M/SessionPaneView.swift agentHeader): its state word in its ink, the figures in mono fading at the right,
-  // then the Default | Mighty switch and the pane's menu. The name is on the tab right above, so it is not said twice.
+  // then the pane's menu. The name is on the tab right above, so it is not said twice.
   return (
     <section className="pane" data-session-id={session.id}>
       <header className="pane-header">
@@ -110,7 +111,6 @@ export const PaneView = memo(function PaneView({ session: saved }: { session: Ru
           {header?.rest}
         </span>
         <span className="pane-header-controls">
-          {switchable && <ModeSwitch session={session} />}
           {mighty && (session.provider === 'claude' || session.provider === 'codex') && (
             <button type="button" className="icon-button pane-plugins-button" data-testid="pane-plugins" title={t('pane.plugins.help', { provider: providerLabel(session.provider) })}
               aria-label={t('plugins.titleTemplate', { provider: providerLabel(session.provider) })} onClick={() => void bridge.call('openPlugins', { id: session.id }).catch(() => {})}>

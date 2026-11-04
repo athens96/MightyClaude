@@ -178,8 +178,6 @@ function patchFor(field: SettingField, id: string): SettingsPatch {
       return { permissionMode: id };
     case 'effort':
       return { effort: id };
-    case 'agentViewMode':
-      return { agentViewMode: id };
     case 'mightyStyle':
       return { mightyStyle: id };
     case 'styleId':
@@ -301,7 +299,6 @@ export default function SessionScreen() {
    */
   const [guidedGroup, setGuidedGroup] = useState<string | undefined>(undefined);
   /** Set while the view mode waits for a style, so both go to the host in one POST. */
-  const [pendingViewMode, setPendingViewMode] = useState<string | undefined>(undefined);
   const [message, setMessage] = useState<{ title: string; body: string } | undefined>(undefined);
   // The pane is gone — closed here or elsewhere. The long poll stops before we leave, so
   // the screen on its way out never raises a banner about a pane that no longer exists.
@@ -952,23 +949,12 @@ export default function SessionScreen() {
 
   const closePicker = useCallback(() => {
     setPicker(undefined);
-    setPendingViewMode(undefined);
   }, []);
 
   const applySetting = useCallback(
     (id: string) => {
       if (!client || !sessionId || !picker) return;
-      // The host offers the other Mighty styles only once the pane is in Mighty view, so
-      // when there is a real choice the view is held back and both keys travel in one
-      // POST; with `cli` alone there is nothing to choose and the view goes on its own.
-      const styleField: SettingField = canStyle ? 'styleId' : 'mightyStyle';
-      if (picker === 'agentViewMode' && id === 'mighty' && optionsFor(settings, styleField).length > 1) {
-        setPendingViewMode(id);
-        setPicker(styleField);
-        return;
-      }
       const patch = patchFor(picker, id);
-      if (picker === styleField && pendingViewMode) patch.agentViewMode = pendingViewMode;
       void (async () => {
         setSavingSetting(true);
         try {
@@ -983,7 +969,7 @@ export default function SessionScreen() {
         }
       })();
     },
-    [canStyle, client, closePicker, pendingViewMode, picker, poll, sessionId, settings],
+    [client, closePicker, picker, poll, sessionId],
   );
 
   const runHostCommand = useCallback(
@@ -1652,13 +1638,7 @@ export default function SessionScreen() {
       <PickerSheet
         visible={picker !== undefined}
         title={picker ? settingTitle(picker) : ''}
-        note={
-          settings && !settings.editable
-            ? t('phone.session.settingsLocked')
-            : pendingViewMode
-              ? t('phone.session.applyWithMighty')
-              : undefined
-        }
+        note={settings && !settings.editable ? t('phone.session.settingsLocked') : undefined}
         options={picker ? optionsFor(settings, picker) : []}
         selectedId={picker && settings ? valueFor(settings, picker) : undefined}
         busy={savingSetting}

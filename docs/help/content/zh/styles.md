@@ -6,10 +6,9 @@ section: styles
 风格是预先定好请求方式的工作流程。它备有阶段和按钮，能让较长的任务按既定顺序推进。不使用风格时，就像平常一样自由地发送请求（CLI）。
 
 ## 选择风格 {#pick}
-风格用于此 Mac 上的 Claude 窗格，且须处于 Mighty 视图。
-1. 将 Claude 窗格切换到{{ui:graph.view.mighty}}视图。
-2. 打开输入框上方的风格菜单（{{ui:guidedPanel.stylesMenuAccessibility}}）。
-3. 选择一种风格。要回到自由请求，请选择 CLI。
+风格用于此 Mac 上的 Claude 窗格。
+1. 打开输入框上方的风格菜单（{{ui:guidedPanel.stylesMenuAccessibility}}）。
+2. 选择一种风格。要回到自由请求，请选择 CLI。
 
 选择结果按窗格保存。运行期间无法更改。如果缺少风格所需的插件或工具，会显示{{ui:guidedPanel.installButton}}按钮。点击后，安装命令会填入新的终端窗格，{{kbd:Enter}}需要你自己按。
 

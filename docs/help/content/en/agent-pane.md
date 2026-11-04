@@ -101,10 +101,8 @@ The ring beside the send button shows how much context the conversation has used
 
 ![[session-info]]
 
-## Default and Mighty views {#views}
-Claude, Codex and Antigravity panes have a {{ui:graph.view.default}} | {{ui:graph.view.mighty}} switch in the header. Switching keeps the conversation and your draft, and each pane remembers its choice.
-- {{ui:graph.view.default}}: the conversation as a log you read top to bottom.
-- {{ui:graph.view.mighty}}: requests, sub-agents, background work and results as a flow of blocks.
+## The Mighty view {#views}
+Claude, Codex and Antigravity panes show the {{ui:graph.view.mighty}} view: requests, sub-agents, background work and results as a flow of blocks. There is nothing to switch.
 
 ### The Mighty flow {#diagram}
 Each request gets a request block with a {{ui:graph.block.execution}} block right below it. The request block holds only what you sent; what the agent did because of it (messages, tool calls, progress) shows in the {{ui:graph.block.execution}} block. Sub-agents and background tasks branch out below the {{ui:graph.block.execution}} block. When the request ends, a {{ui:graph.block.result}} card is attached.

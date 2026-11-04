@@ -84,7 +84,6 @@ public sealed partial class MainWindow
             else if (webMighty.Remove(paneId) && views.TryGetValue(paneId, out var view)) view.WebMightyShown(false);
             return Task.FromResult<object?>(null);
         });
-        bridge.Register("mightySetMode", async args => { await WebPane(args.Text("paneId")).SetAgentViewMode(args.Text("mode") == "mighty" ? "mighty" : "default"); return null; });
         bridge.Register("mightySetPresentation", async args => { await WebPane(args.Text("paneId")).SetGraphPresentation(args.Text("mode") ?? "diagram"); MightyDirty(args.Text("paneId")); return null; });
         bridge.Register("mightySaveSize", async args =>
         {
@@ -243,7 +242,7 @@ public sealed partial class MainWindow
         }
         finally
         {
-            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { AgentViewMode = "default", GraphViewMode = null, GraphRuns = null }).ToList() });
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { AgentViewMode = "mighty", GraphViewMode = null, GraphRuns = null }).ToList() });
         }
     }
 

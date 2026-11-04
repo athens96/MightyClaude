@@ -101,10 +101,8 @@ Codex와 Antigravity는 이름이 조금 다릅니다(예: Codex `/new`, `/appro
 
 ![[session-info]]
 
-## 기본 보기와 마이티 보기 {#views}
-Claude, Codex, Antigravity 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mighty}} 전환이 있습니다. 바꿔도 대화와 입력 중인 글은 그대로입니다. 창마다 따로 기억합니다.
-- {{ui:graph.view.default}}: 대화를 위에서 아래로 읽는 보기입니다.
-- {{ui:graph.view.mighty}}: 요청, 하위 에이전트, 백그라운드 작업, 결과를 블록 흐름으로 보여 줍니다.
+## 마이티 보기 {#views}
+Claude, Codex, Antigravity 창은 {{ui:graph.view.mighty}} 보기로 보입니다. 요청, 하위 에이전트, 백그라운드 작업, 결과를 블록 흐름으로 보여 줍니다. 따로 바꿀 것은 없습니다.
 
 ### 마이티 흐름 {#diagram}
 요청마다 요청 블록이 생기고, 바로 아래 {{ui:graph.block.execution}} 블록이 붙습니다. 요청 블록에는 보낸 요청만 담기고, 에이전트가 그 요청으로 한 일(메시지, 도구 호출, 진행 상태)은 {{ui:graph.block.execution}} 블록에 나옵니다. 하위 에이전트와 백그라운드 작업은 {{ui:graph.block.execution}} 블록 아래로 갈라져 나옵니다. 끝나면 {{ui:graph.block.result}} 카드가 붙습니다.

@@ -149,6 +149,21 @@ struct MightyGraphTests {
         #expect(decoded.mightyGraphRuns.count == 2)
     }
 
+    @Test func aSavedDefaultViewLoadsAsMighty() {
+        // Mighty is the one view an agent pane has: "default", "plain" and nothing at all load as it.
+        let workspace = Workspace(id: "ws", name: "Repo", path: "/tmp/repo")
+        for saved: String? in ["default", "plain", "mighty", nil] {
+            var pane = RunSession(id: "pane", workspaceId: "ws", title: "Claude", provider: "codex")
+            pane.agentViewMode = saved
+            let restored = StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [pane]), restoring: true).sessions[0]
+            #expect(restored.agentViewMode == "mighty", "\(saved ?? "nil")")
+        }
+        #expect(RunSession(workspaceId: "ws", title: "New").agentViewMode == "mighty")
+        var shell = RunSession(id: "sh", workspaceId: "ws", title: "Shell", kind: "shell")
+        shell.agentViewMode = "default"
+        #expect(StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [shell]), restoring: true).sessions[0].agentViewMode == nil)
+    }
+
     @Test func graphRestoresModeAndInterruptedChildrenFromDisk() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-graph-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

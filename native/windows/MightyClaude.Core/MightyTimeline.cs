@@ -29,7 +29,7 @@ public static class MightyTimeline
     public static string? NormalizeMode(string? value) => value is "diagram" or "timeline" or "structure" ? value : null;
     public static string Mode(RunSession session) => NormalizeMode(session.GraphViewMode) ?? "diagram";
     public static RunSession ApplyMode(RunSession session, string value) =>
-        session.Kind == "claude" && MightyGraphViewModel.ShowsModeSwitch(session) && NormalizeMode(value) is { } mode
+        session.Kind == "claude" && MightyGraphViewModel.SupportsMighty(session) && NormalizeMode(value) is { } mode
             ? session with { GraphViewMode = mode } : session;
     // The mobile timeline and Mac timeline share these buckets. Unknown/queued/idle
     // are unfinished work, never a fabricated completion.

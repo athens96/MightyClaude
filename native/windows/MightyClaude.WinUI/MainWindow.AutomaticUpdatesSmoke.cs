@@ -42,7 +42,7 @@ public sealed partial class MainWindow
             try
             {
                 pendingAttachments.Clear(); RefreshAttachments();
-                await Change(p => p with { Status = "completed", MightyStyle = "cli" });
+                await Change(p => p with { Status = "completed", MightyStyle = null });
                 owner.smokeStart = _ => { started++; return Task.CompletedTask; };
                 owner.smokeCliUpdater = async (provider, token) => { if (provider == "claude") await release.Task.WaitAsync(token); return new(provider, "updated"); };
                 Require(owner.coordinator.Start(), "Isolated manual updater must start.");
@@ -95,7 +95,7 @@ public sealed partial class MainWindow
             try
             {
                 pendingAttachments.Clear(); RefreshAttachments();
-                await Change(p => p with { Status = "completed", MightyStyle = "cli", ResumeId = null });
+                await Change(p => p with { Status = "completed", MightyStyle = null, ResumeId = null });
                 owner.smokeStart = request => { calls.Add(request.Input); return Task.CompletedTask; };
                 owner.automaticUpdateRunning = true; owner.automaticallyUpdatingProvider = "claude";
                 owner.NotifyAutomaticUpdates();

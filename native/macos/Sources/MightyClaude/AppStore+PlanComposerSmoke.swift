@@ -29,9 +29,7 @@ extension AppStore {
             result["diagramLeavesOnlyTheAnswers"] = inDiagram
             setGraphViewMode(sessionId, mode: .timeline)
             let timeline = place(guided: false) == .card && place(guided: true) == .card
-            updateSession(sessionId) { $0.agentViewMode = "default"; $0.graphViewMode = nil }
-            let defaultView = place(guided: false) == .card
-            result["otherViewsDockTheWholeCard"] = timeline && defaultView
+            result["otherViewsDockTheWholeCard"] = timeline
 
             let saved = MightyGraphBlockSize(width: 820, height: 610)
             setGraphPlanSize(sessionId, size: saved)
@@ -41,7 +39,7 @@ extension AppStore {
             setGraphPlanSize(sessionId, size: nil)
             let cleared = snapshot.sessions.first { $0.id == sessionId }?.graphPlanSize == nil
             result["planSizeSavedAndCleared"] = kept && cleared
-            result["passed"] = inDiagram && timeline && defaultView && kept && cleared
+            result["passed"] = inDiagram && timeline && kept && cleared
         } catch { result["error"] = error.localizedDescription }
         toolPermissions[sessionId] = originalRequests
         updateSession(sessionId) {

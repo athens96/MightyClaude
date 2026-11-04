@@ -254,7 +254,7 @@ struct SessionPaneView: View {
     }
 
     /// A small status word in its ink, then the figures in mono, which fade at the right
-    /// before the word does; the Default | Mighty switch and the pane's buttons stay at the
+    /// before the word does; the pane's buttons stay at the
     /// right. The pane's name and status glyph are on its tab right above, so they are not
     /// said twice here.
     private var agentHeader: some View {
@@ -298,13 +298,7 @@ struct SessionPaneView: View {
 
     @ViewBuilder private var headerControls: some View {
         if session.kind == "claude", MightyGraphSupport.providers.contains(session.provider) {
-            HStack(spacing: 2) {
-                agentModeButton(L("graph.view.default"), mode: "default", symbol: "text.alignleft")
-                agentModeButton(L("graph.view.mighty"), mode: "mighty", symbol: "point.3.connected.trianglepath.dotted")
-            }
-            .padding(2).background(Palette.segmentTrack, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .fixedSize()
-            if session.agentViewMode == "mighty", ["claude", "codex"].contains(session.provider) {
+            if ["claude", "codex"].contains(session.provider) {
                 Button { store.openPluginBrowser(sessionID: session.id) } label: {
                     Image(systemName: "puzzlepiece.extension").font(.ui(size: 12, weight: .semibold))
                         .frame(width: 22, height: 24).contentShape(Rectangle())
@@ -348,28 +342,6 @@ struct SessionPaneView: View {
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
         .help(L("pane.menu.accessibility")).accessibilityLabel(L("pane.menu.accessibility"))
-    }
-
-    /// One side of the header's Default | Mighty switch: the chosen side is a raised chip on
-    /// the quiet track, the other keeps the muted ink.
-    private func agentModeButton(_ title: String, mode: String, symbol: String) -> some View {
-        let selected = (session.agentViewMode ?? "default") == mode
-        return Button {
-            store.selectSession(session.id)
-            store.setAgentViewMode(session.id, mode: mode)
-        } label: {
-            Label(title, systemImage: symbol)
-                .font(.ui(size: 11, weight: .semibold))
-                .foregroundStyle(selected ? Palette.ink : Palette.ink2)
-                .padding(.horizontal, 8).frame(height: 20)
-                // The chip's shadow sits on its shape only, never on the words.
-                .background { if selected { RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.segmentOn).shadow(color: .black.opacity(0.12), radius: 1, y: 1) } }
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L("graph.view.modeAccessibility", ["mode": title]))
-        .accessibilityValue(selected ? L("accessibility.selected") : L("accessibility.notSelected"))
-        .accessibilityIdentifier("agent-mode-\(mode)-\(session.id)")
     }
 
     private func modelMenu(maximumTextWidth: CGFloat) -> some View {

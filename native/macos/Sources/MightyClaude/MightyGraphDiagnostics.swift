@@ -182,8 +182,7 @@ enum MightyGraphDiagnostics {
                   window.makeFirstResponder(nativeInput) else { throw MightyError("모드 전환용 네이티브 입력창을 찾지 못했습니다.") }
             nativeInput.insertText("한글 초안 · 그래프 전환", replacementRange: NSRange(location: 0, length: nativeInput.string.utf16.count))
             try await store.waitForSmoke(timeout: 3, step: "draft typed into the composer") { store.drafts[session.id] == "한글 초안 · 그래프 전환" }
-            // The pane's mode chip, run as its button runs it.
-            store.selectSession(session.id); store.setAgentViewMode(session.id, mode: "mighty")
+            store.selectSession(session.id)
             // The camera follows the newest result; the draft block below it is panned into view.
             try await store.waitForSmoke(timeout: 3, step: "Mighty mode shows the draft block") {
                 showDraft(window)
@@ -198,15 +197,6 @@ enum MightyGraphDiagnostics {
             try await store.waitForSmoke(timeout: 3, step: "saved draft block size applied") {
                 window.contentView.flatMap { camera(in: $0) }?.layoutFrames.first { $0.0 == "pending-input" }?.1.size == CGSize(width: 680, height: 230)
             }
-            store.selectSession(session.id); store.setAgentViewMode(session.id, mode: "default")
-            // The diagram's canvas is gone from the pane (a native view, found without accessibility).
-            try await store.waitForSmoke(timeout: 3, step: "default mode hides the graph") { window.contentView.flatMap { camera(in: $0) } == nil }
-            guard window.contentView.map({ textViews(in: $0).contains(where: { $0 === nativeInput }) }) == true,
-                  store.drafts[session.id] == "한글 초안 · 그래프 전환",
-                  store.snapshot.sessions.first(where: { $0.id == session.id })?.logs == session.logs,
-                  store.snapshot.sessions.first(where: { $0.id == session.id })?.graphRuns == session.graphRuns else { throw MightyError("기본 모드 복귀가 대화·그래프 기록 또는 초안을 지웠습니다.") }
-            report["modeTogglePreservesNativeComposerAndHistory"] = true
-            store.selectSession(session.id); store.setAgentViewMode(session.id, mode: "mighty")
             try await store.waitForSmoke(timeout: 3, step: "saved size survives the mode remount") {
                 window.contentView.flatMap { camera(in: $0) }?.layoutFrames.first { $0.0 == "pending-input" }?.1.size == CGSize(width: 680, height: 230)
             }

@@ -530,17 +530,6 @@ export function providerColorsFor(palette: Palette, provider: string): string[] 
   return colors ?? [palette.textMuted];
 }
 
-/**
- * `agentViewMode` is the one setting the host sends without an option list, so the two
- * values the contract fixes are spelled out here.
- */
-export function agentViewModes(): SettingOption[] {
-  return [
-    { id: 'plain', label: t('graph.view.default') },
-    { id: 'mighty', label: 'Mighty' },
-  ];
-}
-
 /** The host's label for an id, falling back to the id itself for values we do not know. */
 export function optionLabel(options: readonly SettingOption[], id: string): string {
   const match = options.find((option) => option.id === id);

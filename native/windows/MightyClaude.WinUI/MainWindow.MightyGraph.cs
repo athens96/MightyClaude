@@ -24,13 +24,6 @@ public sealed partial class MainWindow
     /// </summary>
     private sealed partial class PaneView
     {
-        // ── pane header switch ────────────────────────────────────────────────
-
-        private Button? modeDefaultButton, modeMightyButton;
-        /// <summary>The Default | Mighty track (segmentTrack, r8, padding 2) and each side's chip (segmentOn, r6, shadow 0.12).</summary>
-        private Border? modeSwitch;
-        private Rectangle? modeDefaultChip, modeMightyChip;
-
         // ── canvas ────────────────────────────────────────────────────────────
 
         private Grid? graphHost;
@@ -172,7 +165,7 @@ public sealed partial class MainWindow
         internal void AttachMightyView(FrameworkElement anchor)
         {
             if (owner.closing || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } pane ||
-                !MightyGraphViewModel.ShowsModeSwitch(pane)) return;
+                !MightyGraphViewModel.SupportsMighty(pane)) return;
             anchor.Loaded += (_, _) => BuildMightyView();
         }
 
@@ -184,18 +177,9 @@ public sealed partial class MainWindow
             // Loaded can already be queued when a pane is closed. Never build
             // native controls or subscribe the removed view to live run events.
             if (graphAttached || !QueuePaneAlive || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } pane ||
-                !MightyGraphViewModel.ShowsModeSwitch(pane) || Container.Child is not Grid grid || paneHeader is null) return;
+                !MightyGraphViewModel.SupportsMighty(pane) || Container.Child is not Grid grid || paneHeader is null) return;
             graphAttached = true;
 
-            // The switch leads the header's controls (M/SessionPaneView.swift:251-256).
-            var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xxs };
-            modeDefaultButton = ModePill(MightyGraphViewModel.LocaleKeyDefault, "default", options, out modeDefaultChip);
-            modeMightyButton = ModePill(MightyGraphViewModel.LocaleKeyMighty, "mighty", options, out modeMightyChip);
-            modeSwitch = new Border { Child = options, Padding = new Thickness(DesignMetrics.Spacing.Xxs), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = owner.brushes.SegmentTrack, VerticalAlignment = VerticalAlignment.Center };
-            AutomationProperties.SetAutomationId(modeSwitch, "mighty-mode-switch-" + id);
-            paneHeaderControls.Children.Insert(0, modeSwitch);
-            modeSwitch.SizeChanged += (_, _) => QueuePaneHeaderLayout();
-            QueuePaneHeaderLayout();
 
             // The Mighty bar starts right under the header's rule (M/MightyGraphView.swift:175): the pane grid's row gap is taken back.
             graphHost = new Grid { RowSpacing = 0, Visibility = Visibility.Collapsed, Margin = new Thickness(0, -grid.RowSpacing, 0, 0) };
@@ -321,69 +305,6 @@ public sealed partial class MainWindow
             return button;
         }
 
-        /// <summary>
-        /// One side of the Default | Mighty switch (M/SessionPaneView.swift:306-324): the symbol and its word,
-        /// 11 semibold, height 20, padding h8. The Mac's Label sets the symbol in a slot about 15 wide and
-        /// the word 8 after it (the word starts 23pt behind the padding). The button draws no fill in any
-        /// state; the chosen side's chip is the shadow-casting shape under it (<see cref="PaintModeOption"/>).
-        /// </summary>
-        private Button ModePill(string localeKey, string mode, Panel options, out Rectangle chip)
-        {
-            var text = Locale.Get(localeKey);
-            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md, VerticalAlignment = VerticalAlignment.Center };
-            content.Children.Add(ModeSymbol(mode == "mighty"));
-            content.Children.Add(new TextBlock { Text = text, TextSize = DesignMetrics.Type.Pill, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-            var button = new Button { Content = content, MinWidth = 0, MinHeight = 0, Height = 20, Padding = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0) };
-            owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Transparent);
-            AutomationProperties.SetAutomationId(button, "mighty-mode-" + mode + "-" + id); AutomationProperties.SetName(button, text); ToolTipService.SetToolTip(button, text);
-            button.Click += async (_, _) => await SetAgentViewMode(mode);
-            var caster = chip = CardShadow.Caster(DesignMetrics.Radius.Segment, CardShadow.SegmentChip, owner.brushes.SegmentOn); chip.Visibility = Visibility.Collapsed;
-            // A caster's shadow is drawn over the caster itself (it would grey the chip by its 0.12), so the chip's
-            // own face lies on top and only the shadow's rim shows; the face comes and goes with the caster.
-            var face = new Rectangle { RadiusX = DesignMetrics.Radius.Segment, RadiusY = DesignMetrics.Radius.Segment, Fill = owner.brushes.SegmentOn, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
-            AutomationProperties.SetAccessibilityView(face, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-            caster.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => face.Visibility = caster.Visibility);
-            var cell = new Grid(); cell.Children.Add(chip); cell.Children.Add(face); cell.Children.Add(button); options.Children.Add(cell);
-            return button;
-        }
-
-        /// <summary>
-        /// The switch's two symbols, drawn (Segoe Fluent Icons has neither shape) in the Mac's 15×12 slot:
-        /// <c>text.alignleft</c>, four lines left-aligned, long and short in turn, 11 wide; and
-        /// <c>point.3.connected.trianglepath.dotted</c>, three small rings at a triangle's corners joined
-        /// by dotted lines. Filled by <see cref="PaintModeOption"/>.
-        /// </summary>
-        private static Microsoft.UI.Xaml.Shapes.Path ModeSymbol(bool mighty)
-        {
-            var shape = new GeometryGroup { FillRule = FillRule.EvenOdd };
-            void Dot(double x, double y, double radius) => shape.Children.Add(new EllipseGeometry { Center = new Windows.Foundation.Point(x, y), RadiusX = radius, RadiusY = radius });
-            if (mighty)
-            {
-                // Rings and dots stand on whole points, so they stay sharp where one point is one pixel.
-                foreach (var (x, y) in new[] { (3.5, 3.5), (11.5, 3.5), (7.5, 9.5) }) { Dot(x, y, 1.75); Dot(x, y, .6); }
-                foreach (var (x, y) in new[] { (6.5, 3.5), (8.5, 3.5), (5.5, 6.5), (9.5, 6.5) }) Dot(x, y, .55);
-            }
-            else
-                for (var row = 0; row < 4; row++) shape.Children.Add(new RectangleGeometry { Rect = new Windows.Foundation.Rect(2, 1 + row * 3, row % 2 == 0 ? 11 : 7, 1.3) });
-            var symbol = new Microsoft.UI.Xaml.Shapes.Path { Data = shape, Width = 15, Height = 12, VerticalAlignment = VerticalAlignment.Center };
-            AutomationProperties.SetAccessibilityView(symbol, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-            return symbol;
-        }
-
-        /// <summary>The chosen side shows its chip and <c>ink</c>; the other keeps the muted <c>ink2</c>.</summary>
-        private void PaintModeOption(Button button, Rectangle chip, bool selected)
-        {
-            chip.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
-            var ink = owner.brushes.Brush(selected ? DesignToken.Ink : DesignToken.Ink2);
-            foreach (var part in ((Panel)button.Content).Children)
-                if (part is TextBlock words) words.Foreground = ink; else if (part is Microsoft.UI.Xaml.Shapes.Shape symbol) symbol.Fill = ink;
-        }
-
-
-        /// Saves the pane's view mode. The run keeps running and the composer
-        /// draft is never touched — only AgentViewMode changes, for this pane.
-        internal Task SetAgentViewMode(string mode) =>
-            owner.Act(async () => { await Change(p => MightyGraphViewModel.ApplyViewMode(p, mode)); Refresh(); RefreshMightyView(Session); });
 
         // ── refresh ───────────────────────────────────────────────────────────
 
@@ -396,9 +317,8 @@ public sealed partial class MainWindow
         /// <summary>Draws the pane in whichever view mode it is saved in.</summary>
         internal void RefreshMightyView(RunSession pane)
         {
-            if (graphHost is null || modeDefaultButton is null || modeMightyButton is null) return;
+            if (graphHost is null) return;
             var mighty = pane.AgentViewMode == "mighty";
-            PaintModeOption(modeDefaultButton, modeDefaultChip!, !mighty); PaintModeOption(modeMightyButton, modeMightyChip!, mighty);
             // A diagram shown again draws its dots once: a theme or camera change while it was hidden left them stale.
             var diagramWasHidden = graphHost.Visibility != Visibility.Visible || graphViewport?.Visibility != Visibility.Visible;
             graphHost.Visibility = mighty ? Visibility.Visible : Visibility.Collapsed;

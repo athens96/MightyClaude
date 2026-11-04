@@ -83,8 +83,9 @@ struct MobileRemoteExtensionTests {
 
     @Test func viewModeAndStyleNormaliseAndGuidedStylesNeedMightyView() {
         #expect(MobileRemoteSupport.viewMode("mighty") == "mighty")
-        #expect(MobileRemoteSupport.viewMode("default") == "plain" && MobileRemoteSupport.viewMode(nil) == "plain")
-        #expect(MobileRemoteSupport.viewMode("graph") == "plain")
+        // An agent pane is always in the Mighty view, whatever it stored.
+        #expect(MobileRemoteSupport.viewMode("default") == "mighty" && MobileRemoteSupport.viewMode(nil) == "mighty")
+        #expect(MobileRemoteSupport.viewMode("graph") == "mighty")
         #expect(MobileRemoteSupport.style(nil) == "cli" && MobileRemoteSupport.style("ouroboros") == "ouroboros")
         // An unknown saved style is the plain CLI, never invented.
         #expect(MobileRemoteSupport.style("zzz") == "cli")

@@ -65,10 +65,8 @@ export interface StoreState {
 
 /** A view the page shows before the host's state says so. */
 export interface ViewChoice {
-  mode?: 'default' | 'mighty';
   presentation?: string;
   /** The host's call for that part answered: the next delta decides, and a choice it does not hold goes back to the host's. */
-  modeSaved?: boolean;
   presentationSaved?: boolean;
 }
 
@@ -143,7 +141,7 @@ export const emptyState: StoreState = {
 export function mightyHolds(state: StoreState, session: RunSession): (request: PendingRequest) => boolean {
   const choice = state.views[session.id];
   const pane = state.mighty[session.id];
-  if ((choice?.mode ?? session.agentViewMode) !== 'mighty' || !drawsDiagram(session) || !pane) return () => true;
+  if (!drawsDiagram(session) || !pane) return () => true;
   const presentation = choice?.presentation ?? session.graphViewMode;
   return (request) => {
     const runs = request.arrivedRunIds ?? (request.runId ? [request.runId] : []);
@@ -183,16 +181,12 @@ export function settleViews(state: StoreState, fromHost = false): StoreState {
     const session = state.snapshot.sessions.find((pane) => pane.id === id);
     if (!session) { changed = true; continue; }
     const kept: ViewChoice = {};
-    if (choice.mode !== undefined && choice.mode !== (session.agentViewMode ?? 'default') && !(fromHost && choice.modeSaved)) {
-      kept.mode = choice.mode;
-      if (choice.modeSaved) kept.modeSaved = true;
-    }
     if (choice.presentation !== undefined && choice.presentation !== session.graphViewMode && !(fromHost && choice.presentationSaved)) {
       kept.presentation = choice.presentation;
       if (choice.presentationSaved) kept.presentationSaved = true;
     }
-    if (kept.mode !== choice.mode || kept.presentation !== choice.presentation) changed = true;
-    if (kept.mode !== undefined || kept.presentation !== undefined) next[id] = kept;
+    if (kept.presentation !== choice.presentation) changed = true;
+    if (kept.presentation !== undefined) next[id] = kept;
   }
   return changed ? { ...state, views: next } : state;
 }
@@ -276,23 +270,19 @@ export function applyView(state: StoreState, message: ViewMessage): StoreState {
   let next: ViewChoice;
   if (message.revert || message.saved) {
     next = { ...current };
-    const mode = message.choice.mode !== undefined && current.mode === message.choice.mode;
     const presentation = message.choice.presentation !== undefined && current.presentation === message.choice.presentation;
     if (message.revert) {
-      if (mode) { delete next.mode; delete next.modeSaved; }
       if (presentation) { delete next.presentation; delete next.presentationSaved; }
     } else {
-      if (mode) next.modeSaved = true;
       if (presentation) next.presentationSaved = true;
     }
   } else {
     // A new click waits for its own call again.
     next = { ...current, ...message.choice };
-    if (message.choice.mode !== undefined) delete next.modeSaved;
     if (message.choice.presentation !== undefined) delete next.presentationSaved;
   }
   const views = { ...state.views };
-  if (next.mode !== undefined || next.presentation !== undefined) views[message.paneId] = next; else delete views[message.paneId];
+  if (next.presentation !== undefined) views[message.paneId] = next; else delete views[message.paneId];
   return settleViews({ ...state, views });
 }
 

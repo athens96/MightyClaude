@@ -4,67 +4,50 @@ internal static class MightyViewModelVerification
 {
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 
-    // ── 1: mighty switch shows only on claude and codex panes ─────────────────
+    // ── 1: the Mighty view is for claude, codex and antigravity panes only ─────────────────
 
     internal static Task ShowsOnlyOnClaudeAndCodexPanes()
     {
         // Claude + claude provider → shows
         var claude = new RunSession { Kind = "claude", Provider = "claude" };
-        Check(MightyGraphViewModel.ShowsModeSwitch(claude), "claude pane must show the switch");
+        Check(MightyGraphViewModel.SupportsMighty(claude), "claude pane must have the Mighty view");
 
         // Claude + codex provider → shows
         var codex = new RunSession { Kind = "claude", Provider = "codex" };
-        Check(MightyGraphViewModel.ShowsModeSwitch(codex), "codex pane must show the switch");
+        Check(MightyGraphViewModel.SupportsMighty(codex), "codex pane must have the Mighty view");
 
         // Antigravity (the gemini id) → shows, as on the Mac
         var gemini = new RunSession { Kind = "claude", Provider = "gemini" };
-        Check(MightyGraphViewModel.ShowsModeSwitch(gemini), "an Antigravity pane must show the switch");
+        Check(MightyGraphViewModel.SupportsMighty(gemini), "an Antigravity pane must have the Mighty view");
 
         // Shell → does not show
         var shell = new RunSession { Kind = "shell", Provider = "claude" };
-        Check(!MightyGraphViewModel.ShowsModeSwitch(shell), "shell pane must not show the switch");
+        Check(!MightyGraphViewModel.SupportsMighty(shell), "shell pane must not have the Mighty view");
 
         // Browser → does not show
         var browser = new RunSession { Kind = "browser", Provider = "claude" };
-        Check(!MightyGraphViewModel.ShowsModeSwitch(browser), "browser pane must not show the switch");
+        Check(!MightyGraphViewModel.SupportsMighty(browser), "browser pane must not have the Mighty view");
 
         // Verify locale keys exist with the right Korean text
         Locale.LanguagePreference = "ko";
-        Check(Locale.Get(MightyGraphViewModel.LocaleKeyDefault) == "기본", "graph.view.default must be 기본");
         Check(Locale.Get(MightyGraphViewModel.LocaleKeyMighty) == "마이티", "graph.view.mighty must be 마이티");
 
         return Task.CompletedTask;
     }
 
-    // ── 2: mighty switch keeps run and draft ──────────────────────────────────
+    // ── 2: a saved default view loads as mighty ───────────────────────────────
 
-    internal static Task SwitchKeepsRunAndDraft()
+    internal static Task SavedDefaultLoadsAsMighty()
     {
-        var session = new RunSession
+        var workspace = new Workspace { Path = Path.GetTempPath() };
+        RunSession Load(RunSession pane) => StateStore.Normalize(new AppSnapshot { Version = 1, Workspaces = [workspace], Sessions = [pane with { WorkspaceId = workspace.Id }] }, true).Sessions.Single();
+        foreach (var saved in new string?[] { "default", "mighty", null })
         {
-            Kind = "claude", Provider = "claude", Status = "running",
-            Draft = "my composer draft",
-            AgentViewMode = "default",
-            GraphRuns = [new MightyGraphRun { Id = "run-1", Input = "Hello", Status = "running" }],
-        };
-
-        // Switch to mighty
-        var mighty = MightyGraphViewModel.ApplyViewMode(session, "mighty");
-        Check(mighty.AgentViewMode == "mighty", "switching to mighty must save mighty");
-        Check(mighty.Status == "running", "switching view mode must not change run status");
-        Check(mighty.Draft == "my composer draft", "switching view mode must not clear draft");
-        Check(mighty.GraphRuns is { Count: 1 } && mighty.GraphRuns[0].Id == "run-1",
-            "switching view mode must not change GraphRuns");
-
-        // Switch back to default
-        var back = MightyGraphViewModel.ApplyViewMode(mighty, "default");
-        Check(back.AgentViewMode == "default", "switching to default must save default");
-        Check(back.Draft == "my composer draft", "switching back must not clear draft");
-
-        // Unknown mode is a no-op
-        var unchanged = MightyGraphViewModel.ApplyViewMode(session, "grid");
-        Check(unchanged.AgentViewMode == "default", "unknown mode must leave AgentViewMode unchanged");
-
+            var loaded = Load(new RunSession { Kind = "claude", Provider = "codex", Draft = "my composer draft", AgentViewMode = saved });
+            Check(loaded.AgentViewMode == "mighty", "an agent pane saved as " + (saved ?? "nothing") + " must load as mighty");
+            Check(loaded.Draft == "my composer draft", "the view mode must not touch the draft");
+        }
+        Check(Load(new RunSession { Kind = "shell", AgentViewMode = "default" }).AgentViewMode is null, "a shell has no Mighty view");
         return Task.CompletedTask;
     }
 
@@ -295,7 +278,7 @@ internal static class MightyViewModelVerification
 
         // Locale keys are non-empty strings (not hardcoded values)
         foreach (var key in new[] {
-            MightyGraphViewModel.LocaleKeyDefault, MightyGraphViewModel.LocaleKeyMighty,
+            MightyGraphViewModel.LocaleKeyMighty,
             MightyGraphViewModel.LocaleKeyZoomOut, MightyGraphViewModel.LocaleKeyZoomReset,
             MightyGraphViewModel.LocaleKeyZoomIn, MightyGraphViewModel.LocaleKeyResultFilesTitle,
             MightyGraphViewModel.LocaleKeyResultFilesClose, MightyGraphViewModel.LocaleKeyBlockScrolling,
@@ -306,8 +289,7 @@ internal static class MightyViewModelVerification
 
         // All selector methods exist and return expected types
         var session = new RunSession { Kind = "claude", Provider = "claude" };
-        Check(MightyGraphViewModel.ShowsModeSwitch(session), "ShowsModeSwitch must exist and work");
-        Check(MightyGraphViewModel.ApplyViewMode(session, "mighty").AgentViewMode == "mighty", "ApplyViewMode must work");
+        Check(MightyGraphViewModel.SupportsMighty(session), "SupportsMighty must exist and work");
         Check(MightyGraphViewModel.ZoomIn(1.0) > 1.0, "ZoomIn must increase zoom");
         Check(MightyGraphViewModel.ZoomOut(1.0) < 1.0, "ZoomOut must decrease zoom");
         Check(!string.IsNullOrEmpty(MightyGraphViewModel.ZoomLabel(1.0)), "ZoomLabel must return a string");
@@ -346,13 +328,6 @@ internal static class MightyViewModelVerification
         Check((int)Math.Round(levels[0] * 100) == 50, "min zoom must be 50%");
         Check((int)Math.Round(MightyGraphViewModel.ZoomDefault * 100) == 100, "default zoom must be 100%");
         Check((int)Math.Round(levels[^1] * 100) == 150, "max zoom must be 150%");
-
-        // Mode restore must keep draft unchanged
-        var session = new RunSession { Kind = "claude", Provider = "claude", AgentViewMode = "default", Draft = "smoke draft" };
-        var switched = MightyGraphViewModel.ApplyViewMode(session, "mighty");
-        var restored = MightyGraphViewModel.ApplyViewMode(switched, "default");
-        Check(restored.AgentViewMode == "default" && restored.Draft == "smoke draft",
-            "mode restore must set default and keep draft");
 
         // Every drawn block carries the copy the Windows canvas renders.
         var blocks = MightyGraphBlockModel.Blocks(layout, [run], draft: "", providerLabel: "Claude",

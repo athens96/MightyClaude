@@ -54,23 +54,15 @@ public static class MightyGraphViewModel
     // ── pane eligibility ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// True when the pane header should show the Default / Mighty mode switch.
+    /// True when the pane draws the Mighty view (the one view an agent pane has).
     /// Matches macOS: kind == "claude" and provider is in Providers.
     /// </summary>
-    public static bool ShowsModeSwitch(RunSession session) =>
+    public static bool SupportsMighty(RunSession session) =>
         session.Kind == "claude" && MightyGraphSupport.Providers.Contains(session.Provider);
 
-    // ── mode switch ───────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Applies a view-mode switch to the session. Switching never restarts the
-    /// run, never clears the composer draft, and never changes GraphRuns.
-    /// </summary>
-    public static RunSession ApplyViewMode(RunSession session, string mode)
-    {
-        if (mode is not ("default" or "mighty")) return session;
-        return session with { AgentViewMode = mode };
-    }
+    /// <summary>The saved view of a pane: "mighty" for an agent pane that has the Mighty view (whatever was saved), none for any other.</summary>
+    public static string? ViewMode(string kind, string provider) =>
+        kind == "claude" && MightyGraphSupport.Providers.Contains(provider) ? "mighty" : null;
 
     // ── canvas blocks ─────────────────────────────────────────────────────────
 
@@ -206,7 +198,6 @@ public static class MightyGraphViewModel
 
     // ── locale keys (used by WinUI to look up the right strings) ─────────────
 
-    public static string LocaleKeyDefault => "graph.view.default";
     public static string LocaleKeyMighty => "graph.view.mighty";
     public static string LocaleKeyZoomOut => "graph.zoom.out";
     public static string LocaleKeyZoomReset => "graph.zoom.reset";

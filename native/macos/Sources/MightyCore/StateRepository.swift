@@ -364,7 +364,8 @@ public actor StateRepository {
         // A shell starts again at its prompt; an agent's run did not survive the quit.
         if restoring && session.status == "running" { session.status = session.kind == SessionKind.shell ? "idle" : "stopped" }
         if let id = session.resumeId, !CoreValidation.identifier(id) { session.resumeId = nil }
-        session.agentViewMode = ["default", "mighty"].contains(session.agentViewMode ?? "") ? session.agentViewMode : nil
+        // Mighty is the one view an agent pane has: a saved "default" (or nothing) loads as "mighty".
+        session.agentViewMode = session.kind == "claude" && MightyGraphSupport.providers.contains(session.provider) ? "mighty" : nil
         session.mightyStyle = normalizedStyle(session, knownStyleIds: knownStyleIds)
         if session.mightyStyle == nil { session.mightyStyleHash = nil; session.mightyStyleSince = nil }
         if let since = session.mightyStyleSince, since.count > 64 || AgentRunTiming.parseTimestamp(since) == nil { session.mightyStyleSince = nil }

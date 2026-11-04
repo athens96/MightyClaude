@@ -257,13 +257,9 @@ private func openChild(_ id: String, byHuman: Bool = false) -> ChildRecord {
         let agent = DelegationPanes.childSession(DelegationChildPane(sessionId: "c2", parentSessionId: "parent", mode: "plan", folder: "/w/c2"), workspaceId: "ws", title: "Fix it", parent: parent)
         #expect(agent.agentViewMode == "mighty" && agent.mightyViewMode == .structure)
         #expect(agent.mightyStyle == nil && agent.mightyStyleHash == nil)
-        // A parent in the basic view, or no parent, leaves the defaults.
-        parent.agentViewMode = "default"
-        parent.graphViewMode = nil
-        let basic = DelegationPanes.childSession(DelegationChildPane(sessionId: "c3", parentSessionId: "parent", mode: "auto", folder: "/w/c3", startedByHuman: true), workspaceId: "ws", title: "t", parent: parent)
-        #expect(basic.agentViewMode == "default" && basic.mightyViewMode == .diagram)
+        // No parent leaves the defaults: the Mighty view, the diagram.
         let orphan = DelegationPanes.childSession(DelegationChildPane(sessionId: "c4", parentSessionId: "parent", mode: "auto", folder: "/w/c4"), workspaceId: "ws", title: "t")
-        #expect(orphan.agentViewMode == nil && orphan.graphViewMode == nil)
+        #expect(orphan.agentViewMode == "mighty" && orphan.graphViewMode == nil)
     }
 }
 

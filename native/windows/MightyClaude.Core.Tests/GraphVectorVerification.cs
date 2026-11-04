@@ -468,8 +468,8 @@ internal static class GraphVectorVerification
         var live = StateStore.Normalize(new AppSnapshot { Version = 1, Workspaces = [workspace], Sessions = [session] }, false).Sessions.Single().GraphRuns!.Single();
         Check(live.Status == "running" && live.Agents.All(a => a.Status == "running"), "a live update must not stop a running graph block");
 
-        // Anything other than "default"/"mighty" loads as no choice at all.
-        foreach (var raw in new[] { "\"grid\"", "12", "null", "true" })
+        // Whatever was saved, an agent pane loads in the Mighty view (a saved "default" included).
+        foreach (var raw in new[] { "\"grid\"", "\"default\"", "12", "null", "true" })
         {
             var node = JsonNode.Parse(encoded)!;
             node["sessions"]![0]!["agentViewMode"] = JsonNode.Parse(raw);
@@ -478,7 +478,7 @@ internal static class GraphVectorVerification
             {
                 await StateStore.AtomicWriteAsync(Path.Combine(directory2, "workspace-state.json"), System.Text.Encoding.UTF8.GetBytes(node.ToJsonString()));
                 var loaded = await new StateStore(directory2).LoadAsync();
-                Check(loaded.Sessions.Single().AgentViewMode is null, "agentViewMode " + raw + " must load as null");
+                Check(loaded.Sessions.Single().AgentViewMode == "mighty", "agentViewMode " + raw + " must load as mighty");
             }
             finally { Directory.Delete(directory2, true); }
         }
@@ -493,7 +493,7 @@ internal static class GraphVectorVerification
             await StateStore.AtomicWriteAsync(Path.Combine(directory3, "workspace-state.json"), System.Text.Encoding.UTF8.GetBytes(legacy.ToJsonString()));
             var loaded = await new StateStore(directory3).LoadAsync();
             var restored = loaded.Sessions.Single();
-            Check(restored.AgentViewMode is null && restored.GraphRuns is null, "a snapshot without the fields loads unchanged");
+            Check(restored.AgentViewMode == "mighty" && restored.GraphRuns is null, "a snapshot without the fields loads in the Mighty view");
         }
         finally { Directory.Delete(directory3, true); }
     }

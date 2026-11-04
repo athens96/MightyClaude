@@ -130,8 +130,7 @@ extension AppStore {
         guard let id = addSession(kind: SessionKind.claude, provider: item.provider, workspaceId: workspaceId) else { return nil }
         updateSession(id) { ResumableSessions.apply(item, to: &$0) }
         rememberSessionID(item.sessionID)
-        // The Mighty diagram shows the session's latest requests right away;
-        // a pane in the default view loads them when switched to Mighty.
+        // The Mighty diagram shows the session's latest requests right away.
         if snapshot.sessions.first(where: { $0.id == id })?.agentViewMode == "mighty" { loadOlderGraphHistory(id) }
         return id
     }

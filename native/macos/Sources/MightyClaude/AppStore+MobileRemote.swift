@@ -927,9 +927,8 @@ extension AppStore {
     func mobileApplySettings(_ id: String, request: MobileSettingsRequest) throws {
         let session = try mobileAISession(id)
         // Shape and vocabulary first: a malformed body is 400 whatever the pane
-        // is doing. The style is judged against the view mode this same request
-        // asks for, so "turn Mighty on and pick Ouroboros" works in one POST.
-        let viewMode = request.agentViewMode ?? mobileViewMode(session)
+        // is doing. An agent pane is always in the Mighty view, so a style is judged against it.
+        let viewMode = mobileViewMode(session)
         // What this sender was last told, read before a single mutation.
         let shown = mobileStyleId(session)
         try MobileRemoteSupport.validate(request, options: mobileSettingsOptions(session, model: request.model, agentViewMode: viewMode))
@@ -942,7 +941,7 @@ extension AppStore {
             changeModel(id, to: model)
             guard mobilePane(id)?.model == model else { throw MobileHostError.conflict(L("remote.error.modelFailed")) }
         }
-        if let mode = request.agentViewMode { try mobileApplyViewMode(id, mode: mode) }
+        // An older phone may still ask for the plain view: it is heard, and the pane stays in the Mighty view.
         // `styleId` is the open field and wins outright; `mightyStyle` is then
         // ignored rather than refused, so the host's own pair round-trips (§7.2).
         if let styleId = request.styleId { try mobileApplyStyleId(id, styleId: styleId, shown: shown) }
@@ -966,15 +965,6 @@ extension AppStore {
         if let mode = request.permissionMode, mode != session.settings.permissionMode,
            !permissionModes(for: session).contains(mode) {
             throw MobileHostError.conflict(L("remote.error.permissionUnverified"))
-        }
-    }
-
-    private func mobileApplyViewMode(_ id: String, mode: String) throws {
-        guard let session = mobilePane(id) else { throw MobileHostError.notFound(L("remote.error.paneNotFound")) }
-        guard mobileViewMode(session) != mode else { return }
-        setAgentViewMode(id, mode: mode == MobileWire.plainViewMode ? "default" : "mighty")
-        guard let updated = mobilePane(id), mobileViewMode(updated) == mode else {
-            throw MobileHostError.conflict(L("remote.error.noMighty"))
         }
     }
 

@@ -1154,8 +1154,8 @@ internal static class Verification
         await Test("graph result files match macOS", GraphVectorVerification.Files);
         await Test("graph session fields share macOS names", GraphVectorVerification.SessionFields);
         await Test("graph runs recorded from a Windows run", GraphVectorVerification.RecordedFromARun);
-        await Test("mighty switch shows only on claude and codex panes", MightyViewModelVerification.ShowsOnlyOnClaudeAndCodexPanes);
-        await Test("mighty switch keeps run and draft", MightyViewModelVerification.SwitchKeepsRunAndDraft);
+        await Test("mighty view is for claude, codex and antigravity panes only", MightyViewModelVerification.ShowsOnlyOnClaudeAndCodexPanes);
+        await Test("a saved default view loads as mighty", MightyViewModelVerification.SavedDefaultLoadsAsMighty);
         await Test("mighty canvas blocks follow the layout", MightyViewModelVerification.CanvasBlocksFollowTheLayout);
         await Test("mighty capsule and tooltip match macOS", MightyViewModelVerification.CapsuleAndTooltipMatchMacOS);
         await Test("mighty zoom steps match macOS", MightyViewModelVerification.ZoomStepsMatchMacOS);

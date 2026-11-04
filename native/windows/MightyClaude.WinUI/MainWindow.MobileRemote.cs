@@ -707,7 +707,9 @@ public sealed partial class MainWindow
             if (!value.EnumerateObject().Any() || value.EnumerateObject().Any(p => p.Name is not ("model" or "permissionMode" or "effort" or "agentViewMode" or "mightyStyle" or "styleId") || p.Value.ValueKind != JsonValueKind.String)) throw new MobileRequestException(400, "Unknown setting.");
             var pane = Session; var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var model = value.Text("model") ?? pane.Model; var mode = value.Text("permissionMode") ?? pane.Settings.PermissionMode; var effort = value.Text("effort") ?? pane.Settings.Effort;
             if (!ModelLabel.PickerOptions(pane, catalog).Any(m => m.Value == model) || !(Capabilities.PermissionModes ?? []).Contains(mode) || effort != "default" && !ProviderCatalog.Efforts(pane.Provider, model, catalog, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot)).Contains(effort)) throw new MobileRequestException(400, "Unsupported model, permission, or effort.");
-            var view = value.Text("agentViewMode") ?? (pane.AgentViewMode == "mighty" ? "mighty" : "plain"); if (view is not ("plain" or "mighty")) throw new MobileRequestException(400, "Unsupported view.");
+            if (value.Text("agentViewMode") is not (null or "plain" or "mighty")) throw new MobileRequestException(400, "Unsupported view.");
+            // An older phone may still ask for the plain view: it is heard, and the pane stays in the Mighty view, the one view an agent pane has.
+            const string view = "mighty";
             // What this sender was last told, read before anything is changed: a pane in the plain view reports "cli" whatever it
             // has stored, so a phone handing that back while it turns the Mighty view on leaves the stored style alone
             // (M/MightyClaude/AppStore+MobileRemote.swift:783-795). The style is judged against the view this same request asks for.
@@ -721,7 +723,7 @@ public sealed partial class MainWindow
                 if (!StyleRegistry.Unchanged(selected)) throw new MobileRequestException(409, "Style changed.");
             }
             token.ThrowIfCancellationRequested(); if (MobileBusy || Session.Provider != pane.Provider || Session.Model != pane.Model || Session.MightyStyle != pane.MightyStyle || Session.Settings != pane.Settings) throw new MobileRequestException(409, "The pane changed.");
-            await Change(p => p with { Model = model, Settings = p.Settings with { PermissionMode = mode, Effort = effort, NetworkAccess = mode is ("acceptEdits" or "onRequest") && p.Settings.NetworkAccess }, AgentViewMode = view == "mighty" ? "mighty" : "default", MightyStyle = changes ? style : p.MightyStyle, MightyStyleHash = changes ? selected?.Hash : p.MightyStyleHash, MightyStyleSince = !changes || p.MightyStyle == style ? p.MightyStyleSince : null }); loadedStyleKey = null; await LoadStyles(quiet: true); Refresh();
+            await Change(p => p with { Model = model, Settings = p.Settings with { PermissionMode = mode, Effort = effort, NetworkAccess = mode is ("acceptEdits" or "onRequest") && p.Settings.NetworkAccess }, AgentViewMode = "mighty", MightyStyle = changes ? style : p.MightyStyle, MightyStyleHash = changes ? selected?.Hash : p.MightyStyleHash, MightyStyleSince = !changes || p.MightyStyle == style ? p.MightyStyleSince : null }); loadedStyleKey = null; await LoadStyles(quiet: true); Refresh();
         }
         /// <summary>
         /// A style's button pressed on the phone (M/MightyClaude/AppStore+MobileRemote.swift:634-647). The prompt is built by the
