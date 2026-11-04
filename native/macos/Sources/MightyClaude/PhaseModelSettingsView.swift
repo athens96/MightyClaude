@@ -6,19 +6,23 @@ private let mixedSentinel = "__mixed__"
 struct PhaseModelSettingsSection: View {
     @EnvironmentObject private var store: AppStore
 
+    /// One card per agent, so the line between the two comes from the cards, not a divider.
     var body: some View {
-        SettingsGroup {
-            Text(L("settings.phaseModels.description"))
-                .font(.ui(size: 11)).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(L("settings.phaseModels.effortNote"))
-                .font(.ui(size: 11)).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            PhaseModelProviderBlock(provider: "claude").environmentObject(store)
-            Divider()
-            PhaseModelProviderBlock(provider: "codex").environmentObject(store)
-        } header: {
-            Text(L("settings.phaseModels.sectionTitle"))
+        Text(L("settings.phaseModels.description"))
+            .font(.ui(size: 12)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        Text(L("settings.phaseModels.effortNote"))
+            .font(.ui(size: 12)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        ForEach(["claude", "codex"], id: \.self) { provider in
+            SettingsGroup {
+                PhaseModelProviderBlock(provider: provider).environmentObject(store)
+            } header: {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    Text(L("settings.phaseModels.sectionTitle") + " · " + ProviderOptions.label(provider))
+                    if ProviderOptions.isBeta(provider) { BetaBadge() }
+                }
+            }
         }
     }
 }
@@ -41,29 +45,21 @@ private struct PhaseModelProviderBlock: View {
         store.providerRuntime(provider, workspaceId: store.snapshot.activeWorkspaceId ?? "").modelCatalog
     }
 
+    /// The rows of one agent's card: its phases (a model and an effort side by side), the CLI's
+    /// knobs, the models registered by hand, and the row that adds one. Each is a `SettingsRow`, so
+    /// the lines between them are the card's.
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(ProviderOptions.label(provider)).font(.ui(size: 12, weight: .medium))
-                if ProviderOptions.isBeta(provider) { BetaBadge() }
-            }
-            if provider == "claude" { claudePhaseRows } else { codexPhaseRows }
-            Divider()
-            if provider == "claude" { claudeKnobDetails } else { codexKnobDetails }
-            Divider()
-            Text(L("settings.phaseModels.registeredTitle"))
-                .font(.ui(size: 11, weight: .medium))
-            ForEach(registered, id: \.name) { entry in
-                registeredRow(entry)
-            }
-            addRow
-            if let err = validationError {
-                Text(err).font(.ui(size: 11)).foregroundStyle(Palette.errText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("phaseModels-error-\(provider)")
-            }
+        if provider == "claude" { claudePhaseRows } else { codexPhaseRows }
+        if provider == "claude" { claudeKnobDetails } else { codexKnobDetails }
+        ForEach(registered, id: \.name) { entry in
+            registeredRow(entry)
         }
-        .padding(.vertical, DesignMetrics.Spacing.xxs)
+        addRow
+        if let err = validationError {
+            Text(err).font(.ui(size: 12)).foregroundStyle(Palette.errText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("phaseModels-error-\(provider)")
+        }
     }
 
     // MARK: - Claude phase rows
@@ -127,29 +123,32 @@ private struct PhaseModelProviderBlock: View {
 
     /// A phase with no knob for one of the two says so instead of offering a
     /// choice the CLI would ignore.
+    /// Two 160pt selects on one row (decision 6): the model, then the effort.
     private func phaseRow(_ phase: PhaseModelRouting.Phase, model: ModelCell?, effort: EffortCell?) -> some View {
-        HStack(spacing: DesignMetrics.Spacing.sm) {
-            Text(phaseTitle(phase)).font(.ui(size: 11))
-            Spacer(minLength: 4)
-            if let model {
-                Picker("", selection: Binding(get: { model.selection }, set: { if $0 != mixedSentinel { model.onPick($0) } })) {
-                    if model.selection == mixedSentinel { Text(L("settings.phaseModels.mixed")).tag(mixedSentinel) }
-                    modelOptions(current: model.selection)
+        SettingsRow(phaseTitle(phase)) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                if let model {
+                    Picker("", selection: Binding(get: { model.selection }, set: { if $0 != mixedSentinel { model.onPick($0) } })) {
+                        if model.selection == mixedSentinel { Text(L("settings.phaseModels.mixed")).tag(mixedSentinel) }
+                        modelOptions(current: model.selection)
+                    }
+                    .labelsHidden().pickerStyle(.menu).frame(width: DesignMetrics.Settings.pairSelectWidth)
+                    .accessibilityIdentifier("phaseModels-model-\(provider)-\(phase.rawValue)")
+                } else {
+                    Text(L("settings.phaseModels.paneModel")).font(.ui(size: 12)).foregroundStyle(.secondary)
+                        .frame(width: DesignMetrics.Settings.pairSelectWidth, alignment: .trailing)
                 }
-                .labelsHidden().pickerStyle(.menu).frame(maxWidth: 220)
-                .accessibilityIdentifier("phaseModels-model-\(provider)-\(phase.rawValue)")
-            } else {
-                Text(L("settings.phaseModels.paneModel")).font(.ui(size: 11)).foregroundStyle(.secondary).frame(maxWidth: 220, alignment: .trailing)
-            }
-            if let effort {
-                Picker("", selection: Binding(get: { effort.selection }, set: { effort.onPick($0) })) {
-                    Text(L("settings.phaseModels.defaultOption")).tag("default")
-                    ForEach(effortLevels(including: effort.selection), id: \.self) { Text(verbatim: $0).tag($0) }
+                if let effort {
+                    Picker("", selection: Binding(get: { effort.selection }, set: { effort.onPick($0) })) {
+                        Text(L("settings.phaseModels.defaultOption")).tag("default")
+                        ForEach(effortLevels(including: effort.selection), id: \.self) { Text(verbatim: $0).tag($0) }
+                    }
+                    .labelsHidden().pickerStyle(.menu).frame(width: DesignMetrics.Settings.pairSelectWidth)
+                    .accessibilityIdentifier("phaseModels-effort-\(provider)-\(phase.rawValue)")
+                } else {
+                    Text(L("settings.phaseModels.effortUnsupported")).font(.ui(size: 12)).foregroundStyle(.tertiary)
+                        .frame(width: DesignMetrics.Settings.pairSelectWidth, alignment: .leading)
                 }
-                .labelsHidden().pickerStyle(.menu).frame(width: 110)
-                .accessibilityIdentifier("phaseModels-effort-\(provider)-\(phase.rawValue)")
-            } else {
-                Text(L("settings.phaseModels.effortUnsupported")).font(.ui(size: 10)).foregroundStyle(.tertiary).frame(width: 110, alignment: .leading)
             }
         }
     }
@@ -215,69 +214,55 @@ private struct PhaseModelProviderBlock: View {
     }
 
     private func knobRow(label: String, keyPath: WritableKeyPath<PhaseModelHardcodedConfig, String>) -> some View {
-        HStack(spacing: DesignMetrics.Spacing.sm) {
-            Text(label).font(.ui(size: 11)).foregroundStyle(.secondary)
-            Spacer(minLength: 4)
+        SettingsRow(label) {
             Picker("", selection: Binding(
                 get: { phaseConfig[keyPath: keyPath] },
                 set: { store.setPhaseModelKnob(keyPath, value: $0) }
             )) {
                 modelOptions(current: phaseConfig[keyPath: keyPath])
             }
-            .labelsHidden().pickerStyle(.menu).frame(maxWidth: 220)
+            .pickerStyle(.menu).settingsSelect()
         }
     }
 
     // MARK: - Registered model management
 
     private func registeredRow(_ entry: RegisteredModelEntry) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                Text(verbatim: entry.name).font(.ui(size: 11, design: .monospaced))
-                if entry.supportsEffort {
-                    Text(L("settings.phaseModels.supportsEffortLabel"))
-                        .font(.ui(size: 10)).foregroundStyle(.secondary)
-                }
-            }
-            Spacer(minLength: 0)
+        SettingsRow(entry.name, caption: entry.supportsEffort ? L("settings.phaseModels.supportsEffortLabel") : nil) {
             Button(L("settings.phaseModels.deleteButton"), role: .destructive) {
                 store.removeRegisteredModel(provider: provider, name: entry.name)
             }
-            .controlSize(.small)
         }
         .accessibilityIdentifier("phaseModels-registered-\(provider)-\(entry.name)")
     }
 
-    private var addRow: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+    /// A wide row: the model ID across the row with 추가 beside it, then whether it takes an effort and which.
+    @ViewBuilder private var addRow: some View {
+        SettingsRow(L("settings.phaseModels.registeredTitle"), wide: true) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 TextField(L("settings.phaseModels.addPlaceholder"), text: $addName)
                     .textFieldStyle(.roundedBorder)
-                    .font(.ui(size: 11, design: .monospaced))
+                    .font(.ui(size: 12, design: .monospaced))
                     .onSubmit { addModel() }
                     .accessibilityIdentifier("phaseModels-add-\(provider)")
                 Button(L("settings.phaseModels.addButton")) { addModel() }
-                    .controlSize(.small)
                     .accessibilityIdentifier("phaseModels-addButton-\(provider)")
             }
-            Toggle(L("settings.phaseModels.supportsEffortLabel"), isOn: $addSupportsEffort)
-                .font(.ui(size: 11))
-                .accessibilityIdentifier("phaseModels-addEffort-\(provider)")
-                .onChange(of: addSupportsEffort) { _, on in if !on { addEffortLevels = [] } }
-            if addSupportsEffort {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                    Text(L("settings.phaseModels.effortLevelsLabel"))
-                        .font(.ui(size: 10)).foregroundStyle(.secondary)
-                    HStack(spacing: DesignMetrics.Spacing.xs) {
-                        ForEach(ProviderOptions.efforts, id: \.self) { level in
-                            let selected = addEffortLevels.contains(level)
-                            Button(level) {
-                                if selected { addEffortLevels.remove(level) } else { addEffortLevels.insert(level) }
-                            }
-                            .controlSize(.mini).buttonStyle(.borderedProminent)
-                            .opacity(selected ? 1.0 : 0.4)
-                            .accessibilityIdentifier("phaseModels-addLevel-\(provider)-\(level)")
+        }
+        Toggle(L("settings.phaseModels.supportsEffortLabel"), isOn: $addSupportsEffort)
+            .accessibilityIdentifier("phaseModels-addEffort-\(provider)")
+            .onChange(of: addSupportsEffort) { _, on in if !on { addEffortLevels = [] } }
+        if addSupportsEffort {
+            SettingsRow(L("settings.phaseModels.effortLevelsLabel"), wide: true) {
+                HStack(spacing: DesignMetrics.Spacing.xs) {
+                    ForEach(ProviderOptions.efforts, id: \.self) { level in
+                        let selected = addEffortLevels.contains(level)
+                        Button(level) {
+                            if selected { addEffortLevels.remove(level) } else { addEffortLevels.insert(level) }
                         }
+                        .buttonStyle(selected ? AnyPrimitiveButtonStyle(.borderedProminent) : AnyPrimitiveButtonStyle(.bordered))
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                        .accessibilityIdentifier("phaseModels-addLevel-\(provider)-\(level)")
                     }
                 }
             }

@@ -114,7 +114,7 @@ struct MightyStructureView: View {
     private static let outputSize: CGFloat = 11
     private static let promptSize: CGFloat = 10.5
     /// The list of boards.
-    private static let listWidth: CGFloat = 340
+    private static let listWidth = DesignMetrics.Dialog.popoverWidthL
     private static let listHeight: CGFloat = 420
 
     var body: some View {

@@ -9,10 +9,7 @@ struct AppUpdateSettingsSection: View {
             LabeledContent(L("settings.appUpdate.currentVersionLabel"), value: store.appVersion)
             if store.appUpdatePublicKey == nil {
                 // Rule 1: keyless builds do not support update checks — no bypass.
-                Text(L("settings.appUpdate.noPublicKeyNotice"))
-                    .font(.ui(size: 11)).foregroundStyle(Palette.waitText)
-                HStack(spacing: DesignMetrics.Spacing.md) {
-                    Spacer()
+                SettingsRow(L("settings.appUpdate.checkButton"), caption: L("settings.appUpdate.noPublicKeyNotice")) {
                     Button(L("settings.appUpdate.checkButton")) {}.disabled(true)
                 }
             } else {
@@ -22,24 +19,25 @@ struct AppUpdateSettingsSection: View {
                         Text(builtIn).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                 } else {
-                    TextField(L("settings.appUpdate.manifestUrlPlaceholder"), text: Binding(get: { store.appUpdateManifestURLOverride }, set: { store.appUpdateManifestURLOverride = $0 }))
-                        .textFieldStyle(.roundedBorder).font(.ui(size: 12, design: .monospaced))
-                        .accessibilityIdentifier("app-update-url")
-                    if store.appUpdateManifestURL == nil {
-                        Text(L("settings.appUpdate.manifestUrlHint")).font(.ui(size: 11)).foregroundStyle(.secondary)
+                    // An address: a wide row, the field as wide as the row.
+                    SettingsRow(L("settings.appUpdate.manifestUrlAddressLabel"), caption: store.appUpdateManifestURL == nil ? L("settings.appUpdate.manifestUrlHint") : nil, wide: true) {
+                        TextField(L("settings.appUpdate.manifestUrlPlaceholder"), text: Binding(get: { store.appUpdateManifestURLOverride }, set: { store.appUpdateManifestURLOverride = $0 }))
+                            .textFieldStyle(.roundedBorder).font(.ui(size: 12, design: .monospaced))
+                            .accessibilityIdentifier("app-update-url")
                     }
                 }
-                Toggle(L("settings.appUpdate.autoUpdateToggle"), isOn: Binding(get: { store.appUpdateAutomatic }, set: { store.appUpdateAutomatic = $0 }))
-                    .accessibilityIdentifier("app-update-automatic")
-                Text(L("settings.appUpdate.autoUpdateDescription"))
-                    .font(.ui(size: 10)).foregroundStyle(.secondary)
+                Toggle(isOn: Binding(get: { store.appUpdateAutomatic }, set: { store.appUpdateAutomatic = $0 })) {
+                    SettingsRowLabel(L("settings.appUpdate.autoUpdateToggle"), caption: L("settings.appUpdate.autoUpdateDescription"))
+                }
+                .accessibilityIdentifier("app-update-automatic")
                 Text(L("settings.appUpdate.signatureVerified"))
-                    .font(.ui(size: 10)).foregroundStyle(.secondary)
+                    .font(.ui(size: 12)).foregroundStyle(.secondary)
                 HStack(spacing: DesignMetrics.Spacing.md) {
                     statusView
                     Spacer()
                     actionButton
                 }
+                .settingsRowFrame()
                 failureNotice
                 if let manifest = store.appUpdate.availability?.manifest, store.appUpdate.availability?.isNewer == true, let notes = manifest.notes, !notes.isEmpty {
                     Text(notes).font(.ui(size: 11)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(8)

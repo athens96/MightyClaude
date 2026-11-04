@@ -81,29 +81,23 @@ struct RemoteSettingsSection: View {
                 LabeledContent(L("settings.remote.keyLabel")) {
                     HStack(spacing: DesignMetrics.Spacing.sm) {
                         Text(showsKey ? value : String(repeating: "•", count: 16)).font(.ui(size: 11, design: .monospaced)).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
-                        Button(showsKey ? L("settings.remote.hideKeyButton") : L("settings.remote.showKeyButton")) { showsKey.toggle() }.controlSize(.small)
+                        Button(showsKey ? L("settings.remote.hideKeyButton") : L("settings.remote.showKeyButton")) { showsKey.toggle() }
                         copyButton(value, identifier: "settings-remote-copy-key", secret: true)
                     }
                 }
             }
             Toggle(isOn: Binding(get: { host.allowsFullAccess }, set: { store.setRemoteFullAccess($0) })) {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                    Text(L("settings.remote.allowFullAccess"))
-                    Text(L("settings.remote.allowFullAccessDescription"))
-                        .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
+                SettingsRowLabel(L("settings.remote.allowFullAccess"), caption: L("settings.remote.allowFullAccessDescription"))
             }
             .accessibilityIdentifier("settings-remote-full-access")
             Text(L("settings.remote.sharedListTitle")).font(.ui(size: 11, weight: .medium)).foregroundStyle(.secondary)
             ForEach(localWorkspaces.filter { host.workspaceIds.contains($0.id) }) { workspace in
                 Label(workspace.name, systemImage: "folder").font(.ui(size: 12)).help(workspace.path)
             }
-            HStack {
-                Spacer()
+            SettingsRow(L("settings.remote.stopSharing"), caption: L("settings.remote.stopSharingNote")) {
                 Button(role: .destructive) { store.stopSharing(); showsKey = false } label: { Label(L("settings.remote.stopSharing"), systemImage: "stop.circle") }
                     .disabled(store.remoteBusy).accessibilityIdentifier("settings-remote-stop-sharing")
             }
-            Text(L("settings.remote.stopSharingNote")).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         } else {
             if localWorkspaces.isEmpty {
                 Text(L("settings.remote.noLocalWorkspaces")).font(.ui(size: 11)).foregroundStyle(.secondary)
@@ -111,52 +105,47 @@ struct RemoteSettingsSection: View {
                 Text(L("settings.remote.pickWorkspaces")).font(.ui(size: 11, weight: .medium)).foregroundStyle(.secondary)
                 ForEach(localWorkspaces) { workspace in
                     Toggle(isOn: Binding(get: { selected.contains(workspace.id) }, set: { if $0 { selected.insert(workspace.id) } else { selected.remove(workspace.id) } })) {
-                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                            Text(workspace.name).font(.ui(size: 12))
-                            Text(workspace.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                        }
+                        SettingsRowLabel(workspace.name, caption: workspace.path)
                     }
                     .accessibilityIdentifier("settings-remote-share-\(workspace.id)")
                 }
             }
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(L("settings.remote.portLabel")).font(.ui(size: 12))
-                TextField("\(RemoteProtocol.defaultPort)", text: $port).textFieldStyle(.roundedBorder).font(.ui(size: 11, design: .monospaced)).frame(width: 80)
+            SettingsRow(L("settings.remote.portLabel")) {
+                TextField("\(RemoteProtocol.defaultPort)", text: $port).textFieldStyle(.roundedBorder).font(.ui(size: 12, design: .monospaced)).settingsField()
                     .accessibilityIdentifier("settings-remote-port")
-                Spacer()
+            }
+            SettingsRow(L("settings.remote.startSharing"), caption: L("settings.remote.shareNote")) {
                 Button { store.startSharing(workspaceIds: localWorkspaces.map(\.id).filter(selected.contains), port: Int(port) ?? RemoteProtocol.defaultPort) } label: {
                     Label(L("settings.remote.startSharing"), systemImage: "play.circle")
                 }
                 .disabled(store.remoteBusy || selected.isDisjoint(with: localWorkspaces.map(\.id)) || tailscale.isEmpty)
                 .accessibilityIdentifier("settings-remote-start-sharing")
             }
-            Text(L("settings.remote.shareNote")).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     // MARK: 다른 컴퓨터 연결
 
+    /// The address and the key are wide rows (the name over a field as wide as the row); the name a 240pt field.
     @ViewBuilder private var connecting: some View {
-        HStack(spacing: DesignMetrics.Spacing.sm) {
-            Text(L("settings.remote.addressField")).font(.ui(size: 12)).frame(width: 90, alignment: .leading)
-            TextField(L("settings.remote.addressPlaceholder"), text: $address).textFieldStyle(.roundedBorder).font(.ui(size: 11, design: .monospaced))
+        SettingsRow(L("settings.remote.addressField"), wide: true) {
+            TextField(L("settings.remote.addressPlaceholder"), text: $address).textFieldStyle(.roundedBorder).font(.ui(size: 12, design: .monospaced))
                 .accessibilityIdentifier("settings-remote-address")
         }
-        HStack(spacing: DesignMetrics.Spacing.sm) {
-            Text(L("settings.remote.keyField")).font(.ui(size: 12)).frame(width: 90, alignment: .leading)
-            SecureField(L("settings.remote.keyPlaceholder"), text: $key).textFieldStyle(.roundedBorder).font(.ui(size: 11, design: .monospaced))
+        SettingsRow(L("settings.remote.keyField"), wide: true) {
+            SecureField(L("settings.remote.keyPlaceholder"), text: $key).textFieldStyle(.roundedBorder).font(.ui(size: 12, design: .monospaced))
                 .accessibilityIdentifier("settings-remote-key")
         }
-        HStack(spacing: DesignMetrics.Spacing.sm) {
-            Text(L("settings.remote.nameField")).font(.ui(size: 12)).frame(width: 90, alignment: .leading)
-            TextField(L("settings.remote.namePlaceholder"), text: $name).textFieldStyle(.roundedBorder).font(.ui(size: 12))
+        SettingsRow(L("settings.remote.nameField")) {
+            TextField(L("settings.remote.namePlaceholder"), text: $name).textFieldStyle(.roundedBorder).font(.ui(size: 12)).settingsField()
                 .accessibilityIdentifier("settings-remote-name")
+        }
+        SettingsRow(L("settings.remote.connectButton"), caption: L("settings.remote.connectNote")) {
             Button { store.connectRemote(name: name, address: address, key: key); key = "" } label: { Label(L("settings.remote.connectButton"), systemImage: "link") }
                 .disabled(store.remoteBusy || address.trimmingCharacters(in: .whitespaces).isEmpty || key.trimmingCharacters(in: .whitespaces).isEmpty)
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("settings-remote-connect")
         }
-        Text(L("settings.remote.connectNote")).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
     private func connectionRow(_ connection: RemoteConnectionInfo) -> some View {
@@ -168,13 +157,13 @@ struct RemoteSettingsSection: View {
                     Text(connection.address).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: DesignMetrics.Spacing.md)
-                Button(L("settings.remote.refreshButton")) { store.refreshRemote(connection.id) }.controlSize(.small).disabled(store.remoteBusy)
+                Button(L("settings.remote.refreshButton")) { store.refreshRemote(connection.id) }.disabled(store.remoteBusy)
                     .accessibilityIdentifier("settings-remote-refresh-\(connection.id)")
                 if connection.status == .connected {
-                    Button(L("settings.remote.disconnectButton")) { store.disconnectRemote(connection.id) }.controlSize(.small).disabled(store.remoteBusy)
+                    Button(L("settings.remote.disconnectButton")) { store.disconnectRemote(connection.id) }.disabled(store.remoteBusy)
                 }
                 Button(role: .destructive) { store.removeRemote(connection.id) } label: { Image(systemName: "trash") }
-                    .controlSize(.small).disabled(store.remoteBusy).help(L("settings.remote.removeHelp"))
+                    .disabled(store.remoteBusy).help(L("settings.remote.removeHelp"))
                     .accessibilityLabel(L("settings.remote.removeHelp"))
             }
             if let detail = connection.detail { Text(detail).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
@@ -190,14 +179,14 @@ struct RemoteSettingsSection: View {
                         }
                         Spacer()
                         Button(opened ? L("settings.remote.openedButton") : L("settings.remote.openButton")) { store.openRemoteWorkspace(connectionId: connection.id, hostWorkspaceId: shared.id) }
-                            .controlSize(.small).disabled(store.remoteBusy)
+                            .disabled(store.remoteBusy)
                             .accessibilityIdentifier("settings-remote-open-\(shared.id)")
                     }
                     .padding(.leading, DesignMetrics.Spacing.xl)
                 }
             }
         }
-        .padding(.vertical, DesignMetrics.Spacing.xxs)
+        .settingsRowFrame()
         .accessibilityIdentifier("settings-remote-connection-\(connection.id)")
     }
 
@@ -220,6 +209,6 @@ struct RemoteSettingsSection: View {
                 if pasteboard.changeCount == written, pasteboard.string(forType: .string) == value { pasteboard.clearContents() }
             }
         } label: { Label(L("settings.remote.copyButton"), systemImage: "doc.on.doc") }
-            .controlSize(.small).accessibilityIdentifier(identifier)
+            .accessibilityIdentifier(identifier)
     }
 }

@@ -198,12 +198,12 @@ button { font: inherit; color: inherit; }
 .status-divider { width: 1px; height: 12px; margin: 0 var(--space-xs); background: var(--line); }
 .status-chips { display: inline-flex; gap: var(--space-sm); border: 0; background: none; padding: 0; color: var(--ink2); font-size: var(--type-small); }
 .usage-chip { display: inline-flex; align-items: center; gap: var(--space-xs); height: 18px; padding: 0 var(--space-sm); border-radius: 9px; background: var(--card); font-variant-numeric: tabular-nums; }
+/* The usage (kind D, the look of .popover in dialogs/dialog.css): 320 wide over the status bar's chips. */
 .usage-popover {
-  position: absolute; right: var(--space-md); bottom: calc(100% + 4px); width: 320px; max-height: 520px; overflow-y: auto; z-index: 20;
-  display: flex; flex-direction: column; gap: var(--space-md); padding: var(--space-lg); border: var(--stroke-line) solid var(--line);
-  border-radius: var(--radius-pane); background: var(--card); color: var(--ink); white-space: normal; box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  position: absolute; right: var(--space-md); bottom: calc(100% + 4px); z-index: 20;
+  display: flex; flex-direction: column; gap: var(--space-md); padding: 0 var(--dialog-padding) var(--dialog-padding); white-space: normal;
 }
-.usage-head { display: flex; align-items: center; justify-content: space-between; font-size: var(--type-title); }
+.usage-head { display: flex; align-items: center; justify-content: space-between; min-height: var(--dialog-header-height); margin-bottom: calc(-1 * var(--space-md)); font-size: var(--dialog-title-size); font-weight: 600; }
 .usage-card { display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-md); border-radius: var(--radius-card-button); background: var(--card-raised); font-size: var(--type-pill); }
 .usage-card-title { display: flex; align-items: center; gap: var(--space-sm); }
 .usage-window-line { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
@@ -331,7 +331,7 @@ button { font: inherit; color: inherit; }
 .welcome-shortcuts { margin-top: 10px; }
 .empty-panes h2 { margin: 0; font-size: var(--type-title); }
 
-/* Menus and sheets */
+/* Menus and the sheets' fields (the sheets themselves: dialogs/dialog.css) */
 .menu {
   position: fixed; z-index: 50; min-width: 200px; padding: var(--space-xs); border: var(--stroke-line) solid var(--line);
   border-radius: var(--radius-row); background: var(--card); box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
@@ -343,15 +343,9 @@ button { font: inherit; color: inherit; }
 .menu-label { flex: 1; }
 .menu-shortcut { color: var(--ink3); font-size: var(--type-small); }
 .menu-separator { height: 1px; margin: var(--space-xs) 0; background: var(--line); }
-.sheet-backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(0, 0, 0, .28); }
-.sheet { display: flex; flex-direction: column; gap: var(--space-md); max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); padding: var(--inset-sheet); border-radius: var(--radius-pane); background: var(--card); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); }
-.sheet-title { margin: 0; font-size: var(--type-title); font-weight: 700; }
-.sheet-message { margin: 0; white-space: pre-wrap; }
 .sheet-field { height: 28px; padding: 0 var(--space-sm); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-segment); background: var(--page); color: var(--ink); font: inherit; }
 .sheet-caption { font-size: 10px; color: var(--ink2); }
-.sheet-buttons { display: flex; gap: var(--space-sm); align-items: center; }
 /* The create sheets (dialogs/WorkspaceCreate.tsx; M/WorkspaceCreateViews.swift): the labels trailing in their column, the fields after. */
-.create-heading { display: flex; flex-direction: column; gap: var(--space-xxs); }
 .create-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-md); align-items: center; min-width: 0; margin: 0; padding: 0; border: 0; }
 .create-label { justify-self: end; font-size: var(--type-row); }
 .create-location { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; font-size: var(--type-row); }

@@ -92,7 +92,7 @@ function UsagePopover({ usage, onClose }: { usage: UsageDetails; onClose: () => 
     return () => { window.removeEventListener('mousedown', close, true); window.removeEventListener('keydown', key, true); };
   }, [call, onClose]);
   return (
-    <div className="usage-popover" ref={element} role="dialog" data-page-overlay="" aria-label={usage.title} data-testid="usage-popover">
+    <div className="usage-popover popover width-s" ref={element} role="dialog" data-page-overlay="" aria-label={usage.title} data-testid="usage-popover">
       <div className="usage-head">
         <strong>{usage.title}</strong>
         <button type="button" className="icon-button" disabled={usage.refreshing} aria-label={usage.refreshLabel} title={usage.refreshTooltip} onClick={() => call('usageRefresh', { force: true })}>

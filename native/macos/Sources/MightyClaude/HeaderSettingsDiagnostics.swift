@@ -57,7 +57,7 @@ extension AppStore {
         result["settingsFrame"] = NSStringFromRect(sheet.frame)
         result["settingsGearOpensSheet"] = true
         result["settingsScreenshot"] = try captureSmokeWindow(sheet, filename: "settings.png").path
-        guard let close = headerSmokeElement(sheet, label: L("settings.closeButton")), headerSmokePress(close) else { throw MightyError("설정 창 닫기 버튼을 실행하지 못했습니다.") }
+        guard let close = headerSmokeElement(sheet, label: L("dialog.close")), headerSmokePress(close) else { throw MightyError("설정 창 닫기 버튼을 실행하지 못했습니다.") }
         try await waitForSmoke(timeout: 3) { !self.showSettings && window.attachedSheet == nil }
         result["settingsClose"] = true
         result["passed"] = true

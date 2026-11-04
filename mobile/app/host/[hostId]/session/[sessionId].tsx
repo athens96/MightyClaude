@@ -58,8 +58,8 @@ import {
   type SettingField,
 } from '@/components/session-header';
 import { SessionPanel } from '@/components/session-panel';
-import { ConfirmDialog, MessageSheet, PickerSheet, PromptDialog, Sheet } from '@/components/sheets';
-import { Button, EmptyState, ErrorBanner, SegmentedControl } from '@/components/ui';
+import { BottomSheet, ConfirmDialog, MessageSheet, PickerSheet, PromptDialog, SheetRow } from '@/components/sheets';
+import { EmptyState, ErrorBanner, SegmentedControl } from '@/components/ui';
 import { useAttachments } from '@/hooks/use-attachments';
 import { useCapabilities, useRunsAntigravity } from '@/hooks/use-capabilities';
 import { useFollowBottom } from '@/hooks/use-follow-bottom';
@@ -134,7 +134,7 @@ import {
 } from '@/store/live';
 import { showToast } from '@/store/toast';
 import { CLAUDE_ASK, filesTravel, parseAskTargets, shownAskTarget } from '@/lib/ask-targets';
-import { spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
+import { spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 /**
  * The host reports what actually happened, not what was asked for: "next request" on a
@@ -1582,26 +1582,28 @@ export default function SessionScreen() {
         />
       </View>
 
-      <Sheet visible={menuOpen} onClose={() => setMenuOpen(false)}>
-        <Text style={styles.menuTitle}>{t('phone.session.menu.title')}</Text>
-        <Button
+      <BottomSheet
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        title={t('phone.session.menu.title')}
+        inset={false}
+      >
+        <SheetRow
           label={t('phone.session.menu.rename')}
-          tone="neutral"
           onPress={() => {
             setMenuOpen(false);
             setRenaming(true);
           }}
         />
-        <Button
+        <SheetRow
           label={t('phone.session.menu.close')}
-          tone="danger"
+          danger
           onPress={() => {
             setMenuOpen(false);
             setClosing(true);
           }}
         />
-        <Button label={t('common.cancel')} tone="ghost" onPress={() => setMenuOpen(false)} />
-      </Sheet>
+      </BottomSheet>
 
       <PromptDialog
         visible={renaming}
@@ -1643,6 +1645,7 @@ export default function SessionScreen() {
         selectedId={picker && settings ? valueFor(settings, picker) : undefined}
         busy={savingSetting}
         locked={settings ? !settings.editable : true}
+        loading={!settings}
         onSelect={applySetting}
         onClose={closePicker}
       />
@@ -1699,7 +1702,6 @@ const makeStyles = (palette: Palette) =>
       justifyContent: 'center',
       width: 36,
     },
-    menuTitle: { ...typeScale.title, color: palette.text },
     olderRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     olderText: { color: palette.textFaint, fontSize: 12, paddingVertical: spacing.xs },
     pullRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, justifyContent: 'center' },

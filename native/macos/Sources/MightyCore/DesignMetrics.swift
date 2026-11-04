@@ -155,6 +155,104 @@ public enum DesignMetrics {
         ]
     }
 
+    /// The popup standard's desktop sizes (fixture `metrics.dialog`, .omc/plans/popup-standard.md): a
+    /// form sheet (kind B) and a panel (kind C) share the header, body and footer drawn by
+    /// `DialogScaffold`; a popover (kind D) its widths. A Mac sheet or popover keeps the system's
+    /// corners and shadow, so `radius`, the backdrop and the shadows are Windows' alone, kept here so
+    /// the table matches the fixture. The fixture's `phone` sizes are the phone's.
+    public enum Dialog {
+        public static let radius: CGFloat = 12
+        public static let popoverRadius: CGFloat = 10
+        public static let headerHeight: CGFloat = 48
+        public static let footerHeight: CGFloat = 52
+        /// The header's and footer's sides and the body on every side.
+        public static let padding: CGFloat = 16
+        public static let titleSize: CGFloat = 15
+        public static let subtitleSize: CGFloat = 12
+        public static let iconSize: CGFloat = 20
+        /// The panel's ✕: its hit square, glyph and hover corner.
+        public static let closeHit: CGFloat = 28
+        public static let closeGlyph: CGFloat = 14
+        public static let closeRadius: CGFloat = 8
+        public static let buttonHeight: CGFloat = 28
+        public static let buttonPaddingX: CGFloat = 12
+        public static let buttonRadius: CGFloat = 7
+        public static let buttonGap: CGFloat = 8
+        public static let gripSize: CGFloat = 16
+        public static let alertWidth: CGFloat = 400
+        /// A form sheet's three fixed widths.
+        public static let sheetWidthS: CGFloat = 360
+        public static let sheetWidthM: CGFloat = 460
+        public static let sheetWidthL: CGFloat = 560
+        /// A popover's two widths, and the share of the screen it grows to before it scrolls.
+        public static let popoverWidthS: CGFloat = 320
+        public static let popoverWidthL: CGFloat = 360
+        public static let popoverMaxHeightRatio: CGFloat = 0.6
+        public static let backdropOpacityLight: CGFloat = 0.28
+        public static let backdropOpacityDark: CGFloat = 0.5
+        public static let darkBorder: CGFloat = 1
+
+        /// Every number by its fixture name (not the CSS shadows, the note or the phone's sizes).
+        public static let all: [String: CGFloat] = [
+            "radius": radius, "popoverRadius": popoverRadius, "headerHeight": headerHeight, "footerHeight": footerHeight,
+            "padding": padding, "titleSize": titleSize, "subtitleSize": subtitleSize, "iconSize": iconSize,
+            "closeHit": closeHit, "closeGlyph": closeGlyph, "closeRadius": closeRadius,
+            "buttonHeight": buttonHeight, "buttonPaddingX": buttonPaddingX, "buttonRadius": buttonRadius, "buttonGap": buttonGap,
+            "gripSize": gripSize, "alertWidth": alertWidth,
+            "sheetWidthS": sheetWidthS, "sheetWidthM": sheetWidthM, "sheetWidthL": sheetWidthL,
+            "popoverWidthS": popoverWidthS, "popoverWidthL": popoverWidthL, "popoverMaxHeightRatio": popoverMaxHeightRatio,
+            "backdropOpacityLight": backdropOpacityLight, "backdropOpacityDark": backdropOpacityDark, "darkBorder": darkBorder,
+        ]
+    }
+
+    /// The settings window (fixture `metrics.settings`, the same numbers as Windows): its size, the
+    /// list of entries, the large title, and the one row every section draws (`SettingsRow`).
+    public enum Settings {
+        public static let width: CGFloat = 860
+        public static let height: CGFloat = 640
+        public static let minWidth: CGFloat = 720
+        public static let minHeight: CGFloat = 520
+        public static let listWidth: CGFloat = 260
+        public static let largeTitle: CGFloat = 28
+        public static let heroHeight: CGFloat = 104
+        public static let barTitle: CGFloat = 15
+        /// An entry of the list: its row, its icon tile and glyph, its text, and where the line between two starts.
+        public static let navRowHeight: CGFloat = 48
+        public static let navTile: CGFloat = 30
+        public static let navTileRadius: CGFloat = 9
+        public static let navGlyph: CGFloat = 15
+        public static let navText: CGFloat = 14
+        public static let navDividerInset: CGFloat = 56
+        /// A section: its title over a card, the card's corner and sides.
+        public static let sectionTitle: CGFloat = 12
+        public static let cardRadius: CGFloat = 16
+        public static let cardPaddingX: CGFloat = 16
+        /// A row: its least height, its name and caption, the inset of the line between two.
+        public static let rowMinHeight: CGFloat = 48
+        public static let rowName: CGFloat = 14
+        public static let rowCaption: CGFloat = 12
+        public static let rowDividerInset: CGFloat = 16
+        /// A row's control: the switch, a select's width bounds, a text field, and each of a pair of selects.
+        public static let switchWidth: CGFloat = 42
+        public static let switchHeight: CGFloat = 24
+        public static let selectMinWidth: CGFloat = 160
+        public static let selectMaxWidth: CGFloat = 240
+        public static let fieldWidth: CGFloat = 240
+        public static let pairSelectWidth: CGFloat = 160
+
+        /// Every number by its fixture name (not the note).
+        public static let all: [String: CGFloat] = [
+            "width": width, "height": height, "minWidth": minWidth, "minHeight": minHeight, "listWidth": listWidth,
+            "largeTitle": largeTitle, "heroHeight": heroHeight, "barTitle": barTitle,
+            "navRowHeight": navRowHeight, "navTile": navTile, "navTileRadius": navTileRadius, "navGlyph": navGlyph,
+            "navText": navText, "navDividerInset": navDividerInset,
+            "sectionTitle": sectionTitle, "cardRadius": cardRadius, "cardPaddingX": cardPaddingX,
+            "rowMinHeight": rowMinHeight, "rowName": rowName, "rowCaption": rowCaption, "rowDividerInset": rowDividerInset,
+            "switchWidth": switchWidth, "switchHeight": switchHeight,
+            "selectMinWidth": selectMinWidth, "selectMaxWidth": selectMaxWidth, "fieldWidth": fieldWidth, "pairSelectWidth": pairSelectWidth,
+        ]
+    }
+
     /// The motion tokens (fixture `motion`), in whole milliseconds but the easing curve:
     /// `quick` a small state change (a pill, an icon), `standard` a block appearing or
     /// leaving, `scroll` a scroll or camera move, `easing` their cubic-bezier,

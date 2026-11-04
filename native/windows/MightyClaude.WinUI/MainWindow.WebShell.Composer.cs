@@ -273,7 +273,7 @@ public sealed partial class MainWindow
         {
             result["composerRunSettings"] = new { shown, held, blocked, unlocked, draftKept, ctrlEnterIgnored, refusalShown, refused, calls, route, menuChosen, diagnostics, error };
             bridge.Register("applyRunSettings", ApplyWebRunSettings);
-            await core.ExecuteScriptAsync(Query("[data-testid=run-settings] .popover-footer .popover-button") + "?.click()");
+            await core.ExecuteScriptAsync(Query("[data-testid=run-settings-cancel]") + "?.click()");
             await core.ExecuteScriptAsync(Query("[data-menu=options]") + "?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
             await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(p => p.Id == paneId ? p with { Status = before.Status, Settings = before.Settings } : p).ToList() });
             view.Refresh();

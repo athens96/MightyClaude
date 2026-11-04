@@ -5,7 +5,7 @@ import { Icon, type IconName } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { CommandList } from '@/components/command-list';
 import { Pending, PendingBars, usePendingShown } from '@/components/pending';
-import { Sheet } from '@/components/sheets';
+import { BottomSheet, SheetRow } from '@/components/sheets';
 import { byteLength } from '@/api/client';
 import { MAX_TEXT_BYTES, type MobileCommand, type SubmitMode } from '@/api/types';
 import { pickAfterSheet, type PickKind } from '@/lib/attach-picks';
@@ -16,7 +16,7 @@ import { useBusyState } from '@/hooks/use-pending';
 import type { PendingState } from '@/lib/pending';
 import { busySendChoices } from '@/lib/send';
 import { formatBytes, type PickedFile, type UploadProgress } from '@/lib/uploads';
-import { cardShadow, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
+import { cardShadow, radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 const IDLE_STATE: PendingState = { kind: 'idle' };
 
@@ -328,26 +328,27 @@ export function Composer({
       </View>
 
       {attachments ? (
-        <Sheet visible={pickerOpen} onClose={() => setPickerOpen(false)}>
-          <Text style={styles.sheetTitle}>{t('phone.composer.attach')}</Text>
-          <Button
+        <BottomSheet
+          visible={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          title={t('phone.composer.attach')}
+          inset={false}
+        >
+          <SheetRow
             label={t('phone.composer.pickPhotos')}
-            tone="neutral"
             onPress={() => {
               afterSheet.choose('images');
               setPickerOpen(false);
             }}
           />
-          <Button
+          <SheetRow
             label={t('phone.composer.pickFiles')}
-            tone="neutral"
             onPress={() => {
               afterSheet.choose('documents');
               setPickerOpen(false);
             }}
           />
-          <Button label={t('common.cancel')} tone="ghost" onPress={() => setPickerOpen(false)} />
-        </Sheet>
+        </BottomSheet>
       ) : null}
     </View>
   );
@@ -444,7 +445,6 @@ const makeStyles = (palette: Palette) =>
     uploadRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     hint: { color: palette.textFaint, flex: 1, fontSize: 11 },
     askWarning: { color: palette.textFaint, fontSize: 11 },
-    sheetTitle: { ...typeScale.title, color: palette.text },
     terminalNote: {
       color: palette.warning,
       fontSize: 13,

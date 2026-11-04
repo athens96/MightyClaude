@@ -25,11 +25,8 @@
 .context-ring-text { fill: currentColor; font-weight: 600; font-variant-numeric: tabular-nums; }
 .context-ring.large { width: 44px; height: 44px; }
 
-.composer-popover {
-  position: absolute; bottom: calc(100% + var(--space-sm)); left: 0; z-index: 10; min-width: 220px; max-width: 370px; max-height: 60vh; overflow: auto;
-  background: var(--card); color: var(--ink); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-block);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 18%, transparent); font-size: var(--type-row);
-}
+/* The look is the popup standard's popover (.popover, dialogs/dialog.css); this is where it stands. */
+.composer-popover { position: absolute; bottom: calc(100% + var(--space-sm)); left: 0; z-index: 10; min-width: 220px; max-width: var(--dialog-popover-width-l); font-size: var(--type-row); }
 .composer-menu { padding: var(--space-xs); }
 .menu-row {
   display: flex; align-items: center; gap: var(--space-xs); width: 100%; padding: var(--space-xs) var(--space-sm);
@@ -43,11 +40,11 @@
 .menu-separator { height: var(--stroke-line); margin: var(--space-xs) 0; background: var(--line); }
 .menu-nested { padding-left: var(--space-md); }
 
-.run-settings { width: 360px; display: flex; flex-direction: column; }
+.run-settings { display: flex; flex-direction: column; }
 .run-settings-fields { border: 0; margin: 0; min-width: 0; }
-.run-settings-held { padding: 0 var(--space-lg) var(--space-md); }
-/* The session details (M/SessionInfoViews.swift): 370 wide, 14 padded, 10 between the header and the body. */
-.session-info { width: 370px; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--radius-block); }
+.run-settings-held { padding: 0 var(--dialog-padding) var(--space-md); }
+/* The session details (M/SessionInfoViews.swift): the standard's wide popover, padded 16, 10 between the header and the body. */
+.session-info { display: flex; flex-direction: column; gap: 10px; padding: var(--dialog-padding); }
 .session-info .popover-body { padding: 0; gap: var(--space-sm); }
 .session-info-header { display: flex; align-items: center; gap: var(--space-sm); height: 32px; }
 .session-info-heading strong { font-size: 14px; font-weight: 600; }
@@ -60,9 +57,7 @@
 .session-info-scope { font-size: var(--type-pill); font-weight: 600; }
 .session-info-foot { font-size: var(--type-small); color: var(--ink3); display: flex; flex-direction: column; gap: var(--space-xxs); }
 .session-info-disclosure { display: inline-flex; align-items: center; gap: var(--space-xs); border: 0; padding: 0; background: transparent; color: var(--ink2); font: inherit; font-size: var(--type-pill); cursor: default; }
-.popover-header { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-lg); border-bottom: var(--stroke-line) solid var(--line); }
-.popover-header strong { flex: 1; font-size: 14px; }
-.popover-body { display: flex; flex-direction: column; gap: var(--space-md); padding: var(--space-lg); }
+.popover-body { display: flex; flex-direction: column; gap: var(--space-md); padding: 0 var(--dialog-padding) var(--dialog-padding); }
 .popover-body section { display: flex; flex-direction: column; gap: var(--space-sm); padding-bottom: var(--space-md); border-bottom: var(--stroke-line) solid var(--line); }
 .popover-body section:last-child { border-bottom: 0; padding-bottom: 0; }
 .popover-strong { font-weight: 500; }
@@ -73,15 +68,7 @@
   font: inherit; font-size: var(--type-row); color: var(--ink); background: var(--card-raised);
   border: var(--stroke-line) solid var(--line); border-radius: var(--radius-file-row); padding: var(--space-xxs) var(--space-sm);
 }
-.popover-problem { padding: 0 var(--space-lg) var(--space-md); color: var(--err-text); font-size: var(--type-pill); }
-.popover-footer { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-md); border-top: var(--stroke-line) solid var(--line); }
-.popover-footer .popover-quiet { flex: 1; font-size: var(--type-small); }
-.popover-button {
-  font: inherit; font-size: var(--type-pill); padding: var(--space-xxs) var(--space-md); border-radius: var(--radius-file-row);
-  border: var(--stroke-line) solid var(--line); background: var(--card-raised); color: var(--ink);
-}
-.popover-button.prominent { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-.popover-button:disabled { opacity: 0.5; }
+.popover-problem { padding: 0 var(--dialog-padding) var(--space-md); color: var(--err-text); font-size: var(--type-pill); }
 .session-info-heading { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .session-info-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popover-body .session-info-context { flex-direction: row; align-items: center; }

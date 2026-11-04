@@ -63,19 +63,6 @@ private struct CreateLocationRow: View {
     }
 }
 
-/// The sheets' title and the line under it, as RenameSheet draws its title.
-private struct CreateSheetHeading: View {
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-            Text(title).font(.ui(size: 13, weight: .bold))
-            Text(subtitle).font(.ui(size: 11)).foregroundStyle(.secondary)
-        }
-    }
-}
-
 /// "새 폴더 만들기": a name, a location and an optional `git init`; the folder is then added
 /// as ⌘O adds one.
 struct NewFolderSheet: View {
@@ -91,52 +78,55 @@ struct NewFolderSheet: View {
     private var canCreate: Bool { !busy && CreateCheck.problem(name: name, location: location) == nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-            CreateSheetHeading(title: L("workspace.newFolder.title"), subtitle: L("workspace.newFolder.subtitle"))
-            Grid(alignment: .leading, horizontalSpacing: DesignMetrics.Spacing.md, verticalSpacing: DesignMetrics.Spacing.md) {
-                GridRow {
-                    Text(L("workspace.create.name")).font(.ui(size: 12)).gridColumnAlignment(.trailing)
-                    TextField(L("workspace.create.name"), text: $name)
-                        .textFieldStyle(.roundedBorder)
-                        .labelsHidden()
-                        .focused($nameFocused)
-                        .onSubmit { create() }
-                        .accessibilityIdentifier("workspace-new-folder-name")
+        DialogScaffold(L("workspace.newFolder.title"), subtitle: L("workspace.newFolder.subtitle")) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
+                Grid(alignment: .leading, horizontalSpacing: DesignMetrics.Spacing.md, verticalSpacing: DesignMetrics.Spacing.md) {
+                    GridRow {
+                        Text(L("workspace.create.name")).font(.ui(size: 12)).gridColumnAlignment(.trailing)
+                        TextField(L("workspace.create.name"), text: $name)
+                            .textFieldStyle(.roundedBorder)
+                            .labelsHidden()
+                            .focused($nameFocused)
+                            .onSubmit { create() }
+                            .accessibilityIdentifier("workspace-new-folder-name")
+                    }
+                    GridRow {
+                        Text(L("workspace.create.location")).font(.ui(size: 12))
+                        CreateLocationRow(store: store, location: $location, disabled: busy)
+                    }
+                    GridRow {
+                        Color.clear.frame(width: 0, height: 0)
+                        Toggle(L("workspace.newFolder.gitInit"), isOn: $gitInit)
+                            .accessibilityIdentifier("workspace-new-folder-git-init")
+                    }
                 }
-                GridRow {
-                    Text(L("workspace.create.location")).font(.ui(size: 12))
-                    CreateLocationRow(store: store, location: $location, disabled: busy)
+                .disabled(busy)
+                if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(L("workspace.create.path", ["path": target])).font(.ui(size: 10)).foregroundStyle(.secondary)
+                        .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                        .accessibilityIdentifier("workspace-create-path")
                 }
-                GridRow {
-                    Color.clear.frame(width: 0, height: 0)
-                    Toggle(L("workspace.newFolder.gitInit"), isOn: $gitInit)
-                        .accessibilityIdentifier("workspace-new-folder-git-init")
+                // While the folder is being made it exists already: no "already exists" line then.
+                if let problem = createError ?? (busy ? nil : CreateCheck.shownProblem(name: name, location: location)) {
+                    Text(problem).font(.ui(size: 10)).foregroundStyle(Palette.errText)
+                        .accessibilityIdentifier("workspace-create-problem")
                 }
             }
-            .disabled(busy)
-            if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(L("workspace.create.path", ["path": target])).font(.ui(size: 10)).foregroundStyle(.secondary)
-                    .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
-                    .accessibilityIdentifier("workspace-create-path")
-            }
-            // While the folder is being made it exists already: no "already exists" line then.
-            if let problem = createError ?? (busy ? nil : CreateCheck.shownProblem(name: name, location: location)) {
-                Text(problem).font(.ui(size: 10)).foregroundStyle(Palette.errText)
-                    .accessibilityIdentifier("workspace-create-problem")
-            }
-            HStack {
+        } footer: {
+            DialogFooter {
                 if busy { ProgressView().controlSize(.small) }
-                Spacer()
+            } buttons: {
                 Button(L("workspace.create.cancel")) { store.workspaceCreate = nil }
                     .keyboardShortcut(.cancelAction)
                     .disabled(busy)
                 Button(L("workspace.newFolder.create")) { create() }
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canCreate)
                     .accessibilityIdentifier("workspace-new-folder-create")
             }
         }
-        .padding(DesignMetrics.Inset.sheet).frame(width: 460)
+        .dialogSheetWidth(DesignMetrics.Dialog.sheetWidthM)
         .interactiveDismissDisabled(busy)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-new-folder-sheet")
@@ -209,72 +199,74 @@ struct GitCreateSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-            CreateSheetHeading(title: L("workspace.git.title"), subtitle: L("workspace.git.subtitle"))
-            Grid(alignment: .leading, horizontalSpacing: DesignMetrics.Spacing.md, verticalSpacing: DesignMetrics.Spacing.md) {
-                GridRow {
-                    Text(L("workspace.git.url")).font(.ui(size: 12)).gridColumnAlignment(.trailing)
-                    TextField(L("workspace.git.urlPlaceholder"), text: $url)
-                        .textFieldStyle(.roundedBorder)
-                        .labelsHidden()
-                        .focused($urlFocused)
-                        .accessibilityIdentifier("workspace-git-url")
-                }
-                GridRow {
-                    Color.clear.frame(width: 0, height: 0)
-                    HStack(spacing: DesignMetrics.Spacing.md) {
-                        probeRow
-                        Spacer()
-                        Button(L("workspace.git.test")) { probeNow = true; probeToken += 1 }
-                            .buttonStyle(.link)
-                            .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            .accessibilityIdentifier("workspace-git-test")
+        DialogScaffold(L("workspace.git.title"), subtitle: L("workspace.git.subtitle")) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
+                Grid(alignment: .leading, horizontalSpacing: DesignMetrics.Spacing.md, verticalSpacing: DesignMetrics.Spacing.md) {
+                    GridRow {
+                        Text(L("workspace.git.url")).font(.ui(size: 12)).gridColumnAlignment(.trailing)
+                        TextField(L("workspace.git.urlPlaceholder"), text: $url)
+                            .textFieldStyle(.roundedBorder)
+                            .labelsHidden()
+                            .focused($urlFocused)
+                            .accessibilityIdentifier("workspace-git-url")
+                    }
+                    GridRow {
+                        Color.clear.frame(width: 0, height: 0)
+                        HStack(spacing: DesignMetrics.Spacing.md) {
+                            probeRow
+                            Spacer()
+                            Button(L("workspace.git.test")) { probeNow = true; probeToken += 1 }
+                                .buttonStyle(.link)
+                                .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .accessibilityIdentifier("workspace-git-test")
+                        }
+                    }
+                    GridRow {
+                        Text(L("workspace.create.location")).font(.ui(size: 12))
+                        CreateLocationRow(store: store, location: $location, disabled: running)
+                    }
+                    GridRow {
+                        Text(L("workspace.create.name")).font(.ui(size: 12))
+                        TextField(L("workspace.create.name"), text: nameBinding)
+                            .textFieldStyle(.roundedBorder)
+                            .labelsHidden()
+                            .accessibilityIdentifier("workspace-git-name")
                     }
                 }
-                GridRow {
-                    Text(L("workspace.create.location")).font(.ui(size: 12))
-                    CreateLocationRow(store: store, location: $location, disabled: running)
+                .disabled(running)
+                if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(L("workspace.create.path", ["path": target])).font(.ui(size: 10)).foregroundStyle(.secondary)
+                        .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                        .accessibilityIdentifier("workspace-create-path")
                 }
-                GridRow {
-                    Text(L("workspace.create.name")).font(.ui(size: 12))
-                    TextField(L("workspace.create.name"), text: nameBinding)
-                        .textFieldStyle(.roundedBorder)
-                        .labelsHidden()
-                        .accessibilityIdentifier("workspace-git-name")
+                // git makes the target at once: no "already exists" line while the clone runs.
+                if !running, let problem = CreateCheck.shownProblem(name: name, location: location) {
+                    Text(problem).font(.ui(size: 10)).foregroundStyle(Palette.errText)
+                        .accessibilityIdentifier("workspace-create-problem")
+                }
+                if let failure { errorRow(kind: failure.kind, message: failure.message, identifier: "workspace-git-clone-error") }
+                if running {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+                        ProgressView(value: cloneProgress.fraction)
+                        Text(WorkspaceCreate.message(for: cloneProgress)).font(.ui(size: 11)).foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("workspace-git-progress")
                 }
             }
-            .disabled(running)
-            if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(L("workspace.create.path", ["path": target])).font(.ui(size: 10)).foregroundStyle(.secondary)
-                    .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
-                    .accessibilityIdentifier("workspace-create-path")
-            }
-            // git makes the target at once: no "already exists" line while the clone runs.
-            if !running, let problem = CreateCheck.shownProblem(name: name, location: location) {
-                Text(problem).font(.ui(size: 10)).foregroundStyle(Palette.errText)
-                    .accessibilityIdentifier("workspace-create-problem")
-            }
-            if let failure { errorRow(kind: failure.kind, message: failure.message, identifier: "workspace-git-clone-error") }
-            if running {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                    ProgressView(value: cloneProgress.fraction)
-                    Text(WorkspaceCreate.message(for: cloneProgress)).font(.ui(size: 11)).foregroundStyle(.secondary)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("workspace-git-progress")
-            }
-            HStack {
-                Spacer()
+        } footer: {
+            DialogFooter {
                 Button(L("workspace.create.cancel")) { cancel() }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("workspace-git-cancel")
                 Button(L("workspace.git.create")) { create() }
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canCreate)
                     .accessibilityIdentifier("workspace-git-create")
             }
         }
-        .padding(DesignMetrics.Inset.sheet).frame(width: 460)
+        .dialogSheetWidth(DesignMetrics.Dialog.sheetWidthM)
         .interactiveDismissDisabled(running)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-git-sheet")

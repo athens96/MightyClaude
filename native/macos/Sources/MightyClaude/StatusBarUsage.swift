@@ -237,7 +237,7 @@ struct StatusBarUsageDetails: View {
             Text(L("usage.sharedNoteMac"))
                 .font(.ui(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(DesignMetrics.Inset.popover).frame(width: 320)
+        .padding(DesignMetrics.Inset.popover).frame(width: DesignMetrics.Dialog.popoverWidthS)
         .accessibilityIdentifier("statusbar-usage-details")
     }
 

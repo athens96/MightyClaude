@@ -47,14 +47,14 @@ struct ComponentsSettingsSection: View {
                                 Text(running ? L("settings.components.inProgressLabel") : action.title)
                             }
                         }
-                        .controlSize(.small).buttonStyle(action.primary ? AnyPrimitiveButtonStyle(.borderedProminent) : AnyPrimitiveButtonStyle(.bordered))
+                        .buttonStyle(action.primary ? AnyPrimitiveButtonStyle(.borderedProminent) : AnyPrimitiveButtonStyle(.bordered))
                         .disabled(store.componentAction != nil)
                         .accessibilityIdentifier("component-\(component.id)-\(action.id)")
                     }
                 }
             }
         }
-        .padding(.vertical, DesignMetrics.Spacing.xxs)
+        .settingsRowFrame()
         .accessibilityElement(children: .contain).accessibilityIdentifier("component-\(component.id)")
     }
 
@@ -104,17 +104,17 @@ struct ToolkitSettingsSection: View {
             if let results = store.toolkitRunResults {
                 toolkitResultTable(results)
             }
+            Text(L("settings.toolkit.sectionDescription")).font(.ui(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(L("settings.toolkit.sectionDescription")).font(.ui(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Button(L("settings.toolkit.addButton")) { addEntryFromFile() }
-                    .controlSize(.small).disabled(store.toolkitRunning)
+                    .disabled(store.toolkitRunning)
                     .accessibilityIdentifier("settings-toolkit-add")
                 Button(L("settings.toolkit.exportButton")) { exportEntriesToFile() }
-                    .controlSize(.small).disabled(store.toolkitRunning)
+                    .disabled(store.toolkitRunning)
                     .accessibilityIdentifier("settings-toolkit-export")
                 Button(L("settings.toolkit.importButton")) { importEntriesFromFile() }
-                    .controlSize(.small).disabled(store.toolkitRunning)
+                    .disabled(store.toolkitRunning)
                     .accessibilityIdentifier("settings-toolkit-import")
                 Button(store.toolkitRunning ? L("settings.toolkit.installingButton") : L("settings.toolkit.installButton")) {
                     store.planToolkitInstall()
@@ -122,6 +122,7 @@ struct ToolkitSettingsSection: View {
                 .disabled(store.toolkitRunning)
                 .accessibilityIdentifier("settings-toolkit-install")
             }
+            .settingsRowFrame()
         } header: { Text(L("settings.toolkit.sectionTitle")) }
         .sheet(isPresented: $store.toolkitShowConfirmation) {
             toolkitConfirmationSheet()
@@ -153,7 +154,7 @@ struct ToolkitSettingsSection: View {
                         Button(L("settings.toolkit.approveButton")) {
                             store.approveToolkitEntry(entry.entryId)
                         }
-                        .controlSize(.mini).buttonStyle(.bordered)
+                        .buttonStyle(.bordered)
                         .disabled(store.toolkitRunning)
                         .accessibilityIdentifier("settings-toolkit-approve-\(entry.entryId)")
                     }
@@ -161,13 +162,13 @@ struct ToolkitSettingsSection: View {
                     Button(L("settings.toolkit.removeButton")) {
                         store.removeToolkitEntry(entry.entryId)
                     }
-                    .controlSize(.mini).buttonStyle(.bordered)
+                    .buttonStyle(.bordered)
                     .disabled(store.toolkitRunning)
                     .accessibilityIdentifier("settings-toolkit-remove-\(entry.entryId)")
                 }
             }
         }
-        .padding(.vertical, DesignMetrics.Spacing.xxs)
+        .settingsRowFrame()
         .accessibilityIdentifier("settings-toolkit-entry-\(entry.entryId)")
     }
 
@@ -193,20 +194,23 @@ struct ToolkitSettingsSection: View {
         .accessibilityIdentifier("settings-toolkit-results")
     }
 
+    /// A form sheet (kind B): every command the run would start, then [취소] [설치].
     private func toolkitConfirmationSheet() -> some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-            Text(L("settings.toolkit.confirmTitle")).font(.ui(size: 13, weight: .bold))
-            Text(L("settings.toolkit.confirmDescription")).font(.ui(size: 12)).foregroundStyle(.secondary)
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                    ForEach(store.toolkitPlan, id: \.entry.entryId) { item in
-                        confirmationPlanRow(item)
+        DialogScaffold(L("settings.toolkit.confirmTitle")) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+                Text(L("settings.toolkit.confirmDescription")).font(.ui(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+                        ForEach(store.toolkitPlan, id: \.entry.entryId) { item in
+                            confirmationPlanRow(item)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(maxHeight: 300)
             }
-            .frame(maxHeight: 300)
-            HStack {
-                Spacer()
+        } footer: {
+            DialogFooter {
                 Button(L("settings.toolkit.cancelButton")) { store.toolkitShowConfirmation = false }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("settings-toolkit-cancel")
@@ -215,8 +219,7 @@ struct ToolkitSettingsSection: View {
                     .accessibilityIdentifier("settings-toolkit-confirm")
             }
         }
-        .padding(DesignMetrics.Inset.sheet)
-        .frame(minWidth: 480, maxWidth: 600)
+        .dialogSheetWidth(DesignMetrics.Dialog.sheetWidthL)
     }
 
     private func confirmationPlanRow(_ item: ToolkitPlanItem) -> some View {

@@ -440,7 +440,7 @@ function RunNowButton({ paneId, itemId, runNow, held }: { paneId: string; itemId
         <Icon name={branch ? 'split' : 'play'} size={9} weight={branch ? 2.2 : 1} fill={!branch} />{t('queue.runNow')}
       </button>
       {choices && (
-        <div className="composer-popover composer-menu" role="menu" data-menu="run-now" data-page-overlay="">
+        <div className="composer-popover popover composer-menu" role="menu" data-menu="run-now" data-page-overlay="">
           <MenuList rows={[{ kind: 'header', text: t('composer.worktreeMenu.title') }, ...choices.map((c) => ({ kind: 'action' as const, text: c.text, enabled: c.enabled }))]}
             path={[]} choose={(path) => { const choice = choices[(path[0] ?? 0) - 1]; if (choice) run(choice.agent); }} />
         </div>

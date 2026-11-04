@@ -20,7 +20,7 @@ public sealed partial class MainWindow
                 Content = new TextBlock { Text = Locale.Get("workspace.remove.body", new Dictionary<string, string> { ["name"] = workspace.Name }), TextWrapping = TextWrapping.Wrap },
                 PrimaryButtonText = Locale.Get("workspace.menu.remove"), CloseButtonText = Locale.Get("settings.run.cancelButton"),
                 DefaultButton = ContentDialogButton.Close, XamlRoot = root.XamlRoot,
-            });
+            }, chrome: new DialogChrome { Danger = true });
             if (await (webShell is not null ? WebDialog(dialog) : dialog.ShowAsync().AsTask()) != ContentDialogResult.Primary || closing) return;
             // Keep the ID the user approved even if a remote selection changed.
             await RemoveWorkspaceConfirmed(id);

@@ -27,36 +27,41 @@ struct RenameSheet: View {
     private var validName: Bool { !trimmedName.isEmpty && trimmedName.count <= 120 && !hasControlCharacters }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-            Text(heading).font(.ui(size: 13, weight: .bold))
-            TextField(L("pane.rename.namePlaceholder"), text: $name)
-                .textFieldStyle(.roundedBorder)
-                .focused($nameFocused)
-                .onSubmit { save() }
-                .accessibilityIdentifier("rename-name-field")
-            Text(target.kind == .workspace ? L("pane.rename.workspaceNote") : L("pane.rename.paneNote"))
-                .font(.ui(size: 10)).foregroundStyle(.secondary)
-            if trimmedName.count > 120 {
-                Text(L("pane.rename.tooLong")).font(.ui(size: 10)).foregroundStyle(Palette.errText)
+        DialogScaffold(heading) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+                TextField(L("pane.rename.namePlaceholder"), text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($nameFocused)
+                    .onSubmit { save() }
+                    .accessibilityIdentifier("rename-name-field")
+                Text(target.kind == .workspace ? L("pane.rename.workspaceNote") : L("pane.rename.paneNote"))
+                    .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if trimmedName.count > 120 {
+                    Text(L("pane.rename.tooLong")).font(.ui(size: 11)).foregroundStyle(Palette.errText)
+                }
+                if hasControlCharacters {
+                    Text(L("pane.rename.noNewlines")).font(.ui(size: 11)).foregroundStyle(Palette.errText)
+                }
+                if let saveError { Text(saveError).font(.ui(size: 11)).foregroundStyle(Palette.errText) }
             }
-            if hasControlCharacters {
-                Text(L("pane.rename.noNewlines")).font(.ui(size: 10)).foregroundStyle(Palette.errText)
-            }
-            if let saveError { Text(saveError).font(.ui(size: 10)).foregroundStyle(Palette.errText) }
-            HStack {
+        } footer: {
+            DialogFooter {
+                // The third action sits on the status side.
                 if target.kind == .session {
                     Button(L("pane.rename.automatic")) { setAutomatic() }
+                        .buttonStyle(.link)
                         .accessibilityIdentifier("rename-automatic")
                 }
-                Spacer()
+            } buttons: {
                 Button(L("resume.cancel")) { store.renameTarget = nil }.keyboardShortcut(.cancelAction)
                 Button(L("pane.rename.save")) { save() }
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!validName)
                     .accessibilityIdentifier("rename-save")
             }
         }
-        .padding(DesignMetrics.Inset.sheet).frame(width: 360)
+        .dialogSheetWidth(DesignMetrics.Dialog.sheetWidthS)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("rename-sheet")
         .onAppear { nameFocused = true }

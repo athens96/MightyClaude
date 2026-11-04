@@ -52,7 +52,7 @@ describe('PictureViewer', () => {
   const services = {
     bridge: { call: () => Promise.resolve(null) },
     store: { dispatch: () => {} },
-    t: translator([{ 'images.open': 'View image', 'images.copy': 'Copy image', 'images.save': 'Save image', 'menu.showInExplorer': 'Show in Explorer', 'images.openDefault': 'Open in default app', 'files.image.fit': 'Fit', 'files.image.zoomIn': 'Zoom in', 'files.image.zoomOut': 'Zoom out', 'settings.closeButton': 'Close' }]),
+    t: translator([{ 'images.open': 'View image', 'images.copy': 'Copy image', 'images.save': 'Save image', 'menu.showInExplorer': 'Show in Explorer', 'images.openDefault': 'Open in default app', 'files.image.fit': 'Fit', 'files.image.zoomIn': 'Zoom in', 'files.image.zoomOut': 'Zoom out', 'dialog.close': 'Close', 'dialog.resize': 'Resize' }]),
   } as unknown as AppServices;
   const render = () => renderToStaticMarkup(createElement(ServicesContext.Provider, { value: services },
     createElement(Viewer, { picture: { url: 'data:image/png;base64,AA==', alt: 'shot.png', source: { paneId: 'p', hash: 'h' } } })));

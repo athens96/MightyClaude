@@ -36,33 +36,23 @@ struct StyleApprovalSheet: View {
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// A panel (kind C): the source badge and 모두 펼치기 beside the ✕, the manifest in the body, and
+    /// [나중에] [허용] at the bottom; a read-only review has a footer only for its note.
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-                    ForEach(sections) { section in sectionView(section) }
-                    rawSection
-                }
-                .padding(DesignMetrics.Inset.sheet)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Divider()
-            footer
-        }
-        .frame(width: 640, height: 560)
-        .accessibilityIdentifier("style-approval-sheet")
-    }
-
-    private var header: some View {
-        HStack(spacing: DesignMetrics.Spacing.sm) {
-            Text(verbatim: style.manifest.name).font(.ui(size: 15, weight: .semibold))
+        DialogScaffold(style.manifest.name, systemImage: "paintpalette",
+                       close: DialogClose(identifier: "style-approval-close", action: onClose), scrolls: true) {
             if let badge = StyleChrome.sourceBadge(style.source) { SourceBadge(text: badge) }
-            Spacer(minLength: 0)
-            Toggle(L("styles.approval.expandAll"), isOn: $expanded).toggleStyle(.switch).controlSize(.mini)
+            Toggle(L("styles.approval.expandAll"), isOn: $expanded).toggleStyle(.checkbox)
+        } content: {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
+                ForEach(sections) { section in sectionView(section) }
+                rawSection
+            }
+        } footer: {
+            if !candidate.readOnly || confirming || store.styleTrustLocked { footer }
         }
-        .padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md)
+        .dialogPanelFrame(id: "styleApproval", ideal: CGSize(width: 640, height: 560), minimum: CGSize(width: 520, height: 400))
+        .accessibilityIdentifier("style-approval-sheet")
     }
 
     @ViewBuilder private func sectionView(_ section: StyleApprovalSection) -> some View {
@@ -109,28 +99,25 @@ struct StyleApprovalSheet: View {
     }
 
     private var footer: some View {
-        HStack(spacing: DesignMetrics.Spacing.sm) {
+        DialogFooter {
             if confirming {
-                Text(verbatim: StyleApprovalCard.secondConfirmation(count: autoAllowCount))
-                    .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: StyleApprovalCard.secondConfirmation(count: autoAllowCount)).foregroundStyle(.secondary)
             } else if store.styleTrustLocked {
-                Text(verbatim: StyleSettingsList.lockedMessage(store.styleTrustPath))
-                    .font(.ui(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: StyleSettingsList.lockedMessage(store.styleTrustPath)).foregroundStyle(Palette.waitText)
             }
-            Spacer(minLength: 0)
-            Button(candidate.readOnly ? L("settings.closeButton") : L("statusLine.notNow"), action: onClose)
-                .keyboardShortcut(.cancelAction)
-                .accessibilityIdentifier("style-approval-dismiss")
+        } buttons: {
             if !candidate.readOnly {
+                // Esc is the header's ✕; this is the same answer as a button.
+                Button(L("statusLine.notNow"), action: onClose)
+                    .accessibilityIdentifier("style-approval-dismiss")
                 // The auto-allow block has to have been on screen, and a
-                // non-empty list is confirmed a second time (§4.4).
+                // non-empty list is confirmed a second time (§4.4). Return does not allow: trust is a click.
                 Button(confirming ? L("styles.approval.confirmAgain") : L("settings.styles.allowButton")) { allow() }
                     .buttonStyle(.borderedProminent)
                     .disabled(store.styleTrustLocked || !autoAllowSeen)
                     .accessibilityIdentifier("style-approval-allow")
             }
         }
-        .padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md)
     }
 
     private func allow() {

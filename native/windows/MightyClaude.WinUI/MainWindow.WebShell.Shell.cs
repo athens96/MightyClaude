@@ -191,7 +191,7 @@ public sealed partial class MainWindow
         {
             type = "confirm", title = dialog.Title as string ?? "", message,
             primary = string.IsNullOrEmpty(dialog.PrimaryButtonText) ? null : dialog.PrimaryButtonText, close = dialog.CloseButtonText,
-            defaultPrimary = dialog.DefaultButton == ContentDialogButton.Primary,
+            defaultPrimary = dialog.DefaultButton == ContentDialogButton.Primary, destructive = ChromeOf(dialog)?.Danger == true,
         });
         return (await answer).ValueKind == JsonValueKind.True ? ContentDialogResult.Primary : ContentDialogResult.None;
     }

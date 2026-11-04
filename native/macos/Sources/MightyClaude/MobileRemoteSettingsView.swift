@@ -19,19 +19,17 @@ struct MobileRemoteSettingsSection: View {
     var body: some View {
         SettingsGroup(L("settings.mobileRemote.sectionTitle")) {
             Toggle(isOn: Binding(get: { settings.enabled }, set: { store.setMobileRemote(enabled: $0) })) {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                    Text(L("settings.mobileRemote.allowToggle"))
-                    Text(L("settings.mobileRemote.allowDescription"))
-                        .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
+                SettingsRowLabel(L("settings.mobileRemote.allowToggle"), caption: L("settings.mobileRemote.allowDescription"))
             }
             .disabled(store.mobileBusy)
             .accessibilityIdentifier("settings-mobile-toggle")
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(L("settings.mobileRemote.relayLabel"))
-                TextField(MobileWire.defaultRelayURL.isEmpty ? "wss://relay.example.com" : MobileWire.defaultRelayURL, text: $relayText).textFieldStyle(.roundedBorder).font(.ui(size: 11, design: .monospaced))
-                    .onSubmit(applyRelay).accessibilityIdentifier("settings-mobile-relay")
-                Button(L("settings.mobileRemote.applyButton"), action: applyRelay).disabled(store.mobileBusy || !relayDirty || RelayEndpoint.normalize(relayText) == nil)
+            // An address: a wide row, the field across it with 적용 beside it.
+            SettingsRow(L("settings.mobileRemote.relayLabel"), wide: true) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    TextField(MobileWire.defaultRelayURL.isEmpty ? "wss://relay.example.com" : MobileWire.defaultRelayURL, text: $relayText).textFieldStyle(.roundedBorder).font(.ui(size: 12, design: .monospaced))
+                        .onSubmit(applyRelay).accessibilityIdentifier("settings-mobile-relay")
+                    Button(L("settings.mobileRemote.applyButton"), action: applyRelay).disabled(store.mobileBusy || !relayDirty || RelayEndpoint.normalize(relayText) == nil)
+                }
             }
             connectionGuide
             HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -44,7 +42,7 @@ struct MobileRemoteSettingsSection: View {
                 // Shown while connected too: a socket a network change left
                 // half-open still reads as connected until its ping times out.
                 if settings.enabled, settings.effectiveRelayURL != nil {
-                    Button(L("settings.mobileRemote.reconnectButton")) { Task { await store.mobileRemote.reconnect(); store.refreshMobileStatus() } }.controlSize(.small).disabled(store.mobileBusy)
+                    Button(L("settings.mobileRemote.reconnectButton")) { Task { await store.mobileRemote.reconnect(); store.refreshMobileStatus() } }.disabled(store.mobileBusy)
                 }
             }
             Text(status.detail).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -73,15 +71,15 @@ struct MobileRemoteSettingsSection: View {
                         LabeledContent(L("settings.mobileRemote.keyLabel")) {
                             HStack(spacing: DesignMetrics.Spacing.sm) {
                                 Text(showsKey ? (status.key ?? "") : String(repeating: "•", count: 16)).font(.ui(size: 11, design: .monospaced)).textSelection(.enabled).lineLimit(1)
-                                Button(showsKey ? L("settings.mobileRemote.hideKeyButton") : L("settings.mobileRemote.showKeyButton")) { showsKey.toggle() }.controlSize(.small)
+                                Button(showsKey ? L("settings.mobileRemote.hideKeyButton") : L("settings.mobileRemote.showKeyButton")) { showsKey.toggle() }
                             }
                         }
                         HStack(spacing: DesignMetrics.Spacing.sm) {
                             Button {
                                 NSPasteboard.general.clearContents(); NSPasteboard.general.setString(pairing, forType: .string)
-                            } label: { Label(L("settings.mobileRemote.copyLinkButton"), systemImage: "doc.on.doc") }.controlSize(.small)
+                            } label: { Label(L("settings.mobileRemote.copyLinkButton"), systemImage: "doc.on.doc") }
                             Button(role: .destructive) { store.regenerateMobileKey() } label: { Label(L("settings.mobileRemote.regenerateKeyButton"), systemImage: "arrow.clockwise") }
-                                .controlSize(.small).disabled(store.mobileBusy)
+                                .disabled(store.mobileBusy)
                                 .help(L("settings.mobileRemote.regenerateKeyHelp"))
                         }
                     }
@@ -89,11 +87,7 @@ struct MobileRemoteSettingsSection: View {
                 .padding(.vertical, DesignMetrics.Spacing.xxs)
             }
             Toggle(isOn: Binding(get: { settings.allowLegacyPhones }, set: { store.setMobileRemote(enabled: settings.enabled, allowLegacyPhones: $0) })) {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                    Text(L("settings.mobileRemote.legacyAppsToggle"))
-                    Text(L("settings.mobileRemote.legacyAppsDescription"))
-                        .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
+                SettingsRowLabel(L("settings.mobileRemote.legacyAppsToggle"), caption: L("settings.mobileRemote.legacyAppsDescription"))
             }
             .disabled(store.mobileBusy)
             .accessibilityIdentifier("settings-mobile-legacy-toggle")
@@ -116,21 +110,17 @@ struct MobileRemoteSettingsSection: View {
     /// endpoints it listens on, or that there is no Tailscale on this Mac.
     @ViewBuilder private var direct: some View {
         Toggle(isOn: Binding(get: { settings.directEnabled }, set: { store.setMobileRemote(enabled: settings.enabled, directEnabled: $0) })) {
-            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                Text(L("mobileRemote.direct.toggle"))
-                Text(L("mobileRemote.direct.description"))
-                    .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
+            SettingsRowLabel(L("mobileRemote.direct.toggle"), caption: L("mobileRemote.direct.description"))
         }
         .disabled(store.mobileBusy)
         .accessibilityIdentifier("settings-mobile-direct-toggle")
         if settings.directEnabled {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(L("mobileRemote.direct.portLabel"))
-                TextField(String(MobileDirect.defaultPort), text: $portText).textFieldStyle(.roundedBorder).font(.ui(size: 11, design: .monospaced)).frame(width: 80)
-                    .onSubmit(applyPort).accessibilityIdentifier("settings-mobile-direct-port")
-                Button(L("settings.mobileRemote.applyButton"), action: applyPort).disabled(store.mobileBusy || typedPort == nil || typedPort == settings.directPort)
-                Spacer()
+            SettingsRow(L("mobileRemote.direct.portLabel")) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    TextField(String(MobileDirect.defaultPort), text: $portText).textFieldStyle(.roundedBorder).font(.ui(size: 12, design: .monospaced)).settingsField()
+                        .onSubmit(applyPort).accessibilityIdentifier("settings-mobile-direct-port")
+                    Button(L("settings.mobileRemote.applyButton"), action: applyPort).disabled(store.mobileBusy || typedPort == nil || typedPort == settings.directPort)
+                }
             }
             if settings.enabled, !status.directDetail.isEmpty {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -179,9 +169,10 @@ struct MobileRemoteSettingsSection: View {
                 }
                 Spacer(minLength: 8)
                 Button(L("settings.mobileRemote.revokeRowButton")) { revoking = device }
-                    .controlSize(.small).disabled(store.mobileBusy)
+                    .disabled(store.mobileBusy)
                     .accessibilityIdentifier("settings-mobile-revoke-\(device.id)")
             }
+            .settingsRowFrame()
             .accessibilityIdentifier("settings-mobile-device-\(device.id)")
         }
     }

@@ -415,7 +415,7 @@ public sealed partial class MainWindow
             {
                 var id = demo.Pane("plan");
                 await SelectLayoutSession(id); await ApplyLayoutPreset("focus"); await Task.Delay(800);
-                if (!await HelpUntil(core, "(() => { const b = document.querySelector('.pane-slot.active:not(.hidden) [data-answer=plan-expand]'); if (!b) return false; b.click(); return true; })()", 6)) throw new InvalidOperationException("the plan card has no expand button");
+                if (!await HelpUntil(core, "(() => { const b = document.querySelector('.pane-slot.active:not(.hidden) [data-answer=plan-expand], .pane-slot.active:not(.hidden) [data-testid=mighty-plan-expand]'); if (!b) return false; b.click(); return true; })()", 6)) throw new InvalidOperationException("the plan card has no expand button");
                 if (!await HelpUntil(core, "!!document.querySelector('[data-testid=plan-document]')", 6)) throw new InvalidOperationException("the plan document did not open");
                 await Task.Delay(500);
                 return new("[data-testid=plan-document]", async () => { await core.ExecuteScriptAsync("document.querySelector('[data-testid=plan-document-close]')?.click()"); await Task.Delay(200); });
@@ -451,9 +451,9 @@ public sealed partial class MainWindow
                     if (!await HelpUntil(core, "document.querySelectorAll('[data-testid=resume-rows] .resume-row').length > 0", 10)) throw new InvalidOperationException("the session list shows no record");
                 }
                 await Task.Delay(600);
-                return new("[data-testid=dialog] .sheet", async () =>
+                return new("[data-testid=dialog] .dialog", async () =>
                 {
-                    await core.ExecuteScriptAsync("document.querySelector('[data-testid=dialog] .sheet')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+                    await core.ExecuteScriptAsync("document.querySelector('[data-testid=dialog] .dialog')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
                     await Task.Delay(400);
                 });
             }

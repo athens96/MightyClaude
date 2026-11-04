@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,6 +13,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeError, isAbortError } from '@/api/client';
 import type { WorkMap, WorkMapTopic, WorkMapVersion } from '@/api/types';
+import { BottomSheet, DialogLoading } from '@/components/sheets';
 import { Button, Card, EmptyState, ErrorBanner } from '@/components/ui';
 import { t } from '@/lib/i18n';
 import {
@@ -133,7 +133,7 @@ export default function WorkMapScreen() {
   if (!map) {
     body = error ? null : (
       <View style={styles.center}>
-        <ActivityIndicator color={palette.accent} />
+        <DialogLoading />
       </View>
     );
   } else if (!map.available) {
@@ -376,41 +376,32 @@ function TopicSheet({
   onClose: () => void;
 }) {
   const styles = useStyles(makeStyles);
-  const insets = useSafeAreaInsets();
   const commits = topicCommits(version, topic);
   const requests = topicRequests(version, topic);
   const files = commits.reduce((total, commit) => total + commit.filesCount, 0);
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable accessibilityLabel={t('common.close')} accessibilityRole="button" style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + spacing.xl }]} onPress={() => undefined}>
-          <View style={styles.grab} />
-          <ScrollView contentContainerStyle={styles.sheetBody}>
-            <Text style={styles.topicTitle}>{topic.title}</Text>
-            <LaneDots lanes={topic.lanes} />
-            {topic.summary ? <Text style={styles.summary}>{topic.summary}</Text> : null}
+    <BottomSheet visible onClose={onClose} title={topic.title}>
+      <LaneDots lanes={topic.lanes} />
+      {topic.summary ? <Text style={styles.summary}>{topic.summary}</Text> : null}
 
-            <Text style={styles.section}>{t('workMap.detail.requests')}</Text>
-            {requests.length === 0 ? (
-              <Text style={styles.detail}>{t('workMap.detail.noRequests')}</Text>
-            ) : (
-              requests.map((request) => (
-                <Text key={request.id} style={styles.request}>
-                  {request.text}
-                </Text>
-              ))
-            )}
+      <Text style={styles.section}>{t('workMap.detail.requests')}</Text>
+      {requests.length === 0 ? (
+        <Text style={styles.detail}>{t('workMap.detail.noRequests')}</Text>
+      ) : (
+        requests.map((request) => (
+          <Text key={request.id} style={styles.request}>
+            {request.text}
+          </Text>
+        ))
+      )}
 
-            <Text style={styles.section}>{t('workMap.detail.commits')}</Text>
-            {commits.map((commit) => (
-              <CommitRow key={commit.sha} commit={commit} />
-            ))}
+      <Text style={styles.section}>{t('workMap.detail.commits')}</Text>
+      {commits.map((commit) => (
+        <CommitRow key={commit.sha} commit={commit} />
+      ))}
 
-            <Text style={styles.detail}>{t('workMap.detail.filesCount', { count: files })}</Text>
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+      <Text style={styles.detail}>{t('workMap.detail.filesCount', { count: files })}</Text>
+    </BottomSheet>
   );
 }
 
@@ -456,23 +447,6 @@ const makeStyles = (palette: Palette) =>
     sha: { color: palette.accent, fontFamily: monoFontFamily, fontSize: 12 },
     commitText: { color: palette.text, flex: 1, fontSize: 12 },
     scope: { color: palette.textMuted },
-    backdrop: { backgroundColor: palette.overlay, flex: 1, justifyContent: 'flex-end' },
-    sheet: {
-      backgroundColor: palette.surface,
-      borderTopLeftRadius: radius.hero,
-      borderTopRightRadius: radius.hero,
-      maxHeight: '75%',
-      paddingHorizontal: spacing.xxl,
-      paddingTop: spacing.lg,
-    },
-    grab: {
-      alignSelf: 'center',
-      backgroundColor: palette.border,
-      borderRadius: radius.round,
-      height: 4,
-      width: 36,
-    },
-    sheetBody: { gap: spacing.lg, paddingTop: spacing.xl },
     section: { color: palette.textMuted, fontSize: 11, fontWeight: '600', marginTop: spacing.lg },
     request: {
       backgroundColor: palette.surfaceRaised,

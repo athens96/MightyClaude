@@ -99,9 +99,25 @@ export function reducesMotion(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+/**
+ * The popup standard (metrics.dialog, .omc/plans/popup-standard.md) and the settings window (metrics.settings): every number
+ * as `--dialog-*` / `--settings-*` px, except the ratios and opacities, which keep their own unit — the popover's highest share
+ * of the window as `vh`, the backdrop's black as a percentage per theme (`--dialog-backdrop`) — and the two shadows as written.
+ */
+export function dialogVariables(): { shared: string; light: string; dark: string } {
+  const { popoverMaxHeightRatio, backdropOpacityLight, backdropOpacityDark, ...sizes } = tokens.metrics.dialog;
+  return {
+    shared: metricVariables('dialog', sizes) + metricVariables('settings', tokens.metrics.settings) +
+      `--dialog-popover-max-height:${Math.round(popoverMaxHeightRatio * 100)}vh;--dialog-shadow:${tokens.metrics.dialog.shadow};--dialog-popover-shadow:${tokens.metrics.dialog.popoverShadow};`,
+    light: `--dialog-backdrop:rgba(0,0,0,${backdropOpacityLight});--dialog-border:0px;`,
+    dark: `--dialog-backdrop:rgba(0,0,0,${backdropOpacityDark});--dialog-border:${tokens.metrics.dialog.darkBorder}px;`,
+  };
+}
+
 /** The whole style sheet of variables: metrics and fonts for both themes, then each theme's palette. */
 export function tokenStyleSheet(): string {
   const metrics = tokens.metrics;
+  const dialog = dialogVariables();
   const shared =
     metricVariables('radius', metrics.radius) +
     metricVariables('stroke', metrics.stroke) +
@@ -109,6 +125,7 @@ export function tokenStyleSheet(): string {
     metricVariables('space', metrics.spacing) +
     metricVariables('inset', metrics.inset) +
     metricVariables('layout', metrics.layout) +
+    dialog.shared +
     motionVariables() +
     `--font-body:${quoteFamilies(metrics.font.body)}, sans-serif;` +
     `--font-heading:${quoteFamilies(metrics.font.heading)}, sans-serif;` +
@@ -126,7 +143,7 @@ export function tokenStyleSheet(): string {
     const derived = tokens.derived[theme];
     const glyphs = Object.entries(derived.tones).map(([tone, value]) => `--glyph-${tone}:${value.glyph};`).join('');
     const discs = Object.entries(derived.disc).map(([tone, value]) => `--disc-${tone}:${value.fill};--disc-${tone}-ink:${value.ink};`).join('');
-    return glyphs + discs + `--segment-track:${derived.segmentTrack};--segment-on:${derived.segmentOn};--subtle:${hexAlpha(subtle.color, subtle.opacity)};--syntax-keyword:${syntax.keyword};--syntax-string:${syntax.string};--syntax-number:${syntax.number};--terminal-background:${tokens.windowsOnly.terminal[theme].background};`;
+    return glyphs + discs + dialog[theme] + `--segment-track:${derived.segmentTrack};--segment-on:${derived.segmentOn};--subtle:${hexAlpha(subtle.color, subtle.opacity)};--syntax-keyword:${syntax.keyword};--syntax-string:${syntax.string};--syntax-number:${syntax.number};--terminal-background:${tokens.windowsOnly.terminal[theme].background};`;
   };
   return (
     `:root{${shared}}` +

@@ -181,35 +181,35 @@ struct ClaudePluginView: View {
     let onClose: () -> Void
     @ViewState private var showsOutput = false
 
+    /// A panel (kind C): the ✕ in the header (off while an install or refresh runs), the CLI's
+    /// version and 다시 불러오기 beside it, and a footer only while something is in progress.
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-            HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
-                Image(systemName: "puzzlepiece.extension").font(.ui(size: 25)).foregroundStyle(Palette.accent)
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                    Text(L("plugins.titleTemplate", ["provider": model.providerLabel])).font(.ui(size: 18, weight: .semibold))
-                    Text(model.workspace.name).font(.ui(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-                    Text(model.workspace.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).help(model.workspace.path)
-                }
-                Spacer(minLength: 12)
-                if let version = model.snapshot?.cliVersion { Text(version).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
-            }
+        DialogScaffold(L("plugins.titleTemplate", ["provider": model.providerLabel]),
+                       subtitle: "\(model.workspace.name) · \(model.workspace.path)",
+                       systemImage: "puzzlepiece.extension",
+                       close: DialogClose(busy: model.isMutating, identifier: "\(model.provider)-plugin-close", action: onClose)) {
+            if let version = model.snapshot?.cliVersion { Text(version).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary) }
+            Button { model.reload() } label: { Label(L("plugins.button.reload"), systemImage: "arrow.clockwise") }
+                .disabled(model.isBusy).accessibilityIdentifier("\(model.provider)-plugin-reload")
+        } content: {
             browser
-            HStack {
-                if model.isBusy {
-                    ProgressView().controlSize(.small)
-                    Text(progressLabel).font(.ui(size: 11)).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("\(model.provider)-plugin-progress")
+        } footer: {
+            if model.isMutating || (model.isBusy && model.snapshot != nil) {
+                DialogFooter {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
+                        ProgressView().controlSize(.small)
+                        Text(progressLabel).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("\(model.provider)-plugin-progress")
+                    }
+                } buttons: {
+                    if model.isMutating {
+                        Button(model.isCancelling ? L("plugins.button.cancelling") : L("plugins.button.cancelOperation")) { Task { await model.cancelOperation() } }
+                            .disabled(model.isCancelling).accessibilityIdentifier("\(model.provider)-plugin-cancel")
+                    }
                 }
-                Spacer()
-                if model.isMutating {
-                    Button(model.isCancelling ? L("plugins.button.cancelling") : L("plugins.button.cancelOperation")) { Task { await model.cancelOperation() } }
-                        .disabled(model.isCancelling).accessibilityIdentifier("\(model.provider)-plugin-cancel")
-                }
-                Button(L("settings.closeButton"), action: onClose).keyboardShortcut(.cancelAction).disabled(model.isMutating)
-                    .accessibilityIdentifier("\(model.provider)-plugin-close")
             }
         }
-        .padding(DesignMetrics.Inset.sheet).frame(width: 760, height: 620)
+        .dialogPanelFrame(id: "plugins", ideal: CGSize(width: 760, height: 620), minimum: CGSize(width: 640, height: 480))
         .accessibilityElement(children: .contain).accessibilityIdentifier("\(model.provider)-plugin-browser")
         .onAppear { model.loadIfNeeded() }
     }
@@ -220,8 +220,6 @@ struct ClaudePluginView: View {
                 tab(L("settings.toolkit.verdictInstalled"), value: "installed", count: model.snapshot?.installed.count ?? 0)
                 tab(L("plugins.tab.marketplace"), value: "marketplace", count: model.snapshot?.available.count ?? 0)
                 Spacer()
-                Button { model.reload() } label: { Label(L("plugins.button.reload"), systemImage: "arrow.clockwise") }
-                    .disabled(model.isBusy).accessibilityIdentifier("\(model.provider)-plugin-reload")
             }
             HStack(spacing: DesignMetrics.Spacing.md) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -285,19 +283,28 @@ struct ClaudePluginView: View {
                  : L("plugins.claude.footerNote"))
                 .font(.ui(size: 10)).foregroundStyle(.secondary)
             Divider()
-            GeometryReader { viewport in
-                ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-                        if model.tab == "installed" {
-                            ForEach(model.installed) { installedRow($0) }
-                            if model.installed.isEmpty { emptyList }
-                        } else {
-                            ForEach(model.available) { catalogRow($0) }
-                            if model.available.isEmpty { emptyList }
-                        }
+            if model.snapshot == nil {
+                DialogLoading(skeletonRows: 3).frame(maxHeight: .infinity, alignment: .top)
+            } else {
+                list
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var list: some View {
+        GeometryReader { viewport in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+                    if model.tab == "installed" {
+                        ForEach(model.installed) { installedRow($0) }
+                        if model.installed.isEmpty { emptyList }
+                    } else {
+                        ForEach(model.available) { catalogRow($0) }
+                        if model.available.isEmpty { emptyList }
                     }
-                    .frame(width: max(0, viewport.size.width - DesignMetrics.Spacing.lg), alignment: .leading).padding(.trailing, DesignMetrics.Spacing.lg)
                 }
+                .frame(width: max(0, viewport.size.width - DesignMetrics.Spacing.lg), alignment: .leading).padding(.trailing, DesignMetrics.Spacing.lg)
             }
         }
     }

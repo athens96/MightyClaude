@@ -219,6 +219,7 @@ public sealed partial class MainWindow
     {
         if (webSurfaces.ContainsKey("setup")) { RedrawSetup(); return; }
         var surface = OpenNativeSurface("setup", "surface");
+        // The setup screen is the popup standard's panel: its Later is the header's ✕, its never-show box the footer's left.
         var list = BuildSetupContent();
         var neverShow = new CheckBox { Content = Locale.Get("setup.button.neverShow"), MinWidth = 0 };
         AutomationProperties.SetAutomationId(neverShow, "setup-never-show");
@@ -232,6 +233,7 @@ public sealed partial class MainWindow
         surface.Model = () => new
         {
             kind = "setup", title = Locale.Get("setup.title"), subtitle = Locale.Get("setup.windows.subtitle"), close = Locale.Get("setup.button.later"),
+            chrome = new { kind = "panel", panel = "setup", icon = "wrench" },
             sections = new[] { new { title = (string?)null, beta = false, node = surface.Reader.Node(list) } },
             footer = surface.Reader.Node(neverShow), width = SetupWindowWidth, height = SetupWindowHeight,
         };
@@ -257,11 +259,21 @@ public sealed partial class MainWindow
         var answer = new TaskCompletionSource<ContentDialogResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         var content = dialog.Content; dialog.Content = null;
         if (content is FrameworkElement element) HostNative(surface, element);
+        var chrome = ChromeOf(dialog);
+        foreach (var part in new[] { chrome?.Tools, chrome?.Status, chrome?.Actions }) if (part is not null) HostNative(surface, part);
+        // The popup standard's kind: a named panel, a sentence asked (an alert) or a form (a sheet).
+        var kind = chrome?.Panel is not null ? "panel" : content is string or TextBlock ? "alert" : "sheet";
         double? Size(string key) => dialog.Resources.TryGetValue(key, out var value) && value is double size ? size : null;
         object Button(string name, string? label, bool enabled, bool chosen) => new { id = name, label, disabled = !enabled, accent = chosen };
         surface.Model = () => new
         {
             kind = "dialog", title = dialog.Title as string ?? WebNativeReader.Words(dialog.Title),
+            chrome = new
+            {
+                kind, panel = chrome?.Panel, icon = chrome?.Icon, subtitle = chrome?.Subtitle?.Invoke(), danger = chrome?.Danger == true,
+                busy = chrome?.Busy?.Invoke() ?? canClose?.Invoke() == false, minWidth = chrome?.MinWidth, minHeight = chrome?.MinHeight,
+                tools = surface.Reader.Node(chrome?.Tools), status = surface.Reader.Node(chrome?.Status), actions = surface.Reader.Node(chrome?.Actions),
+            },
             sections = new[] { new { title = (string?)null, beta = false, node = content is string words ? new Dictionary<string, object?> { ["t"] = "text", ["text"] = words, ["selectable"] = true } : surface.Reader.Node(content) } },
             buttons = new[]
             {
@@ -385,14 +397,14 @@ public sealed partial class MainWindow
         var closedSettings = await Until(async () => !webSurfaces.ContainsKey("settings") && !dialogOpen && (await Probe("!!document.querySelector('[data-native-view=settings]')")).ValueKind == JsonValueKind.False);
         checks["closed"] = closedSettings; passed &= closedSettings;
 
-        const string Top = "(() => { const v = [...document.querySelectorAll('[data-native-view^=dialog-]')].pop(); return v ? { title: v.querySelector('.sheet-title')?.textContent ?? '', controls: v.querySelectorAll('[data-native-id]').length, text: v.textContent } : null; })()";
+        const string Top = "(() => { const v = [...document.querySelectorAll('[data-native-view^=dialog-]')].pop(); return v ? { title: v.querySelector('.dialog-title')?.textContent ?? '', controls: v.querySelectorAll('[data-native-id]').length, text: v.textContent, kind: v.dataset.dialogKind ?? '', close: String(!!v.querySelector('[data-testid=native-close]')) } : null; })()";
         // The plugin browser over the fake reader: drawn in the page, its fixture loaded, closed through the dialog's Hide.
         var readerBefore = smokeReaderFactory;
         try
         {
             smokeReaderFactory = _ => new FakeMarketplaceReader(PluginSmokeSnapshot);
             var showing = ShowPluginBrowser("claude", workspace);
-            var plugins = await Until(async () => { var page = await Probe(Top); return page.ValueKind == JsonValueKind.Object && page.GetProperty("controls").GetInt32() >= 2; });
+            var plugins = await Until(async () => { var page = await Probe(Top); return page.ValueKind == JsonValueKind.Object && page.GetProperty("controls").GetInt32() >= 2 && page.Text("kind") == "panel" && page.Text("close") == "true"; });
             checks["pluginsView"] = (await Probe(Top)).Clone();
             await Until(() => Task.FromResult(webContentDialogs.Count > 0 && webContentDialogs.Values.All(d => d.CanClose?.Invoke() != false)), 10);
             foreach (var dialog in webContentDialogs.Keys.ToList()) HideDialog(dialog);
@@ -410,7 +422,7 @@ public sealed partial class MainWindow
                 setupFixedResults = catalog.Items.Where(item => item.Entry(SetupPlatform.Windows) is not null).ToDictionary(item => item.Id, _ => SetupProbeResult.Missing, StringComparer.Ordinal);
                 setupResults.Clear(); setupSelection.Clear(); setupDidPreselect = false;
                 OpenSetup();
-                const string Setup = "(() => { const v = document.querySelector('[data-native-view=setup]'); return v ? { controls: v.querySelectorAll('[data-native-id]').length, title: v.querySelector('.sheet-title')?.textContent ?? '' } : null; })()";
+                const string Setup = "(() => { const v = document.querySelector('[data-native-view=setup]'); return v ? { controls: v.querySelectorAll('[data-native-id]').length, title: v.querySelector('.dialog-title')?.textContent ?? '' } : null; })()";
                 var setup = await Until(async () => { var page = await Probe(Setup); return page.ValueKind == JsonValueKind.Object && page.GetProperty("controls").GetInt32() >= 2; });
                 checks["setupView"] = (await Probe(Setup)).Clone();
                 await Eval("document.querySelector('[data-native-view=setup] [data-testid=native-close]')?.click()");
@@ -421,10 +433,10 @@ public sealed partial class MainWindow
         }
         finally { setupFixedResults = null; setupResults.Clear(); setupSelection.Clear(); setupDidPreselect = false; setupFocus = null; }
 
-        // The terminal history: the page's dialog, closed with its Close button.
+        // The terminal history: the page's panel, closed with its ✕ (no Close button at its foot).
         var history = ShowTerminalHistory(shellPane);
-        var historyShown = await Until(async () => { var page = await Probe(Top); return page.ValueKind == JsonValueKind.Object && page.Text("title") == Locale.Get("terminal.history.title") && page.Text("text")?.Contains("fixture answer 2", StringComparison.Ordinal) == true; });
-        await Eval("[...document.querySelectorAll('[data-native-view^=dialog-]')].pop()?.querySelector('[data-testid=native-button-close]')?.click()");
+        var historyShown = await Until(async () => { var page = await Probe(Top); return page.ValueKind == JsonValueKind.Object && page.Text("title") == Locale.Get("terminal.history.title") && page.Text("text")?.Contains("fixture answer 2", StringComparison.Ordinal) == true && page.Text("kind") == "panel" && page.Text("close") == "true"; });
+        await Eval("[...document.querySelectorAll('[data-native-view^=dialog-]')].pop()?.querySelector('[data-testid=native-close]')?.click()");
         var historyClosed = await Until(async () => history.IsCompleted && (await Probe("document.querySelectorAll('[data-native-view^=dialog-]').length")).GetInt32() == 0);
         checks["terminalHistory"] = historyShown && historyClosed; passed &= historyShown && historyClosed;
 

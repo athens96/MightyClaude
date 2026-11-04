@@ -259,8 +259,8 @@
 .structure-position { border: 0; padding: var(--space-xxs) var(--space-xs); border-radius: var(--radius-file-row); background: transparent; color: var(--ink); font: inherit; font-weight: 700; font-size: var(--type-title); cursor: pointer; }
 .structure-position:hover { background: var(--subtle); }
 .structure-position span { font-size: 9px; color: var(--ink2); }
-.structure-list { position: absolute; top: calc(100% + var(--space-xs)); left: 0; z-index: 20; width: 320px; max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-xxs);
-  padding: var(--space-sm); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-row); background: var(--card); box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 18%, transparent); }
+/* The pipeline list: the standard's narrow popover (.popover width-s, dialogs/dialog.css) under its button. */
+.structure-list { position: absolute; top: calc(100% + var(--space-xs)); left: 0; z-index: 20; display: flex; flex-direction: column; gap: var(--space-xxs); padding: var(--space-sm); }
 .structure-entry { display: flex; align-items: flex-start; gap: var(--space-sm); width: 100%; padding: var(--space-xs) var(--space-sm); border: 0; border-radius: var(--radius-file-row); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .structure-entry:hover { background: var(--subtle); }
 .structure-entry.chosen { background: var(--track); }

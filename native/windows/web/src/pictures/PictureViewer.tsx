@@ -2,11 +2,13 @@
 // Mac's (M/MightyGraphImagesView.swift's open, the transcript's image viewer) drawn by the page. The picture fits the room,
 // − / 맞춤 / + (and ctrl+wheel, a touchpad's pinch) zoom it between 25% and 400%, a drag moves it while it is larger than the
 // room; 이미지 복사, 저장, 탐색기에서 보기 and 기본 앱으로 열기 are the host's (`imageAction`, PaneView.TranscriptImageAction).
-// Esc or a click beside the card closes it; focus stays inside while it is open and goes back where it was.
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+// Esc or a click beside the card closes it; focus stays inside while it is open and goes back where it was. It is the popup
+// standard's panel (kind C, its size kept as "pictures"): ✕ in the header, the zoom at the footer's left and the actions at its right.
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { useServices, useStoreState } from '../app/context';
 import { Icon, type IconName } from '../icons/Icon';
 import { usePageOverlay } from '../shell/overlay';
+import { DialogShell } from '../dialogs/DialogShell';
 import { clampPan, clampZoom, drawnSize, stepZoom, zoomPercent, ZoomMax, ZoomMin, type OpenPicture, type Offset, type PictureAction, type Size } from './viewer';
 
 /** The viewer while a picture is open; nothing otherwise. Mounted once, in the shell. */
@@ -25,7 +27,7 @@ const actions: { action: PictureAction; label: string; icon: IconName }[] = [
 /** The open viewer itself; exported for its markup test. */
 export function Viewer({ picture }: { picture: OpenPicture }) {
   const { bridge, store, t } = useServices();
-  const card = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLDivElement | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState<Size>({ width: 0, height: 0 });
   const [natural, setNatural] = useState<Size | null>(null);
@@ -105,14 +107,22 @@ export function Viewer({ picture }: { picture: OpenPicture }) {
       .finally(() => setBusy(false));
   };
   return (
-    <div className="picture-backdrop" data-page-overlay="" data-testid="picture-viewer" onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
-      <div className="picture-card" ref={card} role="dialog" aria-modal="true" aria-label={t('images.open')} onKeyDown={key}>
-        <div className="picture-head">
-          <span className="picture-title">{t('images.open')}</span>
-          {picture.alt && <span className="picture-name" title={picture.alt}>{picture.alt}</span>}
-          <span className="spacer" />
-          <button type="button" className="icon-button" data-testid="picture-close" aria-label={t('settings.closeButton')} title={t('settings.closeButton')} onClick={close}><Icon name="x" size={15} weight={2} /></button>
-        </div>
+    <DialogShell kind="panel" panel="pictures" width={1200} height={900} minWidth={420} minHeight={320} label={t('images.open')} frameRef={card} focus="none" onKeyDown={key}
+      icon={<Icon name="image" size={18} weight={1.8} />} title={t('images.open')} subtitle={picture.alt && <span className="picture-name" title={picture.alt}>{picture.alt}</span>}
+      closeTestId="picture-close" onCancel={close} bodyClassName="picture-body"
+      backdrop={{ 'data-page-overlay': '', 'data-testid': 'picture-viewer', onClick: (event: MouseEvent<HTMLDivElement>) => { if (event.target === event.currentTarget) close(); } }}
+      status={<>
+        <button type="button" className="btn icon" aria-label={t('files.image.zoomOut')} title={t('files.image.zoomOut')} disabled={zoom <= ZoomMin} onClick={() => zoomTo(stepZoom(zoom, -1))}><Icon name="zoom-out" size={15} weight={1.75} /></button>
+        <button type="button" className="btn" data-autofocus onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>{t('files.image.fit')}</button>
+        <button type="button" className="btn icon" aria-label={t('files.image.zoomIn')} title={t('files.image.zoomIn')} disabled={zoom >= ZoomMax} onClick={() => zoomTo(stepZoom(zoom, 1))}><Icon name="zoom-in" size={15} weight={1.75} /></button>
+        <span className="picture-zoom" data-testid="picture-zoom">{zoomPercent(zoom)}</span>
+        {failure && <span className="picture-failure tone-text-err" role="alert" title={failure}>{failure}</span>}
+      </>}
+      buttons={actions.map((item) => (
+        <button key={item.action} type="button" className="btn picture-action" data-testid={'picture-' + item.action} disabled={busy} onClick={() => act(item.action)}>
+          <Icon name={item.icon} size={13} weight={1.75} />{t(item.label)}
+        </button>
+      ))}>
         <div ref={stage} className={'picture-stage' + (pannable ? ' pannable' : '')}
           onPointerDown={down} onPointerMove={move} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}
           onDoubleClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
@@ -120,20 +130,6 @@ export function Viewer({ picture }: { picture: OpenPicture }) {
             onLoad={(event) => setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
             style={drawn ? { width: drawn.width, height: drawn.height, transform: `translate(${pan.x}px, ${pan.y}px)` } : { visibility: 'hidden' }} />
         </div>
-        <div className="picture-foot">
-          <button type="button" className="icon-button" aria-label={t('files.image.zoomOut')} title={t('files.image.zoomOut')} disabled={zoom <= ZoomMin} onClick={() => zoomTo(stepZoom(zoom, -1))}><Icon name="zoom-out" size={15} weight={1.75} /></button>
-          <button type="button" className="plain-button" data-autofocus onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>{t('files.image.fit')}</button>
-          <button type="button" className="icon-button" aria-label={t('files.image.zoomIn')} title={t('files.image.zoomIn')} disabled={zoom >= ZoomMax} onClick={() => zoomTo(stepZoom(zoom, 1))}><Icon name="zoom-in" size={15} weight={1.75} /></button>
-          <span className="picture-zoom" data-testid="picture-zoom">{zoomPercent(zoom)}</span>
-          <span className="spacer" />
-          {actions.map((item) => (
-            <button key={item.action} type="button" className="plain-button picture-action" data-testid={'picture-' + item.action} disabled={busy} onClick={() => act(item.action)}>
-              <Icon name={item.icon} size={13} weight={1.75} />{t(item.label)}
-            </button>
-          ))}
-        </div>
-        {failure && <div className="picture-failure tone-text-err" role="alert">{failure}</div>}
-      </div>
-    </div>
+    </DialogShell>
   );
 }

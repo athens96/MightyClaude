@@ -1,59 +1,70 @@
-/* The host's WinUI views (native/Surfaces.tsx): sizes and colours from the design tokens, the form's metrics from its nodes. */
-.native-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(0, 0, 0, .28); }
-.native-backdrop.dialog { z-index: 45; }
-.native-backdrop.popover { z-index: 35; background: transparent; place-items: end; padding: 0 var(--space-md) 34px 0; }
-.native-frame { display: contents; }
-/* Settings in the One UI layout (Surfaces.tsx Settings): two panes on the page colour, each opening on a large title that a
-   small one in its bar replaces as the pane scrolls; the categories and every section in rounded cards; the colours are the
-   design tokens' own. */
-.native-settings { display: grid; grid-template-columns: 288px minmax(0, 1fr); max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); border-radius: 26px; overflow: hidden; background: var(--page); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); }
+/* The host's WinUI views (native/Surfaces.tsx) in the popup standard (dialogs/dialog.css): sizes and colours from the design
+   tokens (--dialog-*, --settings-*), the form's own metrics from its nodes only where no standard row or control replaces them. */
+.native-popover-place { position: fixed; right: var(--space-md); bottom: 34px; z-index: 35; }
+.native-popover-body { padding: 0 var(--dialog-padding) var(--dialog-padding); }
+.native-sheet-body > .native-section:only-child { flex: 1; min-height: 0; }
+
+/* Settings (metrics.settings, Surfaces.tsx Settings): the list 260 under its 48-high bar title, the page opening on its large
+   title (28 in a 104 hero) that gives way to the bar's (15) as it scrolls, the ✕ at the bar's end; the categories and every
+   section in radius-16 cards on the page colour. */
+.dialog.native-settings { display: grid; grid-template-columns: var(--settings-list-width) minmax(0, 1fr); background: var(--page); }
 .native-settings-list, .native-settings-page { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.native-settings-list { border-right: var(--stroke-line) solid var(--line); }
-.native-settings-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 1; display: flex; align-items: center; gap: var(--space-sm); height: 56px; padding: 0 10px 0 24px; background: var(--page); }
-.native-settings-bar-title { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity var(--motion-quick) var(--motion-easing); }
-.native-settings-close { display: inline-grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 50%; padding: 0; background: none; color: var(--ink); cursor: pointer; }
-.native-settings-close:hover { background: var(--subtle); }
-.native-settings-scroll, .native-settings-form { flex: 1; min-height: 0; overflow: auto; padding: 56px 14px 24px; scrollbar-width: thin; }
-.native-settings-hero { display: flex; flex-direction: column; justify-content: flex-end; height: 150px; padding: 0 10px 22px; }
-.native-settings-title { margin: 0; font-family: var(--font-heading); font-size: 32px; font-weight: 600; letter-spacing: -.2px; }
-.native-settings-list .native-settings-title { font-size: 26px; }
-.native-settings-subtitle { margin-top: 6px; font-size: 13px; color: var(--ink2); }
-.native-settings-nav { display: flex; flex-direction: column; gap: 14px; }
-.native-settings-card { display: flex; flex-direction: column; padding: 6px 0; border-radius: 22px; background: var(--card); overflow: hidden; }
-.native-nav-row { position: relative; display: flex; align-items: center; gap: 14px; min-height: 54px; padding: 8px 18px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
-.native-nav-row + .native-nav-row::before { content: ""; position: absolute; top: 0; left: 66px; right: 18px; height: var(--stroke-line); background: var(--line); }
+.native-settings-list { border-right: var(--stroke-line) solid var(--line); background: var(--sidebar); }
+.native-settings-list-bar { display: flex; align-items: center; height: var(--dialog-header-height); flex: none; padding: 0 20px; font-size: var(--settings-bar-title); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
+.native-settings-nav { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--space-lg); padding: var(--space-xs) var(--space-lg) var(--space-lg); scrollbar-width: thin; }
+.native-settings-card { display: flex; flex-direction: column; flex: none; border-radius: var(--settings-card-radius); background: var(--card); overflow: hidden; }
+.native-nav-row { position: relative; display: flex; align-items: center; gap: 14px; height: var(--settings-nav-row-height); padding: 0 var(--space-lg); border: 0; background: none; color: var(--ink); font: inherit; font-size: var(--settings-nav-text); text-align: left; cursor: pointer; outline: none; }
+.native-nav-row + .native-nav-row::before { content: ""; position: absolute; top: 0; left: var(--settings-nav-divider-inset); right: 0; height: var(--stroke-line); background: var(--line); }
 .native-nav-row:hover { background: var(--subtle); }
-.native-nav-row.selected { background: var(--accent-soft); color: var(--accent); }
-.native-nav-tile { display: inline-grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 12px; color: #fff; }
-.native-nav-tile .native-glyph { color: #fff; font-size: 16px; }
+.native-nav-row.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.native-nav-row:focus-visible { box-shadow: inset 0 0 0 var(--stroke-focus) var(--accent); }
+.native-nav-tile { display: inline-grid; place-items: center; width: var(--settings-nav-tile); height: var(--settings-nav-tile); flex: none; border-radius: var(--settings-nav-tile-radius); color: var(--on-status); }
+.native-nav-tile .native-glyph { color: var(--on-status); font-size: var(--settings-nav-glyph); }
 .native-nav-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.native-settings-form { display: flex; flex-direction: column; gap: 14px; }
-.native-settings-form > .native-settings-hero { margin-bottom: -14px; }
+.native-settings-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 1; display: flex; align-items: center; justify-content: center; height: var(--dialog-header-height); background: color-mix(in srgb, var(--page) 92%, transparent); border-bottom: var(--stroke-line) solid transparent; transition: border-color var(--motion-quick) var(--motion-easing); user-select: none; }
+.native-settings-bar.collapsed { border-bottom-color: var(--line); }
+.native-settings-bar-title { max-width: calc(100% - 96px); font-size: var(--settings-bar-title); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity var(--motion-quick) var(--motion-easing); }
+.native-settings-close { position: absolute; right: 10px; top: 10px; display: inline-flex; }
+.native-settings-form { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 0; padding: var(--dialog-header-height) 24px 28px; scrollbar-width: thin; }
+.native-settings-hero { display: flex; align-items: flex-end; height: calc(var(--settings-hero-height) - var(--dialog-header-height)); flex: none; padding: 0 0 14px 4px; box-sizing: border-box; }
+.native-settings-title { margin: 0; font-family: var(--font-heading); font-size: var(--settings-large-title); font-weight: 700; letter-spacing: -.01em; line-height: 1.15; }
 .native-section { display: flex; flex-direction: column; gap: var(--space-sm); }
 .native-section-title { display: flex; align-items: center; gap: var(--space-sm); margin: 0 var(--space-md); font-size: var(--type-title); font-weight: 600; }
-.native-settings-form .native-section-title { color: var(--accent); font-size: 13px; font-weight: 600; margin: 12px 18px 0; }
-.native-fill > .native-select, .native-fill > .native-segmented, .native-fill > .native-grid, .native-fill > .native-box, .native-fill > .native-stack { width: 100%; }
-.native-settings-form select.native-select { width: 100%; }
-.native-fill .native-n-select, .native-fill select.native-select { width: 100% !important; max-width: none !important; justify-self: stretch !important; }
+.native-settings-form .native-section-title { margin: 18px 0 0 var(--settings-card-padding-x); color: var(--accent); font-size: var(--settings-section-title); }
+.native-settings-form .native-section:first-of-type .native-section-title { margin-top: var(--space-xs); }
 .native-section-box { border: var(--stroke-line) solid var(--line); border-radius: 6px; background: var(--card-raised); }
-.native-settings-form .native-section-box { padding: 10px 18px; border: 0; border-radius: 22px; background: var(--card); }
-/* One UI's controls inside Settings: the larger switch with its ring when off, pill pickers, buttons and fields. */
-.native-settings .native-switch { width: 42px; height: 24px; border-radius: 12px; background: transparent; box-shadow: inset 0 0 0 2px var(--ink3); transition: background var(--motion-quick), box-shadow var(--motion-quick); }
-.native-settings .native-switch .native-knob { top: 5px; left: 5px; width: 14px; height: 14px; background: var(--ink3); transition: left var(--motion-quick), top var(--motion-quick), width var(--motion-quick), height var(--motion-quick); }
-.native-settings .native-switch.on { background: var(--accent); box-shadow: none; }
-.native-settings .native-switch.on .native-knob { top: 3px; left: 21px; width: 18px; height: 18px; background: var(--on-accent); }
-.native-settings .native-n-segmented { height: auto !important; }
-.native-settings .native-segmented { padding: 2px; border-radius: 999px; background: var(--card-raised); }
-.native-settings .native-segmented button { height: 26px; border-radius: 999px; }
-.native-settings .native-select { height: 30px; padding: 0 10px; border-radius: 10px; background: var(--card-raised); }
-.native-settings .native-button { min-height: 28px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--card-raised); color: var(--accent); font-weight: 600; }
-.native-settings .native-button.accent { background: var(--accent); color: var(--on-accent); }
-.native-settings .native-button.destructive { color: var(--err-text); }
-.native-settings .native-field { min-height: 28px; padding: 4px 10px; border-radius: 10px; background: var(--card-raised); }
-.native-settings .native-info { padding: 10px 14px; border-radius: 14px; }
-.native-sheet { display: flex; flex-direction: column; gap: var(--space-md); max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); padding: var(--inset-sheet); border-radius: var(--radius-pane); background: var(--card); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); box-sizing: border-box; }
-.native-sheet.popover { padding: var(--inset-popover); max-height: calc(100vh - 80px); }
-.native-sheet-body { display: flex; flex-direction: column; gap: var(--space-md); min-height: 0; overflow: auto; }
+.native-settings-form .native-section-box { padding: 0; border: 0; border-radius: var(--settings-card-radius); background: var(--card); overflow: hidden; }
+
+/* One settings row (the host's SettingsRow, role settingsRow): at least 48 high, 16 in from the card at the left and right, a 1px
+   rule over every row but the first, inset 16. */
+.native-role-settingsRow { justify-content: center; min-height: var(--settings-row-min-height); margin-left: var(--settings-row-divider-inset); padding: var(--space-md) var(--settings-card-padding-x) var(--space-md) 0; box-sizing: border-box; }
+.native-role-settingsRow + .native-role-settingsRow { border-top: var(--stroke-line) solid var(--line); }
+.native-role-settingsRow > .native-box > .native-node > .native-text { color: var(--ink2); font-size: calc(var(--settings-row-caption) * var(--text-scale, 1)); }
+/* The row pattern (role row, SettingsLabeled): the name 14 over its caption 12 at the left, the controls at the right. */
+.settings-row { display: flex; align-items: center; gap: var(--space-xl); min-width: 0; }
+.settings-row-label { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.settings-row-label .native-text { color: var(--ink2); font-size: calc(var(--settings-row-caption) * var(--text-scale, 1)); line-height: 16px; }
+.settings-row-label > .native-n-text > .native-text,
+.settings-row-label > .native-n-stack > .native-stack > .native-node:first-child > .native-text,
+.settings-row-label > .native-n-grid > .native-grid > .native-node:first-child > .native-text { color: var(--ink); font-size: calc(var(--settings-row-name) * var(--text-scale, 1)); line-height: 19px; }
+.settings-row-label .native-stack.v { gap: 2px; }
+.settings-row-control { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-md); flex: none; max-width: 65%; flex-wrap: wrap; }
+.settings-row-control > .native-n-text > .native-text { color: var(--ink2); text-align: right; }
+.settings-row.wide { flex-direction: column; align-items: stretch; gap: var(--space-sm); }
+.settings-row.wide .settings-row-control { justify-content: flex-start; max-width: none; }
+.settings-row.wide .settings-row-control > .native-node { flex: 1; }
+.settings-row.wide .native-field, .settings-row.wide select.native-select { width: 100%; max-width: none; }
+
+/* The standard's controls (the switch 42×24 everywhere; pop-ups 160–240; fields 240; the common buttons). */
+.native-switch { width: var(--settings-switch-width); height: var(--settings-switch-height); border-radius: calc(var(--settings-switch-height) / 2); background: var(--track); box-shadow: inset 0 0 0 var(--stroke-line) color-mix(in srgb, var(--ink) 10%, transparent); transition: background var(--motion-quick); }
+.native-switch .native-knob { top: 3px; left: 3px; width: 18px; height: 18px; background: var(--on-status); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: left var(--motion-quick); }
+:root[data-theme="dark"] .native-switch:not(.on) .native-knob { background: var(--ink3); }
+.native-switch.on { background: var(--accent); box-shadow: none; }
+.native-switch.on .native-knob { left: 21px; background: var(--on-status); }
+.native-settings select.native-select, .settings-row-control select.native-select { min-width: var(--settings-select-min-width); max-width: var(--settings-select-max-width); }
+.settings-row-control.pair select.native-select { width: var(--settings-pair-select-width); min-width: var(--settings-pair-select-width); max-width: var(--settings-pair-select-width); }
+.settings-row-control input.native-field { width: var(--settings-field-width); }
+.native-settings .native-info { padding: 10px 14px; border-radius: 12px; }
 .native-node { display: flex; flex-direction: column; min-width: 0; }
 .native-stack { display: flex; min-width: 0; }
 .native-stack.v { flex-direction: column; }
@@ -68,25 +79,29 @@
 .native-dot { display: inline-block; border-radius: 50%; }
 .native-rule { display: block; height: var(--stroke-line); width: 100%; }
 .native-rule.vertical { width: var(--stroke-line); height: 100%; }
-.native-button, .native-pull { display: inline-flex; align-items: center; gap: var(--space-xs); min-height: 20px; padding: 0 6px; border: var(--stroke-line) solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); font: inherit; font-size: calc(13px * var(--text-scale, 1)); cursor: pointer; }
-.native-button.accent { border: 0; background: var(--accent); color: var(--on-accent); }
-.native-button.destructive { color: var(--err-text); }
+/* A form's push button is the standard's common button (28 high, 12 at the sides, radius 7): grey, the accent default filled,
+   a dangerous one in err. */
+.native-button, .native-pull { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-xs); height: var(--dialog-button-height); padding: 0 var(--dialog-button-padding-x); border: 0; border-radius: var(--dialog-button-radius); background: var(--dialog-gray); color: var(--ink); font: inherit; font-size: calc(var(--type-body) * var(--text-scale, 1)); font-weight: 500; white-space: nowrap; cursor: default; }
+.native-button:hover:not(:disabled) { background: color-mix(in srgb, var(--dialog-gray) 82%, var(--ink)); }
+.native-button.accent { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.native-button.destructive { background: var(--err); color: var(--on-status); font-weight: 600; }
 .native-button:disabled, .native-pull:disabled { opacity: .5; cursor: default; }
 .native-pull { border: 0; background: none; }
 .native-chevron { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: var(--subtle); font-size: 9px; }
 .native-plain { display: flex; align-items: center; gap: var(--space-xs); width: 100%; padding: 0; border: 0; border-radius: 5px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .native-plain:hover:not(:disabled) { background: var(--subtle); }
-.native-switch { position: relative; width: 26px; height: 15px; flex: none; padding: 0; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--ink2) 30%, transparent); cursor: pointer; }
-.native-switch.on { background: var(--accent); }
+.native-switch { position: relative; flex: none; padding: 0; border: 0; cursor: pointer; }
 .native-switch:disabled { opacity: .5; cursor: default; }
-.native-knob { position: absolute; top: 1px; left: 1px; width: 13px; height: 13px; border-radius: 50%; background: var(--on-status); transition: left .12s; }
-.native-switch.on .native-knob { left: 12px; background: var(--on-accent); }
-.native-segmented { display: flex; width: 100%; border: var(--stroke-line) solid var(--line); border-radius: 5px; overflow: hidden; background: var(--card); }
-.native-segmented button { flex: 1; min-width: 0; height: 20px; border: 0; background: none; color: var(--ink); font: inherit; font-size: calc(13px * var(--text-scale, 1)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.native-segmented button.on { background: var(--accent); color: var(--on-accent); }
+.native-knob { position: absolute; border-radius: 50%; }
+/* The segmented picker as the standard draws it: segments on the track, the chosen one raised. */
+.native-segmented { display: inline-flex; height: var(--dialog-button-height); padding: 2px; box-sizing: border-box; border-radius: var(--dialog-button-radius); background: var(--segment-track); }
+.native-segmented button { flex: 1 1 auto; min-width: 0; padding: 0 10px; border: 0; border-radius: 5px; background: none; color: var(--ink2); font: inherit; font-size: calc(12.5px * var(--text-scale, 1)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.native-segmented button.on { background: var(--segment-on); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .14); }
 .native-segmented button:disabled { opacity: .5; cursor: default; }
-.native-select { height: 22px; max-width: 100%; border: var(--stroke-line) solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); font: inherit; font-size: calc(13px * var(--text-scale, 1)); }
-.native-field { min-height: 19px; width: 100%; padding: 1px var(--space-sm); border: var(--stroke-line) solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); font: inherit; font-size: calc(11px * var(--text-scale, 1)); box-sizing: border-box; }
+.native-select { height: var(--dialog-button-height); max-width: 100%; padding: 0 6px 0 8px; border: var(--stroke-line) solid var(--line); border-radius: var(--dialog-button-radius); background: var(--card-raised); color: var(--ink); font: inherit; font-size: calc(var(--type-body) * var(--text-scale, 1)); }
+.native-field { min-height: var(--dialog-button-height); width: 100%; padding: 0 10px; border: var(--stroke-line) solid var(--line); border-radius: var(--dialog-button-radius); background: var(--card); color: var(--ink); font: inherit; font-size: calc(var(--type-body) * var(--text-scale, 1)); box-sizing: border-box; }
+.native-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+textarea.native-field { padding: 6px 10px; }
 .native-field.mono { font-family: var(--font-mono); }
 textarea.native-field { resize: vertical; }
 .native-check { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: calc(11px * var(--text-scale, 1)); }

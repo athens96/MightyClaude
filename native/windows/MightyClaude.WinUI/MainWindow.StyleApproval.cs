@@ -141,7 +141,7 @@ public sealed partial class MainWindow
         for(var row = 0; row < parts.Length; row++) { Grid.SetRow(parts[row], row); sheet.Children.Add(parts[row]); }
         dialog.Content = sheet;
         // Styled once the body is complete, so every part of it takes the sheet's inks.
-        StyledDialog(dialog, StyleApprovalWidth, StyleApprovalHeight);
+        StyledDialog(dialog, StyleApprovalWidth, StyleApprovalHeight, chrome: new DialogChrome { Panel = "styleApproval", Icon = "palette" });
         // Enter and Space dismiss unless another control was chosen; Esc always does.
         dialog.Opened += (_,_) => dismiss.Focus(FocusState.Programmatic);
         await ShowDialogAsync(dialog);

@@ -1,21 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import {
-  AppState,
-  Linking,
-  PermissionsAndroid,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  View,
-} from 'react-native';
+import { AppState, Linking, PermissionsAndroid, Platform, ScrollView, StyleSheet } from 'react-native';
+import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Card } from '@/components/ui';
+import { SettingRow, SettingSwitch, SettingsSection } from '@/components/settings-rows';
 import { t } from '@/lib/i18n';
 import { PUSH_KINDS, type PushKind } from '@/lib/push/message';
 import { pushSettings } from '@/lib/push/settings';
-import { spacing, typeScale, usePalette, useStyles, type Palette } from '@/theme';
+import { spacing, useStyles, type Palette } from '@/theme';
 
 const KIND_LABEL: Record<PushKind, string> = {
   completed: 'phone.settings.kind.completed',
@@ -32,40 +23,13 @@ async function notificationsAllowed(): Promise<boolean> {
   return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
 }
 
-function SettingSwitch({
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  label: string;
-  /** Read out with the switch, for a note shown under it. */
-  hint?: string;
-  value: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  const palette = usePalette();
-  const styles = useStyles(makeStyles);
-  return (
-    <View style={styles.row}>
-      <Text style={styles.label}>{label}</Text>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        trackColor={{ false: palette.track, true: palette.accent }}
-        accessibilityLabel={label}
-        accessibilityHint={hint}
-      />
-    </View>
-  );
-}
-
-/** Which notifications the paired hosts send, and whether crash reports go out. */
+/** Which notifications the paired hosts send, whether crash reports go out, and the app's version. */
 export default function SettingsScreen() {
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const settings = useSyncExternalStore(pushSettings.subscribe, pushSettings.get);
   const [allowed, setAllowed] = useState(true);
+  const version = Constants.expoConfig?.version;
 
   // The user may turn notifications on in the phone's settings and come back.
   useEffect(() => {
@@ -91,20 +55,17 @@ export default function SettingsScreen() {
     <ScrollView
       contentContainerStyle={[styles.page, { paddingBottom: insets.bottom + spacing.xl }]}
     >
-      <Card>
-        <Text style={styles.heading} accessibilityRole="header">
-          {t('phone.settings.notifications')}
-        </Text>
-        <Text style={styles.hint}>{t('phone.settings.notificationsHint')}</Text>
+      <SettingsSection
+        title={t('phone.settings.notifications')}
+        footnote={t('phone.settings.notificationsHint')}
+      >
         {!allowed ? (
-          <View style={styles.block}>
-            <Text style={styles.warning}>{t('phone.settings.permissionOff')}</Text>
-            <Button
-              label={t('phone.settings.openSystem')}
-              tone="neutral"
-              onPress={() => void Linking.openSettings()}
-            />
-          </View>
+          <SettingRow
+            label={t('phone.settings.openSystem')}
+            caption={t('phone.settings.permissionOff')}
+            warning
+            onPress={() => void Linking.openSettings()}
+          />
         ) : null}
         {PUSH_KINDS.map((kind) => (
           <SettingSwitch
@@ -114,16 +75,16 @@ export default function SettingsScreen() {
             onChange={(value) => setKind(kind, value)}
           />
         ))}
-      </Card>
-      <Card>
+      </SettingsSection>
+      <SettingsSection title={t('settings.appInfo.sectionTitle')}>
         <SettingSwitch
           label={t('phone.settings.crashReports')}
-          hint={t('phone.settings.crashReportsHint')}
+          caption={t('phone.settings.crashReportsHint')}
           value={settings.crashReports}
           onChange={setCrashReports}
         />
-        <Text style={styles.hint}>{t('phone.settings.crashReportsHint')}</Text>
-      </Card>
+        {version ? <SettingRow label={t('settings.appInfo.versionLabel')} value={version} /> : null}
+      </SettingsSection>
     </ScrollView>
   );
 }
@@ -133,20 +94,8 @@ const makeStyles = (palette: Palette) =>
     page: {
       backgroundColor: palette.background,
       flexGrow: 1,
-      gap: spacing.xl,
+      gap: spacing.xxl,
       paddingHorizontal: spacing.xl,
       paddingTop: spacing.xl,
     },
-    block: { gap: spacing.md, paddingVertical: spacing.md },
-    heading: { ...typeScale.heading, color: palette.text },
-    hint: { ...typeScale.caption, color: palette.textMuted, paddingTop: spacing.sm },
-    warning: { ...typeScale.body, color: palette.warning },
-    row: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: spacing.lg,
-      justifyContent: 'space-between',
-      paddingVertical: spacing.md,
-    },
-    label: { ...typeScale.body, color: palette.text, flexShrink: 1 },
   });

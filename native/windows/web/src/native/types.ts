@@ -19,6 +19,12 @@ interface Base {
   minW?: number;
   dim?: boolean;
   disabled?: boolean;
+  /**
+   * What the host's builder made it (WebNativeReader.Mark): `row` — a settings row (its first child the name and caption, the
+   * rest the controls at the right), `wideRow` — the name over a control the row's full width, `settingsRow` — one row of a
+   * settings card (its rule and insets are the standard's, not the form's).
+   */
+  role?: 'row' | 'wideRow' | 'settingsRow';
   /** In a grid: its cell. */
   row?: number;
   col?: number;
@@ -32,6 +38,7 @@ export type NativeNode = Base & (
   | { t: 'image'; src: string }
   | { t: 'dot'; fill: Ink; size: number }
   | { t: 'spinner' }
+  | { t: 'loading'; rows?: number }
   | { t: 'progress'; value: number; max: number; indeterminate: boolean }
   | { t: 'rule'; fill: Ink; vertical: boolean }
   | { t: 'link'; id: number; label: string }
@@ -74,9 +81,33 @@ export interface NativeButton {
   accent: boolean;
 }
 
+/**
+ * How a dialog of the window's flows is drawn (the popup standard, MainWindow.WebShell.Settings.cs ShowDialogAsync): an alert
+ * (A), a form sheet (B) or a panel (C, with its kind for the size kept, a ✕, and busy while it cannot close), with what its
+ * header and footer hold beside the form.
+ */
+export interface NativeChrome {
+  kind: 'alert' | 'sheet' | 'panel';
+  panel?: string | null;
+  icon?: string | null;
+  subtitle?: string | null;
+  busy?: boolean;
+  /** The primary button is a dangerous action (filled in err). */
+  danger?: boolean;
+  minWidth?: number | null;
+  minHeight?: number | null;
+  /** The header's tools, before the ✕. */
+  tools?: NativeNode | null;
+  /** The footer's left: progress and notes. */
+  status?: NativeNode | null;
+  /** The form's own buttons at the footer's right, before the dialog's (an operation's Cancel). */
+  actions?: NativeNode | null;
+}
+
 /** One view: Settings (with its categories), the setup screen, a dialog (with its buttons) or the companion popover. */
 export interface NativeView {
   kind: 'settings' | 'setup' | 'dialog' | 'companion';
+  chrome?: NativeChrome | null;
   title: string;
   subtitle?: string;
   close?: string;

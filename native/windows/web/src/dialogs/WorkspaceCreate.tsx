@@ -36,15 +36,6 @@ function useCreateCheck(location: string, name: string): { current: CreateCheck 
   return { current: answer?.key === key ? answer.check : null, last: answer?.check ?? null };
 }
 
-function Heading({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="create-heading">
-      <h2 className="sheet-title">{title}</h2>
-      <div className="quiet small">{subtitle}</div>
-    </div>
-  );
-}
-
 /** The location: the path, cut in the middle when long, and the folder picker. */
 function LocationRow({ labels, location, onPick }: { labels: CreateLabels; location: string; onPick: (path: string) => void }) {
   const { bridge } = useServices();
@@ -99,11 +90,15 @@ export function NewFolder({ id, dialog, answer }: { id: number; dialog: Extract<
   // While the folder is being made it exists already: no "already exists" line then.
   const problem = failure ?? shownProblem(last, name, busy);
   return (
-    <Sheet id={id} width={460} label={dialog.title} onCancel={() => { if (!busy) answer({ choice: 'cancel' }); }}>
-      <Heading title={dialog.title} subtitle={dialog.subtitle} />
+    <Sheet id={id} width={460} label={dialog.title} subtitle={dialog.subtitle} onCancel={() => { if (!busy) answer({ choice: 'cancel' }); }}
+      status={<Pending busy={busy} showsLabel={false} />}
+      buttons={<>
+        <button type="button" className="btn" disabled={busy} onClick={() => answer({ choice: 'cancel' })}>{labels.cancel}</button>
+        <button type="button" className="btn primary" disabled={!ready} onClick={() => void create()} data-testid="workspace-new-folder-create">{labels.create}</button>
+      </>}>
       <fieldset className="create-grid" disabled={busy}>
         <label className="create-label" htmlFor={fieldId}>{labels.name}</label>
-        <input ref={nameField} id={fieldId} className="sheet-field" data-autofocus placeholder={labels.name} value={name} data-testid="workspace-new-folder-name"
+        <input ref={nameField} id={fieldId} className="dialog-field" data-autofocus placeholder={labels.name} value={name} data-testid="workspace-new-folder-name"
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void create(); } }} />
         <span className="create-label">{labels.location}</span>
@@ -113,12 +108,6 @@ export function NewFolder({ id, dialog, answer }: { id: number; dialog: Extract<
       </fieldset>
       <PathPreview labels={labels} name={name} check={last} />
       {problem && <div className="sheet-caption tone-text-err" data-testid="workspace-create-problem">{problem}</div>}
-      <div className="sheet-buttons">
-        <Pending busy={busy} showsLabel={false} />
-        <span className="spacer" />
-        <button type="button" className="plain-button" disabled={busy} onClick={() => answer({ choice: 'cancel' })}>{labels.cancel}</button>
-        <button type="button" className="accent-button" disabled={!ready} onClick={() => void create()} data-testid="workspace-new-folder-create">{labels.create}</button>
-      </div>
     </Sheet>
   );
 }
@@ -128,7 +117,7 @@ function GitError({ kind, message, labels, onOpenSetup, testId }: { kind: string
   return (
     <div className="create-error">
       <span className="tone-text-err selectable" data-testid={testId}>{'✕ ' + message}</span>
-      {kind === 'gitMissing' && <button type="button" className="plain-button" onClick={onOpenSetup} data-testid="workspace-git-open-setup">{labels.openSetup}</button>}
+      {kind === 'gitMissing' && <button type="button" className="btn" onClick={onOpenSetup} data-testid="workspace-git-open-setup">{labels.openSetup}</button>}
     </div>
   );
 }
@@ -211,11 +200,14 @@ export function GitCreate({ id, dialog, answer }: { id: number; dialog: Extract<
   // git makes the target at once: no "already exists" line while the clone runs.
   const problem = shownProblem(last, name, busy);
   return (
-    <Sheet id={id} width={460} label={dialog.title} onCancel={cancel}>
-      <Heading title={dialog.title} subtitle={dialog.subtitle} />
+    <Sheet id={id} width={460} label={dialog.title} subtitle={dialog.subtitle} onCancel={cancel}
+      buttons={<>
+        <button ref={cancelButton} type="button" className="btn" onClick={cancel} data-testid="workspace-git-cancel">{labels.cancel}</button>
+        <button type="button" className="btn primary" disabled={!ready} onClick={() => void create()} data-testid="workspace-git-create">{labels.create}</button>
+      </>}>
       <fieldset className="create-grid" disabled={busy}>
         <label className="create-label" htmlFor={urlId}>{labels.url}</label>
-        <input id={urlId} className="sheet-field" data-autofocus placeholder={labels.urlPlaceholder} value={url} spellCheck={false} autoComplete="off" data-testid="workspace-git-url"
+        <input id={urlId} className="dialog-field" data-autofocus placeholder={labels.urlPlaceholder} value={url} spellCheck={false} autoComplete="off" data-testid="workspace-git-url"
           onChange={(event) => setUrl(event.target.value)}
           onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void create(); } }} />
         <span />
@@ -230,7 +222,7 @@ export function GitCreate({ id, dialog, answer }: { id: number; dialog: Extract<
         <span className="create-label">{labels.location}</span>
         <LocationRow labels={labels} location={location} onPick={setLocation} />
         <label className="create-label" htmlFor={nameId}>{labels.name}</label>
-        <input id={nameId} className="sheet-field" placeholder={labels.name} value={name} data-testid="workspace-git-name"
+        <input id={nameId} className="dialog-field" placeholder={labels.name} value={name} data-testid="workspace-git-name"
           onChange={(event) => { setName(event.target.value); setEdited(true); }}
           onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void create(); } }} />
       </fieldset>
@@ -243,11 +235,6 @@ export function GitCreate({ id, dialog, answer }: { id: number; dialog: Extract<
           <span className="quiet small">{progress?.text ?? labels.starting}</span>
         </div>
       )}
-      <div className="sheet-buttons">
-        <span className="spacer" />
-        <button ref={cancelButton} type="button" className="plain-button" onClick={cancel} data-testid="workspace-git-cancel">{labels.cancel}</button>
-        <button type="button" className="accent-button" disabled={!ready} onClick={() => void create()} data-testid="workspace-git-create">{labels.create}</button>
-      </div>
     </Sheet>
   );
 }

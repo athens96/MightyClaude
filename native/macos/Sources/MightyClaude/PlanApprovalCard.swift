@@ -13,27 +13,15 @@ struct PlanDocumentSheet: View {
     let document: PlanDocument
     let onClose: () -> Void
 
+    /// A panel (kind C) with nothing but its ✕ in the header and no footer (decision 10).
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.accent)
-                Text(document.title).font(.ui(size: 14, weight: .bold)).foregroundStyle(Palette.ink)
-                Text(document.subtitle).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
-                Spacer(minLength: 0)
-                Button(L("plan.card.close"), action: onClose).buttonStyle(PaneCardButtonStyle())
-                    .keyboardShortcut(.cancelAction)
-                    .accessibilityIdentifier("plan-document-close")
-            }
-            .padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md)
-            Divider().overlay(Palette.border)
-            ScrollView {
-                AgentMarkdownView(source: document.plan).textSelection(.enabled)
-                    .padding(DesignMetrics.Spacing.lg).frame(maxWidth: 860, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .background(Palette.panel)
-        }
-        .frame(minWidth: 620, idealWidth: 860, minHeight: 460, idealHeight: 720)
+        DialogScaffold(document.title, subtitle: document.subtitle, systemImage: "list.bullet.clipboard",
+                       close: DialogClose(identifier: "plan-document-close", action: onClose), scrolls: true) {
+            AgentMarkdownView(source: document.plan).textSelection(.enabled)
+                .frame(maxWidth: 860, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } footer: { EmptyView() }
+        .dialogPanelFrame(id: "planDocument", ideal: CGSize(width: 860, height: 720), minimum: CGSize(width: 620, height: 460))
         .background(Palette.panel)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plan-document-\(document.id)")
