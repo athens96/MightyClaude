@@ -186,7 +186,8 @@ public static class ClaudePlanMode
     /// </summary>
     internal static RunSession Record(RunSession session, RunEvent ev)
     {
-        if (session.Kind != "claude" || session.Provider != "claude") return session;
+        // A Codex pane keeps its checklist (its todo_list items) and nothing else here.
+        if (session.Kind != "claude" || session.Provider != "claude" && !(session.Provider == "codex" && ev.Type == "todos")) return session;
         return ev.Type switch
         {
             "plan" when ev.Plan is { } record => session with
@@ -208,7 +209,8 @@ public static class ClaudePlanMode
 public sealed record TodoItem(string Content, string Status, string? ActiveForm = null, string? Id = null);
 
 /// <summary>The latest checklist the main agent keeps while it carries out a plan.</summary>
-public sealed record TodoProgress(IReadOnlyList<TodoItem> Items)
+/// <param name="RunId">The Mighty graph run id of the request whose stream last changed the list (older saved lists have none).</param>
+public sealed record TodoProgress(IReadOnlyList<TodoItem> Items, [property: JsonPropertyName("runId")] string? RunId = null)
 {
     public const int MaximumItems = 100;
     [JsonIgnore] public int Total => Items.Count;
@@ -229,7 +231,7 @@ public sealed record TodoProgress(IReadOnlyList<TodoItem> Items)
             var id = item.Id is null ? null : ActivitySupport.Clean(item.Id, 128, true);
             return new TodoItem(content, item.Status is "pending" or "in_progress" or "completed" ? item.Status : "pending", string.IsNullOrEmpty(active) ? null : active, string.IsNullOrEmpty(id) ? null : id);
         }).Where(i => i.Content.Length > 0).Take(MaximumItems).ToList();
-        return new(items);
+        return new(items, Wire.Identifier(value.RunId) ? value.RunId : null);
     }
 }
 
@@ -243,6 +245,8 @@ public sealed class TodoProgressTracker
     private readonly List<TodoItem> tasks = [];
     private readonly List<(string ToolUseId, TodoItem Item)> creates = [];
     private List<TodoItem>? todoWrite;
+    /// <summary>This run's stream has sent a list: until then even the saved list sent again goes out, so the request that sends it owns it.</summary>
+    private bool emitted;
     public TodoProgress? Progress { get; private set; }
 
     /// <param name="progress">The pane's saved checklist, for a run that resumes it.</param>
@@ -253,14 +257,30 @@ public sealed class TodoProgressTracker
         Progress = progress;
     }
 
-    /// <summary>One stream-json frame; the new progress when it changed. Sub-agent frames never touch the main checklist.</summary>
+    /// <summary>One stream-json frame (Claude's, or a Codex exec --json item frame); the new progress when it changed. Sub-agent frames never touch the main checklist.</summary>
     public TodoProgress? Consume(JsonElement frame)
     {
         if (MetadataJson.Property(frame, "parent_tool_use_id").ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null)) return null;
-        var blocks = MetadataJson.Property(MetadataJson.Property(frame, "message"), "content");
-        if (blocks.ValueKind != JsonValueKind.Array) return null;
         var changed = false;
-        if (frame.Text("type") == "assistant")
+        var blocks = MetadataJson.Property(MetadataJson.Property(frame, "message"), "content");
+        // Codex's plan (update_plan) reaches exec --json as a todo_list item that only says done or not done:
+        // the first unfinished step is the one being worked on.
+        if (frame.Text("type") is "item.started" or "item.updated" or "item.completed")
+        {
+            var codexItem = MetadataJson.Property(frame, "item");
+            var entries = MetadataJson.Property(codexItem, "items");
+            if (codexItem.Text("type") != "todo_list" || entries.ValueKind != JsonValueKind.Array) return null;
+            var current = false;
+            todoWrite = entries.EnumerateArray().Where(t => ActivitySupport.Clean(t.Text("text"), 1024, true).Length > 0).Select(t =>
+            {
+                if (MetadataJson.Flag(t, "completed")) return new TodoItem(t.Text("text")!, "completed");
+                var status = current ? "pending" : "in_progress"; current = true;
+                return new TodoItem(t.Text("text")!, status);
+            }).ToList();
+            changed = true;
+        }
+        else if (blocks.ValueKind != JsonValueKind.Array) return null;
+        else if (frame.Text("type") == "assistant")
         {
             foreach (var block in blocks.EnumerateArray().Where(b => b.Text("type") == "tool_use"))
             {
@@ -310,7 +330,8 @@ public sealed class TodoProgressTracker
         if (!changed) return null;
         var items = tasks.Concat(creates.Select(c => c.Item)).ToList();
         var next = TodoProgress.Normalized(new(items.Count == 0 ? todoWrite ?? [] : items));
-        if (next is null || next.SameAs(Progress)) return null;
+        if (next is null || emitted && next.SameAs(Progress)) return null;
+        emitted = true;
         Progress = next;
         return next;
     }

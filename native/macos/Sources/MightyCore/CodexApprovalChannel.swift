@@ -153,6 +153,17 @@ final class CodexApprovalChannel {
         if method == "thread/tokenUsage/updated", let tokens = params["tokenUsage"] as? [String: Any], let last = tokens["last"] as? [String: Any] {
             usage = ["input_tokens": last["inputTokens"] ?? 0, "cached_input_tokens": last["cachedInputTokens"] ?? 0, "output_tokens": last["outputTokens"] ?? 0]; return
         }
+        // The turn's plan (update_plan) as exec's todo_list item, so the checklist reads one shape (TodoProgressTracker).
+        if method == "turn/plan/updated" {
+            if let plan = params["plan"] as? [[String: Any]] {
+                let items: [[String: Any]] = plan.compactMap { step in
+                    guard let text = step["step"] as? String else { return nil }
+                    return ["text": text, "completed": step["status"] as? String == "completed"]
+                }
+                legacy(["type": "item.updated", "item": ["id": "turn-plan", "type": "todo_list", "items": Array(items.prefix(TodoProgress.maximumItems))]])
+            }
+            return
+        }
         guard ["item/started", "item/completed"].contains(method), let item = params["item"] as? [String: Any], let id = item["id"] as? String else { return }
         if method == "item/completed" {
             let ids = pending.filter { $0.value.display.toolUseId == id }.map(\.key)

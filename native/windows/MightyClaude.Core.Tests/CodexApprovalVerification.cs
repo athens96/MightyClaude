@@ -106,6 +106,12 @@ internal static class CodexApprovalVerification
         f.Notice("item/started", new { threadId = "thread-1", turnId = "turn-1", item = new { id = "spawn", type = "collabAgentToolCall", tool = "spawnAgent", senderThreadId = "thread-1", receiverThreadIds = new[] { "child" }, status = "inProgress" } });
         Check(f.Events.Any(e => e.Contains("spawn_agent") && e.Contains("receiver_thread_ids")), "graph receives normalized collaboration items");
         f.Notice("thread/tokenUsage/updated", new { threadId = "thread-1", turnId = "turn-1", tokenUsage = new { last = new { inputTokens = 12, outputTokens = 4 } } });
+        // The turn's plan reaches the checklist as exec's todo_list does (the first unfinished step is the current one).
+        f.Notice("turn/plan/updated", new { threadId = "thread-1", turnId = "turn-1", plan = new[] { new { step = "Implement", status = "completed" }, new { step = "Build", status = "inProgress" }, new { step = "Deploy", status = "pending" } } });
+        f.Notice("turn/plan/updated", new { threadId = "thread-1", turnId = "other", plan = new[] { new { step = "Not this turn", status = "pending" } } });
+        var todos = new TodoProgressTracker();
+        foreach (var e in f.Events) { using var doc = System.Text.Json.JsonDocument.Parse(e); todos.Consume(doc.RootElement); }
+        Check(todos.Progress is { Total: 3, Completed: 1, CurrentText: "Build" }, "the turn's plan becomes the pane's checklist; another turn's plan is ignored");
         f.Notice("turn/completed", new { threadId = "thread-1", turn = new { id = "other", status = "completed" } }); Check(!f.Done, "another turn cannot complete this run");
         f.Notice("turn/completed", new { threadId = "thread-1", turn = new { id = "turn-1", status = "completed" } });
         f.Channel.Flush(); Check(f.Done && f.Channel.TurnCompleted && !f.Channel.Failed, "a matching completed turn settles cleanly");

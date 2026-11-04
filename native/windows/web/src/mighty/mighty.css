@@ -30,6 +30,22 @@
 .mighty-edges-live { fill: none; stroke: var(--run); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .mighty-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 
+/* The agent's step list (steps.ts) over the diagram's top-left corner, below the bar; its own scroll, the canvas pans around it. */
+.mighty-steps { position: absolute; left: var(--space-md); top: var(--space-md); z-index: 1; box-sizing: border-box; width: min(calc(var(--layout-sidebar-min) + 2 * var(--space-xl)), calc(100% - 2 * var(--space-md))); max-height: 50%; display: flex; flex-direction: column; border-radius: var(--radius-row); border: var(--stroke-line) solid var(--line); background: var(--card); color: var(--ink); font-size: var(--type-row); }
+.mighty-steps-head { flex: none; display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs) var(--space-xs) var(--space-xs) var(--space-md); }
+.mighty-steps-title { font-weight: 600; }
+.mighty-steps-count { flex: 1; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.mighty-steps-list { touch-action: pan-y; margin: 0; padding: 0 var(--space-md) var(--space-sm); list-style: none; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: var(--space-xs); }
+.mighty-step { display: flex; align-items: flex-start; gap: var(--space-sm); min-width: 0; }
+.mighty-step-text { min-width: 0; overflow-wrap: anywhere; }
+.mighty-step.completed .mighty-step-text { color: var(--ink2); }
+.mighty-step-mark { flex: none; box-sizing: border-box; width: var(--space-lg); height: var(--space-lg); margin-top: var(--space-xxs); border-radius: 50%; display: grid; place-items: center; }
+.mighty-step.completed .mighty-step-mark { background: var(--done); color: var(--on-status); }
+.mighty-step.inProgress .mighty-step-mark { background: var(--accent); }
+.mighty-step.inProgress .mighty-step-mark.live { animation: timeline-pulse 1.6s ease-in-out infinite; }
+.mighty-step.pending .mighty-step-mark { border: var(--stroke-active) solid var(--ink3); }
+.mighty-step.completed .mighty-step-mark .icon { width: var(--space-md); height: var(--space-md); }
+
 .mighty-block { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; border-radius: var(--radius-block); border: var(--stroke-line) solid var(--line); background: var(--card); color: var(--ink); contain: layout paint style; }
 .mighty-block.halo { box-shadow: 0 0 0 4px var(--run-soft); }
 .mighty-block.selected { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -100,7 +116,7 @@
 .mighty-glyph.tone-wait { color: var(--wait-text); }
 @media (prefers-reduced-motion: reduce) {
   .mighty-outline.outline-marching rect { animation: none; stroke-dasharray: none !important; }
-  .mighty-bars span, .timeline-node.ring::after, .timeline-pulse { animation: none; }
+  .mighty-bars span, .timeline-node.ring::after, .timeline-pulse, .mighty-step-mark.live { animation: none; }
   .mighty-bars { display: none; }
   .mighty-bolt-still { display: inline-grid; }
 }

@@ -468,7 +468,7 @@ public enum HelpDemoReplay {
             usage: { emit(RunEvent(sessionId: sessionId, type: "usage", usage: $0)) },
             graph: { emit(RunEvent(sessionId: sessionId, type: "graph", graph: $0)) },
             graphInput: input, configuredModel: model,
-            todos: { emit(RunEvent(sessionId: sessionId, type: "todos", todos: $0)) },
+            todos: { progress in var value = progress; value.runId = runId; emit(RunEvent(sessionId: sessionId, type: "todos", todos: value)) },
             background: { emit(RunEvent(sessionId: sessionId, type: "background", background: $0)) })
         parser = stream
         for frame in frames { stream.push(frame + "\n") }

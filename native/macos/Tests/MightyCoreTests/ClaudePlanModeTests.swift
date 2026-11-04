@@ -223,12 +223,40 @@ struct ClaudePlanModeTests {
         #expect(background.value.last?.turnEnded == true && background.value.last?.running.map(\.id) == ["bg1"])
         parser.finishBackground()
         #expect(background.value.last?.tasks.first?.status == "unknown")
-        // Codex and Gemini panes never report either.
-        let codex = PlanBox<Int>(0)
-        let other = CLIStreamParser(provider: "codex", log: { _, _ in }, resume: { _ in }, todos: { _ in codex.value += 1 }, background: { _ in codex.value += 1 })
-        other.push(try line(["type": "system", "subtype": "task_started", "task_id": "bg1", "task_type": "local_agent"]))
+        // A Codex pane reports its todo_list as its checklist, never background work.
+        let codexTodos = PlanBox<[TodoProgress]>([]), codexBackground = PlanBox<Int>(0)
+        let codex = CLIStreamParser(provider: "codex", log: { _, _ in }, resume: { _ in }, todos: { codexTodos.value.append($0) }, background: { _ in codexBackground.value += 1 })
+        codex.push(try line(["type": "system", "subtype": "task_started", "task_id": "bg1", "task_type": "local_agent"]))
+        codex.push(try line(["type": "item.started", "item": ["id": "item_1", "type": "todo_list", "items": [["text": "Build", "completed": false]]]]))
+        codex.finishBackground()
+        #expect(codexTodos.value.map(\.currentText) == ["Build"] && codexBackground.value == 0)
+        // A Gemini pane reports neither.
+        let gemini = PlanBox<Int>(0)
+        let other = CLIStreamParser(provider: "gemini", log: { _, _ in }, resume: { _ in }, todos: { _ in gemini.value += 1 }, background: { _ in gemini.value += 1 })
+        other.push(try line(["type": "item.started", "item": ["id": "item_1", "type": "todo_list", "items": [["text": "Build", "completed": false]]]]))
         other.finishBackground()
-        #expect(codex.value == 0)
+        #expect(gemini.value == 0)
+    }
+
+    @Test func aChecklistKeepsTheRunThatChangedItAndOnlyItsItemsTellAChange() throws {
+        // Kept by normalize when it is an identifier; dropped when it is not.
+        let kept = try #require(TodoProgress.normalized(TodoProgress(items: [TodoItem(content: "a", status: "pending")], runId: "run-1")))
+        #expect(kept.runId == "run-1")
+        #expect(TodoProgress.normalized(TodoProgress(items: [TodoItem(content: "a", status: "pending")], runId: "bad id"))?.runId == nil)
+        // It round-trips, and an older saved list without one still decodes.
+        #expect(try JSONDecoder().decode(TodoProgress.self, from: JSONEncoder().encode(kept)) == kept)
+        #expect(try JSONDecoder().decode(TodoProgress.self, from: Data(#"{"items":[{"content":"a","status":"pending"}]}"#.utf8)).runId == nil)
+        // A resumed run that sends the saved list again takes it over once (the host names it this run); again, nothing.
+        let tracker = TodoProgressTracker(progress: TodoProgress(items: [TodoItem(content: "Step", status: "in_progress")], runId: "old-run"))
+        let same: [String: Any] = ["type": "assistant", "message": ["content": [["type": "tool_use", "id": "t1", "name": "TodoWrite", "input": ["todos": [["content": "Step", "status": "in_progress"]]]]]]]
+        #expect(tracker.consume(same)?.items == [TodoItem(content: "Step", status: "in_progress")])
+        #expect(tracker.consume(same) == nil)
+        // A sub-agent's todo_list never touches the main checklist.
+        #expect(tracker.consume(["type": "item.updated", "parent_tool_use_id": "toolu_1", "item": ["id": "i", "type": "todo_list", "items": [["text": "Other", "completed": false]]]]) == nil)
+        // An entry with no text is dropped before the current step is chosen.
+        let codex = TodoProgressTracker()
+        let next = codex.consume(["type": "item.updated", "item": ["id": "i", "type": "todo_list", "items": [["text": " ", "completed": false], ["text": "Real", "completed": false], ["text": "Later", "completed": false]]]])
+        #expect(next?.items.map(\.status) == ["in_progress", "pending"] && next?.currentText == "Real")
     }
 
     @Test func anApprovedPlanSetsThePaneModeAndKeepsABoundedHistory() throws {
@@ -253,6 +281,10 @@ struct ClaudePlanModeTests {
         var codex = RunSession(id: "codex", workspaceId: "ws", title: "Codex", provider: "codex")
         codex.recordPlanMode(record("x", .approvedAuto))
         #expect(codex.planHistory == nil && codex.settings.permissionMode == "manual")
+        // A Codex pane keeps its checklist, with the run that changed it, and no background work.
+        codex.recordPlanMode(RunEvent(sessionId: "codex", type: "todos", todos: TodoProgress(items: [TodoItem(content: "Build", status: "in_progress")], runId: "run-2")))
+        codex.recordPlanMode(RunEvent(sessionId: "codex", type: "background", background: BackgroundWork(tasks: [BackgroundTask(id: "t", kind: "agent", description: "d", startedAt: "2026-10-06T01:00:00.000Z")])))
+        #expect(codex.todoProgress?.currentText == "Build" && codex.todoProgress?.runId == "run-2" && codex.backgroundWork == nil)
         // Background work belongs to the latest run.
         session.recordPlanMode(RunEvent(sessionId: "pane", type: "background", background: BackgroundWork(tasks: [BackgroundTask(id: "t", kind: "agent", description: "d", startedAt: "2026-10-06T01:00:00.000Z")])))
         #expect(session.backgroundWork?.running.count == 1)
@@ -301,6 +333,10 @@ struct ClaudePlanModeTests {
         #expect(restored.backgroundWork?.tasks.first?.status == "unknown" && restored.planHistory?.count == 1 && restored.todoProgress?.completed == 1)
         let saved = StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [running]), restoring: false).sessions[0]
         #expect(saved.backgroundWork?.tasks.first?.status == "running")
+        // A Codex pane's saved checklist is kept; nothing else of plan mode is.
+        var codexPane = session; codexPane.id = "cx"; codexPane.provider = "codex"
+        let codexRestored = StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [codexPane]), restoring: true).sessions[0]
+        #expect(codexRestored.todoProgress?.completed == 1 && codexRestored.planHistory == nil && codexRestored.backgroundWork == nil)
         var shell = session; shell.id = "sh"; shell.kind = "shell"
         let shellRestored = StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [shell]), restoring: true).sessions[0]
         #expect(shellRestored.planHistory == nil && shellRestored.todoProgress == nil && shellRestored.backgroundWork == nil)
@@ -393,6 +429,9 @@ struct ClaudePlanModeRunnerTests {
             #expect(try String(contentsOf: root.appendingPathComponent("environment.txt"), encoding: .utf8).contains("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1"))
             #expect(values().compactMap(\.plan).map(\.outcome) == [.approvedAuto])
             #expect(values().compactMap(\.todos).last?.currentText == "Doing it")
+            // The checklist names the request's graph run, the one the diagram draws it over.
+            let graphRun = try #require(values().compactMap(\.graph).first?.runId)
+            #expect(values().compactMap(\.todos).last?.runId == graphRun)
             let backgrounds = values().compactMap(\.background)
             #expect(backgrounds.last?.tasks.first?.status == "completed" && backgrounds.last?.tasks.first?.summary == "All good" && backgrounds.last?.waitingOnBackground == false)
             // The pane was not stored in plan, so the approval does not change it.

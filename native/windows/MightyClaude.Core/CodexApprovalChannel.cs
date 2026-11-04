@@ -145,6 +145,13 @@ public sealed class CodexApprovalChannel
         {
             usage = new { input_tokens = Count(last, "inputTokens"), cached_input_tokens = Count(last, "cachedInputTokens"), output_tokens = Count(last, "outputTokens") }; return;
         }
+        // The turn's plan (update_plan) as exec's todo_list item, so the checklist reads one shape (TodoProgressTracker).
+        if (method == "turn/plan/updated")
+        {
+            if (Get(parameters, "plan") is { ValueKind: JsonValueKind.Array } plan)
+                Legacy(new { type = "item.updated", item = new { id = "turn-plan", type = "todo_list", items = plan.EnumerateArray().Where(s => s.Text("step") is not null).Take(TodoProgress.MaximumItems).Select(s => new { text = s.Text("step"), completed = s.Text("status") == "completed" }).ToArray() } });
+            return;
+        }
         var item = Get(parameters, "item");
         if (method is not ("item/started" or "item/completed") || item.Text("id") is not { } itemId) return;
         if (method == "item/completed") foreach (var id in pending.Where(p => p.Value.Display.ToolUseId == itemId).Select(p => p.Key).ToArray()) CancelPending(id);

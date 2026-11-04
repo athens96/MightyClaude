@@ -229,6 +229,13 @@ internal static class ClaudePlanModeVerification
         Check(session.PlanHistory!.Count == ClaudePlanMode.MaximumHistory && session.PlanHistory[^1].Id == "n11" && session.Settings.PermissionMode == "manual", "history is capped, newest last");
         var codex = new RunSession { Id = "codex", WorkspaceId = "ws", Provider = "codex" }.Apply(Record("x", PlanOutcome.ApprovedAuto));
         Check(codex.PlanHistory is null && codex.Settings.PermissionMode == "manual", "only Claude panes keep plans");
+        codex = codex.Apply(new("codex", "todos", Todos: new([new TodoItem("a", "in_progress")], "run-1")));
+        Check(codex.TodoProgress is { Total: 1, RunId: "run-1" }, "a Codex pane keeps its checklist and the request it belongs to");
+        Check(TodoProgress.Normalized(new([new TodoItem("a", "pending")], "not an id!"))!.RunId is null && new TodoProgress([new TodoItem("a", "pending")], "r1").SameAs(new([new TodoItem("a", "pending")], "r2")), "an invalid run id is dropped, and the list alone decides sameness");
+        // A resumed run that sends the saved list again takes it over once (the host names it this run); again, nothing.
+        var resumed = new TodoProgressTracker(new TodoProgress([new TodoItem("Step", "in_progress")], "old-run"));
+        using (var same = System.Text.Json.JsonDocument.Parse("""{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"TodoWrite","input":{"todos":[{"content":"Step","status":"in_progress"}]}}]}}"""))
+            Check(resumed.Consume(same.RootElement) is { Total: 1 } && resumed.Consume(same.RootElement) is null, "a resumed run's first list goes out even when it is the saved one, then only changes do");
         session = session.Apply(new("pane", "background", Background: new([new BackgroundTask("t", "agent", "d", "2026-10-06T01:00:00.000Z")])));
         Check(session.BackgroundWork!.Running.Count == 1, "background work is kept");
         session = session.Apply(RunEvent.State("pane", "running"));
@@ -247,13 +254,13 @@ internal static class ClaudePlanModeVerification
         var session = decoded with
         {
             PlanHistory = [new PlanRecord("p", "r", "# P", "2026-10-06T01:00:00.000Z", "2026-10-06T01:01:00.000Z", PlanOutcome.ApprovedConfirm)],
-            TodoProgress = new([new TodoItem("a", "completed", Id: "1")]),
+            TodoProgress = new([new TodoItem("a", "completed", Id: "1")], "graph-run-1"),
             BackgroundWork = new([new BackgroundTask("t", "shell", "d", "2026-10-06T01:00:00.000Z")], true),
         };
         var json = JsonSerializer.Serialize(session, Wire.Json);
         Check(json.Contains("\"planHistory\"", StringComparison.Ordinal) && json.Contains("\"todoProgress\":{\"items\"", StringComparison.Ordinal) && json.Contains("\"backgroundWork\"", StringComparison.Ordinal) && !json.Contains("\"total\"", StringComparison.Ordinal), "the Mac field names are written");
         var again = JsonSerializer.Deserialize<RunSession>(json, Wire.Json)!;
-        Check(again.PlanHistory!.SequenceEqual(session.PlanHistory) && again.TodoProgress!.SameAs(session.TodoProgress) && again.BackgroundWork!.SameAs(session.BackgroundWork), "plan state round-trips");
+        Check(again.PlanHistory!.SequenceEqual(session.PlanHistory) && again.TodoProgress!.SameAs(session.TodoProgress) && again.TodoProgress.RunId == "graph-run-1" && json.Contains("\"runId\":\"graph-run-1\"", StringComparison.Ordinal) && again.BackgroundWork!.SameAs(session.BackgroundWork), "plan state round-trips");
         var damaged = JsonSerializer.Deserialize<RunSession>(old.Replace("\"logs\":[]", "\"logs\":[],\"planHistory\":7,\"backgroundWork\":\"x\",\"todoProgress\":[1]", StringComparison.Ordinal), Wire.Json)!;
         Check(damaged.Id == "pane" && damaged.PlanHistory is null && damaged.BackgroundWork is null && damaged.TodoProgress is null, "damage in plan state keeps the conversation");
         var partly = JsonSerializer.Deserialize<RunSession>(old.Replace("\"logs\":[]", "\"logs\":[],\"planHistory\":[{\"id\":1},{\"id\":\"ok\",\"runId\":\"r\",\"plan\":\"# P\",\"receivedAt\":\"2026-10-06T01:00:00.000Z\",\"decidedAt\":\"2026-10-06T01:01:00.000Z\",\"outcome\":\"revised\"},{\"id\":\"bad\",\"outcome\":\"unknown\"}]", StringComparison.Ordinal), Wire.Json)!;
@@ -323,7 +330,7 @@ internal static class ClaudePlanModeVerification
                 if (quiet) continue;
                 Check(answer.GetProperty("updatedPermissions")[0].GetProperty("mode").GetString() == "acceptEdits" && !answer.GetProperty("updatedInput").EnumerateObject().Any(), "approval switches the session to acceptEdits");
                 Check((await File.ReadAllTextAsync(record + ".follow")).Contains("and one more thing", StringComparison.Ordinal) && !File.Exists(record + ".extra"), "the steered text reached the CLI before it closed");
-                Check(all.Last(e => e.Type == "todos").Todos!.CurrentText == "Doing it", "the checklist is reported");
+                Check(all.Last(e => e.Type == "todos").Todos is { CurrentText: "Doing it" } todos && todos.RunId == graphRun!.SourceRunID, "the checklist is reported under its request's graph run");
                 var backgrounds = all.Where(e => e.Type == "background").Select(e => e.Background!).ToArray();
                 Check(backgrounds[^1].Tasks[0] is { Status: "completed", Summary: "All good" } && !backgrounds[^1].WaitingOnBackground, "its notification settles it");
                 var snapshot = new AppSnapshot { Workspaces = [workspace], Sessions = [new RunSession { Id = "plan-pane", WorkspaceId = workspace.Id, Settings = new(PermissionMode: "manual") }] };

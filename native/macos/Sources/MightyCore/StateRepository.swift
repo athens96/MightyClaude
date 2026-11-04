@@ -410,6 +410,10 @@ public actor StateRepository {
             session.planHistory = ClaudePlanMode.normalizedHistory(session.planHistory)
             session.todoProgress = TodoProgress.normalized(session.todoProgress)
             session.backgroundWork = BackgroundWork.normalized(session.backgroundWork, restoring: restoring || session.status != "running")
+        } else if session.kind == SessionKind.claude && session.provider == "codex" {
+            // A Codex pane keeps its checklist (its todo_list items) and nothing else of plan mode.
+            session.planHistory = nil; session.backgroundWork = nil
+            session.todoProgress = TodoProgress.normalized(session.todoProgress)
         } else { session.planHistory = nil; session.todoProgress = nil; session.backgroundWork = nil }
         // A child's links stay even when its parent pane is gone: a closed parent keeps
         // its children. Only agent panes can be children; a malformed value is dropped.

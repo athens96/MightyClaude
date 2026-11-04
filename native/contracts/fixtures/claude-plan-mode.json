@@ -579,6 +579,169 @@
           }
         ]
       }
+    },
+    {
+      "name": "Codex todo_list: the first unfinished step is the current one",
+      "frames": [
+        {
+          "type": "item.started",
+          "item": {
+            "id": "item_3",
+            "type": "todo_list",
+            "items": [
+              {
+                "text": "Implement the app",
+                "completed": false
+              },
+              {
+                "text": "Build the app",
+                "completed": false
+              },
+              {
+                "text": "Deploy the app",
+                "completed": false
+              }
+            ]
+          }
+        },
+        {
+          "type": "item.updated",
+          "item": {
+            "id": "item_3",
+            "type": "todo_list",
+            "items": [
+              {
+                "text": "Implement the app",
+                "completed": true
+              },
+              {
+                "text": "Build the app",
+                "completed": false
+              },
+              {
+                "text": "Deploy the app",
+                "completed": false
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "total": 3,
+        "completed": 1,
+        "current": "Build the app",
+        "items": [
+          {
+            "content": "Implement the app",
+            "status": "completed"
+          },
+          {
+            "content": "Build the app",
+            "status": "in_progress"
+          },
+          {
+            "content": "Deploy the app",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Codex todo_list: a completed list has no current step",
+      "frames": [
+        {
+          "type": "item.started",
+          "item": {
+            "id": "item_3",
+            "type": "todo_list",
+            "items": [
+              {
+                "text": "Implement the app",
+                "completed": false
+              },
+              {
+                "text": "Deploy the app",
+                "completed": false
+              }
+            ]
+          }
+        },
+        {
+          "type": "item.completed",
+          "item": {
+            "id": "item_3",
+            "type": "todo_list",
+            "items": [
+              {
+                "text": "Implement the app",
+                "completed": true
+              },
+              {
+                "text": "Deploy the app",
+                "completed": true
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "total": 2,
+        "completed": 2,
+        "items": [
+          {
+            "content": "Implement the app",
+            "status": "completed"
+          },
+          {
+            "content": "Deploy the app",
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Codex: an item that is not a todo_list does not touch the checklist",
+      "frames": [
+        {
+          "type": "item.started",
+          "item": {
+            "id": "item_3",
+            "type": "todo_list",
+            "items": [
+              {
+                "text": "Only step",
+                "completed": false
+              }
+            ]
+          }
+        },
+        {
+          "type": "item.completed",
+          "item": {
+            "id": "item_4",
+            "type": "agent_message",
+            "text": "done"
+          }
+        },
+        {
+          "type": "item.completed",
+          "item": {
+            "id": "item_5",
+            "type": "todo_list"
+          }
+        }
+      ],
+      "expected": {
+        "total": 1,
+        "completed": 0,
+        "current": "Only step",
+        "items": [
+          {
+            "content": "Only step",
+            "status": "in_progress"
+          }
+        ]
+      }
     }
   ],
   "background": [

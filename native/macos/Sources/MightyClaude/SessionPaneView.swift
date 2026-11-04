@@ -521,7 +521,8 @@ struct SessionPaneView: View {
                 let history = store.graphHistory(for: session, retained: retained)
                 let phase = guidedPhase
                 // Background blocks show only in notice runs; the strip above the composer lists running work.
-                MightyGraphView(sessionID: session.id, provider: session.provider, runs: MightyGraphSupport.shownRuns(history.runs + retained), draft: draft.wrappedValue, running: running,
+                let shownRuns = MightyGraphSupport.shownRuns(history.runs + retained)
+                MightyGraphView(sessionID: session.id, provider: session.provider, runs: shownRuns, draft: draft.wrappedValue, running: running,
                     blockSizes: session.graphBlockSizes ?? [:],
                     onSaveBlockSize: { id, size in store.setGraphBlockSize(session.id, nodeID: id, size: size) },
                     workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
@@ -554,6 +555,8 @@ struct SessionPaneView: View {
                     planRecordCard: { [store] record, expanded, toggle in
                         AnyView(PlanRecordView(record: record, expanded: expanded, onToggle: toggle, inDiagram: true).environmentObject(store))
                     },
+                    progressSteps: ProgressSteps.panel(kind: session.kind, provider: session.provider, status: session.status,
+                                                       progress: session.todoProgress, runs: shownRuns),
                     ownSubmit: store.ownSubmits[session.id], pending: store.submitPending[session.id],
                     backgroundOutput: store.backgroundOutput.pane(session.id)) {
                         store.selectSession(session.id)

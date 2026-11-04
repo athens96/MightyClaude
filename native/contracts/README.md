@@ -412,6 +412,17 @@ the main agent's TodoWrite list, or the same list built from TaskCreate (id from
 TaskUpdate calls (the CLI's own reader: input aliases, updates applied as called,
 an unknown id added with its subject or id). A resumed run continues the pane's
 saved list. Sub-agent frames are ignored.
+A Codex pane reads the same list from `codex exec --json`: an `item.started`,
+`item.updated` or `item.completed` frame whose `item.type` is `todo_list`
+replaces the list with its `item.items` (`text` as the content, `completed` as
+done). The stream only says done or not done, so the first unfinished entry is
+`in_progress` and the rest `pending`; any other item, or a `todo_list` without
+an `items` array, changes nothing. Antigravity has no checklist. `runId` is the
+graph run id (`MightyGraphRun.id`) of the request whose stream last changed the
+list, set by the host when it sends the event; it is dropped when it is not an
+identifier, is not part of the list's sameness, and old saved lists have none.
+The diagram's steps panel draws the list only while `runId` is the pane's
+newest request run.
 
 `type: "background"` carries `BackgroundWork` (saved as
 `RunSession.backgroundWork`, cleared when a run starts): tasks from the CLI's
