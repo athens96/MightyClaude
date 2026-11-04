@@ -15,6 +15,8 @@ import { blockExtras } from './extras';
 import { edgesCursor, pinnedAnchor, pinnedCamera, pinnedUnit, resizedSize, resizeTarget, type Edges } from './resize';
 import { setBlockSize } from './prefs';
 import { shareRuns } from './share';
+import { stepsModel } from './steps';
+import { StepsPanel } from './StepsPanel';
 import type { MightyBlockCopy, MightyPane, MightyFile } from './types';
 import { ReferenceContext, useReferenceClick } from '../conversation/referenceClick';
 import { holding, pendingRun, pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
@@ -301,6 +303,8 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     const element = viewportRef.current;
     if (!element) return;
     const wheel = (event: WheelEvent) => {
+      // The steps panel scrolls its own list.
+      if ((event.target as Element).closest?.('.mighty-steps')) return;
       const hovered = (event.target as Element).closest?.('[data-block-id]') as HTMLElement | null;
       const id = hovered?.dataset.blockId ?? null;
       const kind = hovered?.dataset.kind ?? '';
@@ -465,6 +469,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
   }, [extras, request, pendingState, pendingRunIdOf, mighty.blocks]);
 
   const visible = useMemo(() => new Set(visibleKey.split('\n')), [visibleKey]);
+  const steps = useMemo(() => stepsModel(session, runs), [session, runs]);
   const unfinished = useMemo(() => new Set(runs.filter((r) => !finished(r)).map((r) => r.id)), [runs]);
   const toolbarZoom = (
     <span className="mighty-zoom">
@@ -492,6 +497,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
             <path className="mighty-edges-live" d={edges.live} />
           </g>
         </svg>
+        {steps && <StepsPanel paneId={paneId} model={steps} t={t} />}
         <div className="mighty-world" ref={worldRef} onClick={onReferenceClick}>
           {layout.nodes.map((node) => (
             <Block key={node.id} paneId={paneId} provider={session.provider} id={node.id} kind={node.kind}

@@ -229,6 +229,8 @@ public sealed partial class MainWindow
             var why = await Read("JSON.stringify(Object.fromEntries([...document.querySelectorAll('.mighty-block')].filter(e => e.dataset.changed).map(e => [e.dataset.blockId, e.dataset.changed])))");
             result["mightyStream"] = new { streamed, redrawn, deltaBytes, blocksPushed = WebMightyLastSet.ToList(), why };
             var onlyChanged = streamed && redrawn.Count == 1 && redrawn[0] == writerId && deltaBytes < 16 * 1024;
+            // The 진행 단계 panel: drawn for the list of the newest request's run (title, count, a row per step in its state), gone once the list names an older run.
+            var stepsShown = await RunWebStepsSmoke(core, paneId, result);
             await core.ExecuteScriptAsync("document.querySelector('button[data-presentation=timeline]')?.click()");
             var timeline = await Wait("document.querySelectorAll('[data-testid=timeline-group]').length === 4");
             await core.ExecuteScriptAsync("document.querySelector('button[data-presentation=structure]')?.click()");
@@ -238,12 +240,41 @@ public sealed partial class MainWindow
             var revealed = revealClicked && await Wait("(() => { if (document.querySelector('[data-testid=mighty]')?.dataset.presentation !== 'diagram') return false; const v = document.querySelector('[data-testid=mighty-diagram] .mighty-viewport')?.getBoundingClientRect(); const b = document.querySelector('[data-testid=mighty-diagram] .mighty-block.selected')?.getBoundingClientRect(); "
                 + "return !!v && !!b && b.bottom > v.top && b.top < v.bottom && b.right > v.left && b.left < v.right; })()");
             result["mightyViews"] = new { timeline, structure, revealClicked, revealed, mode = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId)?.GraphViewMode };
-            return drawn && onlyChanged && timeline && structure && revealed;
+            return drawn && onlyChanged && stepsShown && timeline && structure && revealed;
         }
         finally
         {
-            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { AgentViewMode = "mighty", GraphViewMode = null, GraphRuns = null }).ToList() });
+            await service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with { AgentViewMode = "mighty", GraphViewMode = null, GraphRuns = null, TodoProgress = null }).ToList() });
         }
+    }
+
+    /// <summary>
+    /// The diagram's 진행 단계 panel on the Mighty fixture (its newest request is smoke-run-4): a three-step list naming that run
+    /// draws the title, 1/3 and a done, a current and a waiting row; the same list naming smoke-run-3 draws nothing.
+    /// </summary>
+    private async Task<bool> RunWebStepsSmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, string paneId, Dictionary<string, object?> result)
+    {
+        async Task<bool> Wait(string script, int seconds = 15)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(seconds);
+            while (DateTime.UtcNow < deadline) { if (await core.ExecuteScriptAsync(script) == "true") return true; await Task.Delay(100); }
+            return false;
+        }
+        Task Steps(string runId) => service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with
+        {
+            TodoProgress = new([new TodoItem("Implement the app", "completed"), new TodoItem("Build the app", "in_progress", "Building the app"), new TodoItem("Deploy the app", "pending")], runId),
+        }).ToList() });
+        const string Rows = "document.querySelectorAll('[data-testid=mighty-diagram] [data-testid=mighty-steps] .mighty-step')";
+        await Steps("smoke-run-4");
+        var drawn = await Wait(Rows + ".length === 3");
+        var read = JsonDocument.Parse(JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("JSON.stringify({ title: document.querySelector('[data-testid=mighty-steps-title]')?.textContent ?? null, count: document.querySelector('[data-testid=mighty-steps-count]')?.textContent ?? null, "
+            + "rows: Number(" + Rows + ".length), states: [..." + Rows + "].map(e => e.dataset.state).join(','), provider: '" + (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId)?.Provider ?? "") + "' })")) ?? "{}").RootElement.Clone();
+        var right = drawn && read.Text("title") == Locale.Get("graph.steps.title") && read.Text("count") == "1/3" && read.Text("states") == "completed,inProgress,pending"
+            && read.TryGetProperty("rows", out var rows) && rows.GetInt32() == 3;
+        await Steps("smoke-run-3");
+        var hidden = await Wait("!document.querySelector('[data-testid=mighty-diagram] [data-testid=mighty-steps]')");
+        result["mightySteps"] = new { drawn, read, right, hiddenForAnOlderRun = hidden };
+        return right && hidden;
     }
 
     internal sealed record WebMightyProjection(Dictionary<string, WebMightyBlock> Blocks, WebMightyInputs Inputs, string OlderKey, IReadOnlyList<MightyGraphRun> OlderRuns,

@@ -273,7 +273,11 @@ public struct TodoItem: Codable, Sendable, Equatable {
 /// The latest checklist the main agent keeps while it carries out a plan.
 public struct TodoProgress: Codable, Sendable, Equatable {
     public var items: [TodoItem]
-    public init(items: [TodoItem]) { self.items = items }
+    /// The Mighty graph run id of the request whose stream last changed the
+    /// list (the run's `activityId`, its graph run's `sourceRunID`); older
+    /// saved lists have none.
+    public var runId: String?
+    public init(items: [TodoItem], runId: String? = nil) { self.items = items; self.runId = runId }
     public var total: Int { items.count }
     public var completed: Int { items.filter { $0.status == "completed" }.count }
     /// The item being worked on: the first `in_progress` one.
@@ -294,7 +298,7 @@ public struct TodoProgress: Codable, Sendable, Equatable {
             return TodoItem(id: id?.isEmpty == false ? id : nil, content: content, activeForm: active?.isEmpty == false ? active : nil,
                             status: statuses.contains(item.status) ? item.status : "pending")
         }
-        return TodoProgress(items: Array(items.prefix(maximumItems)))
+        return TodoProgress(items: Array(items.prefix(maximumItems)), runId: value.runId.flatMap { CoreValidation.identifier($0) ? $0 : nil })
     }
 }
 
@@ -315,11 +319,40 @@ public final class TodoProgressTracker {
         self.progress = progress
     }
 
-    /// One stream-json frame; the new progress when it changed. Sub-agent
-    /// frames (`parent_tool_use_id`) never touch the main checklist.
+    /// One stream-json frame (Claude's, or a Codex `exec --json` item frame);
+    /// the new progress when it changed. Sub-agent frames (`parent_tool_use_id`)
+    /// never touch the main checklist.
     public func consume(_ frame: [String: Any]) -> TodoProgress? {
-        guard ExecutionGraphTracker.parentToolID(frame) == nil, let type = frame["type"] as? String,
-              let message = frame["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] else { return nil }
+        guard ExecutionGraphTracker.parentToolID(frame) == nil, let type = frame["type"] as? String else { return nil }
+        var changed = false
+        // Codex's plan (update_plan) reaches exec --json as a todo_list item that
+        // only says done or not done: the first unfinished step is the one being worked on.
+        if ["item.started", "item.updated", "item.completed"].contains(type) {
+            guard let item = frame["item"] as? [String: Any], item["type"] as? String == "todo_list",
+                  let entries = item["items"] as? [Any] else { return nil }
+            var current = false
+            todoWrite = entries.compactMap { value -> TodoItem? in
+                guard let row = value as? [String: Any], let text = row["text"] as? String,
+                      !ActivitySupport.clean(text, maximumBytes: 1_024, singleLine: true).isEmpty else { return nil }
+                if row["completed"] as? Bool == true { return TodoItem(content: text, status: "completed") }
+                let status = current ? "pending" : "in_progress"; current = true
+                return TodoItem(content: text, status: status)
+            }
+            changed = true
+        } else if let message = frame["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
+            changed = consumeClaude(type: type, frame: frame, blocks: blocks)
+        }
+        guard changed else { return nil }
+        let items = tasks + creates.map(\.item)
+        let next = TodoProgress.normalized(TodoProgress(items: items.isEmpty ? todoWrite ?? [] : items))
+        // Only the items tell a change: the host names the run on what it emits.
+        guard next?.items != progress?.items else { return nil }
+        progress = next
+        return next
+    }
+
+    /// Claude's TodoWrite, TaskCreate and TaskUpdate calls and TaskCreate's results.
+    private func consumeClaude(type: String, frame: [String: Any], blocks: [[String: Any]]) -> Bool {
         var changed = false
         if type == "assistant" {
             for block in blocks where block["type"] as? String == "tool_use" {
@@ -363,12 +396,7 @@ public final class TodoProgressTracker {
                 changed = true
             }
         }
-        guard changed else { return nil }
-        let items = tasks + creates.map(\.item)
-        let next = TodoProgress.normalized(TodoProgress(items: items.isEmpty ? todoWrite ?? [] : items))
-        guard next != progress else { return nil }
-        progress = next
-        return next
+        return changed
     }
 
     private static func string(_ input: [String: Any], _ keys: [String]) -> String? {
@@ -587,7 +615,8 @@ extension RunSession {
     /// An approved plan also sets the pane's own permission mode, so the next
     /// request and a resume continue the way the user approved.
     public mutating func recordPlanMode(_ event: RunEvent) {
-        guard kind == "claude", provider == "claude" else { return }
+        // A Codex pane keeps its checklist (its todo_list items) and nothing else here.
+        guard kind == "claude", provider == "claude" || (provider == "codex" && event.type == "todos") else { return }
         switch event.type {
         case "plan":
             guard let record = event.plan else { return }

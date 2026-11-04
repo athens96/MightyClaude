@@ -61,7 +61,7 @@ public final class CLIStreamParser {
     private var imageLimitNoted = false
     /// Pictures the line being consumed carried, prepared off the actor.
     private var preparedImages: AgentPreparedImages = [:]
-    /// Claude's execution checklist and background tasks (`ClaudePlanMode.swift`).
+    /// Claude's (or Codex's) execution checklist and Claude's background tasks (`ClaudePlanMode.swift`).
     private let todos: ((TodoProgress) -> Void)?
     private let background: ((BackgroundWork) -> Void)?
     private let todoTracker: TodoProgressTracker
@@ -82,7 +82,7 @@ public final class CLIStreamParser {
                 antigravityPermission: ((AntigravityPermissionRequest) -> Void)? = nil) {
         self.provider = provider; self.log = log; self.resume = resume; self.requestedResume = requestedResume
         self.antigravityPermission = provider == "gemini" ? antigravityPermission : nil
-        self.todos = provider == "claude" ? todos : nil; self.background = provider == "claude" ? background : nil
+        self.todos = provider == "claude" || provider == "codex" ? todos : nil; self.background = provider == "claude" ? background : nil
         todoTracker = TodoProgressTracker(progress: savedTodos); self.settled = settled
         backgroundTracker = BackgroundTaskTracker(clock: backgroundClock)
         self.imageCache = images; self.imageRoot = imageRoot; self.imageEntry = imageEntry; self.maximumLineBytes = maximumLineBytes

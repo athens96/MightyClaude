@@ -197,6 +197,8 @@ export interface TodoItem {
 
 export interface TodoProgress {
   items: TodoItem[];
+  /** The graph run of the request whose stream last changed the list; older saved lists have none. */
+  runId?: string;
 }
 
 export interface BackgroundTask {

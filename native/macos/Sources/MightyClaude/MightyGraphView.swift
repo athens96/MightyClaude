@@ -62,6 +62,8 @@ struct MightyGraphView: View {
     var planHistory: [PlanRecord] = []
     var planCard: (ToolPermissionRequest, (() -> Void)?) -> AnyView = { _, _ in AnyView(EmptyView()) }
     var planRecordCard: (PlanRecord, Bool, @escaping () -> Void) -> AnyView = { _, _, _ in AnyView(EmptyView()) }
+    /// The agent's own step list over the newest request (`ProgressSteps.panel`); nil draws nothing.
+    var progressSteps: ProgressSteps.Panel? = nil
     /// The pane's newest own request (`AppStore.OwnSubmit`): every view moves to it once
     /// (natural submit B2, `SubmitScroll`).
     var ownSubmit: AppStore.OwnSubmit? = nil
@@ -130,6 +132,8 @@ struct MightyGraphView: View {
     /// The 기록's end is in view (its end mark is laid out): someone else's new request is
     /// followed only then (`SubmitScroll`, not own).
     @ViewState private var timelineAtEnd = true
+    /// The steps panel shows its header only: per pane, in memory, never saved.
+    @ViewState private var stepsCollapsed = false
     private static let timelineEndID = "timeline-end"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -330,6 +334,13 @@ struct MightyGraphView: View {
                 // A block the user opened or folded never moves the camera; it follows on
                 // only if the newest block is still in view.
                 .onChange(of: expanded) { _, _ in follow.watch.userChangedLayout() }
+                // The agent's step list sits over the diagram's top-left corner; outside it the canvas still pans and zooms.
+                .overlay(alignment: .topLeading) {
+                    if let progressSteps {
+                        MightyGraphStepsPanel(sessionID: sessionID, panel: progressSteps, areaHeight: canvasViewport?.height, collapsed: $stepsCollapsed)
+                            .padding(DesignMetrics.Spacing.md)
+                    }
+                }
             }
         }
         .accessibilityElement(children: .contain)

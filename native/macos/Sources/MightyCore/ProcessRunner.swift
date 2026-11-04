@@ -639,7 +639,9 @@ public actor ProcessRunner {
                         onEvent(RunEvent(sessionId: run.request.sessionId, type: "log", entry: entry))
                     }, todos: { [weak run, onEvent] progress in
                         guard let run, !run.finalized else { return }
-                        onEvent(RunEvent(sessionId: run.request.sessionId, type: "todos", todos: progress))
+                        // The list names the request whose stream changed it: the diagram draws it only over that request's run.
+                        var value = progress; value.runId = run.activityId
+                        onEvent(RunEvent(sessionId: run.request.sessionId, type: "todos", todos: value))
                     }, background: { [weak self, weak run, onEvent] work in
                         guard let run, !run.finalized else { return }
                         onEvent(RunEvent(sessionId: run.request.sessionId, type: "background", background: work))

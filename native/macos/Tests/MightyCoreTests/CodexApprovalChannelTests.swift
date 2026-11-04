@@ -126,6 +126,11 @@ import Foundation
         h.notify("item/completed", ["item": ["id": "thought", "type": "reasoning", "content": ["private reasoning"]]])
         h.notify("item/completed", ["item": ["id": "message", "type": "agentMessage", "text": "Done"]])
         h.notify("thread/tokenUsage/updated", ["tokenUsage": ["last": ["inputTokens": 10, "cachedInputTokens": 3, "outputTokens": 2]]])
+        // The turn's plan reaches the checklist as exec's todo_list does (the first unfinished step is the current one).
+        h.notify("turn/plan/updated", ["plan": [["step": "Implement", "status": "completed"], ["step": "Build", "status": "inProgress"], ["step": "Deploy", "status": "pending"]]])
+        let todos = TodoProgressTracker()
+        for event in h.events { _ = todos.consume(event) }
+        #expect(todos.progress?.total == 3 && todos.progress?.completed == 1 && todos.progress?.currentText == "Build")
         h.notify("turn/completed", ["turn": ["id": "turn", "status": "completed", "items": []]])
         #expect(h.channel.turnCompleted); #expect(!(h.channel.failed)); #expect((h.completions) == (1))
         #expect(((h.events.last?["usage"] as? [String: Any])?["input_tokens"] as? Int) == (10))

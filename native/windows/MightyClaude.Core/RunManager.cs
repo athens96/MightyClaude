@@ -160,9 +160,11 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
             tracker = new ExecutionGraphTracker(Wire.Identifier(request.GraphRunId) ? request.GraphRunId! : Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), node => { Interlocked.Exchange(ref graphDirty, 1); HandOver(run, node); });
         run.Tracker = tracker;
-        // Claude's execution checklist and background tasks (ClaudePlanMode.cs).
+        // Claude's (or Codex's) execution checklist and Claude's background tasks (ClaudePlanMode.cs).
         var planGate = new object();
         var todoTracker = new TodoProgressTracker(request.TodoProgress);
+        // The list names the request whose stream changed it: the diagram draws it only over that request's run.
+        var todoRunId = tracker?.RunID ?? (Wire.Identifier(request.GraphRunId) ? request.GraphRunId : null);
         run.Parser = parser;
         var backgroundTracker = new BackgroundTaskTracker();
         run.TurnReopened = () => { lock (planGate) if (!run.Finished && backgroundTracker.Reopen() is { } work) emit(new(request.SessionId, "background", Background: work)); };
@@ -171,7 +173,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             lock (planGate)
             {
                 if (run.Finished) return;
-                if (todoTracker.Consume(frame) is { } progress) emit(new(request.SessionId, "todos", Todos: progress));
+                if (todoTracker.Consume(frame) is { } progress) emit(new(request.SessionId, "todos", Todos: progress with { RunId = todoRunId }));
+                if (request.Provider != "claude") return;
                 if (backgroundTracker.Consume(frame) is { } work) emit(new(request.SessionId, "background", Background: work));
                 if (frame.Text("type") == "result" && !ClaudeStream.IsNotificationResult(frame) && MetadataJson.Property(frame, "parent_tool_use_id").ValueKind is System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null
                     && backgroundTracker.TurnEnded() is { } ended) emit(new(request.SessionId, "background", Background: ended));
@@ -374,6 +377,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     }
                     else if (request.Provider == "codex")
                     {
+                        ReadPlanMode(frame);
                         if (frame.Text("type") == "turn.completed") run.AuthenticationFailure = false;
                         else if (frame.Text("type") is "turn.failed" or "error")
                         {

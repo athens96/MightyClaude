@@ -109,6 +109,8 @@ Each request gets a request block with a {{ui:graph.block.execution}} block righ
 
 While they run, a sub-agent started in the background and a background command (task) are not drawn as blocks of the request; they sit on the background work strip above the composer. A row shows the kind, name, elapsed time and the last line of output, and opening a row shows the command it ran (a sub-agent shows the first line of its prompt) and the last lines of its output (up to 6). When a task ends and its notice goes to Claude, each answer of Claude's makes a new {{ui:graph.background.noticeRun}} diagram, with one block for each ended task: a kind line (sub-agent or background command, and how it ended), the command, the last lines of its output and a sub-agent's report. In {{ui:graph.view.timeline}} the diagram is a new row, and in {{ui:graph.view.structure}} a new card (board) at the end. The phone's Mighty view and pipeline work the same way.
 
+When Claude or Codex makes a to-do list while it works on a request, a {{ui:graph.steps.title}} panel at the top left of the flow shows each step as done, in progress or pending. The button in its header folds it, and a new request clears the previous request's list. Codex only says whether a step is done, so its first unfinished step shows as the current one. Antigravity has no checklist to show, so its panes have no panel.
+
 - Drag the empty background or scroll to move around. The zoom buttons go from 50% to 150%.
 - Click a block to scroll inside it. Click the background or press {{kbd:Esc}} to deselect.
 - Drag a block's bottom-right corner to resize it. Right-click for {{ui:graph.block.resetSize}}. Sizes are saved per session.
