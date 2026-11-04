@@ -701,8 +701,8 @@ struct MobileRemoteTests {
         // pane whose state would refuse every change anyway.
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: [:]).0 == 400)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["model": "opus"]).0 == 409)
-        // Only the two accepted bodies changed anything.
-        #expect(host.recorded() == ["settings:-:mighty:ouroboros", "settings:-:-:cli"])
+        // Only the four accepted bodies reached the host; every refused one stopped before it.
+        #expect(host.recorded() == ["settings:-:-:ouroboros", "settings:-:mighty:ouroboros", "settings:-:-:cli", "settings:-:plain:ouroboros"])
     }
 
     @Test func commandsListTheAppActionsAndOnlyThreeCanBePerformed() async throws {

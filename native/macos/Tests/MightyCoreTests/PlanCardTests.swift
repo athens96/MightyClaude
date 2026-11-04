@@ -289,9 +289,8 @@ struct PlanCardTests {
     }
 
     @Test func onlyAClaudePaneShowingItsDiagramDrawsThePlan() {
+        // An agent pane opens in Mighty, so its diagram draws the plan from the start.
         var session = RunSession(id: "s", workspaceId: "w", title: "t")
-        #expect(!PlanCardSupport.showsDiagram(session))
-        session.agentViewMode = "mighty"
         #expect(PlanCardSupport.showsDiagram(session))
         session.graphViewMode = .timeline
         #expect(!PlanCardSupport.showsDiagram(session))
