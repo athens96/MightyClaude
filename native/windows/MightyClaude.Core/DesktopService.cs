@@ -251,6 +251,8 @@ public sealed partial class DesktopService : IAsyncDisposable
     // the "기존 세션 이어가기" list never hides them as automated runs.
     private readonly object knownSync = new();
     private List<string>? knownSessions;
+    /// <summary>What loading did with a saved state that would not read (StateStore.LoadNotice), for the window to say once.</summary>
+    public string? LoadNotice => store.LoadNotice;
     public string KnownSessionsPath => Path.Combine(store.DirectoryPath, KnownSessionIDs.FileName);
     public IReadOnlySet<string> KnownSessions()
     {

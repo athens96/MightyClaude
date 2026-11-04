@@ -1528,6 +1528,8 @@
   "store.error.stateTooLarge": "スナップショットのサイズが保存の上限を超えています。",
   "store.error.timingSaveFailed": "実行時間を保存できませんでした: {error}",
   "store.error.workspaceFolderNotFound": "ワークスペースのフォルダが見つかりません。",
+  "store.notice.restoredBackup": "保存された状態を読み込めなかったため、直前のバックアップから復元しました。読み込めなかったファイルは {file} として残しています。",
+  "store.notice.unreadableStartedEmpty": "保存された状態を読み込めず、バックアップもなかったため、空の状態で起動しました。読み込めなかったファイルは {file} として残しています。ワークスペースをもう一度追加してください。",
   "usage.keychain.allowAndCheck": "キーチェーンへのアクセスを許可して確認",
   "usage.keychain.needed": "キーチェーンへのアクセスが必要",
   "usage.keychain.toggle": "キーチェーン経由でClaudeの上限を確認",
