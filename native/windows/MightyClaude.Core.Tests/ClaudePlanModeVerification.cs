@@ -231,7 +231,11 @@ internal static class ClaudePlanModeVerification
         Check(codex.PlanHistory is null && codex.Settings.PermissionMode == "manual", "only Claude panes keep plans");
         codex = codex.Apply(new("codex", "todos", Todos: new([new TodoItem("a", "in_progress")], "run-1")));
         Check(codex.TodoProgress is { Total: 1, RunId: "run-1" }, "a Codex pane keeps its checklist and the request it belongs to");
-        Check(TodoProgress.Normalized(new([new TodoItem("a", "pending")], "not an id!"))!.RunId is null && new TodoProgress([new TodoItem("a", "pending")], "r1").SameAs(new([new TodoItem("a", "pending")], "r2")), "an invalid run id is dropped, and the list alone decides sameness");
+        Check(TodoProgress.Normalized(new([new TodoItem("a", "pending")], "not an id!"))!.RunId is null && new TodoProgress([new TodoItem("a", "pending")], "r1").SameAs(new([new TodoItem("a", "pending")], "r2")), "an invalid run id is dropped, and the list alone decides sameness");
+        // A resumed run that sends the saved list again takes it over once (the host names it this run); again, nothing.
+        var resumed = new TodoProgressTracker(new TodoProgress([new TodoItem("Step", "in_progress")], "old-run"));
+        using (var same = System.Text.Json.JsonDocument.Parse("""{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"TodoWrite","input":{"todos":[{"content":"Step","status":"in_progress"}]}}]}}"""))
+            Check(resumed.Consume(same.RootElement) is { Total: 1 } && resumed.Consume(same.RootElement) is null, "a resumed run's first list goes out even when it is the saved one, then only changes do");
         session = session.Apply(new("pane", "background", Background: new([new BackgroundTask("t", "agent", "d", "2026-10-06T01:00:00.000Z")])));
         Check(session.BackgroundWork!.Running.Count == 1, "background work is kept");
         session = session.Apply(RunEvent.State("pane", "running"));

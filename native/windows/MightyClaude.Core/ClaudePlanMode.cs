@@ -245,6 +245,8 @@ public sealed class TodoProgressTracker
     private readonly List<TodoItem> tasks = [];
     private readonly List<(string ToolUseId, TodoItem Item)> creates = [];
     private List<TodoItem>? todoWrite;
+    /// <summary>This run's stream has sent a list: until then even the saved list sent again goes out, so the request that sends it owns it.</summary>
+    private bool emitted;
     public TodoProgress? Progress { get; private set; }
 
     /// <param name="progress">The pane's saved checklist, for a run that resumes it.</param>
@@ -328,7 +330,8 @@ public sealed class TodoProgressTracker
         if (!changed) return null;
         var items = tasks.Concat(creates.Select(c => c.Item)).ToList();
         var next = TodoProgress.Normalized(new(items.Count == 0 ? todoWrite ?? [] : items));
-        if (next is null || next.SameAs(Progress)) return null;
+        if (next is null || emitted && next.SameAs(Progress)) return null;
+        emitted = true;
         Progress = next;
         return next;
     }

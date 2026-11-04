@@ -311,6 +311,8 @@ public final class TodoProgressTracker {
     private var tasks: [TodoItem] = []
     private var creates: [(toolUseId: String, item: TodoItem)] = []
     private var todoWrite: [TodoItem]?
+    /// This run's stream has sent a list: until then even the saved list sent again goes out, so the request that sends it owns it.
+    private var emitted = false
 
     /// `progress` is the pane's saved checklist, for a run that resumes it.
     public init(progress: TodoProgress? = nil) {
@@ -345,8 +347,10 @@ public final class TodoProgressTracker {
         guard changed else { return nil }
         let items = tasks + creates.map(\.item)
         let next = TodoProgress.normalized(TodoProgress(items: items.isEmpty ? todoWrite ?? [] : items))
-        // Only the items tell a change: the host names the run on what it emits.
-        guard next?.items != progress?.items else { return nil }
+        // Only the items tell a change: the host names the run on what it emits. The run's first list always goes out,
+        // so a resumed request that sends the saved list again takes it over.
+        guard let next, !emitted || next.items != progress?.items else { return nil }
+        emitted = true
         progress = next
         return next
     }

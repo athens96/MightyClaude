@@ -367,7 +367,8 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
       return;
     }
     const p = panning.current;
-    if (!p) { showResizeCursor(edgesCursor(resizeAt(event.clientX, event.clientY)?.edges ?? 0)); return; }
+    // Over the steps panel no block border is under the pointer: a press there never resizes.
+    if (!p) { showResizeCursor((event.target as Element).closest('.mighty-steps') ? '' : edgesCursor(resizeAt(event.clientX, event.clientY)?.edges ?? 0)); return; }
     pan(event.clientX - p.x, event.clientY - p.y);
     panning.current = { ...p, x: event.clientX, y: event.clientY };
   };
@@ -497,7 +498,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
             <path className="mighty-edges-live" d={edges.live} />
           </g>
         </svg>
-        {steps && <StepsPanel paneId={paneId} model={steps} t={t} />}
+        {steps && <StepsPanel key={paneId} paneId={paneId} model={steps} t={t} />}
         <div className="mighty-world" ref={worldRef} onClick={onReferenceClick}>
           {layout.nodes.map((node) => (
             <Block key={node.id} paneId={paneId} provider={session.provider} id={node.id} kind={node.kind}

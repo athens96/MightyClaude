@@ -246,9 +246,10 @@ struct ClaudePlanModeTests {
         // It round-trips, and an older saved list without one still decodes.
         #expect(try JSONDecoder().decode(TodoProgress.self, from: JSONEncoder().encode(kept)) == kept)
         #expect(try JSONDecoder().decode(TodoProgress.self, from: Data(#"{"items":[{"content":"a","status":"pending"}]}"#.utf8)).runId == nil)
-        // A resumed run that sends the saved list again changes nothing, whatever run named it.
+        // A resumed run that sends the saved list again takes it over once (the host names it this run); again, nothing.
         let tracker = TodoProgressTracker(progress: TodoProgress(items: [TodoItem(content: "Step", status: "in_progress")], runId: "old-run"))
         let same: [String: Any] = ["type": "assistant", "message": ["content": [["type": "tool_use", "id": "t1", "name": "TodoWrite", "input": ["todos": [["content": "Step", "status": "in_progress"]]]]]]]
+        #expect(tracker.consume(same)?.items == [TodoItem(content: "Step", status: "in_progress")])
         #expect(tracker.consume(same) == nil)
         // A sub-agent's todo_list never touches the main checklist.
         #expect(tracker.consume(["type": "item.updated", "parent_tool_use_id": "toolu_1", "item": ["id": "i", "type": "todo_list", "items": [["text": "Other", "completed": false]]]]) == nil)

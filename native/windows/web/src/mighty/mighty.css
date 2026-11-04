@@ -35,7 +35,7 @@
 .mighty-steps-head { flex: none; display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs) var(--space-xs) var(--space-xs) var(--space-md); }
 .mighty-steps-title { font-weight: 600; }
 .mighty-steps-count { flex: 1; color: var(--ink2); font-variant-numeric: tabular-nums; }
-.mighty-steps-list { margin: 0; padding: 0 var(--space-md) var(--space-sm); list-style: none; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: var(--space-xs); }
+.mighty-steps-list { touch-action: pan-y; margin: 0; padding: 0 var(--space-md) var(--space-sm); list-style: none; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: var(--space-xs); }
 .mighty-step { display: flex; align-items: flex-start; gap: var(--space-sm); min-width: 0; }
 .mighty-step-text { min-width: 0; overflow-wrap: anywhere; }
 .mighty-step.completed .mighty-step-text { color: var(--ink2); }
