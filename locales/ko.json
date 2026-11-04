@@ -1528,6 +1528,8 @@
   "store.error.stateTooLarge": "저장 상태 크기 제한을 초과했습니다.",
   "store.error.timingSaveFailed": "실행 시간을 저장하지 못했습니다: {error}",
   "store.error.workspaceFolderNotFound": "작업 폴더를 찾을 수 없습니다.",
+  "store.notice.restoredBackup": "저장 파일을 읽을 수 없어 직전 백업으로 되살렸습니다. 읽지 못한 파일은 {file}(으)로 남겨 두었습니다.",
+  "store.notice.unreadableStartedEmpty": "저장 파일을 읽을 수 없고 백업도 없어 빈 상태로 시작했습니다. 읽지 못한 파일은 {file}(으)로 남겨 두었습니다. 작업 폴더를 다시 추가하세요.",
   "usage.keychain.allowAndCheck": "Keychain 접근 허용하고 조회",
   "usage.keychain.needed": "Keychain 허용 필요",
   "usage.keychain.toggle": "Claude 한도를 Keychain으로 직접 조회",

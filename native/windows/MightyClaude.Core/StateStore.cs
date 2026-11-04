@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -12,6 +13,13 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     public string DirectoryPath { get; } = directory;
     public AppSnapshot Snapshot { get; private set; } = new();
     private string StatePath => Path.Combine(DirectoryPath, "workspace-state.json");
+    /// <summary>The state as it was before the last save: each save keeps the file it replaces here (AtomicWriteAsync).</summary>
+    private string BackupPath => StatePath + ".bak";
+    /// <summary>
+    /// Set by <see cref="LoadAsync"/> when the saved state could not be read and was put aside: whether the backup came back or the
+    /// app starts empty, and where the unreadable file now is. The window shows it once.
+    /// </summary>
+    public string? LoadNotice { get; private set; }
 
     /// <summary>
     /// The saved theme setting, read before the state loads so the launch splash paints in the
@@ -37,6 +45,28 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
         return "dark";
     }
+    /// <summary>True when the file holds a NUL byte, which the JSON this app writes never does: what a power cut leaves behind.</summary>
+    private static bool Damaged(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var buffer = new byte[81920];
+        for (int read; (read = stream.Read(buffer, 0, buffer.Length)) > 0;)
+            if (Array.IndexOf(buffer, (byte)0, 0, read) >= 0) return true;
+        return false;
+    }
+    /// <summary>One saved state file, checked, decoded and normalized; throws when it does not read as one.</summary>
+    private static async Task<AppSnapshot> ReadAsync(string path)
+    {
+        if (new FileInfo(path).Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.fileTooLarge"));
+        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        if (json.RootElement.ValueKind != JsonValueKind.Object || !json.RootElement.TryGetProperty("version", out var version) || !version.TryGetInt32(out var number) || number != 1 || !json.RootElement.TryGetProperty("workspaces", out var workspaces) || workspaces.ValueKind != JsonValueKind.Array || !json.RootElement.TryGetProperty("sessions", out var sessions) || sessions.ValueKind != JsonValueKind.Array) throw new InvalidDataException(Locale.Get("store.error.invalidFormat"));
+        // A workspace whose "remote" value is not today's (version 2) names a folder on another computer in a shape
+        // this app does not read; it is left out before decoding, and Normalize then drops everything keyed by its id.
+        var restored = JsonSerializer.Deserialize<AppSnapshot>(KeptWorkspaces(json.RootElement), Wire.Json) ?? throw new InvalidDataException(Locale.Get("store.error.noSnapshot"));
+        // Once per profile, on load: `gemini` panes now run Antigravity (AntigravityMigration).
+        if (restored.AntigravityMigrated != true) restored = restored with { Sessions = (restored.Sessions ?? []).Select(s => s is null ? s! : AntigravityMigration.Migrated(s)).ToList(), AntigravityMigrated = true };
+        return Normalize(restored, true);
+    }
     public async Task<AppSnapshot> LoadAsync()
     {
         await gate.WaitAsync();
@@ -50,15 +80,22 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             }
             if (File.Exists(StatePath))
             {
-                if (new FileInfo(StatePath).Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.fileTooLarge"));
-                using var json = JsonDocument.Parse(await File.ReadAllTextAsync(StatePath));
-                if (json.RootElement.ValueKind != JsonValueKind.Object || !json.RootElement.TryGetProperty("version", out var version) || !version.TryGetInt32(out var number) || number != 1 || !json.RootElement.TryGetProperty("workspaces", out var workspaces) || workspaces.ValueKind != JsonValueKind.Array || !json.RootElement.TryGetProperty("sessions", out var sessions) || sessions.ValueKind != JsonValueKind.Array) throw new InvalidDataException(Locale.Get("store.error.invalidFormat"));
-                // A workspace whose "remote" value is not today's (version 2) names a folder on another computer in a shape
-                // this app does not read; it is left out before decoding, and Normalize then drops everything keyed by its id.
-                var restored = JsonSerializer.Deserialize<AppSnapshot>(KeptWorkspaces(json.RootElement), Wire.Json) ?? throw new InvalidDataException(Locale.Get("store.error.noSnapshot"));
-                // Once per profile, on load: `gemini` panes now run Antigravity (AntigravityMigration).
-                if (restored.AntigravityMigrated != true) restored = restored with { Sessions = (restored.Sessions ?? []).Select(s => s is null ? s! : AntigravityMigration.Migrated(s)).ToList(), AntigravityMigrated = true };
-                Snapshot = Normalize(restored, true);
+                // A file a power cut damaged (the right length, its bytes zeros: JSON this app writes never holds a NUL byte) is
+                // put aside, never overwritten, and the backup the last save kept comes back; with none, the app starts empty and
+                // can save again. Any other file that does not read (a newer version's, an edited one) still stops loading and
+                // every save, so it is never lost.
+                if (Damaged(StatePath))
+                {
+                    var aside = StatePath + ".unreadable-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Wire.Id()[..8];
+                    File.Move(StatePath, aside);
+                    AppSnapshot? backup = null;
+                    if (File.Exists(BackupPath))
+                        try { backup = await ReadAsync(BackupPath); }
+                        catch (Exception backupError) when (backupError is JsonException or InvalidDataException or DecoderFallbackException) { }
+                    Snapshot = backup ?? new AppSnapshot { AntigravityMigrated = true };
+                    LoadNotice = Locale.Get(backup is null ? "store.notice.unreadableStartedEmpty" : "store.notice.restoredBackup", new Dictionary<string, string> { ["file"] = Path.GetFileName(aside) });
+                }
+                else Snapshot = await ReadAsync(StatePath);
             }
             // A new profile never held Gemini CLI panes.
             else Snapshot = Snapshot with { AntigravityMigrated = true };
@@ -122,7 +159,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             // Files panes are never written: they do not come back after a restart.
             var encoded = JsonSerializer.SerializeToUtf8Bytes(FilePaneKind.Stored(snapshot), Wire.Json);
             if (encoded.Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.stateTooLarge"));
-            await AtomicWriteAsync(StatePath, encoded);
+            await AtomicWriteAsync(StatePath, encoded, BackupPath);
             // Normalize made it, and its records are never edited: it is kept as it is, not copied again.
             Snapshot = snapshot;
         }
@@ -294,19 +331,34 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         var trustedStatusLines = value.TrustedStatusLines?.Where(p => Wire.Identifier(p.Key) && p.Value is { Length: > 0 and <= 64 }).ToDictionary(p => p.Key, p => p.Value);
         return value with { Workspaces = workspaces, Sessions = sessions, ActiveWorkspaceId = workspaceId, ActiveSessionId = activeSessionId, PaneLayouts = layouts, PaneLayoutModes = modes, PaneLayoutActiveSessionIds = selections, Layout = value.Layout is "grid" or "columns" or "focus" or "tabs" or "custom" ? value.Layout : "grid", Theme = value.Theme == "light" ? "light" : "dark", SidebarWidth = double.IsFinite(value.SidebarWidth) ? Math.Clamp(value.SidebarWidth, DesignMetrics.Layout.SidebarMin, DesignMetrics.Layout.SidebarMax) : DesignMetrics.Layout.SidebarDefault, ReferenceBubbleWidth = ReferencePreview.BubbleSize(value.ReferenceBubbleWidth, value.ReferenceBubbleHeight).Width, ReferenceBubbleHeight = ReferencePreview.BubbleSize(value.ReferenceBubbleWidth, value.ReferenceBubbleHeight).Height, TrustedStatusLines = trustedStatusLines?.Count > 0 ? trustedStatusLines : null, LanguagePreference = Locale.Languages.Contains(value.LanguagePreference) ? value.LanguagePreference : "system", AgentWebOpenChoices = value.AgentWebOpenChoices?.Where(p => ids.Contains(p.Key) && p.Value is "inApp" or "external").ToDictionary(p => p.Key, p => p.Value), MobileRemote = (value.MobileRemote ?? new()).Normalized, SettingsPane = value.SettingsPane is "general" or "models" or "styles" or "tools" or "cli" or "mobile" or "remote" or "companion" or "about" ? value.SettingsPane : "general" };
     }
-    public static async Task AtomicWriteAsync(string path, byte[] data)
+    /// <summary>
+    /// Writes <paramref name="data"/> to <paramref name="path"/> whole or not at all. The new bytes reach the disk before the file
+    /// takes the name: a rename alone is journaled ahead of the data, so a power cut right after it left a file of the right length
+    /// holding only zeros, and the app could not start from it. With <paramref name="backup"/>, the file replaced is kept there.
+    /// </summary>
+    public static async Task AtomicWriteAsync(string path, byte[] data, string? backup = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temporary = path + "." + Wire.Id() + ".tmp";
         try
         {
-            await File.WriteAllBytesAsync(temporary, data); if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous))
+            {
+                await stream.WriteAsync(data);
+                stream.Flush(flushToDisk: true);
+            }
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             // Another reader can hold the file for a moment (on Windows a plain read shares no delete, so the replace is
             // refused with "Access to the path is denied"). A refused replace is tried again for about 2 s before the save
             // fails, so a brief read never drops the newest state.
             for (var attempt = 1; ; attempt++)
             {
-                try { File.Move(temporary, path, true); break; }
+                try
+                {
+                    if (backup is not null && File.Exists(path)) File.Replace(temporary, path, backup, ignoreMetadataErrors: true);
+                    else File.Move(temporary, path, true);
+                    break;
+                }
                 catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && attempt < 40) { await Task.Delay(50); }
             }
         }

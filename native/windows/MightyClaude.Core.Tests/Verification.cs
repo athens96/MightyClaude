@@ -1264,6 +1264,7 @@ internal static class Verification
         await Test("app update a check beside a staged update decides as on macOS", AppUpdateVerification.ACheckBesideAStagedUpdateDecidesAsOnMacOS);
         await Test("app update section shows the macOS copy for every phase", AppUpdateVerification.SectionShowsTheMacOSCopyForEveryPhase);
         await Test("app update pipeline runs from a fixture-signed manifest to a ready install plan", AppUpdateVerification.PipelineRunsFromAFixtureSignedManifestToAReadyInstallPlan);
+        await Test("state store: a zeroed state comes back from its backup, or starts empty and saves again", StateRecoveryVerification.AZeroedStateComesBackFromItsBackup);
         await Test("app update keeps the setup program's uninstall entry at the app's version", AppUpdateVerification.InstallerEntryFollowsTheAppsOwnUpdates);
         await Test("rename validation accepts valid names", RenameVerification.renameValidationAcceptsValidNames);
         await Test("rename validation refuses empty", RenameVerification.renameValidationRefusesEmpty);

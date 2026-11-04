@@ -1528,6 +1528,8 @@
   "store.error.stateTooLarge": "快照大小超出保存限制。",
   "store.error.timingSaveFailed": "无法保存运行时间：{error}",
   "store.error.workspaceFolderNotFound": "找不到工作区文件夹。",
+  "store.notice.restoredBackup": "无法读取保存的状态，已从上一次备份恢复。无法读取的文件已保留为 {file}。",
+  "store.notice.unreadableStartedEmpty": "无法读取保存的状态，且没有备份，因此以空状态启动。无法读取的文件已保留为 {file}。请重新添加工作区。",
   "usage.keychain.allowAndCheck": "允许访问钥匙串并检查",
   "usage.keychain.needed": "需要钥匙串访问权限",
   "usage.keychain.toggle": "通过钥匙串查询 Claude 限额",

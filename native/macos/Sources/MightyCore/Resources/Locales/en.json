@@ -1528,6 +1528,8 @@
   "store.error.stateTooLarge": "Snapshot size exceeds the save limit.",
   "store.error.timingSaveFailed": "Could not save the run times: {error}",
   "store.error.workspaceFolderNotFound": "Workspace folder not found.",
+  "store.notice.restoredBackup": "The saved state could not be read, so the last backup was restored. The unreadable file was kept as {file}.",
+  "store.notice.unreadableStartedEmpty": "The saved state could not be read and there was no backup, so the app started empty. The unreadable file was kept as {file}. Add your workspaces again.",
   "usage.keychain.allowAndCheck": "Allow Keychain access and check",
   "usage.keychain.needed": "Keychain access needed",
   "usage.keychain.toggle": "Look up Claude limits through the Keychain",
