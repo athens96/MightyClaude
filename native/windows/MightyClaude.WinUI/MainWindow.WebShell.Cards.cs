@@ -448,10 +448,17 @@ public sealed partial class MainWindow
             _ => throw new ArgumentException("Unknown action."),
         };
 
+        /// <summary>
+        /// The requests the page's cards answer, first one shown. The WinUI style panel answers a waiting question and a plan's
+        /// answers itself (<see cref="CardRequests"/> leaves the question out); the page draws them with its own question and
+        /// plan cards instead, the question first as the panel puts it first (M/GuidedPanel.swift:112-114).
+        /// </summary>
+        internal List<ToolPermissionRequest> WebCardRequests => GuidedQuestion is { } asked ? [asked.Request, .. CardRequests] : CardRequests;
+
         /// <summary>The permission host's card as <see cref="RenderToolPermissionCards"/> picks it: the first request waiting, else the Antigravity card.</summary>
         private object? WebRequestCard()
         {
-            var pending = CardRequests;
+            var pending = WebCardRequests;
             if (pending.Count == 0)
             {
                 if (owner.service.AntigravityCard(id) is not { } card) return null;
@@ -464,11 +471,11 @@ public sealed partial class MainWindow
             var current = pending[0];
             if (current.CanAnswerPlan && current.Plan is not null)
             {
+                // The style panel's answers (PanelActions) dock as the answers alone, as without a style: the page's panel leaves them to this card.
                 var place = ComposerPlanPlace(current);
-                if (place == PlanCardSupport.ComposerPlaces.PanelActions) return null;
                 var draft = planDraft?.RequestId == current.Id ? planDraft : null;
                 return new WebPlanCard(current.Id, pending.Count, current.ReceivedAt is { } at ? PlanCardSupport.ReceivedText(at) : "", current.Plan,
-                    place == PlanCardSupport.ComposerPlaces.BarActions, draft?.Sending == true, draft?.Error);
+                    place is PlanCardSupport.ComposerPlaces.BarActions or PlanCardSupport.ComposerPlaces.PanelActions, draft?.Sending == true, draft?.Error);
             }
             if (current.CanAnswerQuestions && current.ToolName == "AskUserQuestion" && UserQuestionnaire.Parse(current.InputJson) is { } questionnaire)
                 return new WebQuestionnaireCard(current.Id, pending.Count, questionnaire.Questions.Select(q => new WebQuestion(q.Header, q.Question, q.MultiSelect, q.Options.Select(o => new WebQuestionOption(o.Label, o.Description)).ToArray())).ToArray());
@@ -485,7 +492,7 @@ public sealed partial class MainWindow
         /// <summary>Allow once or Deny, for the request the card showed (<see cref="OnPermissionAllow"/>, <see cref="OnPermissionDeny"/>, which answer the first waiting).</summary>
         internal void WebAnswerPermission(string requestId, bool allow)
         {
-            if (CardRequests.FirstOrDefault()?.Id != requestId) throw new InvalidOperationException(Locale.Get("remote.error.notPendingPermission"));
+            if (WebCardRequests.FirstOrDefault()?.Id != requestId) throw new InvalidOperationException(Locale.Get("remote.error.notPendingPermission"));
             if (allow) OnPermissionAllow(); else OnPermissionDeny();
         }
 
@@ -495,8 +502,10 @@ public sealed partial class MainWindow
         /// </summary>
         internal string? WebAnswerQuestionnaire(string requestId, IReadOnlyList<(IReadOnlyList<string> Picks, string? Custom)> answers)
         {
-            var current = CardRequests.FirstOrDefault();
+            var current = WebCardRequests.FirstOrDefault();
             if (current?.Id != requestId || UserQuestionnaire.Parse(current.InputJson) is not { } questionnaire) return Locale.Get("remote.error.notPendingPermission");
+            // The style panel's own progress on this question goes with it, as its last answer does (FinishGuidedStep).
+            if (GuidedQuestion?.Request.Id == current.Id) { guidedProgress = null; guidedQuestionInput = null; guidedQuestionError = null; }
             var draft = new QuestionDraft(current.InputJson);
             for (var index = 0; index < answers.Count; index++)
             {
@@ -517,7 +526,7 @@ public sealed partial class MainWindow
         /// <summary>One of the plan card's four answers through <see cref="AnswerPlanCard"/>; its error and sending state come back with the next push.</summary>
         internal Task WebAnswerPlan(string requestId, string decision, string? feedback)
         {
-            if (CardRequests.FirstOrDefault() is not { } request || request.Id != requestId || !request.CanAnswerPlan) throw new InvalidOperationException(Locale.Get("remote.error.notPendingPermission"));
+            if (WebCardRequests.FirstOrDefault() is not { } request || request.Id != requestId || !request.CanAnswerPlan) throw new InvalidOperationException(Locale.Get("remote.error.notPendingPermission"));
             var answer = decision switch
             {
                 "cancel" => PlanDecision.Cancel,

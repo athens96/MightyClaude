@@ -99,3 +99,69 @@
 .composer-style-badge { font-size: 9px; color: var(--ink2); background: var(--subtle); border-radius: 8px; padding: 1px var(--space-xs); }
 .composer-style-hint { min-width: 0; font-size: 10px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .composer-style-row .composer-menu { top: 100%; left: 0; bottom: auto; }
+
+/* The style's guide panel under the row (M/GuidedPanel.swift, MainWindow.Styles.cs RenderGuidedStyle): rows 5 apart. */
+.guided { display: flex; flex-direction: column; gap: var(--space-xs); min-width: 0; }
+.guided-phases { display: flex; align-items: center; gap: var(--space-xs); overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+.guided-phase-step { display: inline-flex; align-items: center; gap: var(--space-xs); }
+.guided-phase { font-size: 10px; color: color-mix(in srgb, var(--ink2) 60%, transparent); }
+.guided-phase.reached { color: color-mix(in srgb, var(--ink) 75%, transparent); }
+.guided-phase.current { color: var(--accent); font-weight: 600; }
+.guided-phase-chevron { color: var(--ink3); }
+/* The command Enter sends instead of the draft (M/SessionPaneView.swift:567-574): the accent on its tint. */
+.guided-enter { margin-left: auto; font-size: 10px; font-family: var(--font-mono); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: var(--radius-segment); padding: 1px var(--space-xs); overflow: hidden; text-overflow: ellipsis; max-width: 50%; }
+.guided-chips { display: flex; align-items: center; gap: var(--space-sm); overflow-x: auto; scrollbar-width: none; }
+.guided-catalogue { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-xs); }
+.guided-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 170px)); gap: 5px; max-height: 92px; overflow-y: auto; scrollbar-width: none; width: 100%; }
+/* A chip (M/GuidedActionChip.swift:36-56): 11pt, padding h8 v5 at radius 6; semibold when emphasised; 0.45 while it cannot be pressed. */
+.guided-chip {
+  display: inline-flex; align-items: center; gap: var(--space-xs); flex: none; border: 0; cursor: default; white-space: nowrap;
+  padding: 5px 8px; border-radius: var(--radius-segment); color: var(--ink); font: inherit; font-size: 11px; line-height: 1.2; min-width: 0;
+}
+.guided-chip.emphasised { font-weight: 600; }
+.guided-chip:hover:not(:disabled) { filter: brightness(0.96); }
+.guided-chip:disabled { opacity: .45; }
+.guided-chip:focus-visible, .guided-small:focus-visible, .guided-group:focus-visible { outline: var(--stroke-focus) solid var(--accent); }
+.guided-chip-mark { font-size: 10px; }
+.guided-chip-title { overflow: hidden; text-overflow: ellipsis; }
+.guided-chip-flag { font-size: 8px; color: var(--ink2); }
+.guided-small {
+  display: inline-flex; align-items: center; gap: var(--space-xs); flex: none; border: 0; cursor: default; white-space: nowrap;
+  padding: 3px 8px; border-radius: var(--radius-segment); background: var(--subtle); color: var(--ink); font: inherit; font-size: 11px;
+}
+.guided-small:hover { background: var(--track); }
+.guided-buttons { display: flex; gap: var(--space-sm); }
+.guided-approval { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; font-size: 11px; color: var(--ink2); }
+.guided-approval-mark { color: var(--ink2); flex: none; }
+.guided-approval-name { color: var(--ink); font-weight: 500; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guided-setup { display: flex; flex-direction: column; gap: var(--space-xs); font-size: 11px; color: var(--ink); }
+.guided-setup-line { display: flex; align-items: center; gap: var(--space-xs); font-weight: 500; }
+.guided-setup-hint { color: var(--ink2); user-select: text; }
+.guided-setup-command { font-family: var(--font-mono); font-size: 10px; background: var(--subtle); border-radius: var(--radius-segment); padding: var(--space-sm); white-space: pre-wrap; word-break: break-all; user-select: text; }
+.guided-state { display: flex; flex-direction: column; gap: var(--space-xs); }
+.guided-bar { display: flex; align-items: center; gap: var(--space-sm); }
+.guided-bar-track { flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.guided-bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.guided-bar-count { font-size: 10px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+.guided-list { display: flex; flex-direction: column; gap: 1px; font-size: 10px; color: var(--ink2); }
+.guided-list > div, .guided-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guided-line { font-size: 11px; color: var(--ink2); }
+.guided-tasks { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
+.guided-task { display: flex; gap: var(--space-sm); min-width: 0; color: var(--ink); }
+.guided-task-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guided-task-detail { flex: none; color: var(--ink2); font-size: 10px; }
+.guided-groups { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 5px; }
+/* A group tile (M/GuidedPanel.swift:232-233): padding h9 v5 at radius 7; the chosen one accent × 0.16 inside accent × 0.7. */
+.guided-group {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; cursor: default; text-align: left; font: inherit;
+  padding: 5px 9px; border-radius: 7px; border: var(--stroke-line) solid transparent; background: var(--subtle); color: var(--ink);
+}
+.guided-group.chosen { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.guided-group-title { font-family: var(--font-mono); font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guided-group-axis { font-size: 9px; color: var(--ink2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guided-question { font-size: 11px; color: var(--ink2); }
+.guided-spinner { width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--ink2) 22%, transparent); border-top-color: var(--ink2); animation: guided-spin .9s linear infinite; }
+@keyframes guided-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .guided-spinner { animation-duration: 2.4s; } }
+/* The guidance line: 10pt in the tertiary ink (M/GuidedPanel.swift:119). */
+.guided-guidance { font-size: 10px; color: var(--ink3); }
