@@ -45,6 +45,14 @@ struct ActivityTests {
         return binary
     }
 
+    @Test func shownOutputResolvesCarriageReturnsAsATerminalDoes() {
+        // A text view draws nothing for a CR, so redraws used to run together on one line.
+        #expect(ActivitySupport.clean("one\r\ntwo", maximumBytes: 100) == "one\ntwo")
+        #expect(ActivitySupport.clean("[=  ] 10% a\r[== ] 50% a\r[===] 99% a\ndone", maximumBytes: 100) == "[===] 99% a\ndone")
+        #expect(ActivitySupport.clean("loading...\rok", maximumBytes: 100) == "okading...")
+        #expect(ActivitySupport.clean("10%\r20%", maximumBytes: 100, singleLine: true) == "20%")
+    }
+
     @Test func legacyLogsAndSavedActivitiesPreserveCompatibilityAndBounds() throws {
         let legacy = Data(#"{"id":"old-log","kind":"system","text":"legacy","timestamp":"2026-09-16T00:00:00Z"}"#.utf8)
         let old = try JSONDecoder().decode(LogEntry.self, from: legacy)

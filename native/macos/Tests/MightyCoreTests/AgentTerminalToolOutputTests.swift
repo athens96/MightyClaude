@@ -3,8 +3,9 @@ import Testing
 @testable import MightyCore
 
 /// The text run_in_terminal and read_latest_output hand the agent: escape
-/// sequences stripped, CR LF and bare CR turned into LF. The pane and its
-/// buffers stay raw, and the 64 KB read limit counts raw bytes.
+/// sequences stripped, CR LF turned into LF, and a bare CR returning to the
+/// line's start so a redrawn line reads as the pane last showed it. The pane
+/// and its buffers stay raw, and the 64 KB read limit counts raw bytes.
 struct AgentTerminalToolOutputTests {
     private func clean(_ raw: String) -> String {
         var cleaner = AgentTerminalOutputCleaner()
@@ -45,9 +46,24 @@ struct AgentTerminalToolOutputTests {
         #expect(clean("one\r\ntwo\r\n") == "one\ntwo\n")
     }
 
-    @Test func bareCRProgressRedrawsBecomeLines() {
-        #expect(clean("10%\r20%\r30%\r\ndone\n") == "10%\n20%\n30%\ndone\n")
-        #expect(clean("\r\u{1B}[K50%\r\u{1B}[K100%\n") == "\n50%\n100%\n")
+    @Test func bareCRProgressRedrawsLeaveTheLastState() {
+        #expect(clean("10%\r20%\r30%\r\ndone\n") == "30%\ndone\n")
+        #expect(clean("\r\u{1B}[K50%\r\u{1B}[K100%\n") == "100%\n")
+    }
+
+    @Test func aBareCROverwritesInPlaceAndEraseInLineClears() {
+        // As a terminal shows it: the shorter redraw keeps the old line's tail
+        // unless ESC [ K erases it.
+        #expect(clean("loading...\rdone\n") == "doneing...\n")
+        #expect(clean("loading...\rdone\u{1B}[K\n") == "done\n")
+        #expect(clean("abc\r\u{1B}[2Kx\n") == "x\n")
+        #expect(clean("abc\u{08}\u{08}Z\n") == "aZc\n")
+    }
+
+    @Test func aProgressBarLikeSdkmanagersIsOneLine() {
+        // sdkmanager pads each redraw to the width and rewrites it with a CR.
+        let redraws = (1 ... 100).map { "[\(String(repeating: "=", count: $0 / 10))] \($0)% Downloading" }
+        #expect(clean(redraws.joined(separator: "\r") + "\n") == "[==========] 100% Downloading\n")
     }
 
     @Test func repeatedCRBeforeLFIsOneLineEnd() {
@@ -68,6 +84,16 @@ struct AgentTerminalToolOutputTests {
         #expect(cleaner.clean("1mcd\u{1B}]0;ti", final: false) == "cd")
         #expect(cleaner.clean("tle\u{1B}", final: false) == "")
         #expect(cleaner.clean("\\ef", final: true) == "ef")
+    }
+
+    @Test func aLineRedrawnAcrossReadsIsShownOncePerRead() {
+        var cleaner = AgentTerminalOutputCleaner()
+        #expect(cleaner.clean("Fetch 10%\rFetch 20%", final: false) == "Fetch 20%")
+        // Only added to its end: the rest follows on the same line.
+        #expect(cleaner.clean(" ok", final: false) == " ok")
+        // Rewritten: the new state follows on its own line.
+        #expect(cleaner.clean("\rFetch 90%\u{1B}[K", final: false) == "\nFetch 90%")
+        #expect(cleaner.clean("\rFetch 100%\u{1B}[K\ndone\n", final: true) == "\nFetch 100%\ndone\n")
     }
 
     @Test func crlfSplitAcrossReadsIsOneLineEnd() {
@@ -98,7 +124,7 @@ struct AgentTerminalToolOutputTests {
         pane.appendUserTyped(text: "\n\u{1B}[32mready\u{1B}[", handle: run.handle)
         let first = try #require(await runner.readLatestOutput(handle: run.handle))
         #expect(first.output == "\nready")
-        pane.appendUserTyped(text: "0m\r40%\r", handle: run.handle)
+        pane.appendUserTyped(text: "0m\r\u{1B}[K40%\r", handle: run.handle)
         pane.finish(handle: run.handle, code: 0)
         let last = try #require(await runner.readLatestOutput(handle: run.handle))
         #expect(last.status == .done)
@@ -110,7 +136,7 @@ struct AgentTerminalToolOutputTests {
         let pane = PTYAgentTerminalPane(workingDirectory: folder)
         let result = try await AgentTerminalRunner(pane: pane).runInTerminal(command: "printf '\\033[1;32mgreen\\033[0m\\n50%%\\r100%%\\n'")
         #expect(result.status == .done && result.exitCode == 0)
-        #expect(result.output == "green\n50%\n100%\n")
+        #expect(result.output == "green\n100%\n")
         let raw = pane.readOutput(handle: result.handle, fromOffset: 0, maxBytes: 4_096).output
         #expect(raw.contains("\u{1B}[1;32mgreen\u{1B}[0m\r\n50%\r100%\r\n"))
     }
