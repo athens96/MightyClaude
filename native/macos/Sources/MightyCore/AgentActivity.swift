@@ -33,16 +33,39 @@ public enum ActivitySupport {
 
     /// Bound UTF-8 payloads and remove terminal controls before UI/persistence.
     public static func clean(_ value: String, maximumBytes: Int, singleLine: Bool = false) -> String {
-        let plain = value.replacingOccurrences(of: "\\x1b(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\x07]*(?:\\x07|\\x1b\\\\))", with: "", options: .regularExpression)
+        let plain = resolvingCarriageReturns(value.replacingOccurrences(of: "\\x1b(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\x07]*(?:\\x07|\\x1b\\\\))", with: "", options: .regularExpression))
         var result = String.UnicodeScalarView(); var bytes = 0
         for scalar in plain.unicodeScalars {
-            guard scalar.value == 9 || scalar.value == 10 || scalar.value == 13 || scalar.properties.generalCategory != .control else { continue }
+            guard scalar.value == 9 || scalar.value == 10 || scalar.properties.generalCategory != .control else { continue }
             let item: Unicode.Scalar = singleLine && CharacterSet.whitespacesAndNewlines.contains(scalar) ? " " : scalar
             let count = item.utf8.count
             guard bytes + count <= maximumBytes else { break }
             result.append(item); bytes += count
         }
         return String(result).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// CR LF becomes LF, and a bare CR returns to its line's start as a terminal's
+    /// does, so a progress bar's redraws leave the line as it last read instead of
+    /// every redraw run together (a text view draws nothing for a CR).
+    static func resolvingCarriageReturns(_ value: String) -> String {
+        guard value.unicodeScalars.contains("\r") else { return value }
+        var out = String.UnicodeScalarView()
+        var line: [Unicode.Scalar] = [], column = 0, pendingCR = false
+        for scalar in value.unicodeScalars {
+            switch scalar {
+            case "\r": pendingCR = true
+            case "\n":
+                out.append(contentsOf: line); out.append("\n")
+                line.removeAll(keepingCapacity: true); column = 0; pendingCR = false
+            default:
+                if pendingCR { pendingCR = false; column = 0 }
+                if column < line.count { line[column] = scalar } else { line.append(scalar) }
+                column += 1
+            }
+        }
+        out.append(contentsOf: line)
+        return String(out)
     }
 
     public static func normalized(_ activity: AgentActivity, restoring: Bool = false) -> AgentActivity? {
