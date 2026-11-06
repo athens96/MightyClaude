@@ -9,7 +9,9 @@ let package = Package(
         .executable(name: "MightyClaude", targets: ["MightyClaude"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "1.5.20260906"),
+        // libghostty-spm 1.5.20260906 (733ae3b), vendored for one patch: its
+        // resource lookup traps in a shipped app. See Vendor/libghostty-spm/MIGHTY.md.
+        .package(path: "Vendor/libghostty-spm"),
         // Bundled libwebrtc (Google's build, M154) for the BETA screen-share
         // feature. Pinned exactly: a WebRTC bump is a deliberate decision, not a
         // resolver's.

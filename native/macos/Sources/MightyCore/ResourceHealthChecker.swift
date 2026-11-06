@@ -7,6 +7,12 @@ public struct ResourceCheckResult {
     public let triedPaths: [String]
     public var found: Bool { resolvedPath != nil }
 
+    public init(resource: String, resolvedPath: String?, triedPaths: [String]) {
+        self.resource = resource
+        self.resolvedPath = resolvedPath
+        self.triedPaths = triedPaths
+    }
+
     /// A built-in (never locale-catalog) warning string, or nil when the resource was found.
     public var warning: String? {
         guard !found else { return nil }
