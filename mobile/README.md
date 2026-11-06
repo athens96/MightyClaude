@@ -423,6 +423,10 @@ modules/                 로컬 네이티브 모듈: device-lock(휴대폰 잠�
   그 밖에 `ios.supportsTablet: true`, 사용 설명은 카메라(QR) 하나뿐입니다. 사진은 시스템 선택기로만
   고르므로 `NSPhotoLibraryUsageDescription`은 넣지 않습니다(`expo-image-picker` 플러그인의
   `photosPermission: false`).
+- `plugins/with-ios-scene-lifecycle.js`: iOS 27은 scene 생명주기를 쓰지 않는 앱을 실행 직후 멈추는데, Expo
+  prebuild 템플릿은 아직 AppDelegate에서 창을 만듭니다. 이 플러그인이 Info.plist에 Expo의
+  `EXExpoAppSceneDelegate`를 등록하고 AppDelegate는 factory만 만들게 바꿉니다. 정적 프레임워크와 SPM을 함께
+  쓰면 `pod install`이 거부하므로 Podfile에 `$RNFirebaseDisableSPM = true`도 넣습니다.
 - `eas.json`에 `development` / `preview` / `production` / `simulator` 프로필이 있습니다. `simulator`는
   Apple 계정 없이 이 맥의 iOS 시뮬레이터용으로 빌드합니다.
 

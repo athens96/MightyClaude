@@ -93,7 +93,8 @@
         }
       ],
       "expo-screen-orientation",
-      "./plugins/with-no-media-projection"
+      "./plugins/with-no-media-projection",
+      "./plugins/with-ios-scene-lifecycle"
     ],
     "experiments": {
       "typedRoutes": true
