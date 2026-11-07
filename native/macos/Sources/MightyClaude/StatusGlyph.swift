@@ -8,7 +8,9 @@ import MightyCore
 struct StatusGlyph: View {
     let tone: DesignTone
     var kind: String = SessionKind.claude
-    var size: CGFloat = 14
+    var size: CGFloat = StatusGlyph.defaultSize
+    /// The size the sidebar's rows draw it at, so a line under a row can start under its title.
+    static let defaultSize: CGFloat = 14
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {

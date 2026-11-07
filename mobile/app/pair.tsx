@@ -16,7 +16,7 @@ import { parsePairingUrl, relayTransportError, type PairingPayload } from '@/lib
 import { t } from '@/lib/i18n';
 import { useHostsStore } from '@/store/hosts';
 import { showToast } from '@/store/toast';
-import { radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { layout, radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 type Mode = 'qr' | 'manual';
 
@@ -213,8 +213,8 @@ function Field({
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    modes: { flexDirection: 'row', gap: spacing.sm, padding: spacing.lg },
-    scannerWrap: { flex: 1, gap: spacing.lg, padding: spacing.lg },
+    modes: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: layout.gutter, paddingVertical: spacing.lg },
+    scannerWrap: { flex: 1, gap: spacing.lg, paddingHorizontal: layout.gutter, paddingVertical: spacing.lg },
     permissionCard: { gap: spacing.lg },
     // The viewfinder stays black in both schemes: it frames a live camera image.
     camera: {
@@ -233,7 +233,7 @@ const makeStyles = (palette: Palette) =>
       width: 220,
     },
     hint: { color: palette.textMuted, fontSize: 13, lineHeight: 19, textAlign: 'center' },
-    form: { gap: spacing.lg, padding: spacing.lg },
+    form: { gap: spacing.lg, paddingHorizontal: layout.gutter, paddingVertical: spacing.lg },
     field: { gap: spacing.xs },
     fieldLabel: { color: palette.textMuted, fontSize: 13, fontWeight: '500' },
     input: {

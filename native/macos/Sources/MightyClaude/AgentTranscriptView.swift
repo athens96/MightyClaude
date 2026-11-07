@@ -178,7 +178,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         let storage = NSTextStorage()
         let manager = NSLayoutManager()
         let container = NSTextContainer(containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude))
-        container.widthTracksTextView = true
+        container.widthTracksTextView = false
         container.lineFragmentPadding = 0
         manager.addTextContainer(container)
         storage.addLayoutManager(manager)
@@ -199,6 +199,8 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         editor.delegate = self
         editor.onSelectionFinished = { [weak self] in self?.applyLatest() }
         let scroll = AgentTranscriptScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+        let clip = AgentTranscriptClipView(); clip.drawsBackground = false
+        scroll.contentView = clip
         scroll.drawsBackground = false; scroll.borderType = .noBorder
         scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
@@ -317,6 +319,17 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
 }
 
 @MainActor
+/// The transcript never scrolls sideways. A legacy scroller that briefly narrowed the
+/// viewport could leave the clip a few points to the right, and every later scroll kept
+/// that x, so the text sat flush on the card's edge instead of at its 8pt inset.
+private final class AgentTranscriptClipView: NSClipView {
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var rect = super.constrainBoundsRect(proposedBounds)
+        rect.origin.x = 0
+        return rect
+    }
+}
+
 private final class AgentTranscriptScrollView: NSScrollView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -625,27 +638,44 @@ final class AgentTranscriptTextView: SelectableTextView {
         scheduleInitialScrollToBottom()
     }
 
+    /// The space right of the text: the left inset, or the overlay scroller's width
+    /// while the text overflows. A legacy scroller already narrows the viewport.
+    private func trailingTextInset(overflowing: Bool) -> CGFloat {
+        guard overflowing, let scroll = enclosingScrollView, scroll.hasVerticalScroller, scroll.scrollerStyle == .overlay else { return textContainerInset.width }
+        return max(textContainerInset.width, NSScroller.scrollerWidth(for: .regular, scrollerStyle: .overlay))
+    }
+
     private func synchronizeDocumentLayout(invalidatingFrom start: Int) {
         guard !synchronizingLayout, let storage = textStorage,
               let manager = layoutManager, let container = textContainer else { return }
         synchronizingLayout = true
         defer { synchronizingLayout = false }
-        let width = max(1, frame.width - textContainerInset.width * 2)
-        if abs(container.containerSize.width - width) > 0.5 {
-            container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        let visibleHeight = enclosingScrollView?.contentView.bounds.height ?? 0
+        var location = min(max(0, start), storage.length)
+        var measured: CGFloat = 0
+        // An overlay scroller floats over the text's right edge; while the text
+        // overflows (and so can show one), its lines end clear of the scroller.
+        // Each state is self-consistent, so one re-layout settles a change.
+        for _ in 0..<2 {
+            let overflows = (contentHeight ?? 0) > visibleHeight + 0.5
+            let width = max(1, frame.width - textContainerInset.width - trailingTextInset(overflowing: overflows))
+            if abs(container.containerSize.width - width) > 0.5 {
+                container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+                location = 0
+            }
+            let suffix = NSRange(location: location, length: storage.length - location)
+            manager.invalidateLayout(forCharacterRange: suffix, actualCharacterRange: nil)
+            manager.invalidateDisplay(forCharacterRange: suffix)
+            manager.ensureLayout(for: container)
+            // The scroll view owns the viewport, while this native document owns
+            // its entire laid-out height, including content outside the viewport.
+            let bottom = max(manager.usedRect(for: container).maxY, manager.extraLineFragmentRect.maxY)
+            measured = ceil(bottom + textContainerInset.height * 2)
+            contentHeight = measured
+            guard (measured > visibleHeight + 0.5) != overflows else { break }
         }
-        let location = min(max(0, start), storage.length)
-        let suffix = NSRange(location: location, length: storage.length - location)
-        manager.invalidateLayout(forCharacterRange: suffix, actualCharacterRange: nil)
-        manager.invalidateDisplay(forCharacterRange: suffix)
-        manager.ensureLayout(for: container)
-        // The scroll view owns the viewport, while this native document owns
-        // its entire laid-out height, including content outside the viewport.
-        let bottom = max(manager.usedRect(for: container).maxY, manager.extraLineFragmentRect.maxY)
-        let measured = ceil(bottom + textContainerInset.height * 2)
         let height = max(enclosingScrollView?.contentView.bounds.height ?? 0, measured)
         if abs(frame.height - height) > 0.5 { super.setFrameSize(NSSize(width: frame.width, height: height)) }
-        contentHeight = measured
         reportContentHeight()
         // Clear old glyph pixels as well as their new positions after collapse
         // or expansion, including a cached suffix already visible on screen.

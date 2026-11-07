@@ -68,7 +68,9 @@ struct QueuedInputsView: View {
             ForEach(Array(held.enumerated()), id: \.element.id) { index, item in
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Text("\(index + 1)").font(.ui(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary).frame(width: 14, alignment: .trailing).padding(.top, 1)
-                    Text(item.text).font(.ui(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                    // A notice is the agent's raw text: one secondary line, the whole of it on hover.
+                    Text(item.text).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading).help(item.text)
                     // The first held row's 바로 실행 sends them all; the others draw nothing (`.hidden`).
                     runNowButton(item.id)
                     // Held, not the human's request: no remove button.
@@ -110,7 +112,8 @@ struct QueuedInputsView: View {
         let label = Label(L("queue.runNow"), systemImage: branch ? "arrow.triangle.branch" : "play.fill").font(.ui(size: 10, weight: .medium))
         switch path {
         case .hidden:
-            EmptyView()
+            // Keeps the button's slot, so every row's trailing controls stand in one column.
+            label.hidden().accessibilityHidden(true)
         case .waitsForTurn, .waitsForHeld, .waitsForUpdate:
             HStack(spacing: 0) {
                 Button {} label: { label }.buttonStyle(.plain).foregroundStyle(Palette.ink2).disabled(true)

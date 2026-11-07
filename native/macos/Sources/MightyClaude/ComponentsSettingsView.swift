@@ -10,8 +10,11 @@ struct ComponentsSettingsSection: View {
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
+        // No title of its own: it would only repeat the page's.
         SettingsGroup {
-            SetupToolsSettingsContent()
+            // The card's side inset above it too (the card pads its top by `Spacing.sm`), as a row's text sits.
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) { SetupToolsSettingsContent() }
+                .padding(.top, DesignMetrics.Settings.cardPaddingX - DesignMetrics.Spacing.sm)
             ForEach(store.components) { component in row(component) }
             if let message = store.componentMessage {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
@@ -20,36 +23,39 @@ struct ComponentsSettingsSection: View {
                 }
                 .accessibilityIdentifier("components-message")
             }
-        } header: { Text(L("settings.components.sectionTitle")) }
+        } header: { EmptyView() }
         .task { await store.refreshComponents() }
     }
 
     private func row(_ component: ComponentStatus) -> some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                icon(component)
-                Text(component.title).font(.ui(size: 13, weight: .medium))
-                if ProviderOptions.isBeta(component.id) { BetaBadge() }
-                if let version = component.version { Text(version).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1) }
-                Spacer()
-                stateLabel(component.state)
-            }
-            Text(component.detail).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-            if !component.actions.isEmpty {
+        // The shared row: a fixed icon column, the name over its caption, the state trailing; actions under the caption.
+        HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+            icon(component).frame(width: Self.iconWidth)
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    ForEach(component.actions) { action in
-                        let running = store.componentAction == component.id + ":" + action.id
-                        Button {
-                            store.performComponentAction(component: component.id, action: action.id)
-                        } label: {
-                            HStack(spacing: DesignMetrics.Spacing.xs) {
-                                if running { ProgressView().controlSize(.mini) }
-                                Text(running ? L("settings.components.inProgressLabel") : action.title)
+                    Text(component.title).font(.ui(size: DesignMetrics.Settings.rowName)).foregroundStyle(Palette.ink)
+                    if ProviderOptions.isBeta(component.id) { BetaBadge() }
+                    if let version = component.version { Text(version).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1) }
+                    Spacer()
+                    stateLabel(component.state)
+                }
+                Text(component.detail).font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                if !component.actions.isEmpty {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
+                        ForEach(component.actions) { action in
+                            let running = store.componentAction == component.id + ":" + action.id
+                            Button {
+                                store.performComponentAction(component: component.id, action: action.id)
+                            } label: {
+                                HStack(spacing: DesignMetrics.Spacing.xs) {
+                                    if running { ProgressView().controlSize(.mini) }
+                                    Text(running ? L("settings.components.inProgressLabel") : action.title)
+                                }
                             }
+                            .buttonStyle(action.primary ? AnyPrimitiveButtonStyle(.borderedProminent) : AnyPrimitiveButtonStyle(.bordered))
+                            .disabled(store.componentAction != nil)
+                            .accessibilityIdentifier("component-\(component.id)-\(action.id)")
                         }
-                        .buttonStyle(action.primary ? AnyPrimitiveButtonStyle(.borderedProminent) : AnyPrimitiveButtonStyle(.bordered))
-                        .disabled(store.componentAction != nil)
-                        .accessibilityIdentifier("component-\(component.id)-\(action.id)")
                     }
                 }
             }
@@ -57,6 +63,9 @@ struct ComponentsSettingsSection: View {
         .settingsRowFrame()
         .accessibilityElement(children: .contain).accessibilityIdentifier("component-\(component.id)")
     }
+
+    /// The icon column of a component or toolkit row, so every name starts at one x.
+    static let iconWidth: CGFloat = 18
 
     @ViewBuilder private func icon(_ component: ComponentStatus) -> some View {
         if ProviderOptions.ids.contains(component.id) { ProviderIcon(provider: component.id, size: 13) }
@@ -104,7 +113,8 @@ struct ToolkitSettingsSection: View {
             if let results = store.toolkitRunResults {
                 toolkitResultTable(results)
             }
-            Text(L("settings.toolkit.sectionDescription")).font(.ui(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(L("settings.toolkit.sectionDescription")).font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                .settingsRowFrame()
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Spacer()
                 Button(L("settings.toolkit.addButton")) { addEntryFromFile() }
@@ -133,38 +143,40 @@ struct ToolkitSettingsSection: View {
     private func toolkitRow(_ entry: ToolkitEntry) -> some View {
         let isInstalled = isEntryInstalled(entry)
         let approval = store.toolkitApprovals[entry.entryId]
-        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "wrench.and.screwdriver").font(.ui(size: 12))
-                Text(entry.displayName).font(.ui(size: 13, weight: .medium))
-                if entry.source == .bundled {
-                    Text(L("settings.toolkit.bundledBadge")).font(.ui(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Color.secondary.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 3))
-                } else if approval != nil {
-                    Text(L("settings.toolkit.approvedBadge")).font(.ui(size: 9, weight: .medium)).foregroundStyle(Palette.doneText).padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.doneSoft).clipShape(RoundedRectangle(cornerRadius: 3))
-                }
-                Spacer()
-                Text(isInstalled ? L("settings.toolkit.statusInstalled") : L("settings.toolkit.statusMissing"))
-                    .font(.ui(size: 10, weight: .medium))
-                    .foregroundStyle(isInstalled ? Palette.doneText : Palette.waitText)
-            }
-            if entry.source == .user {
+        return HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+            Image(systemName: "wrench.and.screwdriver").font(.ui(size: 13)).frame(width: ComponentsSettingsSection.iconWidth)
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    if approval == nil {
-                        Text(L("settings.toolkit.needsApproval")).font(.ui(size: 11)).foregroundStyle(.secondary)
-                        Button(L("settings.toolkit.approveButton")) {
-                            store.approveToolkitEntry(entry.entryId)
+                    Text(entry.displayName).font(.ui(size: DesignMetrics.Settings.rowName)).foregroundStyle(Palette.ink)
+                    if entry.source == .bundled {
+                        Text(L("settings.toolkit.bundledBadge")).font(.ui(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Color.secondary.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 3))
+                    } else if approval != nil {
+                        Text(L("settings.toolkit.approvedBadge")).font(.ui(size: 9, weight: .medium)).foregroundStyle(Palette.doneText).padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.doneSoft).clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                    Spacer()
+                    Text(isInstalled ? L("settings.toolkit.statusInstalled") : L("settings.toolkit.statusMissing"))
+                        .font(.ui(size: 10, weight: .medium))
+                        .foregroundStyle(isInstalled ? Palette.doneText : Palette.waitText)
+                }
+                if entry.source == .user {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
+                        if approval == nil {
+                            Text(L("settings.toolkit.needsApproval")).font(.ui(size: 11)).foregroundStyle(.secondary)
+                            Button(L("settings.toolkit.approveButton")) {
+                                store.approveToolkitEntry(entry.entryId)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(store.toolkitRunning)
+                            .accessibilityIdentifier("settings-toolkit-approve-\(entry.entryId)")
+                        }
+                        // Removing only delists the entry: nothing is uninstalled or deleted on disk.
+                        Button(L("settings.toolkit.removeButton")) {
+                            store.removeToolkitEntry(entry.entryId)
                         }
                         .buttonStyle(.bordered)
                         .disabled(store.toolkitRunning)
-                        .accessibilityIdentifier("settings-toolkit-approve-\(entry.entryId)")
+                        .accessibilityIdentifier("settings-toolkit-remove-\(entry.entryId)")
                     }
-                    // Removing only delists the entry: nothing is uninstalled or deleted on disk.
-                    Button(L("settings.toolkit.removeButton")) {
-                        store.removeToolkitEntry(entry.entryId)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(store.toolkitRunning)
-                    .accessibilityIdentifier("settings-toolkit-remove-\(entry.entryId)")
                 }
             }
         }

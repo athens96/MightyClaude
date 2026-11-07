@@ -1,15 +1,32 @@
 import { useEffect, useMemo } from 'react';
-import { StyleSheet } from 'react-native';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { Pressable, StyleSheet } from 'react-native';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Icon } from '@/components/icons';
 import { PushRoot } from '@/components/push-root';
 import { ToastHost } from '@/components/toast-host';
 import { installCryptoPolyfill } from '@/api/relay/random';
 import { useHostsStore } from '@/store/hosts';
 import { t } from '@/lib/i18n';
-import { darkPalette, headingFontFamily, useStyles, usePalette, type Palette } from '@/theme';
+import { darkPalette, dialog, headingFontFamily, radius, useStyles, usePalette, type Palette } from '@/theme';
+
+/** A modal panel's ✕ on the left of its head (the popup standard), since iOS shows no grabber. */
+function CloseButton() {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  return (
+    <Pressable
+      accessibilityLabel={t('dialog.close')}
+      accessibilityRole="button"
+      onPress={() => router.back()}
+      style={({ pressed }) => [styles.close, pressed && styles.pressed]}
+    >
+      <Icon name="close" color={palette.text} size={dialog.closeGlyph} />
+    </Pressable>
+  );
+}
 
 // `@noble/*` reads `globalThis.crypto.getRandomValues`, which React Native lacks.
 installCryptoPolyfill();
@@ -66,8 +83,15 @@ export default function RootLayout() {
           >
             {/* The tab bar (dashboard · sessions · alerts · hosts) is the root; everything else stacks on it. */}
             <Stack.Screen name="(tabs)" options={{ headerShown: false, title: t('phone.tabs.dashboard') }} />
-            <Stack.Screen name="connect" options={{ title: t('phone.connect.title'), presentation: 'modal' }} />
-            <Stack.Screen name="pair" options={{ title: t('phone.pair.title'), presentation: 'modal' }} />
+            {/* The guide draws its own large title, so its head carries only the ✕. */}
+            <Stack.Screen
+              name="connect"
+              options={{ title: '', presentation: 'modal', headerLeft: () => <CloseButton /> }}
+            />
+            <Stack.Screen
+              name="pair"
+              options={{ title: t('phone.pair.title'), presentation: 'modal', headerLeft: () => <CloseButton /> }}
+            />
             <Stack.Screen name="settings" options={{ title: t('phone.settings.title') }} />
             <Stack.Screen name="host/[hostId]/index" options={{ title: t('phone.workspaces.title') }} />
             <Stack.Screen name="host/[hostId]/session/[sessionId]" options={{ title: t('phone.session.title') }} />
@@ -100,4 +124,12 @@ export default function RootLayout() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     root: { backgroundColor: palette.background, flex: 1 },
+    close: {
+      alignItems: 'center',
+      borderRadius: radius.round,
+      height: dialog.closeHit,
+      justifyContent: 'center',
+      width: dialog.closeHit,
+    },
+    pressed: { opacity: 0.6 },
   });

@@ -28,7 +28,11 @@ struct MobileRemoteSettingsSection: View {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     TextField(MobileWire.defaultRelayURL.isEmpty ? "wss://relay.example.com" : MobileWire.defaultRelayURL, text: $relayText).textFieldStyle(.roundedBorder).font(.ui(size: 12, design: .monospaced))
                         .onSubmit(applyRelay).accessibilityIdentifier("settings-mobile-relay")
-                    Button(L("settings.mobileRemote.applyButton"), action: applyRelay).disabled(store.mobileBusy || !relayDirty || RelayEndpoint.normalize(relayText) == nil)
+                    let relayLocked = store.mobileBusy || !relayDirty || RelayEndpoint.normalize(relayText) == nil
+                    // Bordered with its title in ink3 while there is nothing to apply, so it still reads as a button in light.
+                    Button(L("settings.mobileRemote.applyButton"), action: applyRelay).buttonStyle(.bordered).fixedSize()
+                        .foregroundStyle(relayLocked ? Palette.token(\.ink3) : Palette.ink)
+                        .disabled(relayLocked)
                 }
             }
             connectionGuide
@@ -119,8 +123,9 @@ struct MobileRemoteSettingsSection: View {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     TextField(String(MobileDirect.defaultPort), text: $portText).textFieldStyle(.roundedBorder).font(.ui(size: 12, design: .monospaced)).settingsField()
                         .onSubmit(applyPort).accessibilityIdentifier("settings-mobile-direct-port")
-                    Button(L("settings.mobileRemote.applyButton"), action: applyPort).disabled(store.mobileBusy || typedPort == nil || typedPort == settings.directPort)
+                    Button(L("settings.mobileRemote.applyButton"), action: applyPort).fixedSize().disabled(store.mobileBusy || typedPort == nil || typedPort == settings.directPort)
                 }
+                .layoutPriority(1)
             }
             if settings.enabled, !status.directDetail.isEmpty {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -215,7 +220,8 @@ struct MobileRemoteSettingsSection: View {
 
     private func guideStep(_ n: Int, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.xs) {
-            Text("\(n).").font(.ui(size: 11)).foregroundStyle(.secondary).frame(width: 14, alignment: .trailing)
+            // The numbers start at the row's text edge (the card's side inset), the steps hang after them.
+            Text("\(n).").font(.ui(size: 11)).foregroundStyle(.secondary).frame(width: 14, alignment: .leading)
             Text(text).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

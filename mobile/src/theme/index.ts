@@ -89,6 +89,17 @@ export const spacing = {
 } as const;
 
 /**
+ * Page geometry. `gutter` is every page's side margin (tabs, Add Host, the connect guide,
+ * settings), so large titles and cards share one left edge; `bubbleInset` is the room the
+ * user's chat bubble leaves on its far side; `emptyOffset` drops an empty state off the top.
+ */
+export const layout = {
+  gutter: spacing.xl,
+  bubbleInset: spacing.xxl * 3,
+  emptyOffset: spacing.xxl * 2,
+} as const;
+
+/**
  * The popup standard on the phone (`.omc/plans/popup-standard.md`), from
  * `native/contracts/fixtures/design-tokens.json` `metrics.dialog`: the touch sizes of its
  * `phone` block, and the shared padding, button gap, icon size, alert width (the phone's

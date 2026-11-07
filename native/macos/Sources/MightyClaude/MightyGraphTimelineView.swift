@@ -98,11 +98,11 @@ struct MightyTimelineMarker: View {
                     .padding(.top, Self.centre).padding(.bottom, -gap)
             }
             ZStack {
-                if node.ring { MightyTimelineRing(color: Palette.heroFill(node.tone), diameter: Self.nodeSize) }
-                Circle().fill(Palette.heroFill(node.tone))
+                if node.ring { MightyTimelineRing(color: fill, diameter: Self.nodeSize) }
+                Circle().fill(fill)
                     .overlay { Circle().strokeBorder(Palette.raised, lineWidth: 3) }
                 Image(systemName: icon).font(.ui(size: 9, weight: .bold))
-                    .foregroundStyle(Palette.heroInk(node.tone))
+                    .foregroundStyle(node.tone == .idle ? Palette.panel : Palette.heroInk(node.tone))
             }
             .frame(width: Self.nodeSize, height: Self.nodeSize)
             .padding(.top, Self.nodeTop)
@@ -112,6 +112,10 @@ struct MightyTimelineMarker: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
+
+    /// The request's idle node is the ink button's fill (`panel` on `ink`), which reads in
+    /// both themes; the idle hero fill sinks into the dark card.
+    private var fill: Color { node.tone == .idle ? Palette.ink : Palette.heroFill(node.tone) }
 
     private func rail(_ tone: DesignTone?) -> some View {
         Rectangle().fill(tone.map(Palette.heroFill) ?? Palette.track)
@@ -237,10 +241,11 @@ struct MightyTimelineResultCard<Files: View>: View {
             .background(Palette.heroFill(result.tone))
             if let text = result.text {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(text).font(.transcript(size: 12.5)).foregroundStyle(Palette.ink)
+                    // Folded, the preview keeps the answer's first lines, each block at most as many.
+                    AgentMarkdownView(source: full ? text : text.split(separator: "\n", omittingEmptySubsequences: false)
+                                        .prefix(Self.previewLines).joined(separator: "\n"), compact: true)
+                        .foregroundStyle(Palette.ink)
                         .lineLimit(full ? nil : Self.previewLines)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     if Self.folds(text) {
                         Button(action: onToggleFull) {
                             Text(full ? L("phone.blocks.resultLess") : L("phone.blocks.resultMore"))

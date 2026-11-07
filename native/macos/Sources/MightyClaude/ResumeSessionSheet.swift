@@ -16,12 +16,12 @@ struct ResumeChoiceSheet: View {
             if checking {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     ProgressView().controlSize(.small)
-                    Text(L("resume.loading")).font(.ui(size: 12)).foregroundStyle(.secondary)
+                    Text(L("resume.loading")).font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("add-pane-choice-checking")
             } else {
-                Text(L("resume.choice.message", ["provider": agent])).font(.ui(size: 12)).foregroundStyle(.secondary)
+                Text(L("resume.choice.message", ["provider": agent])).font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } footer: {
@@ -56,6 +56,15 @@ struct ResumeSessionSheet: View {
     @ViewState private var search = ""
     @ViewState private var showAll = false
     @FocusState private var searchFocused: Bool
+    /// The rows' own height, so the list box hugs a short list instead of a fixed tall box.
+    @ViewState private var rowsHeight: CGFloat = 0
+    private static let listMinHeight = DesignMetrics.Dialog.headerHeight * 3
+    private static let listMaxHeight: CGFloat = 360
+
+    private var listHeight: CGFloat {
+        guard listing != nil, !shown.isEmpty else { return Self.listMinHeight }
+        return min(Self.listMaxHeight, max(Self.listMinHeight, ceil(rowsHeight)))
+    }
 
     /// What the list shows: the search, and never a session a pane took while
     /// the sheet was open.
@@ -69,31 +78,30 @@ struct ResumeSessionSheet: View {
         DialogScaffold(L("resume.title"), subtitle: workspace.path) {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+                    Image(systemName: "magnifyingglass").foregroundStyle(Palette.ink2)
                     TextField(L("resume.search"), text: $search).textFieldStyle(.plain).font(.ui(size: 12))
                         .focused($searchFocused)
                         .accessibilityIdentifier("resume-search")
                 }
-                .padding(DesignMetrics.Spacing.sm).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
-                content.frame(maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
+                .padding(DesignMetrics.Spacing.sm).background(Palette.raised, in: RoundedRectangle(cornerRadius: 7))
+                content.frame(maxWidth: .infinity).frame(height: listHeight)
                 HStack(spacing: DesignMetrics.Spacing.md) {
                     Toggle(L("resume.showAll"), isOn: $showAll).toggleStyle(.checkbox).font(.ui(size: 11))
                         .accessibilityIdentifier("resume-show-all")
                     if !showAll, let hidden = listing?.hidden, hidden > 0 {
-                        Text(L("resume.hiddenCount", ["count": "\(hidden)"])).font(.ui(size: 11)).foregroundStyle(.secondary)
+                        Text(L("resume.hiddenCount", ["count": "\(hidden)"])).font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                     }
                     Spacer()
                 }
             }
-            .frame(maxHeight: .infinity, alignment: .top)
         } footer: {
             DialogFooter {
-                Text(L("resume.note")).foregroundStyle(.secondary)
+                Text(L("resume.note")).foregroundStyle(Palette.ink2)
             } buttons: {
                 Button(L("resume.cancel")) { store.resumePicker = nil }.keyboardShortcut(.cancelAction)
             }
         }
-        .frame(width: DesignMetrics.Dialog.sheetWidthL, height: 520)
+        .dialogSheetWidth(DesignMetrics.Dialog.sheetWidthL)
         .task(id: showAll) {
             listing = await store.resumableSessions(for: workspace, provider: provider, includeAutomated: showAll)
             searchFocused = true
@@ -105,10 +113,10 @@ struct ResumeSessionSheet: View {
             DialogLoading(skeletonRows: 3).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else if shown.isEmpty {
             VStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "clock.arrow.circlepath").font(.ui(size: 26, weight: .light)).foregroundStyle(.tertiary)
+                Image(systemName: "clock.arrow.circlepath").font(.ui(size: 26, weight: .light)).foregroundStyle(Palette.ink2)
                 if search.trimmingCharacters(in: .whitespaces).isEmpty {
                     Text(L("resume.empty")).font(.ui(size: 13, weight: .medium))
-                    Text(L("resume.emptyReason", ["provider": ProviderOptions.label(provider)])).font(.ui(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text(L("resume.emptyReason", ["provider": ProviderOptions.label(provider)])).font(.ui(size: 11)).foregroundStyle(Palette.ink2).multilineTextAlignment(.center)
                 } else {
                     Text(L("resume.noMatch")).font(.ui(size: 13, weight: .medium))
                 }
@@ -120,8 +128,13 @@ struct ResumeSessionSheet: View {
                 LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     ForEach(shown) { item in row(item) }
                 }
+                .background(GeometryReader { rows in Color.clear.preference(key: ResumeRowsHeight.self, value: rows.size.height) })
             }
-            .background(Palette.subtle.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+            .onPreferenceChange(ResumeRowsHeight.self) { height in
+                if height.isFinite, abs(rowsHeight - height) > 0.5 { rowsHeight = height }
+            }
+            .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8))
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.border, lineWidth: 1).allowsHitTesting(false) }
         }
     }
 
@@ -134,13 +147,13 @@ struct ResumeSessionSheet: View {
         let busy = ResumableSessions.mayBeRunning(item)
         return Button { store.resumeSession(item, workspaceId: workspace.id) } label: {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
-                ProviderIcon(provider: item.provider, size: 14).foregroundStyle(.secondary).frame(width: 18).padding(.top, DesignMetrics.Spacing.xxs)
+                ProviderIcon(provider: item.provider, size: 14).foregroundStyle(Palette.ink2).frame(width: 18).padding(.top, DesignMetrics.Spacing.xxs)
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     HStack(spacing: DesignMetrics.Spacing.sm) {
                         Text(title).font(.ui(size: 12, weight: .medium)).lineLimit(2).foregroundStyle(item.title == nil ? .secondary : .primary)
                         if ProviderOptions.isBeta(item.provider) { BetaBadge() }
                     }
-                    Text(details).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(details).font(.ui(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
                     if busy {
                         Label(L("resume.recentlyModified"), systemImage: "exclamationmark.circle")
                             .font(.ui(size: 10)).foregroundStyle(Palette.waitText).lineLimit(1)
@@ -159,4 +172,9 @@ struct ResumeSessionSheet: View {
                                                           "details": busy ? details + " · " + L("resume.recentlyModified") : details]))
         .accessibilityIdentifier("resume-row-\(item.sessionID)")
     }
+}
+
+private struct ResumeRowsHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

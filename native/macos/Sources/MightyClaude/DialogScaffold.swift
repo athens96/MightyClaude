@@ -51,6 +51,8 @@ struct DialogScaffold<Tools: View, Content: View, Footer: View>: View {
             }
             footer
         }
+        // The app's card surface in both themes, not the sheet's stock grey.
+        .background(Palette.panel)
         // A panel at work cannot be closed: its ✕ is off, and so are Esc and the sheet's own dismissal.
         .interactiveDismissDisabled(close?.busy == true)
     }

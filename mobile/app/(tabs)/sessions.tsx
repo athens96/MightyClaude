@@ -9,7 +9,7 @@ import { t } from '@/lib/i18n';
 import { refreshHostPoll, useDashboardStore } from '@/store/dashboard';
 import { useHostsStore, type PairedHost } from '@/store/hosts';
 import { useHostState } from '@/store/live';
-import { headingFontFamily, spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { headingFontFamily, layout, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 function HostSection({ host }: { host: PairedHost }) {
   const palette = usePalette();
@@ -68,11 +68,13 @@ export default function SessionsTab() {
         />
       }
     >
-      <ScreenTitle title={t('phone.tabs.sessions')} style={styles.title} />
+      <ScreenTitle title={t('phone.tabs.sessions')} />
       {hosts.length === 0 && loaded ? (
         <EmptyState
           title={t('phone.hosts.empty.title')}
           description={t('phone.hosts.empty.description')}
+          icon="hosts"
+          action={{ label: t('phone.hosts.addHost'), onPress: () => router.push('/pair') }}
         />
       ) : (
         hosts.map((host) => <HostSection key={host.id} host={host} />)
@@ -84,8 +86,7 @@ export default function SessionsTab() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    content: { gap: spacing.xl, paddingHorizontal: spacing.lg },
-    title: { paddingHorizontal: spacing.xs },
+    content: { gap: spacing.xl, paddingHorizontal: layout.gutter },
     section: { gap: spacing.sm },
     hostRow: {
       alignItems: 'center',

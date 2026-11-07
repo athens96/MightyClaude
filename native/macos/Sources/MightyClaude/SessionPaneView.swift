@@ -230,13 +230,13 @@ struct SessionPaneView: View {
         store.selectSession(session.id)
     }
 
-    /// The pane's header: the shell keeps the slim ink bar; an agent pane gets one `Layout.paneHeader`
+    /// The pane's header: the shell keeps the slim raised bar; an agent pane gets one `Layout.paneHeader`
     /// line on the pane's own surface (status v2), the same in Default and Mighty.
     @ViewBuilder private var header: some View {
         if session.kind == "shell" {
             SlimPaneHeader(kind: SessionKind.shell, title: session.title,
                            subtitle: localTerminal ? L("dashboard.kind.shell") + " · " + L("phone.card.localTerminal") : L("dashboard.kind.shell"),
-                           status: Palette.status(session.status)) { paneMenu(ink: Palette.onStatus) }
+                           status: Palette.status(session.status)) { paneMenu(ink: Palette.ink2) }
                 .contentShape(Rectangle())
                 .simultaneousGesture(TapGesture().onEnded { store.selectSession(session.id) })
         } else {
@@ -606,7 +606,7 @@ struct SessionPaneView: View {
             if offersMightyStyle {
                 HStack(spacing: DesignMetrics.Spacing.md) {
                     MightyStylePicker(session: session, onApprove: { openApproval($0) })
-                    Text(verbatim: styleHint).font(.ui(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
+                    Text(verbatim: styleHint).font(.ui(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
                     Spacer(minLength: 0)
                 }.padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, DesignMetrics.Spacing.sm)
                 // One state, one message: a manifest that changed on disk is

@@ -299,9 +299,14 @@ struct MightyStructureView: View {
     /// The board's status (and a pipeline's name). Its steps are the columns' own
     /// headers below, so the pipeline is not drawn twice.
     private func header(_ board: MightyStructure.Board) -> some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+        // A request that awaits its background work's notices is not done yet: the header
+        // says so in the wait tone, as its 결과 column does (`MightyStructure.Tone.column`).
+        let awaiting = board.items.last.map { $0.awaiting && !["error", "stopped"].contains($0.status) } ?? false
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                MightyStatusMark(status: board.status, text: MightyGraphView.statusLabel(board.status), tone: DesignTone(status: board.status),
+                MightyStatusMark(status: awaiting ? "waiting" : board.status,
+                                 text: awaiting ? L("graph.state.awaitingNotice") : MightyGraphView.statusLabel(board.status),
+                                 tone: awaiting ? .wait : DesignTone(status: board.status),
                                  pending: board.items.last.flatMap { pendingState($0.runID) })
                 // A request's first line is its 요청 card right below; a pipeline's name is not on any card.
                 if board.kind == .pipeline {
@@ -345,6 +350,8 @@ struct MightyStructureView: View {
     /// waiting, or how its newest request ended), pending grey; an error or a stop in its own colour.
     private static func look(_ step: MightyStructure.Step, tone: DesignTone?) -> (fill: Color, ink: Color, icon: String) {
         switch step {
+        // A done 결과 whose request awaits its notices takes its column's wait tone.
+        case .done where tone == .wait: (Palette.heroFill(.wait), Palette.heroInk(.wait), MightyGraphView.awaitingNoticeIcon)
         case .done: (Palette.heroFill(.done), Palette.heroInk(.done), "checkmark")
         case .current: (Palette.heroFill(tone ?? .run), Palette.heroInk(tone ?? .run), "circle.fill")
         case .pending: (Palette.track, Palette.ink2, "circle")
@@ -395,6 +402,9 @@ struct MightyStructureView: View {
                         }
                     }
                     .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.top, DesignMetrics.Spacing.md)
+                    // Columns that fit share the width their rounding leaves over on both sides,
+                    // so the grid's left and right insets match.
+                    .frame(minWidth: geo.size.width, alignment: board == nil ? .topLeading : .top)
                     // The id sits outside the padding, so going back to the first column shows its margin too.
                     .id(board?.id ?? "")
                 }

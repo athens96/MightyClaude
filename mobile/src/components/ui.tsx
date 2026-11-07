@@ -14,6 +14,8 @@ import { useBusyState } from '@/hooks/use-pending';
 import { t } from '@/lib/i18n';
 import {
   cardShadow,
+  dialog,
+  layout,
   radius,
   spacing,
   typeScale,
@@ -279,12 +281,35 @@ export function ScreenTitle({ title, style }: { title: string; style?: StyleProp
   );
 }
 
-export function EmptyState({ title, description }: { title: string; description?: string }) {
+/**
+ * Nothing to show yet: an optional glyph in a soft disc, the title and description, and an
+ * optional primary action that gets the user out of the empty state.
+ */
+export function EmptyState({
+  title,
+  description,
+  icon,
+  action,
+}: {
+  title: string;
+  description?: string;
+  icon?: IconName;
+  action?: { label: string; onPress: () => void };
+}) {
+  const palette = usePalette();
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.empty}>
+      {icon ? (
+        <View style={styles.emptyIcon}>
+          <Icon name={icon} color={palette.accent} size={dialog.iconSize} />
+        </View>
+      ) : null}
       <Text style={styles.emptyTitle}>{title}</Text>
       {description ? <Text style={styles.emptyDescription}>{description}</Text> : null}
+      {action ? (
+        <Button label={action.label} tone="primary" onPress={action.onPress} style={styles.emptyAction} />
+      ) : null}
     </View>
   );
 }
@@ -336,7 +361,7 @@ const makeStyles = (palette: Palette) =>
       borderRadius: radius.round,
       borderWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
-      gap: spacing.xs,
+      gap: spacing.md,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.sm,
     },
@@ -382,7 +407,23 @@ const makeStyles = (palette: Palette) =>
       paddingHorizontal: spacing.sm,
     },
     betaBadgeLabel: { color: palette.warning, fontSize: 9.5, fontWeight: '800', letterSpacing: 0.2 },
-    empty: { alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.xxl },
+    empty: {
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingBottom: spacing.xxl,
+      paddingHorizontal: spacing.xl,
+      paddingTop: layout.emptyOffset,
+    },
+    emptyIcon: {
+      alignItems: 'center',
+      backgroundColor: palette.accentMuted,
+      borderRadius: radius.round,
+      height: dialog.buttonHeight,
+      justifyContent: 'center',
+      marginBottom: spacing.sm,
+      width: dialog.buttonHeight,
+    },
+    emptyAction: { alignSelf: 'stretch', marginTop: spacing.lg },
     emptyTitle: { ...typeScale.heading, color: palette.text, fontSize: 18, lineHeight: 24, textAlign: 'center' },
     emptyDescription: { color: palette.textMuted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
     errorBanner: {

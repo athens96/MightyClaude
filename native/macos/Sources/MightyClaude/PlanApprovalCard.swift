@@ -54,7 +54,6 @@ struct PlanApprovalCard: View {
             PlanActions(sessionId: sessionId, request: request, startsRevising: startsRevising, reviseRequests: reviseRequests)
         }
         .paneWaitCard()
-        .frame(maxHeight: fills ? .infinity : nil)
         .padding(.horizontal, fills ? 0 : DesignMetrics.Spacing.lg).padding(.top, fills ? 0 : DesignMetrics.Spacing.md)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plan-card-\(request.id)")
@@ -88,23 +87,29 @@ struct PlanBody: View {
                 if showsExpand {
                     Button {
                         store.planDocument = PlanDocument(id: request.id, title: L("plan.card.title"), subtitle: received, plan: plan)
-                    } label: { Label(L("plan.card.expand"), systemImage: "arrow.up.left.and.arrow.down.right") }
+                    } label: { Text(L("plan.card.expand")) }
                         .buttonStyle(PaneCardButtonStyle())
                         .disabled(store.hasModal)
                         .accessibilityIdentifier("plan-expand")
                 }
             }
 
-            ScrollView {
-                AgentMarkdownView(source: plan).textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.md)
+            // A short plan shows whole; a longer one scrolls in the room left (260pt docked).
+            ViewThatFits(in: .vertical) {
+                page
+                ScrollView { page }.frame(minHeight: 80)
             }
             .background(Palette.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .frame(minHeight: 80, maxHeight: fills ? .infinity : 260)
+            .frame(maxHeight: fills ? .infinity : 260)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("plan-text")
         }
+    }
+
+    private var page: some View {
+        AgentMarkdownView(source: plan).textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.md)
     }
 }
 
@@ -142,7 +147,8 @@ struct PlanActionsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-            PlanCardTitle(request: request, count: count) { EmptyView() }
+            // The diagram's plan block right above carries the title; repeat it only to say how many wait.
+            if count > 1 { PlanCardTitle(request: request, count: count) { EmptyView() } }
             PlanActions(sessionId: sessionId, request: request)
         }
         .paneWaitCard()
@@ -186,7 +192,7 @@ struct PlanActions: View {
                         Button(L("plan.card.reviseClose")) { revising = false }
                             .buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("plan-revise-close")
                         Button(L("plan.card.reviseSend")) { answer(.revise(feedback: feedback)) }
-                            .buttonStyle(PaneCardButtonStyle(prominent: true))
+                            .buttonStyle(PaneCardButtonStyle(accent: true))
                             .disabled(!canAnswer || !PlanCardSupport.canSendRevise(feedback))
                             .accessibilityIdentifier("plan-revise-send")
                     }
@@ -205,7 +211,15 @@ struct PlanActions: View {
                     Spacer(minLength: 0)
                     buttons
                 }
+                // Narrower: the hint above, the four buttons on their own trailing row.
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+                    Text(L("plan.card.hint")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: DesignMetrics.Spacing.sm) { Spacer(minLength: 0); buttons }
+                }
+                // Narrowest: two trailing rows, the primary pair at the bottom right.
                 VStack(alignment: .trailing, spacing: DesignMetrics.Spacing.sm) {
+                    Text(L("plan.card.hint")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(spacing: DesignMetrics.Spacing.sm) { Spacer(minLength: 0); secondaryButtons }
                     HStack(spacing: DesignMetrics.Spacing.sm) { Spacer(minLength: 0); primaryButtons }
                 }
@@ -260,7 +274,7 @@ struct PlanRecordView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.accent)
+                Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.waitText)
                 Text(L("plan.card.title")).font(.ui(size: 12, weight: .bold)).foregroundStyle(Palette.ink)
                 MightyStatusPill(text: PlanCardSupport.outcomeTitle(record.outcome), tone: tone)
                 Text(PlanCardSupport.timeText(record.decidedAt)).font(.ui(size: 10)).foregroundStyle(Palette.ink2).monospacedDigit()
@@ -324,7 +338,7 @@ struct PlanHistoryStrip: View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             Button { open.toggle() } label: {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.accent)
+                    Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.waitText)
                     Text(L("plan.history.title", ["count": "\(records.count)"])).font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
                     if let last = records.last {
                         Text(PlanCardSupport.outcomeTitle(last.outcome) + " · " + PlanCardSupport.headline(last.plan))

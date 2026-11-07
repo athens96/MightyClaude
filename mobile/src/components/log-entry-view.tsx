@@ -6,6 +6,7 @@ import { t } from '@/lib/i18n';
 import type { Tone } from '@/lib/status-tone';
 import {
   cardShadow,
+  layout,
   monoText,
   providerColorsFor,
   providerLabel,
@@ -171,7 +172,7 @@ const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     // The user's turn is an ink bubble on the right, its corner tucked toward the edge;
     // the reply is a white card with its speaker on top.
-    userWrap: { alignItems: 'flex-end', paddingLeft: 48, paddingVertical: spacing.xs },
+    userWrap: { alignItems: 'flex-end', paddingLeft: layout.bubbleInset, paddingVertical: spacing.xs },
     userBubble: {
       backgroundColor: palette.bubbleUser,
       borderBottomRightRadius: 6,

@@ -414,7 +414,8 @@ struct WorkspaceView: View {
                     .accessibilityIdentifier("child-card-note-\(child.id)")
             }
         }
-        .padding(.leading, DesignMetrics.Spacing.xl + DesignMetrics.Spacing.sm).padding(.trailing, DesignMetrics.Spacing.sm).padding(.bottom, DesignMetrics.Spacing.xs)
+        // Under the row's title: the row's inset, its glyph column and the gap after it.
+        .padding(.leading, DesignMetrics.Spacing.sm + StatusGlyph.defaultSize + DesignMetrics.Spacing.sm).padding(.trailing, DesignMetrics.Spacing.sm).padding(.bottom, DesignMetrics.Spacing.xs)
         .frame(maxWidth: .infinity, alignment: .leading))
     }
 
@@ -600,31 +601,32 @@ struct WorkspaceView: View {
             Text(L("layout.welcome.title")).font(.ui(size: 27, weight: .semibold))
             Text(L("layout.welcome.bodyMac"))
                 .font(.ui(size: 14)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(5)
-            // The three ways to add a workspace (the existing folder first), then the other ways in.
+            // Opening an existing folder is the one primary; the other ways in sit in one row
+            // under it, all at one control size so they share a height and a baseline.
             VStack(spacing: DesignMetrics.Spacing.md) {
+                Button { store.openWorkspace() } label: {
+                    Label(L("layout.welcome.openProject"), systemImage: "folder.badge.plus").padding(.horizontal, DesignMetrics.Spacing.md)
+                }.buttonStyle(.borderedProminent)
                 HStack(spacing: DesignMetrics.Spacing.md) {
-                    Button { store.openWorkspace() } label: { Label(L("layout.welcome.openProject"), systemImage: "folder.badge.plus").padding(.horizontal, 10).padding(.vertical, 5) }.buttonStyle(.borderedProminent)
                     Button { store.showWorkspaceCreate(.newFolder) } label: {
-                        Label(L("workspace.add.newFolder"), systemImage: "plus.rectangle.on.folder").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
+                        Label(L("workspace.add.newFolder"), systemImage: "plus.rectangle.on.folder").padding(.horizontal, DesignMetrics.Spacing.xs)
                     }.buttonStyle(.bordered).accessibilityIdentifier("welcome-new-folder")
                     Button { store.showWorkspaceCreate(.fromGit) } label: {
-                        Label(L("workspace.add.fromGit"), systemImage: "arrow.down.circle").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
+                        Label(L("workspace.add.fromGit"), systemImage: "arrow.down.circle").padding(.horizontal, DesignMetrics.Spacing.xs)
                     }.buttonStyle(.bordered).accessibilityIdentifier("welcome-from-git")
-                }
-                HStack(spacing: DesignMetrics.Spacing.md) {
                     Button { store.openRemoteSettings() } label: {
-                        Label(L("remote.menu.connect"), systemImage: "network").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
+                        Label(L("remote.menu.connect"), systemImage: "network").padding(.horizontal, DesignMetrics.Spacing.xs)
                     }.buttonStyle(.bordered).accessibilityIdentifier("welcome-connect-remote")
                     if store.setupNeedsAttention {
                         Button { store.openSetup() } label: {
-                            Label(L("setup.title"), systemImage: "shippingbox").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
+                            Label(L("setup.title"), systemImage: "shippingbox").padding(.horizontal, DesignMetrics.Spacing.xs)
                         }.buttonStyle(.bordered).accessibilityIdentifier("welcome-setup")
                     }
                 }
-            }.padding(.top, 8)
-            Text(L("layout.welcome.shortcutsMac")).font(.ui(size: 11)).foregroundStyle(.tertiary).padding(.top, 10)
+            }.controlSize(.large).padding(.top, DesignMetrics.Spacing.md)
+            Text(L("layout.welcome.shortcutsMac")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.top, 10)
             Spacer()
-            Text(L("layout.welcome.footerMac")).font(.ui(size: 11)).foregroundStyle(.tertiary).padding(.bottom, 25)
+            Text(L("layout.welcome.footerMac")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.bottom, 25)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topLeading) { SidebarToggleButton().leadingPastTrafficLights(DesignMetrics.Inset.workspaceHeaderH).padding(.top, DesignMetrics.Inset.workspaceHeaderT) }
     }

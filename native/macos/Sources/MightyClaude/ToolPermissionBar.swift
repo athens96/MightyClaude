@@ -68,34 +68,10 @@ private struct AntigravityPermissionCard: View {
                 Spacer(minLength: 0)
             }
             Text(L("antigravity.permission.subtitle")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                    ForEach(Array(card.actions.enumerated()), id: \.offset) { _, action in
-                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                            Text(AntigravityPermissionFlow.kindLabel(action.kind) + " · " + action.displayName)
-                                .font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
-                            if let target = action.target {
-                                if action.kind == .command || action.kind == .file {
-                                    Text(target).font(.code(size: 11)).textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.sm)
-                                        .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                } else {
-                                    Text(target).font(.ui(size: 12, weight: .semibold)).foregroundStyle(Palette.ink).textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                            if let line = AntigravityPermissionFlow.ruleLine(action) {
-                                Text(line).font(.code(size: 10)).foregroundStyle(Palette.ink2).lineLimit(3).textSelection(.enabled)
-                                if let reason = AntigravityPermissionFlow.onceOnlyText(action) {
-                                    Text(reason).font(.ui(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
-                                }
-                            } else {
-                                Text(L("antigravity.permission.noRule")).font(.ui(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, DesignMetrics.Spacing.xs)
+            // Sized to its actions up to 180pt; only a longer list scrolls.
+            ViewThatFits(in: .vertical) {
+                actions
+                ScrollView { actions }
             }.frame(maxHeight: 180)
             if let error = store.antigravityPermissionErrors[sessionId] {
                 Text(error).font(.ui(size: 10)).foregroundStyle(Palette.errText).fixedSize(horizontal: false, vertical: true).lineLimit(3)
@@ -109,14 +85,44 @@ private struct AntigravityPermissionCard: View {
                 Button(L("antigravity.permission.allowAlways")) { answer(.always) }.buttonStyle(PaneCardButtonStyle())
                     .disabled(!card.canAllowAlways).help(card.canAllow && !card.canAllowAlways ? (card.actions.lazy.compactMap { AntigravityPermissionFlow.onceOnlyText($0) }.first ?? L("antigravity.permission.onceOnly")) : "")
                     .accessibilityIdentifier("antigravity-permission-allow-always")
-                Button(L("permission.allowOnce")) { answer(.once) }.buttonStyle(PaneCardButtonStyle(prominent: true))
+                Button(L("permission.allowOnce")) { answer(.once) }.buttonStyle(PaneCardButtonStyle(accent: true))
                     .disabled(!card.canAllow).accessibilityIdentifier("antigravity-permission-allow-once")
             }.disabled(busy)
         }
         .paneWaitCard()
-        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm)
+        .padding(.horizontal, DesignMetrics.Spacing.lg).padding(.top, DesignMetrics.Spacing.md)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("antigravity-permission-\(card.id)")
+    }
+
+    private var actions: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            ForEach(Array(card.actions.enumerated()), id: \.offset) { _, action in
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                    Text(AntigravityPermissionFlow.kindLabel(action.kind) + " · " + action.displayName)
+                        .font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                    if let target = action.target {
+                        if action.kind == .command || action.kind == .file {
+                            Text(target).font(.code(size: 11)).textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.sm)
+                                .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        } else {
+                            Text(target).font(.ui(size: 12, weight: .semibold)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    if let line = AntigravityPermissionFlow.ruleLine(action) {
+                        Text(line).font(.code(size: 10)).foregroundStyle(Palette.ink2).lineLimit(3).textSelection(.enabled)
+                        if let reason = AntigravityPermissionFlow.onceOnlyText(action) {
+                            Text(reason).font(.ui(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else {
+                        Text(L("antigravity.permission.noRule")).font(.ui(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func answer(_ decision: AntigravityPermissionDecision) {
@@ -148,32 +154,10 @@ private struct ToolPermissionCard: View {
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("permission-headline")
             }
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                    ForEach(Array(presentation.fields.enumerated()), id: \.offset) { _, field in
-                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                            Text(field.label).font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
-                            if field.code {
-                                Text(field.value).font(.code(size: 11)).textSelection(.enabled)
-                                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.sm)
-                                    .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            } else {
-                                Text(field.value).font(.ui(size: 11)).textSelection(.enabled)
-                                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
-                    if presentation.fields.isEmpty, presentation.headline == nil {
-                        Text(request.summary).font(.code(size: 12)).textSelection(.enabled)
-                    }
-                    if let path = request.blockedPath, !path.isEmpty { Text(L("permission.bar.blockedPath", ["path": path])).font(.ui(size: 10)) }
-                    if let reason = request.reason, !reason.isEmpty { Text(reason).font(.ui(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true) }
-                    DisclosureGroup(L("styles.approval.raw"), isExpanded: $showsJSON) {
-                        Text(request.inputJSON).font(.code(size: 10)).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, DesignMetrics.Spacing.xs)
-                    }.font(.ui(size: 10)).accessibilityIdentifier("permission-json")
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, DesignMetrics.Spacing.xs)
+            // Sized to its fields up to 180pt; only longer details scroll.
+            ViewThatFits(in: .vertical) {
+                details(presentation)
+                ScrollView { details(presentation) }
             }.frame(maxHeight: 180)
             if !request.canAllow {
                 Text(L("permission.bar.cannotAllow"))
@@ -188,15 +172,43 @@ private struct ToolPermissionCard: View {
                 if busy { ProgressView().controlSize(.mini) }
                 Button(L("permission.deny")) { answer(false) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("permission-deny")
                 Button(L("permission.allowOnce")) { answer(true) }
-                    .buttonStyle(PaneCardButtonStyle(prominent: true)).disabled(!request.canAllow)
+                    .buttonStyle(PaneCardButtonStyle(accent: true)).disabled(!request.canAllow)
                     .accessibilityIdentifier("permission-allow-once")
             }.disabled(busy)
         }
         // Concept D: the same amber-edged card as a question, above the composer.
         .paneWaitCard()
-        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm)
+        .padding(.horizontal, DesignMetrics.Spacing.lg).padding(.top, DesignMetrics.Spacing.md)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("permission-request-\(request.id)")
+    }
+
+    private func details(_ presentation: ToolPermissionPresentation) -> some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            ForEach(Array(presentation.fields.enumerated()), id: \.offset) { _, field in
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                    Text(field.label).font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                    if field.code {
+                        Text(field.value).font(.code(size: 11)).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.sm)
+                            .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    } else {
+                        Text(field.value).font(.ui(size: 11)).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            if presentation.fields.isEmpty, presentation.headline == nil {
+                Text(request.summary).font(.code(size: 12)).textSelection(.enabled)
+            }
+            if let path = request.blockedPath, !path.isEmpty { Text(L("permission.bar.blockedPath", ["path": path])).font(.ui(size: 10)) }
+            if let reason = request.reason, !reason.isEmpty { Text(reason).font(.ui(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true) }
+            DisclosureGroup(L("styles.approval.raw"), isExpanded: $showsJSON) {
+                Text(request.inputJSON).font(.code(size: 10)).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, DesignMetrics.Spacing.xs)
+            }.font(.ui(size: 10)).accessibilityIdentifier("permission-json")
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func answer(_ allow: Bool) {

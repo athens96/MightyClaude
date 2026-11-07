@@ -77,15 +77,21 @@ struct CLIAccountsSettingsSection: View {
             } else {
                 Button(L("settings.cliAccounts.buttonLogin")) { store.startCLILogin(provider) }.disabled(busy).accessibilityIdentifier("cli-account-login-\(provider)")
             }
+            // The less common actions sit in a ⋯ menu, so Claude's row has the same buttons as the others.
             if provider == "claude", status?.installed != false {
-                Button(L("settings.cliAccounts.resetModelsButton")) { store.resetClaudeModels() }
-                    .disabled(busy || pending || store.claudeModelResetInProgress)
-                    .help(L("settings.cliAccounts.resetModelsHelp"))
-                    .accessibilityIdentifier("cli-account-reset-models-claude")
-                Button(L("settings.cliAccounts.bedrockButton")) { store.startCLILogin(provider, option: .bedrock) }
-                    .disabled(busy || pending)
-                    .help(L("settings.cliAccounts.bedrockHelp"))
-                    .accessibilityIdentifier("cli-account-bedrock-claude")
+                Menu {
+                    Button(L("settings.cliAccounts.resetModelsButton")) { store.resetClaudeModels() }
+                        .disabled(busy || pending || store.claudeModelResetInProgress)
+                        .help(L("settings.cliAccounts.resetModelsHelp"))
+                        .accessibilityIdentifier("cli-account-reset-models-claude")
+                    Button(L("settings.cliAccounts.bedrockButton")) { store.startCLILogin(provider, option: .bedrock) }
+                        .disabled(busy || pending)
+                        .help(L("settings.cliAccounts.bedrockHelp"))
+                        .accessibilityIdentifier("cli-account-bedrock-claude")
+                } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .accessibilityLabel(L("composer.more"))
+                    .accessibilityIdentifier("cli-account-more-claude")
             }
             Button { store.cliAccountMessages[provider] = nil; store.refreshCLIAccounts([provider]) } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).disabled(busy).help(L("settings.cliAccounts.refreshTooltip"))
         }

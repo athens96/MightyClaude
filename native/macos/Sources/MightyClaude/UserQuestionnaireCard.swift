@@ -13,7 +13,6 @@ struct UserQuestionnaireCard: View {
     @ViewState private var selections: [Int: Set<String>] = [:]
     @ViewState private var customQuestions = Set<Int>()
     @ViewState private var customText: [Int: String] = [:]
-    @ViewState private var contentHeight: CGFloat = 300
     @ViewState private var step = 0
 
     private var busy: Bool {
@@ -67,20 +66,13 @@ struct UserQuestionnaireCard: View {
                 if count > 1 { Text(L("phone.questionnaire.waiting", ["count": "\(count)"])).foregroundStyle(Palette.ink2) }
             }.font(.ui(size: 12))
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-                    if questionnaire.questions.indices.contains(currentStep) {
-                        questionSection(questionnaire.questions[currentStep], index: currentStep).id(currentStep)
-                    }
-                }.padding(.trailing, DesignMetrics.Spacing.xs).padding(.vertical, DesignMetrics.Spacing.xxs)
-                    .background { GeometryReader { proxy in
-                        Color.clear.preference(key: QuestionContentHeight.self, value: proxy.size.height)
-                    } }
+            // Sized to the question up to 300pt; only a longer one scrolls, and the
+            // viewport still yields to the footer and composer in a short split pane.
+            ViewThatFits(in: .vertical) {
+                questionContent
+                ScrollView { questionContent }
             }
-            // The question viewport must yield space to the footer and composer
-            // when this session is in a short split pane.
-            .frame(minHeight: 56, idealHeight: max(56, min(contentHeight, 300)), maxHeight: max(56, min(contentHeight, 300)))
-            .onPreferenceChange(QuestionContentHeight.self) { contentHeight = max(1, $0) }
+            .frame(minHeight: 56, maxHeight: 300)
             .disabled(busy || !canAnswer)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("questionnaire-viewport")
@@ -127,9 +119,17 @@ struct UserQuestionnaireCard: View {
         }
         // Concept D: a white card with the amber edge, docked right above the composer.
         .paneWaitCard()
-        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm)
+        .padding(.horizontal, DesignMetrics.Spacing.lg).padding(.top, DesignMetrics.Spacing.md)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("questionnaire-\(request.id)")
+    }
+
+    private var questionContent: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
+            if questionnaire.questions.indices.contains(currentStep) {
+                questionSection(questionnaire.questions[currentStep], index: currentStep).id(currentStep)
+            }
+        }.padding(.trailing, DesignMetrics.Spacing.xs).padding(.vertical, DesignMetrics.Spacing.xxs)
     }
 
     /// Filled for answered questions, ringed for the one on screen; a dot jumps
@@ -140,7 +140,7 @@ struct UserQuestionnaireCard: View {
                 Button { if canJump(to: index) { step = index } } label: {
                     // The question on screen is the amber dot; one answered keeps a soft amber.
                     Text("\(index + 1)").font(.ui(size: 10, weight: .bold)).monospacedDigit()
-                        .foregroundStyle(index == currentStep ? Palette.onWait : answered(index) ? Palette.waitText : Palette.ink2)
+                        .foregroundStyle(index == currentStep ? Palette.onWait : answered(index) ? Palette.waitText : Palette.ink)
                         .frame(width: 18, height: 18)
                         .background(index == currentStep ? Palette.wait : answered(index) ? Palette.waitSoft : Palette.track, in: Circle())
                         .contentShape(Circle())
@@ -230,9 +230,4 @@ struct UserQuestionnaireCard: View {
         .accessibilityHint(description ?? L("phone.questionnaire.customHint"))
         .accessibilityIdentifier(identifier)
     }
-}
-
-private struct QuestionContentHeight: PreferenceKey {
-    static var defaultValue: CGFloat = 300
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

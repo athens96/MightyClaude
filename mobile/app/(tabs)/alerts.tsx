@@ -17,7 +17,7 @@ import { t } from '@/lib/i18n';
 import { waitLabel } from '@/lib/session-row';
 import { useHostsStore } from '@/store/hosts';
 import { useLiveStore } from '@/store/live';
-import { spacing, toneColors, useStyles, usePalette, type Palette } from '@/theme';
+import { layout, spacing, toneColors, useStyles, usePalette, type Palette } from '@/theme';
 
 const REASON_KEYS: Record<AttentionReason, string> = {
   question: 'phone.alerts.reason.question',
@@ -115,6 +115,7 @@ export default function AlertsTab() {
         <EmptyState
           title={t('phone.alerts.empty.title')}
           description={t('phone.alerts.empty.description')}
+          icon="alerts"
         />
       }
     />
@@ -124,8 +125,8 @@ export default function AlertsTab() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    content: { paddingHorizontal: spacing.lg },
-    title: { marginBottom: spacing.sm, paddingHorizontal: spacing.xs },
+    content: { paddingHorizontal: layout.gutter },
+    title: { marginBottom: spacing.sm },
     sectionTitle: {
       color: palette.textFaint,
       fontSize: 12,

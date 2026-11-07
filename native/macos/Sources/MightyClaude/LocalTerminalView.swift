@@ -82,9 +82,10 @@ private struct LocalTerminalContent: View {
                 Text(terminal.title.isEmpty ? "zsh" : terminal.title).lineLimit(1)
                 Spacer(minLength: 4)
                 Text(terminal.workingDirectory).lineLimit(1).truncationMode(.middle).help(terminal.workingDirectory)
-                if let grid = terminal.grid { Text("\(grid.columns)×\(grid.rows)").monospacedDigit().foregroundStyle(.tertiary) }
+                if let grid = terminal.grid { Text("\(grid.columns)×\(grid.rows)").monospacedDigit() }
             }
-            .font(.ui(size: 9)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
+            // The type scale's small step (`type.small`), as the app's other captions.
+            .font(.ui(size: 10)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
             .background(Palette.subtle)
         }
         .onAppear { focusIfActive() }

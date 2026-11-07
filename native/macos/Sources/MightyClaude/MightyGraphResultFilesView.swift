@@ -107,7 +107,7 @@ struct MightyGraphResultFilesView: View {
                                         .lineLimit(1).truncationMode(.middle)
                                     Text(file.path + (file.line.map { ":\($0)" } ?? ""))
                                         .font(.ui(size: 10, design: .monospaced)).foregroundStyle(Palette.ink2)
-                                        .lineLimit(2).truncationMode(.middle)
+                                        .lineLimit(1).truncationMode(.middle)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .padding(DesignMetrics.Spacing.sm).contentShape(Rectangle())

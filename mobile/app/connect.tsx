@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui';
 import { t } from '@/lib/i18n';
 import { CONNECT_STEPS } from '@/lib/onboarding';
-import { cardShadow, headingFontFamily, radius, spacing, typeScale, useStyles, type Palette } from '@/theme';
+import { cardShadow, headingFontFamily, layout, radius, spacing, typeScale, useStyles, type Palette } from '@/theme';
 
 function StepRow({ index, titleKey, bodyKey }: { index: number; titleKey: string; bodyKey: string }) {
   const styles = useStyles(makeStyles);
@@ -50,7 +50,7 @@ const makeStyles = (palette: Palette) =>
       backgroundColor: palette.background,
       flexGrow: 1,
       gap: spacing.xl,
-      paddingHorizontal: spacing.xl,
+      paddingHorizontal: layout.gutter,
       paddingTop: spacing.xl,
     },
     title: {
