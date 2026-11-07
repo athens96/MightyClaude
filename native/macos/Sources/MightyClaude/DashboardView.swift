@@ -202,7 +202,7 @@ struct DashboardView: View {
 
     private func usageBar(_ window: AccountUsageWindow) -> some View {
         let fraction = min(1, max(0, window.usedPercent / 100))
-        return HStack(spacing: 8) {
+        return HStack(spacing: DesignMetrics.Spacing.md) {
             Text(StatusBarUsageView.windowLabel(window.kind)).font(.ui(size: 11.5)).foregroundStyle(Palette.ink2).lineLimit(1)
             Capsule().fill(Palette.runSoft).frame(height: 6)
                 .overlay(alignment: .leading) {
@@ -252,9 +252,9 @@ struct DashboardView: View {
                 .accessibilityLabel(L("workspace.addPaneAccessibility", ["workspace": workspace.name]))
                 .accessibilityIdentifier("dashboard-add-session-\(workspace.id)")
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, DesignMetrics.Spacing.xxs)
             if cards.isEmpty {
-                Text(L("phone.workspaces.noSessions")).font(.ui(size: 12)).foregroundStyle(Palette.ink2).padding(.horizontal, 2)
+                Text(L("phone.workspaces.noSessions")).font(.ui(size: 12)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Spacing.xxs)
             } else {
                 // One white group per workspace, its panes as glyph rows (status v2).
                 VStack(spacing: 0) {
@@ -333,7 +333,7 @@ struct DashboardRow: View {
     /// `Claude · Opus 5.5 · 02:14 · 컨텍스트 41%` while it runs, `Codex · GPT-5 · 11분 전` at
     /// rest; a pane that is not an agent's names its kind.
     private func meta(at date: Date) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DesignMetrics.Spacing.xs) {
             if card.isAgent {
                 ProviderBadgeIcon.labelled(ProviderOptions.label(card.provider), provider: card.provider, font: .ui(ofSize: 12))
                 if ProviderOptions.isBeta(card.provider) { BetaBadge() }

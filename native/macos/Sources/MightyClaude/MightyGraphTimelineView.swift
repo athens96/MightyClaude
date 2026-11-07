@@ -13,12 +13,12 @@ struct MightyViewSwitch: View {
     let onSelect: (MightyGraphViewMode) -> Void
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: DesignMetrics.Spacing.xxs) {
             option(.diagram, title: L("graph.view.diagram"), symbol: "point.3.connected.trianglepath.dotted")
             option(.timeline, title: L("graph.view.timeline"), symbol: "list.bullet.indent")
             option(.structure, title: L("graph.view.structure"), symbol: "rectangle.split.3x1")
         }
-        .padding(2)
+        .padding(DesignMetrics.Spacing.xxs)
         .background(Palette.track, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .fixedSize()
         .accessibilityElement(children: .contain)
@@ -170,18 +170,18 @@ struct MightyTimelineRowCard<Detail: View>: View {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(title).font(.ui(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
                             .lineLimit(2).multilineTextAlignment(.leading)
-                        HStack(spacing: 4) {
+                        HStack(spacing: DesignMetrics.Spacing.xs) {
                             Image(systemName: icon).font(.ui(size: 9, weight: .bold)).foregroundStyle(tint)
                             Text(([MightyTimelineText.kind(row.block.kind, input: row.block.summary)] + meta).joined(separator: " · "))
                                 .lineLimit(1).truncationMode(.tail)
                         }
                         .font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                         if let latest = row.latest {
-                            HStack(spacing: 6) {
+                            HStack(spacing: DesignMetrics.Spacing.sm) {
                                 if tone == .run { PulseDot() }
                                 Text(latest).font(.code(size: 10.8)).lineLimit(1).truncationMode(.tail)
                             }
-                            .foregroundStyle(Palette.ink2).padding(.top, 2)
+                            .foregroundStyle(Palette.ink2).padding(.top, DesignMetrics.Spacing.xxs)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -240,7 +240,7 @@ struct MightyTimelineResultCard<Files: View>: View {
             .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
             .background(Palette.heroFill(result.tone))
             if let text = result.text {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     // Folded, the preview keeps the answer's first lines, each block at most as many.
                     AgentMarkdownView(source: full ? text : text.split(separator: "\n", omittingEmptySubsequences: false)
                                         .prefix(Self.previewLines).joined(separator: "\n"), compact: true)

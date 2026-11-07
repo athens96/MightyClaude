@@ -352,7 +352,7 @@ struct WorkspaceView: View {
     /// in past the folder icon; a `nested` row, a child under its parent, one step more.
     private func sidebarListRow(nested: Bool, _ row: some View) -> some View {
         row.padding(.leading, nested ? DesignMetrics.Spacing.xl : 0)
-            .padding(.leading, 22).padding(.trailing, 2)
+            .padding(.leading, 22).padding(.trailing, DesignMetrics.Spacing.xxs)
     }
 
     /// A delegated child's card under its parent: its pane's row while the pane is
@@ -595,7 +595,7 @@ struct WorkspaceView: View {
     }
 
     private var welcome: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: DesignMetrics.Spacing.xl) {
             Spacer()
             Image(systemName: "rectangle.split.2x1").font(.ui(size: 50, weight: .ultraLight)).foregroundStyle(Palette.accent)
             Text(L("layout.welcome.title")).font(.ui(size: 27, weight: .semibold))
@@ -624,7 +624,7 @@ struct WorkspaceView: View {
                     }
                 }
             }.controlSize(.large).padding(.top, DesignMetrics.Spacing.md)
-            Text(L("layout.welcome.shortcutsMac")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.top, 10)
+            Text(L("layout.welcome.shortcutsMac")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.top, DesignMetrics.Spacing.md)
             Spacer()
             Text(L("layout.welcome.footerMac")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.bottom, 25)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -652,7 +652,7 @@ struct WorkspaceView: View {
             }
             Spacer()
             Text(L("window.status.paneCount", ["count": "\(store.activeSessions.count)"]))
-            Text("·").padding(.horizontal, 3)
+            Text("·").padding(.horizontal, DesignMetrics.Spacing.xxs)
             Text(L("window.status.runningCount", ["count": "\(WorkDashboard.stats(sessions: store.snapshot.sessions, permissions: store.toolPermissions).running)"]))
             if store.setupResultWaiting {
                 Button { store.openSetup() } label: {
@@ -675,7 +675,7 @@ struct WorkspaceView: View {
                 }
                 .buttonStyle(.plain).help(L("window.status.updateBadgeHelp")).accessibilityIdentifier("app-update-badge")
             }
-            Divider().frame(height: 12).padding(.horizontal, 4)
+            Divider().frame(height: 12).padding(.horizontal, DesignMetrics.Spacing.xs)
             StatusBarUsageView(controller: accountUsage)
             AgentStatusControls(companion: store.companion)
         }
@@ -684,7 +684,7 @@ struct WorkspaceView: View {
     }
 
     private func resourceWarningBanner(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 9) {
+        HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.waitText)
             Text(message).font(.ui(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             Button { store.resourceWarning = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel(L("window.warning.dismiss"))
@@ -712,7 +712,7 @@ struct WorkspaceView: View {
     }
 
     private func errorBanner(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 9) {
+        HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.errText)
             Text(message).font(.ui(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             Button { store.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel(L("window.error.dismiss"))
@@ -942,7 +942,7 @@ private struct StatusCounts: View {
     var long = false
 
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: DesignMetrics.Spacing.md) {
             ForEach(Self.entries(badges, long: long), id: \.tone) { entry in
                 count(entry)
                     .accessibilityIdentifier(entry.tone == .run ? runningIdentifier : "status-count-\(entry.tone.rawValue)")
@@ -952,7 +952,7 @@ private struct StatusCounts: View {
     }
 
     private func count(_ entry: Entry) -> some View {
-        HStack(spacing: 3) {
+        HStack(spacing: DesignMetrics.Spacing.xxs) {
             StatusGlyph(tone: entry.tone, size: 12)
             Text("\(entry.count)").font(.ui(size: 11, weight: .bold)).monospacedDigit().foregroundStyle(Palette.ink)
             if long { Text(Palette.word(entry.tone)).font(.ui(size: 11, weight: .medium)).foregroundStyle(Palette.ink2).padding(.leading, 1) }

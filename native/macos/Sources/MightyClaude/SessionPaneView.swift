@@ -586,7 +586,7 @@ struct SessionPaneView: View {
                 if session.kind == "shell" { Image(systemName: "terminal").font(.ui(size: 24, weight: .light)) }
                 else { ProviderIcon(provider: session.provider, size: 24, weight: .light) }
             }.foregroundStyle(Palette.accent.opacity(0.75)).padding(.bottom, DesignMetrics.Spacing.xs)
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 Text(session.kind == "shell" ? L("pane.empty.shellTitle") : L("pane.empty.agentTitle", ["provider": ProviderOptions.label(session.provider)]))
                     .font(.ui(size: 16, weight: .medium))
                 if session.kind != "shell" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
@@ -662,7 +662,7 @@ struct SessionPaneView: View {
                 if let armedPrefix {
                     Text(verbatim: armedPrefix)
                         .font(.ui(size: 10, design: .monospaced)).foregroundStyle(Palette.accent).lineLimit(1)
-                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
                         .background(Palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
                         .accessibilityLabel(L("composer.armedCommand", ["command": armedPrefix]))
                         .accessibilityIdentifier("mighty-enter-armed-\(session.id)")
@@ -724,7 +724,7 @@ struct SessionPaneView: View {
             if let problem = store.inputMethodProblem, composerFocused {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(problem.recoveryState == .reconnected ? Palette.doneText : Palette.waitText).padding(.top, 1)
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(problem.recoveryState == .reconnected ? L("inputRecovery.noticeReconnected") : L("inputRecovery.noticeCheck")).fontWeight(.medium)
                         Text(problem.recoveryState.message)
                             .foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
@@ -754,7 +754,7 @@ struct SessionPaneView: View {
             if let reason = blockedReason {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "info.circle").foregroundStyle(Palette.accent).padding(.top, 1)
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(L("composer.blocked.title")).fontWeight(.medium)
                         Text(reason).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                         if let item = store.setupItemForMissingCLI(session) {

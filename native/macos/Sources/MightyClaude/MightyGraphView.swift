@@ -775,7 +775,7 @@ struct MightyGraphView: View {
                 if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog, versioned: true) {
                     let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records, catalog: catalog, versioned: true)
                     Text(capsuleText).font(.ui(size: 10, design: .monospaced)).foregroundStyle(quiet).lineLimit(1)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
                         .background(onStrip ? Color.black.opacity(0.18) : Palette.raised, in: Capsule())
                         .help(helpText)
                         .accessibilityLabel(helpText)
@@ -783,7 +783,7 @@ struct MightyGraphView: View {
                 }
                 if let resultFilesRunID, !resultFiles.files(for: resultFilesRunID).isEmpty {
                     Button { resultFiles.toggle(resultFilesRunID) } label: {
-                        HStack(spacing: 3) {
+                        HStack(spacing: DesignMetrics.Spacing.xxs) {
                             Image(systemName: resultFiles.selectedRunID == resultFilesRunID ? "doc.on.doc.fill" : "doc.on.doc")
                             Text("\(resultFiles.files(for: resultFilesRunID).count)").font(.ui(size: 10)).monospacedDigit()
                         }
@@ -962,7 +962,7 @@ struct MightyGraphView: View {
     private func historyCard(width: CGFloat, height: CGFloat) -> some View {
         let phase = history?.phase ?? .idle
         let loaded = olderCount
-        return HStack(spacing: 6) {
+        return HStack(spacing: DesignMetrics.Spacing.sm) {
             switch phase {
             case .loading:
                 ProgressView().controlSize(.small).scaleEffect(0.7)
@@ -1149,7 +1149,7 @@ struct MightyGraphView: View {
                 }
                 .padding(.leading, Self.timelineRequestIndent)
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, DesignMetrics.Spacing.xxs)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -1266,7 +1266,7 @@ struct MightyGraphView: View {
                         Button(file.path + (file.line.map { ":\($0)" } ?? "")) { openReference(file.path, line: file.line, runID: run.sourceRunID ?? run.id) }
                     }
                 } label: {
-                    HStack(spacing: 3) {
+                    HStack(spacing: DesignMetrics.Spacing.xxs) {
                         Image(systemName: "doc.on.doc")
                         Text("\(files.count)").font(.ui(size: 10)).monospacedDigit()
                     }
@@ -1371,7 +1371,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                                     .foregroundStyle(selection == node.id ? Palette.accent : Palette.ink2)
                                     .frame(width: 22, height: 22)
                                     .background(Palette.panel.opacity(0.95), in: RoundedRectangle(cornerRadius: 5))
-                                    .padding(2)
+                                    .padding(DesignMetrics.Spacing.xxs)
                                     .help(L("graph.block.resizeHelp"))
                                     .accessibilityLabel(L("graph.block.resizeAccessibility"))
                                     .accessibilityIdentifier("mighty-resize-" + node.id)
