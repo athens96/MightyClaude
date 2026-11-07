@@ -72,9 +72,9 @@ struct OneUIPane<Content: View, Trailing: View>: View {
             }
             .padding(.horizontal, OneUIMetrics.paneInset).padding(.top, Self.barHeight).padding(.bottom, OneUIMetrics.bottomInset)
         }
-        // No scroller: a legacy (always shown) one would take a gutter on the pages that scroll
-        // only, so the content's width would jump between pages; the bar's title shows the scroll.
-        .scrollIndicators(.never)
+        // The system's scroller: with "Show scroll bars: Always" (or a mouse) it is the thing to
+        // drag, so it is never hidden, even though a legacy one takes a gutter on pages that scroll.
+        .scrollIndicators(.automatic)
         .coordinateSpace(name: "oneUIPane")
         .onPreferenceChange(OneUIScrollKey.self) { offset in
             let next = min(1, max(0, offset / Self.heroHeight))

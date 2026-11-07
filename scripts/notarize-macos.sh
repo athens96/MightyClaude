@@ -65,8 +65,10 @@ echo "== dmg"
 DMGBUILD="${DMGBUILD:-dmgbuild}"
 command -v "$DMGBUILD" >/dev/null || { echo "dmgbuild가 없습니다: pip install -r scripts/dmg/requirements.txt" >&2; exit 1; }
 rm -f "$OUT/MightyClaude-macos.dmg"
+# hdiutil's deprecation notices are dropped; dmgbuild's own exit status still decides.
 "$DMGBUILD" -s "$PROJECT_ROOT/scripts/dmg/settings.py" -D app="$APP" -D background="$PROJECT_ROOT/assets/dmg/background.tiff" \
-    "Mighty Claude" "$OUT/MightyClaude-macos.dmg" 2>&1 | grep -v "is deprecated" || true
+    "Mighty Claude" "$OUT/MightyClaude-macos.dmg" > >(grep -v "is deprecated" >&2) 2>&1 \
+    || { echo "dmgbuild가 실패했습니다" >&2; exit 1; }
 [ -f "$OUT/MightyClaude-macos.dmg" ] || { echo "dmg를 만들지 못했습니다" >&2; exit 1; }
 codesign --force --timestamp --sign "$MIGHTY_CODESIGN_IDENTITY" "$OUT/MightyClaude-macos.dmg"
 notarize "$OUT/MightyClaude-macos.dmg"

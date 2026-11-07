@@ -20,7 +20,7 @@ function CloseButton() {
     <Pressable
       accessibilityLabel={t('dialog.close')}
       accessibilityRole="button"
-      onPress={() => router.back()}
+      onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
       style={({ pressed }) => [styles.close, pressed && styles.pressed]}
     >
       <Icon name="close" color={palette.text} size={dialog.closeGlyph} />

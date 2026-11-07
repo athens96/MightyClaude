@@ -68,11 +68,13 @@ struct UserQuestionnaireCard: View {
 
             // Sized to the question up to 300pt; only a longer one scrolls, and the
             // viewport still yields to the footer and composer in a short split pane.
-            ViewThatFits(in: .vertical) {
-                questionContent
-                ScrollView { questionContent }
-            }
-            .frame(minHeight: 56, maxHeight: 300)
+            // One scroll view that takes its content's height up to the cap: a ViewThatFits
+            // with two copies would rebuild the answer field (and drop its focus) as typing
+            // crossed the cap.
+            ScrollView { questionContent }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(minHeight: 56, maxHeight: 300)
+                .fixedSize(horizontal: false, vertical: true)
             .disabled(busy || !canAnswer)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("questionnaire-viewport")

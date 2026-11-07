@@ -1316,6 +1316,9 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     @ViewState private var glidedToken: String?
     /// Where a gliding camera set out from, while it glides: the cards along the way are drawn.
     @ViewState private var glideFrom: CGPoint?
+    /// The user panned the camera since the last aim landed: a resize then leaves it where
+    /// they put it, unless the pane gets narrower.
+    @ViewState private var userPanned = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1342,6 +1345,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                 // An aim landing is kept inside the pane; the user's own pan goes where they put it.
                 let landing = abs(new.x - initialOffset.x) < 0.5 && abs(new.y - initialOffset.y) < 0.5
                 cameraOffset = landing ? clamped(new, viewport: viewport.size) : new
+                userPanned = !landing
             })
             let culled: (CGPoint) -> CGRect = { offset in
                 CGRect(x: floor(-offset.x / zoom / 64) * 64 - 192, y: floor(-offset.y / zoom / 64) * 64 - 192,
@@ -1424,12 +1428,15 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                 cameraOffset = CGPoint(x: center.x - (center.x - previous.x) * new / old,
                                        y: center.y - (center.y - previous.y) * new / old)
             }
-            // A narrower pane, or the step list appearing or folding, keeps the blocks in view.
-            .onChange(of: viewport.size) { _, size in
-                if let camera = cameraOffset { cameraOffset = clamped(camera, viewport: size) }
+            // A narrower pane keeps the blocks in view; a taller or shorter one (the composer
+            // growing) and the step list changing move only a camera the user has not panned.
+            .onChange(of: viewport.size) { old, size in
+                guard let camera = cameraOffset, !userPanned || size.width < old.width else { return }
+                cameraOffset = clamped(camera, viewport: size)
             }
             .onChange(of: avoid) { _, _ in
-                if let camera = cameraOffset { cameraOffset = clamped(camera, viewport: viewport.size) }
+                guard let camera = cameraOffset, !userPanned else { return }
+                cameraOffset = clamped(camera, viewport: viewport.size)
             }
         }
     }

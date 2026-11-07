@@ -216,7 +216,8 @@ struct AppSettingsView: View {
             } content: { detail(pane) }
                 // A fresh page per entry starts at its top. A theme change rebuilds it too: a menu picker
                 // (NSPopUpButton) made under one appearance keeps part of it (its title or its bezel)
-                // when the appearance flips under it.
+                // when the appearance flips under it. The price: changing the theme on its page scrolls that
+                // page back to the top; the theme control saves at once, so nothing typed is lost with it.
                 .id("\(pane.rawValue)-\(store.snapshot.theme)")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
