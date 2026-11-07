@@ -14,6 +14,8 @@ struct UserQuestionnaireCard: View {
     @ViewState private var customQuestions = Set<Int>()
     @ViewState private var customText: [Int: String] = [:]
     @ViewState private var step = 0
+    /// The question's own height, measured inside the scroll view.
+    @ViewState private var questionHeight: CGFloat = 0
 
     private var busy: Bool {
         store.permissionResponses.contains(store.permissionResponseKey(sessionId: sessionId, request: request))
@@ -67,14 +69,15 @@ struct UserQuestionnaireCard: View {
             }.font(.ui(size: 12))
 
             // Sized to the question up to 300pt; only a longer one scrolls, and the
-            // viewport still yields to the footer and composer in a short split pane.
-            // One scroll view that takes its content's height up to the cap: a ViewThatFits
-            // with two copies would rebuild the answer field (and drop its focus) as typing
-            // crossed the cap.
-            ScrollView { questionContent }
-                .scrollBounceBehavior(.basedOnSize)
-                .frame(minHeight: 56, maxHeight: 300)
-                .fixedSize(horizontal: false, vertical: true)
+            // viewport still yields (down to 56pt) to the footer and composer in a short split
+            // pane. One scroll view, measured: a ViewThatFits with two copies would rebuild the
+            // answer field (and drop its focus) as typing crossed the cap.
+            ScrollView {
+                questionContent
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { questionHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(minHeight: 56, idealHeight: min(max(questionHeight, 56), 300), maxHeight: min(max(questionHeight, 56), 300))
             .disabled(busy || !canAnswer)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("questionnaire-viewport")
