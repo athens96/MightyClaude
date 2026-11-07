@@ -486,6 +486,11 @@ jobs:
           test -n "$NOTARY_KEY"
           printf '%s\n' "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
           echo "MIGHTY_NOTARY_KEY_FILE=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+      - name: Install dmgbuild (hash-pinned) for the dmg's install window
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"
+          "$RUNNER_TEMP/dmgbuild/bin/python" -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: --no-deps -r scripts/dmg/requirements.txt
+          echo "DMGBUILD=$RUNNER_TEMP/dmgbuild/bin/dmgbuild" >> "$GITHUB_ENV"
       - name: Sign, notarize and staple the app; build the dmg
         env:
           MIGHTY_NOTARY_KEY_ID: ${{ secrets.MIGHTY_NOTARY_KEY_ID }}
