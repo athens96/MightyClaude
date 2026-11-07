@@ -51,6 +51,12 @@ ARTIFACTS = {  # artifact name -> (workflow, files inside)
 PACKAGES = ["MightyClaude-macos.zip", "MightyClaude-windows-x64.zip", "MightyClaude-windows-arm64.zip",
             "MightyClaude-windows-x64-setup.exe", "MightyClaude-windows-arm64-setup.exe"]
 MANIFEST_ROLES = {"macos": "MightyClaude-macos.zip", "x64": "MightyClaude-windows-x64.zip", "arm64": "MightyClaude-windows-arm64.zip"}
+# Shipped when the run made them: the Mac dmg comes from the notarize-macos job, which runs only once
+# notarization is set up (repository variable MIGHTY_MAC_NOTARIZE). artifact -> files it may hold.
+OPTIONAL_ARTIFACT_FILES = {"MightyClaude-native-macos": ["MightyClaude-macos.dmg"]}
+OPTIONAL_PACKAGES = ["MightyClaude-macos.dmg"]
+DMG_LINK = ('<a class="button" href="{version}/MightyClaude-macos.dmg">Mac 앱 (dmg, Apple Silicon)<br><small>열고 Mighty Claude를 '
+            '응용 프로그램 폴더로 끌어다 놓으세요. 이후 업데이트는 앱 안에서 받습니다.</small></a>')
 
 
 class ReleaseError(Exception):
@@ -253,7 +259,7 @@ Mac and Windows can also update from inside the app. · 맥과 윈도우는 앱 
 | File · 파일 · 文件 · ファイル | SHA-256 | Size · 크기 · 大小 · サイズ |
 |---|---|---|
 {rows}
-{{{{ANDROID_ROW}}}}
+{{{{DMG_ROW}}}}{{{{ANDROID_ROW}}}}
 """
 
 
@@ -294,6 +300,8 @@ def note_values(state):
         values["MAC_BUILD"] = data["build"]
     for name, info in data.get("files", {}).items():
         values[f"SHA:{name}"], values[f"SIZE:{name}"] = info["sha256"], info["size"]
+    dmg = data.get("files", {}).get("MightyClaude-macos.dmg")
+    values["DMG_ROW"] = f"| MightyClaude-macos.dmg (Apple Silicon) | `{dmg['sha256']}` | {dmg['size']} |\n" if dmg else ""
     apk, old = data.get("apk"), data.get("previousApk")
     if apk:
         values["ANDROID"] = apk["version"]
@@ -388,6 +396,17 @@ def replace_page_version(html, version, apk_version=None):
     return page, old
 
 
+def add_dmg_link(html, version, has_dmg):
+    """A dmg shipped for the first time gets its button above the Mac zip's; a page that has one keeps it."""
+    if not has_dmg or f'href="{version}/MightyClaude-macos.dmg"' in html:
+        return html
+    zip_link = re.search(rf'([ \t]*)<a class="button" href="{re.escape(version)}/MightyClaude-macos\.zip"', html)
+    if not zip_link:
+        raise ReleaseError("내려받기 페이지에서 Mac zip 링크를 찾지 못해 dmg 링크를 넣지 못했습니다")
+    indent = zip_link.group(1)
+    return html[:zip_link.start()] + indent + DMG_LINK.format(version=version) + "\n" + html[zip_link.start():]
+
+
 def page_apk_version(html):
     found = re.search(r'download="MightyClaude-(\d+\.\d+\.\d+)\.apk"', html)
     return found.group(1) if found else None
@@ -395,16 +414,16 @@ def page_apk_version(html):
 
 # ---------------------------------------------------------------- upload
 
-CONTENT_TYPES = {".zip": "application/zip", ".exe": "application/vnd.microsoft.portable-executable",
+CONTENT_TYPES = {".zip": "application/zip", ".exe": "application/vnd.microsoft.portable-executable", ".dmg": "application/x-apple-diskimage",
                  ".apk": "application/vnd.android.package-archive", ".json": "application/json", ".html": "text/html; charset=utf-8"}
 
 
-def upload_plan(version, folder, apk=None):
+def upload_plan(version, folder, apk=None, names=PACKAGES):
     """(key, file, content type, cache control) in upload order: packages, latest.json, APK, download page.
     The APK key is fixed (the old one is overwritten), so it goes only once the update itself is live."""
     def entry(key, path, cache=None):
         return (f"mightyclaude/{key}", path, CONTENT_TYPES[os.path.splitext(path)[1]], cache)
-    plan = [entry(f"{version}/{name}", os.path.join(folder, name)) for name in PACKAGES]
+    plan = [entry(f"{version}/{name}", os.path.join(folder, name)) for name in names]
     plan.append(entry("latest.json", os.path.join(folder, "latest.json"), "no-cache"))
     if apk:
         plan.append(entry("android/MightyClaude-android.apk", apk, "no-cache"))  # fixed key, so never cached long
@@ -425,6 +444,15 @@ def wrangler_command(key, path, content_type, cache):
 
 def files_of(state):
     return state["data"].get("files", {})
+
+
+def package_names(files):
+    """The packages this release ships, in upload order: the five, then any optional one the run made."""
+    return PACKAGES + [name for name in OPTIONAL_PACKAGES if name in files]
+
+
+def has_packages(files):
+    return set(PACKAGES) <= set(files) and set(files) <= set(PACKAGES + OPTIONAL_PACKAGES)
 
 
 def step_check(state, a):
@@ -621,11 +649,17 @@ def step_download(state, a):
             if not os.path.exists(source):
                 raise ReleaseError(f"{artifact}에 {name}이(가) 없습니다")
             os.replace(source, os.path.join(folder, name))
+        for name in OPTIONAL_ARTIFACT_FILES.get(artifact, []):
+            source, target = os.path.join(temp, name), os.path.join(folder, name)
+            if os.path.exists(source):
+                os.replace(source, target)
+            elif os.path.exists(target):
+                os.remove(target)  # left from another run; this run made none
         sources[artifact] = runs[workflow]
         save_state(state)
     shutil.rmtree(os.path.join(folder, "_download"), ignore_errors=True)
     files = {}
-    for name in PACKAGES:
+    for name in PACKAGES + [n for n in OPTIONAL_PACKAGES if os.path.exists(os.path.join(folder, n))]:
         path = os.path.join(folder, name)
         files[name] = {"sha256": digest(path), "size": os.path.getsize(path)}
         compared = os.path.exists(path + ".sha256")
@@ -751,8 +785,9 @@ def step_page(state, a):
         say("공개 페이지가 이미 이 버전입니다 — 만들어 둔 index.html을 그대로 씁니다")
     else:
         page, old = replace_page_version(live, version, apk and apk["version"])
+        page = add_dmg_link(page, version, "MightyClaude-macos.dmg" in files_of(state))
         for href in re.findall(rf'href="{re.escape(version)}/([^"]+)"', page):
-            if href not in PACKAGES:
+            if href not in package_names(files_of(state)):
                 raise ReleaseError(f"페이지가 올리지 않는 파일을 가리킵니다: {version}/{href}")
         with open(os.path.join(folder, "index.html"), "w", encoding="utf-8", newline="") as f:
             f.write(page)
@@ -766,10 +801,10 @@ def step_page(state, a):
 def step_upload(state, a):
     version, folder, data = state["version"], release_dir(state["version"]), state["data"]
     apk = data.get("apk")
-    plan = upload_plan(version, folder, apk and apk["path"])
-    # Nothing goes up unless every file is the one recorded, and the manifest still matches them and the public key.
     files = files_of(state)
-    if sorted(files) != sorted(PACKAGES):
+    plan = upload_plan(version, folder, apk and apk["path"], package_names(files))
+    # Nothing goes up unless every file is the one recorded, and the manifest still matches them and the public key.
+    if not has_packages(files):
         raise ReleaseError("받은 패키지 기록이 없거나 모자랍니다. release.py download")
     check_recorded(state, [path for _, path, *_ in plan])
     for _, path, *_ in plan:
@@ -817,7 +852,7 @@ def step_upload(state, a):
 
 def release_assets(state):
     folder = release_dir(state["version"])
-    assets = [os.path.join(folder, n) for n in PACKAGES]
+    assets = [os.path.join(folder, n) for n in package_names(files_of(state))]
     if state["data"].get("apk"):
         assets.append(state["data"]["apk"]["path"])
     return assets
@@ -843,7 +878,7 @@ def check_recorded(state, paths):
 
 def step_github(state, a):
     version, tag = state["version"], f"v{state['version']}"
-    if sorted(files_of(state)) != sorted(PACKAGES):
+    if not has_packages(files_of(state)):
         raise ReleaseError("받은 패키지 기록이 없거나 모자랍니다. release.py download")
     notes = render_notes(state)
     left = unfinished_notes(notes)

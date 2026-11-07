@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The app under the hardened runtime (required for notarization).
+  - allow-jit, allow-unsigned-executable-memory: the browser engine (CEF) runs
+    V8 in this process.
+  - automation.apple-events, device.audio-input, device.camera: the app is a
+    terminal. macOS asks the responsible app when a command run in a pane
+    (osascript, a CLI that records audio or video) needs one of these, and under
+    the hardened runtime it refuses without asking unless the app holds the
+    entitlement. The prompts name the reason from Info.plist. Ghostty and iTerm2
+    ship the same three.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.device.camera</key>
+	<true/>
+</dict>
+</plist>

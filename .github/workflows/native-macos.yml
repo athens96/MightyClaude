@@ -430,8 +430,80 @@ jobs:
         run: ditto -c -k --sequesterRsrc --keepParent release/native-macos/MightyClaude.app release/MightyClaude-macos.zip
       - name: Gate the release package size before upload
         run: scripts/check-release-size.sh release/MightyClaude-macos.zip
+      # Without notarization (any branch, or main before the repository variable
+      # MIGHTY_MAC_NOTARIZE is 1) this ad-hoc zip is the release package. With it,
+      # the zip goes to the notarize-macos job, which signs, notarizes and adds the dmg.
       - uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-native-macos
+          name: ${{ (vars.MIGHTY_MAC_NOTARIZE == '1' && github.ref == 'refs/heads/main' && github.event_name == 'push') && 'MightyClaude-native-macos-unsigned' || 'MightyClaude-native-macos' }}
           path: release/MightyClaude-macos.zip
           if-no-files-found: error
+
+  notarize-macos:
+    # Developer ID signing and notarization for main pushes, so a downloaded app
+    # opens without Gatekeeper's warning. The certificate and the notary key are
+    # secrets of the `release` environment (main only); the build job above never
+    # sees them. Actions are pinned to commit SHAs, as in release-manifest.yml.
+    needs: macos
+    if: vars.MIGHTY_MAC_NOTARIZE == '1' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: MightyClaude-native-macos-unsigned
+          path: ${{ runner.temp }}/unsigned
+      - name: Unpack the built app
+        run: ditto -x -k "$RUNNER_TEMP/unsigned/MightyClaude-macos.zip" "$RUNNER_TEMP/app"
+      - name: Put the Developer ID certificate in a temporary keychain
+        env:
+          P12_BASE64: ${{ secrets.MIGHTY_DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.MIGHTY_DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$P12_BASE64" && test -n "$P12_PASSWORD"
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+          test -n "$identity"
+          echo "MIGHTY_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+      - name: Write the notary API key
+        env:
+          NOTARY_KEY: ${{ secrets.MIGHTY_NOTARY_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$NOTARY_KEY"
+          printf '%s\n' "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
+          echo "MIGHTY_NOTARY_KEY_FILE=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+      - name: Sign, notarize and staple the app; build the dmg
+        env:
+          MIGHTY_NOTARY_KEY_ID: ${{ secrets.MIGHTY_NOTARY_KEY_ID }}
+          MIGHTY_NOTARY_ISSUER_ID: ${{ secrets.MIGHTY_NOTARY_ISSUER_ID }}
+        run: scripts/notarize-macos.sh "$RUNNER_TEMP/app/MightyClaude.app" release
+      - name: Gate the release package sizes before upload
+        run: |
+          scripts/check-release-size.sh release/MightyClaude-macos.zip
+          scripts/check-release-size.sh release/MightyClaude-macos.dmg
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: MightyClaude-native-macos
+          path: |
+            release/MightyClaude-macos.zip
+            release/MightyClaude-macos.dmg
+          if-no-files-found: error
+      - name: Remove the keychain and the key
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/notary.p8"

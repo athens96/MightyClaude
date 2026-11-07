@@ -740,5 +740,44 @@ class UploadPlanTests(unittest.TestCase):
         self.assertEqual(len(keys), 8)
 
 
+class DmgTests(unittest.TestCase):
+    """The notarized Mac dmg ships only when the run made it; without it a release is what it always was."""
+    FIVE = {name: {"sha256": "0" * 64, "size": 1} for name in release.PACKAGES}
+    WITH_DMG = dict(FIVE, **{"MightyClaude-macos.dmg": {"sha256": "d" * 64, "size": 7}})
+
+    def test_package_names_add_the_dmg_only_when_it_was_made(self):
+        self.assertEqual(release.package_names(self.FIVE), release.PACKAGES)
+        self.assertEqual(release.package_names(self.WITH_DMG), release.PACKAGES + ["MightyClaude-macos.dmg"])
+        self.assertTrue(release.has_packages(self.FIVE) and release.has_packages(self.WITH_DMG))
+        self.assertFalse(release.has_packages({k: v for k, v in self.FIVE.items() if k != "MightyClaude-macos.zip"}))
+        self.assertFalse(release.has_packages(dict(self.FIVE, **{"other.bin": {}})))
+
+    def test_the_dmg_goes_up_with_the_packages_before_the_manifest(self):
+        plan = release.upload_plan("0.4.52", "f", names=release.package_names(self.WITH_DMG))
+        keys = [key for key, *_ in plan]
+        self.assertLess(keys.index("mightyclaude/0.4.52/MightyClaude-macos.dmg"), keys.index("mightyclaude/latest.json"))
+        self.assertEqual(dict((k, t) for k, _, t, _ in plan)["mightyclaude/0.4.52/MightyClaude-macos.dmg"], "application/x-apple-diskimage")
+
+    def test_notes_get_a_dmg_row_only_with_a_dmg(self):
+        template = "| a | b | c |\n{{DMG_ROW}}{{ANDROID_ROW}}"
+        old = {"previousApk": "0.4.50"}
+        with_dmg = release.fill_notes(template, release.note_values({"version": "0.4.52", "data": dict(old, files=self.WITH_DMG)}))
+        self.assertIn("| MightyClaude-macos.dmg (Apple Silicon) | `" + "d" * 64 + "` | 7 |\n\nAndroid: 0.4.50", with_dmg)
+        without = release.fill_notes(template, release.note_values({"version": "0.4.52", "data": dict(old, files=self.FIVE)}))
+        self.assertNotIn("dmg", without)
+        self.assertEqual(release.unfinished_notes(without), [])
+
+    def test_a_first_dmg_gets_its_button_above_the_mac_zip(self):
+        page, _ = release.replace_page_version(LIVE_PAGE, "0.4.52")
+        added = release.add_dmg_link(page, "0.4.52", True)
+        self.assertLess(added.index('href="0.4.52/MightyClaude-macos.dmg"'), added.index('href="0.4.52/MightyClaude-macos.zip"'))
+        self.assertIn('\n  <a class="button" href="0.4.52/MightyClaude-macos.zip"', added)
+        self.assertEqual(release.add_dmg_link(added, "0.4.52", True), added)  # never twice
+        self.assertEqual(release.add_dmg_link(page, "0.4.52", False), page)  # no dmg, no button
+        # The next release carries the button over with the version.
+        moved, _ = release.replace_page_version(added, "0.4.53")
+        self.assertIn('href="0.4.53/MightyClaude-macos.dmg"', moved)
+
+
 if __name__ == "__main__":
     unittest.main()

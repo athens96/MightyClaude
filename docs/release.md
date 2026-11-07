@@ -155,6 +155,26 @@ gh workflow run release-manifest.yml --ref main -f version=<버전> \
 4. (권장) Settings → Actions → General: 포크의 pull request 워크플로에 승인 요구, 기본 `GITHUB_TOKEN` 권한은 읽기 전용.
 5. **키를 다시 손에 넣게 되면 오프라인 암호화 백업을 만든다** — 예: 암호로 잠근 `age`/`gpg` 파일을 USB 두 개에 따로, 암호는 비밀번호 관리자에. 백업 없이 시크릿이 지워지면(저장소 삭제·이전 등) 기존 앱은 수동 재설치 말고는 업데이트할 길이 없다.
 
+## Mac 공증과 dmg
+
+브라우저로 받은 Mac 앱이 Gatekeeper 경고 없이 열리려면 Developer ID로 서명하고, hardened runtime을 켜고, Apple 공증을 받아 표(ticket)를 붙여야 한다. main push에서 `native-macos.yml`의 `notarize-macos` 잡이 이 일을 하고 zip과 함께 dmg를 만든다. 저장소 변수 `MIGHTY_MAC_NOTARIZE`가 `1`이 아니면 잡은 돌지 않고 패키지는 지금까지처럼 ad-hoc zip 하나다.
+
+- 빌드 잡은 시크릿 없이 앱을 만들어 `MightyClaude-native-macos-unsigned`로 넘긴다. 공증 잡(환경 `release`, main만)이 그 앱을 `scripts/notarize-macos.sh`로 서명(`scripts/sign-macos.sh --hardened-runtime`, 바이너리마다 `native/macos/Entitlements`의 권한)·공증·staple하고, 업데이트용 `MightyClaude-macos.zip`과 첫 설치용 `MightyClaude-macos.dmg`(서명·공증·staple)를 `MightyClaude-native-macos`로 올린다. 이 실행이 끝나야 `release.py ci`가 성공으로 본다.
+- 서명 키 업데이트(`latest.json`)는 zip만 가리킨다. dmg는 `download`가 있으면 받아 업로드(`latest.json` 앞)·GitHub 첨부·노트 표(`{{DMG_ROW}}`)·내려받기 페이지(처음이면 Mac zip 위에 버튼을 넣는다)에 함께 넣는다. 없으면 지금과 같다.
+- 환경 `release`의 시크릿 다섯 개:
+
+| 시크릿 | 값 |
+|---|---|
+| `MIGHTY_DEVELOPER_ID_P12` | Developer ID Application 인증서와 개인 키의 `.p12`, base64 한 줄 |
+| `MIGHTY_DEVELOPER_ID_P12_PASSWORD` | 그 `.p12`의 비밀번호 |
+| `MIGHTY_NOTARY_KEY_P8` | App Store Connect API 키(`AuthKey_….p8`) 내용 |
+| `MIGHTY_NOTARY_KEY_ID` | 그 키 ID |
+| `MIGHTY_NOTARY_ISSUER_ID` | Issuer ID |
+
+- 켜기: 시크릿을 넣은 뒤 `gh variable set MIGHTY_MAC_NOTARIZE --body 1`. 끄려면 변수를 지운다.
+- hardened runtime의 권한: 앱은 브라우저 엔진 때문에 JIT를, 터미널이라서 Apple Events·마이크·카메라를 가진다(창에서 실행한 명령이 요청하면 macOS가 앱에 묻는데, 권한이 없으면 묻지 않고 거부한다). 헬퍼와 내장 Node는 JIT만. Developer ID가 아닌 인증서(`Mighty Claude Dev`, ad-hoc)는 Team ID가 없어 라이브러리 검증을 통과할 수 없으므로 `MIGHTY_HARDENED_RUNTIME=1`로 시험할 때만 `disable-library-validation`이 붙는다.
+- Developer ID로 서명 주체가 바뀐 첫 버전으로 업데이트하면 키체인 "항상 허용"과 화면 기록·손쉬운 사용 권한을 한 번 다시 줘야 한다. 업데이트 노트에 적는다.
+
 ## 그 밖
 
 - 도움말 사이트를 바꿨다면 따로 올린다: `node scripts/help/build.mjs --shots <dir>` 후 `scripts/help/upload.sh --dry-run`, 그다음 `scripts/help/upload.sh`.

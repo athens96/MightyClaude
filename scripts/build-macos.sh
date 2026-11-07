@@ -68,6 +68,9 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>NSLocalNetworkUsageDescription</key><string>같은 Wi-Fi의 휴대폰과 화면 공유를 연결하려면 로컬 네트워크 접근이 필요합니다.</string>
 <key>NSBonjourServices</key><array><string>_mightyclaude._tcp</string></array>
+<key>NSAppleEventsUsageDescription</key><string>터미널에서 실행한 명령이 다른 앱을 제어하려고 합니다.</string>
+<key>NSMicrophoneUsageDescription</key><string>터미널에서 실행한 명령이 마이크를 사용하려고 합니다.</string>
+<key>NSCameraUsageDescription</key><string>터미널에서 실행한 명령이 카메라를 사용하려고 합니다.</string>
 </dict></plist>
 PLIST
 # The languages the app speaks, so AppKit draws its own menus (the app menu,
@@ -190,25 +193,13 @@ if [ -z "${MIGHTY_CODESIGN_IDENTITY:-}" ] && \
     echo "warning: signing identity '$CODESIGN_IDENTITY' not found; signing ad-hoc (TCC grants reset on every build). Run scripts/setup-codesign.sh once." >&2
     CODESIGN_IDENTITY="-"
 fi
-# Sign CEF inner dylibs explicitly (not reached by --deep on the main bundle)
-if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
-    CEF_FW="$APP_PATH/Contents/Frameworks/Chromium Embedded Framework.framework"
-    for dylib in "$CEF_FW/Libraries/"*.dylib; do
-        [ -f "$dylib" ] && codesign --force --sign "$CODESIGN_IDENTITY" "$dylib"
-    done
-    for helper_app in "$APP_PATH/Contents/Frameworks/"*.app; do
-        [ -d "$helper_app" ] && codesign --force --sign "$CODESIGN_IDENTITY" "$helper_app"
-    done
-    [ -f "$APP_PATH/Contents/Frameworks/MightyCEFBridge.dylib" ] && \
-        codesign --force --sign "$CODESIGN_IDENTITY" \
-            "$APP_PATH/Contents/Frameworks/MightyCEFBridge.dylib"
-    codesign --force --sign "$CODESIGN_IDENTITY" "$CEF_FW"
-fi
-# The WebRTC framework is signed with the same stable identity as everything
-# else, before the bundle around it; --deep on the app does not reach inside a
-# nested framework's own binary.
-codesign --force --sign "$CODESIGN_IDENTITY" "$APP_PATH/Contents/Frameworks/WebRTC.framework"
-codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_PATH"
+# Nested code first, each binary with its own entitlements (scripts/sign-macos.sh).
+# A Developer ID identity, or MIGHTY_HARDENED_RUNTIME=1 with any other, signs
+# under the hardened runtime that notarization requires.
+HARDENED_RUNTIME=""
+case "$CODESIGN_IDENTITY" in "Developer ID Application"*) HARDENED_RUNTIME="--hardened-runtime" ;; esac
+[ "${MIGHTY_HARDENED_RUNTIME:-}" = "1" ] && HARDENED_RUNTIME="--hardened-runtime"
+bash "$PROJECT_ROOT/scripts/sign-macos.sh" "$APP_PATH" "$CODESIGN_IDENTITY" $HARDENED_RUNTIME
 # Verify that the packaged app can resolve its locale catalogs and default pet
 # through its own binary before reporting a successful build.
 VERIFY_OUT="$(cd /tmp && "$APP_PATH/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"

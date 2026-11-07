@@ -148,7 +148,7 @@ mightyclaude/0.2.0/MightyClaude-macos.zip     ← latest.json의 macos.url
 
 ## 한계
 
-- 앱은 ad-hoc 서명이라 Gatekeeper 격리 속성이 붙으면 실행이 막힐 수 있다. 앱이 직접 내려받은 파일에는 격리 속성이 붙지 않으므로 도우미는 속성을 건드리지 않는다.
+- 공증하지 않은 빌드(ad-hoc 서명)는 Gatekeeper 격리 속성이 붙으면 실행이 막힐 수 있다. 공증이 켜진 릴리스([release.md](release.md#mac-공증과-dmg))는 Developer ID 서명과 공증 표가 붙어 브라우저로 받아도 열린다. 어느 쪽이든 앱이 직접 내려받은 파일에는 격리 속성이 붙지 않으므로 도우미는 속성을 건드리지 않는다.
 - `updates/` 폴더에는 마지막으로 받은 버전 하나만 남는다.
 - 같은 번들 ID의 앱 복사본(빌드 결과물, 백업)이 LaunchServices에 여러 개 등록되면 입력기 세션이 실행 중인 앱을 다른 번들로 볼 수 있다(한글 자소 분리). 도우미는 옛 번들을 `/tmp`에 백업하지 않고 설치 위치 옆 `<앱>.update-old`로 이름만 바꿔 두었다가, 교체가 끝나면 등록 해제하고 지운다. 준비 폴더의 번들도 등록 해제하고 설치된 앱만 다시 등록하며, 옛 프로세스가 사라진 뒤 2초 기다렸다가 다시 연다. 개발용 `scripts/install-macos.sh`는 여전히 `/tmp/MightyClaude-app-backup-*/MightyClaude.app.bak`에 백업을 두 개까지 남긴다(`.bak`이라 LaunchServices가 앱으로 보지 않는다). `scripts/build-macos.sh`도 빌드 결과물을 등록 해제한다.
 - 개발용 `scripts/install-macos.sh`와 종료할 때 설치하는 도우미가 서로 겹치지 않게 한다. 스크립트는 앱이 끝난 뒤 다음 순서로 일한다.
