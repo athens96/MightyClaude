@@ -106,14 +106,16 @@ struct SlimPaneHeader<Trailing: View>: View {
     var body: some View {
         // The pane's name and kind mark are on its tab right above; the bar says what it is.
         HStack(spacing: DesignMetrics.Spacing.md) {
-            Text(subtitle).font(.ui(size: 11.5)).lineLimit(1).truncationMode(.tail)
+            Text(subtitle).font(.ui(size: 11.5, weight: .medium)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: DesignMetrics.Spacing.sm)
-            if let status { HeroStatusPill(text: status, ink: Palette.onStatus) }
+            if let status { HeroStatusPill(text: status, ink: Palette.ink2) }
             trailing()
         }
-        .foregroundStyle(Palette.onStatus)
+        .foregroundStyle(Palette.ink2)
         .padding(.horizontal, DesignMetrics.Inset.paneHeaderLeading).frame(height: DesignMetrics.Layout.paneHeader)
-        .background(Palette.idle, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        // A quiet raised strip with a hairline, the same in light and dark.
+        .background(Palette.raised, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Palette.border, lineWidth: 1).allowsHitTesting(false) }
         .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.top, DesignMetrics.Spacing.xs).padding(.bottom, DesignMetrics.Spacing.xxs)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
@@ -140,31 +142,31 @@ struct PaneSlimHeader: View {
     }
 }
 
-/// The buttons on the question and permission cards: the ink one goes forward, the
-/// quiet one cancels or goes back.
+/// The buttons on the question, permission and plan cards: the one that goes forward
+/// on the accent, the quiet one cancels or goes back.
 struct PaneCardButtonStyle: ButtonStyle {
+    /// The card's one primary choice, on the accent (이번만 허용, 선택 완료, a plan's 승인하고 실행).
     var prominent = false
-    /// The card's one primary choice, on the accent (a plan's 승인하고 실행).
+    /// The same primary choice; kept so either name draws the one accent style.
     var accent = false
 
     func makeBody(configuration: Configuration) -> some View {
-        CardButton(configuration: configuration, prominent: prominent || accent, accent: accent)
+        CardButton(configuration: configuration, primary: prominent || accent)
     }
 
     private struct CardButton: View {
         let configuration: ButtonStyleConfiguration
-        let prominent: Bool
-        var accent = false
+        let primary: Bool
         @Environment(\.isEnabled) private var enabled
 
         var body: some View {
             let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
             configuration.label
                 .font(.ui(size: 12, weight: .bold)).lineLimit(1)
-                .foregroundStyle(accent ? Palette.onAccent : prominent ? Palette.panel : Palette.ink)
+                .foregroundStyle(primary ? Palette.onAccent : Palette.ink)
                 .padding(.horizontal, DesignMetrics.Spacing.lg).frame(minHeight: 24)
-                .background(accent ? Palette.accent : prominent ? Palette.ink : Palette.raised, in: shape)
-                .overlay { if !prominent { shape.strokeBorder(Palette.border, lineWidth: 1) } }
+                .background(primary ? Palette.accent : Palette.raised, in: shape)
+                .overlay { if !primary { shape.strokeBorder(Palette.border, lineWidth: 1) } }
                 .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
                 .contentShape(shape)
         }
@@ -187,7 +189,8 @@ extension View {
     /// that says it waits on the user.
     func paneWaitCard() -> some View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-        return padding(DesignMetrics.Spacing.md)
+        // The same inset on all four sides, inside the amber edge.
+        return padding(DesignMetrics.Spacing.lg)
             .background(Palette.panel, in: shape)
             .overlay { shape.strokeBorder(Palette.wait, lineWidth: 2).allowsHitTesting(false) }
     }

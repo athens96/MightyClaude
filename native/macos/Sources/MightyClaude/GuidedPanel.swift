@@ -33,9 +33,9 @@ struct MightyStylePicker: View {
             }
         } label: {
             HStack(spacing: DesignMetrics.Spacing.xs) {
-                Text(verbatim: label).font(.ui(size: 10, weight: .medium)).lineLimit(1)
+                Text(verbatim: label).font(.ui(size: 10, weight: .medium)).foregroundStyle(Palette.ink2).lineLimit(1)
                 if let source = current?.source, let badge = StyleChrome.sourceBadge(source) { SourceBadge(text: badge) }
-                Image(systemName: "chevron.down").font(.ui(size: 7)).foregroundStyle(.secondary)
+                Image(systemName: "chevron.down").font(.ui(size: 7)).foregroundStyle(Palette.ink2)
             }
             .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
             .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))

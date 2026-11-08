@@ -306,7 +306,7 @@ struct CompanionApprovalBubble: View {
         let presentation = approval.presentation
         let questionnaire = approval.quickQuestionnaire
         let question = questionnaire.flatMap { companion.questionProgress.current(in: $0) }
-        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: questionnaire == nil ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Palette.waitText)
                 Text(Self.title(questionnaire, progress: companion.questionProgress)).font(.ui(size: 11, weight: .semibold)).monospacedDigit()
@@ -341,26 +341,29 @@ struct CompanionApprovalBubble: View {
                 Button { companion.openApproval() } label: {
                     if questionnaire == nil { Text(L("companion.button.open")) } else { Image(systemName: "arrow.up.forward.app") }
                 }
+                .buttonStyle(PaneCardButtonStyle())
                 .help(L("companion.button.openInPane")).accessibilityLabel(L("companion.button.openInPane")).accessibilityIdentifier("pet-approval-open")
                 Spacer(minLength: 0)
                 if companion.approvalBusy { ProgressView().controlSize(.mini) }
                 if let question, let questionnaire {
                     if companion.questionProgress.index > 0 {
-                        Button(L("companion.question.back")) { companion.previousQuestion() }.accessibilityIdentifier("pet-question-back")
+                        Button(L("companion.question.back")) { companion.previousQuestion() }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-question-back")
                     }
                     if companion.needsCommitButton(question, in: questionnaire) {
                         Button(Self.commitTitle(questionnaire, progress: companion.questionProgress)) { companion.commitQuestion() }
-                            .buttonStyle(.borderedProminent).disabled(!companion.canCommit(question))
+                            .buttonStyle(PaneCardButtonStyle(accent: true)).disabled(!companion.canCommit(question))
                             .accessibilityIdentifier("pet-question-next")
                     }
-                    Button(L("phone.questionnaire.cancel")) { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-cancel")
+                    Button(L("phone.questionnaire.cancel")) { companion.answerApproval(allow: false) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-approval-cancel")
                 } else if questionnaire == nil {
-                    Button(L("permission.deny")) { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-deny")
+                    // The pet's panel is never key, where .borderedProminent turns grey: the card styles keep the accent.
+                    Button(L("permission.deny")) { companion.answerApproval(allow: false) }
+                        .buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-approval-deny")
                     Button(L("permission.allowOnce")) { companion.answerApproval(allow: true) }
-                        .buttonStyle(.borderedProminent).disabled(!approval.request.canAllow)
+                        .buttonStyle(PaneCardButtonStyle(accent: true)).disabled(!approval.request.canAllow)
                         .accessibilityIdentifier("pet-approval-allow")
                 } else {
-                    Button(L("phone.questionnaire.cancel")) { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-cancel")
+                    Button(L("phone.questionnaire.cancel")) { companion.answerApproval(allow: false) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-approval-cancel")
                 }
             }.controlSize(.small).disabled(companion.approvalBusy)
             CompanionPager(companion: companion)
@@ -426,13 +429,14 @@ struct CompanionPlanBubble: View {
                         .help(L("companion.plan.review")).accessibilityLabel(L("companion.plan.review")).accessibilityIdentifier("pet-plan-expand")
                     Spacer(minLength: 0)
                     if companion.approvalBusy { ProgressView().controlSize(.mini) }
-                    Button(L("plan.card.cancel")) { companion.answerPlan(.cancel) }.accessibilityIdentifier("pet-plan-cancel")
-                    Button(L("plan.card.revise")) { companion.openPlanWindow(revising: true) }.accessibilityIdentifier("pet-plan-revise")
+                    Button(L("plan.card.cancel")) { companion.answerPlan(.cancel) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-plan-cancel")
+                    Button(L("plan.card.revise")) { companion.openPlanWindow(revising: true) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-plan-revise")
                 }
                 Button { companion.answerPlan(.approveConfirmEach) } label: { Text(L("plan.card.approveConfirm")).frame(maxWidth: .infinity) }
-                    .accessibilityIdentifier("pet-plan-approve-confirm")
+                    .buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-plan-approve-confirm")
                 Button { companion.answerPlan(.approveAutoEdit) } label: { Text(L("plan.card.approveAuto")).frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent).accessibilityIdentifier("pet-plan-approve-auto")
+                    // Never key, so .borderedProminent would turn grey: the card style keeps the accent.
+                    .buttonStyle(PaneCardButtonStyle(accent: true)).accessibilityIdentifier("pet-plan-approve-auto")
             }.controlSize(.small).disabled(companion.approvalBusy)
             CompanionPager(companion: companion)
         }

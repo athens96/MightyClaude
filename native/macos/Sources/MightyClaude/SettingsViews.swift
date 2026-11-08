@@ -42,14 +42,14 @@ struct RunSettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                        Text(store.modelLabel(for: currentSession)).font(.ui(size: 13, weight: .medium))
+                        Text(store.modelLabel(for: currentSession)).font(.ui(size: 13, weight: .semibold))
                         if let description = selectedModel?.description, !description.isEmpty { Text(description).font(.ui(size: 11)).foregroundStyle(.secondary).textSelection(.enabled) }
                         Label(runtime.modelCatalog.source == "cli" ? L("settings.run.modelSourceCli") : L("settings.run.modelSourceDefault"), systemImage: "info.circle")
                             .font(.ui(size: 10)).foregroundStyle(.secondary)
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                        Text(permissionLabel(currentSession.settings.permissionMode, provider: session.provider)).font(.ui(size: 12, weight: .medium))
+                        Text(permissionLabel(currentSession.settings.permissionMode, provider: session.provider)).font(.ui(size: 13, weight: .semibold))
                         Text(permissionDescription(currentSession.settings.permissionMode, provider: session.provider)).font(.ui(size: 11)).foregroundStyle(.secondary)
                         if let reference = store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote {
                             Text(L("settings.remote.runOnHost", ["host": reference.hostName])).font(.ui(size: 11)).foregroundStyle(.secondary)
@@ -88,7 +88,7 @@ struct RunSettingsView: View {
                     if runtime.capabilities.maxTurns || runtime.capabilities.maxBudgetUsd {
                         Divider()
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                            Text(L("settings.run.limitsTitle")).font(.ui(size: 12, weight: .medium))
+                            Text(L("settings.run.limitsTitle")).font(.ui(size: 13, weight: .semibold))
                             if runtime.capabilities.maxTurns {
                                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                                     Text(L("settings.run.maxTurnsLabel")).font(.ui(size: 11))
@@ -114,7 +114,7 @@ struct RunSettingsView: View {
                         }
                     }
                 }
-                .font(.ui(size: 12)).fixedSize(horizontal: false, vertical: true).padding(DesignMetrics.Inset.popover).disabled(running)
+                .font(.ui(size: 12)).fixedSize(horizontal: false, vertical: true).padding(DesignMetrics.Inset.popover).padding(.bottom, DesignMetrics.Spacing.md).disabled(running)
             }
             if let validationError { Text(validationError).font(.ui(size: 11)).foregroundStyle(Palette.errText).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DesignMetrics.Inset.popover).padding(.bottom, DesignMetrics.Spacing.md) }
             Divider()
@@ -214,8 +214,11 @@ struct AppSettingsView: View {
             SettingsPage(title: pane.title) {
                 DialogCloseButton(close: DialogClose(identifier: "settings-close") { dismiss() })
             } content: { detail(pane) }
-                // A fresh page per entry starts at its top.
-                .id(pane)
+                // A fresh page per entry starts at its top. A theme change rebuilds it too: a menu picker
+                // (NSPopUpButton) made under one appearance keeps part of it (its title or its bezel)
+                // when the appearance flips under it. The price: changing the theme on its page scrolls that
+                // page back to the top; the theme control saves at once, so nothing typed is lost with it.
+                .id("\(pane.rawValue)-\(store.snapshot.theme)")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Palette.canvas)
@@ -226,7 +229,7 @@ struct AppSettingsView: View {
     }
 
     private var sidebar: some View {
-        OneUIPane(title: L("settings.title"), subtitle: "macOS · SwiftUI") {
+        OneUIPane(title: L("settings.title"), subtitle: nil) {
             VStack(spacing: OneUIMetrics.cardGap) {
                 ForEach(Array(SettingsPane.groups.enumerated()), id: \.offset) { _, group in
                     VStack(spacing: 0) {
@@ -234,7 +237,8 @@ struct AppSettingsView: View {
                             navRow(item, divided: index > 0)
                         }
                     }
-                    .padding(.vertical, DesignMetrics.Spacing.xs)
+                    // No inset above or below: the selected row's band reaches the card's edge and is
+                    // rounded by the card's clip.
                     .background(RoundedRectangle(cornerRadius: DesignMetrics.Settings.cardRadius, style: .continuous).fill(Palette.panel))
                     .clipShape(RoundedRectangle(cornerRadius: DesignMetrics.Settings.cardRadius, style: .continuous))
                 }

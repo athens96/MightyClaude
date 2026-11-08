@@ -4,6 +4,7 @@ import base64
 import importlib.util
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import tempfile
@@ -71,28 +72,43 @@ class MacPackageTests(unittest.TestCase):
             release.check_mac_package(self.path, "0.4.48")
 
 class PageTests(unittest.TestCase):
-    def test_moves_only_the_version_line_and_folder_links(self):
-        page, old = release.replace_page_version(LIVE_PAGE, "0.4.48")
-        self.assertEqual(old, "0.4.47")
-        self.assertIn("<p>버전 0.4.48</p>", page)
-        self.assertIn('href="0.4.48/MightyClaude-macos.zip"', page)
-        self.assertIn('href="0.4.48/MightyClaude-windows-x64-setup.exe"', page)
-        self.assertNotIn('href="0.4.47/', page)
-        # Without a new APK the phone download keeps its name, and other text is untouched.
-        self.assertIn('download="MightyClaude-0.4.47.apk"', page)
-        self.assertIn("0.4.35 이후", page)
-        self.assertEqual(release.page_apk_version(page), "0.4.47")
+    """The download page is built from scripts/download-page, not edited from the live copy."""
+    def test_fills_version_links_apk_and_icon(self):
+        page = release.render_page("0.4.52", "0.4.50", has_dmg=False)
+        self.assertEqual(release.page_version(page), "0.4.52")
+        self.assertIn('href="0.4.52/MightyClaude-macos.zip"', page)
+        self.assertIn('href="0.4.52/MightyClaude-windows-x64-setup.exe"', page)
+        self.assertIn('href="0.4.52/MightyClaude-windows-arm64.zip"', page)
+        self.assertIn('download="MightyClaude-0.4.50.apk"', page)
+        self.assertEqual(release.page_apk_version(page), "0.4.50")
+        self.assertIn('src="data:image/png;base64,', page)
+        self.assertNotIn("{{", page)
 
-    def test_new_apk_renames_the_download(self):
-        page, _ = release.replace_page_version(LIVE_PAGE, "0.4.48", apk_version="0.4.48")
-        self.assertIn('download="MightyClaude-0.4.48.apk"', page)
-        self.assertIn('href="android/MightyClaude-android.apk"', page)
+    def test_the_dmg_blocks_ship_only_with_a_dmg(self):
+        without = release.render_page("0.4.52", "0.4.50", has_dmg=False)
+        self.assertNotIn("MightyClaude-macos.dmg", without)
+        self.assertNotIn("dmg-begin", without)
+        self.assertNotIn("Apple 공증", without)
+        with_dmg = release.render_page("0.4.52", "0.4.50", has_dmg=True)
+        self.assertIn('href="0.4.52/MightyClaude-macos.dmg"', with_dmg)
+        self.assertLess(with_dmg.index("MightyClaude-macos.dmg"), with_dmg.index("MightyClaude-macos.zip"))
+        self.assertIn("Apple 공증", with_dmg)
+        self.assertNotIn("dmg-begin", with_dmg)
 
-    def test_refuses_a_page_without_the_old_version(self):
+    def test_every_page_link_is_a_shipped_package_or_a_fixed_path(self):
+        page = release.render_page("0.4.52", "0.4.50", has_dmg=True)
+        hrefs = re.findall(r'href="([^"]+)"', page)
+        shipped = {f"0.4.52/{n}" for n in release.PACKAGES + release.OPTIONAL_PACKAGES}
+        self.assertTrue(set(hrefs) <= shipped | {"android/MightyClaude-android.apk", "help/"}, hrefs)
+
+    def test_reads_the_version_of_the_old_and_the_new_page(self):
+        self.assertEqual(release.page_version(LIVE_PAGE), "0.4.47")
+        self.assertEqual(release.page_version('<p class="version">버전 1.2.3</p>'), "1.2.3")
+        self.assertIsNone(release.page_version("<p>Mighty</p>"))
+
+    def test_a_field_left_unfilled_stops_the_page(self):
         with self.assertRaises(release.ReleaseError):
-            release.replace_page_version(LIVE_PAGE.replace("<p>버전 0.4.47</p>", "<p>Mighty</p>"), "0.4.48")
-        with self.assertRaises(release.ReleaseError):
-            release.replace_page_version(LIVE_PAGE.replace('href="0.4.47/', 'href="old/'), "0.4.48")
+            release.render_page("0.4.52", "0.4.50", has_dmg=False, template="<p>{{NOPE}}</p>")
 
 
 class ManifestTests(unittest.TestCase):
@@ -767,16 +783,6 @@ class DmgTests(unittest.TestCase):
         self.assertNotIn("dmg", without)
         self.assertEqual(release.unfinished_notes(without), [])
 
-    def test_a_first_dmg_gets_its_button_above_the_mac_zip(self):
-        page, _ = release.replace_page_version(LIVE_PAGE, "0.4.52")
-        added = release.add_dmg_link(page, "0.4.52", True)
-        self.assertLess(added.index('href="0.4.52/MightyClaude-macos.dmg"'), added.index('href="0.4.52/MightyClaude-macos.zip"'))
-        self.assertIn('\n  <a class="button" href="0.4.52/MightyClaude-macos.zip"', added)
-        self.assertEqual(release.add_dmg_link(added, "0.4.52", True), added)  # never twice
-        self.assertEqual(release.add_dmg_link(page, "0.4.52", False), page)  # no dmg, no button
-        # The next release carries the button over with the version.
-        moved, _ = release.replace_page_version(added, "0.4.53")
-        self.assertIn('href="0.4.53/MightyClaude-macos.dmg"', moved)
 
 
 if __name__ == "__main__":

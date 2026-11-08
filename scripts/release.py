@@ -55,8 +55,6 @@ MANIFEST_ROLES = {"macos": "MightyClaude-macos.zip", "x64": "MightyClaude-window
 # notarization is set up (repository variable MIGHTY_MAC_NOTARIZE). artifact -> files it may hold.
 OPTIONAL_ARTIFACT_FILES = {"MightyClaude-native-macos": ["MightyClaude-macos.dmg"]}
 OPTIONAL_PACKAGES = ["MightyClaude-macos.dmg"]
-DMG_LINK = ('<a class="button" href="{version}/MightyClaude-macos.dmg">Mac 앱 (dmg, Apple Silicon)<br><small>열고 Mighty Claude를 '
-            '응용 프로그램 폴더로 끌어다 놓으세요. 이후 업데이트는 앱 안에서 받습니다.</small></a>')
 
 
 class ReleaseError(Exception):
@@ -382,29 +380,29 @@ def verify_envelope(envelope, version, build, folder, public_key=PUBLIC_KEY, bas
 
 # ---------------------------------------------------------------- download page
 
-def replace_page_version(html, version, apk_version=None):
-    """The live page moved to version: `버전 X` and `href="X/` only (plus the APK's download name when a new APK ships)."""
-    found = re.search(r"<p>버전 (\d+\.\d+\.\d+)</p>", html)
-    if not found:
-        raise ReleaseError("내려받기 페이지에서 '<p>버전 x.y.z</p>'를 찾지 못했습니다")
-    old = found.group(1)
-    if f'href="{old}/' not in html:
-        raise ReleaseError(f"내려받기 페이지에 href=\"{old}/…\" 링크가 없습니다")
-    page = html.replace(f"<p>버전 {old}</p>", f"<p>버전 {version}</p>").replace(f'href="{old}/', f'href="{version}/')
-    if apk_version:
-        page = re.sub(r'download="MightyClaude-\d+\.\d+\.\d+\.apk"', f'download="MightyClaude-{apk_version}.apk"', page)
-    return page, old
+PAGE_TEMPLATE = os.path.join(ROOT, "scripts", "download-page", "index.html")
+PAGE_ICON = os.path.join(ROOT, "scripts", "download-page", "icon.png")
 
 
-def add_dmg_link(html, version, has_dmg):
-    """A dmg shipped for the first time gets its button above the Mac zip's; a page that has one keeps it."""
-    if not has_dmg or f'href="{version}/MightyClaude-macos.dmg"' in html:
-        return html
-    zip_link = re.search(rf'([ \t]*)<a class="button" href="{re.escape(version)}/MightyClaude-macos\.zip"', html)
-    if not zip_link:
-        raise ReleaseError("내려받기 페이지에서 Mac zip 링크를 찾지 못해 dmg 링크를 넣지 못했습니다")
-    indent = zip_link.group(1)
-    return html[:zip_link.start()] + indent + DMG_LINK.format(version=version) + "\n" + html[zip_link.start():]
+def page_version(html):
+    """The version a download page announces (`버전 X`, in the old page's bare <p> or the template's)."""
+    found = re.search(r'<p(?: class="version")?>버전 (\d+\.\d+\.\d+)</p>', html)
+    return found.group(1) if found else None
+
+
+def render_page(version, apk_version, has_dmg, template=None):
+    """The download page for version from scripts/download-page: its {{…}} fields filled, the app icon inlined,
+    and the <!-- dmg-begin --> … <!-- dmg-end --> blocks kept only when the release ships a dmg."""
+    html = template if template is not None else read_text(PAGE_TEMPLATE)
+    block = re.compile(r"[ \t]*<!-- dmg-begin -->\n(.*?)[ \t]*<!-- dmg-end -->\n", re.S)
+    html = block.sub((lambda m: m.group(1)) if has_dmg else "", html)
+    with open(PAGE_ICON, "rb") as f:
+        icon = "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+    html = html.replace("{{VERSION}}", version).replace("{{APK_VERSION}}", apk_version).replace("{{ICON}}", icon)
+    left = re.findall(r"\{\{[A-Z_]+\}\}|<!-- dmg-(?:begin|end) -->", html)
+    if left:
+        raise ReleaseError(f"내려받기 페이지 템플릿에 채우지 못한 자리가 있습니다: {', '.join(sorted(set(left)))}")
+    return html
 
 
 def page_apk_version(html):
@@ -781,18 +779,22 @@ def step_page(state, a):
     version, folder = state["version"], release_dir(state["version"])
     live = fetch(f"{PUBLIC_BASE}/").decode("utf-8")
     apk = state["data"].get("apk")
-    if f"<p>버전 {version}</p>" in live and os.path.exists(os.path.join(folder, "index.html")):
+    if page_version(live) == version and os.path.exists(os.path.join(folder, "index.html")):
         say("공개 페이지가 이미 이 버전입니다 — 만들어 둔 index.html을 그대로 씁니다")
     else:
-        page, old = replace_page_version(live, version, apk and apk["version"])
-        page = add_dmg_link(page, version, "MightyClaude-macos.dmg" in files_of(state))
+        # Without a new APK the phone download keeps the version the live page names.
+        apk_version = apk["version"] if apk else page_apk_version(live)
+        if not apk_version:
+            raise ReleaseError("공개 페이지에서 Android APK 버전을 찾지 못했습니다 (--apk로 새 APK를 주세요)")
+        page = render_page(version, apk_version, "MightyClaude-macos.dmg" in files_of(state))
         for href in re.findall(rf'href="{re.escape(version)}/([^"]+)"', page):
             if href not in package_names(files_of(state)):
                 raise ReleaseError(f"페이지가 올리지 않는 파일을 가리킵니다: {version}/{href}")
         with open(os.path.join(folder, "index.html"), "w", encoding="utf-8", newline="") as f:
             f.write(page)
-        say(f"내려받기 페이지 {old} → {version}:")
-        for line in difflib.unified_diff(live.splitlines(), page.splitlines(), "공개 페이지", "release/" + version + "/index.html", lineterm="", n=0):
+        shown = re.sub(r"data:image/png;base64,[A-Za-z0-9+/=]+", "data:image/png;base64,…", page)
+        say(f"내려받기 페이지 {page_version(live) or '?'} → {version} (scripts/download-page에서):")
+        for line in difflib.unified_diff(live.splitlines(), shown.splitlines(), "공개 페이지", "release/" + version + "/index.html", lineterm="", n=0):
             say("  " + line)
     mark_done(state, "page")
     say("다음: release.py upload --dry-run  →  release.py upload --yes")
@@ -943,7 +945,7 @@ def step_verify(state, a):
             problems.append(f"{url} 크기 {got} ≠ {size}")
     try:
         page = fetch(f"{PUBLIC_BASE}/").decode("utf-8")
-        ok = f"<p>버전 {version}</p>" in page and f'href="{version}/' in page
+        ok = page_version(page) == version and f'href="{version}/' in page
     except FetchError as error:
         page, ok = None, False
         problems.append(str(error))

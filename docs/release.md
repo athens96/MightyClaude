@@ -47,7 +47,7 @@ python scripts/release.py download
 # 6. CI(release-manifest.yml)에 서명을 맡겨 latest.json을 받고, 공개 키로 서명·버전·build·notes·url·sha256·크기를 확인한다.
 python scripts/release.py manifest [--apk <APK 경로>]
 
-# 7. 공개 내려받기 페이지를 받아 버전만 바꾼 release/0.4.48/index.html을 만들고 차이를 보여 준다.
+# 7. scripts/download-page 템플릿으로 release/0.4.48/index.html을 만들고 공개 페이지와의 차이를 보여 준다.
 python scripts/release.py page
 
 # 8. R2에 올린다. 먼저 --dry-run으로 명령을 보고, 그다음 --yes.
@@ -109,7 +109,7 @@ gh workflow run release-manifest.yml --ref main -f version=<버전> \
 
 ### page
 
-공개 페이지(`…/mightyclaude/`)를 받아 `<p>버전 X</p>`와 `href="X/` 두 곳만 새 버전으로 바꾼다. 새 APK가 있으면 APK 링크의 `download="MightyClaude-X.apk"` 이름도 바꾼다. 이전 버전을 찾지 못하면 멈춘다. 차이(diff)를 보고 이상하면 올리지 않는다.
+페이지의 원본은 `scripts/download-page/index.html`(앱의 색상 토큰, 밝게·어둡게, 맥·윈도우·안드로이드·도움말 묶음)이다. `page`는 그 템플릿의 버전·APK 버전 자리를 채우고 `icon.png`를 페이지에 넣어 `release/<버전>/index.html`을 만든다. dmg가 있는 릴리스만 `<!-- dmg-begin -->` 블록(dmg 버튼, 공증 표시)을 남긴다. APK 버전은 새 APK가 없으면 공개 페이지에 적힌 것을 그대로 쓴다. 공개 페이지와의 차이(diff)를 보여 주므로 이상하면 올리지 않는다. 페이지를 고칠 때는 템플릿을 고친다. 공개 페이지에 손으로 넣은 것은 다음 릴리스에서 템플릿으로 덮이므로 남지 않는다(diff에 지워지는 줄로 보인다).
 
 ### upload
 

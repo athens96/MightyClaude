@@ -1,5 +1,5 @@
 import { Children, Fragment, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Icon } from '@/components/icons';
 import { cardShadow, dialog, settingsLayout, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
@@ -67,9 +67,14 @@ export function SettingRow({
         <Text style={styles.name}>{label}</Text>
         {caption ? <Text style={[styles.caption, warning && { color: palette.warning }]}>{caption}</Text> : null}
       </View>
-      {children}
-      {value !== undefined ? <Text style={styles.value}>{value}</Text> : null}
-      {onPress ? <Icon name="chevronRight" color={palette.textFaint} size={dialog.iconSize} /> : null}
+      {/* One trailing slot, so a switch, a value and a chevron all end on the same edge. */}
+      {children != null || value !== undefined || onPress ? (
+        <View style={styles.trailing}>
+          {children}
+          {value !== undefined ? <Text style={styles.value}>{value}</Text> : null}
+          {onPress ? <Icon name="chevronRight" color={palette.textFaint} size={dialog.iconSize} /> : null}
+        </View>
+      ) : null}
     </>
   );
   if (!onPress) return <View style={styles.row}>{content}</View>;
@@ -105,6 +110,9 @@ export function SettingSwitch({
         value={value}
         onValueChange={onChange}
         trackColor={{ false: palette.track, true: palette.accent }}
+        // Android otherwise tints the thumb with the Material accent (teal).
+        thumbColor={Platform.OS === 'android' ? palette.onStatus : undefined}
+        ios_backgroundColor={palette.track}
         accessibilityLabel={label}
         accessibilityHint={caption}
       />
@@ -141,6 +149,13 @@ const makeStyles = (palette: Palette) =>
       paddingVertical: spacing.md,
     },
     texts: { flex: 1, gap: spacing.xs },
+    trailing: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: spacing.md,
+      justifyContent: 'flex-end',
+      minWidth: dialog.closeHit,
+    },
     name: { color: palette.text, fontSize: settingsLayout.rowName },
     caption: { color: palette.textMuted, fontSize: settingsLayout.rowCaption, lineHeight: 16 },
     value: { color: palette.textMuted, fontSize: settingsLayout.rowName },

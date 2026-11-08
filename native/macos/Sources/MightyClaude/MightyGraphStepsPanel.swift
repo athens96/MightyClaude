@@ -20,12 +20,13 @@ struct MightyGraphStepsPanel: View {
             header
             if !collapsed {
                 Divider().overlay(Palette.border)
-                // A short list shows whole; a long one scrolls within half the diagram.
-                ViewThatFits(in: .vertical) {
-                    rows
-                    ScrollView(.vertical) { rows }
+                // A short list shows whole and the panel hugs it; a long one scrolls within half the diagram.
+                StepsHeightCap(maxHeight: areaHeight.map { $0 / 2 }) {
+                    ViewThatFits(in: .vertical) {
+                        rows
+                        ScrollView(.vertical) { rows }
+                    }
                 }
-                .frame(maxHeight: areaHeight.map { $0 / 2 })
             }
         }
         .frame(width: Self.width, alignment: .leading)
@@ -79,5 +80,24 @@ struct MightyGraphStepsPanel: View {
         case .pending:
             Image(systemName: "circle").font(.ui(size: 11)).foregroundStyle(Palette.ink2)
         }
+    }
+}
+
+/// Offers its content at most `maxHeight` and takes the content's own height, so a
+/// short list is not stretched to the cap the way a flexible frame would stretch it.
+private struct StepsHeightCap: Layout {
+    let maxHeight: CGFloat?
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        subviews.first?.sizeThatFits(capped(proposal)) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    }
+
+    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        guard let maxHeight else { return proposal }
+        return ProposedViewSize(width: proposal.width, height: min(proposal.height ?? maxHeight, maxHeight))
     }
 }

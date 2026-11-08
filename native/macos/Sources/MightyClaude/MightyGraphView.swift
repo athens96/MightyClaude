@@ -134,6 +134,8 @@ struct MightyGraphView: View {
     @ViewState private var timelineAtEnd = true
     /// The steps panel shows its header only: per pane, in memory, never saved.
     @ViewState private var stepsCollapsed = false
+    /// The step list's measured size, which the canvas keeps block titles clear of.
+    @ViewState private var stepsPanelSize: CGSize?
     private static let timelineEndID = "timeline-end"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -317,6 +319,9 @@ struct MightyGraphView: View {
                               onResize: { resize(graph, $0, $1, $2, $3) }, onResetSize: resetSize,
                               onStranded: { reaim(graph, after: $0) }, newestRunID: MightyGraphSupport.newestRequestRun(runs)?.id,
                               onReachTop: { if history?.phase == .idle { onLoadOlder() } },
+                              avoid: progressSteps == nil ? nil : stepsPanelSize.map {
+                                  CGRect(origin: CGPoint(x: DesignMetrics.Spacing.md, y: DesignMetrics.Spacing.md), size: $0)
+                              },
                               card: { card($0, executions: linksByKey, ordinals: ordinals) })
                 // The canvas changing height — the composer growing as a draft is typed,
                 // shrinking after a send, the pane resizing — never re-aims the camera: a
@@ -338,6 +343,11 @@ struct MightyGraphView: View {
                 .overlay(alignment: .topLeading) {
                     if let progressSteps {
                         MightyGraphStepsPanel(sessionID: sessionID, panel: progressSteps, areaHeight: canvasViewport?.height, collapsed: $stepsCollapsed)
+                            .background(GeometryReader { geo in
+                                Color.clear
+                                    .onAppear { stepsPanelSize = geo.size }
+                                    .onChange(of: geo.size) { _, new in stepsPanelSize = new }
+                            })
                             .padding(DesignMetrics.Spacing.md)
                     }
                 }
@@ -765,7 +775,7 @@ struct MightyGraphView: View {
                 if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog, versioned: true) {
                     let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records, catalog: catalog, versioned: true)
                     Text(capsuleText).font(.ui(size: 10, design: .monospaced)).foregroundStyle(quiet).lineLimit(1)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
                         .background(onStrip ? Color.black.opacity(0.18) : Palette.raised, in: Capsule())
                         .help(helpText)
                         .accessibilityLabel(helpText)
@@ -773,7 +783,7 @@ struct MightyGraphView: View {
                 }
                 if let resultFilesRunID, !resultFiles.files(for: resultFilesRunID).isEmpty {
                     Button { resultFiles.toggle(resultFilesRunID) } label: {
-                        HStack(spacing: 3) {
+                        HStack(spacing: DesignMetrics.Spacing.xxs) {
                             Image(systemName: resultFiles.selectedRunID == resultFilesRunID ? "doc.on.doc.fill" : "doc.on.doc")
                             Text("\(resultFiles.files(for: resultFilesRunID).count)").font(.ui(size: 10)).monospacedDigit()
                         }
@@ -840,8 +850,11 @@ struct MightyGraphView: View {
                     .font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(DesignMetrics.Inset.graphBlockBodyH)
             } else {
+                // A scrolled answer is cut a little below the header, not right against it;
+                // the measured height counts that band so a fitted card still shows it all.
                 blockTranscript(id: "graph-\(sessionID)-\(node.id)", status: status, entries: content, records: records, childBlocks: childBlocks,
-                                runID: runID(of: node.content), onContentHeight: onContentHeight)
+                                runID: runID(of: node.content), onContentHeight: onContentHeight.map { report in { report($0 + DesignMetrics.Inset.graphBlockBodyV) } })
+                    .padding(.top, DesignMetrics.Inset.graphBlockBodyV)
             }
             if let reply = backgroundRun?.reply, !reply.isEmpty { backgroundReply(reply, nodeID: node.id) }
             if let awaiting { awaitingNoticeRows(awaiting, nodeID: node.id) }
@@ -949,7 +962,7 @@ struct MightyGraphView: View {
     private func historyCard(width: CGFloat, height: CGFloat) -> some View {
         let phase = history?.phase ?? .idle
         let loaded = olderCount
-        return HStack(spacing: 6) {
+        return HStack(spacing: DesignMetrics.Spacing.sm) {
             switch phase {
             case .loading:
                 ProgressView().controlSize(.small).scaleEffect(0.7)
@@ -1136,7 +1149,7 @@ struct MightyGraphView: View {
                 }
                 .padding(.leading, Self.timelineRequestIndent)
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, DesignMetrics.Spacing.xxs)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -1253,7 +1266,7 @@ struct MightyGraphView: View {
                         Button(file.path + (file.line.map { ":\($0)" } ?? "")) { openReference(file.path, line: file.line, runID: run.sourceRunID ?? run.id) }
                     }
                 } label: {
-                    HStack(spacing: 3) {
+                    HStack(spacing: DesignMetrics.Spacing.xxs) {
                         Image(systemName: "doc.on.doc")
                         Text("\(files.count)").font(.ui(size: 10)).monospacedDigit()
                     }
@@ -1294,12 +1307,18 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     var newestRunID: String? = nil
     /// Scrolling up past the top of the diagram asks for older requests.
     var onReachTop: () -> Void = {}
+    /// What floats over the canvas's top-left corner (the step list), in viewport
+    /// points: a landing or a resize keeps block titles out from under it.
+    var avoid: CGRect? = nil
     let card: (MightyGraphLayout.Node) -> Card
     @ViewState private var cameraOffset: CGPoint?
     /// The token of the animated target whose landing glides, once.
     @ViewState private var glidedToken: String?
     /// Where a gliding camera set out from, while it glides: the cards along the way are drawn.
     @ViewState private var glideFrom: CGPoint?
+    /// The user panned the camera since the last aim landed: a resize then leaves it where
+    /// they put it, unless the pane gets narrower.
+    @ViewState private var userPanned = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1323,7 +1342,10 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                     glideFrom = cameraOffset ?? initialOffset
                     DispatchQueue.main.asyncAfter(deadline: .now() + DesignMetrics.Motion.seconds(DesignMetrics.Motion.scroll) + 0.05) { glideFrom = nil }
                 }
-                cameraOffset = new
+                // An aim landing is kept inside the pane; the user's own pan goes where they put it.
+                let landing = abs(new.x - initialOffset.x) < 0.5 && abs(new.y - initialOffset.y) < 0.5
+                cameraOffset = landing ? clamped(new, viewport: viewport.size) : new
+                userPanned = !landing
             })
             let culled: (CGPoint) -> CGRect = { offset in
                 CGRect(x: floor(-offset.x / zoom / 64) * 64 - 192, y: floor(-offset.y / zoom / 64) * 64 - 192,
@@ -1353,7 +1375,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                                     .foregroundStyle(selection == node.id ? Palette.accent : Palette.ink2)
                                     .frame(width: 22, height: 22)
                                     .background(Palette.panel.opacity(0.95), in: RoundedRectangle(cornerRadius: 5))
-                                    .padding(2)
+                                    .padding(DesignMetrics.Spacing.xxs)
                                     .help(L("graph.block.resizeHelp"))
                                     .accessibilityLabel(L("graph.block.resizeAccessibility"))
                                     .accessibilityIdentifier("mighty-resize-" + node.id)
@@ -1406,7 +1428,44 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                 cameraOffset = CGPoint(x: center.x - (center.x - previous.x) * new / old,
                                        y: center.y - (center.y - previous.y) * new / old)
             }
+            // A narrower pane keeps the blocks in view; a taller or shorter one (the composer
+            // growing) and the step list changing move only a camera the user has not panned.
+            .onChange(of: viewport.size) { old, size in
+                guard let camera = cameraOffset, !userPanned || size.width < old.width else { return }
+                cameraOffset = clamped(camera, viewport: size)
+            }
+            .onChange(of: avoid) { _, _ in
+                guard let camera = cameraOffset, !userPanned else { return }
+                cameraOffset = clamped(camera, viewport: viewport.size)
+            }
         }
+    }
+
+    /// `camera` moved sideways so the blocks in the pane's height start inside its
+    /// leading edge (and right of `avoid` when their title strip is level with it and
+    /// they fit beside it); with nothing cut on the left, a block cut at the trailing
+    /// edge (the result files panel) is pulled in as far as the leading room allows.
+    private func clamped(_ camera: CGPoint, viewport: CGSize) -> CGPoint {
+        let gap = DesignMetrics.Spacing.lg
+        let shown = graph.nodes.filter { node in
+            node.content != .history && camera.y + node.frame.maxY * zoom > 0 && camera.y + node.frame.minY * zoom < viewport.height
+        }
+        guard !shown.isEmpty, viewport.width > 0, zoom > 0 else { return camera }
+        // Each block's room on its leading side: negative when it is cut or covered.
+        let room = shown.map { node -> CGFloat in
+            let leading = camera.x + node.frame.minX * zoom
+            let top = camera.y + node.frame.minY * zoom
+            if let avoid, top < avoid.maxY, top + DesignMetrics.Layout.blockHead * zoom > avoid.minY, leading < avoid.maxX,
+               avoid.maxX + gap + node.frame.width * zoom <= viewport.width - gap {
+                return leading - avoid.maxX - gap
+            }
+            return leading - gap
+        }
+        let worst = room.min() ?? 0
+        if worst < 0 { return CGPoint(x: camera.x - worst, y: camera.y) }
+        let overflow = (shown.map { camera.x + $0.frame.maxX * zoom }.max() ?? 0) - (viewport.width - gap)
+        guard overflow > 0 else { return camera }
+        return CGPoint(x: camera.x - min(overflow, worst), y: camera.y)
     }
 }
 

@@ -16,7 +16,9 @@ struct AppUpdateSettingsSection: View {
                 // Rule 3: when the build carries a URL it is the only address; show it read-only.
                 if let builtIn = store.builtInUpdateManifestURL {
                     LabeledContent(L("settings.appUpdate.manifestUrlAddressLabel")) {
+                        // One line, cut in the middle so the host and the file name both stay readable.
                         Text(builtIn).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+                            .lineLimit(1).truncationMode(.middle).help(builtIn)
                     }
                 } else {
                     // An address: a wide row, the field as wide as the row.
@@ -30,8 +32,11 @@ struct AppUpdateSettingsSection: View {
                     SettingsRowLabel(L("settings.appUpdate.autoUpdateToggle"), caption: L("settings.appUpdate.autoUpdateDescription"))
                 }
                 .accessibilityIdentifier("app-update-automatic")
+                // A row of its own, in the caption style, not tucked under the switch.
                 Text(L("settings.appUpdate.signatureVerified"))
-                    .font(.ui(size: 12)).foregroundStyle(.secondary)
+                    .font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .settingsRowFrame()
                 HStack(spacing: DesignMetrics.Spacing.md) {
                     statusView
                     Spacer()
@@ -54,27 +59,27 @@ struct AppUpdateSettingsSection: View {
         case .idle:
             Text(store.appUpdate.checkedAt.map {
                 L("settings.appUpdate.lastCheckedTemplate", ["time": $0.formatted(date: .omitted, time: .shortened)])
-            } ?? L("settings.appUpdate.notCheckedYet")).font(.ui(size: 11)).foregroundStyle(.secondary)
+            } ?? L("settings.appUpdate.notCheckedYet")).font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
         case .checking:
-            ProgressView().controlSize(.small); Text(L("settings.appUpdate.checking")).font(.ui(size: 11))
+            ProgressView().controlSize(.small); Text(L("settings.appUpdate.checking")).font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
         case .upToDate:
-            Label(L("settings.appUpdate.upToDate"), systemImage: "checkmark.circle").font(.ui(size: 11)).foregroundStyle(.secondary)
+            Label(L("settings.appUpdate.upToDate"), systemImage: "checkmark.circle").font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
         case .available:
-            Label(L("settings.appUpdate.availableTemplate", ["version": store.appUpdate.availability?.manifest.version ?? ""]), systemImage: "arrow.down.circle").font(.ui(size: 11, weight: .medium)).foregroundStyle(Palette.accent)
+            Label(L("settings.appUpdate.availableTemplate", ["version": store.appUpdate.availability?.manifest.version ?? ""]), systemImage: "arrow.down.circle").font(.ui(size: DesignMetrics.Settings.rowCaption, weight: .medium)).foregroundStyle(Palette.accent)
         case .downloading(let fraction):
-            ProgressView(value: fraction).frame(width: 140); Text(L("settings.appUpdate.downloadingTemplate", ["percent": "\(Int(fraction * 100))"])).font(.ui(size: 11))
+            ProgressView(value: fraction).frame(width: 140); Text(L("settings.appUpdate.downloadingTemplate", ["percent": "\(Int(fraction * 100))"])).font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
         case .staging:
-            ProgressView().controlSize(.small); Text(L("settings.appUpdate.stagingProgress")).font(.ui(size: 11))
+            ProgressView().controlSize(.small); Text(L("settings.appUpdate.stagingProgress")).font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
         case .ready:
             // Turned off (or unable to run automatically), quitting does not
             // install: the update only waits for "restart now".
             let version = store.appUpdate.availability?.manifest.version ?? ""
             Label(L(store.appUpdateAutomatic && store.appUpdateCanRunAutomatically ? "settings.appUpdate.stagedTemplate" : "settings.appUpdate.readyTemplate", ["version": version]),
-                  systemImage: "shippingbox").font(.ui(size: 11)).foregroundStyle(.secondary)
+                  systemImage: "shippingbox").font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
         case .installing:
-            ProgressView().controlSize(.small); Text(L("settings.appUpdate.installing")).font(.ui(size: 11))
+            ProgressView().controlSize(.small); Text(L("settings.appUpdate.installing")).font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
         case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle").font(.ui(size: 11)).foregroundStyle(Palette.waitText).lineLimit(3).textSelection(.enabled)
+            Label(message, systemImage: "exclamationmark.triangle").font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.waitText).lineLimit(3).textSelection(.enabled)
         }
     }
 

@@ -13,7 +13,7 @@ struct ComposerPill: View {
     var compact = false
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: DesignMetrics.Spacing.xs) {
             if let provider { ProviderIcon(provider: provider, size: 12).frame(width: 14, height: 14) }
             else if let systemImage { Image(systemName: systemImage).font(.ui(size: 12, weight: .medium)).frame(width: 14, height: 14) }
             if !compact { Text(title).font(.ui(size: 11, weight: .medium)).lineLimit(1).truncationMode(.tail).frame(width: min(ComposerToolbarMetrics.textWidth(title), maximumTextWidth ?? .greatestFiniteMagnitude)) }

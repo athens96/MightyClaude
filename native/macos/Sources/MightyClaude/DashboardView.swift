@@ -103,10 +103,12 @@ struct DashboardView: View {
         let inset = DesignMetrics.Inset.dashboardPageH
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: DesignMetrics.Spacing.md) {
+                // The toggle sits on the title's line, as in a workspace's header, not between title and subtitle.
+                HStack(alignment: .dashboardTitleLine, spacing: DesignMetrics.Spacing.md) {
                     SidebarToggleButton()
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(L("phone.dashboard.title")).font(Palette.heading(29)).foregroundStyle(Palette.ink)
+                            .alignmentGuide(.dashboardTitleLine) { $0[VerticalAlignment.center] }
                             .accessibilityAddTraits(.isHeader)
                         Text(L("dashboard.subtitle", ["workspaces": "\(store.snapshot.workspaces.count)", "panes": "\(sessions.count)"]))
                             .font(.ui(size: 12)).foregroundStyle(Palette.ink2)
@@ -200,7 +202,7 @@ struct DashboardView: View {
 
     private func usageBar(_ window: AccountUsageWindow) -> some View {
         let fraction = min(1, max(0, window.usedPercent / 100))
-        return HStack(spacing: 8) {
+        return HStack(spacing: DesignMetrics.Spacing.md) {
             Text(StatusBarUsageView.windowLabel(window.kind)).font(.ui(size: 11.5)).foregroundStyle(Palette.ink2).lineLimit(1)
             Capsule().fill(Palette.runSoft).frame(height: 6)
                 .overlay(alignment: .leading) {
@@ -250,9 +252,9 @@ struct DashboardView: View {
                 .accessibilityLabel(L("workspace.addPaneAccessibility", ["workspace": workspace.name]))
                 .accessibilityIdentifier("dashboard-add-session-\(workspace.id)")
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, DesignMetrics.Spacing.xxs)
             if cards.isEmpty {
-                Text(L("phone.workspaces.noSessions")).font(.ui(size: 12)).foregroundStyle(Palette.ink2).padding(.horizontal, 2)
+                Text(L("phone.workspaces.noSessions")).font(.ui(size: 12)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Spacing.xxs)
             } else {
                 // One white group per workspace, its panes as glyph rows (status v2).
                 VStack(spacing: 0) {
@@ -298,7 +300,8 @@ struct DashboardRow: View {
                         TimelineView(.everyMinute) { context in meta(at: context.date) }
                     }
                     if let last = card.lastActivity, card.isRunning {
-                        Text(last.text).font(.code(size: 11.3))
+                        // A tool call reads as code; a message's line is prose.
+                        Text(last.text).font(last.tool != nil ? .code(size: 11.3) : .ui(size: 11.5))
                             .foregroundStyle(last.isError ? Palette.errText : Palette.ink2)
                             .lineLimit(1).truncationMode(.tail).padding(.top, DesignMetrics.Spacing.xxs)
                     }
@@ -330,7 +333,7 @@ struct DashboardRow: View {
     /// `Claude · Opus 5.5 · 02:14 · 컨텍스트 41%` while it runs, `Codex · GPT-5 · 11분 전` at
     /// rest; a pane that is not an agent's names its kind.
     private func meta(at date: Date) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DesignMetrics.Spacing.xs) {
             if card.isAgent {
                 ProviderBadgeIcon.labelled(ProviderOptions.label(card.provider), provider: card.provider, font: .ui(ofSize: 12))
                 if ProviderOptions.isBeta(card.provider) { BetaBadge() }
@@ -375,4 +378,12 @@ struct PulseDot: View {
         .frame(width: 14, height: 14)
         .accessibilityHidden(true)
     }
+}
+
+private extension VerticalAlignment {
+    /// The dashboard title's line, which the sidebar toggle beside it centres on.
+    enum DashboardTitleLine: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat { context[VerticalAlignment.center] }
+    }
+    static let dashboardTitleLine = VerticalAlignment(DashboardTitleLine.self)
 }

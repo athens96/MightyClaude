@@ -59,12 +59,17 @@ rm -f "$OUT/MightyClaude-macos.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/MightyClaude-macos.zip"
 
 echo "== dmg"
-STAGE="$WORK/dmg"
-mkdir -p "$STAGE"
-ditto "$APP" "$STAGE/MightyClaude.app"
-ln -s /Applications "$STAGE/Applications"
+# The install window (background, arrow, icon places, no toolbar) is written by dmgbuild
+# from scripts/dmg/settings.py, not by Finder, so a headless runner builds the same one.
+# DMGBUILD names the tool (the CI job installs scripts/dmg/requirements.txt in a venv).
+DMGBUILD="${DMGBUILD:-dmgbuild}"
+command -v "$DMGBUILD" >/dev/null || { echo "dmgbuild가 없습니다: pip install -r scripts/dmg/requirements.txt" >&2; exit 1; }
 rm -f "$OUT/MightyClaude-macos.dmg"
-hdiutil create -volname "Mighty Claude" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$OUT/MightyClaude-macos.dmg" >/dev/null
+# hdiutil's deprecation notices are dropped; dmgbuild's own exit status still decides.
+"$DMGBUILD" -s "$PROJECT_ROOT/scripts/dmg/settings.py" -D app="$APP" -D background="$PROJECT_ROOT/assets/dmg/background.tiff" \
+    "Mighty Claude" "$OUT/MightyClaude-macos.dmg" > >(grep -v "is deprecated" >&2) 2>&1 \
+    || { echo "dmgbuild가 실패했습니다" >&2; exit 1; }
+[ -f "$OUT/MightyClaude-macos.dmg" ] || { echo "dmg를 만들지 못했습니다" >&2; exit 1; }
 codesign --force --timestamp --sign "$MIGHTY_CODESIGN_IDENTITY" "$OUT/MightyClaude-macos.dmg"
 notarize "$OUT/MightyClaude-macos.dmg"
 xcrun stapler staple "$OUT/MightyClaude-macos.dmg"

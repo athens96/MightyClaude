@@ -48,7 +48,7 @@ enum AgentTranscriptFormat {
             if !(activity.output ?? "").isEmpty, let link = disclosureLink(entry.id) {
                 line.append(NSAttributedString(string: "  " + disclosureLabel(expanded), attributes: [.font: NSFont.ui(ofSize: 10), .link: link, .foregroundColor: accent]))
             }
-            builder.paragraph(line, font: font, color: .secondaryLabelColor, spacing: 6)
+            builder.paragraph(line, font: font, color: .secondaryLabelColor, spacing: DesignMetrics.Spacing.sm)
             if expanded, let output = activity.output, !output.isEmpty { builder.code(output, language: nil) }
         } else if entry.kind == "assistant" {
             let selectedProvider = entry.provider ?? provider
@@ -57,7 +57,7 @@ enum AgentTranscriptFormat {
             let header = NSMutableAttributedString(attributedString: providerSymbol(selectedProvider, color: accent))
             let timestamp = time(entry.timestamp)
             header.append(NSAttributedString(string: "  \(ProviderOptions.label(selectedProvider))\(timestamp.isEmpty ? "" : "  ·  " + timestamp)", attributes: [.font: NSFont.ui(ofSize: cards ? 12 : 11, weight: cards ? .semibold : .medium), .foregroundColor: builder.secondary]))
-            builder.paragraph(header, spacing: 10)
+            builder.paragraph(header, spacing: DesignMetrics.Spacing.md)
             if let questions = UserQuestionnaire.parse(inputJSON: entry.text) {
                 builder.questionnaire(questions)
             } else {
@@ -67,18 +67,18 @@ enum AgentTranscriptFormat {
         } else if entry.kind == "user" {
             let line = NSMutableAttributedString(attributedString: symbol("arrow.up.right", color: accent))
             builder.appendText("  " + entry.text, attributes: [:], to: line)
-            builder.paragraph(line, spacing: 12, box: builder.box(background: accentWash, border: .clear))
+            builder.paragraph(line, spacing: DesignMetrics.Spacing.lg, box: builder.box(background: accentWash, border: .clear))
         } else if entry.kind == "output" {
             builder.code(entry.text, language: nil)
         } else if entry.kind == "image", let refs = entry.images, !refs.isEmpty {
             // A tool's pictures, in order, under its row; the entry text names them.
-            for ref in refs { builder.paragraph(AgentImageAttachmentCell.attachment(.stored(ref), caption: ref.source), spacing: 4) }
-            builder.paragraph(NSAttributedString(string: entry.text), font: .ui(ofSize: 10), color: builder.secondary, spacing: 7)
+            for ref in refs { builder.paragraph(AgentImageAttachmentCell.attachment(.stored(ref), caption: ref.source), spacing: DesignMetrics.Spacing.xs) }
+            builder.paragraph(NSAttributedString(string: entry.text), font: .ui(ofSize: 10), color: builder.secondary, spacing: DesignMetrics.Spacing.sm)
         } else {
             let color: NSColor = entry.kind == "error" ? Palette.nsErrText : builder.secondary
             let line = NSMutableAttributedString(attributedString: symbol(entry.kind == "error" ? "exclamationmark.circle" : "info.circle", color: color))
             builder.appendText("  " + entry.text, attributes: [:], to: line)
-            builder.paragraph(line, font: .ui(ofSize: 12), color: color, spacing: 7)
+            builder.paragraph(line, font: .ui(ofSize: 12), color: color, spacing: DesignMetrics.Spacing.sm)
         }
         builder.separation()
         return NSAttributedString(attributedString: builder.result)
@@ -240,7 +240,7 @@ enum AgentTranscriptFormat {
             // The accent fails contrast on the ink bubble; links there keep the bubble's
             // own ink and are told apart by their underline.
             appendText(entry.text, attributes: [:], to: text, linkColor: ink)
-            paragraph(text, color: ink, spacing: 3, box: bubble)
+            paragraph(text, color: ink, spacing: DesignMetrics.Spacing.xxs, box: bubble)
             let timestamp = AgentTranscriptFormat.time(entry.timestamp)
             if !timestamp.isEmpty {
                 let style = style(spacing: 0)
@@ -331,7 +331,7 @@ enum AgentTranscriptFormat {
         /// A thin gap paragraph. Inside a reply's card it stays in the card, so a table
         /// or questionnaire does not split the reply into several cards.
         func separation() {
-            let paragraph = style(spacing: 2)
+            let paragraph = style(spacing: DesignMetrics.Spacing.xxs)
             if let container { paragraph.textBlocks = [container] }
             result.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.ui(ofSize: 4), .paragraphStyle: paragraph]))
         }
@@ -395,7 +395,7 @@ enum AgentTranscriptFormat {
                 paragraph(inline(block.text, color: quote == nil ? .labelColor : secondary), indent: indent, box: quote)
             case .header(let level):
                 let font = NSFont.uiTranscript(ofSize: level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold)
-                let paragraphStyle = style(indent: indent, spacing: 10)
+                let paragraphStyle = style(indent: indent, spacing: DesignMetrics.Spacing.md)
                 paragraphStyle.paragraphSpacingBefore = level <= 2 ? 5 : 2
                 paragraph(inline(block.text, font: font), font: font, indent: indent, box: quote, paragraphStyle: paragraphStyle)
             case .orderedList, .unorderedList:
@@ -413,7 +413,7 @@ enum AgentTranscriptFormat {
                 border.setBorderColor(Palette.nsToken(\.accent, alpha: 0.55), for: .minX)
                 for child in block.children { self.block(child, indent: indent + 3, quote: border) }
             case .thematicBreak:
-                paragraph(NSAttributedString(string: "────────────────────", attributes: [.foregroundColor: NSColor.separatorColor]), indent: indent, spacing: 10)
+                paragraph(NSAttributedString(string: "────────────────────", attributes: [.foregroundColor: NSColor.separatorColor]), indent: indent, spacing: DesignMetrics.Spacing.md)
             case .table(let columns): table(block, columns: columns)
             case .tableCell: paragraph(inline(block.text), indent: indent, box: quote)
             case .tableHeaderRow, .tableRow:
@@ -427,13 +427,13 @@ enum AgentTranscriptFormat {
         func questionnaire(_ form: UserQuestionnaire) {
             for (index, question) in form.questions.enumerated() {
                 let title = "\(index + 1). \(question.header)  ·  \(question.multiSelect ? L("transcript.question.multiple") : L("transcript.question.single"))"
-                paragraph(NSAttributedString(string: title), font: .uiTranscript(ofSize: 11, weight: .semibold), color: AgentTranscriptFormat.accent, spacing: 6,
+                paragraph(NSAttributedString(string: title), font: .uiTranscript(ofSize: 11, weight: .semibold), color: AgentTranscriptFormat.accent, spacing: DesignMetrics.Spacing.sm,
                           box: box(background: AgentTranscriptFormat.accentWash, border: .clear))
-                paragraph(NSAttributedString(string: question.question), font: .uiTranscript(ofSize: 14, weight: .semibold), spacing: 10)
+                paragraph(NSAttributedString(string: question.question), font: .uiTranscript(ofSize: 14, weight: .semibold), spacing: DesignMetrics.Spacing.md)
                 for option in question.options {
-                    paragraph(NSAttributedString(string: "\(question.multiSelect ? "☐" : "○")  \(option.label)"), font: .uiTranscript(ofSize: 13, weight: .medium), spacing: 3)
+                    paragraph(NSAttributedString(string: "\(question.multiSelect ? "☐" : "○")  \(option.label)"), font: .uiTranscript(ofSize: 13, weight: .medium), spacing: DesignMetrics.Spacing.xxs)
                     if !option.description.isEmpty {
-                        paragraph(NSAttributedString(string: option.description), font: .uiTranscript(ofSize: 12), color: secondary, indent: 20, spacing: 10)
+                        paragraph(NSAttributedString(string: option.description), font: .uiTranscript(ofSize: 12), color: secondary, indent: 20, spacing: DesignMetrics.Spacing.md)
                     }
                 }
                 separation()
@@ -455,12 +455,12 @@ enum AgentTranscriptFormat {
             if let first = children.first, first.kind == .paragraph {
                 let line = NSMutableAttributedString(string: marker + "\t", attributes: [.foregroundColor: AgentTranscriptFormat.accent])
                 line.append(inline(first.text))
-                let paragraphStyle = style(indent: indent, spacing: 6)
+                let paragraphStyle = style(indent: indent, spacing: DesignMetrics.Spacing.sm)
                 paragraphStyle.headIndent = indent + 22
                 paragraphStyle.tabStops = [NSTextTab(textAlignment: .left, location: indent + 22)]
-                paragraph(line, indent: indent, spacing: 6, box: quote, paragraphStyle: paragraphStyle)
+                paragraph(line, indent: indent, spacing: DesignMetrics.Spacing.sm, box: quote, paragraphStyle: paragraphStyle)
                 children.removeFirst()
-            } else { paragraph(NSAttributedString(string: marker), indent: indent, spacing: 3, box: quote) }
+            } else { paragraph(NSAttributedString(string: marker), indent: indent, spacing: DesignMetrics.Spacing.xxs, box: quote) }
             for child in children { block(child, indent: indent + 22, quote: quote) }
         }
 
@@ -487,7 +487,7 @@ enum AgentTranscriptFormat {
             let ink: NSColor = cards ? Palette.nsToken(\.codeText) : .labelColor
             let start = result.length
             if let language, !language.isEmpty {
-                paragraph(NSAttributedString(string: language.split(separator: " ").first.map(String.init) ?? language), font: .uiCode(ofSize: 10, weight: .medium), color: cards ? ink : secondary, indent: indent, spacing: 5, box: background)
+                paragraph(NSAttributedString(string: language.split(separator: " ").first.map(String.init) ?? language), font: .uiCode(ofSize: 10, weight: .medium), color: cards ? ink : secondary, indent: indent, spacing: DesignMetrics.Spacing.xs, box: background)
             }
             let paragraphStyle = style(indent: indent, spacing: cards ? 2 : 8)
             paragraphStyle.lineBreakMode = .byCharWrapping

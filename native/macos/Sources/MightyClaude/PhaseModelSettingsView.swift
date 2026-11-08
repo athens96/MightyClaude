@@ -7,13 +7,16 @@ struct PhaseModelSettingsSection: View {
     @EnvironmentObject private var store: AppStore
 
     /// One card per agent, so the line between the two comes from the cards, not a divider.
+    /// The two intro paragraphs start where the cards' titles and rows do (the card's side inset).
     var body: some View {
         Text(L("settings.phaseModels.description"))
-            .font(.ui(size: 12)).foregroundStyle(.secondary)
+            .font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
             .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, DesignMetrics.Settings.cardPaddingX)
         Text(L("settings.phaseModels.effortNote"))
-            .font(.ui(size: 12)).foregroundStyle(.secondary)
+            .font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
             .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, DesignMetrics.Settings.cardPaddingX)
         ForEach(["claude", "codex"], id: \.self) { provider in
             SettingsGroup {
                 PhaseModelProviderBlock(provider: provider).environmentObject(store)
@@ -146,8 +149,9 @@ private struct PhaseModelProviderBlock: View {
                     .labelsHidden().pickerStyle(.menu).frame(width: DesignMetrics.Settings.pairSelectWidth)
                     .accessibilityIdentifier("phaseModels-effort-\(provider)-\(phase.rawValue)")
                 } else {
-                    Text(L("settings.phaseModels.effortUnsupported")).font(.ui(size: 12)).foregroundStyle(.tertiary)
-                        .frame(width: DesignMetrics.Settings.pairSelectWidth, alignment: .leading)
+                    // Ends at the row's trailing edge like a select would, so every row shares one right edge.
+                    Text(L("settings.phaseModels.effortUnsupported")).font(.ui(size: 12)).foregroundStyle(.secondary)
+                        .frame(width: DesignMetrics.Settings.pairSelectWidth, alignment: .trailing)
                 }
             }
         }

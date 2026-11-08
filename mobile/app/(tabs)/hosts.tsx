@@ -14,6 +14,7 @@ import { t } from '@/lib/i18n';
 import {
   cardShadow,
   headingFontFamily,
+  layout,
   monoFontFamily,
   radius,
   spacing,
@@ -122,6 +123,7 @@ export default function HostsTab() {
             <EmptyState
               title={t('phone.hosts.empty.title')}
               description={t('phone.hosts.empty.description')}
+              icon="hosts"
             />
           ) : null
         }
@@ -162,8 +164,8 @@ export default function HostsTab() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    list: { paddingHorizontal: spacing.lg },
-    title: { marginBottom: spacing.md, paddingHorizontal: spacing.xs },
+    list: { paddingHorizontal: layout.gutter },
+    title: { marginBottom: spacing.md },
     separator: { height: spacing.sm },
     row: {
       ...cardShadow,

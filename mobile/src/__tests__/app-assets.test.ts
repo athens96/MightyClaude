@@ -111,7 +111,7 @@ describe('phone assets generated from raccoon artwork', () => {
     expect(left).toEqual([]);
   });
 
-  it('app.json points only at generated images on the dark background', () => {
+  it('app.json points only at generated images, the icon on the dark background', () => {
     const expo = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'mobile', 'app.json'), 'utf8')).expo;
     const splash = expo.plugins.find((p: unknown) => Array.isArray(p) && p[0] === 'expo-splash-screen')[1];
     const referenced: string[] = [
@@ -124,6 +124,9 @@ describe('phone assets generated from raccoon artwork', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(ASSETS_DIR, 'asset-sources.json'), 'utf8'));
     for (const name of referenced) expect(Object.keys(manifest.outputs)).toContain(name);
     expect(expo.android.adaptiveIcon.backgroundColor.toLowerCase()).toBe('#0d0d0f');
-    expect(splash.backgroundColor.toLowerCase()).toBe('#0d0d0f');
+    // The splash image is transparent; its page follows the app's own light and dark page.
+    expect(splash.backgroundColor.toLowerCase()).toBe('#eceef3');
+    expect(splash.dark.backgroundColor.toLowerCase()).toBe('#0b0f19');
+    expect(path.basename(splash.dark.image)).toBe(path.basename(splash.image));
   });
 });

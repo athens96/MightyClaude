@@ -16,6 +16,10 @@ struct StyleSettingsSection: View {
     var body: some View {
         SettingsGroup {
             if store.styleTrustLocked { lockBanner }
+            // What a style is first, then the buttons that add one.
+            Text(L("settings.styles.description"))
+                .font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                .settingsRowFrame()
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Button(L("settings.styles.registerButton")) { register() }.disabled(store.styleTrustLocked)
                     .accessibilityIdentifier("settings-style-register")
@@ -28,8 +32,6 @@ struct StyleSettingsSection: View {
                 Label(registerError, systemImage: "exclamationmark.triangle").font(.ui(size: 11)).foregroundStyle(Palette.waitText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text(L("settings.styles.description"))
-                .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ForEach(rows) { row in styleRow(row) }
             ForEach(store.styleRejections, id: \.path) { rejection in rejectionRow(rejection) }
         } header: {
@@ -59,16 +61,20 @@ struct StyleSettingsSection: View {
             L("settings.styles.actionCountTemplate", ["count": "\(row.actionCount)"]),
             L("settings.styles.autoAllowCountTemplate", ["count": "\(row.autoAllowCount)"]),
         ].joined(separator: " " + StyleChrome.separator + " ")
-        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(verbatim: head).font(.ui(size: 12, weight: .medium))
-                Text(verbatim: row.stateLabel).font(.ui(size: 10)).foregroundStyle(.secondary)
-                    .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.subtle, in: Capsule())
-                Spacer(minLength: 0)
+        // The shared row: the name with its state, the meta line and the path as its caption, the actions trailing.
+        return HStack(alignment: .center, spacing: DesignMetrics.Spacing.lg) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    Text(verbatim: head).font(.ui(size: DesignMetrics.Settings.rowName)).foregroundStyle(Palette.ink)
+                    Text(verbatim: row.stateLabel).font(.ui(size: 10)).foregroundStyle(.secondary)
+                        .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.subtle, in: Capsule())
+                }
+                Text(verbatim: detail).font(.ui(size: DesignMetrics.Settings.rowCaption)).foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: row.path).font(.ui(size: 11, design: .monospaced)).foregroundStyle(Palette.ink2)
+                    .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
             }
-            Text(verbatim: detail).font(.ui(size: 10)).foregroundStyle(.secondary)
-            Text(verbatim: row.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
-                .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+            .frame(maxWidth: .infinity, alignment: .leading)
             buttons(row)
         }
         .settingsRowFrame()
@@ -93,8 +99,8 @@ struct StyleSettingsSection: View {
             // the approval card like any other pending one (§4.2).
             if row.canAllowAgain { Button(L("settings.styles.unblockButton")) { style.map { store.allowStyleAgain($0) } } }
             if row.canRemove { Button(L("settings.styles.removeButton"), role: .destructive) { style.map { store.removeStyle($0) } } }
-            Spacer(minLength: 0)
         }
+        .fixedSize()
     }
 
     private func rejectionRow(_ rejection: StyleRejection) -> some View {

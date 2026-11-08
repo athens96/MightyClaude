@@ -13,12 +13,12 @@ struct MightyViewSwitch: View {
     let onSelect: (MightyGraphViewMode) -> Void
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: DesignMetrics.Spacing.xxs) {
             option(.diagram, title: L("graph.view.diagram"), symbol: "point.3.connected.trianglepath.dotted")
             option(.timeline, title: L("graph.view.timeline"), symbol: "list.bullet.indent")
             option(.structure, title: L("graph.view.structure"), symbol: "rectangle.split.3x1")
         }
-        .padding(2)
+        .padding(DesignMetrics.Spacing.xxs)
         .background(Palette.track, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .fixedSize()
         .accessibilityElement(children: .contain)
@@ -98,11 +98,11 @@ struct MightyTimelineMarker: View {
                     .padding(.top, Self.centre).padding(.bottom, -gap)
             }
             ZStack {
-                if node.ring { MightyTimelineRing(color: Palette.heroFill(node.tone), diameter: Self.nodeSize) }
-                Circle().fill(Palette.heroFill(node.tone))
+                if node.ring { MightyTimelineRing(color: fill, diameter: Self.nodeSize) }
+                Circle().fill(fill)
                     .overlay { Circle().strokeBorder(Palette.raised, lineWidth: 3) }
                 Image(systemName: icon).font(.ui(size: 9, weight: .bold))
-                    .foregroundStyle(Palette.heroInk(node.tone))
+                    .foregroundStyle(node.tone == .idle ? Palette.panel : Palette.heroInk(node.tone))
             }
             .frame(width: Self.nodeSize, height: Self.nodeSize)
             .padding(.top, Self.nodeTop)
@@ -112,6 +112,10 @@ struct MightyTimelineMarker: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
+
+    /// The request's idle node is the ink button's fill (`panel` on `ink`), which reads in
+    /// both themes; the idle hero fill sinks into the dark card.
+    private var fill: Color { node.tone == .idle ? Palette.ink : Palette.heroFill(node.tone) }
 
     private func rail(_ tone: DesignTone?) -> some View {
         Rectangle().fill(tone.map(Palette.heroFill) ?? Palette.track)
@@ -166,18 +170,18 @@ struct MightyTimelineRowCard<Detail: View>: View {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(title).font(.ui(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
                             .lineLimit(2).multilineTextAlignment(.leading)
-                        HStack(spacing: 4) {
+                        HStack(spacing: DesignMetrics.Spacing.xs) {
                             Image(systemName: icon).font(.ui(size: 9, weight: .bold)).foregroundStyle(tint)
                             Text(([MightyTimelineText.kind(row.block.kind, input: row.block.summary)] + meta).joined(separator: " · "))
                                 .lineLimit(1).truncationMode(.tail)
                         }
                         .font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                         if let latest = row.latest {
-                            HStack(spacing: 6) {
+                            HStack(spacing: DesignMetrics.Spacing.sm) {
                                 if tone == .run { PulseDot() }
                                 Text(latest).font(.code(size: 10.8)).lineLimit(1).truncationMode(.tail)
                             }
-                            .foregroundStyle(Palette.ink2).padding(.top, 2)
+                            .foregroundStyle(Palette.ink2).padding(.top, DesignMetrics.Spacing.xxs)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -236,11 +240,12 @@ struct MightyTimelineResultCard<Files: View>: View {
             .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
             .background(Palette.heroFill(result.tone))
             if let text = result.text {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(text).font(.transcript(size: 12.5)).foregroundStyle(Palette.ink)
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+                    // Folded, the preview keeps the answer's first lines, each block at most as many.
+                    AgentMarkdownView(source: full ? text : text.split(separator: "\n", omittingEmptySubsequences: false)
+                                        .prefix(Self.previewLines).joined(separator: "\n"), compact: true)
+                        .foregroundStyle(Palette.ink)
                         .lineLimit(full ? nil : Self.previewLines)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     if Self.folds(text) {
                         Button(action: onToggleFull) {
                             Text(full ? L("phone.blocks.resultLess") : L("phone.blocks.resultMore"))

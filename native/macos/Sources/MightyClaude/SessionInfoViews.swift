@@ -227,7 +227,11 @@ struct SessionInfoView: View {
                 Spacer(minLength: 0)
                 HStack(spacing: DesignMetrics.Spacing.xs) { StatusDot(status: session.status); Text(Palette.status(session.status)).font(.ui(size: 10)) }
                     .foregroundStyle(.secondary)
-            }.frame(height: headerHeight)
+            }
+            // The rows below keep a trailing gutter for the scroller; the header
+            // keeps the same one so the status chip ends on the value column.
+            .padding(.trailing, DesignMetrics.Spacing.lg)
+            .frame(height: headerHeight)
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     HStack(spacing: DesignMetrics.Spacing.md) {
@@ -244,6 +248,7 @@ struct SessionInfoView: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(L("composer.sessionInfo.contextAccessibility", ["percent": SessionUsagePresentation.percent(usage), "detail": SessionUsagePresentation.context(usage)]))
                     .accessibilityIdentifier("session-info-context-\(sessionID)")
+                    .padding(.bottom, DesignMetrics.Spacing.xs)
 
                     row(usage?.model == nil ? L("composer.sessionInfo.selectedModel") : L("composer.sessionInfo.usedModel"), usage?.model.map { ModelLabel.text($0) } ?? selectedModel, key: "model")
                     if let timing = session.runTiming, timing.isValid {
@@ -275,7 +280,7 @@ struct SessionInfoView: View {
                         if let count = usage.totalTokens { tokenRow(L("composer.sessionInfo.total"), count, key: "total") }
                         if usage.cacheReadTokens != nil || usage.cacheWriteTokens != nil || usage.reasoningTokens != nil {
                             Text(L("composer.sessionInfo.note"))
-                                .font(.ui(size: 10)).foregroundStyle(.tertiary)
+                                .font(.ui(size: 10)).foregroundStyle(Palette.ink2)
                         }
                     }
                     if let cost = usage?.costUSD, cost.isFinite, cost >= 0 {
@@ -302,7 +307,7 @@ struct SessionInfoView: View {
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                             Text(L("composer.sessionInfo.reported", ["provider": ProviderOptions.label(session.provider)])).help(usage.source)
                             if let date = AgentRunTiming.parseTimestamp(usage.updatedAt) { Text(L("composer.sessionInfo.lastReceived", ["time": date.formatted(date: .omitted, time: .standard)])) }
-                        }.font(.ui(size: 10)).foregroundStyle(.tertiary)
+                        }.font(.ui(size: 10)).foregroundStyle(Palette.ink2)
                     }
                 }
                 // Keep a bounded line width without a greedy outer geometry

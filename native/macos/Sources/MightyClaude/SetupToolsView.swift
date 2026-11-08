@@ -107,7 +107,9 @@ struct SetupToolsList: View {
                 let items = store.setupItems.filter { $0.group == group }
                 if !items.isEmpty {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                        Text(L(group.titleKey)).font(.ui(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                        // The settings group header (`SettingsGroup`): accent, semibold, a header to VoiceOver.
+                        Text(L(group.titleKey)).font(.ui(size: DesignMetrics.Settings.sectionTitle, weight: .semibold)).foregroundStyle(Palette.accent)
+                            .padding(.top, DesignMetrics.Spacing.xs).accessibilityAddTraits(.isHeader)
                         ForEach(items) { item in SetupItemRow(item: item, focused: item.id == focus).id(item.id) }
                     }
                 }

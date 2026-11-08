@@ -230,13 +230,13 @@ struct SessionPaneView: View {
         store.selectSession(session.id)
     }
 
-    /// The pane's header: the shell keeps the slim ink bar; an agent pane gets one `Layout.paneHeader`
+    /// The pane's header: the shell keeps the slim raised bar; an agent pane gets one `Layout.paneHeader`
     /// line on the pane's own surface (status v2), the same in Default and Mighty.
     @ViewBuilder private var header: some View {
         if session.kind == "shell" {
             SlimPaneHeader(kind: SessionKind.shell, title: session.title,
                            subtitle: localTerminal ? L("dashboard.kind.shell") + " · " + L("phone.card.localTerminal") : L("dashboard.kind.shell"),
-                           status: Palette.status(session.status)) { paneMenu(ink: Palette.onStatus) }
+                           status: Palette.status(session.status)) { paneMenu(ink: Palette.ink2) }
                 .contentShape(Rectangle())
                 .simultaneousGesture(TapGesture().onEnded { store.selectSession(session.id) })
         } else {
@@ -586,7 +586,7 @@ struct SessionPaneView: View {
                 if session.kind == "shell" { Image(systemName: "terminal").font(.ui(size: 24, weight: .light)) }
                 else { ProviderIcon(provider: session.provider, size: 24, weight: .light) }
             }.foregroundStyle(Palette.accent.opacity(0.75)).padding(.bottom, DesignMetrics.Spacing.xs)
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 Text(session.kind == "shell" ? L("pane.empty.shellTitle") : L("pane.empty.agentTitle", ["provider": ProviderOptions.label(session.provider)]))
                     .font(.ui(size: 16, weight: .medium))
                 if session.kind != "shell" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
@@ -606,7 +606,7 @@ struct SessionPaneView: View {
             if offersMightyStyle {
                 HStack(spacing: DesignMetrics.Spacing.md) {
                     MightyStylePicker(session: session, onApprove: { openApproval($0) })
-                    Text(verbatim: styleHint).font(.ui(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
+                    Text(verbatim: styleHint).font(.ui(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
                     Spacer(minLength: 0)
                 }.padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, DesignMetrics.Spacing.sm)
                 // One state, one message: a manifest that changed on disk is
@@ -662,7 +662,7 @@ struct SessionPaneView: View {
                 if let armedPrefix {
                     Text(verbatim: armedPrefix)
                         .font(.ui(size: 10, design: .monospaced)).foregroundStyle(Palette.accent).lineLimit(1)
-                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
                         .background(Palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
                         .accessibilityLabel(L("composer.armedCommand", ["command": armedPrefix]))
                         .accessibilityIdentifier("mighty-enter-armed-\(session.id)")
@@ -724,7 +724,7 @@ struct SessionPaneView: View {
             if let problem = store.inputMethodProblem, composerFocused {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(problem.recoveryState == .reconnected ? Palette.doneText : Palette.waitText).padding(.top, 1)
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(problem.recoveryState == .reconnected ? L("inputRecovery.noticeReconnected") : L("inputRecovery.noticeCheck")).fontWeight(.medium)
                         Text(problem.recoveryState.message)
                             .foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
@@ -754,7 +754,7 @@ struct SessionPaneView: View {
             if let reason = blockedReason {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "info.circle").foregroundStyle(Palette.accent).padding(.top, 1)
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(L("composer.blocked.title")).fontWeight(.medium)
                         Text(reason).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                         if let item = store.setupItemForMissingCLI(session) {

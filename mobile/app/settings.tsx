@@ -6,7 +6,7 @@ import { SettingRow, SettingSwitch, SettingsSection } from '@/components/setting
 import { t } from '@/lib/i18n';
 import { PUSH_KINDS, type PushKind } from '@/lib/push/message';
 import { pushSettings } from '@/lib/push/settings';
-import { spacing, useStyles, type Palette } from '@/theme';
+import { layout, spacing, useStyles, type Palette } from '@/theme';
 
 const KIND_LABEL: Record<PushKind, string> = {
   completed: 'phone.settings.kind.completed',
@@ -95,7 +95,7 @@ const makeStyles = (palette: Palette) =>
       backgroundColor: palette.background,
       flexGrow: 1,
       gap: spacing.xxl,
-      paddingHorizontal: spacing.xl,
+      paddingHorizontal: layout.gutter,
       paddingTop: spacing.xl,
     },
   });

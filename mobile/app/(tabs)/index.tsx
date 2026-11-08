@@ -15,6 +15,7 @@ import { useHostsStore } from '@/store/hosts';
 import { useHostState } from '@/store/live';
 import {
   cardShadow,
+  layout,
   radius,
   spacing,
   toneColors,
@@ -135,7 +136,7 @@ export default function DashboardTab() {
           </Pressable>
         </View>
 
-        <ScreenTitle title={t('phone.dashboard.title')} style={styles.title} />
+        <ScreenTitle title={t('phone.dashboard.title')} />
 
         <View style={styles.stats}>
           <StatTile count={stats.running} label={t('phone.dashboard.stat.running')} tone="run" wide />
@@ -161,6 +162,8 @@ export default function DashboardTab() {
           <EmptyState
             title={t('phone.hosts.empty.title')}
             description={t('phone.hosts.empty.description')}
+            icon="hosts"
+            action={{ label: t('phone.hosts.addHost'), onPress: () => router.push('/pair') }}
           />
         ) : null}
       </ScrollView>
@@ -185,7 +188,7 @@ export default function DashboardTab() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    content: { gap: spacing.md, paddingHorizontal: spacing.lg },
+    content: { gap: spacing.md, paddingHorizontal: layout.gutter },
     topRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
     hostChip: {
       ...cardShadow,
@@ -210,7 +213,6 @@ const makeStyles = (palette: Palette) =>
       width: 36,
     },
     pressed: { opacity: 0.75 },
-    title: { paddingHorizontal: spacing.xs },
     stats: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xs },
     tile: {
       borderRadius: 18,

@@ -72,6 +72,9 @@ struct OneUIPane<Content: View, Trailing: View>: View {
             }
             .padding(.horizontal, OneUIMetrics.paneInset).padding(.top, Self.barHeight).padding(.bottom, OneUIMetrics.bottomInset)
         }
+        // The system's scroller: with "Show scroll bars: Always" (or a mouse) it is the thing to
+        // drag, so it is never hidden, even though a legacy one takes a gutter on pages that scroll.
+        .scrollIndicators(.automatic)
         .coordinateSpace(name: "oneUIPane")
         .onPreferenceChange(OneUIScrollKey.self) { offset in
             let next = min(1, max(0, offset / Self.heroHeight))
@@ -171,7 +174,9 @@ struct OneUISwitch: View {
     var body: some View {
         ZStack(alignment: isOn ? .trailing : .leading) {
             Capsule().fill(isOn ? Palette.accent : Color.clear)
-            Capsule().strokeBorder(Palette.token(\.ink3), lineWidth: isOn ? 0 : 2)
+            // Inset by half the line and a pixel more, so the ring's antialiased edge stays inside
+            // the 42pt frame and draws as a whole pill instead of flat ends.
+            Capsule().inset(by: 1.5).stroke(Palette.token(\.ink3), lineWidth: isOn ? 0 : 2)
             Circle().fill(isOn ? Palette.onAccent : Palette.token(\.ink3))
                 .frame(width: isOn ? 18 : 14, height: isOn ? 18 : 14)
                 .padding(.horizontal, isOn ? OneUIMetrics.knobInsetOn : OneUIMetrics.knobInsetOff)
