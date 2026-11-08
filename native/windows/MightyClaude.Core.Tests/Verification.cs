@@ -598,6 +598,7 @@ internal static class Verification
         await Test("a leftover background task's report does not end the real request", ActivityUsageVerification.LeftoverTaskResult);
         await Test("optional metadata recovery, elapsed checkpoints and workspace state", ActivityUsageVerification.Persistence);
         await Test("authenticated structured Mods output and usage boundaries", ActivityUsageVerification.Mods);
+        await Test("an app started from a bare environment takes the user's own variables back", UserEnvironmentVerification.Repair);
         await Test("Mods parity: graph lifecycle carries bounded input and output", ModBridgeParityVerification.GraphLifecycleCarriesBoundedContent);
         await Test("Mods parity: graph opt-in, authentication and run isolation", ModBridgeParityVerification.GraphOptInAuthenticationAndRunIsolation);
         await Test("Mods parity: malformed graph metadata never reaches a run", ModBridgeParityVerification.MalformedGraphIsRejectedBeforeDelivery);

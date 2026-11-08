@@ -156,6 +156,9 @@ internal static class Program
         // The help capture's canned CLI, the app's own binary in a third mode (HelpDemoCli.cs).
         if (args.Length >= 2 && args[0] == HelpDemoCli.Argument && Path.IsPathFullyQualified(args[1])) return HelpDemoCli.Run(args[1], args[2..]);
         if (AppUpdateInstallPlan.TryParse(args) is { } plan) return RunUpdateHelper(plan);
+        // An app started again by an update helper that predates the fix below inherits the helper's bare environment
+        // (only SystemRoot): take the user's own variables back before anything is run, so every CLI and shell has a home.
+        UserEnvironment.RepairCurrentProcess();
 
         StartupOptions? options = null;
         try
@@ -218,11 +221,18 @@ internal static class Program
                 token => AppUpdateReplacement.WaitForExitAsync(plan.AppProcessId, AppUpdateReplacement.DefaultExitTimeout, token),
                 executable =>
                 {
-                    using (Process.Start(new ProcessStartInfo(executable)
+                    var start = new ProcessStartInfo(executable)
                     {
                         UseShellExecute = false,
                         WorkingDirectory = Path.GetDirectoryName(executable)!,
-                    })) { }
+                    };
+                    // The helper itself runs with only SystemRoot; the app it starts gets the user's own environment instead.
+                    if (UserEnvironment.Fresh() is { } fresh)
+                    {
+                        start.Environment.Clear();
+                        foreach (var (name, value) in fresh) start.Environment[name] = value;
+                    }
+                    using (Process.Start(start)) { }
                     return Task.CompletedTask;
                 },
                 runningAgain: token => AppUpdateReplacement.RunningFromInstallAsync(plan.InstallDirectory, TimeSpan.FromSeconds(30), token)).GetAwaiter().GetResult();

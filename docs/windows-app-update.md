@@ -74,6 +74,11 @@ macOS zip이 `.app` 하나를 담는 것과 같은 모양이다.
 1. 앱이 도우미를 **새 버전의 스테이지된 폴더에서 분리 실행**한다. 도우미는 같은
    실행 파일의 두 번째 모드(`--update-helper …`)이고, **최소 환경**(`SystemRoot`만)으로
    시작한다. 토큰·자격 증명·사용자를 알려 주는 값은 하나도 넘기지 않는다. 승격하지 않는다.
+   도우미가 앱을 다시 띄울 때는 이 최소 환경을 물려주지 않고, 현재 사용자의 원래 환경
+   (`CreateEnvironmentBlock`, `UserEnvironment.Fresh`)으로 띄운다. 최소 환경을 물려받은 앱은
+   `USERPROFILE`·`APPDATA`·`TEMP`·`PATHEXT`가 없어서, 앱이 실행하는 CLI(Antigravity의
+   `%userprofile% is not defined` 등)와 셸이 실패했다. 이 수정 전 도우미가 띄운 앱도 시작할 때
+   `UserEnvironment.RepairCurrentProcess`로 빠진 사용자 변수를 되찾는다.
    앱은 Core가 제공하는 `StagedHelperExecutable`(스테이지된 폴더 안의 경로)만 실행하고,
    그 경로가 스테이지된 폴더 밖이면 시작하지 않는다.
 2. 도우미는 시작하자마자 **끊긴 교체를 되돌린다**(`RestoreInterruptedInstall`).

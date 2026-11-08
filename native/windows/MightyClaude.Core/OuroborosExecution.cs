@@ -572,7 +572,9 @@ public sealed class OuroborosDashboardClient
     public async Task<bool> EnsureDaemonAsync(string? executionID, CancellationToken cancellation = default)
     {
         if (EnsureArguments(executionID) is not { } arguments || PythonCandidates.FirstOrDefault(File.Exists) is not { } python) return false;
-        var inherited = System.Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>().ToDictionary(entry => (string)entry.Key, entry => entry.Value as string ?? "", StringComparer.OrdinalIgnoreCase);
+        // Windows names are case-blind, but a process can still carry two spellings (SystemRoot and SYSTEMROOT): the last wins rather than the read throwing.
+        var inherited = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (System.Collections.DictionaryEntry entry in System.Environment.GetEnvironmentVariables()) inherited[(string)entry.Key] = entry.Value as string ?? "";
         return await launcher(new(python, arguments, DaemonEnvironment(home, inherited, OperatingSystem.IsWindows()), DaemonDirectory)).WaitAsync(cancellation).ConfigureAwait(false);
     }
 }
