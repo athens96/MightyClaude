@@ -6,6 +6,7 @@ import { attachmentRefusal, byteLabel, toBase64 } from './attachments';
 import { enterAction, maximumDraft } from './keys';
 import { choose, closed, move, paletteDraft, paletteKey, paletteState, safeIndex, type PaletteState, type SlashCatalog, type SlashCommand } from './slash';
 import { AskUnsandboxedRow, MenuList, StyleRow, Toolbar, usePopover } from './Toolbar';
+import { Guided } from './Guided';
 import { readRunNow, runNowBranches, runNowTip, runNowWaits, type RunNow, type RunNowChoice } from './queue';
 import { Icon } from '../icons/Icon';
 import type { AttachmentPreview, ComposerState, SendResult } from './types';
@@ -313,6 +314,7 @@ export function Composer({ session }: { session: RunSession }) {
         onDrop={drop}
       >
         {state?.style && <StyleRow paneId={paneId} style={state.style} />}
+        {state?.style && <Guided paneId={paneId} panel={state.guided} />}
         {state && state.attachments.length > 0 && (
           <div className="composer-attachments">
             {state.attachments.map((file) => (

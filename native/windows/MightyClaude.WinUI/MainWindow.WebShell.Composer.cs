@@ -137,6 +137,7 @@ public sealed partial class MainWindow
         });
         bridge.Register("dismissAskNotice", args => { DismissAskNotice(WebPane(args.Text("paneId")).PaneId); return Task.FromResult<object?>(null); });
         bridge.Register("attachmentPreview", args => Task.FromResult(WebPane(args.Text("paneId")).WebAttachmentPreview(args.Text("id") ?? "")));
+        RegisterGuidedMethods(bridge);
     }
 
     private async Task<object?> ApplyWebRunSettings(JsonElement args) =>
@@ -590,6 +591,8 @@ public sealed partial class MainWindow
                 style = styleHost.Visibility == Visibility.Visible
                     ? new { label = stylePickerLabel.Text, badge = stylePickerBadge.Visibility == Visibility.Visible ? (stylePickerBadge.Child as TextBlock)?.Text : null, hint = styleHint.Text, enabled = stylePicker.IsEnabled }
                     : null,
+                // The chosen style's guide panel under that row (MainWindow.WebShell.Guided.cs).
+                guided = WebGuided(),
                 header = WebHeader(pane),
                 // The marks at the toolbar's right (M/SessionPaneView.swift composerToolbar): the resume mark, and a Claude pane's
                 // status-line toggle with whether it is on.
