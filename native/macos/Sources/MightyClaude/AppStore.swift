@@ -467,6 +467,15 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var delegationCardNotes: [String: DelegationCardNote] = [:]
     /// The children whose card action is going.
     @Published var delegationCardBusy: Set<String> = []
+    /// The children whose card merge waits to go through by itself
+    /// (``DelegationMergeQueue``).
+    var delegationMergeQueue: Set<String> = []
+    /// The children whose queued merge is being tried again quietly: the card
+    /// keeps its line and shows no busy state.
+    var delegationMergeRetrying: Set<String> = []
+    /// Tries the queued merges again now and then while any waits, for what
+    /// no event announces (the human committing in a terminal).
+    var delegationMergeRetry: Task<Void, Never>?
     /// A discard from a child's card waiting on the human's confirmation.
     @Published var pendingChildDiscard: PendingChildDiscard?
     /// A merge from a child's card went through: the offer to discard the child now.

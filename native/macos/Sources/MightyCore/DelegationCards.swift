@@ -12,14 +12,63 @@ public enum DelegationCardAction: String, Sendable, CaseIterable {
 
 extension DelegationChildRow {
     /// The actions the child's card offers now, in this order: merge while
-    /// it is reported, undo while its last merge can be undone, and discard
-    /// until it is discarded.
+    /// it is reported, or still working (the merge then waits for its report,
+    /// ``DelegationMergeQueue``), undo while its last merge can be undone,
+    /// and discard until it is discarded.
     public var cardActions: [DelegationCardAction] {
         var actions: [DelegationCardAction] = []
-        if state == .reported { actions.append(.merge) }
+        if [.reported, .running, .waiting].contains(state) { actions.append(.merge) }
         if canUndo { actions.append(.undo) }
         if state != .discarded { actions.append(.discard) }
         return actions
+    }
+}
+
+/// What a human's merge from a child's card waits on before it goes through
+/// by itself (macOS only).
+public enum DelegationMergeWait: String, Sendable, CaseIterable {
+    /// The child is still working: it merges once the child reports.
+    case childRunning
+    /// The parent pane is running: it merges once that run ends.
+    case parentRunning
+    /// The parent's checkout has uncommitted changes to tracked files: it
+    /// merges once they are committed or put back.
+    case parentChanges
+}
+
+/// A human's merge from a child's card does not give up on what passes: it
+/// is queued and tried again until it goes through, is refused for good or
+/// the child can no longer merge (macOS only). A merge conflict asks the
+/// child to resolve it, and its next report merges.
+public enum DelegationMergeQueue {
+    public enum Step: Sendable, Equatable {
+        /// Try the merge now.
+        case attempt
+        /// Keep it queued, waiting on this.
+        case wait(DelegationMergeWait)
+        /// Take it out of the queue: the child ended without a new report,
+        /// was merged, closed, failed or discarded.
+        case drop
+    }
+
+    /// What a queued merge of a child in `state` does now; `parentRunning`
+    /// is whether its parent pane runs (a closed parent pane does not).
+    public static func step(state: ChildState, parentRunning: Bool) -> Step {
+        switch state {
+        case .creating, .running, .waiting: .wait(.childRunning)
+        case .reported: parentRunning ? .wait(.parentRunning) : .attempt
+        case .ended, .interrupted, .merged, .failed, .closed, .discarded: .drop
+        }
+    }
+
+    /// What a merge refused for `reason` waits on while it stays queued; nil
+    /// when the refusal is for good (a conflict is the child's to resolve).
+    public static func wait(after reason: DelegationReasonCode) -> DelegationMergeWait? {
+        switch reason {
+        case .trackedChanges: .parentChanges
+        case .parentBusy: .parentRunning
+        default: nil
+        }
     }
 }
 
@@ -94,6 +143,7 @@ extension DelegationCoordinator {
         guard let child = file.children.first(where: { $0.id == id }) else { return .failed(L("delegation.card.error.noChild")) }
         cardPanes = [child.parentSessionId, child.id]
         guard let checkout = await parentCheckout(of: child) else { return .refused(.branchNotCheckedOut) }
+        guard let child = await followParentBranch(id, in: checkout) else { return .failed(L("delegation.card.error.noChild")) }
         let outcome = await ChildMerge.cardMerge(child, parentCheckout: checkout)
         guard case .merged(let record) = outcome else { return outcome }
         if !file.recordMerge(record), file.children.contains(where: { $0.id == record.childId }) { file.merges.append(record) }
@@ -102,6 +152,25 @@ extension DelegationCoordinator {
         // that the file could not be saved, and the next save writes it.
         do { try commit(file, context: context) } catch { return .mergedUnsaved(record, Self.unsavedReason(error)) }
         return outcome
+    }
+
+    /// The child `id` as it is once its recorded parent branch follows
+    /// `checkout`: when another branch checked out there holds the recorded
+    /// one's work (``ChildMerge/mergeBranch(of:in:)``), as when the recorded
+    /// branch was merged into main, the record names that branch from now on
+    /// and is saved (should the disk refuse, the next save writes it). nil
+    /// when no child has the id.
+    func followParentBranch(_ id: String, in checkout: String) async -> ChildRecord? {
+        guard let found = file.children.first(where: { $0.id == id }) else { return nil }
+        guard let branch = await ChildMerge.mergeBranch(of: found, in: checkout), branch != found.parentBranch,
+              let index = file.children.firstIndex(where: { $0.id == id }), file.children[index].parentBranch == found.parentBranch else {
+            return file.children.first { $0.id == id }
+        }
+        file.children[index].parentBranch = branch
+        let child = file.children[index]
+        let context = await pruneContext()
+        try? commit(file, context: context)
+        return child
     }
 
     /// Why the delegation file was not saved, for a card's note: in the

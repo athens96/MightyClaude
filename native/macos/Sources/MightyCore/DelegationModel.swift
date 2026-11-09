@@ -17,6 +17,9 @@ public enum ChildStateEvent: String, Codable, Sendable, CaseIterable {
     case endWithReport
     /// The run finished, stopped or errored with no new report.
     case endWithoutReport
+    /// A run after a report ended with no new report and the child's branch
+    /// still at its reported head, not merged since: its report still stands.
+    case endUnchanged
     /// Quitting the app killed the run.
     case quitApp
     /// A merge took the child's reported head.
@@ -33,8 +36,9 @@ public enum ChildStateEvent: String, Codable, Sendable, CaseIterable {
 ///
 /// - creating → running (its first run starts) | failed (the start failed)
 /// - running ⇄ waiting (a permission request only a human can answer)
-/// - running → reported (the run ended with a changed REPORT.md) | ended (no
-///   new report) | interrupted (quitting the app killed it; it comes back stopped)
+/// - running → reported (the run ended with a changed REPORT.md, or with no
+///   new report and its branch still at the unmerged reported head) | ended
+///   (no new report) | interrupted (quitting the app killed it; it comes back stopped)
 /// - reported, ended, interrupted, merged → running: any new run in the open,
 ///   idle pane, which clears reported
 /// - reported → merged; merged → reported (undo while the pane is open). Undo
@@ -59,6 +63,7 @@ public enum ChildState: String, Codable, Sendable, CaseIterable {
         case (.waiting, .answerPermission): return .running
         case (.running, .endWithReport): return .reported
         case (.running, .endWithoutReport): return .ended
+        case (.running, .endUnchanged): return .reported
         case (.running, .quitApp): return .interrupted
         case (.reported, .merge): return .merged
         case (.merged, .undoMerge): return .reported
@@ -110,6 +115,10 @@ public struct ChildRecord: Codable, Sendable, Equatable, Identifiable {
     /// The SHA-256 of the whole REPORT.md at the current revision, so only a
     /// changed report makes the next one. nil before the first report.
     public var reportDigest: String?
+    /// The run whose end made the current report, so a later run that
+    /// ended with nothing new (and left it reported) is told apart. nil
+    /// before the first report and in every record kept before it was stored.
+    public var reportRunId: String?
     /// True for a child the human started from its parent's composer (the
     /// second send), not by the parent's delegate call. Its parent's run
     /// never asked for it, so it sends the parent no notices: the human

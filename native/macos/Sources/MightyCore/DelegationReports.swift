@@ -104,7 +104,11 @@ extension DelegationCoordinator {
     ///    or git fails, nothing is committed, the child's pane says why and
     ///    its report counts as not new yet, so the next run's end tries
     ///    again. New files the commit left out are named in the pane.
-    /// 3. Otherwise the child has ended, and when the run was the one its
+    /// 3. A child reported before whose branch is still at its reported head,
+    ///    not merged since, is reported again at the same revision, so its
+    ///    card can still merge it; the run its parent awaits still sends one
+    ///    ended_without_report notice.
+    /// 4. Otherwise the child has ended, and when the run was the one its
     ///    parent awaits (delegate's first run, or the run a follow-up went
     ///    to) the parent gets one ended_without_report notice.
     ///
@@ -129,7 +133,7 @@ extension DelegationCoordinator {
         await takeRunTurn()
         defer { passRunTurn() }
         guard let found = file.children.first(where: { $0.id == id }), Self.mayEnd(found, runId: runId) else { return nil }
-        var report: ChildReportFile?, head: String?, committed = ChildAutoCommit.Result(outcome: .nothing)
+        var report: ChildReportFile?, head: String?, unchangedHead: String?, committed = ChildAutoCommit.Result(outcome: .nothing)
         if end != .quit {
             let path = ChildWorktree.reportFile(worktreePath: found.worktreePath)
             report = await Task.detached { ChildReportFile.read(path) }.value
@@ -142,6 +146,8 @@ extension DelegationCoordinator {
                 // A report whose head git cannot read counts as no new report; its
                 // change is still there for the next run's end.
                 if [.nothing, .committed].contains(committed.outcome) { head = await ChildMerge.head(of: found.worktreePath) }
+            } else if found.reportHead != nil {
+                unchangedHead = await ChildMerge.head(of: found.worktreePath)
             }
         }
         let context = await pruneContext()
@@ -159,8 +165,13 @@ extension DelegationCoordinator {
             child.apply(.quitApp)
         } else if let report, let head, report.digest != child.reportDigest, child.recordReport(head: head) {
             child.reportDigest = report.digest
+            child.reportRunId = runId
             next.setCopy(DelegationCopy(childId: id, kind: .report, revision: child.reportRevision, contents: report.start, totalBytes: report.totalBytes))
             if child.notifiesParent { notice = Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: child.reportRevision, kind: .reported) }
+        } else if let unchangedHead, unchangedHead.lowercased() == child.reportHead?.lowercased(),
+                  next.merges.last(where: { $0.childId == id })?.childHead.lowercased() != unchangedHead.lowercased(), child.apply(.endUnchanged) {
+            // Nothing new since the report, which still stands: the card can merge it.
+            if child.awaitedRunId == runId, child.notifiesParent { notice = Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: child.reportRevision, kind: .endedWithoutReport) }
         } else {
             child.apply(.endWithoutReport)
             if child.awaitedRunId == runId, child.notifiesParent { notice = Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: child.reportRevision, kind: .endedWithoutReport) }
@@ -208,7 +219,8 @@ extension DelegationCoordinator {
         var next = file
         var child = next.children[index]
         var notice: Notice?
-        if child.runId == runId, child.state == .ended, child.notifiesParent {
+        // Ended with no new report: ended, or reported still from an earlier run.
+        if child.runId == runId, child.state == .ended || (child.state == .reported && child.reportRunId != runId), child.notifiesParent {
             let sent = Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: child.reportRevision, kind: .endedWithoutReport)
             next.notices.append(sent); notice = sent
         } else if child.runId != runId, Self.isIdleBetweenRuns(child.state) {

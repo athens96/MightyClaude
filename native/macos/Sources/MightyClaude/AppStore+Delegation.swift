@@ -20,6 +20,10 @@ struct DelegationCardNote: Equatable {
         /// The merge was refused with `merge_conflict`, and the child's pane
         /// took the request to resolve it but did not start it.
         case conflictNotStarted
+        /// The merge is queued and goes through by itself once this passes.
+        case queued(DelegationMergeWait)
+        /// The queued merge was dropped: the child ended without a new report.
+        case queueDropped
     }
 
     var action: DelegationCardAction
@@ -81,7 +85,7 @@ extension AppStore {
             delegationChildWatch = Task { [weak self] in
                 for await rows in coordinator.childRows {
                     guard let self else { return }
-                    if delegationChildren != rows { delegationChildren = rows }
+                    if delegationChildren != rows { delegationChildren = rows; advanceQueuedMerges() }
                 }
             }
             // So do the held rows of each pane's queued list, Mac and phone.
@@ -108,6 +112,10 @@ extension AppStore {
             delegationRunEvents.send(.ended(childId: id, runId: ended.runId, end: ended.end))
         }
         offerDelegationPending()
+        // A parent pane's end may let the merges queued under it through.
+        if delegationChildren.contains(where: { $0.parentSessionId == id && delegationMergeQueue.contains($0.id) }) {
+            Task { [weak self] in await Task.yield(); self?.advanceQueuedMerges() }
+        }
     }
 
     /// The coordinator recorded an end of the child `id`'s run: what its
@@ -475,25 +483,94 @@ extension AppStore {
 
     // MARK: Child cards
 
-    /// The human's merge from the child's card. Once it went through, the
-    /// human is offered to discard the child right away: its work is in the
-    /// parent's branch, so only its worktree, its branch and the undo go.
-    /// When it conflicts, the child's pane is asked once per report to bring
-    /// the parent branch in, resolve the conflict and report again.
+    /// The human's merge from the child's card. It is queued
+    /// (``DelegationMergeQueue``): while the child still works, its parent
+    /// pane runs or the parent's checkout has uncommitted changes, the card
+    /// says what it waits on and the merge goes through by itself once that
+    /// passes. Once it went through, the human is offered to discard the
+    /// child right away: its work is in the parent's branch, so only its
+    /// worktree, its branch and the undo go. When it conflicts, the child's
+    /// pane is asked once per report to bring the parent branch in, resolve
+    /// the conflict and report again, and that report merges.
     func mergeChildFromCard(_ id: String) {
-        runCardAction(id, .merge) { delegation in
+        guard !delegationCardBusy.contains(id) else { return }
+        delegationMergeQueue.insert(id)
+        advanceQueuedMerge(id, pressed: true)
+    }
+
+    /// Moves every queued card merge on (``advanceQueuedMerge(_:pressed:)``).
+    func advanceQueuedMerges() {
+        for id in delegationMergeQueue { advanceQueuedMerge(id) }
+    }
+
+    /// Moves the queued merge of the child `id` on, by its step now: it waits
+    /// (the card says on what), is tried, or leaves the queue. `pressed` is
+    /// the human's own press, which shows the card busy; a retry is quiet
+    /// and changes the card's line only when its answer differs.
+    private func advanceQueuedMerge(_ id: String, pressed: Bool = false) {
+        guard delegationMergeQueue.contains(id), !delegationCardBusy.contains(id), !delegationMergeRetrying.contains(id) else { return }
+        guard let row = delegationChildren.first(where: { $0.id == id }) else { delegationMergeQueue.remove(id); return }
+        let parent = snapshot.sessions.first { $0.id == row.parentSessionId }
+        let parentRunning = parent.map { $0.status == "running" || pendingRuns.contains($0.id) } ?? false
+        switch DelegationMergeQueue.step(state: row.state, parentRunning: parentRunning) {
+        case .wait(let wait):
+            // A child resolving its conflict keeps saying so until it reports.
+            if wait == .childRunning, delegationCardNotes[id]?.result == .conflictSent { break }
+            let note = DelegationCardNote(action: .merge, result: .queued(wait))
+            if delegationCardNotes[id] != note { delegationCardNotes[id] = note }
+        case .drop:
+            delegationMergeQueue.remove(id)
+            if [.ended, .interrupted].contains(row.state), delegationCardNotes[id]?.action == .merge {
+                delegationCardNotes[id] = DelegationCardNote(action: .merge, result: .queueDropped)
+            }
+        case .attempt:
+            attemptQueuedMerge(id, pressed: pressed)
+        }
+        scheduleMergeRetry()
+    }
+
+    private func attemptQueuedMerge(_ id: String, pressed: Bool) {
+        guard let delegation else { return }
+        let work: @Sendable (DelegationCoordinator) async -> DelegationCardNote.Result = { delegation in
             switch await delegation.mergeFromCard(id) {
             case .merged: .done
             case .mergedUnsaved(_, let error): .doneUnsaved(error)
-            case .refused(let reason): .refused(reason)
+            case .refused(let reason): DelegationMergeQueue.wait(after: reason).map { .queued($0) } ?? .refused(reason)
             case .failed(let message): .failed(message)
             }
-        } then: { [weak self] result in
+        }
+        let then: (DelegationCardNote.Result) -> Void = { [weak self] result in
             guard let self else { return }
             switch result {
-            case .done: offerDiscardAfterMerge(id)
-            case .refused(.mergeConflict): askChildToResolveConflict(id)
-            default: break
+            case .queued: break
+            case .refused(.mergeConflict): if !askChildToResolveConflict(id) { delegationMergeQueue.remove(id) }
+            case .done: delegationMergeQueue.remove(id); offerDiscardAfterMerge(id)
+            default: delegationMergeQueue.remove(id)
+            }
+            scheduleMergeRetry()
+        }
+        if pressed { runCardAction(id, .merge, work, then: then); return }
+        delegationMergeRetrying.insert(id)
+        Task { [weak self] in
+            let result = await work(delegation)
+            guard let self else { return }
+            delegationMergeRetrying.remove(id)
+            let note = DelegationCardNote(action: .merge, result: result)
+            if delegationCardNotes[id] != note { delegationCardNotes[id] = note }
+            then(result)
+        }
+    }
+
+    /// Keeps a slow retry going while any merge waits, and stops it once none does.
+    private func scheduleMergeRetry() {
+        if delegationMergeQueue.isEmpty { delegationMergeRetry?.cancel(); delegationMergeRetry = nil; return }
+        guard delegationMergeRetry == nil else { return }
+        delegationMergeRetry = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard let self, !Task.isCancelled, !ending else { return }
+                if delegationMergeQueue.isEmpty { delegationMergeRetry = nil; return }
+                advanceQueuedMerges()
             }
         }
     }
@@ -508,26 +585,30 @@ extension AppStore {
     /// so the card then says the request did not start. A child that cannot
     /// commit in its permission mode now (a Codex or Antigravity child
     /// outside fullAccess) cannot merge either, so it is not asked.
-    private func askChildToResolveConflict(_ id: String) {
+    /// Whether the request was taken to start; a queued merge waits for the
+    /// child's next report only then.
+    @discardableResult private func askChildToResolveConflict(_ id: String) -> Bool {
         guard let delegation, let session = snapshot.sessions.first(where: { $0.id == id }), !delegationCardBusy.contains(id),
               DelegationProviders.canCommit(provider: session.provider, mode: session.settings.permissionMode),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
-              startRefusal(session, in: workspace, input: "conflict", attachments: []) == nil else { return }
+              startRefusal(session, in: workspace, input: "conflict", attachments: []) == nil else { return false }
         delegationCardBusy.insert(id)
         Task { [weak self] in
             let text = await delegation.conflictResolution(for: id)
             guard let self else { return }
-            guard let text else { delegationCardBusy.remove(id); return }
+            guard let text else { delegationCardBusy.remove(id); delegationMergeQueue.remove(id); return }
             let runId = await startRun(sessionId: id, input: text)
             delegationCardBusy.remove(id)
             let refused = DelegationCardNote(action: .merge, result: .refused(.mergeConflict))
             guard runId != nil else {
+                delegationMergeQueue.remove(id)
                 await delegation.conflictResolutionNotStarted(id)
                 if delegationCardNotes[id] == refused { delegationCardNotes[id] = DelegationCardNote(action: .merge, result: .conflictNotStarted) }
                 return
             }
             if delegationCardNotes[id] == refused { delegationCardNotes[id] = DelegationCardNote(action: .merge, result: .conflictSent) }
         }
+        return true
     }
 
     /// Asks whether the merged child goes now, naming the worktrees nested in
@@ -603,7 +684,7 @@ extension AppStore {
             case .reconfirm(let nested):
                 delegationCardNotes[id] = nil
                 if pendingChildDiscard == nil { pendingChildDiscard = PendingChildDiscard(id: id, title: pending.title, branch: pending.branch, nested: nested) }
-            case .doneUnsaved, .refused, .failed, .conflictSent, .conflictNotStarted:
+            case .doneUnsaved, .refused, .failed, .conflictSent, .conflictNotStarted, .queued, .queueDropped:
                 break
             }
         }

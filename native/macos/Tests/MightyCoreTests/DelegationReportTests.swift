@@ -198,8 +198,18 @@ private func record(_ id: String, state: ChildState, runId: String? = nil) -> Ch
         #expect(await fixture.call("merge", ["child": id, "expected_head": firstHead]).refused == .notReported)
         try await fixture.expectSaved()
 
-        // It ends with the report unchanged: ended, and no notice for a human's run.
+        // It ends with the report and the branch unchanged: the report still
+        // stands, so the child is reported again at the same revision and its
+        // card can merge it; no notice for a human's run.
         #expect(await fixture.coordinator.childRunEnded(id, runId: "human-2", end: .finished) == nil)
+        let standing = await fixture.child(id)
+        #expect(standing.state == .reported && standing.reportRevision == 1 && standing.reportHead == firstHead)
+        #expect(await fixture.notices(id).count == 1)
+
+        // New work with no new report: ended, so nothing unreported is merged.
+        await fixture.coordinator.childRunStarted(id, runId: "human-2b")
+        _ = try await fixture.commitWork(started, "unreported")
+        #expect(await fixture.coordinator.childRunEnded(id, runId: "human-2b", end: .finished) == nil)
         #expect(await fixture.child(id).state == .ended)
         #expect(await fixture.notices(id).count == 1)
 
@@ -223,6 +233,7 @@ private func record(_ id: String, state: ChildState, runId: String? = nil) -> Ch
         #expect(await fixture.child(id).state == .running)
         try fixture.writeReport(started, long)
         #expect(await fixture.coordinator.childRunEnded(id, runId: "human-4", end: .errored) == nil)
+        // Merged since that report, so it is not offered again.
         let unchanged = await fixture.child(id)
         #expect(unchanged.state == .ended && unchanged.reportRevision == 2)
 
@@ -240,6 +251,35 @@ private func record(_ id: String, state: ChildState, runId: String? = nil) -> Ch
         #expect(await fixture.coordinator.childRunEnded(id, runId: "human-6", end: .finished) == nil)
         #expect(await fixture.child(id).reportRevision == 2)
         #expect(await fixture.notices(id).count == 2)
+        try await fixture.expectSaved()
+    }
+
+    @Test func aFollowUpRunThatLeavesTheReportStandingStillSendsItsEndedNoticeOnce() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let started = try await fixture.delegateRunningChild()
+        let id = started.id
+        let head = try await fixture.commitWork(started, "one")
+        try fixture.writeReport(started, "Report.\n")
+        #expect(await fixture.coordinator.childRunEnded(id, runId: "first-\(id)", end: .finished)?.kind == .reported)
+
+        // A follow-up's run ends with nothing new before its delivery names it:
+        // still reported, and the notice goes out once it is named.
+        #expect(await fixture.call("follow_up", ["child": id, "text": "Check it once more."]).followUp != nil)
+        await fixture.coordinator.childRunStarted(id, runId: "follow-2")
+        #expect(await fixture.coordinator.childRunEnded(id, runId: "follow-2", end: .finished) == nil)
+        let standing = await fixture.child(id)
+        #expect(standing.state == .reported && standing.reportRevision == 1 && standing.reportHead == head)
+        let late = try #require(await fixture.coordinator.awaitRun("follow-2", of: id))
+        #expect(late.kind == .endedWithoutReport && late.reportRevision == 1)
+        #expect(await fixture.coordinator.awaitRun("follow-2", of: id) == nil)
+
+        // Named first, it sends its notice at the end itself.
+        await fixture.coordinator.childRunStarted(id, runId: "follow-3")
+        #expect(await fixture.coordinator.awaitRun("follow-3", of: id) == nil)
+        #expect(await fixture.coordinator.childRunEnded(id, runId: "follow-3", end: .finished)?.kind == .endedWithoutReport)
+        #expect(await fixture.child(id).state == .reported)
+        #expect(await fixture.notices(id).map(\.kind) == [.reported, .endedWithoutReport, .endedWithoutReport])
         try await fixture.expectSaved()
     }
 

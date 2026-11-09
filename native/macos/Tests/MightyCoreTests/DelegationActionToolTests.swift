@@ -267,8 +267,12 @@ struct DelegationActionToolTests {
         try Data("parent edit\n".utf8).write(to: place.repo.appendingPathComponent("file-0.txt"))
         try await expectRefusal("moved", movedHead, .trackedChanges, look: moved, "tracked change in the parent")
         try await place.git(["checkout", "-q", "--", "file-0.txt"])
-        try await place.git(["checkout", "-q", "-b", "elsewhere"])
+        // One that does not hold main's work (a branch that does takes the merge, see DelegationCardTests).
+        try await place.git(["checkout", "-q", "--orphan", "elsewhere"])
+        try await place.git(["rm", "-q", "-r", "--cached", "."])
+        try await place.git(["commit", "-q", "--allow-empty", "-m", "elsewhere"])
         try await expectRefusal("moved", movedHead, .branchNotCheckedOut, look: moved, "parent branch not checked out")
+        try await place.git(["clean", "-q", "-f"])
         try await place.git(["checkout", "-q", "main"])
 
         // Once one child is merged, a sibling made from the same base has diverged.

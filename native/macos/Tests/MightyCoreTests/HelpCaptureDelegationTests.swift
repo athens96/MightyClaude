@@ -127,8 +127,9 @@ struct HelpCaptureDelegationTests {
         let migration = try #require(pending(demo.children[3].id))
         #expect(migration.canAllow && migration.toolName == "Bash" && migration.summary == "npm run db:migrate")
         #expect(panes.first { $0.session.id == demo.children[2].id }?.session.status == "running")
-        // The merged child closed after its merge still offers undo, reported offers merge, and every child offers discard.
-        #expect(children.map(\.cardActions) == [[.undo, .discard], [.merge, .discard], [.discard], [.discard]])
+        // The merged child closed after its merge still offers undo, reported and working ones offer merge
+        // (a working child's waits for its report), and every child offers discard.
+        #expect(children.map(\.cardActions) == [[.undo, .discard], [.merge, .discard], [.merge, .discard], [.merge, .discard]])
         let merge = try #require(file.merges.first)
         let closed = try #require(file.children.first)
         #expect(file.merges.count == 1 && closed.state == .closed && closed.closedHead == merge.childHead && file.undoableMerge(of: closed.id) == merge)

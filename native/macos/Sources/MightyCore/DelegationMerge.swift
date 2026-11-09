@@ -101,7 +101,7 @@ public enum ChildMerge {
     /// conflicts on its own branch and report again, so the human's next
     /// merge from its card goes through.
     public static func conflictPrompt(_ child: ChildRecord) -> String {
-        "[Mighty Claude] Merging your branch \(child.branch) into \(child.parentBranch) from the app was refused: the two conflict. In this worktree, bring \(child.parentBranch) into your branch with `git merge \(child.parentBranch)`, resolve every conflict so that the changes on both sides are kept (ask when a choice is unclear), run the checks that apply, and commit the merge on \(child.branch), leaving no uncommitted changes to tracked files. Then add a short section to \(ChildWorktree.reportFile(worktreePath: child.worktreePath)) saying what conflicted and how you resolved it. The person who sent this merges your branch from the app again. Do not push, rebase or switch branches."
+        "[Mighty Claude] Merging your branch \(child.branch) into \(child.parentBranch) from the app was refused: the two conflict. In this worktree, bring \(child.parentBranch) into your branch with `git merge \(child.parentBranch)`, resolve every conflict so that the changes on both sides are kept (ask when a choice is unclear), run the checks that apply, and commit the merge on \(child.branch), leaving no uncommitted changes to tracked files. Then add a short section to \(ChildWorktree.reportFile(worktreePath: child.worktreePath)) saying what conflicted and how you resolved it. The app merges your branch once you report again. Do not push, rebase or switch branches."
     }
 
     /// A human's merge from the child's card. The reported head goes into the
@@ -113,7 +113,8 @@ public enum ChildMerge {
     ///
     /// 1. `not_reported`: the child is not reported.
     /// 2. `branch_not_checked_out`: the parent checkout does not have the
-    ///    recorded parent branch checked out.
+    ///    recorded parent branch checked out (the coordinator first moves the
+    ///    record to the branch that holds its work, ``mergeBranch(of:in:)``).
     /// 3. `tracked_changes`: the parent checkout has changes to tracked files.
     /// 4. `merge_conflict`: `git merge-tree` finds conflicts between the
     ///    parent's head and the child's.
@@ -208,6 +209,28 @@ public enum ChildMerge {
             await putBranchBack(); return .failed(L("delegation.card.error.parentMovedDuringUndo"))
         }
         return .undone(record, restoredBranch: restoresBranch)
+    }
+
+    /// The branch a merge of `child` goes into in `parentCheckout`: the
+    /// recorded parent branch while it is checked out there. When another
+    /// branch is checked out and holds the recorded one's work (the recorded
+    /// branch's head, or the child's base commit once that branch is gone, is
+    /// an ancestor of its head), as when the recorded branch was merged into
+    /// main, that branch is. nil with a detached HEAD, an unrelated branch or
+    /// a failed git.
+    public static func mergeBranch(of child: ChildRecord, in parentCheckout: String) async -> String? {
+        guard parentCheckout.hasPrefix("/"), !parentCheckout.contains("\0"), isFolder(parentCheckout),
+              let current = await DelegationGit.run(["symbolic-ref", "-q", "HEAD"], in: parentCheckout), current.exitCode == 0 else { return nil }
+        let ref = DelegationGit.line(current.stdout)
+        guard ref.hasPrefix("refs/heads/") else { return nil }
+        let branch = String(ref.dropFirst("refs/heads/".count))
+        if branch == child.parentBranch { return branch }
+        guard let recorded = await DelegationGit.run(["rev-parse", "-q", "--verify", "refs/heads/\(child.parentBranch)^{commit}"], in: parentCheckout),
+              recorded.exitCode == 0 || recorded.exitCode == 1 else { return nil }
+        let anchor = recorded.exitCode == 0 ? DelegationGit.line(recorded.stdout) : child.baseCommit.lowercased()
+        guard DelegationGit.isObjectName(anchor),
+              let contained = await DelegationGit.run(["merge-base", "--is-ancestor", anchor, "HEAD"], in: parentCheckout), contained.exitCode == 0 else { return nil }
+        return branch
     }
 
     /// The head of `branch` when `folder` is a checkout with that branch checked out, else nil.

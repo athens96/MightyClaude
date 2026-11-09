@@ -378,7 +378,7 @@ struct WorkspaceView: View {
         }
     }
 
-    /// The card's actions as a line of small buttons (merge while reported, undo
+    /// The card's actions as a line of small buttons (merge while reported or working, undo
     /// while its merge can be undone, discard until discarded), a busy line while
     /// one is going, the count of held notices a closed parent left on the card,
     /// and the last answer: a refusal with its reason, or a failure.
@@ -1085,7 +1085,7 @@ enum DelegationText {
     static func actionHelp(_ action: DelegationCardAction, _ child: DelegationChildRow) -> String {
         let branch = child.parentBranch.isEmpty ? L("delegation.card.parentBranch") : child.parentBranch
         return switch action {
-        case .merge: L("delegation.card.mergeHelp", ["branch": branch])
+        case .merge: child.state == .reported ? L("delegation.card.mergeHelp", ["branch": branch]) : L("delegation.card.mergeLaterHelp", ["branch": branch])
         case .undo: L("delegation.card.undoHelp", ["branch": branch])
         case .discard: L("delegation.card.discardHelp", ["branch": ChildRecord.branchName(for: child.id)])
         }
@@ -1104,12 +1104,24 @@ enum DelegationText {
         case (.merge, .conflictSent): return [.creating, .running, .waiting].contains(child.state) ? (L("delegation.card.conflictSent", ["branch": branch]), .wait) : nil
         case (.merge, .conflictNotStarted): return (L("delegation.card.conflictNotStarted", ["branch": branch]), .err)
         case (.undo, .conflictSent), (.discard, .conflictSent), (.undo, .conflictNotStarted), (.discard, .conflictNotStarted): return nil
+        case (.merge, .queued(let wait)): return (Self.mergeWait(wait, branch: branch), .wait)
+        case (.merge, .queueDropped): return (L("delegation.card.mergeQueueDropped"), .wait)
+        case (.undo, .queued), (.discard, .queued), (.undo, .queueDropped), (.discard, .queueDropped): return nil
         case (.merge, .refused(let reason)): return (L("delegation.card.mergeRefused", ["reason": Self.reason(reason)]), .wait)
         case (.undo, .refused(let reason)): return (L("delegation.card.undoRefused", ["reason": Self.reason(reason)]), .wait)
         case (.discard, .refused(let reason)): return (L("delegation.card.discardFailed", ["error": Self.reason(reason)]), .err)
         case (.merge, .failed(let message)): return (L("delegation.card.mergeFailed", ["error": message]), .err)
         case (.undo, .failed(let message)): return (L("delegation.card.undoFailed", ["error": message]), .err)
         case (.discard, .failed(let message)): return (L("delegation.card.discardFailed", ["error": message]), .err)
+        }
+    }
+
+    /// What a queued card merge waits on before it goes through by itself.
+    static func mergeWait(_ wait: DelegationMergeWait, branch: String) -> String {
+        switch wait {
+        case .childRunning: L("delegation.card.mergeQueuedChild", ["branch": branch])
+        case .parentRunning: L("delegation.card.mergeQueuedParent", ["branch": branch])
+        case .parentChanges: L("delegation.card.mergeQueuedChanges", ["branch": branch])
         }
     }
 

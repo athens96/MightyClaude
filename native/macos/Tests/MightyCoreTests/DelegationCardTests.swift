@@ -123,6 +123,42 @@ struct DelegationCardTests {
         #expect(await coordinator.conflictResolution(for: "nobody") == nil)
     }
 
+    @Test func aMergeFollowsTheRecordedBranchIntoTheBranchThatTookItsWork() async throws {
+        let place = try MergePlace(); defer { place.remove() }
+        try await place.repository()
+        for (key, value) in [("user.name", "Fixture"), ("user.email", "fixture@example.invalid"), ("commit.gpgsign", "false")] { try await place.git(["config", key, value]) }
+        // The child is made while the parent works on feat.
+        try await place.git(["checkout", "-q", "-b", "feat"])
+        var child = try await place.child("c1")
+        #expect(child.parentBranch == "feat")
+        child.parentCheckout = place.repo.path
+        let head = try await place.commit(in: child.worktreePath, "a.txt", "a\n")
+        let reported = child.recordReport(head: head); #expect(reported)
+        try store(place).save(DelegationFile(children: [child]))
+        let host = CardHost()
+        host.set(DelegationPaneState(sessionId: "parent", permissionMode: "auto", folder: place.repo.path, runId: "run-1", activity: .finished))
+        let coordinator = try DelegationCoordinator(store: store(place), host: host, worktrees: ChildWorktreeMaker(root: place.root, freeBytes: { _ in 50_000_000_000 }), isSwitchOn: { true })
+
+        // feat goes into main by a merge commit, then is deleted; main is checked out.
+        _ = try await place.commit(in: place.repo.path, "feat.txt", "feat\n")
+        try await place.git(["checkout", "-q", "main"])
+        try await place.git(["merge", "-q", "--no-ff", "-m", "merge feat", "feat"])
+        #expect(await ChildMerge.mergeBranch(of: child, in: place.repo.path) == "main")
+        try await place.git(["branch", "-q", "-D", "feat"])
+        #expect(await ChildMerge.mergeBranch(of: child, in: place.repo.path) == "main")
+        let main = try await place.git(["rev-parse", "HEAD"])
+
+        guard case .merged(let record) = await coordinator.mergeFromCard("c1") else { Issue.record("not merged into main"); return }
+        #expect(record.parentBranch == "main" && record.preMergeCommit == main && record.kind == .cardMergeCommit)
+        #expect(try await place.git(["symbolic-ref", "HEAD"]) == "refs/heads/main")
+        #expect(try await place.git(["rev-parse", "HEAD^2"]) == head)
+        // The record names main from now on, on disk too, so undo and the card's words follow it.
+        #expect(await coordinator.file.children.first?.parentBranch == "main")
+        #expect(try store(place).load().children.first?.parentBranch == "main")
+        guard case .undone = await coordinator.undoMergeFromCard("c1") else { Issue.record("not undone"); return }
+        #expect(try await place.git(["rev-parse", "HEAD"]) == main)
+    }
+
     @Test func refusesWithItsReasonAndChangesNothing() async throws {
         let place = try MergePlace(); defer { place.remove() }
         let (coordinator, _, base, _) = try await reportedChild(place)
@@ -132,9 +168,12 @@ struct DelegationCardTests {
         try Data("changed\n".utf8).write(to: place.repo.appendingPathComponent("file-0.txt"))
         #expect(await coordinator.mergeFromCard("c1") == .refused(.trackedChanges))
         try await place.git(["checkout", "--", "file-0.txt"])
-        // Another branch checked out in the parent's folder.
-        try await place.git(["checkout", "-q", "-b", "elsewhere"])
+        // Another branch checked out in the parent's folder, one that does not hold main's work.
+        try await place.git(["checkout", "-q", "--orphan", "elsewhere"])
+        try await place.git(["rm", "-q", "-r", "--cached", "."])
+        try await place.git(["commit", "-q", "--allow-empty", "-m", "elsewhere"])
         #expect(await coordinator.mergeFromCard("c1") == .refused(.branchNotCheckedOut))
+        try await place.git(["clean", "-q", "-f"])
         try await place.git(["checkout", "-q", "main"])
         #expect(try await place.git(["rev-parse", "HEAD"]) == base)
         #expect(await coordinator.file == before)
@@ -233,6 +272,28 @@ extension DelegationCardTests {
         await coordinator.deliverPending()
         #expect(host.deliveries == ["parent queue"])
         #expect(await coordinator.file.notices.map(\.lane) == [.delivered])
+    }
+
+    @Test func aQueuedMergeWaitsForTheChildsReportAndAnIdleCleanParent() {
+        for state in [ChildState.creating, .running, .waiting] {
+            #expect(DelegationMergeQueue.step(state: state, parentRunning: false) == .wait(.childRunning), "\(state)")
+            #expect(DelegationMergeQueue.step(state: state, parentRunning: true) == .wait(.childRunning), "\(state)")
+        }
+        #expect(DelegationMergeQueue.step(state: .reported, parentRunning: false) == .attempt)
+        #expect(DelegationMergeQueue.step(state: .reported, parentRunning: true) == .wait(.parentRunning))
+        for state in [ChildState.ended, .interrupted, .merged, .failed, .closed, .discarded] {
+            #expect(DelegationMergeQueue.step(state: state, parentRunning: false) == .drop, "\(state)")
+        }
+        // Uncommitted changes and a busy parent pass; every other refusal is for good.
+        #expect(DelegationMergeQueue.wait(after: .trackedChanges) == .parentChanges)
+        #expect(DelegationMergeQueue.wait(after: .parentBusy) == .parentRunning)
+        for reason in DelegationReasonCode.allCases where ![.trackedChanges, .parentBusy].contains(reason) {
+            #expect(DelegationMergeQueue.wait(after: reason) == nil, "\(reason)")
+        }
+        // A working child's card offers the merge that waits; an ended one does not.
+        #expect(DelegationChildRow(id: "c", parentSessionId: "p", state: .running).cardActions == [.merge, .discard])
+        #expect(DelegationChildRow(id: "c", parentSessionId: "p", state: .waiting).cardActions == [.merge, .discard])
+        #expect(DelegationChildRow(id: "c", parentSessionId: "p", state: .ended).cardActions == [.discard])
     }
 
     @Test func undoesOnlyTheMergeInEffect() {

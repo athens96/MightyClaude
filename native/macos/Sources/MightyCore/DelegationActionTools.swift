@@ -54,6 +54,7 @@ extension DelegationCoordinator {
         // Read again after the wait: an earlier merge may have taken this child.
         guard let child = file.children.first(where: { $0.id == id }) else { return .failure(Self.notYourChildMessage(id)) }
         guard let checkout = await parentCheckout(of: child) else { return .failure("The calling pane is closed.") }
+        guard let child = await followParentBranch(id, in: checkout) else { return .failure(Self.notYourChildMessage(id)) }
         switch await ChildMerge.toolMerge(child, expectedHead: expectedHead, parentCheckout: checkout) {
         case .refused(let reason):
             return .refusal(reason)

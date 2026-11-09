@@ -9,7 +9,7 @@ import Testing
     /// listed here must be refused.
     private static let expectedAfter: [ChildState: [ChildStateEvent: ChildState]] = [
         .creating: [.startRun: .running, .failStart: .failed, .closePane: .closed, .discard: .discarded],
-        .running: [.askPermission: .waiting, .endWithReport: .reported, .endWithoutReport: .ended, .quitApp: .interrupted, .closePane: .closed, .discard: .discarded],
+        .running: [.askPermission: .waiting, .endWithReport: .reported, .endWithoutReport: .ended, .endUnchanged: .reported, .quitApp: .interrupted, .closePane: .closed, .discard: .discarded],
         .waiting: [.answerPermission: .running, .closePane: .closed, .discard: .discarded],
         .reported: [.startRun: .running, .merge: .merged, .closePane: .closed, .discard: .discarded],
         .ended: [.startRun: .running, .closePane: .closed, .discard: .discarded],
@@ -49,7 +49,7 @@ import Testing
                 if expected == nil { refused += 1 } else { allowed += 1 }
             }
         }
-        #expect(allowed == 30); #expect(refused == 80)
+        #expect(allowed == 31); #expect(refused == 89)
     }
 
     @Test func everyStatePairIsAMoveExactlyWhenTheOntologyListsIt() {
