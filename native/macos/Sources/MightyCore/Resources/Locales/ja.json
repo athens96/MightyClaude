@@ -3133,5 +3133,15 @@
   "workMap.error.cli": "Claude CLI が見つからないため要約できませんでした。",
   "workMap.error.timeout": "要約が時間内に終わりませんでした。",
   "workMap.error.output": "要約の結果を読み取れませんでした。",
-  "workMap.error.busy": "別のバージョンを要約中です。"
+  "workMap.error.busy": "別のバージョンを要約中です。",
+  "run.shellBlock.run": "実行",
+  "run.shellBlock.help": "このコマンドをワークスペースのフォルダで実行し、ターミナルペインに表示します",
+  "run.shellBlock.running": "実行中",
+  "run.shellBlock.stop": "停止",
+  "run.shellBlock.again": "もう一度実行",
+  "run.shellBlock.done": "完了",
+  "run.shellBlock.failed": "終了コード {code}",
+  "run.shellBlock.stopped": "停止しました",
+  "run.shellBlock.interrupted": "中断しました（アプリが閉じられました）",
+  "run.shellBlock.busy": "このペインのターミナルは別のコマンドを実行中です"
 }

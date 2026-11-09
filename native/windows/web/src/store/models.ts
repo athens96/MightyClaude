@@ -250,6 +250,21 @@ export interface RunSession {
   backgroundWork?: BackgroundWork;
   parentSessionId?: string;
   workingFolder?: string;
+  /** The shell blocks of the agent's replies the user ran (MightyClaude.Core/ShellBlockRuns.cs), one per block key. */
+  shellRuns?: ShellBlockRun[];
+}
+
+export type ShellBlockRunState = 'running' | 'completed' | 'failed' | 'stopped' | 'interrupted';
+
+/** A shell block's run: `key` is `<entryId>#<n>`, `output` its cleaned output's last 16 KB. */
+export interface ShellBlockRun {
+  key: string;
+  command: string;
+  state: ShellBlockRunState;
+  exitCode?: number;
+  output: string;
+  startedAt: string;
+  endedAt?: string;
 }
 
 export interface PaneLayoutNode {

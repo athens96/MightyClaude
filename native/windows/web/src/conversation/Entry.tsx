@@ -29,7 +29,7 @@ export const Entry = memo(function Entry(props: EntryProps) {
   const { entry } = props;
   if (entry.activity) return <ToolChip {...props} activity={entry.activity} />;
   if (entry.kind === 'user') return <UserBubble entry={entry} />;
-  if (entry.kind === 'assistant' && !props.shell) return <Reply entry={entry} provider={entry.provider ?? props.provider} />;
+  if (entry.kind === 'assistant' && !props.shell) return <Reply entry={entry} paneId={props.paneId} provider={entry.provider ?? props.provider} />;
   if (entry.kind === 'output' || entry.kind === 'assistant') {
     return <div className="entry entry-output" data-entry-kind="output"><CodeBlock text={entry.text} /></div>;
   }
@@ -54,8 +54,8 @@ function UserBubble({ entry }: { entry: LogEntry }) {
   );
 }
 
-/** A reply: one card with the agent's mark, name and time over the questions it asks or its Markdown. */
-function Reply({ entry, provider }: { entry: LogEntry; provider: string }) {
+/** A reply: one card with the agent's mark, name and time over the questions it asks or its Markdown (its shell blocks runnable). */
+function Reply({ entry, paneId, provider }: { entry: LogEntry; paneId: string; provider: string }) {
   const time = entryTime(entry.timestamp, language());
   const questions = parseQuestionnaire(entry.text);
   return (
@@ -65,7 +65,7 @@ function Reply({ entry, provider }: { entry: LogEntry; provider: string }) {
           <ProviderMark provider={provider} size={13} />
           <span>{providerLabel(provider) + (time ? '  ·  ' + time : '')}</span>
         </div>
-        {questions ? <Questionnaire questions={questions} /> : <Markdown text={entry.text} />}
+        {questions ? <Questionnaire questions={questions} /> : <Markdown text={entry.text} paneId={paneId} entryId={entry.id} />}
       </div>
     </div>
   );

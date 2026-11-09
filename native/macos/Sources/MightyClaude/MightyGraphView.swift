@@ -72,6 +72,8 @@ struct MightyGraphView: View {
     var pending: AppStore.SubmitPending? = nil
     /// The pane's background runs' last output lines by block id (`AppStore.backgroundOutput`).
     @ObservedObject var backgroundOutput: BackgroundPaneOutput = BackgroundPaneOutput()
+    /// The pane's reply shell-block runs; nil draws no Run buttons in the blocks' transcripts.
+    var shellRuns: ShellBlockRunContext? = nil
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     /// The structure view's model and what it was built from. A reference, so
@@ -954,7 +956,7 @@ struct MightyGraphView: View {
             running: !MightyGraphLayout.terminal(status), entries: entries, onFocus: onFocus,
             onReference: workspaceRoot == nil ? nil : { path, line in openReference(path, line: line, runID: runID) },
             records: records, childBlocks: childBlocks, catalog: catalog, clearsCornerHandle: true, imageRoot: workspaceRoot,
-            passesScrollAtEdges: inTimeline, onContentHeight: onContentHeight)
+            passesScrollAtEdges: inTimeline, onContentHeight: onContentHeight, shellRuns: shellRuns)
     }
 
     /// The top of the diagram: loads the previous requests from the session

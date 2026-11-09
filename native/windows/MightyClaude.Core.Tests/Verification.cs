@@ -1086,6 +1086,12 @@ internal static class Verification
         await Test("background output: the phone's blocks and nodes carry the lines and the notice reply, never the output file", BackgroundOutputVerification.ThePhoneGetsTheLinesAndTheReplyButNeverTheFile);
         await Test("background output: the kind words, backgroundWaiting and the strip's rows follow the block", BackgroundOutputVerification.TheKindWordsAndTheStripFollowTheBlock);
         // native/contracts/fixtures/ask-targets.json, which the Mac (AskTargetsTests) and the phone read too (the composer's 보낼 대상 switch).
+        await Test("shell block runs: the key is the entry and the block's place", ShellBlockRunVerification.TheKeyIsTheEntryAndTheBlocksPlace);
+        await Test("shell block runs: a record moves from running to completed, failed or stopped, and running again replaces it", ShellBlockRunVerification.TheRecordMovesFromRunningToItsEnd);
+        await Test("shell block runs: the saved field is optional and a run restored running reads interrupted", ShellBlockRunVerification.TheFieldIsOptionalAndARestoredRunIsInterrupted);
+        await Test("shell block runs: output is cleaned, its redraws resolved and its last 16 KB kept", ShellBlockRunVerification.TheOutputIsCleanedAndItsTailKept);
+        await Test("shell block runs: the host runs only a command the assistant reply shows", ShellBlockRunVerification.TheHostRunsOnlyWhatTheReplyShows);
+        await Test("shell block runs: the service keeps the record with its pane across a relaunch", ShellBlockRunVerification.TheServiceKeepsTheRecordWithThePane);
         await Test("ask targets: the targets and the skill are the fixture's", AskTargetsVerification.TheTargetsAndSkillAreTheFixtures);
         await Test("ask targets: every shared available, effective and wrap case holds, and a wrapped send is never wrapped again", AskTargetsVerification.EveryAvailableEffectiveAndWrapCaseHolds);
         await Test("ask targets: a choice falls back only once known to be gone, and an unreliable PATH read keeps what was found", AskTargetsVerification.AChoiceFallsBackOnlyWhenKnownToBeGone);

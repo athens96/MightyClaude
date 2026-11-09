@@ -350,12 +350,15 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     /// The composer's "send to" choice on a Claude agent pane: the id of an `AskTargets` entry.
     /// nil (older saves) sends to Claude; an id that is no longer available reads as Claude too.
     public var askTarget: String?
+    /// The runs of this pane's reply shell blocks (`ShellBlockRun`), newest last. nil
+    /// (older saves, or none run yet) is no run.
+    public var shellRuns: [ShellBlockRun]?
     public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil, askTarget: String? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage; self.askTarget = askTarget
         // Mighty is the one view an agent pane has.
         self.agentViewMode = kind == "claude" && MightyGraphSupport.providers.contains(provider) ? "mighty" : nil
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphSizesLayout, graphResultSize, graphPlanSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork, parentSessionId, workingFolder, askTarget }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphSizesLayout, graphResultSize, graphPlanSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork, parentSessionId, workingFolder, askTarget, shellRuns }
     /// How the pane's Mighty view draws its requests; the diagram unless the timeline was chosen.
     public var mightyViewMode: MightyGraphViewMode { graphViewMode ?? .diagram }
     /// Full text of the most recent user log entry that would update the automatic title,
@@ -413,6 +416,8 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         parentSessionId = try? c.decodeIfPresent(String.self, forKey: .parentSessionId)
         workingFolder = try? c.decodeIfPresent(String.self, forKey: .workingFolder)
         askTarget = try? c.decodeIfPresent(String.self, forKey: .askTarget)
+        // Optional run results; a damaged one is dropped, not the conversation.
+        shellRuns = (try? c.decodeIfPresent([LossyDecoded<ShellBlockRun>].self, forKey: .shellRuns))?.compactMap(\.value)
     }
 }
 

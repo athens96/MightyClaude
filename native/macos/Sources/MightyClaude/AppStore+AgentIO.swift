@@ -64,11 +64,9 @@ extension AppStore {
         // Each agent pane's terminal pane runs its commands under PTYs and shows
         // itself next to the agent pane whenever a command starts. The store
         // lives as long as the app, so the factory holds it strongly.
+        // A reply's Run button makes the same pane (`agentTerminalRunner(for:)`).
         let handler = AgentTerminalIOHandler(processes: .shared, panes: .shared, webOpen: webOpen) { binding in
-            let agentPaneId = binding.agentPaneId
-            return PTYAgentTerminalPane(workingDirectory: URL(fileURLWithPath: binding.workspacePath, isDirectory: true)) { pane in
-                Task { @MainActor in self.showAgentTerminal(pane, agentPaneId: agentPaneId) }
-            }
+            self.makeAgentTerminalPane(agentPaneId: binding.agentPaneId, workspacePath: binding.workspacePath)
         }
         // Delegation calls share the socket and the pane tokens. They reach
         // nothing while the delegation switch is off, and only Claude panes may

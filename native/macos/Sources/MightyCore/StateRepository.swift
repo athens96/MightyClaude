@@ -391,6 +391,8 @@ public actor StateRepository {
             }
             return log
         }
+        // A reply's shell-block runs share the log budget; one still running at quit is interrupted.
+        session.shellRuns = session.kind == SessionKind.claude ? ShellBlockRun.normalized(session.shellRuns, restoring: restoring, budget: &logBudget) : nil
         // Sizes saved before the 실행 split move once; the pane is in the current layout from then on.
         if session.graphSizesLayout == nil { session.graphBlockSizes = MightyGraphBlockSize.splittingExecution(session.graphBlockSizes) }
         session.graphSizesLayout = MightyGraphBlockSize.splitLayout
