@@ -29,7 +29,7 @@ describe('blocks', () => {
 
   it('reads fenced code with its language, and an unclosed fence to the end', () => {
     expect(parseMarkdown('```ts\nconst a = 1;\n```\nafter')).toEqual([{ type: 'code', language: 'ts', text: 'const a = 1;' }, paragraph(text('after'))]);
-    expect(parseMarkdown('~~~\nstill\nstreaming')).toEqual([{ type: 'code', language: null, text: 'still\nstreaming' }]);
+    expect(parseMarkdown('~~~\nstill\nstreaming')).toEqual([{ type: 'code', language: null, text: 'still\nstreaming', open: true }]);
   });
 
   it('does not read Markdown inside a fence', () => {

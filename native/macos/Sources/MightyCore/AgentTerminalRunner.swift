@@ -125,12 +125,19 @@ public actor AgentTerminalRunner {
     /// Otherwise the result has `status: .running`, partial output, no exit
     /// code, and a `handle` for follow-up `readLatestOutput` or `stop` calls.
     public func runInTerminal(command: String) async throws -> TerminalRunResult {
+        let handle = try await start(command: command)
+        _ = await waitForExit(handle: handle, until: clock.now().addingTimeInterval(Self.initialWaitSeconds))
+        return readAndAdvance(handle: handle)
+    }
+
+    /// Launch `command` in the terminal pane and return its handle at once, for a
+    /// caller that follows it with `readLatestOutput` and `stop` (a reply's Run button).
+    public func start(command: String) async throws -> String {
         let handle = UUID().uuidString
         try await pane.launch(command: command, handle: handle)
         knownHandles.insert(handle)
         readOffsets[handle] = 0
-        _ = await waitForExit(handle: handle, until: clock.now().addingTimeInterval(Self.initialWaitSeconds))
-        return readAndAdvance(handle: handle)
+        return handle
     }
 
     /// Read the output produced since the last read for this handle (at most

@@ -36,6 +36,8 @@ struct AgentTranscriptView: NSViewRepresentable {
     /// the transcript to its end on the next update, even when the user had scrolled up,
     /// keeping any selection (natural submit B2).
     var ownSubmitSerial: Int? = nil
+    /// The pane's reply shell-block runs and their actions; nil draws no Run buttons.
+    var shellRuns: ShellBlockRunContext? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     /// The corner handle's 22pt glyph plus its 2pt padding, and a little air.
@@ -53,11 +55,14 @@ struct AgentTranscriptView: NSViewRepresentable {
         context.coordinator.textView?.onFocus = onFocus
         context.coordinator.textView?.onContentHeight = onContentHeight
         context.coordinator.onReference = onReference
+        context.coordinator.shellActions = shellRuns
         context.coordinator.update(entries: entries, provider: provider, running: running, dark: colorScheme == .dark, references: onReference != nil, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards,
-                                   pending: pending, ownSubmitSerial: ownSubmitSerial)
+                                   pending: pending, ownSubmitSerial: ownSubmitSerial,
+                                   shellRuns: shellRuns.map { AgentTranscriptFormat.ShellRuns(records: $0.records, busy: $0.busy) })
     }
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: AgentTranscriptCoordinator) {
         coordinator.onReference = nil
+        coordinator.shellActions = nil
         coordinator.textView?.onFocus = nil
         coordinator.textView?.onSelectionFinished = nil
         coordinator.textView?.onContentHeight = nil
@@ -145,6 +150,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         var text: TextAppearance
         var pending: AgentTranscriptPending?
         var ownSubmitSerial: Int?
+        var shellRuns: AgentTranscriptFormat.ShellRuns?
     }
     private struct Cached {
         let entry: LogEntry
@@ -159,9 +165,12 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         let imageRoot: URL?
         let cards: Bool
         let text: TextAppearance
+        let shellRuns: AgentTranscriptFormat.ShellRuns?
         let value: NSAttributedString
     }
     var onReference: ((String, Int?) -> Void)?
+    /// What a reply shell block's Run and Stop links call.
+    var shellActions: ShellBlockRunContext?
     private var latest: Input?
     private var applied: Input?
     private var cache: [String: Cached] = [:]
@@ -232,10 +241,10 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
 
     func update(entries: [LogEntry], provider: String, running: Bool, dark: Bool, references: Bool = false,
                 records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:], catalog: [ModelOption] = [], imageRoot: URL? = nil, cards: Bool = false,
-                pending: AgentTranscriptPending? = nil, ownSubmitSerial: Int? = nil) {
+                pending: AgentTranscriptPending? = nil, ownSubmitSerial: Int? = nil, shellRuns: AgentTranscriptFormat.ShellRuns? = nil) {
         if handledOwnSubmit == nil { handledOwnSubmit = .some(ownSubmitSerial) }
         latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards, text: TextSettings.shared.current,
-                       pending: pending, ownSubmitSerial: ownSubmitSerial)
+                       pending: pending, ownSubmitSerial: ownSubmitSerial, shellRuns: shellRuns)
         applyLatest()
     }
 
@@ -249,14 +258,18 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         var segments: [AgentTranscriptDocument.Segment] = []
         for entry in input.entries {
             let isExpanded = expanded.contains(entry.id)
+            // Only a reply's own runs redraw it, and only a reply has Run buttons.
+            let shellRuns = entry.kind == "assistant" && entry.activity == nil ? input.shellRuns.map { runs in
+                AgentTranscriptFormat.ShellRuns(records: runs.records.filter { $0.key.hasPrefix(entry.id + "#") }, busy: runs.busy)
+            } : nil
             let value: NSAttributedString
             if let old = cache[entry.id], old.entry == entry, old.provider == input.provider,
                old.running == input.running, old.dark == input.dark, old.expanded == isExpanded, old.references == input.references,
                old.records == input.records, old.childBlocks == input.childBlocks,
-               old.catalog == input.catalog, old.imageRoot == input.imageRoot, old.cards == input.cards, old.text == input.text { value = old.value }
+               old.catalog == input.catalog, old.imageRoot == input.imageRoot, old.cards == input.cards, old.text == input.text, old.shellRuns == shellRuns { value = old.value }
             else {
-                value = AgentTranscriptFormat.entry(entry, provider: input.provider, running: input.running, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, cards: input.cards)
-                cache[entry.id] = Cached(entry: entry, provider: input.provider, running: input.running, dark: input.dark, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, cards: input.cards, text: input.text, value: value)
+                value = AgentTranscriptFormat.entry(entry, provider: input.provider, running: input.running, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, cards: input.cards, shellRuns: shellRuns)
+                cache[entry.id] = Cached(entry: entry, provider: input.provider, running: input.running, dark: input.dark, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, cards: input.cards, text: input.text, shellRuns: shellRuns, value: value)
             }
             segments.append(.init(id: entry.id, range: NSRange(location: output.length, length: value.length), value: value))
             output.append(value)
@@ -307,6 +320,23 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
             // Apply after tracking ends, with the same selection preservation.
             applied = nil
             applyLatest(force: true)
+            return true
+        }
+        if url.scheme == "mighty-transcript", url.host == "shell" {
+            // Only the user's click on a reply's Run runs anything, and what runs is the
+            // block as drawn (its command rides on the link's own characters).
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            guard let key = items.first(where: { $0.name == "key" })?.value, let actions = shellActions,
+                  let separator = key.lastIndex(of: "#"),
+                  latest?.entries.contains(where: { $0.id == key[..<separator] && $0.kind == "assistant" && $0.activity == nil }) == true else { return true }
+            switch items.first(where: { $0.name == "op" })?.value {
+            case "stop": actions.stop(key)
+            case "run":
+                guard !actions.busy, charIndex < (textView.textStorage?.length ?? 0),
+                      let command = textView.textStorage?.attribute(AgentTranscriptFormat.shellCommandAttribute, at: charIndex, effectiveRange: nil) as? String else { return true }
+                actions.run(key, command)
+            default: break
+            }
             return true
         }
         if let reference = ReferenceLinkSupport.parseReferenceURL(url) {

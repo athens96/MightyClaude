@@ -563,7 +563,8 @@ struct SessionPaneView: View {
                     progressSteps: ProgressSteps.panel(kind: session.kind, provider: session.provider, status: session.status,
                                                        progress: session.todoProgress, runs: shownRuns),
                     ownSubmit: store.ownSubmits[session.id], pending: store.submitPending[session.id],
-                    backgroundOutput: store.backgroundOutput.pane(session.id)) {
+                    backgroundOutput: store.backgroundOutput.pane(session.id),
+                    shellRuns: store.shellBlockContext(session)) {
                         store.selectSession(session.id)
                     }
             } else if session.logs.isEmpty {
@@ -574,7 +575,8 @@ struct SessionPaneView: View {
                                     imageRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
                                     cards: true,
                                     pending: store.submitPending[session.id].map { AgentTranscriptPending(entryId: $0.entryId, state: $0.state) },
-                                    ownSubmitSerial: store.ownSubmits[session.id]?.serial)
+                                    ownSubmitSerial: store.ownSubmits[session.id]?.serial,
+                                    shellRuns: store.shellBlockContext(session))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

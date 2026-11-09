@@ -29,6 +29,27 @@ public sealed class AgentTerminal : IAsyncDisposable
     public bool IsRunning { get { lock (gate) return commands.Values.Any(c => !c.Finished); } }
     public async Task<AgentTerminalResult> Run(string text, CancellationToken cancellation)
     {
+        var command = await Begin(text, null, cancellation);
+        await Task.WhenAny(command.Completion, Task.Delay(TimeSpan.FromSeconds(12), cancellation));
+        cancellation.ThrowIfCancellationRequested();
+        return Read(command.Handle);
+    }
+    /// <summary>
+    /// Starts <paramref name="text"/> as <see cref="Run"/> does, without waiting for it: its handle once the process started.
+    /// <paramref name="output"/> gets the process's own output as it comes (not the echoed command, nor the exit line), on the
+    /// reading thread. A transcript's shell block runs this way (MainWindow.ShellBlockRuns.cs).
+    /// </summary>
+    public async Task<string> Start(string text, Action<string>? output, CancellationToken cancellation) => (await Begin(text, output, cancellation)).Handle;
+    /// <summary>The exit code of a started command once it ended (-1 when it could not be waited on).</summary>
+    public async Task<int?> Exited(string handle)
+    {
+        Command command;
+        lock (gate) command = commands.GetValueOrDefault(handle) ?? throw new ArgumentException("Unknown handle for this agent pane.");
+        await command.Completion;
+        lock (gate) return command.ExitCode;
+    }
+    private async Task<Command> Begin(string text, Action<string>? output, CancellationToken cancellation)
+    {
         cancellation.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(text) || Encoding.UTF8.GetByteCount(text) > 65_536 || text.Contains('\0')) throw new ArgumentException("Invalid terminal command.");
         Command command;
@@ -47,7 +68,7 @@ public sealed class AgentTerminal : IAsyncDisposable
             {
                 var shell = PseudoTerminal.DefaultShell;
                 var args = PseudoTerminal.ShellArguments(shell, text, noProfile: true);
-                var process = PseudoTerminal.Start(directory, value => Receive(command, value), executable: shell, arguments: args);
+                var process = PseudoTerminal.Start(directory, value => { Receive(command, value); output?.Invoke(value); }, executable: shell, arguments: args);
                 lock (gate) command.Process = process;
             });
             command.Completion = Complete(command);
@@ -55,9 +76,7 @@ public sealed class AgentTerminal : IAsyncDisposable
         Receive(command, "\r\n> " + text + "\r\n");
         try { await command.Startup; }
         catch { lock (gate) { command.Finished = true; command.ExitCode = -1; } throw; }
-        await Task.WhenAny(command.Completion, Task.Delay(TimeSpan.FromSeconds(12), cancellation));
-        cancellation.ThrowIfCancellationRequested();
-        return Read(command.Handle);
+        return command;
     }
     private void Receive(Command command, string text)
     {
@@ -127,7 +146,7 @@ public sealed class AgentTerminal : IAsyncDisposable
 }
 
 // Streaming ANSI/OSC removal, including escape sequences split across reads.
-public sealed class TerminalTextCleaner
+public sealed class TerminalTextCleaner(bool keepCarriageReturns = false)
 {
     private int state;
     public void Reset() => state = 0;
@@ -142,7 +161,7 @@ public sealed class TerminalTextCleaner
                 case 2: if (c is >= '@' and <= '~') state = 0; break;
                 case 3: if (c == '\a') state = 0; else if (c == '\u001b') state = 4; break;
                 case 4: state = c == '\\' ? 0 : 3; break;
-                default: if (c == '\u001b') state = 1; else if (!char.IsControl(c) || c is '\n' or '\t') result.Append(c); break;
+                default: if (c == '\u001b') state = 1; else if (!char.IsControl(c) || c is '\n' or '\t' || keepCarriageReturns && c == '\r') result.Append(c); break;
             }
         }
         return result.ToString();

@@ -61,7 +61,9 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
   named in a conversation, a diagram block or a timeline row (`referenceClick.ts`) opens in the pane's reference bubble
   (`src/pane/ReferenceBubble.tsx`, sizing rules ported in `src/pane/reference.ts`), drawn with the files pane's preview. Host
   methods it calls: `openUrl`, `imageData`, `referencePreview`, `referenceOpen`, `referenceReveal`, `referenceSize`
-  (`MainWindow.WebShell.cs`). The provider marks come from
+  (`MainWindow.WebShell.cs`). A reply's closed `sh`/`bash`/`zsh`/`shell`/`console`/`ps1`/`powershell`/`pwsh` block gets a Run
+  link (`shellBlocks.ts`, `ShellBlock.tsx`): `shellBlockRun` / `shellBlockStop` (`MainWindow.ShellBlockRuns.cs`) run it in the
+  agent's terminal pane, and the pane's `shellRuns` field carries its state and output back. The provider marks come from
   `mobile/src/lib/provider-marks.ts` (alias `@mobile`).
 - `src/composer/` — the agent pane's composer and header figures. The draft is mirrored into a never-shown WinUI pane view
   (`MainWindow.WebShell.Composer.cs`, made the way the phone's are), so send, queue, stop, block reasons, attachments, the

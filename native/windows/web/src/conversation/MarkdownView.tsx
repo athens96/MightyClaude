@@ -1,7 +1,12 @@
-import { memo, type ReactNode } from 'react';
+import { createContext, memo, useContext, useMemo, type ReactNode } from 'react';
 import { useServices } from '../app/context';
 import { markdown, type Block, type Inline } from './markdown';
 import type { Question } from './questionnaire';
+import { ShellBlock } from './ShellBlock';
+import { runnableBlocks, shellBlockKey, type RunnableBlock } from './shellBlocks';
+
+/** An agent reply's runnable shell blocks (shellBlocks.ts), for the code blocks drawn inside its Markdown. */
+const ShellBlocks = createContext<{ paneId: string; entryId: string; blocks: ReadonlyMap<Block, RunnableBlock> } | null>(null);
 
 /**
  * A code block (AgentTranscript.Code): its language over the code in mono on the code surface. `data-code-block` is what
@@ -112,14 +117,19 @@ function Picture({ node, note }: { node: Extract<Inline, { type: 'image' }>; not
 }
 
 function Blocks({ blocks }: { blocks: readonly Block[] }): ReactNode {
+  const shell = useContext(ShellBlocks);
   return blocks.map((block, index) => {
     switch (block.type) {
       case 'paragraph':
         return <p key={index} className="md-paragraph" data-text=""><Spans nodes={block.inline} /></p>;
       case 'heading':
         return <div key={index} className={'md-heading md-h' + Math.min(4, block.level)} role="heading" aria-level={block.level} data-text=""><Spans nodes={block.inline} /></div>;
-      case 'code':
-        return <CodeBlock key={index} text={block.text} language={block.language} />;
+      case 'code': {
+        const runnable = shell?.blocks.get(block);
+        return shell && runnable
+          ? <ShellBlock key={index} text={block.text} language={block.language} paneId={shell.paneId} runKey={shellBlockKey(shell.entryId, runnable.index)} command={runnable.command} />
+          : <CodeBlock key={index} text={block.text} language={block.language} />;
+      }
       case 'questionnaire':
         return <Questionnaire key={index} questions={block.questions} />;
       case 'quote':
@@ -163,7 +173,14 @@ function Blocks({ blocks }: { blocks: readonly Block[] }): ReactNode {
   });
 }
 
-/** An entry's Markdown, parsed once per text (markdown()'s cache) and drawn again only when the text changes. */
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
-  return <div className="markdown"><Blocks blocks={markdown(text)} /></div>;
+/**
+ * An entry's Markdown, parsed once per text (markdown()'s cache) and drawn again only when the text changes. An agent reply
+ * passes its pane and entry: its closed shell blocks then get a Run link (ShellBlock.tsx).
+ */
+export const Markdown = memo(function Markdown({ text, paneId, entryId }: { text: string; paneId?: string; entryId?: string }) {
+  const blocks = markdown(text);
+  const runnable = useMemo(() => (paneId && entryId ? runnableBlocks(blocks) : null), [blocks, paneId, entryId]);
+  const shell = useMemo(() => (paneId && entryId && runnable && runnable.size > 0 ? { paneId, entryId, blocks: runnable } : null), [paneId, entryId, runnable]);
+  const content = <div className="markdown"><Blocks blocks={blocks} /></div>;
+  return shell ? <ShellBlocks.Provider value={shell}>{content}</ShellBlocks.Provider> : content;
 });

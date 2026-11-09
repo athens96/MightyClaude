@@ -272,6 +272,9 @@ final class AppStore: ObservableObject, DelegationHost {
     /// opened stays loaded while its pane is hidden behind a tab or closed, and
     /// the agent's next in-app open navigates this same engine.
     @Published var agentBrowsers: [String: CefBrowserEngine] = [:]
+    /// The reply shell-block runs this app is following (`AppStore+ShellBlocks`), by
+    /// `ShellBlockRunFollow.id`. Not saved: a run ends with the app.
+    var shellBlockFollows: [String: ShellBlockRunFollow] = [:]
     /// Each workspace's files pane state (opened folders, selection), kept
     /// until quit so a closed files pane reopens as it was. Its preview is
     /// released when the pane closes and read again when it reopens.
