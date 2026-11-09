@@ -7,7 +7,7 @@ namespace MightyClaude.WinUI;
 /// The page's Run calls <c>shellBlockRun {paneId, key, command}</c>: the command, which must be a line-for-line copy of what that
 /// assistant entry shows (<see cref="ShellBlockRunSupport.Shown"/>), runs in the agent pane's own terminal, the one
 /// <c>run_in_terminal</c> uses (<see cref="agentTerminals"/>, made here when the agent has not opened it yet), in the workspace
-/// folder, and its terminal pane opens beside the agent. The pane's <c>shellRuns</c> record (<see cref="DesktopService.UpdateShellBlockRun"/>)
+/// folder (a delegated child's worktree), and its terminal pane opens beside the agent. The pane's <c>shellRuns</c> record (<see cref="DesktopService.UpdateShellBlockRun"/>)
 /// carries the state and the cleaned output tail to the page, live a few times a second. <c>shellBlockStop {paneId, key}</c>
 /// stops it as <c>stop</c> stops an agent's command (Ctrl+C, then the process ended after 3 s). One block runs at a time per pane.
 /// The run is the user's own click: it does not pass the agent's tool permissions.
@@ -42,7 +42,9 @@ public sealed partial class MainWindow
         // No pane tools for a remote workspace (InitializeAgentIO): its folder is on another computer.
         if (LocalPath(state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)) is not { } folder) return;
         if (!ShellBlockRunSupport.Shown(pane, key!, command!) || shellBlockRunning.ContainsKey(pane.Id)) return;
-        if (!agentTerminals.TryGetValue(pane.Id, out var terminal)) agentTerminals[pane.Id] = terminal = new AgentTerminal(folder);
+        // A delegated child works in its worktree, as its runs and its run_in_terminal do (RunManager: request.WorkingFolder).
+        var directory = DelegationPanes.IsWorkingFolder(pane.WorkingFolder) && Directory.Exists(pane.WorkingFolder) ? pane.WorkingFolder! : folder;
+        if (!agentTerminals.TryGetValue(pane.Id, out var terminal)) agentTerminals[pane.Id] = terminal = new AgentTerminal(directory);
         await service.UpdateAsync(snapshot => WithAgentIOPane(snapshot, pane.Id, pane.WorkspaceId, AgentIOPaneKind.Terminal));
         HideDashboard(); Render();
         // The await above let another click in: still one block at a time.
@@ -58,6 +60,8 @@ public sealed partial class MainWindow
             throw;
         }
         _ = FinishShellBlock(running, running.Handle);
+        // A Stop pressed while the command was still starting is kept and done now.
+        if (running.Stopping) await running.Terminal.Stop(running.Handle);
     }
 
     /// <summary>On the UI thread once the command ended: the record takes its last output and its end.</summary>
@@ -92,8 +96,9 @@ public sealed partial class MainWindow
 
     private async Task StopShellBlock(string? paneId, string? key)
     {
-        if (paneId is null || !shellBlockRunning.TryGetValue(paneId, out var running) || running.Key != key || running.Handle is not { } handle) return;
+        if (paneId is null || !shellBlockRunning.TryGetValue(paneId, out var running) || running.Key != key) return;
         running.Stopping = true;
-        await running.Terminal.Stop(handle);
+        // Still starting: RunShellBlock stops it once the terminal gave its handle.
+        if (running.Handle is { } handle) await running.Terminal.Stop(handle);
     }
 }

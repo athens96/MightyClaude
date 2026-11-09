@@ -13,7 +13,7 @@ public enum ShellBlocks {
     public static func command(language: String?, code: String) -> String? {
         guard let word = language?.split(whereSeparator: \.isWhitespace).first?.lowercased() else { return nil }
         var body = code
-        while body.hasSuffix("\n") || body.hasSuffix("\r") { body.removeLast() }
+        while body.last?.isNewline == true { body.removeLast() }
         let command: String
         if shellLanguages.contains(word) {
             command = body
@@ -22,7 +22,21 @@ public enum ShellBlocks {
                 ["$ ", "% "].first { line.hasPrefix($0) }.map { String(line.dropFirst($0.count)) }
             }.joined(separator: "\n")
         } else { return nil }
-        return command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : command
+        guard !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !command.unicodeScalars.contains(where: hidesText) else { return nil }
+        return command
+    }
+
+    /// Characters that make the text run differ from the text shown (trojan source): bidi
+    /// embeddings, overrides and isolates, zero-width and other format characters, and C0
+    /// controls other than tab and newline (ESC and CR included) or DEL. A block holding
+    /// one gets no Run button, so what runs is always what the user reads.
+    static func hidesText(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x09, 0x0A: false
+        case 0x00...0x1F, 0x7F: true
+        case 0x200B...0x200F, 0x202A...0x202E, 0x2060, 0x2066...0x2069, 0xFEFF: true
+        default: false
+        }
     }
 
     /// A runnable block's identity: its entry and its 0-based place among that entry's

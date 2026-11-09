@@ -92,16 +92,31 @@ internal static class ShellBlockRunVerification
 
     internal static Task TheHostRunsOnlyWhatTheReplyShows()
     {
-        var reply = new LogEntry("r1", "assistant", "Try:\n\n```console\n$ npm ci\nadded 3 packages\n$ npm test\n```\n\n```sh\necho one\necho two\n```", "t");
+        var reply = new LogEntry("r1", "assistant", "Try:\n\n```console\n$ npm ci\nadded 3 packages\n$ npm test\n```\n\nThen `echo one` and:\n\n```sh\necho one\necho two\n```\n\n```ts\nconst a = 1;\n```\n\n> - ```bash\n>   ls\n>   ```\n\nPS> run me\n\n```sh\nstreaming", "t");
         var request = new LogEntry("u1", "user", "```sh\nrm -rf x\n```", "t");
         var pane = new RunSession { Id = "p", WorkspaceId = "w", Logs = [request, reply] };
+        Check(ShellBlockScan.Runnable(reply.Text).SequenceEqual(["npm ci\nnpm test", "echo one\necho two", "ls"]), "the page's blocks, in reading order, into quotes and lists, the open fence left out: " + string.Join(" | ", ShellBlockScan.Runnable(reply.Text)));
         Check(ShellBlockRunSupport.Shown(pane, "r1#1", "echo one\necho two"), "a block's command");
         Check(ShellBlockRunSupport.Shown(pane, "r1#0", "npm ci\nnpm test"), "a console block's commands without their prompt");
-        Check(!ShellBlockRunSupport.Shown(pane, "r1#1", "echo one\nrm -rf /"), "a line the reply does not show");
+        Check(ShellBlockRunSupport.Shown(pane, "r1#2", "ls"), "a block in a quoted list");
+        Check(!ShellBlockRunSupport.Shown(pane, "r1#1", "echo one"), "only the whole block");
+        Check(!ShellBlockRunSupport.Shown(pane, "r1#1", "echo one\nnpm ci"), "a command forged from the reply's other lines");
+        Check(!ShellBlockRunSupport.Shown(pane, "r1#1", "added 3 packages"), "a console block's sample output");
+        Check(!ShellBlockRunSupport.Shown(pane, "r1#4", "run me"), "prose");
+        Check(!ShellBlockRunSupport.Shown(pane, "r1#0", "echo one\necho two"), "another block's command at the wrong place");
+        Check(!ShellBlockRunSupport.Shown(pane, "r1#3", "streaming"), "a block whose fence has not closed");
         Check(!ShellBlockRunSupport.Shown(pane, "u1#0", "rm -rf x"), "never a request's block");
         Check(!ShellBlockRunSupport.Shown(pane, "zz#0", "echo one"), "an unknown entry");
         var graph = new RunSession { Id = "g", WorkspaceId = "w", GraphRuns = [new MightyGraphRun { Id = "run", RootEntries = [reply] }] };
-        Check(ShellBlockRunSupport.Shown(graph, "r1#1", "echo one"), "an entry the Mighty view shows from its run");
+        Check(ShellBlockRunSupport.Shown(graph, "r1#1", "echo one\necho two"), "an entry the Mighty view shows from its run");
+
+        Check(ShellBlockScan.Command("Bash title=x", "ls\n\n") == "ls" && ShellBlockScan.Command("PwSh", "dir") == "dir" && ShellBlockScan.Command("ts", "ls") is null && ShellBlockScan.Command(null, "ls") is null, "languages");
+        Check(ShellBlockScan.Command("console", "PS> dir\n> cd x\n% ls\nout") == "dir\ncd x" && ShellBlockScan.Command("console", "only output") is null, "console prompts");
+        foreach (var hidden in new[] { "\u202E", "\u202A", "\u2066", "\u2069", "\u200B", "\u200F", "\uFEFF", "\u2060", "\u001b[2K", "\r", "\u0000", "\u007F", "\u000B" })
+            Check(ShellBlockScan.Command("sh", "echo safe" + hidden + " && rm -rf ~") is null, "a hidden or reordering character gets no run: U+" + ((int)hidden[0]).ToString("X4"));
+        Check(ShellBlockScan.Command("sh", "printf 'a\tb'\necho c") == "printf 'a\tb'\necho c", "tab and newline are fine");
+        var trojan = new RunSession { Id = "t", WorkspaceId = "w", Logs = [new LogEntry("r2", "assistant", "```sh\necho ok \u202E; rm -rf ~\n```", "t")] };
+        Check(!ShellBlockRunSupport.Shown(trojan, "r2#0", "echo ok \u202E; rm -rf ~"), "the host refuses a bidi block");
         return Task.CompletedTask;
     }
 

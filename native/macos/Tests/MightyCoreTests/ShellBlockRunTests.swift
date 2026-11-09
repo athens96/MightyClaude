@@ -31,6 +31,20 @@ struct ShellBlockRunTests {
         #expect(ShellBlocks.command(language: "console", code: "$ \n") == nil)
     }
 
+    @Test func blocksHidingTextGetNoButton() {
+        let hidden: [UInt32] = [0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069,
+                                0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0xFEFF, 0x2060,
+                                0x00, 0x07, 0x08, 0x0B, 0x0C, 0x0D, 0x1B, 0x1F, 0x7F]
+        for value in hidden {
+            let scalar = String(Character(Unicode.Scalar(value)!))
+            #expect(ShellBlocks.command(language: "bash", code: "echo ok" + scalar + " && rm -rf x\n") == nil, "U+\(String(value, radix: 16))")
+            #expect(ShellBlocks.command(language: "console", code: "$ echo " + scalar + "x") == nil, "U+\(String(value, radix: 16))")
+        }
+        // Tabs, newlines, a trailing CRLF and ordinary non-ASCII text still run.
+        #expect(ShellBlocks.command(language: "bash", code: "printf 'a\\tb'\n\techo 안녕 — ok\r\n") == "printf 'a\\tb'\n\techo 안녕 — ok")
+        #expect(ShellBlocks.command(language: "bash", code: "echo a\r\necho b") == nil)
+    }
+
     @Test func keysAreTheEntryAndTheRunnableIndex() {
         #expect(ShellBlocks.key(entryId: "entry-1", index: 0) == "entry-1#0")
         #expect(ShellBlocks.key(entryId: "entry-1", index: 2) == "entry-1#2")

@@ -29,6 +29,13 @@ describe('shellCommand', () => {
     expect(shellCommand('console', 'PS> dir', 'mac')).toBeNull();
   });
 
+  it('gives no button to a block hiding or reordering what it shows (Trojan source)', () => {
+    for (const hidden of ['\u202E', '\u202A', '\u2066', '\u2069', '\u200B', '\u200F', '\uFEFF', '\u2060', '\u001b[2K', '\r', '\u0000', '\u007F', '\u000B'])
+      expect(shellCommand('sh', 'echo safe' + hidden + ' && rm -rf ~')).toBeNull();
+    expect(shellCommand('console', '$ ls\u202E')).toBeNull();
+    expect(shellCommand('sh', 'printf "a\tb"\necho c')).toBe('printf "a\tb"\necho c');
+  });
+
   it('gives a console block with no command line no button', () => {
     expect(shellCommand('console', 'just output\nmore output')).toBeNull();
     expect(shellCommand('console', '$ \n$   ')).toBeNull();
@@ -58,6 +65,8 @@ describe('runnableBlocks', () => {
     expect(shellBlockBusy(runs, 'e#0')).toBe(false);
     expect(shellBlockBusy(runs, 'e#1')).toBe(true);
     expect(shellBlockBusy(undefined, 'e#1')).toBe(false);
+    expect(shellBlockBusy(runs, 'e#0', 'ls')).toBe(false);
+    expect(shellBlockBusy(runs, 'e#0', 'pwd')).toBe(true);
   });
 });
 
@@ -97,5 +106,15 @@ describe('a reply\'s shell block', () => {
     expect(failed).not.toContain('data-shell-output');
     expect(render(entry, [{ key: 'r1#0', command: 'npm test', state: 'interrupted', output: '', startedAt: 't' }])).toContain('Interrupted');
     expect(render(entry, [{ key: 'other#0', command: 'ls', state: 'running', output: '', startedAt: 't' }])).toContain('title="Busy"');
+    expect(render(entry, [{ key: 'r1#0', command: 'npm test', state: 'failed', output: '', startedAt: 't' }])).toContain('Exit code –');
+    expect(failed).toMatch(/<span class="shell-block-state failed" role="status" aria-live="polite">Exit code 2<\/span>/);
+    expect(failed).not.toMatch(/shell-block-action[^>]*role=/);
+  });
+
+  it('shows no run of another command under the same key (the entry was replaced)', () => {
+    const html = render(entry, [{ key: 'r1#0', command: 'rm -rf build', state: 'completed', exitCode: 0, output: 'old output', startedAt: 't' }]);
+    expect(html).toContain('data-shell-state="idle"');
+    expect(html).not.toContain('old output');
+    expect(render(entry, [{ key: 'r1#0', command: 'rm -rf build', state: 'running', output: '', startedAt: 't' }])).toContain('title="Busy"');
   });
 });

@@ -186,7 +186,7 @@ The user can run a command the agent showed instead of copying it into a termina
 - Only fenced code blocks in an **assistant reply** (never a user turn, a tool row, a system or log entry), in the pane transcript and in the Mighty view's blocks alike.
 - The info string's first word (case-insensitive) is `sh`, `bash`, `zsh`, `shell` or `console`. PowerShell blocks (`ps1`, `powershell`, `pwsh`) get a button only on Windows.
 - A `console` block runs only its lines that start with `$ ` or `% `, without the prompt; its other lines are sample output and are dropped. With no such line it gets no button.
-- What runs is the block as drawn, its trailing newline trimmed (`ShellBlocks.command`). The command rides on the Run link's own characters, so a click can only run what the user sees.
+- What runs is the block as drawn, its trailing newline trimmed (`ShellBlocks.command`). A block that holds characters which make the text differ from what is shown (bidi controls U+202A–202E and U+2066–2069, zero-width and format characters U+200B–200F, U+2060, U+FEFF, C0 controls other than tab and newline, DEL) gets no button. The command rides on the Run link's own characters, so a click can only run what the user sees.
 - A block whose closing fence has not arrived yet (the reply is still streaming it) gets no button until it has (`ShellBlocks.endsInOpenFence`).
 
 ### Where it runs
@@ -212,7 +212,7 @@ Under the code box, once there is output, the run's output in the transcript's c
 
 ### What is kept
 
-Each run is a `ShellBlockRun` in the pane's `RunSession.shellRuns` (optional, so older saves read as none), keyed `<entryId>#<n>`: the reply's id and the block's 0-based place among that reply's runnable blocks, stable while the reply grows. A record keeps the command, its state, the exit code, the output tail and the start and end times. Running a block again replaces its record. The pane keeps its newest 64 runs; their output counts against the pane's log budget. A run still going when the app quits is `interrupted` when the state is next read.
+Each run is a `ShellBlockRun` in the pane's `RunSession.shellRuns` (optional, so older saves read as none), keyed `<entryId>#<n>`: the reply's id and the block's 0-based place among that reply's runnable blocks, stable while the reply grows. A record keeps the command, its state, the exit code, the output tail and the start and end times. Running a block again replaces its record. A record is shown under a block only while its command is still that block's text; a reply rewritten under the same key shows the block idle. A run whose handle the runner no longer knows ends `failed` (or `stopped`), so the pane never stays busy. The pane keeps its newest 64 runs; their output counts against the pane's log budget. A run still going when the app quits is `interrupted` when the state is next read.
 
 ---
 

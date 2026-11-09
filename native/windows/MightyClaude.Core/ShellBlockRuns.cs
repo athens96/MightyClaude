@@ -102,15 +102,15 @@ public static class ShellBlockRunSupport
     }
 
     /// <summary>
-    /// Whether <paramref name="command"/> is shown in that entry: every line of it is in the entry's text (a console block's
-    /// commands lose their prompt, so the whole command need not be one run of the text). The page draws the button; this
-    /// keeps the host from running anything the reply does not show.
+    /// Whether <paramref name="command"/> is exactly the command of the runnable block at the key's place in that assistant entry,
+    /// as the page finds it (<see cref="ShellBlockScan.Runnable"/>: a closed fence, a console block's prompt lines without their
+    /// prompt, nothing that hides or reorders text). The page draws the button; this keeps the host from running anything else.
     /// </summary>
     public static bool Shown(RunSession pane, string key, string command)
     {
-        if (EntryId(key) is not { } id || AssistantEntry(pane, id) is not { } entry) return false;
-        var text = entry.Text.Replace("\r\n", "\n");
-        return command.Replace("\r\n", "\n").Split('\n').All(line => text.Contains(line, StringComparison.Ordinal));
+        if (EntryId(key) is not { } id || AssistantEntry(pane, id) is not { } entry || !int.TryParse(key[(key.LastIndexOf('#') + 1)..], out var index)) return false;
+        var blocks = ShellBlockScan.Runnable(entry.Text);
+        return index < blocks.Count && string.Equals(blocks[index], command, StringComparison.Ordinal);
     }
 }
 

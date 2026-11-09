@@ -28,14 +28,15 @@ export function ShellBlock({ text, language, paneId, runKey, command }: ShellBlo
   };
   const runs = useSyncExternalStore(store.subscribe, readRuns, readRuns);
   const remote = useSyncExternalStore(store.subscribe, readRemote, readRemote);
-  const record = runs?.find((run) => run.key === runKey);
+  // A record of another command (the entry was replaced or edited since) is not this block's run.
+  const record = runs?.find((run) => run.key === runKey && run.command === command);
   const name = language?.split(' ').find((word) => word.length > 0);
   return (
     <>
       <div className="code-block" data-code-block="" data-shell-block={runKey}>
         <div className="code-language shell-block-head">
           <span>{name}</span>
-          {!remote && <ShellBlockAction paneId={paneId} runKey={runKey} command={command} record={record} busy={shellBlockBusy(runs, runKey)} />}
+          {!remote && <ShellBlockAction paneId={paneId} runKey={runKey} command={command} record={record} busy={shellBlockBusy(runs, runKey, command)} />}
         </div>
         <pre data-text="" data-code="">{text.replace(/[\r\n]+$/, '')}</pre>
       </div>
@@ -68,15 +69,15 @@ function ShellBlockAction({ paneId, runKey, command, record, busy }: { paneId: s
   }
   const square = record.state === 'running' ? 'run' : record.state === 'completed' ? 'done' : record.state === 'failed' ? 'err' : 'stop';
   const word = record.state === 'running' ? t('run.shellBlock.running') : record.state === 'completed' ? t('run.shellBlock.done')
-    : record.state === 'failed' ? t('run.shellBlock.failed', { code: String(record.exitCode ?? -1) })
+    : record.state === 'failed' ? t('run.shellBlock.failed', { code: record.exitCode == null ? '–' : String(record.exitCode) })
       : record.state === 'stopped' ? t('run.shellBlock.stopped') : t('run.shellBlock.interrupted');
   return (
-    <span className="shell-block-action" data-shell-state={record.state} role="status">
+    <span className="shell-block-action" data-shell-state={record.state}>
       <span className={'tool-square ' + square} aria-hidden="true">
         {square === 'done' ? <Icon name="check" size={11} weight={4} /> : square === 'err' ? <Icon name="x" size={11} weight={4} />
           : square === 'stop' ? <Icon name="minus" size={11} weight={4} /> : <span className="tool-square-dot" />}
       </span>
-      <span className={'shell-block-state' + (square === 'err' ? ' failed' : square === 'run' ? ' running' : '')}>{word}</span>
+      <span className={'shell-block-state' + (square === 'err' ? ' failed' : square === 'run' ? ' running' : '')} role="status" aria-live="polite">{word}</span>
       {record.state === 'running'
         ? <button type="button" className="shell-block-link" onClick={stop}>{t('run.shellBlock.stop')}</button>
         : again(t('run.shellBlock.again'))}

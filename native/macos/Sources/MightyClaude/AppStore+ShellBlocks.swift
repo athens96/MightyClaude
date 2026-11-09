@@ -94,6 +94,10 @@ extension AppStore {
             if done { break }
             if !result.moreRemains { try? await Task.sleep(for: .milliseconds(250)) }
         }
+        // The runner no longer knows the handle (it was let go): end the record here so the
+        // pane is not busy for ever. A record that already ended is left as it is.
+        let stopped = shellBlockFollows[id]?.stopRequested == true
+        updateShellRun(sessionId, key: key) { $0.finish(exitCode: nil, signal: nil, stopped: stopped) }
         shellBlockFollows[id] = nil
     }
 

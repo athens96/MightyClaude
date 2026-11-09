@@ -29,7 +29,8 @@ enum AgentTranscriptFormat {
     /// user's turn as an ink bubble, a reply as a white card under its speaker,
     /// each tool call as a chip row and code on the ink code surface. Every one is
     /// a paragraph text block (`RoundedTextBlock`), never a table, so selection,
-    /// copy, find and VoiceOver read straight through them.
+    /// copy, find and VoiceOver read straight through them. The one exception is a
+    /// runnable shell block's label line, a 1×2 table row (see `code(_:language:indent:run:)`).
     /// `shellRuns`, given only for an assistant reply in a pane that can run commands,
     /// puts a Run button on each of its shell blocks whose closing fence has arrived.
     static func entry(_ entry: LogEntry, provider: String, running: Bool, expanded: Bool, references: Bool = false,
@@ -523,13 +524,19 @@ enum AgentTranscriptFormat {
             return (ShellBlocks.key(entryId: scan.entryId, index: scan.runnable), command)
         }
 
+        /// The run shown under a block: its key's record, only while that record ran the
+        /// block's current command. A reply rewritten under the same key shows its block idle.
+        func shellRecord(key: String, command: String) -> ShellBlockRun? {
+            shell?.runs.records[key].flatMap { $0.command == command ? $0 : nil }
+        }
+
         /// A shell block's Run control: the button, or the run's state and its next action.
         /// While another run of the pane is going, Run is shown without its link.
         func shellControl(key: String, command: String, ink: NSColor) -> NSAttributedString {
             let line = NSMutableAttributedString(string: "")
             let small = NSFont.ui(ofSize: 10.5)
             let runs = shell?.runs
-            let record = runs?.records[key]
+            let record = shellRecord(key: key, command: command)
             // The accent fails contrast on concept D's ink code surface; links there keep
             // the surface's ink and are told apart by their underline.
             let linkColor = cards ? ink : AgentTranscriptFormat.accent
@@ -538,6 +545,10 @@ enum AgentTranscriptFormat {
                 if op == "run", runs?.busy == true {
                     attributes[.foregroundColor] = cards ? ink : secondary
                     attributes[.toolTip] = L("run.shellBlock.busy")
+                    // VoiceOver hears why the word is not a link: the busy reason as the
+                    // range's annotation and custom text.
+                    attributes[.accessibilityAnnotationTextAttribute] = [[NSAccessibility.AnnotationAttributeKey.label: L("run.shellBlock.busy")]]
+                    attributes[.accessibilityCustomText] = [L("run.shellBlock.busy")]
                 } else if let link = AgentTranscriptFormat.shellLink(op, key: key) {
                     attributes[.link] = link; attributes[.foregroundColor] = linkColor
                     if cards { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
@@ -578,7 +589,12 @@ enum AgentTranscriptFormat {
                 let labelFont = NSFont.uiCode(ofSize: 10, weight: .medium)
                 if let run {
                     // The label and the Run control share the line: a two-cell row, the
-                    // control at the trailing side.
+                    // control at the trailing side. A right-aligned tab stop would need the
+                    // code box's inner width in points, which is not known when the entry is
+                    // formatted (it follows the pane's width, and entries are cached across
+                    // resizes); percentage cells follow it for free. The row holds only the
+                    // label and the control, so VoiceOver reads one short 1×2 table per
+                    // runnable block, and the code itself stays a plain paragraph.
                     let row = NSTextTable()
                     row.numberOfColumns = 2
                     row.layoutAlgorithm = .fixedLayoutAlgorithm
@@ -600,7 +616,7 @@ enum AgentTranscriptFormat {
             paragraph(NSAttributedString(string: code), font: .uiCode(ofSize: 12, weight: .regular), color: ink, indent: indent, box: background, paragraphStyle: paragraphStyle)
             result.addAttribute(AgentTranscriptFormat.codeAttribute, value: code, range: NSRange(location: start, length: result.length - start))
             // The run's terminal output, live while it runs, in the code style under the block.
-            if let run, let output = shell?.runs.records[run.key]?.output, !output.isEmpty {
+            if let run, let output = shellRecord(key: run.key, command: run.command)?.output, !output.isEmpty {
                 self.code(output, language: nil, indent: indent)
             }
         }
