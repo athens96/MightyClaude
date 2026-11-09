@@ -16,7 +16,7 @@ set -euo pipefail
 PROFILE="DEFAULT"
 DOMAIN=""
 NAME="mightyclaude-relay"
-REPO="https://github.com/athens96/MightyClaude.git"
+REPO="https://github.com/athens96/MightyCode.git"
 
 while [ $# -gt 0 ]; do
     case "$1" in

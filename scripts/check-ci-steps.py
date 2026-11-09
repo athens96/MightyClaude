@@ -8,7 +8,7 @@ def get(u):
     except urllib.error.HTTPError as e:
         if e.code == 403: print('RATE_LIMITED'); sys.exit(3)
         raise
-base = 'https://api.github.com/repos/athens96/MightyClaude'
+base = 'https://api.github.com/repos/athens96/MightyCode'
 t0 = time.time()
 while True:
     runs = [r for r in get(f'{base}/actions/runs?head_sha={sha}&per_page=10').get('workflow_runs', []) if wf in r['name']]

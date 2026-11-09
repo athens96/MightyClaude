@@ -539,7 +539,7 @@ class StateTests(unittest.TestCase):
                              files={"MightyClaude-macos.zip": {"sha256": "a" * 64, "size": 1}})
         first = release.render_notes(state)
         self.assertTrue(first.startswith("2026-11-02 · Mac build 1360 · Android 0.4.47\n" + "a" * 64))
-        self.assertIn("Android: 0.4.47 APK — https://github.com/athens96/MightyClaude/releases/tag/v0.4.47", first)
+        self.assertIn("Android: 0.4.47 APK — https://github.com/athens96/MightyCode/releases/tag/v0.4.47", first)
         state["data"].update(build=1362, files={"MightyClaude-macos.zip": {"sha256": "b" * 64, "size": 2}},
                              apk={"version": "0.4.48", "path": "x.apk", "sha256": "c" * 64, "size": 3})
         second = release.render_notes(state)

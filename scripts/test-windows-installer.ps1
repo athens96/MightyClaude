@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $installDirectory = Join-Path $env:LOCALAPPDATA 'Programs\MightyClaude'
 $entry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{F2F99AEF-FB35-4476-A3EE-49453FA0527F}_is1'
-if (Test-Path $entry) { throw "Mighty Claude is already installed for this user; uninstall it before this check: $installDirectory" }
+if (Test-Path $entry) { throw "Mighty Code is already installed for this user; uninstall it before this check: $installDirectory" }
 if (Test-Path $installDirectory) { throw "The install folder already exists; this check never deletes a folder it did not make: $installDirectory" }
 
 function Invoke-Quiet([string]$Path, [string[]]$Arguments) {
@@ -26,14 +26,18 @@ Remove-Item -Recurse -Force $elsewhere
 Write-Output "refused /DIR= elsewhere (exit $($refused.ExitCode))"
 
 $log = Join-Path ([IO.Path]::GetTempPath()) "mighty-setup-$([Guid]::NewGuid().ToString('N')).log"
+# A Start menu shortcut left by an install from before the rename.
+$oldShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Mighty Claude.lnk'
+Set-Content $oldShortcut 'old'
 Invoke-Quiet $Setup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$log`"")
+if (Test-Path $oldShortcut) { throw "setup left the shortcut from before the rename: $oldShortcut" }
 foreach ($required in @('MightyClaude.exe', 'MightyClaude.dll', 'resources.pri', 'Microsoft.UI.Xaml.dll', 'Assets\MightyClaude.ico', 'Assets\Web\index.html', 'claude-mods\.claude-plugin\plugin.json')) {
     if (-not (Test-Path (Join-Path $installDirectory $required) -PathType Leaf)) { throw "setup did not install $required (log: $log)" }
 }
 $values = Get-ItemProperty $entry
 if ($values.DisplayVersion -ne $Version) { throw "the uninstall entry says $($values.DisplayVersion), expected $Version" }
 if ($values.InstallLocation.TrimEnd('\') -ne $installDirectory) { throw "the uninstall entry points at $($values.InstallLocation)" }
-$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Mighty Claude.lnk'
+$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Mighty Code.lnk'
 if (-not (Test-Path $shortcut)) { throw "setup made no Start menu shortcut: $shortcut" }
 Write-Output "installed $Version into $installDirectory"
 

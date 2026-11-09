@@ -3,7 +3,7 @@ title: はじめに
 order: 1
 section: getting-started
 ---
-Mighty Claudeは、Claude Code、Codex CLI、GoogleのAntigravity CLIを1つのウインドウで並べて使えるデスクトップアプリです。1つのプロジェクトフォルダで複数のペインを開き、ペインごとに会話と設定を別々に保ちます。
+Mighty Codeは、Claude Code、Codex CLI、GoogleのAntigravity CLIを1つのウインドウで並べて使えるデスクトップアプリです。1つのプロジェクトフォルダで複数のペインを開き、ペインごとに会話と設定を別々に保ちます。
 
 ## 必要なもの {#requirements}
 - macOS 14以降。WindowsではWindows 10(バージョン2004)以降またはWindows 11です。

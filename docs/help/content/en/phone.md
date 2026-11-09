@@ -3,7 +3,7 @@ title: Phone remote
 order: 9
 section: phone
 ---
-With the phone app you can follow and drive Mighty Claude on your Mac while you're away: check on tasks, send requests, and answer approvals and questions.
+With the phone app you can follow and drive Mighty Code on your Mac while you're away: check on tasks, send requests, and answer approvals and questions.
 
 The Mac and the phone connect through a relay server. Everything is encrypted end to end, so the relay can't read it. You don't need to open router ports or use a VPN. If you use Tailscale, the phone can also [connect directly](#direct) without the relay.
 

@@ -134,7 +134,7 @@ gh workflow run release-manifest.yml --ref main -f version=<버전> \
 
 ### github
 
-노트를 지금 상태로 다시 채워(`release/<버전>/release-notes.md`) `gh release create v<버전> --draft --target <빌드 커밋> --title "Mighty Claude <버전>" --notes-file release/<버전>/release-notes.md`에 패키지 다섯 개와(있으면) `MightyClaude-<APK 버전>.apk`를 붙여 초안으로 만들고, 첨부가 다 붙은 뒤 `gh release edit v<버전> --draft=false --latest`로 공개한다. 그래서 파일 없는 릴리스가 공개되는 순간이 없다.
+노트를 지금 상태로 다시 채워(`release/<버전>/release-notes.md`) `gh release create v<버전> --draft --target <빌드 커밋> --title "Mighty Code <버전>" --notes-file release/<버전>/release-notes.md`에 패키지 다섯 개와(있으면) `MightyClaude-<APK 버전>.apk`를 붙여 초안으로 만들고, 첨부가 다 붙은 뒤 `gh release edit v<버전> --draft=false --latest`로 공개한다. 그래서 파일 없는 릴리스가 공개되는 순간이 없다.
 
 - 노트에 `(채워 주세요)`, `(fill in)`, `{{…}}`가 남아 있거나 첫 줄의 Android 버전이 APK 유무와 맞지 않으면 멈춘다. 첨부할 파일의 sha256이 기록과 다르면 멈춘다.
 - 같은 태그의 릴리스가 이미 있으면 새로 만들지 않고, 빠진 첨부만 `gh release upload`로 붙이고, 초안이면 공개한다. 할 일이 있는데 `--yes`가 없으면 명령만 보여 주고 멈춘다.

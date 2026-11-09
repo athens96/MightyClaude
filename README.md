@@ -1,12 +1,12 @@
-# Mighty Claude
+# Mighty Code
 
-<img src="assets/icons/mightyclaude.png" alt="Mighty Claude 너구리" width="128" />
+<img src="assets/icons/mightyclaude.png" alt="Mighty Code 너구리" width="128" />
 
 **Claude Code · Codex CLI · Gemini CLI를 한 창에서 나란히 쓰는 데스크톱 앱입니다.**
 
-[macOS 빌드](https://github.com/athens96/MightyClaude/actions/workflows/native-macos.yml) · [Windows 빌드](https://github.com/athens96/MightyClaude/actions/workflows/native-windows.yml) · [도움말](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/) · [다운로드](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/)
+[macOS 빌드](https://github.com/athens96/MightyCode/actions/workflows/native-macos.yml) · [Windows 빌드](https://github.com/athens96/MightyCode/actions/workflows/native-windows.yml) · [도움말](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/) · [다운로드](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/)
 
-Mighty Claude는 프로젝트 폴더(워크스페이스)마다 여러 실행 창을 열고, 창마다 Claude·Codex·Gemini CLI를 직접 실행해 대화와 설정을 따로 유지합니다. 진행을 블록 다이어그램으로 보는 **마이티 보기**, 정해진 순서로 일을 진행하는 **스타일**(오로보로스·페이퍼신·슈퍼파워·클러드 플랜), 작업 상태를 알려 주는 **데스크톱 펫**, 휴대폰에서 Mac을 다루는 **휴대폰 원격**(화면 보기 포함)이 있습니다. macOS 앱과 Windows 앱(**베타**), Android 휴대폰 앱이 있고, 화면은 한국어·영어·중국어·일본어로 볼 수 있습니다.
+Mighty Code는 프로젝트 폴더(워크스페이스)마다 여러 실행 창을 열고, 창마다 Claude·Codex·Gemini CLI를 직접 실행해 대화와 설정을 따로 유지합니다. 진행을 블록 다이어그램으로 보는 **마이티 보기**, 정해진 순서로 일을 진행하는 **스타일**(오로보로스·페이퍼신·슈퍼파워·클러드 플랜), 작업 상태를 알려 주는 **데스크톱 펫**, 휴대폰에서 Mac을 다루는 **휴대폰 원격**(화면 보기 포함)이 있습니다. macOS 앱과 Windows 앱(**베타**), Android 휴대폰 앱이 있고, 화면은 한국어·영어·중국어·일본어로 볼 수 있습니다.
 
 현재 버전은 **0.4.14**입니다. 사용할 AI CLI는 따로 설치하고 로그인해야 합니다. 쓰지 않을 CLI는 설치하지 않아도 됩니다.
 
@@ -43,7 +43,7 @@ AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요�
 
 자세한 사용법은 [도움말 사이트](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/)에 있습니다(한국어·영어·중국어·일본어). 앱에서 고른 언어로 바로 열 수 있습니다.
 
-- Mac: 메뉴 막대의 **Mighty Claude 도움말**(⌘?) 또는 **설정 → 앱 정보 → 도움말 열기**
+- Mac: 메뉴 막대의 **Mighty Code 도움말**(⌘?) 또는 **설정 → 앱 정보 → 도움말 열기**
 - Windows: 사이드바 아래의 도움말 단추, F1 또는 **설정 → 앱 정보 → 도움말 열기**
 - 휴대폰: **호스트** 탭의 **도움말** 단추
 
@@ -87,7 +87,7 @@ AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요�
 - 일반(테마·언어·상태 줄·브라우저), 모델(페이즈별 모델), 스타일, 구성 요소(CLI·플러그인 상태, 내 작업 도구 모음), CLI(계정·업데이트), 모바일 리모트, 원격 연결 (Tailscale), 펫과 알림, 앱 정보(업데이트·데이터 위치) 탭이 있습니다.
 
 **원격 연결 (Tailscale)** — [원격 연결](docs/help/content/ko/remote.md)
-- Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 Tailscale로 이어, 한쪽에서 다른 컴퓨터의 워크스페이스를 열고 그 컴퓨터의 CLI·계정으로 Claude·Codex·Antigravity와 명령을 실행합니다. 파일은 복사하지 않습니다.
+- Mac이나 Windows 컴퓨터 두 대의 Mighty Code를 Tailscale로 이어, 한쪽에서 다른 컴퓨터의 워크스페이스를 열고 그 컴퓨터의 CLI·계정으로 Claude·Codex·Antigravity와 명령을 실행합니다. 파일은 복사하지 않습니다.
 - 공유하는 컴퓨터는 **설정 → 원격 연결 (Tailscale) → 이 컴퓨터 공유**에서 워크스페이스를 고르고 주소와 연결 키를 알려 줍니다. 연결하는 컴퓨터는 **다른 컴퓨터 연결**에 그 주소와 키를 넣고 워크스페이스를 엽니다.
 - 원격 창도 마이티 보기와 승인·질문·계획 카드를 그대로 씁니다. 마이티 오케스트레이션, 파일·브라우저 창, 파일을 읽는 스타일은 원격 워크스페이스에서 쓸 수 없고, 휴대폰에는 보이지 않습니다. Windows 앱도 같은 화면과 프로토콜이라 Mac↔Windows 어느 방향도 연결되게 만들었습니다(실제 기기 연결은 아직 확인 중). Windows에서 공유하려면 방화벽 규칙 하나를 더합니다(관리자 확인 한 번).
 
@@ -105,7 +105,7 @@ AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요�
 ## 직접 빌드하기
 
 ```sh
-git clone https://github.com/athens96/MightyClaude.git
+git clone https://github.com/athens96/MightyCode.git
 cd MightyClaude
 ```
 

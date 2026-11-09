@@ -3,7 +3,7 @@ title: 快速入门
 order: 1
 section: getting-started
 ---
-Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claude Code、Codex CLI 和 Google 的 Antigravity CLI。你可以在一个项目文件夹中打开多个窗格，每个窗格各自保留对话和设置。
+Mighty Code 是一款桌面应用，可以在一个窗口中并排使用 Claude Code、Codex CLI 和 Google 的 Antigravity CLI。你可以在一个项目文件夹中打开多个窗格，每个窗格各自保留对话和设置。
 
 ## 准备工作 {#requirements}
 - macOS 14 或更高版本。Windows 需要 Windows 10（版本 2004）或更高版本，或 Windows 11。

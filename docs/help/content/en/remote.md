@@ -3,10 +3,10 @@ title: Remote connection (Tailscale)
 order: 10
 section: remote
 ---
-Link two computers' Mighty Claude (Mac or Windows) over [Tailscale](https://tailscale.com/kb/1017/install), and one computer can open the other's workspaces and run Claude, Codex, Antigravity and commands on that computer. Files and CLI sign-ins stay where the work runs; no project files are copied or synced.
+Link two computers' Mighty Code (Mac or Windows) over [Tailscale](https://tailscale.com/kb/1017/install), and one computer can open the other's workspaces and run Claude, Codex, Antigravity and commands on that computer. Files and CLI sign-ins stay where the work runs; no project files are copied or synced.
 
 ## Before you start {#prepare}
-- Install Mighty Claude and Tailscale on both computers and sign both into the same tailnet.
+- Install Mighty Code and Tailscale on both computers and sign both into the same tailnet.
 - On the computer that will do the work (the host), install and sign in to the CLIs you will use. Remote runs use the host's CLIs and accounts.
 - No router port forwarding and no Tailscale Serve or Funnel are needed. Just make sure your tailnet policy lets the two devices reach each other.
 
@@ -56,4 +56,4 @@ Remote workspaces do not appear on the [phone](phone.md).
 - If the network drops, a running remote pane ends in an error and the connection list says why. The host stops a run it no longer hears from within about 30 seconds.
 - {{ui:settings.remote.disconnectButton}} stops that connection's runs and keeps the connection. Press {{ui:settings.remote.refreshButton}} or send from a remote pane to use it again.
 - If the host restarted sharing, you need its new key. Connecting to the same address with the new key replaces the saved connection's key.
-- While the host computer sleeps or Mighty Claude is closed there, no new work can be sent.
+- While the host computer sleeps or Mighty Code is closed there, no new work can be sent.

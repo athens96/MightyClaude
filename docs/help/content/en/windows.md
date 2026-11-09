@@ -10,10 +10,10 @@ This help is written from the Mac app. The Windows app has the same features und
 
 ## Install {#install}
 1. Get the setup program for your PC from the [download page](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html). Most PCs need `MightyClaude-windows-x64-setup.exe`; ARM PCs such as Snapdragon laptops need `MightyClaude-windows-arm64-setup.exe`.
-2. Run it. It installs for your user only, without administrator rights, into `%LOCALAPPDATA%\Programs\MightyClaude` and adds Mighty Claude to the Start menu. You can choose a desktop shortcut during setup.
+2. Run it. It installs for your user only, without administrator rights, into `%LOCALAPPDATA%\Programs\MightyClaude` and adds Mighty Code to the Start menu. You can choose a desktop shortcut during setup.
 3. Start the app from the last page, or later from the Start menu.
 
-To remove it, go to Windows Settings → Apps → Installed apps and uninstall Mighty Claude. The install folder is removed whole; your settings and conversations (`%APPDATA%\MightyClaudeNative`) stay.
+To remove it, go to Windows Settings → Apps → Installed apps and uninstall Mighty Code. The install folder is removed whole; your settings and conversations (`%APPDATA%\MightyClaudeNative`) stay.
 
 To use it without installing, get the zip from the same page, unzip the whole folder and run `MightyClaude.exe` inside it. The other files in the folder are needed too, so don't move the exe out on its own.
 
@@ -61,7 +61,7 @@ Windows has no menu bar. The same commands are in the sidebar and the {{ui:works
 | Remote connection (Tailscale) | The same screen and protocol as on the Mac, and it connects in either direction between a Mac and a Windows PC ([Remote connection](remote.md)). The connection key is kept in a file only this Windows user can decrypt, instead of the Keychain; to share, add one firewall rule with {{ui:remote.windows.firewall.add}} (the same rule as the phone's direct connection, after one administrator prompt). Remote commands run in PowerShell on a Windows host. While the {{ui:settings.remote.allowFullAccess}} switch is off, other computers cannot use Codex or Antigravity panes on a Windows host, because Windows cannot confine them to the shared folder the way macOS does. Connections between a Mac and a Windows PC have not been checked on real machines yet. |
 
 > [!warning]
-> Direct connection is on by default, so the first time the app listens for phones, Windows Defender Firewall may show its own alert that it has blocked some features of the app. Choose **Allow access** (Windows then adds its own, broader rule for the app). If you chose **Cancel**, Windows may have added rules that block `MightyClaude.exe`, and those win over the app's rule: open Windows Defender Firewall → Advanced settings → Inbound Rules and delete the block rules for Mighty Claude.
+> Direct connection is on by default, so the first time the app listens for phones, Windows Defender Firewall may show its own alert that it has blocked some features of the app. Choose **Allow access** (Windows then adds its own, broader rule for the app). If you chose **Cancel**, Windows may have added rules that block `MightyClaude.exe`, and those win over the app's rule: open Windows Defender Firewall → Advanced settings → Inbound Rules and delete the block rules for Mighty Code.
 
 > [!note]
 > Some Windows features haven't been checked on enough real machines yet. If something looks wrong, please tell us.

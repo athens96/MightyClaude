@@ -766,13 +766,13 @@ function renderLanguage(language) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHTML(site.title ?? 'Mighty Claude')}</title>
+<title>${escapeHTML(site.title ?? 'Mighty Code')}</title>
 <style>:root{${body}}
 ${CSS}</style>
 </head>
 <body>
 <aside class="side">
- <a class="brandline" href="#top"><span class="logo">${GLYPH}</span><div><b>Mighty Claude</b><small>${escapeHTML(site.brandSub ?? '')}</small></div></a>
+ <a class="brandline" href="#top"><span class="logo">${GLYPH}</span><div><b>Mighty Code</b><small>${escapeHTML(site.brandSub ?? '')}</small></div></a>
  <div class="side-label">${escapeHTML(site.contents ?? '')}</div>
  <nav>${sections.map((s) => s.nav).join('')}</nav>
  <div class="side-foot">
@@ -782,7 +782,7 @@ ${CSS}</style>
 </aside>
 <main id="top">
 <header class="hero">
- <h1>Mighty Claude <span>${escapeHTML(site.heroTitle ?? '')}</span></h1>
+ <h1>Mighty Code <span>${escapeHTML(site.heroTitle ?? '')}</span></h1>
  <p>${inline(site.intro ?? '', { language, page: language.pages[0], where: `docs/help/content/${language.code}/_site.json` })}</p>
  <nav class="toc">${sections.map((s) => s.toc).join('')}</nav>
 </header>
@@ -805,7 +805,7 @@ function renderRedirect() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mighty Claude Help</title>
+<title>Mighty Code Help</title>
 <script>(function(){
  var built=${JSON.stringify(built)},pick="${fallback}";
  var wanted=(navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||""]);
@@ -814,7 +814,7 @@ function renderRedirect() {
 })();</script>
 <style>body{font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0B0F19;color:#EEF1F7;display:grid;place-items:center;min-height:100vh;margin:0}a{color:#7FA3FF}</style>
 </head>
-<body><p>Mighty Claude Help: ${links}</p></body>
+<body><p>Mighty Code Help: ${links}</p></body>
 </html>
 `;
 }

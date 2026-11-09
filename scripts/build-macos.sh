@@ -188,7 +188,7 @@ fi
 # TCC grants (Screen Recording, Accessibility) and Keychain "Always Allow"
 # valid across rebuilds. Override with MIGHTY_CODESIGN_IDENTITY=- for ad-hoc
 # signing (grants reset on every rebuild).
-CODESIGN_IDENTITY="${MIGHTY_CODESIGN_IDENTITY:-Mighty Code Dev}"
+CODESIGN_IDENTITY="${MIGHTY_CODESIGN_IDENTITY:-Mighty Claude Dev}"
 if [ -z "${MIGHTY_CODESIGN_IDENTITY:-}" ] && \
    ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "\"$CODESIGN_IDENTITY\""; then
     echo "warning: signing identity '$CODESIGN_IDENTITY' not found; signing ad-hoc (TCC grants reset on every build). Run scripts/setup-codesign.sh once." >&2

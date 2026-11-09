@@ -1,6 +1,6 @@
 # Windows 이식 검증 기록
 
-2026-10-04. macOS 소스 기준점은 `088fdccc9920ef27f80af724264e8ba9b122f78e`이며, [작업 브랜치](https://github.com/athens96/MightyClaude/tree/windows/macos-feature-parity)는 `windows/macos-feature-parity`다. 최종 검증·배포 소스는 `4301339b11945986c7e3774eb3ccccc75433226a`다. 영역별 원본 파일과 Windows 대응 구현은 [기능 대응 목록](windows-parity.md)에 기록했다. 브랜치와 CI 배포 파일을 업로드했으며 main 병합·정식 릴리스는 하지 않았다.
+2026-10-04. macOS 소스 기준점은 `088fdccc9920ef27f80af724264e8ba9b122f78e`이며, [작업 브랜치](https://github.com/athens96/MightyCode/tree/windows/macos-feature-parity)는 `windows/macos-feature-parity`다. 최종 검증·배포 소스는 `4301339b11945986c7e3774eb3ccccc75433226a`다. 영역별 원본 파일과 Windows 대응 구현은 [기능 대응 목록](windows-parity.md)에 기록했다. 브랜치와 CI 배포 파일을 업로드했으며 main 병합·정식 릴리스는 하지 않았다.
 
 ## 구현 범위
 
@@ -15,7 +15,7 @@ Windows 구현은 WinUI 네이티브 입력 컨트롤, ConPTY, WebView2, Windows
 | 로컬 공통 C# 검사 | 469개 통과, Windows 전용 4개 제외 |
 | 공유 번역 키·변경 파일 검사 | 통과 |
 | macOS에서 WinUI C# 교차 컴파일 | 추가 C# 오류·경고 없음. Windows 전용 XAML 생성은 이 검사로 증명하지 않음 |
-| Windows x64·ARM64 Core·빌드·네이티브 GUI 검사 | 두 아키텍처 모두 통과 — `4301339` [CI 실행](https://github.com/athens96/MightyClaude/actions/runs/37182771471) |
+| Windows x64·ARM64 Core·빌드·네이티브 GUI 검사 | 두 아키텍처 모두 통과 — `4301339` [CI 실행](https://github.com/athens96/MightyCode/actions/runs/37182771471) |
 | 배포 파일 독립 검증 | 두 ZIP의 SHA-256·CRC, 실행 파일 아키텍처, 소스 커밋·런타임 구성 일치 |
 | 공통 스타일 엔진 고정 검사 | `74cd28c` 통과 |
 
@@ -27,7 +27,7 @@ Windows 구현은 WinUI 네이티브 입력 컨트롤, ConPTY, WebView2, Windows
 
 ## 배포 파일
 
-[최종 CI의 Artifacts](https://github.com/athens96/MightyClaude/actions/runs/37182771471)에서 다음 이름의 배포 아티팩트를 받을 수 있다. GitHub 로그인이 필요할 수 있다. `MightyClaude-windows-*-smoke`는 검증 자료이며 실행 배포본은 아래 두 개다.
+[최종 CI의 Artifacts](https://github.com/athens96/MightyCode/actions/runs/37182771471)에서 다음 이름의 배포 아티팩트를 받을 수 있다. GitHub 로그인이 필요할 수 있다. `MightyClaude-windows-*-smoke`는 검증 자료이며 실행 배포본은 아래 두 개다.
 
 | 아티팩트 | 내부 배포 ZIP | ZIP 크기 |
 |---|---|---|
@@ -47,10 +47,10 @@ Windows 아키텍처에 맞는 ZIP 전체를 풀고 `native-windows-x64/MightyCl
 
 ## macOS 회귀 검사
 
-공유 번역 파일 외 macOS 실행 소스는 변경하지 않았다. `74cd28c` [macOS CI](https://github.com/athens96/MightyClaude/actions/runs/37181760242)에서는 앱 빌드와 GUI 검사가 통과했지만 Swift 테스트 두 건에서 네 개의 검증 실패가 있었다.
+공유 번역 파일 외 macOS 실행 소스는 변경하지 않았다. `74cd28c` [macOS CI](https://github.com/athens96/MightyCode/actions/runs/37181760242)에서는 앱 빌드와 GUI 검사가 통과했지만 Swift 테스트 두 건에서 네 개의 검증 실패가 있었다.
 
 - `realPTYCooperativeProcessStopsOnSIGINTQuickly`: 종료 상태·신호와 제한 시간 검사 실패.
-- `shutdownEndsFourFloodingRunsWithinTheQuitDeadline`: 종료에 8.29초가 걸려 6초 제한 초과. [직전 실행](https://github.com/athens96/MightyClaude/actions/runs/37180823350)에서도 같은 검사에서 9.27초가 기록됐다.
+- `shutdownEndsFourFloodingRunsWithinTheQuitDeadline`: 종료에 8.29초가 걸려 6초 제한 초과. [직전 실행](https://github.com/athens96/MightyCode/actions/runs/37180823350)에서도 같은 검사에서 9.27초가 기록됐다.
 
 이 기록은 macOS 전체 검사가 통과했다는 뜻이 아니다. 위 실행 코드와 테스트는 이번 Windows 이식에서 수정하지 않았다.
 

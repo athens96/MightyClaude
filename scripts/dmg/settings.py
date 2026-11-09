@@ -1,6 +1,6 @@
-# dmgbuild settings for the Mighty Claude install window (scripts/notarize-macos.sh).
+# dmgbuild settings for the Mighty Code install window (scripts/notarize-macos.sh).
 #
-#   dmgbuild -s scripts/dmg/settings.py -D app=<MightyClaude.app> -D background=<tiff> "Mighty Claude" <out.dmg>
+#   dmgbuild -s scripts/dmg/settings.py -D app=<MightyClaude.app> -D background=<tiff> "Mighty Code" <out.dmg>
 #
 # A 660×400 window with no toolbar, sidebar or status bar; the app on the left and an
 # Applications link on the right at the positions scripts/dmg/make-background.swift

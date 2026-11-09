@@ -1,6 +1,6 @@
 # The help site
 
-The user help for Mighty Claude, built into one page per language and published on R2 under `mightyclaude/help/<lang>/`.
+The user help for Mighty Code, built into one page per language and published on R2 under `mightyclaude/help/<lang>/`.
 
 | Path | What |
 |---|---|

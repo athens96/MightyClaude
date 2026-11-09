@@ -10,10 +10,10 @@ section: windows
 
 ## 安装 {#install}
 1. 从[下载页面](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)下载适合你电脑的安装程序。大多数电脑选择 `MightyClaude-windows-x64-setup.exe`，骁龙等 ARM 电脑选择 `MightyClaude-windows-arm64-setup.exe`。
-2. 运行安装程序。它无需管理员权限，只为当前用户安装到 `%LOCALAPPDATA%\Programs\MightyClaude`，并在开始菜单中添加 Mighty Claude。安装时可以选择是否创建桌面快捷方式。
+2. 运行安装程序。它无需管理员权限，只为当前用户安装到 `%LOCALAPPDATA%\Programs\MightyClaude`，并在开始菜单中添加 Mighty Code。安装时可以选择是否创建桌面快捷方式。
 3. 在最后一页直接启动，或之后从开始菜单打开。
 
-要删除它，请在 Windows 设置 → 应用 → 已安装的应用中卸载 Mighty Claude。安装文件夹会被整个删除，设置和对话记录（`%APPDATA%\MightyClaudeNative`）会保留。
+要删除它，请在 Windows 设置 → 应用 → 已安装的应用中卸载 Mighty Code。安装文件夹会被整个删除，设置和对话记录（`%APPDATA%\MightyClaudeNative`）会保留。
 
 如果不想安装，可以从同一页面下载 zip，解压整个文件夹后运行其中的 `MightyClaude.exe`。文件夹中的其他文件也是必需的，请勿把 exe 单独移到别处。
 
@@ -61,7 +61,7 @@ Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPan
 | 远程连接（Tailscale） | 屏幕和协议与 Mac 相同，Mac 与 Windows 之间任一方向都能连接（[远程连接](remote.md)）。连接密钥不放在钥匙串里，而是保存在只有当前 Windows 用户能解密的文件中；要共享时，用 {{ui:remote.windows.firewall.add}} 添加一条防火墙规则（与手机直连共用同一条规则，需要一次管理员确认）。远程命令在 Windows 主机上用 PowerShell 运行。共享时如果 {{ui:settings.remote.allowFullAccess}} 开关关闭，其他电脑不能在 Windows 主机上使用 Codex 和 Antigravity 窗格，因为 Windows 无法像 macOS 那样把它们限制在共享文件夹内。Mac 与 Windows 之间的连接尚未在真实设备上验证。 |
 
 > [!warning]
-> 通过 Tailscale 直接连接默认开启，因此应用第一次等待手机连接时，Windows Defender 防火墙可能会弹出它自己的提示，说已阻止此应用的部分功能。请选择**允许访问**（Windows 随后会为此应用添加它自己的、范围更广的规则）。如果选了**取消**，Windows 可能已添加阻止 `MightyClaude.exe` 的规则，而这些规则优先于应用的规则：请打开 Windows Defender 防火墙 → 高级设置 → 入站规则，删除阻止 Mighty Claude 的规则。
+> 通过 Tailscale 直接连接默认开启，因此应用第一次等待手机连接时，Windows Defender 防火墙可能会弹出它自己的提示，说已阻止此应用的部分功能。请选择**允许访问**（Windows 随后会为此应用添加它自己的、范围更广的规则）。如果选了**取消**，Windows 可能已添加阻止 `MightyClaude.exe` 的规则，而这些规则优先于应用的规则：请打开 Windows Defender 防火墙 → 高级设置 → 入站规则，删除阻止 Mighty Code 的规则。
 
 > [!note]
 > Windows 应用的部分功能尚未在真实设备上充分验证。如发现异常，请告诉我们。

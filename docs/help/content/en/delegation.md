@@ -132,7 +132,7 @@ The card's {{ui:delegation.card.discard}} button removes the child's worktree an
 ![[delegation-parent-closed]]
 
 ## Notices and held items {#notices}
-When a child Claude handed work to reports or fails to start, the parent gets one notice. It also gets one when a run the parent started (the first task or a follow-up) ends without a report. A notice is only a short pointer starting with `[Mighty Claude notice …]`; the parent reads the report itself with `child_status`. A child you started yourself sends no notices.
+When a child Claude handed work to reports or fails to start, the parent gets one notice. It also gets one when a run the parent started (the first task or a follow-up) ends without a report. A notice is only a short pointer starting with `[Mighty Code notice …]`; the parent reads the report itself with `child_status`. A child you started yourself sends no notices.
 
 - If the parent is running Claude, the notice goes straight into that run and shows in the parent's Mighty view as an orange {{ui:graph.block.delegationNotice}} block. A notice that reaches the parent after it has finished its answer shows as the same block, and Claude's answer to it is not added to the parent request's result: it opens as its own {{ui:graph.block.delegationNotice}} diagram. A running Codex parent gets it as its next run, once that run finishes normally.
 - If the parent finished its last run normally since the app opened and is now idle, the notice starts its next run.

@@ -3,10 +3,10 @@ title: 원격 연결 (Tailscale)
 order: 10
 section: remote
 ---
-Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 [Tailscale](https://tailscale.com/kb/1017/install)로 이으면, 한쪽에서 다른 쪽 컴퓨터의 워크스페이스를 열고 그 컴퓨터에서 Claude·Codex·Antigravity와 명령을 실행할 수 있습니다. 파일과 CLI 로그인은 실행하는 컴퓨터에 그대로 있고, 프로젝트 파일을 복사하거나 동기화하지 않습니다.
+Mac이나 Windows 컴퓨터 두 대의 Mighty Code를 [Tailscale](https://tailscale.com/kb/1017/install)로 이으면, 한쪽에서 다른 쪽 컴퓨터의 워크스페이스를 열고 그 컴퓨터에서 Claude·Codex·Antigravity와 명령을 실행할 수 있습니다. 파일과 CLI 로그인은 실행하는 컴퓨터에 그대로 있고, 프로젝트 파일을 복사하거나 동기화하지 않습니다.
 
 ## 준비 {#prepare}
-- 두 컴퓨터에 Mighty Claude와 Tailscale을 설치하고 같은 tailnet에 로그인합니다.
+- 두 컴퓨터에 Mighty Code와 Tailscale을 설치하고 같은 tailnet에 로그인합니다.
 - 일을 맡길 컴퓨터(호스트)에 쓸 CLI를 설치하고 로그인합니다. 원격 실행은 호스트의 CLI와 계정을 씁니다.
 - 공유기 포트 포워딩, Tailscale Serve·Funnel은 필요하지 않습니다. tailnet 정책이 두 기기 사이의 연결을 막지 않는지만 확인하세요.
 
@@ -56,4 +56,4 @@ Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 [Tailscale](https://tail
 - 네트워크가 끊기면 실행 중인 원격 창은 오류로 끝나고 연결 목록에 이유가 표시됩니다. 호스트는 확인이 끊긴 실행을 약 30초 안에 스스로 멈춥니다.
 - {{ui:settings.remote.disconnectButton}} 단추는 그 연결의 실행을 멈추고 연결 정보는 남깁니다. 다시 쓰려면 {{ui:settings.remote.refreshButton}} 단추를 누르거나 원격 창에서 보냅니다.
 - 호스트가 공유를 다시 시작했다면 새 키가 필요합니다. 같은 주소로 새 키를 넣어 연결하면 저장된 연결의 키가 바뀝니다.
-- 호스트 컴퓨터가 잠들거나 Mighty Claude가 종료되면 새 작업을 보낼 수 없습니다.
+- 호스트 컴퓨터가 잠들거나 Mighty Code가 종료되면 새 작업을 보낼 수 없습니다.

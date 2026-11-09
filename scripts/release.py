@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Release Mighty Claude one step at a time (docs/release.md).
+"""Release Mighty Code one step at a time (docs/release.md).
 
     release.py check --version 0.4.48
     release.py version --summary "<한 줄 요약>"
@@ -27,7 +27,7 @@ BUCKET = "mightyclaude"
 # The public half of the update signing key (also in .github/workflows/native-windows.yml).
 PUBLIC_KEY = "C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4="
 FORMAT = "mightyclaude-update-v1"
-REPO = "athens96/MightyClaude"
+REPO = "athens96/MightyCode"
 STEPS = ["check", "version", "push", "ci", "download", "manifest", "page", "upload", "github", "verify"]
 # Re-running these replaces files the later steps used, so the later steps must run again.
 PRODUCERS = {"ci", "download", "manifest", "page"}
@@ -902,7 +902,7 @@ def step_github(state, a):
     if existing is None:
         # A draft first, so the release is never public without its files; published once all are attached.
         commands.append(["gh", "release", "create", tag, "--draft", "--target", state["data"]["buildCommit"],
-                         "--title", f"Mighty Claude {version}", "--notes-file", rendered_notes_path(version)] + assets)
+                         "--title", f"Mighty Code {version}", "--notes-file", rendered_notes_path(version)] + assets)
     else:
         names = {x["name"] for x in existing.get("assets", [])}
         missing = [p for p in assets if os.path.basename(p) not in names]
@@ -991,7 +991,7 @@ def run_step(step, state, a):
 
 
 def parser():
-    p = argparse.ArgumentParser(description="Mighty Claude 릴리스를 한 단계씩 (docs/release.md)")
+    p = argparse.ArgumentParser(description="Mighty Code 릴리스를 한 단계씩 (docs/release.md)")
     p.add_argument("step", choices=STEPS + ["status", "next"])
     p.add_argument("--version", help="릴리스 버전 x.y.z (check에서 정하면 이후 단계는 기억합니다)")
     p.add_argument("--summary", help="version: 릴리스 커밋 제목의 한 줄 요약")

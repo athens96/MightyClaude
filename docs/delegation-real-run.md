@@ -40,7 +40,7 @@ open -a /Applications/MightyClaude.app --args --profile "$RUN/profile"
    - 자식 1의 task: hello.txt에 "hello from child 1" 한 줄을 쓰고 커밋하라.
    - 자식 2의 task: count.txt에 1부터 5까지 한 줄에 하나씩 쓰고 커밋하라. 커밋한 다음에는 보고서를 쓰기 전에 AskUserQuestion 도구로 "보고해도 될까요?"라고 물어라. 보고서는 답을 받은 뒤에 써라.
 2. 두 자식의 id를 알려 주고 이번 답을 끝내라. 자식을 기다리며 실행을 이어가지 마라.
-3. "[Mighty Claude notice"로 시작하는 알림을 받으면 child_status로 그 자식의 보고를 읽고 한 줄로 요약하라.
+3. "[Mighty Code notice"로 시작하는 알림을 받으면 child_status로 그 자식의 보고를 읽고 한 줄로 요약하라.
 4. 내가 시키기 전에는 merge, follow_up, discard를 부르지 마라.
 ```
 
@@ -54,7 +54,7 @@ open -a /Applications/MightyClaude.app --args --profile "$RUN/profile"
    - [ ] 두 자식은 `Auto mode`이고, 각자 `mighty/<자식 id>` 브랜치의 worktree(`~/.mightyclaude/worktrees/<자식 id>`)에서 실행된다.
    - [ ] 부모 실행이 정상으로 끝난다.
 2. **자식 1의 알림이 오게 둔다.** 자식 2가 질문하면 사이드바에서 `응답 대기`로 보인다. 그 질문("보고해도 될까요?")에는 아직 답하지 않는다.
-   - [ ] 자식 1이 `보고함`이 되고, `[Mighty Claude notice …] Your child … reported revision 1.`이 부모 대화에 한 번 들어간다. 부모가 쉬고 있었으면 이 알림으로 새 실행이 시작되고, 실행 중이었으면 그 실행으로 바로 전달된다.
+   - [ ] 자식 1이 `보고함`이 되고, `[Mighty Code notice …] Your child … reported revision 1.`이 부모 대화에 한 번 들어간다. 부모가 쉬고 있었으면 이 알림으로 새 실행이 시작되고, 실행 중이었으면 그 실행으로 바로 전달된다.
    - [ ] 부모가 `child_status`로 자식 1의 보고를 읽어 요약하고 실행을 정상으로 끝낸다. `merge`는 부르지 않는다.
 3. **자식 2가 보고하기 전에 부모를 멈춘다.** 부모에게 `자식 2를 기다리는 동안 Bash로 sleep 120 을 실행해.`를 보낸다. 그 명령이 도는 동안 입력창의 `실행 중지`를 누른다. 승인 카드가 뜨면 카드가 떠 있는 동안 누른다. 실행이 멈추면 자식 2 창의 질문에 답한다.
    - [ ] 자식 2가 `보고함`이 되어도 부모에서 실행이 시작되지 않는다.

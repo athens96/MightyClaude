@@ -61,11 +61,11 @@ fi
 helper_waited=0
 while running || update_helper_running; do
   if running; then
-    echo "Mighty Claude가 실행 중입니다. 앱을 종료(⌘Q)하면 교체합니다…"
+    echo "Mighty Code가 실행 중입니다. 앱을 종료(⌘Q)하면 교체합니다…"
     while running; do sleep 1; done
   fi
   if update_helper_running; then
-    echo "Mighty Claude의 업데이트 도우미가 끝나기를 기다립니다…"
+    echo "Mighty Code의 업데이트 도우미가 끝나기를 기다립니다…"
     while update_helper_running; do
       sleep 1
       helper_waited=$((helper_waited + 1))

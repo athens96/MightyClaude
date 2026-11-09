@@ -25,14 +25,14 @@
 ; Never change AppId: it names the uninstall entry, and the app keeps that entry's version in step after it updates itself
 ; (InstallerRegistration in MightyClaude.Core).
 AppId={{F2F99AEF-FB35-4476-A3EE-49453FA0527F}
-AppName=Mighty Claude
+AppName=Mighty Code
 AppVersion={#AppVersion}
-AppVerName=Mighty Claude {#AppVersion}
-AppPublisher=Mighty Claude
-AppPublisherURL=https://github.com/athens96/MightyClaude
+AppVerName=Mighty Code {#AppVersion}
+AppPublisher=Mighty Code
+AppPublisherURL=https://github.com/athens96/MightyCode
 AppSupportURL=https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/
 VersionInfoVersion={#AppVersion}
-VersionInfoProductName=Mighty Claude
+VersionInfoProductName=Mighty Code
 PrivilegesRequired=lowest
 DefaultDirName={userpf}\MightyClaude
 ; The folder is fixed: setup empties it before installing and uninstall removes it whole, which must never reach a folder
@@ -44,8 +44,8 @@ UsePreviousAppDir=no
 ; which would take unins000.exe with it.
 UninstallFilesDir={localappdata}\MightyClaudeSetup
 DisableProgramGroupPage=yes
-DefaultGroupName=Mighty Claude
-UninstallDisplayName=Mighty Claude
+DefaultGroupName=Mighty Code
+UninstallDisplayName=Mighty Code
 UninstallDisplayIcon={app}\MightyClaude.exe
 SetupIconFile=..\..\..\assets\icons\MightyClaude.ico
 OutputDir={#OutputDir}
@@ -62,7 +62,7 @@ ArchitecturesInstallIn64BitMode=arm64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 #endif
-; A running Mighty Claude is asked to close before its files are replaced.
+; A running Mighty Code is asked to close before its files are replaced.
 CloseApplications=yes
 RestartApplications=no
 
@@ -76,9 +76,9 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Languages\Unofficial\ChineseS
 
 [CustomMessages]
 ; The unprefixed line is every language's fallback (English, and Chinese when its file is present).
-OnlyOwnFolder=Mighty Claude can only be installed into %1.
-korean.OnlyOwnFolder=Mighty Claude는 %1 에만 설치할 수 있습니다.
-japanese.OnlyOwnFolder=Mighty Claude は %1 にのみインストールできます。
+OnlyOwnFolder=Mighty Code can only be installed into %1.
+korean.OnlyOwnFolder=Mighty Code는 %1 에만 설치할 수 있습니다.
+japanese.OnlyOwnFolder=Mighty Code は %1 にのみインストールできます。
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -87,17 +87,20 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; An install over an older one starts from an empty folder, as the update helper's copy does, so no file the new version
 ; dropped is left behind.
 Type: filesandordirs; Name: "{app}\*"
+; The Start menu shortcut of an install from before the rename; this one makes it again under the new name. A desktop
+; shortcut was the user's own choice, and still opens the app, so it stays.
+Type: files; Name: "{autoprograms}\Mighty Claude.lnk"
 
 [Files]
 ; The whole publish folder, dot folders included (claude-mods\.claude-plugin\plugin.json): the exe alone does not run.
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Mighty Claude"; Filename: "{app}\MightyClaude.exe"
-Name: "{autodesktop}\Mighty Claude"; Filename: "{app}\MightyClaude.exe"; Tasks: desktopicon
+Name: "{autoprograms}\Mighty Code"; Filename: "{app}\MightyClaude.exe"
+Name: "{autodesktop}\Mighty Code"; Filename: "{app}\MightyClaude.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\MightyClaude.exe"; Description: "{cm:LaunchProgram,Mighty Claude}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\MightyClaude.exe"; Description: "{cm:LaunchProgram,Mighty Code}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; The app replaces its own files when it updates, so the uninstall log no longer lists them all: remove the folder whole,

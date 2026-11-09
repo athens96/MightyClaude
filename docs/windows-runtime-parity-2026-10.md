@@ -42,4 +42,4 @@ Windows의 WinUI 대체 화면은 보낼 대상 선택을 제공하지 않는다
 - 실제 WebView2에서 계획 문서 확대·포커스 복원·기록 정보·한글 의견의 바이트 한도와 실행 설정의 잠금·해제·입력 유지·저장 거절을 확인했다. 좁은 창의 옵션 메뉴를 거치는 실행 설정 경로도 통과했다.
 - 독립 검토에서 HTTP 수신기, 실행기와 이미지 저장, 웹 화면·호스트 변경에 차단 문제가 남지 않았다.
 
-검증한 코드: `ecfa1b23`. [Windows x64·ARM64 CI 실행 40802433327](https://github.com/athens96/MightyClaude/actions/runs/40802433327)은 두 작업 모두 성공했다. 같은 실행의 `MightyClaude-native-windows-x64`·`MightyClaude-native-windows-arm64` 아티팩트에 ZIP과 설치 프로그램 및 SHA-256 파일이 있으며, 각 `web-smoke`·`smoke` 아티팩트에 화면 검사 결과와 스크린샷이 있다.
+검증한 코드: `ecfa1b23`. [Windows x64·ARM64 CI 실행 40802433327](https://github.com/athens96/MightyCode/actions/runs/40802433327)은 두 작업 모두 성공했다. 같은 실행의 `MightyClaude-native-windows-x64`·`MightyClaude-native-windows-arm64` 아티팩트에 ZIP과 설치 프로그램 및 SHA-256 파일이 있으며, 각 `web-smoke`·`smoke` 아티팩트에 화면 검사 결과와 스크린샷이 있다.

@@ -3,7 +3,7 @@ title: Getting started
 order: 1
 section: getting-started
 ---
-Mighty Claude is a desktop app for using Claude Code, Codex CLI and Google's Antigravity CLI side by side in one window. You open several panes on one project folder, and each pane keeps its own conversation and settings.
+Mighty Code is a desktop app for using Claude Code, Codex CLI and Google's Antigravity CLI side by side in one window. You open several panes on one project folder, and each pane keeps its own conversation and settings.
 
 ## What you need {#requirements}
 - macOS 14 or later. On Windows: Windows 10 (version 2004) or later, or Windows 11.

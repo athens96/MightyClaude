@@ -3,10 +3,10 @@ title: 远程连接（Tailscale）
 order: 10
 section: remote
 ---
-用 [Tailscale](https://tailscale.com/kb/1017/install) 连接两台 Mac 或 Windows 电脑上的 Mighty Claude 后，可以在一台电脑上打开另一台的工作区，并在那台电脑上运行 Claude、Codex、Antigravity 和命令。文件和 CLI 登录都留在实际运行的电脑上，不会复制或同步项目文件。
+用 [Tailscale](https://tailscale.com/kb/1017/install) 连接两台 Mac 或 Windows 电脑上的 Mighty Code 后，可以在一台电脑上打开另一台的工作区，并在那台电脑上运行 Claude、Codex、Antigravity 和命令。文件和 CLI 登录都留在实际运行的电脑上，不会复制或同步项目文件。
 
 ## 准备 {#prepare}
-- 在两台电脑上安装 Mighty Claude 和 Tailscale，并登录同一个 tailnet。
+- 在两台电脑上安装 Mighty Code 和 Tailscale，并登录同一个 tailnet。
 - 在负责运行的电脑（主机）上安装并登录要用的 CLI。远程运行使用主机的 CLI 和账号。
 - 不需要路由器端口转发，也不需要 Tailscale Serve 或 Funnel。只需确认 tailnet 策略允许两台设备互相连接。
 
@@ -56,4 +56,4 @@ section: remote
 - 网络断开时，正在运行的远程窗格会以错误结束，连接列表会显示原因。主机会在约 30 秒内自行停止失去联系的运行。
 - {{ui:settings.remote.disconnectButton}} 会停止该连接的运行并保留连接信息。要再次使用，请点按 {{ui:settings.remote.refreshButton}} 或在远程窗格中发送。
 - 如果主机重新开始共享，就需要新的密钥。用新密钥连接同一个地址，会替换已保存连接的密钥。
-- 主机电脑休眠或其 Mighty Claude 退出时，无法发送新的任务。
+- 主机电脑休眠或其 Mighty Code 退出时，无法发送新的任务。

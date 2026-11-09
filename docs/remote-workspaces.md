@@ -1,6 +1,6 @@
 # Tailscale 원격 워크스페이스
 
-Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 Tailscale로 이으면, 한쪽(클라이언트)에서 다른 쪽(호스트)의 워크스페이스를 열고 호스트에서 Claude Code·Codex·Antigravity와 명령을 실행한다. 파일과 CLI 로그인은 호스트에 그대로 있고, 프로젝트 파일을 복사하거나 동기화하지 않는다. 사용 안내는 도움말 [원격 연결 (Tailscale)](help/content/ko/remote.md)에 있다.
+Mac이나 Windows 컴퓨터 두 대의 Mighty Code를 Tailscale로 이으면, 한쪽(클라이언트)에서 다른 쪽(호스트)의 워크스페이스를 열고 호스트에서 Claude Code·Codex·Antigravity와 명령을 실행한다. 파일과 CLI 로그인은 호스트에 그대로 있고, 프로젝트 파일을 복사하거나 동기화하지 않는다. 사용 안내는 도움말 [원격 연결 (Tailscale)](help/content/ko/remote.md)에 있다.
 
 2026-09-28 `e4f973b`에서 지웠다가 2026-10-17에 Mac에 다시 만들었고, Windows 앱에도 같은 프로토콜로 만들었다(아래 [Windows와 Mac↔Windows](#windows와-macwindows), [windows-parity.md](windows-parity.md)). 휴대폰은 릴레이로 Mac에 붙는 별도 기능이고([mobile-remote.md](mobile-remote.md)), 원격 워크스페이스를 휴대폰에 비추지 않는다.
 
@@ -34,7 +34,7 @@ Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 Tailscale로 이으면, 
 | 파일을 읽는 스타일(작업 폴더 스타일, 상태 파일, 사전 조건 검사) | 스타일 선택기가 나오지 않음. 원격 창은 자유 요청만 |
 | 에이전트 터미널·웹 열기 도구(`run_in_terminal`, `open_url`) | 호스트 실행에는 창별 MCP 서버를 붙이지 않음 |
 | 상태 줄, git 배지, 작업 폴더의 슬래시 명령, 이전 세션 이어가기, 이전 요청 불러오기 | 쓰지 않음(사용자 수준 슬래시 명령만) |
-| 플러그인 관리, CLI 로그인 터미널 | 호스트의 Mighty Claude에서 한다 |
+| 플러그인 관리, CLI 로그인 터미널 | 호스트의 Mighty Code에서 한다 |
 | 그림 미리보기 | 호스트의 그림 캐시 키라 클라이언트에서는 뺀다 |
 
 ## 연결이 끊길 때

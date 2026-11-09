@@ -70,8 +70,8 @@ func render(scale: CGFloat) -> Data {
         let bounds = string.boundingRect(with: NSSize(width: width, height: 100), options: .usesLineFragmentOrigin)
         string.draw(in: NSRect(x: 0, y: height - top - bounds.height, width: width, height: bounds.height))
     }
-    line("Mighty Claude를 응용 프로그램 폴더로 끌어다 놓으세요", size: 15, weight: .semibold, colour: ink2, top: 318)
-    line("Drag Mighty Claude into Applications", size: 12, weight: .regular, colour: ink2.withAlphaComponent(0.8), top: 344)
+    line("Mighty Code를 응용 프로그램 폴더로 끌어다 놓으세요", size: 15, weight: .semibold, colour: ink2, top: 318)
+    line("Drag Mighty Code into Applications", size: 12, weight: .regular, colour: ink2.withAlphaComponent(0.8), top: 344)
 
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!

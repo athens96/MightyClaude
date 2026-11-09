@@ -10,10 +10,10 @@ section: windows
 
 ## インストール {#install}
 1. [ダウンロードページ](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)から、お使いのPCに合ったインストーラーをダウンロードします。ほとんどのPCは`MightyClaude-windows-x64-setup.exe`、SnapdragonなどのARM搭載PCは`MightyClaude-windows-arm64-setup.exe`です。
-2. インストーラーを実行します。管理者権限なしで、今のユーザーにだけ`%LOCALAPPDATA%\Programs\MightyClaude`にインストールされ、スタートメニューにMighty Claudeが追加されます。デスクトップのショートカットはインストール中に選べます。
+2. インストーラーを実行します。管理者権限なしで、今のユーザーにだけ`%LOCALAPPDATA%\Programs\MightyClaude`にインストールされ、スタートメニューにMighty Codeが追加されます。デスクトップのショートカットはインストール中に選べます。
 3. 最後の画面からそのまま起動するか、あとでスタートメニューから開きます。
 
-削除するには、Windowsの設定 → アプリ → インストールされているアプリでMighty Claudeをアンインストールします。インストールフォルダはまるごと削除され、設定と会話履歴(`%APPDATA%\MightyClaudeNative`)は残ります。
+削除するには、Windowsの設定 → アプリ → インストールされているアプリでMighty Codeをアンインストールします。インストールフォルダはまるごと削除され、設定と会話履歴(`%APPDATA%\MightyClaudeNative`)は残ります。
 
 インストールせずに使うには、同じページのzipをダウンロードしてフォルダごと展開し、その中の`MightyClaude.exe`を実行します。一緒に含まれているファイルも必要なので、exeだけをほかの場所に移動しないでください。
 
@@ -61,7 +61,7 @@ Windowsにはメニューバーがありません。同じ機能は、サイド�
 | リモート接続（Tailscale） | Macと同じ画面とプロトコルで、MacとWindowsのどちら向きにも接続できます（[リモート接続](remote.md)）。接続キーはキーチェーンではなく、このWindowsユーザーだけが復号できるファイルに保存します。共有するには {{ui:remote.windows.firewall.add}} でファイアウォールルールを1つ追加します（スマートフォンの直接接続と共用の同じルールで、管理者確認が1回あります）。リモートコマンドはWindowsホストではPowerShellで実行します。{{ui:settings.remote.allowFullAccess}} スイッチがオフのあいだは、ほかのコンピュータはWindowsホストでCodexとAntigravityのペインを使えません。WindowsはmacOSのようにこれらを共有フォルダの中に閉じ込められないためです。MacとWindowsのあいだの接続は、まだ実機で確認できていません。 |
 
 > [!warning]
-> Tailscale で直接接続は初期状態でオンのため、アプリが初めてスマートフォンからの接続を待ち受けるとき、Windows Defender ファイアウォールがこのアプリの機能の一部をブロックしたという独自の通知を表示することがあります。**アクセスを許可する**を選んでください（Windows がこのアプリ用に、より広い独自の規則を追加します）。**キャンセル**を選んだ場合は、Windows が `MightyClaude.exe` をブロックする規則を追加していることがあり、その規則はアプリの規則より優先されます。Windows Defender ファイアウォール → 詳細設定 → 受信の規則で、Mighty Claude をブロックする規則を削除してください。
+> Tailscale で直接接続は初期状態でオンのため、アプリが初めてスマートフォンからの接続を待ち受けるとき、Windows Defender ファイアウォールがこのアプリの機能の一部をブロックしたという独自の通知を表示することがあります。**アクセスを許可する**を選んでください（Windows がこのアプリ用に、より広い独自の規則を追加します）。**キャンセル**を選んだ場合は、Windows が `MightyClaude.exe` をブロックする規則を追加していることがあり、その規則はアプリの規則より優先されます。Windows Defender ファイアウォール → 詳細設定 → 受信の規則で、Mighty Code をブロックする規則を削除してください。
 
 > [!note]
 > Windowsアプリの一部の機能は、まだ実機で十分に確認されていません。気になる点があればお知らせください。

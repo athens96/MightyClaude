@@ -3,10 +3,10 @@ title: リモート接続（Tailscale）
 order: 10
 section: remote
 ---
-Mac または Windows のコンピュータ 2 台の Mighty Claude を [Tailscale](https://tailscale.com/kb/1017/install) でつなぐと、一方でもう一方のコンピュータのワークスペースを開き、そのコンピュータで Claude・Codex・Antigravity とコマンドを実行できます。ファイルと CLI のログインは実行するコンピュータに置いたままで、プロジェクトのファイルをコピーや同期はしません。
+Mac または Windows のコンピュータ 2 台の Mighty Code を [Tailscale](https://tailscale.com/kb/1017/install) でつなぐと、一方でもう一方のコンピュータのワークスペースを開き、そのコンピュータで Claude・Codex・Antigravity とコマンドを実行できます。ファイルと CLI のログインは実行するコンピュータに置いたままで、プロジェクトのファイルをコピーや同期はしません。
 
 ## 準備 {#prepare}
-- 2 台のコンピュータに Mighty Claude と Tailscale をインストールし、同じ tailnet にログインします。
+- 2 台のコンピュータに Mighty Code と Tailscale をインストールし、同じ tailnet にログインします。
 - 作業を任せるコンピュータ（ホスト）に、使う CLI をインストールしてログインします。リモート実行はホストの CLI とアカウントを使います。
 - ルーターのポート転送や Tailscale Serve・Funnel は不要です。tailnet のポリシーが 2 台の機器の接続を妨げていないことだけ確認してください。
 
@@ -56,4 +56,4 @@ Mac または Windows のコンピュータ 2 台の Mighty Claude を [Tailscal
 - ネットワークが切れると、実行中のリモートペインはエラーで終わり、接続の一覧に理由が表示されます。ホストは応答が途絶えた実行を約 30 秒以内に自分で止めます。
 - {{ui:settings.remote.disconnectButton}} はその接続の実行を止め、接続情報は残します。もう一度使うには {{ui:settings.remote.refreshButton}} を押すか、リモートペインから送信します。
 - ホストが共有をやり直した場合は新しいキーが必要です。同じアドレスに新しいキーで接続すると、保存された接続のキーが置き換わります。
-- ホストのコンピュータがスリープ中か、そこで Mighty Claude が終了しているあいだは、新しい作業を送れません。
+- ホストのコンピュータがスリープ中か、そこで Mighty Code が終了しているあいだは、新しい作業を送れません。

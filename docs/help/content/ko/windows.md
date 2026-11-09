@@ -10,10 +10,10 @@ section: windows
 
 ## 설치 {#install}
 1. [다운로드 페이지](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)에서 내 PC에 맞는 설치 프로그램을 받습니다. 대부분의 PC는 `MightyClaude-windows-x64-setup.exe`, Snapdragon 같은 ARM PC는 `MightyClaude-windows-arm64-setup.exe`입니다.
-2. 설치 프로그램을 실행합니다. 관리자 권한 없이 지금 사용자에게만 `%LOCALAPPDATA%\Programs\MightyClaude`에 설치되고, 시작 메뉴에 Mighty Claude가 생깁니다. 바탕 화면 바로 가기는 설치 중에 고를 수 있습니다.
+2. 설치 프로그램을 실행합니다. 관리자 권한 없이 지금 사용자에게만 `%LOCALAPPDATA%\Programs\MightyClaude`에 설치되고, 시작 메뉴에 Mighty Code가 생깁니다. 바탕 화면 바로 가기는 설치 중에 고를 수 있습니다.
 3. 마지막 화면에서 바로 실행하거나, 나중에 시작 메뉴에서 엽니다.
 
-지우려면 Windows 설정 → 앱 → 설치된 앱에서 Mighty Claude를 제거합니다. 설치 폴더는 통째로 지워지고, 설정과 대화 기록(`%APPDATA%\MightyClaudeNative`)은 남습니다.
+지우려면 Windows 설정 → 앱 → 설치된 앱에서 Mighty Code를 제거합니다. 설치 폴더는 통째로 지워지고, 설정과 대화 기록(`%APPDATA%\MightyClaudeNative`)은 남습니다.
 
 설치하지 않고 쓰려면 같은 페이지의 zip을 받아 폴더째 풀고 그 안의 `MightyClaude.exe`를 실행하세요. 함께 들어 있는 파일도 필요하므로 exe만 다른 곳으로 옮기지 마세요.
 
@@ -61,7 +61,7 @@ Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{
 | 원격 연결 (Tailscale) | Mac과 같은 화면과 프로토콜이며 Mac↔Windows 어느 방향이든 연결됩니다([원격 연결](remote.md)). 연결 키는 Keychain 대신 이 Windows 사용자만 풀 수 있는 암호화 파일에 두고, 공유하려면 {{ui:remote.windows.firewall.add}}로 방화벽 규칙 하나를 추가합니다(휴대폰 직접 연결과 같은 규칙, 관리자 확인 한 번). 원격 명령은 Windows 호스트에서 PowerShell로 실행합니다. 공유 중 {{ui:settings.remote.allowFullAccess}} 스위치가 꺼져 있으면 다른 컴퓨터는 Windows 호스트에서 Codex·Antigravity 창을 쓸 수 없습니다. Windows는 macOS처럼 이 둘을 공유 폴더 안에 가두지 못하기 때문입니다. Mac↔Windows 실제 기기 연결은 아직 확인 중입니다. |
 
 > [!warning]
-> Tailscale로 직접 연결은 기본으로 켜져 있어서, 앱이 처음 휴대폰 연결을 기다릴 때 Windows Defender 방화벽이 이 앱의 일부 기능을 차단했다는 자체 알림을 띄울 수 있습니다. **액세스 허용**을 고르세요(Windows가 이 앱에 더 넓은 자체 규칙을 더합니다). **취소**를 골랐다면 Windows가 `MightyClaude.exe`를 막는 규칙을 더했을 수 있고, 그 규칙이 앱의 규칙보다 우선합니다. Windows Defender 방화벽 → 고급 설정 → 인바운드 규칙에서 Mighty Claude를 막는 규칙을 지우세요.
+> Tailscale로 직접 연결은 기본으로 켜져 있어서, 앱이 처음 휴대폰 연결을 기다릴 때 Windows Defender 방화벽이 이 앱의 일부 기능을 차단했다는 자체 알림을 띄울 수 있습니다. **액세스 허용**을 고르세요(Windows가 이 앱에 더 넓은 자체 규칙을 더합니다). **취소**를 골랐다면 Windows가 `MightyClaude.exe`를 막는 규칙을 더했을 수 있고, 그 규칙이 앱의 규칙보다 우선합니다. Windows Defender 방화벽 → 고급 설정 → 인바운드 규칙에서 Mighty Code를 막는 규칙을 지우세요.
 
 > [!note]
 > Windows 앱의 일부 기능은 아직 실제 기기에서 충분히 확인되지 않았습니다. 이상한 점이 있으면 알려 주세요.
