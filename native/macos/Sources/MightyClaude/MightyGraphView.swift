@@ -113,6 +113,9 @@ struct MightyGraphView: View {
     /// Counts history trims, so a second trim admits a second re-aim.
     @ViewState private var trimSequence = 0
     @StateObject private var resultFiles = MightyGraphResultFilesModel()
+    /// The runs (as the originals store keys them) whose changes the store still holds, for the 변경 되돌리기 button.
+    @ViewState private var changedRuns: Set<String> = []
+    @ViewState private var changesTarget: RunChangesTarget?
     @StateObject private var ouroboros = MightyGraphOuroborosModel()
     @ViewState private var canvasViewport: CGSize?
     /// Timeline rows opened to show what their diagram card holds.
@@ -358,6 +361,18 @@ struct MightyGraphView: View {
         // Result files are looked for in the pane's own requests only.
         .task(id: MightyGraphResultFilesModel.Request(sessionID: sessionID, runs: Array(ownRuns), root: workspaceRoot)) {
             await resultFiles.load(.init(sessionID: sessionID, runs: Array(ownRuns), root: workspaceRoot))
+        }
+        .task(id: ChangedRunsKey(sessionID: sessionID, runs: ownRuns.filter(\.settled).map { $0.sourceRunID ?? $0.id })) {
+            guard let fileOriginals else { changedRuns = []; return }
+            let sessionID = sessionID
+            changedRuns = await Task.detached(priority: .utility) {
+                Set(fileOriginals.runs(sessionId: sessionID).filter { !fileOriginals.files(sessionId: sessionID, runId: $0).isEmpty })
+            }.value
+        }
+        .sheet(item: $changesTarget) { target in
+            if let fileOriginals {
+                RunChangesSheet(target: target, store: fileOriginals, onClose: { changesTarget = nil })
+            }
         }
         // A resumed pane (or one switched to this view) with nothing on screen
         // yet shows its session's latest requests.
@@ -683,6 +698,7 @@ struct MightyGraphView: View {
                            icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : awaiting != nil ? Self.awaitingNoticeIcon : soFar ? Self.resultSoFarIcon : "checkmark.seal",
                            status: awaiting != nil ? "waiting" : status, input: "", entries: run.resultEntries, tint: soFar ? Palette.ink2 : Palette.text(status),
                            usage: run.totalUsage, usageLabel: L("graph.block.totalUsageLabel"), resultFilesRunID: run.status == "completed" ? run.id : nil,
+                           changesRunID: run.status == "completed" || failed || stopped ? run.sourceRunID ?? run.id : nil,
                            headerFill: Palette.heroFill(awaiting != nil ? .wait : soFar ? .idle : DesignTone(status: status)), headerInk: awaiting != nil ? Palette.heroInk(.wait) : Palette.onStatus,
                            onContentHeight: node.id == MightyGraphLayout.latestResultID(runs: runs) ? { resultMeasured(node.id, $0 + rows) } : nil,
                            outlineTone: awaiting != nil ? .run : nil, awaiting: awaiting)
@@ -741,7 +757,7 @@ struct MightyGraphView: View {
     /// `inputOnly` is the request block: its input fills the card, and it has no status of
     /// its own — the 실행 block under it runs and settles.
     private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, titleProvider: String? = nil, icon: String, status: String, statusText: String? = nil, input: String, entries: [LogEntry], tint: Color,
-                                usage: GraphTokenUsage? = nil, usageLabel: String = L("graph.block.blockUsageLabel"), resultFilesRunID: String? = nil,
+                                usage: GraphTokenUsage? = nil, usageLabel: String = L("graph.block.blockUsageLabel"), resultFilesRunID: String? = nil, changesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
                                 childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil,
                                 headerInk: Color = Palette.onStatus,
@@ -792,6 +808,15 @@ struct MightyGraphView: View {
                     .buttonStyle(.plain).help(resultFiles.selectedRunID == resultFilesRunID ? L("graph.resultFiles.closeButton") : L("graph.resultFiles.openButton"))
                     .accessibilityLabel(L("graph.resultFiles.countLabel", ["count": "\(resultFiles.files(for: resultFilesRunID).count)"]))
                     .accessibilityIdentifier("mighty-result-files-toggle-\(node.id)")
+                }
+                if let changesRunID, changedRuns.contains(changesRunID), let root = referenceRoot ?? workspaceRoot {
+                    Button { changesTarget = RunChangesTarget(sessionID: sessionID, runID: changesRunID, root: root) } label: {
+                        Image(systemName: "arrow.uturn.backward.circle")
+                            .foregroundStyle(onStrip ? headerInk : Palette.ink2)
+                    }
+                    .buttonStyle(.plain).help(L("runChanges.openButton"))
+                    .accessibilityLabel(L("runChanges.openButton"))
+                    .accessibilityIdentifier("mighty-run-changes-\(node.id)")
                 }
                 let isLatestResult = node.id == MightyGraphLayout.latestResultID(runs: runs)
                 // Core owns the rule; the header only reads the same answer.
@@ -1577,4 +1602,10 @@ private struct MightyGraphScrollTarget {
     /// The camera glides to it over `Motion.scroll` (an own request, natural submit B2),
     /// at once under Reduce Motion.
     var animated = false
+}
+
+/// What the 변경 되돌리기 button's run list is read again for.
+private struct ChangedRunsKey: Hashable {
+    let sessionID: String
+    let runs: [String]
 }
