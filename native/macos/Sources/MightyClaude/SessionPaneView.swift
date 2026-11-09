@@ -7,6 +7,8 @@ struct SessionPaneView: View {
     @EnvironmentObject private var store: AppStore
     let session: RunSession
     @ViewState private var composerFocused = false
+    /// The 비교 결과 panel of this pane's compare run is open.
+    @ViewState private var comparing = false
     @ViewState private var composerInput = ComposerInputController()
     @ViewState private var editorHeight: CGFloat = 22
     @ViewState private var attachmentDropTargeted = false
@@ -811,12 +813,16 @@ struct SessionPaneView: View {
         // A run may have installed the plugin or written a new cycle folder.
         .onChange(of: running) { _, busy in if !busy, let style { store.refreshStyle(style, for: session) } }
         // Whether ⌘Enter may promise a new worktree here: asked again as each run starts.
-        .task(id: "\(session.workspaceId)|\(running)") { if running { store.refreshWorktreeReadiness(for: session) } }
+        // Idle too: the send button's context menu offers 비교 실행 from the same check.
+        .task(id: "\(session.workspaceId)|\(running)") { store.refreshWorktreeReadiness(for: session) }
         // The first request in the style is where its state sources start (§1.16).
         .onChange(of: session.mightyStyleSince) { _, _ in if let style { store.refreshStyleState(style, for: session) } }
         // A different style means a different catalogue: the group the user
         // was in and the reset chip both belong to the one they left.
         .onChange(of: session.mightyStyle) { _, _ in guidedSelection = GuidedSelection() }
+        .sheet(isPresented: $comparing) {
+            CompareRunSheet(parentId: session.id, onClose: { comparing = false }).environmentObject(store)
+        }
         .sheet(item: $styleCandidate) { item in
             StyleApprovalSheet(candidate: item, onApproved: { approved in
                 store.setMightyStyle(session.id, style: approved.id)
@@ -909,6 +915,7 @@ struct SessionPaneView: View {
                         }
                     } else {
                         roundSendButton(systemImage: "arrow.up", size: 13, help: L("composer.send.helpMac"), label: L("composer.send.name"), identifier: "send-" + session.id) { submitComposer() }
+                            .contextMenu { compareMenuItems }
                     }
                 }.fixedSize(horizontal: true, vertical: true)
             }.frame(width: geometry.size.width, height: ComposerToolbarMetrics.height, alignment: .leading)
@@ -972,6 +979,27 @@ struct SessionPaneView: View {
                 .disabled(choice.blocked != nil || !canSend)
                 .accessibilityIdentifier("composer-worktree-\(choice.agent)-" + session.id)
             }
+        }
+        compareMenuItems
+    }
+
+    /// 비교 실행 and 비교 결과, in the worktree menu and the idle send button's context menu.
+    @ViewBuilder private var compareMenuItems: some View {
+        let compareAgents = store.compareRunAgents(session)
+        if compareAgents.count >= 2 || !store.compareGroup(parentId: session.id).isEmpty {
+            Divider()
+        }
+        if compareAgents.count >= 2 {
+            Button { store.startCompareRun(session.id) } label: {
+                Label(L("compare.start", ["agents": compareAgents.map(ProviderOptions.label).joined(separator: " · ")]), systemImage: "square.split.3x1")
+            }
+            .disabled(!canSend || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .help(L("compare.startHelp"))
+            .accessibilityIdentifier("composer-compare-" + session.id)
+        }
+        if !store.compareGroup(parentId: session.id).isEmpty {
+            Button { comparing = true } label: { Label(L("compare.open"), systemImage: "rectangle.split.3x1") }
+                .accessibilityIdentifier("composer-compare-open-" + session.id)
         }
     }
 

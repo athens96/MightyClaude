@@ -3200,5 +3200,15 @@
   "git.pr.fixChecks": "修正を依頼",
   "git.pr.fixRequest": "このブランチの CI チェックが失敗しました（{url}）。原因を見つけて直してください。以下は失敗したステップのログの末尾です。",
   "git.pr.error.ghMissing": "GitHub CLI（gh）がないため PR を扱えません。",
-  "git.pr.error.glabMissing": "GitLab CLI（glab）がないため MR を扱えません。"
+  "git.pr.error.glabMissing": "GitLab CLI（glab）がないため MR を扱えません。",
+  "compare.start": "比較実行: {agents}",
+  "compare.startHelp": "入力したリクエストをエージェントごとに新しい worktree の子ペインで同時に実行します。終わったら比較結果から一つをマージし、残りを破棄してください。",
+  "compare.open": "比較結果を見る",
+  "compare.title": "比較結果",
+  "compare.empty": "比較する子ペインがありません。",
+  "compare.files": "変更したファイル",
+  "compare.lines": "行",
+  "compare.cost": "コスト",
+  "compare.openPane": "ペインを見る",
+  "compare.mergeWhenReported": "報告を終えた子のみマージできます。"
 }

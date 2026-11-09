@@ -3200,5 +3200,15 @@
   "git.pr.fixChecks": "请求修复",
   "git.pr.fixRequest": "此分支的 CI 检查失败（{url}）。请找出原因并修复。以下是失败步骤日志的末尾。",
   "git.pr.error.ghMissing": "未安装 GitHub CLI（gh），无法处理 PR。",
-  "git.pr.error.glabMissing": "未安装 GitLab CLI（glab），无法处理 MR。"
+  "git.pr.error.glabMissing": "未安装 GitLab CLI（glab），无法处理 MR。",
+  "compare.start": "对比运行：{agents}",
+  "compare.startHelp": "将请求同时交给每个代理，在各自新的 worktree 子窗格中运行。完成后在对比结果中合并其中一个，丢弃其余。",
+  "compare.open": "查看对比结果",
+  "compare.title": "对比结果",
+  "compare.empty": "没有可对比的子窗格。",
+  "compare.files": "更改的文件",
+  "compare.lines": "行",
+  "compare.cost": "费用",
+  "compare.openPane": "查看窗格",
+  "compare.mergeWhenReported": "只能合并已完成报告的子窗格。"
 }

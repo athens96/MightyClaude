@@ -3200,5 +3200,15 @@
   "git.pr.fixChecks": "Ask to fix",
   "git.pr.fixRequest": "CI checks failed on this branch ({url}). Find the cause and fix it. Below is the end of the failing step's log.",
   "git.pr.error.ghMissing": "GitHub CLI (gh) is not installed, so pull requests are unavailable.",
-  "git.pr.error.glabMissing": "GitLab CLI (glab) is not installed, so merge requests are unavailable."
+  "git.pr.error.glabMissing": "GitLab CLI (glab) is not installed, so merge requests are unavailable.",
+  "compare.start": "Compare run: {agents}",
+  "compare.startHelp": "Runs the request at once in a new child worktree per agent. When they finish, merge one from the comparison and discard the rest.",
+  "compare.open": "Show comparison",
+  "compare.title": "Comparison",
+  "compare.empty": "No child panes to compare.",
+  "compare.files": "Files changed",
+  "compare.lines": "Lines",
+  "compare.cost": "Cost",
+  "compare.openPane": "Show pane",
+  "compare.mergeWhenReported": "Only a child that has reported can be merged."
 }

@@ -3200,5 +3200,15 @@
   "git.pr.fixChecks": "실패 고쳐 달라고 하기",
   "git.pr.fixRequest": "이 브랜치의 CI 검사가 실패했습니다({url}). 실패 원인을 찾아 고쳐 주세요. 아래는 실패한 단계의 로그 끝부분입니다.",
   "git.pr.error.ghMissing": "GitHub CLI(gh)가 없어 PR을 다룰 수 없습니다.",
-  "git.pr.error.glabMissing": "GitLab CLI(glab)가 없어 MR을 다룰 수 없습니다."
+  "git.pr.error.glabMissing": "GitLab CLI(glab)가 없어 MR을 다룰 수 없습니다.",
+  "compare.start": "비교 실행: {agents}",
+  "compare.startHelp": "입력한 요청을 에이전트마다 새 worktree의 자식 창에서 동시에 실행합니다. 끝나면 비교 결과에서 하나를 병합하고 나머지를 폐기하세요.",
+  "compare.open": "비교 결과 보기",
+  "compare.title": "비교 결과",
+  "compare.empty": "비교할 자식 창이 없습니다.",
+  "compare.files": "바꾼 파일",
+  "compare.lines": "줄",
+  "compare.cost": "비용",
+  "compare.openPane": "창 보기",
+  "compare.mergeWhenReported": "보고를 마친 자식만 병합할 수 있습니다."
 }
