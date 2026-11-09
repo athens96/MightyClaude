@@ -3210,5 +3210,15 @@
   "compare.lines": "줄",
   "compare.cost": "비용",
   "compare.openPane": "창 보기",
-  "compare.mergeWhenReported": "보고를 마친 자식만 병합할 수 있습니다."
+  "compare.mergeWhenReported": "보고를 마친 자식만 병합할 수 있습니다.",
+  "conversationSearch.open": "대화 검색",
+  "conversationSearch.title": "대화 검색",
+  "conversationSearch.placeholder": "지난 요청과 답에서 찾을 말",
+  "conversationSearch.hint": "이 폴더의 지난 세션 {count}개에서 찾습니다. 모든 단어가 한 메시지에 들어 있는 세션을 보여 줍니다.",
+  "conversationSearch.none": "찾은 대화가 없습니다.",
+  "conversationSearch.note": "요청과 답만 찾고 도구 실행 결과는 찾지 않습니다. 지금 창에서 열려 있는 세션과 60일보다 오래된 세션은 빠집니다.",
+  "conversationSearch.matches": "맞는 메시지 {count}개",
+  "conversationSearch.resume": "이어가기",
+  "conversationSearch.export": "Markdown으로 저장…",
+  "conversationSearch.speaker.user": "나"
 }

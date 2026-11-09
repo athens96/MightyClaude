@@ -41,3 +41,12 @@
 - 시작: 쉬고 있는 창은 보내기 단추의 우클릭 메뉴, 실행 중인 창은 worktree 단추의 메뉴에 **비교 실행: Claude · Codex …**가 붙는다. 지금 자식을 만들 수 있는 에이전트가 둘 이상일 때만 보인다(설치·로그인·모드, 그리고 사람이 연 자식 3개 한도 안에서 남은 자리만큼). 창 자신의 에이전트가 먼저 선다.
 - 누르면 입력창의 요청이 에이전트마다 `runInNewWorktree`로 새 worktree의 자식 창에서 동시에 실행된다. 자식 하나가 실패하면 기존 worktree 메뉴와 같은 규칙으로 그 이유가 창에 남는다. 이 동작을 위해 worktree 준비 확인(`refreshWorktreeReadiness`)을 창이 쉴 때도 한 번 한다.
 - **비교 결과 보기**(같은 메뉴): 같은 요청 글로 사람이 연 자식이 둘 이상이면 가장 최근 묶음을 나란히 보인다. 열마다 에이전트, 상태, 부모 브랜치 대비 바꾼 파일 수와 +/− 줄(`git diff --shortstat <부모 브랜치>...mighty/<id>`), CLI가 알려 준 비용, 그리고 **창 보기 · 병합 · 폐기…**(사이드바 카드와 같은 동작). 병합은 보고를 마친 자식만 된다.
+
+## 5. 대화 검색
+
+- 모델: `MightyCore/ConversationSearch.swift`, 검사: `Tests/MightyCoreTests/ConversationSearchTests.swift`.
+- 여는 곳: 워크스페이스 머리의 돋보기 단추, 메뉴 **워크스페이스 → 대화 검색**(⇧⌘F). 원격 워크스페이스에서는 꺼진다.
+- 대상은 세션 이어가기 목록과 같다(`ResumableSessions`: 이 폴더의 Claude·Codex·Antigravity 세션, 60일 이내, 지금 창에 열린 세션 제외, 자동 실행 제외). 색인을 만들지 않고 검색할 때마다 세션 파일을 읽는다(파일당 마지막 24 MiB). 입력을 멈추고 250ms 뒤에 찾고, 다시 치면 앞의 검색을 취소한다.
+- 요청과 답 메시지만 본다: Claude `message.content`의 text 조각, Codex `response_item`의 `message`와 `user_message`/`agent_message` 이벤트, 그 밖의 `role`+`content|parts|text` 줄. 도구 호출과 결과(`tool_result`, `function_call_output`)는 보지 않는다.
+- 모든 단어(대소문자 무시)가 한 메시지에 들어 있어야 맞다. 결과는 최신 세션부터 최대 50개, 첫 맞은 메시지의 앞뒤 60자와 맞은 메시지 수를 보인다.
+- **이어가기**는 세션 이어가기와 같은 `resumeSession`으로 새 창을 연다. **Markdown으로 저장…**은 세션을 화자 제목 + 본문으로 저장한다(Codex가 같은 말을 두 번 남긴 줄은 한 번만).

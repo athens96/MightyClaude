@@ -3210,5 +3210,15 @@
   "compare.lines": "行",
   "compare.cost": "コスト",
   "compare.openPane": "ペインを見る",
-  "compare.mergeWhenReported": "報告を終えた子のみマージできます。"
+  "compare.mergeWhenReported": "報告を終えた子のみマージできます。",
+  "conversationSearch.open": "会話を検索",
+  "conversationSearch.title": "会話を検索",
+  "conversationSearch.placeholder": "過去のリクエストと回答から探す言葉",
+  "conversationSearch.hint": "このフォルダの過去のセッション{count}件から探します。一つのメッセージにすべての単語が含まれるセッションを表示します。",
+  "conversationSearch.none": "会話が見つかりません。",
+  "conversationSearch.note": "リクエストと回答のみを検索し、ツールの出力は検索しません。ペインで開いているセッションと60日より古いセッションは含まれません。",
+  "conversationSearch.matches": "一致するメッセージ{count}件",
+  "conversationSearch.resume": "続ける",
+  "conversationSearch.export": "Markdown で保存…",
+  "conversationSearch.speaker.user": "自分"
 }

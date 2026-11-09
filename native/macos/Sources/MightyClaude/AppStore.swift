@@ -27,6 +27,8 @@ final class AppStore: ObservableObject, DelegationHost {
     let claudePlugins = ClaudePluginService()
     let codexPlugins = CodexPluginService()
     @Published var search = ""
+    /// The workspace whose 대화 검색 panel is open.
+    @Published var conversationSearch: Workspace?
     @Published var focusSearch = false
     @Published var drafts: [String: String] = [:] {
         didSet {

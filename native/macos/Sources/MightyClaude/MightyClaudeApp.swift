@@ -102,6 +102,9 @@ struct MightyClaudeApp: App {
                 Button(L("menu.showFiles")) { store.openFilePane() }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
+                Button(L("conversationSearch.open")) { store.conversationSearch = store.activeWorkspace }
+                    .keyboardShortcut("f", modifiers: [.command, .shift])
+                    .disabled(!store.isLoaded || store.activeWorkspace == nil || store.activeWorkspace?.remote != nil || store.hasModal)
                 Button(L("workMap.open")) { store.openWorkMapPane() }
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.activeWorkspace?.remote != nil || store.hasModal)
                 Divider()

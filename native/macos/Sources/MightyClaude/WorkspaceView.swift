@@ -558,6 +558,18 @@ struct WorkspaceView: View {
             .help(workspace.remote == nil ? L("menu.showFiles") + " (⇧⌘E)" : L("remote.workspace.paneUnavailable"))
             .accessibilityLabel(L("menu.showFiles"))
             .accessibilityIdentifier("workspace-open-files-\(workspace.id)")
+            Button { store.conversationSearch = workspace } label: {
+                Image(systemName: "text.magnifyingglass").font(.ui(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            // The sessions are this Mac's CLI records; a remote workspace's are on its host.
+            .disabled(store.hasModal || workspace.remote != nil)
+            .help(workspace.remote == nil ? L("conversationSearch.open") + " (⇧⌘F)" : L("remote.workspace.paneUnavailable"))
+            .accessibilityLabel(L("conversationSearch.open"))
+            .accessibilityIdentifier("workspace-conversation-search-\(workspace.id)")
+            .sheet(item: $store.conversationSearch) { item in
+                ConversationSearchSheet(workspace: item, onClose: { store.conversationSearch = nil }).environmentObject(store)
+            }
             Button { store.openWorkMapPane(workspaceId: workspace.id) } label: {
                 Image(systemName: "map").font(.ui(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
             }

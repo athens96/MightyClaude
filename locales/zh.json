@@ -3210,5 +3210,15 @@
   "compare.lines": "行",
   "compare.cost": "费用",
   "compare.openPane": "查看窗格",
-  "compare.mergeWhenReported": "只能合并已完成报告的子窗格。"
+  "compare.mergeWhenReported": "只能合并已完成报告的子窗格。",
+  "conversationSearch.open": "搜索对话",
+  "conversationSearch.title": "搜索对话",
+  "conversationSearch.placeholder": "在过去的请求和回答中查找",
+  "conversationSearch.hint": "在此文件夹的 {count} 个过去会话中查找，显示某条消息包含所有词的会话。",
+  "conversationSearch.none": "未找到对话。",
+  "conversationSearch.note": "只搜索请求和回答，不搜索工具输出。已在窗格中打开的会话和超过 60 天的会话不包括在内。",
+  "conversationSearch.matches": "{count} 条匹配消息",
+  "conversationSearch.resume": "继续",
+  "conversationSearch.export": "另存为 Markdown…",
+  "conversationSearch.speaker.user": "我"
 }

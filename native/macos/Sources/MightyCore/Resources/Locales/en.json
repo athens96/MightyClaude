@@ -3210,5 +3210,15 @@
   "compare.lines": "Lines",
   "compare.cost": "Cost",
   "compare.openPane": "Show pane",
-  "compare.mergeWhenReported": "Only a child that has reported can be merged."
+  "compare.mergeWhenReported": "Only a child that has reported can be merged.",
+  "conversationSearch.open": "Search conversations",
+  "conversationSearch.title": "Search conversations",
+  "conversationSearch.placeholder": "Words from past requests and answers",
+  "conversationSearch.hint": "Searches {count} past sessions of this folder. Shows sessions where one message holds every word.",
+  "conversationSearch.none": "No conversations found.",
+  "conversationSearch.note": "Only requests and answers are searched, not tool output. Sessions open in a pane and sessions older than 60 days are left out.",
+  "conversationSearch.matches": "{count} matching messages",
+  "conversationSearch.resume": "Continue",
+  "conversationSearch.export": "Save as Markdown…",
+  "conversationSearch.speaker.user": "Me"
 }
