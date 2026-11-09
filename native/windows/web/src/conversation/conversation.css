@@ -129,3 +129,14 @@ ol.md-list > .md-item::before { content: attr(data-marker); }
 .context-menu button:hover:not(:disabled) { background: var(--accent-soft); }
 .context-menu button:disabled { color: var(--ink3); }
 .tool-square-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+/* A reply's shell block (ShellBlock.tsx): Run, or the run's state with Stop / Run again, at the language line's end. */
+.shell-block-head { display: flex; align-items: center; gap: var(--space-sm); }
+.shell-block-action { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-sm); font-family: var(--font-body); }
+.shell-block-link { display: inline-flex; align-items: center; gap: var(--space-xxs); border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.shell-block-link:disabled { color: var(--ink2); cursor: default; }
+.shell-block-link:focus-visible { outline: var(--stroke-focus) solid var(--accent); }
+.shell-block-state { color: var(--ink2); }
+.shell-block-state.running { color: var(--accent); }
+.shell-block-state.failed { color: var(--err-text); }
+.shell-block-output { margin-top: 0; }

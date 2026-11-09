@@ -143,6 +143,9 @@ public sealed record RunSession : IJsonOnDeserializing
     // The composer's "send to" choice on a Claude agent pane (macOS RunSession.askTarget): an AskTargets id. Absent (older saves)
     // sends to Claude, and so does an id no longer offered. Damage loads as nothing instead of failing the snapshot.
     [JsonPropertyName("askTarget"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? AskTarget { get; init; }
+    // The shell code blocks of the agent's replies the user ran, one record per block (ShellBlockRuns.cs). Absent (older saves) is
+    // none; damage in a record drops that record only, and StateStore.Normalize keeps them within their limits.
+    [JsonPropertyName("shellRuns"), JsonConverter(typeof(LenientListConverter<ShellBlockRun>))] public List<ShellBlockRun>? ShellBlockRuns { get; init; }
 
     internal RunSession Apply(RunEvent ev)
     {

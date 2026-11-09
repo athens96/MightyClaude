@@ -177,6 +177,43 @@ The token is never written to disk and never logged. `PaneMCPBinding`'s `descrip
 
 Tokens are never reused across runs.
 
+## 7. Running a shell block from a reply
+
+The user can run a command the agent showed instead of copying it into a terminal. No agent tool takes part: the click is the user's own action, so it does not go through the agent's permission flow.
+
+### Which blocks get a Run button
+
+- Only fenced code blocks in an **assistant reply** (never a user turn, a tool row, a system or log entry), in the pane transcript and in the Mighty view's blocks alike.
+- The info string's first word (case-insensitive) is `sh`, `bash`, `zsh`, `shell` or `console`. PowerShell blocks (`ps1`, `powershell`, `pwsh`) get a button only on Windows.
+- A `console` block runs only its lines that start with `$ ` or `% `, without the prompt; its other lines are sample output and are dropped. With no such line it gets no button.
+- What runs is the block as drawn, its trailing newline trimmed (`ShellBlocks.command`). The command rides on the Run link's own characters, so a click can only run what the user sees.
+- A block whose closing fence has not arrived yet (the reply is still streaming it) gets no button until it has (`ShellBlocks.endsInOpenFence`).
+
+### Where it runs
+
+The command goes to the agent pane's **one terminal pane**, the same one `run_in_terminal` uses (§4): `AppStore.agentTerminalRunner(for:)` gets or makes the pane's `AgentTerminalRunner` in `AgentProcessRegistry`, in the folder the pane's runs work in (a delegated child's worktree included), through the user's shell. A launch puts the terminal pane on screen beside the agent pane. A pane whose workspace is on another host shows no buttons.
+
+One command at a time per pane: while a run started from a reply is going, every other Run button of that pane is shown without its link, with the tooltip `run.shellBlock.busy`.
+
+### What the transcript shows
+
+On the block's language label line, at the trailing side:
+
+| State | Shown |
+|-------|-------|
+| not run | `▶ Run` (tooltip `run.shellBlock.help`) |
+| running | the running status square, `Running`, and `Stop` |
+| completed (exit code 0) | the done square, `Done`, and `Run again` |
+| failed (another exit code, a signal as 128 + signal, or no start) | the error square, `Exit code {code}`, and `Run again` |
+| stopped (the user pressed Stop) | the stopped square, `Stopped`, and `Run again` |
+| interrupted (still running when the app quit) | the stopped square, `Interrupted (the app closed)`, and `Run again` |
+
+Under the code box, once there is output, the run's output in the transcript's code style: the terminal's bytes for that run cleaned like a tool result (`AgentTerminalOutputCleaner`), read a few times a second while it runs (`AgentTerminalRunner.start` then `readLatestOutput`), keeping the last 16 KB. Stop sends the same SIGINT → SIGTERM → SIGKILL escalation as `stop` (§2).
+
+### What is kept
+
+Each run is a `ShellBlockRun` in the pane's `RunSession.shellRuns` (optional, so older saves read as none), keyed `<entryId>#<n>`: the reply's id and the block's 0-based place among that reply's runnable blocks, stable while the reply grows. A record keeps the command, its state, the exit code, the output tail and the start and end times. Running a block again replaces its record. The pane keeps its newest 64 runs; their output counts against the pane's log budget. A run still going when the app quits is `interrupted` when the state is next read.
+
 ---
 
 ## How to check it
@@ -197,5 +234,6 @@ bash scripts/test-native-macos.sh --scratch-path /tmp/mc-agent-terminal-scratch 
 | `PaneBinding` | Per-pane MCP tokens, pane isolation, and revocation. |
 | `AgentToolSurface` | Exactly the four tools are exposed, with the expected routing guidance. |
 | `AgentPaneListPayload` | The terminal and browser panes appear in the relay pane-list payload. |
+| `ShellBlockRun` | Which reply blocks get a Run button, their keys, the run record's states, restore and the output tail. |
 
 Run each filter separately, substituting it for `<Name>` above.

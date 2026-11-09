@@ -3133,5 +3133,15 @@
   "workMap.error.cli": "找不到 Claude CLI，无法生成摘要。",
   "workMap.error.timeout": "摘要未能按时完成。",
   "workMap.error.output": "无法读取摘要结果。",
-  "workMap.error.busy": "正在为另一个版本生成摘要。"
+  "workMap.error.busy": "正在为另一个版本生成摘要。",
+  "run.shellBlock.run": "运行",
+  "run.shellBlock.help": "在工作区文件夹中运行此命令，并在终端窗格中显示",
+  "run.shellBlock.running": "运行中",
+  "run.shellBlock.stop": "停止",
+  "run.shellBlock.again": "再次运行",
+  "run.shellBlock.done": "完成",
+  "run.shellBlock.failed": "退出码 {code}",
+  "run.shellBlock.stopped": "已停止",
+  "run.shellBlock.interrupted": "已中断（应用已关闭）",
+  "run.shellBlock.busy": "此窗格的终端正在运行另一个命令"
 }

@@ -11,6 +11,15 @@ enum AgentTranscriptFormat {
     static let codeAttribute = NSAttributedString.Key("MightyTranscriptCode")
     /// The `AgentImageKey.id` of a picture's attachment character.
     static let imageAttribute = NSAttributedString.Key("MightyTranscriptImage")
+    /// The command a reply shell block's Run link runs: the block as shown.
+    static let shellCommandAttribute = NSAttributedString.Key("MightyTranscriptShellCommand")
+
+    /// A reply's shell-block runs as its Run buttons show them: the runs of that entry's
+    /// blocks by `ShellBlocks.key`, and whether one of the pane's runs is still going.
+    struct ShellRuns: Equatable {
+        var records: [String: ShellBlockRun]
+        var busy: Bool
+    }
 
     /// `references` turns file paths and addresses into links. Only the Mighty
     /// graph opts in; the basic transcript keeps model text as plain text.
@@ -21,9 +30,11 @@ enum AgentTranscriptFormat {
     /// each tool call as a chip row and code on the ink code surface. Every one is
     /// a paragraph text block (`RoundedTextBlock`), never a table, so selection,
     /// copy, find and VoiceOver read straight through them.
+    /// `shellRuns`, given only for an assistant reply in a pane that can run commands,
+    /// puts a Run button on each of its shell blocks whose closing fence has arrived.
     static func entry(_ entry: LogEntry, provider: String, running: Bool, expanded: Bool, references: Bool = false,
                       records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:],
-                      catalog: [ModelOption] = [], imageRoot: URL? = nil, cards: Bool = false) -> NSAttributedString {
+                      catalog: [ModelOption] = [], imageRoot: URL? = nil, cards: Bool = false, shellRuns: ShellRuns? = nil) -> NSAttributedString {
         let builder = Builder(references: references, imageRoot: imageRoot, cards: cards)
         if cards, let activity = entry.activity {
             builder.toolChip(entry, activity: activity, running: running, expanded: expanded, records: records, childBlocks: childBlocks, catalog: catalog)
@@ -61,7 +72,15 @@ enum AgentTranscriptFormat {
             if let questions = UserQuestionnaire.parse(inputJSON: entry.text) {
                 builder.questionnaire(questions)
             } else {
-                for block in AgentMarkdownDocument.parse(entry.text).blocks { builder.block(block) }
+                let document = AgentMarkdownDocument.parse(entry.text)
+                if let shellRuns {
+                    builder.shell = Builder.ShellScan(entryId: entry.id, runs: shellRuns)
+                    // The last block of a reply still streaming it has no closing fence yet.
+                    if ShellBlocks.endsInOpenFence(entry.text) {
+                        builder.shell?.openOrdinal = document.blocks.flatMap(\.descendants).filter { if case .codeBlock = $0.kind { true } else { false } }.count - 1
+                    }
+                }
+                for block in document.blocks { builder.block(block) }
             }
             builder.container = nil
         } else if entry.kind == "user" {
@@ -152,6 +171,14 @@ enum AgentTranscriptFormat {
         return url.url
     }
 
+    /// The link a reply shell block's Run or Stop carries (`op` is "run" or "stop").
+    private static func shellLink(_ op: String, key: String) -> URL? {
+        var url = URLComponents()
+        url.scheme = "mighty-transcript"; url.host = "shell"
+        url.queryItems = [URLQueryItem(name: "op", value: op), URLQueryItem(name: "key", value: key)]
+        return url.url
+    }
+
     /// A tool call's state as a small filled square: ✓ done, ✕ failed, ● still going,
     /// – stopped. The fills carry only their own glyph ink (white; the amber its ink).
     private static func statusSquare(_ state: String, live: Bool) -> NSAttributedString {
@@ -206,6 +233,16 @@ enum AgentTranscriptFormat {
         let cards: Bool
         /// The block every paragraph sits in while one is set: a reply's card.
         var container: NSTextBlock?
+        /// A reply's shell blocks while it is drawn with Run buttons.
+        struct ShellScan {
+            let entryId: String
+            let runs: ShellRuns
+            /// The code block (by its place among the reply's code blocks) still streaming.
+            var openOrdinal: Int?
+            var ordinal = 0
+            var runnable = 0
+        }
+        var shell: ShellScan?
         init(references: Bool, imageRoot: URL?, cards: Bool) { self.references = references; self.imageRoot = imageRoot; self.cards = cards }
 
         /// Secondary words: the D ink on D surfaces, the system colour in the graph's blocks.
@@ -345,9 +382,9 @@ enum AgentTranscriptFormat {
             return style
         }
 
-        func paragraph(_ value: NSAttributedString, font: NSFont = .uiTranscript(ofSize: 13), color: NSColor = .labelColor, indent: CGFloat = 0, spacing: CGFloat = 8, box: NSTextBlock? = nil, paragraphStyle: NSMutableParagraphStyle? = nil) {
+        func paragraph(_ value: NSAttributedString, font: NSFont = .uiTranscript(ofSize: 13), color: NSColor = .labelColor, indent: CGFloat = 0, spacing: CGFloat = 8, box: NSTextBlock? = nil, cell: NSTextBlock? = nil, paragraphStyle: NSMutableParagraphStyle? = nil) {
             let paragraph = paragraphStyle ?? style(indent: indent, spacing: spacing)
-            let blocks = [container, box].compactMap { $0 }
+            let blocks = [container, box, cell].compactMap { $0 }
             if !blocks.isEmpty { paragraph.textBlocks = blocks }
             let text = NSMutableAttributedString(attributedString: value)
             let range = NSRange(location: 0, length: text.length)
@@ -403,8 +440,9 @@ enum AgentTranscriptFormat {
             case .listItem:
                 for child in block.children { self.block(child, indent: indent, quote: quote) }
             case .codeBlock(let language):
+                let run = shellTarget(language: language, code: block.plainText)
                 if let questions = UserQuestionnaire.parse(inputJSON: block.plainText) { questionnaire(questions) }
-                else { code(block.plainText, language: language, indent: indent) }
+                else { code(block.plainText, language: language, indent: indent, run: run) }
             case .blockQuote:
                 let border = NSTextBlock()
                 AgentTranscriptFormat.fillWidth(border)
@@ -474,7 +512,56 @@ enum AgentTranscriptFormat {
             return block
         }
 
-        func code(_ code: String, language: String?, indent: CGFloat = 0) {
+        /// The next code block of a reply drawn with Run buttons: its key and command when
+        /// it is a shell block whose closing fence has arrived, nil otherwise.
+        func shellTarget(language: String?, code: String) -> (key: String, command: String)? {
+            guard var scan = shell else { return nil }
+            defer { scan.ordinal += 1; shell = scan }
+            guard let command = ShellBlocks.command(language: language, code: code) else { return nil }
+            defer { scan.runnable += 1 }
+            guard scan.ordinal != scan.openOrdinal else { return nil }
+            return (ShellBlocks.key(entryId: scan.entryId, index: scan.runnable), command)
+        }
+
+        /// A shell block's Run control: the button, or the run's state and its next action.
+        /// While another run of the pane is going, Run is shown without its link.
+        func shellControl(key: String, command: String, ink: NSColor) -> NSAttributedString {
+            let line = NSMutableAttributedString(string: "")
+            let small = NSFont.ui(ofSize: 10.5)
+            let runs = shell?.runs
+            let record = runs?.records[key]
+            // The accent fails contrast on concept D's ink code surface; links there keep
+            // the surface's ink and are told apart by their underline.
+            let linkColor = cards ? ink : AgentTranscriptFormat.accent
+            func action(_ label: String, op: String) {
+                var attributes: [NSAttributedString.Key: Any] = [.font: small]
+                if op == "run", runs?.busy == true {
+                    attributes[.foregroundColor] = cards ? ink : secondary
+                    attributes[.toolTip] = L("run.shellBlock.busy")
+                } else if let link = AgentTranscriptFormat.shellLink(op, key: key) {
+                    attributes[.link] = link; attributes[.foregroundColor] = linkColor
+                    if cards { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+                    if op == "run" { attributes[AgentTranscriptFormat.shellCommandAttribute] = command; attributes[.toolTip] = L("run.shellBlock.help") }
+                }
+                line.append(NSAttributedString(string: label, attributes: attributes))
+            }
+            func status(_ square: String, live: Bool = false, _ text: String, color: NSColor) {
+                line.append(AgentTranscriptFormat.statusSquare(square, live: live))
+                line.append(NSAttributedString(string: "  " + text + "  ", attributes: [.font: small, .foregroundColor: cards ? ink : color]))
+            }
+            switch record?.state {
+            case nil: action("▶ " + L("run.shellBlock.run"), op: "run"); return line
+            case .running: status("running", live: true, L("run.shellBlock.running"), color: AgentTranscriptFormat.accent); action(L("run.shellBlock.stop"), op: "stop"); return line
+            case .completed: status("completed", L("run.shellBlock.done"), color: secondary)
+            case .failed: status("error", L("run.shellBlock.failed", ["code": record?.exitCode.map(String.init) ?? "–"]), color: Palette.nsErrText)
+            case .stopped: status("stopped", L("run.shellBlock.stopped"), color: secondary)
+            case .interrupted: status("stopped", L("run.shellBlock.interrupted"), color: secondary)
+            }
+            action(L("run.shellBlock.again"), op: "run")
+            return line
+        }
+
+        func code(_ code: String, language: String?, indent: CGFloat = 0, run: (key: String, command: String)? = nil) {
             // Concept D: code sits on the ink code surface in both modes.
             let background: NSTextBlock
             if cards {
@@ -487,12 +574,35 @@ enum AgentTranscriptFormat {
             let ink: NSColor = cards ? Palette.nsToken(\.codeText) : .labelColor
             let start = result.length
             if let language, !language.isEmpty {
-                paragraph(NSAttributedString(string: language.split(separator: " ").first.map(String.init) ?? language), font: .uiCode(ofSize: 10, weight: .medium), color: cards ? ink : secondary, indent: indent, spacing: DesignMetrics.Spacing.xs, box: background)
+                let label = NSAttributedString(string: language.split(separator: " ").first.map(String.init) ?? language)
+                let labelFont = NSFont.uiCode(ofSize: 10, weight: .medium)
+                if let run {
+                    // The label and the Run control share the line: a two-cell row, the
+                    // control at the trailing side.
+                    let row = NSTextTable()
+                    row.numberOfColumns = 2
+                    row.layoutAlgorithm = .fixedLayoutAlgorithm
+                    row.setContentWidth(100, type: .percentageValueType)
+                    let cells: [(NSAttributedString, NSTextAlignment, CGFloat, CGFloat)] = [(label, .left, 30, indent), (shellControl(key: run.key, command: run.command, ink: ink), .right, 70, 0)]
+                    for (column, (value, alignment, width, cellIndent)) in cells.enumerated() {
+                        let cell = NSTextTableBlock(table: row, startingRow: 0, rowSpan: 1, startingColumn: column, columnSpan: 1)
+                        cell.setContentWidth(width, type: .percentageValueType)
+                        let cellStyle = style(indent: cellIndent, spacing: DesignMetrics.Spacing.xs)
+                        cellStyle.alignment = alignment
+                        paragraph(value, font: labelFont, color: cards ? ink : secondary, box: background, cell: cell, paragraphStyle: cellStyle)
+                    }
+                } else {
+                    paragraph(label, font: labelFont, color: cards ? ink : secondary, indent: indent, spacing: DesignMetrics.Spacing.xs, box: background)
+                }
             }
             let paragraphStyle = style(indent: indent, spacing: cards ? 2 : 8)
             paragraphStyle.lineBreakMode = .byCharWrapping
             paragraph(NSAttributedString(string: code), font: .uiCode(ofSize: 12, weight: .regular), color: ink, indent: indent, box: background, paragraphStyle: paragraphStyle)
             result.addAttribute(AgentTranscriptFormat.codeAttribute, value: code, range: NSRange(location: start, length: result.length - start))
+            // The run's terminal output, live while it runs, in the code style under the block.
+            if let run, let output = shell?.runs.records[run.key]?.output, !output.isEmpty {
+                self.code(output, language: nil, indent: indent)
+            }
         }
 
         private func table(_ block: AgentMarkdownBlock, columns: [PresentationIntent.TableColumn]) {

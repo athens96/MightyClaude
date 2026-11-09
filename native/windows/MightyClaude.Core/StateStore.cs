@@ -283,7 +283,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             if (FilePaneKind.IsFilePane(s.Kind) || WorkMapPaneKind.IsWorkMap(s.Kind))
                 return new RunSession { Id = s.Id, WorkspaceId = s.WorkspaceId, Kind = s.Kind, Title = RenameSupport.ClampTitle(s.Title) };
             if (s.Kind is "browser" or AgentIOPaneKind.Browser)
-                return s with { Title = RenameSupport.ClampTitle(s.Title), Status = "idle", Logs = [], Draft = "", RunTiming = null, SessionUsage = null, CurrentActivity = null, AgentViewMode = null, GraphRuns = null, GraphResultSize = null, GraphPlanSize = null, GraphBlockSizes = null, GraphViewMode = null, PlanHistory = null, TodoProgress = null, BackgroundWork = null, ResumeId = null, WorkspaceProfileKey = Wire.Clean(s.WorkspaceProfileKey, 128) is { Length: > 0 } wpk ? wpk : null, OwnerSessionId = Wire.Identifier(s.OwnerSessionId) ? s.OwnerSessionId : null, ParentSessionId = null, WorkingFolder = null, AskTarget = null };
+                return s with { Title = RenameSupport.ClampTitle(s.Title), Status = "idle", Logs = [], Draft = "", RunTiming = null, SessionUsage = null, CurrentActivity = null, AgentViewMode = null, GraphRuns = null, GraphResultSize = null, GraphPlanSize = null, GraphBlockSizes = null, GraphViewMode = null, PlanHistory = null, TodoProgress = null, BackgroundWork = null, ShellBlockRuns = null, ResumeId = null, WorkspaceProfileKey = Wire.Clean(s.WorkspaceProfileKey, 128) is { Length: > 0 } wpk ? wpk : null, OwnerSessionId = Wire.Identifier(s.OwnerSessionId) ? s.OwnerSessionId : null, ParentSessionId = null, WorkingFolder = null, AskTarget = null };
             var provider = Wire.Providers.Contains(s.Provider) ? s.Provider : "claude";
             var logs = (s.Logs ?? []).Where(l => l is not null && Wire.Identifier(l.Id) && LogEntry.Stored.Contains(l.Kind)).TakeLast(TranscriptRetention.MaximumEntries).Select(NormalizeLog).Where(l => l.Text.Length > 0).ToList();
             var timing = s.Kind == "shell" ? null : s.RunTiming is { IsValid: true } ? s.RunTiming : AgentRunTiming.Infer(logs);
@@ -304,7 +304,9 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
                 ParentSessionId = s.Kind == "claude" && Wire.Identifier(s.ParentSessionId) && s.ParentSessionId != s.Id ? s.ParentSessionId : null,
                 WorkingFolder = s.Kind == "claude" && DelegationPanes.IsWorkingFolder(s.WorkingFolder) ? s.WorkingFolder : null,
                 // Only a Claude agent pane asks other CLIs; a saved id that is no longer offered is kept and reads as Claude (macOS StateRepository.normalize).
-                AskTarget = planMode && !remoteIds.Contains(s.WorkspaceId) ? s.AskTarget : null };
+                AskTarget = planMode && !remoteIds.Contains(s.WorkspaceId) ? s.AskTarget : null,
+                // Only an agent pane's replies have shell blocks to run; restoring, a run cut off by the quit reads interrupted.
+                ShellBlockRuns = s.Kind == "claude" ? ShellBlockRunSupport.Normalized(s.ShellBlockRuns, restoring) : null };
             return restoring ? PaneTitle.Restored(normalized) : normalized;
         }
         var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && (s.Kind is "claude" or "shell" or "browser" || !restoring && FilePaneKind.IsFilePane(s.Kind) && s.Id == FilePaneKind.PaneId(s.WorkspaceId) || !restoring && WorkMapPaneKind.IsWorkMap(s.Kind) && s.Id == WorkMapPaneKind.PaneId(s.WorkspaceId) || !restoring && AgentIOPaneKind.IsAgentIO(s.Kind) && s.OwnerSessionId is { } owner && s.Id == AgentIOPaneKind.PaneId(owner, s.Kind) && (value.Sessions ?? []).Any(parent => parent.Id == owner && parent.Kind == "claude" && parent.WorkspaceId == s.WorkspaceId))).DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();

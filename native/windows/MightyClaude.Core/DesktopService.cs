@@ -209,6 +209,30 @@ public sealed partial class DesktopService : IAsyncDisposable
         }
     }
     /// <summary>
+    /// A transcript shell block's run record (ShellBlockRuns.cs) on an agent pane: <paramref name="update"/> gets the pane's record
+    /// of <paramref name="key"/> (null when none) and gives back the one to keep, or the same (or null) to change nothing. Like
+    /// <see cref="UpdateDraft"/> it replaces only that pane, without the whole state's normalize: a running block's output changes
+    /// a few times a second. A record that ended is saved at once, a running one with a streaming run's saves. Safe on any thread;
+    /// gives back whether it changed the state.
+    /// </summary>
+    public bool UpdateShellBlockRun(string sessionId, string key, Func<ShellBlockRun?, ShellBlockRun?> update)
+    {
+        lock (sync)
+        {
+            if (closing) return false;
+            var at = snapshot.Sessions.FindIndex(s => s.Id == sessionId && s.Kind == "claude");
+            if (at < 0) return false;
+            var pane = snapshot.Sessions[at];
+            var current = pane.ShellBlockRuns?.FirstOrDefault(r => r.Key == key);
+            if (update(current) is not { } next || ReferenceEquals(next, current) || next.Key != key) return false;
+            next = next with { Output = ShellBlockRunSupport.Tail(next.Output) };
+            var sessions = snapshot.Sessions.ToList(); sessions[at] = pane with { ShellBlockRuns = ShellBlockRunSupport.Replace(pane.ShellBlockRuns, next) };
+            snapshot = snapshot with { Sessions = sessions };
+            if (next.State == "running") ScheduleSave(); else _ = QueueSave();
+            return true;
+        }
+    }
+    /// <summary>
     /// Under <see cref="sync"/>: a save of the state as it is now, after every save queued before it. It covers any save a run's
     /// events left waiting (<see cref="ScheduleSave"/>).
     /// </summary>

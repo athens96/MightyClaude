@@ -20,7 +20,8 @@ export type Inline =
 export type Block =
   | { type: 'paragraph'; inline: Inline[] }
   | { type: 'heading'; level: number; inline: Inline[] }
-  | { type: 'code'; language: string | null; text: string }
+  /** `open`: its closing fence has not come yet (an answer still streaming). */
+  | { type: 'code'; language: string | null; text: string; open?: true }
   | { type: 'questionnaire'; questions: Question[] }
   | { type: 'quote'; children: Block[] }
   | { type: 'list'; ordered: boolean; items: ListItem[] }
@@ -151,7 +152,7 @@ function tableStarts(lines: readonly string[], i: number): boolean {
 type Raw =
   | { type: 'paragraph'; text: string }
   | { type: 'heading'; level: number; text: string }
-  | { type: 'code'; language: string | null; text: string }
+  | { type: 'code'; language: string | null; text: string; open?: true }
   | { type: 'quote'; children: Raw[] }
   | { type: 'list'; ordered: boolean; items: { ordinal: number; children: Raw[] }[] }
   | { type: 'rule' }
@@ -175,9 +176,10 @@ function parseBlocks(lines: readonly string[], depth: number, budget: Budget): R
       const code: string[] = [];
       i++;
       while (i < lines.length && !(lines[i]!.trimStart().startsWith(mark) && lines[i]!.trim().split(mark[0]!).join('').length === 0)) code.push(unindent(lines[i++]!, opened[1]!.length));
-      if (i < lines.length) i++;
+      const closed = i < lines.length;
+      if (closed) i++;
       const info = opened[3]!.trim();
-      blocks.push({ type: 'code', language: info.length === 0 ? null : info, text: code.join('\n').replace(/\n+$/, '') });
+      blocks.push({ type: 'code', language: info.length === 0 ? null : info, text: code.join('\n').replace(/\n+$/, ''), ...(closed ? {} : { open: true as const }) });
       continue;
     }
     const title = heading.exec(line);
