@@ -42,7 +42,7 @@ struct SavedPromptsSheet: View {
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     ForEach(offered) { prompt in
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                             Text("/" + SavedPrompts.invocationPrefix + prompt.name).font(.code(size: 11)).foregroundStyle(Palette.ink)
                             Text(prompt.workspaceId == nil ? L("savedPrompts.scope.all") : L("savedPrompts.scope.workspace"))
                                 .font(.ui(size: 10)).foregroundStyle(Palette.ink2)

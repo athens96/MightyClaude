@@ -66,7 +66,7 @@ struct ProjectTasksSheet: View {
     private func row(icon: String, title: String, detail: String, trailing: String) -> some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: icon).foregroundStyle(Palette.accent).frame(width: 16)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                 Text(title).font(.ui(size: 12, weight: .medium)).lineLimit(1)
                 Text(detail).font(.code(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.middle)
             }

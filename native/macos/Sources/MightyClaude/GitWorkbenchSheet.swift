@@ -151,7 +151,7 @@ struct GitWorkbenchSheet: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         ScrollView(.vertical) {
-                            LazyVStack(alignment: .leading, spacing: 2) {
+                            LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                                 ForEach(changes) { change in fileRow(change) }
                             }
                         }
@@ -178,7 +178,7 @@ struct GitWorkbenchSheet: View {
                 .font(.code(size: 11)).lineLimit(1).truncationMode(.middle).help(change.path)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 2)
+        .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, DesignMetrics.Spacing.xxs)
     }
 
     // MARK: - Actions

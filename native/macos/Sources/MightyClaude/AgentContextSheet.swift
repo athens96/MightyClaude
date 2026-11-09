@@ -78,7 +78,7 @@ struct AgentContextSheet: View {
             Text(L("agentContext.servers", ["count": "\(servers.count)"])).font(.ui(size: 12, weight: .semibold))
             if servers.isEmpty { Text(L("agentContext.none")).font(.ui(size: 11)).foregroundStyle(Palette.ink2) }
             ForEach(servers) { server in
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     HStack(spacing: DesignMetrics.Spacing.xs) {
                         if let image = ProviderIconImage.image(provider: server.provider, pointSize: 11) { Image(nsImage: image) }
                         Text(server.name).font(.ui(size: 12, weight: .medium))
@@ -100,7 +100,7 @@ struct AgentContextSheet: View {
             Text(L("agentContext.hooks", ["count": "\(hooks.count)"])).font(.ui(size: 12, weight: .semibold))
             if hooks.isEmpty { Text(L("agentContext.none")).font(.ui(size: 11)).foregroundStyle(Palette.ink2) }
             ForEach(hooks) { hook in
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     HStack {
                         Text(hook.event).font(.ui(size: 12, weight: .medium))
                         Text(hook.source).font(.ui(size: 9)).foregroundStyle(Palette.ink2)

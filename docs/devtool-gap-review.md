@@ -1,6 +1,6 @@
 # 개발 도구 관점의 빈자리 검토 (2026-11-09)
 
-Mighty Claude를 "AI CLI를 감싼 개발 도구"로 보고, 지금까지 구현된 것(문서 `docs/`, 도움말 원문 `docs/help/content/ko/`, Mac 소스 `native/macos/Sources/`)을 기준으로 개발자의 하루 흐름에서 비어 있는 자리를 관점별로 정리했다. 코드는 바꾸지 않았다. 각 항목은 **지금 있는 것 → 비어 있는 것 → 제안**의 순서이고, 이미 있는 부품을 다시 쓸 수 있는 것을 우선했다.
+Mighty Claude를 "AI CLI를 감싼 개발 도구"로 보고, 지금까지 구현된 것(문서 `docs/`, 도움말 원문 `docs/help/content/ko/`, Mac 소스 `native/macos/Sources/`)을 기준으로 개발자의 하루 흐름에서 비어 있는 자리를 관점별로 정리했다. 이 검토 뒤에 1–10번을 Mac 앱에 구현했다. 구현 기록은 [`docs/devtool-features.md`](devtool-features.md)에 있다. 각 항목은 **지금 있는 것 → 비어 있는 것 → 제안**의 순서이고, 이미 있는 부품을 다시 쓸 수 있는 것을 우선했다.
 
 ## 지금 갖춘 것 (요약)
 
