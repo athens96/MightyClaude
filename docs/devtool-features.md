@@ -91,3 +91,10 @@
 - **셸 명령** `mighty`: 메뉴 **워크스페이스 → 셸 명령 'mighty' 설치**가 `~/.local/bin/mighty`를 쓴다(관리자 권한 없음). `mighty`(지금 폴더), `mighty <폴더>`, `mighty "요청"`은 위 링크를 `open`한다(인코딩은 `osascript` JavaScript). 그 폴더가 로그인 셸 PATH에 없으면 더하는 방법을 알려 준다.
 - **웹훅**: 설정 → 펫과 알림의 Mac 알림 아래에 웹훅 주소 칸이 있다(`UserDefaults` `notifications.webhookURL`). 요청이 끝나면 Mac 알림과 같은 문구(워크스페이스·창 이름)만 `{"text","content"}` JSON으로 POST한다(Slack·Discord 모두 읽는다). https만, 또는 이 Mac의 http만 허용한다.
 - macOS 단축어(App Intents)와 Finder 빠른 동작은 넣지 않았다. SwiftPM으로 만드는 지금 빌드에서는 App Intents 메타데이터를 만들 수 없다.
+
+## 11. 신뢰와 진단
+
+- 모델: `MightyCore/TrustTools.swift`(`SecretScan`·`RunAudit`·`DiagnosticsSummary`), 검사: `Tests/MightyCoreTests/TrustToolsTests.swift`.
+- **커밋 전 비밀값 검사**: 커밋·PR 창(3번)의 **커밋**은 먼저 고른 파일이 더할 줄(추적 파일은 `git diff HEAD -U0`의 `+` 줄, 새 파일은 1 MiB까지 전체)에서 AWS·GitHub·GitLab·Slack·Anthropic·OpenAI·Google·Stripe 키 모양과 개인 키 블록을, 그리고 `.env*`·`*.pem` 같은 이름(`ChildAutoCommit.looksSecret`)을 찾는다. 하나라도 있으면 파일·줄·종류(값은 보이지 않는다)를 보이고 **그래도 커밋**을 눌러야 커밋한다.
+- **이 요청이 한 일**: 마이티 보기의 결과 블록 머리에 목록 단추가 붙는다(도구를 쓴 요청만). 요청과 하위 에이전트의 도구 활동을 실행한 명령·바꾼 파일·웹·읽은 파일·그 밖으로 나눠 한 줄씩(같은 활동은 마지막 상태로 한 번) 보이고, 실패한 것을 표시하며, 글로 복사할 수 있다.
+- **진단 정보 내보내기…**(메뉴 워크스페이스): 앱 버전·빌드, macOS·로캘·아키텍처, CLI별 설치 상태와 안내 글, 워크스페이스·창 수, 기능 켜짐 여부, 마지막 오류를 JSON으로 저장한다. 요청·출력·워크스페이스 경로·토큰은 넣지 않고 홈 폴더는 `~`로 바꾼다.

@@ -119,6 +119,8 @@ struct MightyClaudeApp: App {
                 Divider()
                 Button(L("menu.reconnectInputMethod")) { store.reconnectInputMethod(editor: nil) }
                 Button(L("menu.saveInputDiagnostics")) { store.saveInputMethodDiagnostics() }
+                Button(L("diagnostics.export")) { store.exportDiagnostics() }
+                    .disabled(!store.isLoaded || store.hasModal)
                 Divider()
                 Button(L("menu.settings")) { store.showSettings = true }
                     .keyboardShortcut(",", modifiers: .command)

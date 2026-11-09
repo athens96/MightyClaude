@@ -67,3 +67,34 @@ extension CompletionNotifications {
         Task.detached { _ = try? await URLSession.shared.data(for: request) }
     }
 }
+
+extension AppStore {
+    /// 진단 정보 내보내기: versions, CLI state and counts as JSON for a bug
+    /// report — no prompts, output, workspace paths or tokens; the home folder reads `~`.
+    func exportDiagnostics() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let providers: [[String: Any]] = (runtime?.providers ?? []).map { provider in
+            ["id": provider.id, "available": provider.available, "detail": DiagnosticsSummary.redact(provider.detail)]
+        }
+        let sessions = snapshot.sessions
+        let summary: [String: Any] = [
+            "app": ["version": info["CFBundleShortVersionString"] ?? "", "build": info["CFBundleVersion"] ?? ""],
+            "system": ["os": ProcessInfo.processInfo.operatingSystemVersionString, "locale": Locale.current.identifier,
+                       "arch": { var s = utsname(); uname(&s); return withUnsafeBytes(of: &s.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) } }()],
+            "providers": providers,
+            "counts": ["workspaces": snapshot.workspaces.count, "remoteWorkspaces": snapshot.workspaces.filter { $0.remote != nil }.count,
+                       "panes": Dictionary(grouping: sessions, by: { $0.kind == SessionKind.claude ? $0.provider : $0.kind }).mapValues(\.count),
+                       "delegatedChildren": delegationChildren.count, "savedPrompts": savedPrompts.count],
+            "features": ["delegation": DelegationSwitch.isOn(), "webhook": UserDefaults.standard.string(forKey: CompletionWebhook.defaultsKey)?.isEmpty == false],
+            "lastError": error.map { DiagnosticsSummary.redact($0) } ?? NSNull(),
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys]) else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "MightyClaude-diagnostics-\(UsageLedger.day(Date())).json"
+        panel.allowedContentTypes = [.json]
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+}

@@ -3291,5 +3291,19 @@
   "shellCommand.installed.addPath": "{path}\n{folder} 가 셸의 PATH에 없습니다. ~/.zshrc 에 export PATH=\"$HOME/.local/bin:$PATH\" 를 더하세요.",
   "webhook.placeholder": "완료 알림 웹훅 주소 (Slack·Discord)",
   "webhook.note": "요청이 끝나면 창 이름만 담아 보냅니다. 요청 내용과 경로는 보내지 않습니다.",
-  "webhook.invalid": "https 주소(또는 이 Mac의 http)만 쓸 수 있습니다."
+  "webhook.invalid": "https 주소(또는 이 Mac의 http)만 쓸 수 있습니다.",
+  "git.secrets.title": "비밀값으로 보이는 것 {count}개",
+  "git.secrets.message": "커밋하면 저장소 기록에 남습니다. 확실히 비밀값이 아닐 때만 그대로 커밋하세요.",
+  "git.secrets.commitAnyway": "그래도 커밋",
+  "audit.open": "이 요청이 한 일",
+  "audit.title": "이 요청이 한 일",
+  "audit.copy": "글로 복사",
+  "audit.empty": "이 요청은 도구를 쓰지 않았습니다.",
+  "audit.failed": "실패",
+  "audit.kind.command": "실행한 명령",
+  "audit.kind.write": "바꾼 파일",
+  "audit.kind.web": "웹",
+  "audit.kind.read": "읽은 파일",
+  "audit.kind.other": "그 밖의 도구",
+  "diagnostics.export": "진단 정보 내보내기…"
 }

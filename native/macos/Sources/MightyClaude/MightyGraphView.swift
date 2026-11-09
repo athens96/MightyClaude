@@ -118,6 +118,8 @@ struct MightyGraphView: View {
     /// The runs (as the originals store keys them) whose changes the store still holds, for the 변경 되돌리기 button.
     @ViewState private var changedRuns: Set<String> = []
     @ViewState private var changesTarget: RunChangesTarget?
+    /// The run whose 이 요청이 한 일 panel is open.
+    @ViewState private var auditRun: MightyGraphRun?
     @StateObject private var ouroboros = MightyGraphOuroborosModel()
     @ViewState private var canvasViewport: CGSize?
     /// Timeline rows opened to show what their diagram card holds.
@@ -371,6 +373,7 @@ struct MightyGraphView: View {
                 Set(fileOriginals.runs(sessionId: sessionID).filter { !fileOriginals.files(sessionId: sessionID, runId: $0).isEmpty })
             }.value
         }
+        .sheet(item: $auditRun) { run in RunAuditSheet(run: run, onClose: { auditRun = nil }) }
         .sheet(item: $changesTarget) { target in
             if let fileOriginals {
                 RunChangesSheet(target: target, store: fileOriginals, onSendNotes: onAppendDraft, onClose: { changesTarget = nil })
@@ -701,6 +704,7 @@ struct MightyGraphView: View {
                            status: awaiting != nil ? "waiting" : status, input: "", entries: run.resultEntries, tint: soFar ? Palette.ink2 : Palette.text(status),
                            usage: run.totalUsage, usageLabel: L("graph.block.totalUsageLabel"), resultFilesRunID: run.status == "completed" ? run.id : nil,
                            changesRunID: run.status == "completed" || failed || stopped ? run.sourceRunID ?? run.id : nil,
+                           auditRun: failed || stopped || run.status == "completed" ? run : nil,
                            headerFill: Palette.heroFill(awaiting != nil ? .wait : soFar ? .idle : DesignTone(status: status)), headerInk: awaiting != nil ? Palette.heroInk(.wait) : Palette.onStatus,
                            onContentHeight: node.id == MightyGraphLayout.latestResultID(runs: runs) ? { resultMeasured(node.id, $0 + rows) } : nil,
                            outlineTone: awaiting != nil ? .run : nil, awaiting: awaiting)
@@ -759,7 +763,7 @@ struct MightyGraphView: View {
     /// `inputOnly` is the request block: its input fills the card, and it has no status of
     /// its own — the 실행 block under it runs and settles.
     private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, titleProvider: String? = nil, icon: String, status: String, statusText: String? = nil, input: String, entries: [LogEntry], tint: Color,
-                                usage: GraphTokenUsage? = nil, usageLabel: String = L("graph.block.blockUsageLabel"), resultFilesRunID: String? = nil, changesRunID: String? = nil,
+                                usage: GraphTokenUsage? = nil, usageLabel: String = L("graph.block.blockUsageLabel"), resultFilesRunID: String? = nil, changesRunID: String? = nil, auditRun: MightyGraphRun? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
                                 childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil,
                                 headerInk: Color = Palette.onStatus,
@@ -810,6 +814,14 @@ struct MightyGraphView: View {
                     .buttonStyle(.plain).help(resultFiles.selectedRunID == resultFilesRunID ? L("graph.resultFiles.closeButton") : L("graph.resultFiles.openButton"))
                     .accessibilityLabel(L("graph.resultFiles.countLabel", ["count": "\(resultFiles.files(for: resultFilesRunID).count)"]))
                     .accessibilityIdentifier("mighty-result-files-toggle-\(node.id)")
+                }
+                if let auditRun, !RunAudit.rows(auditRun).isEmpty {
+                    Button { self.auditRun = auditRun } label: {
+                        Image(systemName: "list.bullet.rectangle").foregroundStyle(onStrip ? headerInk : Palette.ink2)
+                    }
+                    .buttonStyle(.plain).help(L("audit.open"))
+                    .accessibilityLabel(L("audit.open"))
+                    .accessibilityIdentifier("mighty-run-audit-\(node.id)")
                 }
                 if let changesRunID, changedRuns.contains(changesRunID), let root = referenceRoot ?? workspaceRoot {
                     Button { changesTarget = RunChangesTarget(sessionID: sessionID, runID: changesRunID, root: root) } label: {

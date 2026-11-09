@@ -3291,5 +3291,19 @@
   "shellCommand.installed.addPath": "{path}\n{folder} がシェルの PATH にありません。~/.zshrc に export PATH=\"$HOME/.local/bin:$PATH\" を追加してください。",
   "webhook.placeholder": "完了通知の Webhook URL（Slack・Discord）",
   "webhook.note": "リクエストが終わるとペイン名だけを送ります。内容やパスは送りません。",
-  "webhook.invalid": "https アドレス（またはこの Mac の http）のみ使えます。"
+  "webhook.invalid": "https アドレス（またはこの Mac の http）のみ使えます。",
+  "git.secrets.title": "秘密情報らしきもの{count}件",
+  "git.secrets.message": "コミットするとリポジトリの履歴に残ります。秘密情報でないと確かな場合のみそのままコミットしてください。",
+  "git.secrets.commitAnyway": "それでもコミット",
+  "audit.open": "このリクエストがしたこと",
+  "audit.title": "このリクエストがしたこと",
+  "audit.copy": "テキストでコピー",
+  "audit.empty": "このリクエストはツールを使いませんでした。",
+  "audit.failed": "失敗",
+  "audit.kind.command": "実行したコマンド",
+  "audit.kind.write": "書き込んだファイル",
+  "audit.kind.web": "Web",
+  "audit.kind.read": "読んだファイル",
+  "audit.kind.other": "その他のツール",
+  "diagnostics.export": "診断情報を書き出す…"
 }

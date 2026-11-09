@@ -3291,5 +3291,19 @@
   "shellCommand.installed.addPath": "{path}\n{folder} is not on your shell's PATH. Add export PATH=\"$HOME/.local/bin:$PATH\" to ~/.zshrc.",
   "webhook.placeholder": "Completion webhook URL (Slack, Discord)",
   "webhook.note": "Posts only the pane's name when a request finishes, never its content or paths.",
-  "webhook.invalid": "Only https addresses (or http to this Mac) are allowed."
+  "webhook.invalid": "Only https addresses (or http to this Mac) are allowed.",
+  "git.secrets.title": "{count} possible secrets",
+  "git.secrets.message": "Once committed they stay in the repository's history. Commit anyway only if you are sure they are not secrets.",
+  "git.secrets.commitAnyway": "Commit anyway",
+  "audit.open": "What this request did",
+  "audit.title": "What this request did",
+  "audit.copy": "Copy as text",
+  "audit.empty": "This request used no tools.",
+  "audit.failed": "Failed",
+  "audit.kind.command": "Commands run",
+  "audit.kind.write": "Files written",
+  "audit.kind.web": "Web",
+  "audit.kind.read": "Files read",
+  "audit.kind.other": "Other tools",
+  "diagnostics.export": "Export diagnostics…"
 }

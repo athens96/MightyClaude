@@ -22,6 +22,8 @@ struct GitWorkbenchSheet: View {
     @ViewState private var request: GitReviewRequest?
     @ViewState private var requestLoaded = false
     @ViewState private var branch: String?
+    /// Secrets found in what the commit would add; the commit waits for the user to go on anyway.
+    @ViewState private var secrets: [SecretScan.Finding] = []
 
     private var root: URL { URL(fileURLWithPath: workspace.path, isDirectory: true) }
     private var chosenPaths: [String] { (changes ?? []).map(\.path).filter(chosen.contains) }
@@ -67,6 +69,13 @@ struct GitWorkbenchSheet: View {
         }
         .dialogSheetWidth(DesignMetrics.Dialog.sheetWidthL)
         .task { await reload() }
+        .alert(L("git.secrets.title", ["count": "\(secrets.count)"]), isPresented: Binding(get: { !secrets.isEmpty }, set: { if !$0 { secrets = [] } })) {
+            Button(L("git.secrets.commitAnyway"), role: .destructive) { secrets = []; commitNow() }
+            Button(L("runChanges.confirm.cancel"), role: .cancel) { secrets = [] }
+        } message: {
+            Text(secrets.prefix(8).map { $0.line > 0 ? "\($0.path):\($0.line) · \($0.kind)" : "\($0.path) · \($0.kind)" }.joined(separator: "\n")
+                 + (secrets.count > 8 ? "\n…" : "") + "\n\n" + L("git.secrets.message"))
+        }
     }
 
     // MARK: - Pull request
@@ -205,6 +214,17 @@ struct GitWorkbenchSheet: View {
     }
 
     private func commit() {
+        let root = root, paths = chosenPaths
+        let untracked = Set((changes ?? []).filter(\.untracked).map(\.path))
+        working = true; failure = nil; note = nil
+        Task {
+            let found = await GitWorkbench.secretFindings(root: root, paths: paths, untracked: untracked)
+            working = false
+            if found.isEmpty { commitNow() } else { secrets = found }
+        }
+    }
+
+    private func commitNow() {
         let root = root, paths = chosenPaths, message = message
         perform {
             let sha = try await GitWorkbench.commit(root: root, paths: paths, message: message)

@@ -3291,5 +3291,19 @@
   "shellCommand.installed.addPath": "{path}\n{folder} 不在 shell 的 PATH 中。请在 ~/.zshrc 中添加 export PATH=\"$HOME/.local/bin:$PATH\"。",
   "webhook.placeholder": "完成通知 Webhook 地址（Slack、Discord）",
   "webhook.note": "请求完成时只发送窗格名称，不发送请求内容和路径。",
-  "webhook.invalid": "只能使用 https 地址（或本机的 http）。"
+  "webhook.invalid": "只能使用 https 地址（或本机的 http）。",
+  "git.secrets.title": "发现 {count} 处疑似密钥",
+  "git.secrets.message": "提交后会保留在仓库历史中。只有确定不是密钥时才继续提交。",
+  "git.secrets.commitAnyway": "仍然提交",
+  "audit.open": "此请求做了什么",
+  "audit.title": "此请求做了什么",
+  "audit.copy": "复制为文本",
+  "audit.empty": "此请求没有使用工具。",
+  "audit.failed": "失败",
+  "audit.kind.command": "运行的命令",
+  "audit.kind.write": "写入的文件",
+  "audit.kind.web": "网页",
+  "audit.kind.read": "读取的文件",
+  "audit.kind.other": "其他工具",
+  "diagnostics.export": "导出诊断信息…"
 }

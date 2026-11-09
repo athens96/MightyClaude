@@ -148,6 +148,22 @@ public enum GitWorkbench {
         return DelegationGit.line(head.stdout)
     }
 
+    /// Secrets in what committing `paths` would add (`SecretScan`): the added
+    /// lines of tracked files against HEAD, new files whole (up to 1 MiB each), and secret-looking names.
+    public static func secretFindings(root: URL, paths: [String], untracked: Set<String>) async -> [SecretScan.Finding] {
+        var findings = SecretScan.scanNames(paths)
+        let tracked = paths.filter { !untracked.contains($0) }
+        if !tracked.isEmpty, let diff = try? await git(root, ["diff", "HEAD", "--no-color", "--no-ext-diff", "-U0", "--"] + tracked), diff.exitCode == 0 {
+            findings += SecretScan.scanDiff(String(decoding: diff.stdout, as: UTF8.self))
+        }
+        for path in paths where untracked.contains(path) {
+            guard let url = WorkspaceFiles.resolve(path, root: root),
+                  let data = try? Data(contentsOf: url), data.count <= 1_048_576, let text = String(data: data, encoding: .utf8) else { continue }
+            findings += SecretScan.scan(text, path: path)
+        }
+        return findings
+    }
+
     /// Pushes the branch, setting its upstream to `origin` the first time.
     public static func push(root: URL) async throws {
         let upstream = try await git(root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
