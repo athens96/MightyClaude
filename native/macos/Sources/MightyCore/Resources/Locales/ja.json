@@ -3255,5 +3255,22 @@
   "usage.budget.label": "1日の予算（USD）",
   "usage.budget.note": "超えると一度通知します。空にするとオフです。",
   "usage.budget.notificationTitle": "1日の予算を超えました",
-  "usage.budget.notificationBody": "今日 {spent} 使用 · 予算 {budget}"
+  "usage.budget.notificationBody": "今日 {spent} 使用 · 予算 {budget}",
+  "agentContext.open": "エージェントのコンテキスト",
+  "agentContext.title": "エージェントのコンテキスト",
+  "agentContext.missing": "なし",
+  "agentContext.diverged": "エージェントごとに指示ファイルの内容が違います。同じルールを使うには一つを基準に揃えてください。",
+  "agentContext.copy.menu": "他のファイルにコピー",
+  "agentContext.copy.to": "{target} に上書き",
+  "agentContext.copy.confirm": "{source} の内容で {target} を上書きしますか？",
+  "agentContext.copy.overwrite": "上書き",
+  "agentContext.copy.help": "このファイルの内容で他のエージェントの指示ファイルを上書きします。",
+  "agentContext.copy.saveFirst": "先に保存してください。",
+  "agentContext.revert": "元に戻す",
+  "agentContext.servers": "MCP サーバー{count}件",
+  "agentContext.hooks": "Claude フック{count}件",
+  "agentContext.none": "なし",
+  "agentContext.scope.project": "このプロジェクト",
+  "agentContext.scope.user": "すべてのプロジェクト",
+  "agentContext.readOnly": "サーバーとフックは各 CLI の設定ファイルから読むだけです。変更するにはそのファイルか CLI コマンドを使ってください。"
 }

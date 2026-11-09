@@ -36,6 +36,8 @@ final class AppStore: ObservableObject, DelegationHost {
     /// 사용량 집계 (`<data>/usage-ledger.json`), each finished run's cost and tokens.
     @Published var usageLedger = UsageLedger()
     @Published var showsUsageReport = false
+    /// The workspace whose 에이전트 맥락 panel is open.
+    @Published var agentContext: Workspace?
     @Published var focusSearch = false
     @Published var drafts: [String: String] = [:] {
         didSet {

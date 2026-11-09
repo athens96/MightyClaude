@@ -65,3 +65,12 @@
 - 기록: 에이전트 창의 실행이 끝날 때(`completed`·`stopped`·`error`) 그 창의 `sessionUsage`를 한 번 읽어 날짜·워크스페이스·에이전트·모델별로 비용과 토큰을 남긴다. CLI가 `run` 범위로 알리면 그 값을, `session` 범위(세션 누계)로 알리면 같은 세션의 직전 기록보다 늘어난 만큼만 센다. 누계가 줄면 새 세션으로 보고 전부 센다. CLI가 알려 주지 않은 값은 0이다.
 - 보기: 메뉴 **워크스페이스 → 사용량 보기**. 7일/30일, 총 비용·토큰·실행 수, 날짜별 비용 막대(하나의 계열이라 범례 없음, 마우스를 올리면 그날의 값), 워크스페이스·모델·에이전트별 표.
 - 하루 예산: 같은 창에서 정한다(`UserDefaults` `usage.dailyBudgetUSD`). 그날 비용이 예산을 처음 넘는 실행에서 macOS 알림을 한 번 보낸다(알림 권한이 있을 때). 휴대폰 푸시는 아직 보내지 않는다.
+
+## 8. 에이전트 맥락
+
+- 모델: `MightyCore/AgentContext.swift`, 검사: `Tests/MightyCoreTests/AgentContextTests.swift`.
+- 여는 곳: 워크스페이스 머리의 뇌 단추, 메뉴 **워크스페이스 → 에이전트 맥락**. 원격 워크스페이스에서는 꺼진다.
+- 지침 파일: 워크스페이스 폴더의 `CLAUDE.md`(Claude), `AGENTS.md`(Codex), `GEMINI.md`(Antigravity)를 탭으로 보고 고쳐 저장한다(512 KiB까지, 원자적 쓰기). 있는 파일들의 내용이 서로 다르면 경고가 뜨고, **다른 파일에 복사**로 지금 파일 내용을 다른 에이전트의 파일에 덮어쓴다(확인 후, 저장된 내용만).
+- MCP 서버(읽기만): Claude `.mcp.json`·`~/.claude.json`(이 프로젝트 항목과 전체), Codex `~/.codex/config.toml`의 `[mcp_servers.*]`, Antigravity `.gemini/settings.json`·`~/.gemini/settings.json`. 이름, 범위, 실행 명령이나 주소, 출처 파일을 보인다.
+- Claude hook(읽기만): `.claude/settings.local.json`, `.claude/settings.json`, `~/.claude/settings.json`의 `hooks`를 이벤트별로 명령과 함께 보인다.
+- 서버·hook을 켜고 끄는 기능은 넣지 않았다. CLI 설정 파일을 앱이 고치는 것은 CLI 버전마다 형식이 달라 위험하다.

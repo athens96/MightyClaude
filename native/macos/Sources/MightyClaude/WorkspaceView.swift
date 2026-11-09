@@ -558,6 +558,14 @@ struct WorkspaceView: View {
             .help(workspace.remote == nil ? L("menu.showFiles") + " (⇧⌘E)" : L("remote.workspace.paneUnavailable"))
             .accessibilityLabel(L("menu.showFiles"))
             .accessibilityIdentifier("workspace-open-files-\(workspace.id)")
+            Button { store.agentContext = workspace } label: {
+                Image(systemName: "brain").font(.ui(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .disabled(store.hasModal || workspace.remote != nil)
+            .help(workspace.remote == nil ? L("agentContext.open") : L("remote.workspace.paneUnavailable"))
+            .accessibilityLabel(L("agentContext.open"))
+            .accessibilityIdentifier("workspace-agent-context-\(workspace.id)")
             Button { store.conversationSearch = workspace } label: {
                 Image(systemName: "text.magnifyingglass").font(.ui(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
             }
@@ -567,6 +575,9 @@ struct WorkspaceView: View {
             .help(workspace.remote == nil ? L("conversationSearch.open") + " (⇧⌘F)" : L("remote.workspace.paneUnavailable"))
             .accessibilityLabel(L("conversationSearch.open"))
             .accessibilityIdentifier("workspace-conversation-search-\(workspace.id)")
+            .sheet(item: $store.agentContext) { item in
+                AgentContextSheet(workspace: item, onClose: { store.agentContext = nil })
+            }
             .sheet(isPresented: $store.showsUsageReport) {
                 UsageReportSheet(onClose: { store.showsUsageReport = false }).environmentObject(store)
             }

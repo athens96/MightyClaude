@@ -3255,5 +3255,22 @@
   "usage.budget.label": "每日预算（USD）",
   "usage.budget.note": "超出时通知一次。留空则关闭。",
   "usage.budget.notificationTitle": "已超出每日预算",
-  "usage.budget.notificationBody": "今天已用 {spent} · 预算 {budget}"
+  "usage.budget.notificationBody": "今天已用 {spent} · 预算 {budget}",
+  "agentContext.open": "代理上下文",
+  "agentContext.title": "代理上下文",
+  "agentContext.missing": "无",
+  "agentContext.diverged": "各代理的指令文件内容不同。若要使用同一套规则，请以其中一个为准进行同步。",
+  "agentContext.copy.menu": "复制到其他文件",
+  "agentContext.copy.to": "覆盖 {target}",
+  "agentContext.copy.confirm": "用 {source} 的内容覆盖 {target}？",
+  "agentContext.copy.overwrite": "覆盖",
+  "agentContext.copy.help": "用当前文件内容覆盖其他代理的指令文件。",
+  "agentContext.copy.saveFirst": "请先保存。",
+  "agentContext.revert": "还原",
+  "agentContext.servers": "{count} 个 MCP 服务器",
+  "agentContext.hooks": "{count} 个 Claude hook",
+  "agentContext.none": "无",
+  "agentContext.scope.project": "此项目",
+  "agentContext.scope.user": "所有项目",
+  "agentContext.readOnly": "服务器和 hook 仅从各 CLI 的设置文件读取，此处不修改。如需更改，请编辑相应文件或使用 CLI 命令。"
 }

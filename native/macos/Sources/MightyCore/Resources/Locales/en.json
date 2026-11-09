@@ -3255,5 +3255,22 @@
   "usage.budget.label": "Daily budget (USD)",
   "usage.budget.note": "Notifies once when exceeded. Leave empty to turn off.",
   "usage.budget.notificationTitle": "Daily budget exceeded",
-  "usage.budget.notificationBody": "{spent} spent today · budget {budget}"
+  "usage.budget.notificationBody": "{spent} spent today · budget {budget}",
+  "agentContext.open": "Agent context",
+  "agentContext.title": "Agent context",
+  "agentContext.missing": "none",
+  "agentContext.diverged": "The agents' instruction files differ. To share one set of rules, copy one over the others.",
+  "agentContext.copy.menu": "Copy to another file",
+  "agentContext.copy.to": "Overwrite {target}",
+  "agentContext.copy.confirm": "Overwrite {target} with {source}?",
+  "agentContext.copy.overwrite": "Overwrite",
+  "agentContext.copy.help": "Overwrites another agent's instruction file with this one.",
+  "agentContext.copy.saveFirst": "Save first.",
+  "agentContext.revert": "Revert",
+  "agentContext.servers": "{count} MCP servers",
+  "agentContext.hooks": "{count} Claude hooks",
+  "agentContext.none": "None",
+  "agentContext.scope.project": "This project",
+  "agentContext.scope.user": "All projects",
+  "agentContext.readOnly": "Servers and hooks are read from each CLI's settings and not changed here. Edit those files or use the CLI to change them."
 }
