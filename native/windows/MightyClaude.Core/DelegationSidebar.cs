@@ -21,12 +21,13 @@ public sealed record DelegationChildRow(string Id, string ParentSessionId, Child
         file.UndoableMerge(record.Id) is not null, file.HeldNotices(record.Id).Count, !record.NotifiesParent, record.Agent);
 
     /// <summary>
-    /// The actions the child's card offers now, in this order (M/DelegationCards.swift:13-24): merge while it is reported, undo
-    /// while its last merge can be undone, and discard until it is discarded.
+    /// The actions the child's card offers now, in this order (M/DelegationCards.swift:13-24): merge while it is reported, or still
+    /// working (the merge then waits for its report, <see cref="DelegationMergeQueue"/>), undo while its last merge can be undone,
+    /// and discard until it is discarded.
     /// </summary>
     public IReadOnlyList<DelegationCardAction> CardActions =>
     [
-        .. State == ChildState.Reported ? new[] { DelegationCardAction.Merge } : [],
+        .. State is ChildState.Reported or ChildState.Running or ChildState.Waiting ? new[] { DelegationCardAction.Merge } : [],
         .. CanUndo ? new[] { DelegationCardAction.Undo } : [],
         .. State != ChildState.Discarded ? new[] { DelegationCardAction.Discard } : [],
     ];

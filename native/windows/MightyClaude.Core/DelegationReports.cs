@@ -113,7 +113,9 @@ public sealed partial class DelegationCoordinator
     ///    finished normally: after a stop or an error its report counts as not new yet. When the commit finds an unresolved
     ///    conflict or git fails, nothing is committed, the child's pane says why and its report counts as not new yet, so the
     ///    next run's end tries again. New files the commit left out are named in the pane.
-    /// 3. Otherwise the child has ended, and when the run was the one its parent awaits (delegate's first run, or the run a
+    /// 3. A child reported before whose branch is still at its reported head, not merged since, is reported again at the same
+    ///    revision, so its card can still merge it; the run its parent awaits still sends one ended_without_report notice.
+    /// 4. Otherwise the child has ended, and when the run was the one its parent awaits (delegate's first run, or the run a
     ///    follow-up went to) the parent gets one ended_without_report notice.
     /// A child the human started (<see cref="ChildRecord.StartedByHuman"/>) is recorded the same way but never sends its parent a notice.
     /// Only the run going now is recorded, or the child's first run, whose start the host may not have reported yet. A second
@@ -137,7 +139,7 @@ public sealed partial class DelegationCoordinator
         try
         {
             if (File.Children.Find(record => record.Id == id) is not { } found || !MayEnd(found, runId)) return null;
-            ChildReportFile? report = null; string? head = null; var committed = ChildAutoCommit.Result.Of(ChildAutoCommit.Outcome.Nothing);
+            ChildReportFile? report = null; string? head = null, unchangedHead = null; var committed = ChildAutoCommit.Result.Of(ChildAutoCommit.Outcome.Nothing);
             if (end != ChildRunEnd.Quit)
             {
                 var path = ChildWorktree.ReportFileIn(found.WorktreePath);
@@ -151,6 +153,7 @@ public sealed partial class DelegationCoordinator
                     // A report whose head git cannot read counts as no new report; its change is still there for the next run's end.
                     if (committed.Outcome is ChildAutoCommit.Outcome.Nothing or ChildAutoCommit.Outcome.Committed) head = await ChildMerge.Head(found.WorktreePath);
                 }
+                else if (found.ReportHead is not null) unchangedHead = await ChildMerge.Head(found.WorktreePath);
             }
             var context = await PruneContext();
             // Nothing below suspends until the end is saved, so the same end reported twice finds it recorded.
@@ -163,9 +166,16 @@ public sealed partial class DelegationCoordinator
             if (end == ChildRunEnd.Quit) child = child.Applied(ChildStateEvent.QuitApp);
             else if (report is not null && head is not null && report.Digest != child.ReportDigest && child.RecordingReport(head) is { } reported)
             {
-                child = reported with { ReportDigest = report.Digest };
+                child = reported with { ReportDigest = report.Digest, ReportRunId = runId };
                 next = next.SettingCopy(DelegationCopy.Of(id, DelegationCopyKind.Report, child.ReportRevision, report.Start, report.TotalBytes));
                 if (child.NotifiesParent) notice = new(Wire.Id(), id, child.ReportRevision, NoticeKind.Reported, DeliveryLane.Pending);
+            }
+            else if (unchangedHead is not null && string.Equals(unchangedHead, child.ReportHead, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(next.Merges.FindLast(merge => merge.ChildId == id)?.ChildHead, unchangedHead, StringComparison.OrdinalIgnoreCase) && child.Applying(ChildStateEvent.EndUnchanged) is { } standing)
+            {
+                // Nothing new since the report, which still stands: the card can merge it.
+                child = standing;
+                if (child.AwaitedRunId == runId && child.NotifiesParent) notice = new(Wire.Id(), id, child.ReportRevision, NoticeKind.EndedWithoutReport, DeliveryLane.Pending);
             }
             else
             {
@@ -219,7 +229,8 @@ public sealed partial class DelegationCoordinator
             var next = File; var index = next.Children.FindIndex(record => record.Id == id);
             if (index < 0 || next.Children[index].AwaitedRunId == runId) return null;
             var child = next.Children[index]; Notice? notice = null;
-            if (child.RunId == runId && child.State == ChildState.Ended && child.NotifiesParent)
+            // Ended with no new report: ended, or reported still from an earlier run.
+            if (child.RunId == runId && (child.State == ChildState.Ended || child.State == ChildState.Reported && child.ReportRunId != runId) && child.NotifiesParent)
             {
                 notice = new(Wire.Id(), id, child.ReportRevision, NoticeKind.EndedWithoutReport, DeliveryLane.Pending);
                 next = next with { Notices = next.Notices.Add(notice) };

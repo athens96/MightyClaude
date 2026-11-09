@@ -49,7 +49,8 @@ public sealed partial class DelegationCoordinator
             // Read again after the wait: an earlier merge may have taken this child.
             if (File.Children.Find(record => record.Id == id) is not { } child) return DelegationResponse.Failure(NotYourChildMessage(id));
             if (await ParentCheckout(child) is not { } checkout) return DelegationResponse.Failure("The calling pane is closed.");
-            switch (await ChildMerge.ToolMerge(child, expectedHead, checkout))
+            if (await FollowParentBranch(id, checkout) is not { } followed) return DelegationResponse.Failure(NotYourChildMessage(id));
+            switch (await ChildMerge.ToolMerge(followed, expectedHead, checkout))
             {
                 case ChildMergeOutcome.Refused refused: return DelegationResponse.Refusal(refused.Reason);
                 case ChildMergeOutcome.Failed failed: return DelegationResponse.Failure($"Git did not merge the child: {failed.Message}");

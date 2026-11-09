@@ -313,8 +313,12 @@ internal static class DelegationCoordinatorVerification
             await fixture.Coordinator.ChildRunStarted(id, "human-2");
             Check(fixture.Child(id) is { State: ChildState.Running, RunId: "human-2", ReportRevision: 1 } running && running.ReportHead == head && (await fixture.Call("merge", ("child", id), ("expected_head", head))).Refused == DelegationReasonCode.NotReported
                 && fixture.Store.Load() == fixture.File, "a human's run in the child's pane clears reported, so a merge waits");
-            // It ends with the report unchanged: ended, and no notice for a human's run.
-            Check(await fixture.Coordinator.ChildRunEnded(id, "human-2", ChildRunEnd.Finished) is null && fixture.Child(id).State == ChildState.Ended && fixture.Notices(id).Count == 1, "an unchanged report is no new revision");
+            // It ends with the report and the branch unchanged: the report still stands, so the child is reported again at the same revision and its card can merge it; no notice for a human's run.
+            Check(await fixture.Coordinator.ChildRunEnded(id, "human-2", ChildRunEnd.Finished) is null && fixture.Child(id) is { State: ChildState.Reported, ReportRevision: 1 } standing && standing.ReportHead == head && fixture.Notices(id).Count == 1, "an unchanged report is no new revision, and it stands");
+            // New work with no new report: ended, so nothing unreported is merged.
+            await fixture.Coordinator.ChildRunStarted(id, "human-2b");
+            await CommitWork(fixture, started, "unreported");
+            Check(await fixture.Coordinator.ChildRunEnded(id, "human-2b", ChildRunEnd.Finished) is null && fixture.Child(id).State == ChildState.Ended && fixture.Notices(id).Count == 1, "new work with no new report ends the child");
             // A changed report makes revision 2 at the new head, with its one notice; a report over 64 KiB is kept as the marked copy.
             await fixture.Coordinator.ChildRunStarted(id, "human-3");
             var secondHead = await CommitWork(fixture, started, "two"); var longReport = string.Concat(Enumerable.Repeat("a line of the second report\n", 4_000));
@@ -637,9 +641,11 @@ internal static class DelegationCoordinatorVerification
             // The parent's side: a tracked change, then another branch checked out.
             System.IO.File.WriteAllText(Path.Combine(place.Repo, "file-0.txt"), "parent edit\n");
             await Refuses("moved", movedHead, DelegationReasonCode.TrackedChanges, moved, "tracked change in the parent");
-            await place.Git("checkout", "-q", "--", "file-0.txt"); await place.Git("checkout", "-q", "-b", "elsewhere");
+            // One that does not hold main's work (a branch that does takes the merge, see the card checks).
+            await place.Git("checkout", "-q", "--", "file-0.txt"); await place.Git("checkout", "-q", "--orphan", "elsewhere");
+            await place.Git("rm", "-q", "-r", "--cached", "."); await place.Git("commit", "-q", "--allow-empty", "-m", "elsewhere");
             await Refuses("moved", movedHead, DelegationReasonCode.BranchNotCheckedOut, moved, "parent branch not checked out");
-            await place.Git("checkout", "-q", "main");
+            await place.Git("clean", "-q", "-f"); await place.Git("checkout", "-q", "main");
             // Once one child is merged, a sibling made from the same base has diverged.
             Check((await fixture.Call("merge", ("child", "first"), ("expected_head", firstHead))).Merged?.MergedCommit == firstHead, "the first child merges");
             await Refuses("late", lateHead, DelegationReasonCode.Diverged, late, "diverged");
@@ -793,9 +799,11 @@ internal static class DelegationCoordinatorVerification
             var before = fixture.File;
             System.IO.File.WriteAllText(Path.Combine(place.Repo, "file-0.txt"), "changed\n");
             Check(await coordinator.MergeFromCard("c1") == new ChildMergeOutcome.Refused(DelegationReasonCode.TrackedChanges), "tracked changes in the parent's folder");
-            await place.Git("checkout", "--", "file-0.txt"); await place.Git("checkout", "-q", "-b", "elsewhere");
+            // Another branch checked out in the parent's folder, one that does not hold main's work.
+            await place.Git("checkout", "--", "file-0.txt"); await place.Git("checkout", "-q", "--orphan", "elsewhere");
+            await place.Git("rm", "-q", "-r", "--cached", "."); await place.Git("commit", "-q", "--allow-empty", "-m", "elsewhere");
             Check(await coordinator.MergeFromCard("c1") == new ChildMergeOutcome.Refused(DelegationReasonCode.BranchNotCheckedOut), "another branch checked out in the parent's folder");
-            await place.Git("checkout", "-q", "main");
+            await place.Git("clean", "-q", "-f"); await place.Git("checkout", "-q", "main");
             Check(await place.Git("rev-parse", "HEAD") == start && fixture.File == before && await coordinator.MergeFromCard("nobody") is ChildMergeOutcome.Failed, "nothing changed, and nobody is not merged");
 
             // A card's failure reads in the app's language: each language's own words.
@@ -1096,6 +1104,79 @@ internal static class DelegationCoordinatorVerification
             await pump.Finish();
             Check(coordinator.File.Children.Single() is { State: ChildState.Reported, ReportRevision: 1 } && coordinator.File.Notices.Single() is { Kind: NoticeKind.Reported, Lane: DeliveryLane.Delivered } && DelegationSidebar.Rows(coordinator.File).Single().CardActions.SequenceEqual([DelegationCardAction.Merge, DelegationCardAction.Discard])
                 && await coordinator.MergeFromCard(id) is ChildMergeOutcome.Merged && await coordinator.CloseChild(id) is ChildCleanupOutcome.Cleaned, "existing children, their cards and their cleanup go on with the switch off");
+        }
+        finally { place.Remove(); }
+    }
+
+    internal static async Task AFollowUpRunThatLeavesTheReportStandingStillSendsItsEndedNoticeOnce()
+    {
+        var fixture = await Reports();
+        try
+        {
+            var started = await RunningChild(fixture); var id = started.Id;
+            var head = await CommitWork(fixture, started, "one");
+            WriteReport(started, "Report.\n");
+            Check((await fixture.Coordinator.ChildRunEnded(id, "first-" + id, ChildRunEnd.Finished))?.Kind == NoticeKind.Reported, "the first run reports");
+            // A follow-up's run ends with nothing new before its delivery names it: still reported, and the notice goes out once it is named.
+            fixture.Host.Set(id, Idle, "first-" + id);
+            Check((await fixture.Call("follow_up", ("child", id), ("text", "Check it once more."))).FollowUp is not null, "the follow-up is recorded");
+            await fixture.Coordinator.ChildRunStarted(id, "follow-2");
+            Check(await fixture.Coordinator.ChildRunEnded(id, "follow-2", ChildRunEnd.Finished) is null && fixture.Child(id) is { State: ChildState.Reported, ReportRevision: 1 } standing && standing.ReportHead == head, "the report still stands");
+            Check(await fixture.Coordinator.AwaitRun("follow-2", id) is { Kind: NoticeKind.EndedWithoutReport, ReportRevision: 1 } && await fixture.Coordinator.AwaitRun("follow-2", id) is null, "the late notice goes out once");
+            // Named first, it sends its notice at the end itself.
+            await fixture.Coordinator.ChildRunStarted(id, "follow-3");
+            Check(await fixture.Coordinator.AwaitRun("follow-3", id) is null && await fixture.Coordinator.ChildRunEnded(id, "follow-3", ChildRunEnd.Finished) is { Kind: NoticeKind.EndedWithoutReport }, "an awaited run sends its notice at its end");
+            Check(fixture.Child(id).State == ChildState.Reported && fixture.Notices(id).Select(notice => notice.Kind).SequenceEqual([NoticeKind.Reported, NoticeKind.EndedWithoutReport, NoticeKind.EndedWithoutReport]) && fixture.Store.Load() == fixture.File, "the notices are one each");
+        }
+        finally { fixture.Remove(); }
+    }
+
+    /// <summary>A repository on main with the parent on <c>feat</c>, a child made there and reported, and a coordinator over it.</summary>
+    private static async Task<(Fixture Fixture, ChildRecord Child, string Head)> OnFeature(DelegationPlace place, bool workOnFeature)
+    {
+        await place.Repository();
+        await place.Git("checkout", "-q", "-b", "feat");
+        var child = await place.Child("c1", place.Repo);
+        Check(child.ParentBranch == "feat", "the child is made while the parent works on feat");
+        var head = await place.Commit(child.WorktreePath, "a.txt", "a\n");
+        child = child.RecordingReport(head)!;
+        var fixture = Tools(place, [child]); fixture.SetParent(activity: Finished);
+        if (workOnFeature) await place.Commit(place.Repo, "feat.txt", "feat\n");
+        return (fixture, child, head);
+    }
+
+    internal static async Task AMergeFollowsTheRecordedBranchIntoTheBranchThatTookItsWork()
+    {
+        // The card: feat goes into main by a merge commit, then is deleted; main is checked out.
+        var place = new DelegationPlace();
+        try
+        {
+            var (fixture, child, head) = await OnFeature(place, true);
+            await place.Git("checkout", "-q", "main"); await place.Git("merge", "-q", "--no-ff", "-m", "merge feat", "feat");
+            Check(await ChildMerge.MergeBranch(child, place.Repo) == "main", "main took feat's work");
+            await place.Git("branch", "-q", "-D", "feat");
+            Check(await ChildMerge.MergeBranch(child, place.Repo) == "main", "main took the work of a branch that is gone");
+            var main = await place.Git("rev-parse", "HEAD");
+            Check(await fixture.Coordinator.MergeFromCard("c1") is ChildMergeOutcome.Merged { Record: var record } && record.ParentBranch == "main" && record.PreMergeCommit == main && record.Kind == MergeKind.CardMergeCommit
+                && await place.Git("symbolic-ref", "HEAD") == "refs/heads/main" && await place.Git("rev-parse", "HEAD^2") == head, "the card's merge went into main");
+            // The record names main from now on, on disk too, so the undo and the card's words follow it.
+            Check(fixture.File.Children.Single().ParentBranch == "main" && fixture.Store.Load().Children.Single().ParentBranch == "main", "the record follows the branch");
+            Check(await fixture.Coordinator.UndoMergeFromCard("c1") is ChildUndoOutcome.Undone && await place.Git("rev-parse", "HEAD") == main, "the undo follows it");
+            // A detached HEAD, or a branch that does not hold the work, is not followed.
+            await place.Git("checkout", "-q", "--detach");
+            Check(await ChildMerge.MergeBranch(child, place.Repo) is null && await fixture.Coordinator.MergeFromCard("c1") == new ChildMergeOutcome.Refused(DelegationReasonCode.BranchNotCheckedOut), "a detached HEAD refuses");
+        }
+        finally { place.Remove(); }
+
+        // The merge tool: the recorded branch is gone and main sits where the child began.
+        place = new DelegationPlace();
+        try
+        {
+            var (fixture, _, head) = await OnFeature(place, false);
+            await place.Git("checkout", "-q", "main"); await place.Git("branch", "-q", "-D", "feat");
+            var start = await place.Git("rev-parse", "HEAD");
+            var answer = await fixture.Call("merge", ("child", "c1"), ("expected_head", head));
+            Check(answer.Merged == new MergeRecord("c1", MergeKind.ToolFastForward, "main", start, head, head) && fixture.File.Children.Single().ParentBranch == "main" && fixture.Store.Load().Children.Single().ParentBranch == "main", "the tool's merge went into main");
         }
         finally { place.Remove(); }
     }

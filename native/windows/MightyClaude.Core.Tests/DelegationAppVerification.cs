@@ -320,12 +320,65 @@ internal static class DelegationAppVerification
         finally { place.Remove(); }
     }
 
+    internal static async Task ACardMergeIsQueuedAndGoesThroughByItself()
+    {
+        var place = new DelegationPlace();
+        try
+        {
+            var start = await place.Repository();
+            // c1 works and reports later, c2 reported while its parent runs, c3 ends without a report. Human-started, so no notice runs the parent.
+            var (reported, _) = await place.ReportedChild("c2", ["c2.txt"], place.Repo);
+            var (working, _) = await place.ReportedChild("c1", ["c1.txt"], place.Repo);
+            var silent = await place.Child("c3", place.Repo);
+            ChildRecord Human(ChildRecord record) => record with { StartedByHuman = true };
+            working = Human(working with { State = ChildState.Running, ReportHead = null, ReportRevision = 0, RunId = "r1" });
+            silent = Human(silent with { RunId = "r3" });
+            new DelegationFileStore(place.Profile).Save(DelegationFile.Of([working, Human(reported), silent]));
+            await using var s = await DelegationLaunch.Start(place.Profile, Path.Combine(place.Base, "fake"), place.Repo, place.Root);
+            // The sweep at launch stopped the running ones; their runs are back.
+            await s.Coordinator.ChildRunStarted("c1", "r1b"); await s.Coordinator.ChildRunStarted("c3", "r3b");
+            s.Service.MergeRetryInterval = TimeSpan.FromMilliseconds(100);
+            var done = new List<string>(); s.Service.QueuedMergeDone += id => { lock (done) done.Add(id); };
+            await s.Service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(pane => pane.Id == DelegationLaunch.Parent ? pane with { Status = "running" } : pane).ToList() });
+
+            // Each says what it waits on, and nothing is busy or merged.
+            Check(await s.Service.MergeChildAsync("c1") is { Result: DelegationCardResult.Queued { On: DelegationMergeWait.ChildRunning } }, "a working child's merge is queued");
+            Check(await s.Service.MergeChildAsync("c2") is { Result: DelegationCardResult.Queued { On: DelegationMergeWait.ParentRunning } }, "a running parent's merge is queued");
+            Check(await s.Service.MergeChildAsync("c3") is { Result: DelegationCardResult.Queued { On: DelegationMergeWait.ChildRunning } }, "a third is queued too");
+            Check(!s.Service.IsCardBusy("c1") && !s.Service.IsCardBusy("c2") && await place.Git("rev-parse", "HEAD") == start, "a queued merge shows no busy state and merges nothing");
+
+            // The parent's run ends: the slow retry lets c2 through, and the window is told to offer the discard.
+            await s.Service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(pane => pane.Id == DelegationLaunch.Parent ? pane with { Status = "idle" } : pane).ToList() });
+            await Verification.Until(() => s.Service.CardNote("c2")?.Result is DelegationCardResult.Done);
+            Check(s.File.Children.Single(record => record.Id == "c2").State == ChildState.Merged && System.IO.File.Exists(Path.Combine(place.Repo, "c2.txt")), "c2 merged by itself");
+            await Verification.Until(() => { lock (done) return done.SequenceEqual(["c2"]); });
+
+            // c1 reports: its row changes and the merge goes through, with a merge commit over c2's.
+            Check(s.Service.CardNote("c1")?.Result is DelegationCardResult.Queued, "c1 is still queued");
+            await s.Coordinator.ChildRunEnded("c1", "r1b", ChildRunEnd.Finished);
+            await Verification.Until(() => s.Service.CardNote("c1")?.Result is DelegationCardResult.Done);
+            Check(s.File.Children.Single(record => record.Id == "c1").State == ChildState.Merged && System.IO.File.Exists(Path.Combine(place.Repo, "c1.txt")) && System.IO.File.Exists(Path.Combine(place.Repo, "c2.txt")), "c1 merged by itself");
+            await Verification.Until(() => { lock (done) return done.Count == 2; });
+
+            // c3 ends with no report: the queued merge is dropped, and the card says so.
+            await s.Coordinator.ChildRunEnded("c3", "r3b", ChildRunEnd.Finished);
+            await Verification.Until(() => s.Service.CardNote("c3")?.Result is DelegationCardResult.QueueDropped);
+            Check(s.File.Children.Single(record => record.Id == "c3").State == ChildState.Ended && await place.Git("log", "--oneline", "--", "c3.txt") == "", "an ended child is not merged");
+        }
+        finally { place.Remove(); }
+    }
+
     internal static Task TheWindowSaysEachStateActionAndAnswerInTheAppsLanguage()
     {
         foreach (var state in Enum.GetValues<ChildState>()) Check(DelegationText.State(state) is { Length: > 0 } words && !words.StartsWith("delegation.", StringComparison.Ordinal), state + " has its words");
         foreach (var action in Enum.GetValues<DelegationCardAction>()) Check(!DelegationText.Action(action).StartsWith("delegation.", StringComparison.Ordinal), action + " has its button");
         var row = new DelegationChildRow("c1", "p", ChildState.Reported, "Task", "main");
         Check(DelegationText.Note(new(DelegationCardAction.Merge, new DelegationCardResult.Done()), row) is { Tone: DesignTone.Done } merged && merged.Text.Contains("main", StringComparison.Ordinal), "a merge names the branch it went into");
+        foreach (var wait in Enum.GetValues<DelegationMergeWait>())
+            Check(DelegationText.Note(new(DelegationCardAction.Merge, new DelegationCardResult.Queued(wait)), row) is { Tone: DesignTone.Wait } queued && queued.Text.Contains("main", StringComparison.Ordinal) && !queued.Text.StartsWith("delegation.", StringComparison.Ordinal), wait + " is said with the branch");
+        Check(DelegationText.Note(new(DelegationCardAction.Merge, new DelegationCardResult.QueueDropped()), row) is { Tone: DesignTone.Wait, Text.Length: > 0 } && DelegationText.Note(new(DelegationCardAction.Undo, new DelegationCardResult.Queued(DelegationMergeWait.ChildRunning)), row) is null
+            && DelegationText.Note(new(DelegationCardAction.Discard, new DelegationCardResult.QueueDropped()), row) is null, "a dropped queue is said for the merge only");
+        Check(DelegationText.ActionHelp(DelegationCardAction.Merge, row) != DelegationText.ActionHelp(DelegationCardAction.Merge, row with { State = ChildState.Running }) && !DelegationText.ActionHelp(DelegationCardAction.Merge, row with { State = ChildState.Running }).StartsWith("delegation.", StringComparison.Ordinal), "a working child's merge says it waits");
         Check(DelegationText.Note(new(DelegationCardAction.Discard, new DelegationCardResult.Done()), row) is null && DelegationText.Note(new(DelegationCardAction.Discard, new DelegationCardResult.Reconfirm(["x"])), row) is null, "a discard done or asked again says nothing on the card");
         Check(DelegationText.Note(new(DelegationCardAction.Merge, new DelegationCardResult.Failed("fatal: not a git repository")), row) is { Tone: DesignTone.Err } failed && failed.Text.Contains("fatal: not a git repository", StringComparison.Ordinal), "git's output is the detail of a failure");
         Check(DelegationText.Note(new(DelegationCardAction.Undo, new DelegationCardResult.Refused(DelegationReasonCode.WorkspaceHasChildren)), row) is { Tone: DesignTone.Wait } refused && refused.Text.Contains("workspace_has_children", StringComparison.Ordinal), "a refusal with no words of its own ends in its code");

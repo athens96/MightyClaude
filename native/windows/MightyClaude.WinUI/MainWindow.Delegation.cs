@@ -51,6 +51,8 @@ public sealed partial class MainWindow
         service.EndAgentTerminal = id => OnWindow(() => EndAgentTerminal(id));
         // The app's note in a pane's transcript (its commit of a child's work, among others) shows at once.
         service.DelegationNoted += id => DispatcherQueue.TryEnqueue(() => { if (!closing && views.TryGetValue(id, out var view)) view.Refresh(); });
+        // A merge queued from a child's card went through by itself: the discard is offered as after a merge the human waited for.
+        service.QueuedMergeDone += id => DispatcherQueue.TryEnqueue(async () => { if (!closing) try { await OfferDiscardAfterMerge(id); } catch (Exception ex) when (ex is not OutOfMemoryException) { error.Text = ex.Message; } });
         service.DelegationChanged += () => DispatcherQueue.TryEnqueue(() =>
         {
             if (delegationRedrawQueued) return;

@@ -24,7 +24,7 @@ public static class DelegationText
     /// <summary>What a card action does to this child, for its tooltip and its accessible name.</summary>
     public static string ActionHelp(DelegationCardAction action, DelegationChildRow child) => action switch
     {
-        DelegationCardAction.Merge => Locale.Get("delegation.card.mergeHelp", new Dictionary<string, string> { ["branch"] = Branch(child) }),
+        DelegationCardAction.Merge => Locale.Get(child.State == ChildState.Reported ? "delegation.card.mergeHelp" : "delegation.card.mergeLaterHelp", new Dictionary<string, string> { ["branch"] = Branch(child) }),
         DelegationCardAction.Undo => Locale.Get("delegation.card.undoHelp", new Dictionary<string, string> { ["branch"] = Branch(child) }),
         _ => Locale.Get("delegation.card.discardHelp", new Dictionary<string, string> { ["branch"] = ChildRecord.BranchName(child.Id) }),
     };
@@ -51,6 +51,9 @@ public static class DelegationText
             (DelegationCardAction.Merge, DelegationCardResult.ConflictSent) => child.State is ChildState.Creating or ChildState.Running or ChildState.Waiting ? (Locale.Get("delegation.card.conflictSent", Words(("branch", branch))), DesignTone.Wait) : null,
             (DelegationCardAction.Merge, DelegationCardResult.ConflictNotStarted) => (Locale.Get("delegation.card.conflictNotStarted", Words(("branch", branch))), DesignTone.Err),
             (_, DelegationCardResult.ConflictSent or DelegationCardResult.ConflictNotStarted) => null,
+            (DelegationCardAction.Merge, DelegationCardResult.Queued queued) => (MergeWait(queued.On, branch), DesignTone.Wait),
+            (DelegationCardAction.Merge, DelegationCardResult.QueueDropped) => (Locale.Get("delegation.card.mergeQueueDropped"), DesignTone.Wait),
+            (_, DelegationCardResult.Queued or DelegationCardResult.QueueDropped) => null,
             (DelegationCardAction.Merge, DelegationCardResult.Refused refused) => (Locale.Get("delegation.card.mergeRefused", Words(("reason", Reason(refused.Reason)))), DesignTone.Wait),
             (DelegationCardAction.Undo, DelegationCardResult.Refused refused) => (Locale.Get("delegation.card.undoRefused", Words(("reason", Reason(refused.Reason)))), DesignTone.Wait),
             (DelegationCardAction.Discard, DelegationCardResult.Refused refused) => (Locale.Get("delegation.card.discardFailed", Words(("error", Reason(refused.Reason)))), DesignTone.Err),
@@ -60,6 +63,12 @@ public static class DelegationText
             _ => null,
         };
     }
+
+    /// <summary>What a queued card merge waits on before it goes through by itself.</summary>
+    public static string MergeWait(DelegationMergeWait wait, string branch) => Locale.Get(wait switch
+    {
+        DelegationMergeWait.ChildRunning => "delegation.card.mergeQueuedChild", DelegationMergeWait.ParentRunning => "delegation.card.mergeQueuedParent", _ => "delegation.card.mergeQueuedChanges",
+    }, new Dictionary<string, string> { ["branch"] = branch });
 
     /// <summary>
     /// What closing the child's pane left, when the card says so: the Windows-only <c>link</c> hold, which keeps a merged

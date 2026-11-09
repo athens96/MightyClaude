@@ -18,6 +18,10 @@ public abstract record DelegationCardResult
     public sealed record ConflictSent : DelegationCardResult;
     /// <summary>The merge was refused with <c>merge_conflict</c>, and the child's pane took the request to resolve it but did not start it.</summary>
     public sealed record ConflictNotStarted : DelegationCardResult;
+    /// <summary>The merge is queued and goes through by itself once this passes.</summary>
+    public sealed record Queued(DelegationMergeWait On) : DelegationCardResult;
+    /// <summary>The queued merge was dropped: the child ended without a new report.</summary>
+    public sealed record QueueDropped : DelegationCardResult;
 }
 
 /// <summary>The last answer a child's card got, shown on the card until its next action (M/AppStore+Delegation.swift:4-21).</summary>
@@ -54,6 +58,14 @@ public sealed partial class DesktopService : IDelegationHost
     private readonly HashSet<string> childRuns = [];
     private readonly HashSet<string> cardBusy = [];
     private readonly Dictionary<string, DelegationCardNote> cardNotes = [];
+    /// <summary>The children whose card merge waits to go through by itself (<see cref="DelegationMergeQueue"/>). Under <c>sync</c>.</summary>
+    private readonly HashSet<string> mergeQueue = [];
+    /// <summary>The children whose queued merge is being tried again quietly: the card keeps its line and shows no busy state. Under <c>sync</c>.</summary>
+    private readonly HashSet<string> mergeRetrying = [];
+    /// <summary>Tries the queued merges again now and then while any waits, for what no event announces (the human committing in a terminal). Under <c>sync</c>.</summary>
+    private CancellationTokenSource? mergeRetry;
+    /// <summary>How often a waiting queued merge is tried again.</summary>
+    internal TimeSpan MergeRetryInterval { get; set; } = TimeSpan.FromSeconds(10);
     /// <summary>What closing each delegated child's pane did to its worktree and branch.</summary>
     private readonly Dictionary<string, Task<ChildCleanupOutcome>> childCloses = [];
     private CancellationTokenSource delegationWatchStop = new();
@@ -94,6 +106,8 @@ public sealed partial class DesktopService : IDelegationHost
     public event Action? DelegationChanged;
     /// <summary>Delegation said something in a pane's transcript (the app's commit of a child's work, among others): the pane with this id. Raised on a thread-pool thread.</summary>
     public event Action<string>? DelegationNoted;
+    /// <summary>A queued merge from a child's card went through by itself, not under the human's press: the window offers to discard the child (<see cref="MergedDiscardOffer"/>). Raised on a thread-pool thread.</summary>
+    public event Action<string>? QueuedMergeDone;
     /// <summary>
     /// Set by the window: ends the pane's agent terminal and everything it started, and returns once they have exited. A child's
     /// discard and its close's cleanup wait for it before they look for links in its worktree. Called on thread-pool threads.
@@ -141,7 +155,7 @@ public sealed partial class DesktopService : IDelegationHost
 
     private async Task Watch<T>(ChannelReader<T> rows)
     {
-        try { await foreach (var _ in rows.ReadAllAsync(delegationWatchStop.Token)) RaiseDelegationChanged(); }
+        try { await foreach (var _ in rows.ReadAllAsync(delegationWatchStop.Token)) { RaiseDelegationChanged(); KickQueuedMerges(); } }
         catch (OperationCanceledException) { }
     }
 
@@ -174,6 +188,7 @@ public sealed partial class DesktopService : IDelegationHost
         if (delegationRunEvents is { } events) await events.Finish();
         Task[] closes; lock (sync) closes = [.. childCloses.Values];
         await Task.WhenAll(closes);
+        lock (sync) { mergeRetry?.Cancel(); mergeRetry = null; }
         await delegationWatchStop.CancelAsync(); await delegationWatch;
     }
 
@@ -580,21 +595,145 @@ public sealed partial class DesktopService : IDelegationHost
     public bool IsCardBusy(string id) { lock (sync) return cardBusy.Contains(id); }
 
     /// <summary>
-    /// The human's merge from the child's card. Its answer, kept for the card; null when an action of this card is going. Once it
-    /// went through, the window offers to discard the child right away (<see cref="MergedDiscardOffer"/>). When it conflicts, the
-    /// child's pane is asked once per report to bring the parent branch in, resolve the conflict and report again.
+    /// The human's merge from the child's card. It is queued (<see cref="DelegationMergeQueue"/>): while the child still works,
+    /// its parent pane runs or the parent's checkout has uncommitted changes, the card says what it waits on and the merge goes
+    /// through by itself once that passes (the window then offers the discard through <see cref="QueuedMergeDone"/>). Its answer,
+    /// kept for the card; null when an action of this card is going. Once it went through, the window offers to discard the child
+    /// right away (<see cref="MergedDiscardOffer"/>). When it conflicts, the child's pane is asked once per report to bring the
+    /// parent branch in, resolve the conflict and report again, and that report merges.
     /// </summary>
     public async Task<DelegationCardNote?> MergeChildAsync(string id)
     {
-        var note = await CardAction(id, DelegationCardAction.Merge, async coordinator => await coordinator.MergeFromCard(id) switch
+        lock (sync) { if (cardBusy.Contains(id)) return null; mergeQueue.Add(id); }
+        return await AdvanceQueuedMerge(id, true);
+    }
+
+    /// <summary>Moves every queued card merge on (<see cref="AdvanceQueuedMerge"/>).</summary>
+    internal async Task AdvanceQueuedMerges()
+    {
+        string[] ids; lock (sync) ids = [.. mergeQueue];
+        foreach (var id in ids) await AdvanceQueuedMerge(id);
+    }
+
+    /// <summary>
+    /// Moves the queued merges on after something changed: a child's row, or a parent pane's run that ended (the end is recorded
+    /// first, so the pane reads as idle). Off the caller's thread, so a merge in git never holds up what announced it.
+    /// </summary>
+    private void KickQueuedMerges()
+    {
+        lock (sync) { if (closing || mergeQueue.Count == 0) return; }
+        _ = Task.Run(async () => { try { await AdvanceQueuedMerges(); } catch (Exception ex) when (ex is not OutOfMemoryException) { } });
+    }
+
+    /// <summary>
+    /// Moves the queued merge of the child <paramref name="id"/> on, by its step now: it waits (the card says on what), is tried,
+    /// or leaves the queue. <paramref name="pressed"/> is the human's own press, which shows the card busy; a retry is quiet and
+    /// changes the card's line only when its answer differs. The card's note after a press; null otherwise.
+    /// </summary>
+    private async Task<DelegationCardNote?> AdvanceQueuedMerge(string id, bool pressed = false)
+    {
+        DelegationChildRow? row; bool parentRunning;
+        lock (sync)
+        {
+            if (!mergeQueue.Contains(id) || cardBusy.Contains(id) || mergeRetrying.Contains(id)) return null;
+            row = DelegationChildren.FirstOrDefault(child => child.Id == id);
+            if (row is null) { mergeQueue.Remove(id); return null; }
+            var parent = snapshot.Sessions.FirstOrDefault(s => s.Id == row.ParentSessionId);
+            parentRunning = parent is not null && (parent.Status == "running" || routes.ContainsKey(parent.Id));
+        }
+        DelegationCardNote? note = null; var changed = false;
+        switch (DelegationMergeQueue.Step(row.State, parentRunning))
+        {
+            case DelegationMergeStep.Wait wait:
+                lock (sync)
+                {
+                    // A child resolving its conflict keeps saying so until it reports.
+                    if (wait.On == DelegationMergeWait.ChildRunning && cardNotes.GetValueOrDefault(id)?.Result is DelegationCardResult.ConflictSent) { note = cardNotes[id]; break; }
+                    note = new(DelegationCardAction.Merge, new DelegationCardResult.Queued(wait.On));
+                    if (cardNotes.GetValueOrDefault(id) != note) { cardNotes[id] = note; changed = true; }
+                }
+                break;
+            case DelegationMergeStep.Drop:
+                lock (sync)
+                {
+                    mergeQueue.Remove(id);
+                    if (row.State is ChildState.Ended or ChildState.Interrupted && cardNotes.GetValueOrDefault(id)?.Action == DelegationCardAction.Merge)
+                    {
+                        note = cardNotes[id] = new(DelegationCardAction.Merge, new DelegationCardResult.QueueDropped()); changed = true;
+                    }
+                }
+                break;
+            default:
+                note = await AttemptQueuedMerge(id, pressed);
+                break;
+        }
+        if (changed) RaiseDelegationChanged();
+        ScheduleMergeRetry();
+        return note;
+    }
+
+    /// <summary>
+    /// Tries the queued merge now. A refusal that passes (uncommitted changes in the parent, a busy parent) keeps it queued, a
+    /// conflict keeps it queued only while the child was asked to resolve it, and any other answer takes it out of the queue.
+    /// </summary>
+    private async Task<DelegationCardNote?> AttemptQueuedMerge(string id, bool pressed)
+    {
+        if (delegation is not { } coordinator) { lock (sync) mergeQueue.Remove(id); return null; }
+        async Task<DelegationCardResult> Work(DelegationCoordinator merging) => await merging.MergeFromCard(id) switch
         {
             ChildMergeOutcome.Merged => new DelegationCardResult.Done(),
             ChildMergeOutcome.MergedUnsaved unsaved => new DelegationCardResult.DoneUnsaved(unsaved.Reason),
-            ChildMergeOutcome.Refused refused => new DelegationCardResult.Refused(refused.Reason),
+            ChildMergeOutcome.Refused refused => DelegationMergeQueue.WaitAfter(refused.Reason) is { } wait ? new DelegationCardResult.Queued(wait) : new DelegationCardResult.Refused(refused.Reason),
             ChildMergeOutcome.Failed failed => new DelegationCardResult.Failed(failed.Message),
             _ => throw new InvalidOperationException(),
-        });
-        return note?.Result is DelegationCardResult.Refused { Reason: DelegationReasonCode.MergeConflict } ? await AskChildToResolveConflict(id, note) : note;
+        };
+        DelegationCardNote? note; var changed = false;
+        if (pressed) note = await CardAction(id, DelegationCardAction.Merge, Work);
+        else
+        {
+            lock (sync) mergeRetrying.Add(id);
+            DelegationCardResult result;
+            try { result = await Work(coordinator); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { result = new DelegationCardResult.Failed(ex.Message); }
+            finally { lock (sync) mergeRetrying.Remove(id); }
+            note = new(DelegationCardAction.Merge, result);
+            lock (sync) { if (cardNotes.GetValueOrDefault(id) != note) { cardNotes[id] = note; changed = true; } }
+            if (changed) RaiseDelegationChanged();
+        }
+        if (note?.Result is DelegationCardResult.Refused { Reason: DelegationReasonCode.MergeConflict }) note = await AskChildToResolveConflict(id, note);
+        lock (sync)
+        {
+            // Queued waits on what passes, and a child asked to resolve its conflict waits for its next report; the rest is over.
+            if (note?.Result is not (DelegationCardResult.Queued or DelegationCardResult.ConflictSent)) mergeQueue.Remove(id);
+        }
+        if (!pressed && note?.Result is DelegationCardResult.Done && QueuedMergeDone is { } done)
+            ThreadPool.QueueUserWorkItem(_ => { try { done(id); } catch (Exception ex) when (ex is not OutOfMemoryException) { } });
+        return note;
+    }
+
+    /// <summary>Keeps a slow retry going while any merge waits, and stops it once none does.</summary>
+    private void ScheduleMergeRetry()
+    {
+        lock (sync)
+        {
+            if (mergeQueue.Count == 0) { mergeRetry?.Cancel(); mergeRetry = null; return; }
+            if (mergeRetry is not null || closing) return;
+            var stop = mergeRetry = new CancellationTokenSource();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (!stop.IsCancellationRequested)
+                    {
+                        await Task.Delay(MergeRetryInterval, stop.Token);
+                        lock (sync) { if (closing) return; if (mergeQueue.Count == 0) { if (ReferenceEquals(mergeRetry, stop)) mergeRetry = null; return; } }
+                        await AdvanceQueuedMerges();
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) when (ex is not OutOfMemoryException) { lock (sync) { if (ReferenceEquals(mergeRetry, stop)) mergeRetry = null; } }
+            });
+        }
     }
 
     /// <summary>

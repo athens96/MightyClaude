@@ -86,7 +86,7 @@ Claude나 Codex 창(부모)이 일을 나눠 다른 창(자식)에게 맡길 수
 | {{ui:delegation.child.state.creating}} | worktree와 창을 만드는 중입니다. |
 | {{ui:delegation.child.state.running}} | 일하고 있습니다. |
 | {{ui:delegation.child.state.waiting}} | 승인이나 질문에 사람의 답을 기다립니다. |
-| {{ui:delegation.child.state.reported}} | REPORT.md를 남기고 실행을 마쳤습니다. 병합할 수 있습니다. |
+| {{ui:delegation.child.state.reported}} | REPORT.md를 남기고 실행을 마쳤습니다. 병합할 수 있습니다. 보고한 뒤의 실행이 아무것도 바꾸지 않고 끝나도 이 상태로 남습니다. |
 | {{ui:delegation.child.state.merged}} | 부모 브랜치에 병합되었습니다. |
 | {{ui:delegation.child.state.ended}} | 새 보고 없이 실행이 끝났습니다. |
 | {{ui:delegation.child.state.interrupted}} | 앱을 끄는 바람에 실행이 끊겼습니다. |
@@ -99,8 +99,9 @@ Claude나 Codex 창(부모)이 일을 나눠 다른 창(자식)에게 맡길 수
 자식의 결과를 부모 브랜치에 넣는 방법은 둘입니다.
 
 1. **카드의 {{ui:delegation.card.merge}} 단추**: 사람이 누릅니다. 직접 띄운 자식은 이 방법으로만 병합합니다. 빨리 감기(fast-forward)가 되면 그렇게 하고, 안 되면 병합 커밋을 정확히 하나 만듭니다. 먼저 충돌을 미리 살펴 보고, 거절되면 그 이유를 카드에 보여 줍니다.
+   자식이 아직 일하는 중이거나, 부모 창이 실행 중이거나, 부모 폴더에 커밋하지 않은 변경이 있으면 거절하지 않고 병합을 예약합니다. 카드에 무엇을 기다리는지 나오고, 그것이 끝나면 저절로 병합됩니다. 자식이 새 보고 없이 끝나면 예약이 취소됩니다. 자식을 만들 때의 부모 브랜치가 그 뒤 지금 체크아웃된 브랜치(예: main)에 병합됐거나 지워졌다면, 지금 브랜치에 병합합니다. 부모의 `merge` 도구도 이렇게 브랜치를 따라갑니다.
    병합이 되면 그 자식 창을 바로 폐기할지 묻습니다. {{ui:delegation.mergedDiscard.confirm}}를 고르면 자식 창을 닫고 worktree와 브랜치를 지웁니다. 병합된 내용은 부모 브랜치에 그대로 남지만, 그 병합은 더 이상 되돌릴 수 없습니다. {{ui:delegation.mergedDiscard.later}}를 고르면 카드가 그대로 남습니다.
-   충돌로 거절되면 앱이 자식 창에 부모 브랜치를 가져와 충돌을 풀고, 커밋하고, 다시 보고하라고 요청합니다. 카드에 그렇다고 나오고 자식은 {{ui:delegation.child.state.running}} 상태가 됩니다. 자식이 다시 보고하면 {{ui:delegation.card.merge}} 단추를 다시 누르세요. 이 요청은 보고마다 한 번만 갑니다. 자식 창이 지금 실행을 시작하지 못하면 보내지 않고 거절 이유만 카드에 남으며, 다음에 병합할 때 다시 시도합니다. 요청을 받고도 시작하지 못했거나, 자식이 계획 모드여서 계획만 세우고 끝났다면, 자식 창에 직접 충돌을 풀고 다시 보고하라고 요청하세요. Codex와 Antigravity 자식에게는 {{ui:permission.label.fullAccess}}일 때만 요청합니다([Codex와 Antigravity](#agents)).
+   충돌로 거절되면 앱이 자식 창에 부모 브랜치를 가져와 충돌을 풀고, 커밋하고, 다시 보고하라고 요청합니다. 카드에 그렇다고 나오고 자식은 {{ui:delegation.child.state.running}} 상태가 됩니다. 자식이 다시 보고하면 저절로 병합됩니다. 이 요청은 보고마다 한 번만 갑니다. 자식 창이 지금 실행을 시작하지 못하면 보내지 않고 거절 이유만 카드에 남으며, 다음에 병합할 때 다시 시도합니다. 요청을 받고도 시작하지 못했거나, 자식이 계획 모드여서 계획만 세우고 끝났다면, 자식 창에 직접 충돌을 풀고 다시 보고하라고 요청하세요. Codex와 Antigravity 자식에게는 {{ui:permission.label.fullAccess}}일 때만 요청합니다([Codex와 Antigravity](#agents)).
 2. **부모의 `merge` 도구**: Claude에게 맡긴 자식만 됩니다. 빨리 감기만 합니다. 부모는 `child_status`가 준 자식의 head를 함께 넘깁니다. 자식이 아직 보고하지 않았거나, 자식이나 부모 폴더에 커밋하지 않은 변경이 있거나, 자식의 head가 움직였거나, 부모 브랜치가 그새 더 나아갔거나(갈라짐), 부모 브랜치가 체크아웃되어 있지 않으면 거절하고 아무것도 바꾸지 않습니다. 이 도구에 승인 카드가 뜨는지는 부모 창의 권한 모드에 따릅니다. Codex 부모는 실행이 {{ui:permission.label.fullAccess}} 모드로 시작했을 때만 쓸 수 있고, 다른 모드에서는 `merge_human_only`로 거절되므로 카드에서 병합합니다.
 
 > [!tip]

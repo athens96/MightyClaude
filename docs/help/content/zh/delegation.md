@@ -86,7 +86,7 @@ Mighty 编排也适用于 Codex 和 Antigravity 窗格。默认情况下，子�
 | {{ui:delegation.child.state.creating}} | 正在创建 worktree 和窗格。 |
 | {{ui:delegation.child.state.running}} | 正在工作。 |
 | {{ui:delegation.child.state.waiting}} | 正在等你回答批准或提问。 |
-| {{ui:delegation.child.state.reported}} | 已留下 REPORT.md 并结束运行，可以合并。 |
+| {{ui:delegation.child.state.reported}} | 已留下 REPORT.md 并结束运行，可以合并。报告之后的运行若没有任何改动就结束，也保持此状态。 |
 | {{ui:delegation.child.state.merged}} | 已合并到父窗格的分支。 |
 | {{ui:delegation.child.state.ended}} | 运行结束，但没有新的报告。 |
 | {{ui:delegation.child.state.interrupted}} | 因为退出应用，运行被中断。 |
@@ -99,8 +99,9 @@ Mighty 编排也适用于 Codex 和 Antigravity 窗格。默认情况下，子�
 把子窗格的结果放进父窗格的分支有两种方法。
 
 1. **卡片上的{{ui:delegation.card.merge}}按钮**：由你来点。亲自启动的子窗格只能用这种方法合并。能快进（fast-forward）时就快进，否则只创建一个合并提交。它会先检查冲突，拒绝时会在卡片上显示原因。
+   子窗格仍在工作、父窗格正在运行或父文件夹有未提交的更改时，不会拒绝，而是排队合并：卡片上显示它在等待什么，等这些结束后会自动合并。子窗格没有新的报告就结束时，排队会取消。如果创建子窗格时的父分支之后已合并到当前检出的分支（例如 main）或已删除，就合并到当前分支；父窗格的 `merge` 工具也会这样跟随分支。
    合并成功后，会询问是否立即丢弃该子窗格。选择{{ui:delegation.mergedDiscard.confirm}}会关闭子窗格并删除其 worktree 和分支；已合并的内容仍保留在父窗格的分支中，但这次合并将无法撤销。选择{{ui:delegation.mergedDiscard.later}}则保留卡片。
-   因冲突被拒绝时，应用会请子窗格并入父分支、解决冲突、提交并重新报告。卡片上会这样提示，子窗格变为{{ui:delegation.child.state.running}}。子窗格重新报告后，请再次按{{ui:delegation.card.merge}}按钮。这个请求每次报告只发送一次。子窗格现在无法开始运行时不会发送，卡片上只留下拒绝原因，下次合并时会再试一次。如果子窗格收到请求却没能开始，或者子窗格处于计划模式、只做了计划就结束了，请直接让子窗格解决冲突并重新报告。对于 Codex 和 Antigravity 子窗格，只有在{{ui:permission.label.fullAccess}}模式下才会发送此请求（[Codex 和 Antigravity](#agents)）。
+   因冲突被拒绝时，应用会请子窗格并入父分支、解决冲突、提交并重新报告。卡片上会这样提示，子窗格变为{{ui:delegation.child.state.running}}。子窗格重新报告后会自动合并。这个请求每次报告只发送一次。子窗格现在无法开始运行时不会发送，卡片上只留下拒绝原因，下次合并时会再试一次。如果子窗格收到请求却没能开始，或者子窗格处于计划模式、只做了计划就结束了，请直接让子窗格解决冲突并重新报告。对于 Codex 和 Antigravity 子窗格，只有在{{ui:permission.label.fullAccess}}模式下才会发送此请求（[Codex 和 Antigravity](#agents)）。
 2. **父窗格的 `merge` 工具**：只适用于交给 Claude 的子窗格，只做快进。父窗格要一起传入 `child_status` 给出的子窗格 head。子窗格尚未报告、子窗格或父窗格文件夹中有未提交的更改、子窗格的 head 已移动、父窗格的分支在此期间已经前进（分叉），或者父窗格的分支没有被检出时，合并会被拒绝，并且不做任何更改。这个工具是否会弹出批准卡片，取决于父窗格的权限模式。只有当运行以{{ui:permission.label.fullAccess}}模式开始时，Codex 父窗格才能使用它，在其他模式下会以 `merge_human_only` 被拒绝，请在卡片上合并。
 
 > [!tip]

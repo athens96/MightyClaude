@@ -20,6 +20,8 @@ public enum ChildStateEvent
     EndWithReport,
     /// <summary>The run finished, stopped or errored with no new report.</summary>
     EndWithoutReport,
+    /// <summary>A run after a report ended with no new report and the child's branch still at its reported head, not merged since: its report still stands.</summary>
+    EndUnchanged,
     /// <summary>Quitting the app killed the run.</summary>
     QuitApp,
     /// <summary>A merge took the child's reported head.</summary>
@@ -35,8 +37,8 @@ public enum ChildStateEvent
 /// <summary>
 /// Where a delegated child is (M/DelegationModel.swift:32-74). The events allow exactly these moves:
 /// creating → running (its first run starts) | failed (the start failed); running ⇄ waiting (a permission request only a
-/// human can answer); running → reported (the run ended with a changed REPORT.md) | ended (no new report) | interrupted
-/// (quitting the app killed it); reported, ended, interrupted, merged → running (any new run in the open, idle pane, which
+/// human can answer); running → reported (the run ended with a changed REPORT.md, or with no new report and its branch still at the
+/// unmerged reported head) | ended (no new report) | interrupted (quitting the app killed it); reported, ended, interrupted, merged → running (any new run in the open, idle pane, which
 /// clears reported); reported → merged; merged → reported (undo while the pane is open; undo on a closed child leaves it
 /// closed); every open state → closed; every state but discarded → discarded. Every other event is refused. Discarded is final.
 /// </summary>
@@ -57,6 +59,7 @@ public static class ChildStates
         (ChildState.Waiting, ChildStateEvent.AnswerPermission) => ChildState.Running,
         (ChildState.Running, ChildStateEvent.EndWithReport) => ChildState.Reported,
         (ChildState.Running, ChildStateEvent.EndWithoutReport) => ChildState.Ended,
+        (ChildState.Running, ChildStateEvent.EndUnchanged) => ChildState.Reported,
         (ChildState.Running, ChildStateEvent.QuitApp) => ChildState.Interrupted,
         (ChildState.Reported, ChildStateEvent.Merge) => ChildState.Merged,
         (ChildState.Merged, ChildStateEvent.UndoMerge) => ChildState.Reported,
@@ -83,13 +86,15 @@ public static class ChildStates
 /// <param name="AwaitedRunId">The run that carries the parent's work: the child's first run, which delegate started, or the run a
 /// follow-up went to. It stays named after that run ends, so its end sends the parent one notice, never two.</param>
 /// <param name="ReportDigest">The SHA-256 of the whole REPORT.md at the current revision, so only a changed report makes the next one.</param>
+/// <param name="ReportRunId">The run whose end made the current report, so a later run that ended with nothing new (and left it reported) is told apart.
+/// null before the first report and in every record kept before it was stored.</param>
 /// <param name="StartedByHuman">True for a child the human started from its parent's composer (the second send), not by the parent's
 /// delegate call (M/DelegationModel.swift:113-118). Its parent's run never asked for it, so it sends the parent no notices: the
 /// human merges or discards it from its card. null (agent-made) in every record kept before it was stored.</param>
 /// <param name="Provider">The agent CLI the child runs, its parent's: "codex" or "gemini". null is Claude, as in every record kept before it was stored.</param>
 public sealed partial record ChildRecord(string Id, string ParentSessionId, string WorktreePath, string Branch, string ParentBranch, string BaseCommit, string StartingMode, string RequestKey,
     int FollowUpCount, int ReportRevision, ChildState State, string? ReportHead = null, string? ParentCheckout = null, string? ClosedHead = null, string? RunId = null,
-    string? AwaitedRunId = null, string? ReportDigest = null, bool? StartedByHuman = null, string? Provider = null)
+    string? AwaitedRunId = null, string? ReportDigest = null, bool? StartedByHuman = null, string? Provider = null, string? ReportRunId = null)
 {
     public static ChildRecord Make(string id, string parentSessionId, string worktreePath, string parentBranch, string baseCommit, string startingMode, string requestKey,
         int followUpCount = 0, int reportRevision = 0, string? reportHead = null, ChildState state = ChildState.Creating, string? parentCheckout = null, bool? startedByHuman = null, string? provider = null) =>

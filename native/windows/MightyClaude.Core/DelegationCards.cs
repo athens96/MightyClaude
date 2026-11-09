@@ -11,6 +11,52 @@ public enum DelegationCardAction
     Discard,
 }
 
+/// <summary>What a human's merge from a child's card waits on before it goes through by itself (M/DelegationCards.swift DelegationMergeWait).</summary>
+public enum DelegationMergeWait
+{
+    /// <summary>The child is still working: it merges once the child reports.</summary>
+    ChildRunning,
+    /// <summary>The parent pane is running: it merges once that run ends.</summary>
+    ParentRunning,
+    /// <summary>The parent's checkout has uncommitted changes to tracked files: it merges once they are committed or put back.</summary>
+    ParentChanges,
+}
+
+/// <summary>What a queued card merge does now (<see cref="DelegationMergeQueue.Step"/>).</summary>
+public abstract record DelegationMergeStep
+{
+    /// <summary>Try the merge now.</summary>
+    public sealed record Attempt : DelegationMergeStep;
+    /// <summary>Keep it queued, waiting on this.</summary>
+    public sealed record Wait(DelegationMergeWait On) : DelegationMergeStep;
+    /// <summary>Take it out of the queue: the child ended without a new report, was merged, closed, failed or discarded.</summary>
+    public sealed record Drop : DelegationMergeStep;
+}
+
+/// <summary>
+/// A human's merge from a child's card does not give up on what passes: it is queued and tried again until it goes through, is
+/// refused for good or the child can no longer merge (M/DelegationCards.swift DelegationMergeQueue). A merge conflict asks the
+/// child to resolve it, and its next report merges.
+/// </summary>
+public static class DelegationMergeQueue
+{
+    /// <summary>What a queued merge of a child in <paramref name="state"/> does now; <paramref name="parentRunning"/> is whether its parent pane runs (a closed parent pane does not).</summary>
+    public static DelegationMergeStep Step(ChildState state, bool parentRunning) => state switch
+    {
+        ChildState.Creating or ChildState.Running or ChildState.Waiting => new DelegationMergeStep.Wait(DelegationMergeWait.ChildRunning),
+        ChildState.Reported => parentRunning ? new DelegationMergeStep.Wait(DelegationMergeWait.ParentRunning) : new DelegationMergeStep.Attempt(),
+        _ => new DelegationMergeStep.Drop(),
+    };
+
+    /// <summary>What a merge refused for <paramref name="reason"/> waits on while it stays queued; null when the refusal is for good (a conflict is the child's to resolve).</summary>
+    public static DelegationMergeWait? WaitAfter(DelegationReasonCode reason) => reason switch
+    {
+        DelegationReasonCode.TrackedChanges => DelegationMergeWait.ParentChanges,
+        DelegationReasonCode.ParentBusy => DelegationMergeWait.ParentRunning,
+        _ => null,
+    };
+}
+
 /// <summary>The answer to a human's discard from a child's card, once confirmed (M/DelegationCards.swift:26-37).</summary>
 public abstract record ChildCardDiscardOutcome
 {
@@ -91,13 +137,33 @@ public sealed partial class DelegationCoordinator
         if (File.Children.Find(record => record.Id == id) is not { } child) return new ChildMergeOutcome.Failed(Locale.Get("delegation.card.error.noChild"));
         cardPanes.Clear(); cardPanes.Add(child.ParentSessionId); cardPanes.Add(child.Id);
         if (await ParentCheckout(child) is not { } checkout) return new ChildMergeOutcome.Refused(DelegationReasonCode.BranchNotCheckedOut);
-        var outcome = await ChildMerge.CardMerge(child, checkout);
+        if (await FollowParentBranch(id, checkout) is not { } followed) return new ChildMergeOutcome.Failed(Locale.Get("delegation.card.error.noChild"));
+        var outcome = await ChildMerge.CardMerge(followed, checkout);
         if (outcome is not ChildMergeOutcome.Merged { Record: var record }) return outcome;
         KeepMerge(record);
         var context = await PruneContext();
         // The merge stands and stays on record in memory; the human hears that the file could not be saved, and the next save writes it.
         try { Commit(File, context); } catch (Exception ex) when (DelegationFileStore.IsSaveFailure(ex)) { return new ChildMergeOutcome.MergedUnsaved(record, UnsavedReason(ex)); }
         return outcome;
+    }
+
+    /// <summary>
+    /// The child <paramref name="id"/> as it is once its recorded parent branch follows <paramref name="checkout"/>: when another
+    /// branch checked out there holds the recorded one's work (<see cref="ChildMerge.MergeBranch"/>), as when the recorded branch
+    /// was merged into main, the record names that branch from now on and is saved (should the disk refuse, the next save writes
+    /// it). null when no child has the id (M/DelegationCards.swift followParentBranch).
+    /// </summary>
+    internal async Task<ChildRecord?> FollowParentBranch(string id, string checkout)
+    {
+        if (File.Children.Find(record => record.Id == id) is not { } found) return null;
+        if (await ChildMerge.MergeBranch(found, checkout) is not { } branch || branch == found.ParentBranch) return File.Children.Find(record => record.Id == id);
+        var context = await PruneContext();
+        // Nothing below suspends until the new branch is kept, so the record is as it is now.
+        var index = File.Children.FindIndex(record => record.Id == id);
+        if (index < 0 || File.Children[index].ParentBranch != found.ParentBranch) return index < 0 ? null : File.Children[index];
+        var child = File.Children[index] with { ParentBranch = branch };
+        SaveOrKeep(File.SettingChild(index, child), context);
+        return child;
     }
 
     /// <summary>A merge that is made goes on record: with its child merged, or all the same should the child have moved on meanwhile.</summary>

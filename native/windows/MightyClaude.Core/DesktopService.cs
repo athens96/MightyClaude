@@ -270,6 +270,8 @@ public sealed partial class DesktopService : IAsyncDisposable
         // A run that is up takes what its start could not, and a pane's end offers again what it could not take while ending (M/AppStore.swift:1023, M/AppStore+Delegation.swift:82-92).
         // A notice turn's answer came: delegation's items that waited for it rather than steer in are offered again now (M/AppStore.swift apply).
         if (ended || value.Type == "status" && value.Status == "running" || noticeTurnEnded) OfferDelegationPending();
+        // A parent pane's end may let the merges queued under it through.
+        if (ended) KickQueuedMerges();
     }
     // Session ids this app's panes started or resumed (macOS KnownSessionIDs):
     // the "기존 세션 이어가기" list never hides them as automated runs.

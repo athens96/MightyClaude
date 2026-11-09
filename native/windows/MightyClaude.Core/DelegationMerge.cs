@@ -46,10 +46,10 @@ public static class ChildMerge
     /// <summary>
     /// The request that asks a reported <paramref name="child"/> whose card merge was refused with <c>merge_conflict</c> to bring
     /// its parent branch in, resolve the conflicts on its own branch and report again, so the human's next merge from its card
-    /// goes through (M/DelegationMerge.swift conflictPrompt).
+    /// goes through once it reports again (M/DelegationMerge.swift conflictPrompt).
     /// </summary>
     public static string ConflictPrompt(ChildRecord child) =>
-        $"[Mighty Claude] Merging your branch {child.Branch} into {child.ParentBranch} from the app was refused: the two conflict. In this worktree, bring {child.ParentBranch} into your branch with `git merge {child.ParentBranch}`, resolve every conflict so that the changes on both sides are kept (ask when a choice is unclear), run the checks that apply, and commit the merge on {child.Branch}, leaving no uncommitted changes to tracked files. Then add a short section to {ChildWorktree.ReportFileIn(child.WorktreePath)} saying what conflicted and how you resolved it. The person who sent this merges your branch from the app again. Do not push, rebase or switch branches.";
+        $"[Mighty Claude] Merging your branch {child.Branch} into {child.ParentBranch} from the app was refused: the two conflict. In this worktree, bring {child.ParentBranch} into your branch with `git merge {child.ParentBranch}`, resolve every conflict so that the changes on both sides are kept (ask when a choice is unclear), run the checks that apply, and commit the merge on {child.Branch}, leaving no uncommitted changes to tracked files. Then add a short section to {ChildWorktree.ReportFileIn(child.WorktreePath)} saying what conflicted and how you resolved it. The app merges your branch once you report again. Do not push, rebase or switch branches.";
 
     /// <summary>
     /// The parent's merge tool, fast-forward only. <paramref name="parentCheckout"/> is the parent pane's folder. The first rule
@@ -104,7 +104,8 @@ public static class ChildMerge
     /// the child's head. <paramref name="parentCheckout"/> is the parent's folder. The first rule that applies answers, and
     /// every refusal comes before any git write:
     /// 1. <c>not_reported</c>: the child is not reported.
-    /// 2. <c>branch_not_checked_out</c>: the parent checkout does not have the recorded parent branch checked out.
+    /// 2. <c>branch_not_checked_out</c>: the parent checkout does not have the recorded parent branch checked out (the coordinator
+    ///    first moves the record to the branch that holds its work, <see cref="MergeBranch"/>).
     /// 3. <c>tracked_changes</c>: the parent checkout has changes to tracked files.
     /// 4. <c>merge_conflict</c>: <c>git merge-tree</c> finds conflicts between the parent's head and the child's.
     /// The merge commit holds exactly the tree merge-tree checked (made with <c>git commit-tree</c>). The branch, index and files
@@ -201,6 +202,27 @@ public static class ChildMerge
             await PutBranchBack(); return Failed("delegation.card.error.parentMovedDuringUndo");
         }
         return new ChildUndoOutcome.Undone(record, restoresBranch);
+    }
+
+    /// <summary>
+    /// The branch a merge of <paramref name="child"/> goes into in <paramref name="parentCheckout"/>: the recorded parent branch
+    /// while it is checked out there. When another branch is checked out and holds the recorded one's work (the recorded branch's
+    /// head, or the child's base commit once that branch is gone, is an ancestor of its head), as when the recorded branch was
+    /// merged into main, that branch is. null with a detached HEAD, an unrelated branch or a failed git
+    /// (M/DelegationMerge.swift mergeBranch).
+    /// </summary>
+    public static async Task<string?> MergeBranch(ChildRecord child, string parentCheckout)
+    {
+        if (!Path.IsPathFullyQualified(parentCheckout) || parentCheckout.Contains('\0') || !IsFolder(parentCheckout)
+            || await DelegationGit.Run(["symbolic-ref", "-q", "HEAD"], parentCheckout) is not { ExitCode: 0 } current) return null;
+        var reference = DelegationGit.Line(current.Stdout);
+        if (!reference.StartsWith("refs/heads/", StringComparison.Ordinal)) return null;
+        var branch = reference["refs/heads/".Length..];
+        if (branch == child.ParentBranch) return branch;
+        if (await DelegationGit.Run(["rev-parse", "-q", "--verify", $"refs/heads/{child.ParentBranch}^{{commit}}"], parentCheckout) is not { ExitCode: 0 or 1 } recorded) return null;
+        var anchor = recorded.ExitCode == 0 ? DelegationGit.Line(recorded.Stdout) : child.BaseCommit.ToLowerInvariant();
+        if (!DelegationGit.IsObjectName(anchor) || await DelegationGit.Run(["merge-base", "--is-ancestor", anchor, "HEAD"], parentCheckout) is not { ExitCode: 0 }) return null;
+        return branch;
     }
 
     /// <summary>The head of <paramref name="branch"/> when <paramref name="folder"/> is a checkout with that branch checked out, else null.</summary>

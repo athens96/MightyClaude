@@ -495,6 +495,7 @@ internal static class Verification
         await Test("delegation: a new child needs room, and saving near the cap prunes", DelegationVerification.ANewChildNeedsRoomAndSavingNearTheCapPrunes);
         await Test("delegation: the switch, the gates and the six tools", DelegationVerification.SwitchGatesAndTheSixTools);
         await Test("delegation: the sidebar tree, rows and card actions", DelegationVerification.SidebarTreeRowsAndCards);
+        await Test("delegation: a queued merge waits for the report and an idle, clean parent", DelegationVerification.AQueuedMergeWaitsForTheReportAndAnIdleCleanParent);
         await Test("delegation: child panes, the run ledger and the pane's snapshot keys", DelegationVerification.PanesLedgerAndSnapshotKeys);
         await Test("delegation: worktrees are made beside the checkout, on a flat branch, with ignored notes", DelegationGitVerification.WorktreesAreMadeBesideTheCheckout);
         await Test("delegation: a workspace that cannot host a child is refused before anything is made", DelegationGitVerification.WorkspacesThatCannotHostAChildAreRefused);
@@ -507,6 +508,8 @@ internal static class Verification
         await Test("delegation: run ends record report revisions and send one notice each", DelegationCoordinatorVerification.RunEndsRecordReportRevisions);
         await Test("delegation: the gates, discard_human_only, the status tools and the server's protocol", DelegationCoordinatorVerification.TheGatesDiscardAndStatusTools);
         await Test("delegation: the merge tool takes turns, and follow-ups stop at two", DelegationCoordinatorVerification.TheMergeToolAndFollowUps);
+        await Test("delegation: a follow-up run that leaves the report standing sends its ended notice once", DelegationCoordinatorVerification.AFollowUpRunThatLeavesTheReportStandingStillSendsItsEndedNoticeOnce);
+        await Test("delegation: a merge follows the recorded branch into the branch that took its work", DelegationCoordinatorVerification.AMergeFollowsTheRecordedBranchIntoTheBranchThatTookItsWork);
         await Test("delegation: a card merges, undoes and discards, in the app's language", DelegationCoordinatorVerification.CardsMergeUndoAndDiscard);
         await Test("delegation: closing stores copies before cleanup, and a discard that fails says so", DelegationCoordinatorVerification.ClosingAndDiscardingThroughTheCoordinator);
         await Test("delegation: a child whose run would not end is never cleaned up", DelegationCoordinatorVerification.AChildWhoseRunWouldNotEndIsNeverCleanedUp);
@@ -521,6 +524,7 @@ internal static class Verification
         await Test("delegation: the headless server lists the six tools and forwards over the pipe", DelegationAppVerification.TheHeadlessServerListsTheSixToolsAndForwardsOverThePipe);
         await Test("delegation: the real run path attaches the server and runs a child in its worktree", DelegationAppVerification.TheRealRunPathAttachesTheServerAndRunsAChildInItsWorktree);
         await Test("delegation: the desktop service hosts delegation and offers the window its entry points", DelegationAppVerification.TheServiceHostsDelegationAndOffersTheWindowItsEntryPoints);
+        await Test("delegation: a card's merge is queued while the child works or the parent runs, then goes through by itself", DelegationAppVerification.ACardMergeIsQueuedAndGoesThroughByItself);
         await Test("delegation: a junction in a child worktree never reaches what it points to", DelegationAppVerification.AJunctionInAChildWorktreeNeverReachesWhatItPointsTo);
         await Test("delegation: the window says each state, action and answer in the app's language", DelegationAppVerification.TheWindowSaysEachStateActionAndAnswerInTheAppsLanguage);
         await Test("delegation: a host that throws is a host that did not take the call", DelegationAppVerification.AHostThatThrowsIsAHostThatDidNotTakeTheCall);

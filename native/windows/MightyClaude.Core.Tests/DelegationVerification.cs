@@ -58,7 +58,7 @@ internal static class DelegationVerification
         var after = new Dictionary<ChildState, Dictionary<ChildStateEvent, ChildState>>
         {
             [ChildState.Creating] = new() { [ChildStateEvent.StartRun] = ChildState.Running, [ChildStateEvent.FailStart] = ChildState.Failed, [ChildStateEvent.ClosePane] = ChildState.Closed, [ChildStateEvent.Discard] = ChildState.Discarded },
-            [ChildState.Running] = new() { [ChildStateEvent.AskPermission] = ChildState.Waiting, [ChildStateEvent.EndWithReport] = ChildState.Reported, [ChildStateEvent.EndWithoutReport] = ChildState.Ended, [ChildStateEvent.QuitApp] = ChildState.Interrupted, [ChildStateEvent.ClosePane] = ChildState.Closed, [ChildStateEvent.Discard] = ChildState.Discarded },
+            [ChildState.Running] = new() { [ChildStateEvent.AskPermission] = ChildState.Waiting, [ChildStateEvent.EndWithReport] = ChildState.Reported, [ChildStateEvent.EndWithoutReport] = ChildState.Ended, [ChildStateEvent.EndUnchanged] = ChildState.Reported, [ChildStateEvent.QuitApp] = ChildState.Interrupted, [ChildStateEvent.ClosePane] = ChildState.Closed, [ChildStateEvent.Discard] = ChildState.Discarded },
             [ChildState.Waiting] = new() { [ChildStateEvent.AnswerPermission] = ChildState.Running, [ChildStateEvent.ClosePane] = ChildState.Closed, [ChildStateEvent.Discard] = ChildState.Discarded },
             [ChildState.Reported] = new() { [ChildStateEvent.StartRun] = ChildState.Running, [ChildStateEvent.Merge] = ChildState.Merged, [ChildStateEvent.ClosePane] = ChildState.Closed, [ChildStateEvent.Discard] = ChildState.Discarded },
             [ChildState.Ended] = new() { [ChildStateEvent.StartRun] = ChildState.Running, [ChildStateEvent.ClosePane] = ChildState.Closed, [ChildStateEvent.Discard] = ChildState.Discarded },
@@ -84,7 +84,7 @@ internal static class DelegationVerification
                 if (expected) moves++;
             }
         }
-        Check(allowed == 30 && refused == 80 && moves == 29, "exactly the ontology's 30 allowed pairs, 80 refusals and 29 moves");
+        Check(allowed == 31 && refused == 89 && moves == 29, "exactly the ontology's 31 allowed pairs, 89 refusals and 29 moves");
         // Undo of a merge: back to reported while the pane is open; a closed child stays closed. A failed start is only discarded. Discarded is final.
         Check(!ChildState.Closed.CanMove(ChildState.Reported) && !ChildState.Closed.CanMove(ChildState.Merged) && !ChildState.Closed.CanMove(ChildState.Running), "a closed child is never reopened");
         Check(ChildState.Failed.After(ChildStateEvent.ClosePane) is null && ChildState.Failed.After(ChildStateEvent.StartRun) is null && events.All(change => ChildState.Discarded.After(change) is null), "failed is only discarded, and discarded is final");
@@ -443,6 +443,24 @@ internal static class DelegationVerification
 
     private static RunSession Pane(string id, string workspace, string? parent = null) => new() { Id = id, WorkspaceId = workspace, Title = id, ParentSessionId = parent };
     private static DelegationChildRow Row(string id, string parent, ChildState state = ChildState.Running, string? checkout = null) => new(id, parent, state, ParentBranch: "main", ParentCheckout: checkout);
+
+    internal static Task AQueuedMergeWaitsForTheReportAndAnIdleCleanParent()
+    {
+        // A working child's card offers the merge that waits for its report; an ended one does not.
+        foreach (var working in new[] { ChildState.Running, ChildState.Waiting }) SameList(Row("a", "p", working).CardActions, [DelegationCardAction.Merge, DelegationCardAction.Discard], $"a {working} child's card offers the merge that waits");
+        SameList(Row("a", "p", ChildState.Ended).CardActions, [DelegationCardAction.Discard], "an ended child's card");
+        // A queued merge waits for the child's report and an idle, clean parent.
+        foreach (var working in new[] { ChildState.Creating, ChildState.Running, ChildState.Waiting })
+            foreach (var parentRunning in new[] { false, true }) Same(DelegationMergeQueue.Step(working, parentRunning), new DelegationMergeStep.Wait(DelegationMergeWait.ChildRunning), $"{working} waits for its report");
+        Same(DelegationMergeQueue.Step(ChildState.Reported, false), new DelegationMergeStep.Attempt(), "a reported child is merged");
+        Same(DelegationMergeQueue.Step(ChildState.Reported, true), new DelegationMergeStep.Wait(DelegationMergeWait.ParentRunning), "a running parent is waited for");
+        foreach (var over in new[] { ChildState.Ended, ChildState.Interrupted, ChildState.Merged, ChildState.Failed, ChildState.Closed, ChildState.Discarded }) Same(DelegationMergeQueue.Step(over, false), new DelegationMergeStep.Drop(), $"{over} leaves the queue");
+        // Uncommitted changes and a busy parent pass; every other refusal is for good.
+        Same(DelegationMergeQueue.WaitAfter(DelegationReasonCode.TrackedChanges), DelegationMergeWait.ParentChanges, "uncommitted changes pass");
+        Same(DelegationMergeQueue.WaitAfter(DelegationReasonCode.ParentBusy), DelegationMergeWait.ParentRunning, "a busy parent passes");
+        foreach (var reason in Enum.GetValues<DelegationReasonCode>().Where(reason => reason is not (DelegationReasonCode.TrackedChanges or DelegationReasonCode.ParentBusy))) Check(DelegationMergeQueue.WaitAfter(reason) is null, $"{reason} is for good");
+        return Task.CompletedTask;
+    }
 
     internal static Task SidebarTreeRowsAndCards()
     {
