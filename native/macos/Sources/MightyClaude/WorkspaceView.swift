@@ -567,6 +567,9 @@ struct WorkspaceView: View {
             .help(workspace.remote == nil ? L("conversationSearch.open") + " (⇧⌘F)" : L("remote.workspace.paneUnavailable"))
             .accessibilityLabel(L("conversationSearch.open"))
             .accessibilityIdentifier("workspace-conversation-search-\(workspace.id)")
+            .sheet(isPresented: $store.showsUsageReport) {
+                UsageReportSheet(onClose: { store.showsUsageReport = false }).environmentObject(store)
+            }
             .sheet(item: $store.conversationSearch) { item in
                 ConversationSearchSheet(workspace: item, onClose: { store.conversationSearch = nil }).environmentObject(store)
             }

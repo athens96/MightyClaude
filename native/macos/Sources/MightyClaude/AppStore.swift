@@ -33,6 +33,9 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var savedPrompts: [SavedPrompt] = []
     /// The pane whose 저장한 요청 panel is open (`/prompts`).
     @Published var managingPromptsFor: String?
+    /// 사용량 집계 (`<data>/usage-ledger.json`), each finished run's cost and tokens.
+    @Published var usageLedger = UsageLedger()
+    @Published var showsUsageReport = false
     @Published var focusSearch = false
     @Published var drafts: [String: String] = [:] {
         didSet {
@@ -561,6 +564,7 @@ final class AppStore: ObservableObject, DelegationHost {
         await delegation?.interruptRunsKilledByQuit()
         guard !ending, !Task.isCancelled else { loading = false; return }
         savedPrompts = SavedPrompts.load(directory: dataDirectory)
+        usageLedger = UsageLedger.load(directory: dataDirectory)
         isLoaded = true
         checkResourceHealth()
         // The bundled and user styles are read once at start; a workspace's
@@ -1551,6 +1555,7 @@ final class AppStore: ObservableObject, DelegationHost {
         if event.type == "status", let provider = snapshot.sessions.first(where: { $0.id == event.sessionId })?.provider { providerLastActive[provider] = receivedAt }
         companion.receive(event, snapshot: snapshot, at: receivedAt)
         if event.type == "status", let status = event.status, ["completed", "stopped", "error"].contains(status) { delegationRunEnded(event.sessionId, status: status) }
+        if event.type == "status", let status = event.status, ["completed", "stopped", "error"].contains(status) { recordRunUsage(event.sessionId) }
         if event.type == "status", let status = event.status, status != "running" { settleQueue(event.sessionId, status: status) }
         // Files a finished run wrote may now be readable pictures.
         if event.type == "status", ["completed", "error", "stopped"].contains(event.status ?? "") { AgentImageLibrary.shared.forgetMissingFiles() }

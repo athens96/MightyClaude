@@ -106,6 +106,8 @@ struct MightyClaudeApp: App {
                     .keyboardShortcut("f", modifiers: [.command, .shift])
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.activeWorkspace?.remote != nil || store.hasModal)
                 Button(L("workMap.open")) { store.openWorkMapPane() }
+                Button(L("usage.open")) { store.showsUsageReport = true }
+                    .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.activeWorkspace?.remote != nil || store.hasModal)
                 Divider()
                 Button(L("menu.reconnectInputMethod")) { store.reconnectInputMethod(editor: nil) }
