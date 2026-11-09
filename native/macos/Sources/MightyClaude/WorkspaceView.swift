@@ -8,6 +8,8 @@ struct WorkspaceView: View {
     /// ⌘K asked for the search while the sidebar was folded: it takes focus once the sidebar is back.
     @ViewState private var focusSearchOnUnfold = false
     @StateObject private var gitState = WorkspaceGitState()
+    /// The workspace whose 커밋·PR panel is open (the git badge).
+    @ViewState private var gitWorkbench: Workspace?
     @StateObject private var accountUsage = AccountUsageStatusController()
 
     var body: some View {
@@ -530,7 +532,14 @@ struct WorkspaceView: View {
                     .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
                     HStack(spacing: DesignMetrics.Spacing.md) {
                         Text(workspace.path).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                        if let git = gitState.info(for: workspace) { WorkspaceGitBadge(info: git) }
+                        if let git = gitState.info(for: workspace) {
+                            Button { gitWorkbench = workspace } label: { WorkspaceGitBadge(info: git) }
+                                .buttonStyle(.plain).help(L("git.workbench.open"))
+                                .accessibilityIdentifier("workspace-git-workbench")
+                                .sheet(item: $gitWorkbench) { item in
+                                    GitWorkbenchSheet(workspace: item, onClose: { gitWorkbench = nil }).environmentObject(store)
+                                }
+                        }
                         Spacer(minLength: 0)
                             .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
                     }
