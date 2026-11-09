@@ -3220,5 +3220,21 @@
   "conversationSearch.matches": "맞는 메시지 {count}개",
   "conversationSearch.resume": "이어가기",
   "conversationSearch.export": "Markdown으로 저장…",
-  "conversationSearch.speaker.user": "나"
+  "conversationSearch.speaker.user": "나",
+  "slash.builtin.prompts": "저장한 요청 관리",
+  "slash.source.savedPrompt": "저장한 요청",
+  "savedPrompts.title": "저장한 요청",
+  "savedPrompts.subtitle": "입력창에서 /prompt:이름 으로 불러옵니다",
+  "savedPrompts.new": "새 요청",
+  "savedPrompts.empty": "저장한 요청이 없습니다.",
+  "savedPrompts.scope.all": "모든 워크스페이스",
+  "savedPrompts.scope.workspace": "이 워크스페이스",
+  "savedPrompts.name": "이름 (예: review-pr)",
+  "savedPrompts.nameRule": "이름에는 글자, 숫자, -, _ 만 씁니다.",
+  "savedPrompts.invokeAs": "{command} 로 불러옵니다",
+  "savedPrompts.placeholders": "자리표시자: {branch} 지금 브랜치 · {workspace} 워크스페이스 이름 · {date} 오늘 날짜 · {clipboard} 클립보드 글",
+  "savedPrompts.shareAll": "모든 워크스페이스에서 쓰기",
+  "savedPrompts.delete": "지우기",
+  "savedPrompts.use": "입력창에 넣기",
+  "savedPrompts.save": "저장"
 }

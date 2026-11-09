@@ -29,6 +29,10 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var search = ""
     /// The workspace whose 대화 검색 panel is open.
     @Published var conversationSearch: Workspace?
+    /// 저장한 요청 (`<data>/saved-prompts.json`), read when the app loads.
+    @Published var savedPrompts: [SavedPrompt] = []
+    /// The pane whose 저장한 요청 panel is open (`/prompts`).
+    @Published var managingPromptsFor: String?
     @Published var focusSearch = false
     @Published var drafts: [String: String] = [:] {
         didSet {
@@ -556,6 +560,7 @@ final class AppStore: ObservableObject, DelegationHost {
         // Children whose runs quitting killed come back interrupted, before any pane runs again.
         await delegation?.interruptRunsKilledByQuit()
         guard !ending, !Task.isCancelled else { loading = false; return }
+        savedPrompts = SavedPrompts.load(directory: dataDirectory)
         isLoaded = true
         checkResourceHealth()
         // The bundled and user styles are read once at start; a workspace's

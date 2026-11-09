@@ -3220,5 +3220,21 @@
   "conversationSearch.matches": "{count} 条匹配消息",
   "conversationSearch.resume": "继续",
   "conversationSearch.export": "另存为 Markdown…",
-  "conversationSearch.speaker.user": "我"
+  "conversationSearch.speaker.user": "我",
+  "slash.builtin.prompts": "管理已保存的请求",
+  "slash.source.savedPrompt": "已保存的请求",
+  "savedPrompts.title": "已保存的请求",
+  "savedPrompts.subtitle": "在输入框中输入 /prompt:名称 来使用",
+  "savedPrompts.new": "新请求",
+  "savedPrompts.empty": "还没有已保存的请求。",
+  "savedPrompts.scope.all": "所有工作区",
+  "savedPrompts.scope.workspace": "此工作区",
+  "savedPrompts.name": "名称（例如 review-pr）",
+  "savedPrompts.nameRule": "名称只能使用字母、数字、- 和 _。",
+  "savedPrompts.invokeAs": "用 {command} 调用",
+  "savedPrompts.placeholders": "占位符：{branch} 当前分支 · {workspace} 工作区名称 · {date} 今天日期 · {clipboard} 剪贴板文本",
+  "savedPrompts.shareAll": "在所有工作区使用",
+  "savedPrompts.delete": "删除",
+  "savedPrompts.use": "放入输入框",
+  "savedPrompts.save": "保存"
 }

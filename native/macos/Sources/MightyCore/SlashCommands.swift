@@ -6,6 +6,10 @@ import Foundation
 public enum SlashCommandAction: Sendable, Equatable {
     case openPlugins, newConversation, showUsage, openSettings, rename, help
     case setModel(String), setPermission(String)
+    /// A saved request (`SavedPrompts`) by its id: its text goes into the composer.
+    case insertPrompt(String)
+    /// Opens the saved requests panel.
+    case managePrompts
 }
 
 /// A built-in whose argument the palette completes after `/name `.
@@ -84,24 +88,25 @@ public enum SlashCommandCatalog {
         let model = app("model", L("slash.builtin.model"), argument: .model)
         let rename = app("rename", L("slash.builtin.rename"), action: .rename)
         let help = app("help", L("slash.builtin.help"), action: .help)
+        let prompts = app("prompts", L("slash.builtin.prompts"), action: .managePrompts)
         switch provider {
         case "claude":
             return [app("plugin", L("slash.builtin.plugin"), action: .openPlugins), model,
                     app("permissions", L("slash.builtin.permission"), argument: .permission),
                     app("clear", L("slash.builtin.newConversation"), action: .newConversation),
                     app("cost", L("slash.builtin.usage"), action: .showUsage), app("usage", L("slash.builtin.usage"), action: .showUsage),
-                    app("config", L("slash.builtin.settings"), action: .openSettings), rename, help]
+                    app("config", L("slash.builtin.settings"), action: .openSettings), rename, prompts, help]
         case "codex":
             return [app("plugins", L("slash.builtin.plugin"), action: .openPlugins), model,
                     app("approvals", L("slash.builtin.permission"), argument: .permission),
                     app("new", L("slash.builtin.newConversation"), action: .newConversation),
                     app("status", L("slash.builtin.usage"), action: .showUsage),
-                    app("settings", L("slash.builtin.settings"), action: .openSettings), rename, help]
+                    app("settings", L("slash.builtin.settings"), action: .openSettings), rename, prompts, help]
         case "gemini":
             return [model, app("permissions", L("slash.builtin.permission"), argument: .permission),
                     app("clear", L("slash.builtin.newConversation"), action: .newConversation),
                     app("usage", L("slash.builtin.usage"), action: .showUsage),
-                    app("config", L("slash.builtin.settings"), action: .openSettings), rename, help]
+                    app("config", L("slash.builtin.settings"), action: .openSettings), rename, prompts, help]
         default: return []
         }
     }

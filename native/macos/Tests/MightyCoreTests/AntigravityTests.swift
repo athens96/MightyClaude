@@ -311,7 +311,7 @@ struct AntigravityTests {
 
     @Test func builtinSlashCommandsAreAnsweredByTheApp() {
         let commands = SlashCommandCatalog.builtins(provider: "gemini")
-        #expect(commands.map(\.invocation) == ["model", "permissions", "clear", "usage", "config", "rename", "help"])
+        #expect(commands.map(\.invocation) == ["model", "permissions", "clear", "usage", "config", "rename", "prompts", "help"])
         #expect(commands.allSatisfy { $0.origin == .app && ($0.action != nil || $0.argument != nil) })
     }
 }

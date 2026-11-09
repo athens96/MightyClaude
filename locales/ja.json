@@ -3220,5 +3220,21 @@
   "conversationSearch.matches": "一致するメッセージ{count}件",
   "conversationSearch.resume": "続ける",
   "conversationSearch.export": "Markdown で保存…",
-  "conversationSearch.speaker.user": "自分"
+  "conversationSearch.speaker.user": "自分",
+  "slash.builtin.prompts": "保存したリクエストを管理",
+  "slash.source.savedPrompt": "保存したリクエスト",
+  "savedPrompts.title": "保存したリクエスト",
+  "savedPrompts.subtitle": "入力欄で /prompt:名前 と入力して呼び出します",
+  "savedPrompts.new": "新しいリクエスト",
+  "savedPrompts.empty": "保存したリクエストはありません。",
+  "savedPrompts.scope.all": "すべてのワークスペース",
+  "savedPrompts.scope.workspace": "このワークスペース",
+  "savedPrompts.name": "名前（例: review-pr）",
+  "savedPrompts.nameRule": "名前には文字・数字・-・_ のみ使えます。",
+  "savedPrompts.invokeAs": "{command} で呼び出します",
+  "savedPrompts.placeholders": "プレースホルダー: {branch} 現在のブランチ · {workspace} ワークスペース名 · {date} 今日の日付 · {clipboard} クリップボードの文字",
+  "savedPrompts.shareAll": "すべてのワークスペースで使う",
+  "savedPrompts.delete": "削除",
+  "savedPrompts.use": "入力欄に入れる",
+  "savedPrompts.save": "保存"
 }

@@ -50,3 +50,11 @@
 - 요청과 답 메시지만 본다: Claude `message.content`의 text 조각, Codex `response_item`의 `message`와 `user_message`/`agent_message` 이벤트, 그 밖의 `role`+`content|parts|text` 줄. 도구 호출과 결과(`tool_result`, `function_call_output`)는 보지 않는다.
 - 모든 단어(대소문자 무시)가 한 메시지에 들어 있어야 맞다. 결과는 최신 세션부터 최대 50개, 첫 맞은 메시지의 앞뒤 60자와 맞은 메시지 수를 보인다.
 - **이어가기**는 세션 이어가기와 같은 `resumeSession`으로 새 창을 연다. **Markdown으로 저장…**은 세션을 화자 제목 + 본문으로 저장한다(Codex가 같은 말을 두 번 남긴 줄은 한 번만).
+
+## 6. 저장한 요청
+
+- 모델: `MightyCore/SavedPrompts.swift`, 검사: `Tests/MightyCoreTests/SavedPromptsTests.swift`. 파일: `<데이터 폴더>/saved-prompts.json`(앱이 열릴 때 읽는다).
+- 쓰기: 입력창에서 `/prompt`를 치면 저장한 요청이 `/prompt:<이름>`으로 슬래시 목록에 함께 뜬다. 고르면 그 글이 자리표시자를 채운 채 입력창에 들어간다(보내지는 않는다).
+- 자리표시자: `{branch}` 지금 브랜치(로컬 워크스페이스, 글에 있을 때만 git을 읽는다), `{workspace}` 워크스페이스 이름, `{date}` 오늘(ISO 날짜), `{clipboard}` 클립보드 글. 그 밖의 `{말}`은 그대로 둔다.
+- 관리: 새 내장 명령 `/prompts`(Claude·Codex·Antigravity 공통)가 **저장한 요청** 창을 연다. 열 때 입력창의 글이 새 요청 칸에 미리 들어간다. 이름은 글자·숫자·`-`·`_`만(공백은 `-`, 40자). 범위는 모든 워크스페이스 또는 이 워크스페이스이고, 같은 이름이면 워크스페이스 것이 우선한다.
+- 휴대폰 명령 목록에는 `/prompts`와 저장한 요청을 보내지 않는다(휴대폰은 이름을 CLI 스킬로 보낼 것이므로). 휴대폰에서 쓰려면 프로토콜에 별도 항목이 필요하다.

@@ -544,7 +544,9 @@ public enum MobileCommandSupport {
 
     static func listed(_ command: SlashCommand) -> Bool {
         switch command.action {
-        case .openPlugins, .openSettings: return false
+        case .openPlugins, .openSettings, .managePrompts: return false
+        // A saved request's text is the Mac's to insert; the phone would send its name as a skill.
+        case .insertPrompt: return false
         // Argument choices (`/model opus`) belong to a palette, not to a list.
         case .setModel, .setPermission: return false
         default: return true

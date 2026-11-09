@@ -820,6 +820,9 @@ struct SessionPaneView: View {
         // A different style means a different catalogue: the group the user
         // was in and the reset chip both belong to the one they left.
         .onChange(of: session.mightyStyle) { _, _ in guidedSelection = GuidedSelection() }
+        .sheet(isPresented: Binding(get: { store.managingPromptsFor == session.id }, set: { if !$0 { store.managingPromptsFor = nil } })) {
+            SavedPromptsSheet(sessionID: session.id, onClose: { store.managingPromptsFor = nil }).environmentObject(store)
+        }
         .sheet(isPresented: $comparing) {
             CompareRunSheet(parentId: session.id, onClose: { comparing = false }).environmentObject(store)
         }
@@ -1039,6 +1042,15 @@ struct SessionPaneView: View {
     /// inserted as `/name ` for the CLI.
     private func applyCompletion(_ command: SlashCommand) {
         guard !store.hasModal else { return }
+        if case .insertPrompt(let promptId) = command.action {
+            paletteDismissedFor = nil
+            Task {
+                guard let text = await store.savedPromptText(promptId, sessionID: session.id) else { return }
+                composerInput.replaceDraft(text)
+                store.drafts[session.id] = text
+            }
+            return
+        }
         if let action = command.action {
             guard store.performSlashAction(action, sessionID: session.id) else { return }
             paletteDismissedFor = nil

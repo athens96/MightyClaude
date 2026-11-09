@@ -62,14 +62,14 @@ struct SlashCommandTests {
     @Test func builtinsUseEachCLIsOwnNamesAndRunInTheApp() {
         LocaleOverride.$language.withValue(.ko) {
             let claude = SlashCommandCatalog.builtins(provider: "claude")
-            #expect(claude.map(\.invocation) == ["plugin", "model", "permissions", "clear", "cost", "usage", "config", "rename", "help"])
+            #expect(claude.map(\.invocation) == ["plugin", "model", "permissions", "clear", "cost", "usage", "config", "rename", "prompts", "help"])
             #expect(claude.allSatisfy { $0.source == "앱 기능" && ($0.action != nil) != ($0.argument != nil) })
             #expect(claude.first { $0.invocation == "plugin" }?.action == .openPlugins)
             #expect(claude.first { $0.invocation == "model" }?.argument == .model)
             #expect(claude.first { $0.invocation == "permissions" }?.argument == .permission)
-            #expect(SlashCommandCatalog.builtins(provider: "codex").map(\.invocation) == ["plugins", "model", "approvals", "new", "status", "settings", "rename", "help"])
+            #expect(SlashCommandCatalog.builtins(provider: "codex").map(\.invocation) == ["plugins", "model", "approvals", "new", "status", "settings", "rename", "prompts", "help"])
             let antigravity = SlashCommandCatalog.builtins(provider: "gemini")
-            #expect(antigravity.map(\.invocation) == ["model", "permissions", "clear", "usage", "config", "rename", "help"])
+            #expect(antigravity.map(\.invocation) == ["model", "permissions", "clear", "usage", "config", "rename", "prompts", "help"])
             #expect(!antigravity.contains { $0.action == .openPlugins })
             #expect(SlashCommandCatalog.builtins(provider: "shell").isEmpty)
             let help = SlashCommandCatalog.helpText(provider: "claude")

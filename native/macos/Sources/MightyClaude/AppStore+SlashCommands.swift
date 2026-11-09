@@ -29,7 +29,8 @@ extension AppStore {
         if let query = SlashCommandCatalog.query(from: draft) {
             // A scanned command with a built-in's name would collide on id; the built-in wins.
             let names = Set(builtins.map(\.invocation))
-            return SlashCommandCatalog.filter(builtins + slashCommands(for: session).filter { !names.contains($0.invocation) }, query: query)
+            let saved = SavedPrompts.commands(savedPrompts, workspaceId: session.workspaceId, source: L("slash.source.savedPrompt"))
+            return SlashCommandCatalog.filter(builtins + saved + slashCommands(for: session).filter { !names.contains($0.invocation) }, query: query)
         }
         guard let parsed = SlashCommandCatalog.argumentQuery(from: draft),
               let argument = builtins.first(where: { $0.invocation == parsed.command })?.argument else { return [] }
@@ -88,6 +89,10 @@ extension AppStore {
         case .openSettings: showSettings = true
         case .rename: beginRenameSession(id)
         case .help: slashNote(id, SlashCommandCatalog.helpText(provider: session.provider))
+        case .managePrompts: managingPromptsFor = id
+        case .insertPrompt:
+            // The composer puts the text in itself (`savedPromptText`); nothing runs here.
+            return false
         case .setModel(let model):
             guard session.status != "running", !pendingRuns.contains(id) else { slashNote(id, L("slash.note.modelRunning")); return true }
             var chosen = session; chosen.model = model
@@ -161,5 +166,25 @@ extension AppStore {
                 self.reconcileAskTargets()
             }
         }
+    }
+
+    /// A saved request's text for the pane `id`, its placeholders filled: the
+    /// workspace's branch and name, today's date, and the clipboard's text.
+    func savedPromptText(_ promptId: String, sessionID id: String) async -> String? {
+        guard let prompt = savedPrompts.first(where: { $0.id == promptId }), let session = snapshot.sessions.first(where: { $0.id == id }) else { return nil }
+        let workspace = snapshot.workspaces.first { $0.id == session.workspaceId }
+        var values = ["workspace": workspace?.name ?? "", "date": Date().formatted(.iso8601.year().month().day()),
+                      "clipboard": NSPasteboard.general.string(forType: .string) ?? ""]
+        if prompt.text.contains("{branch}"), let workspace, workspace.remote == nil {
+            values["branch"] = await GitWorkbench.currentBranch(root: URL(fileURLWithPath: workspace.path, isDirectory: true)) ?? ""
+        }
+        return SavedPrompts.expand(prompt.text, values: values)
+    }
+
+    /// Replaces the saved requests and writes them; false (and `error` set) when the file could not be written.
+    @discardableResult
+    func saveSavedPrompts(_ prompts: [SavedPrompt]) -> Bool {
+        do { try SavedPrompts.save(prompts, directory: dataDirectory); savedPrompts = prompts; return true }
+        catch { self.error = error.localizedDescription; return false }
     }
 }

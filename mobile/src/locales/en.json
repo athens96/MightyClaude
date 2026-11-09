@@ -3220,5 +3220,21 @@
   "conversationSearch.matches": "{count} matching messages",
   "conversationSearch.resume": "Continue",
   "conversationSearch.export": "Save as Markdown…",
-  "conversationSearch.speaker.user": "Me"
+  "conversationSearch.speaker.user": "Me",
+  "slash.builtin.prompts": "Manage saved requests",
+  "slash.source.savedPrompt": "Saved request",
+  "savedPrompts.title": "Saved requests",
+  "savedPrompts.subtitle": "Type /prompt:name in the composer to use one",
+  "savedPrompts.new": "New request",
+  "savedPrompts.empty": "No saved requests yet.",
+  "savedPrompts.scope.all": "All workspaces",
+  "savedPrompts.scope.workspace": "This workspace",
+  "savedPrompts.name": "Name (e.g. review-pr)",
+  "savedPrompts.nameRule": "Names use letters, digits, - and _ only.",
+  "savedPrompts.invokeAs": "Use it as {command}",
+  "savedPrompts.placeholders": "Placeholders: {branch} current branch · {workspace} workspace name · {date} today · {clipboard} clipboard text",
+  "savedPrompts.shareAll": "Use in every workspace",
+  "savedPrompts.delete": "Delete",
+  "savedPrompts.use": "Put in composer",
+  "savedPrompts.save": "Save"
 }
