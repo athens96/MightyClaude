@@ -483,6 +483,18 @@ internal static class AppUpdateVerification
 
             var armPackage = MakeZip(directory, "arm-ok.zip", zip => AddEntry(zip, "MightyClaude.exe", FakeExecutable("arm64")));
             Check(Directory.Exists(AppUpdateService.Stage(armPackage, "arm64")), "an arm64 package must stage on arm64");
+
+            // The renamed version carries MightyCode.exe: it stages, and it is the helper the old app starts.
+            var renamed = MakeZip(directory, "renamed.zip", zip => AddEntry(zip, "native-windows-x64/MightyCode.exe", exe));
+            var renamedFolder = AppUpdateService.Stage(renamed, "x64");
+            Check(File.Exists(Path.Combine(renamedFolder, "MightyCode.exe")), "a package of the renamed version must stage");
+            var plan = AppUpdateInstallPlan.Create(renamedFolder, Path.Combine(directory, "install"), renamed, new string('a', 64), 1, 1);
+            Check(Path.GetFileName(plan.StagedHelperExecutable) == "MightyCode.exe", "the renamed version's own executable must be the helper");
+            Refuse("both.zip", zip =>
+            {
+                AddEntry(zip, "MightyClaude.exe", exe);
+                AddEntry(zip, "MightyCode.exe", exe);
+            }, "x64", "a package with both executables");
             return Task.CompletedTask;
         }
         finally { Directory.Delete(directory, true); }

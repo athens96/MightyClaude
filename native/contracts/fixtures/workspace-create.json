@@ -1,9 +1,9 @@
 {
   "about": "Workspace create rules shared by MightyCore WorkspaceCreate.swift and MightyClaude.Core WorkspaceCreate.cs (docs/superpowers/specs/2026-10-26-workspace-create-design.md).",
   "repoNames": [
-    { "url": "https://github.com/athens96/MightyClaude.git", "name": "MightyClaude" },
-    { "url": "https://github.com/athens96/MightyClaude", "name": "MightyClaude" },
-    { "url": "https://github.com/athens96/MightyClaude/", "name": "MightyClaude" },
+    { "url": "https://github.com/athens96/MightyCode.git", "name": "MightyCode" },
+    { "url": "https://github.com/athens96/MightyCode", "name": "MightyCode" },
+    { "url": "https://github.com/athens96/MightyCode/", "name": "MightyCode" },
     { "url": "https://gitlab.com/group/sub/project.git", "name": "project" },
     { "url": "git@github.com:owner/my-repo.git", "name": "my-repo" },
     { "url": "ssh://git@example.com:2222/owner/tool.git", "name": "tool" },

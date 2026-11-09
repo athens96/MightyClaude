@@ -33,6 +33,14 @@ public sealed class AppUpdateService : IDisposable
     public const long MaxPackageBytes = 512L * 1024 * 1024;
     public const string PackageName = "MightyClaude-windows.zip";
     public const string ExecutableName = "MightyClaude.exe";
+    /// <summary>
+    /// The executable the next version carries once the app is renamed to Mighty Code: the last version under the old name
+    /// stages and starts it as the helper, so its own update takes the first under the new one (docs/rename-identifiers.md;
+    /// M/AppUpdate.swift successorBundleIdentifiers).
+    /// </summary>
+    public const string SuccessorExecutableName = "MightyCode.exe";
+    /// <summary>The executables a package may carry: this version's and the one it hands on to.</summary>
+    public static IReadOnlyList<string> AcceptedExecutableNames { get; } = [ExecutableName, SuccessorExecutableName];
     private const int MaxRedirects = 5;
 
     private readonly string stateDirectory;
@@ -195,8 +203,8 @@ public sealed class AppUpdateService : IDisposable
             }
         }
 
-        // The package shape: exactly one MightyClaude.exe, at the expected place.
-        var executables = Directory.GetFiles(root, ExecutableName, SearchOption.AllDirectories);
+        // The package shape: exactly one MightyClaude.exe (or, from the renamed version on, MightyCode.exe), at the expected place.
+        var executables = AcceptedExecutableNames.SelectMany(name => Directory.GetFiles(root, name, SearchOption.AllDirectories)).ToArray();
         if (executables.Length != 1)
             throw new InvalidOperationException(Locale.Get("appUpdate.error.executableCount", new Dictionary<string, string> { ["name"] = ExecutableName, ["count"] = executables.Length.ToString(CultureInfo.InvariantCulture) }));
 

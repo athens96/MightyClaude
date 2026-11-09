@@ -264,7 +264,20 @@ public actor AppUpdateService {
         return app
     }
 
-    /// The identity check, run at stage time and again right before install.
+    /// The bundle id each app id hands its updates on to: the app renamed to
+    /// Mighty Code takes `dev.mightycode.native`, so the last version under the
+    /// old id installs the first under the new one (docs/rename-identifiers.md).
+    public static let successorBundleIdentifiers = ["dev.mightyclaude.native": "dev.mightycode.native"]
+
+    /// Whether an update whose bundle id is `candidate` may replace the app
+    /// whose id is `expected`: the same id, or the one it hands on to.
+    public static func accepts(_ candidate: String?, for expected: String) -> Bool {
+        guard let candidate else { return false }
+        return candidate == expected || successorBundleIdentifiers[expected] == candidate
+    }
+
+    /// The identity check, run at stage time and again right before install:
+    /// the bundle id is `expectedBundleIdentifier` or its successor.
     public static func validate(app: URL, within folder: URL? = nil, expectedBundleIdentifier: String) throws {
         let plist = app.appendingPathComponent("Contents/Info.plist")
         let binaryDirectory = app.appendingPathComponent("Contents/MacOS", isDirectory: true)
@@ -273,7 +286,7 @@ public actor AppUpdateService {
         }
         if let folder, !app.resolvingSymlinksInPath().path.hasPrefix(folder.resolvingSymlinksInPath().path + "/") { throw MightyError(L("appUpdate.error.bundleLocation")) }
         guard let data = try? Data(contentsOf: plist), let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              info["CFBundleIdentifier"] as? String == expectedBundleIdentifier, let executable = info["CFBundleExecutable"] as? String, !executable.contains("/") else {
+              accepts(info["CFBundleIdentifier"] as? String, for: expectedBundleIdentifier), let executable = info["CFBundleExecutable"] as? String, !executable.contains("/") else {
             throw MightyError(L("appUpdate.error.bundleIdentity"))
         }
         let binary = binaryDirectory.appendingPathComponent(executable)
@@ -312,13 +325,23 @@ public actor AppUpdateService {
     /// the old process is gone. Every build carries a fresh ad-hoc signature,
     /// so duplicate registrations of the same bundle id are what confuse the
     /// text-input session (Korean composition falling apart into jamo).
-    public static func installScript(stagedApp: URL, destination: URL, pid: Int32, relaunch: Bool = true) -> String {
+    ///
+    /// `replacing` is the installed app when the new bundle lands under
+    /// another name (`MightyClaude.app` → `Mighty Code.app` beside it): the
+    /// installed app is the one moved aside, checked for running and put back
+    /// on failure, an app already at `destination` gives way, and the old
+    /// one is deleted once the new one is in place. `runningExecutable` is the
+    /// installed app's executable, the one the running check looks for.
+    public static func installScript(stagedApp: URL, destination: URL, replacing: URL? = nil, runningExecutable: String = "MightyClaude", pid: Int32, relaunch: Bool = true) -> String {
         func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
         /// `pgrep` and `grep -E` take extended regular expressions; these must match literally.
         func literalPattern(_ value: String) -> String {
             value.map { "\\.[]()*+?{}|^$".contains($0) ? "\\" + String($0) : String($0) }.joined()
         }
-        let executable = "^" + literalPattern(destination.path + "/Contents/MacOS/MightyClaude") + "( |$)"
+        let replaced = replacing.flatMap { $0.standardizedFileURL.path == destination.standardizedFileURL.path ? nil : $0 }
+        // The installed app as the script names it: the destination itself, or the app it replaces.
+        let installed = replaced == nil ? "$DESTINATION" : "$REPLACED"
+        let executable = "^" + literalPattern((replaced ?? destination).path + "/Contents/MacOS/" + runningExecutable) + "( |$)"
         let headless = " (" + [PaneMCPServerLocation.headlessArgument, DelegationMCPServer.headlessArgument, "--verify-resources"].map(literalPattern).joined(separator: "|") + ")( |$)"
         let runningCheck = relaunch ? "" : """
         if pgrep -lf \(quote(executable)) 2>/dev/null | grep -Ev -- \(quote(headless)) | grep -q .; then
@@ -335,13 +358,13 @@ public actor AppUpdateService {
         PATH=/usr/bin:/bin; export PATH
         SOURCE=\(quote(stagedApp.path))
         DESTINATION=\(quote(destination.path))
-        PID=\(pid)
+        \(replaced.map { "REPLACED=" + quote($0.path) + "\n" } ?? "")PID=\(pid)
         NEW="$DESTINATION.update-new"
-        OLD="$DESTINATION.update-old"
+        OLD="\(installed).update-old"
         LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-        if [ ! -e "$DESTINATION" ] && [ -d "$OLD" ]; then
+        if [ ! -e "\(installed)" ]\(replaced == nil ? "" : " && [ ! -e \"$DESTINATION\" ]") && [ -d "$OLD" ]; then
           echo "Putting back the app an interrupted update left aside." >&2
-          mv "$OLD" "$DESTINATION" || { echo "Could not put back the previous version; it is at $OLD." >&2; exit 1; }
+          mv "$OLD" "\(installed)" || { echo "Could not put back the previous version; it is at $OLD." >&2; exit 1; }
         fi
         for _ in $(seq 1 600); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
         if kill -0 "$PID" 2>/dev/null; then echo "Mighty Code did not quit; skipping the update." >&2; exit 1; fi
@@ -352,15 +375,18 @@ public actor AppUpdateService {
         \(runningCheck)trap '' HUP INT TERM
         if [ -e "$OLD" ]; then "$LSREGISTER" -u "$OLD" >/dev/null 2>&1 || true; rm -rf "$OLD"; fi
         if [ -e "$OLD" ]; then echo "Could not remove the leftover $OLD; skipping the update." >&2; rm -rf "$NEW"; exit 1; fi
-        if [ -d "$DESTINATION" ]; then
-          mv "$DESTINATION" "$OLD" || { echo "Could not back up the current app." >&2; rm -rf "$NEW"; exit 1; }
+        if [ -d "\(installed)" ]; then
+          mv "\(installed)" "$OLD" || { echo "Could not back up the current app." >&2; rm -rf "$NEW"; exit 1; }
         fi
-        if ! mv "$NEW" "$DESTINATION"; then
+        \(replaced == nil ? "" : """
+        if [ -e "$DESTINATION" ]; then "$LSREGISTER" -u "$DESTINATION" >/dev/null 2>&1 || true; rm -rf "$DESTINATION"; fi
+
+        """)if ! mv "$NEW" "$DESTINATION"; then
           echo "Could not replace the app; restoring the previous version." >&2
           rm -rf "$NEW"
           if [ -d "$OLD" ]; then
-            rm -rf "$DESTINATION"
-            mv "$OLD" "$DESTINATION" || echo "Could not restore the previous version; it is at $OLD." >&2
+            rm -rf "\(installed)"
+            mv "$OLD" "\(installed)" || echo "Could not restore the previous version; it is at $OLD." >&2
           fi
           exit 1
         fi

@@ -394,14 +394,18 @@ extension AppStore {
         guard let asset = appUpdate.availability?.manifest.macos else {
             appUpdate.phase = .failed(L("settings.appUpdate.errorNoPackage")); return nil
         }
-        let destination = Bundle.main.bundleURL
-        guard destination.pathExtension == "app", FileManager.default.isWritableFile(atPath: destination.deletingLastPathComponent().path) else {
-            appUpdate.phase = .failed(L("settings.appUpdate.errorNotWritable", ["path": destination.path])); return nil
+        let installed = Bundle.main.bundleURL
+        guard installed.pathExtension == "app", FileManager.default.isWritableFile(atPath: installed.deletingLastPathComponent().path) else {
+            appUpdate.phase = .failed(L("settings.appUpdate.errorNotWritable", ["path": installed.path])); return nil
         }
+        // The new version lands under its own name beside the installed one (MightyClaude.app → Mighty Code.app).
+        let destination = installed.deletingLastPathComponent().appendingPathComponent(staged.lastPathComponent, isDirectory: true)
         do { try AppUpdateService.validate(app: staged, within: package.deletingLastPathComponent(), expectedBundleIdentifier: Self.appBundleIdentifier) }
         catch { appUpdate.phase = .failed(L("settings.appUpdate.errorPreflight", ["error": error.localizedDescription])); appUpdate.stagedApp = nil; return nil }
         appUpdate.phase = .installing
-        let script = AppUpdateService.installScript(stagedApp: staged, destination: destination, pid: ProcessInfo.processInfo.processIdentifier, relaunch: relaunch)
+        let script = AppUpdateService.installScript(stagedApp: staged, destination: destination, replacing: installed,
+                                                    runningExecutable: Bundle.main.executableURL?.lastPathComponent ?? "MightyClaude",
+                                                    pid: ProcessInfo.processInfo.processIdentifier, relaunch: relaunch)
         let service = appUpdateService
         return (verify: {
             // Rule 4: re-verify the package on disk immediately before replacement,

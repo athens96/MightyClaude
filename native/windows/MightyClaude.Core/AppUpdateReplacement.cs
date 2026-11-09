@@ -99,7 +99,10 @@ public sealed record AppUpdateInstallPlan(
     /// The executable inside the staged folder that the running app starts as
     /// the detached helper. The helper runs from here — not from the install
     /// folder — so the install folder can be renamed aside freely.
-    public string StagedHelperExecutable => Path.Combine(StagedDirectory, AppUpdateService.ExecutableName);
+    /// It is the staged version's own executable: MightyCode.exe once the app is renamed, else MightyClaude.exe.
+    public string StagedHelperExecutable =>
+        AppUpdateService.AcceptedExecutableNames.Select(name => Path.Combine(StagedDirectory, name)).FirstOrDefault(File.Exists)
+        ?? Path.Combine(StagedDirectory, AppUpdateService.ExecutableName);
 
     /// Where the helper copies the staged folder before the two renames: beside
     /// the install, so a copy cut off half-way never touches it

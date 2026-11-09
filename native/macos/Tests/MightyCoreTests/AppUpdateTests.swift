@@ -80,8 +80,8 @@ import Testing
         #expect(decision??.url?.host == "cdn.x")
     }
 
-    private func makeFakeApp(at root: URL, executable: String = "MightyClaude", bundleId: String = "dev.mightyclaude.native", version: String = "0.2.0") throws -> URL {
-        let app = root.appendingPathComponent("MightyClaude.app", isDirectory: true)
+    private func makeFakeApp(at root: URL, name: String = "MightyClaude.app", executable: String = "MightyClaude", bundleId: String = "dev.mightyclaude.native", version: String = "0.2.0") throws -> URL {
+        let app = root.appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: app.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
         let plist: [String: Any] = ["CFBundleIdentifier": bundleId, "CFBundleExecutable": executable, "CFBundleShortVersionString": version]
         try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: app.appendingPathComponent("Contents/Info.plist"))
@@ -210,6 +210,42 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: staged.path)) // staged folder removed
         #expect(!FileManager.default.fileExists(atPath: installed.path + ".update-new"))
         #expect(!FileManager.default.fileExists(atPath: installed.path + ".update-old")) // the old app is gone once the swap succeeded
+    }
+
+    /// The last version under the old id takes the first under the new one: the renamed bundle
+    /// (another id, another file name and executable) passes the identity check, and the helper
+    /// installs it under its own name beside the old app, which it then removes.
+    @Test func theOldIdInstallsTheRenamedAppUnderItsNewName() async throws {
+        #expect(AppUpdateService.accepts("dev.mightycode.native", for: "dev.mightyclaude.native"))
+        #expect(AppUpdateService.accepts("dev.mightyclaude.native", for: "dev.mightyclaude.native"))
+        #expect(!AppUpdateService.accepts("dev.mightyclaude.native", for: "dev.mightycode.native"))
+        #expect(!AppUpdateService.accepts("com.example.other", for: "dev.mightyclaude.native") && !AppUpdateService.accepts(nil, for: "dev.mightyclaude.native"))
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("app-rename-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let staged = try makeFakeApp(at: root.appendingPathComponent("updates/0.3.0/staged", isDirectory: true), name: "Mighty Code.app", executable: "MightyCode", bundleId: "dev.mightycode.native", version: "0.3.0")
+        try AppUpdateService.validate(app: staged, within: root.appendingPathComponent("updates/0.3.0/staged"), expectedBundleIdentifier: "dev.mightyclaude.native")
+        let apps = root.appendingPathComponent("Apps", isDirectory: true)
+        let installed = try makeFakeApp(at: apps, version: "0.2.0")
+        let destination = apps.appendingPathComponent("Mighty Code.app", isDirectory: true)
+        let gone = Process()
+        gone.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try gone.run(); gone.waitUntilExit()
+        let script = AppUpdateService.installScript(stagedApp: staged, destination: destination, replacing: installed, pid: gone.processIdentifier, relaunch: false)
+        #expect(script.contains("REPLACED='\(installed.path)'") && script.contains("OLD=\"$REPLACED.update-old\""))
+        #expect(script.contains("pgrep -lf '^" + installed.path.replacingOccurrences(of: ".", with: "\\.") + "/Contents/MacOS/MightyClaude( |$)'"))
+        // The same name as before writes the script it always did.
+        #expect(AppUpdateService.installScript(stagedApp: staged, destination: installed, replacing: installed, pid: 1, relaunch: false)
+                == AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: 1, relaunch: false))
+        let helper = root.appendingPathComponent("install.sh")
+        try Data(script.utf8).write(to: helper)
+        let done = try await AppUpdateService.run("/bin/sh", [helper.path])
+        let log = String(decoding: done.stdout + done.stderr, as: UTF8.self)
+        #expect(done.exitCode == 0 && log.contains("Installed: "), "\(log)")
+        let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: destination.appendingPathComponent("Contents/Info.plist")), format: nil) as? [String: Any]
+        #expect(plist?["CFBundleIdentifier"] as? String == "dev.mightycode.native" && plist?["CFBundleShortVersionString"] as? String == "0.3.0")
+        #expect(!FileManager.default.fileExists(atPath: installed.path))
+        #expect(!FileManager.default.fileExists(atPath: installed.path + ".update-old") && !FileManager.default.fileExists(atPath: destination.path + ".update-new"))
     }
 
     /// Installing when the app quits: the helper does not start the app again, and if a copy of
