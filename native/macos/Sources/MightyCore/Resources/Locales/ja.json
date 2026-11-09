@@ -3280,5 +3280,16 @@
   "projectTasks.noTasks": "package.json・Makefile・justfile・Package.swift・Cargo.toml・go.mod にコマンドが見つかりません。",
   "projectTasks.ports": "待ち受け中のポート",
   "projectTasks.portsNote": "この Mac で自分のプロセスが待ち受けている1024番以上のポートです。クリックするとブラウザで開きます。",
-  "projectTasks.noPorts": "待ち受け中のポートはありません。"
+  "projectTasks.noPorts": "待ち受け中のポートはありません。",
+  "deepLink.error.noFolder": "リンクのフォルダがありません: {path}",
+  "deepLink.confirm.title": "このフォルダをワークスペースとして開きますか？",
+  "deepLink.confirm.message": "リンクがまだワークスペースではないフォルダを開こうとしています。\n{path}\nリクエストがあれば入力欄に入れるだけで送信しません。",
+  "deepLink.confirm.open": "開く",
+  "shellCommand.install": "シェルコマンド「mighty」をインストール",
+  "shellCommand.installed.title": "「mighty」コマンドをインストールしました",
+  "shellCommand.installed.ready": "{path}\nターミナルで mighty（このフォルダを開く）、mighty フォルダ、mighty \"リクエスト\" と使います。",
+  "shellCommand.installed.addPath": "{path}\n{folder} がシェルの PATH にありません。~/.zshrc に export PATH=\"$HOME/.local/bin:$PATH\" を追加してください。",
+  "webhook.placeholder": "完了通知の Webhook URL（Slack・Discord）",
+  "webhook.note": "リクエストが終わるとペイン名だけを送ります。内容やパスは送りません。",
+  "webhook.invalid": "https アドレス（またはこの Mac の http）のみ使えます。"
 }

@@ -236,6 +236,7 @@ final class AgentCompanion: ObservableObject {
                 completionCount += 1
                 let workspace = snapshot.workspaces.first { $0.id == session.workspaceId }?.name
                 if preferences.notifications && !testMode { notifications?.send(sessionID: session.id, title: workspace.map { $0 + " · " + session.title } ?? session.title) }
+                if !testMode { CompletionNotifications.postWebhook(title: workspace.map { $0 + " · " + session.title } ?? session.title) }
             }
         }
     }

@@ -114,6 +114,8 @@ struct MightyClaudeApp: App {
                 Button(L("usage.open")) { store.showsUsageReport = true }
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.activeWorkspace?.remote != nil || store.hasModal)
+                Button(L("shellCommand.install")) { store.installShellCommand() }
+                    .disabled(!store.isLoaded || store.hasModal)
                 Divider()
                 Button(L("menu.reconnectInputMethod")) { store.reconnectInputMethod(editor: nil) }
                 Button(L("menu.saveInputDiagnostics")) { store.saveInputMethodDiagnostics() }
@@ -145,6 +147,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         if let image = BrandAssets.icon { NSApp.applicationIconImage = image }
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// `mightyclaude://` links (`DeepLink`).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme?.lowercased() == DeepLink.scheme { AppStore.shared.handleDeepLink(url) }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

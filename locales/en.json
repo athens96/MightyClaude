@@ -3280,5 +3280,16 @@
   "projectTasks.noTasks": "No commands found in package.json, Makefile, justfile, Package.swift, Cargo.toml or go.mod.",
   "projectTasks.ports": "Listening ports",
   "projectTasks.portsNote": "Ports from 1024 up your processes listen on. Click to open in a browser.",
-  "projectTasks.noPorts": "No listening ports."
+  "projectTasks.noPorts": "No listening ports.",
+  "deepLink.error.noFolder": "The link's folder does not exist: {path}",
+  "deepLink.confirm.title": "Open this folder as a workspace?",
+  "deepLink.confirm.message": "A link wants to open a folder that is not a workspace yet.\n{path}\nAny request in it goes into the composer and is not sent.",
+  "deepLink.confirm.open": "Open",
+  "shellCommand.install": "Install shell command 'mighty'",
+  "shellCommand.installed.title": "Installed the 'mighty' command",
+  "shellCommand.installed.ready": "{path}\nIn a terminal: mighty (open this folder), mighty <folder>, mighty \"request\".",
+  "shellCommand.installed.addPath": "{path}\n{folder} is not on your shell's PATH. Add export PATH=\"$HOME/.local/bin:$PATH\" to ~/.zshrc.",
+  "webhook.placeholder": "Completion webhook URL (Slack, Discord)",
+  "webhook.note": "Posts only the pane's name when a request finishes, never its content or paths.",
+  "webhook.invalid": "Only https addresses (or http to this Mac) are allowed."
 }

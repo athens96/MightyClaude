@@ -3280,5 +3280,16 @@
   "projectTasks.noTasks": "package.json, Makefile, justfile, Package.swift, Cargo.toml, go.mod 에서 찾은 명령이 없습니다.",
   "projectTasks.ports": "열린 포트",
   "projectTasks.portsNote": "이 Mac에서 내 프로세스가 듣고 있는 1024번 이상 포트입니다. 누르면 브라우저로 엽니다.",
-  "projectTasks.noPorts": "열린 포트가 없습니다."
+  "projectTasks.noPorts": "열린 포트가 없습니다.",
+  "deepLink.error.noFolder": "링크의 폴더가 없습니다: {path}",
+  "deepLink.confirm.title": "이 폴더를 워크스페이스로 열까요?",
+  "deepLink.confirm.message": "링크가 아직 워크스페이스가 아닌 폴더를 열려고 합니다.\n{path}\n요청 글이 있으면 입력창에 넣기만 하고 보내지 않습니다.",
+  "deepLink.confirm.open": "열기",
+  "shellCommand.install": "셸 명령 'mighty' 설치",
+  "shellCommand.installed.title": "'mighty' 명령을 설치했습니다",
+  "shellCommand.installed.ready": "{path}\n터미널에서 mighty (이 폴더 열기), mighty 폴더, mighty \"요청\" 으로 씁니다.",
+  "shellCommand.installed.addPath": "{path}\n{folder} 가 셸의 PATH에 없습니다. ~/.zshrc 에 export PATH=\"$HOME/.local/bin:$PATH\" 를 더하세요.",
+  "webhook.placeholder": "완료 알림 웹훅 주소 (Slack·Discord)",
+  "webhook.note": "요청이 끝나면 창 이름만 담아 보냅니다. 요청 내용과 경로는 보내지 않습니다.",
+  "webhook.invalid": "https 주소(또는 이 Mac의 http)만 쓸 수 있습니다."
 }

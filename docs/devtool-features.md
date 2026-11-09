@@ -83,3 +83,11 @@
 - 누르면 새 터미널 창을 열고 명령을 **입력만** 해 둔다(`TerminalInput.autoRun = false`). 프로젝트 파일에서 온 글이라 앱이 Enter를 대신 누르지 않는다는 기존 규칙(§1.5)을 따른다.
 - 열린 포트: `lsof -nP -iTCP -sTCP:LISTEN -F pcn`으로 내 프로세스가 듣는 1024번 이상 포트를 보인다. 누르면 그 워크스페이스의 가장 최근 에이전트 창 옆 웹 열기 규칙(브라우저 창 또는 시스템 브라우저)으로, 에이전트 창이 없으면 기본 브라우저로 `http://localhost:<포트>`를 연다.
 - 실패한 명령의 출력을 에이전트에게 보내는 기능은 아직 없다(터미널 출력을 읽는 경로가 필요하다).
+
+## 10. OS 연결 (링크·셸 명령·웹훅)
+
+- 모델: `MightyCore/OSIntegration.swift`, 검사: `Tests/MightyCoreTests/OSIntegrationTests.swift`.
+- **링크** `mightyclaude://open?path=<절대 경로>&prompt=<글>&agent=<claude|codex|gemini>`: `scripts/build-macos.sh`가 Info.plist에 URL 스킴을 등록한다. 이미 워크스페이스인 폴더면 고르고, 아니면 **확인 창을 띄운 뒤에만** 워크스페이스로 더한다. `prompt`는 그 워크스페이스의 가장 최근 에이전트 창(또는 `agent`의 창, 없으면 새 창) 입력창에 넣기만 하고 **절대 보내지 않는다**. 웹 페이지도 링크를 열 수 있기 때문이다. 앱이 링크로 처음 켜졌으면 저장된 상태를 읽을 때까지(최대 10초) 기다린다.
+- **셸 명령** `mighty`: 메뉴 **워크스페이스 → 셸 명령 'mighty' 설치**가 `~/.local/bin/mighty`를 쓴다(관리자 권한 없음). `mighty`(지금 폴더), `mighty <폴더>`, `mighty "요청"`은 위 링크를 `open`한다(인코딩은 `osascript` JavaScript). 그 폴더가 로그인 셸 PATH에 없으면 더하는 방법을 알려 준다.
+- **웹훅**: 설정 → 펫과 알림의 Mac 알림 아래에 웹훅 주소 칸이 있다(`UserDefaults` `notifications.webhookURL`). 요청이 끝나면 Mac 알림과 같은 문구(워크스페이스·창 이름)만 `{"text","content"}` JSON으로 POST한다(Slack·Discord 모두 읽는다). https만, 또는 이 Mac의 http만 허용한다.
+- macOS 단축어(App Intents)와 Finder 빠른 동작은 넣지 않았다. SwiftPM으로 만드는 지금 빌드에서는 App Intents 메타데이터를 만들 수 없다.

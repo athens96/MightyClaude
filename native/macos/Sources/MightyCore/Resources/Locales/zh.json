@@ -3280,5 +3280,16 @@
   "projectTasks.noTasks": "在 package.json、Makefile、justfile、Package.swift、Cargo.toml、go.mod 中未找到命令。",
   "projectTasks.ports": "监听端口",
   "projectTasks.portsNote": "本机上你的进程正在监听的 1024 以上端口，点击在浏览器中打开。",
-  "projectTasks.noPorts": "没有监听端口。"
+  "projectTasks.noPorts": "没有监听端口。",
+  "deepLink.error.noFolder": "链接中的文件夹不存在：{path}",
+  "deepLink.confirm.title": "将此文件夹作为工作区打开？",
+  "deepLink.confirm.message": "链接想要打开一个尚不是工作区的文件夹。\n{path}\n其中的请求只会放入输入框，不会发送。",
+  "deepLink.confirm.open": "打开",
+  "shellCommand.install": "安装 shell 命令“mighty”",
+  "shellCommand.installed.title": "已安装“mighty”命令",
+  "shellCommand.installed.ready": "{path}\n在终端中使用：mighty（打开此文件夹）、mighty <文件夹>、mighty \"请求\"。",
+  "shellCommand.installed.addPath": "{path}\n{folder} 不在 shell 的 PATH 中。请在 ~/.zshrc 中添加 export PATH=\"$HOME/.local/bin:$PATH\"。",
+  "webhook.placeholder": "完成通知 Webhook 地址（Slack、Discord）",
+  "webhook.note": "请求完成时只发送窗格名称，不发送请求内容和路径。",
+  "webhook.invalid": "只能使用 https 地址（或本机的 http）。"
 }

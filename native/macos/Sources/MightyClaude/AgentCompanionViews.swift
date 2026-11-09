@@ -94,6 +94,7 @@ struct CompanionSettingsSection: View {
             Toggle(L("companion.settings.task"), isOn: $companion.preferences.showsTask)
             Toggle(L("companion.settings.motion"), isOn: $companion.preferences.reducedMotion)
             Toggle(L("companion.settings.macNotifications"), isOn: $companion.preferences.notifications)
+            WebhookField()
                 .onChange(of: companion.preferences.notifications) { _, enabled in Task { await companion.refreshNotificationStatus(request: enabled) } }
             SettingsRow(L("windows.notifications.settingsButton"), caption: companion.notificationStatus) {
                 Button(L("windows.notifications.settingsButton")) {
@@ -601,5 +602,17 @@ struct CompanionBubbleResizer: View {
         drag = nil
         if size == current.size { companion.cancelBubbleResize(keeping: side) }
         else { companion.resizeBubble(to: next, keeping: side, finished: true) }
+    }
+}
+
+/// The chat webhook a finished run is also posted to (`CompletionWebhook`); empty is off.
+private struct WebhookField: View {
+    @AppStorage(CompletionWebhook.defaultsKey) private var webhook = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+            TextField(L("webhook.placeholder"), text: $webhook).textFieldStyle(.roundedBorder).font(.ui(size: 12))
+            Text(webhook.isEmpty ? L("webhook.note") : CompletionWebhook.validURL(webhook) == nil ? L("webhook.invalid") : L("webhook.note"))
+                .font(.ui(size: 11)).foregroundStyle(!webhook.isEmpty && CompletionWebhook.validURL(webhook) == nil ? Palette.errText : Palette.ink2)
+        }
     }
 }

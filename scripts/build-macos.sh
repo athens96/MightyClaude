@@ -68,6 +68,7 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>NSLocalNetworkUsageDescription</key><string>같은 Wi-Fi의 휴대폰과 화면 공유를 연결하려면 로컬 네트워크 접근이 필요합니다.</string>
 <key>NSBonjourServices</key><array><string>_mightyclaude._tcp</string></array>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>dev.mightyclaude.native.link</string><key>CFBundleURLSchemes</key><array><string>mightyclaude</string></array></dict></array>
 <key>NSAppleEventsUsageDescription</key><string>터미널에서 실행한 명령이 다른 앱을 제어하려고 합니다.</string>
 <key>NSMicrophoneUsageDescription</key><string>터미널에서 실행한 명령이 마이크를 사용하려고 합니다.</string>
 <key>NSCameraUsageDescription</key><string>터미널에서 실행한 명령이 카메라를 사용하려고 합니다.</string>
