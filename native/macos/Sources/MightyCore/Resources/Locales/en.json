@@ -3272,5 +3272,13 @@
   "agentContext.none": "None",
   "agentContext.scope.project": "This project",
   "agentContext.scope.user": "All projects",
-  "agentContext.readOnly": "Servers and hooks are read from each CLI's settings and not changed here. Edit those files or use the CLI to change them."
+  "agentContext.readOnly": "Servers and hooks are read from each CLI's settings and not changed here. Edit those files or use the CLI to change them.",
+  "projectTasks.open": "Run a task",
+  "projectTasks.title": "Tasks",
+  "projectTasks.tasks": "Project commands",
+  "projectTasks.tasksNote": "Click to type the command into a new terminal pane. Press Enter there to run it.",
+  "projectTasks.noTasks": "No commands found in package.json, Makefile, justfile, Package.swift, Cargo.toml or go.mod.",
+  "projectTasks.ports": "Listening ports",
+  "projectTasks.portsNote": "Ports from 1024 up your processes listen on. Click to open in a browser.",
+  "projectTasks.noPorts": "No listening ports."
 }

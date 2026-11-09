@@ -106,6 +106,9 @@ struct MightyClaudeApp: App {
                     .keyboardShortcut("f", modifiers: [.command, .shift])
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.activeWorkspace?.remote != nil || store.hasModal)
                 Button(L("workMap.open")) { store.openWorkMapPane() }
+                Button(L("projectTasks.open")) { store.projectTasks = store.activeWorkspace }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                    .disabled(!store.isLoaded || store.activeWorkspace == nil || store.activeWorkspace?.remote != nil || store.hasModal)
                 Button(L("agentContext.open")) { store.agentContext = store.activeWorkspace }
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.activeWorkspace?.remote != nil || store.hasModal)
                 Button(L("usage.open")) { store.showsUsageReport = true }

@@ -3272,5 +3272,13 @@
   "agentContext.none": "无",
   "agentContext.scope.project": "此项目",
   "agentContext.scope.user": "所有项目",
-  "agentContext.readOnly": "服务器和 hook 仅从各 CLI 的设置文件读取，此处不修改。如需更改，请编辑相应文件或使用 CLI 命令。"
+  "agentContext.readOnly": "服务器和 hook 仅从各 CLI 的设置文件读取，此处不修改。如需更改，请编辑相应文件或使用 CLI 命令。",
+  "projectTasks.open": "运行任务",
+  "projectTasks.title": "任务",
+  "projectTasks.tasks": "项目命令",
+  "projectTasks.tasksNote": "点击后会在新的终端窗格中输入命令，按 Enter 运行。",
+  "projectTasks.noTasks": "在 package.json、Makefile、justfile、Package.swift、Cargo.toml、go.mod 中未找到命令。",
+  "projectTasks.ports": "监听端口",
+  "projectTasks.portsNote": "本机上你的进程正在监听的 1024 以上端口，点击在浏览器中打开。",
+  "projectTasks.noPorts": "没有监听端口。"
 }

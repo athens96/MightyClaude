@@ -3272,5 +3272,13 @@
   "agentContext.none": "なし",
   "agentContext.scope.project": "このプロジェクト",
   "agentContext.scope.user": "すべてのプロジェクト",
-  "agentContext.readOnly": "サーバーとフックは各 CLI の設定ファイルから読むだけです。変更するにはそのファイルか CLI コマンドを使ってください。"
+  "agentContext.readOnly": "サーバーとフックは各 CLI の設定ファイルから読むだけです。変更するにはそのファイルか CLI コマンドを使ってください。",
+  "projectTasks.open": "タスクを実行",
+  "projectTasks.title": "タスク",
+  "projectTasks.tasks": "プロジェクトのコマンド",
+  "projectTasks.tasksNote": "クリックすると新しいターミナルペインにコマンドを入力します。Enter で実行してください。",
+  "projectTasks.noTasks": "package.json・Makefile・justfile・Package.swift・Cargo.toml・go.mod にコマンドが見つかりません。",
+  "projectTasks.ports": "待ち受け中のポート",
+  "projectTasks.portsNote": "この Mac で自分のプロセスが待ち受けている1024番以上のポートです。クリックするとブラウザで開きます。",
+  "projectTasks.noPorts": "待ち受け中のポートはありません。"
 }

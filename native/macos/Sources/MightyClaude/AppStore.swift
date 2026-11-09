@@ -38,6 +38,8 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var showsUsageReport = false
     /// The workspace whose 에이전트 맥락 panel is open.
     @Published var agentContext: Workspace?
+    /// The workspace whose 작업 panel is open.
+    @Published var projectTasks: Workspace?
     @Published var focusSearch = false
     @Published var drafts: [String: String] = [:] {
         didSet {

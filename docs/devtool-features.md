@@ -74,3 +74,12 @@
 - MCP 서버(읽기만): Claude `.mcp.json`·`~/.claude.json`(이 프로젝트 항목과 전체), Codex `~/.codex/config.toml`의 `[mcp_servers.*]`, Antigravity `.gemini/settings.json`·`~/.gemini/settings.json`. 이름, 범위, 실행 명령이나 주소, 출처 파일을 보인다.
 - Claude hook(읽기만): `.claude/settings.local.json`, `.claude/settings.json`, `~/.claude/settings.json`의 `hooks`를 이벤트별로 명령과 함께 보인다.
 - 서버·hook을 켜고 끄는 기능은 넣지 않았다. CLI 설정 파일을 앱이 고치는 것은 CLI 버전마다 형식이 달라 위험하다.
+
+## 9. 작업 실행과 열린 포트
+
+- 모델: `MightyCore/ProjectTasks.swift`, 검사: `Tests/MightyCoreTests/ProjectTasksTests.swift`.
+- 여는 곳: 워크스페이스 머리의 재생 단추, 메뉴 **워크스페이스 → 작업 실행**(⇧⌘R). 원격 워크스페이스에서는 꺼진다.
+- 명령 찾기: `package.json` scripts(잠금 파일로 npm·pnpm·yarn·bun 선택, 파일 순서 유지), `Makefile` 대상(변수·패턴 규칙·`.` 특수 대상 제외), `justfile` 레시피, `Package.swift`(swift build/test), `Cargo.toml`(cargo build/test/run), `go.mod`(go build/test ./...). 이름은 셸 한 단어로 감싼다.
+- 누르면 새 터미널 창을 열고 명령을 **입력만** 해 둔다(`TerminalInput.autoRun = false`). 프로젝트 파일에서 온 글이라 앱이 Enter를 대신 누르지 않는다는 기존 규칙(§1.5)을 따른다.
+- 열린 포트: `lsof -nP -iTCP -sTCP:LISTEN -F pcn`으로 내 프로세스가 듣는 1024번 이상 포트를 보인다. 누르면 그 워크스페이스의 가장 최근 에이전트 창 옆 웹 열기 규칙(브라우저 창 또는 시스템 브라우저)으로, 에이전트 창이 없으면 기본 브라우저로 `http://localhost:<포트>`를 연다.
+- 실패한 명령의 출력을 에이전트에게 보내는 기능은 아직 없다(터미널 출력을 읽는 경로가 필요하다).

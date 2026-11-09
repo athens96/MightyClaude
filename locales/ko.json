@@ -3272,5 +3272,13 @@
   "agentContext.none": "없음",
   "agentContext.scope.project": "이 프로젝트",
   "agentContext.scope.user": "사용자 전체",
-  "agentContext.readOnly": "서버와 hook은 각 CLI의 설정 파일에서 읽기만 합니다. 바꾸려면 그 파일이나 CLI 명령을 쓰세요."
+  "agentContext.readOnly": "서버와 hook은 각 CLI의 설정 파일에서 읽기만 합니다. 바꾸려면 그 파일이나 CLI 명령을 쓰세요.",
+  "projectTasks.open": "작업 실행",
+  "projectTasks.title": "작업",
+  "projectTasks.tasks": "프로젝트 명령",
+  "projectTasks.tasksNote": "누르면 새 터미널 창에 명령을 입력해 둡니다. Enter를 눌러 실행하세요.",
+  "projectTasks.noTasks": "package.json, Makefile, justfile, Package.swift, Cargo.toml, go.mod 에서 찾은 명령이 없습니다.",
+  "projectTasks.ports": "열린 포트",
+  "projectTasks.portsNote": "이 Mac에서 내 프로세스가 듣고 있는 1024번 이상 포트입니다. 누르면 브라우저로 엽니다.",
+  "projectTasks.noPorts": "열린 포트가 없습니다."
 }
