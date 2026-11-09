@@ -19,6 +19,8 @@ struct MightyGraphView: View {
     /// What files were before this pane's Claude runs changed them, for the
     /// reference bubble's 변경사항 (AppStore.fileOriginals).
     var fileOriginals: FileOriginalStore? = nil
+    /// Adds text after the pane's composer draft (the change review's notes); nil hides the notes.
+    var onAppendDraft: ((String) -> Void)? = nil
     /// Request-block titles, icons and colours come from every style this pane
     /// may run, not only the one it is in: a pane keeps blocks it made under an
     /// earlier style (§1.10). Empty for a pane that runs no style at all.
@@ -371,7 +373,7 @@ struct MightyGraphView: View {
         }
         .sheet(item: $changesTarget) { target in
             if let fileOriginals {
-                RunChangesSheet(target: target, store: fileOriginals, onClose: { changesTarget = nil })
+                RunChangesSheet(target: target, store: fileOriginals, onSendNotes: onAppendDraft, onClose: { changesTarget = nil })
             }
         }
         // A resumed pane (or one switched to this view) with nothing on screen
@@ -811,7 +813,7 @@ struct MightyGraphView: View {
                 }
                 if let changesRunID, changedRuns.contains(changesRunID), let root = referenceRoot ?? workspaceRoot {
                     Button { changesTarget = RunChangesTarget(sessionID: sessionID, runID: changesRunID, root: root) } label: {
-                        Image(systemName: "arrow.uturn.backward.circle")
+                        Image(systemName: "doc.text.magnifyingglass")
                             .foregroundStyle(onStrip ? headerInk : Palette.ink2)
                     }
                     .buttonStyle(.plain).help(L("runChanges.openButton"))

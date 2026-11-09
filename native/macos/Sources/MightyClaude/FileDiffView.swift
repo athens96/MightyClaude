@@ -10,6 +10,11 @@ struct FileDiffView: View {
     let changes: FileChangeSet
     /// Room under the last row (the bubble's corner grip).
     var bottomClearance: CGFloat = 0
+    /// The change review: a click on a line with a number picks it for a note; nil keeps the rows inert.
+    var onLine: ((Row) -> Void)? = nil
+    /// Rows with a note on them (marked in the gutter) and the row picked now.
+    var notedRows: Set<Int> = []
+    var pickedRow: Int? = nil
 
     /// One drawn row: a hunk head, a context, added or removed line with its
     /// line numbers (nil on the side it is not on), or the "no newline at end
@@ -100,6 +105,20 @@ struct FileDiffView: View {
         .font(.code(size: 11))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(row.kind == .added ? Palette.doneSoft : row.kind == .removed ? Palette.errSoft : row.kind == .hunk ? Palette.raised : Color.clear)
+        .overlay(alignment: .leading) {
+            if notedRows.contains(row.id) || pickedRow == row.id {
+                Rectangle().fill(Palette.accent).frame(width: pickedRow == row.id ? 3 : 2)
+            }
+        }
+        .modifier(LinePick(action: onLine.flatMap { pick in row.old != nil || row.new != nil ? { pick(row) } : nil }))
+    }
+
+    /// A tap that picks the row, only in the change review: elsewhere the rows keep plain text selection.
+    private struct LinePick: ViewModifier {
+        let action: (() -> Void)?
+        func body(content: Content) -> some View {
+            if let action { content.contentShape(Rectangle()).onTapGesture(perform: action) } else { content }
+        }
     }
 
     /// A line number right-aligned in the code font's cells, blank on the side

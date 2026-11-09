@@ -531,6 +531,7 @@ struct SessionPaneView: View {
                     referenceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }
                         .map { URL(fileURLWithPath: DelegationPanes.runWorkspace(for: session, in: $0).path, isDirectory: true) },
                     fileOriginals: store.fileOriginals,
+                    onAppendDraft: { draft.wrappedValue = ReviewNotes.appending($0, to: draft.wrappedValue) },
                     styleTitles: styleTitles,
                     styleName: style?.manifest.name, styleSource: style?.source, stylePhase: phase?.title,
                     styleEvaluator: style?.evaluator, guidedPhase: phase, guidedStartingNew: guidedSelection.startingNew,
