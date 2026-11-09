@@ -118,8 +118,8 @@ public enum ClaudePlanMode {
     static let injectedKeys: Set<String> = ["plan", "planFilePath"]
 
     static let reviseMessage = "The user reviewed your plan and wants changes before any code is written. Stay in plan mode, revise the plan, and call ExitPlanMode again. The user said:\n"
-    static let cancelMessage = "The user cancelled this plan in Mighty Claude. Do not make any changes; stop and wait for the user's next request."
-    static let tooLongMessage = "The plan is longer than Mighty Claude can show in full, so it cannot be approved. Shorten the plan and call ExitPlanMode again."
+    static let cancelMessage = "The user cancelled this plan in Mighty Code. Do not make any changes; stop and wait for the user's next request."
+    static let tooLongMessage = "The plan is longer than Mighty Code can show in full, so it cannot be approved. Shorten the plan and call ExitPlanMode again."
 
     /// ISO 8601 with milliseconds, as run timing writes them.
     public static func timestamp(_ date: Date) -> String {

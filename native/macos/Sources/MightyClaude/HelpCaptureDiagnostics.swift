@@ -208,7 +208,7 @@ enum HelpCapture {
                 throw MightyError("refusing to replace \(folder.path): no earlier help capture made it")
             }
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            try Data("Demo workspaces of Mighty Claude's help capture.\n".utf8).write(to: marker, options: .atomic)
+            try Data("Demo workspaces of Mighty Code's help capture.\n".utf8).write(to: marker, options: .atomic)
         }
         try? FileManager.default.removeItem(at: folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -660,7 +660,7 @@ enum HelpCapture {
                   expected.allSatisfy({ child in store.snapshot.sessions.contains { $0.id == child.id } == child.state.isOpen }) else {
                 throw MightyError("the parent's children are not listed under it, each open one with its pane")
             }
-            guard session.logs.contains(where: { $0.kind == "user" && $0.text.hasPrefix("[Mighty Claude notice ") }) else { throw MightyError("the parent's transcript has no notice") }
+            guard session.logs.contains(where: { $0.kind == "user" && $0.text.hasPrefix("[Mighty Code notice ") }) else { throw MightyError("the parent's transcript has no notice") }
         case .delegationHeld:
             guard session.status == "stopped", ownHeld > 0, store.delegationHeld[id]?.count == ownHeld else { throw MightyError("the stopped parent does not hold its notices") }
         case .delegationParentClosed:

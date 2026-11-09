@@ -168,7 +168,7 @@ public static class SetupScript
     {
         var lines = new List<string>
         {
-            "# Written by Mighty Claude from its bundled tool catalog (setup-catalog.json).",
+            "# Written by Mighty Code from its bundled tool catalog (setup-catalog.json).",
             "$mightyStarted = " + Quote(startedMarker),
             "$mightyDone = " + Quote(doneMarker),
             "function New-MightyMarker([string]$Path) { if (Test-Path -LiteralPath $Path) { throw ('already there: ' + $Path) }; $null = [IO.Directory]::CreateDirectory($Path) }",

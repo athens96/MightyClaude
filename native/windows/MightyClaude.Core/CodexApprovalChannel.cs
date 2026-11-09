@@ -49,7 +49,7 @@ public sealed class CodexApprovalChannel
         lock (sync)
         {
             if (started || closed) return; started = true;
-            Call("initialize", new { clientInfo = new { name = "mightyclaude", title = "Mighty Claude", version = "1.0" }, capabilities = new { experimentalApi = false } });
+            Call("initialize", new { clientInfo = new { name = "mightyclaude", title = "Mighty Code", version = "1.0" }, capabilities = new { experimentalApi = false } });
         }
     }
     public void InitializationTimedOut() { lock (sync) if (!closed && !ready) FailClosed("Codex approval channel initialization timed out."); }

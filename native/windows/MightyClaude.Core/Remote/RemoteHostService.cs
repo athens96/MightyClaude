@@ -68,7 +68,7 @@ public sealed class RemoteRateLimiter(Func<DateTimeOffset> clock)
 }
 
 /// <summary>
-/// "이 컴퓨터 공유" (M/Remote/RemoteHostService.swift): serves the chosen local workspaces to other Mighty Claude apps on this PC's
+/// "이 컴퓨터 공유" (M/Remote/RemoteHostService.swift): serves the chosen local workspaces to other Mighty Code apps on this PC's
 /// Tailscale addresses only. Runs go through this PC's own RunManager with its CLIs and sign-ins; their events wait in a per-run buffer
 /// the client reads by cursor. A run its client stops polling for the heartbeat is stopped. Sharing never survives the app; stopping
 /// it revokes the key, which lives in memory only.

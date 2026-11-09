@@ -249,7 +249,7 @@ import Testing
 
     @Test func aRefusalNamesWhatItIsAboutAfterItsOneCode() throws {
         let detail = try #require(DelegationCoordinator.unavailable("codex", .signedOut))
-        #expect(detail == "Codex is not signed in on this Mac; the user can check it in Mighty Claude's Settings › CLI")
+        #expect(detail == "Codex is not signed in on this Mac; the user can check it in Mighty Code's Settings › CLI")
         #expect(DelegationCoordinator.unavailable("gemini", .notInstalled)?.hasSuffix("Settings › CLI") == true && DelegationCoordinator.unavailable("codex", .ready) == nil)
         let result = DelegationMCPServer.result(.refusal(.agentUnavailable, detail: detail))
         #expect(result["structuredContent"] as? [String: String] == ["refused": "agent_unavailable"])
@@ -457,9 +457,9 @@ struct DelegationCrossAgentTests {
         let unknown = await fixture.call("delegate", ["task": "Do it.", "mode": "acceptEdits", "agent": "gpt"])
         #expect(unknown.refused == .agentUnknown && unknown.error?.contains("\"gpt\"") == true)
         let notInstalled = await fixture.call("delegate", ["task": "Do it.", "mode": "acceptEdits", "agent": "antigravity"])
-        #expect(notInstalled == .refusal(.agentUnavailable, detail: "Antigravity is not installed on this Mac; the user can check it in Mighty Claude's Settings › CLI"))
+        #expect(notInstalled == .refusal(.agentUnavailable, detail: "Antigravity is not installed on this Mac; the user can check it in Mighty Code's Settings › CLI"))
         let signedOut = await fixture.call("delegate", ["task": "Do it.", "mode": "onRequest", "agent": "codex"])
-        #expect(signedOut == .refusal(.agentUnavailable, detail: "Codex is not signed in on this Mac; the user can check it in Mighty Claude's Settings › CLI"))
+        #expect(signedOut == .refusal(.agentUnavailable, detail: "Codex is not signed in on this Mac; the user can check it in Mighty Code's Settings › CLI"))
         // A mode that is not the agent's, or one in which its child cannot write: an error.
         #expect(await fixture.call("delegate", ["task": "Do it.", "mode": "auto", "agent": "codex"]).error == "mode must be one of a Codex child's: manual, acceptEdits, onRequest, fullAccess.")
         #expect(await fixture.call("delegate", ["task": "Do it.", "mode": "manual", "agent": "codex"]).error?.hasPrefix("A Codex child in manual mode cannot change files") == true)

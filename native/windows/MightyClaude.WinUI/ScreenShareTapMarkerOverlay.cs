@@ -57,7 +57,7 @@ internal sealed class ScreenShareTapMarkerOverlay(DispatcherQueue dispatcher) : 
             procedure = (handle, message, w, l) => message switch { 0x0084 => -1, 0x0021 => 3, _ => DefWindowProc(handle, message, w, l) };
             var cls = new WindowClass { Size = (uint)Marshal.SizeOf<WindowClass>(), Procedure = Marshal.GetFunctionPointerForDelegate(procedure), Instance = instance, ClassName = name };
             if (RegisterClassEx(ref cls) == 0) throw new System.ComponentModel.Win32Exception();
-            hwnd = CreateWindowEx(0x080800a0, name, "Mighty Claude tap marker", 0x80000000, centerX - 24, centerY - 24, 48, 48, 0, 0, instance, 0);
+            hwnd = CreateWindowEx(0x080800a0, name, "Mighty Code tap marker", 0x80000000, centerX - 24, centerY - 24, 48, 48, 0, 0, instance, 0);
             if (hwnd == 0) { UnregisterClass(name, instance); throw new System.ComponentModel.Win32Exception(); }
             try
             {

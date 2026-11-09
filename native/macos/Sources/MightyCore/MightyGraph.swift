@@ -38,7 +38,7 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     /// A steer no person sent: a delegation notice or a task notice.
     public var isNotice: Bool { isDelegationNotice || isTaskNotice }
     /// What the block shows as its request: a task notice without its prefix.
-    public var shownInput: String { isTaskNotice ? String(input.dropFirst(MightyGraphSupport.taskNoticePrefix.count)) : input }
+    public var shownInput: String { isTaskNotice ? String(input.dropFirst(MightyGraphSupport.taskNoticePrefix(of: input)?.count ?? 0)) : input }
     /// The CLI summarized its context mid-turn; the block is complete on arrival.
     public var isCompact: Bool { kind == "compact" }
     /// A question the agent asked the user (AskUserQuestion); the answer is its output.
@@ -214,21 +214,27 @@ public enum MightyGraphSupport {
     /// Delegation hands a child's notice, or a follow-up to a running child,
     /// into a running Claude turn as a steer (`DelegationDelivery`); its text
     /// opens with one of these. Such a block is a 위임 알림, not a 중간 요청.
-    public static let delegationNoticePrefixes = ["[Mighty Claude notice ", "[Mighty Claude follow-up "]
+    public static let delegationNoticePrefixes = ["[Mighty Code notice ", "[Mighty Code follow-up ",
+                                                  // Written before the app was renamed, in saved transcripts.
+                                                  "[Mighty Claude notice ", "[Mighty Claude follow-up "]
     public static func isDelegationNotice(_ input: String) -> Bool {
         delegationNoticePrefixes.contains { input.hasPrefix($0) }
     }
     /// A background task's `<task-notification>` the tracker shows as a steer under
     /// main, its readable line after this prefix; the next root-level answer is its
     /// reply. Such a block is a 작업 알림, not a 중간 요청.
-    public static let taskNoticePrefix = "[Mighty Claude task notice] "
+    public static let taskNoticePrefix = "[Mighty Code task notice] "
+    /// The same prefix as it was written before the app was renamed, in saved transcripts.
+    static let legacyTaskNoticePrefix = "[Mighty Claude task notice] "
+    /// The task notice prefix `input` opens with, new or legacy; nil when it is no task notice.
+    static func taskNoticePrefix(of input: String) -> String? { [taskNoticePrefix, legacyTaskNoticePrefix].first { input.hasPrefix($0) } }
     /// What opens a notice turn's section in a request's result.
     public static let noticeSectionMark = "\n\n---\n\n**"
     /// The result with a notice turn's answer after it, under a bold line naming the notice; the request's own answer stays first.
     public static func withNoticeSection(_ result: String?, header: String, answer: String) -> String {
         (result.map { $0.isEmpty ? "**" : $0 + noticeSectionMark } ?? "**") + header + "**\n\n" + answer
     }
-    public static func isTaskNotice(_ input: String) -> Bool { input.hasPrefix(taskNoticePrefix) }
+    public static func isTaskNotice(_ input: String) -> Bool { taskNoticePrefix(of: input) != nil }
     /// The result card's title in every view and on the phone: how the request ended, 알림 대기 중 while it awaits the
     /// notices of background work it started (`awaiting`, `BackgroundNoticeRuns.awaitingNotice`), else the result so far while
     /// background work of its request still runs (`waiting`, `MightyGraphRun.backgroundWaiting`).

@@ -45,8 +45,8 @@ public sealed partial class DelegationCoordinator
     /// <summary>Why the <paramref name="provider"/> agent cannot run a child, naming it, or null when it can.</summary>
     public static string? Unavailable(string provider, DelegationAgentAvailability availability) => availability switch
     {
-        DelegationAgentAvailability.NotInstalled => $"{ProviderMark.Label(provider)} is not installed on this PC; the user can check it in Mighty Claude's Settings › CLI",
-        DelegationAgentAvailability.SignedOut => $"{ProviderMark.Label(provider)} is not signed in on this PC; the user can check it in Mighty Claude's Settings › CLI",
+        DelegationAgentAvailability.NotInstalled => $"{ProviderMark.Label(provider)} is not installed on this PC; the user can check it in Mighty Code's Settings › CLI",
+        DelegationAgentAvailability.SignedOut => $"{ProviderMark.Label(provider)} is not signed in on this PC; the user can check it in Mighty Code's Settings › CLI",
         _ => null,
     };
 
@@ -196,14 +196,14 @@ public sealed partial class DelegationCoordinator
             ? $"When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write your report to {worktree.ReportFile}"
             : $"When you are done, write your report to {worktree.ReportFile}";
         var leave = provider == "claude" ? "" : " " + AppCommitNote(worktree);
-        return $"{from} in Mighty Claude delegated this task to you. You work in your own git worktree on the branch {worktree.Branch}; the task is also saved in {worktree.TaskFile}.\n\n"
+        return $"{from} in Mighty Code delegated this task to you. You work in your own git worktree on the branch {worktree.Branch}; the task is also saved in {worktree.TaskFile}.\n\n"
             + $"{done}: what you did, what is left and what your parent should check.{leave} Your parent gets one notice for each of your runs that ends with that file changed, and may merge your branch. Do not merge, push or switch branches.\n\n"
             + $"Task:\n{task}";
     }
 
     /// <summary>How a child of an agent other than Claude leaves its work: the app commits it on the child's branch when the child writes its report.</summary>
     public static string AppCommitNote(ChildWorktree worktree) =>
-        $"Do not commit: leave your changes in this worktree. When your run ends with {worktree.ReportFile} changed, Mighty Claude commits every change .gitignore lets in on {worktree.Branch} for you.";
+        $"Do not commit: leave your changes in this worktree. When your run ends with {worktree.ReportFile} changed, Mighty Code commits every change .gitignore lets in on {worktree.Branch} for you.";
 
     /// <summary>
     /// The first run of a child the human started: their text as they typed it, then the app's note on where the child works and
@@ -221,8 +221,8 @@ public sealed partial class DelegationCoordinator
     {
         var beside = (parentAgent ?? provider) == "claude" ? "another Claude pane" : "another pane";
         return provider == "claude"
-            ? $"[Mighty Claude] This request runs in its own git worktree on the branch {worktree.Branch}, opened beside {beside} so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to {worktree.ReportFile}: what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches."
-            : $"[Mighty Claude] This request runs in its own git worktree on the branch {worktree.Branch}, opened beside {beside} so that pane keeps working undisturbed. When you are done, write a short report to {worktree.ReportFile}: what you did and what is left. {AppCommitNote(worktree)} The person who sent this merges your branch from the app. Do not merge, push or switch branches.";
+            ? $"[Mighty Code] This request runs in its own git worktree on the branch {worktree.Branch}, opened beside {beside} so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to {worktree.ReportFile}: what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches."
+            : $"[Mighty Code] This request runs in its own git worktree on the branch {worktree.Branch}, opened beside {beside} so that pane keeps working undisturbed. When you are done, write a short report to {worktree.ReportFile}: what you did and what is left. {AppCommitNote(worktree)} The person who sent this merges your branch from the app. Do not merge, push or switch branches.";
     }
 
     /// <summary>

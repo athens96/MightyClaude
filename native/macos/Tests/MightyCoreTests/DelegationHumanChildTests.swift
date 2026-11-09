@@ -290,7 +290,7 @@ struct DelegationHumanChildTests {
         let run = try #require(fixture.sends.started.first)
         #expect(fixture.sends.started.count == 1 && run.childId == child.id)
         #expect(run.input.hasPrefix(text))
-        #expect(fixture.sends.firstRuns.first?.followingNote == nil && run.input.contains("[Mighty Claude]"))
+        #expect(fixture.sends.firstRuns.first?.followingNote == nil && run.input.contains("[Mighty Code]"))
         #expect(run.input.contains(child.branch) && run.input.contains(ChildWorktree.reportFile(worktreePath: child.worktreePath)))
         #expect(try await fixture.git(["rev-parse", "refs/heads/" + child.branch]) == head)
         // The parent's checkout is untouched.
@@ -354,7 +354,7 @@ struct DelegationHumanChildTests {
         let run = try #require(fixture.sends.firstRuns.first)
         #expect(run.input == "/review the parser")
         let note = try #require(run.followingNote)
-        #expect(note.hasPrefix("[Mighty Claude]") && note.contains(child.branch) && note.contains(ChildWorktree.reportFile(worktreePath: child.worktreePath)))
+        #expect(note.hasPrefix("[Mighty Code]") && note.contains(child.branch) && note.contains(ChildWorktree.reportFile(worktreePath: child.worktreePath)))
     }
 
     @Test func aPlanFirstStyleStartsTheChildInPlanMode() async throws {

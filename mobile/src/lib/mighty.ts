@@ -81,7 +81,13 @@ function labelled(table: Record<string, string>, key: string): string | undefine
  * Claude turn as a steer; its text opens with one of these (the Mac's
  * `MightyGraphSupport.delegationNoticePrefixes`). Such a block is a 위임 알림, not a 중간 요청.
  */
-export const DELEGATION_NOTICE_PREFIXES = ['[Mighty Claude notice ', '[Mighty Claude follow-up '];
+export const DELEGATION_NOTICE_PREFIXES = [
+  '[Mighty Code notice ',
+  '[Mighty Code follow-up ',
+  // Written before the app was renamed, in saved transcripts.
+  '[Mighty Claude notice ',
+  '[Mighty Claude follow-up ',
+];
 
 /** Whether a `steer` block was sent by delegation rather than by a person, read from what it was asked. */
 export function isDelegationNotice(kind: string, summary: string | undefined): boolean {

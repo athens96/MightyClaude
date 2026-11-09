@@ -22,7 +22,7 @@ struct LaunchSplashView: View {
                     .shadow(color: Palette.accent.opacity(0.10), radius: 24, y: 8)
                     .padding(.bottom, DesignMetrics.Spacing.xl)
 
-                Text("Mighty Claude")
+                Text("Mighty Code")
                     .font(.ui(size: 30, weight: .semibold, design: .rounded))
                     .tracking(-0.6)
                     .foregroundStyle(.primary)

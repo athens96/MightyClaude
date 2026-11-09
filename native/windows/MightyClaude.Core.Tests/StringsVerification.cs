@@ -229,7 +229,7 @@ internal static class StringsVerification
     // (Windows instead of Mac) is documented in docs/windows-completion-notification.md.
     private static readonly Dictionary<string, string> CompletionNotificationMacOS = new()
     {
-        ["NotificationTitle"] = "MightyClaude · 작업 완료",
+        ["NotificationTitle"] = "Mighty Code · 작업 완료",
         ["NotificationBodyTemplate"] = "{title}의 작업이 완료되었습니다.",
         ["ToggleLabel"] = "작업 완료 시 Windows 알림",
         ["StatusAllowed"] = "허용됨",

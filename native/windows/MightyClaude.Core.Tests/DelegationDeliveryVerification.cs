@@ -202,11 +202,11 @@ internal static class DelegationDeliveryVerification
             && DelegationCoordinator.Automatic(Pane(Running, provider: "gemini")) is DelegationCoordinator.AutomaticDelivery.Later && DelegationCoordinator.Automatic(Pane(Running, kind: "terminal")) is DelegationCoordinator.AutomaticDelivery.Hold
             && DelegationCoordinator.Automatic(null) is DelegationCoordinator.AutomaticDelivery.Hold, "the automatic delivery");
         var sample = new Notice("n-1", "c-1", 2, NoticeKind.Reported, DeliveryLane.Pending);
-        Same(DelegationCoordinator.Text(sample), "[Mighty Claude notice n-1] Your child c-1 reported revision 2. Read the report with child_status; merge it with merge when it is right.", "a reported notice's words");
-        Same(DelegationCoordinator.Text(sample with { Kind = NoticeKind.EndedWithoutReport }), "[Mighty Claude notice n-1] Your child c-1's run ended without a new report; its report revision is still 2. Call child_status to see where it stands.", "an ended notice's words");
-        Same(DelegationCoordinator.Text(sample with { Kind = NoticeKind.FailedToStart }), "[Mighty Claude notice n-1] Your child c-1 could not be started. Only a human can discard it, from its card.", "a failed start's words");
+        Same(DelegationCoordinator.Text(sample), "[Mighty Code notice n-1] Your child c-1 reported revision 2. Read the report with child_status; merge it with merge when it is right.", "a reported notice's words");
+        Same(DelegationCoordinator.Text(sample with { Kind = NoticeKind.EndedWithoutReport }), "[Mighty Code notice n-1] Your child c-1's run ended without a new report; its report revision is still 2. Call child_status to see where it stands.", "an ended notice's words");
+        Same(DelegationCoordinator.Text(sample with { Kind = NoticeKind.FailedToStart }), "[Mighty Code notice n-1] Your child c-1 could not be started. Only a human can discard it, from its card.", "a failed start's words");
         Same(DelegationCoordinator.Text(new FollowUp("f-1", "c-1", "Also add tests.\n", DeliveryLane.Pending), @"C:\w\c-1\.mighty-delegation\REPORT.md"),
-            "[Mighty Claude follow-up f-1] Your parent sent you this follow-up:\n\nAlso add tests.\n\n\nWhen you are done, commit your work on your branch and write your updated report to C:\\w\\c-1\\.mighty-delegation\\REPORT.md.", "a follow-up's words");
+            "[Mighty Code follow-up f-1] Your parent sent you this follow-up:\n\nAlso add tests.\n\n\nWhen you are done, commit your work on your branch and write your updated report to C:\\w\\c-1\\.mighty-delegation\\REPORT.md.", "a follow-up's words");
         Check(System.Text.RegularExpressions.Regex.IsMatch(DelegationCoordinator.Now(), @"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\z"), "a receipt's time is ISO 8601 to the second");
 
         // A notice is steered into the parent's running Claude run once, and saved delivered before the run gets it.

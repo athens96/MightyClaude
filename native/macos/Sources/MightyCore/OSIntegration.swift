@@ -38,7 +38,7 @@ public enum ShellCommand {
 
     public static let script = """
     #!/bin/sh
-    # Mighty Claude: open a folder (default: the current one) as a workspace,
+    # Mighty Code: open a folder (default: the current one) as a workspace,
     # with an optional request put in the composer (never sent).
     #   mighty                 open this folder
     #   mighty ../other        open another folder

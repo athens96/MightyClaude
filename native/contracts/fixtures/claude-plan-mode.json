@@ -210,7 +210,7 @@
       "toolUseId": "toolu_plan_1",
       "expected": {
         "behavior": "deny",
-        "message": "The user cancelled this plan in Mighty Claude. Do not make any changes; stop and wait for the user's next request.",
+        "message": "The user cancelled this plan in Mighty Code. Do not make any changes; stop and wait for the user's next request.",
         "interrupt": true,
         "toolUseID": "toolu_plan_1"
       }

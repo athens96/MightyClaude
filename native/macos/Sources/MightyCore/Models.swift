@@ -114,7 +114,7 @@ public struct PhaseModelHardcodedConfig: Codable, Sendable, Equatable {
     }
 }
 
-/// A workspace that lives on another computer running Mighty Claude, reached over
+/// A workspace that lives on another computer running Mighty Code, reached over
 /// Tailscale (docs/remote-workspaces.md). Saved as the workspace's `remote` value.
 /// Its `version` tells it apart from the references the app wrote before remote
 /// workspaces were removed on 2026-09-28, which had none: those are still dropped

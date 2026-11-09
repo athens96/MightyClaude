@@ -122,7 +122,7 @@ private actor Latch {
         defer { fixture.tearDown() }
         let parent = fixture.bind("parent")
         let clock = ContinuousClock()
-        let noAnswer = DelegationResponse.failure("Mighty Claude did not answer the request.")
+        let noAnswer = DelegationResponse.failure("Mighty Code did not answer the request.")
         for tool in DelegationToolManifest.all {
             let started = clock.now
             let answer = fixture.send(tool.name, Self.arguments(tool), parent)

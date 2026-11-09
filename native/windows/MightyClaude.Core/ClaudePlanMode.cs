@@ -88,8 +88,8 @@ public static class ClaudePlanMode
     private const int SummaryLines = 8, SummaryBytes = 1_024, SummaryFeedbackBytes = 512;
 
     public const string ReviseMessage = "The user reviewed your plan and wants changes before any code is written. Stay in plan mode, revise the plan, and call ExitPlanMode again. The user said:\n";
-    public const string CancelMessage = "The user cancelled this plan in Mighty Claude. Do not make any changes; stop and wait for the user's next request.";
-    public const string TooLongMessage = "The plan is longer than Mighty Claude can show in full, so it cannot be approved. Shorten the plan and call ExitPlanMode again.";
+    public const string CancelMessage = "The user cancelled this plan in Mighty Code. Do not make any changes; stop and wait for the user's next request.";
+    public const string TooLongMessage = "The plan is longer than Mighty Code can show in full, so it cannot be approved. Shorten the plan and call ExitPlanMode again.";
 
     /// <summary>ISO 8601 with milliseconds, as macOS writes them.</summary>
     public static string Timestamp(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);

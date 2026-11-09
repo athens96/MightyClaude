@@ -340,7 +340,7 @@ struct DelegationActionToolTests {
         #expect(data["child"] as? String == "c1")
         #expect(data["lane"] as? String == "pending")
         #expect(data["remaining"] as? Int == 1)
-        #expect(text(of: result) == "Follow-up \(info.id) for child c1 is recorded; Mighty Claude hands it to the child exactly once. This child may get 1 more.")
+        #expect(text(of: result) == "Follow-up \(info.id) for child c1 is recorded; Mighty Code hands it to the child exactly once. This child may get 1 more.")
 
         // The second, kept exactly as given; the other child's count is its own.
         let second = await fixture.call("follow_up", ["child": " c1\n", "text": "그리고 문서도 고쳐 줘.\n"])

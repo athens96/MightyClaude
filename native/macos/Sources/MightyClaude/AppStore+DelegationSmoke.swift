@@ -114,7 +114,7 @@ extension AppStore {
             try await waitForSmoke(timeout: 60) { self.snapshot.sessions.first(where: { $0.id == parent })?.status != "running" && !self.pendingRuns.contains(parent) }
             let sent = snapshot.sessions.first(where: { $0.id == parent })?.logs.last(where: { $0.kind == "user" })?.text ?? ""
             // The notice is a pointer naming itself and its child, ahead of the human's text.
-            guard delivered.receipt?.route == .queue, let pointer = sent.range(of: "[Mighty Claude notice \(notice.id)]"), sent.contains(c),
+            guard delivered.receipt?.route == .queue, let pointer = sent.range(of: "[Mighty Code notice \(notice.id)]"), sent.contains(c),
                   let human = sent.range(of: text), pointer.upperBound <= human.lowerBound,
                   delegationHeld[parent]?.isEmpty != false else { throw MightyError("The held notice did not go ahead of the phone's text in one run.") }
             checks["phoneSendReleasedHeldNotice"] = ["route": delivered.receipt?.route.rawValue ?? "", "runId": delivered.receipt?.runId ?? ""]

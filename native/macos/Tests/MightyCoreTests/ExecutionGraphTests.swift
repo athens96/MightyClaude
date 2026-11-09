@@ -265,7 +265,7 @@ struct ExecutionGraphTests {
             let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "deleg-after", graph: { nodes.append($0) }, graphInput: "Split the work")
             try send(assistant([["type": "text", "text": "Delegated."]], id: "main-1"), to: parser)
             try send(["type": "result", "subtype": "success", "is_error": false, "result": "Delegated."], to: parser)
-            let text = "[Mighty Claude notice n-1] Your child c-1 reported revision 1. Read the report with child_status; merge it with merge when it is right."
+            let text = "[Mighty Code notice n-1] Your child c-1 reported revision 1. Read the report with child_status; merge it with merge when it is right."
             parser.steer(id: "n-1", text: text)
             try send(assistant([["type": "text", "text": "Merged the child."]], id: "main-2"), to: parser)
             try send(["type": "result", "subtype": "success", "is_error": false, "result": "Merged the child."], to: parser)
@@ -292,7 +292,7 @@ struct ExecutionGraphTests {
                 tracker.consume(try event(["type": "system", "subtype": "compact_boundary", "uuid": "c\(index)"]))
             }
             tracker.consume(try event(["type": "result", "subtype": "success", "is_error": false, "result": "Delegated."]))
-            tracker.steer(id: "n-1", text: "[Mighty Claude notice n-1] Your child c-1 reported revision 1.")
+            tracker.steer(id: "n-1", text: "[Mighty Code notice n-1] Your child c-1 reported revision 1.")
             tracker.consume(try event(assistant([["type": "text", "text": "Merged the child."]], id: "main-2")))
             tracker.consume(try event(["type": "result", "subtype": "success", "is_error": false, "result": "Merged the child."]))
             var latest: [String: ExecutionGraphNode] = [:]
@@ -365,6 +365,9 @@ struct ExecutionGraphTests {
             let person = MightyGraphAgent(id: "p", input: "Also add tests", kind: "steer")
             #expect(!person.isNotice); #expect(person.shownInput == "Also add tests")
             #expect(!MightyGraphAgent(id: "a", input: agent.input).isTaskNotice)
+            // Saved before the app was renamed: still a task notice, shown without its prefix.
+            let legacy = MightyGraphAgent(id: "old-notice", input: "[Mighty Claude task notice] Build · 완료", kind: "steer")
+            #expect(legacy.isTaskNotice); #expect(legacy.shownInput == "Build · 완료")
         }
     }
 
@@ -627,10 +630,10 @@ struct SteeringGraphTests {
             var nodes: [ExecutionGraphNode] = []
             let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-notice", graph: { nodes.append($0) }, graphInput: "Refactor the parser")
             try send(assistant([["type": "tool_use", "id": "tool-1", "name": "Bash", "input": ["command": "sleep 5"]]], id: "main-1"), to: parser)
-            parser.steer(id: "notice", text: "[Mighty Claude notice n-1] Your child c-1 reported revision 1.")
+            parser.steer(id: "notice", text: "[Mighty Code notice n-1] Your child c-1 reported revision 1.")
             parser.steer(id: "person", text: "Also add tests")
             parser.finishGraph(state: "completed")
-            let notice = try #require(nodes.last(where: { $0.input?.hasPrefix("[Mighty Claude notice ") == true }))
+            let notice = try #require(nodes.last(where: { $0.input?.hasPrefix("[Mighty Code notice ") == true }))
             #expect(notice.state == "stopped"); #expect(notice.entries.last?.text == L("graph.block.unfinished.delegationNotice"))
             let person = try #require(nodes.last(where: { $0.input == "Also add tests" }))
             #expect(person.entries.last?.text == L("graph.block.unfinished.steer"))
@@ -659,8 +662,8 @@ struct SteeringGraphTests {
 
     @Test func aSteerDelegationSentIsADelegationNoticeAndAPersonsStaysAMidTurnInput() {
         LocaleOverride.$language.withValue(.ko) {
-            let notice = MightyGraphAgent(id: "n", input: "[Mighty Claude notice n-1] Your child c-1 reported revision 1.", kind: "steer")
-            let followUp = MightyGraphAgent(id: "f", input: "[Mighty Claude follow-up f-1] Your parent sent you this follow-up:", kind: "steer")
+            let notice = MightyGraphAgent(id: "n", input: "[Mighty Code notice n-1] Your child c-1 reported revision 1.", kind: "steer")
+            let followUp = MightyGraphAgent(id: "f", input: "[Mighty Code follow-up f-1] Your parent sent you this follow-up:", kind: "steer")
             let person = MightyGraphAgent(id: "p", input: "Also add tests", kind: "steer")
             #expect(MightyGraphSupport.blockTitle(notice) == "위임 알림")
             #expect(MightyGraphSupport.blockTitle(followUp) == "위임 알림")
@@ -670,6 +673,9 @@ struct SteeringGraphTests {
             #expect(MightyGraphSupport.blockKind(notice) == "steer")
             // Only a steer is one: a sub-agent asked with the same words is not.
             #expect(!MightyGraphAgent(id: "a", input: notice.input).isDelegationNotice)
+            // Saved before the app was renamed.
+            #expect(MightyGraphAgent(id: "o", input: "[Mighty Claude notice n-0] Your child c-0 reported revision 1.", kind: "steer").isDelegationNotice)
+            #expect(MightyGraphAgent(id: "o", input: "[Mighty Claude follow-up f-0] Your parent sent you this follow-up:", kind: "steer").isDelegationNotice)
         }
     }
 

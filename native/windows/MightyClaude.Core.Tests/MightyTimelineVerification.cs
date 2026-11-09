@@ -32,8 +32,8 @@ internal static class MightyTimelineVerification
         Check(MightyTimeline.Groups([Shown("running")])[0].Result is { Tone: DesignTone.Wait, Awaiting: true } && MightyTimeline.Groups([Shown("completed")])[0].Result is { Tone: DesignTone.Done, Awaiting: false }
             && MightyTimeline.Groups([Shown("running", "error")])[0].Result?.Tone == DesignTone.Err, "the awaiting head waits in 기록");
         // A steer delegation sent is a 위임 알림; one a person sent stays a 중간 요청, and only those are counted in the toolbar.
-        var notice = new MightyGraphAgent { Id = "notice", Kind = "steer", Status = "completed", Input = "[Mighty Claude notice n-1] Your child c-1 reported revision 1." };
-        var followUp = new MightyGraphAgent { Id = "follow", Kind = "steer", Status = "completed", Input = "[Mighty Claude follow-up f-1] Your parent sent you this follow-up:" };
+        var notice = new MightyGraphAgent { Id = "notice", Kind = "steer", Status = "completed", Input = "[Mighty Code notice n-1] Your child c-1 reported revision 1." };
+        var followUp = new MightyGraphAgent { Id = "follow", Kind = "steer", Status = "completed", Input = "[Mighty Code follow-up f-1] Your parent sent you this follow-up:" };
         var person = new MightyGraphAgent { Id = "person", Kind = "steer", Status = "completed", Input = "Also add tests" };
         Check(MightyGraphSupport.BlockTitle(notice) == "위임 알림" && MightyGraphSupport.BlockTitle(followUp) == "위임 알림" && MightyGraphSupport.BlockTitle(person) == "중간 요청", "a delegation notice is named 위임 알림, a person's steer 중간 요청");
         Check(MightyTimeline.KindLabel("steer", notice.Input) == "위임 알림" && MightyTimeline.KindLabel("steer", person.Input) == "중간 요청" && MightyGraphSupport.BlockKind(notice) == "steer", "the timeline names the kind the same way, and the kind stays steer");
@@ -93,6 +93,9 @@ internal static class MightyTimelineVerification
         var agent = new MightyGraphAgent { Id = "saved-notice", Kind = "steer", Input = MightyGraphSupport.TaskNoticePrefix + "Build · 완료\nBuild done" };
         Check(MightyGraphSupport.BlockTitle(agent) == "작업 알림" && MightyGraphSupport.BlockKind(agent) == "steer" && MightyGraphSupport.IsTaskNotice(agent) && MightyGraphSupport.IsNotice(agent) && !MightyGraphSupport.IsDelegationNotice(agent)
             && MightyGraphSupport.ShownInput(agent) == "Build · 완료\nBuild done", "a saved block is a 작업 알림 that shows its line without the prefix");
+        var legacy = new MightyGraphAgent { Id = "old-notice", Kind = "steer", Input = "[Mighty Claude task notice] Build · 완료" };
+        Check(MightyGraphSupport.IsTaskNotice(legacy) && MightyGraphSupport.ShownInput(legacy) == "Build · 완료", "a block saved before the rename is still a 작업 알림");
+        Check(MightyGraphSupport.IsDelegationNotice(new MightyGraphAgent { Id = "o", Kind = "steer", Input = "[Mighty Claude notice n-0] Your child c-0 reported revision 1." }), "a delegation notice saved before the rename is still one");
         run.Agents.Add(agent);
         Check(MightyTimeline.KindLabel("steer", agent.Input) == "작업 알림" && MightyTimeline.KindLabel("steer", "Also add tests") == "중간 요청", "the timeline names it the same way");
         run.Agents.Add(new MightyGraphAgent { Id = "person", Kind = "steer", Status = "completed", Input = "Also add tests" });

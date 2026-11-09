@@ -161,7 +161,7 @@ public enum SetupScript {
         var lines = [
             "#!/bin/bash",
             "mkdir -- \(quote(startedMarker)) 2>/dev/null",
-            "# Written by Mighty Claude from its bundled tool catalog (setup-catalog.json).",
+            "# Written by Mighty Code from its bundled tool catalog (setup-catalog.json).",
             "mighty_marker=" + quote(doneMarker),
             "trap 'mkdir -- \"$mighty_marker\" 2>/dev/null' EXIT",
         ] + preamble(home: home) + ["mighty_failed=0"]

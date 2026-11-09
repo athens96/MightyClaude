@@ -281,7 +281,7 @@ public sealed partial class DelegationCoordinator
     /// <summary>A notice as its parent's run reads it: a pointer naming the notice and the child. The report itself is read through child_status.</summary>
     public static string Text(Notice notice)
     {
-        var head = $"[Mighty Claude notice {notice.Id}]";
+        var head = $"[Mighty Code notice {notice.Id}]";
         return notice.Kind switch
         {
             NoticeKind.Reported => $"{head} Your child {notice.ChildId} reported revision {notice.ReportRevision}. Read the report with child_status; merge it with merge when it is right.",
@@ -295,8 +295,8 @@ public sealed partial class DelegationCoordinator
     {
         var done = provider == "claude"
             ? $"When you are done, commit your work on your branch and write your updated report to {reportFile}."
-            : $"When you are done, write your updated report to {reportFile}. Do not commit: leave your changes, and Mighty Claude commits them on your branch when your run ends with that file changed.";
-        return $"[Mighty Claude follow-up {followUp.Id}] Your parent sent you this follow-up:\n\n{followUp.Text}\n\n{done}";
+            : $"When you are done, write your updated report to {reportFile}. Do not commit: leave your changes, and Mighty Code commits them on your branch when your run ends with that file changed.";
+        return $"[Mighty Code follow-up {followUp.Id}] Your parent sent you this follow-up:\n\n{followUp.Text}\n\n{done}";
     }
 
     /// <summary>The items for the pane <paramref name="sessionId"/> in <paramref name="lane"/>, oldest first.</summary>

@@ -3,7 +3,7 @@ import MightyCore
 import SwiftUI
 
 /// Settings → 원격 연결 (Tailscale): share this Mac's workspaces with another
-/// Mighty Claude, and connect to one that shares (docs/remote-workspaces.md).
+/// Mighty Code, and connect to one that shares (docs/remote-workspaces.md).
 struct RemoteSettingsSection: View {
     @EnvironmentObject private var store: AppStore
     @ViewState private var selected = Set<String>()

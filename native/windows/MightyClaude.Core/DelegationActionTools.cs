@@ -62,7 +62,7 @@ public sealed partial class DelegationCoordinator
                     try { Commit(File, context); }
                     catch (Exception ex) when (DelegationFileStore.IsSaveFailure(ex))
                     {
-                        return DelegationResponse.Failure($"The child is merged: {record.ParentBranch} now points at {record.MergedCommit}, and the app keeps the merge on record, but the delegation file could not be saved ({UnsavedReasonForAgent(ex)}). Mighty Claude saves it again by itself; nothing is needed from you. Do not merge this child again.");
+                        return DelegationResponse.Failure($"The child is merged: {record.ParentBranch} now points at {record.MergedCommit}, and the app keeps the merge on record, but the delegation file could not be saved ({UnsavedReasonForAgent(ex)}). Mighty Code saves it again by itself; nothing is needed from you. Do not merge this child again.");
                     }
                     return new(Merged: record);
                 default: throw new InvalidOperationException();

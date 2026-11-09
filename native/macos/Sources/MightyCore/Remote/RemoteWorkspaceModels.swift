@@ -1,8 +1,8 @@
 import Foundation
 import CryptoKit
 
-// Remote workspaces: one Mighty Claude opens a workspace another computer's
-// Mighty Claude shares over Tailscale and runs agents and commands there
+// Remote workspaces: one Mighty Code opens a workspace another computer's
+// Mighty Code shares over Tailscale and runs agents and commands there
 // (docs/remote-workspaces.md). The host is `RemoteHostService`, the client
 // `RemoteClientService`; this file holds what both read.
 

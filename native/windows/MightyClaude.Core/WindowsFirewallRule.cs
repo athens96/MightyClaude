@@ -25,13 +25,13 @@ public sealed record FirewallRuleReading(FirewallRuleState State, IReadOnlyList<
 /// app's own ports, only from and to Tailscale's ranges, only for the app's own executable. This is the one place the app asks Windows
 /// to elevate a command, and the command is fixed: <c>%SystemRoot%\System32\netsh.exe advfirewall firewall add|set|delete rule …</c>,
 /// built from these constants, the validated exe path and the validated ports:
-/// <c>name="Mighty Claude (Tailscale)" dir=in action=allow protocol=TCP localport=&lt;ports&gt; localip=&lt;ranges&gt;
+/// <c>name="Mighty Code (Tailscale)" dir=in action=allow protocol=TCP localport=&lt;ports&gt; localip=&lt;ranges&gt;
 /// remoteip=&lt;ranges&gt; program="&lt;exe&gt;" profile=any</c> (<c>set rule … new … enable=yes</c> when the rule is there).
 /// Reading whether the rule exists needs no elevation.
 /// </summary>
 public static partial class WindowsFirewallRule
 {
-    public const string RuleName = "Mighty Claude (Tailscale)";
+    public const string RuleName = "Mighty Code (Tailscale)";
     public const string RemoteRanges = "100.64.0.0/10,fd7a:115c:a1e0::/48";
     /// <summary>The rule's <c>localip=</c>: the same ranges, a backstop for <c>profile=any</c> so no other adapter's address is opened.</summary>
     public const string LocalRanges = "100.64.0.0/10,fd7a:115c:a1e0::/48";

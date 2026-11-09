@@ -106,15 +106,15 @@ internal static class DelegationHumanChildVerification
 
         // A Claude child's words are as before; another agent's name no Claude pane and leave the commit to the app.
         var worktree = new ChildWorktree("c1", @"C:\w\c1", @"C:\w\c1", "mighty/c1", "main", Commit);
-        Same(DelegationCoordinator.FirstInput("Fix the parser.\n", worktree), $"Another Claude pane in Mighty Claude delegated this task to you. You work in your own git worktree on the branch mighty/c1; the task is also saved in {worktree.TaskFile}.\n\nWhen you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write your report to {worktree.ReportFile}: what you did, what is left and what your parent should check. Your parent gets one notice for each of your runs that ends with that file changed, and may merge your branch. Do not merge, push or switch branches.\n\nTask:\nFix the parser.\n", "a Claude child's first run");
-        Same(DelegationCoordinator.HumanNote(worktree), $"[Mighty Claude] This request runs in its own git worktree on the branch mighty/c1, opened beside another Claude pane so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to {worktree.ReportFile}: what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches.", "a Claude child's note");
+        Same(DelegationCoordinator.FirstInput("Fix the parser.\n", worktree), $"Another Claude pane in Mighty Code delegated this task to you. You work in your own git worktree on the branch mighty/c1; the task is also saved in {worktree.TaskFile}.\n\nWhen you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write your report to {worktree.ReportFile}: what you did, what is left and what your parent should check. Your parent gets one notice for each of your runs that ends with that file changed, and may merge your branch. Do not merge, push or switch branches.\n\nTask:\nFix the parser.\n", "a Claude child's first run");
+        Same(DelegationCoordinator.HumanNote(worktree), $"[Mighty Code] This request runs in its own git worktree on the branch mighty/c1, opened beside another Claude pane so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to {worktree.ReportFile}: what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches.", "a Claude child's note");
         var followUp = new FollowUp("f-1", "c1", "Also add tests.", DeliveryLane.Pending);
         Check(DelegationCoordinator.Text(followUp, worktree.ReportFile).EndsWith($"When you are done, commit your work on your branch and write your updated report to {worktree.ReportFile}.", StringComparison.Ordinal), "a Claude child's follow-up");
         foreach (var provider in new[] { "codex", "gemini" })
         {
             string[] texts = [DelegationCoordinator.FirstInput("Fix the parser.", worktree, provider), DelegationCoordinator.HumanNote(worktree, provider), DelegationCoordinator.HumanFirstRun("Fix the parser.", worktree, provider).Input, DelegationCoordinator.Text(followUp, worktree.ReportFile, provider)];
             foreach (var text in texts) Check(!text.Contains("Claude pane", StringComparison.Ordinal) && !text.Contains("commit your work", StringComparison.Ordinal) && text.Contains("Do not commit", StringComparison.Ordinal) && text.Contains(worktree.ReportFile, StringComparison.Ordinal), $"{provider}: {text}");
-            Check(texts[0].StartsWith("Another pane in Mighty Claude delegated this task to you.", StringComparison.Ordinal) && texts[0].EndsWith("Task:\nFix the parser.", StringComparison.Ordinal)
+            Check(texts[0].StartsWith("Another pane in Mighty Code delegated this task to you.", StringComparison.Ordinal) && texts[0].EndsWith("Task:\nFix the parser.", StringComparison.Ordinal)
                 && texts[0].Contains(DelegationCoordinator.AppCommitNote(worktree), StringComparison.Ordinal) && texts[1].Contains(DelegationCoordinator.AppCommitNote(worktree), StringComparison.Ordinal), provider + "'s first run");
         }
         // A slash command runs alone, the note following it as the next request.
@@ -179,7 +179,7 @@ internal static class DelegationHumanChildVerification
             var saved = fixture.Store.Load();
             Check(saved.Children.Single() is { StartedByHuman: true, RunId: var runId, AwaitedRunId: var awaited } && runId == "send-run-of-" + child.Id && awaited == runId && saved.Copy(child.Id, DelegationCopyKind.Task)?.Text == text && saved.Notices.Count == 0, "the record is saved with its task and first run");
             Check(fixture.Host.CreatedPanes.SequenceEqual([new DelegationChildPane(child.Id, "parent", "acceptEdits", child.WorktreePath, true)]) && fixture.Host.StartedRuns.Count == 0, "the host made its pane and started nothing");
-            Check(fixture.Sends.Started is [var (id, run)] && id == child.Id && run.FollowingNote is null && run.Input.StartsWith(text, StringComparison.Ordinal) && run.Input.Contains("[Mighty Claude]", StringComparison.Ordinal)
+            Check(fixture.Sends.Started is [var (id, run)] && id == child.Id && run.FollowingNote is null && run.Input.StartsWith(text, StringComparison.Ordinal) && run.Input.Contains("[Mighty Code]", StringComparison.Ordinal)
                 && run.Input.Contains(child.Branch, StringComparison.Ordinal) && run.Input.Contains(ChildWorktree.ReportFileIn(child.WorktreePath), StringComparison.Ordinal), "the send's own start runs the human's text first");
             Check(await fixture.Place.Git("rev-parse", "refs/heads/" + child.Branch) == head && await fixture.Place.Git("symbolic-ref", "--short", "HEAD") == "main" && (await fixture.Place.Git("status", "--porcelain", "--untracked-files=all")).Length == 0, "the parent's checkout is untouched");
 
@@ -220,7 +220,7 @@ internal static class DelegationHumanChildVerification
         try
         {
             var command = Started(await fixture.Send("/review the parser"));
-            Check(await fixture.WaitFor(command.Id, ChildState.Running) && fixture.Sends.Started[0].Run is { Input: "/review the parser", FollowingNote: { } note } && note.StartsWith("[Mighty Claude]", StringComparison.Ordinal) && note.Contains(command.Branch, StringComparison.Ordinal), "a slash command runs alone");
+            Check(await fixture.WaitFor(command.Id, ChildState.Running) && fixture.Sends.Started[0].Run is { Input: "/review the parser", FollowingNote: { } note } && note.StartsWith("[Mighty Code]", StringComparison.Ordinal) && note.Contains(command.Branch, StringComparison.Ordinal), "a slash command runs alone");
             var planned = Started(await fixture.Send("Plan the parser.", planFirst: true));
             Check(planned.StartingMode == "plan" && await fixture.WaitFor(planned.Id, ChildState.Running) && fixture.Host.CreatedPanes[^1].Mode == "plan", "a plan-first style starts the child in plan mode");
         }
@@ -447,7 +447,7 @@ internal static class DelegationHumanChildVerification
             await fixture.Coordinator.ChildRunEnded(child.Id, "send-run-of-" + child.Id, ChildRunEnd.Finished);
             var reported = fixture.Only;
             Check(reported.State == ChildState.Reported && await fixture.Coordinator.ConflictResolution(child.Id) is { } text && text == ChildMerge.ConflictPrompt(reported) && await fixture.Coordinator.ConflictResolution(child.Id) is null, "asked once per report");
-            Check(ChildMerge.ConflictPrompt(reported).StartsWith($"[Mighty Claude] Merging your branch {reported.Branch} into main from the app was refused: the two conflict.", StringComparison.Ordinal)
+            Check(ChildMerge.ConflictPrompt(reported).StartsWith($"[Mighty Code] Merging your branch {reported.Branch} into main from the app was refused: the two conflict.", StringComparison.Ordinal)
                 && ChildMerge.ConflictPrompt(reported).Contains(ChildWorktree.ReportFileIn(reported.WorktreePath), StringComparison.Ordinal), "the request names the branches and the report");
             await fixture.Coordinator.ConflictResolutionNotStarted(child.Id);
             Check(await fixture.Coordinator.ConflictResolution(child.Id) is not null, "a request that did not start is asked again");

@@ -15,7 +15,7 @@ using static DelegationSupport;
 /// </summary>
 internal static class DelegationAppVerification
 {
-    private static readonly string Executable = Path.Combine(Path.GetTempPath(), "Mighty Claude", "MightyClaude.exe");
+    private static readonly string Executable = Path.Combine(Path.GetTempPath(), "Mighty Code", "MightyClaude.exe");
     private static readonly DelegationRequest Delegate = Request("delegate", ("task", "Write the release notes"), ("mode", "plan"));
 
     private static JsonObject Servers(List<string> arguments)
@@ -120,14 +120,14 @@ internal static class DelegationAppVerification
         Same(await AgentIOPipe.CallDelegation(pipe.Name, "forged", Delegate, CancellationToken.None), DelegationResponse.Failure(AgentIOPipe.UnknownTokenMessage), "a forged token");
         var revoked = Bind("revoked", "claude", on, true); pipe.Bindings.Revoke("revoked");
         Same(await Send(Delegate, revoked), DelegationResponse.Failure(AgentIOPipe.UnknownTokenMessage), "a revoked token");
-        Same(await AgentIOPipe.CallDelegation("not-a-pipe", "x", Delegate, CancellationToken.None), DelegationResponse.Failure("Mighty Claude's agent socket path is invalid."), "an invalid pipe name is never opened");
+        Same(await AgentIOPipe.CallDelegation("not-a-pipe", "x", Delegate, CancellationToken.None), DelegationResponse.Failure("Mighty Code's agent socket path is invalid."), "an invalid pipe name is never opened");
         // A malformed delegation call is answered, and the terminal calls on the shared pipe are served as before.
         var alone = pipe.Bindings.Bind("alone", workspace, "claude", pipe.Name, Executable);
         await using (var raw = new NamedPipeClientStream(".", pipe.Name, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly))
         {
             await raw.ConnectAsync(10_000);
             await AgentIOPipe.WritePacket(raw, Encoding.UTF8.GetBytes("{\"token\":\"" + alone.Environment[AgentIOBinding.TokenKey] + "\",\"delegation\":{\"tool\":5,\"arguments\":{}}}"), CancellationToken.None);
-            Same(JsonSerializer.Deserialize<DelegationResponse>(await AgentIOPipe.ReadPacket(raw, CancellationToken.None), Wire.Json), DelegationResponse.Failure("The request to Mighty Claude was malformed."), "a malformed call");
+            Same(JsonSerializer.Deserialize<DelegationResponse>(await AgentIOPipe.ReadPacket(raw, CancellationToken.None), Wire.Json), DelegationResponse.Failure("The request to Mighty Code was malformed."), "a malformed call");
         }
         var served = await AgentIOPipe.Call(pipe.Name, alone.Environment[AgentIOBinding.TokenKey], "read_latest_output", JsonSerializer.SerializeToElement(new { handle = "h" }), CancellationToken.None);
         Check(served.GetProperty("ok").GetBoolean() && served.GetProperty("result").GetProperty("owner").GetString() == "alone" && terminal.SequenceEqual(["alone"]), "a terminal call is served, and no delegation call reached the terminal tools");
@@ -138,7 +138,7 @@ internal static class DelegationAppVerification
             await using var raw = new NamedPipeClientStream(".", pipe.Name, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             await raw.ConnectAsync(10_000);
             await AgentIOPipe.WritePacket(raw, Encoding.UTF8.GetBytes(packet), CancellationToken.None);
-            Same(JsonSerializer.Deserialize<DelegationResponse>(await AgentIOPipe.ReadPacket(raw, CancellationToken.None), Wire.Json), DelegationResponse.Failure("The request to Mighty Claude was malformed."), "a malformed call: " + packet[..Math.Min(40, packet.Length)]);
+            Same(JsonSerializer.Deserialize<DelegationResponse>(await AgentIOPipe.ReadPacket(raw, CancellationToken.None), Wire.Json), DelegationResponse.Failure("The request to Mighty Code was malformed."), "a malformed call: " + packet[..Math.Min(40, packet.Length)]);
         }
         served = await AgentIOPipe.Call(pipe.Name, alone.Environment[AgentIOBinding.TokenKey], "read_latest_output", JsonSerializer.SerializeToElement(new { handle = "h" }), CancellationToken.None);
         Check(served.GetProperty("ok").GetBoolean(), "a terminal call is served after seventeen malformed packets");

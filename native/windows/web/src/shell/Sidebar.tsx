@@ -219,7 +219,7 @@ export function Sidebar() {
       <footer className="sidebar-footer">
         <img className="sidebar-app-icon" src={appIcon} width={20} height={20} alt="" />
         <span className="sidebar-brand">
-          <span className="sidebar-brand-line"><span className="sidebar-brand-name">Mighty Claude</span><BetaBadge /></span>
+          <span className="sidebar-brand-line"><span className="sidebar-brand-name">Mighty Code</span><BetaBadge /></span>
           <span className="sidebar-version mono">v{shell.version}</span>
         </span>
         <button type="button" className="icon-button sidebar-footer-button" title={t('menu.help')} aria-label={t('menu.help')} onClick={() => call('openHelp')}><Icon name="circle-question-mark" size={15} /></button>

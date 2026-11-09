@@ -9,7 +9,7 @@ using MightyClaude.Core;
 // recorder in place of Process.Start.
 internal static class WindowsFirewallVerification
 {
-    private const string Program = @"C:\Program Files\Mighty Claude\MightyClaude.exe";
+    private const string Program = @"C:\Program Files\Mighty Code\MightyClaude.exe";
     private const string System32 = @"C:\Windows\System32";
     private const string Ranges = "100.64.0.0/10,fd7a:115c:a1e0::/48";
     private static void Check(bool value, string reason) { if (!value) throw new InvalidOperationException(reason); }
@@ -17,15 +17,15 @@ internal static class WindowsFirewallVerification
     internal static Task TheRuleIsBuiltFromConstants()
     {
         var add = WindowsFirewallRule.AddArguments(Program, [43139]);
-        Check(add is not null && add.SequenceEqual(["advfirewall", "firewall", "add", "rule", "name=Mighty Claude (Tailscale)", "dir=in", "action=allow", "protocol=TCP", "localport=43139", "localip=" + Ranges, "remoteip=" + Ranges, "program=" + Program, "profile=any"]), "the add rule's argv");
-        Check(WindowsFirewallRule.CommandLine(add!) == "advfirewall firewall add rule name=\"Mighty Claude (Tailscale)\" dir=in action=allow protocol=TCP localport=43139 localip=100.64.0.0/10,fd7a:115c:a1e0::/48 remoteip=100.64.0.0/10,fd7a:115c:a1e0::/48 program=\"C:\\Program Files\\Mighty Claude\\MightyClaude.exe\" profile=any", "netsh's own spelling: key=\"value\" around the name and the path");
+        Check(add is not null && add.SequenceEqual(["advfirewall", "firewall", "add", "rule", "name=Mighty Code (Tailscale)", "dir=in", "action=allow", "protocol=TCP", "localport=43139", "localip=" + Ranges, "remoteip=" + Ranges, "program=" + Program, "profile=any"]), "the add rule's argv");
+        Check(WindowsFirewallRule.CommandLine(add!) == "advfirewall firewall add rule name=\"Mighty Code (Tailscale)\" dir=in action=allow protocol=TCP localport=43139 localip=100.64.0.0/10,fd7a:115c:a1e0::/48 remoteip=100.64.0.0/10,fd7a:115c:a1e0::/48 program=\"C:\\Program Files\\Mighty Code\\MightyClaude.exe\" profile=any", "netsh's own spelling: key=\"value\" around the name and the path");
         Check(WindowsFirewallRule.CommandLine(WindowsFirewallRule.AddArguments(@"C:\Mighty\MightyClaude.exe", [43139])!).Contains(" program=\"C:\\Mighty\\MightyClaude.exe\" ", StringComparison.Ordinal), "the path is quoted even without a space");
         Check(WindowsFirewallRule.AddArguments(Program, [43139, 43137, 43139])![8] == "localport=43137,43139", "a port set (part 3 adds 43137): sorted, each once");
         var set = WindowsFirewallRule.SetArguments(Program, [43139, 43137]);
-        Check(set is not null && set.SequenceEqual(["advfirewall", "firewall", "set", "rule", "name=Mighty Claude (Tailscale)", "new", "dir=in", "action=allow", "protocol=TCP", "localport=43137,43139", "localip=" + Ranges, "remoteip=" + Ranges, "program=" + Program, "profile=any", "enable=yes"]), "the update-in-place argv");
+        Check(set is not null && set.SequenceEqual(["advfirewall", "firewall", "set", "rule", "name=Mighty Code (Tailscale)", "new", "dir=in", "action=allow", "protocol=TCP", "localport=43137,43139", "localip=" + Ranges, "remoteip=" + Ranges, "program=" + Program, "profile=any", "enable=yes"]), "the update-in-place argv");
         Check(WindowsFirewallRule.SetArguments("MightyClaude.exe", [43139]) is null && WindowsFirewallRule.SetArguments(Program, []) is null, "the update is refused like the add");
-        Check(WindowsFirewallRule.DeleteArguments().SequenceEqual(["advfirewall", "firewall", "delete", "rule", "name=Mighty Claude (Tailscale)"]), "the delete rule's argv");
-        Check(WindowsFirewallRule.ShowArguments().SequenceEqual(["advfirewall", "firewall", "show", "rule", "name=Mighty Claude (Tailscale)"]), "the query's argv");
+        Check(WindowsFirewallRule.DeleteArguments().SequenceEqual(["advfirewall", "firewall", "delete", "rule", "name=Mighty Code (Tailscale)"]), "the delete rule's argv");
+        Check(WindowsFirewallRule.ShowArguments().SequenceEqual(["advfirewall", "firewall", "show", "rule", "name=Mighty Code (Tailscale)"]), "the query's argv");
         Check(WindowsFirewallRule.Arguments([43139], Program)!.SequenceEqual(add!) && WindowsFirewallRule.Arguments([], Program)!.SequenceEqual(WindowsFirewallRule.DeleteArguments()), "a port set adds; none deletes");
         foreach (var bad in new[] { "", "MightyClaude.exe", "C:\\Mighty\\Mighty\"Claude.exe", "C:\\Mighty\\Mighty\nClaude.exe", @"C:\Mighty\%TEMP%\MightyClaude.exe", @"C:\Mighty\MightyClaude.bat", @"\\server\share\MightyClaude.exe", @"C:\Mighty\..\MightyClaude.exe", @"C:\Mighty\x.exe:stream.exe", "C:/Mighty/MightyClaude.exe", @"C:\Mighty\\MightyClaude.exe",
             "C:\\Mighty\\MightyClaude.exe\n", "C:\\Mi\u007Fghty\\MightyClaude.exe", "C:\\Mighty\u202E\\MightyClaude.exe", "C:\\Mighty\\.\\MightyClaude.exe", "C:\\\uFEFFMighty\\MightyClaude.exe", "C:\\Mighty\u00A0Claude\\MightyClaude.exe", "C:\\Mighty\tClaude\\MightyClaude.exe", "C:\\Mighty\u0085\\MightyClaude.exe",

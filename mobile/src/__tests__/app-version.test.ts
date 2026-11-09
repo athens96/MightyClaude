@@ -39,12 +39,12 @@ describe('app version', () => {
   });
 
   it('applies the version, versionCode and build number, keeping the rest', () => {
-    const base = { name: 'Mighty Claude', version: '1.1.0', android: { package: 'x.y', versionCode: 2 }, ios: { buildNumber: '2', supportsTablet: true } };
+    const base = { name: 'Mighty Code', version: '1.1.0', android: { package: 'x.y', versionCode: 2 }, ios: { buildNumber: '2', supportsTablet: true } };
     const config = withReleaseVersion(base, '0.4.43');
     expect(config.version).toBe('0.4.43');
     expect(config.android).toEqual({ package: 'x.y', versionCode: 4043 });
     expect(config.ios).toEqual({ buildNumber: '4043', supportsTablet: true });
-    expect(config.name).toBe('Mighty Claude');
+    expect(config.name).toBe('Mighty Code');
     expect(withReleaseVersion(base, null)).toBe(base);
   });
 });

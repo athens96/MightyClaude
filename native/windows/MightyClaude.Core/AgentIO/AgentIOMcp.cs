@@ -68,7 +68,7 @@ public sealed class AgentIOMcp(Func<string, JsonElement, CancellationToken, Task
             {
                 case "initialize":
                     var version = args.Text("protocolVersion") is "2024-11-05" or "2025-03-26" or "2025-06-18" or "2025-11-25" ? args.Text("protocolVersion")! : "2025-06-18";
-                    return Result(new { protocolVersion = version, capabilities = new { tools = new { listChanged = false } }, serverInfo = new { name = AgentIOBinding.ServerName, title = "Mighty Claude terminal and web", version = "1.0.0" }, instructions = AgentIOTools.Guidance });
+                    return Result(new { protocolVersion = version, capabilities = new { tools = new { listChanged = false } }, serverInfo = new { name = AgentIOBinding.ServerName, title = "Mighty Code terminal and web", version = "1.0.0" }, instructions = AgentIOTools.Guidance });
                 case "ping": return Result(new { });
                 case "tools/list":
                     return Result(new { tools = AgentIOTools.All.Select(tool => new { name = tool.Name, description = tool.Description, inputSchema = new { type = "object", properties = new Dictionary<string, object> { [tool.Argument] = new { type = "string" } }, required = new[] { tool.Argument }, additionalProperties = false } }) });

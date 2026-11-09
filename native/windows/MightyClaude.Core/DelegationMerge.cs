@@ -49,7 +49,7 @@ public static class ChildMerge
     /// goes through once it reports again (M/DelegationMerge.swift conflictPrompt).
     /// </summary>
     public static string ConflictPrompt(ChildRecord child) =>
-        $"[Mighty Claude] Merging your branch {child.Branch} into {child.ParentBranch} from the app was refused: the two conflict. In this worktree, bring {child.ParentBranch} into your branch with `git merge {child.ParentBranch}`, resolve every conflict so that the changes on both sides are kept (ask when a choice is unclear), run the checks that apply, and commit the merge on {child.Branch}, leaving no uncommitted changes to tracked files. Then add a short section to {ChildWorktree.ReportFileIn(child.WorktreePath)} saying what conflicted and how you resolved it. The app merges your branch once you report again. Do not push, rebase or switch branches.";
+        $"[Mighty Code] Merging your branch {child.Branch} into {child.ParentBranch} from the app was refused: the two conflict. In this worktree, bring {child.ParentBranch} into your branch with `git merge {child.ParentBranch}`, resolve every conflict so that the changes on both sides are kept (ask when a choice is unclear), run the checks that apply, and commit the merge on {child.Branch}, leaving no uncommitted changes to tracked files. Then add a short section to {ChildWorktree.ReportFileIn(child.WorktreePath)} saying what conflicted and how you resolved it. The app merges your branch once you report again. Do not push, rebase or switch branches.";
 
     /// <summary>
     /// The parent's merge tool, fast-forward only. <paramref name="parentCheckout"/> is the parent pane's folder. The first rule

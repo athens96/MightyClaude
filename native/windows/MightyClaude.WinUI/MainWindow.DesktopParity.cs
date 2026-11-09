@@ -26,7 +26,7 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The launch splash (M/LaunchSplashView.swift:6-44): the page under a faint accent glow from its
-    /// centre; the 104pt app icon over its soft accent shadow, 24 over "Mighty Claude" (30 semibold,
+    /// centre; the 104pt app icon over its soft accent shadow, 24 over "Mighty Code" (30 semibold,
     /// tracking −0.6, <c>ink</c>), 10 over the 13pt <c>ink2</c> line, 28 over a small spinner.
     /// </summary>
     private void ShowLaunchSplash()
@@ -54,7 +54,7 @@ public sealed partial class MainWindow
         badge.Children.Add(icon); stack.Children.Add(badge);
         // Tracking −0.6pt at 30pt is −20 thousandths of an em. SF's 30pt line is 36 high where Segoe's is 40, and its
         // 13pt line 15.5 where Segoe's is 17: the margins give the difference back, so the column measures as the Mac's.
-        stack.Children.Add(new TextBlock { Text = "Mighty Claude", TextSize = 30, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, CharacterSpacing = -20, Foreground = brushes.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Md) });
+        stack.Children.Add(new TextBlock { Text = "Mighty Code", TextSize = 30, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, CharacterSpacing = -20, Foreground = brushes.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Md) });
         stack.Children.Add(new TextBlock { Text = Locale.Get("launch.preparing"), TextSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -DesignMetrics.Spacing.Xxs, 0, 0) });
         var progress = new ProgressRing { IsActive = true, Width = 16, Height = 16, MinWidth = 16, MinHeight = 16, Margin = new Thickness(0, DesignMetrics.Spacing.Xl, 0, 0) };
         AutomationProperties.SetName(progress, Locale.Get("launch.loading")); stack.Children.Add(progress);

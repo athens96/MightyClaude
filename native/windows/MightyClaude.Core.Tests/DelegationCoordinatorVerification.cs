@@ -557,12 +557,12 @@ internal static class DelegationCoordinatorVerification
             && calls.Single() is { Tool: "delegate" } forwarded && forwarded.Arguments.OrderBy(pair => pair.Key).Select(pair => pair.Key + "=" + pair.Value).SequenceEqual(["mode=plan", "task=Write the release notes"]), "the call is forwarded as it was given");
         reply = DelegationResponse.Failure(DelegationIOHandler.DetachedMessage);
         var failed = Json(await mcp.Handle(ToolCall("list_children", "{}")))["result"]!;
-        Check(failed["isError"]!.GetValue<bool>() && failed["structuredContent"] is null && failed["content"]![0]!["text"]!.GetValue<string>() == DelegationIOHandler.DetachedMessage && TextOf(DelegationMcp.Result(new())) == "Mighty Claude did not answer the request.", "a failure is the tool's error text");
+        Check(failed["isError"]!.GetValue<bool>() && failed["structuredContent"] is null && failed["content"]![0]!["text"]!.GetValue<string>() == DelegationIOHandler.DetachedMessage && TextOf(DelegationMcp.Result(new())) == "Mighty Code did not answer the request.", "a failure is the tool's error text");
         // Malformed calls never reach the app.
         calls.Clear();
         foreach (var name in new[] { "Delegate", "../delegate", "", new string('a', 65), "1delegate" }) Check(Json(await mcp.Handle(ToolCall(name, "{}")))["error"]!["code"]!.GetValue<int>() == -32602, "no tool is named " + name);
         foreach (var arguments in new[] { """{"task":42}""", """{"task":["a"]}""", """{"Task":"x"}""", "\"not an object\"", "null" }) Check(Json(await mcp.Handle(ToolCall("delegate", arguments)))["result"]!["isError"]!.GetValue<bool>(), "arguments must be strings with lowercase names: " + arguments);
-        Check(Json(await new DelegationMcp(null).Handle(ToolCall("delegate", """{"task":"x","mode":"plan"}""")))["result"]!["content"]![0]!["text"]!.GetValue<string>() == "This MCP server was started without a Mighty Claude pane connection, so it cannot reach the app." && calls.Count == 0, "a server with no pane connection reaches nothing");
+        Check(Json(await new DelegationMcp(null).Handle(ToolCall("delegate", """{"task":"x","mode":"plan"}""")))["result"]!["content"]![0]!["text"]!.GetValue<string>() == "This MCP server was started without a Mighty Code pane connection, so it cannot reach the app." && calls.Count == 0, "a server with no pane connection reaches nothing");
         Check(await mcp.Handle("""{"jsonrpc":"2.0","method":"notifications/initialized"}""") is null && await mcp.Handle("  \t") is null && Json(await mcp.Handle("{"))["error"]!["code"]!.GetValue<int>() == -32700 && Json(await mcp.Handle("""{"jsonrpc":"1.0","id":3,"method":"ping"}"""))["error"]!["code"]!.GetValue<int>() == -32600
             && Json(await mcp.Handle("""{"jsonrpc":"2.0","id":true,"method":"ping"}"""))["error"]!["code"]!.GetValue<int>() == -32600 && Json(await mcp.Handle("""{"jsonrpc":"2.0","id":4,"method":"resources/list"}"""))["error"]!["message"]!.GetValue<string>() == "Method not found: resources/list", "notifications get no reply, and bad requests their protocol error");
     }
@@ -686,7 +686,7 @@ internal static class DelegationCoordinatorVerification
             var answer = await fixture.Call("merge", ("child", "c1"), ("expected_head", head));
             // The fast-forward landed, and the parent is told so and not to merge again.
             Check(answer.Error is { } error && error.StartsWith($"The child is merged: main now points at {head}, and the app keeps the merge on record, but the delegation file could not be saved (", StringComparison.Ordinal)
-                && error.EndsWith("). Mighty Claude saves it again by itself; nothing is needed from you. Do not merge this child again.", StringComparison.Ordinal), "the parent is told the merge stands: " + answer.Error);
+                && error.EndsWith("). Mighty Code saves it again by itself; nothing is needed from you. Do not merge this child again.", StringComparison.Ordinal), "the parent is told the merge stands: " + answer.Error);
             Check(await place.Git("rev-parse", "HEAD") == head && fixture.File.Merges.Select(merge => merge.ChildId).SequenceEqual(["c1"]) && fixture.File.Children[0].State == ChildState.Merged, "the merge is on record in memory");
             Check((await fixture.Call("merge", ("child", "c1"), ("expected_head", head))).Refused == DelegationReasonCode.NotReported, "and is not merged again");
             unblock();
@@ -708,7 +708,7 @@ internal static class DelegationCoordinatorVerification
             Check(file.FollowUps.SequenceEqual([new FollowUp(info.Id, "c1", "Also add tests.", DeliveryLane.Held)]) && file.Children.Select(child => child.FollowUpCount).SequenceEqual([1, 0]) && fixture.Store.Load() == file, "written to disk before the answer");
             var result = DelegationMcp.Result(first);
             Check(result["isError"] is null && Data(result, "followUp")!.ToJsonString() == $$"""{"id":"{{info.Id}}","child":"c1","lane":"held","remaining":1}"""
-                && TextOf(result) == $"Follow-up {info.Id} for child c1 is recorded; Mighty Claude hands it to the child exactly once. This child may get 1 more.", "the follow-up is tool data");
+                && TextOf(result) == $"Follow-up {info.Id} for child c1 is recorded; Mighty Code hands it to the child exactly once. This child may get 1 more.", "the follow-up is tool data");
             // The second, kept exactly as given; the other child's count is its own.
             var words = "그리고 문서도 고쳐 줘.\n";
             var second = await fixture.Call("follow_up", ("child", " c1\n"), ("text", words));

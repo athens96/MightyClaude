@@ -49,7 +49,7 @@ public final class DelegationMCPServer: @unchecked Sendable {
         if let status = response.status { return result(status) }
         if let merged = response.merged { return result(merged) }
         if let followUp = response.followUp { return result(followUp) }
-        return MCPStdioServer.toolError(response.error ?? "Mighty Claude did not answer the request.")
+        return MCPStdioServer.toolError(response.error ?? "Mighty Code did not answer the request.")
     }
 
     /// What a refusal's code means when its name does not say it.
@@ -70,7 +70,7 @@ private struct DelegationToolSurface: MCPToolSurface {
     let socketPath: String?
     let transport: DelegationMCPServer.Transport
 
-    var serverInfo: [String: String] { ["name": DelegationMCPServer.serverName, "title": "Mighty Claude delegation", "version": "1.0.0"] }
+    var serverInfo: [String: String] { ["name": DelegationMCPServer.serverName, "title": "Mighty Code delegation", "version": "1.0.0"] }
     var instructions: String? { nil }
     var toolDefinitions: [[String: Any]] { DelegationToolManifest.all.map(DelegationToolManifest.definition) }
     func accepts(tool name: String) -> Bool { DelegationRequest.isToolName(name) }
@@ -81,7 +81,7 @@ private struct DelegationToolSurface: MCPToolSurface {
             guard DelegationRequest.isToolName(key), let text = value as? String else { return MCPStdioServer.toolError("Arguments of \(name) must be strings with lowercase names.") }
             values[key] = text
         }
-        guard let token, let socketPath else { return MCPStdioServer.toolError("This MCP server was started without a Mighty Claude pane connection, so it cannot reach the app.") }
+        guard let token, let socketPath else { return MCPStdioServer.toolError("This MCP server was started without a Mighty Code pane connection, so it cannot reach the app.") }
         return DelegationMCPServer.result(transport(DelegationRequest(tool: name, arguments: values), token, socketPath))
     }
 }

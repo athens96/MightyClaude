@@ -16,7 +16,7 @@ public sealed record RemoteClientOptions
 }
 
 /// <summary>
-/// "다른 컴퓨터 연결" (M/Remote/RemoteClientService.swift): saved connections to other computers' Mighty Claude, the remote workspaces
+/// "다른 컴퓨터 연결" (M/Remote/RemoteClientService.swift): saved connections to other computers' Mighty Code, the remote workspaces
 /// opened through them, and the runs of their panes. A run's events are the host runner's own, read by cursor and applied as
 /// the pane's; polling a run is also its heartbeat.
 /// </summary>

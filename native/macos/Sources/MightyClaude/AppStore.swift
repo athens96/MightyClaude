@@ -82,7 +82,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// Phone access (docs/mobile-remote.md): listener, revision tracking, UI status.
     @Published var mobileStatus = MobileHostStatus()
     @Published var mobileBusy = false
-    lazy var mobileRemote = MobileRemoteService(dataDirectory: dataDirectory.appendingPathComponent("mobile-remote", isDirectory: true), hostName: Host.current().localizedName ?? "Mighty Claude Mac")
+    lazy var mobileRemote = MobileRemoteService(dataDirectory: dataDirectory.appendingPathComponent("mobile-remote", isDirectory: true), hostName: Host.current().localizedName ?? "Mighty Code Mac")
     var mobileBridge: MobileRemoteBridge?
     /// Screen-share safety (ScreenShareSafety.swift): the per-phone allow-list,
     /// the host's enforcement actor and the menu-bar kill switch.

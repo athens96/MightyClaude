@@ -178,7 +178,7 @@ struct WorkspaceView: View {
                     else { Image(systemName: "sparkles").resizable().scaledToFit().foregroundStyle(Palette.sidebarAccent) }
                 }.frame(width: 20, height: 20).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                    Text("Mighty Claude").font(.ui(size: 12, weight: .semibold)).lineLimit(1)
+                    Text("Mighty Code").font(.ui(size: 12, weight: .semibold)).lineLimit(1)
                     Text("v\(store.appVersion)").font(.ui(size: 10, design: .monospaced))
                         .foregroundStyle(Palette.sidebarInk2).lineLimit(1)
                         .accessibilityIdentifier("sidebar-app-version")

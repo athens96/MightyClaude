@@ -280,7 +280,7 @@ extension DelegationCoordinator {
     /// A notice as its parent's run reads it: a pointer naming the notice and
     /// the child. The report itself is read through child_status.
     static func text(of notice: Notice) -> String {
-        let head = "[Mighty Claude notice \(notice.id)]"
+        let head = "[Mighty Code notice \(notice.id)]"
         switch notice.kind {
         case .reported:
             return "\(head) Your child \(notice.childId) reported revision \(notice.reportRevision). Read the report with child_status; merge it with merge when it is right."
@@ -296,9 +296,9 @@ extension DelegationCoordinator {
     static func text(of followUp: FollowUp, reportFile: String, provider: String = "claude") -> String {
         let done = provider == "claude"
             ? "When you are done, commit your work on your branch and write your updated report to \(reportFile)."
-            : "When you are done, write your updated report to \(reportFile). Do not commit: leave your changes, and Mighty Claude commits them on your branch when your run ends with that file changed."
+            : "When you are done, write your updated report to \(reportFile). Do not commit: leave your changes, and Mighty Code commits them on your branch when your run ends with that file changed."
         return """
-        [Mighty Claude follow-up \(followUp.id)] Your parent sent you this follow-up:
+        [Mighty Code follow-up \(followUp.id)] Your parent sent you this follow-up:
 
         \(followUp.text)
 

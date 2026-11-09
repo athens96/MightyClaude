@@ -73,8 +73,8 @@ import Testing
 
     @Test func aClaudeChildsWordsAreAsBeforeAndAnotherAgentsNameNoClaudePane() {
         let claude = DelegationCoordinator.firstInput(task: "Fix the parser.\n", worktree: worktree)
-        #expect(claude == "Another Claude pane in Mighty Claude delegated this task to you. You work in your own git worktree on the branch mighty/c1; the task is also saved in \(worktree.taskFile).\n\nWhen you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write your report to \(worktree.reportFile): what you did, what is left and what your parent should check. Your parent gets one notice for each of your runs that ends with that file changed, and may merge your branch. Do not merge, push or switch branches.\n\nTask:\nFix the parser.\n")
-        #expect(DelegationCoordinator.humanNote(worktree: worktree) == "[Mighty Claude] This request runs in its own git worktree on the branch mighty/c1, opened beside another Claude pane so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to \(worktree.reportFile): what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches.")
+        #expect(claude == "Another Claude pane in Mighty Code delegated this task to you. You work in your own git worktree on the branch mighty/c1; the task is also saved in \(worktree.taskFile).\n\nWhen you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write your report to \(worktree.reportFile): what you did, what is left and what your parent should check. Your parent gets one notice for each of your runs that ends with that file changed, and may merge your branch. Do not merge, push or switch branches.\n\nTask:\nFix the parser.\n")
+        #expect(DelegationCoordinator.humanNote(worktree: worktree) == "[Mighty Code] This request runs in its own git worktree on the branch mighty/c1, opened beside another Claude pane so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to \(worktree.reportFile): what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches.")
         let followUp = FollowUp(id: "f-1", childId: "c1", text: "Also add tests.")
         #expect(DelegationCoordinator.text(of: followUp, reportFile: worktree.reportFile).hasSuffix("When you are done, commit your work on your branch and write your updated report to \(worktree.reportFile)."))
         for provider in ["codex", "gemini"] {
@@ -86,7 +86,7 @@ import Testing
                 #expect(!text.contains("Claude pane") && !text.contains("commit your work"), "\(provider): \(text)")
                 #expect(text.contains("Do not commit") && text.contains(worktree.reportFile), "\(provider): \(text)")
             }
-            #expect(texts[0].hasPrefix("Another pane in Mighty Claude delegated this task to you.") && texts[0].hasSuffix("Task:\nFix the parser."))
+            #expect(texts[0].hasPrefix("Another pane in Mighty Code delegated this task to you.") && texts[0].hasSuffix("Task:\nFix the parser."))
             #expect(texts[0].contains(DelegationCoordinator.appCommitNote(worktree: worktree)) && texts[1].contains(DelegationCoordinator.appCommitNote(worktree: worktree)))
         }
         // The provider rides with the follow-up's child.

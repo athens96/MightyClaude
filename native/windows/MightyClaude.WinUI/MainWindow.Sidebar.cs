@@ -158,7 +158,7 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The footer under a full-width <c>line</c> (M/WorkspaceView.swift:108-120): the app icon 20,
-    /// <c>Spacing.Md</c> from "Mighty Claude" 12pt semibold with the app's 베타 capsule right after it, then the
+    /// <c>Spacing.Md</c> from "Mighty Code" 12pt semibold with the app's 베타 capsule right after it, then the
     /// help, theme and settings symbols, plain; the current app version sits below the name in muted 10pt mono.
     /// Help is Windows' own (the Mac's is in its Help menu), set the same pitch before the theme symbol.
     /// </summary>
@@ -176,7 +176,7 @@ public sealed partial class MainWindow
         brand.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); brand.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); brand.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var image = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/mightyclaude.png")), Width = 20, Height = 20, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Md, 0) };
         AutomationProperties.SetAccessibilityView(image, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw); Grid.SetRowSpan(image, 2); brand.Children.Add(image);
-        var title = new TextBlock { Text = "Mighty Claude", TextSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        var title = new TextBlock { Text = "Mighty Code", TextSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(title, 1); brand.Children.Add(title);
         var version = new TextBlock { Text = "v" + AppVersionText, TextSize = DesignMetrics.Type.Small, TextFont = TextArea.Code, Foreground = brushes.Brush(DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis };
         AutomationProperties.SetAutomationId(version, "sidebar-app-version");

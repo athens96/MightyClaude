@@ -50,7 +50,7 @@ final class CodexApprovalChannel {
 
     func start() {
         guard !started, !closed else { return }; started = true
-        call("initialize", ["clientInfo": ["name": "mightyclaude", "title": "Mighty Claude", "version": "1.0"],
+        call("initialize", ["clientInfo": ["name": "mightyclaude", "title": "Mighty Code", "version": "1.0"],
                             "capabilities": ["experimentalApi": false]])
     }
     func initializationTimedOut() {

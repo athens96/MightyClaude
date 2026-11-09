@@ -1,6 +1,6 @@
 import Foundation
 
-/// "다른 컴퓨터 연결": saved connections to other computers' Mighty Claude, the
+/// "다른 컴퓨터 연결": saved connections to other computers' Mighty Code, the
 /// remote workspaces opened through them, and the runs of their panes
 /// (docs/remote-workspaces.md). A run's events are the host runner's own,
 /// parsed there from the CLI's stream by the same parsers a local run uses, and

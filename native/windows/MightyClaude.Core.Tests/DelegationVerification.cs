@@ -438,7 +438,7 @@ internal static class DelegationVerification
         Check(answer == late, "the late answer comes at the limit");
         gate.SetResult(); await finished.Task.WaitAsync(TimeSpan.FromSeconds(30));
         Check(await DelegationCoordinator.Answer(30, late, () => Task.FromResult(DelegationResponse.Refusal(DelegationReasonCode.NotGit))) == DelegationResponse.Refusal(DelegationReasonCode.NotGit), "a quick tool answers itself");
-        Same(DelegationCoordinator.LateMessage("merge", DelegationCoordinator.AnswerSeconds), "merge did not finish within 45 seconds. Its work goes on in Mighty Claude; call list_children to see where your children stand.", "the late answer's words");
+        Same(DelegationCoordinator.LateMessage("merge", DelegationCoordinator.AnswerSeconds), "merge did not finish within 45 seconds. Its work goes on in Mighty Code; call list_children to see where your children stand.", "the late answer's words");
     }
 
     private static RunSession Pane(string id, string workspace, string? parent = null) => new() { Id = id, WorkspaceId = workspace, Title = id, ParentSessionId = parent };

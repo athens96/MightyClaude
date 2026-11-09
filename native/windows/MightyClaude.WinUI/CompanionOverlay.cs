@@ -191,7 +191,7 @@ internal sealed class CompanionOverlay : IDisposable
         if (RegisterClassEx(ref cls) == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
         // Made where it was left, so it takes the scale of the display it will stand on: made elsewhere and moved there,
         // it would be sized for the first display and then change its size around its bottom edge, away from the saved top.
-        window = CreateWindowEx(ExStyle, className, "Mighty Claude Companion", 0x80000000, preferences.Left ?? 0, preferences.Top ?? 0, (int)panelWidth, (int)height, 0, 0, instance, 0);
+        window = CreateWindowEx(ExStyle, className, "Mighty Code Companion", 0x80000000, preferences.Left ?? 0, preferences.Top ?? 0, (int)panelWidth, (int)height, 0, 0, instance, 0);
         if (window == 0) { UnregisterClass(className, instance); throw new Win32Exception(Marshal.GetLastWin32Error()); }
         try
         {

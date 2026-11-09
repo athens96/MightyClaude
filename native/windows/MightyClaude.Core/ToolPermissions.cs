@@ -202,7 +202,7 @@ public sealed class ClaudePermissionChannel
             if (allow && !request.Display.CanAllow)
                 throw new InvalidOperationException(ToolPermissionStrings.CannotAllow);
             if (allow) SendSuccess(requestId, new { behavior = "allow", updatedInput = request.Input, toolUseID = request.Display.ToolUseId });
-            else Deny(requestId, request.Display.ToolUseId, "The user denied this tool request in Mighty Claude.");
+            else Deny(requestId, request.Display.ToolUseId, "The user denied this tool request in Mighty Code.");
             pending.Remove(requestId); pendingOrder.Remove(requestId);
             var display = request.Display with { State = allow ? "allowed" : "denied" };
             activity(display, allow ? "running" : "error"); emit(display);

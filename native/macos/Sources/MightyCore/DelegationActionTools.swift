@@ -67,7 +67,7 @@ extension DelegationCoordinator {
             if !file.recordMerge(record), file.children.contains(where: { $0.id == record.childId }) { file.merges.append(record) }
             let context = await pruneContext()
             do { try commit(file, context: context) } catch {
-                return .failure("The child is merged: \(record.parentBranch) now points at \(record.mergedCommit), and the app keeps the merge on record, but the delegation file could not be saved (\(Self.unsavedReasonForAgent(error))). Mighty Claude saves it again by itself; nothing is needed from you. Do not merge this child again.")
+                return .failure("The child is merged: \(record.parentBranch) now points at \(record.mergedCommit), and the app keeps the merge on record, but the delegation file could not be saved (\(Self.unsavedReasonForAgent(error))). Mighty Code saves it again by itself; nothing is needed from you. Do not merge this child again.")
             }
             return DelegationResponse(merged: record)
         }
@@ -161,7 +161,7 @@ extension DelegationMCPServer {
     /// follow_up's answer as text and as structured content.
     static func result(_ followUp: DelegationFollowUpInfo) -> [String: Any] {
         let left = followUp.remaining == 0 ? "It was this child's last follow-up." : "This child may get \(followUp.remaining) more."
-        let text = "Follow-up \(followUp.id) for child \(followUp.child) is recorded; Mighty Claude hands it to the child exactly once. \(left)"
+        let text = "Follow-up \(followUp.id) for child \(followUp.child) is recorded; Mighty Code hands it to the child exactly once. \(left)"
         let data: [String: Any] = ["id": followUp.id, "child": followUp.child, "lane": followUp.lane.rawValue, "remaining": followUp.remaining]
         return ["content": [["type": "text", "text": text]], "structuredContent": ["followUp": data]]
     }

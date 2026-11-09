@@ -322,7 +322,7 @@ public actor AppUpdateService {
         let headless = " (" + [PaneMCPServerLocation.headlessArgument, DelegationMCPServer.headlessArgument, "--verify-resources"].map(literalPattern).joined(separator: "|") + ")( |$)"
         let runningCheck = relaunch ? "" : """
         if pgrep -lf \(quote(executable)) 2>/dev/null | grep -Ev -- \(quote(headless)) | grep -q .; then
-          echo "Mighty Claude is running again; leaving the update for the next quit." >&2
+          echo "Mighty Code is running again; leaving the update for the next quit." >&2
           rm -rf "$NEW"
           exit 0
         fi
@@ -344,7 +344,7 @@ public actor AppUpdateService {
           mv "$OLD" "$DESTINATION" || { echo "Could not put back the previous version; it is at $OLD." >&2; exit 1; }
         fi
         for _ in $(seq 1 600); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
-        if kill -0 "$PID" 2>/dev/null; then echo "Mighty Claude did not quit; skipping the update." >&2; exit 1; fi
+        if kill -0 "$PID" 2>/dev/null; then echo "Mighty Code did not quit; skipping the update." >&2; exit 1; fi
         sleep 2
         [ -d "$SOURCE" ] || { echo "No app to install: $SOURCE" >&2; exit 1; }
         rm -rf "$NEW"

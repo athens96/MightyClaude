@@ -70,7 +70,7 @@ public sealed class DelegationMcp(Func<DelegationRequest, CancellationToken, Tas
                 {
                     ["protocolVersion"] = asked is "2024-11-05" or "2025-03-26" or "2025-06-18" or "2025-11-25" ? asked : "2025-06-18",
                     ["capabilities"] = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } },
-                    ["serverInfo"] = new JsonObject { ["name"] = ServerName, ["title"] = "Mighty Claude delegation", ["version"] = "1.0.0" },
+                    ["serverInfo"] = new JsonObject { ["name"] = ServerName, ["title"] = "Mighty Code delegation", ["version"] = "1.0.0" },
                 });
             case "ping": return Reply(requestId, "result", new JsonObject());
             case "tools/list": return Reply(requestId, "result", new JsonObject { ["tools"] = new JsonArray([.. DelegationToolManifest.All.Select(Definition)]) });
@@ -92,7 +92,7 @@ public sealed class DelegationMcp(Func<DelegationRequest, CancellationToken, Tas
             if (!DelegationRequest.IsToolName(key) || value is not JsonValue text || text.GetValueKind() != JsonValueKind.String) return ToolError($"Arguments of {name} must be strings with lowercase names.");
             values[key] = text.GetValue<string>();
         }
-        if (transport is null) return ToolError("This MCP server was started without a Mighty Claude pane connection, so it cannot reach the app.");
+        if (transport is null) return ToolError("This MCP server was started without a Mighty Code pane connection, so it cannot reach the app.");
         return Result(await transport(new(name, values), cancellation).ConfigureAwait(false));
     }
 
@@ -158,9 +158,9 @@ public sealed class DelegationMcp(Func<DelegationRequest, CancellationToken, Tas
         if (response.FollowUp is { } followUp)
         {
             var left = followUp.Remaining == 0 ? "It was this child's last follow-up." : $"This child may get {followUp.Remaining} more.";
-            return Answer($"Follow-up {followUp.Id} for child {followUp.Child} is recorded; Mighty Claude hands it to the child exactly once. {left}", "followUp",
+            return Answer($"Follow-up {followUp.Id} for child {followUp.Child} is recorded; Mighty Code hands it to the child exactly once. {left}", "followUp",
                 new JsonObject { ["id"] = followUp.Id, ["child"] = followUp.Child, ["lane"] = DelegationNames.Of(followUp.Lane), ["remaining"] = followUp.Remaining });
         }
-        return ToolError(response.Error ?? "Mighty Claude did not answer the request.");
+        return ToolError(response.Error ?? "Mighty Code did not answer the request.");
     }
 }

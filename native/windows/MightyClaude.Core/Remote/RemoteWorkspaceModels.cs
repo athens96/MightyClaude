@@ -9,7 +9,7 @@ using System.Text.Json.Serialization.Metadata;
 namespace MightyClaude.Core;
 
 /// <summary>
-/// Tailscale remote workspaces (docs/remote-workspaces.md): one Mighty Claude opens a workspace another computer's Mighty Claude
+/// Tailscale remote workspaces (docs/remote-workspaces.md): one Mighty Code opens a workspace another computer's Mighty Code
 /// shares and runs agents and commands there. The protocol is the Mac's (M/Remote/RemoteWorkspaceModels.swift), pinned by
 /// native/contracts/fixtures/remote-v2/. The host is RemoteHostService, the client RemoteClientService.
 /// </summary>

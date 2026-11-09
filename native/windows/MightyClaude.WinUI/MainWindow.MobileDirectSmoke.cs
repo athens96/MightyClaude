@@ -19,7 +19,7 @@ public sealed partial class MainWindow
     private async Task<Dictionary<string, object?>> RunMobileDirectSmoke()
     {
         var checks = new Dictionary<string, object?>();
-        const string program = @"C:\Program Files\Mighty Claude\MightyClaude.exe";
+        const string program = @"C:\Program Files\Mighty Code\MightyClaude.exe";
         // The runner starts netsh only from the folder Windows reports, so the recorder is given that folder's name (read, never run).
         var system = WindowsFirewallRule.SystemDirectory ?? @"C:\Windows\System32";
         var netsh = system.TrimEnd('\\') + @"\netsh.exe";

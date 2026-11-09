@@ -51,10 +51,10 @@ public final class AgentIOMCPServer: @unchecked Sendable {
     static func describeOpen(_ response: AgentIOResponse) -> String {
         let page = response.url ?? "the page"
         guard response.destination == WebOpenDestination.external.rawValue else {
-            return "Opened \(page) in the Mighty Claude browser pane next to this agent pane."
+            return "Opened \(page) in the Mighty Code browser pane next to this agent pane."
         }
         if response.inAppUnavailable == true {
-            return "Opened \(page) in the user's system browser. The in-app browser was chosen but could not show it (the Mighty Claude browser pane is turned off in Settings or not available in this build)."
+            return "Opened \(page) in the user's system browser. The in-app browser was chosen but could not show it (the Mighty Code browser pane is turned off in Settings or not available in this build)."
         }
         return "Opened \(page) in the user's system browser."
     }
@@ -91,7 +91,7 @@ private struct TerminalToolSurface: MCPToolSurface {
     let socketPath: String?
     let transport: AgentIOMCPServer.Transport
 
-    var serverInfo: [String: String] { ["name": PaneMCPBinding.serverName, "title": "Mighty Claude terminal and web", "version": "1.0.0"] }
+    var serverInfo: [String: String] { ["name": PaneMCPBinding.serverName, "title": "Mighty Code terminal and web", "version": "1.0.0"] }
     var instructions: String? { PaneMCPToolManifest.routingGuidance }
     var toolDefinitions: [[String: Any]] { PaneMCPToolManifest.all.map(AgentIOMCPServer.toolDefinition) }
     func accepts(tool name: String) -> Bool { PaneMCPToolManifest.all.contains { $0.name == name } }
@@ -116,7 +116,7 @@ private struct TerminalToolSurface: MCPToolSurface {
             guard value.count <= WebOpenURLValidator.maxLength else { return MCPStdioServer.toolError("url is longer than 8192 characters.") }
             request.url = value
         }
-        guard let token, let socketPath else { return MCPStdioServer.toolError("This MCP server was started without a Mighty Claude pane connection, so it cannot reach the app.") }
+        guard let token, let socketPath else { return MCPStdioServer.toolError("This MCP server was started without a Mighty Code pane connection, so it cannot reach the app.") }
         let response = transport(request, token, socketPath)
         if let error = response.error { return MCPStdioServer.toolError(error) }
         return ["content": [["type": "text", "text": name == PaneMCPToolManifest.openURL.name ? AgentIOMCPServer.describeOpen(response) : AgentIOMCPServer.describeTerminal(response)]], "isError": false]

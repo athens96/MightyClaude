@@ -38,7 +38,7 @@ final class CoreTests {
     }
 
     @Test func testArgumentBoundariesAndProviderSettings() throws {
-        let plugin = URL(fileURLWithPath: "/Applications/Mighty Claude.app/Contents/Resources/mods/mighty-bridge")
+        let plugin = URL(fileURLWithPath: "/Applications/Mighty Code.app/Contents/Resources/mods/mighty-bridge")
         var request = StartRunRequest(sessionId: "run", workspaceId: "workspace", input: "--yolo $(echo secret)", model: "sonnet", settings: RunSettings(effort: "high", permissionMode: "plan", maxTurns: 5, maxBudgetUsd: 1.25), resumeId: "resume-id")
         let claude = try ProviderService.arguments(request, pluginDirectory: plugin)
         #expect(claude.contains("--plugin-dir")); #expect(claude.contains("--permission-prompts")); #expect(claude.contains("none")); #expect(!(claude.contains(request.input)))

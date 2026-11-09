@@ -152,7 +152,7 @@ struct HelpCaptureDelegationTests {
         // waiting child's, which cannot be removed; the first one's 바로 실행 sends both.
         let held = try #require(file.heldItemsByPane()[Self.parentId])
         #expect(held.map(\.childId) == [demo.children[1].id, demo.children[3].id])
-        #expect(held.allSatisfy { $0.kind == .notice && $0.text.hasPrefix("[Mighty Claude notice \($0.id)] Your child \($0.childId)") })
+        #expect(held.allSatisfy { $0.kind == .notice && $0.text.hasPrefix("[Mighty Code notice \($0.id)] Your child \($0.childId)") })
         let stopped = QueueRunNow.Pane(busy: false, heldForUpdate: false, secondSend: .worktree, menuOnly: false, waitsOnBackgroundOnly: false, held: held.count)
         #expect(QueueRunNow.decide(heldIndex: 0, text: "", attachments: 0, pane: stopped) == .held)
         #expect(QueueRunNow.decide(heldIndex: 1, text: "", attachments: 0, pane: stopped) == .hidden)

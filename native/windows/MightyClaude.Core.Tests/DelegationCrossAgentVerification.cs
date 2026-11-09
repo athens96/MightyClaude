@@ -195,7 +195,7 @@ internal static class DelegationCrossAgentVerification
 
         // A refusal names what it is about after its one code.
         var detail = DelegationCoordinator.Unavailable("codex", DelegationAgentAvailability.SignedOut) ?? throw new InvalidOperationException("no detail for a signed-out agent");
-        Same(detail, "Codex is not signed in on this PC; the user can check it in Mighty Claude's Settings › CLI", "a signed-out agent's detail");
+        Same(detail, "Codex is not signed in on this PC; the user can check it in Mighty Code's Settings › CLI", "a signed-out agent's detail");
         Check(DelegationCoordinator.Unavailable("gemini", DelegationAgentAvailability.NotInstalled)?.EndsWith("Settings › CLI", StringComparison.Ordinal) == true
             && DelegationCoordinator.Unavailable("codex", DelegationAgentAvailability.Ready) is null, "a missing agent's detail, and none for a ready one");
         var refused = DelegationMcp.Result(DelegationResponse.Refusal(DelegationReasonCode.AgentUnavailable, detail));
@@ -369,9 +369,9 @@ internal static class DelegationCrossAgentVerification
             var unknown = await place.Call("delegate", ("task", "Do it."), ("mode", "acceptEdits"), ("agent", "gpt"));
             Check(unknown.Refused == DelegationReasonCode.AgentUnknown && unknown.Error?.Contains("\"gpt\"", StringComparison.Ordinal) == true, "an unknown agent");
             Same(await place.Call("delegate", ("task", "Do it."), ("mode", "acceptEdits"), ("agent", "antigravity")),
-                DelegationResponse.Refusal(DelegationReasonCode.AgentUnavailable, "Antigravity is not installed on this PC; the user can check it in Mighty Claude's Settings › CLI"), "an agent not installed");
+                DelegationResponse.Refusal(DelegationReasonCode.AgentUnavailable, "Antigravity is not installed on this PC; the user can check it in Mighty Code's Settings › CLI"), "an agent not installed");
             Same(await place.Call("delegate", ("task", "Do it."), ("mode", "onRequest"), ("agent", "codex")),
-                DelegationResponse.Refusal(DelegationReasonCode.AgentUnavailable, "Codex is not signed in on this PC; the user can check it in Mighty Claude's Settings › CLI"), "an agent signed out");
+                DelegationResponse.Refusal(DelegationReasonCode.AgentUnavailable, "Codex is not signed in on this PC; the user can check it in Mighty Code's Settings › CLI"), "an agent signed out");
             // A mode that is not the agent's, or one in which its child cannot write: an error.
             Same((await place.Call("delegate", ("task", "Do it."), ("mode", "auto"), ("agent", "codex"))).Error, "mode must be one of a Codex child's: manual, acceptEdits, onRequest, fullAccess.", "not a Codex mode");
             Check((await place.Call("delegate", ("task", "Do it."), ("mode", "manual"), ("agent", "codex"))).Error?.StartsWith("A Codex child in manual mode cannot change files", StringComparison.Ordinal) == true, "a read-only Codex child");

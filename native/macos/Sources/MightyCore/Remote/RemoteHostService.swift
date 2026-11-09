@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// "이 컴퓨터 공유": serves the chosen local workspaces to other Mighty Claude
+/// "이 컴퓨터 공유": serves the chosen local workspaces to other Mighty Code
 /// apps on this computer's Tailscale addresses only (docs/remote-workspaces.md).
 /// Runs go through this Mac's own `ProcessRunner`, so they use its CLIs, sign-ins
 /// and accounts; their parsed events wait in a per-run buffer the client reads by

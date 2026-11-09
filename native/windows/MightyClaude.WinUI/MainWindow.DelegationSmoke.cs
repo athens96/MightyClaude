@@ -97,7 +97,7 @@ public sealed partial class MainWindow
             var delivered = await DelegationSmokeWait("C's notice delivered", 60, () => delegation.File.Notices.FirstOrDefault(n => n.Id == notice.Id && n.Lane == DeliveryLane.Delivered && !string.IsNullOrEmpty(n.Receipt?.RunId)));
             await DelegationSmokeUntil("the parent's run to end", 60, () => !service.IsSessionRunning(parent) && service.Snapshot.Sessions.First(s => s.Id == parent).Status != "running");
             var sent = service.Snapshot.Sessions.First(s => s.Id == parent).Logs.LastOrDefault(entry => entry.Kind == "user")?.Text ?? "";
-            int pointer = sent.IndexOf($"[Mighty Claude notice {notice.Id}]", StringComparison.Ordinal), human = sent.IndexOf(text, StringComparison.Ordinal);
+            int pointer = sent.IndexOf($"[Mighty Code notice {notice.Id}]", StringComparison.Ordinal), human = sent.IndexOf(text, StringComparison.Ordinal);
             Require(delivered.Receipt?.Route == DeliveryRoute.Queue && pointer >= 0 && sent.Contains(c, StringComparison.Ordinal) && human > pointer && service.HeldItems(parent).Count == 0, "The held notice did not go ahead of the phone's text in one run.");
             checks["phoneSendReleasedHeldNotice"] = true;
             checks["heldNoticeReceipt"] = new Dictionary<string, object?> { ["route"] = DelegationNames.Of(delivered.Receipt!.Route), ["runId"] = delivered.Receipt.RunId };

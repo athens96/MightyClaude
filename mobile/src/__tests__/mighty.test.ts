@@ -74,12 +74,14 @@ describe('block labels and marks', () => {
   });
 
   it('names a steer that delegation sent 위임 알림 and one a person sent 중간 요청', () => {
-    const notice = '[Mighty Claude notice n-1] Your child c-1 reported revision 1.';
-    const followUp = '[Mighty Claude follow-up f-1] Your parent sent you this follow-up:';
+    const notice = '[Mighty Code notice n-1] Your child c-1 reported revision 1.';
+    const followUp = '[Mighty Code follow-up f-1] Your parent sent you this follow-up:';
     // An older host still titles a notice 중간 요청; the phone names it from what it was asked.
     expect(blockTitle(block({ kind: 'steer', title: '중간 요청', summary: notice }))).toBe('위임 알림');
     expect(blockTitle(block({ kind: 'steer', title: '중간 요청', summary: followUp }))).toBe('위임 알림');
     expect(blockKindLabel('steer', notice)).toBe('위임 알림');
+    // Saved before the app was renamed.
+    expect(blockKindLabel('steer', '[Mighty Claude notice n-0] Your child c-0 reported revision 1.')).toBe('위임 알림');
     expect(blockTitle(block({ kind: 'steer', title: '중간 요청', summary: 'Also add tests' }))).toBe('중간 요청');
     expect(blockKindLabel('steer', 'Also add tests')).toBe('중간 요청');
     expect(blockKindLabel('steer')).toBe('중간 요청');

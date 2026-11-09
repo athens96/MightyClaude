@@ -219,7 +219,7 @@ public sealed partial class MainWindow
                 var expected = children.Where(c => demo.Panes.GetValueOrDefault(HelpText(c["parent"])) == id).Select(c => HelpText(c["id"])).ToList();
                 if (expected.Count == 0 || tree.Children.GetValueOrDefault(id)?.Select(c => c.Id).SequenceEqual(expected) != true)
                     throw new InvalidOperationException("the parent's children are not listed under it");
-                if (!session.Logs.Any(l => l.Kind == "user" && l.Text.StartsWith("[Mighty Claude notice ", StringComparison.Ordinal))) throw new InvalidOperationException("the parent's transcript has no notice");
+                if (!session.Logs.Any(l => l.Kind == "user" && l.Text.StartsWith("[Mighty Code notice ", StringComparison.Ordinal))) throw new InvalidOperationException("the parent's transcript has no notice");
                 break;
             case "delegation-held":
                 if (session.Status != "stopped" || service.HeldItems(id).Count == 0) throw new InvalidOperationException("the stopped parent does not hold its notices");

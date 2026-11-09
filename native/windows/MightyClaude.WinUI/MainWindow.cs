@@ -177,7 +177,7 @@ public sealed partial class MainWindow : Window
     private void ApplyChromeText()
     {
         RefreshDashboardChrome();
-        Title = Locale.Get("window.title.betaTemplate", new Dictionary<string, string> { ["app"] = "Mighty Claude" });
+        Title = Locale.Get("window.title.betaTemplate", new Dictionary<string, string> { ["app"] = "Mighty Code" });
         brandBeta.Text = Locale.Get("badge.beta"); AutomationProperties.SetName(brandBeta, Locale.Get("badge.betaAccessibility"));
         search.PlaceholderText = Locale.Get("sidebar.searchPlaceholder");
         foreach (var item in layout.Items.OfType<ComboBoxItem>())

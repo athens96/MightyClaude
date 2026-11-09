@@ -274,7 +274,7 @@ public sealed partial class DelegationCoordinator : IDelegationRequestHandler
     }
 
     public static string LateMessage(string tool, double seconds) =>
-        $"{tool} did not finish within {(int)seconds} seconds. Its work goes on in Mighty Claude; call list_children to see where your children stand.";
+        $"{tool} did not finish within {(int)seconds} seconds. Its work goes on in Mighty Code; call list_children to see where your children stand.";
 
     /// <summary>Why <paramref name="arguments"/> are not <paramref name="tool"/>'s (every required one, and no other), or null when they are.</summary>
     public static string? ArgumentProblem(IReadOnlyDictionary<string, string> arguments, DelegationToolManifest.Tool tool)
@@ -301,7 +301,7 @@ public sealed partial class DelegationCoordinator : IDelegationRequestHandler
         return first != answer ? late : answer.IsCompletedSuccessfully ? answer.Result : DelegationResponse.Failure(NoAnswerMessage);
     }
 
-    public const string NoAnswerMessage = "Mighty Claude did not answer the request.";
+    public const string NoAnswerMessage = "Mighty Code did not answer the request.";
 
     /// <summary>
     /// Runs <paramref name="work"/> in the coordinator's turn. Called from one of its own turns it simply goes on; from anywhere

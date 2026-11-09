@@ -64,7 +64,7 @@ export interface ComposerState {
   resumed?: boolean;
   /** A Claude pane's status-line toggle, on or off (null for a remote pane, which has no status line); null elsewhere. */
   toggles?: { statusLine: boolean | null } | null;
-  /** A Mighty Claude pane's style row (M/SessionPaneView.swift composer): the chosen style's name, its source badge, what it is for; null elsewhere. */
+  /** A Mighty Code pane's style row (M/SessionPaneView.swift composer): the chosen style's name, its source badge, what it is for; null elsewhere. */
   style?: { label: string; badge: string | null; hint: string; enabled: boolean } | null;
   /** The chosen style's guide panel under that row (MainWindow.WebShell.Guided.cs); null or absent without a style. */
   guided?: GuidedPanel | null;

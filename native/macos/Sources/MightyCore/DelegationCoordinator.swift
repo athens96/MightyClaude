@@ -321,7 +321,7 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     }
 
     static func lateMessage(_ tool: String, seconds: TimeInterval) -> String {
-        "\(tool) did not finish within \(Int(seconds)) seconds. Its work goes on in Mighty Claude; call list_children to see where your children stand."
+        "\(tool) did not finish within \(Int(seconds)) seconds. Its work goes on in Mighty Code; call list_children to see where your children stand."
     }
 
     /// Why `arguments` are not `tool`'s (every required one, and no other),

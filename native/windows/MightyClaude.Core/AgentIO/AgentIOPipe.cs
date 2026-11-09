@@ -9,9 +9,9 @@ public sealed class AgentIOPipe : IAsyncDisposable
     public const int MaximumBytes = 1_048_576;
     /// <summary>A delegation call's limit at both ends, as on the Mac (M/AgentIOSocketServer.swift:238-245): it covers the coordinator's <see cref="DelegationCoordinator.AnswerSeconds"/>.</summary>
     public const int DelegationSeconds = 60;
-    public const string UnknownTokenMessage = "This agent pane is no longer connected to Mighty Claude. Reopen the pane and try again.";
-    private const string MalformedMessage = "The request to Mighty Claude was malformed.", NoAnswerMessage = "Mighty Claude did not answer the request.";
-    public const string BusyMessage = "This pane already has as many delegation calls going as Mighty Claude takes at once. Wait for one to answer and try again.";
+    public const string UnknownTokenMessage = "This agent pane is no longer connected to Mighty Code. Reopen the pane and try again.";
+    private const string MalformedMessage = "The request to Mighty Code was malformed.", NoAnswerMessage = "Mighty Code did not answer the request.";
+    public const string BusyMessage = "This pane already has as many delegation calls going as Mighty Code takes at once. Wait for one to answer and try again.";
     private const string Prefix = "mighty-agent-io-";
     /// <summary>
     /// The listeners waiting for a client, the connections served at once (waiting ones included) and the delegation calls one
@@ -142,15 +142,15 @@ public sealed class AgentIOPipe : IAsyncDisposable
     /// </summary>
     public static async Task<DelegationResponse> CallDelegation(string pipeName, string token, DelegationRequest request, CancellationToken cancellation)
     {
-        if (!IsPipeName(pipeName)) return DelegationResponse.Failure("Mighty Claude's agent socket path is invalid.");
+        if (!IsPipeName(pipeName)) return DelegationResponse.Failure("Mighty Code's agent socket path is invalid.");
         var bytes = JsonSerializer.SerializeToUtf8Bytes(new { token, delegation = request }, Wire.Json);
         if (bytes.Length >= MaximumBytes) return DelegationResponse.Failure("The request is too large.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(DelegationSeconds));
         await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         try { await pipe.ConnectAsync(timeout.Token); }
-        catch (Exception ex) when (ex is IOException or OperationCanceledException or UnauthorizedAccessException or TimeoutException) { return DelegationResponse.Failure("Mighty Claude is not running or not accepting agent tool calls."); }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or UnauthorizedAccessException or TimeoutException) { return DelegationResponse.Failure("Mighty Code is not running or not accepting agent tool calls."); }
         try { await WritePacket(pipe, bytes, timeout.Token); }
-        catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException) { return DelegationResponse.Failure("Could not send the request to Mighty Claude."); }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException) { return DelegationResponse.Failure("Could not send the request to Mighty Code."); }
         try { return JsonSerializer.Deserialize<DelegationResponse>(await ReadPacket(pipe, timeout.Token), Wire.Json) ?? DelegationResponse.Failure(NoAnswerMessage); }
         catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException or JsonException) { return DelegationResponse.Failure(NoAnswerMessage); }
     }

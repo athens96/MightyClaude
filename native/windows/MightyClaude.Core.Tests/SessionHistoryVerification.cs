@@ -163,7 +163,7 @@ internal static class SessionHistoryVerification
         void Frame(object value) { using var json = JsonDocument.Parse(Json(value)); tracker.Consume(json.RootElement.Clone()); }
         Frame(new { type = "assistant", message = new { id = "main-1", content = new[] { new { type = "text", text = "Delegated." } } } });
         Frame(new { type = "result", subtype = "success", is_error = false, result = "Delegated." });
-        const string noticeText = "[Mighty Claude notice n-1] Your child c-1 reported revision 1. Read the report with child_status; merge it with merge when it is right.";
+        const string noticeText = "[Mighty Code notice n-1] Your child c-1 reported revision 1. Read the report with child_status; merge it with merge when it is right.";
         tracker.Steer("n-1", noticeText);
         Frame(new { type = "assistant", message = new { id = "main-2", content = new[] { new { type = "text", text = "Merged the child." } } } });
         Frame(new { type = "result", subtype = "success", is_error = false, result = "Merged the child." });
@@ -195,7 +195,7 @@ internal static class SessionHistoryVerification
         // The request's own blocks fill all nodes but one, which the notice's steer block takes.
         for (var index = 1; index < ExecutionGraphSupport.MaximumNodes - 1; index++) Frame(new { type = "system", subtype = "compact_boundary", uuid = "c" + index });
         Frame(new { type = "result", subtype = "success", is_error = false, result = "Delegated." });
-        tracker.Steer("n-1", "[Mighty Claude notice n-1] Your child c-1 reported revision 1.");
+        tracker.Steer("n-1", "[Mighty Code notice n-1] Your child c-1 reported revision 1.");
         Frame(new { type = "assistant", message = new { id = "main-2", content = new[] { new { type = "text", text = "Merged the child." } } } });
         Frame(new { type = "result", subtype = "success", is_error = false, result = "Merged the child." });
         var latest = new Dictionary<string, ExecutionGraphNode>();

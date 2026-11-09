@@ -8,7 +8,7 @@ internal static class AgentIOVerification
     private static void Reject(Action action) { try { action(); } catch (ArgumentException) { return; } throw new InvalidOperationException("Invalid input was accepted."); }
     internal static Task BindingSecretsAndArgumentBoundaries()
     {
-        var registry = new AgentIOBindings(); var workspace = new Workspace { Id = "workspace", Path = Path.GetTempPath() }; var executable = Path.Combine(Path.GetTempPath(), "Mighty Claude.exe");
+        var registry = new AgentIOBindings(); var workspace = new Workspace { Id = "workspace", Path = Path.GetTempPath() }; var executable = Path.Combine(Path.GetTempPath(), "Mighty Code.exe");
         var first = registry.Bind("pane", workspace, "claude", "pipe", executable); var secret = first.Environment[AgentIOBinding.TokenKey];
         Check(registry.Resolve(secret) == first && registry.Resolve(new string('0', 64)) is null, "unknown tokens cannot resolve a pane");
         Check(!first.ToString().Contains(secret, StringComparison.Ordinal) && first.Redact("x" + secret + "y") == "x<pane-token-redacted>y", "binding and output redact the secret");

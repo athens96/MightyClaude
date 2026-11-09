@@ -18,7 +18,7 @@ public static class Wire
 }
 
 /// <summary>
-/// A workspace that lives on another computer running Mighty Claude, reached over Tailscale (docs/remote-workspaces.md).
+/// A workspace that lives on another computer running Mighty Code, reached over Tailscale (docs/remote-workspaces.md).
 /// Saved as the workspace's "remote" value with the Mac's JSON: {version: 2, connectionId, workspaceId, hostName}.
 /// <see cref="StateStore.KeepsWorkspace"/> drops any other shape, including the unversioned one written before 2026-09-28.
 /// </summary>

@@ -147,21 +147,28 @@ public static class MightyGraphSupport
     /// <summary>Delegation hands a child's notice, or a follow-up to a running child, into a running Claude turn as a steer
     /// (<see cref="DelegationCoordinator"/>); its text opens with one of these. Such a block is a 위임 알림, not a 중간 요청
     /// (macOS MightyGraphSupport.delegationNoticePrefixes).</summary>
-    public static readonly string[] DelegationNoticePrefixes = ["[Mighty Claude notice ", "[Mighty Claude follow-up "];
+    public static readonly string[] DelegationNoticePrefixes = ["[Mighty Code notice ", "[Mighty Code follow-up ",
+        // Written before the app was renamed, in saved transcripts.
+        "[Mighty Claude notice ", "[Mighty Claude follow-up "];
     public static bool IsDelegationNotice(string? input) =>
         input is not null && DelegationNoticePrefixes.Any(prefix => input.StartsWith(prefix, StringComparison.Ordinal));
     /// <summary>A steer that delegation sent, not a person.</summary>
     public static bool IsDelegationNotice(MightyGraphAgent agent) => BlockKind(agent) == "steer" && IsDelegationNotice(agent.Input);
     /// <summary>A background task's <c>&lt;task-notification&gt;</c> the tracker shows as a steer under main, its readable line after this
     /// prefix; the next root-level answer is its reply. Such a block is a 작업 알림 (macOS MightyGraphSupport.taskNoticePrefix).</summary>
-    public const string TaskNoticePrefix = "[Mighty Claude task notice] ";
-    public static bool IsTaskNotice(string? input) => input is not null && input.StartsWith(TaskNoticePrefix, StringComparison.Ordinal);
+    public const string TaskNoticePrefix = "[Mighty Code task notice] ";
+    /// <summary>The same prefix as it was written before the app was renamed, in saved transcripts.</summary>
+    private const string LegacyTaskNoticePrefix = "[Mighty Claude task notice] ";
+    /// <summary>The task notice prefix <paramref name="input"/> opens with, new or legacy; null when it is no task notice.</summary>
+    private static string? TaskNoticePrefixOf(string? input) =>
+        input is null ? null : input.StartsWith(TaskNoticePrefix, StringComparison.Ordinal) ? TaskNoticePrefix : input.StartsWith(LegacyTaskNoticePrefix, StringComparison.Ordinal) ? LegacyTaskNoticePrefix : null;
+    public static bool IsTaskNotice(string? input) => TaskNoticePrefixOf(input) is not null;
     /// <summary>A steer the tracker made from a task notification, not a person.</summary>
     public static bool IsTaskNotice(MightyGraphAgent agent) => BlockKind(agent) == "steer" && IsTaskNotice(agent.Input);
     /// <summary>A steer no person sent: a delegation notice or a task notice (macOS MightyGraphAgent.isNotice).</summary>
     public static bool IsNotice(MightyGraphAgent agent) => IsDelegationNotice(agent) || IsTaskNotice(agent);
     /// <summary>What the block shows as its request: a task notice without its prefix (macOS MightyGraphAgent.shownInput).</summary>
-    public static string ShownInput(MightyGraphAgent agent) => IsTaskNotice(agent) ? agent.Input[TaskNoticePrefix.Length..] : agent.Input;
+    public static string ShownInput(MightyGraphAgent agent) => IsTaskNotice(agent) ? agent.Input[TaskNoticePrefixOf(agent.Input)!.Length..] : agent.Input;
     /// <summary>What opens a notice turn's section in a request's result (macOS MightyGraphSupport.noticeSectionMark).</summary>
     public const string NoticeSectionMark = "\n\n---\n\n**";
     /// <summary>The result with a notice turn's answer after it, under a bold line naming the notice; the request's own answer stays first.</summary>

@@ -2133,7 +2133,7 @@
           ]
         },
         {
-          "input": "[Mighty Claude notice a4c8e1f7-3b29-4d06-9e5a-1f7b3c8d2e60] Your child 3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73 reported revision 1. Read the report with child_status; merge it with merge when it is right.",
+          "input": "[Mighty Code notice a4c8e1f7-3b29-4d06-9e5a-1f7b3c8d2e60] Your child 3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73 reported revision 1. Read the report with child_status; merge it with merge when it is right.",
           "finish": "completed",
           "elapsedSeconds": 38,
           "frames": [

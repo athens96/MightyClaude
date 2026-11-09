@@ -142,8 +142,8 @@ extension DelegationCoordinator {
     static func unavailable(_ provider: String, _ availability: DelegationAgentAvailability) -> String? {
         switch availability {
         case .ready: nil
-        case .notInstalled: "\(ProviderOptions.label(provider)) is not installed on this Mac; the user can check it in Mighty Claude's Settings › CLI"
-        case .signedOut: "\(ProviderOptions.label(provider)) is not signed in on this Mac; the user can check it in Mighty Claude's Settings › CLI"
+        case .notInstalled: "\(ProviderOptions.label(provider)) is not installed on this Mac; the user can check it in Mighty Code's Settings › CLI"
+        case .signedOut: "\(ProviderOptions.label(provider)) is not signed in on this Mac; the user can check it in Mighty Code's Settings › CLI"
         }
     }
 
@@ -200,7 +200,7 @@ extension DelegationCoordinator {
             : "When you are done, write your report to \(worktree.reportFile)"
         let leave = provider == "claude" ? "" : " " + appCommitNote(worktree: worktree)
         return """
-        \(from) in Mighty Claude delegated this task to you. You work in your own git worktree on the branch \(worktree.branch); the task is also saved in \(worktree.taskFile).
+        \(from) in Mighty Code delegated this task to you. You work in your own git worktree on the branch \(worktree.branch); the task is also saved in \(worktree.taskFile).
 
         \(done): what you did, what is left and what your parent should check.\(leave) Your parent gets one notice for each of your runs that ends with that file changed, and may merge your branch. Do not merge, push or switch branches.
 
@@ -212,7 +212,7 @@ extension DelegationCoordinator {
     /// How a child of an agent other than Claude leaves its work: the app
     /// commits it on the child's branch when the child writes its report.
     static func appCommitNote(worktree: ChildWorktree) -> String {
-        "Do not commit: leave your changes in this worktree. When your run ends with \(worktree.reportFile) changed, Mighty Claude commits every change .gitignore lets in on \(worktree.branch) for you."
+        "Do not commit: leave your changes in this worktree. When your run ends with \(worktree.reportFile) changed, Mighty Code commits every change .gitignore lets in on \(worktree.branch) for you."
     }
 
     /// The first run of a child the human started: their text as they typed
@@ -232,9 +232,9 @@ extension DelegationCoordinator {
     static func humanNote(worktree: ChildWorktree, provider: String = "claude", parentAgent: String? = nil) -> String {
         let beside = (parentAgent ?? provider) == "claude" ? "another Claude pane" : "another pane"
         if provider == "claude" {
-            return "[Mighty Claude] This request runs in its own git worktree on the branch \(worktree.branch), opened beside \(beside) so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to \(worktree.reportFile): what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches."
+            return "[Mighty Code] This request runs in its own git worktree on the branch \(worktree.branch), opened beside \(beside) so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to \(worktree.reportFile): what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches."
         }
-        return "[Mighty Claude] This request runs in its own git worktree on the branch \(worktree.branch), opened beside \(beside) so that pane keeps working undisturbed. When you are done, write a short report to \(worktree.reportFile): what you did and what is left. \(appCommitNote(worktree: worktree)) The person who sent this merges your branch from the app. Do not merge, push or switch branches."
+        return "[Mighty Code] This request runs in its own git worktree on the branch \(worktree.branch), opened beside \(beside) so that pane keeps working undisturbed. When you are done, write a short report to \(worktree.reportFile): what you did and what is left. \(appCommitNote(worktree: worktree)) The person who sent this merges your branch from the app. Do not merge, push or switch branches."
     }
 
     /// The human's run of `text` in a new child of the Claude, Codex or
