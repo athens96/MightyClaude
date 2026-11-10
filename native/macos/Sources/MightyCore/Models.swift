@@ -328,6 +328,9 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     /// The Mighty view's "Diagram | Timeline | Structure" choice. nil (older saves, or a word this
     /// build does not know) is the diagram; see `mightyViewMode`.
     public var graphViewMode: MightyGraphViewMode?
+    /// The flow's session log strip folded down to its status line (`FlowLog`). nil (older saves, a pane that never
+    /// folded it) is open.
+    public var flowLogCollapsed: Bool?
     /// Present only on browser sessions: the workspace-scoped CEF profile key.
     public var workspaceProfileKey: String?
     /// Present only on browser sessions owned by an agent pane (stage 2+).
@@ -358,7 +361,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         // Mighty is the one view an agent pane has.
         self.agentViewMode = kind == "claude" && MightyGraphSupport.providers.contains(provider) ? "mighty" : nil
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphSizesLayout, graphResultSize, graphPlanSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork, parentSessionId, workingFolder, askTarget, shellRuns }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphSizesLayout, graphResultSize, graphPlanSize, graphViewMode, flowLogCollapsed, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork, parentSessionId, workingFolder, askTarget, shellRuns }
     /// How the pane's Mighty view draws its requests; the diagram unless the timeline was chosen.
     public var mightyViewMode: MightyGraphViewMode { graphViewMode ?? .diagram }
     /// Full text of the most recent user log entry that would update the automatic title,
@@ -405,6 +408,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         graphResultSize = try? c.decodeIfPresent(MightyGraphBlockSize.self, forKey: .graphResultSize)
         graphPlanSize = try? c.decodeIfPresent(MightyGraphBlockSize.self, forKey: .graphPlanSize)
         graphViewMode = try? c.decodeIfPresent(MightyGraphViewMode.self, forKey: .graphViewMode)
+        flowLogCollapsed = (try? c.decodeIfPresent(Bool.self, forKey: .flowLogCollapsed)) == true ? true : nil
         workspaceProfileKey = try? c.decodeIfPresent(String.self, forKey: .workspaceProfileKey)
         ownerSessionId = try? c.decodeIfPresent(String.self, forKey: .ownerSessionId)
         titleMode = try? c.decodeIfPresent(String.self, forKey: .titleMode)

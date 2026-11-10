@@ -35,4 +35,12 @@ extension AppStore {
             session.graphViewMode = mode == .diagram ? nil : mode
         }
     }
+
+    /// The flow's session log strip, open or folded to its status line: remembered with the pane.
+    func setFlowLogOpen(_ sessionID: String, open: Bool) {
+        updateSession(sessionID) { session in
+            guard session.kind == "claude" else { return }
+            session.flowLogCollapsed = open ? nil : true
+        }
+    }
 }

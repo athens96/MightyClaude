@@ -57,14 +57,24 @@ public enum FlowCard {
         let who = FlowRoles.subagent(agent, definition: definition)
         let status = MobileMightySupport.status(agent.status)
         let running = !MightyGraphLayout.terminal(status)
-        let model = agent.responseRecords?.lazy.compactMap(\.model).first { !$0.isEmpty }.map { ModelUsageFormat.shortName($0, versioned: true) }
-            ?? ModelUsageFormat.versionedNodeLabel(who?.modelLabel)
-        let identity = [who?.type.map(FlowRoles.typeName).flatMap { who?.marks.contains(.fork) == true ? nil : $0 }, model].compactMap { $0 }
-        return Content(title: MightyGraphSupport.blockTitle(agent), identity: identity.isEmpty ? nil : identity.joined(separator: " · "),
+        return Content(title: MightyGraphSupport.blockTitle(agent), identity: identityLine(who, agent),
                        activity: running ? doing(agent) : outcome(agent), status: status, stateWord: stateWord(status),
                        startedAt: agent.figures?.started, endedAt: agent.figures?.ended, toolCalls: agent.figures?.toolCalls,
                        tokens: agent.usage.flatMap { $0.isEmpty ? nil : $0.total }, nested: nested(under: agent, in: run),
                        marks: who?.marks ?? [], ink: who?.ink ?? FlowRoles.ink(.subagent), summary: who?.summary ?? "")
+    }
+
+    /// "Explore · Haiku 5.5": a sub-agent's type and its model, whichever is known. The model is the one its own
+    /// responses name, else the one the CLI resolved at launch, else the alias that was asked for, marked as requested. A
+    /// fork has no type to name: its mark says it.
+    public static func identityLine(_ agent: MightyGraphAgent, definition: AgentDefinition? = nil) -> String? {
+        identityLine(FlowRoles.subagent(agent, definition: definition), agent)
+    }
+    static func identityLine(_ who: FlowIdentity?, _ agent: MightyGraphAgent) -> String? {
+        let model = agent.responseRecords?.lazy.compactMap(\.model).first { !$0.isEmpty }.map { ModelUsageFormat.shortName($0, versioned: true) }
+            ?? ModelUsageFormat.versionedNodeLabel(who?.modelLabel)
+        let parts = [who?.type.map(FlowRoles.typeName).flatMap { who?.marks.contains(.fork) == true ? nil : $0 }, model].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// The most a card's line holds; the view cuts what does not fit its width.
