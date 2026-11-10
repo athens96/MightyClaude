@@ -2,11 +2,15 @@ import Foundation
 
 /// The bounded, complete AskUserQuestion input. Question strings are protocol
 /// keys, so neither parsing nor rendering may shorten or normalize them.
+/// Claude asks one to four questions of two to four options; the questions other agents ask
+/// through the same card (`AgentQuestions`) may have more options, or none (a typed answer).
 public struct UserQuestionnaire: Codable, Sendable, Equatable {
     public struct Option: Codable, Sendable, Equatable {
         public let label: String
         public let description: String
     }
+    public static let maximumQuestions = 8
+    public static let maximumOptions = 12
     public struct Question: Codable, Sendable, Equatable {
         public let header: String
         public let question: String
@@ -19,10 +23,10 @@ public struct UserQuestionnaire: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         questions = try container.decode([Question].self, forKey: .questions)
-        guard (1...4).contains(questions.count), Set(questions.map(\.question)).count == questions.count,
+        guard (1...Self.maximumQuestions).contains(questions.count), Set(questions.map(\.question)).count == questions.count,
               questions.allSatisfy({ question in
                   Self.textIsValid(question.header, limit: 256) && Self.textIsValid(question.question, limit: 8_192)
-                  && (2...4).contains(question.options.count)
+                  && question.options.count <= Self.maximumOptions
                   && Set(question.options.map(\.label)).count == question.options.count
                   && question.options.allSatisfy { Self.textIsValid($0.label, limit: 1_024) && Self.textIsValid($0.description, limit: 8_192, allowEmpty: true) }
               }) else { throw MightyError(L("questionnaire.error.badFormat")) }

@@ -54,6 +54,153 @@ struct PiTests {
         return result
     }
 
+    /// `--extension <the bundled ask_user extension>`, as every pi run carries it.
+    static func askArguments() throws -> [String] { ["--extension", try #require(PiAgent.questionExtension()).path] }
+
+    /// A parser with the dialog channel a run gives it, and what both did with a fixture.
+    final class Asked {
+        var logs: [(kind: String, text: String)] = []
+        var activities: [AgentActivity] = []
+        var cards: [ToolPermissionRequest] = []
+        var writes: [[String: Any]] = []
+        var cancelled: [Data] = []
+        var warnings: [String] = []
+        var timers: [(id: String, seconds: Double)] = []
+        var parser: CLIStreamParser!
+        var dialogs: PiDialogChannel!
+        var pending: [ToolPermissionRequest] { cards.filter { card in card.state == "pending" && !cards.contains { $0.id == card.id && $0.state != "pending" } } }
+    }
+    static func asked() -> Asked {
+        let run = Asked()
+        run.parser = CLIStreamParser(provider: "pi", log: { run.logs.append(($0, $1)) }, resume: { _ in }, activityNamespace: "run-pi",
+                                     activity: { run.activities.append($0) }, graphInput: "go", piReply: { run.cancelled.append($0) })
+        run.dialogs = PiDialogChannel(runId: "run-pi", write: { run.writes.append((try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] ?? [:]) },
+                                      emit: { run.cards.append($0) }, activity: { run.parser.permissionActivity($0, state: $1) },
+                                      warning: { run.warnings.append($0) }, timer: { run.timers.append(($0, $1)) })
+        run.parser.piDialogs = run.dialogs
+        return run
+    }
+    static func answer(_ card: ToolPermissionRequest, picked: [String] = [], typed: String? = nil) throws -> [String: UserQuestionAnswer] {
+        [try #require(card.questionnaire).questions[0].question: UserQuestionAnswer(selectedOptions: picked, customText: typed)]
+    }
+
+    // MARK: Questions (recorded with pi 1.5.2: pi-rpc-question.jsonl, pi-rpc-dialogs.jsonl)
+
+    @Test func theAskUserToolIsTheQuestionCardAndItsAnswerGoesBackAsTheDialogsValue() throws {
+        let run = Self.asked()
+        var answered = false
+        for line in try Self.fixture("question") {
+            run.parser.push(line + Data([10]))
+            guard !answered, let card = run.pending.first else { continue }
+            answered = true
+            let questionnaire = try #require(card.questionnaire)
+            #expect(card.toolName == "AskUserQuestion" && card.canAnswerQuestions && !card.canAllow && card.toolUseId == "toolu_question_1")
+            #expect(questionnaire.questions.map(\.question) == ["What is your favorite color?"] && questionnaire.questions[0].options.map(\.label) == ["Red", "Green", "Blue"])
+            #expect(!questionnaire.questions[0].multiSelect)
+            #expect(run.activities.last?.state == "waiting")
+            // Nothing picked is no answer, and the card stays.
+            #expect(throws: (any Error).self) { try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card)) }
+            try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card, picked: ["Red"]))
+        }
+        #expect(answered && run.cancelled.isEmpty && run.warnings.isEmpty)
+        #expect(run.writes.count == 1 && run.writes[0]["type"] as? String == "extension_ui_response" && run.writes[0]["value"] as? String == "Red"
+                && run.writes[0]["id"] as? String == "7dcf54f5-170a-4f79-9fbb-3e627cc9a099")
+        #expect(run.cards.map(\.state) == ["pending", "answered"])
+        // pi 1.5 streams the text without naming its message, then ends the message: one answer, not two.
+        #expect(run.logs.filter { $0.kind == "assistant" }.map(\.text) == ["Your favorite color is red."])
+        #expect(run.activities.last { $0.toolName == "ask_user" }?.state == "completed")
+    }
+
+    @Test func theAppsToolTakesATypedAnswerAndSeveralPicksAndAnyOtherSelectOnlyItsOptions() throws {
+        func ask(multiple: Bool, tool: String) throws -> (Asked, ToolPermissionRequest) {
+            let run = Self.asked()
+            let args = #"{"question":"Which fruits?","options":["Apple","Banana","Cherry"],"multiple":\#(multiple)}"#
+            run.parser.push(Data(#"{"type":"tool_execution_start","toolCallId":"call-1","toolName":"\#(tool)","args":\#(args)}"#.utf8) + Data([10]))
+            run.parser.push(Data(#"{"type":"extension_ui_request","id":"dialog-1","method":"select","title":"Which fruits?","options":["Apple","Banana","Cherry"]}"#.utf8) + Data([10]))
+            return (run, try #require(run.pending.first))
+        }
+        var (run, card) = try ask(multiple: true, tool: "ask_user")
+        #expect(card.questionnaire?.questions[0].multiSelect == true)
+        try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card, picked: ["Cherry", "Apple"], typed: " Mango "))
+        // In the offered order, the typed answer last.
+        #expect(run.writes.last?["value"] as? String == "Apple, Cherry, Mango")
+        (run, card) = try ask(multiple: false, tool: "ask_user")
+        try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card, typed: "Mango"))
+        #expect(run.writes.last?["value"] as? String == "Mango")
+        // The tool ended before an answer (pi aborted it): the card is withdrawn, nothing is written.
+        (run, card) = try ask(multiple: false, tool: "ask_user")
+        run.parser.push(Data(#"{"type":"tool_execution_end","toolCallId":"call-1","toolName":"ask_user","result":{"content":[]},"isError":true}"#.utf8) + Data([10]))
+        #expect(run.cards.map(\.state) == ["pending", "cancelled"] && run.writes.isEmpty)
+        // Another extension's select reads one of its options, nothing else.
+        (run, card) = try ask(multiple: true, tool: "pick_fruit")
+        #expect(card.questionnaire?.questions[0].multiSelect == false && card.toolUseId == "pi-dialog-dialog-1")
+        #expect(throws: (any Error).self) { try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card, typed: "Mango")) }
+        #expect(run.writes.isEmpty && run.pending.count == 1)
+        try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card, picked: ["Banana"]))
+        #expect(run.writes.last?["value"] as? String == "Banana")
+    }
+
+    @Test func confirmAndInputAreCardsATimedDialogClosesItselfAndAnEditorIsStillCancelled() throws {
+        let run = Self.asked()
+        let lines = try Self.fixture("dialogs")
+        // confirm: the title is the header, the message the question, yes or no the answer.
+        run.parser.push(lines[0] + Data([10]))
+        var card = try #require(run.pending.first)
+        var question = try #require(card.questionnaire).questions[0]
+        #expect(question.header == "Clear cache?" && question.question == "All cached files will be removed.")
+        #expect(question.options.map(\.label) == [L("questionnaire.option.yes"), L("questionnaire.option.no")])
+        #expect(throws: (any Error).self) { try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card, typed: "maybe")) }
+        try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card, picked: [L("questionnaire.option.no")]))
+        #expect(run.writes.last?["confirmed"] as? Bool == false && run.writes.last?["id"] as? String == "4b4a8f51-a5ac-41bd-a77d-a13763abd897")
+        // input: nothing to pick, the typed text is the value.
+        run.parser.push(lines[1] + Data([10]))
+        card = try #require(run.pending.first); question = try #require(card.questionnaire).questions[0]
+        #expect(question.question == "Project name" && question.options.isEmpty)
+        try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card, typed: "demo"))
+        #expect(run.writes.last?["value"] as? String == "demo")
+        // select with a deadline: pi answers it itself after 1.5 s, and the card goes with a line.
+        run.parser.push(lines[2] + Data([10]))
+        card = try #require(run.pending.first)
+        #expect(run.timers.count == 1 && run.timers[0].id == card.id && run.timers[0].seconds == 1.5)
+        run.dialogs.timedOut(requestId: card.id)
+        #expect(run.pending.isEmpty && run.cards.last?.state == "cancelled" && run.warnings == [L("run.notice.piDialogTimedOut", ["title": "Pick a color"])])
+        #expect(throws: (any Error).self) { try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card, picked: ["Red"])) }
+        // editor: not a question the card asks; cancelled and named as before.
+        run.parser.push(lines[3] + Data([10]))
+        #expect(run.pending.isEmpty && run.cancelled.count == 1)
+        #expect(String(decoding: run.cancelled[0], as: UTF8.self) == #"{"cancelled":true,"id":"b0b081e4-bba2-4b64-a094-7886256af76f","type":"extension_ui_response"}"# + "\n")
+        #expect(run.logs.last?.text == L("run.notice.piDialogDismissed", ["title": "Edit notes"]))
+        // notify needs no answer.
+        run.parser.push(lines[4] + Data([10]))
+        #expect(run.writes.count == 2 && run.cancelled.count == 1)
+    }
+
+    @Test func theCardsCancelDismissesTheDialogAndAStoppedRunWithdrawsItWithoutAnAnswer() throws {
+        let run = Self.asked()
+        let lines = try Self.fixture("dialogs")
+        run.parser.push(lines[0] + Data([10]))
+        var card = try #require(run.pending.first)
+        #expect(throws: (any Error).self) { try run.dialogs.respond(requestId: card.id, allow: true) }
+        try run.dialogs.respond(requestId: card.id, allow: false)
+        #expect(run.writes.last?["cancelled"] as? Bool == true && run.cards.last?.state == "denied")
+        run.parser.push(lines[1] + Data([10]))
+        card = try #require(run.pending.first)
+        run.dialogs.cancelAll()
+        #expect(run.cards.last?.state == "cancelled" && run.writes.count == 1)
+        #expect(throws: (any Error).self) { try run.dialogs.answerQuestions(requestId: card.id, answers: Self.answer(card, typed: "late")) }
+        // A select of more options than the card holds is cancelled as before.
+        let many = Self.asked()
+        let options = (1...13).map { "\"option \($0)\"" }.joined(separator: ",")
+        many.parser.push(Data(#"{"type":"extension_ui_request","id":"dialog-9","method":"select","title":"Pick","options":[\#(options)]}"#.utf8) + Data([10]))
+        #expect(many.cards.isEmpty && many.cancelled.count == 1 && many.logs.last?.text == L("run.notice.piDialogDismissed", ["title": "Pick"]))
+    }
+
+    @Test func theBundledExtensionRegistersTheQuestionToolWithoutDependencies() throws {
+        let source = try String(contentsOf: try #require(PiAgent.questionExtension()), encoding: .utf8)
+        #expect(source.contains(#"name: "ask_user""#) && source.contains("ctx.ui.select(") && source.contains("ctx.ui.input("))
+        #expect(!source.contains("import ") && !source.contains("require("))
+    }
+
     // MARK: Events to the log and the graph
 
     @Test func anAnswerIsLoggedOnceWhateverTheDeltasAndTheEndOfTheMessage() throws {
@@ -155,11 +302,13 @@ struct PiTests {
 
     @Test func permissionsBecomeTheToolAllowlist() throws {
         let plugin = URL(fileURLWithPath: "/tmp")
-        #expect(try ProviderService.arguments(request("manual"), pluginDirectory: plugin) == ["--mode", "rpc", "--tools", "read,grep,find,ls"])
-        #expect(try ProviderService.arguments(request("fullAccess"), pluginDirectory: plugin) == ["--mode", "rpc"])
+        // The app's question tool rides along as an extension of the run, and the read-only allowlist names it.
+        let ask = try Self.askArguments()
+        #expect(try ProviderService.arguments(request("manual"), pluginDirectory: plugin) == ["--mode", "rpc", "--tools", "read,grep,find,ls,ask_user"] + ask)
+        #expect(try ProviderService.arguments(request("fullAccess"), pluginDirectory: plugin) == ["--mode", "rpc"] + ask)
         #expect(try ProviderService.arguments(request("manual", model: "anthropic/claude-sonnet-4-5", effort: "high", resume: Self.sessionID), pluginDirectory: plugin)
-                == ["--mode", "rpc", "--model", "anthropic/claude-sonnet-4-5", "--thinking", "high", "--tools", "read,grep,find,ls", "--session", Self.sessionID])
-        #expect(try ProviderService.arguments(request("fullAccess", effort: "off"), pluginDirectory: plugin) == ["--mode", "rpc", "--thinking", "off"])
+                == ["--mode", "rpc", "--model", "anthropic/claude-sonnet-4-5", "--thinking", "high", "--tools", "read,grep,find,ls,ask_user"] + ask + ["--session", Self.sessionID])
+        #expect(try ProviderService.arguments(request("fullAccess", effort: "off"), pluginDirectory: plugin) == ["--mode", "rpc", "--thinking", "off"] + ask)
         // The two modes pi has; the others are not its.
         #expect(ProviderOptions.permissionModes(provider: "pi") == ["manual", "fullAccess"])
         #expect(ProviderOptions.normalizedSettings(provider: "pi", settings: RunSettings(effort: "minimal", permissionMode: "acceptEdits")).permissionMode == "manual")
@@ -369,6 +518,54 @@ struct PiTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
         return binary
     }
+    /// A pi that plays the question recording up to its dialog, waits for the answer line, then plays the rest.
+    private func askingPi(_ directory: URL) throws -> URL {
+        let binary = directory.appendingPathComponent("pi")
+        let fixtureFile = Self.root.appendingPathComponent("native/contracts/fixtures/pi-rpc-question.jsonl").path
+        let source = """
+        #!/bin/sh
+        if [ "$1" = "--version" ]; then printf '1.5.2\\n'; exit 0; fi
+        printf '%s\\n' "$@" > argv.txt
+        while IFS= read -r line; do
+          printf '%s\\n' "$line" >> stdin.txt
+          case "$line" in
+            *'"prompt"'*)
+              sed -n 1,21p '\(fixtureFile)'
+              IFS= read -r answer; printf '%s\\n' "$answer" >> stdin.txt
+              sed -n '22,$p' '\(fixtureFile)' ;;
+          esac
+        done
+        """
+        try Data(source.utf8).write(to: binary)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
+        return binary
+    }
+
+    @Test func aRunShowsThePiQuestionAsACardAndTheAnswerContinuesTheSameTurn() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let service = ProviderService(binaryOverrides: ["pi": try askingPi(directory)])
+        let events = PiRecorder<RunEvent>()
+        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0) })
+        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+        do {
+            try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "ask me", provider: "pi"), workspace: workspace)
+            try await wait { events.values().contains { $0.type == "permission" } }
+            let card = try #require(events.values().first { $0.type == "permission" }?.permission)
+            #expect(card.canAnswerQuestions && card.state == "pending" && card.questionnaire?.questions[0].options.map(\.label) == ["Red", "Green", "Blue"])
+            // A card of another run answers nothing.
+            await #expect(throws: (any Error).self) { try await runner.answerUserQuestions(sessionId: "pane", runId: "other-run", requestId: card.id, answers: try Self.answer(card, picked: ["Red"])) }
+            try await runner.answerUserQuestions(sessionId: "pane", runId: card.runId, requestId: card.id, answers: try Self.answer(card, picked: ["Red"]))
+            try await wait { events.values().contains { $0.status == "completed" || $0.status == "error" } }
+            let all = events.values()
+            #expect(all.last { $0.type == "status" }?.status == "completed")
+            #expect(all.filter { $0.type == "permission" }.compactMap { $0.permission?.state } == ["pending", "answered"])
+            #expect(all.filter { $0.type == "log" && $0.entry?.kind == "assistant" }.compactMap { $0.entry?.text } == ["Your favorite color is red."])
+            let stdin = try String(contentsOf: directory.appendingPathComponent("stdin.txt"), encoding: .utf8)
+            #expect(stdin.contains(#"{"id":"7dcf54f5-170a-4f79-9fbb-3e627cc9a099","type":"extension_ui_response","value":"Red"}"#))
+        } catch { await runner.shutdown(); await service.shutdown(); throw error }
+        await runner.shutdown(); await service.shutdown()
+    }
+
     private func wait(_ predicate: () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(30)
         while !predicate() {
@@ -394,7 +591,7 @@ struct PiTests {
             #expect(all.contains { $0.type == "usage" && $0.usage?.provider == "pi" && $0.usage?.outputTokens == 18 })
             #expect(all.contains { $0.type == "graph" && $0.graph?.kind == "main" && $0.graph?.state == "completed" })
             let argv = try String(contentsOf: directory.appendingPathComponent("argv.txt"), encoding: .utf8).split(separator: "\n").map(String.init)
-            #expect(argv == ["--mode", "rpc", "--tools", "read,grep,find,ls"])
+            #expect(argv == ["--mode", "rpc", "--tools", "read,grep,find,ls,ask_user"] + (try Self.askArguments()))
             let stdin = try String(contentsOf: directory.appendingPathComponent("stdin.txt"), encoding: .utf8).split(separator: "\n").map(String.init)
             #expect(stdin.count == 2 && stdin[0] == #"{"type":"get_state"}"# && stdin[1].contains(#""message":"hi there""#))
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
@@ -444,7 +641,7 @@ struct PiTests {
             await runner.stop(id: "pane")
             #expect(events.values().last { $0.type == "status" }?.status == "stopped")
             let argv = try String(contentsOf: directory.appendingPathComponent("argv.txt"), encoding: .utf8).split(separator: "\n").map(String.init)
-            #expect(argv == ["--mode", "rpc"])
+            #expect(argv == ["--mode", "rpc"] + (try Self.askArguments()))
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
         await runner.shutdown(); await service.shutdown()
     }

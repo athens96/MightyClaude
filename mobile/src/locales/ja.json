@@ -3442,6 +3442,12 @@
   "run.notice.hermesFullAccessSession": "この Hermes セッションはフルアクセスで始まっており、危険なコマンドを尋ねません。現在の権限に合わせて新しいセッションで始めます。",
   "run.notice.hermesAskingSession": "この Hermes セッションはフルアクセスなしで始まっており、危険なコマンドを引き続き尋ねます。フルアクセスは新しい会話から適用されます。",
   "run.error.hermesTurnFailed": "Hermes はこのリクエストを完了できませんでした。理由は上の返答にあります。",
-  "acp.channel.questionSkipped": "エージェントの質問にはまだこのペインで答えられないため、スキップしました: {question} ({choices})",
-  "run.error.hermesNoProvider": "Hermes に接続されたモデルプロバイダーがないため、リクエストを送りませんでした。ログインしてプロバイダーと既定のモデルを選んでください。"
+  "acp.channel.questionSkipped": "エージェントの質問は質問カードとして表示できないため、スキップしました: {question} ({choices})",
+  "run.error.hermesNoProvider": "Hermes に接続されたモデルプロバイダーがないため、リクエストを送りませんでした。ログインしてプロバイダーと既定のモデルを選んでください。",
+  "questionnaire.header.agent": "質問",
+  "questionnaire.option.yes": "はい",
+  "questionnaire.option.no": "いいえ",
+  "questionnaire.error.choicesOnly": "この質問には選択肢からのみ答えられます。選択肢を選んでください。",
+  "acp.channel.formDeclined": "エージェントの入力フォームは質問カードとして表示できないため、辞退しました: {question}",
+  "run.notice.piDialogTimedOut": "pi の拡張機能の質問は、時間内に回答がなかったため閉じられました: {title}"
 }

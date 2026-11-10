@@ -3442,6 +3442,12 @@
   "run.notice.hermesFullAccessSession": "This Hermes session started with full access and does not ask about dangerous commands. A new session is started to match the current permission.",
   "run.notice.hermesAskingSession": "This Hermes session started without full access and keeps asking about dangerous commands. Full access applies from a new conversation.",
   "run.error.hermesTurnFailed": "Hermes could not finish this request. The reply above says why.",
-  "acp.channel.questionSkipped": "The agent's question cannot be answered in this pane yet, so it was skipped: {question} ({choices})",
-  "run.error.hermesNoProvider": "Hermes has no model provider connected, so the request was not sent. Sign in to pick a provider and a default model."
+  "acp.channel.questionSkipped": "The agent's question cannot be shown as a question card, so it was skipped: {question} ({choices})",
+  "run.error.hermesNoProvider": "Hermes has no model provider connected, so the request was not sent. Sign in to pick a provider and a default model.",
+  "questionnaire.header.agent": "Question",
+  "questionnaire.option.yes": "Yes",
+  "questionnaire.option.no": "No",
+  "questionnaire.error.choicesOnly": "This question takes only its listed choices. Pick one of them.",
+  "acp.channel.formDeclined": "The agent's input form cannot be shown as a question card, so it was declined: {question}",
+  "run.notice.piDialogTimedOut": "A pi extension's question closed because it was not answered in time: {title}"
 }

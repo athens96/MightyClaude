@@ -455,6 +455,8 @@ private final class ManagedProcess {
     var codexPermissions: CodexApprovalChannel?
     /// An ACP agent's run (opencode, Hermes): the JSON-RPC channel its stdio carries.
     var acp: ACPChannel?
+    /// A pi run's extension dialogs, shown as the pane's question card.
+    var piDialogs: PiDialogChannel?
     /// The ACP prompt was answered and the runner ended the agent's server itself.
     var acpEnding = false
     /// Hermes logs to stderr (INFO lines, a traceback for every failed request): kept out of the pane.
@@ -709,6 +711,17 @@ public actor ProcessRunner {
                         _ = originals.capture(sessionId: sessionId, runId: runId, workspaceRoot: root, filePath: path, edit: edit)
                     }
                 }
+                if request.provider == "pi" {
+                    let dialogs = PiDialogChannel(runId: run.activityId,
+                        write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
+                        emit: { [weak run, onEvent] permission in guard let run else { return }; onEvent(RunEvent(sessionId: run.request.sessionId, type: "permission", permission: permission)) },
+                        activity: { [weak run] permission, state in run?.parser?.permissionActivity(permission, state: state) },
+                        warning: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "system", text: message) },
+                        timer: { [weak self, weak run] id, seconds in
+                            Task { try? await Task.sleep(for: .seconds(seconds)); guard let run else { return }; await self?.piDialogTimedOut(run, id) }
+                        })
+                    run.piDialogs = dialogs; run.parser?.piDialogs = dialogs
+                }
                 if codexApprovals {
                     run.codexPermissions = CodexApprovalChannel(runId: run.activityId, request: request, workspacePath: workspace.path, attachments: attachments,
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
@@ -725,6 +738,7 @@ public actor ProcessRunner {
                     if let hermesNotice { emitLogSynchronously(run, kind: "system", text: hermesNotice) }
                     run.acp = ACPChannel(runId: run.activityId, request: launch, workspacePath: workspace.path, attachments: attachments, configValues: hermes ? HermesAgent.configValues(request) : OpencodeAgent.configValues(request),
                         // Hermes without a provider would open a session that can never answer: the run stops as a missing sign-in.
+                        freeChoices: hermes,
                         admit: hermes ? { result in
                             guard HermesAgent.provider(initialize: result) == nil else { return nil }
                             HermesAgent.forgetModels(at: HermesAgent.modelCacheURL())
@@ -822,7 +836,7 @@ public actor ProcessRunner {
                 }
             } else { child.write(standardInput, closeAfter: request.provider != "pi") }
         } catch {
-            run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.acp?.cancelAll(); run.permissionInitializationTask?.cancel()
+            run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.acp?.cancelAll(); run.piDialogs?.cancelAll(); run.permissionInitializationTask?.cancel()
             run.attachments?.cleanup(); run.attachments = nil
             await run.bridge?.stop()
             if run.finished { if !request.attachments.isEmpty { throw CancellationError() }; return }
@@ -873,6 +887,7 @@ public actor ProcessRunner {
         if let permissions = run.permissions { try permissions.respond(requestId: requestId, allow: allow) }
         else if let permissions = run.codexPermissions { try permissions.respond(requestId: requestId, allow: allow) }
         else if let channel = run.acp { try channel.respond(requestId: requestId, allow: allow) }
+        else if let dialogs = run.piDialogs { try dialogs.respond(requestId: requestId, allow: allow) }
         else { throw MightyError(L("run.error.noInteractivePermission")) }
     }
     /// Answers one pending ExitPlanMode request in exactly one local run.
@@ -927,11 +942,18 @@ public actor ProcessRunner {
         return true
     }
     public func answerUserQuestions(sessionId: String, runId: String, requestId: String, answers: [String: UserQuestionAnswer]) async throws {
-        guard !shuttingDown, let run = runs[sessionId], run.activityId == runId,
-              !run.stopping, !run.finished, let permissions = run.permissions else {
+        guard !shuttingDown, let run = runs[sessionId], run.activityId == runId, !run.stopping, !run.finished else {
             throw MightyError(L("run.error.questionRunGone"))
         }
-        try permissions.answerQuestions(requestId: requestId, answers: answers)
+        // Claude's AskUserQuestion, an ACP agent's form or clarify (opencode, Hermes), or a pi extension's dialog.
+        if let permissions = run.permissions { try permissions.answerQuestions(requestId: requestId, answers: answers) }
+        else if let channel = run.acp { try channel.answerQuestions(requestId: requestId, answers: answers) }
+        else if let dialogs = run.piDialogs { try dialogs.answerQuestions(requestId: requestId, answers: answers) }
+        else { throw MightyError(L("run.error.questionRunGone")) }
+    }
+    private func piDialogTimedOut(_ run: ManagedProcess, _ requestId: String) {
+        guard runs[run.request.sessionId] === run, !run.finished else { return }
+        run.piDialogs?.timedOut(requestId: requestId)
     }
     private func permissionInitializationTimedOut(_ run: ManagedProcess) {
         guard runs[run.request.sessionId] === run, !run.stopping, !run.finished else { return }
@@ -1104,7 +1126,7 @@ public actor ProcessRunner {
         run.finished = true; run.parser?.flush(); emitLog(run, kind: "output", text: run.outputDecoder.flush()); var errorTail = run.errorDecoder.flush(); if let filter = run.hermesStderr { errorTail = filter.push(errorTail) + filter.finish() }; run.parser?.receiveStderr(errorTail); run.parser?.finishStderr(); emitLog(run, kind: "output", text: errorTail)
         // The run still ends by its exit code; only the stray writer's rest is lost.
         if run.child?.outputAbandoned == true, !run.stopping, !shuttingDown { emitLog(run, kind: "system", text: L("run.notice.outputAbandoned")) }
-        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.acp?.cancelAll(); run.permissionInitializationTask?.cancel(); run.inputWatchdog?.cancel()
+        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.acp?.cancelAll(); run.piDialogs?.cancelAll(); run.permissionInitializationTask?.cancel(); run.inputWatchdog?.cancel()
         let incompletePermissionRun = run.permissions != nil && (run.permissions?.initialized != true || !run.receivedClaudeResult)
         if incompletePermissionRun, !run.stopping, !shuttingDown, !run.planCancelled, run.permissions?.failed != true {
             emitLog(run, kind: "error", text: L("run.error.claudeEndedEarly"))
@@ -1155,7 +1177,7 @@ public actor ProcessRunner {
         guard let run = runs[id] else { return }
         if run.finished { await waitForFinalization(run); return }
         run.stopping = true
-        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.acp?.cancelAll(); run.permissionInitializationTask?.cancel()
+        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.acp?.cancelAll(); run.piDialogs?.cancelAll(); run.permissionInitializationTask?.cancel()
         if let child = run.child {
             // Usually signalled already, before the caller reached this actor;
             // the consumer's deadline comes with the signal. Cancelled, it

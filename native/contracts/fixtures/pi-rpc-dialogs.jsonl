@@ -1,0 +1,5 @@
+{"type":"extension_ui_request","id":"4b4a8f51-a5ac-41bd-a77d-a13763abd897","method":"confirm","title":"Clear cache?","message":"All cached files will be removed."}
+{"type":"extension_ui_request","id":"824de0fa-4cba-4e60-b448-c2f6b1b1b33b","method":"input","title":"Project name","placeholder":"my-project"}
+{"type":"extension_ui_request","id":"9f52b434-70eb-4ab2-b740-044278d3c2be","method":"select","title":"Pick a color","options":["Red","Green"],"timeout":1500}
+{"type":"extension_ui_request","id":"b0b081e4-bba2-4b64-a094-7886256af76f","method":"editor","title":"Edit notes","prefill":"line 1"}
+{"type":"extension_ui_request","id":"665ef68d-a7eb-470c-8d38-6f47d0a85d93","method":"notify","message":"confirm=true input=demo select=undefined editor=undefined","notifyType":"info"}

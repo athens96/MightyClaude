@@ -60,7 +60,7 @@ struct HermesTests {
         result.parser = CLIStreamParser(provider: "hermes", log: { result.logs.append(($0, $1)) }, resume: { result.resumes.append($0) }, activityNamespace: "run-hermes",
                                         activity: { result.activities.append($0) }, usage: { result.usage.append($0) }, graph: { result.graph.append($0) }, graphInput: request.input)
         result.channel = ACPChannel(runId: "run-hermes", request: request, workspacePath: "/tmp/project", attachments: try AttachmentPreparation([]),
-                                    configValues: HermesAgent.configValues(request), admit: admit,
+                                    configValues: HermesAgent.configValues(request), freeChoices: true, admit: admit,
                                     write: { data in result.writes.append((try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]) },
                                     event: { result.parser.receive(object: $0) },
                                     emit: { result.permissions.append($0) }, activity: { result.parser.permissionActivity($0, state: $1) },
@@ -233,19 +233,90 @@ struct HermesTests {
         #expect(allowed.answers.map(allowed.option) == ["allow_once", "allow_once"])
     }
 
-    @Test func aQuestionWithChoicesIsSkippedAndNamed() throws {
-        // Not recorded (the recorded model had no clarify tool): the shape is acp_adapter/elicitation.py's.
+    /// A session opened, then line `index` of hermes-acp-clarify.jsonl: the frames Hermes 0.23.1's own
+    /// builders (`acp_adapter/elicitation.py`) make for a clarify prompt. Not a model recording: the
+    /// `hermes-acp` toolset leaves the clarify tool out unless the user's `hermes tools` turns it on.
+    static func clarify(_ index: Int) throws -> (Replay, ToolPermissionRequest?) {
         let run = try Self.channel(StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "hi", provider: "hermes"))
         run.channel.start()
         let lines = try Self.fixture("answer")
         run.channel.receive(lines[0] + Data([10])); run.channel.receive(lines[1] + Data([10]))
-        let ask: [String: Any] = ["jsonrpc": "2.0", "id": 2, "method": "session/request_permission", "params": ["sessionId": Self.answerSession,
-            "toolCall": ["toolCallId": "clarify-7c1d", "title": "Commit the change now?", "kind": "other", "status": "pending", "rawInput": ["question": "Commit the change now?", "choices": ["Yes", "Not yet"]]],
-            "options": [["optionId": "choice-0", "name": "Yes", "kind": "allow_once"], ["optionId": "choice-1", "name": "Not yet", "kind": "allow_once"], ["optionId": "skip", "name": "Skip", "kind": "reject_once"]]]]
-        run.channel.receive(try JSONSerialization.data(withJSONObject: ask) + Data([10]))
+        run.channel.receive(try Self.fixture("clarify")[index] + Data([10]))
+        return (run, run.permissions.first)
+    }
+    static func answers(_ card: ToolPermissionRequest, picked: [String] = [], typed: String? = nil) throws -> [String: UserQuestionAnswer] {
+        [try #require(card.questionnaire).questions[0].question: UserQuestionAnswer(selectedOptions: picked, customText: typed)]
+    }
+
+    @Test func formElicitationIsOfferedAndAClarifyFormIsTheQuestionCard() throws {
+        var (run, shown) = try Self.clarify(0)
+        let capabilities = try #require((run.writes[0]["params"] as? [String: Any])?["clientCapabilities"] as? [String: Any])
+        #expect(((capabilities["elicitation"] as? [String: Any])?["form"] as? [String: Any])?.isEmpty == true)
+        // One property without a title: the form's message is the question, each `enum` value a choice.
+        var card = try #require(shown), question = try #require(card.questionnaire).questions[0]
+        #expect(card.canAnswerQuestions && question.question == "Commit the change now?" && question.header == L("questionnaire.header.agent"))
+        #expect(question.options.map(\.label) == ["Yes", "Not yet"] && !question.multiSelect)
+        // No tool call of its own: no activity row is made for it.
+        #expect(run.activities.allSatisfy { $0.kind == "turn" })
+        try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card, picked: ["Not yet"]))
+        var result = try #require(run.answers.last?["result"] as? [String: Any])
+        #expect(run.answers.last?["id"] as? Int == 0 && result["action"] as? String == "accept" && (result["content"] as? [String: String]) == ["answer": "Not yet"])
+        // Hermes reads any string as the answer: a typed one travels in the same property.
+        (run, shown) = try Self.clarify(0); card = try #require(shown)
+        try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card, typed: "After the tests pass"))
+        #expect(((run.answers.last?["result"] as? [String: Any])?["content"] as? [String: String]) == ["answer": "After the tests pass"])
+        // Several picks are a list, a typed answer its last entry.
+        (run, shown) = try Self.clarify(1); card = try #require(shown); question = try #require(card.questionnaire).questions[0]
+        #expect(question.multiSelect && question.options.map(\.label) == ["README.md", "notes.txt", "src/main.py"])
+        try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card, picked: ["notes.txt", "README.md"], typed: "docs/"))
+        #expect(((run.answers.last?["result"] as? [String: Any])?["content"] as? [String: [String]]) == ["answer": ["README.md", "notes.txt", "docs/"]])
+        // No choices: a typed answer.
+        (run, shown) = try Self.clarify(2); card = try #require(shown); question = try #require(card.questionnaire).questions[0]
+        #expect(question.options.isEmpty && question.question == "What should the commit message say?")
+        #expect(throws: (any Error).self) { try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card)) }
+        try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card, typed: "Fix the parser"))
+        #expect(((run.answers.last?["result"] as? [String: Any])?["content"] as? [String: String]) == ["answer": "Fix the parser"])
+        // Cancel declines the form, which Hermes reads as its Skip.
+        (run, shown) = try Self.clarify(0); card = try #require(shown)
+        try run.channel.respond(requestId: card.id, allow: false)
+        result = try #require(run.answers.last?["result"] as? [String: Any])
+        #expect(result["action"] as? String == "decline" && result.count == 1 && run.permissions.map(\.state) == ["pending", "denied"])
+    }
+
+    @Test func aClarifyApprovalIsTheQuestionCardAndThePickIsItsOption() throws {
+        // What a Hermes that was not told about forms sends: one `allow_once` option per choice, plus Skip.
+        var (run, shown) = try Self.clarify(3)
+        var card = try #require(shown)
+        let question = try #require(card.questionnaire).questions[0]
+        #expect(card.canAnswerQuestions && !card.canAllow && card.toolUseId == "clarify-7c1d")
+        #expect(question.question == "Commit the change now?" && question.options.map(\.label) == ["Yes", "Not yet"])
+        // Nothing typed can travel as an option: refused, and the card stays.
+        #expect(throws: (any Error).self) { try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card, typed: "Later")) }
+        #expect(run.answers.isEmpty)
+        try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card, picked: ["Not yet"]))
+        #expect(run.answers.map(run.option) == ["choice-1"] && run.answers.last?["id"] as? Int == 3 && run.permissions.map(\.state) == ["pending", "answered"])
+        // Cancel is Hermes's Skip.
+        (run, shown) = try Self.clarify(3); card = try #require(shown)
+        try run.channel.respond(requestId: card.id, allow: false)
+        #expect(run.answers.map(run.option) == ["skip"])
+        // The call settled elsewhere: the card goes without an answer.
+        (run, shown) = try Self.clarify(3)
         run.channel.receive(Data(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"\#(Self.answerSession)","update":{"sessionUpdate":"tool_call_update","toolCallId":"clarify-7c1d","status":"failed"}}}"#.utf8) + Data([10]))
+        #expect(run.permissions.map(\.state) == ["pending", "cancelled"] && run.answers.isEmpty)
+    }
+
+    @Test func aQuestionTheCardCannotShowIsSkippedAndNamed() throws {
+        let run = try Self.channel(StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "hi", provider: "hermes"))
+        run.channel.start()
+        let lines = try Self.fixture("answer")
+        run.channel.receive(lines[0] + Data([10])); run.channel.receive(lines[1] + Data([10]))
+        // Two choices of one name: the card could not tell them apart.
+        let ask: [String: Any] = ["jsonrpc": "2.0", "id": 2, "method": "session/request_permission", "params": ["sessionId": Self.answerSession,
+            "toolCall": ["toolCallId": "clarify-7c1d", "title": "Commit the change now?", "kind": "other", "status": "pending", "rawInput": ["question": "Commit the change now?", "choices": ["Yes", "Yes"]]],
+            "options": [["optionId": "choice-0", "name": "Yes", "kind": "allow_once"], ["optionId": "choice-1", "name": "Yes", "kind": "allow_once"], ["optionId": "skip", "name": "Skip", "kind": "reject_once"]]]]
+        run.channel.receive(try JSONSerialization.data(withJSONObject: ask) + Data([10]))
         #expect(run.permissions.isEmpty && run.answers.map(run.option) == ["skip"] && run.activities.allSatisfy { $0.kind == "turn" })
-        #expect(run.warnings == [L("acp.channel.questionSkipped", ["question": "Commit the change now?", "choices": "Yes / Not yet"])])
+        #expect(run.warnings == [L("acp.channel.questionSkipped", ["question": "Commit the change now?", "choices": "Yes / Yes"])])
     }
 
     @Test func aTurnThatFailsForAMissingProviderIsALostSignIn() throws {

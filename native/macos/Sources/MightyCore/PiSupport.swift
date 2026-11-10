@@ -16,6 +16,23 @@ public enum PiAgent {
         "AWS_BEARER_TOKEN_BEDROCK",
     ]
 
+    /// The tool the app's extension gives pi so it can ask the user (`ask_user`: a question, its
+    /// options, `multiple`). pi has no question tool of its own.
+    public static let questionTool = "ask_user"
+    static let questionExtensionName = "pi-ask-user.js"
+    /// The extension in the app's resource bundle (Agents/), loaded per run with `pi -e`; the
+    /// user's `~/.pi` is not touched. Nil when the bundle lacks it: pi then runs without the tool.
+    public static func questionExtension() -> URL? {
+        var candidates: [URL] = []
+        for root in BundledStyleSource.searchRoots() {
+            let bundle = root.appendingPathComponent(BundledStyleSource.bundleName, isDirectory: true)
+            candidates.append(bundle.appendingPathComponent("Contents/Resources/Agents/" + questionExtensionName))
+            candidates.append(bundle.appendingPathComponent("Agents/" + questionExtensionName))
+        }
+        if let resources = Bundle.main.resourceURL { candidates.append(resources.appendingPathComponent("Agents/" + questionExtensionName)) }
+        return candidates.first { FileManager.default.isReadableFile(atPath: $0.path) }
+    }
+
     /// `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`.
     public static func directory(home: URL, environment: [String: String]) -> URL {
         environment["PI_CODING_AGENT_DIR"].flatMap { $0.hasPrefix("/") ? URL(fileURLWithPath: $0, isDirectory: true) : nil }

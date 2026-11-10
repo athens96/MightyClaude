@@ -50,6 +50,12 @@ public final class CLIStreamParser {
     private var piError: String?
     /// Answers an extension's dialog that no window can show (`piReply`).
     private let piReply: ((Data) -> Void)?
+    /// Shows an extension's dialog as the pane's question card; without it every dialog is cancelled.
+    var piDialogs: PiDialogChannel?
+    /// The app's `ask_user` calls in flight: a dialog titled with one's question is its question.
+    private var piAsking: [String: (question: String, multiple: Bool)] = [:]
+    /// The assistant message pi is streaming: `message_update` does not name it.
+    private var piMessage: String?
     /// The turn is still going: stdin must stay open.
     public var piTurnOpen: Bool { piAgentOpen || piCompacting || piRetrying }
     /// The text of the latest Claude message the CLI marked as a lost sign-in,
@@ -704,10 +710,14 @@ public final class CLIStreamParser {
             piAgentOpen = true; piRetrying = false; turn(L("run.turn.generating", ["name": name]))
         case "agent_end":
             piAgentOpen = false; turn(L("run.turn.finishing", ["name": name])); result?()
+        case "message_start":
+            if let message = value["message"] as? [String: Any], message["role"] as? String == "assistant" { piMessage = Self.piMessageKey(message) }
         case "message_update":
             guard let event = value["assistantMessageEvent"] as? [String: Any], event["type"] as? String == "text_end",
                   let text = event["content"] as? String else { return }
-            emitUnique(text, id: Self.piMessageKey(value["message"]) + ":\(event["contentIndex"] as? Int ?? 0)")
+            // pi 1.5 sends the update without its message: it is the one `message_start` opened.
+            let key = value["message"] is [String: Any] ? Self.piMessageKey(value["message"]) : piMessage ?? Self.piMessageKey(nil)
+            emitUnique(text, id: key + ":\(event["contentIndex"] as? Int ?? 0)")
         case "message_end":
             guard let message = value["message"] as? [String: Any], message["role"] as? String == "assistant" else { return }
             let key = Self.piMessageKey(message)
@@ -721,6 +731,12 @@ public final class CLIStreamParser {
         case "tool_execution_start", "tool_execution_update", "tool_execution_end":
             let ended = type == "tool_execution_end"
             let toolName = value["toolName"] as? String ?? "Tool"
+            if toolName == PiAgent.questionTool, let id = value["toolCallId"] as? String {
+                if ended { piAsking.removeValue(forKey: id); piDialogs?.toolEnded(id) }
+                else if let args = value["args"] as? [String: Any], let question = args["question"] as? String {
+                    piAsking[id] = (question.trimmingCharacters(in: .whitespacesAndNewlines), args["multiple"] as? Bool == true)
+                }
+            }
             let output = ActivitySupport.output(ended ? value["result"] : value["partialResult"])
             tool(id: value["toolCallId"] as? String, name: toolName, input: value["args"], state: ended ? (value["isError"] as? Bool == true ? "error" : "completed") : "running", output: output)
             if activity == nil, ended, let output, !output.isEmpty { log("output", output) }
@@ -743,9 +759,13 @@ public final class CLIStreamParser {
             }
         case "extension_error": log("system", errorText(value["error"], fallback: ""))
         case "extension_ui_request":
-            // A dialog (select, confirm, input, editor) waits for an answer no pane can give it.
-            guard ["select", "confirm", "input", "editor"].contains(value["method"] as? String ?? ""), let id = value["id"] as? String,
-                  var data = try? JSONSerialization.data(withJSONObject: ["type": "extension_ui_response", "id": id, "cancelled": true], options: [.sortedKeys]) else { return }
+            // A dialog waits for an answer: select, confirm and input are the pane's question card;
+            // an editor, or one the card cannot show, gets the answer no pane can give it.
+            guard ["select", "confirm", "input", "editor"].contains(value["method"] as? String ?? ""), let id = value["id"] as? String else { return }
+            let title = (value["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let asking = piAsking.first { $0.value.question == title }.map { PiDialogChannel.Asking(toolCallId: $0.key, multiple: $0.value.multiple) }
+            if piDialogs?.receive(value, asking: asking) == true { return }
+            guard var data = try? JSONSerialization.data(withJSONObject: ["type": "extension_ui_response", "id": id, "cancelled": true], options: [.sortedKeys]) else { return }
             data.append(10); piReply?(data)
             log("system", L("run.notice.piDialogDismissed", ["title": ActivitySupport.clean(value["title"] as? String ?? "", maximumBytes: 256, singleLine: true)]))
         default: break
@@ -754,7 +774,7 @@ public final class CLIStreamParser {
     /// Names one pi message across its updates and its end: assistant messages carry no id, only a timestamp.
     static func piMessageKey(_ message: Any?) -> String {
         let fields = message as? [String: Any]
-        return "pi:" + String(describing: fields?["responseId"] ?? fields?["timestamp"] ?? "message")
+        return "pi:" + String(describing: fields?["timestamp"] ?? fields?["responseId"] ?? "message")
     }
 
     /// Antigravity CLI (`agy --output-format stream-json`): each line names its

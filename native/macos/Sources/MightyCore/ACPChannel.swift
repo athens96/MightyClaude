@@ -7,17 +7,25 @@ import CoreFoundation
 /// pane's session), the pane's settings as `session/set_config_option`, then one
 /// `session/prompt`. What the agent streams (`session/update`) reaches the parser as
 /// `acp.*` events (`CLIStreamParser.acp`); a `session/request_permission` becomes the
-/// pane's approval card, and only the user's single-call answer leaves the channel.
+/// pane's approval card, and only the user's single-call answer leaves the channel. A question
+/// (an `elicitation/create` form: opencode's `question` tool, Hermes's clarify; or Hermes's
+/// clarify as an approval with one `allow_once` option per choice, for a Hermes that was not
+/// told about forms) becomes the pane's question card (`AgentQuestions`).
 /// Nothing here is one agent's own: opencode and Hermes use the same channel, and differ only
 /// in their argv, how the permission mode reaches them, and their settings' ids.
 final class ACPChannel {
     static let maximumFrameBytes = 32 * 1024 * 1024
     static let maximumInputBytes = 65_536
     static let maximumPending = 16
-    /// What the client offers: no file system and no terminal, so the agent uses its own tools.
-    static let clientCapabilities: [String: Any] = ["fs": ["readTextFile": false, "writeTextFile": false], "terminal": false]
+    /// What the client offers: no file system and no terminal, so the agent uses its own tools,
+    /// and form elicitation, so its questions arrive as `elicitation/create`.
+    static let clientCapabilities: [String: Any] = ["fs": ["readTextFile": false, "writeTextFile": false], "terminal": false, "elicitation": ["form": [String: Any]()]]
 
-    private struct Pending { let rpcID: Any; let allowOption: String?; let rejectOption: String?; var display: ToolPermissionRequest }
+    /// How a question's answer travels: an elicitation's `content`, or the option of the picked choice.
+    private enum Question { case form(ACPElicitationForm), choices([String: String]) }
+    private struct Pending { let rpcID: Any; let allowOption: String?; let rejectOption: String?; var display: ToolPermissionRequest; var question: Question? = nil
+                             /// False for a form without a tool call of its own (Hermes's): no activity row to mark.
+                             var row = true }
     private let runId: String
     private let request: StartRunRequest
     private let workspacePath: String
@@ -27,6 +35,8 @@ final class ACPChannel {
     /// Reads the agent's `initialize` answer before a session is opened: a message stops the run
     /// there as a missing sign-in (Hermes names no provider it could use).
     private let admit: (([String: Any]) -> String?)?
+    /// The agent reads a typed answer in place of a form's choice (Hermes's clarify).
+    private let freeChoices: Bool
     private let write: (Data) -> Void
     private let event: ([String: Any]) -> Void
     private let emit: (ToolPermissionRequest) -> Void
@@ -58,10 +68,10 @@ final class ACPChannel {
     let cancellation = ACPCancellation()
 
     init(runId: String, request: StartRunRequest, workspacePath: String, attachments: AttachmentPreparation, configValues: [(id: String, value: String)],
-         admit: (([String: Any]) -> String?)? = nil, write: @escaping (Data) -> Void, event: @escaping ([String: Any]) -> Void,
+         freeChoices: Bool = false, admit: (([String: Any]) -> String?)? = nil, write: @escaping (Data) -> Void, event: @escaping ([String: Any]) -> Void,
          emit: @escaping (ToolPermissionRequest) -> Void, activity: @escaping (ToolPermissionRequest, String) -> Void,
          warning: @escaping (String) -> Void, fail: @escaping (String) -> Void, completed: @escaping () -> Void) {
-        self.runId = runId; self.request = request; self.workspacePath = workspacePath; self.attachments = attachments; self.configValues = configValues; self.admit = admit
+        self.runId = runId; self.request = request; self.workspacePath = workspacePath; self.attachments = attachments; self.configValues = configValues; self.admit = admit; self.freeChoices = freeChoices
         self.write = write; self.event = event; self.emit = emit; self.activity = activity
         self.warning = warning; self.fail = fail; self.completed = completed
     }
@@ -221,6 +231,11 @@ final class ACPChannel {
     }
 
     private func notification(_ method: String, _ params: [String: Any]) {
+        // The agent withdrew a request of its own (its turn was cancelled while it asked).
+        if method == "$/cancel_request", let key = Self.idKey(params["requestId"]) {
+            for id in pending.filter({ Self.idKey($0.value.rpcID) == key }).map(\.key) { cancelPending(id) }
+            return
+        }
         guard method == "session/update", !replaying, let sessionId, params["sessionId"] as? String == sessionId,
               let update = params["update"] as? [String: Any], let kind = update["sessionUpdate"] as? String else { return }
         // A call that settled no longer waits for an answer.
@@ -234,6 +249,7 @@ final class ACPChannel {
         guard let key = Self.idKey(rawID) else { failClosed(L("acp.channel.badRequestId")); return }
         guard seen.insert(key).inserted else { failClosed(L("acp.channel.duplicateRequest")); return }
         guard seen.count <= 2_048 else { failClosed(L("acp.channel.tooManyRequests")); return }
+        if method == "elicitation/create" { elicitation(rawID, key, params); return }
         guard method == "session/request_permission" else {
             // No file system or terminal was offered: anything else is not this client's.
             rpcError(rawID, -32601, "Method not supported by this client."); return
@@ -248,8 +264,13 @@ final class ACPChannel {
         }
         let allow = option(["allow_once"]), reject = option(["reject_once", "reject_always"])
         // Several "allow once" options are a question's choices (Hermes's clarify), not an approval:
-        // the card has one Allow, so the question is skipped and named instead of answered by guess.
+        // they are the question card's choices. One the card cannot show is skipped and named
+        // instead of answered by guess.
         if options.filter({ $0["kind"] as? String == "allow_once" }).count > 1 {
+            if pending.count < Self.maximumPending, let ask = choiceQuestion(rawID, key, call, Array(options), reject: reject) {
+                pending[ask.display.id] = ask
+                activity(ask.display, "waiting"); emit(ask.display); return
+            }
             answer(rawID, reject)
             let question = ActivitySupport.clean(call["title"] as? String ?? "", maximumBytes: 1_000, singleLine: true)
             let choices = options.filter { $0["kind"] as? String == "allow_once" }.compactMap { $0["name"] as? String }.prefix(8).map { ActivitySupport.clean($0, maximumBytes: 120, singleLine: true) }.joined(separator: " / ")
@@ -268,26 +289,79 @@ final class ACPChannel {
         pending[value.id] = Pending(rpcID: rawID, allowOption: allow, rejectOption: reject, display: value)
         activity(value, "waiting"); emit(value)
     }
+    /// Hermes's clarify as an approval: the tool call's title is the question and each
+    /// `allow_once` option one choice. The answer is the picked option; nothing typed can travel.
+    private func choiceQuestion(_ rawID: Any, _ key: String, _ call: [String: Any], _ options: [[String: Any]], reject: String?) -> Pending? {
+        var choices: [String: String] = [:], item = AgentQuestions.Item(header: L("questionnaire.header.agent"), question: "")
+        guard let question = AgentQuestions.text((call["rawInput"] as? [String: Any])?["question"] as? String ?? call["title"] as? String, limit: 8_192) else { return nil }
+        item.question = question
+        for option in options where option["kind"] as? String == "allow_once" {
+            guard let id = option["optionId"] as? String, !id.isEmpty, id.utf8.count <= 256,
+                  let label = AgentQuestions.text(option["name"] as? String, limit: 1_024, singleLine: true), choices[label] == nil else { return nil }
+            choices[label] = id; item.options.append((label, ""))
+        }
+        let callID = (call["toolCallId"] as? String).flatMap { !$0.isEmpty && $0.utf8.count <= 256 ? $0 : nil } ?? "question-\(key)"
+        guard let display = AgentQuestions.request(id: UUID().uuidString, runId: runId, toolUseId: callID, items: [item]) else { return nil }
+        return Pending(rpcID: rawID, allowOption: nil, rejectOption: reject, display: display, question: .choices(choices))
+    }
+    /// `elicitation/create`: a form the question card asks, or one it cannot (a number, a nested
+    /// object, more than the card holds), which is declined and named.
+    private func elicitation(_ rawID: Any, _ key: String, _ params: [String: Any]) {
+        guard let sessionId, params["sessionId"] as? String == sessionId else { reply(rawID, ["action": "cancel"]); return }
+        let callID = (params["toolCallId"] as? String).flatMap { !$0.isEmpty && $0.utf8.count <= 256 ? $0 : nil }
+        guard pending.count < Self.maximumPending, let form = ACPElicitationForm(params: params, freeChoices: freeChoices),
+              let display = AgentQuestions.request(id: UUID().uuidString, runId: runId, toolUseId: callID ?? "question-\(key)", items: form.items) else {
+            reply(rawID, ["action": "decline"])
+            warning(L("acp.channel.formDeclined", ["question": ActivitySupport.clean(params["message"] as? String ?? "", maximumBytes: 1_000, singleLine: true)])); return
+        }
+        pending[display.id] = Pending(rpcID: rawID, allowOption: nil, rejectOption: nil, display: display, question: .form(form), row: callID != nil)
+        if callID != nil { activity(display, "waiting") }
+        emit(display)
+    }
+    /// The question card's answers, sent as the form's content or the picked choice's option.
+    func answerQuestions(requestId: String, answers: [String: UserQuestionAnswer]) throws {
+        guard !closed, let ask = pending[requestId], let question = ask.question else { throw MightyError(L("permission.error.questionGone")) }
+        let checked = try AgentQuestions.answers(ask.display, answers)
+        switch question {
+        case .form(let form):
+            // Checked first: an answer the form cannot carry leaves the card answerable.
+            let content = try form.content(checked)
+            pending.removeValue(forKey: requestId)
+            reply(ask.rpcID, ["action": "accept", "content": content])
+        case .choices(let options):
+            guard let answer = checked.values.first, answer.typed.isEmpty, answer.picked.count == 1, let option = options[answer.picked[0]] else { throw MightyError(L("questionnaire.error.choicesOnly")) }
+            pending.removeValue(forKey: requestId)
+            self.answer(ask.rpcID, option)
+        }
+        var value = ask.display; value.state = "answered"
+        if ask.row { activity(value, "running") }
+        emit(value)
+    }
     func respond(requestId: String, allow: Bool) throws {
         guard !closed, let ask = pending[requestId] else { throw MightyError(L("permission.error.requestGone")) }
         guard !allow || ask.allowOption != nil else { throw MightyError(L("acp.channel.denyOnly")) }
         pending.removeValue(forKey: requestId)
-        answer(ask.rpcID, allow ? ask.allowOption : ask.rejectOption)
+        // A question's Cancel: the form is declined, the clarify approval skipped.
+        if case .form = ask.question { reply(ask.rpcID, ["action": "decline"]) }
+        else { answer(ask.rpcID, allow ? ask.allowOption : ask.rejectOption) }
         var value = ask.display; value.state = allow ? "allowed" : "denied"
-        activity(value, allow ? "running" : "error"); emit(value)
+        // A dismissed question's call is settled by the agent's own update, not marked failed here.
+        if ask.row { activity(value, allow || ask.question != nil ? "running" : "error") }
+        emit(value)
     }
     /// The option the user chose; without a reject option the request is cancelled, which the agent reads as a no.
     private func answer(_ id: Any, _ optionId: String?) {
         reply(id, ["outcome": optionId.map { ["outcome": "selected", "optionId": $0] } ?? ["outcome": "cancelled"]])
     }
     private func cancelPending(_ id: String) {
-        guard var value = pending.removeValue(forKey: id)?.display else { return }
-        value.state = "cancelled"; activity(value, "stopped"); emit(value)
+        guard let ask = pending.removeValue(forKey: id) else { return }
+        var value = ask.display
+        value.state = "cancelled"; if ask.question == nil { activity(value, "stopped") }; emit(value)
     }
     func cancelAll() {
         guard !closed else { return }; closed = true; _ = lines.finish(); rpc.removeAll()
         let asks = Array(pending.values); pending.removeAll()
-        for ask in asks { var value = ask.display; value.state = "cancelled"; activity(value, "stopped"); emit(value) }
+        for ask in asks { var value = ask.display; value.state = "cancelled"; if ask.row { activity(value, "stopped") }; emit(value) }
     }
     private func failClosed(_ message: String) { guard !closed else { return }; failed = true; cancelAll(); fail(message) }
     private func call(_ method: String, _ params: [String: Any]) {

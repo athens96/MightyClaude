@@ -27,13 +27,18 @@ struct UserQuestionnaireCard: View {
             // Retain the displayed option order, regardless of the order of clicks.
             let labels = question.options.map(\.label).filter { selections[index, default: []].contains($0) }
             return (question.question, UserQuestionAnswer(selectedOptions: labels,
-                customText: customQuestions.contains(index) ? customText[index, default: ""] : nil))
+                customText: typing(index) ? customText[index, default: ""] : nil))
         })
+    }
+    /// The answer is being typed: the user opened the "write your answer" row, or the question
+    /// offers nothing to pick (another agent's free-text question).
+    private func typing(_ index: Int) -> Bool {
+        customQuestions.contains(index) || (questionnaire.questions.indices.contains(index) && questionnaire.questions[index].options.isEmpty)
     }
 
     private func answered(_ index: Int) -> Bool {
         !selections[index, default: []].isEmpty ||
-        (customQuestions.contains(index) && !customText[index, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        (typing(index) && !customText[index, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
     private var answeredCount: Int { questionnaire.questions.indices.filter(answered).count }
     private var lastStep: Int { max(0, questionnaire.questions.count - 1) }
@@ -162,8 +167,10 @@ struct UserQuestionnaireCard: View {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(question.header).font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.waitText)
                 Spacer(minLength: 0)
-                Text(question.multiSelect ? L("phone.questionnaire.multiple") : L("phone.questionnaire.single"))
-                    .font(.ui(size: 10.5)).foregroundStyle(Palette.ink2)
+                if !question.options.isEmpty {
+                    Text(question.multiSelect ? L("phone.questionnaire.multiple") : L("phone.questionnaire.single"))
+                        .font(.ui(size: 10.5)).foregroundStyle(Palette.ink2)
+                }
             }
             Text(question.question).font(.ui(size: 14.5, weight: .bold)).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
@@ -183,6 +190,7 @@ struct UserQuestionnaireCard: View {
                     }
                 }
             }
+            if !question.options.isEmpty {
             choiceRow(label: L("phone.questionnaire.custom"), description: nil, selected: customQuestions.contains(index),
                       multiple: question.multiSelect, identifier: "questionnaire-custom-\(index)") {
                 if customQuestions.contains(index) { customQuestions.remove(index) }
@@ -192,7 +200,8 @@ struct UserQuestionnaireCard: View {
                 }
             }
             }
-            if customQuestions.contains(index) {
+            }
+            if typing(index) {
                 TextField(L("phone.questionnaire.customPlaceholder"), text: Binding(get: { customText[index, default: ""] },
                     set: { customText[index] = $0 }), axis: .vertical)
                     .textFieldStyle(.roundedBorder).font(.ui(size: 12))

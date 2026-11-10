@@ -119,6 +119,115 @@ struct OpencodeTests {
         #expect(run.channel.turnCompleted && !run.parser.failed)
     }
 
+    // MARK: Questions (recorded with OpenCode 2.2.7: opencode-acp-question*.jsonl)
+
+    /// Answers the first pending question card with `answer`, once.
+    static func answering(_ answer: @escaping (Replay, ToolPermissionRequest) throws -> Void) -> (Replay, Int) throws -> Void {
+        { run, _ in
+            guard let card = run.permissions.last, card.state == "pending", run.permissions.filter({ $0.id == card.id }).count == 1 else { return }
+            try answer(run, card)
+        }
+    }
+    static func answers(_ card: ToolPermissionRequest, picked: [String] = [], typed: String? = nil) throws -> [String: UserQuestionAnswer] {
+        [try #require(card.questionnaire).questions[0].question: UserQuestionAnswer(selectedOptions: picked, customText: typed)]
+    }
+    static func result(_ run: Replay, id: Int = 0) -> [String: Any]? { run.writes.first { $0["id"] as? Int == id }?["result"] as? [String: Any] }
+
+    @Test func formElicitationIsOfferedSoTheQuestionToolAsksThroughIt() throws {
+        let run = try Self.replay("answer")
+        let capabilities = try #require((run.writes[0]["params"] as? [String: Any])?["clientCapabilities"] as? [String: Any])
+        // Named by its presence: an empty object.
+        #expect(((capabilities["elicitation"] as? [String: Any])?["form"] as? [String: Any])?.isEmpty == true)
+    }
+
+    @Test func theQuestionToolIsTheQuestionCardAndThePickIsTheFormsContent() throws {
+        var shown: ToolPermissionRequest?
+        let run = try Self.replay("question", answer: Self.answering { run, card in
+            shown = card
+            #expect(run.activities.last?.state == "waiting")
+            try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card, picked: ["Green"]))
+        })
+        let card = try #require(shown), question = try #require(card.questionnaire).questions[0]
+        #expect(card.toolName == "AskUserQuestion" && card.canAnswerQuestions && !card.canAllow && card.toolUseId == "call_question_1")
+        // The property's title is the header, its description the question, each `oneOf` entry an option.
+        #expect(question.header == "Favorite color" && question.question == "What's your favorite color?" && !question.multiSelect)
+        #expect(question.options.map(\.label) == ["Red", "Green", "Blue"] && question.options[0].description == "You prefer red.")
+        let result = try #require(Self.result(run))
+        #expect(result["action"] as? String == "accept" && (result["content"] as? [String: String]) == ["q0": "Green"])
+        #expect(run.permissions.map(\.state) == ["pending", "answered"])
+        #expect(run.warnings.isEmpty && run.failures.isEmpty && run.channel.turnCompleted && !run.parser.failed && run.completed == 1)
+        // The call's row settles with opencode's own update.
+        #expect(run.activities.last { $0.kind == "tool" }?.state == "completed")
+    }
+
+    @Test func aTypedAnswerTravelsInTheCustomPropertyAndSeveralPicksAsAList() throws {
+        var run = try Self.replay("question", answer: Self.answering { run, card in
+            try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card, typed: " Purple "))
+        })
+        #expect((Self.result(run)?["content"] as? [String: String]) == ["q0_custom": "Purple"])
+        run = try Self.replay("question-multiple", answer: Self.answering { run, card in
+            #expect(card.questionnaire?.questions[0].multiSelect == true && card.questionnaire?.questions[0].options.map(\.label) == ["Apple", "Banana", "Cherry"])
+            // One pick of a single-choice answer shape is not this question's: both picks are kept, in the offered order.
+            try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card, picked: ["Cherry", "Apple"], typed: "Mango"))
+        })
+        let content = try #require(Self.result(run)?["content"] as? [String: Any])
+        #expect(content["q0"] as? [String] == ["Apple", "Cherry"] && content["q0_custom"] as? String == "Mango" && content.count == 2)
+    }
+
+    @Test func theCardsCancelDeclinesTheFormAndOpencodeEndsTheTurn() throws {
+        let run = try Self.replay("question-dismissed", answer: Self.answering { run, card in
+            #expect(throws: (any Error).self) { try run.channel.respond(requestId: card.id, allow: true) }
+            try run.channel.respond(requestId: card.id, allow: false)
+        })
+        #expect(Self.result(run)?["action"] as? String == "decline" && Self.result(run)?.count == 1)
+        #expect(run.permissions.map(\.state) == ["pending", "denied"])
+        // Recorded: the tool fails as dismissed and the prompt ends `cancelled`, which is not a failed run.
+        #expect(run.activities.last { $0.kind == "tool" }?.state == "error")
+        #expect(run.channel.turnCompleted && !run.parser.failed && run.failures.isEmpty)
+    }
+
+    @Test func aFormTheCardCannotAskIsDeclinedAndNamedAndAWithdrawnQuestionLeavesNoCard() throws {
+        func asked(_ properties: String) throws -> Replay {
+            let run = try Self.channel(StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "hi", provider: "opencode"))
+            run.channel.start()
+            let lines = try Self.fixture("answer")
+            run.channel.receive(lines[0] + Data([10])); run.channel.receive(lines[1] + Data([10]))
+            run.channel.receive(Data(#"{"jsonrpc":"2.0","id":0,"method":"elicitation/create","params":{"mode":"form","sessionId":"\#(Self.sessionID)","toolCallId":"call-9","message":"Questions","requestedSchema":{"type":"object","properties":\#(properties),"required":[]}}}"#.utf8) + Data([10]))
+            return run
+        }
+        // A number is not a question the card asks.
+        var run = try asked(#"{"q0":{"type":"integer","title":"Retries","description":"How many retries?"}}"#)
+        #expect(run.permissions.isEmpty && Self.result(run)?["action"] as? String == "decline")
+        #expect(run.warnings == [L("acp.channel.formDeclined", ["question": "Questions"])])
+        // More options than the card holds.
+        let options = (1...13).map { #"{"const":"o\#($0)","title":"Option \#($0)"}"# }.joined(separator: ",")
+        run = try asked(#"{"q0":{"type":"string","title":"Pick","description":"Which one?","oneOf":[\#(options)]}}"#)
+        #expect(run.permissions.isEmpty && Self.result(run)?["action"] as? String == "decline")
+        // A choice without the custom property takes only its options; the card stays answerable.
+        run = try asked(#"{"q0":{"type":"string","title":"Pick","description":"Which one?","oneOf":[{"const":"a","title":"First"},{"const":"b","title":"Second"}]},"q1":{"type":"boolean","title":"Sure","description":"Are you sure?"}}"#)
+        let card = try #require(run.permissions.first), questions = try #require(card.questionnaire).questions
+        #expect(questions.map(\.question) == ["Which one?", "Are you sure?"] && questions[1].options.map(\.label) == [L("questionnaire.option.yes"), L("questionnaire.option.no")])
+        #expect(throws: (any Error).self) {
+            try run.channel.answerQuestions(requestId: card.id, answers: ["Which one?": UserQuestionAnswer(customText: "Third"), "Are you sure?": UserQuestionAnswer(selectedOptions: [L("questionnaire.option.yes")])])
+        }
+        #expect(Self.result(run) == nil)
+        try run.channel.answerQuestions(requestId: card.id, answers: ["Which one?": UserQuestionAnswer(selectedOptions: ["Second"]), "Are you sure?": UserQuestionAnswer(selectedOptions: [L("questionnaire.option.no")])])
+        // The label's value travels, not the label; a boolean as a boolean.
+        let content = try #require(Self.result(run)?["content"] as? [String: Any])
+        #expect(content["q0"] as? String == "b" && content["q1"] as? Bool == false)
+        // The agent withdraws its request, or its call fails: the card goes and nothing is answered.
+        run = try asked(#"{"q0":{"type":"string","title":"Pick","description":"Which one?","oneOf":[{"const":"a","title":"First"},{"const":"b","title":"Second"}]}}"#)
+        run.channel.receive(Data(#"{"jsonrpc":"2.0","method":"$/cancel_request","params":{"requestId":0}}"#.utf8) + Data([10]))
+        #expect(run.permissions.map(\.state) == ["pending", "cancelled"] && Self.result(run) == nil)
+        run = try asked(#"{"q0":{"type":"string","title":"Pick","description":"Which one?","oneOf":[{"const":"a","title":"First"},{"const":"b","title":"Second"}]}}"#)
+        run.channel.receive(Data(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"\#(Self.sessionID)","update":{"sessionUpdate":"tool_call_update","toolCallId":"call-9","status":"failed"}}}"#.utf8) + Data([10]))
+        #expect(run.permissions.map(\.state) == ["pending", "cancelled"] && Self.result(run) == nil)
+        // A stopped run withdraws the card without an answer.
+        run = try asked(#"{"q0":{"type":"string","title":"Pick","description":"Which one?","oneOf":[{"const":"a","title":"First"},{"const":"b","title":"Second"}]}}"#)
+        run.channel.cancelAll()
+        #expect(run.permissions.map(\.state) == ["pending", "cancelled"] && Self.result(run) == nil)
+    }
+
     // MARK: Updates to the log, the graph and usage
 
     @Test func streamedTextIsLoggedOnceAndThoughtsAreNotCopied() throws {

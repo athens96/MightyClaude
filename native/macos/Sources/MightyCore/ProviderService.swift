@@ -304,7 +304,11 @@ public actor ProviderService {
             var args = ["--mode", "rpc"]
             if request.model != "default" { args += ["--model", request.model] }
             if s.effort != "default" { args += ["--thinking", s.effort] }
-            if s.permissionMode != "fullAccess" { args += ["--tools", ProviderOptions.piReadOnlyTools] }
+            // The app's question tool (`ask_user`) rides along as an extension of this run only;
+            // the read-only allowlist names it, or `--tools` would leave it off.
+            let questions = PiAgent.questionExtension()
+            if s.permissionMode != "fullAccess" { args += ["--tools", ProviderOptions.piReadOnlyTools + (questions == nil ? "" : "," + PiAgent.questionTool)] }
+            if let questions { args += ["--extension", questions.path] }
             if let resume = request.resumeId { args += ["--session", resume] }
             return args
         case "opencode":

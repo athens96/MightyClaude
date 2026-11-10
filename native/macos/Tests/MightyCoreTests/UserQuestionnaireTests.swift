@@ -30,6 +30,22 @@ struct UserQuestionnaireTests {
         #expect(UserQuestionnaire.parse(inputJSON: input + String(repeating: " ", count: 65_536)) == nil)
     }
 
+    @Test func otherAgentsQuestionsMayOfferMoreOptionsOrNoneAndUpToEightQuestions() throws {
+        func options(_ count: Int) -> [[String: String]] { (0..<count).map { ["label": "보기 \($0)", "description": ""] } }
+        var wide = question; wide["options"] = options(UserQuestionnaire.maximumOptions)
+        #expect(UserQuestionnaire.parse(inputJSON: try string(["questions": [wide]])) != nil)
+        wide["options"] = options(UserQuestionnaire.maximumOptions + 1)
+        #expect(UserQuestionnaire.parse(inputJSON: try string(["questions": [wide]])) == nil)
+        // No options: only a typed answer answers it.
+        var typed = question; typed["options"] = options(0)
+        let form = try #require(UserQuestionnaire.parse(inputJSON: try string(["questions": [typed]])))
+        #expect(try form.validatedAnswers(["어느 앱인가요?": UserQuestionAnswer(customText: " Linux ")]) == ["어느 앱인가요?": "Linux"])
+        #expect(throws: (any Error).self) { try form.validatedAnswers(["어느 앱인가요?": UserQuestionAnswer()]) }
+        func questions(_ count: Int) -> [[String: Any]] { (0..<count).map { var item = question; item["question"] = "질문 \($0)"; return item } }
+        #expect(UserQuestionnaire.parse(inputJSON: try string(["questions": questions(UserQuestionnaire.maximumQuestions)])) != nil)
+        #expect(UserQuestionnaire.parse(inputJSON: try string(["questions": questions(UserQuestionnaire.maximumQuestions + 1)])) == nil)
+    }
+
     @Test func validatesSingleMultipleCustomAndExactQuestionKeys() throws {
         var multi = question; multi["multiSelect"] = true; multi["question"] = "추가 앱은?"
         let form = try #require(UserQuestionnaire.parse(inputJSON: try string(["questions": [question, multi]])))

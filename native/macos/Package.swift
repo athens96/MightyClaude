@@ -24,7 +24,7 @@ let package = Package(
     targets: [
         .target(name: "MightyCore", dependencies: [
             .product(name: "libzstd", package: "zstd"),
-        ], resources: [.copy("Resources/Styles"), .copy("Resources/Locales"), .copy("Resources/Help"), .copy("Resources/Setup")]),
+        ], resources: [.copy("Resources/Styles"), .copy("Resources/Locales"), .copy("Resources/Help"), .copy("Resources/Setup"), .copy("Resources/Agents")]),
         .executableTarget(name: "MightyCode", dependencies: [
             "MightyCore",
             .product(name: "GhosttyTerminal", package: "libghostty-spm"),
