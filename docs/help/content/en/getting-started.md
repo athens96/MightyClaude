@@ -3,7 +3,7 @@ title: Getting started
 order: 1
 section: getting-started
 ---
-Mighty Code is a desktop app for using Claude Code, Codex CLI, Google's Antigravity CLI and pi side by side in one window. You open several panes on one project folder, and each pane keeps its own conversation and settings.
+Mighty Code is a desktop app for using Claude Code, Codex CLI, Google's Antigravity CLI, pi and opencode side by side in one window. You open several panes on one project folder, and each pane keeps its own conversation and settings.
 
 ## What you need {#requirements}
 - macOS 14 or later. On Windows: Windows 10 (version 2004) or later, or Windows 11.
@@ -13,6 +13,7 @@ Mighty Code is a desktop app for using Claude Code, Codex CLI, Google's Antigrav
 - Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
 - Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 - pi: Mac and Windows `npm install -g @mariozechner/pi-coding-agent` (needs Node.js; see [pi](agent-pane.md#pi))
+- opencode: Mac `npm install -g opencode-ai` (needs Node.js; see [opencode](agent-pane.md#opencode))
 
 > [!tip]
 > Once the app is open, {{ui:settings.nav.tools}} shows which CLIs are ready. On a Mac you install them right there; on Windows you copy the install commands. You sign in on the {{ui:settings.nav.cli}} tab. See [Settings](settings.md#components).
@@ -62,7 +63,7 @@ The first time you open the app there is no workspace yet, so you see the welcom
 ![[welcome]]
 
 ### Required tools {#setup}
-If no agent CLI (Claude Code, Codex, Antigravity or pi) can run, or Git is not ready, the {{ui:setup.title}} screen opens when the app starts. It groups the agent CLIs, the prerequisites (Git, Homebrew, Node, Bun), the style tools (uv, Ouroboros, oh-my-claudecode, gstack), Tailscale, and gh and glab.
+If no agent CLI (Claude Code, Codex, Antigravity, pi or opencode) can run, or Git is not ready, the {{ui:setup.title}} screen opens when the app starts. It groups the agent CLIs, the prerequisites (Git, Homebrew, Node, Bun), the style tools (uv, Ouroboros, oh-my-claudecode, gstack), Tailscale, and gh and glab.
 
 1. Check what you want to install. The first time, a missing Git starts checked, and so does Claude Code when there is no agent CLI at all; and anything a picked item needs (such as Homebrew for gh) comes along.
 2. Click {{ui:setup.button.install}}. Every command that will run is shown, in order. Nothing runs until you click {{ui:setup.confirm.run}}.

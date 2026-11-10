@@ -3,7 +3,7 @@ title: エージェントペイン
 order: 3
 section: agent-pane
 ---
-エージェントペインは、Claude、Codex、Antigravity、piのいずれかと会話するペインです。下部の入力欄にリクエストを書き、上部で進行状況と結果を確認します。
+エージェントペインは、Claude、Codex、Antigravity、pi、opencodeのいずれかと会話するペインです。下部の入力欄にリクエストを書き、上部で進行状況と結果を確認します。
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ section: agent-pane
 入力欄の下の行には、左から添付、モデル、思考レベル、権限、その他の実行設定(…)が並んでいます。ペインの幅が狭いと、一部が1つのメニューにまとめられます。実行中は変更できず、変更した値は次のリクエストから適用されます。
 
 ### モデル {#model}
-モデルのチップをクリックすると、{{ui:composer.label.runner}}(Claude、Codex、Antigravity、pi)と{{ui:composer.label.model}}を選べます。一覧が正しくない場合は{{ui:composer.model.refresh}}をクリックしてください。エージェントを変更すると、会話は新しく始まります。
+モデルのチップをクリックすると、{{ui:composer.label.runner}}(Claude、Codex、Antigravity、pi、opencode)と{{ui:composer.label.model}}を選べます。一覧が正しくない場合は{{ui:composer.model.refresh}}をクリックしてください。エージェントを変更すると、会話は新しく始まります。
 
 ### 思考レベル {#effort}
-{{ui:composer.effort.label}}は、モデルがどれだけ深く考えるかを決めます。Auto、Low、Medium、High、XHigh、Maxから選びます。モデルが対応している段階だけが表示されます。Antigravityにはなく、piはOff、Minimal、Low、Medium、High、XHighです。
+{{ui:composer.effort.label}}は、モデルがどれだけ深く考えるかを決めます。Auto、Low、Medium、High、XHigh、Maxから選びます。モデルが対応している段階だけが表示されます。Antigravityにはなく、piはOff、Minimal、Low、Medium、High、XHighで、opencodeはモデルが提供するバリアントのLow、Medium、High、Maxです。
 
 ### 作業の権限 {#permission}
 権限は、エージェントが確認なしで行える作業の範囲です。
@@ -44,8 +44,9 @@ section: agent-pane
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 | pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
+| opencode | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
-- ClaudeのAlways askとCodexの{{ui:permission.label.onRequest}}では、追加の権限が必要になったときにペイン内で許可を求めます。[許可と質問](approvals.md#permission)を参照してください。
+- ClaudeのAlways ask、Codexの{{ui:permission.label.onRequest}}、{{ui:permission.label.fullAccess}}以外のopencodeのすべてのモードでは、追加の権限が必要になったときにペイン内で許可を求めます。[許可と質問](approvals.md#permission)を参照してください。
 - Auto modeは、インストールされているClaude CLIが対応している場合にのみ表示されます。
 - Bypassと{{ui:permission.label.fullAccess}}は、プロジェクト外のファイルやコマンドにもアクセスします。本当に必要なときだけ使ってください。
 
@@ -68,6 +69,16 @@ pi(`pi`)は、多くのモデル提供元で使えるオープンソースのコ
 - 権限: piには承認ウィンドウがないため、モードは2つです。{{ui:permission.label.defaultCodex}}モードは読み取りツール(read、grep、find、ls)だけを有効にします。{{ui:permission.label.fullAccess}}モードはすべてのツールを確認なしで使い、プロジェクトの外にも触れられます。
 - リクエストごとにペインの作業フォルダで`pi --mode rpc`を実行し、ペインのセッションを引き継ぎます。セッションは`~/.pi/agent/sessions`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのpiセッションが表示されます。
 - まだできないこと: piのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けず、承認カードもありません。今のところMacでのみ動作します。
+
+### opencode {#opencode}
+opencode(`opencode`)は、多くのモデル提供元で使えるオープンソースのコーディングエージェントCLIです。自社サービスopencode Zenの無料モデルはサインインなしでも使えます。
+
+- インストール: {{ui:setup.title}}画面からインストールします(HomebrewとNode.jsがなければ先にインストールします)。自分でインストールするなら`npm install -g opencode-ai`を実行します。アップデートはアプリが`opencode upgrade`で行います。
+- サインイン: {{ui:settings.nav.cli}}タブの{{ui:settings.cliAccounts.buttonLogin}}を押すと、`opencode auth login`を実行するターミナルペインが開きます。そこで提供元を選び、そのサブスクリプションでサインインするかAPIキーを入力します。`~/.local/share/opencode/auth.json`の認証情報や環境変数のAPIキー(`ANTHROPIC_API_KEY`など)もサインイン済みと見なし、どちらもなければopencode Zenの無料モデルだけが表示されます。ログアウトはターミナルで`opencode auth logout`を実行します。
+- モデル: `opencode models`の一覧が「提供元/モデル」の名前で表示され、先頭の項目はopencode自身の設定に従います。
+- 権限: 選んだモードがそのリクエストだけのopencode自身のルールになり、ルールが確認に残した操作はClaudeと同じくペインに承認カードとして届きます。{{ui:permission.label.default}}はファイルの編集、コマンド、Web、プロジェクト外へのアクセスの前に確認し、{{ui:permission.label.acceptEdits}}はファイルの編集を確認せず、{{ui:permission.label.plan}}はファイルを編集しないopencodeのplanエージェントで実行し、{{ui:permission.label.fullAccess}}は確認しません。
+- リクエストごとにペインの作業フォルダで`opencode acp`(Agent Client Protocol)を実行し、ペインのセッションを引き継ぎます。セッションはopencodeの`opencode.db`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのopencodeセッションが表示されます。使用量にはセッションの費用、使用中のコンテキスト、最後のモデル呼び出しのトークンが表示されます。
+- まだできないこと: opencodeのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けません。今のところMacでのみ動作します。
 
 ### その他の実行設定 {#run-settings}
 …ボタンをクリックすると{{ui:settings.run.title}}が開きます。

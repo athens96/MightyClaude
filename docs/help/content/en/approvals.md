@@ -16,7 +16,7 @@ When the agent wants to do something outside its permission (run a command, chan
 An approval applies to this one request only. No rule is made that keeps allowing it.
 
 > [!note]
-> Approval cards appear in Claude panes on this Mac (Always ask and similar modes) and with Codex's {{ui:permission.label.onRequest}} mode. In other modes the CLI's own settings allow or block the action. Antigravity works differently and [asks in its own way](#antigravity-permission).
+> Approval cards appear in Claude panes on this Mac (Always ask and similar modes) with Codex's {{ui:permission.label.onRequest}} mode, and in opencode panes in every mode but {{ui:permission.label.fullAccess}}. In other modes the CLI's own settings allow or block the action. Antigravity works differently and [asks in its own way](#antigravity-permission).
 
 ## Antigravity's permission card {#antigravity-permission}
 Antigravity cannot ask the app while it works. When it meets an action it would have to ask about (running a command, writing a file and so on), it skips just that action, finishes the turn, and then asks about everything it declined in one card. The card appears in {{ui:permission.label.default}} too, and the same card appears on your phone.
@@ -73,7 +73,7 @@ If a request fails because the CLI sign-in expired, a sign-in recovery card appe
 
 If you already signed in somewhere else, click {{ui:loginRecovery.resendButton}}. If the browser sign-in doesn't work for you, use {{ui:loginRecovery.terminalButton}}.
 
-Antigravity and pi sign in in a terminal. A sign-in terminal opens beside the failed pane. Antigravity (agy) opens a browser where you sign in with your Google account. In pi, type `/login` in the terminal and pick a subscription or enter an API key. Once the sign-in is confirmed, the failed request is sent again automatically. The terminal stays open after you sign in.
+Antigravity, pi and opencode sign in in a terminal. A sign-in terminal opens beside the failed pane. Antigravity (agy) opens a browser where you sign in with your Google account. In pi, type `/login` in the terminal and pick a subscription or enter an API key. opencode runs `opencode auth login`: pick a provider, then sign in or enter an API key. Once the sign-in is confirmed, the failed request is sent again automatically. The terminal stays open after you sign in.
 
 > [!tip]
 > Turn on {{ui:settings.cliAccounts.autoLoginToggle}} on the {{ui:settings.nav.cli}} tab and sign-in starts again the moment it drops.

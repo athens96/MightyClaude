@@ -3,7 +3,7 @@ title: 에이전트 창
 order: 3
 section: agent-pane
 ---
-에이전트 창은 Claude, Codex, Antigravity, pi 중 하나와 대화하는 실행 창입니다. 아래쪽 입력창에 요청을 쓰고, 위쪽에서 진행과 결과를 봅니다.
+에이전트 창은 Claude, Codex, Antigravity, pi, opencode 중 하나와 대화하는 실행 창입니다. 아래쪽 입력창에 요청을 쓰고, 위쪽에서 진행과 결과를 봅니다.
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ section: agent-pane
 입력창 아래 줄에는 왼쪽부터 첨부, 모델, 사고 강도, 권한, 추가 실행 설정(…)이 있습니다. 창이 좁으면 일부가 메뉴 하나로 접힙니다. 실행 중에는 바꿀 수 없고, 바꾼 값은 다음 요청부터 적용됩니다.
 
 ### 모델 {#model}
-모델 칩을 누르면 {{ui:composer.label.runner}}(Claude, Codex, Antigravity, pi)와 {{ui:composer.label.model}} 항목을 고를 수 있습니다. 목록이 맞지 않으면 {{ui:composer.model.refresh}}을 누르세요. 에이전트를 바꾸면 대화가 새로 시작됩니다.
+모델 칩을 누르면 {{ui:composer.label.runner}}(Claude, Codex, Antigravity, pi, opencode)와 {{ui:composer.label.model}} 항목을 고를 수 있습니다. 목록이 맞지 않으면 {{ui:composer.model.refresh}}을 누르세요. 에이전트를 바꾸면 대화가 새로 시작됩니다.
 
 ### 사고 강도 {#effort}
-{{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Antigravity에는 없고, pi는 Off, Minimal, Low, Medium, High, XHigh입니다.
+{{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Antigravity에는 없고, pi는 Off, Minimal, Low, Medium, High, XHigh이고, opencode는 모델이 제공하는 변형인 Low, Medium, High, Max입니다.
 
 ### 작업 권한 {#permission}
 권한은 에이전트가 묻지 않고 할 수 있는 일의 범위입니다.
@@ -44,8 +44,9 @@ section: agent-pane
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 | pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
+| opencode | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
-- Claude의 Always ask와 Codex의 {{ui:permission.label.onRequest}} 권한은 추가 권한이 필요할 때 창 안에서 승인을 묻습니다. [승인과 질문](approvals.md#permission)을 보세요.
+- Claude의 Always ask, Codex의 {{ui:permission.label.onRequest}}, {{ui:permission.label.fullAccess}}을 뺀 opencode의 모든 권한은 추가 권한이 필요할 때 창 안에서 승인을 묻습니다. [승인과 질문](approvals.md#permission)을 보세요.
 - Auto mode는 설치된 Claude CLI가 지원할 때만 보입니다.
 - Bypass와 {{ui:permission.label.fullAccess}} 권한은 프로젝트 밖의 파일과 명령에도 접근합니다. 꼭 필요할 때만 쓰세요.
 
@@ -68,6 +69,16 @@ pi(`pi`)는 여러 모델 제공자를 쓰는 오픈소스 코딩 에이전트 C
 - 권한: pi에는 승인 창이 없어 모드가 두 가지입니다. {{ui:permission.label.defaultCodex}} 모드는 읽기 도구(read, grep, find, ls)만 켭니다. {{ui:permission.label.fullAccess}} 모드는 모든 도구를 묻지 않고 쓰며 프로젝트 밖도 건드릴 수 있습니다.
 - 요청마다 창의 작업 폴더에서 `pi --mode rpc`를 실행하고 창의 세션을 이어 갑니다. 세션은 `~/.pi/agent/sessions`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 pi 세션이 나옵니다.
 - 아직 안 되는 것: pi 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고, [원격 작업 공간](remote.md)에서 열 수 없으며, 승인 카드도 없습니다. 지금은 Mac에서만 동작합니다.
+
+### opencode {#opencode}
+opencode(`opencode`)는 여러 모델 제공자를 쓰는 오픈소스 코딩 에이전트 CLI입니다. 자체 서비스인 opencode Zen의 무료 모델은 로그인 없이도 씁니다.
+
+- 설치: {{ui:setup.title}} 화면에서 설치합니다(Homebrew와 Node.js가 없으면 먼저 설치합니다). 직접 설치하려면 `npm install -g opencode-ai`를 실행합니다. 업데이트는 앱이 `opencode upgrade`로 합니다.
+- 로그인: {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliAccounts.buttonLogin}} 단추를 누르면 `opencode auth login`을 실행하는 터미널 창이 열립니다. 거기서 제공자를 고르고 그 제공자의 구독으로 로그인하거나 API 키를 입력합니다. `~/.local/share/opencode/auth.json`의 자격 증명이나 환경 변수의 API 키(`ANTHROPIC_API_KEY` 등)도 로그인으로 보고, 둘 다 없으면 opencode Zen의 무료 모델만 나옵니다. 로그아웃은 터미널에서 `opencode auth logout`을 실행합니다.
+- 모델: `opencode models`의 목록이 `제공자/모델` 이름으로 나오고, 첫 항목은 opencode 자체 설정을 따릅니다.
+- 권한: 고른 모드가 그 요청에만 쓰는 opencode 자체 규칙이 되고, 규칙이 묻도록 남긴 일은 Claude처럼 창에 승인 카드로 옵니다. {{ui:permission.label.default}}은 파일 수정, 명령, 웹, 프로젝트 밖 접근 전에 묻고, {{ui:permission.label.acceptEdits}}은 파일 수정을 묻지 않으며, {{ui:permission.label.plan}}은 파일을 고치지 않는 opencode의 plan 에이전트로 실행하고, {{ui:permission.label.fullAccess}}은 묻지 않습니다.
+- 요청마다 창의 작업 폴더에서 `opencode acp`(Agent Client Protocol)를 실행하고 창의 세션을 이어 갑니다. 세션은 opencode의 `opencode.db`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 opencode 세션이 나옵니다. 사용량에는 세션 비용, 쓰고 있는 컨텍스트, 마지막 모델 호출의 토큰이 보입니다.
+- 아직 안 되는 것: opencode 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고 [원격 작업 공간](remote.md)에서 열 수 없습니다. 지금은 Mac에서만 동작합니다.
 
 ### 추가 실행 설정 {#run-settings}
 … 단추를 누르면 {{ui:settings.run.title}}이 열립니다.

@@ -3,7 +3,7 @@ title: 시작하기
 order: 1
 section: getting-started
 ---
-Mighty Code는 Claude Code, Codex CLI, Google의 Antigravity CLI, pi를 한 창에서 나란히 쓰는 데스크톱 앱입니다. 프로젝트 폴더 하나에 여러 실행 창을 열고, 창마다 대화와 설정을 따로 유지합니다.
+Mighty Code는 Claude Code, Codex CLI, Google의 Antigravity CLI, pi, opencode를 한 창에서 나란히 쓰는 데스크톱 앱입니다. 프로젝트 폴더 하나에 여러 실행 창을 열고, 창마다 대화와 설정을 따로 유지합니다.
 
 ## 준비물 {#requirements}
 - macOS 14 이상. Windows는 Windows 10(버전 2004) 이상 또는 Windows 11입니다.
@@ -13,6 +13,7 @@ Mighty Code는 Claude Code, Codex CLI, Google의 Antigravity CLI, pi를 한 창�
 - Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
 - Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 - pi: Mac과 Windows `npm install -g @mariozechner/pi-coding-agent` (Node.js가 필요합니다. [pi](agent-pane.md#pi) 참고)
+- opencode: Mac `npm install -g opencode-ai` (Node.js가 필요합니다. [opencode](agent-pane.md#opencode) 참고)
 
 > [!tip]
 > 앱을 연 뒤 {{ui:settings.nav.tools}}에서 어떤 CLI가 준비됐는지 봅니다. Mac은 그 자리에서 설치하고, Windows는 설치 명령을 복사합니다. 로그인은 {{ui:settings.nav.cli}} 탭에서 합니다. [설정](settings.md#components)을 보세요.
@@ -62,7 +63,7 @@ Windows 앱도 같은 방식으로 업데이트합니다([Windows에서 다른 �
 ![[welcome]]
 
 ### 필요한 도구 {#setup}
-에이전트 CLI(Claude Code, Codex, Antigravity, pi 중 하나)가 하나도 실행되지 않거나 Git이 준비되지 않았으면 앱을 열 때 {{ui:setup.title}} 화면이 먼저 열립니다. 에이전트 CLI, 기본 도구(Git, Homebrew, Node, Bun), 스타일 도구(uv, Ouroboros, oh-my-claudecode, gstack), Tailscale, gh·glab을 묶어서 보여 줍니다.
+에이전트 CLI(Claude Code, Codex, Antigravity, pi, opencode 중 하나)가 하나도 실행되지 않거나 Git이 준비되지 않았으면 앱을 열 때 {{ui:setup.title}} 화면이 먼저 열립니다. 에이전트 CLI, 기본 도구(Git, Homebrew, Node, Bun), 스타일 도구(uv, Ouroboros, oh-my-claudecode, gstack), Tailscale, gh·glab을 묶어서 보여 줍니다.
 
 1. 설치할 항목에 체크합니다. 처음 열 때 빠진 Git과, 에이전트 CLI가 하나도 없으면 Claude Code가 미리 체크되어 있고, 고른 항목에 필요한 도구(예: gh에 필요한 Homebrew)는 함께 들어갑니다.
 2. {{ui:setup.button.install}}를 누르면 실행할 명령을 순서대로 모두 보여 줍니다. {{ui:setup.confirm.run}}을 눌러야 실행됩니다.

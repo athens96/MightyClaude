@@ -3,7 +3,7 @@ title: Agent panes
 order: 3
 section: agent-pane
 ---
-An agent pane is a conversation with Claude, Codex, Antigravity or pi. You write requests in the composer at the bottom and follow the progress and results above it.
+An agent pane is a conversation with Claude, Codex, Antigravity, pi or opencode. You write requests in the composer at the bottom and follow the progress and results above it.
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ Stopping the task cancels the queued requests too, except in a pane whose turn o
 The row under the composer has, from the left: attach, model, thinking effort, permission and more run settings (…). In a narrow pane some of them fold into one menu. They can't be changed while a task runs, and a change applies from the next request.
 
 ### Model {#model}
-Click the model chip to choose the {{ui:composer.label.runner}} (Claude, Codex, Antigravity or pi) and the {{ui:composer.label.model}}. If the list looks wrong, click {{ui:composer.model.refresh}}. Switching agents starts a new conversation.
+Click the model chip to choose the {{ui:composer.label.runner}} (Claude, Codex, Antigravity, pi or opencode) and the {{ui:composer.label.model}}. If the list looks wrong, click {{ui:composer.model.refresh}}. Switching agents starts a new conversation.
 
 ### Thinking effort {#effort}
-{{ui:composer.effort.label}} sets how deeply the model thinks: Auto, Low, Medium, High, XHigh or Max. Only the levels the model supports are shown. Antigravity has none; pi has Off, Minimal, Low, Medium, High and XHigh.
+{{ui:composer.effort.label}} sets how deeply the model thinks: Auto, Low, Medium, High, XHigh or Max. Only the levels the model supports are shown. Antigravity has none; pi has Off, Minimal, Low, Medium, High and XHigh; opencode has Low, Medium, High and Max, the variants its model offers.
 
 ### Permissions {#permission}
 The permission mode sets what the agent may do without asking.
@@ -44,8 +44,9 @@ The permission mode sets what the agent may do without asking.
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 | pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
+| opencode | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
-- Claude's Always ask and Codex's {{ui:permission.label.onRequest}} ask for approval in the pane when extra permission is needed. See [Approvals and questions](approvals.md#permission).
+- Claude's Always ask, Codex's {{ui:permission.label.onRequest}} and every opencode mode but {{ui:permission.label.fullAccess}} ask for approval in the pane when extra permission is needed. See [Approvals and questions](approvals.md#permission).
 - Auto mode appears only when the installed Claude CLI supports it.
 - Bypass and {{ui:permission.label.fullAccess}} reach files and commands outside the project too. Use them only when you must.
 
@@ -68,6 +69,16 @@ pi (`pi`) is an open-source coding agent CLI that works with many model provider
 - Permissions: pi has no approval window, so there are two modes. {{ui:permission.label.defaultCodex}} turns on only the read tools (read, grep, find, ls). {{ui:permission.label.fullAccess}} uses every tool without asking, outside the project too.
 - Each request runs `pi --mode rpc` in the pane's folder and continues the pane's own session, saved in `~/.pi/agent/sessions`. {{ui:resume.choice.resume}} lists the pi sessions of the folder as well.
 - Not yet: pi panes take no part in [Mighty Orchestration](delegation.md), cannot be opened in a [remote workspace](remote.md), and show no approval cards. They work on the Mac only for now.
+
+### opencode {#opencode}
+opencode (`opencode`) is an open-source coding agent CLI that works with many model providers, and also runs the free models of its own service, opencode Zen, without a sign-in.
+
+- Install: from the {{ui:setup.title}} screen (it installs Homebrew and Node.js first when they are missing), or `npm install -g opencode-ai`. The app updates it with `opencode upgrade`.
+- Sign in: {{ui:settings.cliAccounts.buttonLogin}} on the {{ui:settings.nav.cli}} tab opens a terminal pane running `opencode auth login`. Pick a provider there, then sign in with its subscription or enter an API key. A credential in `~/.local/share/opencode/auth.json` or an API key in the environment (such as `ANTHROPIC_API_KEY`) counts as signed in; without one only opencode Zen's free models are offered. To sign out, run `opencode auth logout` in a terminal.
+- Model: the list comes from `opencode models` as `provider/model`; the first entry follows opencode's own settings.
+- Permissions: the mode becomes opencode's own rules for the run, and what they leave to ask comes to the pane as an approval card, as for Claude. {{ui:permission.label.default}} asks before edits, commands, the web and anything outside the project; {{ui:permission.label.acceptEdits}} edits without asking; {{ui:permission.label.plan}} runs opencode's plan agent, which does not edit; {{ui:permission.label.fullAccess}} never asks.
+- Each request starts `opencode acp` in the pane's folder (the Agent Client Protocol) and continues the pane's own session, kept in opencode's `opencode.db`. {{ui:resume.choice.resume}} lists the opencode sessions of the folder as well. Usage shows the session's cost, the context in use and the last model call's tokens.
+- Not yet: opencode panes take no part in [Mighty Orchestration](delegation.md) and cannot be opened in a [remote workspace](remote.md). They work on the Mac only for now.
 
 ### More run settings {#run-settings}
 Click the … button to open {{ui:settings.run.title}}.

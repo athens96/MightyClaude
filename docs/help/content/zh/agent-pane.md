@@ -3,7 +3,7 @@ title: 智能体窗格
 order: 3
 section: agent-pane
 ---
-智能体窗格是与 Claude、Codex、Antigravity 或 pi 之一对话的窗格。在下方的输入框中写请求，在上方查看进度和结果。
+智能体窗格是与 Claude、Codex、Antigravity、pi 或 opencode 之一对话的窗格。在下方的输入框中写请求，在上方查看进度和结果。
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ section: agent-pane
 输入框下方一行从左到右依次是附件、模型、思考强度、权限和更多运行设置（…）。窗格较窄时，部分项目会收进一个菜单。运行期间无法更改，更改后的值从下一个请求起生效。
 
 ### 模型 {#model}
-点击模型按钮，可以选择{{ui:composer.label.runner}}（Claude、Codex、Antigravity、pi）和{{ui:composer.label.model}}。如果列表不对，请点击{{ui:composer.model.refresh}}。切换智能体会开始新的对话。
+点击模型按钮，可以选择{{ui:composer.label.runner}}（Claude、Codex、Antigravity、pi、opencode）和{{ui:composer.label.model}}。如果列表不对，请点击{{ui:composer.model.refresh}}。切换智能体会开始新的对话。
 
 ### 思考强度 {#effort}
-{{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 没有此项；pi 有 Off、Minimal、Low、Medium、High、XHigh。
+{{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 没有此项；pi 有 Off、Minimal、Low、Medium、High、XHigh；opencode 有 Low、Medium、High、Max，即模型提供的变体。
 
 ### 权限 {#permission}
 权限决定智能体无需询问即可做哪些事。
@@ -44,8 +44,9 @@ section: agent-pane
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 | pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
+| opencode | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
-- Claude 的 Always ask 和 Codex 的{{ui:permission.label.onRequest}}权限在需要额外权限时，会在窗格中请求批准。请参阅[批准与提问](approvals.md#permission)。
+- Claude 的 Always ask、Codex 的{{ui:permission.label.onRequest}}以及除{{ui:permission.label.fullAccess}}外的所有 opencode 权限在需要额外权限时，会在窗格中请求批准。请参阅[批准与提问](approvals.md#permission)。
 - 只有已安装的 Claude CLI 支持时，才会显示 Auto mode。
 - Bypass 和{{ui:permission.label.fullAccess}}权限也能访问项目以外的文件和命令。请仅在确有必要时使用。
 
@@ -68,6 +69,16 @@ pi（`pi`）是支持多家模型提供商的开源编码智能体 CLI。
 - 权限：pi 没有审批窗口，所以只有两种模式。{{ui:permission.label.defaultCodex}}模式只启用读取工具（read、grep、find、ls）。{{ui:permission.label.fullAccess}}模式不经询问使用所有工具，也可能触及项目之外。
 - 每次请求都会在窗格的工作文件夹中运行 `pi --mode rpc`，并延续窗格自己的会话，会话保存在 `~/.pi/agent/sessions`。{{ui:resume.choice.resume}}中也会列出该文件夹的 pi 会话。
 - 暂不支持：pi 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开，也没有审批卡。目前只能在 Mac 上使用。
+
+### opencode {#opencode}
+opencode（`opencode`）是支持多家模型提供商的开源编码智能体 CLI，其自有服务 opencode Zen 的免费模型无需登录即可使用。
+
+- 安装：在{{ui:setup.title}}界面中安装（缺少 Homebrew 和 Node.js 时会先安装它们），也可以自己运行 `npm install -g opencode-ai`。应用用 `opencode upgrade` 更新它。
+- 登录：点击{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliAccounts.buttonLogin}}，会打开运行 `opencode auth login` 的终端窗格。在其中选择提供商，然后用其订阅登录或输入 API 密钥。`~/.local/share/opencode/auth.json` 中的凭据或环境变量中的 API 密钥（如 `ANTHROPIC_API_KEY`）也视为已登录；两者都没有时只提供 opencode Zen 的免费模型。退出登录请在终端中运行 `opencode auth logout`。
+- 模型：列表来自 `opencode models`，以“提供商/模型”显示，第一项遵循 opencode 自身的设置。
+- 权限：所选模式会成为该次请求专用的 opencode 规则，规则留待询问的操作会像 Claude 一样以审批卡出现在窗格中。{{ui:permission.label.default}}在修改文件、执行命令、访问网络和访问项目外内容前询问；{{ui:permission.label.acceptEdits}}修改文件不询问；{{ui:permission.label.plan}}使用不修改文件的 opencode plan 智能体运行；{{ui:permission.label.fullAccess}}从不询问。
+- 每次请求都会在窗格的工作文件夹中运行 `opencode acp`（Agent Client Protocol），并延续窗格自己的会话，会话保存在 opencode 的 `opencode.db`。{{ui:resume.choice.resume}}中也会列出该文件夹的 opencode 会话。用量中显示会话费用、正在使用的上下文和最后一次模型调用的令牌。
+- 暂不支持：opencode 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开。目前只能在 Mac 上使用。
 
 ### 更多运行设置 {#run-settings}
 点击 … 按钮会打开{{ui:settings.run.title}}。
