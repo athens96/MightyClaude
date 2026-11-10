@@ -233,6 +233,13 @@ public actor ProviderService {
             // Build --settings env JSON: effort + phase model alias pins.
             var envVars: [String: String] = [:]
             if s.effort != "default" { envVars["CLAUDE_CODE_EFFORT_LEVEL"] = s.effort }
+            // The advisor, as the pane chose it: a model is named beside the main one, off is the CLI's own switch for
+            // this run alone, and a pane that follows Claude's settings passes nothing. The CLI checks the model itself
+            // (an advisor weaker than the main model is refused in its own words).
+            if let advisor = s.advisor {
+                if advisor == RunSettings.advisorOff { envVars[ClaudeAdvisorSettings.disableVariable] = "1" }
+                else { args += ["--advisor", advisor] }
+            }
             if phaseModels.claudeOpusAlias != "default" { envVars["ANTHROPIC_DEFAULT_OPUS_MODEL"] = phaseModels.claudeOpusAlias }
             if phaseModels.claudeSonnetAlias != "default" { envVars["ANTHROPIC_DEFAULT_SONNET_MODEL"] = phaseModels.claudeSonnetAlias }
             if phaseModels.claudeHaikuAlias != "default" { envVars["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = phaseModels.claudeHaikuAlias }

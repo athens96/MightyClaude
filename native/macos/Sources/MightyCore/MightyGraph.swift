@@ -603,10 +603,20 @@ extension RunSession {
         graphRuns?[index].configuredEffort = effort
     }
 
+    /// The advisor request `runID`'s run starts with, once Claude's settings were read for a pane that follows them
+    /// (`ClaudeAdvisorSettings.configured`); nil when none is known to be on.
+    public mutating func noteGraphRunAdvisor(_ model: String?, runID: String) {
+        guard provider == "claude", let index = graphRuns?.firstIndex(where: { $0.id == runID }) else { return }
+        let value = model.flatMap { CoreValidation.model($0) ? $0 : nil }
+        guard graphRuns?[index].configuredAdvisor != value else { return }
+        graphRuns?[index].configuredAdvisor = value
+    }
+
     public mutating func recordGraph(_ event: RunEvent) {
         guard kind == "claude", MightyGraphSupport.providers.contains(provider), event.sessionId == id else { return }
         if event.type == "log", let entry = event.entry, entry.kind == "user" {
-            beginGraphRun(input: entry.text, id: entry.id, configuredModel: model, configuredEffort: settings.effort)
+            beginGraphRun(input: entry.text, id: entry.id, configuredModel: model, configuredEffort: settings.effort,
+                          configuredAdvisor: ClaudeAdvisorSettings.configured(pane: settings.advisor) { nil })
             return
         }
         guard var runs = graphRuns, !runs.isEmpty else { return }

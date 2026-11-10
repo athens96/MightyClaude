@@ -406,6 +406,62 @@ struct SessionPaneView: View {
         .disabled(running || (effortLevels.isEmpty && session.settings.effort == "default"))
     }
 
+    /// A Claude pane on this Mac may name its advisor (Claude Code's experimental advisor tool): another computer runs
+    /// its own CLI with its own settings.
+    private var showsAdvisor: Bool { session.kind == "claude" && session.provider == "claude" && !store.isRemoteSession(session) }
+    /// The models an advisor may be: the pane's Claude models but the CLI's default, and the pane's own choice even when
+    /// the list no longer has it.
+    private var advisorModels: [ModelOption] {
+        let offered = models.filter { $0.value != "default" }
+        guard let chosen = session.settings.advisor, chosen != RunSettings.advisorOff, !offered.contains(where: { $0.value == chosen }) else { return offered }
+        return offered + [ModelOption(value: chosen, displayName: chosen)]
+    }
+    private func advisorLabel(_ value: String?) -> String {
+        guard let value else { return L("composer.advisor.follow") }
+        if value == RunSettings.advisorOff { return L("composer.advisor.off") }
+        return advisorModels.first { $0.value == value }?.displayName ?? value
+    }
+    /// The advisor pill's title: a chosen model's name; the pill of a pane that follows Claude's settings, or turned the
+    /// advisor off, is its icon alone.
+    private var advisorPillTitle: String {
+        guard let value = session.settings.advisor, value != RunSettings.advisorOff else { return "" }
+        return advisorLabel(value)
+    }
+
+    @ViewBuilder private var advisorOptions: some View {
+        Button { updateSettings { $0.advisor = nil } } label: {
+            if session.settings.advisor == nil { Label(L("composer.advisor.follow"), systemImage: "checkmark") } else { Text(L("composer.advisor.follow")) }
+        }
+        Divider()
+        ForEach(advisorModels) { model in
+            Button { updateSettings { $0.advisor = model.value } } label: {
+                if model.value == session.settings.advisor { Label(model.displayName, systemImage: "checkmark") } else { Text(model.displayName) }
+            }
+        }
+        Divider()
+        Button { updateSettings { $0.advisor = RunSettings.advisorOff } } label: {
+            if session.settings.advisor == RunSettings.advisorOff { Label(L("composer.advisor.off"), systemImage: "checkmark") } else { Text(L("composer.advisor.off")) }
+        }
+        Divider()
+        // What choosing one means, in the menu itself: a disabled line.
+        Text(L("composer.advisor.note"))
+    }
+
+    private func advisorMenu(compact: Bool) -> some View {
+        let value = session.settings.advisor
+        let title = advisorPillTitle
+        return Menu {
+            Section(L("composer.advisor.label")) { advisorOptions }
+        } label: {
+            ComposerPill(title: title, systemImage: value == RunSettings.advisorOff ? "lightbulb.slash" : "lightbulb", active: !title.isEmpty, chevron: true,
+                         maximumTextWidth: ComposerToolbarMetrics.advisorTextWidth, compact: compact || title.isEmpty)
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running)
+        .help(L("composer.advisor.help", ["value": advisorLabel(value)]))
+        .accessibilityLabel(L("composer.advisor.label")).accessibilityValue(advisorLabel(value))
+        .accessibilityIdentifier("composer-advisor-\(session.id)")
+    }
+
     private func permissionModeMenuLabel(_ mode: String) -> String {
         permissionLabel(mode, provider: session.provider)
     }
@@ -488,6 +544,9 @@ struct SessionPaneView: View {
             if showsEffort {
                 Menu(L("composer.effort.menu", ["effort": effortLabel(session.settings.effort)])) { effortOptions }
                     .disabled(running || (effortLevels.isEmpty && session.settings.effort == "default"))
+            }
+            if showsAdvisor {
+                Menu(L("composer.advisor.menu", ["value": advisorLabel(session.settings.advisor)])) { advisorOptions }.disabled(running)
             }
             // The run's settings wait for the run; the "send to" choice above does not.
             Menu(L("composer.permission.menu", ["permission": permissionModeMenuLabel(session.settings.permissionMode)])) { permissionOptions }.disabled(running)
@@ -863,7 +922,7 @@ struct SessionPaneView: View {
             let targets = askTargets
             let current = AskTargets.effective(saved: session.askTarget, available: targets)
             let style = ComposerToolbarMetrics.style(width: width, model: selectedModelName, effort: showsEffort ? effortLabel(session.settings.effort) : nil, permission: permissionLabel(session.settings.permissionMode, provider: session.provider), fast: showsFast,
-                                                     ask: targets.isEmpty ? nil : askPillTitle(current))
+                                                     ask: targets.isEmpty ? nil : askPillTitle(current), advisor: showsAdvisor ? advisorPillTitle : nil)
             HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
                 if session.kind != "shell" {
                     HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
@@ -873,6 +932,7 @@ struct SessionPaneView: View {
                         if style == .overflow { overflowMenu(askTargets: targets, current: current) }
                         else {
                             if showsEffort { effortMenu(compact: style == .compact) }
+                            if showsAdvisor { advisorMenu(compact: style == .compact) }
                             permissionMenu(compact: style == .compact)
                             if showsFast { fastButton(compact: style == .compact) }
                             moreButton

@@ -643,6 +643,8 @@ public actor ProcessRunner {
                     arguments = prepared.arguments; standardInput = prepared.standardInput
                 }
                 if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
+                // A pane that turned the advisor off: for this run's process alone.
+                if request.provider == "claude", request.settings.advisor == RunSettings.advisorOff { environment[ClaudeAdvisorSettings.disableVariable] = "1" }
                 // OpenCode 2's rules for this run only, read after the user's own config.
                 if request.provider == "opencode" { environment["OPENCODE_CONFIG_CONTENT"] = OpencodeAgent.configContent(mode: request.settings.permissionMode) }
                 // Hermes's `--yolo` for a session this run creates, as its environment equivalent.

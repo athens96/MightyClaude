@@ -46,16 +46,19 @@ enum ComposerToolbarMetrics {
     static func pillWidth(_ title: String, cap: CGFloat, chevron: Bool = true) -> CGFloat {
         min(textWidth(title), cap) + 16 + 14 + 5 + (chevron ? 12 : 0)
     }
-    /// `ask`: the "send to" pill's name while the pane shows it.
-    static func style(width: CGFloat, model: String, effort: String?, permission: String, fast: Bool, ask: String? = nil) -> ComposerToolbarStyle {
-        let count = 4 + (effort == nil ? 0 : 1) + (fast ? 1 : 0) + (ask == nil ? 0 : 1)
+    /// `ask`: the "send to" pill's name while the pane shows it. `advisor`: the advisor pill's title while the pane
+    /// shows it, empty for the pill that is its icon alone.
+    static func style(width: CGFloat, model: String, effort: String?, permission: String, fast: Bool, ask: String? = nil, advisor: String? = nil) -> ComposerToolbarStyle {
+        let count = 4 + (effort == nil ? 0 : 1) + (fast ? 1 : 0) + (ask == nil ? 0 : 1) + (advisor == nil ? 0 : 1)
         let gaps = CGFloat(count - 1) * spacing
         let full = height * 2 + pillWidth(model, cap: 155) + pillWidth(permission, cap: 90) + (effort.map { pillWidth($0, cap: 48) } ?? 0) + (fast ? pillWidth("Fast", cap: 40, chevron: false) : 0)
-            + (ask.map { pillWidth($0, cap: 90) } ?? 0) + gaps
+            + (ask.map { pillWidth($0, cap: 90) } ?? 0) + (advisor.map { $0.isEmpty ? height : pillWidth($0, cap: advisorTextWidth) } ?? 0) + gaps
         if width >= full + 4 { return .full }
         let compact = height * CGFloat(count - 1) + pillWidth(model, cap: 90) + gaps
         return width >= compact + 4 ? .compact : .overflow
     }
+    /// The most of a chosen advisor's name its pill shows.
+    static let advisorTextWidth: CGFloat = 60
     static func modelTextWidth(style: ComposerToolbarStyle, width: CGFloat) -> CGFloat {
         switch style {
         case .full: return 155

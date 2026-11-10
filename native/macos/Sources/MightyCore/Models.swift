@@ -156,11 +156,18 @@ public struct RunSettings: Codable, Sendable, Equatable {
     public var fastMode: Bool
     public var webSearch: String
     public var networkAccess: Bool
-    public init(effort: String = "default", permissionMode: String = "manual", maxTurns: Int? = nil, maxBudgetUsd: Double? = nil, fastMode: Bool = false, webSearch: String = "default", networkAccess: Bool = false) {
+    /// A Claude pane's advisor (Claude Code's experimental server-side advisor tool): nil follows Claude's own settings
+    /// and passes nothing, a model's name is passed as `--advisor`, `advisorOff` turns it off for the run. Absent in
+    /// older saves; other agents never read it.
+    public var advisor: String?
+    /// `advisor` for a pane that turned the advisor off.
+    public static let advisorOff = "off"
+    public init(effort: String = "default", permissionMode: String = "manual", maxTurns: Int? = nil, maxBudgetUsd: Double? = nil, fastMode: Bool = false, webSearch: String = "default", networkAccess: Bool = false,
+                advisor: String? = nil) {
         self.effort = effort; self.permissionMode = permissionMode; self.maxTurns = maxTurns; self.maxBudgetUsd = maxBudgetUsd
-        self.fastMode = fastMode; self.webSearch = webSearch; self.networkAccess = networkAccess
+        self.fastMode = fastMode; self.webSearch = webSearch; self.networkAccess = networkAccess; self.advisor = advisor
     }
-    enum CodingKeys: String, CodingKey { case effort, permissionMode, maxTurns, maxBudgetUsd, fastMode, webSearch, networkAccess }
+    enum CodingKeys: String, CodingKey { case effort, permissionMode, maxTurns, maxBudgetUsd, fastMode, webSearch, networkAccess, advisor }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         effort = try c.decodeIfPresent(String.self, forKey: .effort) ?? "default"
@@ -170,6 +177,7 @@ public struct RunSettings: Codable, Sendable, Equatable {
         fastMode = try c.decodeIfPresent(Bool.self, forKey: .fastMode) ?? false
         webSearch = try c.decodeIfPresent(String.self, forKey: .webSearch) ?? "default"
         networkAccess = try c.decodeIfPresent(Bool.self, forKey: .networkAccess) ?? false
+        advisor = (try? c.decodeIfPresent(String.self, forKey: .advisor)).flatMap { $0 }.flatMap { $0.isEmpty ? nil : $0 }
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -180,6 +188,7 @@ public struct RunSettings: Codable, Sendable, Equatable {
         if fastMode { try c.encode(fastMode, forKey: .fastMode) }
         if webSearch != "default" { try c.encode(webSearch, forKey: .webSearch) }
         if networkAccess { try c.encode(networkAccess, forKey: .networkAccess) }
+        if let advisor { try c.encode(advisor, forKey: .advisor) }
     }
 }
 public typealias ClaudeRunSettings = RunSettings
@@ -770,7 +779,9 @@ public enum ProviderOptions {
     public static func normalizedSettings(provider: String, settings: RunSettings) -> RunSettings {
         var caps = fallbackRuntime(provider).capabilities
         caps.permissionModes = permissionModes(provider: provider)
-        return RunSettings(effort: caps.effort && (provider == "pi" ? piThinkingLevels : efforts).contains(settings.effort) ? settings.effort : "default", permissionMode: caps.permissionModes.contains(settings.permissionMode) ? settings.permissionMode : "manual", maxTurns: caps.maxTurns && (1...1000).contains(settings.maxTurns ?? 0) ? settings.maxTurns : nil, maxBudgetUsd: caps.maxBudgetUsd && (settings.maxBudgetUsd ?? 0).isFinite && (settings.maxBudgetUsd ?? 0) > 0 && (settings.maxBudgetUsd ?? 0) <= 10_000 ? settings.maxBudgetUsd : nil, fastMode: caps.fastMode && settings.fastMode, webSearch: caps.webSearch && webSearchModes.contains(settings.webSearch) ? settings.webSearch : "default", networkAccess: caps.networkAccess && ["acceptEdits", "onRequest"].contains(settings.permissionMode) && settings.networkAccess)
+        return RunSettings(effort: caps.effort && (provider == "pi" ? piThinkingLevels : efforts).contains(settings.effort) ? settings.effort : "default", permissionMode: caps.permissionModes.contains(settings.permissionMode) ? settings.permissionMode : "manual", maxTurns: caps.maxTurns && (1...1000).contains(settings.maxTurns ?? 0) ? settings.maxTurns : nil, maxBudgetUsd: caps.maxBudgetUsd && (settings.maxBudgetUsd ?? 0).isFinite && (settings.maxBudgetUsd ?? 0) > 0 && (settings.maxBudgetUsd ?? 0) <= 10_000 ? settings.maxBudgetUsd : nil, fastMode: caps.fastMode && settings.fastMode, webSearch: caps.webSearch && webSearchModes.contains(settings.webSearch) ? settings.webSearch : "default", networkAccess: caps.networkAccess && ["acceptEdits", "onRequest"].contains(settings.permissionMode) && settings.networkAccess,
+                           // Only Claude has an advisor: a model's name, or off.
+                           advisor: provider == "claude" ? settings.advisor.flatMap { CoreValidation.model($0) ? $0 : nil } : nil)
     }
 }
 
@@ -789,7 +800,7 @@ public enum CoreValidation {
         guard !request.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !request.attachments.isEmpty, request.input.utf8.count <= 400_000, request.input.count <= 100_000, !request.input.contains("\0") else { throw MightyError(L("validation.run.badInput")) }
         if let resume = request.resumeId, !sessionIdentifier(resume) { throw MightyError(L("validation.run.badResumeId")) }
         let s = request.settings
-        guard (["default"] + (request.provider == "pi" ? ProviderOptions.piThinkingLevels : ProviderOptions.efforts)).contains(s.effort), ["manual", "plan", "acceptEdits", "auto", "onRequest", "fullAccess"].contains(s.permissionMode), ProviderOptions.webSearchModes.contains(s.webSearch), s.maxTurns == nil || (1...1000).contains(s.maxTurns!), s.maxBudgetUsd == nil || (s.maxBudgetUsd!.isFinite && s.maxBudgetUsd! > 0 && s.maxBudgetUsd! <= 10_000) else { throw MightyError(L("wire.startRun.invalidSettings")) }
+        guard (["default"] + (request.provider == "pi" ? ProviderOptions.piThinkingLevels : ProviderOptions.efforts)).contains(s.effort), ["manual", "plan", "acceptEdits", "auto", "onRequest", "fullAccess"].contains(s.permissionMode), ProviderOptions.webSearchModes.contains(s.webSearch), s.maxTurns == nil || (1...1000).contains(s.maxTurns!), s.maxBudgetUsd == nil || (s.maxBudgetUsd!.isFinite && s.maxBudgetUsd! > 0 && s.maxBudgetUsd! <= 10_000), s.advisor.map(model) ?? true else { throw MightyError(L("wire.startRun.invalidSettings")) }
         if s.permissionMode == "auto", request.kind != "claude" || request.provider != "claude" { throw MightyError(L("wire.startRun.autoModeClaudeOnly")) }
         if let mode = request.permissionModeOverride, mode != "plan" || request.kind != "claude" || request.provider != "claude" { throw MightyError(L("plan.error.overrideClaudeOnly")) }
         if s.permissionMode == "onRequest", request.kind != "claude" || request.provider != "codex" { throw MightyError(L("validation.run.onRequestCodexOnly")) }
