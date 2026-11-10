@@ -3,7 +3,7 @@ title: はじめに
 order: 1
 section: getting-started
 ---
-Mighty Codeは、Claude Code、Codex CLI、GoogleのAntigravity CLIを1つのウインドウで並べて使えるデスクトップアプリです。1つのプロジェクトフォルダで複数のペインを開き、ペインごとに会話と設定を別々に保ちます。
+Mighty Codeは、Claude Code、Codex CLI、GoogleのAntigravity CLI、piを1つのウインドウで並べて使えるデスクトップアプリです。1つのプロジェクトフォルダで複数のペインを開き、ペインごとに会話と設定を別々に保ちます。
 
 ## 必要なもの {#requirements}
 - macOS 14以降。WindowsではWindows 10(バージョン2004)以降またはWindows 11です。
@@ -12,6 +12,7 @@ Mighty Codeは、Claude Code、Codex CLI、GoogleのAntigravity CLIを1つのウ
 - Claude Code: Mac `curl -fsSL https://claude.ai/install.sh | bash`, Windows `npm install -g @anthropic-ai/claude-code`
 - Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
 - Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
+- pi: MacとWindows `npm install -g @mariozechner/pi-coding-agent`(Node.jsが必要です。[pi](agent-pane.md#pi)を参照)
 
 > [!tip]
 > アプリを開いたあと、{{ui:settings.nav.tools}}でどのCLIが準備できているかを確認できます。Macではその場でインストールでき、Windowsではインストールコマンドをコピーします。サインインは{{ui:settings.nav.cli}}タブで行います。[設定](settings.md#components)を参照してください。
@@ -61,7 +62,7 @@ Windowsアプリも同じ方法でアップデートします([Windowsでの違�
 ![[welcome]]
 
 ### 必要なツール {#setup}
-動かせるエージェントCLI(Claude Code、Codex、Antigravityのいずれか)が1つもないか、Gitの準備ができていない場合は、アプリの起動時に{{ui:setup.title}}画面が先に開きます。エージェントCLI、前提ツール(Git、Homebrew、Node、Bun)、スタイル用ツール(uv、Ouroboros、oh-my-claudecode、gstack)、Tailscale、gh・glabをグループごとに表示します。
+動かせるエージェントCLI(Claude Code、Codex、Antigravity、piのいずれか)が1つもないか、Gitの準備ができていない場合は、アプリの起動時に{{ui:setup.title}}画面が先に開きます。エージェントCLI、前提ツール(Git、Homebrew、Node、Bun)、スタイル用ツール(uv、Ouroboros、oh-my-claudecode、gstack)、Tailscale、gh・glabをグループごとに表示します。
 
 1. インストールする項目にチェックを入れます。最初に開いたときは、足りないGitと、エージェントCLIが1つもなければClaude Codeが最初からチェックされていて、選んだ項目に必要なツール(例: ghに必要なHomebrew)も一緒に入ります。
 2. {{ui:setup.button.install}}をクリックすると、実行するコマンドがすべて順番に表示されます。{{ui:setup.confirm.run}}をクリックするまで何も実行されません。

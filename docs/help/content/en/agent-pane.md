@@ -3,7 +3,7 @@ title: Agent panes
 order: 3
 section: agent-pane
 ---
-An agent pane is a conversation with Claude, Codex or Antigravity. You write requests in the composer at the bottom and follow the progress and results above it.
+An agent pane is a conversation with Claude, Codex, Antigravity or pi. You write requests in the composer at the bottom and follow the progress and results above it.
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ Stopping the task cancels the queued requests too, except in a pane whose turn o
 The row under the composer has, from the left: attach, model, thinking effort, permission and more run settings (…). In a narrow pane some of them fold into one menu. They can't be changed while a task runs, and a change applies from the next request.
 
 ### Model {#model}
-Click the model chip to choose the {{ui:composer.label.runner}} (Claude, Codex or Antigravity) and the {{ui:composer.label.model}}. If the list looks wrong, click {{ui:composer.model.refresh}}. Switching agents starts a new conversation.
+Click the model chip to choose the {{ui:composer.label.runner}} (Claude, Codex, Antigravity or pi) and the {{ui:composer.label.model}}. If the list looks wrong, click {{ui:composer.model.refresh}}. Switching agents starts a new conversation.
 
 ### Thinking effort {#effort}
-{{ui:composer.effort.label}} sets how deeply the model thinks: Auto, Low, Medium, High, XHigh or Max. Only the levels the model supports are shown. Antigravity has none.
+{{ui:composer.effort.label}} sets how deeply the model thinks: Auto, Low, Medium, High, XHigh or Max. Only the levels the model supports are shown. Antigravity has none; pi has Off, Minimal, Low, Medium, High and XHigh.
 
 ### Permissions {#permission}
 The permission mode sets what the agent may do without asking.
@@ -43,6 +43,7 @@ The permission mode sets what the agent may do without asking.
 | Claude | Plan mode · Always ask · Accept file edits · Auto mode · Bypass |
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
 
 - Claude's Always ask and Codex's {{ui:permission.label.onRequest}} ask for approval in the pane when extra permission is needed. See [Approvals and questions](approvals.md#permission).
 - Auto mode appears only when the installed Claude CLI supports it.
@@ -57,6 +58,16 @@ Google's agent runs through Antigravity CLI (`agy`), which can also run Claude a
 - Each Antigravity model carries its effort in its name, so there is no separate {{ui:composer.effort.label}}.
 - The {{ui:graph.view.mighty}} view works as for Claude and Codex: each sub-agent Antigravity starts is a block of its own under the request, filled from the sub-agent's own record in `~/.gemini/antigravity-cli` (`%USERPROFILE%\.gemini\antigravity-cli` on Windows; its instructions, messages, tool calls and the answer it sent back; files it read are named, not copied). Earlier requests of the conversation load from the same records, and {{ui:resume.choice.resume}} lists this folder's Antigravity conversations.
 - A pane that ran Gemini CLI before keeps its history, but its next request starts a new conversation, and a Gemini CLI model it had is set back to the default.
+
+### pi {#pi}
+pi (`pi`) is an open-source coding agent CLI that works with many model providers.
+
+- Install: from the {{ui:setup.title}} screen (it installs Homebrew and Node.js first when they are missing), or `npm install -g @mariozechner/pi-coding-agent`. The app updates it with `pi update self`.
+- Sign in: {{ui:settings.cliAccounts.buttonLogin}} on the {{ui:settings.nav.cli}} tab opens a terminal pane running `pi`. Type `/login` there and pick a subscription (Claude Pro/Max, ChatGPT, GitHub Copilot) or an API key. An API key in the environment (such as `ANTHROPIC_API_KEY`) or in `~/.pi/agent/auth.json` counts as signed in too. To sign out, type `/logout` inside pi.
+- Model: once you are signed in, the list comes from `pi --list-models` as `provider/model`; the first entry follows pi's own settings. A model without thinking shows no {{ui:composer.effort.label}}; the levels are Off, Minimal, Low, Medium, High and XHigh.
+- Permissions: pi has no approval window, so there are two modes. {{ui:permission.label.defaultCodex}} turns on only the read tools (read, grep, find, ls). {{ui:permission.label.fullAccess}} uses every tool without asking, outside the project too.
+- Each request runs `pi --mode rpc` in the pane's folder and continues the pane's own session, saved in `~/.pi/agent/sessions`. {{ui:resume.choice.resume}} lists the pi sessions of the folder as well.
+- Not yet: pi panes take no part in [Mighty Orchestration](delegation.md), cannot be opened in a [remote workspace](remote.md), and show no approval cards. They work on the Mac only for now.
 
 ### More run settings {#run-settings}
 Click the … button to open {{ui:settings.run.title}}.

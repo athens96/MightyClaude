@@ -3,7 +3,7 @@ title: 智能体窗格
 order: 3
 section: agent-pane
 ---
-智能体窗格是与 Claude、Codex 或 Antigravity 之一对话的窗格。在下方的输入框中写请求，在上方查看进度和结果。
+智能体窗格是与 Claude、Codex、Antigravity 或 pi 之一对话的窗格。在下方的输入框中写请求，在上方查看进度和结果。
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ section: agent-pane
 输入框下方一行从左到右依次是附件、模型、思考强度、权限和更多运行设置（…）。窗格较窄时，部分项目会收进一个菜单。运行期间无法更改，更改后的值从下一个请求起生效。
 
 ### 模型 {#model}
-点击模型按钮，可以选择{{ui:composer.label.runner}}（Claude、Codex、Antigravity）和{{ui:composer.label.model}}。如果列表不对，请点击{{ui:composer.model.refresh}}。切换智能体会开始新的对话。
+点击模型按钮，可以选择{{ui:composer.label.runner}}（Claude、Codex、Antigravity、pi）和{{ui:composer.label.model}}。如果列表不对，请点击{{ui:composer.model.refresh}}。切换智能体会开始新的对话。
 
 ### 思考强度 {#effort}
-{{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 没有此项。
+{{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 没有此项；pi 有 Off、Minimal、Low、Medium、High、XHigh。
 
 ### 权限 {#permission}
 权限决定智能体无需询问即可做哪些事。
@@ -43,6 +43,7 @@ section: agent-pane
 | Claude | Plan mode · Always ask · Accept file edits · Auto mode · Bypass |
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
 
 - Claude 的 Always ask 和 Codex 的{{ui:permission.label.onRequest}}权限在需要额外权限时，会在窗格中请求批准。请参阅[批准与提问](approvals.md#permission)。
 - 只有已安装的 Claude CLI 支持时，才会显示 Auto mode。
@@ -57,6 +58,16 @@ Google 的智能体通过 Antigravity CLI（`agy`）运行，它也可以运行 
 - Antigravity 的每个模型名称中已包含思考深度，因此没有单独的{{ui:composer.effort.label}}。
 - {{ui:graph.view.mighty}}视图与 Claude、Codex 相同：Antigravity 启动的每个子代理都会在请求下方成为单独的块，其内容（收到的指示、消息、工具调用和发回的答复）从 `~/.gemini/antigravity-cli`（Windows 上为 `%USERPROFILE%\.gemini\antigravity-cli`）中子代理自己的记录读取；读取过的文件只显示名称，不会复制内容。对话中较早的请求也从同样的记录加载，{{ui:resume.choice.resume}}会列出此文件夹中的 Antigravity 对话。
 - 以前运行 Gemini CLI 的窗格会保留记录，但下一个请求会开始新的对话；如果选过 Gemini CLI 的模型，会改回默认。
+
+### pi {#pi}
+pi（`pi`）是支持多家模型提供商的开源编码智能体 CLI。
+
+- 安装：在{{ui:setup.title}}界面中安装（缺少 Homebrew 和 Node.js 时会先安装它们），也可以自己运行 `npm install -g @mariozechner/pi-coding-agent`。应用用 `pi update self` 更新它。
+- 登录：点击{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliAccounts.buttonLogin}}，会打开运行 `pi` 的终端窗格。在其中输入 `/login`，选择订阅（Claude Pro/Max、ChatGPT、GitHub Copilot）或 API 密钥。环境变量中的 API 密钥（如 `ANTHROPIC_API_KEY`）或 `~/.pi/agent/auth.json` 中保存的凭据也视为已登录。退出登录请在 pi 中输入 `/logout`。
+- 模型：登录后，列表来自 `pi --list-models`，以“提供商/模型”显示，第一项遵循 pi 自身的设置。不支持思考的模型不显示{{ui:composer.effort.label}}。级别为 Off、Minimal、Low、Medium、High、XHigh。
+- 权限：pi 没有审批窗口，所以只有两种模式。{{ui:permission.label.defaultCodex}}模式只启用读取工具（read、grep、find、ls）。{{ui:permission.label.fullAccess}}模式不经询问使用所有工具，也可能触及项目之外。
+- 每次请求都会在窗格的工作文件夹中运行 `pi --mode rpc`，并延续窗格自己的会话，会话保存在 `~/.pi/agent/sessions`。{{ui:resume.choice.resume}}中也会列出该文件夹的 pi 会话。
+- 暂不支持：pi 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开，也没有审批卡。目前只能在 Mac 上使用。
 
 ### 更多运行设置 {#run-settings}
 点击 … 按钮会打开{{ui:settings.run.title}}。

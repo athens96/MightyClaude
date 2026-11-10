@@ -3,7 +3,7 @@ title: 에이전트 창
 order: 3
 section: agent-pane
 ---
-에이전트 창은 Claude, Codex, Antigravity 중 하나와 대화하는 실행 창입니다. 아래쪽 입력창에 요청을 쓰고, 위쪽에서 진행과 결과를 봅니다.
+에이전트 창은 Claude, Codex, Antigravity, pi 중 하나와 대화하는 실행 창입니다. 아래쪽 입력창에 요청을 쓰고, 위쪽에서 진행과 결과를 봅니다.
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ section: agent-pane
 입력창 아래 줄에는 왼쪽부터 첨부, 모델, 사고 강도, 권한, 추가 실행 설정(…)이 있습니다. 창이 좁으면 일부가 메뉴 하나로 접힙니다. 실행 중에는 바꿀 수 없고, 바꾼 값은 다음 요청부터 적용됩니다.
 
 ### 모델 {#model}
-모델 칩을 누르면 {{ui:composer.label.runner}}(Claude, Codex, Antigravity)와 {{ui:composer.label.model}} 항목을 고를 수 있습니다. 목록이 맞지 않으면 {{ui:composer.model.refresh}}을 누르세요. 에이전트를 바꾸면 대화가 새로 시작됩니다.
+모델 칩을 누르면 {{ui:composer.label.runner}}(Claude, Codex, Antigravity, pi)와 {{ui:composer.label.model}} 항목을 고를 수 있습니다. 목록이 맞지 않으면 {{ui:composer.model.refresh}}을 누르세요. 에이전트를 바꾸면 대화가 새로 시작됩니다.
 
 ### 사고 강도 {#effort}
-{{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Antigravity에는 없습니다.
+{{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Antigravity에는 없고, pi는 Off, Minimal, Low, Medium, High, XHigh입니다.
 
 ### 작업 권한 {#permission}
 권한은 에이전트가 묻지 않고 할 수 있는 일의 범위입니다.
@@ -43,6 +43,7 @@ section: agent-pane
 | Claude | Plan mode · Always ask · Accept file edits · Auto mode · Bypass |
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
 
 - Claude의 Always ask와 Codex의 {{ui:permission.label.onRequest}} 권한은 추가 권한이 필요할 때 창 안에서 승인을 묻습니다. [승인과 질문](approvals.md#permission)을 보세요.
 - Auto mode는 설치된 Claude CLI가 지원할 때만 보입니다.
@@ -57,6 +58,16 @@ Google 에이전트는 Antigravity CLI(`agy`)로 실행됩니다. Antigravity는
 - Antigravity 모델은 이름에 생각 깊이가 들어 있어 {{ui:composer.effort.label}}를 따로 고르지 않습니다.
 - {{ui:graph.view.mighty}} 보기는 Claude, Codex와 같습니다. Antigravity가 띄운 하위 에이전트는 요청 아래에 따로 블록이 되고, 그 내용(받은 지시, 메시지, 도구 호출, 돌려보낸 답)은 `~/.gemini/antigravity-cli`(Windows에서는 `%USERPROFILE%\.gemini\antigravity-cli`)에 남는 하위 에이전트 자신의 기록에서 읽습니다. 읽은 파일은 이름만 보이고 내용은 옮기지 않습니다. 대화의 이전 요청도 같은 기록에서 불러오고, {{ui:resume.choice.resume}}에는 이 폴더의 Antigravity 대화가 나옵니다.
 - 전에 Gemini CLI로 실행하던 창은 기록은 그대로지만 다음 요청부터 새 대화로 시작하고, Gemini CLI 모델을 골라 두었다면 기본값으로 바뀝니다.
+
+### pi {#pi}
+pi(`pi`)는 여러 모델 제공자를 쓰는 오픈소스 코딩 에이전트 CLI입니다.
+
+- 설치: {{ui:setup.title}} 화면에서 설치합니다(Homebrew와 Node.js가 없으면 먼저 설치합니다). 직접 설치하려면 `npm install -g @mariozechner/pi-coding-agent`를 실행합니다. 업데이트는 앱이 `pi update self`로 합니다.
+- 로그인: {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliAccounts.buttonLogin}} 단추를 누르면 `pi`를 실행하는 터미널 창이 열립니다. 거기서 `/login`을 입력하고 구독(Claude Pro/Max, ChatGPT, GitHub Copilot)이나 API 키를 고릅니다. 환경 변수의 API 키(`ANTHROPIC_API_KEY` 등)나 `~/.pi/agent/auth.json`에 저장된 자격 증명도 로그인으로 봅니다. 로그아웃은 pi 안에서 `/logout`을 입력합니다.
+- 모델: 로그인하면 `pi --list-models`의 목록이 `제공자/모델` 이름으로 나오고, 첫 항목은 pi 자체 설정을 따릅니다. 생각 기능이 없는 모델에는 {{ui:composer.effort.label}} 항목이 보이지 않습니다. 단계는 Off, Minimal, Low, Medium, High, XHigh입니다.
+- 권한: pi에는 승인 창이 없어 모드가 두 가지입니다. {{ui:permission.label.defaultCodex}} 모드는 읽기 도구(read, grep, find, ls)만 켭니다. {{ui:permission.label.fullAccess}} 모드는 모든 도구를 묻지 않고 쓰며 프로젝트 밖도 건드릴 수 있습니다.
+- 요청마다 창의 작업 폴더에서 `pi --mode rpc`를 실행하고 창의 세션을 이어 갑니다. 세션은 `~/.pi/agent/sessions`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 pi 세션이 나옵니다.
+- 아직 안 되는 것: pi 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고, [원격 작업 공간](remote.md)에서 열 수 없으며, 승인 카드도 없습니다. 지금은 Mac에서만 동작합니다.
 
 ### 추가 실행 설정 {#run-settings}
 … 단추를 누르면 {{ui:settings.run.title}}이 열립니다.

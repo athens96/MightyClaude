@@ -56,3 +56,12 @@ pi에는 승인 창이 없다. 모드 두 가지:
 
 - 이벤트 → 기록 변환은 녹화한 RPC 출력 fixture(`native/contracts/fixtures/pi-rpc-*.jsonl`)로 Mac·Windows가 같은 결과를 내는지 본다.
 - 설치 목록, 로그인 판정, 모델 목록 파싱, 권한 → 인자 변환의 단위 테스트.
+
+## Mac 구현 메모 (1단계)
+
+- 상주 프로세스 대신 **요청마다** `pi --mode rpc`를 띄운다(앱의 실행 단위가 요청이라 상태·중지·대기열이 다른 에이전트와 같은 길을 쓴다). 이어하기는 `--session <세션 id>`가 맡는다. stdin은 `get_state`(세션 id·모델의 컨텍스트 크기) → `prompt` 순서로 쓰고, `agent_end` 뒤 1초 조용하면(압축·자동 재시도가 바로 이어질 수 있다) stdin을 닫아 pi가 끝나게 한다. 닫기 전에는 `steer` 줄을 쓸 수 있다. 중지는 프로세스 종료다.
+- 이어하기 id는 세션 uuid다(헤더의 `id`, 파일 이름 `<시각>_<uuid>.jsonl`). 그 파일이 없으면(답이 한 번도 없던 세션) `--session` 없이 새 세션으로 시작한다.
+- 답은 `text_end`/`message_end`에서 한 번에 기록하고, 생각 텍스트는 기록에 옮기지 않는다. 재시도가 이어질 오류(`auto_retry_start`)는 실행 실패가 아니고, 재시도가 없었던 오류는 프로세스가 끝날 때 실패가 된다.
+- 확장이 띄운 대화상자(`select`·`confirm`·`input`·`editor`)는 창에서 답할 수 없어 `cancelled`로 답하고 한 줄 알린다.
+- 이전 요청을 마이티 흐름 보기로 불러오는 기록 읽기(`SessionHistory`)는 아직 pi를 읽지 않는다. 폰은 `provider: "pi"`를 그대로 받아 보여 주기만 한다.
+- Windows가 맞출 것: `native/contracts/fixtures/pi-rpc-*.jsonl`(answer, tools, retry, error, rejected)과 같은 결과, `setup-catalog.json`의 `pi` 항목, 위 argv/stdin 모양.

@@ -3,7 +3,7 @@ title: エージェントペイン
 order: 3
 section: agent-pane
 ---
-エージェントペインは、Claude、Codex、Antigravityのいずれかと会話するペインです。下部の入力欄にリクエストを書き、上部で進行状況と結果を確認します。
+エージェントペインは、Claude、Codex、Antigravity、piのいずれかと会話するペインです。下部の入力欄にリクエストを書き、上部で進行状況と結果を確認します。
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ section: agent-pane
 入力欄の下の行には、左から添付、モデル、思考レベル、権限、その他の実行設定(…)が並んでいます。ペインの幅が狭いと、一部が1つのメニューにまとめられます。実行中は変更できず、変更した値は次のリクエストから適用されます。
 
 ### モデル {#model}
-モデルのチップをクリックすると、{{ui:composer.label.runner}}(Claude、Codex、Antigravity)と{{ui:composer.label.model}}を選べます。一覧が正しくない場合は{{ui:composer.model.refresh}}をクリックしてください。エージェントを変更すると、会話は新しく始まります。
+モデルのチップをクリックすると、{{ui:composer.label.runner}}(Claude、Codex、Antigravity、pi)と{{ui:composer.label.model}}を選べます。一覧が正しくない場合は{{ui:composer.model.refresh}}をクリックしてください。エージェントを変更すると、会話は新しく始まります。
 
 ### 思考レベル {#effort}
-{{ui:composer.effort.label}}は、モデルがどれだけ深く考えるかを決めます。Auto、Low、Medium、High、XHigh、Maxから選びます。モデルが対応している段階だけが表示されます。Antigravityにはありません。
+{{ui:composer.effort.label}}は、モデルがどれだけ深く考えるかを決めます。Auto、Low、Medium、High、XHigh、Maxから選びます。モデルが対応している段階だけが表示されます。Antigravityにはなく、piはOff、Minimal、Low、Medium、High、XHighです。
 
 ### 作業の権限 {#permission}
 権限は、エージェントが確認なしで行える作業の範囲です。
@@ -43,6 +43,7 @@ section: agent-pane
 | Claude | Plan mode · Always ask · Accept file edits · Auto mode · Bypass |
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
 
 - ClaudeのAlways askとCodexの{{ui:permission.label.onRequest}}では、追加の権限が必要になったときにペイン内で許可を求めます。[許可と質問](approvals.md#permission)を参照してください。
 - Auto modeは、インストールされているClaude CLIが対応している場合にのみ表示されます。
@@ -57,6 +58,16 @@ GoogleのエージェントはAntigravity CLI(`agy`)で動きます。Antigravit
 - Antigravityのモデルは名前に思考の深さが含まれているため、{{ui:composer.effort.label}}を別に選びません。
 - {{ui:graph.view.mighty}}表示はClaudeやCodexと同じです。Antigravityが起動したサブエージェントはリクエストの下にそれぞれのブロックになり、その内容(受けた指示、メッセージ、ツール呼び出し、送り返した答え)は`~/.gemini/antigravity-cli`(Windowsでは`%USERPROFILE%\.gemini\antigravity-cli`)に残るサブエージェント自身の記録から読みます。読んだファイルは名前だけが表示され、中身は写しません。会話の以前のリクエストも同じ記録から読み込み、{{ui:resume.choice.resume}}にはこのフォルダのAntigravityの会話が表示されます。
 - 以前Gemini CLIで実行していたペインは、履歴はそのままですが次のリクエストから新しい会話になり、Gemini CLIのモデルを選んでいた場合は既定に戻ります。
+
+### pi {#pi}
+pi(`pi`)は、多くのモデル提供元で使えるオープンソースのコーディングエージェントCLIです。
+
+- インストール: {{ui:setup.title}}画面からインストールします(HomebrewとNode.jsがなければ先にインストールします)。自分でインストールするなら`npm install -g @mariozechner/pi-coding-agent`を実行します。アップデートはアプリが`pi update self`で行います。
+- サインイン: {{ui:settings.nav.cli}}タブの{{ui:settings.cliAccounts.buttonLogin}}を押すと、`pi`を実行するターミナルペインが開きます。そこで`/login`と入力し、サブスクリプション(Claude Pro/Max、ChatGPT、GitHub Copilot)またはAPIキーを選びます。環境変数のAPIキー(`ANTHROPIC_API_KEY`など)や`~/.pi/agent/auth.json`に保存された認証情報もサインイン済みと見なします。サインアウトはpiの中で`/logout`と入力します。
+- モデル: サインインすると、`pi --list-models`の一覧が「提供元/モデル」の名前で表示され、先頭の項目はpi自身の設定に従います。思考機能のないモデルでは{{ui:composer.effort.label}}は表示されません。段階はOff、Minimal、Low、Medium、High、XHighです。
+- 権限: piには承認ウィンドウがないため、モードは2つです。{{ui:permission.label.defaultCodex}}モードは読み取りツール(read、grep、find、ls)だけを有効にします。{{ui:permission.label.fullAccess}}モードはすべてのツールを確認なしで使い、プロジェクトの外にも触れられます。
+- リクエストごとにペインの作業フォルダで`pi --mode rpc`を実行し、ペインのセッションを引き継ぎます。セッションは`~/.pi/agent/sessions`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのpiセッションが表示されます。
+- まだできないこと: piのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けず、承認カードもありません。今のところMacでのみ動作します。
 
 ### その他の実行設定 {#run-settings}
 …ボタンをクリックすると{{ui:settings.run.title}}が開きます。
