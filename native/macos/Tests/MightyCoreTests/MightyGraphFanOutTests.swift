@@ -23,6 +23,9 @@ struct MightyGraphFanOutTests {
         MightyGraphLayout.make(runs: MightyGraphSupport.shownRuns(runs), draft: "", running: running, expanded: [], splitsExecution: true)
     }
     private func id(_ run: MightyGraphRun, _ agent: String) -> String { MightyGraphLayout.nodeID(run, suffix: "agent:" + agent) }
+    /// The delegate line of the run's main block, and what it adds between a block and its row beyond the row gap.
+    private func line(_ run: MightyGraphRun, _ key: String = FlowDelegation.mainKey) -> String { MightyGraphLayout.nodeID(run, suffix: MightyGraphLayout.delegateSuffix + key) }
+    private let lineDrop: CGFloat = 18 + FlowDelegation.size.height + 26
     private func node(_ layout: MightyGraphLayout, _ id: String) -> MightyGraphLayout.Node? { layout.nodes.first { $0.id == id } }
 
     // MARK: What a shown run carries
@@ -93,8 +96,10 @@ struct MightyGraphFanOutTests {
         #expect(!card.isResizable && card.isFixed)
         #expect(card.content == .agent(0, 0))
         let work = try #require(graph.nodes.first { $0.content == .work(0) })
-        #expect(graph.edges.contains { $0.source == work.id && $0.target == card.id })
-        #expect(card.frame.minY == work.frame.maxY + 32)
+        // Through the delegate line that stands on its branch.
+        #expect(graph.edges.contains { $0.source == work.id && $0.target == line(request) })
+        #expect(graph.edges.contains { $0.source == line(request) && $0.target == card.id })
+        #expect(card.frame.minY == work.frame.maxY + lineDrop)
         #expect(abs(card.frame.midX - work.frame.midX) < 0.5)
         // The edge into a running card is a live one.
         #expect(MightyGraphLayout.liveNodeIDs(MightyGraphSupport.shownRuns([request]), fanOut: true).contains(card.id))
@@ -121,8 +126,10 @@ struct MightyGraphFanOutTests {
         let block = try #require(node(ended, id(request, "fg")))
         #expect(!block.isCompact && block.isResizable && !block.isFixed)
         #expect(block.frame.size == CGSize(width: 360, height: 240))
-        // Exactly the block the layout always drew for it.
-        #expect(block.frame == node(plain([request], running: true), id(request, "fg"))?.frame)
+        // The block the layout always drew for it, where it drew it, under the delegate line that now stands above the row.
+        let before = try #require(node(plain([request], running: true), id(request, "fg")))
+        #expect(block.frame.size == before.frame.size && block.frame.minX == before.frame.minX)
+        #expect(block.frame.minY == before.frame.minY + lineDrop - 32)
         // Its saved size and its opened height are back with it.
         let saved = layout([request], running: true, sizes: [block.id: MightyGraphBlockSize(width: 420, height: 300)])
         #expect(node(saved, block.id)?.frame.size == CGSize(width: 420, height: 300))
@@ -155,8 +162,11 @@ struct MightyGraphFanOutTests {
         let folded = layout([request], running: true)
         #expect(node(folded, id(request, "lead"))?.isCompact == true)
         for hidden in ["child", "grand", "note"] { #expect(node(folded, id(request, hidden)) == nil, "\(hidden)") }
-        // Request, 실행 and the one card: what is under the card is laid out nowhere, not even as a stray root.
-        #expect(folded.nodes.count == 3)
+        // Request, 실행, its delegate line, the one card and the return node: what is under the card is laid out nowhere,
+        // not even as a stray root.
+        #expect(folded.nodes.count == 5)
+        #expect(Set(folded.nodes.map(\.id)) == [MightyGraphLayout.nodeID(request, suffix: "request"), MightyGraphLayout.nodeID(request, suffix: MightyGraphLayout.workSuffix),
+                                                 line(request), id(request, "lead"), MightyGraphLayout.nodeID(request, suffix: MightyGraphLayout.returnSuffix)])
         #expect(FlowCard.nested(under: agents[0], in: request) == 2)
         let lead = id(request, "lead")
         let opened = layout([request], running: true, opened: [lead])
@@ -166,8 +176,10 @@ struct MightyGraphFanOutTests {
         #expect(child.isCompact)
         #expect(node(opened, id(request, "grand")) == nil)
         #expect(node(opened, id(request, "note"))?.isCompact == false)
-        #expect(opened.edges.contains { $0.source == lead && $0.target == child.id })
-        #expect(opened.nodes.count == 5)
+        // The opened block delegated too: its own line stands between it and its row.
+        #expect(opened.edges.contains { $0.source == lead && $0.target == line(request, "lead") })
+        #expect(opened.edges.contains { $0.source == line(request, "lead") && $0.target == child.id })
+        #expect(opened.nodes.count == 8)
     }
 
     @Test func theRowIsInLaunchOrderBackgroundOrNot() throws {
@@ -196,7 +208,7 @@ struct MightyGraphFanOutTests {
         // Where and how large it always was; only lower, by the card row the request now has above it.
         let before = try #require(node(plain([request, notice]), copy.id))
         #expect(copy.frame.size == before.frame.size && copy.frame.minX == before.frame.minX)
-        #expect(copy.frame.minY == before.frame.minY + FlowCard.size.height + 32)
+        #expect(copy.frame.minY == before.frame.minY + FlowCard.size.height + lineDrop)
         // The request keeps its card above, which leads to this copy.
         #expect(node(graph, id(request, "bg"))?.isCompact == true)
         let shown = MightyGraphSupport.shownRuns([request, notice])
@@ -214,8 +226,8 @@ struct MightyGraphFanOutTests {
         let request = run("r", agents: [agent("one", status: "running", background: true), agent("two", status: "running", background: true)], status: "running")
         let runs = MightyGraphSupport.shownRuns([request])
         let graph = MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [], splitsExecution: true, fanOut: .init())
-        // While the request runs, the cards are its lowest blocks: the one launched last is followed.
-        #expect(MightyGraphFollow.targetID(graph, runs: runs) == id(request, "two"))
+        // While the request runs, the return node under the cards is its lowest block.
+        #expect(MightyGraphFollow.targetID(graph, runs: runs) == MightyGraphLayout.nodeID(request, suffix: MightyGraphLayout.returnSuffix))
         // Its turn ended: the 알림 대기 block under the cards is the lowest.
         var ended = request; ended.status = "completed"; ended.finalOutput = "launched"
         let endedRuns = MightyGraphSupport.shownRuns([ended])

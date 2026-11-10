@@ -161,6 +161,8 @@ enum GraphVectors {
         case .history: return "history"
         case .plan: return "plan"
         case .planRecord: return "planRecord"
+        case .delegate: return "delegate"
+        case .returning: return "returning"
         }
     }
 

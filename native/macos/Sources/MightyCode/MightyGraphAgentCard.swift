@@ -85,3 +85,59 @@ private struct FlowCardFigures: View {
         }
     }
 }
+
+/// The line on the branch from a block to the sub-agents it delegated to (`FlowDelegation`): the count in ink, the
+/// model in the sub-agent ink, how many still run in the run ink. It is a label, not a block: nothing in it is clicked.
+struct MightyGraphDelegateLine: View {
+    let nodeID: String
+    let line: FlowDelegation.Line
+
+    var body: some View {
+        HStack(spacing: DesignMetrics.Spacing.xs) {
+            Image(systemName: "arrow.turn.down.right").font(.ui(size: 9, weight: .semibold)).foregroundStyle(Palette.flow(.subagent))
+            Text(verbatim: line.head).foregroundStyle(Palette.ink)
+            if let model = line.model {
+                Text(verbatim: "·").foregroundStyle(Palette.ink2)
+                Text(verbatim: model).foregroundStyle(Palette.flow(.subagent))
+            }
+            if let progress = line.progress {
+                Text(verbatim: "·").foregroundStyle(Palette.ink2)
+                Text(verbatim: progress).foregroundStyle(Palette.accent).monospacedDigit()
+            }
+        }
+        .font(.ui(size: 10.5, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.85)
+        .padding(.horizontal, DesignMetrics.Spacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.panel, in: Capsule())
+        .overlay { Capsule().strokeBorder(Palette.border, lineWidth: 1).allowsHitTesting(false) }
+        .help(line.text)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(line.text)
+        .accessibilityIdentifier("mighty-node-\(nodeID)")
+    }
+}
+
+/// The return node at a request's result position until the result is there (`FlowReturn`): the lead's ink, since
+/// the work comes back to the main session, and the running outline, since it stands only while the run goes on.
+struct MightyGraphReturnNode: View {
+    let nodeID: String
+    let state: FlowReturn.State
+
+    private static let corner: CGFloat = 10
+
+    var body: some View {
+        let ink = Palette.flow(.lead)
+        HStack(spacing: DesignMetrics.Spacing.sm) {
+            Image(systemName: state.waiting ? "hourglass" : "arrow.uturn.backward").font(.ui(size: 10, weight: .semibold)).foregroundStyle(ink)
+            Text(verbatim: state.text).font(.ui(size: 11, weight: .semibold)).foregroundStyle(ink).lineLimit(1).minimumScaleFactor(0.85)
+        }
+        .padding(.horizontal, DesignMetrics.Spacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .mightyBlockCard(cornerRadius: Self.corner)
+        .overlay { MightyGraphActivityOutline(tone: .run, cornerRadius: Self.corner) }
+        .help(state.text)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(state.text)
+        .accessibilityIdentifier("mighty-node-\(nodeID)")
+    }
+}

@@ -41,7 +41,9 @@ public enum MightyGraphFollow {
 
     private static func run(of content: MightyGraphLayout.Content) -> Int? {
         switch content {
-        case .request(let index), .work(let index), .result(let index), .plan(let index), .agent(let index, _): index
+        // The return node stands where the result will: it is the run's lowest block until then. A delegate line is a
+        // label on a branch, never a block to follow.
+        case .request(let index), .work(let index), .result(let index), .plan(let index), .agent(let index, _), .returning(let index): index
         default: nil
         }
     }

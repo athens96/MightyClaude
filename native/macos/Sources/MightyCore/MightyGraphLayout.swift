@@ -19,6 +19,12 @@ public struct MightyGraphLayout {
         /// its result will go; `planRecord` is a run index and a `PlanRecord.id`,
         /// an answered plan attached beside its request.
         case plan(Int), planRecord(Int, String)
+        /// The line on the branch from a block to the sub-agents it delegated to (`FlowDelegation`): a run index and
+        /// the block's key (`FlowDelegation.mainKey`, or a sub-agent's id). Only with a fan-out.
+        case delegate(Int, String)
+        /// The way back to the main session, where a run's result will go, until the result is there (`FlowReturn`):
+        /// a run index. Only with a fan-out.
+        case returning(Int)
     }
     public struct Node: Identifiable {
         public let id: String
@@ -29,7 +35,13 @@ public struct MightyGraphLayout {
         public var isResultFiles: Bool { if case .resultFiles = content { return true }; return false }
         /// Neither selected nor resized: a click goes to what it holds and a wheel pans past it. The history block at
         /// the top, and a compact card, which has nothing to scroll.
-        public var isFixed: Bool { content == .history || isCompact }
+        public var isFixed: Bool {
+            if isCompact { return true }
+            switch content {
+            case .history, .delegate, .returning: return true
+            default: return false
+            }
+        }
         /// Attachments beside the flow: scrolled at once.
         public var isAuxiliary: Bool {
             switch content {
@@ -43,7 +55,7 @@ public struct MightyGraphLayout {
             if isCompact { return false }
             switch content {
             case .request, .work, .agent, .result, .draft, .plan, .planRecord: return true
-            case .resultFiles, .execution, .images, .history: return false
+            case .resultFiles, .execution, .images, .history, .delegate, .returning: return false
             }
         }
         /// The least a drag may make it: an answered plan may stay as short as it folds.
@@ -67,6 +79,12 @@ public struct MightyGraphLayout {
         public var opened: Set<String>
         public init(opened: Set<String> = []) { self.opened = opened }
     }
+    /// The delegate line's and the return node's suffixes (`Content.delegate`, `Content.returning`).
+    public static let delegateSuffix = "delegate:"
+    public static let returnSuffix = "return"
+    /// From a block's bottom to its delegate line, and from the line to the row under it.
+    static let delegateGap: CGFloat = 18
+    static let delegateRowGap: CGFloat = 26
     public static let executionSuffix = "ouroboros-execution:"
     /// The 실행 block's suffix (`Content.work`).
     public static let workSuffix = "execution"
@@ -430,17 +448,29 @@ public struct MightyGraphLayout {
                 if compact { for child in below { fold(child, depth: depth + 1) } }
                 let children = compact ? [] : below.compactMap { branch($0, depth: depth + 1) }
                 let childrenWidth = children.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, children.count - 1)) * siblingGap
-                let width = max(cardSize.width, childrenWidth)
+                // A block that delegated says so on the branch to its row (`FlowDelegation`).
+                let delegates = fanOut != nil && !children.isEmpty && !FlowDelegation.children(of: agent.id, in: run).isEmpty
+                let width = max(cardSize.width, childrenWidth, delegates ? FlowDelegation.size.width : 0)
                 var result = Tree(nodes: [Node(id: id, content: .agent(runIndex, index), frame: CGRect(x: (width - cardSize.width) / 2, y: 0, width: cardSize.width, height: height), isCompact: compact)], edges: [], width: width, height: height, top: id, leaves: [id])
                 if !children.isEmpty {
                     result.leaves = []
+                    var source = id
+                    var top = height + rowGap
+                    if delegates {
+                        let line = nodeID(run, suffix: delegateSuffix + agent.id)
+                        let frame = CGRect(x: (width - FlowDelegation.size.width) / 2, y: height + delegateGap, width: FlowDelegation.size.width, height: FlowDelegation.size.height)
+                        result.nodes.append(Node(id: line, content: .delegate(runIndex, agent.id), frame: frame))
+                        result.edges.append(Edge(source: id, target: line))
+                        source = line
+                        top = frame.maxY + delegateRowGap
+                    }
                     var x = (width - childrenWidth) / 2
                     for var child in children {
-                        child.offset(x: x, y: height + rowGap)
+                        child.offset(x: x, y: top)
                         result.nodes += child.nodes
-                        result.edges += [Edge(source: id, target: child.top)] + child.edges
+                        result.edges += [Edge(source: source, target: child.top)] + child.edges
                         result.leaves += child.leaves
-                        result.height = max(result.height, height + rowGap + child.height)
+                        result.height = max(result.height, top + child.height)
                         x += child.width + siblingGap
                     }
                 }
@@ -471,7 +501,16 @@ public struct MightyGraphLayout {
             }
             if !branches.isEmpty {
                 tree.leaves = []
-                let top = tree.height + rowGap
+                var top = tree.height + rowGap
+                // The main session's delegate line stands between it and the row (`FlowDelegation`).
+                if fanOut != nil, !FlowDelegation.children(of: FlowDelegation.mainKey, in: run).isEmpty {
+                    let line = nodeID(run, suffix: delegateSuffix + FlowDelegation.mainKey)
+                    let frame = CGRect(x: (width - FlowDelegation.size.width) / 2, y: tree.height + delegateGap, width: FlowDelegation.size.width, height: FlowDelegation.size.height)
+                    tree.nodes.append(Node(id: line, content: .delegate(runIndex, FlowDelegation.mainKey), frame: frame))
+                    tree.edges.append(Edge(source: parentID, target: line))
+                    parentID = line
+                    top = frame.maxY + delegateRowGap
+                }
                 var x = (width - branchWidth) / 2
                 for var child in branches {
                     child.offset(x: x, y: top)
@@ -498,6 +537,16 @@ public struct MightyGraphLayout {
                 tree.edges += tree.leaves.map { Edge(source: $0, target: id, joins: true) }
                 tree.leaves = [id]
                 tree.height += rowGap + planSize.height
+            }
+            // Until the result is there, the branches of a run that delegated come back into the return node standing in
+            // its place (`FlowReturn`): a plan waiting for its answer already stands there.
+            if fanOut != nil, !hasResult(run), !(run.id == planRunID && !finished(run)), FlowReturn.state(run) != nil {
+                let id = nodeID(run, suffix: returnSuffix)
+                let size = FlowReturn.size
+                tree.nodes.append(Node(id: id, content: .returning(runIndex), frame: CGRect(x: (tree.width - size.width) / 2, y: tree.height + rowGap, width: size.width, height: size.height)))
+                tree.edges += tree.leaves.map { Edge(source: $0, target: id, joins: true) }
+                tree.leaves = [id]
+                tree.height += rowGap + size.height
             }
             if hasResult(run) {
                 let id = resultID

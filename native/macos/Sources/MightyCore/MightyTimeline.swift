@@ -189,6 +189,16 @@ extension MightyGraphLayout {
         return ids
     }
 
+    /// `live` (`liveNodeIDs`) with the flow's own nodes that are in motion: a return node, which stands only while its
+    /// run goes on, and a delegate line that leads to a block still running. The edges into them are blue too.
+    public func liveFlowIDs(_ live: Set<String>) -> Set<String> {
+        var ids = live
+        for node in nodes { if case .returning = node.content { ids.insert(node.id) } }
+        let lines = Set(nodes.filter { if case .delegate = $0.content { true } else { false } }.map(\.id))
+        for edge in edges where lines.contains(edge.source) && live.contains(edge.target) { ids.insert(edge.source) }
+        return ids
+    }
+
     /// `routes(in:)`, split by whether the edge runs into one of `targets`.
     public func routes(in visible: CGRect? = nil, into targets: Set<String>) -> (into: [[CGPoint]], other: [[CGPoint]]) {
         let frames = Dictionary(nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })

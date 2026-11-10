@@ -330,7 +330,7 @@ struct MightyGraphView: View {
                               scrollTarget: target,
                               defaultNodeID: fallbackNodeID, follow: follow,
                               diagnosticActions: MightyGraphDiagnosticActions(toggleExpanded: toggleExpanded, zoomOut: zoomOut),
-                              selection: $selectedNodeID, edges: { graphEdges(graph, live: live, visible: $0) },
+                              selection: $selectedNodeID, edges: { graphEdges(graph, live: graph.liveFlowIDs(live), visible: $0) },
                               overlay: overlayView,
                               overlayLayout: overlayLayout,
                               onOverlayResize: { size, _ in
@@ -781,6 +781,16 @@ struct MightyGraphView: View {
                                   onOpen: onFocus)
         case .history:
             historyCard(width: node.frame.width, height: node.frame.height)
+        case .delegate(let index, let key):
+            // On the branch to a block's sub-agents: how many it delegated to, on which model, how many still run.
+            if let line = FlowDelegation.line(FlowDelegation.children(of: key, in: runs[index]), definitions: agentDefinitions.definitions) {
+                MightyGraphDelegateLine(nodeID: node.id, line: line)
+            }
+        case .returning(let index):
+            // Where the result will go: the way back to the main session, as it is at this moment.
+            if let state = FlowReturn.state(runs[index]) {
+                MightyGraphReturnNode(nodeID: node.id, state: state)
+            }
         case .plan:
             // The plan alone on the block card, its page scrolling inside;
             // its answers wait in the composer.
