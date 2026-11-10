@@ -95,5 +95,14 @@ The first time you allow control, check that the fingerprint matches on both scr
 > [!tip]
 > Press {{kbd:⌃⌥⌘K}} on the Mac to stop every remote screen session at once. Control ends after 10 minutes without input, viewing after 30.
 
+## Desktop app update {#desktop-update}
+
+When the Mac or Windows app has a new version, a **{{ui:phone.appUpdate.title}}** strip appears above that computer's session list on the phone. Press **{{ui:phone.appUpdate.install}}** and the computer downloads the new version, installs it and restarts the app. You do not need to be at the computer.
+
+- When requests are running, it first tells you how many will stop and goes on only once you confirm.
+- The connection drops for a moment while the app restarts and comes back by itself.
+- The computer downloads the update from the official address and installs it only after checking its signature. The phone only tells it to start.
+- This works with computers on 0.4.55 or later.
+
 ## Run your own relay {#own-relay}
 Instead of the default relay you can run your own. Deploy the `relay/` folder from the repository to a server, then enter its address (`wss://…`) under {{ui:settings.mobileRemote.relayLabel}} on the Mac.
