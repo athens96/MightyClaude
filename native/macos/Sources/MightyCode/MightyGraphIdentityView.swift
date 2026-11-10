@@ -47,15 +47,14 @@ struct FlowIdentityChips: View {
 
     var body: some View {
         let ink = stripInk ?? Palette.flow(identity.ink)
-        if let width = fit.typeWidth, let type = identity.typeChip {
-            Text(verbatim: type).font(.ui(size: 10, weight: .semibold)).foregroundStyle(ink).lineLimit(1).truncationMode(.tail)
-                .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
-                .background(ink.opacity(0.12), in: Capsule())
-                .frame(maxWidth: width, alignment: .leading)
-                .layoutPriority(-1)
-                .help(identity.type ?? type)
-                .accessibilityLabel(identity.type ?? type)
-                .accessibilityIdentifier("mighty-type-\(nodeID)")
+        if fit.showsMarks {
+            ForEach(identity.marks, id: \.self) { mark in
+                Image(systemName: mark.symbol).font(.ui(size: 9, weight: .semibold)).foregroundStyle(stripInk ?? Palette.ink2)
+                    .frame(width: 12).fixedSize()
+                    .help(mark.help)
+                    .accessibilityLabel(mark.help)
+                    .accessibilityIdentifier("mighty-mark-\(mark.rawValue)-\(nodeID)")
+            }
         }
         if fit.showsEffort, let effort = identity.effort {
             HStack(spacing: DesignMetrics.Spacing.xxs) {
@@ -68,14 +67,17 @@ struct FlowIdentityChips: View {
             .accessibilityLabel(L("composer.effort.menu", ["effort": effort]))
             .accessibilityIdentifier("mighty-effort-\(nodeID)")
         }
-        if fit.showsMarks {
-            ForEach(identity.marks, id: \.self) { mark in
-                Image(systemName: mark.symbol).font(.ui(size: 9, weight: .semibold)).foregroundStyle(stripInk ?? Palette.ink2)
-                    .frame(width: 12).fixedSize()
-                    .help(mark.help)
-                    .accessibilityLabel(mark.help)
-                    .accessibilityIdentifier("mighty-mark-\(mark.rawValue)-\(nodeID)")
-            }
+        // Last, right before the header's spacer, in exactly the room the header's fit gave it: a longer type is cut
+        // inside its capsule, and room a shorter one leaves runs on into the spacer. Its width never depends on how
+        // the stack shares out what is left.
+        if let width = fit.typeWidth, let type = identity.typeChip {
+            Text(verbatim: type).font(.ui(size: 10, weight: .semibold)).foregroundStyle(ink).lineLimit(1).truncationMode(.tail)
+                .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
+                .background(ink.opacity(0.12), in: Capsule())
+                .frame(width: width, alignment: .leading)
+                .help(identity.type ?? type)
+                .accessibilityLabel(identity.type ?? type)
+                .accessibilityIdentifier("mighty-type-\(nodeID)")
         }
     }
 }

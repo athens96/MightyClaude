@@ -238,8 +238,9 @@ public enum FlowRoles {
 
     /// What fits in a block header `width` wide. The title, the status mark, the token capsule and the buttons were there
     /// first and keep their room (the title at least `titleFloor`, or its own width when it is shorter); what is left
-    /// goes to the marks, then the effort, then the type chip, which is cut to the room it gets or left out. A header
-    /// at the block's least width shows none of them: the identity stays on the icon's tooltip.
+    /// goes to the marks, then the effort, then the type chip, which takes the width given here (its type cut inside it)
+    /// or is left out. A header at the block's least width that holds a status and a capsule shows none of them: the
+    /// identity stays on the icon's tooltip.
     public static func headerFit(width: CGFloat, title: String, status: String?, capsule: String?, buttons: Int, identity: FlowIdentity) -> HeaderFit {
         let gap = DesignMetrics.Spacing.sm
         var used = 2 * DesignMetrics.Inset.graphBlockBodyH + 16 + gap
@@ -259,8 +260,9 @@ public enum FlowRoles {
             if free >= chip { fit.showsEffort = true; free -= chip }
         }
         if let type = identity.typeChip, free >= typeFloor + gap {
-            fit.typeWidth = min(typeCeiling, free - gap, estimatedWidth(type, size: 10) + chipPadding + 2)
-            if let typeWidth = fit.typeWidth, typeWidth < typeFloor { fit.typeWidth = typeFloor }
+            // A little over the estimate, so a type of wide letters is not cut while there is room.
+            let wanted = (estimatedWidth(type, size: 10) * 1.15 + chipPadding + 4).rounded(.up)
+            fit.typeWidth = max(typeFloor, min(typeCeiling, free - gap, wanted))
         }
         return fit
     }
