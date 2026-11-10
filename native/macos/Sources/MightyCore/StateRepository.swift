@@ -263,7 +263,7 @@ public actor StateRepository {
         guard !runs.isEmpty else { return 0 }
         func entryBytes(_ values: [LogEntry]) -> Int { values.reduce(0) { $0 + 1024 + $1.text.utf8.count + ($1.activity?.output?.utf8.count ?? 0) + ($1.activity?.summary.utf8.count ?? 0) + AgentImageSupport.approximateBytes($1.images) } }
         let bytes = runs.reduce(0) { total, run in
-            total + 2048 + run.id.utf8.count * 2 + (run.sourceRunID?.utf8.count ?? 0) + run.input.utf8.count + (run.finalOutput?.utf8.count ?? 0) * 3 + entryBytes(run.rootEntries)
+            total + 2048 + run.id.utf8.count * 2 + (run.sourceRunID?.utf8.count ?? 0) + run.input.utf8.count + (run.finalOutput?.utf8.count ?? 0) * 3 + entryBytes(run.rootEntries) + (run.advisor?.byteCount ?? 0)
                 + run.agents.reduce(0) { $0 + 1536 + $1.id.utf8.count * 2 + ($1.parentID?.utf8.count ?? 0) + $1.title.utf8.count + $1.input.utf8.count + entryBytes($1.entries) }
         }
         return bytes + bytes / 4 + 4096

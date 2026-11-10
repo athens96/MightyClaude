@@ -367,6 +367,7 @@
   "graph.advisor.totals.tokens": "读取令牌 {tokens}",
   "graph.advisor.note.hidden": "建议经加密后只送达 Claude，内容不会显示。",
   "graph.advisor.empty": "尚未征求建议",
+  "graph.advisor.none": "未征求建议",
   "graph.advisor.earlier": "更早的 {count} 次调用",
   "graph.advisor.log.asked": "应{caller}的请求开始检查",
   "graph.advisor.reveal": "显示征求建议的块",

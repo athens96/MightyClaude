@@ -367,6 +367,7 @@
   "graph.advisor.totals.tokens": "Tokens read {tokens}",
   "graph.advisor.note.hidden": "The advice goes to Claude encrypted. Its text is not shown.",
   "graph.advisor.empty": "Not consulted yet",
+  "graph.advisor.none": "Not consulted",
   "graph.advisor.earlier": "{count} earlier calls",
   "graph.advisor.log.asked": "started reviewing for {caller}",
   "graph.advisor.reveal": "Show the block that asked",

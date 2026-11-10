@@ -245,6 +245,58 @@ struct GraphAdvisorTests {
         #expect(advisor.model == "claude-opus-5-5" && advisor.calls.isEmpty && advisor.count == 0)
     }
 
+    // MARK: A transcript
+
+    /// A session transcript writes a message as the stream does, one line a block, but every line carries the advisor
+    /// the message ran with (`advisorModel`) and the message's final usage with its `iterations`, and there is no
+    /// `result` line. (Seen in the transcript Claude Code 2.1.322 wrote for the recorded request.)
+    private func transcriptLine(_ content: [[String: Any]], id: String = "msg_1", at time: String, advisor: String? = "claude-opus-5-5",
+                                iterations: [[String: Any]]) -> [String: Any] {
+        var value: [String: Any] = ["type": "assistant", "uuid": UUID().uuidString, "timestamp": time, "requestedModel": "claude-sonnet-5-5",
+                                    "message": ["id": id, "model": "claude-sonnet-5-5", "content": content,
+                                                "usage": ["input_tokens": 4, "output_tokens": 177, "cache_read_input_tokens": 43_694, "iterations": iterations]]]
+        if let advisor { value["advisorModel"] = advisor }
+        return value
+    }
+
+    @Test func aTranscriptNamesTheAdvisorAndItsTokensOnTheMessageItself() throws {
+        let iterations: [[String: Any]] = [["type": "message", "input_tokens": 2, "output_tokens": 174], Self.advisorMessage(input: 34_217, output: 570),
+                                           ["type": "message", "input_tokens": 2, "output_tokens": 3]]
+        let (parser, session) = pane(runID: "transcript")
+        try send(transcriptLine([["type": "thinking", "thinking": ""]], at: "2026-11-10T18:16:51.656Z", iterations: iterations), to: parser)
+        try send(transcriptLine([["type": "server_tool_use", "id": "srvtoolu_1", "name": "advisor", "input": [String: Any]()]], at: "2026-11-10T18:16:51.658Z", iterations: iterations), to: parser)
+        try send(transcriptLine([["type": "advisor_tool_result", "tool_use_id": "srvtoolu_1", "content": Self.redacted]], at: "2026-11-10T18:16:59.540Z", iterations: iterations), to: parser)
+        try send(transcriptLine([["type": "text", "text": "No"]], at: "2026-11-10T18:16:59.541Z", iterations: iterations), to: parser)
+        parser.flush(); parser.finishGraph(state: "completed")
+        let advisor = try #require(session().mightyGraphRuns[0].advisor)
+        // The message's four lines carry the same usage: the advisor's tokens are counted once.
+        #expect(advisor.model == "claude-opus-5-5")
+        #expect(advisor.usage == GraphTokenUsage(inputTokens: 34_217, outputTokens: 570))
+        #expect(advisor.calls.map(\.state) == ["done"] && advisor.calls.first?.endedAt == "2026-11-10T18:16:59.540Z")
+
+        // A message that ran with an advisor and never asked it still says the advisor was on.
+        let (plain, other) = pane(runID: "unasked")
+        try send(transcriptLine([["type": "text", "text": "Done."]], at: "2026-11-10T18:17:00Z", iterations: [["type": "message", "input_tokens": 2, "output_tokens": 3]]), to: plain)
+        #expect(other().mightyGraphRuns[0].advisor == GraphAdvisor(model: "claude-opus-5-5"))
+        // And one that ran without says nothing.
+        let (none, third) = pane(runID: "none")
+        try send(transcriptLine([["type": "text", "text": "Done."]], at: "2026-11-10T18:17:00Z", advisor: nil, iterations: [["type": "message", "input_tokens": 2, "output_tokens": 3]]), to: none)
+        #expect(third().mightyGraphRuns[0].advisor == nil)
+    }
+
+    @Test func tokensSaidByTheMessagesAndByTheResultAreNotCountedTwice() throws {
+        let (parser, session) = pane()
+        let first = [Self.advisorMessage(input: 100, output: 10)], second = [Self.advisorMessage(input: 300, output: 30)]
+        try send(transcriptLine([["type": "text", "text": "a"]], id: "msg_1", at: "2026-11-10T10:00:00Z", iterations: first), to: parser)
+        try send(transcriptLine([["type": "text", "text": "b"]], id: "msg_2", at: "2026-11-10T10:00:01Z", iterations: second), to: parser)
+        // A later line of a message carries its newer figure: the message is counted at that figure.
+        try send(transcriptLine([["type": "text", "text": "b2"]], id: "msg_2", at: "2026-11-10T10:00:02Z", iterations: [Self.advisorMessage(input: 320, output: 32)]), to: parser)
+        #expect(session().mightyGraphRuns[0].advisor?.usage == GraphTokenUsage(inputTokens: 420, outputTokens: 42))
+        // A result that says the same again adds nothing; one that says more is the figure.
+        try send(result("done", iterations: [Self.advisorMessage(input: 420, output: 42)]), to: parser)
+        #expect(session().mightyGraphRuns[0].advisor?.usage == GraphTokenUsage(inputTokens: 420, outputTokens: 42))
+    }
+
     // MARK: Bounds and saves
 
     @Test func onlyTheNewestConsultationsAreKeptAndTheCountSaysAll() throws {
@@ -291,6 +343,15 @@ struct GraphAdvisorTests {
         #expect(restored.advisor?.calls.map(\.state) == ["stopped", "error"] && restored.configuredAdvisor == "opus")
         run.configuredAdvisor = "not a model"
         #expect(MightyGraphSupport.normalized([run], restoring: false, budget: &budget).first?.configuredAdvisor == nil)
+        // A save with no room left keeps the run and drops the record whole, never a consultation without its text.
+        var advised = MightyGraphRun(id: "r3", input: "go", status: "completed", provider: "claude",
+                                     advisor: GraphAdvisor(calls: [GraphAdvisorCall(id: "srvtoolu_t", state: "done", text: String(repeating: "x", count: 900))]))
+        var small = 1_200
+        #expect(MightyGraphSupport.normalized([advised], restoring: false, budget: &small).first.map { $0.advisor == nil } == true)
+        var roomy = 100_000
+        #expect(MightyGraphSupport.normalized([advised], restoring: false, budget: &roomy).first?.advisor?.calls.first?.text?.count == 900)
+        advised.advisor = nil
+        #expect(StateRepository.approximateGraphBytes([advised]) < StateRepository.approximateGraphBytes([run]))
         let old = try JSONDecoder().decode(MightyGraphRun.self, from: Data(#"{"id":"r0","input":"go","status":"completed","rootEntries":[],"agents":[],"resultEntries":[]}"#.utf8))
         #expect(old.advisor == nil && old.configuredAdvisor == nil)
         let plain = try JSONEncoder().encode(MightyGraphRun(id: "r2", input: "go", status: "completed", provider: "claude"))

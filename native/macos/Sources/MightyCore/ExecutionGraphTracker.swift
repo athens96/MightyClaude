@@ -129,6 +129,13 @@ final class ExecutionGraphTracker {
     private var advisorOrder: [String] = []
     /// The blocks that have called a file-changing tool, for `GraphAdvisorCall.beforeChange`.
     private var changedFiles = Set<String>()
+    /// What the advisor's own messages cost, by the run main block that keeps it, from the two places that say so: a
+    /// message's own usage (a transcript line's, by owner and message id, each message once) and a turn's result (the
+    /// live stream's). The block carries the larger of the two sums, so a stream that had both would not count twice.
+    private var advisorMessageUsage: [String: GraphTokenUsage] = [:]
+    private var advisorMessageOrder: [String] = []
+    private var advisorMessageSum: [String: GraphTokenUsage] = [:]
+    private var advisorResultSum: [String: GraphTokenUsage] = [:]
 
     init(runID: String, input: String?, provider: String = "claude", configuredModel: String? = nil, emit: @escaping (ExecutionGraphNode) -> Void) {
         self.runID = runID; mainID = ExecutionGraphSupport.mainNodeID(runId: runID); self.provider = provider; self.configuredModel = configuredModel; self.emit = emit
@@ -351,6 +358,7 @@ final class ExecutionGraphTracker {
         }
         if type == "result", parentTool == nil { advisorTurnEnded(value) }
         if type == "assistant", let message = value["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
+            advisorNoted(value, message: message, root: parentTool == nil)
             // The advisor is a server tool: its call and its result are blocks of the caller's own message and make no
             // tool block. In the order they stand, so a tool call after a consultation says the work went on.
             for block in blocks {
@@ -899,30 +907,72 @@ final class ExecutionGraphTracker {
             node.advisor = advisor
         }
     }
+    /// The advisor's own messages among a usage's `iterations` (`type: "advisor_message"`): their tokens, and the
+    /// advisor's model as the last of them names it.
+    private static func advisorMessages(_ usage: Any?) -> (tokens: GraphTokenUsage, model: String?) {
+        var tokens = GraphTokenUsage()
+        var model: String?
+        let iterations = (usage as? [String: Any])?["iterations"] as? [Any] ?? []
+        for case let iteration as [String: Any] in iterations.prefix(4_096) where iteration["type"] as? String == "advisor_message" {
+            if let usage = GraphTokenUsage.parse(iteration) { tokens = tokens + usage }
+            if let name = iteration["model"] as? String, CoreValidation.model(name) { model = name }
+        }
+        return (tokens, model)
+    }
+    /// What a message itself says of the advisor. A transcript's assistant line names the advisor its message ran
+    /// with (`advisorModel`) and carries the message's final usage, the advisor's own messages among its iterations;
+    /// the live stream's messages have neither (its turn's result has the iterations).
+    private func advisorNoted(_ frame: [String: Any], message: [String: Any], root: Bool) {
+        guard provider == "claude" else { return }
+        let said = Self.advisorMessages(message["usage"])
+        let model = said.model ?? (frame["advisorModel"] as? String).flatMap { CoreValidation.model($0) ? $0 : nil }
+        guard model != nil || !said.tokens.isEmpty else { return }
+        let owner = advisorOwner(root: root)
+        if !said.tokens.isEmpty, let id = Self.key(message["id"]) {
+            // A message comes as several lines that all carry its usage: counted once, at its latest figure.
+            let key = owner + "|" + id
+            let previous = advisorMessageUsage[key]
+            if previous == nil {
+                advisorMessageOrder.append(key)
+                if advisorMessageOrder.count > 1_024 { advisorMessageUsage.removeValue(forKey: advisorMessageOrder.removeFirst()) }
+            }
+            if previous != said.tokens {
+                advisorMessageUsage[key] = said.tokens
+                advisorMessageSum[owner] = (advisorMessageSum[owner] ?? GraphTokenUsage()) - (previous ?? GraphTokenUsage()) + said.tokens
+            }
+        }
+        publishAdvisor(owner, model: model)
+    }
+    /// The advisor's model and tokens on run main block `owner`: the larger of what its messages and what its turns'
+    /// results said of the tokens.
+    private func publishAdvisor(_ owner: String, model: String?, _ settle: ((inout GraphAdvisor) -> Void)? = nil) {
+        let usage = [advisorMessageSum[owner], advisorResultSum[owner]].compactMap { $0 }.max { $0.total < $1.total }
+        guard let current = nodes[owner], current.kind == "main" else { return }
+        let known = current.advisor
+        guard settle != nil || (model != nil && known?.model != model) || (usage != nil && known?.usage != usage) else { return }
+        update(owner) { node in
+            var advisor = node.advisor ?? GraphAdvisor()
+            if let model { advisor.model = model }
+            if let usage { advisor.usage = usage }
+            settle?(&advisor)
+            node.advisor = advisor
+        }
+    }
     /// A root turn's result: what it says the advisor's own messages cost (`usage.iterations[]` of type
     /// `advisor_message`, which also names the advisor's model), and the end of what the main session still had out.
     private func advisorTurnEnded(_ frame: [String: Any]) {
         guard provider == "claude" else { return }
         let owner = advisorOwner(root: true)
-        var tokens = GraphTokenUsage()
-        var model: String?
-        let iterations = (frame["usage"] as? [String: Any])?["iterations"] as? [Any] ?? []
-        for case let iteration as [String: Any] in iterations.prefix(4_096) where iteration["type"] as? String == "advisor_message" {
-            if let usage = GraphTokenUsage.parse(iteration) { tokens = tokens + usage }
-            if let name = iteration["model"] as? String, CoreValidation.model(name) { model = name }
-        }
+        let said = Self.advisorMessages(frame["usage"])
+        if !said.tokens.isEmpty { advisorResultSum[owner] = (advisorResultSum[owner] ?? GraphTokenUsage()) + said.tokens }
         let out = nodes[owner]?.advisor?.calls.contains { $0.caller == nil && $0.state == "consulting" } == true
-        guard !tokens.isEmpty || model != nil || out else { return }
+        guard !said.tokens.isEmpty || said.model != nil || out else { return }
         let time = now
-        update(owner) { node in
-            var advisor = node.advisor ?? GraphAdvisor()
-            if !tokens.isEmpty { advisor.usage = (advisor.usage ?? GraphTokenUsage()) + tokens }
-            if let model { advisor.model = model }
+        publishAdvisor(owner, model: said.model, !out ? nil : { advisor in
             for index in advisor.calls.indices where advisor.calls[index].caller == nil && advisor.calls[index].state == "consulting" {
                 advisor.calls[index].state = "stopped"; advisor.calls[index].endedAt = time
             }
-            node.advisor = advisor
-        }
+        })
     }
     /// The process ended: a consultation still out never got its result.
     private func stopAdvisorCalls() {

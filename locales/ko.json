@@ -367,6 +367,7 @@
   "graph.advisor.totals.tokens": "읽은 토큰 {tokens}",
   "graph.advisor.note.hidden": "조언은 암호화되어 Claude에게만 전달됩니다. 내용은 표시되지 않습니다.",
   "graph.advisor.empty": "아직 조언을 구하지 않았습니다",
+  "graph.advisor.none": "조언을 구하지 않았습니다",
   "graph.advisor.earlier": "이전 호출 {count}개",
   "graph.advisor.log.asked": "{caller}의 요청으로 검토 시작",
   "graph.advisor.reveal": "조언을 구한 블록 보기",

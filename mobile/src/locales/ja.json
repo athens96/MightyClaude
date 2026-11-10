@@ -367,6 +367,7 @@
   "graph.advisor.totals.tokens": "読んだトークン {tokens}",
   "graph.advisor.note.hidden": "助言は暗号化されてClaudeにだけ届きます。内容は表示されません。",
   "graph.advisor.empty": "まだ助言を求めていません",
+  "graph.advisor.none": "助言を求めませんでした",
   "graph.advisor.earlier": "以前の呼び出し {count} 件",
   "graph.advisor.log.asked": "{caller}の依頼で確認を開始",
   "graph.advisor.reveal": "助言を求めたブロックを表示",

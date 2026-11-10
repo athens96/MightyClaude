@@ -639,6 +639,13 @@ advisor's `model` and its tokens between the main model's `message` entries, and
 `modelUsage` has the advisor's model beside the main one. The tracker keeps the
 consultation on the run's main block (`advisor`: who asked, when, how it ended,
 the advisor's model and tokens) and makes no tool block or tool row for it.
+Nothing in the live stream says an advisor is on before it is asked: neither the
+`init` frame nor a message frame names it. The session transcript Claude Code
+wrote for the same request does: each `assistant` line has a top-level
+`advisorModel` (the advisor's resolved model), and its `message.usage` is the
+message's final usage, `iterations` included; a transcript has no `result`
+line. The tracker reads both when a line carries them (requests read back from
+the transcript) and counts a message's advisor tokens once.
 
 ## Help capture demo profile (`fixtures/demo-profile.json`)
 

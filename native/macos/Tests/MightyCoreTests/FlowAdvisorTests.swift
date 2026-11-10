@@ -45,10 +45,19 @@ struct FlowAdvisorTests {
             let waiting = FlowAdvisor.band(run("on", configured: "opus"))
             #expect(waiting?.header == "조언자 · Opus · 요청 · 대기 중")
             #expect(waiting?.rows.isEmpty == true && waiting?.calls == 0 && waiting?.totals == "호출 0" && waiting?.note == nil)
+            #expect(waiting?.empty == "아직 조언을 구하지 않았습니다")
+            // The run ended without asking: the band says so and waits for nothing.
+            let unused = FlowAdvisor.band(run("ended", status: "completed", configured: "opus", output: "done"))
+            #expect(unused?.header == "조언자 · Opus · 요청" && unused?.empty == "조언을 구하지 않았습니다")
             // Not known to be on, but the stream showed it at work.
-            #expect(FlowAdvisor.band(run("used", calls: [call("srvtoolu_a", at: 1, state: "consulting")]))?.header == "조언자 · 검토 중")
+            let used = FlowAdvisor.band(run("used", calls: [call("srvtoolu_a", at: 1, state: "consulting")]))
+            #expect(used?.header == "조언자 · 검토 중" && used?.empty == nil)
             // Only what the turn's result said it cost (a transcript read from its middle).
             #expect(FlowAdvisor.band(run("cost", status: "completed", model: "claude-opus-5-5", usage: GraphTokenUsage(inputTokens: 900)))?.header == "조언자 · Opus 5.5")
+            // A notice run inherits what its request was started with: it has a band once its own turn asked, with the
+            // model its request named until a result names one.
+            #expect(FlowAdvisor.band(run("r:notice:1", configured: "opus", notice: true)) == nil)
+            #expect(FlowAdvisor.band(run("r:notice:1", calls: [call("srvtoolu_n", at: 1, until: 2)], configured: "opus", notice: true))?.header == "조언자 · Opus · 요청 · 대기 중")
             // Another agent has no advisor, whatever its run carries.
             #expect(FlowAdvisor.band(run("codex", configured: "opus", provider: "codex")) == nil)
         }

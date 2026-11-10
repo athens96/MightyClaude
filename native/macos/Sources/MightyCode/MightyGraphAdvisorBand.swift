@@ -23,8 +23,8 @@ struct MightyGraphAdvisorBand: View {
             VStack(alignment: .leading, spacing: 0) {
                 header(ink)
                 Divider().overlay(Palette.border)
-                if band.calls == 0 {
-                    Text(L("graph.advisor.empty")).font(.ui(size: 10.5)).foregroundStyle(Palette.ink2).lineLimit(1)
+                if let empty = band.empty {
+                    Text(verbatim: empty).font(.ui(size: 10.5)).foregroundStyle(Palette.ink2).lineLimit(1)
                         .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH)
                         .frame(height: FlowAdvisor.rowHeight, alignment: .leading)
                         .accessibilityIdentifier("mighty-advisor-empty-\(nodeID)")

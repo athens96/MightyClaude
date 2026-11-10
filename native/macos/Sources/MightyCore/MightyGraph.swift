@@ -357,7 +357,9 @@ public enum MightyGraphSupport {
             run.noticeRun = run.noticeRun == true ? true : nil
             run.configuredEffort = run.configuredEffort.flatMap { CoreValidation.effort($0) ? $0 : nil }
             run.configuredAdvisor = run.configuredAdvisor.flatMap { CoreValidation.model($0) ? $0 : nil }
-            run.advisor = run.advisor?.normalized(restoring: restoring)
+            // The advisor's record is kept whole or not at all: a consultation without its text would read as one
+            // whose reply had none.
+            run.advisor = run.advisor?.normalized(restoring: restoring).flatMap { $0.byteCount <= max(0, budget) ? $0 : nil }
             budget -= run.advisor?.byteCount ?? 0
             run.noticeTitle = run.noticeRun == true ? run.noticeTitle.map { bounded($0, maximum: 240, budget: &budget) }.flatMap { $0.isEmpty ? nil : $0 } : nil
             // Prefer the actual final answer over older intermediate output.

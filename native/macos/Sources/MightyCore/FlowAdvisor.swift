@@ -79,6 +79,12 @@ public enum FlowAdvisor {
             return parts.joined(separator: " · ")
         }
         public var note: String? { hidesText ? L("graph.advisor.note.hidden") : nil }
+        /// What a band without a consultation says in its rows' place: not asked yet while the run goes on, not asked
+        /// once it ended.
+        public var empty: String? {
+            guard calls == 0 else { return nil }
+            return state == nil ? L("graph.advisor.none") : L("graph.advisor.empty")
+        }
     }
 
     /// The band of `run`, nil for a run without an advisor: one that was started with none known to be on and never
@@ -106,9 +112,12 @@ public enum FlowAdvisor {
                     usage: advisor.usage, hidesText: advisor.calls.contains { $0.state == "done" && $0.text == nil })
     }
 
-    /// A run has a band when an advisor was known to be on when it started, or when its stream showed one at work.
+    /// A run has a band when its stream showed an advisor at work, or when it is a request that was started with one
+    /// known to be on. A notice run, which only inherits what its request was started with, has one once its own turn
+    /// asked.
     public static func shows(_ run: MightyGraphRun) -> Bool {
-        (run.provider ?? "claude") == "claude" && (run.configuredAdvisor != nil || run.advisor != nil)
+        guard (run.provider ?? "claude") == "claude" else { return false }
+        return run.advisor != nil || (run.configuredAdvisor != nil && run.noticeRun != true)
     }
 
     /// Where a consultation stands in its caller's work. `callerAnswered`: the caller ended with its answer.
