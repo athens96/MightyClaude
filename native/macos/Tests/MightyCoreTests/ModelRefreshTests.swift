@@ -3,6 +3,12 @@ import Testing
 @testable import MightyCore
 
 struct ModelRefreshTests {
+    @Test func theModelListProbeLetsTheCLIFetchTheAccountsCurrentModels() {
+        // With DISABLE_TELEMETRY the CLI answers with its built-in list (Fable 5.2 read as Fable 5.1 [1m]).
+        #expect(ProviderService.quietClaudeEnvironment["DISABLE_TELEMETRY"] == nil)
+        #expect(ProviderService.quietClaudeEnvironment["DISABLE_AUTOUPDATER"] == "1" && ProviderService.quietClaudeEnvironment["CLAUDE_CODE_SAFE_MODE"] == "1")
+    }
+
     @Test func resumedClaudeDefaultExplicitlyClearsSavedModel() throws {
         let plugin = URL(fileURLWithPath: "/fixture/plugin")
         var request = StartRunRequest(sessionId: "session", workspaceId: "workspace", input: "fixture", resumeId: "old-conversation")

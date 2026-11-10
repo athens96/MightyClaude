@@ -59,7 +59,10 @@ public actor ProviderService {
     }
 
     /// The environment of a headless Claude CLI run that must stay quiet: the model-list probe and the work map's summary.
-    static let quietClaudeEnvironment: [String: String] = ["CLAUDE_CODE_SAFE_MODE": "1", "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1", "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1", "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1", "DISABLE_AUTOUPDATER": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1", "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1"]
+    /// `DISABLE_TELEMETRY` is left out on purpose: with it the CLI skips fetching the account's current model
+    /// configuration and answers with its built-in list, so a model released after the CLI was built (Fable 5.2 on
+    /// 2.1.322) never reaches the model menu, and the `fable` alias reads as the older model.
+    static let quietClaudeEnvironment: [String: String] = ["CLAUDE_CODE_SAFE_MODE": "1", "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1", "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1", "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1", "DISABLE_AUTOUPDATER": "1", "DISABLE_ERROR_REPORTING": "1", "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1"]
 
     public nonisolated static func capabilities(provider: String, version: String?) -> ProviderCapabilities {
         var value = ProviderOptions.fallbackRuntime(provider).capabilities
