@@ -827,10 +827,19 @@ final class ExecutionGraphTracker {
     }
     /// Remember one message's latest usage. Returns the figure it replaces,
     /// or nil when nothing changed.
+    /// A message comes as several events that share its id, one content block each (its thinking, then each of its tool
+    /// calls): the tool calls it names are the union over those events, in the order they came, so the message's record
+    /// names every call it made and not only the ones its first event carried.
     private func noteUsage(_ usage: GraphTokenUsage, message: String, node: String, model: String?, activityIds: [String], markedAsConfigured: Bool) -> GraphTokenUsage? {
         guard nodes[node] != nil else { return nil }
         let previous = messageUsage[message]
-        guard previous != usage else { return nil }
+        var named = false
+        if previous != nil {
+            var known = messageActivityIds[message] ?? []
+            for id in activityIds where !known.contains(id) { known.append(id); named = true }
+            if named { messageActivityIds[message] = known }
+        }
+        guard previous != usage || named else { return nil }
         if previous == nil {
             messageOrder.append(message)
             if messageOrder.count > 1_024 { messageUsage.removeValue(forKey: messageOrder.removeFirst()) }
