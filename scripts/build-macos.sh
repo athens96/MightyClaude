@@ -20,7 +20,7 @@ mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources/mods"
 cp "$BIN_PATH/MightyCode" "$APP_PATH/Contents/MacOS/MightyCode"
 # `ditto` merges rather than replaces, so a Styles/ left by an earlier build
 # would satisfy the gate below even after the manifests stopped being packaged.
-STYLE_BUNDLE="$APP_PATH/Contents/Resources/MightyCode_MightyCore.bundle"
+STYLE_BUNDLE="$APP_PATH/Contents/Resources/MightyClaude_MightyCore.bundle"
 rm -rf "$STYLE_BUNDLE/Contents/Resources/Styles" "$STYLE_BUNDLE/Styles"
 # SwiftPM resource bundles contain Ghostty's terminfo and shell integration.
 # They must travel with the app; a development checkout is not a runtime dependency.

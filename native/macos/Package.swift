@@ -2,7 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "MightyCode",
+    // Stays "MightyClaude" after the rename to Mighty Code: SwiftPM names the resource bundle after the package
+    // (MightyClaude_MightyCore.bundle), and the frozen style engine finds its manifests there (docs/mighty-styles.md §8.3).
+    name: "MightyClaude",
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "MightyCore", targets: ["MightyCore"]),

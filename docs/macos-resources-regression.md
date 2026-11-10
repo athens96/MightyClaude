@@ -16,13 +16,13 @@ the conclusion, and what was added to prevent recurrence.
   icons, Info.plist, then signs.
 - `native/macos/Package.swift` — `MightyCore` target declares
   `.copy("Resources/Styles")` and `.copy("Resources/Locales")` which SwiftPM
-  copies into `MightyCode_MightyCore.bundle`. The `en.json` and `ko.json`
+  copies into `MightyClaude_MightyCore.bundle`. The `en.json` and `ko.json`
   files live under `native/macos/Sources/MightyCore/Resources/Locales/`.
 
 ### Locale lookup path (`LocaleBundle.swift`)
 `loadCatalog` walks these candidate paths in order:
-1. Inside `MightyCode_MightyCore.bundle/Contents/Resources/Locales/` (macOS SwiftPM layout)
-2. Inside `MightyCode_MightyCore.bundle/Locales/` (flat layout)
+1. Inside `MightyClaude_MightyCore.bundle/Contents/Resources/Locales/` (macOS SwiftPM layout)
+2. Inside `MightyClaude_MightyCore.bundle/Locales/` (flat layout)
 3. `Bundle.main.resourceURL/Locales/`
 4. `Bundle.main.resourceURL/` (bare filename)
 5. `locales/<lang>.json` relative to cwd
@@ -66,7 +66,7 @@ $DESTINATION` but the order of registration events in the system database is
 not guaranteed, and a fresh launch via Spotlight or Dock could still pick the
 stale copy in rare race windows.
 
-A secondary candidate is that the `MightyCode_MightyCore.bundle` was copied
+A secondary candidate is that the `MightyClaude_MightyCore.bundle` was copied
 with a SwiftPM flat layout (`Locales/ko.json` at the root of the bundle) on one
 build and a macOS layout (`Contents/Resources/Locales/ko.json`) on another, and
 both paths were present with one being empty or stale.

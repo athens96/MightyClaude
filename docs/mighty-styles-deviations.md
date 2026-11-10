@@ -14,7 +14,7 @@ docs/mighty-styles.md를 구현하면서 계약이 모호하거나 이 환경에
 
 ### 2. 번들 리소스의 실제 경로와 탐색 후보 (§3.2)
 
-계약은 `<후보>/MightyCode_MightyCore.bundle/Styles`를 찾으라고 하고, 후보를 `Bundle.main.resourceURL` · `Bundle(for:).resourceURL` · `Bundle.main.bundleURL` 셋으로 고정한다. 실측: ① macOS에서 SwiftPM이 만드는 리소스 번들은 **`Contents/Resources/Styles`** 구조다(평평한 `Styles`가 아니다). ② `swift test`에서 번들은 테스트 러너(`MightyCoreTests.xctest`)의 **형제**로 놓이므로 세 후보 중 어느 것도 그 폴더를 가리키지 않는다.
+계약은 `<후보>/MightyClaude_MightyCore.bundle/Styles`를 찾으라고 하고, 후보를 `Bundle.main.resourceURL` · `Bundle(for:).resourceURL` · `Bundle.main.bundleURL` 셋으로 고정한다. 실측: ① macOS에서 SwiftPM이 만드는 리소스 번들은 **`Contents/Resources/Styles`** 구조다(평평한 `Styles`가 아니다). ② `swift test`에서 번들은 테스트 러너(`MightyCoreTests.xctest`)의 **형제**로 놓이므로 세 후보 중 어느 것도 그 폴더를 가리키지 않는다.
 
 한 일: 후보에 `Bundle(for:).bundleURL` · 실행 파일의 폴더를 더하고, 각 후보 아래에서 `Contents/Resources/Styles`와 평평한 `Styles`를 **둘 다** 본다. 트랩 없는 탐색이라는 원칙은 그대로다(`Bundle.module` 미사용, 못 찾으면 빈 배열). `scripts/build-macos.sh`의 존재 확인도 두 경로를 모두 받는다. `.app`을 **담고 있는** 폴더는 후보에서 뺐다 — 리뷰 지적대로 거기 떨어진 번들이 사전 승인된 `bundled` 출처로 읽히며, 올바른 배치에서는 쓰이지 않는 후보다. 계약 §3.2에 그 문장을 되접어 넣었다.
 

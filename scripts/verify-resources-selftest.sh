@@ -39,7 +39,7 @@ echo "--- case 2: broken Locales ---"
 COPY_NO_LOCALES="$SCRATCH/no-locales/MightyCode.app"
 mkdir -p "$SCRATCH/no-locales"
 cp -R "$APP" "$COPY_NO_LOCALES"
-CORE_BUNDLE="$COPY_NO_LOCALES/Contents/Resources/MightyCode_MightyCore.bundle"
+CORE_BUNDLE="$COPY_NO_LOCALES/Contents/Resources/MightyClaude_MightyCore.bundle"
 # Remove both layout variants so neither path finds the catalogs.
 rm -rf "$CORE_BUNDLE/Contents/Resources/Locales" "$CORE_BUNDLE/Locales"
 set +e

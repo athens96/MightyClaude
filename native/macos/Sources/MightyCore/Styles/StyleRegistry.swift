@@ -228,7 +228,7 @@ public struct StyleRequestTitles: Sendable {
 final class BundledStyleMarker {}
 
 public enum BundledStyleSource {
-    public static let bundleName = "MightyCode_MightyCore.bundle"
+    public static let bundleName = "MightyClaude_MightyCore.bundle"
     public static let directoryName = "Styles"
 
     /// The places the resource bundle sits: beside the app's own resources in

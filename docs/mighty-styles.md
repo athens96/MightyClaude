@@ -639,7 +639,7 @@ RunEventStateSource: {
 
 #### 1.16.4 위젯
 
-위젯 값은 7장 폰 페이로드 `panel.widgets` 배열로 전달된다. Mac 패널과 폰은 **같은 캐시된 읽기**에서 같은 순서(파일 소스 먼저, 그다음 실행 이벤트, 각각 선언 순서)로, 아래 같은 모양으로 그린다. Mac은 `GuidedPanel`(`native/macos/Sources/MightyCode/GuidedPanel.swift`의 `stateWidgets`)이 준비물 블록 아래·그룹 지도 위에 그리고, 폰은 `mobile/src/components/guided-panel.tsx`의 `StateWidget`이 같은 자리에 그린다. 그리는 쪽은 파일을 읽지 않는다 — 파일 소스는 메인 스레드 밖에서 읽어 캐시해 두고(§1.16.1), 패널은 `AppStore.styleState(_:for:)`가 돌려주는 캐시만 쓴다.
+위젯 값은 7장 폰 페이로드 `panel.widgets` 배열로 전달된다. Mac 패널과 폰은 **같은 캐시된 읽기**에서 같은 순서(파일 소스 먼저, 그다음 실행 이벤트, 각각 선언 순서)로, 아래 같은 모양으로 그린다. Mac은 `GuidedPanel`(`native/macos/Sources/MightyClaude/GuidedPanel.swift`의 `stateWidgets`)이 준비물 블록 아래·그룹 지도 위에 그리고, 폰은 `mobile/src/components/guided-panel.tsx`의 `StateWidget`이 같은 자리에 그린다. 그리는 쪽은 파일을 읽지 않는다 — 파일 소스는 메인 스레드 밖에서 읽어 캐시해 두고(§1.16.1), 패널은 `AppStore.styleState(_:for:)`가 돌려주는 캐시만 쓴다.
 
 위젯 값을 화면 값으로 바꾸는 규칙은 한 곳씩에 있다 — Mac은 `MightyCore`의 `StyleWidgetPresentation`(`native/macos/Sources/MightyCore/Styles/StyleWidgetPresentation.swift`), 폰은 `mobile/src/lib/styles.ts`의 `parseWidgets`·`progressBarDisplay`. 두 쪽 테스트(`StyleWidgetPresentationTests`, `mobile/src/__tests__/styles.test.ts`의 "state widgets")가 같은 사례를 같은 기대값으로 확인하고, `styles/golden/claude-plan.panel.json`의 `withState` 사례를 두 쪽이 함께 읽는다(v6까지는 Superpowers의 골든이었다). 이 사례는 손으로 만든 값이 아니라 실제 엔진(`StyleStateEngine.reading`)이 매니페스트 자신의 `stateSources`를 고정 입력(체크리스트 3/7, 실행 이벤트 고정 목록, 1.17의 계획 모드 상태)으로 읽은 결과이고, 라벨 문구가 앱 언어를 따르므로 기록·검증은 한국어로 고정해서 한다(`StyleGolden.withKoreanLocale`).
 
@@ -880,23 +880,23 @@ v5의 상태 소스가 워크스페이스 파일과 실행 이벤트를 읽었�
 
 ### 3.2 번들 매니페스트의 포장과 안전한 적재
 
-파일은 `native/macos/Sources/MightyCore/Resources/Styles/{ouroboros,claude-plan}.json`에 두고(v5에 Superpowers, v6에 클러드 플랜이 더해졌고 v7에서 Paperthin·Superpowers를 지웠다) `Package.swift`의 `MightyCore` 타깃에 `resources: [.copy("Resources/Styles")]`를 선언한다. SwiftPM이 `MightyCode_MightyCore.bundle`을 빌드 산출물 옆에 만들고, `scripts/build-macos.sh:23-27`의 기존 루프가 `$BIN_PATH/*.bundle`을 `Contents/Resources/`로 그대로 복사한다 — Ghostty의 터미널 리소스가 이미 그렇게 앱 안으로 들어간다.
+파일은 `native/macos/Sources/MightyCore/Resources/Styles/{ouroboros,claude-plan}.json`에 두고(v5에 Superpowers, v6에 클러드 플랜이 더해졌고 v7에서 Paperthin·Superpowers를 지웠다) `Package.swift`의 `MightyCore` 타깃에 `resources: [.copy("Resources/Styles")]`를 선언한다. SwiftPM이 `MightyClaude_MightyCore.bundle`을 빌드 산출물 옆에 만들고, `scripts/build-macos.sh:23-27`의 기존 루프가 `$BIN_PATH/*.bundle`을 `Contents/Resources/`로 그대로 복사한다 — Ghostty의 터미널 리소스가 이미 그렇게 앱 안으로 들어간다.
 
 **`Bundle.module`은 쓰지 않는다.** SwiftPM이 만들어 주는 접근자는 번들을 못 찾으면 `fatalError`로 트랩하므로, 포장 실수가 사용자의 앱을 즉사시킨다. 대신 트랩 없는 탐색을 직접 쓴다.
 
 ```
 BundledStyleSource.directories() -> [URL]
   후보 = [ Bundle.main.resourceURL, Bundle(for: BundledStyleMarker.self).resourceURL, Bundle.main.bundleURL ]
-  각 후보 + "MightyCode_MightyCore.bundle/Styles" 중 존재하는 디렉터리를 순서대로 돌려준다.
+  각 후보 + "MightyClaude_MightyCore.bundle/Styles" 중 존재하는 디렉터리를 순서대로 돌려준다.
   하나도 없으면 빈 배열.
 ```
-후보에 **`.app`을 담고 있는 폴더는 넣지 않는다.** 거기에 떨어진 `MightyCode_MightyCore.bundle`은 `bundled` 출처로 읽히고, 그것은 사전 승인이며 예약 id·예약 이름·`ToolSearch` 자동 허용이 모두 허용되고 승인 카드가 뜨지 않는다는 뜻이다. 올바로 조립된 앱은 이 후보를 한 번도 쓰지 않으므로 잃을 것이 없다.
+후보에 **`.app`을 담고 있는 폴더는 넣지 않는다.** 거기에 떨어진 `MightyClaude_MightyCore.bundle`은 `bundled` 출처로 읽히고, 그것은 사전 승인이며 예약 id·예약 이름·`ToolSearch` 자동 허용이 모두 허용되고 승인 카드가 뜨지 않는다는 뜻이다. 올바로 조립된 앱은 이 후보를 한 번도 쓰지 않으므로 잃을 것이 없다.
 
 `BundledStyleMarker`는 이 목적만을 위한 **빈 `final class`**다 — `Bundle(for:)`가 `AnyClass`를 받으므로, MightyCore가 그 밖에는 값 타입만 쓰더라도 클래스 하나는 있어야 한다. `Bundle.main.resourceURL`이 `swift test`에서는 테스트 러너의 리소스 폴더를, 조립된 `.app`에서는 `Contents/Resources`를 가리키므로 양쪽 모두 첫 후보에서 잡힌다. 빈 배열이 돌아오면 번들 스타일이 0개가 되고 모든 실행 창이 일반 CLI로 떨어진다 — 크래시는 없다.
 
 그 무해한 실패가 **출시되지 않도록** 두 겹의 관문을 둔다.
 1. `StylesBundledTests`가 매니페스트 2개를 찾아 디코딩·검증하고 `id`가 `claude-plan`·`ouroboros`임을 단언한다. `swift test`에서 잡힌다.
-2. `scripts/build-macos.sh`가 `.app` 조립 직후 `Contents/Resources/MightyCode_MightyCore.bundle/Styles/ouroboros.json`과 `claude-plan.json`의 존재를 확인하고 없으면 0이 아닌 코드로 죽는다.
+2. `scripts/build-macos.sh`가 `.app` 조립 직후 `Contents/Resources/MightyClaude_MightyCore.bundle/Styles/ouroboros.json`과 `claude-plan.json`의 존재를 확인하고 없으면 0이 아닌 코드로 죽는다.
 
 ### 3.3 우선순위와 충돌
 
@@ -946,7 +946,7 @@ BundledStyleSource.directories() -> [URL]
 { "version": 1,
   "records": [
     { "styleId": "acme", "source": "user",
-      "path": "/Users/x/Library/Application Support/MightyCode/styles/acme.json",
+      "path": "/Users/x/Library/Application Support/MightyClaude Native/styles/acme.json",
       "hash": "9f2c…", "state": "approved", "decidedAt": "2026-09-19T08:00:00Z" },
     { "styleId": "repo-flow", "source": "workspace",
       "workspacePath": "/Users/x/Work/repo",
@@ -1348,7 +1348,7 @@ public enum TerminalInputPolicy {
 }
 ```
 
-> **왜 엔진에 두는가 (검증된 제약).** 보안 검토는 "`LocalTerminalSession` 계층에서 스파이로 단언하라"고 했고 그 의도는 옳다 — 오늘 `installIsNeverRun`은 `AppStore` 계층이라 싱크 한 층 위에서 통과한다. 그런데 `Package.swift`에 테스트 타깃은 **`MightyCoreTests` 하나뿐**이고, `LocalTerminalSession`은 실행 파일 타깃 `MightyCode`에 살며 `libghostty-spm`에 의존한다. 그 자리에 테스트를 놓으려면 새 테스트 타깃과 CI에서의 Ghostty 링크가 필요하다.
+> **왜 엔진에 두는가 (검증된 제약).** 보안 검토는 "`LocalTerminalSession` 계층에서 스파이로 단언하라"고 했고 그 의도는 옳다 — 오늘 `installIsNeverRun`은 `AppStore` 계층이라 싱크 한 층 위에서 통과한다. 그런데 `Package.swift`에 테스트 타깃은 **`MightyCoreTests` 하나뿐**이고, `LocalTerminalSession`은 실행 파일 타깃 `MightyClaude`에 살며 `libghostty-spm`에 의존한다. 그 자리에 테스트를 놓으려면 새 테스트 타깃과 CI에서의 Ghostty 링크가 필요하다.
 >
 > 그래서 **싱크 자체를 엔진으로 옮긴다**. 붙여넣기와 Enter를 실제로 부르는 반복문 전체가 `TerminalInputPolicy.apply`이고, `LocalTerminalSession`은 `TerminalPasteSink`를 구현한 얇은 어댑터가 된다(오늘의 재시도 3회·0.9초 지연은 `LocalTerminalSession`에 남는다). 스파이 단언은 요구된 그대로 **싱크에서** 이뤄지고, 새 테스트 타깃은 필요 없다.
 
@@ -1384,7 +1384,7 @@ public enum TerminalInputPolicy {
 
 ---
 
-## 6. 앱(MightyCode) 변경
+## 6. 앱(MightyClaude) 변경
 
 ### 6.1 범용 가이드 패널 — `GuidedPanel.swift` (신규, `OuroborosPanel.swift`·`PaperthinPanel.swift` 대체)
 
@@ -1451,7 +1451,7 @@ public enum TerminalInputPolicy {
 | 26 | `:157-170` `finishOuroborosStep` | `finishGuidedStep` |
 | 27 | `:174-185` `autoAllowOuroborosTool` | `autoAllowGuidedTool` — 승인·해시 확인 후 `evaluator.autoAllowed(toolName:)` |
 | 28 | `:189-195` `ouroborosVisibleRequests` | `guidedVisibleRequests` |
-| 29 | `MightyCode/OuroborosPanel.swift:5-20` `MightyStylePicker` | `Menu` + 배지 + `pending` 행 탭 (6.1) |
+| 29 | `MightyClaude/OuroborosPanel.swift:5-20` `MightyStylePicker` | `Menu` + 배지 + `pending` 행 탭 (6.1) |
 | 30 | `OuroborosPanel.swift:24-122` | `GuidedPanel` |
 | 31 | `PaperthinPanel.swift:8-163` | `GuidedPanel` + `GuidedActionChip` |
 | 32 | `SessionPaneView.swift:14-15` 두 개의 스타일 전용 `@ViewState` | `guidedSelection: GuidedSelection`(startingNew + groupId) 하나 |
@@ -1903,17 +1903,17 @@ v1–v6의 번들 스타일. 행동 28 · 단계 0 · 그룹 4(axis+question) ·
 
 산출물: 5장의 `public` API 전부 + 번들 매니페스트 2개 + `swift test` 통과.
 
-### 레인 B — MightyCode 앱
+### 레인 B — MightyClaude 앱
 
 **레인 A의 5장 API에 대고 쓴다.** 5장의 선언이 확정되면 레인 A의 구현이 끝나기 전에도 시작할 수 있다.
 
 소유 파일:
-- `native/macos/Sources/MightyCode/GuidedPanel.swift`·`GuidedActionChip.swift`·`StyleApprovalSheet.swift`·`StyleSettingsSection.swift` (신규)
-- `native/macos/Sources/MightyCode/OuroborosPanel.swift`·`PaperthinPanel.swift` (삭제)
-- `native/macos/Sources/MightyCode/AppStore+Styles.swift` (`AppStore+Ouroboros.swift`를 이름 바꿔 대체)
-- `native/macos/Sources/MightyCode/AppStore.swift`·`AppStore+Terminals.swift`·`AppStore+MobileRemote.swift`·`AppStore+CLIAccounts.swift`(`autoRun: true` 한 곳)
-- `native/macos/Sources/MightyCode/LocalTerminalSession.swift` (`TerminalPasteSink` 구현으로 축소)
-- `native/macos/Sources/MightyCode/SessionPaneView.swift`·`MightyGraphView.swift`·`ToolPermissionBar.swift`·`AgentQuestionPanel.swift`·`SettingsViews.swift`
+- `native/macos/Sources/MightyClaude/GuidedPanel.swift`·`GuidedActionChip.swift`·`StyleApprovalSheet.swift`·`StyleSettingsSection.swift` (신규)
+- `native/macos/Sources/MightyClaude/OuroborosPanel.swift`·`PaperthinPanel.swift` (삭제)
+- `native/macos/Sources/MightyClaude/AppStore+Styles.swift` (`AppStore+Ouroboros.swift`를 이름 바꿔 대체)
+- `native/macos/Sources/MightyClaude/AppStore.swift`·`AppStore+Terminals.swift`·`AppStore+MobileRemote.swift`·`AppStore+CLIAccounts.swift`(`autoRun: true` 한 곳)
+- `native/macos/Sources/MightyClaude/LocalTerminalSession.swift` (`TerminalPasteSink` 구현으로 축소)
+- `native/macos/Sources/MightyClaude/SessionPaneView.swift`·`MightyGraphView.swift`·`ToolPermissionBar.swift`·`AgentQuestionPanel.swift`·`SettingsViews.swift`
 
 작업 순서: ① `AppStore`의 레지스트리·신뢰 배선과 `guidedStyle`(해시 포함) → ② `TerminalInput` 전환 → ③ `GuidedPanel`·칩·시트 → ④ 선택기(`Menu`)와 설정 화면 → ⑤ 그래프 접두사·아이콘·색·머리말 → ⑥ 권한 훅 이름 변경 → ⑦ `AppStore+MobileRemote`의 투영 배선.
 
