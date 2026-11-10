@@ -114,6 +114,29 @@ Claude·Codex·Antigravity 실행 창은 마이티 보기로 보인다. 같은 �
 - **한계**: Claude 하위 에이전트의 내부 활동은 기록 본문에 없으므로(요청·결과만 있음) 하위 에이전트 블록에는 요청과 최종 응답만 나온다. Codex 하위 스레드는 `collab_tool_call`로 알려진 요청·상태만 보이며 자식 기록은 다시 읽지 않는다. 그림은 다시 불러오지 않는다. Gemini는 마이티 모드가 없으므로(기록은 `~/.gemini/tmp/<프로젝트>/chats/`에 있다) 이전 기록 불러오기를 제공하지 않는다.
 - **기본 화면**: 기본(비 마이티) 대화 표시에는 이 기능을 붙이지 않았다. 대화 표시는 하나의 NSTextView 문서를 통째로 다시 그리므로, 앞에 기록을 붙이면서 스크롤 위치를 지키려면 별도의 스크롤 고정 작업이 필요하다.
 
+## 역할 보기 (맥)
+
+흐름은 누가 어떤 역할로 일하는지를 보여 준다. 역할은 셋이다(`FlowRole`): 요청을 받은 **메인**(lead, 요청의 실행 블록), 메인이나 다른 하위 에이전트가 일을 맡긴 **하위 에이전트**, Claude 세션이 조언을 구하는 **조언자**(advisor). 역할마다 잉크가 하나이고 디자인 토큰에 새 색은 더하지 않는다(`FlowRoles.ink`, `FlowInk`): 메인은 청록(`taskText`), 하위 에이전트는 지금까지처럼 보라(`agentText`), 조언자는 분홍(`steerText`)이다. 세 색은 밝은 화면과 어두운 화면 모두에서 서로 다르고 상태 색(실행 파랑, 대기 호박)과 겹치지 않는다. 역할은 색만으로 말하지 않는다: 종류 칩, 표시, 툴팁의 문장이 같은 것을 글로 말한다. 맥의 흐름에서만 그린다(아래 "Windows·폰이 맞출 것").
+
+### 블록이 누구인가
+
+- **기록하는 것.** 하위 에이전트 블록은 `identity`(`GraphAgentIdentity`)를 가진다: 종류 `type`(Agent 호출의 `subagent_type`: Explore, general-purpose, 직접 만든 에이전트나 플러그인 에이전트의 이름, `fork`), 요청한 모델 `requestedModel`(호출의 `model`, `haiku` 같은 별칭), CLI가 정한 모델 `resolvedModel`, 격리 `isolation`(호출의 `isolation`: `worktree`·`remote`). 넷 다 없을 수 있고 하나도 없으면 `identity`가 없다. 포크는 종류가 `fork`인 블록이고(`isFork`) 백그라운드는 지금의 `background`다. 요청에는 그 요청을 시작할 때 창의 사고 강도 `configuredEffort`가 남는다(`configuredModel`과 같은 자리, CLI가 정하면 `default`). 창이 Auto인데 설정 › 모델의 사고 강도가 실행에 들어가면 그 값으로 고쳐 적는다(`RunSession.noteGraphRunEffort`). 알림 실행은 그 요청의 값을 물려받는다. 모두 선택 필드다: 예전 저장과 예전 이벤트는 그대로 읽히고, 없는 값은 쓰지 않는다. 저장과 전송 경계에서 종류는 한 줄 160바이트, 모델은 CLI가 부를 수 있는 이름, 격리는 아는 두 값만 남긴다(`GraphAgentIdentity.normalized`).
+- **어디서 읽나.** 실제 Claude Code 2.1.322의 스트림과 대화 기록에서 확인한 이름이다(같은 스트림이 `native/contracts/fixtures/claude-stream-subagents.jsonl`·`claude-stream-fork-worktree.jsonl`에 있다). ① Agent 호출 입력의 `subagent_type`·`model`·`isolation`. 호출의 말이라 같은 이벤트가 다시 와도 그대로 다시 적는다. ② 호출 결과의 구조화된 부분(라이브 스트림은 `tool_use_result`, 대화 기록은 `toolUseResult`)의 `resolvedModel`(백그라운드 발사 확인과 포그라운드 결과 모두에 있다), `agentType`(포그라운드 결과), `worktreePath`(있으면 worktree). ③ `system`의 `task_started`(`tool_use_id`, `subagent_type`): 호출이 종류를 말하지 않았을 때만 채운다. ④ Mods `agent.spawn`의 `agentType`과 `model`: `starting`의 모델은 요청한 것, `running`·`completed`의 모델은 CLI가 정한 것이고, 시작하지 못한(`error`·`stopped`) 호출의 모델은 쓰지 않는다. 호출 밖의 출처는 비어 있는 값만 채우고, CLI가 정한 모델만은 마지막 말을 따른다. 포크는 호출이 `model`을 말하지 않고(`subagent_type: "fork"`뿐이다) 발사 결과가 부른 세션의 모델을 알려 준다. 알림 실행의 사본은 원래 블록의 `identity`를 그대로 가지며, 사본이 생긴 뒤에 온 결과가 모델을 알려 주면 사본도 고친다. 다시 깨운 에이전트(`SendMessage`)의 블록은 같은 실행에 있는 앞 블록의 것을 이어받는다.
+- **모델 표시.** 블록의 응답 기록이 모델을 알려 주면 지금처럼 토큰 캡슐에 그 모델이 나온다(`12.3K · Haiku 5.5`). 응답이 아직 없으면 캡슐은 CLI가 정한 모델(`Haiku 5.5`)을, 그것도 없으면 요청한 별칭에 **· 요청**을 붙여 보인다(`Haiku · 요청`, `graph.nodeModel.requestedSuffix`; 설정한 모델의 `· 설정`과 같은 방식, `GraphModelLabel.agentModelLabel`). 호출이 모델을 말하지 않았으면 에이전트 정의의 `model`이 요청한 모델을 대신한다. `inherit`는 요청이 없는 것이다.
+- **직접 만든 에이전트.** 종류가 가리키는 정의 파일의 머리말(frontmatter)에서 `color`와 `model`을 읽는다(`AgentDefinitions`). 프로젝트의 `<작업 폴더>/.claude/agents/*.md`, 사용자의 `$CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)`/agents/*.md`를 보고 같은 이름이면 프로젝트가 이긴다. 종류가 `플러그인:에이전트`면 `plugins/installed_plugins.json`이 알려 주는 그 플러그인 설치 폴더의 `agents/<에이전트>.md`를 본다. 읽기만 한다. 파일은 앞 16 KiB, 폴더는 256개까지 읽는다. 머리말은 YAML로 풀지 않고 줄 단위로 읽는다(들여쓰지 않은 `키: 값`, 따옴표를 벗기고 뒤 주석을 자른다). 그래서 YAML로는 깨진 파일도 읽을 수 있는 줄은 읽고, 머리말이 닫히지 않은 파일은 정의로 보지 않는다. 폴더의 파일 이름·크기·수정 시각이 그대로면 다시 읽지 않는다(`AgentDefinitions.Cache`). 읽기는 메인 액터 밖에서 하고, 블록이 처음 보는 종류를 말하거나 창의 폴더가 바뀔 때 다시 한다. 원격 워크스페이스의 창은 읽지 않는다(그 에이전트는 다른 컴퓨터에 있다). 색은 Claude Code의 여덟 가지만 받아 팔레트 잉크로 옮긴다(`FlowRoles.ink(color:)`): red → `errText`, blue → `accent`, green → `doneText`, yellow → `waitText`, purple → `agentText`, orange → `questionText`, pink → `steerText`, cyan → `taskText`. 지금 팔레트에서 yellow와 orange는 같은 호박색이다.
+- **머리.** 실행 블록과 하위 에이전트 블록의 머리 왼쪽 끝에 역할 잉크의 띠(3pt)가 서고, 아이콘과 요청 칸의 옅은 바탕도 그 잉크다. 직접 만든 에이전트의 `color`는 하위 에이전트 잉크를 대신한다(메인과 조언자의 잉크는 바뀌지 않는다). 제목 뒤에 종류 칩이 온다. 플러그인 에이전트는 `:` 뒤 이름만 쓰고, 제목이 곧 종류이거나 포크이면 칩이 없다. 실행 블록에는 사고 강도가 온다(뇌 아이콘과 `High`; 창이 Auto이면 없다). 그리고 표시 셋이 온다: 백그라운드(`square.stack.3d.up`), 포크(`square.on.square`), worktree(`arrow.triangle.branch`). 칩과 표시에는 툴팁이 있고, 아이콘의 툴팁은 전체를 한 줄로 말한다(`FlowIdentity.summary`, 예: `하위 에이전트 · Explore · 요청한 모델 Haiku · 백그라운드`). 칩은 제목·상태 표시·토큰 캡슐·크기 단추가 쓰고 남은 폭에만 들어간다(`FlowRoles.headerFit`): 표시, 사고 강도, 종류 칩 순으로 자리를 얻고 종류 칩은 남은 폭만큼 잘린다. 블록 최소 폭(300)에서는 셋 다 나오지 않고 띠와 아이콘의 툴팁만 남는다. 요청 블록, 결과 블록, 백그라운드 작업·중간 요청·컨텍스트 정리·질문 블록은 그대로다. Codex·Antigravity·pi·opencode·Hermes 창도 실행 블록은 메인 잉크와 사고 강도를, 하위 에이전트 블록은 하위 에이전트 잉크를 받는다. 종류와 요청한 모델은 Claude만 알려 준다.
+- **기록과 파이프라인.** 기록의 행 아이콘은 같은 잉크이고, 행의 "종류 · …" 줄에 종류 칩의 글, 사고 강도, 표시의 낱말(백그라운드·포크·worktree)이 들어간다. 파이프라인의 하위 에이전트 카드는 종류 낱말 뒤에 종류 칩의 글을 더한다(`MightyStructure.Node.agentType`). 휴대폰에 보내는 내용은 바뀌지 않는다.
+- **접근성 ID.** `mighty-role-<노드 ID>`(아이콘, 전체 문장), `mighty-type-<노드 ID>`, `mighty-effort-<노드 ID>`, `mighty-mark-<background|fork|worktree>-<노드 ID>`.
+
+### Windows·폰이 맞출 것
+
+맥에서 먼저 만든 것이다. 다른 클라이언트가 같은 것을 그리려면 아래를 맞춘다.
+
+- 그래프 노드와 저장된 에이전트의 선택 필드 `identity { type, requestedModel, resolvedModel, isolation }`, 저장된 실행의 `configuredEffort`. 지금 Windows Core의 추적기는 이 값을 적지 않는다(읽는 출처는 위 "어디서 읽나").
+- 역할 잉크 셋과 Claude 색 여덟 가지의 대응(`FlowRoles`), 종류 칩·표시·사고 강도와 툴팁 문장(`graph.identity.*`, `graph.nodeModel.requestedSuffix`), 좁은 머리에서 칩이 먼저 물러나는 규칙.
+- 에이전트 정의 읽기(`AgentDefinitions`: 경로, 16 KiB, 256개, 줄 단위 머리말).
+- 휴대폰의 블록 페이로드에는 아직 `identity`가 없다.
+
 ## 진행 단계
 
 Claude나 Codex가 요청을 처리하며 자기 할 일 목록을 만들면(예: 앱 구현 → 앱 빌드 → 앱 배포) 흐름(다이어그램) 왼쪽 위, 마이티 막대 바로 아래에 **진행 단계** 패널이 뜬다. 기록과 파이프라인에는 없다.

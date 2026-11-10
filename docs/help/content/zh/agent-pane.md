@@ -143,6 +143,8 @@ Claude、Codex 和 Antigravity 窗格都以{{ui:graph.view.mighty}}视图显示�
 ### Mighty 流程 {#diagram}
 每个请求生成一个请求块，其正下方是{{ui:graph.block.execution}}块。请求块只包含发出的请求；智能体因该请求所做的事（消息、工具调用、进度）显示在{{ui:graph.block.execution}}块中。子智能体和后台任务从{{ui:graph.block.execution}}块下方分支出来。请求结束后，会附上{{ui:graph.block.result}}卡片。
 
+{{platform:mac}} {{ui:graph.block.execution}}块和子智能体块的标题栏显示是谁在工作。左端的色条和图标的颜色表示角色（主会话、子智能体）。标题后面是子智能体的类型（Explore、自定义智能体的名称等）以及后台、分叉、worktree 标记；{{ui:graph.block.execution}}块上还有窗格所选的思考强度。模型与令牌数一起显示，尚无响应时，请求的模型后面会标注“请求”。自定义智能体的定义文件里若有 `color`，就用那个颜色。块较窄时这些标记先隐藏，把指针移到图标上可以看到完整内容。
+
 在后台启动的子智能体和后台命令（任务）在运行期间不会画成请求的块，而是在输入框上方的后台任务条里。每一行显示类型、名称、用时和输出的最后一行；展开一行会显示它运行的命令（子智能体显示提示的第一行）和输出的最后几行（最多 6 行）。任务结束、通知送达 Claude 后，Claude 的每一次回答都会生成一个新的{{ui:graph.background.noticeRun}}图表，每个已结束的任务一个块：类型行（子智能体还是后台命令，以及结束状态）、命令、输出的最后几行，以及子智能体的报告。在{{ui:graph.view.timeline}}中，这个图表是新增的一行；在{{ui:graph.view.structure}}中，它是末尾新增的一张卡片（看板）。手机上的 Mighty 视图和流水线也一样。
 
 Claude 或 Codex 在处理请求时列出待办清单后，流程左上角会出现{{ui:graph.steps.title}}面板，逐步显示已完成、进行中和待处理。可用标题栏的按钮收起。发送新请求后，上一个请求的清单会消失。Codex 只说明步骤是否完成，因此第一个未完成的步骤显示为当前步骤。Antigravity 没有可显示的清单，因此不会出现该面板。

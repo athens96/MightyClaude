@@ -585,6 +585,36 @@ Display text in the expectations is the Korean copy. The Windows port takes that
 text from `locales/ko.json` / `en.json` and compares against these vectors with
 the `ko` locale selected.
 
+## Claude stream recordings (`fixtures/claude-stream-*.jsonl`)
+
+Recordings of Claude Code 2.1.322 (`--print --verbose --output-format stream-json`),
+one frame a line, as the CLI wrote them apart from this: hook and rate-limit
+frames are dropped, the `init` frame is cut to the keys that name the run, the
+session, request, message, tool and agent ids and the paths are replaced, and
+thinking signatures and the credential expiry are cut.
+
+| File | What was recorded |
+| --- | --- |
+| `claude-stream-subagents.jsonl` | A foreground and then a background Explore sub-agent (Haiku) with the flags the Mac app runs Claude with (`--input-format stream-json --permission-prompts host --permission-prompt-tool stdio`, stdin left open): the request's `result` comes when its turn ends, the background agent's notification opens a turn of its own. |
+| `claude-stream-fork-worktree.jsonl` | A fork (`subagent_type: "fork"`) and a sub-agent with `isolation: "worktree"`, recorded with a prompt argument and `--forward-subagent-text`, which the app does not pass: the foreground agent's thinking and text frames are there too, and both `result` frames come at the end. |
+
+What they show of a sub-agent, and what the Mac's graph tracker reads
+(`GraphAgentIdentityTests`): the Agent call's input names `subagent_type`,
+`model` (an alias) and `isolation`; a fork's input is `subagent_type: "fork"`
+with no model. The call's result carries a structured `tool_use_result` (a
+transcript spells it `toolUseResult`) with `resolvedModel` for a background
+launch (`status: "async_launched"`) and a foreground answer alike, and for a
+foreground answer also `agentType`, `totalTokens`, `totalToolUseCount`,
+`totalDurationMs` and, in a worktree, `worktreePath` and `worktreeBranch`. The
+`system` frames `task_started` (`tool_use_id`, `subagent_type`,
+`is_backgrounded`, `prompt`), `task_progress` (`description`, `last_tool_name`,
+`usage { total_tokens, tool_uses, duration_ms }`) and `task_notification`
+(`status`, `summary`, `output_file`, `usage`) come for a foreground agent as well
+as a background one. A sub-agent's own `assistant` and `user` frames carry
+`parent_tool_use_id`, `agent_id` and `subagent_type`; a background agent's
+thinking and text frames come without `--forward-subagent-text`, a foreground
+agent's only with it.
+
 ## Help capture demo profile (`fixtures/demo-profile.json`)
 
 The demo state the macOS `--help-capture` mode loads to take the help site's
