@@ -78,6 +78,43 @@ public struct GraphResponseRecord: Codable, Sendable, Equatable {
     }
 }
 
+/// Who a sub-agent block is, as the CLI said it: the Agent call's `subagent_type`, `model` and `isolation`, and the
+/// model the CLI resolved when it launched the agent. Every part is optional; a block without any carries none
+/// (older graph events and saves, Codex and Antigravity sub-agents). `FlowRoles` reads it for the flow diagram.
+public struct GraphAgentIdentity: Codable, Sendable, Equatable {
+    /// The Agent call's `subagent_type` (Explore, general-purpose, a custom or plugin agent's name, `fork`), else the
+    /// type the CLI named when it started the agent (`task_started`, Mods' `agent.spawn`, the result's `agentType`).
+    public var type: String?
+    /// The Agent call's `model`: what was asked for (an alias such as `haiku`), not what ran.
+    public var requestedModel: String?
+    /// The model the CLI said the agent runs with (the launch result's `resolvedModel`, Mods' spawn result).
+    public var resolvedModel: String?
+    /// The Agent call's `isolation`: `worktree` (a checkout of its own) or `remote`.
+    public var isolation: String?
+
+    public init(type: String? = nil, requestedModel: String? = nil, resolvedModel: String? = nil, isolation: String? = nil) {
+        self.type = type; self.requestedModel = requestedModel; self.resolvedModel = resolvedModel; self.isolation = isolation
+    }
+
+    /// The Agent call's type for a fork of the calling session.
+    public static let forkType = "fork"
+    public static let isolations = ["worktree", "remote"]
+    /// A fork inherits its caller's whole conversation and model.
+    public var isFork: Bool { type == Self.forkType }
+    public var isEmpty: Bool { type == nil && requestedModel == nil && resolvedModel == nil && isolation == nil }
+
+    /// Bounded for the wire and for saves: a type on one line, model names the CLI could name, a known isolation.
+    /// Nil when nothing is left.
+    public var normalized: GraphAgentIdentity? {
+        func model(_ value: String?) -> String? { value.flatMap { CoreValidation.model($0) ? $0 : nil } }
+        let type = self.type.map { ActivitySupport.clean($0, maximumBytes: 160, singleLine: true) }.flatMap { $0.isEmpty ? nil : $0 }
+        let value = GraphAgentIdentity(type: type, requestedModel: model(requestedModel), resolvedModel: model(resolvedModel),
+                                       isolation: isolation.flatMap { Self.isolations.contains($0) ? $0 : nil })
+        return value.isEmpty ? nil : value
+    }
+    var byteCount: Int { (type?.utf8.count ?? 0) + (requestedModel?.utf8.count ?? 0) + (resolvedModel?.utf8.count ?? 0) + (isolation?.utf8.count ?? 0) }
+}
+
 /// A request-scoped node snapshot. Missing input/output means the engine did
 /// not report it; display code must not manufacture a prompt or final answer.
 public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
@@ -104,13 +141,16 @@ public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
     public var noticeReply: String?
     /// A copy in a notice run (`BackgroundNoticeRuns`): the id of the finished background block it copies.
     public var sourceBlockId: String?
+    /// Who a sub-agent block is (`GraphAgentIdentity`); absent on other blocks, in older graph events and in older saves.
+    public var identity: GraphAgentIdentity?
 
     public init(id: String, runId: String, parentId: String? = nil, kind: String, state: String, title: String,
                 input: String? = nil, output: String? = nil, entries: [LogEntry] = [], updatedAt: String = mightyTimestamp(), usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil,
-                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil) {
+                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil, identity: GraphAgentIdentity? = nil) {
         self.id = id; self.runId = runId; self.parentId = parentId; self.kind = kind; self.state = state
         self.title = title; self.input = input; self.output = output; self.entries = entries; self.updatedAt = updatedAt; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
         self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply; self.sourceBlockId = sourceBlockId
+        self.identity = identity
     }
 }
 
@@ -152,11 +192,14 @@ public enum ExecutionGraphSupport {
         result.outputFile = node.outputFile.flatMap { $0.utf8.count <= 4096 && !$0.contains(where: \.isNewline) ? $0 : nil }
         result.noticeReply = node.noticeReply.map { ActivitySupport.clean($0, maximumBytes: maximumOutputBytes) }
         result.sourceBlockId = node.sourceBlockId.flatMap { CoreValidation.identifier($0) ? $0 : nil }
+        // Only a sub-agent block has a type, a model of its own and an isolation.
+        result.identity = node.kind == "agent" ? node.identity?.normalized : nil
         if restoring && !terminal(result.state) { result.state = "stopped" }
         if node.kind == "main" { result.entries = []; return result }
 
         var remaining = maximumNodeBytes - result.title.utf8.count - (result.input?.utf8.count ?? 0) - (result.output?.utf8.count ?? 0)
             - (result.outputFile?.utf8.count ?? 0) - (result.noticeReply?.utf8.count ?? 0) - (result.sourceBlockId?.utf8.count ?? 0)
+            - (result.identity?.byteCount ?? 0)
         var seen = Set<String>()
         var entries: [LogEntry] = []
         for var entry in node.entries.suffix(maximumEntries).reversed() {

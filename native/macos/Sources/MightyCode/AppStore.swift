@@ -1365,7 +1365,7 @@ final class AppStore: ObservableObject, DelegationHost {
         updateSession(id) {
             if startsStyle { $0.mightyStyleSince = inputEntry.timestamp }
             // 전송 중 until the run's first event (natural submit B1).
-            $0.beginGraphRun(input: logText, id: inputEntry.id, configuredModel: session.model, status: "starting")
+            $0.beginGraphRun(input: logText, id: inputEntry.id, configuredModel: session.model, configuredEffort: session.settings.effort, status: "starting")
             $0.logs.append(inputEntry); $0.logs = TranscriptRetention.trimmed($0.logs)
             if let shortened = autoTitle { $0.title = shortened }
         }
@@ -1413,6 +1413,11 @@ final class AppStore: ObservableObject, DelegationHost {
                     request.phaseModels = (snapshot.phaseModels ?? PhaseModelHardcodedConfig()).toPhaseModelConfig(omcAgents: nil, ouroborosKeys: nil)
                     request.settings.effort = request.phaseModels.runEffort(provider: current.provider, paneEffort: current.settings.effort, paneModel: model,
                                                                             catalog: provider.modelCatalog, registeredModels: registered)
+                    // The 실행 block names the effort the run starts with, which Settings › Models gives a pane left on Auto.
+                    if request.settings.effort != current.settings.effort {
+                        let effort = request.settings.effort
+                        updateSession(id) { $0.noteGraphRunEffort(effort, runID: inputEntry.id) }
+                    }
                     try CoreValidation.validateSelection(request, catalog: provider.modelCatalog, registeredModels: registered)
                     try CoreValidation.validateCapabilities(request, capabilities: provider.capabilities)
                 }

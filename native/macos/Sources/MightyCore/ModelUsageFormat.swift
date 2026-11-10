@@ -108,10 +108,11 @@ public enum ModelUsageFormat {
     /// say which version an older run used.
     public static func versionedNodeLabel(_ label: String?) -> String? {
         guard let label else { return nil }
-        let marker = " " + L("graph.nodeModel.configuredSuffix")
-        let configured = label.hasSuffix(marker)
-        let text = ModelLabel.text(configured ? String(label.dropLast(marker.count)) : label)
-        return configured ? text + marker : text
+        // A sub-agent's requested alias carries its own marker (`GraphModelLabel.agentModelLabel`).
+        for marker in [" " + L("graph.nodeModel.configuredSuffix"), " " + L("graph.nodeModel.requestedSuffix")] where label.hasSuffix(marker) {
+            return ModelLabel.text(String(label.dropLast(marker.count))) + marker
+        }
+        return ModelLabel.text(label)
     }
 
     /// Short display name for a model ID looked up against the catalog.

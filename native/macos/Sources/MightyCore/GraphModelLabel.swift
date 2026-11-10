@@ -13,4 +13,14 @@ public enum GraphModelLabel {
         if configuredModel != "default" { return configuredModel + " " + L("graph.nodeModel.configuredSuffix") }
         return nil
     }
+
+    /// The model label of a sub-agent block before its own responses name the model that answered (`GraphAgentIdentity`):
+    /// the model the CLI resolved when it launched the agent, else the alias the Agent call (or, failing that, the agent's
+    /// definition) asked for, marked "요청" as a configured model is marked "설정": it is what was asked, not what ran.
+    /// "inherit" is a definition's way of asking for none.
+    public static func agentModelLabel(resolved: String?, requested: String?) -> String? {
+        if let resolved, !resolved.isEmpty { return resolved }
+        if let requested, !requested.isEmpty, requested != "inherit" { return requested + " " + L("graph.nodeModel.requestedSuffix") }
+        return nil
+    }
 }

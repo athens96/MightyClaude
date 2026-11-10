@@ -21,12 +21,18 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     public var noticeReply: String?
     /// A copy in a notice run: the finished background block it copies. See `ExecutionGraphNode`.
     public var sourceBlockId: String?
+    /// Who a sub-agent is: its type, the model it asked for and runs with, its isolation (`GraphAgentIdentity`). Absent on
+    /// other blocks and in older saves.
+    public var identity: GraphAgentIdentity?
     public init(id: String, parentID: String? = nil, title: String = L("graph.agent.defaultTitle"), input: String = "", status: String = "running", entries: [LogEntry] = [], kind: String? = nil, usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil,
-                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil) {
+                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil, identity: GraphAgentIdentity? = nil) {
         self.id = id; self.parentID = parentID; self.title = title; self.input = input; self.status = status; self.entries = entries; self.kind = kind; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
         self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply; self.sourceBlockId = sourceBlockId
+        self.identity = identity
     }
     public var isTask: Bool { kind == "task" }
+    /// A sub-agent: a block that is none of the kinds the core records apart (`MightyGraphSupport.childKinds`).
+    public var isSubagent: Bool { MightyGraphSupport.blockKind(self) == "agent" }
     /// A sub-agent started with `run_in_background`.
     public var isBackgroundAgent: Bool { kind == nil && background == true }
     /// A mid-turn message the user sent to a running Claude request.
@@ -66,6 +72,9 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     /// The model the request was configured with when it started ("default" when the CLI
     /// decides). Kept so a later CLI report can recompute `nodeModelLabel`.
     public var configuredModel: String?
+    /// The effort the pane was set to when the request started ("default" when the CLI decides), as `configuredModel` is
+    /// the model. Absent in older saves and in runs the app did not start.
+    public var configuredEffort: String?
     /// Claude's reply to finished background work, not a request the user sent (`BackgroundNoticeRuns`); absent otherwise and in older saves.
     public var noticeRun: Bool?
     /// A notice run's title, "<kind> · <name>" (`BackgroundNoticeRuns.title(kind:names:)`), its main block's; absent in
@@ -83,11 +92,12 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     var carriedAwaiting: BackgroundNoticeRuns.Awaiting?? { shownBackgroundWaiting == nil ? nil : .some(shownAwaiting) }
     private enum CodingKeys: String, CodingKey {
         case id, input, status, rootEntries, agents, resultEntries, sourceRunID, finalOutput, usage, responseRecords, provider, nodeModelLabel, configuredModel, noticeRun, noticeTitle
+        case configuredEffort
     }
     public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, responseRecords: [GraphResponseRecord]? = nil, provider: String? = nil, nodeModelLabel: String? = nil, configuredModel: String? = nil,
-                noticeRun: Bool? = nil, noticeTitle: String? = nil) {
+                noticeRun: Bool? = nil, noticeTitle: String? = nil, configuredEffort: String? = nil) {
         self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.responseRecords = responseRecords; self.provider = provider; self.nodeModelLabel = nodeModelLabel; self.configuredModel = configuredModel
-        self.noticeRun = noticeRun; self.noticeTitle = noticeTitle
+        self.noticeRun = noticeRun; self.noticeTitle = noticeTitle; self.configuredEffort = configuredEffort
     }
     public var totalUsage: GraphTokenUsage? {
         let sum = agents.reduce(usage ?? GraphTokenUsage()) { $0 + ($1.usage ?? GraphTokenUsage()) }
@@ -313,6 +323,7 @@ public enum MightyGraphSupport {
             if restoring && !terminal(run.status) { run.status = "stopped" }
             if let source = run.sourceRunID, !CoreValidation.identifier(source) { run.sourceRunID = nil }
             run.noticeRun = run.noticeRun == true ? true : nil
+            run.configuredEffort = run.configuredEffort.flatMap { CoreValidation.effort($0) ? $0 : nil }
             run.noticeTitle = run.noticeRun == true ? run.noticeTitle.map { bounded($0, maximum: 240, budget: &budget) }.flatMap { $0.isEmpty ? nil : $0 } : nil
             // Prefer the actual final answer over older intermediate output.
             run.finalOutput = run.finalOutput.map { bounded($0, maximum: min(32_768, max(0, budget / 3)), budget: &budget) }
@@ -329,6 +340,8 @@ public enum MightyGraphSupport {
                 budget -= agent.outputFile?.utf8.count ?? 0
                 agent.status = states.contains(agent.status) ? agent.status : "stopped"
                 if !["task", "steer", "compact", "question"].contains(agent.kind ?? "") { agent.kind = nil }
+                agent.identity = agent.kind == nil ? agent.identity?.normalized : nil
+                budget -= agent.identity?.byteCount ?? 0
                 agent.usage = agent.usage?.normalized
                 agent.activityGeneration = ExecutionGraphSupport.normalizedGeneration(agent.activityGeneration)
                 if restoring && !terminal(agent.status) { agent.status = "stopped" }
@@ -533,19 +546,28 @@ extension RunSession {
     /// default value on purpose: every production caller must pass the resolution.
     /// `status` "starting" is a request this app sent that reads 전송 중 until its run's
     /// first event (natural submit B1; `recordGraph` moves it on).
-    public mutating func beginGraphRun(input: String, id: String = UUID().uuidString, configuredModel: String, status: String = "running") {
+    /// `configuredEffort` is the pane's effort setting at that moment, kept for the 실행 block's header.
+    public mutating func beginGraphRun(input: String, id: String = UUID().uuidString, configuredModel: String, configuredEffort: String? = nil, status: String = "running") {
         guard kind == "claude", MightyGraphSupport.providers.contains(provider) else { return }
         if graphRuns == nil { graphRuns = MightyGraphSupport.legacyRuns(self) }
         graphRuns?.append(MightyGraphRun(id: id, input: input, status: status, provider: provider,
                                          nodeModelLabel: GraphModelLabel.nodeModelLabel(cliReportedModel: nil, configuredModel: configuredModel),
-                                         configuredModel: configuredModel))
+                                         configuredModel: configuredModel, configuredEffort: configuredEffort))
         graphRuns = graphRuns.map { MightyGraphSupport.boundedLiveHistory(Array($0.suffix(128))) }
+    }
+
+    /// The effort request `runID`'s run starts with, when it is not the pane's own: Settings › Models gives its effort to a
+    /// pane left on Auto, after the request was already recorded.
+    public mutating func noteGraphRunEffort(_ effort: String, runID: String) {
+        guard CoreValidation.effort(effort), let index = graphRuns?.firstIndex(where: { $0.id == runID }),
+              graphRuns?[index].configuredEffort != effort else { return }
+        graphRuns?[index].configuredEffort = effort
     }
 
     public mutating func recordGraph(_ event: RunEvent) {
         guard kind == "claude", MightyGraphSupport.providers.contains(provider), event.sessionId == id else { return }
         if event.type == "log", let entry = event.entry, entry.kind == "user" {
-            beginGraphRun(input: entry.text, id: entry.id, configuredModel: model)
+            beginGraphRun(input: entry.text, id: entry.id, configuredModel: model, configuredEffort: settings.effort)
             return
         }
         guard var runs = graphRuns, !runs.isEmpty else { return }
@@ -581,7 +603,7 @@ extension RunSession {
                 while index > 0, runs[index - 1].sourceRunID == nil, !MightyGraphSupport.terminal(runs[index - 1].status) { index -= 1 }
                 runs.insert(MightyGraphRun(id: node.runId, input: node.input ?? "", status: node.state, sourceRunID: node.runId, provider: provider,
                                            nodeModelLabel: original?.nodeModelLabel, configuredModel: original?.configuredModel,
-                                           noticeRun: true), at: index)
+                                           noticeRun: true, configuredEffort: original?.configuredEffort), at: index)
             } else {
                 // New process identities bind only to the pending request.
                 index = runs.count - 1
@@ -604,7 +626,8 @@ extension RunSession {
             } else {
                 let parent = node.parentId == ExecutionGraphSupport.mainNodeID(runId: node.runId) ? nil : node.parentId
                 var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact", "question"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration, responseRecords: node.responseRecords,
-                                              background: node.background, outputFile: node.outputFile, noticeReply: node.noticeReply, sourceBlockId: node.sourceBlockId)
+                                              background: node.background, outputFile: node.outputFile, noticeReply: node.noticeReply, sourceBlockId: node.sourceBlockId,
+                                              identity: node.identity)
                 if let output = node.output, !output.isEmpty {
                     // Codex and Antigravity children take new assignments: one answer per generation.
                     let answerID = ["codex", "gemini"].contains(provider)
@@ -637,6 +660,7 @@ extension RunSession {
                     if agent.outputFile == nil { agent.outputFile = previous.outputFile }
                     if agent.noticeReply == nil { agent.noticeReply = previous.noticeReply }
                     if agent.sourceBlockId == nil { agent.sourceBlockId = previous.sourceBlockId }
+                    if agent.identity == nil { agent.identity = previous.identity }
                     if !previous.input.isEmpty { agent.input = previous.input }
                     var mergedEntries = previous.entries
                     for entry in agent.entries {

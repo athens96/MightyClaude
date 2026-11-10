@@ -802,7 +802,8 @@ struct MightyStructureView: View {
         // A background sub-agent or run is named as the diagram's block names it.
         let kindWords = task || node.background ? MightyGraphSupport.backgroundLabel(run: task, status: node.status) : MightyTimelineText.kind(node.kind)
         // A task notice's title already names its kind.
-        let meta = ((steer ? [] : [kindWords]) + [model].compactMap { $0 }).joined(separator: " · ")
+        // A sub-agent's type follows its kind, as its diagram header names it.
+        let meta = ((steer ? [] : [kindWords]) + [node.agentType, model].compactMap { $0 }).joined(separator: " · ")
         let ended = MightyGraphLayout.terminal(node.status)
         let tail = task ? backgroundOutput[node.agentID] ?? [] : []
         // Running, the last two lines; ended, the lines and Claude's reply once opened.

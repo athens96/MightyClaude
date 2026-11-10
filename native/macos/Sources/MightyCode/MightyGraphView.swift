@@ -123,6 +123,8 @@ struct MightyGraphView: View {
     /// The run whose 이 요청이 한 일 panel is open.
     @ViewState private var auditRun: MightyGraphRun?
     @StateObject private var ouroboros = MightyGraphOuroborosModel()
+    /// The custom agents the pane's blocks name: their colours on those blocks' headers (`FlowRoles.subagent`).
+    @StateObject private var agentDefinitions = MightyGraphAgentDefinitionsModel()
     @ViewState private var canvasViewport: CGSize?
     /// Timeline rows opened to show what their diagram card holds.
     @ViewState private var timelineOpen = Set<String>()
@@ -416,6 +418,8 @@ struct MightyGraphView: View {
         }
         // Cancelled when the graph leaves the screen or the pane closes.
         .task(id: ouroborosRequest) { await ouroboros.run(ouroborosRequest) }
+        // Read again when a block names a type not seen before, or the pane's folder changes.
+        .task(id: definitionsRequest) { await agentDefinitions.load(definitionsRequest) }
         // The user's own request (natural submit B2): moved to once its block is there;
         // a 바로 실행 steer once its 중간 요청 block arrives.
         .onChange(of: ownSubmit) { _, _ in handleOwnSubmit() }
@@ -447,6 +451,16 @@ struct MightyGraphView: View {
             publish(.reaim(nodeID: MightyGraphBlockSize.nodeID(runID: run.id, suffix: "agent:" + steer.id), alignTop: false), animated: viewMode == .diagram)
             if viewMode == .timeline { timelineReveal = TimelineReveal(serial: own.serial, id: run.id) }
         }
+    }
+
+    private var definitionsRequest: MightyGraphAgentDefinitionsModel.Request {
+        .init(root: workspaceRoot, types: FlowRoles.types(runs).sorted())
+    }
+
+    /// Who a sub-agent block is (`FlowRoles.subagent`), with the custom agent its type names when one was found; nil for
+    /// a block that is no sub-agent.
+    private func identity(_ agent: MightyGraphAgent) -> FlowIdentity? {
+        FlowRoles.subagent(agent, definition: agent.identity?.type.flatMap { agentDefinitions.definitions[$0] })
     }
 
     /// The sent request's pending state, for the run `runID` only.
@@ -676,20 +690,26 @@ struct MightyGraphView: View {
             let run = runs[index]
             let runID = run.sourceRunID ?? run.id
             let runChildBlocks = GraphChildBlocks.map(responseRecords: run.responseRecords, agents: run.agents, runId: runID)
+            // The main session: the lead's ink and, when the pane named one, its effort.
+            let lead = FlowRoles.lead(run)
             transcriptCard(node, title: BackgroundNoticeRuns.executionTitle(notice: run.noticeRun == true, ordinal: ordinals[index]), icon: Self.executionIcon, status: run.status, statusText: Self.runStatusLabel(run),
-                           input: "", entries: run.rootEntries, tint: Palette.agentText, usage: run.usage,
+                           input: "", entries: run.rootEntries, tint: Palette.flow(lead.ink), usage: run.usage,
                            records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks,
-                           fromRecord: index < olderCount, pending: pendingState(run.id))
+                           fromRecord: index < olderCount, pending: pendingState(run.id), identity: lead)
         case .agent(let runIndex, let agentIndex):
             let run = runs[runIndex]
             let agent = run.agents[agentIndex]
             let look = Self.agentPresentation(agent)
             let runID = run.sourceRunID ?? run.id
             let agentChildBlocks = GraphChildBlocks.map(responseRecords: agent.responseRecords, agents: run.agents, runId: runID)
-            transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.shownInput, entries: agent.entries, tint: look.tint, usage: agent.usage,
-                           records: agent.responseRecords ?? [], childBlocks: agentChildBlocks,
+            // A sub-agent wears its role's ink (its own colour, when its definition names one), its type and its marks.
+            let who = identity(agent)
+            transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.shownInput, entries: agent.entries,
+                           tint: who.map { Palette.flow($0.ink) } ?? look.tint, usage: agent.usage,
+                           records: agent.responseRecords ?? [], nodeModelLabel: who?.modelLabel, childBlocks: agentChildBlocks,
                            kindLine: MightyGraphSupport.backgroundLabel(agent),
-                           backgroundRun: agent.isTask ? BackgroundRunBody(command: agent.shownInput, tail: backgroundOutput.lines[agent.id] ?? [], reply: agent.noticeReply) : nil)
+                           backgroundRun: agent.isTask ? BackgroundRunBody(command: agent.shownInput, tail: backgroundOutput.lines[agent.id] ?? [], reply: agent.noticeReply) : nil,
+                           identity: who)
         case .result(let index):
             let run = runs[index]
             let failed = ["error", "failed"].contains(run.status)
@@ -771,15 +791,28 @@ struct MightyGraphView: View {
                                 headerInk: Color = Palette.onStatus,
                                 inputOnly: Bool = false, onContentHeight: ((CGFloat) -> Void)? = nil, pending: PendingState? = nil,
                                 kindLine: String? = nil, backgroundRun: BackgroundRunBody? = nil,
-                                outlineTone: DesignTone? = nil, awaiting: BackgroundNoticeRuns.Awaiting? = nil) -> some View {
+                                outlineTone: DesignTone? = nil, awaiting: BackgroundNoticeRuns.Awaiting? = nil,
+                                identity: FlowIdentity? = nil) -> some View {
         let content = entries.filter { $0.kind != "user" }
         // A background run shows its live lines in place of the wait for a reply.
         let showsTail = backgroundRun.map { !$0.tail.isEmpty && !MightyGraphLayout.terminal(status) } ?? false
         let onStrip = headerFill != nil
         let quiet = onStrip ? headerInk : Palette.ink2
+        let statusWords = !onStrip && !inputOnly ? statusText ?? Self.statusLabel(status) : nil
+        let capsule = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog, versioned: true)
+        // The identity chips take only the room the title, the status, the tokens and the size button leave.
+        let fit = identity.map { FlowRoles.headerFit(width: node.frame.width, title: title, status: statusWords, capsule: capsule, buttons: 1, identity: $0) }
         return VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: icon).foregroundStyle(onStrip ? headerInk : tint)
+                if let identity {
+                    // Who the block is, whole, on its glyph: the chips beside the title give way in a narrow block.
+                    Image(systemName: icon).foregroundStyle(onStrip ? headerInk : tint)
+                        .help(identity.summary)
+                        .accessibilityLabel(identity.summary)
+                        .accessibilityIdentifier("mighty-role-\(node.id)")
+                } else {
+                    Image(systemName: icon).foregroundStyle(onStrip ? headerInk : tint)
+                }
                 // A request block's title ends with its agent's name; its mark goes before it.
                 (titleProvider.map { ProviderBadgeIcon.labelled(title, provider: $0, font: .ui(ofSize: 12, weight: .bold)) } ?? Text(title))
                     .font(.ui(size: 12, weight: .bold)).lineLimit(1).help(title)
@@ -791,12 +824,13 @@ struct MightyGraphView: View {
                         .accessibilityLabel(L("graph.history.tag"))
                         .accessibilityIdentifier("mighty-record-\(node.id)")
                 }
+                if let identity, let fit { FlowIdentityChips(identity: identity, fit: fit, nodeID: node.id, stripInk: onStrip ? headerInk : nil) }
                 Spacer(minLength: 3)
                 if selectedNodeID == node.id { blockScrollLabel(node.id, ink: onStrip ? headerInk : Palette.accent) }
-                if !onStrip && !inputOnly {
-                    MightyStatusMark(status: status, text: statusText ?? Self.statusLabel(status), tone: DesignTone(blockStatus: status), pending: pending)
+                if let statusWords {
+                    MightyStatusMark(status: status, text: statusWords, tone: DesignTone(blockStatus: status), pending: pending)
                 }
-                if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog, versioned: true) {
+                if let capsuleText = capsule {
                     let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records, catalog: catalog, versioned: true)
                     Text(capsuleText).font(.ui(size: 10, design: .monospaced)).foregroundStyle(quiet).lineLimit(1)
                         .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
@@ -856,6 +890,13 @@ struct MightyGraphView: View {
                 }
             }.padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).frame(height: Self.blockHeaderHeight)
             .background(headerFill ?? Color.clear)
+            // The role's ink down the header's leading edge: who the block is, at any width.
+            .overlay(alignment: .leading) {
+                if let identity, !onStrip {
+                    Rectangle().fill(Palette.flow(identity.ink)).frame(width: DesignMetrics.Pipeline.cardBarWidth)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
             if !onStrip { Divider().overlay(Palette.border) }
             if let kindLine { backgroundKindLine(kindLine, tint: tint, nodeID: node.id) }
             if let backgroundRun {
@@ -1236,26 +1277,30 @@ struct MightyGraphView: View {
 
     /// The glyph and ink the diagram gives the block.
     private func timelineLook(_ row: MightyTimeline.Row, run: MightyGraphRun) -> (icon: String, tint: Color) {
-        if row.isExecution { return (Self.executionIcon, Palette.agentText) }
+        // The 실행 row is the main session's; a sub-agent's row wears its role's ink, as its diagram block does.
+        if row.isExecution { return (Self.executionIcon, Palette.flow(.lead)) }
         if row.agentIndex == nil, run.noticeRun == true { return (BackgroundNoticeRuns.icon, Palette.taskText) }
         guard let agentIndex = row.agentIndex else {
             return (styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue, Palette.tint(styleTitles.tint(run.input)))
         }
         let look = Self.agentPresentation(run.agents[agentIndex])
-        return (look.icon, look.tint)
+        return (look.icon, identity(run.agents[agentIndex]).map { Palette.flow($0.ink) } ?? look.tint)
     }
 
     /// After the kind: the block's usage capsule as the diagram shows it, then how long
     /// its records span once it settled. Only figures the block has.
     private func timelineMeta(_ row: MightyTimeline.Row, run: MightyGraphRun) -> [String] {
+        // Who the block is, as its diagram header says it: a sub-agent's type and marks, the main session's effort.
+        let who = row.agentIndex.flatMap { identity(run.agents[$0]) } ?? (row.isExecution ? FlowRoles.lead(run) : nil)
         let capsule: String? = if let agentIndex = row.agentIndex {
-            ModelUsageFormat.blockCapsule(usage: run.agents[agentIndex].usage, records: run.agents[agentIndex].responseRecords ?? [], nodeModelLabel: nil, catalog: catalog, versioned: true)
+            ModelUsageFormat.blockCapsule(usage: run.agents[agentIndex].usage, records: run.agents[agentIndex].responseRecords ?? [], nodeModelLabel: who?.modelLabel, catalog: catalog, versioned: true)
         } else if row.isExecution {
             ModelUsageFormat.blockCapsule(usage: run.usage, records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, catalog: catalog, versioned: true)
         } else {
             nil
         }
-        return [capsule, MightyTimelineText.duration(row.block.durationMs)].compactMap { $0 }
+        let words = [who?.typeChip, who?.effort].compactMap { $0 } + (who?.marks.map(\.word) ?? [])
+        return words + [capsule, MightyTimelineText.duration(row.block.durationMs)].compactMap { $0 }
     }
 
     /// What the block's diagram card holds: what it was asked, and its records. The

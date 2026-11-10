@@ -41,6 +41,8 @@ public enum MightyStructure {
         public var model: String?
         /// A background sub-agent or a task (`MightyGraphAgent.background`).
         public var background = false
+        /// A sub-agent's type as its diagram header's chip words it (`FlowRoles.subagent`), when it named one.
+        public var agentType: String? = nil
         /// Claude's reply to a task's notice (`MightyGraphAgent.noticeReply`).
         public var noticeReply: Excerpt? = nil
         public var id: String { nodeID }
@@ -502,6 +504,7 @@ public enum MightyStructure {
                               activity: activity(agent.entries, limit: nodeActivity),
                               model: agent.responseRecords?.lazy.compactMap(\.model).first { !$0.isEmpty },
                               background: agent.background == true,
+                              agentType: FlowRoles.subagent(agent)?.typeChip,
                               noticeReply: agent.noticeReply.flatMap { excerpt($0, maximumBytes: outputBytes, lines: outputLines) }))
             for child in children[agent.id] ?? [] where child != index { walk(child, depth: depth + 1, into: &nodes) }
         }

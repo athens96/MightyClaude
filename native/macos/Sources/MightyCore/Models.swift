@@ -776,6 +776,8 @@ public enum CoreValidation {
     /// `<yyyymmdd>_<hhmmss>_<hex>` is one), or opencode's `ses_<base62>`.
     public static func sessionIdentifier(_ value: String) -> Bool { identifier(value) || value.range(of: "^ses_[a-zA-Z0-9]{1,124}$", options: .regularExpression) != nil }
     public static func model(_ value: String) -> Bool { value.count <= 200 && value.range(of: "^[a-zA-Z0-9][a-zA-Z0-9._:/@\\[\\]-]*$", options: .regularExpression) != nil }
+    /// An effort a pane of any provider may be set to: "default" (the CLI decides) or one of the levels.
+    public static func effort(_ value: String) -> Bool { value == "default" || ProviderOptions.efforts.contains(value) || ProviderOptions.piThinkingLevels.contains(value) }
     public static func validate(_ request: StartRunRequest) throws {
         guard identifier(request.sessionId), identifier(request.workspaceId), SessionKind.runnable.contains(request.kind), ProviderOptions.ids.contains(request.provider), model(request.model) else { throw MightyError(L("validation.run.badRequest")) }
         try AttachmentSupport.validate(request.attachments)

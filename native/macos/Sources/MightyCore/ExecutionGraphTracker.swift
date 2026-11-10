@@ -315,6 +315,9 @@ final class ExecutionGraphTracker {
                         if background { node.background = true }
                         if let prompt = input?["prompt"] as? String { node.input = prompt }
                         if let title = (input?["name"] ?? input?["description"] ?? input?["subagent_type"]) as? String, !title.isEmpty { node.title = title }
+                        // Who it is, as the call says it: its type, the model it asks for and its isolation.
+                        Self.identify(&node, type: input?["subagent_type"] as? String, requestedModel: input?["model"] as? String,
+                                      isolation: input?["isolation"] as? String, replacing: true)
                     }
                 } else if block["name"] as? String == "AskUserQuestion", let question = ensureNode(toolID: toolID, kind: "question", title: L("graph.block.question")) {
                     // Each question to the user is its own block; the answer settles it.
@@ -351,6 +354,7 @@ final class ExecutionGraphTracker {
                 if let sent = sentMessages.removeValue(forKey: toolID) { resumeAgent(toolID: toolID, sent: sent, block: block, frame: value); continue }
                 let child = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: toolID)
                 guard let node = nodes[child] else { continue }
+                if node.kind == "agent" { identifyLaunch(child, frame: value) }
                 if node.kind == "task" { acknowledgeTask(child, block: block); continue }
                 if node.kind == "question" {
                     update(child) { node in
@@ -389,6 +393,10 @@ final class ExecutionGraphTracker {
             body += "<status>\(status)</status>"
             if let summary = value["summary"] as? String, !summary.isEmpty { body += "<summary>\(summary)</summary>" }
             settleTasks(in: body + "</task-notification>", notice: parentTool == nil)
+        } else if type == "system", value["subtype"] as? String == "task_started", let tool = Self.key(value["tool_use_id"]) {
+            // The CLI names the type it started the agent as, which a call without `subagent_type` leaves unsaid.
+            let child = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: tool)
+            if nodes[child]?.kind == "agent" { update(child) { Self.identify(&$0, type: value["subagent_type"] as? String) } }
         } else if type == "result", ClaudeStream.isNotificationResult(value) || (parentTool == nil && (noticeTurn != nil || mergeTurn != nil)) {
             guard parentTool == nil else { return }
             let run = noticeTurn, merged = mergeTurn, absorbed = absorbedRun, lines = turnLines
@@ -814,6 +822,40 @@ final class ExecutionGraphTracker {
         else { return }
         if taskAliases[agent] != nil || taskAliases.count < 512 { taskAliases[agent] = id }
     }
+    /// What the CLI said about who an agent block is (`GraphAgentIdentity`), added to what the block holds. `replacing`: the
+    /// Agent call's own words, which a repeated event restates; any other source only fills what is still unsaid. The model
+    /// that runs is always the CLI's latest word.
+    private static func identify(_ node: inout ExecutionGraphNode, type: String? = nil, requestedModel: String? = nil, resolvedModel: String? = nil,
+                                 isolation: String? = nil, replacing: Bool = false) {
+        var identity = node.identity ?? GraphAgentIdentity()
+        func value(_ incoming: String?, _ current: String?) -> String? {
+            guard let incoming, !incoming.isEmpty else { return current }
+            return replacing || current == nil ? incoming : current
+        }
+        identity.type = value(type, identity.type)
+        identity.requestedModel = value(requestedModel, identity.requestedModel)
+        if let resolvedModel, !resolvedModel.isEmpty { identity.resolvedModel = resolvedModel }
+        identity.isolation = value(isolation, identity.isolation)
+        node.identity = identity.isEmpty ? nil : identity
+    }
+    /// An Agent call's result names the model the CLI resolved for the agent (`resolvedModel`), its type (`agentType`, when
+    /// it ran in the foreground) and an isolated agent's worktree (`worktreePath`): the live stream's `tool_use_result`,
+    /// a transcript's `toolUseResult`.
+    private func identifyLaunch(_ id: String, frame: [String: Any]) {
+        guard let result = (frame["tool_use_result"] as? [String: Any]) ?? (frame["toolUseResult"] as? [String: Any]) else { return }
+        let worktree = (result["worktreePath"] as? String).map { !$0.isEmpty } ?? false
+        update(id) {
+            Self.identify(&$0, type: result["agentType"] as? String, resolvedModel: result["resolvedModel"] as? String,
+                          isolation: worktree ? GraphAgentIdentity.isolations[0] : nil)
+        }
+        // A copy made before this result (the agent's notification came first) is still who its block is.
+        if let run = copiedIn[id], let identity = nodes[id]?.identity { update(copyID(of: id, in: run)) { $0.identity = identity } }
+    }
+    /// The id of block `id`'s copy in notice run `run`.
+    private func copyID(of id: String, in run: String) -> String {
+        let joined = run + ":" + id
+        return CoreValidation.identifier(joined) ? joined : ExecutionGraphSupport.identifier(run, "copy:" + id)
+    }
     /// Whether an Agent call's result is the acknowledgement of an asynchronous launch: the event's structured `toolUseResult`
     /// (a transcript's) says `async_launched`, else the result's text opens with "Async agent launched successfully.".
     private static func asyncLaunch(block: [String: Any], frame: [String: Any]) -> Bool {
@@ -843,6 +885,8 @@ final class ExecutionGraphTracker {
             else if let title = earlier?.title, !title.isEmpty { node.title = title }
             else if let to = sent.to { node.title = to }
             if let message = sent.message { node.input = message }
+            // The same agent goes on: it is who its earlier block in this run was.
+            if node.identity == nil { node.identity = earlier?.identity }
         }
     }
     /// The agent a SendMessage result says it resumed: the result's JSON text, else the event's `toolUseResult` (a transcript's).
@@ -937,12 +981,12 @@ final class ExecutionGraphTracker {
     private func copy(_ id: String, into run: String) {
         guard let block = nodes[id] else { return }
         let main = ExecutionGraphSupport.mainNodeID(runId: run)
-        let joined = run + ":" + id
-        let copyID = CoreValidation.identifier(joined) ? joined : ExecutionGraphSupport.identifier(run, "copy:" + id)
+        let copyID = copyID(of: id, in: run)
         if nodes[copyID] == nil {
             guard nodes.count < ExecutionGraphSupport.maximumNodes else { return }
             let copy = ExecutionGraphNode(id: copyID, runId: run, parentId: main, kind: block.kind, state: block.state, title: block.title,
-                                          input: block.input, output: block.output, background: true, outputFile: block.outputFile, sourceBlockId: id)
+                                          input: block.input, output: block.output, background: true, outputFile: block.outputFile, sourceBlockId: id,
+                                          identity: block.identity)
             guard let normalized = ExecutionGraphSupport.normalized(copy) else { return }
             nodes[copyID] = normalized; order.append(copyID); emit(normalized)
             noticeCopies[run, default: []].append(copyID)
@@ -953,6 +997,7 @@ final class ExecutionGraphTracker {
             update(copyID) { copy in
                 copy.title = block.title; copy.input = block.input; copy.state = block.state
                 copy.output = block.output; copy.outputFile = block.outputFile
+                copy.identity = block.identity
             }
         }
         describe(run)
@@ -1163,6 +1208,13 @@ final class ExecutionGraphTracker {
             if let output = metadata.output { node.output = output }
             let state = metadata.phase == "starting" ? "running" : metadata.phase
             if ActivitySupport.states.contains(state) { node.state = state }
+            // Mods names the agent's type, the model the call asked for (while it starts) and the one the CLI resolved
+            // (once it runs, and with its answer). A start that failed names no model that ran.
+            if node.kind == "agent" {
+                let ran = ["running", "completed"].contains(metadata.phase)
+                Self.identify(&node, type: metadata.agentType, requestedModel: metadata.phase == "starting" ? metadata.model : nil,
+                              resolvedModel: ran ? metadata.model : nil)
+            }
         }
     }
 
