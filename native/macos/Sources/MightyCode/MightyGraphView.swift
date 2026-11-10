@@ -79,6 +79,10 @@ struct MightyGraphView: View {
     /// The role view of a Claude pane's flow: every sub-agent under the block that launched it, a running one as its
     /// compact card (`MightyGraphLayout.FanOut`). The interaction diagnostics turn it off: they exercise full blocks.
     var showsFanOut = true
+    /// The session log under the diagram is open rather than folded to its status line (`RunSession.flowLogCollapsed`);
+    /// `onLogOpen` saves the user's change with the pane.
+    var logOpen = true
+    var onLogOpen: (Bool) -> Void = { _ in }
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     /// The structure view's model and what it was built from. A reference, so
@@ -374,6 +378,17 @@ struct MightyGraphView: View {
                             .padding(DesignMetrics.Spacing.md)
                     }
                 }
+                // The role view's session log, between the diagram and the composer: who is doing what, and the last
+                // things that happened. Its rows are read only while it is open.
+                if fanOut != nil, let status = FlowLog.status(runs) {
+                    MightyGraphLogStrip(sessionID: sessionID, status: status,
+                                        rows: logOpen ? FlowLog.rows(runs, definitions: agentDefinitions.definitions) : [], open: logOpen,
+                                        onToggle: {
+                                            onFocus()
+                                            onLogOpen(!logOpen)
+                                        },
+                                        onReveal: { reveal($0, in: graph) })
+                }
             }
         }
         .accessibilityElement(children: .contain)
@@ -523,6 +538,14 @@ struct MightyGraphView: View {
         follow.watch.stop()
         trimSequence += 1
         scrollTarget = MightyGraphScrollTarget(token: MightyGraphCamera.trimToken(sequence: trimSequence, nodeID: nodeID), nodeID: nodeID, alignTop: alignTop, animated: animated)
+    }
+
+    /// A log row's click: the camera goes to the row's block (`FlowLog.target`).
+    private func reveal(_ row: FlowLog.Row, in graph: MightyGraphLayout) {
+        let drawn = Set(graph.nodes.map(\.id))
+        guard let id = FlowLog.target(row, in: runs, drawn: drawn.contains) else { return }
+        onFocus()
+        publish(.reaim(nodeID: id, alignTop: false), animated: true)
     }
 
     /// Follow from now on, the newest block right above the composer. `animated`: the

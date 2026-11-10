@@ -101,8 +101,9 @@ public enum FlowLog {
                 latest.append(lead(run.id + ":" + entry.id, entry.timestamp, what))
             }
             candidates += latest.reversed()
-            // The request's own end: at its result, which stands at its last record.
-            if run.noticeRun != true, MightyGraphSupport.terminal(run.status), let ended = run.resultEntries.first?.timestamp ?? run.rootEntries.last?.timestamp {
+            // The turn's own end: at its result, which stands at its last record. A notice taken into a running turn has
+            // no reply of its own and so no end.
+            if MightyGraphSupport.terminal(run.status), !run.quietNotice, let ended = run.resultEntries.first?.timestamp ?? run.rootEntries.last?.timestamp {
                 candidates.append(lead(run.id + ":end", ended, FlowCard.stateWord(MobileMightySupport.status(run.status))))
             }
             for agent in run.flowAgents where agent.isSubagent && agent.sourceBlockId == nil {
@@ -139,6 +140,27 @@ public enum FlowLog {
         }
         timed.sort { $0.time != $1.time ? $0.time < $1.time : $0.order < $1.order }
         return timed.suffix(limit).map { $0.make($0.time) }
+    }
+
+    /// The diagram block a row's click shows: its own, else the nearest block above it that the diagram drew (a block
+    /// under a folded card is laid out nowhere), else its request's main session. Nil when the diagram drew none of them.
+    public static func target(_ row: Row, in runs: [MightyGraphRun], drawn: (String) -> Bool) -> String? {
+        if drawn(row.nodeID) { return row.nodeID }
+        for index in activity(runs).reversed() {
+            let run = runs[index]
+            let agents = run.flowAgents
+            guard let own = agents.first(where: { MightyGraphLayout.nodeID(run, suffix: "agent:" + $0.id) == row.nodeID }) else { continue }
+            var above = own.parentID, depth = 0
+            while let id = above, depth < 64, let parent = agents.first(where: { $0.id == id }) {
+                let node = MightyGraphLayout.nodeID(run, suffix: "agent:" + parent.id)
+                if drawn(node) { return node }
+                above = parent.parentID
+                depth += 1
+            }
+            let work = MightyGraphLayout.nodeID(run, suffix: MightyGraphLayout.workSuffix)
+            return drawn(work) ? work : nil
+        }
+        return nil
     }
 
     /// What a record of the main session's says in the log: a tool call as the transcript words it, a question it
@@ -193,7 +215,15 @@ public enum FlowLog {
         public var subagents: String?
         /// "조언자 대기" or "조언자 검토 중"; nil without an advisor.
         public var advisor: String?
-        public var text: String { [lead, subagents, advisor].compactMap { $0 }.joined(separator: " · ") }
+        public var text: String { parts.map(\.text).joined(separator: " · ") }
+        /// The line's parts in order, each with the role whose ink it takes.
+        public var parts: [Part] {
+            [Part(role: .lead, text: lead)] + [subagents.map { Part(role: .subagent, text: $0) }, advisor.map { Part(role: .advisor, text: $0) }].compactMap { $0 }
+        }
+        public struct Part: Equatable, Sendable {
+            public var role: FlowRole
+            public var text: String
+        }
     }
 
     /// The status of the pane's newest activity, nil for a pane without a request. The main session's state is the

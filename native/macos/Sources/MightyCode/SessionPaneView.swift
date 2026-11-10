@@ -567,7 +567,9 @@ struct SessionPaneView: View {
                                                        progress: session.todoProgress, runs: shownRuns),
                     ownSubmit: store.ownSubmits[session.id], pending: store.submitPending[session.id],
                     backgroundOutput: store.backgroundOutput.pane(session.id),
-                    shellRuns: store.shellBlockContext(session)) {
+                    shellRuns: store.shellBlockContext(session),
+                    logOpen: session.flowLogCollapsed != true,
+                    onLogOpen: { store.setFlowLogOpen(session.id, open: $0) }) {
                         store.selectSession(session.id)
                     }
             } else if session.logs.isEmpty {

@@ -104,13 +104,23 @@ struct FlowLogTests {
             #expect(FlowLog.activity(runs) == 1..<3)
             let rows = FlowLog.rows(runs, limit: 20)
             // Nothing of the older request; the background agent's own events, though no other view draws its block there;
-            // the request's end at its last record; the notice at the first thing its turn recorded. A copy adds no row.
-            #expect(words(rows) == ["Sonnet 5.5 | new read", "bg | 시작", "bg | c.txt 읽기", "Sonnet 5.5 | 완료", "bg | 완료", "Sonnet 5.5 | 알림 받음 · 백그라운드 작업 완료 · bg"])
-            #expect(rows.map(\.time) == [11, 12, 13, 14, 15, 16].map(date))
-            #expect(rows.last?.nodeID == MightyGraphLayout.nodeID(notice, suffix: "request"))
-            // A notice whose turn has recorded nothing yet came when the work it reports on ended.
-            var silent = notice; silent.rootEntries = []
-            #expect(FlowLog.rows(MightyGraphSupport.shownRuns([old, request, silent]), limit: 20).last?.time == date(15))
+            // the request's end at its last record; the notice at the first thing its turn recorded and the end of the
+            // turn that answered it. A copy adds no row.
+            #expect(words(rows) == ["Sonnet 5.5 | new read", "bg | 시작", "bg | c.txt 읽기", "Sonnet 5.5 | 완료", "bg | 완료", "Sonnet 5.5 | 알림 받음 · 백그라운드 작업 완료 · bg",
+                                    "Sonnet 5.5 | 완료"])
+            #expect(rows.map(\.time) == [11, 12, 13, 14, 15, 16, 16].map(date))
+            #expect(rows[5].nodeID == MightyGraphLayout.nodeID(notice, suffix: "request"))
+            #expect(rows[6].nodeID == MightyGraphLayout.nodeID(notice, suffix: MightyGraphLayout.workSuffix))
+            // A notice whose turn has recorded nothing yet came when the work it reports on ended; while it answers, and
+            // when it was taken into a running turn without a reply of its own, it has no end.
+            var silent = notice; silent.rootEntries = []; silent.resultEntries = []; silent.status = "running"; silent.finalOutput = nil
+            let answering = FlowLog.rows(MightyGraphSupport.shownRuns([old, request, silent]), limit: 20)
+            #expect(answering.last?.what == "알림 받음 · 백그라운드 작업 완료 · bg" && answering.last?.time == date(15))
+            var quiet = notice; quiet.finalOutput = nil; quiet.resultEntries = []
+            #expect(FlowLog.rows(MightyGraphSupport.shownRuns([old, request, quiet]), limit: 20).last?.what == "알림 받음 · 백그라운드 작업 완료 · bg")
+            // One that failed says so.
+            var failed = notice; failed.status = "error"; failed.finalOutput = nil
+            #expect(FlowLog.rows(MightyGraphSupport.shownRuns([old, request, failed]), limit: 20).last?.what == "실패")
             // A pane with only notice runs or only history still has its last run's log.
             #expect(FlowLog.activity([notice]) == 0..<1)
         }
@@ -151,6 +161,38 @@ struct FlowLogTests {
         }
     }
 
+    @Test func aRowLeadsToItsBlockOrTheNearestOneDrawnAboveIt() throws {
+        let nested = agent("inner", parent: "outer", entries: [tool("i1", "grep", at: 4, name: "Grep")], started: 3)
+        let outer = agent("outer", entries: [tool("o1", "ls", at: 2, name: "Bash")], started: 1)
+        let request = run("r", root: [tool("m1", "A.swift 읽기", at: 0)], agents: [outer, nested])
+        let rows = FlowLog.rows([request], limit: 20)
+        let inner = try #require(rows.first { $0.id.hasSuffix(":i1") })
+        let lead = try #require(rows.first { $0.actor == .lead })
+        let work = MightyGraphLayout.nodeID(request, suffix: MightyGraphLayout.workSuffix)
+        let outerNode = MightyGraphLayout.nodeID(request, suffix: "agent:outer"), innerNode = MightyGraphLayout.nodeID(request, suffix: "agent:inner")
+        #expect(inner.nodeID == innerNode)
+        // Its own block when the diagram drew it.
+        #expect(FlowLog.target(inner, in: [request], drawn: { _ in true }) == innerNode)
+        #expect(FlowLog.target(lead, in: [request], drawn: { _ in true }) == work)
+        // Under a folded card the block is laid out nowhere: the card above it stands for it.
+        #expect(FlowLog.target(inner, in: [request], drawn: { $0 != innerNode }) == outerNode)
+        // Else the request's main session; nothing when the diagram drew none of them.
+        #expect(FlowLog.target(inner, in: [request], drawn: { $0 == work }) == work)
+        #expect(FlowLog.target(inner, in: [request], drawn: { _ in false }) == nil)
+        #expect(FlowLog.target(lead, in: [request], drawn: { _ in false }) == nil)
+        // A block that names itself as its parent ends the walk.
+        let loop = run("r", agents: [agent("self", parent: "self", started: 1)])
+        let own = try #require(FlowLog.rows([loop], limit: 20).first)
+        #expect(FlowLog.target(own, in: [loop], drawn: { _ in false }) == nil)
+        // The layout the pane draws holds every row's block.
+        let layout = MightyGraphLayout.make(runs: [request], draft: "", running: true, expanded: [], splitsExecution: true, fanOut: .init(opened: []))
+        let ids = Set(layout.nodes.map(\.id))
+        #expect(FlowLog.target(inner, in: [request], drawn: ids.contains) == outerNode)
+        #expect(FlowLog.target(lead, in: [request], drawn: ids.contains) == work)
+        let opened = MightyGraphLayout.make(runs: [request], draft: "", running: true, expanded: [], splitsExecution: true, fanOut: .init(opened: [outerNode]))
+        #expect(FlowLog.target(inner, in: [request], drawn: Set(opened.nodes.map(\.id)).contains) == innerNode)
+    }
+
     @Test func theClockIsHoursMinutesAndSecondsInTheGivenZone() {
         let utc = TimeZone(identifier: "UTC")!, seoul = TimeZone(identifier: "Asia/Seoul")!
         let moment = Date(timeIntervalSince1970: 1_794_336_483)   // 2026-11-10T18:48:03Z
@@ -168,6 +210,9 @@ struct FlowLogTests {
             #expect(running.subagents == "하위 에이전트 2/3 실행 중")
             #expect(running.advisor == nil)
             #expect(running.text == "Sonnet 5.5 실행 중 · 하위 에이전트 2/3 실행 중")
+            #expect(running.parts == [.init(role: .lead, text: "Sonnet 5.5 실행 중"), .init(role: .subagent, text: "하위 에이전트 2/3 실행 중")])
+            #expect(FlowLog.status([run("r", agents: agents)], advisor: .onCall)?.parts.map(\.role) == [.lead, .subagent, .advisor])
+            #expect(FlowLog.status([run("r")], advisor: .consulting)?.parts.map(\.role) == [.lead, .advisor])
             // With an advisor, waiting or at work.
             #expect(FlowLog.status([run("r", agents: agents)], advisor: .onCall)?.text == "Sonnet 5.5 실행 중 · 하위 에이전트 2/3 실행 중 · 조언자 대기")
             #expect(FlowLog.status([run("r")], advisor: .consulting)?.text == "Sonnet 5.5 실행 중 · 조언자 검토 중")
