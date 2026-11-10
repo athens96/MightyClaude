@@ -218,7 +218,7 @@ extension AppStore {
             do { try install.launch() } catch {
                 owner.appUpdate.phase = .failed(L("settings.appUpdate.errorInstall", ["error": error.localizedDescription])); return
             }
-            NSApp.terminate(nil)
+            AppStore.quitForAppUpdate()
         }
     }
 
@@ -363,11 +363,31 @@ extension AppStore {
             do {
                 try await install.verify()
                 try install.launch()
-                NSApp.terminate(nil)
+                AppStore.quitForAppUpdate()
             } catch {
                 store.owner?.appUpdate.phase = .failed(L("settings.appUpdate.errorInstall", ["error": error.localizedDescription]))
             }
         }
+    }
+
+    /// Seconds past the quit's own deadline after which an update's quit ends the process regardless.
+    static let appUpdateQuitWatchdogSeconds: Double = ApplicationDelegate.terminationDeadline + 10
+
+    /// Quits so the started helper can swap the bundle. A modal window or a
+    /// sheet would make AppKit set the quit aside, and a cleanup that blocks
+    /// the main thread would keep even the quit's deadline from firing — the
+    /// app then stayed open on "installing" while the helper waited for it.
+    /// So modal sessions and sheets end first, and a watchdog on another thread
+    /// ends the process once the deadline is well past; the state saved along
+    /// the way restores as after any quit.
+    static func quitForAppUpdate() {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + appUpdateQuitWatchdogSeconds) {
+            NSLog("MightyCode update: the app had not quit %.0f s after the update's quit; ending it so the update installs", appUpdateQuitWatchdogSeconds)
+            exit(0)
+        }
+        if NSApp.modalWindow != nil { NSApp.abortModal() }
+        for window in NSApp.windows { if let sheet = window.attachedSheet { window.endSheet(sheet) } }
+        NSApp.terminate(nil)
     }
 
     /// Called first thing in `shutdown()`: a staged update is installed once

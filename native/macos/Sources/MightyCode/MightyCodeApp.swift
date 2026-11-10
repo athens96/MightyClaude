@@ -207,7 +207,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         guard !terminationReady else { return }
         terminationReady = true
         // Cleanup hung: nothing it would still have stopped outlives the app.
-        if deadline { AppStore.shared.killProcessesAtQuitDeadline() }
+        if deadline {
+            NSLog("MightyCode quit: cleanup was still running at the %.0f s deadline; quitting without it", Self.terminationDeadline)
+            AppStore.shared.killProcessesAtQuitDeadline()
+        }
         if replyPending { sender.reply(toApplicationShouldTerminate: true) } else { sender.terminate(nil) }
     }
 
