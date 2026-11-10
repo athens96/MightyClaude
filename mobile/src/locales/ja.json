@@ -3362,7 +3362,7 @@
   "permission.pi.fullAccess": "すべてのツールを確認なしで使います。ファイルの編集やコマンドの実行をし、プロジェクトの外にも触れられます。pi には承認ウィンドウがないため、すぐに実行されます。",
   "run.notice.piRetry": "pi が一時的なエラーのため再試行しています（{attempt}/{max}）: {error}",
   "run.notice.piDialogDismissed": "pi の拡張機能が、このペインでは答えられない入力を求めたためキャンセルしました: {title}",
-  "run.blocked.piRemote": "pi は今のところこの Mac でのみ実行できます。リモートのワークスペースでは Claude、Codex、Antigravity を使ってください。",
+  "run.blocked.piRemote": "pi は今のところこのコンピューターでのみ実行できます。リモートのワークスペースでは Claude、Codex、Antigravity を使ってください。",
   "settings.cliAccounts.detailPiTimeout": "pi の状態確認（pi --list-models）が制限時間内に完了しませんでした。",
   "settings.cliAccounts.detailPiUnknown": "pi のログイン状態を確認できませんでした。ターミナルで pi を実行して確認してください。",
   "settings.cliAccounts.detailPiSignOut": "ログアウトは pi の中で /logout と入力してください。ここではログアウトやアカウントの切り替えはできません。",

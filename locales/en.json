@@ -3362,7 +3362,7 @@
   "permission.pi.fullAccess": "Every tool is used without asking: files are edited and commands run, also outside the project. pi has no approval window, so it runs at once.",
   "run.notice.piRetry": "pi is retrying after a temporary error ({attempt}/{max}): {error}",
   "run.notice.piDialogDismissed": "A pi extension asked for input this pane cannot answer, so it was cancelled: {title}",
-  "run.blocked.piRemote": "pi runs on this Mac only for now. In a remote workspace use Claude, Codex or Antigravity.",
+  "run.blocked.piRemote": "pi runs on this computer only for now. In a remote workspace use Claude, Codex or Antigravity.",
   "settings.cliAccounts.detailPiTimeout": "The pi status check (pi --list-models) did not complete within the time limit.",
   "settings.cliAccounts.detailPiUnknown": "Could not check pi's sign-in status. Run pi in a terminal to see.",
   "settings.cliAccounts.detailPiSignOut": "Sign out by typing /logout inside pi. You cannot sign out or switch accounts here.",
