@@ -73,11 +73,11 @@ pi(`pi`)는 여러 모델 제공자를 쓰는 오픈소스 코딩 에이전트 C
 ### opencode {#opencode}
 opencode(`opencode`)는 여러 모델 제공자를 쓰는 오픈소스 코딩 에이전트 CLI입니다. 자체 서비스인 opencode Zen의 무료 모델은 로그인 없이도 씁니다.
 
-- 설치: {{ui:setup.title}} 화면에서 설치합니다(Homebrew와 Node.js가 없으면 먼저 설치합니다). 직접 설치하려면 `npm install -g opencode-ai`를 실행합니다. 업데이트는 앱이 `opencode upgrade`로 합니다.
-- 로그인: {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliAccounts.buttonLogin}} 단추를 누르면 `opencode auth login`을 실행하는 터미널 창이 열립니다. 거기서 제공자를 고르고 그 제공자의 구독으로 로그인하거나 API 키를 입력합니다. `~/.local/share/opencode/auth.json`의 자격 증명이나 환경 변수의 API 키(`ANTHROPIC_API_KEY` 등)도 로그인으로 보고, 둘 다 없으면 opencode Zen의 무료 모델만 나옵니다. 로그아웃은 터미널에서 `opencode auth logout`을 실행합니다.
+- 설치: {{ui:setup.title}} 화면에서 설치합니다(Homebrew와 Node.js가 없으면 먼저 설치합니다). 직접 설치하려면 `npm install -g @opencode/cli`를 실행합니다. 앱은 OpenCode 2를 씁니다. Mac에 OpenCode 1이 있으면 오래된 것으로 보이고, 구성 요소 화면에서 설치하면 npm의 `opencode-ai`를 먼저 지웁니다. 업데이트는 앱이 `opencode upgrade`로 합니다.
+- 로그인: {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliAccounts.buttonLogin}} 단추를 누르면 `opencode auth login`을 실행하는 터미널 창이 열립니다. 거기서 제공자를 고르고 그 제공자의 구독으로 로그인하거나 API 키를 입력합니다. opencode가 저장한 로그인(`opencode auth list`)이나 환경 변수의 API 키(`ANTHROPIC_API_KEY` 등)도 로그인으로 보고, 둘 다 없으면 opencode Zen의 무료 모델만 나옵니다. 로그아웃은 터미널에서 `opencode auth logout`을 실행합니다.
 - 모델: `opencode models`의 목록이 `제공자/모델` 이름으로 나오고, 첫 항목은 opencode 자체 설정을 따릅니다.
 - 권한: 고른 모드가 그 요청에만 쓰는 opencode 자체 규칙이 되고, 규칙이 묻도록 남긴 일은 Claude처럼 창에 승인 카드로 옵니다. {{ui:permission.label.default}}은 파일 수정, 명령, 웹, 프로젝트 밖 접근 전에 묻고, {{ui:permission.label.acceptEdits}}은 파일 수정을 묻지 않으며, {{ui:permission.label.plan}}은 파일을 고치지 않는 opencode의 plan 에이전트로 실행하고, {{ui:permission.label.fullAccess}}은 묻지 않습니다.
-- 요청마다 창의 작업 폴더에서 `opencode acp`(Agent Client Protocol)를 실행하고 창의 세션을 이어 갑니다. 세션은 opencode의 `opencode.db`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 opencode 세션이 나옵니다. 사용량에는 세션 비용, 쓰고 있는 컨텍스트, 마지막 모델 호출의 토큰이 보입니다.
+- 요청마다 창의 작업 폴더에서 `opencode acp`(OpenCode 2, Agent Client Protocol)를 실행하고 창의 세션을 이어 갑니다. 세션은 opencode의 `opencode.db`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 opencode 세션이 나옵니다. 사용량에는 세션 비용, 쓰고 있는 컨텍스트, 요청의 토큰이 보입니다.
 - 아직 안 되는 것: opencode 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고 [원격 작업 공간](remote.md)에서 열 수 없습니다. 지금은 Mac에서만 동작합니다.
 
 ### 추가 실행 설정 {#run-settings}

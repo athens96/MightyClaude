@@ -13,7 +13,7 @@ Mighty Code is a desktop app for using Claude Code, Codex CLI, Google's Antigrav
 - Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
 - Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 - pi: Mac and Windows `npm install -g @mariozechner/pi-coding-agent` (needs Node.js; see [pi](agent-pane.md#pi))
-- opencode: Mac `npm install -g opencode-ai` (needs Node.js; see [opencode](agent-pane.md#opencode))
+- opencode: Mac `npm install -g @opencode/cli` (OpenCode 2) (needs Node.js; see [opencode](agent-pane.md#opencode))
 
 > [!tip]
 > Once the app is open, {{ui:settings.nav.tools}} shows which CLIs are ready. On a Mac you install them right there; on Windows you copy the install commands. You sign in on the {{ui:settings.nav.cli}} tab. See [Settings](settings.md#components).

@@ -73,11 +73,11 @@ pi（`pi`）是支持多家模型提供商的开源编码智能体 CLI。
 ### opencode {#opencode}
 opencode（`opencode`）是支持多家模型提供商的开源编码智能体 CLI，其自有服务 opencode Zen 的免费模型无需登录即可使用。
 
-- 安装：在{{ui:setup.title}}界面中安装（缺少 Homebrew 和 Node.js 时会先安装它们），也可以自己运行 `npm install -g opencode-ai`。应用用 `opencode upgrade` 更新它。
-- 登录：点击{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliAccounts.buttonLogin}}，会打开运行 `opencode auth login` 的终端窗格。在其中选择提供商，然后用其订阅登录或输入 API 密钥。`~/.local/share/opencode/auth.json` 中的凭据或环境变量中的 API 密钥（如 `ANTHROPIC_API_KEY`）也视为已登录；两者都没有时只提供 opencode Zen 的免费模型。退出登录请在终端中运行 `opencode auth logout`。
+- 安装：在{{ui:setup.title}}界面中安装（缺少 Homebrew 和 Node.js 时会先安装它们），也可以自己运行 `npm install -g @opencode/cli`。应用使用 OpenCode 2；Mac 上若有 OpenCode 1 会显示为过旧，从设置界面安装时会先删除 npm 的 `opencode-ai`。应用用 `opencode upgrade` 更新它。
+- 登录：点击{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliAccounts.buttonLogin}}，会打开运行 `opencode auth login` 的终端窗格。在其中选择提供商，然后用其订阅登录或输入 API 密钥。opencode 保存的登录（`opencode auth list`）或环境变量中的 API 密钥（如 `ANTHROPIC_API_KEY`）也视为已登录；两者都没有时只提供 opencode Zen 的免费模型。退出登录请在终端中运行 `opencode auth logout`。
 - 模型：列表来自 `opencode models`，以“提供商/模型”显示，第一项遵循 opencode 自身的设置。
 - 权限：所选模式会成为该次请求专用的 opencode 规则，规则留待询问的操作会像 Claude 一样以审批卡出现在窗格中。{{ui:permission.label.default}}在修改文件、执行命令、访问网络和访问项目外内容前询问；{{ui:permission.label.acceptEdits}}修改文件不询问；{{ui:permission.label.plan}}使用不修改文件的 opencode plan 智能体运行；{{ui:permission.label.fullAccess}}从不询问。
-- 每次请求都会在窗格的工作文件夹中运行 `opencode acp`（Agent Client Protocol），并延续窗格自己的会话，会话保存在 opencode 的 `opencode.db`。{{ui:resume.choice.resume}}中也会列出该文件夹的 opencode 会话。用量中显示会话费用、正在使用的上下文和最后一次模型调用的令牌。
+- 每次请求都会在窗格的工作文件夹中运行 `opencode acp`（OpenCode 2，Agent Client Protocol），并延续窗格自己的会话，会话保存在 opencode 的 `opencode.db`。{{ui:resume.choice.resume}}中也会列出该文件夹的 opencode 会话。用量中显示会话费用、正在使用的上下文和该次请求的令牌。
 - 暂不支持：opencode 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开。目前只能在 Mac 上使用。
 
 ### 更多运行设置 {#run-settings}

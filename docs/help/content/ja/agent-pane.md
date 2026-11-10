@@ -73,11 +73,11 @@ pi(`pi`)は、多くのモデル提供元で使えるオープンソースのコ
 ### opencode {#opencode}
 opencode(`opencode`)は、多くのモデル提供元で使えるオープンソースのコーディングエージェントCLIです。自社サービスopencode Zenの無料モデルはサインインなしでも使えます。
 
-- インストール: {{ui:setup.title}}画面からインストールします(HomebrewとNode.jsがなければ先にインストールします)。自分でインストールするなら`npm install -g opencode-ai`を実行します。アップデートはアプリが`opencode upgrade`で行います。
-- サインイン: {{ui:settings.nav.cli}}タブの{{ui:settings.cliAccounts.buttonLogin}}を押すと、`opencode auth login`を実行するターミナルペインが開きます。そこで提供元を選び、そのサブスクリプションでサインインするかAPIキーを入力します。`~/.local/share/opencode/auth.json`の認証情報や環境変数のAPIキー(`ANTHROPIC_API_KEY`など)もサインイン済みと見なし、どちらもなければopencode Zenの無料モデルだけが表示されます。ログアウトはターミナルで`opencode auth logout`を実行します。
+- インストール: {{ui:setup.title}}画面からインストールします(HomebrewとNode.jsがなければ先にインストールします)。自分でインストールするなら`npm install -g @opencode/cli`を実行します。アプリはOpenCode 2を使います。MacにOpenCode 1があると古いものとして表示され、セットアップ画面からインストールするとnpmの`opencode-ai`を先に削除します。アップデートはアプリが`opencode upgrade`で行います。
+- サインイン: {{ui:settings.nav.cli}}タブの{{ui:settings.cliAccounts.buttonLogin}}を押すと、`opencode auth login`を実行するターミナルペインが開きます。そこで提供元を選び、そのサブスクリプションでサインインするかAPIキーを入力します。opencodeが保存したサインイン(`opencode auth list`)や環境変数のAPIキー(`ANTHROPIC_API_KEY`など)もサインイン済みと見なし、どちらもなければopencode Zenの無料モデルだけが表示されます。ログアウトはターミナルで`opencode auth logout`を実行します。
 - モデル: `opencode models`の一覧が「提供元/モデル」の名前で表示され、先頭の項目はopencode自身の設定に従います。
 - 権限: 選んだモードがそのリクエストだけのopencode自身のルールになり、ルールが確認に残した操作はClaudeと同じくペインに承認カードとして届きます。{{ui:permission.label.default}}はファイルの編集、コマンド、Web、プロジェクト外へのアクセスの前に確認し、{{ui:permission.label.acceptEdits}}はファイルの編集を確認せず、{{ui:permission.label.plan}}はファイルを編集しないopencodeのplanエージェントで実行し、{{ui:permission.label.fullAccess}}は確認しません。
-- リクエストごとにペインの作業フォルダで`opencode acp`(Agent Client Protocol)を実行し、ペインのセッションを引き継ぎます。セッションはopencodeの`opencode.db`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのopencodeセッションが表示されます。使用量にはセッションの費用、使用中のコンテキスト、最後のモデル呼び出しのトークンが表示されます。
+- リクエストごとにペインの作業フォルダで`opencode acp`(OpenCode 2、Agent Client Protocol)を実行し、ペインのセッションを引き継ぎます。セッションはopencodeの`opencode.db`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのopencodeセッションが表示されます。使用量にはセッションの費用、使用中のコンテキスト、リクエストのトークンが表示されます。
 - まだできないこと: opencodeのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けません。今のところMacでのみ動作します。
 
 ### その他の実行設定 {#run-settings}

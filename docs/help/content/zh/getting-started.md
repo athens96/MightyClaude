@@ -13,7 +13,7 @@ Mighty Code 是一款桌面应用，可以在一个窗口中并排使用 Claude 
 - Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
 - Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 - pi: Mac 和 Windows `npm install -g @mariozechner/pi-coding-agent`（需要 Node.js，见 [pi](agent-pane.md#pi)）
-- opencode: Mac `npm install -g opencode-ai`（需要 Node.js，见 [opencode](agent-pane.md#opencode)）
+- opencode: Mac `npm install -g @opencode/cli`（OpenCode 2）（需要 Node.js，见 [opencode](agent-pane.md#opencode)）
 
 > [!tip]
 > 打开应用后，可以在{{ui:settings.nav.tools}}标签页中查看哪些 CLI 已就绪。Mac 上可以直接在那里安装，Windows 上可以复制安装命令。登录在{{ui:settings.nav.cli}}标签页中进行。请参阅[设置](settings.md#components)。

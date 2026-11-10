@@ -13,7 +13,7 @@ Mighty Codeは、Claude Code、Codex CLI、GoogleのAntigravity CLI、pi、openc
 - Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
 - Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 - pi: MacとWindows `npm install -g @mariozechner/pi-coding-agent`(Node.jsが必要です。[pi](agent-pane.md#pi)を参照)
-- opencode: Mac `npm install -g opencode-ai`(Node.jsが必要です。[opencode](agent-pane.md#opencode)を参照)
+- opencode: Mac `npm install -g @opencode/cli`(OpenCode 2)(Node.jsが必要です。[opencode](agent-pane.md#opencode)を参照)
 
 > [!tip]
 > アプリを開いたあと、{{ui:settings.nav.tools}}でどのCLIが準備できているかを確認できます。Macではその場でインストールでき、Windowsではインストールコマンドをコピーします。サインインは{{ui:settings.nav.cli}}タブで行います。[設定](settings.md#components)を参照してください。
