@@ -20,10 +20,11 @@ public sealed record MobileQueuedItem(string Id, string Text,
 /// What a pane's detail carries beside its record. <c>AskTargets</c>: the composer's "send to" targets, sent only on a pane that offers
 /// any (a Claude agent pane with oh-my-claudecode's ask and an installed target); <c>AskTarget</c>: the one its sends go to now, null for Claude.
 /// <c>BackgroundWork</c>: the background work still running, as the strip lists it (<see cref="PlanCardSupport.MobileBackgroundWork"/>); absent when none runs.
+/// <c>TerminalPrompt</c>: the command in the pane's terminal waiting for input (docs/terminal-prompts.md); absent when none waits.
 /// <c>BackgroundDone</c>: how many of the strip's tasks ended, sent with the strip, 0 included (<see cref="PlanCardSupport.MobileBackgroundDone"/>); absent when it does not show.
 /// </summary>
 public sealed record MobilePaneExtras(IReadOnlyList<MobileQueuedItem> Queued, object? Settings = null, object? Mighty = null, object? StatusLine = null, IReadOnlyList<MobileAskTarget>? AskTargets = null, string? AskTarget = null,
-    IReadOnlyList<MobileBackgroundWork>? BackgroundWork = null, int? BackgroundDone = null);
+    IReadOnlyList<MobileBackgroundWork>? BackgroundWork = null, int? BackgroundDone = null, TerminalPrompt? TerminalPrompt = null);
 /// <summary>One choice of the phone's "send to" switch (<c>AskTargets</c>), in the desktop menu's order.</summary>
 public sealed record MobileAskTarget(string Id, string Label);
 public sealed record MobileDesktopAction(string SessionId, string Action, JsonElement Body, IReadOnlyList<RunAttachment>? Attachments = null);
@@ -340,6 +341,15 @@ public sealed class MobileDesktopRouter : IDisposable
                         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { throw new MobileRequestException(409, ex.Message); }
                         Changed(); return Reply(OK());
                     }
+                    if (operation == "terminal-prompt")
+                    {
+                        // The answer to the card of a command waiting for input (docs/terminal-prompts.md); the text of a secret is passed on and never kept.
+                        var value = Object(body);
+                        var typed = TerminalPromptAnswer.FromPhone(value.Text("promptId"), value.Text("answer"), value.Text("text")) ?? throw new MobileRequestException(400, Locale.Get("terminalPrompt.error.badAnswer"));
+                        var forwarded = JsonSerializer.SerializeToElement(new { promptId = value.Text("promptId"), answer = typed.Name, text = typed.Line });
+                        if (await action(new(pane.Id, operation, forwarded), token) is not true) throw new MobileRequestException(409, Locale.Get("terminalPrompt.error.gone"));
+                        Changed(); return Reply(OK());
+                    }
                     if (operation == "uploads")
                     {
                         var value = Object(body); if (!value.TryGetProperty("size", out var size) || !size.TryGetInt32(out var count)) throw new MobileRequestException(400, "Invalid size.");
@@ -454,7 +464,9 @@ public sealed class MobileDesktopRouter : IDisposable
             // Running background work only, never an output file's path (M/MightyCore/Remote/MobileRemoteModels.swift MobileSessionDetail.backgroundWork).
             backgroundWork = detail.BackgroundWork is { Count: > 0 } work ? work : null,
             // How many of the strip's tasks ended, 0 included, while it shows (M/MightyCore/Remote/MobileRemoteModels.swift MobileSessionDetail.backgroundDone).
-            backgroundDone = detail.BackgroundDone };
+            backgroundDone = detail.BackgroundDone,
+            // A command in the pane's terminal waiting for input, answered with POST …/terminal-prompt (docs/terminal-prompts.md); absent when none waits.
+            terminalPrompt = detail.TerminalPrompt is { } prompt ? new { prompt.Id, prompt.Handle, prompt.Text, prompt.Options, prompt.Kind, prompt.DefaultYes } : null };
     }
     /// <summary>
     /// The read-only file routes (M/MightyCore/Remote/MobileRemoteService.swift:1048-1104). The folder and the file are read

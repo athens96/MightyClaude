@@ -59,6 +59,7 @@ public sealed partial class MainWindow
             service.UpdateShellBlockRun(pane.Id, running.Key, run => run is { State: "running" } ? ShellBlockRunSupport.Finished(run, null, false) : run);
             throw;
         }
+        WatchTerminalPrompts();
         _ = FinishShellBlock(running, running.Handle);
         // A Stop pressed while the command was still starting is kept and done now.
         if (running.Stopping) await running.Terminal.Stop(running.Handle);

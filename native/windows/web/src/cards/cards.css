@@ -174,3 +174,11 @@
 .status-trust-answers { display: flex; gap: var(--space-sm); align-items: center; }
 .status-trust-note { font-size: 10px; color: var(--ink3); }
 .question-kind .card-waiting { font-size: var(--type-small); }
+
+.terminal-prompt { display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-md); font-size: 12px; color: var(--ink); background: color-mix(in srgb, var(--accent) 5.5%, transparent); border-top: var(--stroke-line) solid var(--line); margin: 0 calc(-1 * var(--space-md)); }
+.terminal-prompt-title { display: flex; gap: var(--space-sm); align-items: center; font-size: 11px; }
+.terminal-prompt-title .card-button { margin-left: auto; }
+.terminal-prompt-text { font-family: var(--font-mono); font-size: 12px; background: color-mix(in srgb, var(--ink) 5%, transparent); border-radius: var(--radius-segment); padding: var(--space-sm); white-space: pre-wrap; word-break: break-all; user-select: text; }
+.terminal-prompt-options { font-family: var(--font-mono); font-size: 11px; color: var(--ink2); }
+.terminal-prompt-options .marked { color: var(--accent); }
+.terminal-prompt input { flex: 1 1 12rem; min-width: 0; }

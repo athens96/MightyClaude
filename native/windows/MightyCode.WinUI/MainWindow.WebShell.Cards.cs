@@ -44,6 +44,9 @@ internal sealed record WebPlanCard(string RequestId, int Count, string Received,
 internal sealed record WebAntigravityAction(string Heading, string? Target, bool Code, string? Rule, string? OnceOnly);
 internal sealed record WebAntigravityCard(string CardId, string RunId, IReadOnlyList<WebAntigravityAction> Actions, string? Reason, bool Busy, bool CanAllow, bool CanAllowAlways, string? AlwaysTip) { public string Kind => "antigravity"; }
 
+/// <summary>A command in the pane's terminal waiting for input (MainWindow.TerminalPrompts.cs); <c>Input</c> is yesNo, secret, text or choice.</summary>
+internal sealed record WebTerminalPromptCard(string PromptId, string Text, IReadOnlyList<string> Options, string Input, bool? DefaultYes) { public string Kind => "terminalPrompt"; }
+
 /// <summary>An agent's request to open a web page (MainWindow.AgentWebPrompts.cs).</summary>
 internal sealed record WebOpenCard(string RequestId, string Url) { public string Kind => "webOpen"; }
 
@@ -392,6 +395,7 @@ public sealed partial class MainWindow
             if (WebPlanHistory(pane) is { } history) cards.Add(history);
             if (WebBackground(pane) is { } background) { cards.Add(background); ticks = background.Open && pane.BackgroundWork!.Tasks.Any(t => t.Status == "running"); }
             if (WebRequestCard() is { } request) cards.Add(request);
+            if (owner.terminalPrompts.GetValueOrDefault(id) is { } waiting) cards.Add(new WebTerminalPromptCard(waiting.Id, waiting.Text, waiting.Options, waiting.Kind, waiting.DefaultYes));
             foreach (var prompt in owner.agentUrlPrompts.ForPane(id)) cards.Add(new WebOpenCard(prompt.Id, prompt.Url.AbsoluteUri));
             if (WebLogin() is { } login) cards.Add(login);
             if (WebStatusLine() is { } line) cards.Add(line);

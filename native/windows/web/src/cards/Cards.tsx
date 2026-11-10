@@ -9,11 +9,12 @@ import * as draftOf from './questionnaire';
 import { usePageOverlay } from '../shell/overlay';
 import { PlanDocument, PlanRecordDetails } from './PlanDocument';
 import { planFeedbackState } from './plan';
+import { isMarked, yesNoEmphasis } from './terminalPrompt';
 import { Pending } from '../pending/Pending';
 import { usePendingAction, type ActionResult } from '../pending/usePending';
 import type {
   AntigravityCard, BackgroundCard, Card, LoginCard, NextActionsCard, PermissionCard, PlanCard, PlanHistoryCard, QuestionnaireCard,
-  StatusLineCard, WebOpenCard,
+  StatusLineCard, TerminalPromptCard, WebOpenCard,
 } from './types';
 
 type Call = (method: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -69,6 +70,7 @@ export function Cards({ paneId }: { paneId: string }) {
           case 'nextActions': return <NextActions key="next" paneId={paneId} card={card} call={call} />;
           case 'planHistory': return <PlanHistory key="history" card={card} />;
           case 'background': return <Background key="background" card={card} call={call} />;
+          case 'terminalPrompt': return <TerminalPrompt key={card.promptId} card={card} reply={reply} />;
           case 'webOpen': return <WebOpen key={'web-' + card.requestId} card={card} reply={reply} />;
           default: return null;
         }
@@ -560,6 +562,65 @@ function Antigravity({ card, reply }: { card: AntigravityCard; reply: Reply }) {
         <button type="button" className="card-button" data-answer="always" title={card.alwaysTip} disabled={busy || !card.canAllowAlways} onClick={() => void answer('Always')}>{t('antigravity.permission.allowAlways')}</button>
         <button type="button" className="card-button prominent" data-answer="once" disabled={busy || !card.canAllow} onClick={() => void answer('Once')}>{t('permission.allowOnce')}</button>
       </div>
+    </div>
+  );
+}
+
+/** The card of a command waiting for input: its question as the terminal shows it, and the answers its kind takes; the answer is typed into the terminal. */
+function TerminalPrompt({ card, reply }: { card: TerminalPromptCard; reply: Reply }) {
+  const { t } = useServices();
+  const [text, setText] = useState('');
+  const answer = (name: string, line?: string) => void reply('terminalPromptAnswer', { promptId: card.promptId, answer: name, text: line });
+  const send = () => {
+    if (text === '') return;
+    const typed = text;
+    setText(''); // a secret never stays in the field
+    answer('text', typed);
+  };
+  const emphasis = yesNoEmphasis(card.defaultYes);
+  const word = (key: string, isDefault: boolean) => (isDefault ? t(key) + ' (' + t('terminalPrompt.default') + ')' : t(key));
+  return (
+    <div className="terminal-prompt" data-card="terminalPrompt">
+      <div className="terminal-prompt-title">
+        <span className="web-open-mark" aria-hidden="true">▣</span>
+        <strong>{t('terminalPrompt.title')}</strong>
+        <button type="button" className="card-button small" onClick={() => void reply('terminalPromptShow', {})}>{t('terminalPrompt.showTerminal')}</button>
+      </div>
+      <div className="terminal-prompt-text">{card.text}</div>
+      {card.input === 'choice' && (
+        <div className="terminal-prompt-options">
+          {card.options.map((option, index) => <div key={index} className={isMarked(option) ? 'marked' : undefined}>{option}</div>)}
+        </div>
+      )}
+      <div className="wait-card-footer">
+        {card.input === 'yesNo' && (
+          <>
+            <button type="button" className={'card-button small' + (emphasis.noAccent ? ' accent' : '')} data-answer="no" onClick={() => answer('no')}>{word('terminalPrompt.no', emphasis.noDefault)}</button>
+            <button type="button" className={'card-button small' + (emphasis.yesAccent ? ' accent' : '')} data-answer="yes" onClick={() => answer('yes')}>{word('terminalPrompt.yes', emphasis.yesDefault)}</button>
+          </>
+        )}
+        {(card.input === 'secret' || card.input === 'text') && (
+          <>
+            <input
+              type={card.input === 'secret' ? 'password' : 'text'} autoComplete="off" spellCheck={false} maxLength={4096} value={text}
+              placeholder={t(card.input === 'secret' ? 'terminalPrompt.secretPlaceholder' : 'terminalPrompt.textPlaceholder')}
+              aria-label={t(card.input === 'secret' ? 'terminalPrompt.secretPlaceholder' : 'terminalPrompt.textPlaceholder')}
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); send(); } }}
+            />
+            {card.input === 'text' && <button type="button" className="card-button small" onClick={() => answer('enter')}>{t('terminalPrompt.enterOnly')}</button>}
+            <button type="button" className="card-button small accent" disabled={text === ''} onClick={send}>{t('terminalPrompt.send')}</button>
+          </>
+        )}
+        {card.input === 'choice' && (
+          <>
+            <button type="button" className="card-button small" onClick={() => answer('up')}>{t('terminalPrompt.up')}</button>
+            <button type="button" className="card-button small" onClick={() => answer('down')}>{t('terminalPrompt.down')}</button>
+            <button type="button" className="card-button small accent" onClick={() => answer('enter')}>{t('terminalPrompt.select')}</button>
+          </>
+        )}
+      </div>
+      <span className="card-hint">{t('terminalPrompt.help')}</span>
     </div>
   );
 }

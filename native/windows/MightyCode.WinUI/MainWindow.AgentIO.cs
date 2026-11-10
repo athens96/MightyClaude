@@ -34,7 +34,7 @@ public sealed partial class MainWindow
                 if (tool != "run_in_terminal") throw new ArgumentException("Unknown terminal handle.");
                 agentTerminals[binding.PaneId] = terminal = new AgentTerminal(binding.WorkspacePath);
             }
-            if (tool == "run_in_terminal") await ShowAgentIOPane(binding, AgentIOPaneKind.Terminal);
+            if (tool == "run_in_terminal") { WatchTerminalPrompts(); await ShowAgentIOPane(binding, AgentIOPaneKind.Terminal); }
             cancellation.ThrowIfCancellationRequested();
             RequireActiveAgentBinding(binding);
             return terminal;

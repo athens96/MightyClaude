@@ -5,7 +5,7 @@ namespace MightyCode.Core;
 public sealed record AgentTerminalResult(string Handle, string Status, string Output, int? ExitCode, bool OutputDropped, bool MoreRemains);
 
 /// <summary>A pane-scoped terminal: handles and output never cross agent panes.</summary>
-public sealed class AgentTerminal : IAsyncDisposable
+public sealed class AgentTerminal : IAsyncDisposable, IPromptTerminal
 {
     private sealed class Command(string handle)
     {
@@ -14,6 +14,9 @@ public sealed class AgentTerminal : IAsyncDisposable
         internal readonly StringBuilder Pending = new();
         internal readonly TerminalTextCleaner Cleaner = new();
         internal bool Dropped, Finished;
+        /// <summary>The process's own raw output, the last 1 MiB, for readers with their own cursor (<see cref="ReadOutput"/>); <see cref="LogStart"/> is the offset of its first character.</summary>
+        internal readonly StringBuilder Log = new();
+        internal int LogStart;
         internal int? ExitCode;
         internal Task Startup = Task.CompletedTask, Completion = Task.CompletedTask;
     }
@@ -68,7 +71,7 @@ public sealed class AgentTerminal : IAsyncDisposable
             {
                 var shell = PseudoTerminal.DefaultShell;
                 var args = PseudoTerminal.ShellArguments(shell, text, noProfile: true);
-                var process = PseudoTerminal.Start(directory, value => { Receive(command, value); output?.Invoke(value); }, executable: shell, arguments: args);
+                var process = PseudoTerminal.Start(directory, value => { Receive(command, value); Record(command, value); output?.Invoke(value); }, executable: shell, arguments: args);
                 lock (gate) command.Process = process;
             });
             command.Completion = Complete(command);
@@ -78,6 +81,30 @@ public sealed class AgentTerminal : IAsyncDisposable
         catch { lock (gate) { command.Finished = true; command.ExitCode = -1; } throw; }
         return command;
     }
+    private void Record(Command command, string text)
+    {
+        lock (gate)
+        {
+            command.Log.Append(text);
+            if (command.Log.Length > 1_048_576) { var cut = command.Log.Length - 1_048_576; command.Log.Remove(0, cut); command.LogStart += cut; }
+        }
+    }
+    public IReadOnlyList<string> RunningHandles() { lock (gate) return commands.Values.Where(c => !c.Finished).Select(c => c.Handle).ToArray(); }
+    public bool IsCommandRunning(string handle) { lock (gate) return commands.TryGetValue(handle, out var c) && !c.Finished; }
+    /// <summary>The command's own output from <paramref name="offset"/> on, apart from what <see cref="Read"/> hands the agent (which it does not move).</summary>
+    public PromptRead ReadOutput(string handle, int offset, int maxChars)
+    {
+        lock (gate)
+        {
+            if (!commands.TryGetValue(handle, out var c)) return new("", offset, false);
+            var start = Math.Clamp(offset, c.LogStart, c.LogStart + c.Log.Length);
+            var count = Math.Min(c.Log.Length - (start - c.LogStart), maxChars);
+            if (count > 0 && char.IsHighSurrogate(c.Log[start - c.LogStart + count - 1])) count--;
+            return new(c.Log.ToString(start - c.LogStart, count), start + count, start - c.LogStart + count < c.Log.Length);
+        }
+    }
+    /// <summary>Types <paramref name="text"/> into the command's terminal as the user would have; whether it was taken.</summary>
+    public bool WriteTo(string handle, string text) { lock (gate) return commands.TryGetValue(handle, out var c) && !c.Finished && c.Process?.TryWrite(text) == true; }
     private void Receive(Command command, string text)
     {
         lock (gate)

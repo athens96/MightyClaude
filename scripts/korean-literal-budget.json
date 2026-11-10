@@ -155,6 +155,11 @@
       "file": "native/macos/Sources/MightyCore/TerminalPrompt.swift",
       "literal": "(password|passphrase|passcode|\\bpin\\b|token|secret|비밀번호|암호|パスワード|密码)[^\\n]*[:?：]\\s*$",
       "reason": "A pattern matched against what a terminal command prints (TerminalPromptDetector): Korean, Japanese and Chinese programs ask for a password in those words. It is never shown."
+    },
+    {
+      "file": "native/windows/MightyCode.Core/TerminalPrompt.cs",
+      "literal": "(password|passphrase|passcode|\\bpin\\b|token|secret|비밀번호|암호|パスワード|密码)[^\\n]*[:?：]\\s*$",
+      "reason": "The same password pattern as the Mac's TerminalPromptDetector, matched against what a terminal command prints; never shown."
     }
   ]
 }

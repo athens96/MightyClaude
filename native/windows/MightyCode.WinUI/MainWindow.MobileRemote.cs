@@ -523,6 +523,10 @@ public sealed partial class MainWindow
                 if (target is not null && !AskTargetsFor(pane.MobileSession).Any(t => t.Id == target)) throw new MobileRequestException(400, Locale.Get("remote.error.badBody"));
                 token.ThrowIfCancellationRequested(); await SetAskTarget(request.SessionId, target); return null;
             case "guided": return await pane.MobileGuided(body, token);
+            // The answer to the pane's waiting terminal command, typed as its card types it; whether it was (false: no such card now).
+            case "terminal-prompt":
+                token.ThrowIfCancellationRequested();
+                return TerminalPromptAnswer.FromPhone(body.Text("promptId"), body.Text("answer"), body.Text("text")) is { } typed && AnswerTerminalPrompt(request.SessionId, body.Text("promptId")!, typed);
             // An Antigravity card answered on the phone, as its own buttons answer it; what comes back is why nothing happened.
             case "antigravityPermission":
                 var card = service.PendingAntigravityCard(request.SessionId, body.Text("requestId") ?? "", body.Text("runId") ?? "") ?? throw new MobileRequestException(409, Locale.Get("remote.error.notPendingPermission"));
@@ -707,6 +711,8 @@ public sealed partial class MainWindow
             foreach (var task in pane.BackgroundWork?.Running ?? []) { mighty.Add(task.Id); mighty.Add(task.Description); mighty.Add(task.ToolUseId); mighty.Add(task.Kind); }
             // The detail's backgroundDone: the strip's finished count while it shows (M/AppStore+MobileRemote.swift mobileBackgroundDigest).
             mighty.Add(PlanCardSupport.MobileBackgroundDone(pane.BackgroundWork));
+            // The detail's terminalPrompt: a card that comes, changes or goes moves the pane.
+            mighty.Add(owner.terminalPrompts.GetValueOrDefault(id)?.Id);
             if (MobileActiveStyle is { } style)
             {
                 mighty.Add(style.Id); mighty.Add(style.Hash); mighty.Add(GuidedPhase(style)?.Id); mighty.Add(pane.Status == "running"); mighty.Add(stylePrerequisites?.Ready);
@@ -738,7 +744,7 @@ public sealed partial class MainWindow
             var runNow = RunNowRows();
             // How many of the strip's tasks ended, while the strip shows (M/AppStore+MobileRemote.swift mobileBackgroundDone).
             return new(DelegationQueueRows.MobileItems(owner.service.HeldItems(id), queuedInputs.Items, rowId => runNow.GetValueOrDefault(rowId, QueueRunNowPath.Hidden)), settings, mighty, statusLine,
-                askTargets.Select(t => new MobileAskTarget(t.Id, t.Label)).ToArray(), AskTargets.Effective(pane.AskTarget, askTargets)?.Id, background, PlanCardSupport.MobileBackgroundDone(pane.BackgroundWork));
+                askTargets.Select(t => new MobileAskTarget(t.Id, t.Label)).ToArray(), AskTargets.Effective(pane.AskTarget, askTargets)?.Id, background, PlanCardSupport.MobileBackgroundDone(pane.BackgroundWork), owner.terminalPrompts.GetValueOrDefault(id));
         }
         /// <summary>The style panel the phone draws, in the shared golden shape (M/MightyCore/Styles/StylePanelProjection.swift).</summary>
         private object? MobileStylePanel(RegisteredStyle? chosen) => chosen is { } style

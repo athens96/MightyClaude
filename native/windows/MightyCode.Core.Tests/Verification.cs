@@ -1092,6 +1092,13 @@ internal static class Verification
         // native/contracts/fixtures/ask-targets.json, which the Mac (AskTargetsTests) and the phone read too (the composer's 보낼 대상 switch).
         await Test("shell block runs: the key is the entry and the block's place", ShellBlockRunVerification.TheKeyIsTheEntryAndTheBlocksPlace);
         await Test("shell block runs: a record moves from running to completed, failed or stopped, and running again replaces it", ShellBlockRunVerification.TheRecordMovesFromRunningToItsEnd);
+        await Test("terminal prompts: yes/no questions and their default", TerminalPromptVerification.YesNoQuestionsAndTheirDefault);
+        await Test("terminal prompts: secrets, lines and what is no prompt", TerminalPromptVerification.SecretsTextAndNotPrompts);
+        await Test("terminal prompts: a list moved with the arrow keys", TerminalPromptVerification.AListMovedWithTheArrowKeys);
+        await Test("terminal prompts: answers type what the terminal would get", TerminalPromptVerification.AnswersTypeWhatTheTerminalWouldGet);
+        await Test("terminal prompts: the phone's answer is read strictly", TerminalPromptVerification.ThePhonesAnswerIsReadStrictly);
+        await Test("terminal prompts: the monitor waits for quiet output and hides an answered prompt", TerminalPromptVerification.TheMonitorWaitsForQuietOutputAndHidesAnAnsweredPrompt);
+        await Test("terminal prompts: the agent terminal reads a command's output with its own cursor", TerminalPromptVerification.TheAgentTerminalKeepsAReadCursorApartFromTheAgentsReads);
         await Test("shell block runs: the saved field is optional and a run restored running reads interrupted", ShellBlockRunVerification.TheFieldIsOptionalAndARestoredRunIsInterrupted);
         await Test("shell block runs: output is cleaned, its redraws resolved and its last 16 KB kept", ShellBlockRunVerification.TheOutputIsCleanedAndItsTailKept);
         await Test("shell block runs: the host runs only a command the assistant reply shows", ShellBlockRunVerification.TheHostRunsOnlyWhatTheReplyShows);

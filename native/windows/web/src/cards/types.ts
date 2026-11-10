@@ -133,6 +133,18 @@ export interface WebOpenCard {
   url: string;
 }
 
+export type TerminalPromptInput = 'yesNo' | 'secret' | 'text' | 'choice';
+
+/** A command in the pane's terminal waiting for input (MainWindow.TerminalPrompts.cs). */
+export interface TerminalPromptCard {
+  kind: 'terminalPrompt';
+  promptId: string;
+  text: string;
+  options: string[];
+  input: TerminalPromptInput;
+  defaultYes?: boolean;
+}
+
 export interface LoginLine {
   text: string;
   tone: 'ink2' | 'wait';
@@ -187,6 +199,7 @@ export type Card =
   | QuestionnaireCard
   | PlanCard
   | AntigravityCard
+  | TerminalPromptCard
   | WebOpenCard
   | LoginCard
   | StatusLineCard;
