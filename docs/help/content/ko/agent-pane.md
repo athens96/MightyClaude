@@ -91,7 +91,7 @@ Hermes(`hermes`)는 Nous Research의 오픈소스 에이전트 CLI(Hermes Agent)
 - 모델: 첫 항목은 Hermes 자체 설정(`hermes model`로 정한 기본 모델)을 따릅니다. Hermes는 세션을 열어야 모델 목록을 알려 주므로, 첫 요청을 보낸 뒤부터 `제공자:모델` 목록이 나옵니다.
 - 권한: {{ui:permission.label.default}}은 파일을 고칠 때마다 창의 승인 카드로 묻고, {{ui:permission.label.acceptEdits}}은 작업 폴더 안의 수정을 묻지 않으며, {{ui:permission.label.fullAccess}}은 Hermes의 `--yolo`로 위험한 명령도 묻지 않습니다. 위험한 명령(`rm -rf` 등)은 Hermes의 승인 설정(`approvals.mode`)에 따라 카드로 묻고, 그 밖의 명령과 읽기는 묻지 않습니다. 계획 전용 모드는 없습니다. {{ui:permission.label.fullAccess}}은 세션을 시작할 때 정해지므로, 이미 시작한 세션에는 새 대화부터 적용됩니다.
 - 요청마다 창의 작업 폴더에서 `hermes acp`(Agent Client Protocol)를 실행하고 창의 세션을 이어 갑니다. 실제 작업은 Hermes의 게이트웨이(백그라운드 프로세스)가 하며, 필요할 때 저절로 시작되고 쓰지 않으면 끝납니다. 세션은 `~/.hermes/state.db`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 Hermes 세션이 나옵니다. 사용량에는 세션의 누적 토큰과 쓰고 있는 컨텍스트가 보이고, 비용은 Hermes가 알려 주지 않습니다.
-- 질문: Hermes가 clarify 도구로 물으면 [질문 카드](approvals.md#questions)가 뜨고, 답하면 같은 요청이 이어집니다. Hermes는 편집기 연결(ACP)에서 이 도구를 기본으로 꺼 두므로, 앱이 첫 Hermes 요청 전에 Hermes 설정의 `platform_toolsets.acp` 한 항목을 `hermes config set`으로 켜고 기록에 알립니다. 직접 정해 둔 목록이 있으면 건드리지 않습니다. 새 대화부터 적용되고, 되돌리려면 터미널에서 `hermes config unset platform_toolsets.acp`를 실행합니다.
+- 질문: Hermes가 clarify 도구로 물으면 [질문 카드](approvals.md#questions)가 뜨고, 답하면 같은 요청이 이어집니다. Hermes는 편집기 연결(ACP)에서 이 도구를 기본으로 꺼 두므로, 앱이 첫 Hermes 요청 전에 Hermes 설정의 `platform_toolsets.acp` 한 항목을 `hermes config set`으로 켜고 기록에 알립니다. 직접 정해 둔 목록이 있으면 건드리지 않습니다. 새 대화부터 적용되고, 되돌리려면 터미널에서 `hermes config unset platform_toolsets.acp`를 실행합니다. Hermes는 답을 일정 시간(기본 90초)만 기다립니다. 그 뒤에는 카드가 닫히고 Hermes가 답 없이 이어 갑니다.
 - 아직 안 되는 것: Hermes 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고 [원격 작업 공간](remote.md)에서 열 수 없습니다. 지금은 Mac에서만 동작합니다.
 
 ### 추가 실행 설정 {#run-settings}

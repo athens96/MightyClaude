@@ -126,6 +126,7 @@ OpenCode 2.2.7 실물로 확인했고 fixture는 그 녹화다(`opencode-acp-que
 - 카드의 취소: `{action: "decline"}`. 2는 도구를 `failed`("The user dismissed this question")로 닫고 **턴을 끝낸다**(`session/prompt`의 `stopReason: "cancelled"`). 실행은 실패가 아니라 끝난 것으로 본다.
 - 카드로 보일 수 없는 form(숫자·객체 속성, 질문 8개나 보기 12개 초과, 같은 질문이나 같은 이름의 보기)은 `decline`으로 답하고 한 줄 남긴다(`acp.channel.formDeclined`). 2는 위와 같이 턴을 끝낸다. 알리지 않던 때처럼 모델이 글로 이어 가게 할 방법은 form을 알린 뒤에는 없다.
 - 카드가 떠 있는 동안 그 호출이 `completed`/`failed`가 되거나 에이전트가 요청을 거두면(`$/cancel_request`) 카드를 거둔다. 실행을 멈추면 답 없이 거둔다.
+- 모델이 보기를 글로 적지 않게: 실행의 `OPENCODE_CONFIG_CONTENT`에 `instructions: ["<앱 번들>/Agents/opencode-questions.md"]`를 함께 싣는다. 2는 모든 설정 원본의 `instructions`(경로·URL 목록)를 합치므로 사용자의 것은 그대로다. 파일은 "보기 중에서 고르게 할 때는 `question` 도구를 부른다"는 짧은 안내다. 실물 2.2.7에서 안내 없이 "선택하는 문제를 내"는 두 번 모두 글로 퀴즈를 냈고, 안내와 함께는 두 문장 여섯 번 모두 도구로 물었다.
 - 폰: 카드가 Claude의 질문과 같은 `ToolPermissionRequest`라 폰에도 그대로 가고, 폰의 답도 같은 길로 온다.
 
 ## 모델과 사고 강도

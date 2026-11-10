@@ -91,7 +91,7 @@ Hermes（`hermes`）是 Nous Research 的开源智能体 CLI（Hermes Agent）�
 - 模型：第一项跟随 Hermes 自身的设置（通过 `hermes model` 设定的默认模型）。Hermes 只有打开会话后才给出模型列表，因此发送第一个请求后才会出现 `提供商:模型` 列表。
 - 权限：{{ui:permission.label.default}}在每次修改文件前用窗格中的批准卡片询问；{{ui:permission.label.acceptEdits}}不询问工作文件夹内的修改；{{ui:permission.label.fullAccess}}即 Hermes 的 `--yolo`，危险命令也不询问。危险命令（如 `rm -rf`）按 Hermes 的审批设置（`approvals.mode`）用卡片询问，其他命令和读取不询问。没有仅规划的模式。{{ui:permission.label.fullAccess}}在会话开始时确定，已开始的会话要从新对话起才生效。
 - 每个请求都会在窗格的工作文件夹中运行 `hermes acp`（Agent Client Protocol），并继续该窗格的会话。实际工作由 Hermes 的网关（后台进程）完成，它按需启动，空闲时退出。会话保存在 `~/.hermes/state.db` 中，{{ui:resume.choice.resume}}中也会列出此文件夹的 Hermes 会话。用量显示会话的累计令牌数和正在使用的上下文；Hermes 不报告费用。
-- 提问：Hermes 通过 clarify 工具提问时会弹出[提问卡片](approvals.md#questions)，回答后同一请求继续进行。Hermes 默认在编辑器连接（ACP）中关闭此工具，因此应用会在第一次 Hermes 请求之前，用 `hermes config set` 设置 Hermes 配置中的 `platform_toolsets.acp` 这一项来开启它，并在记录中说明。如果你自己保存过该列表，应用不会改动。从新对话开始生效；要撤销，请在终端运行 `hermes config unset platform_toolsets.acp`。
+- 提问：Hermes 通过 clarify 工具提问时会弹出[提问卡片](approvals.md#questions)，回答后同一请求继续进行。Hermes 默认在编辑器连接（ACP）中关闭此工具，因此应用会在第一次 Hermes 请求之前，用 `hermes config set` 设置 Hermes 配置中的 `platform_toolsets.acp` 这一项来开启它，并在记录中说明。如果你自己保存过该列表，应用不会改动。从新对话开始生效；要撤销，请在终端运行 `hermes config unset platform_toolsets.acp`。Hermes 只等待回答一段时间（默认 90 秒），之后卡片会关闭，Hermes 在没有回答的情况下继续。
 - 暂不支持：Hermes 窗格不参与[Mighty 编排](delegation.md)，也无法在[远程工作区](remote.md)中打开。目前仅在 Mac 上可用。
 
 ### 更多运行设置 {#run-settings}

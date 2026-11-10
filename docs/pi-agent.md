@@ -66,6 +66,8 @@ pi에는 질문 도구가 없다. 앱이 두 가지를 한다. pi 1.5.2 실물�
 - `ask_user`가 연 `select`(제목이 실행 중인 `ask_user` 호출의 `question`과 같다)에서만 직접 쓴 답과 여러 개 고르기를 받는다. pi는 `value`가 보기 중 하나인지 보지 않으므로 쓴 글을 그대로, 여러 개는 `", "`로 이어 보낸다. 다른 확장의 `select`는 보기 하나만 답이 되고(그 확장이 값을 어떻게 읽을지 모른다), 쓴 답은 카드에서 거절한다.
 - `timeout`이 있는 대화상자는 그 시간이 지나면 pi가 스스로 닫는다(클라이언트에 알리지 않는다). 앱도 같은 시간 뒤 카드를 거두고 한 줄 남긴다.
 - 실행을 멈추면 카드는 답 없이 거둔다(프로세스가 끝난다). `ask_user` 호출이 답 전에 끝나도(`tool_execution_end`) 거둔다.
+- 창에 카드가 뜨는 조건: 창은 승인을 창에서 묻는 에이전트(`ProviderOptions.asksInPane`)의 요청만 받았고 pi는 거기에 없어서, 처음에는 `ask_user`가 물어도 카드 없이 실행만 기다렸다. 질문(`canAnswerQuestions`)은 어느 에이전트 것이든 창에 닿는다(`ProviderOptions.showsInPane`).
+- 모델이 보기를 글로 적지 않게: 확장의 `promptGuidelines`가 "사용자가 보기 중에서 고르게 할 때(퀴즈·객관식, 선호, 결정)는 `ask_user`를 부른다"를 시스템 프롬프트의 규칙에 더한다. 실물 1.5.2에서 "선택하는 문제를 내"와 "선택하는 질문을 해줘" 여섯 번 모두 도구로 물었다.
 - 폰: 카드가 `ToolPermissionRequest`(`AskUserQuestion`, `canAnswerQuestions`)라 `MobilePermission.questionnaire`로 그대로 가고, 폰의 답도 같은 길(`answerUserQuestions`)로 온다.
 
 ## 1단계에 넣지 않는 것

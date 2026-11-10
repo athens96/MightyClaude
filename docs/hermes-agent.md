@@ -119,7 +119,10 @@ Hermes에는 승인이 둘 있다.
   - 기록을 읽지 못하면 그대로 잇는다.
 - 카드의 답: 허용 → Hermes의 `allow_once`, 거부 → `deny`(reject_once). "세션 동안 허용"(`allow_session`)과 "항상 허용"(`allow_always`)은 내보이지 않는다.
 - 수정 승인의 `rawInput`은 `{tool, arguments}`다. 카드에는 `arguments`를 풀어 보인다(`ACPChannel.displayInput`). 내용이 64KB를 넘는 쓰기는 카드에 다 보일 수 없어 거부된다(수정 허용 모드에서는 묻지 않으므로 된다).
-- **질문(clarify)**: 앱의 질문 카드(Claude의 AskUserQuestion과 같은 카드, `AgentQuestions`)로 받는다. 모양은 `acp_adapter/elicitation.py`의 것이고, fixture `hermes-acp-clarify.jsonl`은 0.23.1의 그 함수들(`build_clarify_elicitation`, `build_clarify_permission`)이 만든 프레임이다(모델 녹화가 아니다. 아래 "아직 확인하지 못한 것").
+- **질문(clarify)**: 앱의 질문 카드(Claude의 AskUserQuestion과 같은 카드, `AgentQuestions`)로 받는다. 모양은 `acp_adapter/elicitation.py`의 것이다. fixture `hermes-acp-clarify.jsonl`(질문 셋에 답함)과 `hermes-acp-clarify-declined.jsonl`(거절)은 실물 0.23.1의 녹화다. 여러 개 고르기·입력 칸·승인 요청 모양은 녹화에 없어 Hermes의 생성 함수(`build_clarify_elicitation`, `build_clarify_permission`)가 만든 프레임으로 시험한다(`HermesTests.builtClarify`).
+  - 녹화에서 본 것: clarify 호출 하나가 질문 여럿을 담으면 질문마다 `elicitation/create`가 하나씩 차례로 온다(JSON-RPC id는 0부터의 숫자, 0도 보통 id다). 앞에는 `tool_call`(제목 `clarify: <질문>`, 내용은 질문 JSON)이, 뒤에는 그 호출의 `completed`("clarify result")가 온다. Hermes는 첫 선택지 글 끝에 ` (Recommended)`를 붙여 보내고(퀴즈에서도), 그 글 전체가 답이다. 앱은 받은 대로 보이고 그대로 돌려준다. 답하면 같은 턴이 이어지고, 거절하면 Hermes가 답 없음으로 읽고 이어 간다.
+  - form에는 `toolCallId`가 없다. 앱은 그때 열려 있는(아직 닫히지 않은) 마지막 도구 호출의 질문으로 본다: 그 행이 "대기"가 되고, 그 호출이 닫히면 카드를 거둔다.
+  - **기다리는 시간**: Hermes는 `agent.clarify_timeout`(기본 90초) 동안만 답을 기다리고, 지나면 클라이언트에 알리지 않고 호출을 닫는다(Python ACP SDK는 요청 취소를 보내지 않는다). 앱은 호출이 닫히는 것을 보고 카드를 거두며 한 줄 남긴다(`acp.channel.questionWithdrawn`). 시간을 늘리는 것은 사용자의 Hermes 설정이다.
   - 앱이 `elicitation.form`을 알리므로 `elicitation/create` `{sessionId, mode: "form", message: <질문>, requestedSchema: {type: "object", properties: {answer: …}, required: ["answer"]}}`로 온다. `answer`는 선택지가 있으면 `{type: "string", enum: […]}`, 여러 개 고르기면 `{type: "array", items: {type: "string", enum: […]}}`, 없으면 `{type: "string"}`(입력 칸)이다. `toolCallId`가 없어 활동 행은 만들지 않는다.
   - 답: `{action: "accept", content: {answer: "Yes"}}`, 여러 개는 `{answer: ["a", "b"]}`. Hermes는 `answer`의 문자열을 `enum`과 맞춰 보지 않으므로 **직접 쓴 답도 같은 `answer`로 간다**(여러 개 고르기에서는 목록의 마지막 항목). 카드의 취소는 `{action: "decline"}`이고 Hermes는 건너뛰기(빈 답)로 읽고 이어 간다.
   - form을 알리지 않은 클라이언트에는 선택지마다 `allow_once` 옵션(`choice-N`)과 `reject_once`(`skip`)를 단 승인 요청(`toolCallId: clarify-<id>`, `rawInput: {question, choices}`)으로 온다. `allow_once`가 둘 이상이면 이것도 질문 카드로 보이고, 고른 선택지의 `optionId`로 답한다. 이 모양에는 직접 쓴 답을 실을 곳이 없어 카드에서 거절한다. 취소는 `skip`이다.
@@ -132,7 +135,8 @@ Hermes에는 승인이 둘 있다.
     3. 사용자가 저장한 목록이 있으면 건드리지 않는다. 거기에 clarify가 없으면 더하는 법을 한 줄 알린다(`run.notice.hermesClarifyMissing`).
   - 값이 `[hermes-acp, clarify]`가 아니라 세 항목인 이유: 목록을 저장하면 `_get_platform_tools`가 `_composite_toolsets` 대신 `_explicit_toolsets`로 가고, 저장하지 않았을 때만 붙던 두 가지가 빠진다. `x_search`(xAI 자격 증명이 있을 때만 붙는다. 없으면 도구의 `check_fn`이 여전히 뺀다)는 항상 적고, `kanban`은 설정의 옛 최상위 `toolsets`에 있을 때만 적는다. 0.23.1의 `_get_platform_tools`로 비교하면 도구 집합은 전과 같고 clarify만 는다. 켜 둔 MCP 서버도 그대로 들어간다(목록에 MCP 서버 이름이 없으면 전부 포함).
   - 앱은 이 키 말고는 Hermes 설정을 읽거나 쓰지 않고, 파일을 직접 고치지 않는다. 되돌리기: `hermes config unset platform_toolsets.acp`(앱이 다음 실행 때 다시 켠다. 끄고 싶으면 `hermes config set platform_toolsets.acp '["hermes-acp"]'`처럼 clarify 없는 목록을 저장한다).
-  - 적용 시점(소스로 읽은 것): 게이트웨이는 세션을 만들 때(`session.create`) 도구 모음을 정해 얼리므로 **새 대화부터** 적용되고, 이어 가는 세션은 만들 때의 도구를 쓴다. 설정 파일은 바뀌면 다시 읽으므로(`_LOAD_CONFIG_CACHE`의 파일 서명) 데몬을 다시 띄울 필요는 없어 보인다.
+  - 적용 시점(실물로 확인): 게이트웨이는 세션을 만들 때(`session.create`) 설정을 새로 읽어 도구 모음을 정해 얼리므로 **새 대화부터** 적용되고, 이어 가는 세션은 만들 때의 도구를 쓴다. 데몬을 다시 띄울 필요는 없다. 앱이 키를 쓴 3초 뒤에 만든 세션에도 clarify가 있었다(`state_meta`의 `gateway.local_policy.v1:<세션>` → `policy.toolsets`). 세션의 도구는 모델 호출 없이 `/tools` 명령으로도 볼 수 있다.
+  - **모델이 도구를 쓰게**: clarify가 켜져 있어도 Hermes의 모델은 보기를 글로 적었다(사용자의 창에서 두 번, 시험에서 세 번 중 세 번). Hermes에는 실행별 시스템 프롬프트가 없다(`session/new`는 폴더와 MCP 서버만, 실행 플래그는 불 값뿐). 그래서 앱은 clarify가 켜진 동안 **요청 글 뒤에** 한 문단을 붙여 보낸다(`HermesQuestionTool.promptNote`: "[Note from the Mighty Code app, not from the user: … call clarify …]"). 앞이 아니라 뒤인 이유는 Hermes가 첫 메시지의 앞머리로 세션 제목을 만들기 때문이다. 창의 기록에는 사용자의 글만 남고, 세션 목록은 저장된 요청에서 이 문단을 떼고 보인다. Hermes 자신의 기록(`state.db`, 터미널의 Hermes)에는 문단이 보인다. 붙인 뒤에는 "선택하는 문제를 내"와 "선택하는 질문을 해줘"가 여덟 번 중 여덟 번 clarify로 물었다(앞에 붙인 넷, 뒤에 붙인 넷).
   - 폰: 카드가 Claude의 질문과 같은 `ToolPermissionRequest`라 폰에도 그대로 가고, 폰의 답도 같은 길로 온다.
 - 승인은 Hermes의 `approvals.timeout`(기본 300초)이 지나면 Hermes가 스스로 거절한다.
 - 기본값은 기본 권한.
@@ -197,7 +201,7 @@ fixture(`native/contracts/fixtures/hermes-acp-{answer,tools,auth,resume,resume-m
 
 ## 아직 확인하지 못한 것
 
-- 질문(clarify)을 모델이 실제로 묻는 턴: 실물 0.23.1의 ACP 도구 모음에는 clarify가 없어(사용자 설정으로만 켠다) 모델이 "clarify 도구가 없다"며 글로 물었다(form을 알린 실행과 알리지 않은 실행 둘 다). 프레임은 Hermes 자신의 생성 함수로 만들어 시험했고, form을 알려도 보통 실행이 그대로 되는 것은 실물로 확인했다. 답이 간 뒤 게이트웨이의 `clarify.respond`와 턴이 이어지는 것은 확인하지 못했다. `platform_toolsets.acp`를 실제 설정에 쓴 뒤의 실물 턴도 아직 못 봤다: `config get/set/unset`의 모양과 종료 코드는 `/tmp`의 빈 `HERMES_HOME`에서 실물 0.23.1로 확인했고, 도구 집합은 사용자의 설정을 메모리에서만 바꿔 `_get_platform_tools`로 비교했다. 데몬 재시작이 필요 없는지와 새 세션에 clarify가 생기는지는 소스로만 읽었다.
+- 질문(clarify)을 모델이 실제로 묻는 턴: 실물 0.23.1의 ACP 도구 모음에는 clarify가 없어(사용자 설정으로만 켠다) 모델이 "clarify 도구가 없다"며 글로 물었다(form을 알린 실행과 알리지 않은 실행 둘 다). 프레임은 Hermes 자신의 생성 함수로 만들어 시험했고, form을 알려도 보통 실행이 그대로 되는 것은 실물로 확인했다. 답이 간 뒤 게이트웨이의 `clarify.respond`와 턴이 이어지는 것은 확인하지 못했다. 여러 개 고르기·입력 칸 form과 승인 요청 모양의 실물 턴, 90초가 지나 Hermes가 스스로 닫는 순간, 직접 쓴 답이 `answer`로 가는 실물 턴은 아직 못 봤다(생성 함수의 프레임과 소스로 시험한다).
 - 열쇠 없이 쓰는 로컬 끝점(Ollama 등)만 설정한 Hermes가 `authMethods`에 제공자를 내는지. 내지 않으면 앱이 요청을 막는다.
 - 제공자 로그인이 끊겼을 때(만료된 토큰, 틀린 키)의 실제 문구.
 - 압축된 대화의 `parent_session_id` 사슬(가지·하위 에이전트 세션과 섞이지 않는지), WAL 중 읽기.
