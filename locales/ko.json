@@ -3451,5 +3451,6 @@
   "acp.channel.formDeclined": "에이전트가 보낸 입력 양식은 질문 카드로 보일 수 없어 거절했습니다: {question}",
   "run.notice.piDialogTimedOut": "pi 확장의 질문이 정해진 시간 안에 답을 받지 못해 닫혔습니다: {title}",
   "run.notice.hermesClarifyEnabled": "Hermes가 질문을 물을 수 있도록 ACP 도구에 clarify를 켰습니다(Hermes 설정 {key} = {value}). 새 대화부터 적용됩니다. 되돌리려면 터미널에서 hermes config unset {key}를 실행하세요.",
-  "run.notice.hermesClarifyMissing": "Hermes 설정의 {key}에 clarify가 없어 Hermes가 질문 카드로 묻지 못합니다. 쓰려면 그 목록에 clarify를 더하거나, hermes config unset {key}를 실행해 앱이 켜게 하세요."
+  "run.notice.hermesClarifyMissing": "Hermes 설정의 {key}에 clarify가 없어 Hermes가 질문 카드로 묻지 못합니다. 쓰려면 그 목록에 clarify를 더하거나, hermes config unset {key}를 실행해 앱이 켜게 하세요.",
+  "acp.channel.questionWithdrawn": "에이전트가 답을 더 기다리지 않고 질문을 닫았습니다: {question}"
 }

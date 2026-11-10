@@ -3451,5 +3451,6 @@
   "acp.channel.formDeclined": "エージェントの入力フォームは質問カードとして表示できないため、辞退しました: {question}",
   "run.notice.piDialogTimedOut": "pi の拡張機能の質問は、時間内に回答がなかったため閉じられました: {title}",
   "run.notice.hermesClarifyEnabled": "Hermesが質問できるように、ACPツールでclarifyをオンにしました（Hermesの設定 {key} = {value}）。新しい会話から適用されます。元に戻すには、ターミナルで hermes config unset {key} を実行してください。",
-  "run.notice.hermesClarifyMissing": "Hermesの設定 {key} にclarifyがないため、Hermesは質問カードで質問できません。使うにはそのリストにclarifyを追加するか、hermes config unset {key} を実行してアプリにオンにさせてください。"
+  "run.notice.hermesClarifyMissing": "Hermesの設定 {key} にclarifyがないため、Hermesは質問カードで質問できません。使うにはそのリストにclarifyを追加するか、hermes config unset {key} を実行してアプリにオンにさせてください。",
+  "acp.channel.questionWithdrawn": "エージェントが回答を待つのをやめ、質問を閉じました: {question}"
 }

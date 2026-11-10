@@ -363,7 +363,7 @@ enum HermesSessions {
             if text.hasPrefix("["), let parts = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [[String: Any]] {
                 text = parts.compactMap { $0["text"] as? String }.joined(separator: " ")
             }
-            let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let prompt = HermesQuestionTool.withoutNote(text).trimmingCharacters(in: .whitespacesAndNewlines)
             row.prompt = prompt.isEmpty ? nil : String(prompt.prefix(2_000))
         }
         row.requests = count
@@ -385,8 +385,18 @@ public enum HermesQuestionTool {
         case enabled([String])
         /// The user's own list has no clarify: the app says how to add it.
         case missing
-        /// clarify is already on, the key could not be read or set, or this launch already looked.
-        case nothing
+        /// clarify is already on.
+        case ready
+    }
+    /// What follows the user's request in a Hermes prompt while clarify is on. Hermes has no
+    /// per-run system prompt (ACP's `session/new` takes a folder and MCP servers, its launch
+    /// flags are yes/no switches), and without these words its model lists choices as text.
+    /// After the request, not before it: Hermes titles a session by the start of its first message.
+    public static let promptNote = "[Note from the Mighty Code app, not from the user: this pane shows your clarify tool as a card the user answers with a click. Whenever you present the user with options to choose from (a quiz or multiple-choice problem, a preference, a decision), call clarify with the question and the choices instead of listing them in your reply.]"
+    /// A stored request without the note, as the session list shows it.
+    public static func withoutNote(_ text: String) -> String {
+        guard let range = text.range(of: "[Note from the Mighty Code app, not from the user:") else { return text }
+        return String(text[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// What the unset key becomes. Saving a list makes Hermes stop adding two things it adds to
@@ -408,23 +418,24 @@ public enum HermesQuestionTool {
     }
 
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var looked = Set<String>()
-    /// Once per app launch for each Hermes (its executable and data folder).
-    static func ensure(executable: URL, environment: [String: String], cwd: URL) async -> Outcome {
+    nonisolated(unsafe) private static var looked: [String: Outcome] = [:]
+    /// Once per app launch for each Hermes (its executable and data folder). `first` is what
+    /// this launch found the first time (the pane says it once); `asks` whether Hermes's model
+    /// has the tool as far as the app knows.
+    static func ensure(executable: URL, environment: [String: String], cwd: URL) async -> (first: Outcome?, asks: Bool) {
         let identity = executable.path + "\n" + (environment["HERMES_HOME"] ?? "")
-        let first = lock.withLock { looked.insert(identity).inserted }
-        guard first else { return .nothing }
-        let outcome = await apply(executable: executable, environment: environment, cwd: cwd)
+        if let known = lock.withLock({ looked[identity] }) { return (nil, known != .missing) }
         // A Hermes that could not answer is asked again by the next run.
-        if outcome == nil { lock.withLock { _ = looked.remove(identity) } }
-        return outcome ?? .nothing
+        guard let outcome = await apply(executable: executable, environment: environment, cwd: cwd) else { return (nil, false) }
+        let first = lock.withLock { () -> Bool in if looked[identity] == nil { looked[identity] = outcome; return true }; return false }
+        return (first ? outcome : nil, outcome != .missing)
     }
     /// nil when Hermes could not be asked (no answer, a managed or unreadable config).
     static func apply(executable: URL, environment: [String: String], cwd: URL) async -> Outcome? {
         guard let current = await run(executable, ["config", "get", "--json", key], environment, cwd) else { return nil }
         if current.status == 0 {
             guard let names = names(json: current.stdout) else { return nil }
-            return names.contains(tool) ? .nothing : .missing
+            return names.contains(tool) ? .ready : .missing
         }
         // Only Hermes's own "not set" answer is an unset key; any other failure changes nothing.
         guard current.status == 1, current.stdout.allSatisfy({ $0 == 10 || $0 == 32 }), String(decoding: current.stderr, as: UTF8.self).contains("not set: " + key) else { return nil }

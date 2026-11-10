@@ -233,17 +233,90 @@ struct HermesTests {
         #expect(allowed.answers.map(allowed.option) == ["allow_once", "allow_once"])
     }
 
-    /// A session opened, then line `index` of hermes-acp-clarify.jsonl: the frames Hermes 0.23.1's own
-    /// builders (`acp_adapter/elicitation.py`) make for a clarify prompt. Not a model recording: the
-    /// `hermes-acp` toolset leaves the clarify tool out unless the user's `hermes tools` turns it on.
+    /// The frames Hermes 0.23.1's own builders (`acp_adapter/elicitation.py`) make for a clarify prompt:
+    /// one choice, several, a typed answer, and the approval a client without forms gets. The recorded
+    /// exchange (hermes-acp-clarify.jsonl) shows only the single-choice form.
+    static let builtClarify: [String] = [
+        #"{"jsonrpc":"2.0","id":0,"method":"elicitation/create","params":{"sessionId":"local-3869e20bb2f7a486741b466fd3689c6722764393b7a2f50bca1fa86853cd1f9b","mode":"form","message":"Commit the change now?","requestedSchema":{"type":"object","properties":{"answer":{"type":"string","enum":["Yes","Not yet"]}},"required":["answer"]}}}"#,
+        #"{"jsonrpc":"2.0","id":1,"method":"elicitation/create","params":{"sessionId":"local-3869e20bb2f7a486741b466fd3689c6722764393b7a2f50bca1fa86853cd1f9b","mode":"form","message":"Which files should be staged?","requestedSchema":{"type":"object","properties":{"answer":{"type":"array","items":{"type":"string","enum":["README.md","notes.txt","src/main.py"]}}},"required":["answer"]}}}"#,
+        #"{"jsonrpc":"2.0","id":2,"method":"elicitation/create","params":{"sessionId":"local-3869e20bb2f7a486741b466fd3689c6722764393b7a2f50bca1fa86853cd1f9b","mode":"form","message":"What should the commit message say?","requestedSchema":{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}}}"#,
+        #"{"jsonrpc":"2.0","id":3,"method":"session/request_permission","params":{"sessionId":"local-3869e20bb2f7a486741b466fd3689c6722764393b7a2f50bca1fa86853cd1f9b","toolCall":{"content":[{"content":{"text":"Commit the change now?","type":"text"},"type":"content"}],"kind":"other","rawInput":{"question":"Commit the change now?","choices":["Yes","Not yet"]},"status":"pending","title":"Commit the change now?","toolCallId":"clarify-7c1d","sessionUpdate":"tool_call_update"},"options":[{"kind":"allow_once","name":"Yes","optionId":"choice-0"},{"kind":"allow_once","name":"Not yet","optionId":"choice-1"},{"kind":"reject_once","name":"Skip","optionId":"skip"}]}}"#,
+    ]
+    /// A session opened, then one of `builtClarify`.
     static func clarify(_ index: Int) throws -> (Replay, ToolPermissionRequest?) {
         let run = try Self.channel(StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "hi", provider: "hermes"))
         run.channel.start()
         let lines = try Self.fixture("answer")
         run.channel.receive(lines[0] + Data([10])); run.channel.receive(lines[1] + Data([10]))
-        run.channel.receive(try Self.fixture("clarify")[index] + Data([10]))
+        run.channel.receive(Data(Self.builtClarify[index].utf8) + Data([10]))
         return (run, run.permissions.first)
     }
+    /// Answers each question card as it appears with `answer`.
+    static func answering(_ answer: @escaping (Replay, ToolPermissionRequest) throws -> Void) -> (Replay, Int) throws -> Void {
+        { run, _ in
+            guard let card = run.permissions.last, card.state == "pending", run.permissions.filter({ $0.id == card.id }).count == 1 else { return }
+            try answer(run, card)
+        }
+    }
+
+    @Test func aRecordedClarifyAsksItsQuestionsOneCardAtATimeAndTheTurnGoesOn() throws {
+        // Recorded with Hermes 0.23.1: one clarify call of three questions, each its own `elicitation/create` (ids 0, 1, 2).
+        var asked: [UserQuestionnaire.Question] = []
+        let run = try Self.replay("clarify", answer: Self.answering { run, card in
+            let question = try #require(card.questionnaire).questions[0]
+            asked.append(question)
+            // The form names no call: it is the question of the clarify call that is open, whose row waits.
+            #expect(card.toolUseId == "call_clarify_1" && run.activities.last?.state == "waiting")
+            try run.channel.answerQuestions(requestId: card.id, answers: Self.answers(card, picked: [question.options[0].label]))
+        })
+        #expect(asked.count == 3 && asked.allSatisfy { !$0.multiSelect && $0.header == L("questionnaire.header.agent") })
+        // Hermes marks its suggested choice in the choice's own text; the whole text is the answer it reads.
+        #expect(asked[0].options.map(\.label) == ["작은 웹 앱/CLI 툴 (Recommended)", "라이브러리/패키지", "대충 뭐라도 — 아이디어를 던져보고 같이 다듬기", "아직 모르겠음"])
+        let replies = run.writes.filter { ($0["result"] as? [String: Any])?["action"] != nil }
+        // The request ids are numbers from 0: zero is an id like any other.
+        #expect(replies.map { $0["id"] as? Int } == [0, 1, 2])
+        #expect(((replies[0]["result"] as? [String: Any])?["content"] as? [String: String]) == ["answer": "작은 웹 앱/CLI 툴 (Recommended)"])
+        #expect(run.permissions.map(\.state) == ["pending", "answered", "pending", "answered", "pending", "answered"])
+        #expect(run.warnings.isEmpty && run.failures.isEmpty && run.channel.turnCompleted && !run.parser.failed)
+        #expect(run.logs.contains { $0.kind == "assistant" && $0.text.contains("작은 웹 앱/CLI 툴") })
+    }
+
+    @Test func aDeclinedClarifyIsSkippedAndTheTurnGoesOn() throws {
+        let run = try Self.replay("clarify-declined", answer: Self.answering { run, card in try run.channel.respond(requestId: card.id, allow: false) })
+        let reply = try #require(run.writes.first { $0["id"] as? Int == 0 }?["result"] as? [String: Any])
+        #expect(reply["action"] as? String == "decline" && reply.count == 1)
+        #expect(run.permissions.map(\.state) == ["pending", "denied"] && run.channel.turnCompleted && !run.parser.failed)
+        // Recorded: Hermes goes on and says the card did not reach the user.
+        #expect(run.logs.contains { $0.kind == "assistant" })
+    }
+
+    @Test func aClarifyHermesStoppedWaitingForTakesItsCardAwayWithALine() throws {
+        // Hermes waits `agent.clarify_timeout` (90 s by default), then settles the call without telling the client.
+        let run = try Self.replay("clarify-declined")
+        #expect(run.permissions.map(\.state) == ["pending", "cancelled"])
+        #expect(run.warnings == [L("acp.channel.questionWithdrawn", ["question": try #require(run.permissions.first).summary])])
+        #expect(!run.writes.contains { $0["id"] as? Int == 0 })
+    }
+
+    @Test func theNoteAboutTheCardFollowsTheRequestAndIsNotTheSessionsPrompt() throws {
+        let result = Replay()
+        let request = StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "선택하는 문제를 내", provider: "hermes")
+        result.parser = CLIStreamParser(provider: "hermes", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-hermes", graphInput: request.input)
+        result.channel = ACPChannel(runId: "run-hermes", request: request, workspacePath: "/tmp/project", attachments: try AttachmentPreparation([]),
+                                    configValues: HermesAgent.configValues(request), freeChoices: true, promptNote: HermesQuestionTool.promptNote,
+                                    write: { data in result.writes.append((try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]) },
+                                    event: { result.parser.receive(object: $0) }, emit: { _ in }, activity: { _, _ in }, warning: { _ in }, fail: { _ in }, completed: {})
+        result.channel.start()
+        let lines = try Self.fixture("answer")
+        result.channel.receive(lines[0] + Data([10])); result.channel.receive(lines[1] + Data([10]))
+        let prompt = try #require(result.writes.last { $0["method"] as? String == "session/prompt" }?["params"] as? [String: Any])
+        let text = try #require((prompt["prompt"] as? [[String: Any]])?.first?["text"] as? String)
+        // After the request: Hermes titles the session by the start of its first message.
+        #expect(text == "선택하는 문제를 내\n\n" + HermesQuestionTool.promptNote)
+        #expect(HermesQuestionTool.withoutNote(text) == "선택하는 문제를 내" && HermesQuestionTool.withoutNote("plain") == "plain")
+        #expect(HermesQuestionTool.promptNote.contains("clarify"))
+    }
+
     static func answers(_ card: ToolPermissionRequest, picked: [String] = [], typed: String? = nil) throws -> [String: UserQuestionAnswer] {
         [try #require(card.questionnaire).questions[0].question: UserQuestionAnswer(selectedOptions: picked, customText: typed)]
     }
@@ -612,12 +685,12 @@ struct HermesTests {
         #expect(outcome == .enabled(["hermes-acp", "clarify", "x_search", "kanban"]))
         // The user's own list is left alone: with clarify nothing is said, without it the pane says how to add it.
         (outcome, commands, saved) = try await look(acp: #"["hermes-acp", "clarify"]"#)
-        #expect(outcome == .nothing && commands == ["config get --json platform_toolsets.acp"])
+        #expect(outcome == .ready && commands == ["config get --json platform_toolsets.acp"])
         (outcome, commands, saved) = try await look(acp: #"["terminal", "file"]"#)
         #expect(outcome == .missing && commands == ["config get --json platform_toolsets.acp"] && saved == #"["terminal", "file"]"#)
         // A list an older `config set` saved as text reads as the list it spells.
         (outcome, commands, saved) = try await look(acp: #""['terminal', 'clarify']""#)
-        #expect(outcome == .nothing && commands.count == 1)
+        #expect(outcome == .ready && commands.count == 1)
         // An answer that is not a list changes nothing and is asked again later.
         (outcome, commands, saved) = try await look(acp: "not json")
         #expect(outcome == nil && commands.count == 1 && saved == "not json")

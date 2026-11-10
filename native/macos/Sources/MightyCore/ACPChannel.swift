@@ -37,6 +37,12 @@ final class ACPChannel {
     private let admit: (([String: Any]) -> String?)?
     /// The agent reads a typed answer in place of a form's choice (Hermes's clarify).
     private let freeChoices: Bool
+    /// Words for the agent that follow the user's request in the prompt (Hermes has no other
+    /// place for a per-run instruction): the pane's log and the request itself stay the user's.
+    private let promptNote: String?
+    /// The tool call the agent opened last and has not settled: a form that names no call of its
+    /// own (Hermes's clarify) is that call's question, and goes when the call settles.
+    private var openCall: String?
     private let write: (Data) -> Void
     private let event: ([String: Any]) -> Void
     private let emit: (ToolPermissionRequest) -> Void
@@ -68,10 +74,10 @@ final class ACPChannel {
     let cancellation = ACPCancellation()
 
     init(runId: String, request: StartRunRequest, workspacePath: String, attachments: AttachmentPreparation, configValues: [(id: String, value: String)],
-         freeChoices: Bool = false, admit: (([String: Any]) -> String?)? = nil, write: @escaping (Data) -> Void, event: @escaping ([String: Any]) -> Void,
+         freeChoices: Bool = false, promptNote: String? = nil, admit: (([String: Any]) -> String?)? = nil, write: @escaping (Data) -> Void, event: @escaping ([String: Any]) -> Void,
          emit: @escaping (ToolPermissionRequest) -> Void, activity: @escaping (ToolPermissionRequest, String) -> Void,
          warning: @escaping (String) -> Void, fail: @escaping (String) -> Void, completed: @escaping () -> Void) {
-        self.runId = runId; self.request = request; self.workspacePath = workspacePath; self.attachments = attachments; self.configValues = configValues; self.admit = admit; self.freeChoices = freeChoices
+        self.runId = runId; self.request = request; self.workspacePath = workspacePath; self.attachments = attachments; self.configValues = configValues; self.admit = admit; self.freeChoices = freeChoices; self.promptNote = promptNote
         self.write = write; self.event = event; self.emit = emit; self.activity = activity
         self.warning = warning; self.fail = fail; self.completed = completed
     }
@@ -200,7 +206,7 @@ final class ACPChannel {
         ready = true
         let prompt = request.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L("attachments.prompt.default") : request.input
         let references = attachments.files.filter { !$0.attachment.mediaType.hasPrefix("image/") }.map { AttachmentSupport.reference($0).replacingOccurrences(of: "\\/", with: "/") }
-        var blocks: [[String: Any]] = [["type": "text", "text": ([prompt] + references).joined(separator: "\n\n")]]
+        var blocks: [[String: Any]] = [["type": "text", "text": ([prompt] + references + (promptNote.map { [$0] } ?? [])).joined(separator: "\n\n")]]
         blocks += attachments.files.filter { $0.attachment.mediaType.hasPrefix("image/") }.map { ["type": "image", "data": $0.attachment.dataBase64, "mimeType": $0.attachment.mediaType] }
         event(["type": "acp.prompt", "sessionId": sessionId])
         cancellation.set(try? JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "method": "session/cancel", "params": ["sessionId": sessionId]], options: [.sortedKeys, .withoutEscapingSlashes]))
@@ -238,9 +244,17 @@ final class ACPChannel {
         }
         guard method == "session/update", !replaying, let sessionId, params["sessionId"] as? String == sessionId,
               let update = params["update"] as? [String: Any], let kind = update["sessionUpdate"] as? String else { return }
-        // A call that settled no longer waits for an answer.
-        if kind == "tool_call_update", let id = update["toolCallId"] as? String, ["completed", "failed"].contains(update["status"] as? String ?? "") {
-            for key in pending.filter({ $0.value.display.toolUseId == id }).map(\.key) { cancelPending(key) }
+        let settled = ["completed", "failed"].contains(update["status"] as? String ?? "")
+        if kind == "tool_call" || kind == "tool_call_update", let id = update["toolCallId"] as? String, !id.isEmpty, id.utf8.count <= 256 {
+            if settled { if openCall == id { openCall = nil } } else if kind == "tool_call" { openCall = id }
+        }
+        // A call that settled no longer waits for an answer. A question that goes this way was not
+        // answered in time (Hermes stops waiting after `agent.clarify_timeout`): the pane says so.
+        if kind == "tool_call_update", let id = update["toolCallId"] as? String, settled {
+            for key in pending.filter({ $0.value.display.toolUseId == id }).map(\.key) {
+                if pending[key]?.question != nil, let summary = pending[key]?.display.summary { warning(L("acp.channel.questionWithdrawn", ["question": summary])) }
+                cancelPending(key)
+            }
         }
         event(["type": "acp.update", "sessionId": sessionId, "update": update])
     }
@@ -308,7 +322,7 @@ final class ACPChannel {
     /// object, more than the card holds), which is declined and named.
     private func elicitation(_ rawID: Any, _ key: String, _ params: [String: Any]) {
         guard let sessionId, params["sessionId"] as? String == sessionId else { reply(rawID, ["action": "cancel"]); return }
-        let callID = (params["toolCallId"] as? String).flatMap { !$0.isEmpty && $0.utf8.count <= 256 ? $0 : nil }
+        let callID = (params["toolCallId"] as? String).flatMap { !$0.isEmpty && $0.utf8.count <= 256 ? $0 : nil } ?? openCall
         guard pending.count < Self.maximumPending, let form = ACPElicitationForm(params: params, freeChoices: freeChoices),
               let display = AgentQuestions.request(id: UUID().uuidString, runId: runId, toolUseId: callID ?? "question-\(key)", items: form.items) else {
             reply(rawID, ["action": "decline"])

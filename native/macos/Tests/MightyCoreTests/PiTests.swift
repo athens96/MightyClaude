@@ -195,6 +195,20 @@ struct PiTests {
         #expect(many.cards.isEmpty && many.cancelled.count == 1 && many.logs.last?.text == L("run.notice.piDialogDismissed", ["title": "Pick"]))
     }
 
+    @Test func aQuestionReachesThePaneOfAnyAgentAndAnApprovalOnlyWhereTheAgentAsks() throws {
+        let question = try #require(AgentQuestions.request(id: "q", runId: "run", toolUseId: "call", items: [AgentQuestions.Item(header: "h", question: "Which?", options: [("A", ""), ("B", "")])]))
+        let approval = ToolPermissionRequest(id: "a", runId: "run", toolUseId: "call", toolName: "Bash", inputJSON: "{}", summary: "ls")
+        // pi has no approvals, so its pane showed no card at all: its ask_user question waited unseen.
+        #expect(!ProviderOptions.asksInPane(provider: "pi", mode: "manual"))
+        for provider in ["pi", "opencode", "hermes", "claude"] {
+            #expect(ProviderOptions.showsInPane(question, provider: provider, mode: "fullAccess"))
+        }
+        #expect(!ProviderOptions.showsInPane(approval, provider: "pi", mode: "manual") && ProviderOptions.showsInPane(approval, provider: "opencode", mode: "manual"))
+        // Settled, the same request still reaches the pane, which takes the card away.
+        var answered = question; answered.state = "answered"
+        #expect(ProviderOptions.showsInPane(answered, provider: "pi", mode: "manual"))
+    }
+
     @Test func theBundledExtensionRegistersTheQuestionToolWithoutDependencies() throws {
         let source = try String(contentsOf: try #require(PiAgent.questionExtension()), encoding: .utf8)
         #expect(source.contains(#"name: "ask_user""#) && source.contains("ctx.ui.select(") && source.contains("ctx.ui.input("))

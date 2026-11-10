@@ -22,14 +22,16 @@ public enum PiAgent {
     static let questionExtensionName = "pi-ask-user.js"
     /// The extension in the app's resource bundle (Agents/), loaded per run with `pi -e`; the
     /// user's `~/.pi` is not touched. Nil when the bundle lacks it: pi then runs without the tool.
-    public static func questionExtension() -> URL? {
+    public static func questionExtension() -> URL? { bundledAgentFile(questionExtensionName) }
+    /// A file of the resource bundle's Agents/ folder, searched like the other bundled resources.
+    static func bundledAgentFile(_ name: String) -> URL? {
         var candidates: [URL] = []
         for root in BundledStyleSource.searchRoots() {
             let bundle = root.appendingPathComponent(BundledStyleSource.bundleName, isDirectory: true)
-            candidates.append(bundle.appendingPathComponent("Contents/Resources/Agents/" + questionExtensionName))
-            candidates.append(bundle.appendingPathComponent("Agents/" + questionExtensionName))
+            candidates.append(bundle.appendingPathComponent("Contents/Resources/Agents/" + name))
+            candidates.append(bundle.appendingPathComponent("Agents/" + name))
         }
-        if let resources = Bundle.main.resourceURL { candidates.append(resources.appendingPathComponent("Agents/" + questionExtensionName)) }
+        if let resources = Bundle.main.resourceURL { candidates.append(resources.appendingPathComponent("Agents/" + name)) }
         return candidates.first { FileManager.default.isReadableFile(atPath: $0.path) }
     }
 

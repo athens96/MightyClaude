@@ -3451,5 +3451,6 @@
   "acp.channel.formDeclined": "智能体发来的输入表单无法显示为提问卡片，已拒绝：{question}",
   "run.notice.piDialogTimedOut": "pi 扩展的提问未在限定时间内得到回答，已关闭：{title}",
   "run.notice.hermesClarifyEnabled": "已在 Hermes 的 ACP 工具中开启 clarify，以便 Hermes 提问（Hermes 配置 {key} = {value}）。从新对话开始生效。要撤销，请在终端运行 hermes config unset {key}。",
-  "run.notice.hermesClarifyMissing": "Hermes 配置的 {key} 中没有 clarify，因此 Hermes 无法通过提问卡片提问。要使用它，请把 clarify 加入该列表，或运行 hermes config unset {key} 让应用来开启。"
+  "run.notice.hermesClarifyMissing": "Hermes 配置的 {key} 中没有 clarify，因此 Hermes 无法通过提问卡片提问。要使用它，请把 clarify 加入该列表，或运行 hermes config unset {key} 让应用来开启。",
+  "acp.channel.questionWithdrawn": "智能体不再等待回答，已关闭提问：{question}"
 }

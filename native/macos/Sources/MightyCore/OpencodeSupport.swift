@@ -68,9 +68,16 @@ public enum OpencodeAgent {
         }
     }
     public static func configContent(mode: String) -> String {
-        let data = (try? JSONSerialization.data(withJSONObject: ["permissions": permissionRules(mode: mode)], options: [.sortedKeys])) ?? Data("{}".utf8)
+        var content: [String: Any] = ["permissions": permissionRules(mode: mode)]
+        // opencode joins every config source's `instructions` (paths or URLs), so the user's own stay.
+        if let instructions = questionInstructions() { content["instructions"] = [instructions.path] }
+        let data = (try? JSONSerialization.data(withJSONObject: content, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
         return String(decoding: data, as: UTF8.self)
     }
+    /// The app's instruction file for a run (Agents/ in the resource bundle): it tells opencode's
+    /// model to ask through its `question` tool, which the pane shows as a card, when it offers
+    /// choices. Without it the model writes a quiz or a list of options as text.
+    public static func questionInstructions() -> URL? { PiAgent.bundledAgentFile("opencode-questions.md") }
     /// The settings a run sends as `session/set_config_option` before its prompt.
     public static func configValues(_ request: StartRunRequest) -> [(id: String, value: String)] {
         var values: [(id: String, value: String)] = []

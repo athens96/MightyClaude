@@ -10,7 +10,7 @@ export default function (pi) {
       "Ask the user one question and wait for the answer. Pass 2 to 6 short options for a multiple-choice question, or no options for a free-text answer. The user can always type their own answer instead of picking an option.",
     promptSnippet: "Ask the user a multiple-choice or free-text question and wait for the answer",
     promptGuidelines: [
-      "Use ask_user when the user must choose between alternatives or a requirement is unclear, instead of listing the choices as text and ending the turn.",
+      "When you want the user to choose among options (a quiz or multiple-choice problem, a preference such as which do you prefer, a decision between alternatives) or a requirement is unclear, call ask_user instead of listing the options in your reply: the app shows it as a card the user answers with a click, and the answer comes back in the same turn.",
     ],
     executionMode: "sequential",
     parameters: {
