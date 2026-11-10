@@ -95,6 +95,8 @@ extension AppStore {
     /// view on first use, and put it back on screen if the user closed it.
     func showAgentTerminal(_ pane: PTYAgentTerminalPane, agentPaneId: String) {
         guard !ending, snapshot.sessions.contains(where: { $0.id == agentPaneId }) else { return }
+        // A command started: watch it for a question it may ask the user.
+        watchTerminalPrompts()
         if agentTerminals[agentPaneId] == nil {
             let id = AgentIOPaneRegistry.shared.terminalPaneId(for: agentPaneId)
             agentTerminals[agentPaneId] = AgentTerminalHost(pane: pane, sessionId: id, controller: sharedTerminalController(), focused: { [weak self] in

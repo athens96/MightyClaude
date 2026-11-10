@@ -320,6 +320,12 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var error: String?
     @Published var resourceWarning: String?
     @Published var toolPermissions: [String: [ToolPermissionRequest]] = [:]
+    /// The command in each agent pane's terminal that waits for input, by agent pane id (``TerminalPrompt``).
+    @Published var terminalPrompts: [String: TerminalPrompt] = [:]
+    /// One per agent pane whose terminal ran a command: follows its output for prompts.
+    var terminalPromptMonitors: [String: TerminalPromptMonitor] = [:]
+    /// Polls the monitors while any agent terminal has a command running.
+    var terminalPromptWatch: Task<Void, Never>?
     @Published var permissionResponses = Set<String>()
     @Published var permissionErrors: [String: String] = [:]
     /// Antigravity cards (`AntigravityPermissions.swift`): one per pane, the

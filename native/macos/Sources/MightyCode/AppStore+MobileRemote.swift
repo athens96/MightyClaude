@@ -188,6 +188,13 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         await store.answerQuestionnaire(sessionId: sessionId, request: request, answers: answers)
         try await MainActor.run { try store.mobileCheckPermissionOutcome(sessionId: sessionId, requestId: requestId) }
     }
+    func mobileTerminalPrompt(sessionId: String, promptId: String, answer: TerminalPromptAnswer) async throws {
+        try await MainActor.run {
+            let store = try self.store.orClosing()
+            guard store.mobilePane(sessionId) != nil else { throw MightyError(L("remote.error.paneNotFound")) }
+            guard store.answerTerminalPrompt(sessionId: sessionId, promptId: promptId, answer: answer) else { throw MightyError(L("terminalPrompt.error.gone")) }
+        }
+    }
     func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws {
         let (store, request) = try await MainActor.run { () -> (AppStore, ToolPermissionRequest) in
             let store = try self.store.orClosing()
@@ -513,7 +520,8 @@ extension AppStore {
                                    statusLine: mobileStatusLine(id), rateLimits: MobileRemoteSupport.rateLimits(session.sessionUsage?.rateLimits ?? []),
                                    askTargets: targets.map { MobileAskTarget(id: $0.id, label: $0.label) },
                                    askTarget: AskTargets.effective(saved: session.askTarget, available: targets)?.id,
-                                   backgroundWork: mobileBackgroundWork(session), backgroundDone: mobileBackgroundDone(session))
+                                   backgroundWork: mobileBackgroundWork(session), backgroundDone: mobileBackgroundDone(session),
+                                   terminalPrompt: terminalPrompts[id])
     }
 
     /// The pane's running background work as its strip lists it, joined to the newest request's blocks for the

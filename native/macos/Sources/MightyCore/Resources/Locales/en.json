@@ -3320,5 +3320,20 @@
   "audit.kind.web": "Web",
   "audit.kind.read": "Files read",
   "audit.kind.other": "Other tools",
-  "diagnostics.export": "Export diagnostics…"
+  "diagnostics.export": "Export diagnostics…",
+  "terminalPrompt.title": "The terminal is waiting for input",
+  "terminalPrompt.help": "Your answer is typed into that command's terminal as it is.",
+  "terminalPrompt.yes": "Yes",
+  "terminalPrompt.no": "No",
+  "terminalPrompt.default": "default",
+  "terminalPrompt.send": "Send",
+  "terminalPrompt.enterOnly": "Press Enter",
+  "terminalPrompt.up": "Up",
+  "terminalPrompt.down": "Down",
+  "terminalPrompt.select": "Select",
+  "terminalPrompt.showTerminal": "Show terminal",
+  "terminalPrompt.textPlaceholder": "Your answer",
+  "terminalPrompt.secretPlaceholder": "Password (never shown or kept)",
+  "terminalPrompt.error.gone": "The terminal is no longer waiting for this input.",
+  "terminalPrompt.error.badAnswer": "The answer for the terminal is not valid."
 }

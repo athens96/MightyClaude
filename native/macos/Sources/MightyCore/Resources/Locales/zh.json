@@ -3320,5 +3320,20 @@
   "audit.kind.web": "网页",
   "audit.kind.read": "读取的文件",
   "audit.kind.other": "其他工具",
-  "diagnostics.export": "导出诊断信息…"
+  "diagnostics.export": "导出诊断信息…",
+  "terminalPrompt.title": "终端正在等待输入",
+  "terminalPrompt.help": "你的回答会原样输入到该命令的终端中。",
+  "terminalPrompt.yes": "是",
+  "terminalPrompt.no": "否",
+  "terminalPrompt.default": "默认",
+  "terminalPrompt.send": "发送",
+  "terminalPrompt.enterOnly": "只按 Enter",
+  "terminalPrompt.up": "向上",
+  "terminalPrompt.down": "向下",
+  "terminalPrompt.select": "选择",
+  "terminalPrompt.showTerminal": "显示终端",
+  "terminalPrompt.textPlaceholder": "要输入的内容",
+  "terminalPrompt.secretPlaceholder": "密码（不会显示或保存）",
+  "terminalPrompt.error.gone": "终端已不再等待此输入。",
+  "terminalPrompt.error.badAnswer": "要发送到终端的回答无效。"
 }

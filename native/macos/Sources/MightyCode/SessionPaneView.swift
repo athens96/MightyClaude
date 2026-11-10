@@ -207,6 +207,9 @@ struct SessionPaneView: View {
                     BackgroundWorkStrip(sessionId: session.id, work: work, run: MightyGraphSupport.newestRequestRun(session.graphRuns ?? []), output: store.backgroundOutput.pane(session.id))
                 }
                 ToolPermissionBar(sessionId: session.id)
+                if let prompt = store.terminalPrompts[session.id] {
+                    TerminalPromptCard(sessionId: session.id, prompt: prompt).id(prompt.id)
+                }
                 if let request = store.webOpenRequests.first(where: { $0.agentPaneId == session.id }) {
                     WebOpenChoicePanel(request: request).id(request.id)
                 }

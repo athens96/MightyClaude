@@ -36,6 +36,8 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws
     /// Answers a pending Claude plan the way the desktop plan card does.
     func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws
+    /// Types the answer to the pane's waiting terminal command (``TerminalPrompt``), as its card does.
+    func mobileTerminalPrompt(sessionId: String, promptId: String, answer: TerminalPromptAnswer) async throws
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String
     func mobileRemoveQueued(sessionId: String, itemId: String) async throws
     func mobileRunNextQueued(sessionId: String) async throws
@@ -100,6 +102,8 @@ public extension MobileHostDelegate {
     }
     /// A host without plan cards has nothing to answer.
     func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws { throw MightyError(L("plan.error.notPlan")) }
+    /// A host without terminal prompt cards has no command waiting.
+    func mobileTerminalPrompt(sessionId: String, promptId: String, answer: TerminalPromptAnswer) async throws { throw MightyError(L("terminalPrompt.error.gone")) }
     /// A host without 바로 실행 on its rows knows no such row.
     func mobileRunQueuedNow(sessionId: String, itemId: String) async throws -> String {
         throw MobileHostError.notFound(L("remote.error.queueItemNotFound"))
@@ -1276,6 +1280,12 @@ public actor MobileRemoteService {
                         do { _ = try ClaudePlanMode.validatedFeedback(feedback) } catch let failure as MightyError { throw Failure(400, failure.message) }
                     }
                     do { try await delegate.mobilePlan(sessionId: id, requestId: request.requestId, runId: request.runId, decision: decision) }
+                    catch let failure as MightyError { throw Failure(409, failure.message) }
+                    return reply(200, MobileOK())
+                case "terminal-prompt":
+                    let request = try decode(body, as: MobileTerminalPromptAnswer.self)
+                    guard let answer = request.terminalAnswer else { throw Failure(400, L("terminalPrompt.error.badAnswer")) }
+                    do { try await delegate.mobileTerminalPrompt(sessionId: id, promptId: request.promptId, answer: answer) }
                     catch let failure as MightyError { throw Failure(409, failure.message) }
                     return reply(200, MobileOK())
                 case "rename":

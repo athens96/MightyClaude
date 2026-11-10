@@ -3320,5 +3320,20 @@
   "audit.kind.web": "Web",
   "audit.kind.read": "読んだファイル",
   "audit.kind.other": "その他のツール",
-  "diagnostics.export": "診断情報を書き出す…"
+  "diagnostics.export": "診断情報を書き出す…",
+  "terminalPrompt.title": "ターミナルが入力を待っています",
+  "terminalPrompt.help": "回答はそのコマンドのターミナルにそのまま入力されます。",
+  "terminalPrompt.yes": "はい",
+  "terminalPrompt.no": "いいえ",
+  "terminalPrompt.default": "既定",
+  "terminalPrompt.send": "送信",
+  "terminalPrompt.enterOnly": "Enter だけ送る",
+  "terminalPrompt.up": "上へ",
+  "terminalPrompt.down": "下へ",
+  "terminalPrompt.select": "選択",
+  "terminalPrompt.showTerminal": "ターミナルを表示",
+  "terminalPrompt.textPlaceholder": "入力する内容",
+  "terminalPrompt.secretPlaceholder": "パスワード（表示も保存もされません）",
+  "terminalPrompt.error.gone": "ターミナルはもうこの入力を待っていません。",
+  "terminalPrompt.error.badAnswer": "ターミナルに送る回答が正しくありません。"
 }

@@ -3320,5 +3320,20 @@
   "audit.kind.web": "웹",
   "audit.kind.read": "읽은 파일",
   "audit.kind.other": "그 밖의 도구",
-  "diagnostics.export": "진단 정보 내보내기…"
+  "diagnostics.export": "진단 정보 내보내기…",
+  "terminalPrompt.title": "터미널이 입력을 기다립니다",
+  "terminalPrompt.help": "답은 그 명령의 터미널에 그대로 입력됩니다.",
+  "terminalPrompt.yes": "예",
+  "terminalPrompt.no": "아니오",
+  "terminalPrompt.default": "기본값",
+  "terminalPrompt.send": "보내기",
+  "terminalPrompt.enterOnly": "Enter만 보내기",
+  "terminalPrompt.up": "위로",
+  "terminalPrompt.down": "아래로",
+  "terminalPrompt.select": "선택",
+  "terminalPrompt.showTerminal": "터미널 보기",
+  "terminalPrompt.textPlaceholder": "입력할 내용",
+  "terminalPrompt.secretPlaceholder": "비밀번호 (화면과 기록에 남지 않습니다)",
+  "terminalPrompt.error.gone": "터미널이 더 이상 이 입력을 기다리지 않습니다.",
+  "terminalPrompt.error.badAnswer": "터미널에 보낼 답이 올바르지 않습니다."
 }
