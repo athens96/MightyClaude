@@ -139,7 +139,7 @@ internal static class WindowsParityVerification
         Check(ComponentSection.CopiedMessage("npm install -g x") == Locale.Get("settings.components.copied", new Dictionary<string, string> { ["command"] = "npm install -g x" }) && ComponentSection.CopiedMessage("npm install -g x").Contains("npm install -g x", StringComparison.Ordinal), "the confirmation must name the command that was copied");
         Check(ComponentSection.RecheckInterval == TimeSpan.FromSeconds(5), "the open section looks again every 5 s, as on the Mac");
         Check(ComponentSection.NeedsRecheck(missing) && ComponentSection.NeedsRecheck(old), "a row that still needs the user keeps the section looking");
-        Check(!ComponentSection.NeedsRecheck(ComponentSection.SectionRows(Runtime(Provider("claude", true, "2.1.271"), Provider("codex", true, "0.153.4"), Provider("gemini", true, "1.0.0")))), "with every CLI ready there is nothing to look for");
+        Check(!ComponentSection.NeedsRecheck(ComponentSection.SectionRows(Runtime(Provider("claude", true, "2.1.271"), Provider("codex", true, "0.153.4"), Provider("gemini", true, "1.0.0"), Provider("pi", true, "0.73.1")))), "with every CLI ready there is nothing to look for");
         return Task.CompletedTask;
     }
 

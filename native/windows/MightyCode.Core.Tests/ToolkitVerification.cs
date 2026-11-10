@@ -583,12 +583,12 @@ internal static class ToolkitVerification
         // All three providers missing.
         var runtime = MakeRuntime([]);
         var rows = ComponentSection.SectionRows(runtime);
-        Check(rows.Count == 3, "3 rows always");
+        Check(rows.Count == Wire.Providers.Length, "a row per provider always");
         foreach (var row in rows)
             Check(row.State == "missing", row.Id + " missing when not in runtime");
 
         // All three installed.
-        var fullRuntime = MakeRuntime(["claude", "codex", "gemini"]);
+        var fullRuntime = MakeRuntime(["claude", "codex", "gemini", "pi"]);
         var fullRows = ComponentSection.SectionRows(fullRuntime);
         Check(fullRows.All(r => r.State == "installed"), "all installed when all available");
 
