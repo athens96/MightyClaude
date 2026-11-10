@@ -110,6 +110,19 @@ public enum CLIAuthFailure {
         return lowered.contains("401") && (lowered.contains("unauthorized") || lowered.contains("authentication"))
     }
 
+    /// Hermes's own words for a missing or lost model provider, in a failed turn's reply or an ACP
+    /// error: "Hermes is not connected to any AI provider yet", "No LLM provider configured",
+    /// its hints to run `hermes model` / `hermes setup` / `hermes auth add`, a provider's 401 or an
+    /// invalid key. A candidate signal only: recovery confirms with the sign-in probe.
+    public static func hermes(text: String) -> Bool {
+        let lowered = text.prefix(16_384).lowercased()
+        if lowered.contains("proxy authentication") { return false }
+        if ["not connected to any ai provider", "no llm provider configured", "no inference provider", "run `hermes model`", "run hermes model", "run `hermes setup`", "run hermes setup",
+            "hermes auth add", "run `hermes auth`", "not logged into", "credentials available", "configure an api key", "api key is missing", "invalid api key", "invalid x-api-key",
+            "incorrect api key", "authentication_error", "token has expired", "needs refresh", "please log in", "not logged in"].contains(where: lowered.contains) { return true }
+        return lowered.contains("401") && (lowered.contains("unauthorized") || lowered.contains("authentication"))
+    }
+
     /// Whether signing in again can fix a run that failed with a sign-in
     /// signal. A dropped sign-in usually leaves credentials on disk, so the
     /// status still says signed in (or cannot tell): that does not rule it out.
@@ -125,7 +138,7 @@ public enum CLIAuthFailure {
     }
 
     /// The providers whose lost sign-in raises the card and may start a sign-in.
-    public static let providers = ["claude", "codex", "gemini", "pi", "opencode"]
+    public static let providers = ["claude", "codex", "gemini", "pi", "opencode", "hermes"]
 }
 
 /// A provider whose sign-in is its interactive CLI, so it runs in a terminal
@@ -141,11 +154,13 @@ public struct CLITerminalSignIn: Sendable, Equatable {
 
     /// Antigravity opens the browser on its first run. pi signs in inside
     /// itself: `/login`, then a subscription or an API key. opencode asks in
-    /// `opencode auth login`: a provider, then its browser sign-in or an API key.
+    /// `opencode auth login`: a provider, then its browser sign-in or an API key. Hermes asks in
+    /// `hermes model`: a provider, its sign-in or key, then the default model.
     public static let table: [String: CLITerminalSignIn] = [
         "gemini": CLITerminalSignIn(provider: "gemini", waitingKey: "loginRecovery.antigravityTerminal", titleKey: nil),
         "pi": CLITerminalSignIn(provider: "pi", waitingKey: "loginRecovery.piTerminal", titleKey: "loginRecovery.piTerminalTitle"),
         "opencode": CLITerminalSignIn(provider: "opencode", waitingKey: "loginRecovery.opencodeTerminal", titleKey: "loginRecovery.opencodeTerminalTitle"),
+        "hermes": CLITerminalSignIn(provider: "hermes", waitingKey: "loginRecovery.hermesTerminal", titleKey: "loginRecovery.hermesTerminalTitle"),
     ]
     public var command: String? { CLIAccountSupport.loginCommand(provider: provider, option: .account) }
 }

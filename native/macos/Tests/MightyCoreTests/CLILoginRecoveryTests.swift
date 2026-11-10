@@ -281,8 +281,8 @@ struct CLITerminalSignInTests {
     }
 
     @Test func theTerminalTableAndProviders() {
-        #expect(CLIAuthFailure.providers == ["claude", "codex", "gemini", "pi", "opencode"])
-        #expect(Set(CLITerminalSignIn.table.keys) == ["gemini", "pi", "opencode"])
+        #expect(CLIAuthFailure.providers == ["claude", "codex", "gemini", "pi", "opencode", "hermes"])
+        #expect(Set(CLITerminalSignIn.table.keys) == ["gemini", "pi", "opencode", "hermes"])
         #expect(CLITerminalSignIn.table["pi"]?.command == "pi" && CLITerminalSignIn.table["pi"]?.titleKey != nil)
         #expect(CLITerminalSignIn.table["gemini"]?.command == ProviderOptions.executable("gemini"))
         #expect(CLITerminalSignIn.table.values.allSatisfy { CLIAuthFailure.providers.contains($0.provider) && L($0.waitingKey) != $0.waitingKey })

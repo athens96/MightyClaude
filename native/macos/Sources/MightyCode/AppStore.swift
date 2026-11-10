@@ -724,6 +724,7 @@ final class AppStore: ObservableObject, DelegationHost {
         // pi's RPC run is local for now.
         if workspace.remote != nil, session.kind != "shell", session.provider == "pi" { return L("run.blocked.piRemote") }
         if workspace.remote != nil, session.kind != "shell", session.provider == "opencode" { return L("run.blocked.opencodeRemote") }
+        if workspace.remote != nil, session.kind != "shell", session.provider == "hermes" { return L("run.blocked.hermesRemote") }
         // A remote pane runs on its host: this Mac's CLI updates and plugin changes never hold it.
         if workspace.remote != nil { return remoteRunBlockedReason(session, workspace: workspace, checkRuntime: checkRuntime) }
         // A delegated child runs only in its own worktree, never in its parent's checkout.

@@ -265,6 +265,8 @@ final class ExecutionGraphTracker {
         if provider == "gemini" { consumeAntigravity(value); return }
         if provider == "pi" { consumePi(value); return }
         if provider == "opencode" { consumeACP(value); return }
+        // Hermes reports its session's running token counts, not the request's: the block carries none.
+        if provider == "hermes" { return }
         let parentTool = Self.parentToolID(value)
         if let parentTool { ensureAgent(toolID: parentTool) }
         // Over-cap child events are omitted, never reclassified as main text.
@@ -703,7 +705,7 @@ final class ExecutionGraphTracker {
     /// result's full response when nothing was streamed): the latest one is
     /// the request's answer.
     func antigravityAnswer(_ text: String) {
-        guard !finished, provider == "gemini" || provider == "opencode", !text.isEmpty else { return }
+        guard !finished, provider == "gemini" || provider == "opencode" || provider == "hermes", !text.isEmpty else { return }
         update(mainID) { $0.output = text }
     }
     @discardableResult private func ensureAntigravityAgent(conversation: String) -> String? {

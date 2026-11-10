@@ -930,7 +930,7 @@ struct WorkspaceAddMenuItems: View {
     let workspace: Workspace
 
     var body: some View {
-        // pi and opencode run on this Mac only for now: a remote workspace's menu leaves them out.
+        // pi, opencode and Hermes run on this Mac only for now: a remote workspace's menu leaves them out.
         ForEach(ProviderOptions.ids.filter { workspace.remote == nil || !ProviderOptions.isLocalOnly($0) }, id: \.self) { provider in
             Button { store.addAgentPane(provider: provider, workspaceId: workspace.id) } label: {
                 Label { Text(ProviderOptions.betaTitle(provider, L("workspace.newAgentPane", ["provider": ProviderOptions.label(provider)]))) } icon: {

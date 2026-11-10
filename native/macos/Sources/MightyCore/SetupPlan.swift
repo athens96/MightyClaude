@@ -127,7 +127,10 @@ public enum SetupScript {
             // Fetched first and handed to the shell as its script, so the script's
             // own questions (a password, a yes/no) still read the terminal.
             let interpreter = shell == "sh" ? "/bin/sh" : "/bin/bash"
-            return "mighty_script=\"$(\(curl) \(quote(url.absoluteString)))\" && \(interpreter) -c \"$mighty_script\""
+            // Options the app gives the script (`SetupCatalog.scriptArguments`) follow a name for `$0`.
+            let arguments = (SetupCatalog.scriptArguments[url.absoluteString] ?? []).map(quote)
+            let tail = arguments.isEmpty ? "" : " mighty-install " + arguments.joined(separator: " ")
+            return "mighty_script=\"$(\(curl) \(quote(url.absoluteString)))\" && \(interpreter) -c \"$mighty_script\"" + tail
         case .brewFormula(let name): return "brew install " + quote(name)
         case .brewCask(let name): return "brew install --cask " + quote(name)
         case .npmGlobal(let name):

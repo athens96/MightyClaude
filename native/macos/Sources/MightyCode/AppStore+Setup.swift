@@ -281,6 +281,7 @@ extension AppStore {
         endCLILogin(provider)
         if provider == "pi" { setupMessage = L("settings.cliAccounts.piLoginHint") }
         if provider == "opencode" { setupMessage = L("settings.cliAccounts.opencodeLoginHint") }
+        if provider == "hermes" { setupMessage = L("settings.cliAccounts.hermesLoginHint") }
         let id = "setup-login-" + UUID().uuidString
         openSetupTerminal(id: id, title: L("loginRecovery.terminalTitle", ["provider": ProviderOptions.label(provider)]), input: TerminalInput(text: command, autoRun: true))
         watchCLILogin(provider, terminalId: id)

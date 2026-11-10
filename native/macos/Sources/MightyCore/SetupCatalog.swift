@@ -110,12 +110,16 @@ public struct SetupCatalog: Sendable, Equatable {
     /// Agent CLIs that an out-of-date copy cannot update into (OpenCode 1's own upgrade stays
     /// on 1): their row is offered for install again instead of the CLI update.
     public static let reinstalledWhenOutdated: Set<String> = ["opencode"]
+    /// The options an official script is run with, by its URL. Hermes's installer otherwise
+    /// ends in its own setup wizard and installs a background gateway service; the app
+    /// offers the sign-in (`hermes model`) itself, and `hermes acp` starts the gateway on demand.
+    public static let scriptArguments: [String: [String]] = ["https://hermes-agent.nousresearch.com/install.sh": ["--skip-setup"]]
 
     /// Hosts an official script, a vendor page, a marketplace URL or a skill's
     /// repository may live on. The catalog cannot add one.
     public static let allowedHosts: Set<String> = [
         "claude.ai", "chatgpt.com", "antigravity.google", "raw.githubusercontent.com",
-        "astral.sh", "bun.com", "github.com", "tailscale.com",
+        "astral.sh", "bun.com", "github.com", "tailscale.com", "hermes-agent.nousresearch.com",
     ]
     /// The only programs an `argv` install may start, each with the only options
     /// (arguments starting with `-`) it may be given.
@@ -128,7 +132,7 @@ public struct SetupCatalog: Sendable, Equatable {
     /// marketplace's owner/repo short form, may name: only those the catalog uses.
     public static let allowedRepositories: Set<String> = [
         "Homebrew/install", "Q00/ouroboros", "anthropics/claude-plugins-community",
-        "Yeachan-Heo/oh-my-claudecode", "garrytan/gstack", "badlogic/pi-mono",
+        "Yeachan-Heo/oh-my-claudecode", "garrytan/gstack", "badlogic/pi-mono", "NousResearch/hermes-agent",
     ]
 
     /// Every label and description key a catalog item may name. Kept here so an
@@ -140,6 +144,7 @@ public struct SetupCatalog: Sendable, Equatable {
         "setup.item.agy.title", "setup.item.agy.detail",
         "setup.item.pi.title", "setup.item.pi.detail",
         "setup.item.opencode.title", "setup.item.opencode.detail",
+        "setup.item.hermes.title", "setup.item.hermes.detail",
         "setup.item.git.title", "setup.item.git.detail",
         "setup.item.homebrew.title", "setup.item.homebrew.detail",
         "setup.item.node.title", "setup.item.node.detail",

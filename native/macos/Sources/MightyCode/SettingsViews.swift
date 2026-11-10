@@ -498,6 +498,14 @@ func permissionDescription(_ mode: String, provider: String) -> String {
         default: return L("permission.opencode.default")
         }
     }
+    // Hermes's own approvals: edits by the session's edit mode, dangerous commands by its approvals setting.
+    if provider == "hermes" {
+        switch mode {
+        case "acceptEdits": return L("permission.hermes.acceptEdits")
+        case "fullAccess": return L("permission.hermes.fullAccess")
+        default: return L("permission.hermes.default")
+        }
+    }
     if mode == "fullAccess" { return L("permission.other.fullAccess") }
     if provider == "codex", mode == "onRequest" { return L("permission.codex.onRequest") }
     if provider == "codex" { return mode == "acceptEdits" ? L("permission.codex.acceptEdits") : L("permission.codex.default") }

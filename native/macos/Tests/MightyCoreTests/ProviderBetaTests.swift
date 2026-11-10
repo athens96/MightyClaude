@@ -8,11 +8,11 @@ struct ProviderBetaTests {
         #expect(ProviderOptions.isBeta("gemini"))
         #expect(!ProviderOptions.isBeta("unknown"))
         #expect(ProviderOptions.isBeta("pi"))
-        #expect(ProviderOptions.ids.filter(ProviderOptions.isBeta) == ["codex", "gemini", "pi", "opencode"])
+        #expect(ProviderOptions.ids.filter(ProviderOptions.isBeta) == ["codex", "gemini", "pi", "opencode", "hermes"])
     }
 
     @Test func theBadgeNeverChangesTheProviderName() {
-        #expect(ProviderOptions.ids.map(ProviderOptions.label) == ["Claude", "Codex", "Antigravity", "pi", "opencode"])
+        #expect(ProviderOptions.ids.map(ProviderOptions.label) == ["Claude", "Codex", "Antigravity", "pi", "opencode", "Hermes"])
     }
 
     @Test func menuTitlesCarryTheBadgeOnlyForBetaProviders() {

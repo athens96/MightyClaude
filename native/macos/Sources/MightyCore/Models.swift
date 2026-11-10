@@ -679,7 +679,7 @@ public struct RuntimeInfo: Codable, Sendable, Equatable {
 }
 
 public enum ProviderOptions {
-    public static let ids = ["claude", "codex", "gemini", "pi", "opencode"]
+    public static let ids = ["claude", "codex", "gemini", "pi", "opencode", "hermes"]
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
     /// pi's `--thinking` levels: its effort setting, off included.
     public static let piThinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"]
@@ -693,6 +693,8 @@ public enum ProviderOptions {
     public static func permissionModes(provider: String, includeAuto: Bool = true, includeOnRequest: Bool = true) -> [String] {
         // pi has no approval window: its tools are either read-only (manual) or all on.
         if provider == "pi" { return ["manual", "fullAccess"] }
+        // Hermes asks before edits (or not) and before dangerous commands; it has no read-only or plan mode.
+        if provider == "hermes" { return ["manual", "acceptEdits", "fullAccess"] }
         if provider == "codex" { return includeOnRequest ? ["manual", "acceptEdits", "onRequest", "fullAccess"] : ["manual", "acceptEdits", "fullAccess"] }
         if provider == "claude", includeAuto { return ["plan", "manual", "acceptEdits", "auto", "fullAccess"] }
         return ["manual", "plan", "acceptEdits", "fullAccess"]
@@ -700,25 +702,27 @@ public enum ProviderOptions {
     public static func normalizeProvider(_ value: String) -> String { ids.contains(value) ? value : "claude" }
     /// The `gemini` id is kept for stored panes and the wire; on the Mac it is
     /// Google's Antigravity CLI (`agy`), which also runs Claude and GPT-OSS models.
-    public static func label(_ id: String) -> String { ["claude": "Claude", "codex": "Codex", "gemini": "Antigravity", "pi": "pi", "opencode": "opencode"][id] ?? "Claude" }
+    public static func label(_ id: String) -> String { ["claude": "Claude", "codex": "Codex", "gemini": "Antigravity", "pi": "pi", "opencode": "opencode", "hermes": "Hermes"][id] ?? "Claude" }
     /// Whether an agent pane's run asks for approvals in the pane (the approval card): Claude,
-    /// Codex in on-request mode, and opencode, whose ACP run asks for what its rules leave at "ask".
+    /// Codex in on-request mode, and the ACP agents: opencode asks for what its rules leave at
+    /// "ask", Hermes for the edits and dangerous commands its own approvals hold back.
     public static func asksInPane(provider: String, mode: String) -> Bool {
-        provider == "claude" || (provider == "codex" && mode == "onRequest") || provider == "opencode"
+        provider == "claude" || (provider == "codex" && mode == "onRequest") || provider == "opencode" || provider == "hermes"
     }
-    /// pi and opencode run on this Mac only for now: a remote workspace (whose host may be
-    /// Windows or an older Mac) offers neither.
-    public static func isLocalOnly(_ id: String) -> Bool { id == "pi" || id == "opencode" }
+    /// pi, opencode and Hermes run on this Mac only for now: a remote workspace (whose host may be
+    /// Windows or an older Mac) offers none of them.
+    public static func isLocalOnly(_ id: String) -> Bool { id == "pi" || id == "opencode" || id == "hermes" }
     /// The executable the Mac runs, finds, version-checks, updates and signs in with.
     public static func executable(_ id: String) -> String { id == "gemini" ? "agy" : id }
-    /// Claude is official; Codex, Antigravity, pi and opencode are beta. The one Mac answer every beta badge asks.
+    /// Claude is official; Codex, Antigravity, pi, opencode and Hermes are beta. The one Mac answer every beta badge asks.
     /// The badge is drawn beside the name and never becomes part of `label`.
-    public static func isBeta(_ id: String) -> Bool { id == "codex" || id == "gemini" || id == "pi" || id == "opencode" }
+    public static func isBeta(_ id: String) -> Bool { id == "codex" || id == "gemini" || id == "pi" || id == "opencode" || id == "hermes" }
     /// Menu rows cannot host the badge view, so there the badge rides in the row's text.
     public static func betaTitle(_ id: String, _ text: String) -> String { isBeta(id) ? text + " · " + L("badge.beta") : text }
     public static func fallbackCatalog(_ id: String) -> ModelCatalog {
-        // pi and opencode list their models (`pi --list-models`, `opencode models`) once signed in; until then only their own default.
-        let names = id == "pi" || id == "opencode" ? ["default"] : id == "codex" ? ["default", "gpt-5.6-sol", "gpt-6-astra"] : id == "gemini" ? ["default"] + antigravityModels.map(\.slug) : ["default", "best", "fable", "opus", "sonnet", "haiku", "opusplan"]
+        // pi and opencode list their models (`pi --list-models`, `opencode models`) once signed in, Hermes the picker
+        // its last session offered (`HermesAgent.cachedCatalog`); until then only their own default.
+        let names = id == "pi" || id == "opencode" || id == "hermes" ? ["default"] : id == "codex" ? ["default", "gpt-5.6-sol", "gpt-6-astra"] : id == "gemini" ? ["default"] + antigravityModels.map(\.slug) : ["default", "best", "fable", "opus", "sonnet", "haiku", "opusplan"]
         let named = Dictionary(uniqueKeysWithValues: id == "gemini" ? antigravityModels.map { ($0.slug, $0.name) } : [])
         return ModelCatalog(models: names.map { ModelOption(value: $0, displayName: $0 == "default" ? L("provider.fallback.defaultLabel", ["name": label(id)]) : named[$0] ?? $0, description: $0 == "default" ? (id == "claude" ? L("provider.fallback.claudeDefaultDescription") : L("provider.fallback.sessionDefaultDescription")) : L("provider.fallback.exampleOption"), supportsEffort: $0 == "haiku" ? false : nil) }, detail: L("provider.fallback.exampleDetail"))
     }
@@ -739,6 +743,8 @@ public enum ProviderOptions {
         if provider == "pi" { return catalog?.models.first { $0.value == model }?.supportsEffort == false ? [] : piThinkingLevels }
         // opencode's effort is the model's variant (`effort` config option); one a model lacks is named and skipped at the run.
         if provider == "opencode" { return model == "default" || catalog?.models.first { $0.value == model }?.supportsEffort == false ? [] : opencodeEfforts }
+        // Hermes takes a reasoning effort for the session (`reasoning_effort` config option), whatever the model.
+        if provider == "hermes" { return efforts }
         let option = catalog?.models.first { $0.value == model || $0.resolvedModel == model }
         if option?.supportsEffort == false { return [] }
         if let levels = option?.supportedEffortLevels { return levels.filter { efforts.contains($0) } }
@@ -760,7 +766,8 @@ public enum ProviderOptions {
 
 public enum CoreValidation {
     public static func identifier(_ value: String) -> Bool { value.range(of: "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$", options: .regularExpression) != nil }
-    /// A CLI's own session id, the pane's resume id: an `identifier`, or opencode's `ses_<base62>`.
+    /// A CLI's own session id, the pane's resume id: an `identifier` (Hermes's
+    /// `<yyyymmdd>_<hhmmss>_<hex>` is one), or opencode's `ses_<base62>`.
     public static func sessionIdentifier(_ value: String) -> Bool { identifier(value) || value.range(of: "^ses_[a-zA-Z0-9]{1,124}$", options: .regularExpression) != nil }
     public static func model(_ value: String) -> Bool { value.count <= 200 && value.range(of: "^[a-zA-Z0-9][a-zA-Z0-9._:/@\\[\\]-]*$", options: .regularExpression) != nil }
     public static func validate(_ request: StartRunRequest) throws {

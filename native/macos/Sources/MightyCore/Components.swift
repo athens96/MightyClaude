@@ -50,6 +50,7 @@ public enum ComponentCatalog {
         case "gemini": return "curl -fsSL https://antigravity.google/cli/install.sh | bash"
         case "pi": return "npm install -g @mariozechner/pi-coding-agent"
         case "opencode": return "npm install -g @opencode/cli"
+        case "hermes": return "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup"
         default: return nil
         }
     }

@@ -112,7 +112,7 @@ public enum SlashCommandCatalog {
                     app("new", L("slash.builtin.newConversation"), action: .newConversation),
                     app("session", L("slash.builtin.usage"), action: .showUsage),
                     app("settings", L("slash.builtin.settings"), action: .openSettings), rename, prompts, help]
-        case "opencode":
+        case "opencode", "hermes":
             return [model, app("permissions", L("slash.builtin.permission"), argument: .permission),
                     app("new", L("slash.builtin.newConversation"), action: .newConversation),
                     app("usage", L("slash.builtin.usage"), action: .showUsage),

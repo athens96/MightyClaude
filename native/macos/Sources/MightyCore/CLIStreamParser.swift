@@ -563,21 +563,24 @@ public final class CLIStreamParser {
             }
             if type == "turn.completed" { authFailure = false }
         case "pi": pi(value, type: type)
-        case "opencode": acp(value, type: type)
+        case "opencode", "hermes": acp(value, type: type)
         default: break
         }
     }
 
     /// The message the streamed ACP text belongs to: a new one ends the previous reply.
     private var acpMessage: String?
-    /// An ACP agent (opencode) through `ACPChannel`: its `session/update`s, the prompt's result
+    /// The tail of the turn's reply text: Hermes says why a turn failed (a missing provider, a
+    /// rejected key) in the reply, and the error that follows only says that it failed.
+    private var acpReplyTail = ""
+    /// An ACP agent (opencode, Hermes) through `ACPChannel`: its `session/update`s, the prompt's result
     /// and a failed call, as `acp.*` events. Text arrives as deltas and is logged whole when the
     /// message, a tool call or the turn ends; thoughts are not copied.
     private func acp(_ value: [String: Any], type: String) {
         let name = ProviderOptions.label(provider)
         switch type {
         case "acp.session": resumeIfValid(value["sessionId"])
-        case "acp.prompt": turn(L("run.turn.generating", ["name": name]))
+        case "acp.prompt": acpReplyTail = ""; turn(L("run.turn.generating", ["name": name]))
         case "acp.output": if let text = value["text"] as? String { log("output", text) }
         case "acp.update":
             guard let update = value["update"] as? [String: Any] else { return }
@@ -592,14 +595,19 @@ public final class CLIStreamParser {
                 let remaining = max(0, 131_072 - pendingText.utf8.count)
                 if text.utf8.count > remaining { pendingTextTruncated = true }
                 pendingText += ActivitySupport.prefixUTF8(text, maximumBytes: remaining)
+                acpReplyTail = String((acpReplyTail + text).suffix(8_192))
             case "tool_call", "tool_call_update":
                 flushText()
                 guard let id = update["toolCallId"] as? String else { return }
                 let status = update["status"] as? String
                 let state = status == "completed" ? "completed" : status == "failed" ? "error" : "running"
                 let known = toolActivities[ActivitySupport.id(namespace: activityNamespace, key: id)] != nil
-                let toolName = update["kind"] != nil || !known ? ACPChannel.toolName(kind: update["kind"] as? String, title: (update["name"] ?? update["title"]) as? String) : nil
-                let input = update["rawInput"].map(ACPChannel.displayInput)
+                // A settled call that was never announced and says nothing of itself (the close of a
+                // permission card's own bubble) is not a tool row.
+                if !known, state != "running", !(update["kind"] is String), !(update["title"] is String) { return }
+                let toolName = update["kind"] is String || !known ? ACPChannel.toolName(kind: update["kind"] as? String, title: (update["name"] as? String) ?? ACPChannel.titledTool(update["title"] as? String)) : nil
+                // Hermes sends no `rawInput` for its own tools: the path, shell line or title stands in.
+                let input: [String: Any]? = (update["rawInput"].flatMap { $0 is NSNull ? nil : $0 }).map(ACPChannel.displayInput) ?? (known ? nil : ACPChannel.describedInput(update))
                 let output = state == "running" ? nil : Self.acpOutput(update)
                 tool(id: id, name: toolName, input: input, state: state, output: output)
                 if activity == nil, state != "running", let output, !output.isEmpty { log("output", output) }
@@ -627,9 +635,18 @@ public final class CLIStreamParser {
             flushText()
             failed = true
             let message = (value["message"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            let detail = ((value["data"] as? [String: Any])?["message"] as? String) ?? (value["data"] as? String)
-            let text = [message, detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
-            authFailure = value["code"] as? Int == -32000 || CLIAuthFailure.opencode(text: text)
+            let data = value["data"] as? [String: Any]
+            // The Python ACP SDK (Hermes) puts an unexpected failure's words in `data.details`.
+            let detail = (data?["message"] as? String) ?? (data?["details"] as? String) ?? (value["data"] as? String)
+            var text = [message, detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+            if provider == "hermes" {
+                authFailure = CLIAuthFailure.hermes(text: text + "\n" + acpReplyTail)
+                // Hermes's gateway names a failed turn only by this word; the reply above said why.
+                if detail == "admitted_turn_failed" { text = L("run.error.hermesTurnFailed") }
+                else if message == "Internal error", let detail, !detail.isEmpty { text = detail }
+            } else {
+                authFailure = value["code"] as? Int == -32000 || CLIAuthFailure.opencode(text: text)
+            }
             log("error", text.isEmpty ? L("run.error.providerRunFailed", ["name": name]) : String(text.prefix(32_768)))
         default: break
         }

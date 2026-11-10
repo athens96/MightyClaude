@@ -363,7 +363,10 @@ final class ChildOutputBudget: @unchecked Sendable {
 /// that first had to get onto it could wait behind every chunk queued there;
 /// signalling from here ends the child at once, whatever the caller's priority.
 public final class LiveRunRegistry: @unchecked Sendable {
-    private struct Entry { let child: NativeChildProcess; let consumer: Task<Void, Never>?; var signalled = false }
+    private struct Entry { let child: NativeChildProcess; let consumer: Task<Void, Never>?; var cancel: (@Sendable () -> Data?)? = nil; var signalled = false }
+    /// Seconds a child whose turn runs elsewhere (Hermes's gateway) gets to pass on the
+    /// cancel it was just sent, before it is ended.
+    static let cancelGrace: TimeInterval = 1.5
     private let lock = NSLock()
     private var entries: [String: Entry] = [:]
     private var isClosing = false
@@ -374,8 +377,10 @@ public final class LiveRunRegistry: @unchecked Sendable {
     /// The app is quitting (`signalAll()` was called): no run starts a child
     /// any more, and one that got past that check is signalled as it registers.
     public var closing: Bool { lock.lock(); defer { lock.unlock() }; return isClosing }
-    func register(_ id: String, child: NativeChildProcess, consumer: Task<Void, Never>?) {
-        lock.lock(); entries[id] = Entry(child: child, consumer: consumer); let closing = isClosing; lock.unlock()
+    /// `cancel` gives the frame that tells the agent to stop its turn (ACP `session/cancel`), for
+    /// an agent whose turn would go on without this process: it is written before the signal.
+    func register(_ id: String, child: NativeChildProcess, consumer: Task<Void, Never>?, cancel: (@Sendable () -> Data?)? = nil) {
+        lock.lock(); entries[id] = Entry(child: child, consumer: consumer, cancel: cancel); let closing = isClosing; lock.unlock()
         if closing { signal(id, child: child) }
     }
     func remove(_ id: String, child: NativeChildProcess) {
@@ -411,6 +416,17 @@ public final class LiveRunRegistry: @unchecked Sendable {
         entry.signalled = true; entries[id] = entry
         lock.unlock()
         guard first else { return true }
+        if let frame = entry.cancel?() {
+            let child = entry.child, consumer = entry.consumer
+            child.write(frame)
+            Task.detached(priority: .userInitiated) {
+                let began = Date()
+                while !child.hasExited, Date().timeIntervalSince(began) < Self.cancelGrace { try? await Task.sleep(for: .milliseconds(20)) }
+                child.stop()
+                Self.cancelConsumerAfterExit(child, consumer: consumer)
+            }
+            return true
+        }
         entry.child.stop()
         Self.cancelConsumerAfterExit(entry.child, consumer: entry.consumer)
         return true
@@ -437,7 +453,7 @@ private final class ManagedProcess {
     var parser: CLIStreamParser?
     var permissions: ClaudePermissionChannel?
     var codexPermissions: CodexApprovalChannel?
-    /// An ACP agent's run (opencode): the JSON-RPC channel its stdio carries.
+    /// An ACP agent's run (opencode, Hermes): the JSON-RPC channel its stdio carries.
     var acp: ACPChannel?
     /// The ACP prompt was answered and the runner ended the agent's server itself.
     var acpEnding = false
@@ -596,6 +612,16 @@ public actor ProcessRunner {
                     let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.homeDirectoryForCurrentUser
                     if PiAgent.sessionFile(id: resume, workspacePath: workspace.path, home: home, environment: environment) == nil { launch.resumeId = nil }
                 }
+                // Hermes fixes `--yolo` when a session starts. A session that started with it is not
+                // continued by a pane that asks (it would not ask); one that started without it keeps asking.
+                var hermesNotice: String?
+                if request.provider == "hermes", let resume = request.resumeId {
+                    let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.homeDirectoryForCurrentUser
+                    let started = HermesAgent.startedWithFullAccess(sessionID: resume, database: HermesAgent.database(home: home, environment: environment))
+                    let full = request.settings.permissionMode == "fullAccess"
+                    if started == true, !full { launch.resumeId = nil; hermesNotice = L("run.notice.hermesFullAccessSession") }
+                    else if started == false, full { hermesNotice = L("run.notice.hermesAskingSession") }
+                }
                 if codexApprovals {
                     arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneBinding, codexHome: run.codexHome)
                 } else {
@@ -605,6 +631,8 @@ public actor ProcessRunner {
                 if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
                 // OpenCode 2's rules for this run only, read after the user's own config.
                 if request.provider == "opencode" { environment["OPENCODE_CONFIG_CONTENT"] = OpencodeAgent.configContent(mode: request.settings.permissionMode) }
+                // Hermes's `--yolo` for a session this run creates, as its environment equivalent.
+                if request.provider == "hermes" { HermesAgent.apply(mode: request.settings.permissionMode, to: &environment) }
                 if interactivePermissions {
                     // The CLI's authoritative "turn over, no background agent left" signal.
                     environment["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1"
@@ -685,14 +713,28 @@ public actor ProcessRunner {
                         fail: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "error", text: message); run.child?.stop() },
                         completed: { [weak run] in run?.permissionInitializationTask?.cancel(); run?.child?.closeInput() })
                 }
-                if request.provider == "opencode" {
-                    run.acp = ACPChannel(runId: run.activityId, request: request, workspacePath: workspace.path, attachments: attachments, configValues: OpencodeAgent.configValues(request),
+                if request.provider == "opencode" || request.provider == "hermes" {
+                    let hermes = request.provider == "hermes"
+                    if let hermesNotice { emitLogSynchronously(run, kind: "system", text: hermesNotice) }
+                    run.acp = ACPChannel(runId: run.activityId, request: launch, workspacePath: workspace.path, attachments: attachments, configValues: hermes ? HermesAgent.configValues(request) : OpencodeAgent.configValues(request),
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
-                        event: { [weak run] object in guard let run, !run.finished else { return }; run.parser?.receive(object: object) },
+                        event: { [weak run] object in
+                            guard let run, !run.finished else { return }
+                            // The picker a Hermes session offers is the model menu's list from then on.
+                            if hermes, object["type"] as? String == "acp.session" { HermesAgent.saveModels(configOptions: object["configOptions"], to: HermesAgent.modelCacheURL()) }
+                            run.parser?.receive(object: object)
+                        },
                         emit: { [weak run, onEvent] permission in guard let run else { return }; onEvent(RunEvent(sessionId: run.request.sessionId, type: "permission", permission: permission)) },
                         activity: { [weak run] permission, state in run?.parser?.permissionActivity(permission, state: state) },
                         warning: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "system", text: message) },
-                        fail: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "error", text: message); run.child?.stop() },
+                        fail: { [weak self, weak run] message in
+                            guard let self, let run else { return }
+                            self.emitLogSynchronously(run, kind: "error", text: message)
+                            // Hermes's turn runs in its gateway: it is cancelled before this process ends.
+                            guard hermes, let child = run.child, let frame = run.acp?.cancellation.take() else { run.child?.stop(); return }
+                            child.write(frame)
+                            Task.detached { try? await Task.sleep(for: .seconds(LiveRunRegistry.cancelGrace)); child.stop() }
+                        },
                         completed: { [weak self, weak run] in
                             guard let run else { return }
                             run.permissionInitializationTask?.cancel()
@@ -751,11 +793,13 @@ public actor ProcessRunner {
                 budget.close()
                 if !exited, let self, let run, let rest = lines?.finish(), !rest.isEmpty { await self.receive(rest, run: run) }
             }
-            liveRuns.register(request.sessionId, child: child, consumer: run.task)
+            let cancellation = request.provider == "hermes" ? run.acp?.cancellation : nil
+            liveRuns.register(request.sessionId, child: child, consumer: run.task, cancel: cancellation.map { held in { held.take() } })
             if run.permissions != nil || run.codexPermissions != nil || run.acp != nil {
                 run.permissions?.start(); run.codexPermissions?.start(); run.acp?.start()
                 // An ACP agent boots its own server (and may refresh its model list) before it answers.
-                let initialization: Double = run.acp != nil ? 45 : 15
+                // Hermes may have to start its gateway daemon first.
+                let initialization: Double = run.acp == nil ? 15 : request.provider == "hermes" ? 90 : 45
                 run.permissionInitializationTask = Task { [weak self, weak run] in
                     do { try await Task.sleep(for: .seconds(initialization)) } catch { return }
                     guard let self, let run else { return }; await self.permissionInitializationTimedOut(run)

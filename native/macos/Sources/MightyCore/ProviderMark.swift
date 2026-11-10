@@ -6,7 +6,7 @@ import Foundation
 /// move / line / cubic / close commands (arcs and quadratics were converted
 /// when the data was prepared). Claude and Gemini follow the Simple Icons
 /// outlines (CC0); the Codex pane carries OpenAI's mark, the Antigravity
-/// pane (the `gemini` id) Gemini's, the pi pane a drawn π and the opencode pane a drawn block O. The marks remain
+/// pane (the `gemini` id) Gemini's, the pi pane a drawn π, the opencode pane a drawn block O and the Hermes pane a drawn winged H. The marks remain
 /// trademarks of Anthropic, OpenAI and Google and only identify their CLIs.
 public enum ProviderMark {
     public static let box: CGFloat = 24
@@ -18,6 +18,7 @@ public enum ProviderMark {
         case "gemini": return [0x4285F4, 0x9B72CB, 0xD96570]
         case "pi": return [0x8B7CF6]
         case "opencode": return [0x8A8F98]
+        case "hermes": return [0xD9A441]
         default: return [0xD97757]
         }
     }
@@ -40,7 +41,7 @@ public enum ProviderMark {
     }
 
     public static func outline(provider: String) -> String {
-        switch provider { case "codex": return codex; case "gemini": return gemini; case "pi": return pi; case "opencode": return opencode; default: return claude }
+        switch provider { case "codex": return codex; case "gemini": return gemini; case "pi": return pi; case "opencode": return opencode; case "hermes": return hermes; default: return claude }
     }
 
     /// The mark scaled to fit `rect`, centred, y pointing down as in the source data.
@@ -89,5 +90,7 @@ public enum ProviderMark {
     static let pi = "M3 4.5 L21 4.5 L21 7.5 L17.5 7.5 L17.5 17 C17.5 18.2 18 18.6 19.2 18.6 L20.5 18.6 L20.5 21.5 L18.8 21.5 C15.6 21.5 14.5 19.9 14.5 17.2 L14.5 7.5 L9.6 7.5 L9.6 21 L6.6 21 L6.6 7.5 L3 7.5 Z"
     /// A drawn block O (after opencode's square mark): a frame whose lower half is solid, the upper hole wound the other way.
     static let opencode = "M3 3 L21 3 L21 21 L3 21 Z M7 7 L7 13 L17 13 L17 7 Z"
+    /// A drawn H with a wing at each shoulder (Hermes Agent has no outline mark published for this use): the messenger's winged cap.
+    static let hermes = "M7 6 L10 6 L10 10.5 L14 10.5 L14 6 L17 6 L17 21 L14 21 L14 13.5 L10 13.5 L10 21 L7 21 Z M1 3 L6 5.5 L6 9.5 L3.5 9.5 Z M23 3 L18 5.5 L18 9.5 L20.5 9.5 Z"
     static let gemini = "M11.04 19.32 C11.68 20.78 12 22.34 12 24 C12 22.34 12.31 20.78 12.93 19.32 C13.57 17.86 14.43 16.59 15.51 15.51 C16.59 14.43 17.86 13.58 19.32 12.96 C20.78 12.32 22.34 12 24 12 C22.34 12 20.78 11.69 19.32 11.07 C17.899 10.457 16.606 9.582 15.51 8.49 C14.418 7.394 13.543 6.101 12.93 4.68 C12.31 3.22 12 1.66 12 0 C12 1.66 11.68 3.22 11.04 4.68 C10.42 6.14 9.57 7.41 8.49 8.49 C7.394 9.582 6.101 10.457 4.68 11.07 C3.22 11.69 1.66 12 0 12 C1.66 12 3.22 12.32 4.68 12.96 C6.14 13.58 7.41 14.43 8.49 15.51 C9.57 16.59 10.42 17.86 11.04 19.32 Z"
 }

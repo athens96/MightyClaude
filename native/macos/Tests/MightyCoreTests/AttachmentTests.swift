@@ -106,8 +106,8 @@ private final class AttachmentEvents: @unchecked Sendable {
                     #expect(!input.arguments.contains("--add-dir"))
                     #expect(String(decoding: input.standardInput, as: UTF8.self).contains(prepared.files[1].url.path.replacingOccurrences(of: "/", with: "\\/")) || String(decoding: input.standardInput, as: UTF8.self).contains(prepared.files[1].url.path))
                     if resume != nil { #expect(input.arguments.contains("resume")) }
-                } else if provider == "opencode" {
-                    // opencode: the prompt and pictures go in ACP's session/prompt (ACPChannel), stdin carries no prompt.
+                } else if provider == "opencode" || provider == "hermes" {
+                    // opencode, Hermes: the prompt and pictures go in ACP's session/prompt (ACPChannel), stdin carries no prompt.
                     #expect(input.arguments == ["acp"] && input.standardInput.isEmpty)
                 } else if provider == "pi" {
                     // pi: pictures ride in the prompt, any other file is named by the path of its copy.

@@ -57,6 +57,8 @@ public enum CLIAccountMethod {
     /// opencode: a subscription sign-in (`opencode auth login` with OAuth) or API keys (stored in its database, or in the environment).
     public static let opencodeSubscription = "opencode-subscription"
     public static let opencodeAPIKey = "opencode-api-key"
+    /// Hermes: the model provider `hermes model` set up (a Nous Portal or other OAuth sign-in, or an API key).
+    public static let hermesProvider = "hermes-provider"
 }
 
 public enum CLILoginOption: String, Sendable, CaseIterable {
@@ -153,13 +155,15 @@ public enum CLIAccountSupport {
         case "pi": return "pi"
         // opencode's own interactive sign-in: a provider picker, then that provider's method.
         case "opencode": return "opencode auth login"
+        // Hermes's provider and model setup: a provider, its sign-in or API key, then the default model.
+        case "hermes": return "hermes model"
         default: return nil
         }
     }
     /// argv for the CLI's own status / logout command. Antigravity has
     /// neither; its model list stands in for the status (`antigravityStatus`).
     public static func statusArguments(provider: String) -> [String]? {
-        switch provider { case "claude": return ["claude", "auth", "status", "--json"]; case "codex": return ["codex", "login", "status"]; case "gemini": return [ProviderOptions.executable(provider), "models"]; case "pi": return ["pi", "--list-models"]; case "opencode": return ["opencode", "auth", "list", "--format", "json", "--standalone"]; default: return nil }
+        switch provider { case "claude": return ["claude", "auth", "status", "--json"]; case "codex": return ["codex", "login", "status"]; case "gemini": return [ProviderOptions.executable(provider), "models"]; case "pi": return ["pi", "--list-models"]; case "opencode": return ["opencode", "auth", "list", "--format", "json", "--standalone"]; case "hermes": return ["hermes", "acp"]; default: return nil }
     }
     public static func logoutArguments(provider: String) -> [String]? {
         switch provider { case "claude": return ["claude", "auth", "logout"]; case "codex": return ["codex", "logout"]; default: return nil }
@@ -217,6 +221,8 @@ public actor CLIAccountService {
         let environment = snapshot.values
         guard let arguments = CLIAccountSupport.statusArguments(provider: provider) else { return CLIAccountStatus(provider: provider, installed: false, detail: L("settings.cliAccounts.detailUnsupportedProvider")) }
         guard installed(arguments[0], environment: environment) else { return CLIAccountStatus(provider: provider, installed: false, detail: L("settings.cliAccounts.detailNotInstalledTemplate", ["provider": ProviderOptions.label(provider)])) }
+        // Hermes has no status command: its ACP server's `initialize` answer names the provider whose credentials resolve.
+        if provider == "hermes" { return CLIAccountSupport.hermesStatus(await HermesAgent.probe(arguments: arguments, environment: environment, cwd: home, timeout: 25)) }
         guard let result = await run(arguments, environment: environment, timeout: 20) else { return CLIAccountStatus(provider: provider, detail: L("settings.cliAccounts.detailRunFailed")) }
         if provider == "pi" {
             let auth = CLIAccountSupport.boundedData(PiAgent.authFile(home: home, environment: environment))

@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// An earlier Claude, Codex, Antigravity, pi or opencode session recorded for a workspace
+/// An earlier Claude, Codex, Antigravity, pi, opencode or Hermes session recorded for a workspace
 /// folder that a new pane can continue with `--resume` / `exec resume` /
 /// `--conversation` / `--session`.
 public struct ResumableSession: Sendable, Equatable, Identifiable {
@@ -76,7 +76,7 @@ public struct ResumableSessionQuery: Sendable {
 /// is small enough to read whole for a request count. Synchronous and
 /// file-bound: call it off the main actor.
 public enum ResumableSessions {
-    public static let providers = ["claude", "codex", "gemini", "pi", "opencode"]
+    public static let providers = ["claude", "codex", "gemini", "pi", "opencode", "hermes"]
     public static let maximumAge: TimeInterval = 60 * 86_400
     public static let maximumCandidates = 600
     public static let maximumScanned = 6_000
@@ -101,9 +101,9 @@ public enum ResumableSessions {
 
     public static func listing(_ query: ResumableSessionQuery) -> ResumableSessionListing {
         var budget = countBudget
-        let claude = claude(query, budget: &budget), codex = codex(query, budget: &budget), antigravity = antigravity(query, budget: &budget), pi = pi(query, budget: &budget), opencode = opencode(query, budget: &budget)
-        let items = (claude.items + codex.items + antigravity.items + pi.items + opencode.items).sorted { $0.modified != $1.modified ? $0.modified > $1.modified : $0.id < $1.id }
-        return ResumableSessionListing(items: items, hidden: claude.hidden + codex.hidden + antigravity.hidden + pi.hidden + opencode.hidden)
+        let claude = claude(query, budget: &budget), codex = codex(query, budget: &budget), antigravity = antigravity(query, budget: &budget), pi = pi(query, budget: &budget), opencode = opencode(query, budget: &budget), hermes = hermes(query, budget: &budget)
+        let items = (claude.items + codex.items + antigravity.items + pi.items + opencode.items + hermes.items).sorted { $0.modified != $1.modified ? $0.modified > $1.modified : $0.id < $1.id }
+        return ResumableSessionListing(items: items, hidden: claude.hidden + codex.hidden + antigravity.hidden + pi.hidden + opencode.hidden + hermes.hidden)
     }
 
     /// One agent's sessions alone: the other agent's records are not read. An agent
@@ -116,6 +116,7 @@ public enum ResumableSessions {
         case "gemini": return antigravity(query, budget: &budget)
         case "pi": return pi(query, budget: &budget)
         case "opencode": return opencode(query, budget: &budget)
+        case "hermes": return hermes(query, budget: &budget)
         default: return ResumableSessionListing()
         }
     }

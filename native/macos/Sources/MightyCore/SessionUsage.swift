@@ -222,7 +222,7 @@ final class SessionUsageTracker {
     private var claudeResultSeen = false
 
     init(provider: String, callback: ((SessionUsage) -> Void)?) {
-        value = SessionUsage(provider: provider, source: provider == "gemini" ? "antigravity.stream-json" : provider == "pi" ? "pi.rpc" : provider == "opencode" ? "opencode.acp" : provider + ".stream-json",
+        value = SessionUsage(provider: provider, source: provider == "gemini" ? "antigravity.stream-json" : provider == "pi" ? "pi.rpc" : provider == "opencode" ? "opencode.acp" : provider == "hermes" ? "hermes.acp" : provider + ".stream-json",
                              tokenScope: provider == "claude" ? "response" : provider == "pi" || provider == "opencode" ? "run" : "session")
         self.callback = callback
     }
@@ -232,7 +232,7 @@ final class SessionUsageTracker {
         switch value.provider {
         case "claude": consumeClaude(event, type: type)
         case "pi": consumePi(event, type: type)
-        case "opencode": consumeACP(event, type: type)
+        case "opencode", "hermes": consumeACP(event, type: type)
         case "codex":
             if type == "thread.started" { setIdentity(event["thread_id"]); publish() }
             if type == "turn.completed", let usage = event["usage"] as? [String: Any] {
@@ -293,14 +293,16 @@ final class SessionUsageTracker {
         publish()
     }
 
-    /// An ACP agent (OpenCode 2): `usage_update` carries the context in use, its window and the
-    /// session's running cost (session scope, so the ledger counts what grew); the prompt's
-    /// result carries the turn's tokens, every model call of it summed (run scope).
+    /// An ACP agent: `usage_update` carries the context in use and its window, and from OpenCode 2
+    /// the session's running cost (session scope, so the ledger counts what grew). The prompt's
+    /// result carries tokens: OpenCode 2's are the turn's, every model call summed (run scope);
+    /// Hermes's are its session's running counts (session scope), and it reports no cost.
     private func consumeACP(_ event: [String: Any], type: String) {
         switch type {
         case "acp.session":
             setIdentity(event["sessionId"])
-            let model = (event["configOptions"] as? [[String: Any]])?.first { $0["id"] as? String == "model" || $0["category"] as? String == "model" }
+            let model = (event["configOptions"] as? [[String: Any]])?.first { $0["id"] as? String == "model" }
+                ?? (event["configOptions"] as? [[String: Any]])?.first { $0["category"] as? String == "model" }
             setModel(model?["currentValue"])
             publish()
         case "acp.update":
@@ -314,6 +316,17 @@ final class SessionUsageTracker {
         case "acp.prompt_result":
             guard let usage = event["usage"] as? [String: Any], let input = SessionUsageSupport.count(usage["inputTokens"]), let output = SessionUsageSupport.count(usage["outputTokens"]) else { return }
             let read = SessionUsageSupport.count(usage["cachedReadTokens"]), written = SessionUsageSupport.count(usage["cachedWriteTokens"])
+            if value.provider == "hermes" {
+                // The session's counters so far (`gateway/session_usage.py`). `inputTokens` leaves the cache out and
+                // `totalTokens` holds it (read and written), so input is the total without the output.
+                let total = SessionUsageSupport.count(usage["totalTokens"])
+                value.tokenScope = "session"
+                value.inputTokens = total.flatMap { $0 >= output ? $0 - output : nil } ?? SessionUsageSupport.sum([input, read ?? 0])
+                value.outputTokens = output; value.cacheReadTokens = read
+                value.reasoningTokens = SessionUsageSupport.count(usage["thoughtTokens"])
+                value.totalTokens = SessionUsageSupport.sum([value.inputTokens, output])
+                publish(); return
+            }
             value.tokenScope = "run"
             // opencode's `inputTokens` leaves the cached part out (core session/usage.ts); here input includes it, as for the others.
             value.inputTokens = SessionUsageSupport.sum([input, read ?? 0, written ?? 0])

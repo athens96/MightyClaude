@@ -129,11 +129,11 @@ enum Palette {
     }
 
     static func symbol(_ provider: String) -> String {
-        switch provider { case "codex": return "hexagon"; case "gemini": return "sparkle"; case "pi": return "function"; case "opencode": return "chevron.left.forwardslash.chevron.right"; default: return "asterisk" }
+        switch provider { case "codex": return "hexagon"; case "gemini": return "sparkle"; case "pi": return "function"; case "opencode": return "chevron.left.forwardslash.chevron.right"; case "hermes": return "paperplane"; default: return "asterisk" }
     }
 
     static func name(_ provider: String) -> String {
-        switch provider { case "codex": return "Codex"; case "gemini": return "Antigravity"; case "pi": return "pi"; case "opencode": return "opencode"; default: return "Claude" }
+        switch provider { case "codex": return "Codex"; case "gemini": return "Antigravity"; case "pi": return "pi"; case "opencode": return "opencode"; case "hermes": return "Hermes"; default: return "Claude" }
     }
 
     /// A pane's status in words, through the locale (`session.state.*`).

@@ -3,7 +3,7 @@ import Foundation
 public struct CLIUpdateInstallation: Sendable, Equatable {
     public var provider: String
     public var version: String?
-    /// native, brew-cask, brew-formula, npm, pi (its own `update self`), opencode (its own `upgrade`), unknown, or missing.
+    /// native, brew-cask, brew-formula, npm, pi (its own `update self`), opencode (its own `upgrade`), hermes (its own `update`), unknown, or missing.
     public var method: String
     public var executablePath: String?
     public var canUpdate: Bool
@@ -172,6 +172,12 @@ public actor CLIUpdateService {
             installation.detail = L("settings.cliUpdate.detailOpencode")
             return CLIUpdatePlan(installation: installation, invocation: CLIUpdateInvocation(executable: command.executable, arguments: ["upgrade"], environment: environment))
         }
+        if provider == "hermes" {
+            // Hermes updates its own checkout and environment; `--yes` keeps it from waiting on a prompt.
+            installation.method = "hermes"; installation.canUpdate = true
+            installation.detail = L("settings.cliUpdate.detailHermes")
+            return CLIUpdatePlan(installation: installation, invocation: CLIUpdateInvocation(executable: command.executable, arguments: ["update", "--yes"], environment: environment))
+        }
         if let brew = brewInstallation(resolved, provider: provider) {
             installation.method = brew.cask ? "brew-cask" : "brew-formula"
             guard FileManager.default.isExecutableFile(atPath: brew.executable.path) else {
@@ -228,7 +234,8 @@ public actor CLIUpdateService {
                 let result = try await ProcessCapture.run(executable: path, arguments: ["--version"], environment: configuration.environment,
                     timeout: configuration.metadataTimeout, maximumBytes: 16_384)
                 guard result.exitCode == 0 else { continue }
-                let text = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                var text = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                if provider == "hermes" { text = HermesAgent.versionLine(text) }
                 if !text.isEmpty { return ProviderCommand(provider: provider, executable: path, version: String(text.prefix(160))) }
             } catch { if error is CancellationError || Task.isCancelled { throw CancellationError() } }
         }

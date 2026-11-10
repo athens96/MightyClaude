@@ -8,7 +8,8 @@ import CoreFoundation
 /// `session/prompt`. What the agent streams (`session/update`) reaches the parser as
 /// `acp.*` events (`CLIStreamParser.acp`); a `session/request_permission` becomes the
 /// pane's approval card, and only the user's single-call answer leaves the channel.
-/// Nothing here is opencode's own: another ACP agent (Hermes) uses the same channel.
+/// Nothing here is one agent's own: opencode and Hermes use the same channel, and differ only
+/// in their argv, how the permission mode reaches them, and their settings' ids.
 final class ACPChannel {
     static let maximumFrameBytes = 32 * 1024 * 1024
     static let maximumInputBytes = 65_536
@@ -48,6 +49,10 @@ final class ACPChannel {
     private(set) var ready = false
     private(set) var turnCompleted = false
     private(set) var failed = false
+    /// The `session/cancel` notification of the turn in flight, readable off the runner's actor:
+    /// an agent whose turn outlives its ACP process (Hermes's gateway owns it) is told to stop
+    /// before the process is ended.
+    let cancellation = ACPCancellation()
 
     init(runId: String, request: StartRunRequest, workspacePath: String, attachments: AttachmentPreparation, configValues: [(id: String, value: String)],
          write: @escaping (Data) -> Void, event: @escaping ([String: Any]) -> Void,
@@ -125,7 +130,7 @@ final class ACPChannel {
             var value: [String: Any] = ["type": "acp.prompt_result", "sessionId": sessionId, "stopReason": result["stopReason"] as? String ?? "end_turn"]
             if let usage = result["usage"] { value["usage"] = usage }
             event(value)
-            turnCompleted = true; cancelAll(); completed()
+            turnCompleted = true; cancellation.set(nil); cancelAll(); completed()
         default: break
         }
     }
@@ -181,6 +186,7 @@ final class ACPChannel {
         var blocks: [[String: Any]] = [["type": "text", "text": ([prompt] + references).joined(separator: "\n\n")]]
         blocks += attachments.files.filter { $0.attachment.mediaType.hasPrefix("image/") }.map { ["type": "image", "data": $0.attachment.dataBase64, "mimeType": $0.attachment.mediaType] }
         event(["type": "acp.prompt", "sessionId": sessionId])
+        cancellation.set(try? JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "method": "session/cancel", "params": ["sessionId": sessionId]], options: [.sortedKeys, .withoutEscapingSlashes]))
         call("session/prompt", ["sessionId": sessionId, "prompt": blocks])
     }
 
@@ -201,6 +207,8 @@ final class ACPChannel {
             var value: [String: Any] = ["type": "acp.error", "method": method, "code": code, "message": message]
             if let data = error["data"] { value["data"] = data }
             event(value)
+            // The agent answered the prompt with an error: no turn is left to cancel.
+            if method == "session/prompt" { cancellation.set(nil) }
             failed = true; cancelAll(); completed()
         }
     }
@@ -232,6 +240,14 @@ final class ACPChannel {
             return nil
         }
         let allow = option(["allow_once"]), reject = option(["reject_once", "reject_always"])
+        // Several "allow once" options are a question's choices (Hermes's clarify), not an approval:
+        // the card has one Allow, so the question is skipped and named instead of answered by guess.
+        if options.filter({ $0["kind"] as? String == "allow_once" }).count > 1 {
+            answer(rawID, reject)
+            let question = ActivitySupport.clean(call["title"] as? String ?? "", maximumBytes: 1_000, singleLine: true)
+            let choices = options.filter { $0["kind"] as? String == "allow_once" }.compactMap { $0["name"] as? String }.prefix(8).map { ActivitySupport.clean($0, maximumBytes: 120, singleLine: true) }.joined(separator: " / ")
+            warning(L("acp.channel.questionSkipped", ["question": question, "choices": choices])); return
+        }
         guard pending.count < Self.maximumPending else { answer(rawID, reject); warning(L("acp.channel.tooManyPending")); return }
         let callID = (call["toolCallId"] as? String).flatMap { !$0.isEmpty && $0.utf8.count <= 256 && $0.unicodeScalars.allSatisfy { $0.value > 32 && $0.value != 127 } ? $0 : nil } ?? "permission-\(key)"
         let input = Self.displayInput(call["rawInput"])
@@ -294,9 +310,11 @@ final class ACPChannel {
         }
     }
     /// A tool's input with camelCase keys in the snake_case the card and the activity summary read
-    /// (`filePath` → `file_path`); anything that is not an object is shown under `input`.
+    /// (`filePath` → `file_path`); anything that is not an object is shown under `input`. An input
+    /// wrapped as `{tool, arguments}` (Hermes's edit approvals) is shown as its arguments.
     static func displayInput(_ raw: Any?) -> [String: Any] {
-        guard let fields = raw as? [String: Any] else { return raw.map { $0 is NSNull ? [:] : ["input": $0] } ?? [:] }
+        guard var fields = raw as? [String: Any] else { return raw.map { $0 is NSNull ? [:] : ["input": $0] } ?? [:] }
+        if fields.count == 2, fields["tool"] is String, let arguments = fields["arguments"] as? [String: Any] { fields = arguments }
         var result: [String: Any] = [:]
         for (key, value) in fields.prefix(64) {
             var snake = ""
@@ -308,10 +326,37 @@ final class ACPChannel {
         }
         return result
     }
+    /// What a tool call without `rawInput` still says about itself: its first location's path, a
+    /// shell line its content shows (`$ ls`), or the title's part after `tool: `.
+    static func describedInput(_ call: [String: Any]) -> [String: Any]? {
+        if let path = (call["locations"] as? [[String: Any]])?.first?["path"] as? String, !path.isEmpty { return ["file_path": path] }
+        for block in (call["content"] as? [[String: Any]] ?? []).prefix(4) {
+            if let inner = block["content"] as? [String: Any], let text = inner["text"] as? String, text.hasPrefix("$ ") { return ["command": String(text.dropFirst(2).prefix(8_192))] }
+        }
+        guard let title = call["title"] as? String, let colon = title.range(of: ": ") else { return nil }
+        let rest = String(title[colon.upperBound...])
+        return rest.isEmpty ? nil : ["description": rest]
+    }
+    /// A title of the form `tool: preview` names its tool before the colon; any other title is the name.
+    static func titledTool(_ title: String?) -> String? {
+        guard let title, let colon = title.range(of: ": ") else { return title }
+        let name = String(title[..<colon.lowerBound])
+        return name.range(of: "^[A-Za-z0-9_.-]{1,64}$", options: .regularExpression) != nil ? name : title
+    }
     private static func displayJSON(_ obj: [String: Any]) -> String? {
         guard JSONSerialization.isValidJSONObject(obj), let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) else { return nil }
         return String(decoding: data, as: UTF8.self).unicodeScalars.map {
             $0.properties.generalCategory == .format ? String($0).utf16.map { String(format: "\\u%04x", $0) }.joined() : String($0)
         }.joined()
     }
+}
+
+/// A turn's `session/cancel` frame behind a lock, so the stop signal (sent off the runner's
+/// actor, before the process is ended) can read it.
+final class ACPCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var frame: Data?
+    func set(_ value: Data?) { lock.lock(); frame = value.map { $0 + Data([10]) }; lock.unlock() }
+    /// The frame, once: a second stop does not send it again.
+    func take() -> Data? { lock.lock(); defer { frame = nil; lock.unlock() }; return frame }
 }

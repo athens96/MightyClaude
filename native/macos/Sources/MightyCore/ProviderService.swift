@@ -106,7 +106,8 @@ public actor ProviderService {
                     if Task.isCancelled { return nil }
                     guard FileManager.default.isExecutableFile(atPath: path.path) else { continue }
                     if let result = try? await ProcessCapture.run(executable: path, arguments: ["--version"], environment: env, timeout: probeTimeout, maximumBytes: 16_384), result.exitCode == 0 {
-                        let version = String(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
+                        var version = String(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
+                        if provider == "hermes" { version = HermesAgent.versionLine(version) }
                         if !version.isEmpty { return ProviderCommand(provider: provider, executable: path, version: version) }
                     }
                 }
@@ -150,6 +151,8 @@ public actor ProviderService {
                 if provider == "gemini" { return await Self.antigravityCatalog(command: command, environment: snapshot.values, workspace: cwd) }
                 if provider == "pi" { return await Self.piCatalog(command: command, environment: snapshot.values, workspace: cwd) }
                 if provider == "opencode" { return await Self.opencodeCatalog(command: command, environment: snapshot.values, workspace: cwd) }
+                // Hermes lists models only inside a session: the picker its last session offered is kept and read here.
+                if provider == "hermes" { return HermesAgent.cachedCatalog(url: HermesAgent.modelCacheURL()) }
                 return await CLIModelProbe.read(command: command, environment: snapshot.values, workspace: cwd)
             }
             entry = CatalogEntry(id: UUID(), created: Date(), task: task, inFlight: true, forced: forceRefresh, environment: snapshot.values)
@@ -308,6 +311,11 @@ public actor ProviderService {
             // One ACP server per request (`opencode acp`, OpenCode 2): the session, the settings and
             // the prompt travel as JSON-RPC on stdio (`ACPChannel`), the permission mode as the
             // run's `OPENCODE_CONFIG_CONTENT` (`OpencodeAgent.permissionRules`).
+            return ["acp"]
+        case "hermes":
+            // One ACP server per request (`hermes acp`), a viewer of Hermes's gateway daemon, which it
+            // starts when needed. The session, the settings and the prompt travel as JSON-RPC
+            // (`ACPChannel`); full access is the run's `HERMES_YOLO_MODE` (`HermesAgent.apply`).
             return ["acp"]
         default: throw MightyError(L("common.unsupportedCli"))
         }

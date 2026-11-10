@@ -148,7 +148,7 @@ public struct ProviderInput {
         }
         var arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneMCPBinding, codexHome: codexHome)
         // An ACP agent's prompt and pictures travel in `session/prompt` (`ACPChannel`), not on stdin as such.
-        if request.provider == "opencode" { return ProviderInput(arguments: arguments, standardInput: Data()) }
+        if request.provider == "opencode" || request.provider == "hermes" { return ProviderInput(arguments: arguments, standardInput: Data()) }
         guard !request.attachments.isEmpty else {
             if request.provider == "claude", allowPermissionPrompts {
                 return ProviderInput(arguments: arguments, standardInput: try claudeUserMessage(request.input))

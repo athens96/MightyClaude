@@ -101,7 +101,8 @@ public actor AccountUsageService {
                 return try await Self.antigravity(command: command, environment: environment)
             }
             throw AccountUsageFailure.unavailable(provider == "pi" ? L("accountUsage.detailPiUnavailable")
-                : provider == "opencode" ? L("accountUsage.detailOpencodeUnavailable") : L("windows.accountUsage.detailUnsupportedProvider"))
+                : provider == "opencode" ? L("accountUsage.detailOpencodeUnavailable")
+                : provider == "hermes" ? L("accountUsage.detailHermesUnavailable") : L("windows.accountUsage.detailUnsupportedProvider"))
         }
         now = { Date() }
     }

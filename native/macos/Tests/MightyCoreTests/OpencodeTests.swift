@@ -302,7 +302,7 @@ struct OpencodeTests {
         #expect(!SetupRowState.isSelectable(.outdated, item: try #require(catalog.item("pi")), platform: .macos))
         // After pi, among the agents.
         let agents = catalog.items.filter { $0.group == .agent }.map(\.id)
-        #expect(agents.last == "opencode" && agents.contains("pi"))
+        #expect(agents.firstIndex(of: "opencode").map { $0 > 0 && agents[$0 - 1] == "pi" } == true)
         #expect(SetupPlan.order(selected: ["opencode"], catalog: catalog, platform: .macos, isSatisfied: { $0 == "git" }) == ["homebrew", "node", "opencode"])
         #expect(try SetupCatalog.bundled().item("opencode") != nil)
         #expect(ComponentCatalog.installCommand(provider: "opencode") == "npm install -g @opencode/cli")
@@ -450,7 +450,7 @@ struct OpencodeTests {
     // MARK: Where it shows
 
     @Test func opencodeIsABetaLocalAgentWithItsMarkAndNotADelegationAgent() {
-        #expect(ProviderOptions.ids.last == "opencode" && ProviderOptions.label("opencode") == "opencode" && ProviderOptions.isBeta("opencode"))
+        #expect(ProviderOptions.ids.contains("opencode") && ProviderOptions.label("opencode") == "opencode" && ProviderOptions.isBeta("opencode"))
         #expect(ProviderOptions.isLocalOnly("opencode") && ProviderOptions.isLocalOnly("pi") && !ProviderOptions.isLocalOnly("codex"))
         #expect(ProviderMark.markedProvider("opencode") == "opencode" && ProviderMark.colors(provider: "opencode").count == 1)
         #expect(!ProviderMark.commands(ProviderMark.outline(provider: "opencode")).isEmpty && ProviderMark.outline(provider: "opencode") != ProviderMark.outline(provider: "claude"))
