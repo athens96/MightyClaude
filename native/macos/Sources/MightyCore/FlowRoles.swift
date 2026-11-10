@@ -203,7 +203,7 @@ public enum FlowRoles {
     /// The types the blocks of `runs` name, for looking their definitions up (`AgentDefinitions.load`).
     public static func types(_ runs: [MightyGraphRun]) -> Set<String> {
         var types = Set<String>()
-        for run in runs { for agent in run.agents { if let type = agent.identity?.type { types.insert(type) } } }
+        for run in runs { for agent in run.flowAgents { if let type = agent.identity?.type { types.insert(type) } } }
         return types
     }
 

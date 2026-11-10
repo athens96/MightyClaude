@@ -87,7 +87,7 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
         view.resizableNodeIDs = Set(nodes.filter(\.isResizable).map(\.id))
         view.minimumSizes = Dictionary(nodes.filter { $0.minimumSize != MightyGraphInteractionProbe.minimumBlockSize }.map { ($0.id, $0.minimumSize) },
                                        uniquingKeysWith: { first, _ in first })
-        view.fixedNodeIDs = Set(nodes.filter { $0.content == .history }.map(\.id))
+        view.fixedNodeIDs = Set(nodes.filter(\.isFixed).map(\.id))
         view.targetToken = targetToken
         view.targetFrame = targetFrame
         view.alignTop = alignTop

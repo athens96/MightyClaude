@@ -115,6 +115,35 @@ public struct GraphAgentIdentity: Codable, Sendable, Equatable {
     var byteCount: Int { (type?.utf8.count ?? 0) + (requestedModel?.utf8.count ?? 0) + (resolvedModel?.utf8.count ?? 0) + (isolation?.utf8.count ?? 0) }
 }
 
+/// The figures a sub-agent block keeps of its own run, for the flow diagram's compact card (`FlowCard`): when the
+/// app saw it start and end, and how many tools it called so far. Each is what was observed, never an estimate; a
+/// block without any carries none (older events and saves, Codex and Antigravity sub-agents).
+public struct GraphAgentFigures: Codable, Sendable, Equatable {
+    /// When the Agent call that started it was seen: that frame's own `timestamp`, else the moment the app read it.
+    public var startedAt: String?
+    /// When it was seen to end (its result, its notification, the process's end), by the same clock.
+    public var endedAt: String?
+    /// Tool calls of its own so far: the tool_use blocks of its messages, or the count the CLI reports when that is more.
+    public var toolCalls: Int?
+
+    public init(startedAt: String? = nil, endedAt: String? = nil, toolCalls: Int? = nil) {
+        self.startedAt = startedAt; self.endedAt = endedAt; self.toolCalls = toolCalls
+    }
+    public static let maximumToolCalls = 1_000_000
+    public var isEmpty: Bool { startedAt == nil && endedAt == nil && toolCalls == nil }
+    /// A timestamp the app can read back, a count in range; nil when nothing is left.
+    public var normalized: GraphAgentFigures? {
+        func time(_ value: String?) -> String? {
+            value.flatMap { $0.utf8.count <= 80 && AgentRunTiming.parseTimestamp($0) != nil ? $0 : nil }
+        }
+        let value = GraphAgentFigures(startedAt: time(startedAt), endedAt: time(endedAt),
+                                      toolCalls: toolCalls.flatMap { (0...Self.maximumToolCalls).contains($0) ? $0 : nil })
+        return value.isEmpty ? nil : value
+    }
+    public var started: Date? { startedAt.flatMap(AgentRunTiming.parseTimestamp) }
+    public var ended: Date? { endedAt.flatMap(AgentRunTiming.parseTimestamp) }
+}
+
 /// A request-scoped node snapshot. Missing input/output means the engine did
 /// not report it; display code must not manufacture a prompt or final answer.
 public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
@@ -143,14 +172,17 @@ public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
     public var sourceBlockId: String?
     /// Who a sub-agent block is (`GraphAgentIdentity`); absent on other blocks, in older graph events and in older saves.
     public var identity: GraphAgentIdentity?
+    /// A sub-agent block's start, end and tool calls (`GraphAgentFigures`); absent as `identity` is.
+    public var figures: GraphAgentFigures?
 
     public init(id: String, runId: String, parentId: String? = nil, kind: String, state: String, title: String,
                 input: String? = nil, output: String? = nil, entries: [LogEntry] = [], updatedAt: String = mightyTimestamp(), usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil,
-                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil, identity: GraphAgentIdentity? = nil) {
+                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil, identity: GraphAgentIdentity? = nil,
+                figures: GraphAgentFigures? = nil) {
         self.id = id; self.runId = runId; self.parentId = parentId; self.kind = kind; self.state = state
         self.title = title; self.input = input; self.output = output; self.entries = entries; self.updatedAt = updatedAt; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
         self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply; self.sourceBlockId = sourceBlockId
-        self.identity = identity
+        self.identity = identity; self.figures = figures
     }
 }
 
@@ -194,6 +226,7 @@ public enum ExecutionGraphSupport {
         result.sourceBlockId = node.sourceBlockId.flatMap { CoreValidation.identifier($0) ? $0 : nil }
         // Only a sub-agent block has a type, a model of its own and an isolation.
         result.identity = node.kind == "agent" ? node.identity?.normalized : nil
+        result.figures = node.kind == "agent" ? node.figures?.normalized : nil
         if restoring && !terminal(result.state) { result.state = "stopped" }
         if node.kind == "main" { result.entries = []; return result }
 

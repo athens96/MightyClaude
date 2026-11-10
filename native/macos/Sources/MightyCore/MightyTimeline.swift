@@ -175,12 +175,14 @@ public enum MightyTimeline {
 extension MightyGraphLayout {
     /// The diagram nodes of 실행 blocks and child blocks that are running, by the same rule as
     /// their pills (`DesignTone(blockStatus:)`): the edges into them are drawn blue.
-    public static func liveNodeIDs(_ runs: [MightyGraphRun]) -> Set<String> {
+    /// `fanOut`: the flow draws the run's background sub-agents too (`MightyGraphRun.flowAgents`), so the edges into
+    /// their running cards are blue as well.
+    public static func liveNodeIDs(_ runs: [MightyGraphRun], fanOut: Bool = false) -> Set<String> {
         var ids = Set<String>()
         for run in runs {
             // The request block holds its input alone; the run's own work is its 실행 block.
             if DesignTone(blockStatus: run.status) == .run { ids.insert(nodeID(run, suffix: workSuffix)) }
-            for agent in BackgroundNoticeRuns.shownAgents(run) where DesignTone(blockStatus: agent.status) == .run {
+            for agent in fanOut ? run.flowAgents : BackgroundNoticeRuns.shownAgents(run) where DesignTone(blockStatus: agent.status) == .run {
                 ids.insert(nodeID(run, suffix: "agent:" + agent.id))
             }
         }

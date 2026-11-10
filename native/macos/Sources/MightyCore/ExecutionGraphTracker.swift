@@ -114,6 +114,16 @@ final class ExecutionGraphTracker {
     private var unnamedUsage = 0
     private var compactions = 0
     private var finished = false
+    /// The `timestamp` of the frame being read, when it carries one: a block starts and ends at the time its frame names
+    /// (a recorded line's own), else at the moment it is read.
+    private var frameTime: String?
+    /// Tool calls already counted for their agent block (`GraphAgentFigures.toolCalls`): a message is sent more than once.
+    private var countedTools = Set<String>()
+    private var countedOrder: [String] = []
+    /// Each agent block's tool calls as its own messages showed them, and as the CLI last reported them: the block
+    /// carries the larger of the two, since the CLI's report of a call may come before the message that makes it.
+    private var seenTools: [String: Int] = [:]
+    private var reportedTools: [String: Int] = [:]
 
     init(runID: String, input: String?, provider: String = "claude", configuredModel: String? = nil, emit: @escaping (ExecutionGraphNode) -> Void) {
         self.runID = runID; mainID = ExecutionGraphSupport.mainNodeID(runId: runID); self.provider = provider; self.configuredModel = configuredModel; self.emit = emit
@@ -191,9 +201,44 @@ final class ExecutionGraphTracker {
         let id = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: toolID)
         guard nodes[id] == nil else { return id }
         guard nodes.count < ExecutionGraphSupport.maximumNodes else { return nil }
-        let value = ExecutionGraphNode(id: id, runId: runID, kind: kind, state: "running", title: title)
+        // A Claude sub-agent's block keeps when it was first seen, for its card's elapsed time.
+        let figures = kind == "agent" && provider == "claude" ? GraphAgentFigures(startedAt: now) : nil
+        let value = ExecutionGraphNode(id: id, runId: runID, kind: kind, state: "running", title: title, figures: figures)
         nodes[id] = value; order.append(id); emit(value)
         return id
+    }
+    /// The time of the frame being read, else now.
+    private var now: String { frameTime ?? mightyTimestamp() }
+    private static func frameTime(_ value: [String: Any]) -> String? {
+        guard let text = value["timestamp"] as? String, text.utf8.count <= 80, AgentRunTiming.parseTimestamp(text) != nil else { return nil }
+        return text
+    }
+    /// One more tool call of sub-agent block `node`, counted once however often its message is sent.
+    private func countTool(_ tool: String, for node: String) {
+        guard provider == "claude", nodes[node]?.kind == "agent", countedTools.insert(tool).inserted else { return }
+        countedOrder.append(tool)
+        if countedOrder.count > 4_096 { countedTools.remove(countedOrder.removeFirst()) }
+        seenTools[node, default: 0] += 1
+        publishTools(node)
+    }
+    /// The block's tool calls: what its messages showed or what the CLI reported, whichever is more.
+    private func publishTools(_ node: String) {
+        let count = min(GraphAgentFigures.maximumToolCalls, max(seenTools[node] ?? 0, reportedTools[node] ?? 0))
+        guard count > 0, count != nodes[node]?.figures?.toolCalls else { return }
+        update(node) { value in
+            var figures = value.figures ?? GraphAgentFigures()
+            figures.toolCalls = count
+            value.figures = figures
+        }
+    }
+    /// The CLI's own count of an agent's tool calls (`task_progress` and `task_notification`: `usage.tool_uses`), taken when
+    /// it is more than was counted from the agent's messages (a message that never reached the stream).
+    private func reportTools(_ frame: [String: Any]) {
+        guard let tool = Self.key(frame["tool_use_id"]), let count = (frame["usage"] as? [String: Any])?["tool_uses"] as? Int, count > 0 else { return }
+        let node = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: tool)
+        guard provider == "claude", nodes[node]?.kind == "agent", count > (reportedTools[node] ?? 0) else { return }
+        reportedTools[node] = count
+        publishTools(node)
     }
     /// `continuing`: an Antigravity sub-agent that answered while helpers it
     /// started were still out goes on with the same assignment when one reports.
@@ -208,6 +253,13 @@ final class ExecutionGraphTracker {
             value.state = previous.state; value.output = previous.output ?? value.output
         } else if !restart, ExecutionGraphSupport.terminal(previous.state), !ExecutionGraphSupport.terminal(value.state),
                   !(continuing && provider == "gemini" && previous.kind == "agent" && previous.state == "completed" && value.state == "running") { value.state = previous.state }
+        // A Claude sub-agent's block keeps when it was seen to end, once.
+        if provider == "claude", value.kind == "agent", !ExecutionGraphSupport.terminal(previous.state), ExecutionGraphSupport.terminal(value.state),
+           value.figures?.endedAt == nil {
+            var figures = value.figures ?? GraphAgentFigures()
+            figures.endedAt = now
+            value.figures = figures
+        }
         guard var normalized = ExecutionGraphSupport.normalized(value), normalized != previous else { return }
         normalized.updatedAt = mightyTimestamp(); nodes[id] = normalized; emit(normalized)
     }
@@ -267,6 +319,8 @@ final class ExecutionGraphTracker {
         if provider == "opencode" { consumeACP(value); return }
         // Hermes reports its session's running token counts, not the request's: the block carries none.
         if provider == "hermes" { return }
+        frameTime = Self.frameTime(value)
+        defer { frameTime = nil }
         let parentTool = Self.parentToolID(value)
         if let parentTool { ensureAgent(toolID: parentTool) }
         // Over-cap child events are omitted, never reclassified as main text.
@@ -304,6 +358,7 @@ final class ExecutionGraphTracker {
             for block in blocks where block["type"] as? String == "tool_use" {
                 guard let toolID = Self.key(block["id"]) else { continue }
                 rememberTool(toolID, owner: owner)
+                if parentTool != nil, current != mainID { countTool(toolID, for: current) }
                 let input = block["input"] as? [String: Any]
                 let background = input?["run_in_background"] as? Bool == true
                 if Self.agentTool(block["name"] as? String) {
@@ -386,6 +441,7 @@ final class ExecutionGraphTracker {
         } else if type == "system", value["subtype"] as? String == "task_notification", let task = Self.key(value["task_id"]) {
             // The live stream (no --replay-user-messages) carries a task's end as this event, not as the injected user message: the same
             // notification, so it settles the block the same way.
+            reportTools(value)
             var body = "<task-notification><task-id>\(task)</task-id>"
             if let tool = Self.key(value["tool_use_id"]) { body += "<tool-use-id>\(tool)</tool-use-id>" }
             if let file = value["output_file"] as? String, !file.isEmpty { body += "<output-file>\(file)</output-file>" }
@@ -393,6 +449,8 @@ final class ExecutionGraphTracker {
             body += "<status>\(status)</status>"
             if let summary = value["summary"] as? String, !summary.isEmpty { body += "<summary>\(summary)</summary>" }
             settleTasks(in: body + "</task-notification>", notice: parentTool == nil)
+        } else if type == "system", value["subtype"] as? String == "task_progress" {
+            reportTools(value)
         } else if type == "system", value["subtype"] as? String == "task_started", let tool = Self.key(value["tool_use_id"]) {
             // The CLI names the type it started the agent as, which a call without `subagent_type` leaves unsaid.
             let child = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: tool)
@@ -986,7 +1044,7 @@ final class ExecutionGraphTracker {
             guard nodes.count < ExecutionGraphSupport.maximumNodes else { return }
             let copy = ExecutionGraphNode(id: copyID, runId: run, parentId: main, kind: block.kind, state: block.state, title: block.title,
                                           input: block.input, output: block.output, background: true, outputFile: block.outputFile, sourceBlockId: id,
-                                          identity: block.identity)
+                                          identity: block.identity, figures: block.figures)
             guard let normalized = ExecutionGraphSupport.normalized(copy) else { return }
             nodes[copyID] = normalized; order.append(copyID); emit(normalized)
             noticeCopies[run, default: []].append(copyID)
@@ -997,7 +1055,7 @@ final class ExecutionGraphTracker {
             update(copyID) { copy in
                 copy.title = block.title; copy.input = block.input; copy.state = block.state
                 copy.output = block.output; copy.outputFile = block.outputFile
-                copy.identity = block.identity
+                copy.identity = block.identity; copy.figures = block.figures
             }
         }
         describe(run)

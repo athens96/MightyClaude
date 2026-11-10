@@ -76,6 +76,9 @@ struct MightyGraphView: View {
     @ObservedObject var backgroundOutput: BackgroundPaneOutput = BackgroundPaneOutput()
     /// The pane's reply shell-block runs; nil draws no Run buttons in the blocks' transcripts.
     var shellRuns: ShellBlockRunContext? = nil
+    /// The role view of a Claude pane's flow: every sub-agent under the block that launched it, a running one as its
+    /// compact card (`MightyGraphLayout.FanOut`). The interaction diagnostics turn it off: they exercise full blocks.
+    var showsFanOut = true
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     /// The structure view's model and what it was built from. A reference, so
@@ -111,6 +114,9 @@ struct MightyGraphView: View {
     @AppStorage("mighty.referenceBubble.width") private var bubbleWidth: Double = MightyGraphReferenceBubble.defaultWidth
     @AppStorage("mighty.referenceBubble.height") private var bubbleHeight: Double = 0
     @ViewState private var expanded = Set<String>()
+    /// Sub-agent cards the user opened into their full block (`FlowCard.isCompact`): they stay open until folded back.
+    /// Per pane, in memory, never saved.
+    @ViewState private var openedCards = Set<String>()
     @ViewState private var zoom: CGFloat = 1
     @ViewState private var scrollTarget: MightyGraphScrollTarget?
     @ViewState private var selectedNodeID: String?
@@ -196,8 +202,13 @@ struct MightyGraphView: View {
               galleries: MightyGraphImages.galleries(runs: runs, root: workspaceRoot, fixed: olderCount),
               retainedStart: pinnedStart, history: history != nil,
               planRunID: planRunID, planRecords: PlanCardSupport.diagramRecords(planHistory, runs: runs), planSize: livePlanSize ?? graphPlanSize,
-              splitsExecution: true)
+              splitsExecution: true, fanOut: fanOut)
     }
+    /// A Claude pane's flow draws the run's sub-agents in a fan-out row, background ones too; any other pane's flow is
+    /// laid out as it always was.
+    private var fanOut: MightyGraphLayout.FanOut? { showsFanOut && provider == "claude" ? .init(opened: openedCards) : nil }
+    /// The blocks the diagram drew for a run, which `Content.agent` indexes.
+    private func flowAgents(_ run: MightyGraphRun) -> [MightyGraphAgent] { fanOut == nil ? run.agents : run.flowAgents }
     /// The diagram request the pending plan card goes under, nil when it is docked.
     private var planRunID: String? { PlanCardSupport.diagramPlanRunID(planRequest, showsDiagram: viewMode == .diagram, runs: runs) }
     private var planNodeID: String? { planRunID.map { MightyGraphBlockSize.nodeID(runID: $0, suffix: MightyGraphLayout.planSuffix) } }
@@ -273,7 +284,7 @@ struct MightyGraphView: View {
         let fallbackNodeID = followTarget(graph)
         // Before anything aimed it, the camera follows: the newest block right above the composer.
         let target = scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: fallbackNodeID, alignTop: false, follows: true)
-        let live = MightyGraphLayout.liveNodeIDs(runs)
+        let live = MightyGraphLayout.liveNodeIDs(runs, fanOut: fanOut != nil)
         let ordinals = MightyGraphSupport.requestOrdinals(runs)
         VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.md) {
@@ -350,6 +361,7 @@ struct MightyGraphView: View {
                 // A block the user opened or folded never moves the camera; it follows on
                 // only if the newest block is still in view.
                 .onChange(of: expanded) { _, _ in follow.watch.userChangedLayout() }
+                .onChange(of: openedCards) { _, _ in follow.watch.userChangedLayout() }
                 // The agent's step list sits over the diagram's top-left corner; outside it the canvas still pans and zooms.
                 .overlay(alignment: .topLeading) {
                     if let progressSteps {
@@ -460,7 +472,11 @@ struct MightyGraphView: View {
     /// Who a sub-agent block is (`FlowRoles.subagent`), with the custom agent its type names when one was found; nil for
     /// a block that is no sub-agent.
     private func identity(_ agent: MightyGraphAgent) -> FlowIdentity? {
-        FlowRoles.subagent(agent, definition: agent.identity?.type.flatMap { agentDefinitions.definitions[$0] })
+        FlowRoles.subagent(agent, definition: definition(agent))
+    }
+    /// The custom agent a block's type names, when its definition was found.
+    private func definition(_ agent: MightyGraphAgent) -> AgentDefinition? {
+        agent.identity?.type.flatMap { agentDefinitions.definitions[$0] }
     }
 
     /// The sent request's pending state, for the run `runID` only.
@@ -609,6 +625,13 @@ struct MightyGraphView: View {
         onSavePlanSize(nil)
     }
 
+    /// A block the user opened from its card goes back to the card, which is never selected: a wheel over it pans.
+    private func foldToCard(_ id: String) {
+        onFocus()
+        if selectedNodeID == id { selectedNodeID = nil }
+        openedCards.remove(id)
+    }
+
     /// A block header's 펼치기/접기: back to its default size, opened or folded.
     private func toggleExpanded(_ id: String) {
         resized.removeValue(forKey: id)
@@ -698,18 +721,36 @@ struct MightyGraphView: View {
                            fromRecord: index < olderCount, pending: pendingState(run.id), identity: lead)
         case .agent(let runIndex, let agentIndex):
             let run = runs[runIndex]
-            let agent = run.agents[agentIndex]
-            let look = Self.agentPresentation(agent)
-            let runID = run.sourceRunID ?? run.id
-            let agentChildBlocks = GraphChildBlocks.map(responseRecords: agent.responseRecords, agents: run.agents, runId: runID)
-            // A sub-agent wears its role's ink (its own colour, when its definition names one), its type and its marks.
-            let who = identity(agent)
-            transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.shownInput, entries: agent.entries,
-                           tint: who.map { Palette.flow($0.ink) } ?? look.tint, usage: agent.usage,
-                           records: agent.responseRecords ?? [], nodeModelLabel: who?.modelLabel, childBlocks: agentChildBlocks,
-                           kindLine: MightyGraphSupport.backgroundLabel(agent),
-                           backgroundRun: agent.isTask ? BackgroundRunBody(command: agent.shownInput, tail: backgroundOutput.lines[agent.id] ?? [], reply: agent.noticeReply) : nil,
-                           identity: who)
+            let agents = flowAgents(run)
+            let agent = agents[agentIndex]
+            if node.isCompact {
+                // A running sub-agent, or a background one of this request: its card. A finished background agent's full
+                // block is the copy in its notice run, where the click goes; any other card opens in place.
+                let copy = agent.background == true && MightyGraphLayout.terminal(agent.status) ? FlowCard.copyNodeID(of: agent, in: runs) : nil
+                MightyGraphAgentCard(nodeID: node.id, content: FlowCard.content(agent, in: run, definition: definition(agent)),
+                                     onActivate: {
+                                         onFocus()
+                                         // The copy is shown and selected, so it is plain which block the card led to.
+                                         if let copy { selectedNodeID = copy; publish(.reaim(nodeID: copy, alignTop: false), animated: true) }
+                                         else { openedCards.insert(node.id) }
+                                     },
+                                     activateHelp: copy == nil ? L("graph.card.open") : L("graph.card.showCopy"),
+                                     onOpen: { onFocus(); openedCards.insert(node.id) })
+            } else {
+                let look = Self.agentPresentation(agent)
+                let runID = run.sourceRunID ?? run.id
+                let agentChildBlocks = GraphChildBlocks.map(responseRecords: agent.responseRecords, agents: agents, runId: runID)
+                // A sub-agent wears its role's ink (its own colour, when its definition names one), its type and its marks.
+                let who = identity(agent)
+                transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.shownInput, entries: agent.entries,
+                               tint: who.map { Palette.flow($0.ink) } ?? look.tint, usage: agent.usage,
+                               records: agent.responseRecords ?? [], nodeModelLabel: who?.modelLabel, childBlocks: agentChildBlocks,
+                               kindLine: MightyGraphSupport.backgroundLabel(agent),
+                               backgroundRun: agent.isTask ? BackgroundRunBody(command: agent.shownInput, tail: backgroundOutput.lines[agent.id] ?? [], reply: agent.noticeReply) : nil,
+                               identity: who,
+                               // A block the user opened from its card folds back to it.
+                               onFoldToCard: fanOut != nil && FlowCard.foldsToCard(agent) ? { foldToCard(node.id) } : nil)
+            }
         case .result(let index):
             let run = runs[index]
             let failed = ["error", "failed"].contains(run.status)
@@ -792,7 +833,7 @@ struct MightyGraphView: View {
                                 inputOnly: Bool = false, onContentHeight: ((CGFloat) -> Void)? = nil, pending: PendingState? = nil,
                                 kindLine: String? = nil, backgroundRun: BackgroundRunBody? = nil,
                                 outlineTone: DesignTone? = nil, awaiting: BackgroundNoticeRuns.Awaiting? = nil,
-                                identity: FlowIdentity? = nil) -> some View {
+                                identity: FlowIdentity? = nil, onFoldToCard: (() -> Void)? = nil) -> some View {
         let content = entries.filter { $0.kind != "user" }
         // A background run shows its live lines in place of the wait for a reply.
         let showsTail = backgroundRun.map { !$0.tail.isEmpty && !MightyGraphLayout.terminal(status) } ?? false
@@ -801,7 +842,7 @@ struct MightyGraphView: View {
         let statusWords = !onStrip && !inputOnly ? statusText ?? Self.statusLabel(status) : nil
         let capsule = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog, versioned: true)
         // The identity chips take only the room the title, the status, the tokens and the size button leave.
-        let fit = identity.map { FlowRoles.headerFit(width: node.frame.width, title: title, status: statusWords, capsule: capsule, buttons: 1, identity: $0) }
+        let fit = identity.map { FlowRoles.headerFit(width: node.frame.width, title: title, status: statusWords, capsule: capsule, buttons: onFoldToCard == nil ? 1 : 2, identity: $0) }
         return VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 if let identity {
@@ -887,6 +928,12 @@ struct MightyGraphView: View {
                         .buttonStyle(.plain).foregroundStyle(quiet).help(expanded.contains(node.id) ? L("graph.block.collapse") : L("graph.block.expand"))
                         .accessibilityLabel(expanded.contains(node.id) ? L("graph.block.collapse") : L("graph.block.expand"))
                         .accessibilityIdentifier("mighty-expand-\(node.id)")
+                }
+                if let onFoldToCard {
+                    Button(action: onFoldToCard) { Image(systemName: "minus.rectangle") }
+                        .buttonStyle(.plain).foregroundStyle(quiet).help(L("graph.card.fold"))
+                        .accessibilityLabel(L("graph.card.fold"))
+                        .accessibilityIdentifier("mighty-compact-\(node.id)")
                 }
             }.padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).frame(height: Self.blockHeaderHeight)
             .background(headerFill ?? Color.clear)
@@ -1446,7 +1493,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                             if visible.intersects(node.frame) {
                                 card(node)
                                     .overlay {
-                                        if selection == node.id, node.content != .history {
+                                        if selection == node.id, !node.isFixed {
                                             RoundedRectangle(cornerRadius: 12).stroke(Palette.accent, lineWidth: 2)
                                                 .allowsHitTesting(false).accessibilityIdentifier("mighty-selected-" + node.id)
                                         }

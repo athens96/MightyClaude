@@ -120,4 +120,23 @@ public enum BackgroundNoticeRuns {
         }
         return run.agents.filter { !hidden.contains($0.id) }
     }
+
+    /// The blocks `shownAgents` hides that the flow diagram still draws, by index into `run.agents`: a request's background
+    /// sub-agents and the blocks under them, live while they run and after they ended (`MightyGraphRun.flowAgents`,
+    /// `FlowCard`). A background run (a task block) and whatever hangs under one stay out: they are the strip's and the
+    /// notice runs', as before.
+    public static func fanOut(_ run: MightyGraphRun) -> [Int] {
+        guard run.noticeRun != true, run.agents.contains(where: { $0.background == true }) else { return [] }
+        let hidden = Set(run.agents.map(\.id)).subtracting(shownAgents(run).map(\.id))
+        // Tasks and what is under them, found by walking down from each task.
+        var underTask = Set(run.agents.filter(\.isTask).map(\.id))
+        var grew = true
+        while grew {
+            grew = false
+            for agent in run.agents where !underTask.contains(agent.id) {
+                if let parent = agent.parentID, underTask.contains(parent) { underTask.insert(agent.id); grew = true }
+            }
+        }
+        return run.agents.indices.filter { hidden.contains(run.agents[$0].id) && !underTask.contains(run.agents[$0].id) }
+    }
 }

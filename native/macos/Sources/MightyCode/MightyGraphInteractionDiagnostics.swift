@@ -28,7 +28,7 @@ enum MightyGraphInteractionDiagnostics {
             let rootID = MightyGraphLayout.nodeID(run, suffix: MightyGraphLayout.workSuffix)
             var savedSizes: [String: MightyGraphBlockSize] = [:]
             let host = NSHostingView(rootView: MightyGraphView(sessionID: "wheel-fixture", provider: "claude", runs: [run], draft: "", running: true,
-                onSaveBlockSize: { id, size in savedSizes[id] = size }, onFocus: {}))
+                onSaveBlockSize: { id, size in savedSizes[id] = size }, showsFanOut: false, onFocus: {}))
             window.contentView = host
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)

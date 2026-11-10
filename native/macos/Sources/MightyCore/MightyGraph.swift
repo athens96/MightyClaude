@@ -24,11 +24,14 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     /// Who a sub-agent is: its type, the model it asked for and runs with, its isolation (`GraphAgentIdentity`). Absent on
     /// other blocks and in older saves.
     public var identity: GraphAgentIdentity?
+    /// A sub-agent's own start, end and tool calls (`GraphAgentFigures`), for its compact card. Absent as `identity` is.
+    public var figures: GraphAgentFigures?
     public init(id: String, parentID: String? = nil, title: String = L("graph.agent.defaultTitle"), input: String = "", status: String = "running", entries: [LogEntry] = [], kind: String? = nil, usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil,
-                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil, identity: GraphAgentIdentity? = nil) {
+                background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil, identity: GraphAgentIdentity? = nil,
+                figures: GraphAgentFigures? = nil) {
         self.id = id; self.parentID = parentID; self.title = title; self.input = input; self.status = status; self.entries = entries; self.kind = kind; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
         self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply; self.sourceBlockId = sourceBlockId
-        self.identity = identity
+        self.identity = identity; self.figures = figures
     }
     public var isTask: Bool { kind == "task" }
     /// A sub-agent: a block that is none of the kinds the core records apart (`MightyGraphSupport.childKinds`).
@@ -90,6 +93,21 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     fileprivate var shownAwaiting: BackgroundNoticeRuns.Awaiting?
     /// What a shown run carries of its awaiting (`BackgroundNoticeRuns.awaitingNotice`), nil for a run that is not one.
     var carriedAwaiting: BackgroundNoticeRuns.Awaiting?? { shownBackgroundWaiting == nil ? nil : .some(shownAwaiting) }
+    /// The background sub-agents `shown` took out of `agents`, with the blocks under them, in the order they stood: the
+    /// flow diagram alone still draws them, under the block that launched them (`flowAgents`). Never saved.
+    fileprivate var shownFanOut: [MightyGraphAgent]?
+    /// Where each of `flowAgents` stood among the run's blocks before `shown` took the background ones out. Never saved.
+    fileprivate var shownFlowOrder: [Int]?
+    /// Every block the flow diagram draws for the run: the ones every view draws (`agents`, at the same indexes), then
+    /// the background sub-agents and what hangs under them, which the other views leave to the strip and the notice runs
+    /// (`BackgroundNoticeRuns.fanOut`). A run that hides nothing has only its `agents`.
+    public var flowAgents: [MightyGraphAgent] { shownFanOut.map { agents + $0 } ?? agents }
+    /// The place `flowAgents[index]` had among the run's blocks as they were recorded, by which the flow orders
+    /// the blocks of one row: a background sub-agent stands where it was launched, not after the others.
+    public func flowOrder(_ index: Int) -> Int {
+        guard let order = shownFlowOrder, order.indices.contains(index) else { return index }
+        return order[index]
+    }
     private enum CodingKeys: String, CodingKey {
         case id, input, status, rootEntries, agents, resultEntries, sourceRunID, finalOutput, usage, responseRecords, provider, nodeModelLabel, configuredModel, noticeRun, noticeTitle
         case configuredEffort
@@ -114,6 +132,11 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
         var run = self
         run.shownBackgroundWaiting = held
         run.shownAwaiting = BackgroundNoticeRuns.awaitingNotice(self, in: [self])
+        // What the flow diagram still draws of the blocks that went, and where every block stood.
+        let fanOut = BackgroundNoticeRuns.fanOut(self)
+        let kept = Set(agents.map(\.id))
+        run.shownFanOut = fanOut.map { self.agents[$0] }
+        run.shownFlowOrder = self.agents.indices.filter { kept.contains(self.agents[$0].id) } + fanOut
         run.agents = agents
         return run
     }
@@ -342,6 +365,7 @@ public enum MightyGraphSupport {
                 if !["task", "steer", "compact", "question"].contains(agent.kind ?? "") { agent.kind = nil }
                 agent.identity = agent.kind == nil ? agent.identity?.normalized : nil
                 budget -= agent.identity?.byteCount ?? 0
+                agent.figures = agent.kind == nil ? agent.figures?.normalized : nil
                 agent.usage = agent.usage?.normalized
                 agent.activityGeneration = ExecutionGraphSupport.normalizedGeneration(agent.activityGeneration)
                 if restoring && !terminal(agent.status) { agent.status = "stopped" }
@@ -627,7 +651,7 @@ extension RunSession {
                 let parent = node.parentId == ExecutionGraphSupport.mainNodeID(runId: node.runId) ? nil : node.parentId
                 var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact", "question"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration, responseRecords: node.responseRecords,
                                               background: node.background, outputFile: node.outputFile, noticeReply: node.noticeReply, sourceBlockId: node.sourceBlockId,
-                                              identity: node.identity)
+                                              identity: node.identity, figures: node.figures)
                 if let output = node.output, !output.isEmpty {
                     // Codex and Antigravity children take new assignments: one answer per generation.
                     let answerID = ["codex", "gemini"].contains(provider)
@@ -661,6 +685,7 @@ extension RunSession {
                     if agent.noticeReply == nil { agent.noticeReply = previous.noticeReply }
                     if agent.sourceBlockId == nil { agent.sourceBlockId = previous.sourceBlockId }
                     if agent.identity == nil { agent.identity = previous.identity }
+                    if agent.figures == nil { agent.figures = previous.figures }
                     if !previous.input.isEmpty { agent.input = previous.input }
                     var mergedEntries = previous.entries
                     for entry in agent.entries {

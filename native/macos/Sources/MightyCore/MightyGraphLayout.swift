@@ -7,6 +7,8 @@ public struct MightyGraphLayout {
     public enum Content: Hashable {
         /// `execution` is a run index and an `OuroborosExecutionLink.key`.
         /// `images` is a run index and the step it attaches to (`MightyGraphImages`).
+        /// `agent` is a run index and an index into the blocks the layout drew for that run: its `agents`, or with a
+        /// fan-out (`make(fanOut:)`) its `flowAgents`, which begin with the same blocks at the same indexes.
         case request(Int), agent(Int, Int), result(Int), resultFiles(Int), execution(Int, String), images(Int, String), draft
         /// The 실행 block under a request (`make(splitsExecution:)`): what the main
         /// agent did because of the request, a run index.
@@ -22,7 +24,12 @@ public struct MightyGraphLayout {
         public let id: String
         public let content: Content
         public var frame: CGRect
+        /// A sub-agent drawn as its compact card (`FlowCard`), not as its block.
+        public var isCompact = false
         public var isResultFiles: Bool { if case .resultFiles = content { return true }; return false }
+        /// Neither selected nor resized: a click goes to what it holds and a wheel pans past it. The history block at
+        /// the top, and a compact card, which has nothing to scroll.
+        public var isFixed: Bool { content == .history || isCompact }
         /// Attachments beside the flow: scrolled at once.
         public var isAuxiliary: Bool {
             switch content {
@@ -33,6 +40,7 @@ public struct MightyGraphLayout {
         /// Blocks with the corner handle and the edge bands: the flow's own
         /// blocks, and the answered plans although they hang beside it.
         public var isResizable: Bool {
+            if isCompact { return false }
             switch content {
             case .request, .work, .agent, .result, .draft, .plan, .planRecord: return true
             case .resultFiles, .execution, .images, .history: return false
@@ -50,6 +58,14 @@ public struct MightyGraphLayout {
         public var runID: String
         public var key: String
         public init(runID: String, key: String) { self.runID = runID; self.key = key }
+    }
+    /// The Mac's role view of a request (`make(fanOut:)`): every sub-agent of the run stands under the block that
+    /// launched it, a background one too, which the other views leave to the strip and the notice runs; a running one
+    /// is a compact card (`FlowCard`) unless the user opened it.
+    public struct FanOut: Equatable, Sendable {
+        /// The nodes the user opened from their card into the full block.
+        public var opened: Set<String>
+        public init(opened: Set<String> = []) { self.opened = opened }
     }
     public static let executionSuffix = "ouroboros-execution:"
     /// The 실행 block's suffix (`Content.work`).
@@ -332,9 +348,12 @@ public struct MightyGraphLayout {
     /// with the sub-agents, the step's pictures, the background executions and the
     /// answered plans hanging off it. Off, the request block holds both, as the
     /// shared graph vectors (`native/contracts/graph-vectors.json`) lay it out.
+    /// `fanOut` is the Mac's role view of a Claude pane (`FanOut`): the run's `flowAgents` are laid out, a background
+    /// sub-agent under the block that launched it, and a sub-agent that is a card takes `FlowCard.size` with nothing
+    /// drawn under it. Nil lays out `agents` as full blocks, as every other caller and the shared vectors do.
     public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, zoom: CGFloat? = nil, sharedResultSize: MightyGraphBlockSize? = nil, resultContentHeight: CGFloat? = nil, executions: [Execution] = [], galleries: [ImageGallery] = [], retainedStart: Int = 0, history: Bool = false,
                             planRunID: String? = nil, planRecords: [PlanRecordBlock] = [], planSize savedPlanSize: MightyGraphBlockSize? = nil,
-                            splitsExecution: Bool = false) -> Self {
+                            splitsExecution: Bool = false, fanOut: FanOut? = nil) -> Self {
         let latestResultID = Self.latestResultID(runs: runs)
 
         // The files panel reduces available width only when it is open for the latest result.
@@ -386,20 +405,33 @@ public struct MightyGraphLayout {
             let resultID = nodeID(run, suffix: "result")
             let resultSize = size(resultID, width: MightyGraphCamera.requestWidth, height: expanded.contains(resultID) ? 440 : 200)
             var visited = Set<Int>()
-            let indexes = Dictionary(run.agents.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+            // With a fan-out the run's background sub-agents are laid out too, each where it was launched.
+            let agents = fanOut == nil ? run.agents : run.flowAgents
+            func ordered(_ indexes: [Int]) -> [Int] {
+                fanOut == nil ? indexes : indexes.sorted { run.flowOrder($0) < run.flowOrder($1) }
+            }
+            let indexes = Dictionary(agents.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+            /// A card counts the blocks under it instead of drawing them: they are laid out nowhere.
+            func fold(_ index: Int, depth: Int) {
+                guard depth < 64, visited.insert(index).inserted else { return }
+                for child in agents.indices where child != index && agents[child].parentID == agents[index].id { fold(child, depth: depth + 1) }
+            }
             func branch(_ index: Int, depth: Int = 0) -> Tree? {
                 guard depth < 64, visited.insert(index).inserted else { return nil }
-                let agent = run.agents[index]
+                let agent = agents[index]
                 let id = nodeID(run, suffix: "agent:\(agent.id)")
+                let compact = fanOut.map { FlowCard.isCompact(agent, opened: $0.opened.contains(id)) } ?? false
                 // A background run with Claude's reply to its notice holds its command, output
                 // lines and that reply above its summary, so it opens taller.
-                let cardSize = size(id, width: 360, height: expanded.contains(id) ? 480 : agent.isTask && agent.noticeReply != nil ? 320 : 240)
+                let cardSize = compact ? FlowCard.size
+                    : size(id, width: 360, height: expanded.contains(id) ? 480 : agent.isTask && agent.noticeReply != nil ? 320 : 240)
                 let height = cardSize.height
-                let children = run.agents.indices.filter { $0 != index && run.agents[$0].parentID == agent.id }
-                    .compactMap { branch($0, depth: depth + 1) }
+                let below = ordered(agents.indices.filter { $0 != index && agents[$0].parentID == agent.id })
+                if compact { for child in below { fold(child, depth: depth + 1) } }
+                let children = compact ? [] : below.compactMap { branch($0, depth: depth + 1) }
                 let childrenWidth = children.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, children.count - 1)) * siblingGap
                 let width = max(cardSize.width, childrenWidth)
-                var result = Tree(nodes: [Node(id: id, content: .agent(runIndex, index), frame: CGRect(x: (width - cardSize.width) / 2, y: 0, width: cardSize.width, height: height))], edges: [], width: width, height: height, top: id, leaves: [id])
+                var result = Tree(nodes: [Node(id: id, content: .agent(runIndex, index), frame: CGRect(x: (width - cardSize.width) / 2, y: 0, width: cardSize.width, height: height), isCompact: compact)], edges: [], width: width, height: height, top: id, leaves: [id])
                 if !children.isEmpty {
                     result.leaves = []
                     var x = (width - childrenWidth) / 2
@@ -415,14 +447,14 @@ public struct MightyGraphLayout {
                 return result
             }
             var branches: [Tree] = []
-            for index in run.agents.indices {
-                let parent = run.agents[index].parentID
-                if parent == nil || indexes[parent!] == nil || parent == run.agents[index].id {
+            for index in ordered(Array(agents.indices)) {
+                let parent = agents[index].parentID
+                if parent == nil || indexes[parent!] == nil || parent == agents[index].id {
                     if let tree = branch(index) { branches.append(tree) }
                 }
             }
             // Malformed/cyclic legacy data still remains visible, once per agent.
-            for index in run.agents.indices where !visited.contains(index) {
+            for index in agents.indices where !visited.contains(index) {
                 if let tree = branch(index) { branches.append(tree) }
             }
             let branchWidth = branches.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, branches.count - 1)) * siblingGap

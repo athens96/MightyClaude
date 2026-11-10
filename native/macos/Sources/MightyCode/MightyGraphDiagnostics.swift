@@ -526,7 +526,7 @@ enum MightyGraphDiagnostics {
     private struct GraphFixtureView: View {
         @ObservedObject var fixture: GraphFixture
         var body: some View {
-            MightyGraphView(sessionID: "graph-fixture", provider: "claude", runs: fixture.runs, draft: fixture.draft, running: fixture.running, onFocus: {})
+            MightyGraphView(sessionID: "graph-fixture", provider: "claude", runs: fixture.runs, draft: fixture.draft, running: fixture.running, showsFanOut: false, onFocus: {})
         }
     }
 }
