@@ -3449,5 +3449,7 @@
   "questionnaire.option.no": "No",
   "questionnaire.error.choicesOnly": "This question takes only its listed choices. Pick one of them.",
   "acp.channel.formDeclined": "The agent's input form cannot be shown as a question card, so it was declined: {question}",
-  "run.notice.piDialogTimedOut": "A pi extension's question closed because it was not answered in time: {title}"
+  "run.notice.piDialogTimedOut": "A pi extension's question closed because it was not answered in time: {title}",
+  "run.notice.hermesClarifyEnabled": "Turned on clarify in Hermes's ACP tools so Hermes can ask questions (Hermes config {key} = {value}). It applies from a new conversation. To undo it, run hermes config unset {key} in a terminal.",
+  "run.notice.hermesClarifyMissing": "Hermes's config {key} has no clarify, so Hermes cannot ask through the question card. To use it, add clarify to that list, or run hermes config unset {key} and let the app turn it on."
 }

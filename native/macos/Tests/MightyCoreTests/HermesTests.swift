@@ -559,12 +559,25 @@ struct HermesTests {
     /// A stand-in `hermes`: answers each of the channel's requests with the fixture's next
     /// response. With `hold` it answers up to the prompt and then only records what it is sent,
     /// as a turn in flight does.
-    private func fakeHermes(_ directory: URL, fixture: String, hold: Bool = false) throws -> URL {
+    /// `acp`: what `hermes config get --json platform_toolsets.acp` answers (nil: not set); `config set` rewrites it.
+    private func fakeHermes(_ directory: URL, fixture: String, hold: Bool = false, acp: String? = #"["hermes-acp", "clarify"]"#, toolsets: String = #"["hermes-cli"]"#) throws -> URL {
+        if let acp { try Data(acp.utf8).write(to: directory.appendingPathComponent("acp.json")) }
+        try Data(toolsets.utf8).write(to: directory.appendingPathComponent("toolsets.json"))
         let binary = directory.appendingPathComponent("hermes")
         let fixtureFile = Self.root.appendingPathComponent("native/contracts/fixtures/hermes-acp-\(fixture).jsonl").path
         let source = """
         #!/bin/sh
         if [ "$1" = "--version" ]; then printf 'Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882\\nInstall directory: /tmp/hermes\\nInstall method: git\\n'; exit 0; fi
+        if [ "$1" = "config" ]; then
+          cd '\(directory.path)'
+          printf '%s\\n' "$*" >> config.txt
+          case "$2 $3 $4" in
+            "get --json platform_toolsets.acp") if [ -f acp.json ]; then cat acp.json; exit 0; fi; printf 'Config key not set: platform_toolsets.acp\\n' >&2; exit 1 ;;
+            "get --json toolsets") cat toolsets.json; exit 0 ;;
+            "set platform_toolsets.acp "*) printf '%s' "$4" > acp.json; printf 'Set\\n'; exit 0 ;;
+          esac
+          exit 2
+        fi
         printf '2026-11-11 01:18:54 [INFO] acp_adapter.entry: Starting hermes-agent ACP adapter\\n2026-11-11 01:18:54 [ERROR] root: Background task failed\\nTraceback (most recent call last):\\n  File "x.py", line 1, in run\\nacp.exceptions.RequestError: Internal error\\n' >&2
         printf '%s\\n' "$@" > argv.txt
         printf '%s\\n' "${HERMES_YOLO_MODE:-unset}" > yolo.txt
@@ -582,6 +595,57 @@ struct HermesTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
         return binary
     }
+    @Test func theClarifyToolIsTurnedOnOnlyWhenTheUserSavedNoAcpToolList() async throws {
+        func look(acp: String?, toolsets: String = #"["hermes-cli"]"#) async throws -> (HermesQuestionTool.Outcome?, [String], String?) {
+            let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+            let binary = try fakeHermes(directory, fixture: "answer", acp: acp, toolsets: toolsets)
+            let outcome = await HermesQuestionTool.apply(executable: binary, environment: ["PATH": "/usr/bin:/bin"], cwd: directory)
+            let commands = ((try? String(contentsOf: directory.appendingPathComponent("config.txt"), encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+            return (outcome, commands, try? String(contentsOf: directory.appendingPathComponent("acp.json"), encoding: .utf8))
+        }
+        // Not set: the default composite plus clarify, through `hermes config set`, then read back.
+        var (outcome, commands, saved) = try await look(acp: nil)
+        #expect(outcome == .enabled(["hermes-acp", "clarify", "x_search"]) && saved == #"["hermes-acp","clarify","x_search"]"#)
+        #expect(commands == ["config get --json platform_toolsets.acp", "config get --json toolsets", #"config set platform_toolsets.acp ["hermes-acp","clarify","x_search"]"#, "config get --json platform_toolsets.acp"])
+        // The legacy top-level kanban opt-in would stop applying once a list is saved: it is named.
+        (outcome, commands, saved) = try await look(acp: nil, toolsets: #"["hermes-cli", "kanban"]"#)
+        #expect(outcome == .enabled(["hermes-acp", "clarify", "x_search", "kanban"]))
+        // The user's own list is left alone: with clarify nothing is said, without it the pane says how to add it.
+        (outcome, commands, saved) = try await look(acp: #"["hermes-acp", "clarify"]"#)
+        #expect(outcome == .nothing && commands == ["config get --json platform_toolsets.acp"])
+        (outcome, commands, saved) = try await look(acp: #"["terminal", "file"]"#)
+        #expect(outcome == .missing && commands == ["config get --json platform_toolsets.acp"] && saved == #"["terminal", "file"]"#)
+        // A list an older `config set` saved as text reads as the list it spells.
+        (outcome, commands, saved) = try await look(acp: #""['terminal', 'clarify']""#)
+        #expect(outcome == .nothing && commands.count == 1)
+        // An answer that is not a list changes nothing and is asked again later.
+        (outcome, commands, saved) = try await look(acp: "not json")
+        #expect(outcome == nil && commands.count == 1 && saved == "not json")
+        #expect(HermesQuestionTool.value(legacyToolsets: []) == ["hermes-acp", "clarify", "x_search"])
+    }
+
+    @Test func aRunTurnsClarifyOnOnceAndSaysSoInThePane() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let binary = try fakeHermes(directory, fixture: "answer", acp: nil)
+        let service = ProviderService(binaryOverrides: ["hermes": binary])
+        let events = HermesRecorder<RunEvent>()
+        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0) })
+        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+        let notice = L("run.notice.hermesClarifyEnabled", ["key": "platform_toolsets.acp", "value": "hermes-acp, clarify, x_search"])
+        do {
+            for round in 1...2 {
+                try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "hi there", provider: "hermes"), workspace: workspace)
+                try await wait { events.values().filter { $0.type == "status" && ($0.status == "completed" || $0.status == "error") }.count == round }
+            }
+            // Said once, set once: the second run of this launch does not look again.
+            #expect(events.values().filter { $0.type == "log" && $0.entry?.text == notice }.count == 1)
+            let commands = try String(contentsOf: directory.appendingPathComponent("config.txt"), encoding: .utf8).split(separator: "\n")
+            #expect(commands.filter { $0.hasPrefix("config set ") }.count == 1 && commands.count == 4)
+            #expect(try String(contentsOf: directory.appendingPathComponent("acp.json"), encoding: .utf8) == #"["hermes-acp","clarify","x_search"]"#)
+        } catch { await runner.shutdown(); await service.shutdown(); throw error }
+        await runner.shutdown(); await service.shutdown()
+    }
+
     private func wait(_ predicate: () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(30)
         while !predicate() {

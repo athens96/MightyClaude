@@ -5,7 +5,8 @@ import SQLite3
 /// them. A run is `hermes acp` through `ACPChannel`; the turn itself runs in Hermes's gateway
 /// daemon, which `hermes acp` starts when needed. The app reads the sign-in from the ACP
 /// server's `initialize` answer (a provider's name, never a credential), the session list
-/// from `state.db`, and the model picker a session offered. It never writes into `~/.hermes`.
+/// from `state.db`, and the model picker a session offered. It never writes into `~/.hermes`
+/// itself; the one setting it changes (`HermesQuestionTool`) goes through `hermes config set`.
 public enum HermesAgent {
     /// The ACP method id Hermes always advertises: its terminal setup, not a sign-in.
     static let setupMethod = "hermes-setup"
@@ -366,5 +367,81 @@ enum HermesSessions {
             row.prompt = prompt.isEmpty ? nil : String(prompt.prefix(2_000))
         }
         row.requests = count
+    }
+}
+
+/// Hermes leaves its question tool (`clarify`) out of editor sessions: the `hermes-acp` toolset
+/// is its coding tools without it, and only `platform_toolsets.acp` in Hermes's config changes
+/// what an ACP session gets (no flag, environment variable or ACP parameter does). So before
+/// the first Hermes run of an app launch the app reads that one key with `hermes config get`
+/// and, only when it is unset, sets it with `hermes config set` to the default plus clarify.
+/// A list the user saved is theirs and is left alone. Nothing else of Hermes's config is read
+/// or written, and the file is never edited by the app itself.
+public enum HermesQuestionTool {
+    public static let key = "platform_toolsets.acp"
+    public static let tool = "clarify"
+    public enum Outcome: Equatable, Sendable {
+        /// The key was unset and is now this list.
+        case enabled([String])
+        /// The user's own list has no clarify: the app says how to add it.
+        case missing
+        /// clarify is already on, the key could not be read or set, or this launch already looked.
+        case nothing
+    }
+
+    /// What the unset key becomes. Saving a list makes Hermes stop adding two things it adds to
+    /// the unsaved default, so they are named: `x_search` (Hermes adds it when xAI credentials
+    /// exist; without them the tool's own check still leaves it out) and `kanban` when the
+    /// config's legacy top-level `toolsets` opts into it. Every other tool and every enabled MCP
+    /// server resolves as before (checked against Hermes 0.23.1's `_get_platform_tools`).
+    static func value(legacyToolsets: [String]) -> [String] {
+        ["hermes-acp", tool, "x_search"] + (legacyToolsets.contains("kanban") ? ["kanban"] : [])
+    }
+    /// A `config get --json` answer as toolset names: a list, or the list a string spells
+    /// (older `config set` builds saved `'["a", "b"]'` as text).
+    static func names(json: Data) -> [String]? {
+        guard let object = try? JSONSerialization.jsonObject(with: json, options: [.fragmentsAllowed]) else { return nil }
+        if let list = object as? [Any] { return list.map { "\($0)" } }
+        if let text = object as? String, text.trimmingCharacters(in: .whitespaces).hasPrefix("["),
+           let list = try? JSONSerialization.jsonObject(with: Data(text.replacingOccurrences(of: "'", with: "\"").utf8)) as? [Any] { return list.map { "\($0)" } }
+        return nil
+    }
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var looked = Set<String>()
+    /// Once per app launch for each Hermes (its executable and data folder).
+    static func ensure(executable: URL, environment: [String: String], cwd: URL) async -> Outcome {
+        let identity = executable.path + "\n" + (environment["HERMES_HOME"] ?? "")
+        let first = lock.withLock { looked.insert(identity).inserted }
+        guard first else { return .nothing }
+        let outcome = await apply(executable: executable, environment: environment, cwd: cwd)
+        // A Hermes that could not answer is asked again by the next run.
+        if outcome == nil { lock.withLock { _ = looked.remove(identity) } }
+        return outcome ?? .nothing
+    }
+    /// nil when Hermes could not be asked (no answer, a managed or unreadable config).
+    static func apply(executable: URL, environment: [String: String], cwd: URL) async -> Outcome? {
+        guard let current = await run(executable, ["config", "get", "--json", key], environment, cwd) else { return nil }
+        if current.status == 0 {
+            guard let names = names(json: current.stdout) else { return nil }
+            return names.contains(tool) ? .nothing : .missing
+        }
+        // Only Hermes's own "not set" answer is an unset key; any other failure changes nothing.
+        guard current.status == 1, current.stdout.allSatisfy({ $0 == 10 || $0 == 32 }), String(decoding: current.stderr, as: UTF8.self).contains("not set: " + key) else { return nil }
+        let legacy = await run(executable, ["config", "get", "--json", "toolsets"], environment, cwd)
+        let list = value(legacyToolsets: legacy.flatMap { $0.status == 0 ? names(json: $0.stdout) : nil } ?? [])
+        guard let json = try? JSONSerialization.data(withJSONObject: list),
+              let written = await run(executable, ["config", "set", key, String(decoding: json, as: UTF8.self)], environment, cwd), written.status == 0,
+              let check = await run(executable, ["config", "get", "--json", key], environment, cwd), check.status == 0, names(json: check.stdout) == list else { return nil }
+        return .enabled(list)
+    }
+    private static func run(_ executable: URL, _ arguments: [String], _ environment: [String: String], _ cwd: URL) async -> (status: Int32, stdout: Data, stderr: Data)? {
+        let stdout = AppUpdateService.OutputSink(), stderr = AppUpdateService.OutputSink()
+        var env = environment; env["NO_COLOR"] = "1"
+        guard let child = try? NativeChildProcess(executable: executable, arguments: arguments, environment: env, cwd: cwd,
+                                                  stdout: { stdout.append($0) }, stderr: { stderr.append($0) }, exited: { _ in }) else { return nil }
+        child.closeInput()
+        let status = await child.wait(timeout: 20)
+        return status < 0 ? nil : (status, stdout.data, stderr.data)
     }
 }

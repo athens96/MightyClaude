@@ -91,7 +91,7 @@ Hermes(`hermes`)は、Nous Researchのオープンソースのエージェント
 - モデル: 最初の項目はHermes自体の設定(`hermes model`で決めた既定のモデル)に従います。Hermesはセッションを開いて初めてモデル一覧を示すため、最初のリクエストを送ったあとから`提供元:モデル`の一覧が表示されます。
 - 権限: {{ui:permission.label.default}}はファイルを変更するたびにペインの承認カードで確認し、{{ui:permission.label.acceptEdits}}は作業フォルダ内の変更を確認せず、{{ui:permission.label.fullAccess}}はHermesの`--yolo`で危険なコマンドも確認しません。危険なコマンド(`rm -rf`など)はHermesの承認設定(`approvals.mode`)に従ってカードで確認し、それ以外のコマンドと読み取りは確認しません。計画専用のモードはありません。{{ui:permission.label.fullAccess}}はセッション開始時に決まるため、すでに始めたセッションには新しい会話から適用されます。
 - リクエストごとにペインの作業フォルダで`hermes acp`(Agent Client Protocol)を実行し、ペインのセッションを引き継ぎます。実際の作業はHermesのゲートウェイ(バックグラウンドプロセス)が行い、必要なときに自動で起動し、使われなくなると終了します。セッションは`~/.hermes/state.db`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのHermesセッションが表示されます。使用量にはセッションの累計トークンと使用中のコンテキストが表示され、費用はHermesが知らせません。
-- 質問: Hermesがclarifyツールで質問すると[質問カード](approvals.md#questions)が表示され、答えると同じリクエストが続きます。Hermesはエディタ接続（ACP）ではこのツールを既定でオフにしているため、使うにはターミナルの`hermes tools`でオンにします。
+- 質問: Hermesがclarifyツールで質問すると[質問カード](approvals.md#questions)が表示され、答えると同じリクエストが続きます。Hermesはエディタ接続（ACP）ではこのツールを既定でオフにしているため、最初のHermesリクエストの前に、アプリがHermesの設定の`platform_toolsets.acp`という1項目を`hermes config set`でオンにし、記録に残します。自分で保存したリストがある場合は変更しません。新しい会話から適用され、元に戻すにはターミナルで`hermes config unset platform_toolsets.acp`を実行します。
 - まだできないこと: Hermesのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けません。現在はMacでのみ動作します。
 
 ### その他の実行設定 {#run-settings}

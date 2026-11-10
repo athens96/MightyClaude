@@ -580,6 +580,12 @@ public actor ProcessRunner {
                 try Task.checkCancellation()
                 guard !run.stopping, !shuttingDown, !run.finished else { await cancelPending(run); if !request.attachments.isEmpty { throw CancellationError() }; return }
                 try CoreValidation.validateSelection(request, catalog: catalog, registeredModels: request.registeredModels)
+                // Hermes asks questions only with its clarify tool on for editor sessions: looked at once per launch.
+                var hermesQuestions = HermesQuestionTool.Outcome.nothing
+                if request.provider == "hermes" {
+                    hermesQuestions = await HermesQuestionTool.ensure(executable: command.executable, environment: environment, cwd: URL(fileURLWithPath: workspace.path, isDirectory: true))
+                    try Task.checkCancellation()
+                }
                 if request.provider == "claude" {
                     guard FileManager.default.fileExists(atPath: pluginDirectory.appendingPathComponent(".claude-plugin/plugin.json").path) else { throw MightyError(L("run.error.modsFileMissing")) }
                     let bridge = try ModBridge(graphEnabled: true) { [weak self, weak run] metadata in guard let run else { return }; Task { await self?.receiveMod(metadata, run: run) } }
@@ -736,6 +742,11 @@ public actor ProcessRunner {
                     let hermes = request.provider == "hermes"
                     if hermes { run.hermesStderr = HermesAgent.StderrFilter() }
                     if let hermesNotice { emitLogSynchronously(run, kind: "system", text: hermesNotice) }
+                    switch hermesQuestions {
+                    case .enabled(let list): emitLogSynchronously(run, kind: "system", text: L("run.notice.hermesClarifyEnabled", ["key": HermesQuestionTool.key, "value": list.joined(separator: ", ")]))
+                    case .missing: emitLogSynchronously(run, kind: "system", text: L("run.notice.hermesClarifyMissing", ["key": HermesQuestionTool.key]))
+                    case .nothing: break
+                    }
                     run.acp = ACPChannel(runId: run.activityId, request: launch, workspacePath: workspace.path, attachments: attachments, configValues: hermes ? HermesAgent.configValues(request) : OpencodeAgent.configValues(request),
                         // Hermes without a provider would open a session that can never answer: the run stops as a missing sign-in.
                         freeChoices: hermes,
