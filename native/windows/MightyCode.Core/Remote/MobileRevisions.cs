@@ -36,7 +36,7 @@ public sealed class MobileRevisions
     private Dictionary<string, Fingerprint> seen = [];
     private Dictionary<string, (string Summary, long Revision)> summaries = [];
     private string[] order = [];
-    private string workspaces = "";
+    private string workspaces = "", update = "";
     public long State { get; private set; } = 1;
     public long Session(string id) => sessions.GetValueOrDefault(id, 1);
 
@@ -44,10 +44,10 @@ public sealed class MobileRevisions
     /// Reads the panes again and returns the scopes whose revision moved — <c>state</c> first, then <c>session:&lt;id&gt;</c> for
     /// each pane — for the connected phones to be told. A pane whose summary alone moved has its own revision moved too.
     /// </summary>
-    public IReadOnlyList<(string Scope, long Revision)> Observe(IEnumerable<Workspace> spaces, IReadOnlyList<Reading> panes)
+    public IReadOnlyList<(string Scope, long Revision)> Observe(IEnumerable<Workspace> spaces, IReadOnlyList<Reading> panes, string appUpdate = "")
     {
         var paneOrder = panes.Select(p => p.Pane.Id).ToArray(); var workspaceKey = string.Join('\n', spaces.Select(w => w.Id + "\u001f" + w.Name + "\u001f" + w.Path));
-        var stateChanged = workspaceKey != workspaces || !order.SequenceEqual(paneOrder); var changed = new List<string>();
+        var stateChanged = workspaceKey != workspaces || appUpdate != update || !order.SequenceEqual(paneOrder); var changed = new List<string>();
         var nextSeen = new Dictionary<string, Fingerprint>(); var nextSummaries = new Dictionary<string, (string, long)>();
         foreach (var reading in panes)
         {
@@ -60,7 +60,7 @@ public sealed class MobileRevisions
             nextSeen[id] = fingerprint; nextSummaries[id] = (reading.Summary, revision);
         }
         foreach (var id in summaries.Keys.Where(id => !nextSummaries.ContainsKey(id)).ToArray()) sessions.Remove(id);
-        seen = nextSeen; summaries = nextSummaries; workspaces = workspaceKey; order = paneOrder;
+        seen = nextSeen; summaries = nextSummaries; workspaces = workspaceKey; update = appUpdate; order = paneOrder;
         if (stateChanged) State++;
         var result = new List<(string, long)>();
         if (stateChanged) result.Add(("state", State));

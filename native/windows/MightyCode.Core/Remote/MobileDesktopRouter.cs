@@ -34,7 +34,7 @@ public sealed record MobileDesktopAction(string SessionId, string Action, JsonEl
 public sealed class MobileDesktopRouter : IDisposable
 {
     public Func<string[]>? ExtraCapabilities { get; set; }
-    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push", "fileChanges", "workMap"];
+    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push", "fileChanges", "workMap", "appUpdate"];
     /// <summary>The direct path's endpoints for /m1/info (docs/mobile-remote.md, "direct"); empty when there is no host or it does not listen.</summary>
     public Func<IReadOnlyList<string>>? DirectEndpoints { get; set; }
     /// <summary>The largest reply body the host sends; a session detail over it sheds its structure first (<see cref="SessionReply"/>).</summary>
@@ -60,6 +60,10 @@ public sealed class MobileDesktopRouter : IDisposable
     public Func<RunSession, MobilePaneDigest?>? Digest { get; set; }
     /// <summary>The style a pane is really running, null for none: a stored style that is not approved, or a pane outside the Mighty view, answers "cli" (M/MightyCode/AppStore+MobileRemote.swift:346-351).</summary>
     public Func<RunSession, string?>? ActiveStyle { get; set; }
+    /// <summary>The desktop app's update (docs/phone-desktop-update.md); null when this build cannot update itself, and without the function the phone gets no update state and 409 from <c>POST /m1/app-update</c>.</summary>
+    public Func<AppUpdateState?>? AppUpdateRead { get; set; }
+    /// <summary>The phone's button: <c>true</c> installs (checking and downloading first as needed), <c>false</c> only checks.</summary>
+    public Func<bool, Task>? AppUpdateAct { get; set; }
     /// <summary>Draws an image file's thumbnail from its name and bytes.</summary>
     public Func<string, byte[], CancellationToken, Task<MobileImageResult>>? ImagePreview { get; set; }
     public Func<string, string, JsonElement?, string, CancellationToken, Task<MobileReply>>? ScreenRoute { get; set; }
@@ -103,7 +107,7 @@ public sealed class MobileDesktopRouter : IDisposable
                 // The held rows by id, so one swapped for another moves the pane even when their count stays.
                 return new MobileRevisions.Reading(pane, digest.Editable, digest.Options, digest.Mighty, JsonSerializer.Serialize(Summary(pane, 0), Wire.Json), string.Join('\n', service.HeldItems(pane.Id).Select(item => item.Id)));
             }).ToArray();
-            lock (sync) foreach (var note in revisions.Observe(RemoteWorkspacePhone.Workspaces(snapshot.Workspaces), readings)) { notifications.RemoveAll(n => n.Scope == note.Scope); notifications.Add(note); }
+            lock (sync) foreach (var note in revisions.Observe(RemoteWorkspacePhone.Workspaces(snapshot.Workspaces), readings, JsonSerializer.Serialize(AppUpdatePhone(), Wire.Json))) { notifications.RemoveAll(n => n.Scope == note.Scope); notifications.Add(note); }
         }
         catch { Changed(); throw; }
     }
@@ -209,6 +213,17 @@ public sealed class MobileDesktopRouter : IDisposable
                 long Current() { Observe(); return state ? StateRevision : SessionRevision(route[2]); }
                 if (Current() <= since && wait > 0) { var until = DateTime.UtcNow.AddSeconds(wait); while (Current() <= since && DateTime.UtcNow < until) await Task.Delay(100, token); }
                 token.ThrowIfCancellationRequested(); return state ? Reply(State()) : SessionReply(Session(route[2]), asked);
+            }
+            if (method == "POST" && route.SequenceEqual(new[] { "m1", "app-update" }) && query.Count == 0)
+            {
+                var value = Object(body); var install = value.Text("action") == "install";
+                if (!install && value.Text("action") != "check") throw new MobileRequestException(400, Locale.Get("appUpdate.mobile.badAction"));
+                var state = AppUpdatePhone();
+                if (state is null || AppUpdateAct is null) throw new MobileRequestException(409, Locale.Get("appUpdate.mobile.unavailable"));
+                if (install && state.Running > 0 && !(value.TryGetProperty("confirm", out var confirm) && confirm.ValueKind == JsonValueKind.True))
+                    throw new MobileRequestException(409, Locale.Get("appUpdate.mobile.runningRequests", new Dictionary<string, string> { ["count"] = state.Running.ToString() }));
+                await AppUpdateAct(install);
+                return Reply(AppUpdatePhone() ?? state);
             }
             if (route.Length == 3 && route[1] == "screen-share") { if (ScreenRoute is not null) return await ScreenRoute(method, route[2], body, device, token); throw new MobileRequestException(503, "Screen sharing is not available on this host."); }
             if (route.Length is 4 or 5 && route[1] == "workspaces" && route[3] == "workmap")
@@ -410,11 +425,18 @@ public sealed class MobileDesktopRouter : IDisposable
     }
     private static long Number(Dictionary<string, string> query, string key, long minimum, long maximum, long fallback)
         => !query.TryGetValue(key, out var text) ? fallback : long.TryParse(text, out var number) && number >= minimum && number <= maximum ? number : throw new MobileRequestException(400, "Invalid " + key + ".");
+    /// <summary>The app update as the phone sees it, with the requests running now; null when there is none.</summary>
+    private MobileAppUpdate? AppUpdatePhone()
+    {
+        var snapshot = service.Snapshot;
+        var running = RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).Count(s => s.Kind is not ("files" or "workmap") && (s.Status == "running" || service.IsSessionRunning(s.Id)));
+        return PhoneAppUpdate.Map(AppUpdateRead?.Invoke(), AppVersion, running);
+    }
     private object State()
     {
         var snapshot = service.Snapshot;
         return new { protocol = 1, revision = StateRevision, hostName = HostName, workspaces = RemoteWorkspacePhone.Workspaces(snapshot.Workspaces).Select(w => new { w.Id, w.Name, w.Path }),
-            sessions = RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).Where(s => s.Kind is not ("files" or "workmap")).Select(s => Summary(s, SessionRevision(s.Id))).ToArray() };
+            sessions = RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).Where(s => s.Kind is not ("files" or "workmap")).Select(s => Summary(s, SessionRevision(s.Id))).ToArray(), appUpdate = AppUpdatePhone() };
     }
     private object Summary(RunSession pane, long revision)
     {

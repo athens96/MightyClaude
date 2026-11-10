@@ -1098,6 +1098,10 @@ internal static class Verification
         await Test("terminal prompts: answers type what the terminal would get", TerminalPromptVerification.AnswersTypeWhatTheTerminalWouldGet);
         await Test("terminal prompts: the phone's answer is read strictly", TerminalPromptVerification.ThePhonesAnswerIsReadStrictly);
         await Test("terminal prompts: the monitor waits for quiet output and hides an answered prompt", TerminalPromptVerification.TheMonitorWaitsForQuietOutputAndHidesAnAnsweredPrompt);
+        await Test("phone app update: the state travels as plain JSON and keeps its notes short", PhoneAppUpdateVerification.TheStateTravelsAsPlainJsonAndKeepsItsNotesShort);
+        await Test("phone app update: the phases map to the phone's", PhoneAppUpdateVerification.ThePhasesMapToThePhones);
+        await Test("phone app update: the phone's install advances and never loops", PhoneAppUpdateVerification.ThePhonesInstallAdvancesAndNeverLoops);
+        await Test("phone app update: the route validates and asks before stopping requests", PhoneAppUpdateVerification.TheRouteValidatesAndAsksBeforeStoppingRequests);
         await Test("terminal prompts: the agent terminal reads a command's output with its own cursor", TerminalPromptVerification.TheAgentTerminalKeepsAReadCursorApartFromTheAgentsReads);
         await Test("shell block runs: the saved field is optional and a run restored running reads interrupted", ShellBlockRunVerification.TheFieldIsOptionalAndARestoredRunIsInterrupted);
         await Test("shell block runs: output is cleaned, its redraws resolved and its last 16 KB kept", ShellBlockRunVerification.TheOutputIsCleanedAndItsTailKept);

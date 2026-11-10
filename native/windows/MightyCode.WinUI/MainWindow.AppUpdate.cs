@@ -335,6 +335,7 @@ public sealed partial class MainWindow
     private void AppUpdateStateChanged()
     {
         if (closing) return;
+        AppUpdateChangedForPhone();
         RenderAppUpdateSection();
         var state = AppUpdate.State;
         if (state.CheckedAt is { } at && at != appUpdateSavedCheck && !options.SmokeTest)
@@ -346,6 +347,43 @@ public sealed partial class MainWindow
         appUpdateShownPhase = state.Phase;
         RefreshStatusBar();
         RenderAppUpdateCountdown();
+    }
+
+    /// The phone asked to install the update: it goes on through check, download and install by itself (docs/phone-desktop-update.md).
+    private bool phoneRequestedAppUpdate;
+
+    /// What the phone sees of the update (null when this build cannot update itself); the router adds the running requests.
+    private AppUpdateState? PhoneAppUpdateRead() => AppUpdateCanRunAutomatically ? AppUpdate.State : null;
+
+    /// The phone's button: `install` false checks; true installs a staged update now, or first checks and downloads, then installs once ready.
+    private async Task PhoneAppUpdateActAsync(bool install)
+    {
+        if (!AppUpdateCanRunAutomatically) return;
+        if (!install) { await AppUpdate.CheckAsync(service.Snapshot.AppUpdateManifestUrlOverride); return; }
+        phoneRequestedAppUpdate = true;
+        if (PhoneAppUpdate.Begin(AppUpdate.State) == PhoneAppUpdateStep.Check) await AppUpdate.CheckAsync(service.Snapshot.AppUpdateManifestUrlOverride);
+        else AdvancePhoneAppUpdate();
+    }
+
+    /// Each change of the update: the phone hears of it, and a phone's request moves on.
+    private void AppUpdateChangedForPhone()
+    {
+        if (phoneRequestedAppUpdate) AdvancePhoneAppUpdate();
+        mobileRouter?.Changed();
+    }
+
+    private void AdvancePhoneAppUpdate()
+    {
+        switch (PhoneAppUpdate.Next(AppUpdate.State))
+        {
+            case PhoneAppUpdateStep.Download: _ = AppUpdate.DownloadAsync(); break;
+            case PhoneAppUpdateStep.Install:
+                phoneRequestedAppUpdate = false;
+                // After the change that made it ready has been applied.
+                DispatcherQueue.TryEnqueue(RestartForAppUpdateNow);
+                break;
+            case PhoneAppUpdateStep.Done: phoneRequestedAppUpdate = false; break;
+        }
     }
 
     private void StartAppUpdateLoop()

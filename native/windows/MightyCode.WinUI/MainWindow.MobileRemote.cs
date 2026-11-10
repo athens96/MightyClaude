@@ -28,6 +28,7 @@ public sealed partial class MainWindow
         mobileRouter.HostId = mobileHost.HostId;
         // The work map (docs/work-map.md) is the one the page shows: same model, same one-at-a-time summary.
         mobileRouter.WorkMapRead = WorkMaps.ModelAsync; mobileRouter.WorkMapSummarize = WorkMaps.StartAsync;
+        mobileRouter.AppUpdateRead = PhoneAppUpdateRead; mobileRouter.AppUpdateAct = PhoneAppUpdateActAsync;
         mobileRouter.DirectEndpoints = () => mobileHost?.DirectEndpoints ?? [];
         // Phone notifications (M/MightyCode/AppStore+MobilePush.swift), routed before the host starts so the "push" it advertises always
         // has its routes. A confirmed lost sign-in is the login recovery's remembered request, read on this (the UI) thread.
