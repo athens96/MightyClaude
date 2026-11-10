@@ -3,7 +3,7 @@ title: 에이전트 창
 order: 3
 section: agent-pane
 ---
-에이전트 창은 Claude, Codex, Antigravity, pi, opencode 중 하나와 대화하는 실행 창입니다. 아래쪽 입력창에 요청을 쓰고, 위쪽에서 진행과 결과를 봅니다.
+에이전트 창은 Claude, Codex, Antigravity, pi, opencode, Hermes 중 하나와 대화하는 실행 창입니다. 아래쪽 입력창에 요청을 쓰고, 위쪽에서 진행과 결과를 봅니다.
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ section: agent-pane
 입력창 아래 줄에는 왼쪽부터 첨부, 모델, 사고 강도, 권한, 추가 실행 설정(…)이 있습니다. 창이 좁으면 일부가 메뉴 하나로 접힙니다. 실행 중에는 바꿀 수 없고, 바꾼 값은 다음 요청부터 적용됩니다.
 
 ### 모델 {#model}
-모델 칩을 누르면 {{ui:composer.label.runner}}(Claude, Codex, Antigravity, pi, opencode)와 {{ui:composer.label.model}} 항목을 고를 수 있습니다. 목록이 맞지 않으면 {{ui:composer.model.refresh}}을 누르세요. 에이전트를 바꾸면 대화가 새로 시작됩니다.
+모델 칩을 누르면 {{ui:composer.label.runner}}(Claude, Codex, Antigravity, pi, opencode, Hermes)와 {{ui:composer.label.model}} 항목을 고를 수 있습니다. 목록이 맞지 않으면 {{ui:composer.model.refresh}}을 누르세요. 에이전트를 바꾸면 대화가 새로 시작됩니다.
 
 ### 사고 강도 {#effort}
-{{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Antigravity에는 없고, pi는 Off, Minimal, Low, Medium, High, XHigh이고, opencode는 모델이 제공하는 변형인 Low, Medium, High, Max입니다.
+{{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Antigravity에는 없고, pi는 Off, Minimal, Low, Medium, High, XHigh이고, opencode는 모델이 제공하는 변형인 Low, Medium, High, Max이고, Hermes는 Low, Medium, High, XHigh, Max입니다.
 
 ### 작업 권한 {#permission}
 권한은 에이전트가 묻지 않고 할 수 있는 일의 범위입니다.
@@ -45,8 +45,9 @@ section: agent-pane
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 | pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
 | opencode | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| Hermes | {{ui:permission.label.default}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
-- Claude의 Always ask, Codex의 {{ui:permission.label.onRequest}}, {{ui:permission.label.fullAccess}}을 뺀 opencode의 모든 권한은 추가 권한이 필요할 때 창 안에서 승인을 묻습니다. [승인과 질문](approvals.md#permission)을 보세요.
+- Claude의 Always ask, Codex의 {{ui:permission.label.onRequest}}, {{ui:permission.label.fullAccess}}을 뺀 opencode의 모든 권한, Hermes의 파일 수정과 위험한 명령은 추가 권한이 필요할 때 창 안에서 승인을 묻습니다. [승인과 질문](approvals.md#permission)을 보세요.
 - Auto mode는 설치된 Claude CLI가 지원할 때만 보입니다.
 - Bypass와 {{ui:permission.label.fullAccess}} 권한은 프로젝트 밖의 파일과 명령에도 접근합니다. 꼭 필요할 때만 쓰세요.
 
@@ -79,6 +80,16 @@ opencode(`opencode`)는 여러 모델 제공자를 쓰는 오픈소스 코딩 �
 - 권한: 고른 모드가 그 요청에만 쓰는 opencode 자체 규칙이 되고, 규칙이 묻도록 남긴 일은 Claude처럼 창에 승인 카드로 옵니다. {{ui:permission.label.default}}은 파일 수정, 명령, 웹, 프로젝트 밖 접근 전에 묻고, {{ui:permission.label.acceptEdits}}은 파일 수정을 묻지 않으며, {{ui:permission.label.plan}}은 파일을 고치지 않는 opencode의 plan 에이전트로 실행하고, {{ui:permission.label.fullAccess}}은 묻지 않습니다.
 - 요청마다 창의 작업 폴더에서 `opencode acp`(OpenCode 2, Agent Client Protocol)를 실행하고 창의 세션을 이어 갑니다. 세션은 opencode의 `opencode.db`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 opencode 세션이 나옵니다. 사용량에는 세션 비용, 쓰고 있는 컨텍스트, 요청의 토큰이 보입니다.
 - 아직 안 되는 것: opencode 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고 [원격 작업 공간](remote.md)에서 열 수 없습니다. 지금은 Mac에서만 동작합니다.
+
+### Hermes {#hermes}
+Hermes(`hermes`)는 Nous Research의 오픈소스 에이전트 CLI(Hermes Agent)입니다. Nous Portal, OpenRouter, Anthropic, OpenAI 등 여러 모델 제공자를 씁니다.
+
+- 설치: {{ui:setup.title}} 화면에서 설치합니다(Git이 없으면 먼저 설치합니다). 공식 설치 스크립트가 자체 Python 환경과 함께 `~/.hermes`에 설치하고 브라우저 도구도 내려받아 몇 분 걸립니다. 직접 설치하려면 `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`를 실행합니다. 업데이트는 앱이 `hermes update`로 합니다.
+- 로그인: {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliAccounts.buttonLogin}} 단추를 누르면 `hermes model`을 실행하는 터미널 창이 열립니다. 거기서 모델 제공자를 고르고 로그인하거나 API 키를 입력한 뒤 기본 모델을 고릅니다. 앱은 Hermes가 자격 증명을 찾은 제공자의 이름만 읽습니다. 자격 증명을 지우려면 터미널에서 `hermes auth`를 씁니다.
+- 모델: 첫 항목은 Hermes 자체 설정(`hermes model`로 정한 기본 모델)을 따릅니다. Hermes는 세션을 열어야 모델 목록을 알려 주므로, 첫 요청을 보낸 뒤부터 `제공자:모델` 목록이 나옵니다.
+- 권한: {{ui:permission.label.default}}은 파일을 고칠 때마다 창의 승인 카드로 묻고, {{ui:permission.label.acceptEdits}}은 작업 폴더 안의 수정을 묻지 않으며, {{ui:permission.label.fullAccess}}은 Hermes의 `--yolo`로 위험한 명령도 묻지 않습니다. 위험한 명령(`rm -rf` 등)은 Hermes의 승인 설정(`approvals.mode`)에 따라 카드로 묻고, 그 밖의 명령과 읽기는 묻지 않습니다. 계획 전용 모드는 없습니다. {{ui:permission.label.fullAccess}}은 세션을 시작할 때 정해지므로, 이미 시작한 세션에는 새 대화부터 적용됩니다.
+- 요청마다 창의 작업 폴더에서 `hermes acp`(Agent Client Protocol)를 실행하고 창의 세션을 이어 갑니다. 실제 작업은 Hermes의 게이트웨이(백그라운드 프로세스)가 하며, 필요할 때 저절로 시작되고 쓰지 않으면 끝납니다. 세션은 `~/.hermes/state.db`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 Hermes 세션이 나옵니다. 사용량에는 세션의 누적 토큰과 쓰고 있는 컨텍스트가 보이고, 비용은 Hermes가 알려 주지 않습니다.
+- 아직 안 되는 것: Hermes가 선택지를 내며 묻는 질문은 건너뛰고 그 사실을 기록에 남깁니다. Hermes 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고 [원격 작업 공간](remote.md)에서 열 수 없습니다. 지금은 Mac에서만 동작합니다.
 
 ### 추가 실행 설정 {#run-settings}
 … 단추를 누르면 {{ui:settings.run.title}}이 열립니다.

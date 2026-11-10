@@ -16,7 +16,7 @@ section: approvals
 批准仅对这一次请求有效，不会创建今后持续允许的规则。
 
 > [!note]
-> 批准卡片会在此 Mac 上的 Claude 窗格（Always ask 等）、Codex 的{{ui:permission.label.onRequest}}权限以及 opencode 窗格中除{{ui:permission.label.fullAccess}}外的所有权限下弹出。在其他权限下，是允许还是阻止取决于 CLI 设置。Antigravity 的工作方式不同，会[用自己的方式询问](#antigravity-permission)。
+> 批准卡片会在此 Mac 上的 Claude 窗格（Always ask 等）、Codex 的{{ui:permission.label.onRequest}}权限以及 opencode 窗格中除{{ui:permission.label.fullAccess}}外的所有权限下弹出。在 Hermes 窗格中，文件修改和危险命令会弹出卡片。在其他权限下，是允许还是阻止取决于 CLI 设置。Antigravity 的工作方式不同，会[用自己的方式询问](#antigravity-permission)。
 
 ## Antigravity 的权限卡片 {#antigravity-permission}
 Antigravity 在工作过程中无法向应用提问。遇到必须询问的操作（运行命令、写入文件等）时，它只跳过该操作，先结束这一轮，再把所有被拒绝的操作汇总到一张卡片里询问。{{ui:permission.label.default}}权限下也会弹出，手机上会出现同样的卡片。
@@ -73,7 +73,7 @@ CLI 登录过期导致请求失败时，输入框上方会出现登录恢复卡�
 
 如果已经在其他地方登录，请点击{{ui:loginRecovery.resendButton}}。如果浏览器登录有困难，请使用{{ui:loginRecovery.terminalButton}}。
 
-Antigravity、pi 和 opencode 在终端中登录。登录终端会在失败的窗格旁边打开：Antigravity（agy）会打开浏览器，请用 Google 账户登录；pi 则在终端中输入 `/login`，选择订阅或输入 API 密钥；opencode 会运行 `opencode auth login`，先选择提供商，再登录或输入 API 密钥。确认登录后，失败的请求会自动重新发送。登录后该终端仍保持打开。
+Antigravity、pi、opencode 和 Hermes 在终端中登录。登录终端会在失败的窗格旁边打开：Antigravity（agy）会打开浏览器，请用 Google 账户登录；pi 则在终端中输入 `/login`，选择订阅或输入 API 密钥；opencode 会运行 `opencode auth login`，先选择提供商，再登录或输入 API 密钥；Hermes 会运行 `hermes model`，先选择模型提供商并登录，再选择默认模型。确认登录后，失败的请求会自动重新发送。登录后该终端仍保持打开。
 
 > [!tip]
 > 打开{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliAccounts.autoLoginToggle}}后，登录一断开就会立即重新开始登录。

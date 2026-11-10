@@ -3,7 +3,7 @@ title: Agent panes
 order: 3
 section: agent-pane
 ---
-An agent pane is a conversation with Claude, Codex, Antigravity, pi or opencode. You write requests in the composer at the bottom and follow the progress and results above it.
+An agent pane is a conversation with Claude, Codex, Antigravity, pi, opencode or Hermes. You write requests in the composer at the bottom and follow the progress and results above it.
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ Stopping the task cancels the queued requests too, except in a pane whose turn o
 The row under the composer has, from the left: attach, model, thinking effort, permission and more run settings (…). In a narrow pane some of them fold into one menu. They can't be changed while a task runs, and a change applies from the next request.
 
 ### Model {#model}
-Click the model chip to choose the {{ui:composer.label.runner}} (Claude, Codex, Antigravity, pi or opencode) and the {{ui:composer.label.model}}. If the list looks wrong, click {{ui:composer.model.refresh}}. Switching agents starts a new conversation.
+Click the model chip to choose the {{ui:composer.label.runner}} (Claude, Codex, Antigravity, pi, opencode or Hermes) and the {{ui:composer.label.model}}. If the list looks wrong, click {{ui:composer.model.refresh}}. Switching agents starts a new conversation.
 
 ### Thinking effort {#effort}
-{{ui:composer.effort.label}} sets how deeply the model thinks: Auto, Low, Medium, High, XHigh or Max. Only the levels the model supports are shown. Antigravity has none; pi has Off, Minimal, Low, Medium, High and XHigh; opencode has Low, Medium, High and Max, the variants its model offers.
+{{ui:composer.effort.label}} sets how deeply the model thinks: Auto, Low, Medium, High, XHigh or Max. Only the levels the model supports are shown. Antigravity has none; pi has Off, Minimal, Low, Medium, High and XHigh; opencode has Low, Medium, High and Max, the variants its model offers; Hermes has Low, Medium, High, XHigh and Max.
 
 ### Permissions {#permission}
 The permission mode sets what the agent may do without asking.
@@ -45,8 +45,9 @@ The permission mode sets what the agent may do without asking.
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 | pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
 | opencode | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| Hermes | {{ui:permission.label.default}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
-- Claude's Always ask, Codex's {{ui:permission.label.onRequest}} and every opencode mode but {{ui:permission.label.fullAccess}} ask for approval in the pane when extra permission is needed. See [Approvals and questions](approvals.md#permission).
+- Claude's Always ask, Codex's {{ui:permission.label.onRequest}} every opencode mode but {{ui:permission.label.fullAccess}}, and Hermes's file edits and dangerous commands ask for approval in the pane when extra permission is needed. See [Approvals and questions](approvals.md#permission).
 - Auto mode appears only when the installed Claude CLI supports it.
 - Bypass and {{ui:permission.label.fullAccess}} reach files and commands outside the project too. Use them only when you must.
 
@@ -79,6 +80,16 @@ opencode (`opencode`) is an open-source coding agent CLI that works with many mo
 - Permissions: the mode becomes opencode's own rules for the run, and what they leave to ask comes to the pane as an approval card, as for Claude. {{ui:permission.label.default}} asks before edits, commands, the web and anything outside the project; {{ui:permission.label.acceptEdits}} edits without asking; {{ui:permission.label.plan}} runs opencode's plan agent, which does not edit; {{ui:permission.label.fullAccess}} never asks.
 - Each request starts `opencode acp` in the pane's folder (OpenCode 2, the Agent Client Protocol) and continues the pane's own session, kept in opencode's `opencode.db`. {{ui:resume.choice.resume}} lists the opencode sessions of the folder as well. Usage shows the session's cost, the context in use and the request's tokens.
 - Not yet: opencode panes take no part in [Mighty Orchestration](delegation.md) and cannot be opened in a [remote workspace](remote.md). They work on the Mac only for now.
+
+### Hermes {#hermes}
+Hermes (`hermes`) is Nous Research's open-source agent CLI (Hermes Agent). It works with many model providers, such as Nous Portal, OpenRouter, Anthropic and OpenAI.
+
+- Install: from the {{ui:setup.title}} screen (it installs Git first when it is missing). The official install script puts Hermes in `~/.hermes` with its own Python environment and downloads its browser tools, so it takes a few minutes. To install it yourself, run `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`. The app updates it with `hermes update`.
+- Sign in: {{ui:settings.cliAccounts.buttonLogin}} on the {{ui:settings.nav.cli}} tab opens a terminal pane running `hermes model`. Pick a model provider there, sign in or enter an API key, then pick a default model. The app reads only the name of the provider whose credentials Hermes finds. To remove credentials, use `hermes auth` in a terminal.
+- Model: the first entry follows Hermes's own settings (the default model set with `hermes model`). Hermes lists models only once a session is open, so the `provider:model` list appears after the first request.
+- Permissions: {{ui:permission.label.default}} asks with an approval card in the pane before every file edit; {{ui:permission.label.acceptEdits}} does not ask about edits inside the workspace folder; {{ui:permission.label.fullAccess}} is Hermes's `--yolo`, which does not ask about dangerous commands either. Dangerous commands (such as `rm -rf`) are asked about as Hermes's approvals setting (`approvals.mode`) says; other commands and reads are not asked about. There is no plan-only mode. {{ui:permission.label.fullAccess}} is fixed when a session starts, so a session already started gets it from a new conversation.
+- Each request starts `hermes acp` in the pane's folder (the Agent Client Protocol) and continues the pane's own session. The work itself runs in Hermes's gateway, a background process that starts on demand and ends when idle. Sessions are kept in `~/.hermes/state.db`, and {{ui:resume.choice.resume}} lists the Hermes sessions of the folder as well. Usage shows the session's running token counts and the context in use; Hermes does not report cost.
+- Not yet: a question Hermes asks with choices is skipped, and the log says so. Hermes panes take no part in [Mighty Orchestration](delegation.md) and cannot be opened in a [remote workspace](remote.md). They work on the Mac only for now.
 
 ### More run settings {#run-settings}
 Click the … button to open {{ui:settings.run.title}}.

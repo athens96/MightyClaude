@@ -16,7 +16,7 @@ section: approvals
 승인은 이 요청 한 번에만 적용됩니다. 앞으로도 계속 허용하는 규칙은 만들지 않습니다.
 
 > [!note]
-> 승인 카드는 이 Mac의 Claude 창(Always ask 등)과 Codex의 {{ui:permission.label.onRequest}} 권한, {{ui:permission.label.fullAccess}}을 뺀 opencode 창의 모든 권한에서 뜹니다. 다른 권한에서는 CLI 설정에 따라 허용되거나 막힙니다. Antigravity는 일하는 방식이 달라 [따로 묻습니다](#antigravity-permission).
+> 승인 카드는 이 Mac의 Claude 창(Always ask 등)과 Codex의 {{ui:permission.label.onRequest}} 권한, {{ui:permission.label.fullAccess}}을 뺀 opencode 창의 모든 권한에서 뜹니다. Hermes 창에서는 파일 수정과 위험한 명령에 뜹니다. 다른 권한에서는 CLI 설정에 따라 허용되거나 막힙니다. Antigravity는 일하는 방식이 달라 [따로 묻습니다](#antigravity-permission).
 
 ## Antigravity의 권한 카드 {#antigravity-permission}
 Antigravity는 일하는 도중에 앱에 물어볼 수 없습니다. 물어봐야 하는 작업(명령 실행, 파일 쓰기 등)을 만나면 그 작업만 건너뛰고 턴을 끝낸 뒤, 거절한 작업을 모두 모아 카드로 묻습니다. 권한이 {{ui:permission.label.default}}일 때도 뜹니다. 휴대폰에도 같은 카드가 뜹니다.
@@ -73,7 +73,7 @@ CLI 로그인이 만료되어 요청이 실패하면 입력창 위에 로그인 
 
 이미 다른 곳에서 로그인했다면 {{ui:loginRecovery.resendButton}}를 누르세요. 브라우저 로그인이 어려우면 {{ui:loginRecovery.terminalButton}}을 씁니다.
 
-Antigravity, pi, opencode는 터미널에서 로그인합니다. 실패한 창 옆에 로그인 터미널이 열리고, Antigravity(agy)는 열리는 브라우저에서 Google 계정으로 로그인합니다. pi는 터미널에서 `/login`을 입력해 구독을 고르거나 API 키를 입력합니다. opencode는 `opencode auth login`이 실행되어 제공자를 고른 뒤 로그인하거나 API 키를 입력합니다. 로그인이 확인되면 실패한 요청을 저절로 다시 보냅니다. 이 터미널은 로그인 뒤에도 열려 있습니다.
+Antigravity, pi, opencode, Hermes는 터미널에서 로그인합니다. 실패한 창 옆에 로그인 터미널이 열리고, Antigravity(agy)는 열리는 브라우저에서 Google 계정으로 로그인합니다. pi는 터미널에서 `/login`을 입력해 구독을 고르거나 API 키를 입력합니다. opencode는 `opencode auth login`이 실행되어 제공자를 고른 뒤 로그인하거나 API 키를 입력합니다. Hermes는 `hermes model`이 실행되어 모델 제공자를 고르고 로그인한 뒤 기본 모델을 고릅니다. 로그인이 확인되면 실패한 요청을 저절로 다시 보냅니다. 이 터미널은 로그인 뒤에도 열려 있습니다.
 
 > [!tip]
 > {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliAccounts.autoLoginToggle}}을 켜 두면 로그인이 끊긴 순간 바로 다시 로그인을 시작합니다.

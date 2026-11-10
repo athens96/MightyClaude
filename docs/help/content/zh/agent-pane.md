@@ -3,7 +3,7 @@ title: 智能体窗格
 order: 3
 section: agent-pane
 ---
-智能体窗格是与 Claude、Codex、Antigravity、pi 或 opencode 之一对话的窗格。在下方的输入框中写请求，在上方查看进度和结果。
+智能体窗格是与 Claude、Codex、Antigravity、pi、opencode 或 Hermes 之一对话的窗格。在下方的输入框中写请求，在上方查看进度和结果。
 
 ![[agent-basic]]
 
@@ -30,10 +30,10 @@ section: agent-pane
 输入框下方一行从左到右依次是附件、模型、思考强度、权限和更多运行设置（…）。窗格较窄时，部分项目会收进一个菜单。运行期间无法更改，更改后的值从下一个请求起生效。
 
 ### 模型 {#model}
-点击模型按钮，可以选择{{ui:composer.label.runner}}（Claude、Codex、Antigravity、pi、opencode）和{{ui:composer.label.model}}。如果列表不对，请点击{{ui:composer.model.refresh}}。切换智能体会开始新的对话。
+点击模型按钮，可以选择{{ui:composer.label.runner}}（Claude、Codex、Antigravity、pi、opencode、Hermes）和{{ui:composer.label.model}}。如果列表不对，请点击{{ui:composer.model.refresh}}。切换智能体会开始新的对话。
 
 ### 思考强度 {#effort}
-{{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 没有此项；pi 有 Off、Minimal、Low、Medium、High、XHigh；opencode 有 Low、Medium、High、Max，即模型提供的变体。
+{{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 没有此项；pi 有 Off、Minimal、Low、Medium、High、XHigh；opencode 有 Low、Medium、High、Max，即模型提供的变体；Hermes 有 Low、Medium、High、XHigh、Max。
 
 ### 权限 {#permission}
 权限决定智能体无需询问即可做哪些事。
@@ -45,8 +45,9 @@ section: agent-pane
 | Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 | pi | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.fullAccess}} |
 | opencode | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| Hermes | {{ui:permission.label.default}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
-- Claude 的 Always ask、Codex 的{{ui:permission.label.onRequest}}以及除{{ui:permission.label.fullAccess}}外的所有 opencode 权限在需要额外权限时，会在窗格中请求批准。请参阅[批准与提问](approvals.md#permission)。
+- Claude 的 Always ask、Codex 的{{ui:permission.label.onRequest}}除{{ui:permission.label.fullAccess}}外的所有 opencode 权限，以及 Hermes 的文件修改和危险命令在需要额外权限时，会在窗格中请求批准。请参阅[批准与提问](approvals.md#permission)。
 - 只有已安装的 Claude CLI 支持时，才会显示 Auto mode。
 - Bypass 和{{ui:permission.label.fullAccess}}权限也能访问项目以外的文件和命令。请仅在确有必要时使用。
 
@@ -79,6 +80,16 @@ opencode（`opencode`）是支持多家模型提供商的开源编码智能体 C
 - 权限：所选模式会成为该次请求专用的 opencode 规则，规则留待询问的操作会像 Claude 一样以审批卡出现在窗格中。{{ui:permission.label.default}}在修改文件、执行命令、访问网络和访问项目外内容前询问；{{ui:permission.label.acceptEdits}}修改文件不询问；{{ui:permission.label.plan}}使用不修改文件的 opencode plan 智能体运行；{{ui:permission.label.fullAccess}}从不询问。
 - 每次请求都会在窗格的工作文件夹中运行 `opencode acp`（OpenCode 2，Agent Client Protocol），并延续窗格自己的会话，会话保存在 opencode 的 `opencode.db`。{{ui:resume.choice.resume}}中也会列出该文件夹的 opencode 会话。用量中显示会话费用、正在使用的上下文和该次请求的令牌。
 - 暂不支持：opencode 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开。目前只能在 Mac 上使用。
+
+### Hermes {#hermes}
+Hermes（`hermes`）是 Nous Research 的开源智能体 CLI（Hermes Agent），可使用 Nous Portal、OpenRouter、Anthropic、OpenAI 等多家模型提供商。
+
+- 安装：在{{ui:setup.title}}界面安装（没有 Git 时会先安装）。官方安装脚本会连同自带的 Python 环境一起装到 `~/.hermes`，并下载浏览器工具，需要几分钟。也可以自行运行 `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`。更新由应用通过 `hermes update` 完成。
+- 登录：点击{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliAccounts.buttonLogin}}按钮，会打开运行 `hermes model` 的终端窗格。在其中选择模型提供商，登录或输入 API 密钥，然后选择默认模型。应用只读取 Hermes 找到凭据的提供商名称。要删除凭据，请在终端使用 `hermes auth`。
+- 模型：第一项跟随 Hermes 自身的设置（通过 `hermes model` 设定的默认模型）。Hermes 只有打开会话后才给出模型列表，因此发送第一个请求后才会出现 `提供商:模型` 列表。
+- 权限：{{ui:permission.label.default}}在每次修改文件前用窗格中的批准卡片询问；{{ui:permission.label.acceptEdits}}不询问工作文件夹内的修改；{{ui:permission.label.fullAccess}}即 Hermes 的 `--yolo`，危险命令也不询问。危险命令（如 `rm -rf`）按 Hermes 的审批设置（`approvals.mode`）用卡片询问，其他命令和读取不询问。没有仅规划的模式。{{ui:permission.label.fullAccess}}在会话开始时确定，已开始的会话要从新对话起才生效。
+- 每个请求都会在窗格的工作文件夹中运行 `hermes acp`（Agent Client Protocol），并继续该窗格的会话。实际工作由 Hermes 的网关（后台进程）完成，它按需启动，空闲时退出。会话保存在 `~/.hermes/state.db` 中，{{ui:resume.choice.resume}}中也会列出此文件夹的 Hermes 会话。用量显示会话的累计令牌数和正在使用的上下文；Hermes 不报告费用。
+- 暂不支持：Hermes 带选项的提问会被跳过，并在记录中注明。Hermes 窗格不参与[Mighty 编排](delegation.md)，也无法在[远程工作区](remote.md)中打开。目前仅在 Mac 上可用。
 
 ### 更多运行设置 {#run-settings}
 点击 … 按钮会打开{{ui:settings.run.title}}。

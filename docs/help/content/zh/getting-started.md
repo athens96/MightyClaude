@@ -3,7 +3,7 @@ title: 快速入门
 order: 1
 section: getting-started
 ---
-Mighty Code 是一款桌面应用，可以在一个窗口中并排使用 Claude Code、Codex CLI、Google 的 Antigravity CLI、pi 和 opencode。你可以在一个项目文件夹中打开多个窗格，每个窗格各自保留对话和设置。
+Mighty Code 是一款桌面应用，可以在一个窗口中并排使用 Claude Code、Codex CLI、Google 的 Antigravity CLI、pi、opencode 和 Hermes。你可以在一个项目文件夹中打开多个窗格，每个窗格各自保留对话和设置。
 
 ## 准备工作 {#requirements}
 - macOS 14 或更高版本。Windows 需要 Windows 10（版本 2004）或更高版本，或 Windows 11。
@@ -14,6 +14,7 @@ Mighty Code 是一款桌面应用，可以在一个窗口中并排使用 Claude 
 - Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 - pi: Mac 和 Windows `npm install -g @mariozechner/pi-coding-agent`（需要 Node.js，见 [pi](agent-pane.md#pi)）
 - opencode: Mac `npm install -g @opencode/cli`（OpenCode 2）（需要 Node.js，见 [opencode](agent-pane.md#opencode)）
+- Hermes: Mac `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`（需要 Git，见 [Hermes](agent-pane.md#hermes)）
 
 > [!tip]
 > 打开应用后，可以在{{ui:settings.nav.tools}}标签页中查看哪些 CLI 已就绪。Mac 上可以直接在那里安装，Windows 上可以复制安装命令。登录在{{ui:settings.nav.cli}}标签页中进行。请参阅[设置](settings.md#components)。
@@ -63,7 +64,7 @@ Windows 应用也以同样的方式更新（[Windows 上的不同之处](windows
 ![[welcome]]
 
 ### 所需工具 {#setup}
-如果没有任何智能体 CLI（Claude Code、Codex、Antigravity、pi 或 opencode）可以运行，或 Git 尚未就绪，应用启动时会先打开{{ui:setup.title}}界面。界面按组列出智能体 CLI、基础工具（Git、Homebrew、Node、Bun）、风格工具（uv、Ouroboros、oh-my-claudecode、gstack）、Tailscale 以及 gh 和 glab。
+如果没有任何智能体 CLI（Claude Code、Codex、Antigravity、pi、opencode 或 Hermes）可以运行，或 Git 尚未就绪，应用启动时会先打开{{ui:setup.title}}界面。界面按组列出智能体 CLI、基础工具（Git、Homebrew、Node、Bun）、风格工具（uv、Ouroboros、oh-my-claudecode、gstack）、Tailscale 以及 gh 和 glab。
 
 1. 勾选要安装的项目。首次打开时，缺少的 Git 会预先勾选；如果一个智能体 CLI 都没有，Claude Code 也会预先勾选；所选项目需要的工具（例如 gh 需要的 Homebrew）会一并加入。
 2. 点击{{ui:setup.button.install}}后，会按顺序显示将要运行的所有命令。点击{{ui:setup.confirm.run}}之后才会运行。
