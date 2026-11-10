@@ -467,6 +467,14 @@ export function MightyRunList({
       ref={listRef}
       data={runs}
       keyExtractor={(run) => run.id}
+      // Every request the host sends (at most 20) stays mounted. Rows the list let go of would come back
+      // at an estimated height while it follows the bottom of a running request, so its jump to the end
+      // would land on an older row for a frame: the last request's result card flashed up while the
+      // running one streamed. Nothing is clipped away for the same reason.
+      initialNumToRender={Math.max(1, runs.length)}
+      maxToRenderPerBatch={Math.max(1, runs.length)}
+      windowSize={Math.max(1, runs.length) * 2 + 1}
+      removeClippedSubviews={false}
       renderItem={({ item, index }) => (
         <View style={styles.listItem}>
           <RunGroup run={item} ordinal={ordinals[index] ?? index + 1} newest={index === followed} onOpenFile={onOpenFile} />
