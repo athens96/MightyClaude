@@ -223,7 +223,7 @@ final class SessionUsageTracker {
 
     init(provider: String, callback: ((SessionUsage) -> Void)?) {
         value = SessionUsage(provider: provider, source: provider == "gemini" ? "antigravity.stream-json" : provider == "pi" ? "pi.rpc" : provider == "opencode" ? "opencode.acp" : provider + ".stream-json",
-                             tokenScope: provider == "claude" || provider == "opencode" ? "response" : provider == "pi" ? "run" : "session")
+                             tokenScope: provider == "claude" ? "response" : provider == "pi" || provider == "opencode" ? "run" : "session")
         self.callback = callback
     }
     func consume(_ event: [String: Any]) {
@@ -293,9 +293,9 @@ final class SessionUsageTracker {
         publish()
     }
 
-    /// An ACP agent (opencode): `usage_update` carries the context in use, its window and the
+    /// An ACP agent (OpenCode 2): `usage_update` carries the context in use, its window and the
     /// session's running cost (session scope, so the ledger counts what grew); the prompt's
-    /// result carries the tokens of the turn's last model call (response scope).
+    /// result carries the turn's tokens, every model call of it summed (run scope).
     private func consumeACP(_ event: [String: Any], type: String) {
         switch type {
         case "acp.session":
@@ -314,8 +314,8 @@ final class SessionUsageTracker {
         case "acp.prompt_result":
             guard let usage = event["usage"] as? [String: Any], let input = SessionUsageSupport.count(usage["inputTokens"]), let output = SessionUsageSupport.count(usage["outputTokens"]) else { return }
             let read = SessionUsageSupport.count(usage["cachedReadTokens"]), written = SessionUsageSupport.count(usage["cachedWriteTokens"])
-            value.tokenScope = "response"
-            // opencode's `inputTokens` leaves the cached part out (acp/usage.ts buildUsage); here input includes it, as for the others.
+            value.tokenScope = "run"
+            // opencode's `inputTokens` leaves the cached part out (core session/usage.ts); here input includes it, as for the others.
             value.inputTokens = SessionUsageSupport.sum([input, read ?? 0, written ?? 0])
             value.outputTokens = output
             value.cacheReadTokens = read; value.cacheWriteTokens = written

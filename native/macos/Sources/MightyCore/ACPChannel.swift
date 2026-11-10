@@ -239,7 +239,7 @@ final class ACPChannel {
             answer(rawID, reject); warning(L("acp.channel.requestTooLarge")); return
         }
         let title = ActivitySupport.clean(call["title"] as? String ?? "", maximumBytes: 1_000, singleLine: true)
-        let value = ToolPermissionRequest(id: UUID().uuidString, runId: runId, toolUseId: callID, toolName: Self.toolName(kind: call["kind"] as? String, title: call["title"] as? String),
+        let value = ToolPermissionRequest(id: UUID().uuidString, runId: runId, toolUseId: callID, toolName: Self.toolName(kind: call["kind"] as? String, title: (call["name"] ?? call["title"]) as? String),
                                           inputJSON: display, summary: title.isEmpty ? L("acp.channel.permissionSummary") : title,
                                           reason: allow == nil ? L("acp.channel.denyOnly") : nil, canAllow: allow != nil)
         pending[value.id] = Pending(rpcID: rawID, allowOption: allow, rejectOption: reject, display: value)

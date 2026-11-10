@@ -11,8 +11,8 @@ private final class OpencodeRecorder<T>: @unchecked Sendable {
 }
 
 /// opencode (`opencode acp`) as the fifth agent, Mac only: the ACP frames in
-/// native/contracts/fixtures/opencode-acp-*.jsonl (written by hand from opencode 1.19.5's
-/// source, src/acp/*), the channel's requests and answers, the approval card, usage,
+/// native/contracts/fixtures/opencode-acp-*.jsonl (written by hand from OpenCode 2.2.7's
+/// source, packages/cli/src/acp/*), the channel's requests and answers, the approval card, usage,
 /// permissions as opencode's rules, the model list, the sign-in reading, the Mac-only setup
 /// item and the session list read from `opencode.db`.
 struct OpencodeTests {
@@ -89,13 +89,13 @@ struct OpencodeTests {
 
     @Test func settingsGoAsConfigOptionsAndOneTheAgentLacksIsNamedAndSkipped() throws {
         var request = StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "plan it", model: "anthropic/claude-sonnet-4-5", provider: "opencode",
-                                      settings: RunSettings(effort: "high", permissionMode: "plan"))
+                                      settings: RunSettings(effort: "low", permissionMode: "plan"))
         request.attachments = []
         let run = try Self.channel(request)
         run.channel.start()
         let lines = try Self.fixture("answer")
         run.channel.receive(lines[0] + Data([10])); run.channel.receive(lines[1] + Data([10]))
-        // model first; the fixture's session has no effort option; mode differs from build.
+        // model first; the session's effort option has no "low"; mode differs from build.
         #expect(run.methods == ["initialize", "session/new", "session/set_config_option"])
         #expect((run.writes[2]["params"] as? [String: Any])?["configId"] as? String == "model")
         #expect((run.writes[2]["params"] as? [String: Any])?["value"] as? String == "anthropic/claude-sonnet-4-5")
@@ -132,14 +132,14 @@ struct OpencodeTests {
         #expect(main.usage == GraphTokenUsage(inputTokens: 1203, outputTokens: 18))
     }
 
-    @Test func usageIsTheSessionsCostTheContextAndTheLastCallsTokens() throws {
+    @Test func usageIsTheSessionsCostTheContextAndTheTurnsTokens() throws {
         let run = try Self.replay("answer")
         let last = try #require(run.usage.last)
         #expect(last.provider == "opencode" && last.source == "opencode.acp" && last.providerSessionId == Self.sessionID)
         #expect(last.model == "opencode/big-pickle")
         #expect(last.costUSD == 0.0123 && last.costScope == "session")
-        #expect(last.contextUsedTokens == 12034 && last.contextWindowTokens == 200000)
-        #expect(last.inputTokens == 1203 && last.outputTokens == 18 && last.totalTokens == 1221 && last.tokenScope == "response")
+        #expect(last.contextUsedTokens == 1221 && last.contextWindowTokens == 200000)
+        #expect(last.inputTokens == 1203 && last.outputTokens == 18 && last.totalTokens == 1221 && last.tokenScope == "run")
         // The ledger counts the run once, and only what the session's cost grew next time.
         var ledger = UsageLedger()
         let recorded = ledger.record(paneId: "pane", workspaceId: "w", provider: "opencode", model: "default", usage: last)
@@ -149,13 +149,15 @@ struct OpencodeTests {
         #expect(abs((ledger.record(paneId: "pane", workspaceId: "w", provider: "opencode", model: "default", usage: next)?.costUSD ?? 0) - 0.0377) < 1e-9)
         // Cached input is inside input, as for the others.
         let tools = try Self.replay("tools", answer: { run, _ in if let ask = run.permissions.last, ask.state == "pending" { try run.channel.respond(requestId: ask.id, allow: true) } })
-        #expect(tools.usage.last?.inputTokens == 5148 && tools.usage.last?.cacheReadTokens == 2048 && tools.usage.last?.costUSD == 0.0411)
+        // OpenCode 2 sums the turn's model calls; cached input is inside input, as for the others.
+        #expect(tools.usage.last?.inputTokens == 5148 && tools.usage.last?.cacheReadTokens == 2048 && tools.usage.last?.totalTokens == 5243 && tools.usage.last?.costUSD == 0.0411)
     }
 
     @Test func toolsAreRowsAndAnAskIsTheApprovalCardAnsweredOnce() throws {
         let run = try Self.replay("tools", answer: { run, _ in
             if let ask = run.permissions.last, ask.state == "pending" { try run.channel.respond(requestId: ask.id, allow: true) }
         })
+        // A sub-agent's own reply (a child session's update) is not part of the answer.
         #expect(run.logs.filter { $0.kind == "assistant" }.map(\.text) == ["Let me run the tests.", "One test fails because main returns 1."])
         let read = run.activities.filter { $0.toolName == "Read" }
         #expect(read.last?.state == "completed" && read.last?.kind == "read" && read.last?.summary == "src/main.ts")
@@ -166,8 +168,8 @@ struct OpencodeTests {
         #expect(edit.last?.state == "error" && edit.last?.output?.contains("rejected") == true)
         // The card: the command, allowed once with opencode's own option id.
         let card = try #require(run.permissions.first)
-        #expect(card.toolName == "Bash" && card.toolUseId == "toolu_02BashB" && card.summary == "npm test" && card.canAllow)
-        #expect(card.inputJSON.contains("\"command\" : \"npm test\""))
+        #expect(card.toolName == "Bash" && card.toolUseId == "call_02ShellB" && card.summary == "npm test" && card.canAllow)
+        #expect(card.inputJSON.contains("\"command\" : \"npm test\"") && card.inputJSON.contains("\"cwd\" : \"/tmp/project\""))
         #expect(ToolPermissionPresentation.make(toolName: card.toolName, inputJSON: card.inputJSON).primaryCode?.value == "npm test")
         #expect(run.permissions.map(\.state) == ["pending", "allowed"])
         let answer = try #require(run.writes.first { $0["result"] != nil })
@@ -190,8 +192,10 @@ struct OpencodeTests {
     @Test func aSignedOutRunFailsAsALostSignIn() throws {
         let run = try Self.replay("auth")
         #expect(run.parser.failed && run.parser.authFailure && run.channel.failed && run.completed == 1)
-        #expect(run.logs.contains { $0.kind == "error" && $0.text.contains("API key is missing") })
-        #expect(CLIAuthFailure.opencode(text: "ProviderAuthError: Anthropic API key is missing"))
+        #expect(run.logs.contains { $0.kind == "error" && $0.text.contains("provider authentication required") })
+        #expect(CLIAuthFailure.opencode(text: "provider authentication required"))
+        #expect(CLIAuthFailure.opencode(text: "Free usage limit reached. Connect a provider or subscribe to OpenCode Go"))
+        #expect(CLIAuthFailure.opencode(text: "Authorization failed"))
         #expect(CLIAuthFailure.opencode(text: "AI_APICallError: 401 Unauthorized"))
         #expect(CLIAuthFailure.opencode(text: "Run `opencode auth login` to add a provider"))
         #expect(!CLIAuthFailure.opencode(text: "Model not found: anthropic/claude-x"))
@@ -212,15 +216,17 @@ struct OpencodeTests {
 
     @Test func permissionModesAreOpencodesRulesForTheRun() throws {
         #expect(ProviderOptions.permissionModes(provider: "opencode") == ["manual", "plan", "acceptEdits", "fullAccess"])
-        #expect(OpencodeAgent.permissionRules(mode: "manual")["edit"] == "ask" && OpencodeAgent.permissionRules(mode: "manual")["bash"] == "ask")
-        #expect(OpencodeAgent.permissionRules(mode: "acceptEdits")["edit"] == "allow" && OpencodeAgent.permissionRules(mode: "acceptEdits")["bash"] == "ask")
+        func effect(_ mode: String, _ action: String) -> String? { OpencodeAgent.permissionRules(mode: mode).last { $0["action"] == action || $0["action"] == "*" }?["effect"] }
+        #expect(effect("manual", "edit") == "ask" && effect("manual", "shell") == "ask")
+        #expect(effect("acceptEdits", "edit") == "allow" && effect("acceptEdits", "shell") == "ask")
+        // OpenCode 2 allows folders outside the project by default: every asking mode asks there.
+        for mode in ["manual", "acceptEdits", "plan"] { #expect(effect(mode, "external_directory") == "ask" && effect(mode, "webfetch") == "ask" && effect(mode, "subagent") == "ask") }
         // Plan keeps the plan agent's own edit denial: no edit rule over it.
-        #expect(OpencodeAgent.permissionRules(mode: "plan")["edit"] == nil)
-        #expect(OpencodeAgent.permissionRules(mode: "fullAccess")["*"] == "allow" && OpencodeAgent.permissionRules(mode: "fullAccess")["external_directory"] == "allow")
-        // The question tool cannot be answered from a pane.
-        for mode in ["manual", "plan", "acceptEdits", "fullAccess"] { #expect(OpencodeAgent.permissionRules(mode: mode)["question"] == "deny") }
-        let json = try #require(try JSONSerialization.jsonObject(with: Data(OpencodeAgent.permissionEnvironment(mode: "manual").utf8)) as? [String: String])
-        #expect(json == OpencodeAgent.permissionRules(mode: "manual"))
+        #expect(effect("plan", "edit") == nil)
+        #expect(OpencodeAgent.permissionRules(mode: "fullAccess") == [["action": "*", "resource": "*", "effect": "allow"]])
+        #expect(OpencodeAgent.permissionRules(mode: "manual").allSatisfy { $0["resource"] == "*" && Set($0.keys) == ["action", "resource", "effect"] })
+        let json = try #require(try JSONSerialization.jsonObject(with: Data(OpencodeAgent.configContent(mode: "manual").utf8)) as? [String: [[String: String]]])
+        #expect(json == ["permissions": OpencodeAgent.permissionRules(mode: "manual")])
         #expect(OpencodeAgent.configValues(StartRunRequest(sessionId: "p", workspaceId: "w", input: "x", provider: "opencode")).isEmpty)
         #expect(OpencodeAgent.configValues(StartRunRequest(sessionId: "p", workspaceId: "w", input: "x", provider: "opencode", settings: RunSettings(permissionMode: "plan"))).map(\.id) == ["mode"])
         #expect(try ProviderService.arguments(StartRunRequest(sessionId: "p", workspaceId: "w", input: "x", provider: "opencode"), pluginDirectory: URL(fileURLWithPath: "/tmp")) == ["acp"])
@@ -237,40 +243,45 @@ struct OpencodeTests {
         #expect(ProviderService.normalizeOpencodeCatalog("").models.map(\.value) == ["default"])
     }
 
-    @Test func signInIsAuthJsonOrAnEnvironmentKeyAndOtherwiseZensFreeModelsOnly() throws {
-        let oauth = Data(#"{"anthropic":{"type":"oauth","refresh":"r","access":"a","expires":1},"openai":{"type":"api","key":"sk-secret"}}"#.utf8)
-        let signedIn = CLIAccountSupport.opencodeStatus(exitCode: 0, authJSON: oauth, environment: [:])
-        #expect(signedIn.loggedIn == true && signedIn.methodId == CLIAccountMethod.opencodeSubscription && signedIn.account == "anthropic, openai" && !signedIn.canSignOut)
-        // A credential is never shown.
-        #expect(![signedIn.account, signedIn.detail, signedIn.method].compactMap { $0 }.joined().contains("sk-secret"))
-        #expect(CLIAccountSupport.opencodeStatus(exitCode: 0, authJSON: nil, environment: ["OPENROUTER_API_KEY": "x"]).loggedIn == true)
-        let free = CLIAccountSupport.opencodeStatus(exitCode: 0, authJSON: Data("{}".utf8), environment: [:])
+    static let authList = Data(#"[{"id":"anthropic","name":"Anthropic","connections":[{"type":"credential","id":"cred_01","label":"OAuth","method":"oauth"}]},{"id":"openrouter","name":"OpenRouter","connections":[{"type":"env","name":"OPENROUTER_API_KEY"}]},{"id":"openai","name":"OpenAI","connections":[{"type":"credential","id":"cred_02","label":"API key","method":"key","status":{"status":"needs_auth","message":"expired"}}]}]"#.utf8)
+
+    @Test func signInIsWhatAuthListNamesAndOtherwiseZensFreeModelsOnly() throws {
+        let signedIn = CLIAccountSupport.opencodeStatus(exitCode: 0, output: Self.authList)
+        // A connection that needs signing in again does not count.
+        #expect(signedIn.loggedIn == true && signedIn.methodId == CLIAccountMethod.opencodeSubscription && signedIn.account == "Anthropic, OpenRouter" && !signedIn.canSignOut)
+        let environment = CLIAccountSupport.opencodeStatus(exitCode: 0, output: Data(#"[{"id":"openrouter","name":"OpenRouter","connections":[{"type":"env","name":"OPENROUTER_API_KEY"}]}]"#.utf8))
+        #expect(environment.loggedIn == true && environment.method == L("cliAccounts.method.opencodeEnvironmentKey"))
+        let free = CLIAccountSupport.opencodeStatus(exitCode: 0, output: Data("[]".utf8))
         #expect(free.loggedIn == false && free.detail == L("settings.cliAccounts.detailOpencodeFreeOnly"))
-        #expect(CLIAccountSupport.opencodeStatus(exitCode: -1, authJSON: oauth, environment: [:]).loggedIn == nil)
+        #expect(CLIAccountSupport.opencodeStatus(exitCode: -1, output: Self.authList).loggedIn == nil)
+        #expect(CLIAccountSupport.opencodeStatus(exitCode: 0, output: Data("No authenticated integrations\n".utf8)).loggedIn == nil)
+        // OpenCode 1 has no `--format json`: its version names it, and it asks for OpenCode 2.
+        let legacy = CLIAccountSupport.opencodeStatus(exitCode: 1, output: Data(), version: "1.19.5")
+        #expect(legacy.loggedIn == nil && legacy.detail == L("settings.cliAccounts.detailOpencodeV1"))
         #expect(CLIAuthFailure.signInCanFix(free) && !CLIAuthFailure.signInCanFix(signedIn))
+        #expect(OpencodeAgent.isSupported(version: "opencode v2.2.7") && !OpencodeAgent.isSupported(version: "1.19.5") && !OpencodeAgent.isSupported(version: "local"))
         let home = URL(fileURLWithPath: "/Users/someone")
-        #expect(OpencodeAgent.authFile(home: home, environment: [:]).path == "/Users/someone/.local/share/opencode/auth.json")
-        #expect(OpencodeAgent.authFile(home: home, environment: ["XDG_DATA_HOME": "/data"]).path == "/data/opencode/auth.json")
-        #expect(OpencodeAgent.authJSON(home: home, environment: ["OPENCODE_AUTH_CONTENT": "{\"x\":{\"type\":\"api\",\"key\":\"k\"}}"]).map { OpencodeAgent.credentials(authJSON: $0).providers } == ["x"])
+        #expect(OpencodeAgent.database(home: home, environment: [:]).path == "/Users/someone/.local/share/opencode/opencode.db")
+        #expect(OpencodeAgent.database(home: home, environment: ["XDG_DATA_HOME": "/data", "OPENCODE_CHANNEL": "canary"]).path == "/data/opencode/opencode-canary.db")
+        #expect(OpencodeAgent.database(home: home, environment: ["OPENCODE_DB": "/tmp/x.db"]).path == "/tmp/x.db")
         #expect(CLIAccountSupport.loginCommand(provider: "opencode") == "opencode auth login")
-        #expect(CLIAccountSupport.statusArguments(provider: "opencode") == ["opencode", "auth", "list"])
+        #expect(CLIAccountSupport.statusArguments(provider: "opencode") == ["opencode", "auth", "list", "--format", "json", "--standalone"])
         #expect(CLITerminalSignIn.table["opencode"]?.command == "opencode auth login")
     }
 
-    @Test func theAccountServiceReadsTheHomesAuthFile() async throws {
+    @Test func theAccountServiceAsksAuthListAndNamesOpenCode1() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
         let bin = directory.appendingPathComponent("bin"); try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let home = directory.appendingPathComponent("home"); try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-        let script = bin.appendingPathComponent("opencode")
-        try Data("#!/bin/sh\necho 'Credentials ~/.local/share/opencode/auth.json' >&2\nexit 0\n".utf8).write(to: script)
+        let script = bin.appendingPathComponent("opencode"), listing = directory.appendingPathComponent("list.json")
+        try Data("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '1.19.5'; exit 0; fi\nif [ -f '\(listing.path)' ]; then cat '\(listing.path)'; exit 0; fi\necho 'Unknown argument: format' >&2\nexit 1\n".utf8).write(to: script)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
         let service = CLIAccountService(environment: ["PATH": bin.path + ":/usr/bin:/bin"], home: home)
-        let signedOut = await service.status(provider: "opencode")
-        #expect(signedOut.loggedIn == false, "\(signedOut)")
-        let folder = home.appendingPathComponent(".local/share/opencode"); try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try Data(#"{"github-copilot":{"type":"oauth","refresh":"r","access":"a","expires":1}}"#.utf8).write(to: folder.appendingPathComponent("auth.json"))
+        let legacy = await service.status(provider: "opencode")
+        #expect(legacy.installed && legacy.loggedIn == nil && legacy.detail.contains(L("settings.cliAccounts.detailOpencodeV1")), "\(legacy)")
+        try Self.authList.write(to: listing)
         let status = await service.status(provider: "opencode")
-        #expect(status.installed && status.loggedIn == true && status.account == "github-copilot")
+        #expect(status.installed && status.loggedIn == true && status.account == "Anthropic, OpenRouter")
     }
 
     // MARK: Setup
@@ -284,13 +295,17 @@ struct OpencodeTests {
         let item = try #require(catalog.item("opencode"))
         #expect(item.group == .agent && !item.required && item.provider == "opencode" && item.platforms[.windows] == nil)
         let entry = try #require(item.platforms[.macos])
-        #expect(entry.probe == .executable(name: "opencode", minimumVersion: nil) && entry.install == .npmGlobal("opencode-ai") && entry.prerequisites == ["node"])
+        #expect(entry.probe == .executable(name: "opencode", minimumVersion: "2.0.0") && entry.install == .npmGlobal("@opencode/cli") && entry.prerequisites == ["node"])
+        // OpenCode 1 (npm opencode-ai) owns the same command: it goes first, and an OpenCode 1 reads out of date and may be picked.
+        #expect(SetupScript.body(entry) == "npm uninstall -g 'opencode-ai' >/dev/null 2>&1; npm install -g '@opencode/cli'")
+        #expect(SetupRowState.isSelectable(.outdated, item: item, platform: .macos))
+        #expect(!SetupRowState.isSelectable(.outdated, item: try #require(catalog.item("pi")), platform: .macos))
         // After pi, among the agents.
         let agents = catalog.items.filter { $0.group == .agent }.map(\.id)
         #expect(agents.last == "opencode" && agents.contains("pi"))
         #expect(SetupPlan.order(selected: ["opencode"], catalog: catalog, platform: .macos, isSatisfied: { $0 == "git" }) == ["homebrew", "node", "opencode"])
         #expect(try SetupCatalog.bundled().item("opencode") != nil)
-        #expect(ComponentCatalog.installCommand(provider: "opencode") == "npm install -g opencode-ai")
+        #expect(ComponentCatalog.installCommand(provider: "opencode") == "npm install -g @opencode/cli")
         // A Mac-only item names the Mac alone.
         let both = String(decoding: macOnly, as: UTF8.self).replacingOccurrences(of: "\"macos\": {", with: "\"windows\": { \"probe\": { \"kind\": \"executable\", \"name\": \"opencode\" }, \"install\": { \"kind\": \"npmGlobal\", \"package\": \"opencode-ai\" }, \"prerequisites\": [\"node\"], \"source\": \"https://github.com/anomalyco/opencode\" }, \"macos\": {")
         #expect(throws: (any Error).self) { try SetupCatalogDecoder.decode(shared, macOnly: Data(both.utf8)) }
@@ -306,21 +321,19 @@ struct OpencodeTests {
         let path = workspace.resolvingSymlinksInPath().path
         let now = Date()
         let ms = Int64(now.timeIntervalSince1970 * 1_000)
+        let model = #"{"id":"claude-sonnet-4-5","providerID":"anthropic"}"#
         try sqlite(data.appendingPathComponent("opencode.db"), [
-            "CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT, parent_id TEXT, slug TEXT, directory TEXT, title TEXT, version TEXT, time_created INTEGER, time_updated INTEGER, time_archived INTEGER)",
-            "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, data TEXT)",
-            "CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, data TEXT)",
-            "INSERT INTO session VALUES ('\(Self.sessionID)', 'p', NULL, 's', '\(path)', 'Fix the failing test', '1.19.5', \(ms - 9000), \(ms - 1000), NULL)",
-            "INSERT INTO session VALUES ('ses_8a0000000000Ab0000000000Cd', 'p', NULL, 's', '\(path)', 'New session - 2026-11-10T10:00:00.000Z', '1.19.5', \(ms - 8000), \(ms - 2000), NULL)",
-            "INSERT INTO session VALUES ('ses_7a0000000000Ab0000000000Ce', 'p', '\(Self.sessionID)', 's', '\(path)', 'Child session', '1.19.5', \(ms - 8000), \(ms - 500), NULL)",
-            "INSERT INTO session VALUES ('ses_6a0000000000Ab0000000000Cf', 'p', NULL, 's', '/elsewhere', 'Other folder', '1.19.5', \(ms - 8000), \(ms - 500), NULL)",
-            "INSERT INTO session VALUES ('ses_5a0000000000Ab0000000000Cg', 'p', NULL, 's', '\(path)', 'Archived', '1.19.5', \(ms - 8000), \(ms - 500), \(ms))",
-            "INSERT INTO message VALUES ('msg_1', '\(Self.sessionID)', 1, '{\"role\":\"user\"}')",
-            "INSERT INTO message VALUES ('msg_2', '\(Self.sessionID)', 2, '{\"role\":\"assistant\",\"providerID\":\"anthropic\",\"modelID\":\"claude-sonnet-4-5\"}')",
-            "INSERT INTO message VALUES ('msg_3', '\(Self.sessionID)', 3, '{\"role\":\"user\"}')",
-            "INSERT INTO part VALUES ('prt_1', 'msg_1', '\(Self.sessionID)', '{\"type\":\"text\",\"text\":\"why does main return 1?\"}')",
-            "INSERT INTO message VALUES ('msg_4', 'ses_8a0000000000Ab0000000000Cd', 1, '{\"role\":\"user\"}')",
-            "INSERT INTO part VALUES ('prt_2', 'msg_4', 'ses_8a0000000000Ab0000000000Cd', '{\"type\":\"text\",\"text\":\"hello\"}')",
+            "CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, parent_id TEXT, slug TEXT, directory TEXT, title TEXT, version TEXT, model TEXT, time_created INTEGER, time_updated INTEGER, time_archived INTEGER)",
+            "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, time_updated INTEGER, data TEXT)",
+            "INSERT INTO session_v2 VALUES ('\(Self.sessionID)', 'p', NULL, 's', '\(path)', 'Fix the failing test', '2.2.7', '\(model)', \(ms - 9000), \(ms - 1000), NULL)",
+            "INSERT INTO session_v2 VALUES ('ses_8a0000000000Ab0000000000Cd', 'p', NULL, 's', '\(path)', 'New session - 2026-11-10T10:00:00.000Z', '2.2.7', NULL, \(ms - 8000), \(ms - 2000), NULL)",
+            "INSERT INTO session_v2 VALUES ('ses_7a0000000000Ab0000000000Ce', 'p', '\(Self.sessionID)', 's', '\(path)', 'Child session', '2.2.7', NULL, \(ms - 8000), \(ms - 500), NULL)",
+            "INSERT INTO session_v2 VALUES ('ses_6a0000000000Ab0000000000Cf', 'p', NULL, 's', '/elsewhere', 'Other folder', '2.2.7', NULL, \(ms - 8000), \(ms - 500), NULL)",
+            "INSERT INTO session_v2 VALUES ('ses_5a0000000000Ab0000000000Cg', 'p', NULL, 's', '\(path)', 'Archived', '2.2.7', NULL, \(ms - 8000), \(ms - 500), \(ms))",
+            "INSERT INTO session_message VALUES ('msg_1', '\(Self.sessionID)', 'user', 1, 1, 1, '{\"text\":\"why does main return 1?\",\"files\":[]}')",
+            "INSERT INTO session_message VALUES ('msg_2', '\(Self.sessionID)', 'assistant', 2, 2, 2, '{\"agent\":\"build\",\"content\":[]}')",
+            "INSERT INTO session_message VALUES ('msg_3', '\(Self.sessionID)', 'user', 3, 3, 3, '{\"text\":\"and now?\"}')",
+            "INSERT INTO session_message VALUES ('msg_4', 'ses_8a0000000000Ab0000000000Cd', 'user', 1, 1, 1, '{\"text\":\"hello\"}')",
         ])
         let listing = ResumableSessions.listing(ResumableSessionQuery(workspacePath: workspace.path, home: home, now: now), provider: "opencode")
         #expect(listing.items.map(\.sessionID) == [Self.sessionID, "ses_8a0000000000Ab0000000000Cd"])
@@ -348,15 +361,15 @@ struct OpencodeTests {
     }
     /// A stand-in `opencode`: answers each of the channel's requests with the fixture's next
     /// response, and stays up after the prompt's answer when `linger` (as an ACP server may).
-    private func fakeOpencode(_ directory: URL, fixture: String, linger: Bool) throws -> URL {
+    private func fakeOpencode(_ directory: URL, fixture: String, linger: Bool, version: String = "opencode v2.2.7") throws -> URL {
         let binary = directory.appendingPathComponent("opencode")
         let fixtureFile = Self.root.appendingPathComponent("native/contracts/fixtures/opencode-acp-\(fixture).jsonl").path
         let source = """
         #!/bin/sh
-        if [ "$1" = "--version" ]; then printf '1.19.5\\n'; exit 0; fi
+        if [ "$1" = "--version" ]; then printf '\(version)\\n'; exit 0; fi
         if [ "$1" = "models" ]; then printf 'opencode/big-pickle\\n'; exit 0; fi
         printf '%s\\n' "$@" > argv.txt
-        printf '%s\\n' "$OPENCODE_PERMISSION" > permission.txt
+        printf '%s\\n' "$OPENCODE_CONFIG_CONTENT" > config.txt
         exec 3<&0
         while IFS= read -r frame; do
           case "$frame" in
@@ -395,8 +408,8 @@ struct OpencodeTests {
             #expect(all.contains { $0.type == "usage" && $0.usage?.provider == "opencode" && $0.usage?.costUSD == 0.0123 })
             let argv = try String(contentsOf: directory.appendingPathComponent("argv.txt"), encoding: .utf8).split(separator: "\n").map(String.init)
             #expect(argv == ["acp"])
-            let permission = try String(contentsOf: directory.appendingPathComponent("permission.txt"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-            #expect(permission == OpencodeAgent.permissionEnvironment(mode: "manual"))
+            let config = try String(contentsOf: directory.appendingPathComponent("config.txt"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            #expect(config == OpencodeAgent.configContent(mode: "manual"))
             let stdin = try String(contentsOf: directory.appendingPathComponent("stdin.txt"), encoding: .utf8).split(separator: "\n").map(String.init)
             #expect(stdin.count == 3 && stdin[0].contains("\"initialize\"") && stdin[1].contains("\"session/new\"") && stdin[2].contains("\"session/prompt\""))
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
@@ -415,6 +428,21 @@ struct OpencodeTests {
             try await wait { events.values().contains { $0.status == "completed" || $0.status == "error" } }
             let status = events.values().last { $0.type == "status" }
             #expect(status?.status == "error" && status?.reason == "auth")
+        } catch { await runner.shutdown(); await service.shutdown(); throw error }
+        await runner.shutdown(); await service.shutdown()
+    }
+
+    @Test func anOpenCode1IsNotRunAndAsksForOpenCode2() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let binary = try fakeOpencode(directory, fixture: "answer", linger: false, version: "1.19.5")
+        let service = ProviderService(binaryOverrides: ["opencode": binary])
+        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { _ in })
+        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+        do {
+            await #expect(throws: (any Error).self) {
+                try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "hi", provider: "opencode"), workspace: workspace)
+            }
+            #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("argv.txt").path))
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
         await runner.shutdown(); await service.shutdown()
     }

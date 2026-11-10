@@ -553,6 +553,7 @@ public actor ProcessRunner {
                 guard let command = await providerService.command(provider: request.provider, workspacePath: workspace.path, snapshot: snapshot) else { throw MightyError(L("run.error.cliExecutableMissing", ["name": ProviderOptions.label(request.provider)])) }
                 try Task.checkCancellation()
                 guard !run.stopping, !shuttingDown, !run.finished else { await cancelPending(run); if !request.attachments.isEmpty { throw CancellationError() }; return }
+                if request.provider == "opencode", !OpencodeAgent.isSupported(version: command.version) { throw MightyError(L("run.error.opencodeV1", ["version": command.version])) }
                 if request.provider == "claude", !ProviderService.supportsMods(command.version) { throw MightyError(L("run.error.modsVersionUnsupported", ["version": command.version])) }
                 try CoreValidation.validateCapabilities(request, capabilities: ProviderService.capabilities(provider: request.provider, version: command.version))
                 let catalog = await providerService.modelCatalog(provider: request.provider, workspacePath: workspace.path, snapshot: snapshot)
@@ -602,8 +603,8 @@ public actor ProcessRunner {
                     arguments = prepared.arguments; standardInput = prepared.standardInput
                 }
                 if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
-                // opencode's rules for this run only, merged over the user's own config.
-                if request.provider == "opencode" { environment["OPENCODE_PERMISSION"] = OpencodeAgent.permissionEnvironment(mode: request.settings.permissionMode) }
+                // OpenCode 2's rules for this run only, read after the user's own config.
+                if request.provider == "opencode" { environment["OPENCODE_CONFIG_CONTENT"] = OpencodeAgent.configContent(mode: request.settings.permissionMode) }
                 if interactivePermissions {
                     // The CLI's authoritative "turn over, no background agent left" signal.
                     environment["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1"

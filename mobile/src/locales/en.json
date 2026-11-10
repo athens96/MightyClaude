@@ -3382,7 +3382,7 @@
   "slash.source.piSkill": "pi skill",
   "accountUsage.detailPiUnavailable": "pi has no way to read account usage. Each request's tokens and cost are in the pane's usage.",
   "setup.item.opencode.title": "opencode CLI",
-  "setup.item.opencode.detail": "An open-source coding agent CLI that works with many model providers. Needs Node.js and is installed globally with npm.",
+  "setup.item.opencode.detail": "An open-source coding agent CLI (OpenCode 2) that works with many model providers. Needs Node.js and is installed globally with npm. An OpenCode 1 installed with npm is removed first.",
   "run.blocked.opencodeRemote": "opencode runs on this computer only for now. In a remote workspace use Claude, Codex or Antigravity.",
   "settings.cliUpdate.detailOpencode": "Uses opencode's own update command (opencode upgrade).",
   "accountUsage.detailOpencodeUnavailable": "opencode has no way to read account usage. Each request's tokens and cost are in the pane's usage.",
@@ -3416,5 +3416,8 @@
   "acp.channel.tooManyPending": "Too many approval requests are waiting.",
   "acp.channel.requestTooLarge": "An approval request too large to show in full was denied.",
   "acp.channel.permissionSummary": "Tool approval",
-  "acp.channel.denyOnly": "The agent offers no allow-once choice, so it can only be denied."
+  "acp.channel.denyOnly": "The agent offers no allow-once choice, so it can only be denied.",
+  "settings.cliAccounts.detailOpencodeV1": "The installed opencode is OpenCode 1. This app uses OpenCode 2: install opencode again from the setup screen.",
+  "settings.cliUpdate.detailOpencodeV1": "OpenCode 1 doesn't update to OpenCode 2. Install opencode again from the setup screen.",
+  "run.error.opencodeV1": "The installed opencode ({version}) is OpenCode 1. This app uses OpenCode 2: install opencode again from the setup screen."
 }

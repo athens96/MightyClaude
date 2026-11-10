@@ -477,7 +477,7 @@ final class ExecutionGraphTracker {
 
     // MARK: ACP (opencode)
     // One block for the request: the answer is the streamed text (`antigravityAnswer`), and the
-    // prompt's result carries the last model call's tokens.
+    // prompt's result carries the turn's tokens.
     private func consumeACP(_ value: [String: Any]) {
         guard value["type"] as? String == "acp.prompt_result", let usage = value["usage"] as? [String: Any] else { return }
         let mapped = ["input_tokens": usage["inputTokens"], "output_tokens": usage["outputTokens"], "cache_read_input_tokens": usage["cachedReadTokens"], "cache_creation_input_tokens": usage["cachedWriteTokens"]].compactMapValues { $0 }

@@ -305,9 +305,9 @@ public actor ProviderService {
             if let resume = request.resumeId { args += ["--session", resume] }
             return args
         case "opencode":
-            // One ACP server per request (`opencode acp`): the session, the settings and the prompt
-            // travel as JSON-RPC on stdio (`ACPChannel`), the permission mode as the run's
-            // `OPENCODE_PERMISSION` (`OpencodeAgent.permissionRules`).
+            // One ACP server per request (`opencode acp`, OpenCode 2): the session, the settings and
+            // the prompt travel as JSON-RPC on stdio (`ACPChannel`), the permission mode as the
+            // run's `OPENCODE_CONFIG_CONTENT` (`OpencodeAgent.permissionRules`).
             return ["acp"]
         default: throw MightyError(L("common.unsupportedCli"))
         }
@@ -342,7 +342,7 @@ public actor ProviderService {
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.antigravitySource")) : fallback
     }
     static func antigravityCatalog(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
-        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: ["models"], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 262_144),
+        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: ["models", "--standalone"], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 262_144),
               result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("gemini") }
         return normalizeAntigravityCatalog(String(decoding: result.stdout, as: UTF8.self))
     }
@@ -367,7 +367,7 @@ public actor ProviderService {
               result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("pi") }
         return normalizePiCatalog(String(decoding: result.stdout, as: UTF8.self))
     }
-    /// `opencode models`: one `provider/model` per line, opencode Zen's (`opencode/…`) first.
+    /// `opencode models --standalone` (without OpenCode 2's background service): one `provider/model` per line.
     /// Without a sign-in it lists Zen's free models, which still run. Anything that is not a
     /// `provider/model` (a notice, a refresh line) is left out; an empty list keeps the fallback.
     public nonisolated static func normalizeOpencodeCatalog(_ text: String) -> ModelCatalog {

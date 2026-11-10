@@ -97,15 +97,16 @@ public enum CLIAuthFailure {
         return ["no api key", "no models available", "use /login", "run /login", "please /login"].contains(where: lowered.contains)
     }
 
-    /// opencode's own sign-in failures, as an ACP error or a failed call's words: its
-    /// `ProviderAuthError` ("… API key is missing", "Authentication required"), a provider's
-    /// 401 or an invalid key, and its hint to run `opencode auth login`. A candidate signal
-    /// only: recovery confirms with opencode's status (`auth.json` and the environment).
+    /// OpenCode 2's own sign-in failures, as an ACP error or a failed call's words: its
+    /// `provider.auth` error (ACP -32000 "provider authentication required", "Authorization
+    /// failed"), the free models' limit ("Free usage limit reached. Connect a provider …"),
+    /// a provider's 401 or an invalid key, and its hint to run `opencode auth login`. A
+    /// candidate signal only: recovery confirms with `opencode auth list`.
     public static func opencode(text: String) -> Bool {
         let lowered = text.prefix(16_384).lowercased()
         // A proxy's "407 Proxy Authentication Required" is not a lost sign-in.
         if lowered.contains("proxy authentication") { return false }
-        if ["providerautherror", "authentication required", "auth required", "api key is missing", "invalid api key", "invalid x-api-key", "incorrect api key", "opencode auth login", "token has expired", "please log in", "not logged in"].contains(where: lowered.contains) { return true }
+        if ["provider authentication required", "provider.auth", "authorization failed", "free usage limit reached", "connect a provider", "providerautherror", "authentication required", "auth required", "api key is missing", "invalid api key", "invalid x-api-key", "incorrect api key", "opencode auth login", "token has expired", "please log in", "not logged in"].contains(where: lowered.contains) { return true }
         return lowered.contains("401") && (lowered.contains("unauthorized") || lowered.contains("authentication"))
     }
 

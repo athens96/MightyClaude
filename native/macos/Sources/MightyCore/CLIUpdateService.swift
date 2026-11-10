@@ -161,8 +161,13 @@ public actor CLIUpdateService {
             installation.detail = L("settings.cliUpdate.detailPi")
             return CLIUpdatePlan(installation: installation, invocation: CLIUpdateInvocation(executable: command.executable, arguments: ["update", "self"], environment: environment))
         }
+        if provider == "opencode", !OpencodeAgent.isSupported(version: command.version) {
+            // OpenCode 1 is replaced from the setup screen (its own upgrade stays on 1).
+            installation.method = "opencode"; installation.detail = L("settings.cliUpdate.detailOpencodeV1")
+            return CLIUpdatePlan(installation: installation, invocation: nil)
+        }
         if provider == "opencode" {
-            // opencode upgrades itself and finds out how it was installed (npm, Homebrew, its script).
+            // OpenCode 2 upgrades itself and finds out how it was installed (npm, Homebrew, its script).
             installation.method = "opencode"; installation.canUpdate = true
             installation.detail = L("settings.cliUpdate.detailOpencode")
             return CLIUpdatePlan(installation: installation, invocation: CLIUpdateInvocation(executable: command.executable, arguments: ["upgrade"], environment: environment))

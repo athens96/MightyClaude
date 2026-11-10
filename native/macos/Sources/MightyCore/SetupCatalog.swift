@@ -104,6 +104,12 @@ public struct SetupCatalog: Sendable, Equatable {
     /// file stays the contract Windows embeds as is (an item Windows does not know yet
     /// would stop its decoder). An item moves into the shared file once Windows has it.
     public static let macOnlyFileName = "setup-catalog-macos.json"
+    /// npm packages whose install replaces an older package owning the same command:
+    /// OpenCode 2 (`@opencode/cli`) takes `opencode` over from OpenCode 1 (`opencode-ai`).
+    public static let npmReplaces: [String: String] = ["@opencode/cli": OpencodeAgent.legacyPackage]
+    /// Agent CLIs that an out-of-date copy cannot update into (OpenCode 1's own upgrade stays
+    /// on 1): their row is offered for install again instead of the CLI update.
+    public static let reinstalledWhenOutdated: Set<String> = ["opencode"]
 
     /// Hosts an official script, a vendor page, a marketplace URL or a skill's
     /// repository may live on. The catalog cannot add one.

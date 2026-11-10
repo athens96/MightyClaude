@@ -3382,7 +3382,7 @@
   "slash.source.piSkill": "pi 스킬",
   "accountUsage.detailPiUnavailable": "pi는 계정 사용량을 조회하는 방법이 없습니다. 요청별 토큰과 비용은 창의 사용량에서 볼 수 있습니다.",
   "setup.item.opencode.title": "opencode CLI",
-  "setup.item.opencode.detail": "여러 모델 제공자를 쓰는 오픈소스 코딩 에이전트 CLI입니다. Node.js가 필요하며 npm으로 전역 설치합니다.",
+  "setup.item.opencode.detail": "여러 모델 제공자를 쓰는 오픈소스 코딩 에이전트 CLI(OpenCode 2)입니다. Node.js가 필요하며 npm으로 전역 설치합니다. npm으로 설치한 OpenCode 1이 있으면 먼저 지웁니다.",
   "run.blocked.opencodeRemote": "opencode는 아직 이 컴퓨터에서만 실행할 수 있습니다. 원격 작업 공간에서는 Claude, Codex, Antigravity를 쓰세요.",
   "settings.cliUpdate.detailOpencode": "opencode의 자체 업데이트 명령(opencode upgrade)을 사용합니다.",
   "accountUsage.detailOpencodeUnavailable": "opencode는 계정 사용량을 조회하는 방법이 없습니다. 요청별 토큰과 비용은 창의 사용량에서 볼 수 있습니다.",
@@ -3416,5 +3416,8 @@
   "acp.channel.tooManyPending": "대기 중인 승인 요청 수 제한을 초과했습니다.",
   "acp.channel.requestTooLarge": "전체 내용을 표시할 수 없는 승인 요청을 거부했습니다.",
   "acp.channel.permissionSummary": "도구 사용 승인",
-  "acp.channel.denyOnly": "에이전트가 한 번 허용을 제공하지 않아 거부만 가능합니다."
+  "acp.channel.denyOnly": "에이전트가 한 번 허용을 제공하지 않아 거부만 가능합니다.",
+  "settings.cliAccounts.detailOpencodeV1": "설치된 opencode는 OpenCode 1입니다. 이 앱은 OpenCode 2를 씁니다. 구성 요소 화면에서 opencode를 다시 설치하세요.",
+  "settings.cliUpdate.detailOpencodeV1": "OpenCode 1은 OpenCode 2로 업데이트되지 않습니다. 구성 요소 화면에서 opencode를 다시 설치하세요.",
+  "run.error.opencodeV1": "설치된 opencode({version})는 OpenCode 1입니다. 이 앱은 OpenCode 2를 씁니다. 구성 요소 화면에서 opencode를 다시 설치하세요."
 }

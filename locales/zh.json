@@ -3382,7 +3382,7 @@
   "slash.source.piSkill": "pi 技能",
   "accountUsage.detailPiUnavailable": "pi 无法读取账户用量。每次请求的令牌和费用可在窗格的用量中查看。",
   "setup.item.opencode.title": "opencode CLI",
-  "setup.item.opencode.detail": "支持多家模型提供商的开源编码智能体 CLI。需要 Node.js，通过 npm 全局安装。",
+  "setup.item.opencode.detail": "支持多家模型提供商的开源编码智能体 CLI（OpenCode 2）。需要 Node.js，通过 npm 全局安装。如有通过 npm 安装的 OpenCode 1，会先将其删除。",
   "run.blocked.opencodeRemote": "opencode 目前只能在本机运行。远程工作区请使用 Claude、Codex 或 Antigravity。",
   "settings.cliUpdate.detailOpencode": "使用 opencode 自带的更新命令（opencode upgrade）。",
   "accountUsage.detailOpencodeUnavailable": "opencode 无法读取账户用量。每次请求的令牌和费用可在窗格的用量中查看。",
@@ -3416,5 +3416,8 @@
   "acp.channel.tooManyPending": "等待中的审批请求过多。",
   "acp.channel.requestTooLarge": "已拒绝无法完整显示的审批请求。",
   "acp.channel.permissionSummary": "工具使用审批",
-  "acp.channel.denyOnly": "智能体未提供“允许一次”选项，因此只能拒绝。"
+  "acp.channel.denyOnly": "智能体未提供“允许一次”选项，因此只能拒绝。",
+  "settings.cliAccounts.detailOpencodeV1": "已安装的 opencode 是 OpenCode 1。此应用使用 OpenCode 2，请在设置界面中重新安装 opencode。",
+  "settings.cliUpdate.detailOpencodeV1": "OpenCode 1 无法更新为 OpenCode 2。请在设置界面中重新安装 opencode。",
+  "run.error.opencodeV1": "已安装的 opencode（{version}）是 OpenCode 1。此应用使用 OpenCode 2，请在设置界面中重新安装 opencode。"
 }

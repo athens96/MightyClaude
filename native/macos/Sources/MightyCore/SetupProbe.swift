@@ -200,7 +200,7 @@ public enum SetupRowState: String, Sendable, Equatable {
         guard item.platforms[platform]?.install.runsInTerminal == true else { return false }
         switch state {
         case .missing, .failed: return true
-        case .outdated: return item.provider == nil
+        case .outdated: return item.provider == nil || SetupCatalog.reinstalledWhenOutdated.contains(item.id)
         case .checking, .installed, .attention, .installing: return false
         }
     }

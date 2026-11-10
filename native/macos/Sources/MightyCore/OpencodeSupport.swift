@@ -1,66 +1,74 @@
 import Foundation
 import SQLite3
 
-/// Where opencode (`opencode-ai`, OpenCode 1) keeps its files, and what the app reads of
-/// them: whether any sign-in exists (`auth.json`, or a provider API key in the environment),
-/// and the session list of `opencode.db` for "resume an earlier session". The app never
-/// writes any of it and never shows a credential: only which providers have one.
+/// Where OpenCode 2 (`@opencode/cli`) keeps its files, and what the app reads of them:
+/// the sign-ins (`opencode auth list --format json`: integration names only, never a
+/// credential) and the session list of `opencode.db` for "resume an earlier session".
+/// The app never writes any of it.
 public enum OpencodeAgent {
-    /// The provider API key variables opencode reads through models.dev (`provider.env`),
-    /// the common ones; `OPENCODE_API_KEY` is opencode Zen's own.
-    public static let apiKeyVariables = PiAgent.apiKeyVariables.filter { $0 != "OPENCODE_API_KEY" } + ["OPENCODE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "TOGETHER_AI_API_KEY", "GITHUB_TOKEN"]
+    /// The first OpenCode 2 release: an older `opencode` is OpenCode 1 (`opencode-ai`), whose
+    /// files, permissions and credentials differ, and is replaced rather than run.
+    public static let minimumMajor = 2
+    /// The npm package OpenCode 1 came in; the setup screen removes it before installing 2,
+    /// since both put an `opencode` command on the PATH (migrate-v1.mdx).
+    public static let legacyPackage = "opencode-ai"
 
-    /// `$XDG_DATA_HOME/opencode`, else `~/.local/share/opencode`.
+    /// Whether `opencode --version` (`opencode v2.2.7`; OpenCode 1 printed `1.19.5`) names OpenCode 2.
+    public static func isSupported(version: String) -> Bool {
+        guard let numbers = SetupProber.versionNumbers(version), let major = numbers.first else { return false }
+        return major >= minimumMajor
+    }
+
+    /// `$XDG_DATA_HOME/opencode`, else `~/.local/share/opencode` (OpenCode 2 keeps the name).
     public static func dataDirectory(home: URL, environment: [String: String]) -> URL {
         environment["XDG_DATA_HOME"].flatMap { $0.hasPrefix("/") ? URL(fileURLWithPath: $0, isDirectory: true).appendingPathComponent("opencode", isDirectory: true) : nil }
             ?? home.appendingPathComponent(".local/share/opencode", isDirectory: true)
     }
-    public static func authFile(home: URL, environment: [String: String]) -> URL {
-        dataDirectory(home: home, environment: environment).appendingPathComponent("auth.json")
-    }
-    /// What opencode reads as its sign-ins: `$OPENCODE_AUTH_CONTENT` when set, else `auth.json`.
-    public static func authJSON(home: URL, environment: [String: String]) -> Data? {
-        if let content = environment["OPENCODE_AUTH_CONTENT"], !content.isEmpty { return Data(content.prefix(1_048_576).utf8) }
-        return CLIAccountSupport.boundedData(authFile(home: home, environment: environment))
-    }
-    /// The session database: `$OPENCODE_DB` when absolute, else `<data dir>/opencode.db`.
+    /// The database (sessions and credentials): `$OPENCODE_DB` when absolute, else
+    /// `<data dir>/opencode.db` (the release channels' name; another channel is `opencode-<channel>.db`).
     public static func database(home: URL, environment: [String: String]) -> URL {
         if let override = environment["OPENCODE_DB"], override.hasPrefix("/") { return URL(fileURLWithPath: override) }
-        return dataDirectory(home: home, environment: environment).appendingPathComponent("opencode.db")
+        let channel = environment["OPENCODE_CHANNEL"] ?? ""
+        let shared = channel.isEmpty || ["latest", "dev", "beta", "next", "prod"].contains(channel) || ["1", "true"].contains(environment["OPENCODE_DISABLE_CHANNEL_DB"] ?? "")
+        let name = shared || channel.range(of: "^[a-z0-9-]{1,32}$", options: .regularExpression) == nil ? "opencode.db" : "opencode-\(channel).db"
+        return dataDirectory(home: home, environment: environment).appendingPathComponent(name)
     }
 
-    /// What `auth.json` holds: the providers with a credential (`oauth`, `api` or `wellknown`),
-    /// and whether one is a subscription (OAuth) sign-in. An empty or unreadable file holds none.
-    public static func credentials(authJSON: Data?) -> (providers: [String], subscription: Bool) {
-        guard let authJSON, let object = try? JSONSerialization.jsonObject(with: authJSON) as? [String: Any] else { return ([], false) }
-        let entries = object.filter { ["oauth", "api", "wellknown"].contains(($0.value as? [String: Any])?["type"] as? String ?? "") }
-        let providers = entries.keys.sorted().prefix(16).map { CLIAccountSupport.clean($0) }
-        let subscription = entries.values.contains { ($0 as? [String: Any])?["type"] as? String == "oauth" }
-        return (Array(providers), subscription)
-    }
-    public static func environmentKeys(_ environment: [String: String]) -> [String] {
-        apiKeyVariables.filter { !(environment[$0] ?? "").isEmpty }
+    /// What `opencode auth list --format json` lists: integrations with at least one
+    /// connection (a stored credential or an environment key). A connection whose status is
+    /// `needs_auth` does not count. Only ids, names and the kind of connection are read.
+    public static func connections(listJSON: Data) -> (integrations: [String], subscription: Bool, environmentOnly: Bool)? {
+        guard let rows = try? JSONSerialization.jsonObject(with: listJSON) as? [[String: Any]] else { return nil }
+        var names: [String] = [], subscription = false, stored = false
+        for row in rows.prefix(64) {
+            let live = (row["connections"] as? [[String: Any]] ?? []).filter { ($0["status"] as? [String: Any])?["status"] as? String != "needs_auth" }
+            guard !live.isEmpty, let id = (row["name"] ?? row["id"]) as? String else { continue }
+            names.append(CLIAccountSupport.clean(id))
+            if live.contains(where: { $0["type"] as? String == "credential" }) { stored = true }
+            if live.contains(where: { $0["type"] as? String == "credential" && $0["method"] as? String == "oauth" }) { subscription = true }
+        }
+        return (names.sorted(), subscription, !names.isEmpty && !stored)
     }
 
     // MARK: Permissions
 
-    /// The pane's permission mode as opencode's own rules (`OPENCODE_PERMISSION`, merged over
-    /// the user's config for this run only). "ask" becomes the pane's approval card through ACP.
-    /// Plan keeps opencode's plan agent (edits denied) and asks for commands and the web.
-    public static func permissionRules(mode: String) -> [String: String] {
+    /// The pane's permission mode as OpenCode 2's ordered rules (`permissions`, the last match
+    /// wins), given to the run alone in `OPENCODE_CONFIG_CONTENT` after the user's own config.
+    /// OpenCode 2 allows everything by default, the folders outside the project too; what
+    /// these leave at "ask" comes to the pane as the approval card. Plan sets no edit rule, so
+    /// the plan agent's own edit denial stays.
+    public static func permissionRules(mode: String) -> [[String: String]] {
+        func rule(_ action: String, _ effect: String) -> [String: String] { ["action": action, "resource": "*", "effect": effect] }
+        let outside = ["shell", "webfetch", "websearch", "subagent", "external_directory"]
         switch mode {
-        case "fullAccess":
-            return ["*": "allow", "external_directory": "allow", "doom_loop": "allow", "question": "deny"]
-        case "acceptEdits":
-            return ["edit": "allow", "bash": "ask", "webfetch": "ask", "websearch": "ask", "task": "ask", "external_directory": "ask", "doom_loop": "ask", "question": "deny"]
-        case "plan":
-            return ["bash": "ask", "webfetch": "ask", "websearch": "ask", "external_directory": "ask", "doom_loop": "ask", "question": "deny"]
-        default:
-            return ["edit": "ask", "bash": "ask", "webfetch": "ask", "websearch": "ask", "task": "ask", "external_directory": "ask", "doom_loop": "ask", "question": "deny"]
+        case "fullAccess": return [rule("*", "allow")]
+        case "acceptEdits": return [rule("edit", "allow")] + outside.map { rule($0, "ask") }
+        case "plan": return outside.map { rule($0, "ask") }
+        default: return [rule("edit", "ask")] + outside.map { rule($0, "ask") }
         }
     }
-    public static func permissionEnvironment(mode: String) -> String {
-        let data = (try? JSONSerialization.data(withJSONObject: permissionRules(mode: mode), options: [.sortedKeys])) ?? Data("{}".utf8)
+    public static func configContent(mode: String) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: ["permissions": permissionRules(mode: mode)], options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(decoding: data, as: UTF8.self)
     }
     /// The settings a run sends as `session/set_config_option` before its prompt.
@@ -75,33 +83,33 @@ public enum OpencodeAgent {
 }
 
 extension CLIAccountSupport {
-    /// opencode's sign-in is `auth.json` (or `$OPENCODE_AUTH_CONTENT`) and the environment's
-    /// provider keys. Without either it still runs opencode Zen's free models, which reads as
-    /// signed out with a note: `opencode auth login` adds a provider. A failed `auth list`
-    /// (the liveness check) stays unknown.
-    public static func opencodeStatus(exitCode: Int32, authJSON: Data?, environment: [String: String]) -> CLIAccountStatus {
-        guard exitCode == 0 else {
+    /// OpenCode 2's sign-ins are what `opencode auth list --format json` lists (credentials in
+    /// its database, keys in the environment). With none it still runs opencode Zen's free
+    /// models, which reads as signed out with a note: `opencode auth login` adds a provider.
+    /// A failed or unreadable list stays unknown; OpenCode 1 asks to install OpenCode 2.
+    public static func opencodeStatus(exitCode: Int32, output: Data, version: String? = nil) -> CLIAccountStatus {
+        if let version, !OpencodeAgent.isSupported(version: version) {
+            return CLIAccountStatus(provider: "opencode", detail: L("settings.cliAccounts.detailOpencodeV1"), canSignOut: false)
+        }
+        guard exitCode == 0, let listed = OpencodeAgent.connections(listJSON: output) else {
             return CLIAccountStatus(provider: "opencode", detail: exitCode == -1 ? L("settings.cliAccounts.detailOpencodeTimeout") : L("settings.cliAccounts.detailOpencodeUnknown"), canSignOut: false)
         }
-        let stored = OpencodeAgent.credentials(authJSON: authJSON)
-        if !stored.providers.isEmpty {
-            return CLIAccountStatus(provider: "opencode", loggedIn: true, method: stored.subscription ? L("cliAccounts.method.opencodeSubscription") : L("windows.cli.method.apiKey"),
-                                    methodId: stored.subscription ? CLIAccountMethod.opencodeSubscription : CLIAccountMethod.opencodeAPIKey,
-                                    account: stored.providers.joined(separator: ", "), detail: L("settings.cliAccounts.detailOpencodeSignOut"), canSignOut: false)
+        guard !listed.integrations.isEmpty else {
+            return CLIAccountStatus(provider: "opencode", loggedIn: false, detail: L("settings.cliAccounts.detailOpencodeFreeOnly"), canSignOut: false)
         }
-        if !OpencodeAgent.environmentKeys(environment).isEmpty {
-            return CLIAccountStatus(provider: "opencode", loggedIn: true, method: L("cliAccounts.method.opencodeEnvironmentKey"), methodId: CLIAccountMethod.opencodeAPIKey, canSignOut: false)
-        }
-        return CLIAccountStatus(provider: "opencode", loggedIn: false, detail: L("settings.cliAccounts.detailOpencodeFreeOnly"), canSignOut: false)
+        let method = listed.environmentOnly ? L("cliAccounts.method.opencodeEnvironmentKey") : listed.subscription ? L("cliAccounts.method.opencodeSubscription") : L("windows.cli.method.apiKey")
+        return CLIAccountStatus(provider: "opencode", loggedIn: true, method: method, methodId: listed.subscription ? CLIAccountMethod.opencodeSubscription : CLIAccountMethod.opencodeAPIKey,
+                                account: listed.integrations.prefix(16).joined(separator: ", "), detail: L("settings.cliAccounts.detailOpencodeSignOut"), canSignOut: false)
     }
 }
 
 // MARK: Resumable sessions
 
 extension ResumableSessions {
-    /// The root sessions `opencode.db` keeps for the workspace folder (`session.directory`),
-    /// newest first; the first user message is the title when opencode's own is still its
-    /// placeholder, and the request count is the session's user messages. Read-only.
+    /// The root sessions OpenCode 2's `opencode.db` keeps for the workspace folder
+    /// (`session_v2.directory`), newest first; the first user message is the title when
+    /// opencode's own is still its placeholder, and the request count is the session's user
+    /// messages. Read-only. OpenCode 1's tables, which 2 migrates in the background, are not read.
     static func opencode(_ query: ResumableSessionQuery, budget: inout Int) -> ResumableSessionListing {
         let database = OpencodeAgent.database(home: query.home, environment: query.environment)
         let paths = workspacePaths(query.workspacePath)
@@ -124,8 +132,9 @@ extension ResumableSessions {
 enum OpencodeSessions {
     struct Row: Equatable { var id: String; var title: String; var updated: Date; var requests: Int?; var prompt: String?; var model: String? }
 
-    /// `session` rows without a parent (sub-agent sessions have one), not archived, in one of
-    /// `directories`, updated since `since`. nil when the database is missing or unreadable.
+    /// `session_v2` rows without a parent (sub-agent sessions have one), not archived, in one
+    /// of `directories`, updated since `since`; `model` is the session's `{providerID, id}`.
+    /// nil when the database is missing or unreadable.
     static func rows(database: URL, directories: Set<String>, since: Date, limit: Int, counts: Bool) -> [Row]? {
         guard FileManager.default.isReadableFile(atPath: database.path), !directories.isEmpty else { return nil }
         for mode in ["mode=ro", "immutable=1"] {
@@ -136,7 +145,7 @@ enum OpencodeSessions {
             defer { sqlite3_close(db) }
             sqlite3_busy_timeout(db, 250)
             let marks = Array(repeating: "?", count: directories.count).joined(separator: ",")
-            let query = "SELECT id, title, time_updated FROM session WHERE parent_id IS NULL AND time_archived IS NULL AND directory IN (\(marks)) AND time_updated >= ? ORDER BY time_updated DESC LIMIT \(max(0, limit))"
+            let query = "SELECT id, title, time_updated, model FROM session_v2 WHERE parent_id IS NULL AND time_archived IS NULL AND directory IN (\(marks)) AND time_updated >= ? ORDER BY time_updated DESC LIMIT \(max(0, limit))"
             var statement: OpaquePointer?
             guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK, let statement else { sqlite3_finalize(statement); continue }
             defer { sqlite3_finalize(statement) }
@@ -149,7 +158,7 @@ enum OpencodeSessions {
                 let id = sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? ""
                 let title = sqlite3_column_text(statement, 1).map { String(cString: $0) } ?? ""
                 let updated = Date(timeIntervalSince1970: Double(sqlite3_column_int64(statement, 2)) / 1_000)
-                rows.append(Row(id: id, title: placeholderTitle(title) ? "" : ActivitySupport.clean(title, maximumBytes: 512, singleLine: true), updated: updated))
+                rows.append(Row(id: id, title: placeholderTitle(title) ? "" : ActivitySupport.clean(title, maximumBytes: 512, singleLine: true), updated: updated, model: model(json(statement, 3))))
                 result = sqlite3_step(statement)
             }
             guard result == SQLITE_DONE else { continue }
@@ -162,42 +171,33 @@ enum OpencodeSessions {
     /// opencode names a new session "New session - <time>" until it writes a real title.
     static func placeholderTitle(_ title: String) -> Bool { title.isEmpty || title.lowercased().hasPrefix("new session") || title.lowercased().hasPrefix("child session") }
 
-    /// The session's user messages (their count, the first one's text) and the model of its last
-    /// assistant message. Message `data` is opencode's JSON (`role`, `modelID`, `providerID`);
-    /// a part of `type: text` carries the words.
+    static func model(_ value: [String: Any]?) -> String? {
+        guard let provider = value?["providerID"] as? String, let id = value?["id"] as? String, CoreValidation.model(provider + "/" + id) else { return nil }
+        return provider + "/" + id
+    }
+    private static func json(_ statement: OpaquePointer, _ column: Int32) -> [String: Any]? {
+        guard let bytes = sqlite3_column_blob(statement, column) else { return nil }
+        let count = Int(sqlite3_column_bytes(statement, column))
+        guard count <= 1_048_576 else { return nil }
+        return (try? JSONSerialization.jsonObject(with: Data(bytes: bytes, count: count))) as? [String: Any]
+    }
+
+    /// The session's user messages (`session_message.type = user`): their count and the first
+    /// one's `data.text`.
     private static func details(_ db: OpaquePointer, row: inout Row) {
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        func each(_ sql: String, _ body: (OpaquePointer) -> Bool) {
-            var statement: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else { sqlite3_finalize(statement); return }
-            defer { sqlite3_finalize(statement) }
-            sqlite3_bind_text(statement, 1, row.id, -1, transient)
-            while sqlite3_step(statement) == SQLITE_ROW { if !body(statement) { break } }
-        }
-        func json(_ statement: OpaquePointer, _ column: Int32) -> [String: Any]? {
-            guard let bytes = sqlite3_column_blob(statement, column) else { return nil }
-            let count = Int(sqlite3_column_bytes(statement, column))
-            guard count <= 1_048_576 else { return nil }
-            return (try? JSONSerialization.jsonObject(with: Data(bytes: bytes, count: count))) as? [String: Any]
-        }
-        var users: [String] = [], model: String?
-        each("SELECT id, data FROM message WHERE session_id = ? ORDER BY id LIMIT 20000") { statement in
-            guard let data = json(statement, 1) else { return true }
-            if data["role"] as? String == "user", let id = sqlite3_column_text(statement, 0).map({ String(cString: $0) }) { users.append(id) }
-            if data["role"] as? String == "assistant", let provider = data["providerID"] as? String, let id = data["modelID"] as? String, CoreValidation.model(provider + "/" + id) { model = provider + "/" + id }
-            return true
-        }
-        row.requests = users.count; row.model = model
-        guard let first = users.first else { return }
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "SELECT data FROM part WHERE message_id = ? ORDER BY id LIMIT 64", -1, &statement, nil) == SQLITE_OK, let statement else { sqlite3_finalize(statement); return }
+        guard sqlite3_prepare_v2(db, "SELECT data FROM session_message WHERE session_id = ? AND type = 'user' ORDER BY seq LIMIT 20000", -1, &statement, nil) == SQLITE_OK, let statement else { sqlite3_finalize(statement); return }
         defer { sqlite3_finalize(statement) }
-        sqlite3_bind_text(statement, 1, first, -1, transient)
-        var texts: [String] = []
+        sqlite3_bind_text(statement, 1, row.id, -1, transient)
+        var count = 0
         while sqlite3_step(statement) == SQLITE_ROW {
-            if let data = json(statement, 0), data["type"] as? String == "text", data["synthetic"] as? Bool != true, let text = data["text"] as? String { texts.append(text) }
+            count += 1
+            if count == 1, let text = json(statement, 0)?["text"] as? String {
+                let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                row.prompt = prompt.isEmpty ? nil : prompt
+            }
         }
-        let prompt = texts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        row.prompt = prompt.isEmpty ? nil : prompt
+        row.requests = count
     }
 }

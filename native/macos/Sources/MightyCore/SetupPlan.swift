@@ -130,7 +130,11 @@ public enum SetupScript {
             return "mighty_script=\"$(\(curl) \(quote(url.absoluteString)))\" && \(interpreter) -c \"$mighty_script\""
         case .brewFormula(let name): return "brew install " + quote(name)
         case .brewCask(let name): return "brew install --cask " + quote(name)
-        case .npmGlobal(let name): return "npm install -g " + quote(name)
+        case .npmGlobal(let name):
+            // A package that takes over another's command removes that one first (npm will not
+            // let two global packages own one command); one that is not there is no error.
+            let install = "npm install -g " + quote(name)
+            return SetupCatalog.npmReplaces[name].map { "npm uninstall -g \(quote($0)) >/dev/null 2>&1; " + install } ?? install
         case .claudePlugin(let marketplace, let plugin):
             // An already added marketplace is fine; the install decides. The
             // marketplace, not the app, decides the plugin's version.

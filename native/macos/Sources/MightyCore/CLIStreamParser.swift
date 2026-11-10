@@ -583,6 +583,8 @@ public final class CLIStreamParser {
             guard let update = value["update"] as? [String: Any] else { return }
             switch update["sessionUpdate"] as? String {
             case "agent_message_chunk":
+                // A sub-agent's own reply (OpenCode 2 marks its child sessions' updates) is not the answer.
+                if (update["_meta"] as? [String: Any])?["opencode/child-session"] != nil { return }
                 let message = update["messageId"] as? String
                 if let message, let previous = acpMessage, message != previous { flushText() }
                 if let message { acpMessage = message }
@@ -596,7 +598,7 @@ public final class CLIStreamParser {
                 let status = update["status"] as? String
                 let state = status == "completed" ? "completed" : status == "failed" ? "error" : "running"
                 let known = toolActivities[ActivitySupport.id(namespace: activityNamespace, key: id)] != nil
-                let toolName = update["kind"] != nil || !known ? ACPChannel.toolName(kind: update["kind"] as? String, title: update["title"] as? String) : nil
+                let toolName = update["kind"] != nil || !known ? ACPChannel.toolName(kind: update["kind"] as? String, title: (update["name"] ?? update["title"]) as? String) : nil
                 let input = update["rawInput"].map(ACPChannel.displayInput)
                 let output = state == "running" ? nil : Self.acpOutput(update)
                 tool(id: id, name: toolName, input: input, state: state, output: output)

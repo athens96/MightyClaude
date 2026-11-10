@@ -3382,7 +3382,7 @@
   "slash.source.piSkill": "pi スキル",
   "accountUsage.detailPiUnavailable": "pi にはアカウントの使用量を取得する方法がありません。リクエストごとのトークンと費用はペインの使用量で確認できます。",
   "setup.item.opencode.title": "opencode CLI",
-  "setup.item.opencode.detail": "多くのモデル提供元で使えるオープンソースのコーディングエージェント CLI です。Node.js が必要で、npm でグローバルにインストールします。",
+  "setup.item.opencode.detail": "多くのモデル提供元で使えるオープンソースのコーディングエージェント CLI（OpenCode 2）です。Node.js が必要で、npm でグローバルにインストールします。npm でインストールした OpenCode 1 があれば先に削除します。",
   "run.blocked.opencodeRemote": "opencode は今のところこのコンピューターでのみ実行できます。リモートのワークスペースでは Claude、Codex、Antigravity を使ってください。",
   "settings.cliUpdate.detailOpencode": "opencode 自身の更新コマンド（opencode upgrade）を使います。",
   "accountUsage.detailOpencodeUnavailable": "opencode にはアカウントの使用量を取得する方法がありません。リクエストごとのトークンと費用はペインの使用量で確認できます。",
@@ -3416,5 +3416,8 @@
   "acp.channel.tooManyPending": "保留中の承認リクエストが上限を超えました。",
   "acp.channel.requestTooLarge": "全体を表示できない承認リクエストを拒否しました。",
   "acp.channel.permissionSummary": "ツールの使用の承認",
-  "acp.channel.denyOnly": "エージェントが今回のみの許可を提供していないため、拒否のみ可能です。"
+  "acp.channel.denyOnly": "エージェントが今回のみの許可を提供していないため、拒否のみ可能です。",
+  "settings.cliAccounts.detailOpencodeV1": "インストールされている opencode は OpenCode 1 です。このアプリは OpenCode 2 を使います。セットアップ画面から opencode をもう一度インストールしてください。",
+  "settings.cliUpdate.detailOpencodeV1": "OpenCode 1 は OpenCode 2 に更新されません。セットアップ画面から opencode をもう一度インストールしてください。",
+  "run.error.opencodeV1": "インストールされている opencode（{version}）は OpenCode 1 です。このアプリは OpenCode 2 を使います。セットアップ画面から opencode をもう一度インストールしてください。"
 }

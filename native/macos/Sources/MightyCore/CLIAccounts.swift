@@ -54,7 +54,7 @@ public enum CLIAccountMethod {
     public static let piSubscription = "pi-subscription"
     public static let piAPIKey = "pi-api-key"
     public static let piModels = "pi-models"
-    /// opencode: a subscription sign-in (`opencode auth login` with OAuth) or API keys (`auth.json` or the environment).
+    /// opencode: a subscription sign-in (`opencode auth login` with OAuth) or API keys (stored in its database, or in the environment).
     public static let opencodeSubscription = "opencode-subscription"
     public static let opencodeAPIKey = "opencode-api-key"
 }
@@ -159,7 +159,7 @@ public enum CLIAccountSupport {
     /// argv for the CLI's own status / logout command. Antigravity has
     /// neither; its model list stands in for the status (`antigravityStatus`).
     public static func statusArguments(provider: String) -> [String]? {
-        switch provider { case "claude": return ["claude", "auth", "status", "--json"]; case "codex": return ["codex", "login", "status"]; case "gemini": return [ProviderOptions.executable(provider), "models"]; case "pi": return ["pi", "--list-models"]; case "opencode": return ["opencode", "auth", "list"]; default: return nil }
+        switch provider { case "claude": return ["claude", "auth", "status", "--json"]; case "codex": return ["codex", "login", "status"]; case "gemini": return [ProviderOptions.executable(provider), "models"]; case "pi": return ["pi", "--list-models"]; case "opencode": return ["opencode", "auth", "list", "--format", "json", "--standalone"]; default: return nil }
     }
     public static func logoutArguments(provider: String) -> [String]? {
         switch provider { case "claude": return ["claude", "auth", "logout"]; case "codex": return ["codex", "logout"]; default: return nil }
@@ -223,7 +223,13 @@ public actor CLIAccountService {
             return CLIAccountSupport.piStatus(exitCode: result.exitCode, output: String(decoding: result.stdout + result.stderr, as: UTF8.self), authJSON: auth, environment: environment)
         }
         if provider == "opencode" {
-            return CLIAccountSupport.opencodeStatus(exitCode: result.exitCode, authJSON: OpencodeAgent.authJSON(home: home, environment: environment), environment: environment)
+            // `--standalone` reads the list without starting OpenCode 2's background service.
+            // A list that is not JSON may be OpenCode 1, which has no `--format`: its version says.
+            var version: String?
+            if OpencodeAgent.connections(listJSON: result.stdout) == nil, let named = await run(["opencode", "--version"], environment: environment, timeout: 10), named.exitCode == 0 {
+                version = String(decoding: named.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            return CLIAccountSupport.opencodeStatus(exitCode: result.exitCode, output: result.stdout, version: version)
         }
         if provider == "gemini" { return CLIAccountSupport.antigravityStatus(exitCode: result.exitCode, output: String(decoding: result.stdout + result.stderr, as: UTF8.self)) }
         if provider == "claude" {

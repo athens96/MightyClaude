@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "note": "Items only the Mac offers so far, read beside setup-catalog.json (the contract Windows embeds as is). An item moves into setup-catalog.json once Windows has it.",
+  "note": "Items only the Mac offers so far, read beside setup-catalog.json (the contract Windows embeds as is). An item moves into setup-catalog.json once Windows has it. opencode is OpenCode 2 (@opencode/cli); an OpenCode 1 below 2.0.0 reads out of date and is replaced (npm uninstall -g opencode-ai first, SetupCatalog.npmReplaces).",
   "items": [
     {
       "id": "opencode",
@@ -11,8 +11,8 @@
       "afterInstall": { "kind": "signIn", "provider": "opencode" },
       "platforms": {
         "macos": {
-          "probe": { "kind": "executable", "name": "opencode" },
-          "install": { "kind": "npmGlobal", "package": "opencode-ai" },
+          "probe": { "kind": "executable", "name": "opencode", "minimumVersion": "2.0.0" },
+          "install": { "kind": "npmGlobal", "package": "@opencode/cli" },
           "prerequisites": ["node"],
           "source": "https://github.com/anomalyco/opencode"
         }
