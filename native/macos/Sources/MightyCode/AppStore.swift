@@ -1659,7 +1659,7 @@ final class AppStore: ObservableObject, DelegationHost {
         }
         guard event.type == "permission", let permission = event.permission,
               let session = snapshot.sessions.first(where: { $0.id == event.sessionId }),
-              session.kind == "claude", ProviderOptions.asksInPane(provider: session.provider, mode: session.settings.permissionMode),
+              session.kind == "claude", ProviderOptions.showsInPane(permission, provider: session.provider, mode: session.settings.permissionMode),
               snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return }
         var requests = toolPermissions[event.sessionId] ?? []
         let previousFirst = requests.first.map { permissionResponseKey(sessionId: event.sessionId, request: $0) }

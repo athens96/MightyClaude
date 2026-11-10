@@ -709,6 +709,12 @@ public enum ProviderOptions {
     public static func asksInPane(provider: String, mode: String) -> Bool {
         provider == "claude" || (provider == "codex" && mode == "onRequest") || provider == "opencode" || provider == "hermes"
     }
+    /// Whether a run's request reaches the pane's cards: an approval only where the provider asks
+    /// in the pane, a question (`canAnswerQuestions`) from any agent. pi has no approvals, but its
+    /// `ask_user` tool and its extensions' dialogs are questions.
+    public static func showsInPane(_ request: ToolPermissionRequest, provider: String, mode: String) -> Bool {
+        request.canAnswerQuestions || asksInPane(provider: provider, mode: mode)
+    }
     /// pi, opencode and Hermes run on this Mac only for now: a remote workspace (whose host may be
     /// Windows or an older Mac) offers none of them.
     public static func isLocalOnly(_ id: String) -> Bool { id == "pi" || id == "opencode" || id == "hermes" }
