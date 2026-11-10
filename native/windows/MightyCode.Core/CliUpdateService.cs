@@ -83,6 +83,7 @@ public sealed partial class CliUpdateService
         "claude" => "Claude",
         "codex" => "Codex",
         "gemini" => "Antigravity",
+        "pi" => "pi",
         _ => "Claude",
     };
 
@@ -211,6 +212,13 @@ public sealed partial class CliUpdateService
 
         var resolved = Resolve(command.Path);
         var installation = new CliUpdateInstallation(provider, command.Version, "unknown", command.Path, false, CliUpdateStrings.DetailUnknownMethod);
+
+        if (provider == "pi")
+        {
+            // pi updates itself, whichever way it was installed (`pi update self`; M/CLIUpdateService.swift).
+            return (installation with { Method = "pi", CanUpdate = true, Detail = Locale.Get("settings.cliUpdate.detailPi") },
+                new CliUpdateInvocation(command.Path, ["update", "self"]));
+        }
 
         if (WingetPackage(resolved) is { } package)
         {

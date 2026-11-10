@@ -69,6 +69,8 @@ public static class AccountUsageRuntime
             }
             case "gemini":
                 throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailAntigravityUnavailable);
+            case "pi":
+                throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, Locale.Get("accountUsage.detailPiUnavailable"));
             default:
                 throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailUnsupportedProvider);
         }

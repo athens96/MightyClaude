@@ -41,6 +41,20 @@ public sealed class OutputParser
     private readonly AgentImageCache? imageCache;
     private readonly Action<LogEntry>? imageEntry;
     private readonly Func<LogEntry, string?, string?, bool>? graphImages;
+    /// <summary>
+    /// pi (<c>pi --mode rpc</c>): the turn is open from <c>agent_start</c> to <c>agent_end</c>, and while a compaction or an automatic
+    /// retry (which pi announces after <c>agent_end</c>) goes on.
+    /// </summary>
+    private bool piAgentOpen, piCompacting, piRetrying;
+    /// <summary>The latest assistant message pi ended with <c>stopReason: error</c>, until a retry or a later message answers it; still set at <see cref="Flush"/>, it fails the run.</summary>
+    private string? piError;
+    /// <summary>Answers an extension's dialog that no window can show (one JSON line, newline included).</summary>
+    private readonly Action<string>? piReply;
+    /// <summary>The turn is still going: stdin must stay open.</summary>
+    public bool PiTurnOpen { get { lock (sync) return piAgentOpen || piCompacting || piRetrying; } }
+    /// <summary>pi's <c>agent_end</c> has come (stdin closes after the quiet that follows it).</summary>
+    public bool PiTurnEnded { get { lock (sync) return piEnded; } }
+    private bool piEnded;
     private int storedImages;
     private bool imageLimitNoted;
     public bool Failed { get; private set; }
@@ -55,10 +69,11 @@ public sealed class OutputParser
     /// <param name="antigravityPermission">Hears the card an Antigravity turn leaves when it was refused anything (M/MightyCore/CLIStreamParser.swift antigravityPermission).</param>
     /// <param name="graphActivity">Routes a tool's activity with its original tool ID before the main activity callback; true means a child graph took it.</param>
     /// <param name="graphImages">Routes a picture entry with its tool and spawning tool IDs; true means it belongs to a child graph.</param>
-    public OutputParser(string provider, Action<string, string> log, Action<string> resume, Action<AgentActivity>? activity = null, Action<SessionUsage>? usage = null, string? activityNamespace = null, Func<double>? activityClock = null, AgentImageCache? images = null, Action<LogEntry>? imageEntry = null, string? requestedResume = null, Action<string>? answer = null, Action<AntigravityPermissionRequest>? antigravityPermission = null, Func<AgentActivity, string?, bool>? graphActivity = null, Func<LogEntry, string?, string?, bool>? graphImages = null)
+    public OutputParser(string provider, Action<string, string> log, Action<string> resume, Action<AgentActivity>? activity = null, Action<SessionUsage>? usage = null, string? activityNamespace = null, Func<double>? activityClock = null, AgentImageCache? images = null, Action<LogEntry>? imageEntry = null, string? requestedResume = null, Action<string>? answer = null, Action<AntigravityPermissionRequest>? antigravityPermission = null, Func<AgentActivity, string?, bool>? graphActivity = null, Func<LogEntry, string?, string?, bool>? graphImages = null, Action<string>? piReply = null)
     {
         this.provider = provider; this.log = log; this.resume = resume; this.activity = activity; this.requestedResume = requestedResume; this.answer = answer;
         this.antigravityPermission = provider == "gemini" ? antigravityPermission : null;
+        this.piReply = provider == "pi" ? piReply : null;
         this.usage = new(provider, usage); this.activityNamespace = activityNamespace ?? Wire.Id();
         var origin = Stopwatch.GetTimestamp(); clock = activityClock ?? (() => Stopwatch.GetElapsedTime(origin).TotalMilliseconds);
         imageCache = images; this.imageEntry = imageEntry;
@@ -300,6 +315,7 @@ public sealed class OutputParser
                 }
                 if (type is "turn.failed" or "error") { Failed = true; log("error", root.TryGetProperty("error", out var error) ? Error(error, Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Codex" })) : root.Text("message") ?? Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Codex" })); }
             }
+            else if (provider == "pi") Pi(root, type);
             else if (root.Text("event") is { } kind) Antigravity(root, kind);
         }
         catch (JsonException) { log("output", line); }
@@ -353,6 +369,8 @@ public sealed class OutputParser
             if (text.Length > 0) { log("assistant", text); answer?.Invoke(text); }
             if (pendingTruncated) log("system", Locale.Get("run.notice.messageTruncated"));
             pending.Clear(); pendingTruncated = false;
+            // An error pi gave up on is the run's failure; one a retry answered was cleared.
+            if (piError is { } error) { piError = null; Failed = true; log("error", error); }
         }
     }
     /// <summary>
@@ -478,6 +496,74 @@ public sealed class OutputParser
             case "command_result": break;
             // An event this app does not read yet is shown, not dropped.
             default: var raw = root.GetRawText(); log("output", raw.Length > 32768 ? raw[..32768] : raw); break;
+        }
+    }
+    /// <summary>
+    /// pi (<c>pi --mode rpc</c>, docs/rpc.md; M/MightyCore/CLIStreamParser.swift pi): one JSON object per line, commands' <c>response</c>s and
+    /// the agent's events. A reply is logged whole, when its text block or message ends; thinking text is not copied. Tools are rows in
+    /// the activity list as for the others.
+    /// </summary>
+    private void Pi(JsonElement root, string? type)
+    {
+        var name = new Dictionary<string, string> { ["name"] = ProviderMark.Label(provider) };
+        static string Id(JsonElement message) => "pi:" + (message.TryGetProperty("responseId", out var response) && response.ValueKind != JsonValueKind.Null ? response.ToString() : message.TryGetProperty("timestamp", out var stamp) ? stamp.ToString() : "message");
+        switch (type)
+        {
+            case "response":
+                // The get_state asked first names the session this run continues.
+                if (root.TryGetProperty("success", out var success) && success.ValueKind == JsonValueKind.False)
+                { Failed = true; log("error", Error(MetadataJson.Property(root, "error"), Locale.Get("run.error.providerRunFailed", name))); }
+                else if (root.Text("command") == "get_state" && MetadataJson.Property(root, "data") is { ValueKind: JsonValueKind.Object } data) Resume(data.Text("sessionId"));
+                break;
+            case "agent_start":
+                // A retry pi announced has started: the turn itself is open now.
+                piAgentOpen = true; piRetrying = false; piEnded = false; Turn(Locale.Get("run.turn.generating", name));
+                break;
+            case "agent_end":
+                piAgentOpen = false; piEnded = true; Turn(Locale.Get("run.turn.finishing", name));
+                break;
+            case "message_update":
+                if (MetadataJson.Property(root, "assistantMessageEvent") is { ValueKind: JsonValueKind.Object } update && update.Text("type") == "text_end" && update.Text("content") is { } text)
+                    Assistant(text, Id(MetadataJson.Property(root, "message")) + ":" + (MetadataJson.Integer(update, "contentIndex") ?? 0));
+                break;
+            case "message_end":
+                if (MetadataJson.Property(root, "message") is not { ValueKind: JsonValueKind.Object } message || message.Text("role") != "assistant") break;
+                var key = Id(message);
+                if (MetadataJson.Property(message, "content") is { ValueKind: JsonValueKind.Array } blocks)
+                {
+                    var index = 0;
+                    foreach (var block in blocks.EnumerateArray()) { if (block.Text("type") == "text" && block.Text("text") is { } blockText) Assistant(blockText, key + ":" + index); index++; }
+                }
+                piError = message.Text("stopReason") == "error" ? Error(MetadataJson.Property(message, "errorMessage"), Locale.Get("run.error.providerRunFailed", name)) : null;
+                break;
+            case "tool_execution_start": case "tool_execution_update": case "tool_execution_end":
+                var ended = type == "tool_execution_end";
+                var output = ActivitySupport.Output(MetadataJson.Property(root, ended ? "result" : "partialResult"));
+                Tool(root.Text("toolCallId"), ended ? MetadataJson.Flag(root, "isError") ? "error" : "completed" : "running", root.Text("toolName") ?? "Tool", MetadataJson.Property(root, "args"), output);
+                if (activity is null && ended && output is { Length: > 0 }) log("output", output);
+                break;
+            case "compaction_start": piCompacting = true; break;
+            case "compaction_end":
+                piCompacting = false;
+                if (root.Text("errorMessage") is { } failure) { log("system", ContextCompaction.Title + " · " + failure); break; }
+                if (MetadataJson.Property(root, "result") is { ValueKind: JsonValueKind.Object } result)
+                    log("system", ContextCompaction.Title + " · " + ContextCompaction.ClaudeSummary(JsonSerializer.SerializeToElement(new { trigger = root.Text("reason") == "manual" ? "manual" : "auto", pre_tokens = MetadataJson.Integer(result, "tokensBefore") })));
+                break;
+            case "auto_retry_start":
+                piRetrying = true; piError = null;
+                log("system", Locale.Get("run.notice.piRetry", new Dictionary<string, string> { ["attempt"] = (MetadataJson.Integer(root, "attempt") ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture), ["max"] = (MetadataJson.Integer(root, "maxAttempts") ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture), ["error"] = ActivitySupport.Clean(root.Text("errorMessage") ?? "", 512, true) }));
+                break;
+            case "auto_retry_end":
+                piRetrying = false;
+                if (root.TryGetProperty("success", out var retried) && retried.ValueKind == JsonValueKind.False) { Failed = true; log("error", Error(MetadataJson.Property(root, "finalError"), Locale.Get("run.error.providerRunFailed", name))); }
+                break;
+            case "extension_error": log("system", Error(MetadataJson.Property(root, "error"), "")); break;
+            case "extension_ui_request":
+                // A dialog (select, confirm, input, editor) waits for an answer no pane can give it.
+                if (root.Text("method") is not ("select" or "confirm" or "input" or "editor") || root.Text("id") is not { } dialog) break;
+                piReply?.Invoke(JsonSerializer.Serialize(new { type = "extension_ui_response", id = dialog, cancelled = true }, Wire.Json) + "\n");
+                log("system", Locale.Get("run.notice.piDialogDismissed", new Dictionary<string, string> { ["title"] = ActivitySupport.Clean(root.Text("title") ?? "", 256, true) }));
+                break;
         }
     }
     /// <summary>agy names its tool parameters in PascalCase (<c>AbsolutePath</c>, <c>CommandLine</c>); the activity summary reads snake_case.</summary>

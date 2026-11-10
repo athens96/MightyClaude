@@ -64,6 +64,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         internal long LastOutputTicks = Environment.TickCount64;
         internal readonly object InputGate = new();
         internal OutputParser? Parser;
+        /// <summary>pi's stdin was closed after its turn ended (or never opened): no steer follows.</summary>
+        internal bool PiInputClosed;
         /// <summary>A leaf lock: a graph node is handed to the host and the last status is emitted under it, never both at once.</summary>
         internal readonly object NodeGate = new();
     }
@@ -152,7 +154,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         Task graphTask = Task.CompletedTask;
         var parser = new OutputParser(request.Provider, (kind, text) => Log(run, kind, text), id => emit(new(request.SessionId, "resume", ResumeId: id)), value => Activity(run, value), value => { if (!run.Finalizing) emit(new(request.SessionId, "usage", Usage: value)); }, run.ActivityId,
             images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); },
-            requestedResume: request.Provider == "gemini" ? request.ResumeId : null, answer: text => tracker?.AntigravityAnswer(text),
+            requestedResume: request.Provider == "gemini" ? request.ResumeId : null, piReply: data => { lock (run.InputGate) { if (run.Finished || run.PiInputClosed || run.Child is not { } pi) return; try { pi.Input.Write(data); pi.Input.Flush(); } catch (IOException) { } catch (ObjectDisposedException) { } } }, answer: text => tracker?.AntigravityAnswer(text),
             // The card goes out before the run's last status (M/ProcessRunner.swift antigravityPermission).
             antigravityPermission: card => { if (!run.Finished && request.Kind == "claude") emit(new(request.SessionId, "antigravityPermission", AntigravityPermission: card)); },
             graphActivity: (value, toolId) => tracker?.Activity(value, toolId) == true,
@@ -314,7 +316,10 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 }
                 if (request.Attachments is { Count: > 0 } files) { attachments = await StagedAttachments.CreateAsync(files, token); token.ThrowIfCancellationRequested(); input = attachments.InputFor(request); }
                 binary = command.Binary;
-                var providerArguments = codexApprovals ? ProviderCatalog.Arguments(request, pluginDirectory) : attachments?.ArgumentsFor(request, pluginDirectory) ?? ProviderCatalog.Arguments(request, pluginDirectory);
+                if (request.Provider == "pi" && attachments is null) input = ProviderInput.PiStartup(input);
+                // pi exits on a session it cannot find (one that never got an answer is not written): such a pane starts a new session.
+                var launch = request.Provider == "pi" && request.ResumeId is { } piResume && PiAgent.SessionFile(piResume, workspace.Path, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment) is null ? request with { ResumeId = null } : request;
+                var providerArguments = codexApprovals ? ProviderCatalog.Arguments(launch, pluginDirectory) : attachments?.ArgumentsFor(launch, pluginDirectory) ?? ProviderCatalog.Arguments(launch, pluginDirectory);
                 if (request.Provider is "claude" or "codex" && AgentIOBindingFactory?.Invoke(request, workspace) is { } binding)
                 {
                     run.PaneBinding = binding;
@@ -330,7 +335,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 arguments = command.Prefix.Concat(providerArguments);
             }
             token.ThrowIfCancellationRequested();
-            await using var child = ChildProcess.Start(ChildProcess.StartInfo(binary, arguments, workspace.Path, environment), OperatingSystem.IsWindows() && request.Kind == "shell" && !powerShell ? request.Input : null);
+            await using var child = request.Kind == "shell" ? ChildProcess.Start(ChildProcess.StartInfo(binary, arguments, workspace.Path, environment), OperatingSystem.IsWindows() && !powerShell ? request.Input : null) : ProviderCatalog.StartCli(binary, arguments, workspace.Path, environment);
             run.Child = child; token.ThrowIfCancellationRequested();
             using var stop = token.Register(child.Kill);
             if (interactive)
@@ -467,7 +472,9 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             {
                 // Antigravity reads its prompt as one stream-json line (ProviderInput.AntigravityUserMessage).
                 if (request.Kind != "shell") await child.Input.WriteAsync((request.Provider == "gemini" ? ProviderInput.AntigravityUserMessage(input) : input).AsMemory(), token);
-                child.Input.Close();
+                // pi reads get_state and the prompt, then keeps reading for a steer: stdin stays open until its turn ended and went quiet.
+                if (request.Provider == "pi") { await child.Input.FlushAsync(token); _ = ClosePiWhenIdle(run, child); }
+                else child.Input.Close();
             }
             run.Accepted?.TrySetResult();
             var code = await child.Completion.WaitAsync(token);
@@ -523,8 +530,37 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         else if (run.Permissions is { } channel) channel.Respond(requestId, allow);
         else throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
     }
+    /// <summary>
+    /// Closes a pi run's stdin (pi then exits) once its turn is over and it has been silent for a second: compaction and an
+    /// automatic retry come right after <c>agent_end</c> (M/MightyCore/ProcessRunner.swift armPiClose).
+    /// </summary>
+    private static async Task ClosePiWhenIdle(Run run, ChildProcess child)
+    {
+        try
+        {
+            while (!run.Finished && !run.Cancel.IsCancellationRequested)
+            {
+                await Task.Delay(250);
+                if (run.Parser is not { PiTurnEnded: true, PiTurnOpen: false } || Environment.TickCount64 - Interlocked.Read(ref run.LastOutputTicks) < 1000) continue;
+                lock (run.InputGate) { run.PiInputClosed = true; try { child.Input.Close(); } catch (IOException) { } catch (ObjectDisposedException) { } }
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
+    }
     public Task<bool> TrySteerAsync(string sessionId, string text)
     {
+        // pi takes a steer as a `steer` command while its turn is open; it reads it after the current tool calls, before the next model call.
+        if (runs.TryGetValue(sessionId, out var piRun) && piRun.Request.Provider == "pi")
+        {
+            lock (piRun.InputGate)
+            {
+                if (piRun.Finalizing || piRun.Finished || piRun.Cancel.IsCancellationRequested || piRun.PiInputClosed || piRun.Parser is not { PiTurnOpen: true } || piRun.Child is not { } pi) return Task.FromResult(false);
+                try { pi.Input.Write(ProviderInput.PiSteer(text)); pi.Input.Flush(); Interlocked.Exchange(ref piRun.LastOutputTicks, Environment.TickCount64); return Task.FromResult(true); }
+                catch (IOException) { return Task.FromResult(false); }
+                catch (ObjectDisposedException) { return Task.FromResult(false); }
+            }
+        }
         if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested || run.Request.Provider != "claude" || run.Permissions is not { } channel) return Task.FromResult(false);
         // After the request's result this starts a new turn in the same process (it stays open while background tasks run).
         // The queue no longer reads as waiting only on background work until that turn's own result (M/ProcessRunner.steer).

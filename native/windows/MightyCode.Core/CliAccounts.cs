@@ -57,6 +57,10 @@ public static class CliAccountMethod
     public const string CodexApiKey = "codex-api-key";
     /// <summary>Antigravity's one sign-in: a Google account (personal, or Business for Gemini Enterprise).</summary>
     public const string GeminiGoogle = "gemini-google";
+    /// <summary>pi: a subscription sign-in (<c>/login</c>), API keys (<c>auth.json</c> or the environment), or only models from <c>models.json</c>.</summary>
+    public const string PiSubscription = "pi-subscription";
+    public const string PiApiKey = "pi-api-key";
+    public const string PiModels = "pi-models";
 }
 
 /// Parsing helpers that depend only on data — no I/O, no runner.
@@ -177,6 +181,7 @@ public static class CliAccountSupport
         "claude" => ["claude", "auth", "status", "--json"],
         "codex" => ["codex", "login", "status"],
         "gemini" => ["agy", "models"],
+        "pi" => ["pi", "--list-models"],
         _ => null,
     };
 
@@ -195,6 +200,8 @@ public static class CliAccountSupport
         "codex" => ["codex", "login"],
         // Antigravity signs in the first time it runs interactively.
         "gemini" => ["agy"],
+        // pi signs in inside itself: the terminal shows `pi`, where `/login` is typed.
+        "pi" => ["pi"],
         _ => null,
     };
 
@@ -329,6 +336,7 @@ public sealed class CliAccountsCoordinator
         catch (OperationCanceledException) { throw; }
         catch { return new CliAccountStatus { Provider = provider, Detail = CliAccountStrings.DetailRunFailed }; }
 
+        if (provider == "pi") return PiAccounts.Status(result.ExitCode, result.Output + "\n" + result.ErrorOutput, CliAccountSupport.BoundedFileText(PiAgent.AuthFile(home, environment)), environment, result.TimedOut);
         if (provider == "gemini") return CliAccountSupport.AntigravityStatus(result.ExitCode, result.Output + "\n" + result.ErrorOutput, result.TimedOut);
         if (provider == "claude")
         {

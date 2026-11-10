@@ -20,7 +20,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     /// The <c>gemini</c> id is kept for saved panes and the wire; it runs Google's Antigravity CLI (<c>agy</c>), which also runs
     /// Claude and GPT-OSS models (M/MightyCore/Models.swift ProviderOptions.label/executable).
     /// </summary>
-    public static string Name(string provider) => provider == "claude" ? "Claude Code" : provider == "codex" ? "Codex CLI" : "Antigravity CLI";
+    public static string Name(string provider) => provider == "claude" ? "Claude Code" : provider == "codex" ? "Codex CLI" : provider == "pi" ? "pi" : "Antigravity CLI";
     /// <summary>The executable the app runs, finds, version-checks, updates and signs in with.</summary>
     public static string Executable(string provider) => provider == "gemini" ? "agy" : provider;
     /// <summary>
@@ -29,27 +29,28 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     /// </summary>
     public static string AntigravityInstallFolder(IReadOnlyDictionary<string, string>? environment = null) =>
         Path.Combine(environment?.GetValueOrDefault("LOCALAPPDATA") is { Length: > 0 } local ? local : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "agy", "bin");
-    // Claude is official; Codex and Antigravity are beta. The one Windows answer every beta
+    // Claude is official; Codex, Antigravity and pi are beta. The one Windows answer every beta
     // badge asks — the badge sits beside Name and never becomes part of it.
-    public static bool IsBeta(string provider) => provider is "codex" or "gemini";
+    public static bool IsBeta(string provider) => provider is "codex" or "gemini" or "pi";
     // Menu items and plain text rows cannot host the badge, so it rides in their text.
     public static string BetaLabel(string provider, string text) => IsBeta(provider) ? text + " · " + Locale.Get("badge.beta") : text;
     // A sidebar row or tab carries the capsule after its title only for a beta agent's pane
     // (macOS paneRow / PaneDockView: kind "claude" and isBeta); shells, browsers and files never do.
     public static bool ShowsBetaBadge(RunSession session) => session.Kind == "claude" && IsBeta(session.Provider);
-    public static string[] PermissionModes(string provider, bool includeAuto = true) => provider == "codex" ? ["manual", "onRequest", "acceptEdits", "fullAccess"] : provider == "claude" && includeAuto ? ["plan", "manual", "acceptEdits", "auto", "fullAccess"] : ["manual", "plan", "acceptEdits", "fullAccess"];
+    public static string[] PermissionModes(string provider, bool includeAuto = true) => provider == "pi" ? ["manual", "fullAccess"] : provider == "codex" ? ["manual", "onRequest", "acceptEdits", "fullAccess"] : provider == "claude" && includeAuto ? ["plan", "manual", "acceptEdits", "auto", "fullAccess"] : ["manual", "plan", "acceptEdits", "fullAccess"];
     public static ProviderCapabilities Capabilities(string provider, string? version = null) => new(provider != "gemini", PermissionModes(provider, provider == "claude" && SupportsMods(version)).Where(mode => mode != "onRequest" || SupportsCodexApprovals(version)).ToArray(), provider == "claude", provider == "claude", true, provider == "codex", provider == "codex", provider == "codex", true);
     public static RunSettings NormalizeSettings(string provider, RunSettings? value)
     {
         var v = value ?? new(); var caps = Capabilities(provider);
         var permission = PermissionModes(provider).Contains(v.PermissionMode) ? v.PermissionMode : "manual";
-        return new(caps.Effort && Wire.Efforts.Contains(v.Effort) ? v.Effort : "default", permission, caps.MaxTurns && v.MaxTurns is >= 1 and <= 1000 ? v.MaxTurns : null, caps.MaxBudgetUsd && v.MaxBudgetUsd is > 0 and <= 10000 ? v.MaxBudgetUsd : null, caps.FastMode && v.FastMode, caps.WebSearch && v.WebSearch is "disabled" or "cached" or "live" ? v.WebSearch : "default", caps.NetworkAccess && permission is ("acceptEdits" or "onRequest") && v.NetworkAccess);
+        return new(caps.Effort && (provider == "pi" ? Wire.PiThinkingLevels : Wire.Efforts).Contains(v.Effort) ? v.Effort : "default", permission, caps.MaxTurns && v.MaxTurns is >= 1 and <= 1000 ? v.MaxTurns : null, caps.MaxBudgetUsd && v.MaxBudgetUsd is > 0 and <= 10000 ? v.MaxBudgetUsd : null, caps.FastMode && v.FastMode, caps.WebSearch && v.WebSearch is "disabled" or "cached" or "live" ? v.WebSearch : "default", caps.NetworkAccess && permission is ("acceptEdits" or "onRequest") && v.NetworkAccess);
     }
     public static ModelCatalog Fallback(string provider)
     {
         var models = new List<ModelOption> { new("default", Locale.Get("provider.fallback.defaultLabel", new Dictionary<string, string> { ["name"] = ProviderMark.Label(provider) }), Locale.Get("provider.fallback.defaultDescription")) };
+        // pi lists its models from `pi --list-models` once signed in; until then only its own default.
         if (provider == "gemini") foreach (var (slug, name) in AntigravityModels) models.Add(new(slug, name, Locale.Get("provider.fallback.exampleDescription")));
-        else foreach (var value in provider switch { "claude" => new[] { "best", "fable", "opus", "sonnet", "haiku", "opusplan" }, _ => new[] { "gpt-5.6-sol", "gpt-6-astra" } }) models.Add(new(value, value, Locale.Get("provider.fallback.exampleDescription"), SupportsEffort: value.Contains("haiku") ? false : null));
+        else if (provider != "pi") foreach (var value in provider switch { "claude" => new[] { "best", "fable", "opus", "sonnet", "haiku", "opusplan" }, _ => new[] { "gpt-5.6-sol", "gpt-6-astra" } }) models.Add(new(value, value, Locale.Get("provider.fallback.exampleDescription"), SupportsEffort: value.Contains("haiku") ? false : null));
         return new("fallback", models, Locale.Get("provider.fallback.source"));
     }
     /// <summary>
@@ -96,12 +97,62 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidDataException or System.ComponentModel.Win32Exception or InvalidOperationException) { }
         return Fallback("gemini");
     }
+    /// <summary>
+    /// Starts a CLI with its pipes. pi is an npm shim (<c>pi.cmd</c>), which CreateProcess does not run: a batch file goes through
+    /// cmd.exe with every argument quoted (<see cref="WindowsCommand.Launch"/>), as the other tools' shims do.
+    /// </summary>
+    public static ChildProcess StartCli(string binary, IEnumerable<string> arguments, string workingDirectory, IDictionary<string, string>? environment)
+    {
+        if (OperatingSystem.IsWindows() && WindowsCommand.IsBatch(binary))
+        {
+            var (info, shell) = WindowsCommand.Launch(binary, arguments.ToList(), workingDirectory, environment);
+            info.Environment["NO_COLOR"] = "1";
+            return ChildProcess.Start(info, shell);
+        }
+        return ChildProcess.Start(ChildProcess.StartInfo(binary, arguments, workingDirectory, environment));
+    }
+    /// <summary>
+    /// <c>pi --list-models</c> (M/MightyCore/ProviderService.swift normalizePiCatalog): a header row (<c>provider model context
+    /// max-out thinking images</c>) and one row per model, columns padded with spaces. Without a sign-in it prints "No models
+    /// available…", which keeps the fallback (just pi's own default). A model is <c>provider/id</c>, the form <c>--model</c> takes;
+    /// <c>thinking: no</c> means it has no thinking levels.
+    /// </summary>
+    public static ModelCatalog PiCatalog(string text)
+    {
+        var fallback = Fallback("pi");
+        var models = new List<ModelOption> { fallback.Models[0] }; var seen = new HashSet<string> { "default" };
+        foreach (var line in text.Split('\n').Take(1_024))
+        {
+            var fields = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length < 6 || fields[0] == "provider" || fields[4] is not ("yes" or "no")) continue;
+            var value = fields[0] + "/" + fields[1];
+            if (!Wire.Model(value) || models.Count > 512 || !seen.Add(value)) continue;
+            models.Add(new(value, value, Locale.Get("provider.catalog.piModelRow", new Dictionary<string, string> { ["context"] = fields[2], ["output"] = fields[3] }), SupportsEffort: fields[4] == "yes"));
+        }
+        return models.Count > 1 ? new("cli", models, Locale.Get("provider.catalog.piSource")) : fallback;
+    }
+    /// <summary>Asks <c>pi --list-models</c> for its list (15 s), or keeps the fallback list.</summary>
+    public static async Task<ModelCatalog> ReadPiModelsAsync(CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        try
+        {
+            await using var child = StartCli(command.Binary, command.Prefix.Concat(["--list-models"]), workingDirectory ?? Path.GetTempPath(), QuietEnvironment());
+            child.Input.Close();
+            var stderr = DrainAsync(child.Error, timeout.Token); _ = stderr.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+            var text = await ReadBoundedAsync(child.Output, 1_048_576, timeout.Token);
+            if (await child.Completion.WaitAsync(timeout.Token) == 0) return PiCatalog(text);
+        }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidDataException or System.ComponentModel.Win32Exception or InvalidOperationException) { }
+        return Fallback("pi");
+    }
     public static string[] Efforts(string provider, string model, ModelCatalog catalog) =>
         Efforts(provider, model, catalog, null);
 
     public static string[] Efforts(string provider, string model, ModelCatalog catalog, IReadOnlyList<RegisteredModelEntry>? registeredModels)
     {
         if (provider == "gemini") return [];
+        if (provider == "pi") return catalog.Models.FirstOrDefault(m => m.Value == model)?.SupportsEffort == false ? [] : Wire.PiThinkingLevels;
         var row = catalog.Models.FirstOrDefault(m => m.Value == model || m.ResolvedModel == model);
         if (row?.SupportsEffort == false) return [];
         if (row?.SupportedEffortLevels is { } levels) return levels.Where(Wire.Efforts.Contains).Distinct().ToArray();
@@ -163,7 +214,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     private async Task<ProviderRuntime> ReadProviderAsync(string id, string directory)
     {
         var command = await FindAsync(id, closing.Token);
-        var catalog = command is null ? Fallback(id) : id == "gemini" ? await ReadAntigravityModelsAsync(command, closing.Token, directory) : await ReadModelsAsync(id, command, closing.Token, directory);
+        var catalog = command is null ? Fallback(id) : id == "gemini" ? await ReadAntigravityModelsAsync(command, closing.Token, directory) : id == "pi" ? await ReadPiModelsAsync(command, closing.Token, directory) : await ReadModelsAsync(id, command, closing.Token, directory);
         return new(id, Name(id), command is not null && (id != "claude" || SupportsMods(command.Version)), command?.Version, command is null ? Locale.Get("provider.notInstalled") : id == "claude" && !SupportsMods(command.Version) ? Locale.Get("provider.unsupportedVersion") : Locale.Get("provider.available"), catalog, Capabilities(id, command?.Version));
     }
     private static RuntimeInfo Info(List<ProviderRuntime> providers)
@@ -197,7 +248,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         var directories = (CliEnvironment.Current().GetValueOrDefault("PATH") ?? "").Split(Path.PathSeparator).Concat([Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm")]).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToArray();
         // Antigravity's installer adds its folder to PATH for new sessions only, so the folder it installs to is looked in as well.
         if (provider == "gemini" && OperatingSystem.IsWindows()) directories = [.. directories, AntigravityInstallFolder(CliEnvironment.Current())];
-        var candidates = directories.Select(path => new CliCommand(Path.Combine(path, Executable(provider) + (OperatingSystem.IsWindows() ? ".exe" : "")), [])).ToList();
+        var candidates = directories.Select(path => new CliCommand(Path.Combine(path, Executable(provider) + (OperatingSystem.IsWindows() ? provider == "pi" ? ".cmd" : ".exe" : "")), [])).ToList();
         // npm's global install leaves only claude.cmd on PATH; the executable it forwards to sits inside the package.
         if (OperatingSystem.IsWindows() && provider == "claude") candidates.AddRange(directories.Select(path => new CliCommand(Path.Combine(path, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"), [])));
         if (OperatingSystem.IsWindows() && provider == "codex")
@@ -212,7 +263,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(TimeSpan.FromSeconds(4));
-                await using var child = ChildProcess.Start(ChildProcess.StartInfo(candidate.Binary, candidate.Prefix.Concat(["--version"]), Path.GetTempPath(), QuietEnvironment()));
+                await using var child = StartCli(candidate.Binary, candidate.Prefix.Concat(["--version"]), Path.GetTempPath(), QuietEnvironment());
                 var stderr = DrainAsync(child.Error, timeout.Token);
                 var text = await ReadBoundedAsync(child.Output, 16384, timeout.Token);
                 var code = await child.Completion.WaitAsync(timeout.Token); await stderr;
@@ -375,6 +426,18 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
                 if (request.ResumeId is not null) args.AddRange(["resume", request.ResumeId]);
                 args.AddRange(["--json", "--skip-git-repo-check"]);
             }
+        }
+        else if (request.Provider == "pi")
+        {
+            // One RPC-mode process per request (M/MightyCore/ProviderService.swift arguments): the prompt, a steer and the stop travel
+            // as JSON lines on stdin (ProviderInput.PiStartup). pi has no approval window, so manual keeps only the read tools and
+            // full access leaves every tool on. The model, thinking level and session follow the same order as the Mac's.
+            args.AddRange(["--mode", "rpc"]);
+            if (request.Model != "default") args.AddRange(["--model", request.Model]);
+            if (settings.Effort != "default") args.AddRange(["--thinking", settings.Effort]);
+            if (settings.PermissionMode != "fullAccess") args.AddRange(["--tools", Wire.PiReadOnlyTools]);
+            if (request.ResumeId is not null) args.AddRange(["--session", request.ResumeId]);
+            return args;
         }
         else
         {

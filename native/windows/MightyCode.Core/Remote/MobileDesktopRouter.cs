@@ -34,7 +34,7 @@ public sealed record MobileDesktopAction(string SessionId, string Action, JsonEl
 public sealed class MobileDesktopRouter : IDisposable
 {
     public Func<string[]>? ExtraCapabilities { get; set; }
-    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push", "fileChanges", "workMap", "appUpdate"];
+    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push", "fileChanges", "workMap", "appUpdate", "pi"];
     /// <summary>The direct path's endpoints for /m1/info (docs/mobile-remote.md, "direct"); empty when there is no host or it does not listen.</summary>
     public Func<IReadOnlyList<string>>? DirectEndpoints { get; set; }
     /// <summary>The largest reply body the host sends; a session detail over it sheds its structure first (<see cref="SessionReply"/>).</summary>

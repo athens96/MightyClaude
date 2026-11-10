@@ -77,7 +77,8 @@ public sealed class SessionHistoryException(SessionHistoryError error) : Excepti
 /// </summary>
 public static class SessionHistory
 {
-    public static IReadOnlyList<string> Providers => MightyGraphSupport.Providers;
+    // pi's records are listed for resuming (ResumableSessions) but not replayed into the graph yet.
+    public static IReadOnlyList<string> Providers { get; } = ["claude", "codex", "gemini"];
     public const int TurnsPerChunk = 10;
     public const long MaximumChunkBytes = 48L * 1_048_576;
     /// A single record line larger than this is skipped rather than held in memory.

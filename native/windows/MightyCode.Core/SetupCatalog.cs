@@ -88,13 +88,13 @@ public sealed class SetupCatalog(IReadOnlyList<SetupItem> items)
     /// <summary>The GitHub repositories a URL or a marketplace's owner/repo short form may name: only those the catalog uses.</summary>
     public static readonly IReadOnlySet<string> AllowedRepositories = new HashSet<string>(StringComparer.Ordinal)
     {
-        "Homebrew/install", "Q00/ouroboros", "anthropics/claude-plugins-community", "Yeachan-Heo/oh-my-claudecode", "garrytan/gstack",
+        "Homebrew/install", "Q00/ouroboros", "anthropics/claude-plugins-community", "Yeachan-Heo/oh-my-claudecode", "garrytan/gstack", "badlogic/pi-mono",
     };
     /// <summary>Every label and description key a catalog item may name, as the Mac keeps them (SetupCatalog.knownKeys).</summary>
     public static readonly IReadOnlySet<string> KnownKeys = new HashSet<string>(StringComparer.Ordinal)
     {
         "setup.item.claude.title", "setup.item.claude.detail", "setup.item.codex.title", "setup.item.codex.detail",
-        "setup.item.agy.title", "setup.item.agy.detail", "setup.item.git.title", "setup.item.git.detail",
+        "setup.item.agy.title", "setup.item.agy.detail", "setup.item.pi.title", "setup.item.pi.detail", "setup.item.git.title", "setup.item.git.detail",
         "setup.item.homebrew.title", "setup.item.homebrew.detail", "setup.item.node.title", "setup.item.node.detail",
         "setup.item.bun.title", "setup.item.bun.detail", "setup.item.uv.title", "setup.item.uv.detail",
         "setup.item.ouroboros.title", "setup.item.ouroboros.detail", "setup.item.omc.title", "setup.item.omc.detail",

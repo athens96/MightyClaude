@@ -60,7 +60,7 @@ public static class ActivitySupport
         "bash" or "run_shell_command" or "command_execution" or "exec_command" or "shell" or "run_command" or "send_command_input" or "command_status" => "command",
         "read" or "read_file" or "read_many_files" or "list_directory" or "ls" or "view_file" or "list_dir" or "read_resource" or "list_resources" => "read",
         "edit" or "write" or "write_file" or "replace" or "apply_patch" or "file_change" or "notebookedit" or "write_to_file" or "replace_file_content" or "multi_replace_file_content" or "sed_file" or "notebook_edit" => "edit",
-        "grep" or "glob" or "search_file_content" or "glob_search" or "grep_search" or "find_by_name" => "search",
+        "grep" or "glob" or "find" or "search_file_content" or "glob_search" or "grep_search" or "find_by_name" => "search",
         "websearch" or "webfetch" or "web_search" or "google_web_search" or "web_fetch" or "search_web" or "read_url_content" => "web",
         // Antigravity's browser tools act on web pages (M/MightyCore/AgentActivity.swift:68-79).
         var name when name.StartsWith("browser_", StringComparison.Ordinal) || name is "open_browser_url" or "read_browser_page" or "list_browser_pages" or "click_browser_pixel" or "execute_browser_javascript" or "capture_browser_screenshot" or "capture_browser_console_logs" => "web",

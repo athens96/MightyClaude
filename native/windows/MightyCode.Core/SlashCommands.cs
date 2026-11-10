@@ -103,6 +103,14 @@ public static class SlashCommandCatalog
                 App("usage", Locale.Get("slash.builtin.usage"), SlashCommandAction.ShowUsage),
                 App("config", Locale.Get("slash.builtin.settings"), SlashCommandAction.OpenSettings), rename, help
             ],
+            "pi" =>
+            [
+                model,
+                App("permissions", Locale.Get("slash.builtin.permission"), argument: SlashArgument.Permission),
+                App("new", Locale.Get("slash.builtin.newConversation"), SlashCommandAction.NewConversation),
+                App("session", Locale.Get("slash.builtin.usage"), SlashCommandAction.ShowUsage),
+                App("settings", Locale.Get("slash.builtin.settings"), SlashCommandAction.OpenSettings), rename, help
+            ],
             _ => []
         };
     }
@@ -167,6 +175,12 @@ public static class SlashCommandCatalog
                 found.AddRange(Skills(Path.Combine(agy, "skills"), SlashCommandStrings.AntigravitySkillSource, SlashCommandOrigin.User));
                 if (workspacePath is not null)
                     found.AddRange(Skills(Path.Combine(workspacePath, ".agents", "skills"), SlashCommandStrings.ProjectSkillSource, SlashCommandOrigin.Project));
+                break;
+            case "pi":
+                // pi's skills: the user's (~/.pi/agent/skills), then the project's (.pi/skills).
+                found.AddRange(Skills(Path.Combine(PiAgent.Directory(home, new Dictionary<string, string>()), "skills"), Locale.Get("slash.source.piSkill"), SlashCommandOrigin.User));
+                if (workspacePath is not null)
+                    found.AddRange(Skills(Path.Combine(workspacePath, ".pi", "skills"), SlashCommandStrings.ProjectSkillSource, SlashCommandOrigin.Project));
                 break;
         }
         // Later sources (project) win over earlier ones (user, plugins).
@@ -343,6 +357,7 @@ public static class SlashCommandCatalog
         "claude" => "Claude",
         "codex" => "Codex",
         "gemini" => "Antigravity",
+        "pi" => "pi",
         _ => provider
     };
 }

@@ -41,7 +41,7 @@ internal static class SetupVerification
         var catalog = SetupCatalog.Bundled();
         Check(catalog.Items.Select(item => item.Id).SequenceEqual(SetupCatalogDecoder.Decode(FixtureText()).Items.Select(item => item.Id)), "the embedded catalog must be the contract file");
         var windows = catalog.Items.Where(item => item.Entry(SetupPlatform.Windows) is not null).Select(item => item.Id).ToList();
-        Check(windows.SequenceEqual(["claude", "codex", "agy", "git", "node", "uv", "ouroboros", "omc", "tailscale", "gh", "glab"]),
+        Check(windows.SequenceEqual(["claude", "codex", "agy", "pi", "git", "node", "uv", "ouroboros", "omc", "tailscale", "gh", "glab"]),
             "every tool Windows can install has a Windows entry; got " + string.Join(", ", windows));
         foreach (var id in new[] { "homebrew", "bun", "gstack" }) Check(catalog.Item(id)?.Entry(SetupPlatform.Windows) is null, id + " stays a Mac tool");
         Check(catalog.Items.Where(item => item.Required).Select(item => item.Id).SequenceEqual(["git"]), "Git is the one required tool");

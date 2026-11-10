@@ -49,6 +49,7 @@ internal static class Verification
     internal static async Task FakeCliAsync(string provider, string record, string[] args)
     {
         await File.WriteAllTextAsync(record + ".args", JsonSerializer.Serialize(args, Wire.Json));
+        if (provider == "pi" && !args.Contains("--version")) { await PiVerification.FakeAsync(record, args); return; }
         if (args.Contains("--version")) { Console.WriteLine("2.1.271"); return; }
         // A Claude launched with host permission prompts: answer the handshake,
         // ask to use one tool once the prompt frame arrives, record the answer.
@@ -451,6 +452,25 @@ internal static class Verification
         await Test("antigravity: the watcher follows growing transcripts and nested sub-agents", AntigravityVerification.TheWatcherFollowsGrowingTranscriptsAndNestedSubagents);
         await Test("antigravity: older requests are read from the conversation's transcript", AntigravityVerification.OlderRequestsAreReadFromTheConversationTranscript);
         await Test("antigravity: the conversations to continue and the skills", AntigravityVerification.TheConversationListAndSkills);
+        await Test("pi: an answer is logged once whatever the deltas and the end of the message", PiVerification.AnAnswerIsLoggedOnceWhateverTheDeltasAndTheEndOfTheMessage);
+        await Test("pi: tools are rows that settle by their call id and the second message is logged too", PiVerification.ToolsAreRowsThatSettleByTheirCallIdAndTheSecondMessageIsLoggedToo);
+        await Test("pi: usage adds each message with cached input inside input", PiVerification.UsageAddsEachMessageWithCachedInputInsideInput);
+        await Test("pi: a retried error is not the run's failure and keeps the turn open", PiVerification.ARetriedErrorIsNotTheRunsFailureAndKeepsTheTurnOpen);
+        await Test("pi: an error no retry answered fails the run and a dialog is cancelled", PiVerification.AnErrorNoRetryAnsweredFailsTheRunAndADialogIsCancelled);
+        await Test("pi: a rejected command fails the run", PiVerification.ARejectedCommandFailsTheRun);
+        await Test("pi: permissions become the tool allowlist and thinking levels are the effort", PiVerification.PermissionsBecomeTheToolAllowlistAndThinkingLevelsAreTheEffort);
+        await Test("pi: the RPC stdin is get_state then the prompt, and a steer is one line", PiVerification.TheRpcStdinIsGetStateThenThePromptAndASteerIsOneLine);
+        await Test("pi: attachments ride in the prompt or are named by path", PiVerification.AttachmentsRideInThePromptOrAreNamedByPath);
+        await Test("pi: the model list becomes provider/model rows", PiVerification.TheModelListBecomesProviderSlashModelRowsAndWithoutASignInIsJustPisDefault);
+        await Test("pi: no models reads signed out, credentials and environment keys sign pi in", PiVerification.NoModelsReadsSignedOutAndCredentialsAndEnvironmentKeysSignPiIn);
+        await Test("pi: the auth file and the coordinator are read from the home and never shown", PiVerification.TheAuthFileAndTheCoordinatorAreReadFromTheHomeAndNeverShown);
+        await Test("pi: the setup item installs pi with npm after Node and then signs in", PiVerification.TheSetupItemInstallsPiWithNpmAfterNodeAndThenSignsIn);
+        await Test("pi: updates itself with update self wherever it is installed", PiVerification.PiUpdatesItselfWithUpdateSelfWhereverItIsInstalled);
+        await Test("pi: sessions of the workspace folder are listed with their first request", PiVerification.SessionsOfTheWorkspaceFolderAreListedWithTheirFirstRequest);
+        await Test("pi: a run writes the startup lines, keeps stdin open until the turn ends, then completes", PiVerification.ARunWritesTheStartupLinesKeepsStdinOpenUntilTheTurnEndsThenCompletes);
+        await Test("pi: a steer is written while the turn is open and refused before and after", PiVerification.ASteerIsWrittenWhileTheTurnIsOpenAndRefusedBeforeAndAfter);
+        await Test("pi: stopping a run ends it stopped, and a resume of a missing session starts a new one", PiVerification.StoppingARunEndsItStoppedAndAResumeOfAMissingSessionStartsANewOne);
+        await Test("pi: neither a delegation child nor a parent, not in a remote workspace, advertised to the phone", PiVerification.PiIsNeitherADelegationChildNorAParentNorInARemoteWorkspaceAndTheHostAdvertisesIt);
         // Antigravity permission cards, ported from the Mac's AntigravityPermissionTests over the shared fixture.
         await Test("antigravity cards: every fixture turn gives its actions", AntigravityPermissionVerification.EveryFixtureTurnGivesItsActions);
         await Test("antigravity cards: without a card the older notice stays", AntigravityPermissionVerification.WithoutACardTheOlderNoticeStays);
@@ -626,10 +646,10 @@ internal static class Verification
             Check(ProviderCatalog.Arguments(new("p", "w", "claude", "secret", [], "sonnet", "claude", new("high", "manual", 3, 1.5)), "/plugin").Contains("--effort"));
             Check(ProviderCatalog.Efforts("codex", "default", ProviderCatalog.Fallback("codex")).Length == 0); Check(!ProviderCatalog.SupportsMods("2.1.263")); Check(ProviderCatalog.SupportsMods("2.1.271 (Claude Code)"));
         });
-        await Test("Codex and Antigravity are beta, Claude is official, and Name never carries the badge", () =>
+        await Test("Codex, Antigravity and pi are beta, Claude is official, and Name never carries the badge", () =>
         {
-            Check(!ProviderCatalog.IsBeta("claude") && ProviderCatalog.IsBeta("codex") && ProviderCatalog.IsBeta("gemini") && !ProviderCatalog.IsBeta("unknown"), "beta providers");
-            Check(Wire.Providers.Select(ProviderCatalog.Name).SequenceEqual(new[] { "Claude Code", "Codex CLI", "Antigravity CLI" }), "provider names");
+            Check(!ProviderCatalog.IsBeta("claude") && ProviderCatalog.IsBeta("codex") && ProviderCatalog.IsBeta("gemini") && ProviderCatalog.IsBeta("pi") && !ProviderCatalog.IsBeta("unknown"), "beta providers");
+            Check(Wire.Providers.Select(ProviderCatalog.Name).SequenceEqual(new[] { "Claude Code", "Codex CLI", "Antigravity CLI", "pi" }), "provider names");
             var badge = Locale.Get("badge.beta"); Check(badge is "베타" or "Beta", "badge text " + badge);
             Check(Locale.Get("badge.betaAccessibility") is "베타 기능" or "Beta feature", "badge accessibility text");
             Check(ProviderCatalog.BetaLabel("claude", "Claude Code") == "Claude Code", "official label untouched");
@@ -819,7 +839,7 @@ internal static class Verification
             try
             {
                 var plugin = Path.Combine(directory, "plugin"); Directory.CreateDirectory(Path.Combine(plugin, ".claude-plugin")); await File.WriteAllTextAsync(Path.Combine(plugin, ".claude-plugin", "plugin.json"), "{}");
-                foreach (var provider in Wire.Providers)
+                foreach (var provider in Wire.Providers.Where(p => p != "pi"))
                 {
                     var record = Path.Combine(directory, provider); await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Self("--fake-cli", provider, record, "--verify-attachments"))); await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, events.Enqueue);
                     await manager.StartAsync(new(provider, workspace.Id, "claude", "", [], Provider: provider, Attachments: files)); await Until(() => !manager.IsRunning(provider));

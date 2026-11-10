@@ -13,7 +13,11 @@ public static class Wire
     public static bool Model(string? value) => value is { Length: > 0 and <= 200 } && Regex.IsMatch(value, @"^[a-zA-Z0-9][a-zA-Z0-9._:/@\[\]-]*\z");
     public static string Clean(string? value, int limit = 32768) { var clean = Regex.Replace(value ?? "", @"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", ""); return clean[..Math.Min(clean.Length, limit)]; }
     public static T Clone<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, Json), Json)!;
-    public static readonly string[] Providers = ["claude", "codex", "gemini"];
+    public static readonly string[] Providers = ["claude", "codex", "gemini", "pi"];
+    /// <summary>pi's <c>--thinking</c> levels: its effort setting, off included (M/MightyCore/Models.swift piThinkingLevels).</summary>
+    public static readonly string[] PiThinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"];
+    /// <summary>The tools pi's read-only mode leaves on (<c>--tools</c>); full access passes none.</summary>
+    public const string PiReadOnlyTools = "read,grep,find,ls";
     public static readonly string[] Efforts = ["low", "medium", "high", "xhigh", "max"];
 }
 
@@ -419,7 +423,7 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
         if (!Wire.Identifier(SessionId) || !Wire.Identifier(WorkspaceId) || Kind is not ("claude" or "shell") || !Wire.Model(Model) || !Wire.Providers.Contains(Provider) || ResumeId is not null && !Wire.Identifier(ResumeId)) throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
         if (Input is null || string.IsNullOrWhiteSpace(Input) && files is null || Input.Length > 100000 || Input.Contains('\0')) throw new ArgumentException(Locale.Get("wire.startRun.emptyInput"));
         if (Kind == "shell" && files is not null) throw new ArgumentException(Locale.Get("wire.startRun.attachmentAiOnly"));
-        if (settings.Effort != "default" && !Wire.Efforts.Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "onRequest" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
+        if (settings.Effort != "default" && !(Provider == "pi" ? Wire.PiThinkingLevels : Wire.Efforts).Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "onRequest" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
         if (settings.PermissionMode == "onRequest" && (Provider != "codex" || Kind != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
         if (settings.PermissionMode == "auto" && (Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.autoModeClaudeOnly"));
         if (PermissionModeOverride is { } mode && (mode != "plan" || Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("plan.error.overrideClaudeOnly"));

@@ -338,6 +338,8 @@ public sealed partial class DesktopService : IAsyncDisposable
             ObjectDisposedException.ThrowIf(closing, this);
             if (!snapshot.Workspaces.Any(w => w.Id == request.WorkspaceId)) throw new ArgumentException(Locale.Get("run.error.workspaceNotRegistered"));
             workspace = snapshot.Workspaces.First(w => w.Id == request.WorkspaceId); remote = workspace.Remote is not null;
+            // pi's RPC run is local for now (M/AppStore.swift runBlock).
+            if (remote && request.Kind != "shell" && request.Provider == "pi") throw new InvalidOperationException(Locale.Get("run.blocked.piRemote"));
             if (snapshot.Sessions.FirstOrDefault(s => s.Id == request.SessionId && s.WorkspaceId == request.WorkspaceId && s.Kind == request.Kind) is not { } pane) throw new ArgumentException(Locale.Get("run.error.sessionNotInWorkspace"));
             // A delegated child runs only in its own worktree, never in its parent's checkout (M/AppStore.swift:490-491).
             if (DelegationPanes.RunRefusal(pane) is not null) throw new InvalidOperationException(Locale.Get("run.blocked.worktreeMissing"));

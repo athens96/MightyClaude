@@ -25,21 +25,21 @@ internal static class DelegationCrossAgentVerification
     internal static Task TheSharedModeTablesHold()
     {
         var fixture = Modes.Value;
-        SameList(fixture.GetProperty("agents").EnumerateArray().Select(agent => agent.GetString()!), Wire.Providers, "the agents are the app's three, in order");
-        SameList(fixture.GetProperty("capabilities").EnumerateObject().Select(agent => agent.Name), Wire.Providers, "every agent has its capabilities");
+        SameList(fixture.GetProperty("agents").EnumerateArray().Select(agent => agent.GetString()!), Providers.AgentIds, "the agents are the app's three, in order");
+        SameList(fixture.GetProperty("capabilities").EnumerateObject().Select(agent => agent.Name), Providers.AgentIds, "every agent has its capabilities");
         foreach (var provider in fixture.GetProperty("capabilities").EnumerateObject())
         {
             SameList(provider.Value.EnumerateObject().Select(mode => mode.Name).Order(StringComparer.Ordinal), Providers.StartingModes(provider.Name).Order(StringComparer.Ordinal), provider.Name + "'s modes");
             foreach (var mode in provider.Value.EnumerateObject())
                 SameList(Providers.Capabilities(provider.Name, mode.Name).Select(Name).Order(StringComparer.Ordinal), mode.Value.EnumerateArray().Select(name => name.GetString()!).Order(StringComparer.Ordinal), $"what {provider.Name} {mode.Name} may do");
         }
-        SameList(fixture.GetProperty("widestChildMode").EnumerateObject().Select(agent => agent.Name), Wire.Providers, "every agent is a parent");
+        SameList(fixture.GetProperty("widestChildMode").EnumerateObject().Select(agent => agent.Name), Providers.AgentIds, "every agent is a parent");
         foreach (var parent in fixture.GetProperty("widestChildMode").EnumerateObject())
         {
             SameList(parent.Value.EnumerateObject().Select(mode => mode.Name).Order(StringComparer.Ordinal), Providers.StartingModes(parent.Name).Order(StringComparer.Ordinal), parent.Name + "'s modes as a parent");
             foreach (var parentMode in parent.Value.EnumerateObject())
             {
-                SameList(parentMode.Value.EnumerateObject().Select(child => child.Name), Wire.Providers, $"every child agent under {parent.Name} {parentMode.Name}");
+                SameList(parentMode.Value.EnumerateObject().Select(child => child.Name), Providers.AgentIds, $"every child agent under {parent.Name} {parentMode.Name}");
                 foreach (var child in parentMode.Value.EnumerateObject())
                     Same(Providers.WidestChildMode(child.Name, parent.Name, parentMode.Name), child.Value.ValueKind == JsonValueKind.Null ? null : child.Value.GetString(), $"{child.Name} under {parent.Name} {parentMode.Name}");
             }
@@ -53,7 +53,7 @@ internal static class DelegationCrossAgentVerification
         foreach (var (word, provider) in new[] { ("claude", "claude"), ("codex", "codex"), ("antigravity", "gemini"), ("gemini", "gemini"), ("Codex", "codex"), (" ANTIGRAVITY\n", "gemini") })
             Same(Providers.Agent(word), provider, "the agent named " + word.Trim());
         foreach (var word in new[] { "", "gpt", "openai", "agy", "claude code", "codex-cli" }) Same(Providers.Agent(word), null, "no agent is named '" + word + "'");
-        SameList(Wire.Providers.Select(Providers.AgentName), ["claude", "codex", "antigravity"], "the tools name the agents by their words");
+        SameList(Providers.AgentIds.Select(Providers.AgentName), ["claude", "codex", "antigravity"], "the tools name the agents by their words");
 
         // Editing unasked covers editing after asking; everything else is a plain subset.
         static HashSet<ModeCapability> Of(params ModeCapability[] capabilities) => [.. capabilities];
@@ -81,7 +81,7 @@ internal static class DelegationCrossAgentVerification
         Same(Providers.WidestChildMode("codex", "claude", "sideways"), null, "an unknown parent mode");
         Same(Providers.WidestChildMode("other", "claude", "fullAccess"), null, "an unknown child agent");
         // One agent's modes compare by its own order, exactly as before.
-        foreach (var provider in Wire.Providers)
+        foreach (var provider in Providers.AgentIds)
         {
             var modes = Providers.StartingModes(provider);
             for (var own = 0; own < modes.Count; own++)

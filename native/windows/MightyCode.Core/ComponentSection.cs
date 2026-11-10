@@ -103,6 +103,7 @@ public static class ComponentSection
         "claude" => "npm install -g @anthropic-ai/claude-code",
         "codex" => "npm install -g @openai/codex",
         "gemini" => "irm https://antigravity.google/cli/install.ps1 | iex",
+        "pi" => "npm install -g @mariozechner/pi-coding-agent",
         _ => null,
     };
 
@@ -111,6 +112,7 @@ public static class ComponentSection
         "claude" => "Claude Code",
         "codex" => "Codex",
         "gemini" => "Antigravity CLI",
+        "pi" => "pi",
         _ => id,
     };
 }

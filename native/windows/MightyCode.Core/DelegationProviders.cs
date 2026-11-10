@@ -27,6 +27,8 @@ public static class DelegationProviders
     private static readonly HashSet<string> AgentParents = ["claude", "codex"];
     /// <summary>The agents of agent panes that take part at all.</summary>
     private static readonly HashSet<string> Agents = ["claude", "codex", "gemini"];
+    /// <summary>The agents that take part, in the app's order (the provider list without pi, which has no worktree child and no delegation tools yet).</summary>
+    public static IEnumerable<string> AgentIds => Wire.Providers.Where(Agents.Contains);
     /// <summary>Every permission mode of any provider, narrowest first: how freely the agent acts without asking. Modes are compared within one provider.</summary>
     private static readonly string[] ModeRank = ["plan", "manual", "acceptEdits", "onRequest", "auto", "fullAccess"];
 
@@ -132,7 +134,7 @@ public static class DelegationProviders
 
     /// <summary>Whether the pane, in <paramref name="mode"/> now, may have a child the human starts of any agent: its own (<see cref="CanParentByHuman"/>), or another with a mode in which its child can change files.</summary>
     public static bool MayHaveHumanChild(string kind, string provider, string mode) =>
-        IsAgentPane(kind, provider) && Wire.Providers.Any(agent => HumanChildMode(agent, provider, mode, false) is not null);
+        IsAgentPane(kind, provider) && AgentIds.Any(agent => HumanChildMode(agent, provider, mode, false) is not null);
 
     /// <summary>The provider id delegate's <c>agent</c> argument names: claude, codex or antigravity (or Antigravity's provider id, gemini), in any case; null for any other word.</summary>
     public static string? Agent(string name) => name.Trim().ToLowerInvariant() switch
@@ -165,7 +167,7 @@ public static class DelegationProviders
     /// could change files, or the cap.
     /// </summary>
     public static IReadOnlyList<DelegationChildChoice> HumanChildChoices(string parent, string parentMode, bool planFirst, int openHumanChildren, Func<string, DelegationAgentAvailability> availability) =>
-        Wire.Providers.Select(agent =>
+        AgentIds.Select(agent =>
         {
             var mode = HumanChildMode(agent, parent, parentMode, planFirst);
             DelegationChildBlock? blocked = (agent == parent ? DelegationAgentAvailability.Ready : availability(agent)) switch

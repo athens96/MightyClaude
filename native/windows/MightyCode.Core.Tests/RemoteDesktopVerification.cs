@@ -27,6 +27,12 @@ internal static class RemoteDesktopVerification
             Check(service.IsRemoteSession("cmd") && service.IsRemoteSession("agent") && !service.IsRemoteSession("mine"), "panes are remote by their workspace");
             Check(service.RemoteReference("cmd") == far.Remote && service.RemoteReference("agent") == far.Remote && service.RemoteReference("mine") is null && service.RemoteReference("gone") is null,
                 "a pane's host is its workspace's, read without a copy of the state");
+            // pi's RPC run is local for now: a pi pane in a remote workspace is refused before anything is sent.
+            await service.UpdateAsync(s => s with { Sessions = [.. s.Sessions, new RunSession { Id = "pi", WorkspaceId = far.Id, Provider = "pi" }] });
+            var piRefusal = "";
+            try { await service.StartAsync(new StartRunRequest("pi", far.Id, "claude", "hi", [], Provider: "pi")); } catch (InvalidOperationException ex) { piRefusal = ex.Message; }
+            Check(piRefusal == Locale.Get("run.blocked.piRemote"), "a pi pane is not run in a remote workspace: " + piRefusal);
+            await service.UpdateAsync(s => s with { Sessions = s.Sessions.Where(p => p.Id != "pi").ToList() });
 
             await service.StartAsync(new StartRunRequest("cmd", far.Id, "shell", "dir", []));
             await Verification.Until(() => service.Snapshot.Sessions.Single(s => s.Id == "cmd").Status == "completed");
@@ -561,7 +567,7 @@ internal static class RemoteDesktopVerification
         var remote = new Workspace { Path = "C:\\far", Remote = new("conn-1", "ws-1", "studio-pc") };
         Check(RemoteWorkspaceFeatures.AddPaneEntries(local).SequenceEqual(AddPaneMenu.Entries()), "a local workspace keeps its menu");
         var entries = RemoteWorkspaceFeatures.AddPaneEntries(remote);
-        Check(entries.Contains(AddPaneMenu.Shell) && !entries.Contains(AddPaneMenu.Browser) && !entries.Contains(AddPaneMenu.Files) && Wire.Providers.All(p => entries.Contains(AddPaneMenu.AgentPrefix + p)), "a remote workspace offers agents and commands, never files or a browser");
+        Check(entries.Contains(AddPaneMenu.Shell) && !entries.Contains(AddPaneMenu.Browser) && !entries.Contains(AddPaneMenu.Files) && Wire.Providers.Where(p => p != "pi").All(p => entries.Contains(AddPaneMenu.AgentPrefix + p)) && !entries.Contains(AddPaneMenu.AgentPrefix + "pi"), "a remote workspace offers agents and commands, never files or a browser");
         Check(entries.TakeLast(4).SequenceEqual([AddPaneMenu.Separator, AddPaneMenu.OpenProject, AddPaneMenu.NewFolder, AddPaneMenu.FromGit]), "a remote workspace's menu ends with the three ways to add a (local) workspace, as on the Mac");
         Check(RemoteWorkspaceFeatures.AllowsLocalOnly(local) && !RemoteWorkspaceFeatures.AllowsLocalOnly(remote), "local-only features stay local");
         Check(RemoteWorkspaceFeatures.UsesLocalTerminal(new RunSession { Kind = "shell" }, local) && !RemoteWorkspaceFeatures.UsesLocalTerminal(new RunSession { Kind = "shell" }, remote), "a remote command pane is never a local ConPTY terminal");

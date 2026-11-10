@@ -386,4 +386,18 @@ public sealed record ProviderInput(List<string> Arguments, byte[] StandardInput)
     /// </summary>
     public static string AntigravityUserMessage(string text)
         => JsonSerializer.Serialize(new { @event = "user", message = new { content = text } }, Wire.Json) + "\n";
+
+    /// <summary>
+    /// The stdin of a pi RPC run (<c>pi --mode rpc</c>, M/MightyCore/Attachments.swift piStartup): <c>get_state</c> first, whose
+    /// response names the session the run continues (its id is the pane's resume id), then the prompt with the pictures as
+    /// <c>ImageContent</c>. Stdin stays open until the turn ends: pi exits on its end.
+    /// </summary>
+    public static string PiStartup(string text, IEnumerable<(string MediaType, string Base64)>? images = null)
+    {
+        var pictures = (images ?? []).Select(i => new { type = "image", data = i.Base64, mimeType = i.MediaType }).ToArray();
+        object prompt = pictures.Length == 0 ? new { type = "prompt", message = text } : new { type = "prompt", message = text, images = pictures };
+        return "{\"type\":\"get_state\"}\n" + JsonSerializer.Serialize(prompt, Wire.Json) + "\n";
+    }
+    /// <summary>A user message sent while pi works: delivered after the current turn's tool calls.</summary>
+    public static string PiSteer(string text) => JsonSerializer.Serialize(new { type = "steer", message = text }, Wire.Json) + "\n";
 }

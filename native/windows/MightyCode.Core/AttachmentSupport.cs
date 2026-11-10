@@ -110,15 +110,17 @@ public sealed class StagedAttachments : IAsyncDisposable
     public string InputFor(StartRunRequest request)
     {
         var prompt = string.IsNullOrWhiteSpace(request.Input) ? Locale.Get("attachments.prompt.default") : request.Input;
-        var generic = Files.Where(f => request.Provider != "claude" || !f.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal) && f.Attachment.MediaType != "application/pdf").ToArray();
+        var generic = Files.Where(f => request.Provider == "pi" ? !f.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal) : request.Provider != "claude" || !f.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal) && f.Attachment.MediaType != "application/pdf").ToArray();
         if (generic.Length > 0)
         {
             // agy reads a file outside the workspace once its folder is added (ArgumentsFor); the prompt names each copy by its
             // plain path, never JSON-escaped (M/MightyCore/Attachments.swift:160-164). A staged path never holds a quote.
-            var references = generic.Select(f => JsonSerializer.Serialize(f.Attachment.Name, Wire.Json) + ": " + (request.Provider == "gemini" ? "\"" + f.Path + "\"" : JsonSerializer.Serialize(f.Path, Wire.Json)));
+            var references = generic.Select(f => JsonSerializer.Serialize(f.Attachment.Name, Wire.Json) + ": " + (request.Provider is "gemini" or "pi" ? "\"" + f.Path + "\"" : JsonSerializer.Serialize(f.Path, Wire.Json)));
             // Model input, not UI: one fixed English line in every app language, as the macOS reference line is.
             prompt += "\n\nAttached files (copies provided for this run only):\n" + string.Join("\n", references);
         }
+        // pi takes pictures in the prompt itself; any other file is named by the path of its copy.
+        if (request.Provider == "pi") return ProviderInput.PiStartup(prompt, Files.Where(f => f.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal)).Select(f => (f.Attachment.MediaType, f.Attachment.DataBase64)));
         if (request.Provider != "claude") return prompt;
         var content = new List<object> { new { type = "text", text = prompt } };
         foreach (var file in Files.Where(f => f.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal) || f.Attachment.MediaType == "application/pdf")) content.Add(new { type = file.Attachment.MediaType == "application/pdf" ? "document" : "image", source = new { type = "base64", media_type = file.Attachment.MediaType, data = file.Attachment.DataBase64 } });
@@ -136,7 +138,7 @@ public sealed class StagedAttachments : IAsyncDisposable
         {
             foreach (var file in Files.Where(f => f.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal))) args.InsertRange(args.Count - 1, ["--image", file.Path]);
         }
-        else args.AddRange(["--add-dir", DirectoryPath]);
+        else if (request.Provider != "pi") args.AddRange(["--add-dir", DirectoryPath]);
         return args;
     }
     public ValueTask DisposeAsync() { if (Directory.Exists(DirectoryPath)) Directory.Delete(DirectoryPath, true); return ValueTask.CompletedTask; }

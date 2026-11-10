@@ -90,12 +90,13 @@ internal sealed class SessionUsageTracker
     private long lastModSequence = -1;
     private bool authoritativeContext, resultSeen;
     internal SessionUsageTracker(string provider, Action<SessionUsage>? callback) { value = Initial(provider); this.callback = callback; }
-    private static SessionUsage Initial(string provider) => new() { Provider = provider, Source = provider == "gemini" ? "antigravity.stream-json" : provider + ".stream-json", TokenScope = provider == "claude" ? "response" : "session" };
+    private static SessionUsage Initial(string provider) => new() { Provider = provider, Source = provider == "gemini" ? "antigravity.stream-json" : provider == "pi" ? "pi.rpc" : provider + ".stream-json", TokenScope = provider == "claude" ? "response" : provider == "pi" ? "run" : "session" };
     internal void Consume(JsonElement root)
     {
         if (callback is null) return;
         var type = root.Text("type");
         if (value.Provider == "claude") { Claude(root, type); return; }
+        if (value.Provider == "pi") { Pi(root, type); return; }
         if (value.Provider == "codex")
         {
             if (type == "thread.started") { Identity(root.Text("thread_id")); Publish(); }
@@ -120,6 +121,29 @@ internal sealed class SessionUsageTracker
                 Publish();
             }
         }
+    }
+    /// <summary>
+    /// pi reports each assistant message's own usage (<c>message_end</c>): the run's figures add them up, input counting the cached
+    /// part as the others do. <c>get_state</c> names the session and the model's context window (M/MightyCore/SessionUsage.swift consumePi).
+    /// </summary>
+    private void Pi(JsonElement root, string? type)
+    {
+        if (type == "response" && root.Text("command") == "get_state" && MetadataJson.Property(root, "success").ValueKind == JsonValueKind.True && MetadataJson.Property(root, "data") is { ValueKind: JsonValueKind.Object } data)
+        {
+            Identity(data.Text("sessionId"));
+            if (MetadataJson.Property(data, "model") is { ValueKind: JsonValueKind.Object } model) { Model(model.Text("id")); value = value with { ContextWindowTokens = SessionUsageSupport.Count(model, "contextWindow") }; }
+            Publish(); return;
+        }
+        if (type != "message_end" || MetadataJson.Property(root, "message") is not { ValueKind: JsonValueKind.Object } message || message.Text("role") != "assistant" || MetadataJson.Property(message, "usage") is not { ValueKind: JsonValueKind.Object } usage
+            || SessionUsageSupport.Count(usage, "input") is not { } fresh || SessionUsageSupport.Count(usage, "output") is not { } output) return;
+        var read = MetadataJson.Property(usage, "cacheRead").ValueKind == JsonValueKind.Undefined ? 0 : SessionUsageSupport.Count(usage, "cacheRead");
+        var written = MetadataJson.Property(usage, "cacheWrite").ValueKind == JsonValueKind.Undefined ? 0 : SessionUsageSupport.Count(usage, "cacheWrite");
+        if (read is null || written is null || SessionUsageSupport.Sum([fresh, read, written]) is not { } input) return;
+        Model(message.Text("model"));
+        var inputTotal = (value.InputTokens ?? 0) + input; var outputTotal = (value.OutputTokens ?? 0) + output;
+        value = value with { InputTokens = inputTotal, OutputTokens = outputTotal, CacheReadTokens = (value.CacheReadTokens ?? 0) + read, CacheWriteTokens = (value.CacheWriteTokens ?? 0) + written, TotalTokens = SessionUsageSupport.Sum([inputTotal, outputTotal]), ContextUsedTokens = input };
+        if (SessionUsageSupport.Cost(MetadataJson.Number(MetadataJson.Property(usage, "cost"), "total")) is { } cost) value = value with { CostUSD = (value.CostUSD ?? 0) + cost, CostScope = "run" };
+        Publish();
     }
     internal void ConsumeMod(JsonElement root)
     {

@@ -48,7 +48,7 @@ public sealed record ResumableSessionQuery(string WorkspacePath)
 /// </summary>
 public static class ResumableSessions
 {
-    public static readonly string[] Providers = ["claude", "codex", "gemini"];
+    public static readonly string[] Providers = ["claude", "codex", "gemini", "pi"];
     public static readonly TimeSpan MaximumAge = TimeSpan.FromDays(60);
     public const int MaximumCandidates = 600;
     public const int MaximumScanned = 6_000;
@@ -69,16 +69,16 @@ public static class ResumableSessions
     public static ResumableSessionListing Listing(ResumableSessionQuery query, CancellationToken token = default)
     {
         var budget = CountBudget;
-        var claude = Claude(query, ref budget, token); var codex = Codex(query, ref budget, token); var antigravity = Antigravity(query, ref budget, token);
-        var items = claude.Items.Concat(codex.Items).Concat(antigravity.Items).OrderByDescending(i => i.Modified).ThenBy(i => i.Id, StringComparer.Ordinal).ToList();
-        return new(items, claude.Hidden + codex.Hidden + antigravity.Hidden);
+        var claude = Claude(query, ref budget, token); var codex = Codex(query, ref budget, token); var antigravity = Antigravity(query, ref budget, token); var pi = Pi(query, ref budget, token);
+        var items = claude.Items.Concat(codex.Items).Concat(antigravity.Items).Concat(pi.Items).OrderByDescending(i => i.Modified).ThenBy(i => i.Id, StringComparer.Ordinal).ToList();
+        return new(items, claude.Hidden + codex.Hidden + antigravity.Hidden + pi.Hidden);
     }
 
     /// One agent's sessions alone: the other agent's records are not read.
     public static ResumableSessionListing Listing(ResumableSessionQuery query, string provider, CancellationToken token = default)
     {
         var budget = CountBudget;
-        return provider switch { "claude" => Claude(query, ref budget, token), "codex" => Codex(query, ref budget, token), "gemini" => Antigravity(query, ref budget, token), _ => ResumableSessionListing.Empty };
+        return provider switch { "claude" => Claude(query, ref budget, token), "codex" => Codex(query, ref budget, token), "gemini" => Antigravity(query, ref budget, token), "pi" => Pi(query, ref budget, token), _ => ResumableSessionListing.Empty };
     }
 
     /// <summary>
@@ -332,6 +332,83 @@ public static class ResumableSessions
         var requests = Count(handle, size, headOnly, ref budget, line => AntigravityRecords.Opening(line) is not null);
         var shown = title ?? summary;
         return (Outcome.Listed, new ResumableSession("gemini", id, shown is null ? null : OneLine(shown), modified, requests, null, path, automated));
+    }
+
+    // ── pi ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <c>&lt;agent dir&gt;/sessions/--&lt;path&gt;--/&lt;timestamp&gt;_&lt;id&gt;.jsonl</c> of the workspace folder. The first line is the header
+    /// (<c>type: session</c>, <c>id</c>, <c>cwd</c>); a request is a <c>message</c> entry whose message has the <c>user</c> role.
+    /// </summary>
+    private static ResumableSessionListing Pi(ResumableSessionQuery query, ref long budget, CancellationToken token)
+    {
+        var paths = WorkspacePaths(query.WorkspacePath);
+        var candidates = new List<(string Path, string Id, DateTimeOffset Modified)>();
+        var seen = new HashSet<string>();
+        foreach (var folder in PiAgent.SessionFolders(paths, query.Home, query.Environment))
+            foreach (var (path, modified) in RecordFiles.Files(folder, ".jsonl"))
+            {
+                if (PiAgent.SessionID(System.IO.Path.GetFileName(path)) is not { } id || !seen.Add(id.ToLowerInvariant())) continue;
+                candidates.Add((path, id, modified));
+            }
+        var items = new List<ResumableSession>(); int hidden = 0, read = 0;
+        foreach (var candidate in Recent(candidates, query))
+        {
+            if (items.Count >= query.MaximumSessions || read >= query.MaximumCandidates || token.IsCancellationRequested) break;
+            var lowered = candidate.Id.ToLowerInvariant();
+            if (query.Excluding.Contains(lowered)) continue;
+            var (outcome, item) = PiSession(candidate.Path, candidate.Id, candidate.Modified, paths, query.Known.Contains(lowered), query.IncludeAutomated, query.HeadOnly, ref budget);
+            if (outcome == Outcome.Listed) { read++; items.Add(item!); }
+            else if (outcome == Outcome.Hidden) hidden++;
+            else read++;
+        }
+        return new(items, hidden);
+    }
+
+    private static (Outcome, ResumableSession?) PiSession(string path, string id, DateTimeOffset modified, IReadOnlyList<string> paths, bool known, bool includeAutomated, bool headOnly, ref long budget)
+    {
+        using var handle = RecordFiles.Open(path);
+        if (handle is null) return (Outcome.Skipped, null);
+        var size = RandomAccess.GetLength(handle);
+        if (size <= 0) return (Outcome.Skipped, null);
+        string? title = null; bool headerChecked = false, foreign = false;
+        var headComplete = RecordFiles.ForEachLine(handle, size, HeadBytes, line =>
+        {
+            if (!headerChecked)
+            {
+                headerChecked = true;
+                if (HistoryScan.Parse(line) is not { } header || header.Text("type") != "session" || header.Text("cwd") is not { } cwd || !Matches(cwd, paths)) { foreign = true; return false; }
+                return true;
+            }
+            title = PiPrompt(line);
+            return title is null;
+        });
+        // A session without a single request has nothing to continue.
+        if (foreign || (title is null && headComplete)) return (Outcome.Skipped, null);
+        var automated = !known && AutomatedPrompt(title);
+        if (automated && !includeAutomated) return (Outcome.Hidden, null);
+        var requests = Count(handle, size, headOnly, ref budget, line => PiPrompt(line) is not null);
+        var model = headOnly ? null : RecordFiles.TailValue(handle, size, PiModel);
+        return (Outcome.Listed, new ResumableSession("pi", id, title is null ? null : OneLine(title), modified, requests, model, path, automated));
+    }
+
+    /// <summary>The text of a user request line; null for any other line.</summary>
+    private static string? PiPrompt(byte[] line)
+    {
+        if (!HistoryScan.Contains(line, "\"role\":\"user\"") || HistoryScan.Parse(line) is not { } value || value.Text("type") != "message") return null;
+        var message = MetadataJson.Property(value, "message");
+        if (message.Text("role") != "user") return null;
+        var content = MetadataJson.Property(message, "content");
+        var text = content.ValueKind == JsonValueKind.String ? content.GetString()!
+            : content.ValueKind == JsonValueKind.Array ? string.Join("\n", content.EnumerateArray().Where(b => b.Text("type") == "text").Select(b => b.Text("text")).OfType<string>()) : null;
+        var prompt = text?.Trim();
+        return string.IsNullOrEmpty(prompt) ? null : prompt;
+    }
+    private static string? PiModel(byte[] line)
+    {
+        if (!HistoryScan.Contains(line, "\"role\":\"assistant\"") || HistoryScan.Parse(line) is not { } value || value.Text("type") != "message") return null;
+        var model = MetadataJson.Property(value, "message").Text("model");
+        return model is not null && Wire.Model(model) ? model : null;
     }
 
     // ── reading ───────────────────────────────────────────────────────────

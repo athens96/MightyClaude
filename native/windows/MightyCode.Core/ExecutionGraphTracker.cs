@@ -197,7 +197,7 @@ public sealed partial class ExecutionGraphTracker
         var main = new ExecutionGraphNode(mainID, runID, null, "main", "running", ProviderLabel(provider)) { Input = input };
         if (ExecutionGraphSupport.Normalized(main) is { } normalized) { nodes[mainID] = normalized; order.Add(mainID); emit(normalized); }
     }
-    private static string ProviderLabel(string id) => id switch { "codex" => "Codex", "gemini" => "Antigravity", _ => "Claude" };
+    private static string ProviderLabel(string id) => id switch { "codex" => "Codex", "gemini" => "Antigravity", "pi" => "pi", _ => "Claude" };
     private static string Prefix(string value, int count) => ExecutionGraphSupport.Prefix(value, count);
 
     /// A message the user sent while the turn ran. Claude reads it from stdin
@@ -359,6 +359,7 @@ public sealed partial class ExecutionGraphTracker
         if (finished || value.ValueKind != JsonValueKind.Object) return;
         if (Provider == "codex") { ConsumeCodex(value); return; }
         if (Provider == "gemini") { ConsumeAntigravity(value); return; }
+        if (Provider == "pi") { ConsumePi(value); return; }
         var parentTool = Key(MetadataJson.Property(value, "parent_tool_use_id"));
         if (parentTool is not null) EnsureAgent(parentTool);
         // Over-cap child events are omitted, never reclassified as main text.
