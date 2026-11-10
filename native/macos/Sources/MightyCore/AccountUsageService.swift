@@ -93,9 +93,14 @@ public actor AccountUsageService {
                 guard let command else { throw AccountUsageFailure.unavailable(L("windows.accountUsage.detailCodexNotInstalled")) }
                 return try await CodexAccountProbe.read(command: command, environment: environment)
             }
-            throw AccountUsageFailure.unavailable(provider == "gemini"
-                ? L("accountUsage.detailAntigravityUnavailable")
-                : provider == "pi" ? L("accountUsage.detailPiUnavailable") : L("windows.accountUsage.detailUnsupportedProvider"))
+            if provider == "gemini" {
+                let providers = ProviderService(environment: environment)
+                let command = await providers.command(provider: provider)
+                await providers.shutdown()
+                guard let command else { throw AccountUsageFailure.unavailable(L("accountUsage.detailAntigravityNotInstalled")) }
+                return try await Self.antigravity(command: command, environment: environment)
+            }
+            throw AccountUsageFailure.unavailable(provider == "pi" ? L("accountUsage.detailPiUnavailable") : L("windows.accountUsage.detailUnsupportedProvider"))
         }
         now = { Date() }
     }
@@ -211,6 +216,76 @@ public actor AccountUsageService {
             windows.append(AccountUsageWindow(kind: windowKind, usedPercent: used, resetsAt: reset(row["resetsAt"]), windowMinutes: mins))
         }
         return AccountUsageSnapshot(provider: "codex", accountLabel: text(account["email"]), plan: text(primary["planType"]) ?? text(account["planType"]), windows: windows, status: windows.isEmpty ? "unavailable" : "available", detail: windows.isEmpty ? L("windows.accountUsage.detailCodexNoWindows") : L("windows.accountUsage.detailCodex"))
+    }
+
+    /// `agy -p "/usage" --output-format json`: Antigravity's own read of its
+    /// quota, answered locally without a model call. Runs in the temporary
+    /// directory so no project's configuration is read, with the CLI's own
+    /// sign-in; the output is parsed and dropped, never logged.
+    static func antigravity(command: ProviderCommand, environment: [String: String], timeout: TimeInterval = 20) async throws -> AccountUsageSnapshot {
+        var quiet = environment; quiet["NO_COLOR"] = "1"; quiet["CI"] = "1"
+        let result: ProcessResult
+        do {
+            result = try await ProcessCapture.run(executable: command.executable, arguments: ["-p", "/usage", "--output-format", "json"],
+                                                  environment: quiet, cwd: FileManager.default.temporaryDirectory, timeout: timeout, maximumBytes: 1024 * 1024)
+        } catch is CancellationError { throw CancellationError() } catch { throw AccountUsageFailure.network }
+        try Task.checkCancellation()
+        return try mapAntigravity(stdout: result.stdout, stderr: result.stderr)
+    }
+
+    /// Each agy group ("Gemini Models", "Claude and GPT models") has its own
+    /// 5-hour and weekly bucket; a window's kind is "<window>@<group>" so the
+    /// four stay apart and read "Gemini · Session", "Claude & GPT · Weekly".
+    static func mapAntigravity(stdout: Data, stderr: Data = Data()) throws -> AccountUsageSnapshot {
+        guard let groups = antigravityGroups(stdout) else {
+            if CLIAuthFailure.antigravity(text: String(decoding: stdout.prefix(65_536) + stderr.prefix(65_536), as: UTF8.self)) { throw AccountUsageFailure.authentication }
+            throw AccountUsageFailure.invalidResponse
+        }
+        var windows: [AccountUsageWindow] = []
+        for group in groups.prefix(16) {
+            guard let buckets = group["buckets"] as? [[String: Any]] else { continue }
+            let name = text(group["name"])
+            for bucket in buckets.prefix(16) {
+                guard let remaining = number(bucket["remaining_fraction"]), remaining >= -0.001, remaining <= 1.001,
+                      let token = antigravityGroup(name: name, bucketId: text(bucket["id"])) else { continue }
+                let period = text(bucket["window"])?.lowercased()
+                let (window, minutes): (String, Int?) = switch period {
+                case "5h": ("session", 300)
+                case "weekly": ("weekly", 10080)
+                case "daily": ("daily", 1440)
+                case let other?: (other.filter { $0.isLetter || $0.isNumber || $0 == "_" }, nil)
+                case nil: ("", nil)
+                }
+                guard !window.isEmpty else { continue }
+                let kind = window + "@" + token
+                guard !windows.contains(where: { $0.kind == kind }) else { continue }
+                let used = min(100, max(0, (1 - remaining) * 100))
+                windows.append(AccountUsageWindow(kind: kind, usedPercent: used, resetsAt: reset(bucket["reset_time"]), windowMinutes: minutes))
+            }
+        }
+        return AccountUsageSnapshot(provider: "gemini", windows: windows, status: windows.isEmpty ? "unavailable" : "available",
+                                    detail: windows.isEmpty ? L("accountUsage.detailAntigravityNoWindows") : L("accountUsage.detailAntigravity"))
+    }
+    /// `command.data.groups` of a successful `/usage` reply, or nil for anything else.
+    private static func antigravityGroups(_ data: Data) -> [[String: Any]]? {
+        guard data.count <= 1024 * 1024 else { return nil }
+        var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        // Tolerate a line of noise before or after the JSON object.
+        if object == nil, let start = data.firstIndex(of: UInt8(ascii: "{")), let end = data.lastIndex(of: UInt8(ascii: "}")), start < end {
+            object = try? JSONSerialization.jsonObject(with: data[start...end]) as? [String: Any]
+        }
+        guard let object, (object["status"] as? String).map({ $0.uppercased() == "SUCCESS" }) ?? true,
+              let command = object["command"] as? [String: Any], let payload = command["data"] as? [String: Any],
+              let groups = payload["groups"] as? [[String: Any]] else { return nil }
+        return groups
+    }
+    /// The known groups by name or bucket id; any other keeps agy's own group name.
+    private static func antigravityGroup(name: String?, bucketId: String?) -> String? {
+        let lowered = name?.lowercased() ?? ""
+        let id = bucketId?.lowercased() ?? ""
+        if lowered.hasPrefix("gemini") || id.hasPrefix("gemini-") { return "gemini" }
+        if (lowered.contains("claude") && lowered.contains("gpt")) || id.hasPrefix("3p-") { return "claude_gpt" }
+        return name.map { String($0.replacingOccurrences(of: "@", with: " ").prefix(40)) }
     }
 
     static func mapClaude(_ body: [String: Any], profile: [String: Any] = [:], plan: String? = nil) -> AccountUsageSnapshot {

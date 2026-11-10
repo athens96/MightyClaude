@@ -194,19 +194,8 @@ struct StatusBarUsageView: View {
 
     static func windowLabel(_ kind: String) -> String { RateLimitWindowLabel.label(kind) }
     static func percent(_ value: Double) -> String { "\(Int(value.rounded()))%" }
-    /// The two windows worth a chip: the session window, then the weekly one.
-    static func leading(_ windows: [AccountUsageWindow]) -> [AccountUsageWindow] {
-        let ranked = windows.filter { $0.kind != "spend_limit" }.sorted { rank($0.kind) < rank($1.kind) }
-        return Array(ranked.prefix(2))
-    }
-    private static func rank(_ kind: String) -> Int {
-        // Ranked by what the window is, not by its label in the current language.
-        switch RateLimitWindowLabel.label(kind) {
-        case RateLimitWindowLabel.label("session"): return 0
-        case RateLimitWindowLabel.label("weekly"): return 1
-        default: return 2
-        }
-    }
+    /// The two windows worth a chip (RateLimitWindowLabel.leading).
+    static func leading(_ windows: [AccountUsageWindow]) -> [AccountUsageWindow] { RateLimitWindowLabel.leading(windows) }
 }
 
 struct StatusBarUsageDetails: View {

@@ -634,3 +634,62 @@ struct AccountResetEntitlementTests {
         #expect(!encoded.contains("smoke-fixture-not-a-real-token") && !encoded.contains("grant-fixture"))
     }
 }
+
+struct AntigravityAccountUsageTests {
+    static let usage = #"{"conversation_id":"","status":"SUCCESS","response":"group\tbucket","usage":{"input_tokens":0},"command":{"name":"usage","data":{"description":"Within each group, models share a weekly limit and a 5-hour limit.","groups":[{"name":"Gemini Models","description":"Models within this group: Gemini Flash, Gemini Pro","buckets":[{"id":"gemini-weekly","name":"Weekly Limit Remaining","window":"weekly","remaining_fraction":0.983944296836853,"reset_time":"2026-11-14T03:59:25Z"},{"id":"gemini-5h","name":"Five Hour Limit Remaining","window":"5h","remaining_fraction":0.9997177720069885,"reset_time":"2026-11-10T17:58:15Z"}]},{"name":"Claude and GPT models","description":"Models within this group: Claude Opus, Claude Sonnet, GPT-OSS","buckets":[{"id":"3p-weekly","name":"Weekly Limit Remaining","window":"weekly","remaining_fraction":1,"reset_time":"2026-11-17T13:01:31Z"},{"id":"3p-5h","name":"Five Hour Limit Remaining","window":"5h","remaining_fraction":1,"reset_time":"2026-11-10T18:01:31Z"}]}]}}}"#
+
+    @Test func usageReplyGivesFourGroupedWindows() throws {
+        let value = try AccountUsageService.mapAntigravity(stdout: Data(Self.usage.utf8))
+        #expect(value.provider == "gemini"); #expect(value.status == "available")
+        #expect(value.windows.map(\.kind) == ["weekly@gemini", "session@gemini", "weekly@claude_gpt", "session@claude_gpt"])
+        #expect(Set(value.windows.map(\.id)).count == 4)
+        let weekly = value.windows[0]
+        #expect(abs(weekly.usedPercent - 1.6055703163147) < 0.0001)
+        #expect(weekly.windowMinutes == 10080); #expect(weekly.resetsAt == "2026-11-14T03:59:25Z")
+        #expect(value.windows[1].windowMinutes == 300)
+        #expect(value.windows[2].usedPercent == 0)
+        LocaleOverride.$language.withValue(.ko) {
+            #expect(RateLimitWindowLabel.label("session@gemini") == "Gemini · 세션")
+            #expect(RateLimitWindowLabel.label("weekly@claude_gpt") == "Claude·GPT · 주간")
+            #expect(RateLimitWindowLabel.label("weekly@Other Models") == "Other Models · 주간")
+        }
+        LocaleOverride.$language.withValue(.en) {
+            #expect(RateLimitWindowLabel.label("weekly@claude_gpt") == "Claude & GPT · Weekly")
+        }
+        // The chip keeps the most-used group per window: session first, then weekly.
+        let chip = RateLimitWindowLabel.leading(value.windows)
+        #expect(chip.map(\.kind) == ["session@gemini", "weekly@gemini"])
+    }
+
+    @Test func leadingKeepsUngroupedOrder() {
+        let windows = [AccountUsageWindow(kind: "Sonnet", usedPercent: 90), .init(kind: "weekly", usedPercent: 10), .init(kind: "session", usedPercent: 5)]
+        #expect(RateLimitWindowLabel.leading(windows).map(\.kind) == ["session", "weekly"])
+    }
+
+    @Test func invalidBucketsAreSkippedAndUnknownGroupsKeepTheirName() throws {
+        let body = #"{"status":"SUCCESS","command":{"data":{"groups":[{"name":"New Models","buckets":[{"id":"n-5h","window":"5h","remaining_fraction":0.25},{"id":"n-w","window":"weekly","remaining_fraction":"x"},{"id":"n-w2","window":"weekly","remaining_fraction":7},{"id":"n-5h-dup","window":"5h","remaining_fraction":0.5}]}]}}}"#
+        let value = try AccountUsageService.mapAntigravity(stdout: Data(("noise\n" + body + "\n").utf8))
+        #expect(value.windows.count == 1)
+        #expect(value.windows[0].kind == "session@New Models"); #expect(value.windows[0].usedPercent == 75)
+        let empty = try AccountUsageService.mapAntigravity(stdout: Data(#"{"status":"SUCCESS","command":{"data":{"groups":[]}}}"#.utf8))
+        #expect(empty.status == "unavailable"); #expect(empty.windows.isEmpty)
+    }
+
+    @Test func signedOutReadsAsAuthenticationAndGarbageAsInvalid() {
+        #expect {
+            try AccountUsageService.mapAntigravity(stdout: Data(), stderr: Data("Error: Please sign in to continue.\n".utf8))
+        } throws: { error in
+            if case .authentication = error as? AccountUsageFailure { return true }; return false
+        }
+        #expect {
+            try AccountUsageService.mapAntigravity(stdout: Data(#"{"status":"ERROR","response":"Authentication required. Run agy to sign in."}"#.utf8))
+        } throws: { error in
+            if case .authentication = error as? AccountUsageFailure { return true }; return false
+        }
+        #expect {
+            try AccountUsageService.mapAntigravity(stdout: Data("<<garbage>> {not json".utf8))
+        } throws: { error in
+            if case .invalidResponse = error as? AccountUsageFailure { return true }; return false
+        }
+    }
+}

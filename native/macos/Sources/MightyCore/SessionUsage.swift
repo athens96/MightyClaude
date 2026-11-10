@@ -6,6 +6,11 @@ import CoreFoundation
 /// "seven_day", "seven_day_opus", "spend_limit"). Both must read the same.
 public enum RateLimitWindowLabel {
     public static func label(_ kind: String) -> String {
+        // A grouped window, "<window>@<group>" (Antigravity's model groups share
+        // one 5-hour and one weekly limit each): the group, then the window.
+        if let at = kind.firstIndex(of: "@") {
+            return L("accountUsage.groupWindow", ["group": groupLabel(String(kind[kind.index(after: at)...])), "window": label(String(kind[..<at]))])
+        }
         switch kind.lowercased() {
         case "session", "five_hour", "5h", "primary": return L("windows.accountUsage.windowSession")
         case "weekly", "seven_day", "7d", "secondary": return L("windows.accountUsage.windowWeekly")
@@ -20,6 +25,42 @@ public enum RateLimitWindowLabel {
         if let range = lowered.range(of: #"^(\d+)m$"#, options: .regularExpression) { return L("windows.accountUsage.minutes", ["count": String(lowered[range].dropLast())]) }
         if let range = lowered.range(of: #"^(\d+)h$"#, options: .regularExpression) { return L("windows.accountUsage.hours", ["count": String(lowered[range].dropLast())]) }
         return kind.replacingOccurrences(of: "_", with: " ")
+    }
+    /// The window part of a grouped kind ("session@gemini" → "session"); other kinds as they are.
+    public static func window(_ kind: String) -> String { kind.firstIndex(of: "@").map { String(kind[..<$0]) } ?? kind }
+    /// Antigravity's two known groups read in the app's language; any other group keeps agy's own name.
+    static func groupLabel(_ group: String) -> String {
+        switch group {
+        case "gemini": return L("accountUsage.antigravityGroupGemini")
+        case "claude_gpt": return L("accountUsage.antigravityGroupClaudeGPT")
+        default: return group
+        }
+    }
+    /// The two windows worth a chip: the session window, then the weekly one.
+    /// Grouped windows give the most-used group of each, so the chip shows the
+    /// limit that runs out first; the popover lists every group.
+    public static func leading(_ windows: [AccountUsageWindow]) -> [AccountUsageWindow] {
+        let ranked = windows.enumerated().filter { $0.element.kind != "spend_limit" }.sorted { a, b in
+            let (ra, rb) = (rank(a.element.kind), rank(b.element.kind))
+            if ra != rb { return ra < rb }
+            let (ga, gb) = (window(a.element.kind) != a.element.kind, window(b.element.kind) != b.element.kind)
+            if ga, gb, a.element.usedPercent != b.element.usedPercent { return a.element.usedPercent > b.element.usedPercent }
+            return a.offset < b.offset
+        }.map(\.element)
+        var seen = Set<String>()
+        let chosen = ranked.filter { item in
+            let base = window(item.kind)
+            return base == item.kind || seen.insert(label(base)).inserted
+        }
+        return Array(chosen.prefix(2))
+    }
+    private static func rank(_ kind: String) -> Int {
+        // Ranked by what the window is, not by its label in the current language.
+        switch label(window(kind)) {
+        case label("session"): return 0
+        case label("weekly"): return 1
+        default: return 2
+        }
     }
     private static func model(_ value: String) -> String {
         guard let first = value.first else { return value }
