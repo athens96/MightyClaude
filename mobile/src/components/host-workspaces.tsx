@@ -162,6 +162,7 @@ export function HostWorkspaces({
         workspaceName={activeWorkspace?.workspace.name ?? ''}
         busy={creating}
         antigravity={antigravity}
+        offersPi={hasCapability(capabilities, 'pi')}
         onCancel={() => setCreatingFor(undefined)}
         onCreate={(choice) => void createSession(choice)}
       />

@@ -6,10 +6,16 @@ describe('beta providers', () => {
     resetLanguage();
   });
 
+  it('names pi "pi" whatever the host runs for gemini', () => {
+    expect(providerLabel('pi')).toBe('pi');
+    expect(providerLabel('pi', false)).toBe('pi');
+  });
+
   it('marks Codex and Antigravity as beta and keeps Claude official', () => {
     expect(providerIsBeta('claude')).toBe(false);
     expect(providerIsBeta('codex')).toBe(true);
     expect(providerIsBeta('gemini')).toBe(true);
+    expect(providerIsBeta('pi')).toBe(true);
     expect(providerIsBeta('')).toBe(false);
     expect(providerIsBeta('constructor')).toBe(false);
   });

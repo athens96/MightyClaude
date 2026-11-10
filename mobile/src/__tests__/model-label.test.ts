@@ -39,6 +39,8 @@ describe('model labels', () => {
  */
 describe('Antigravity slugs', () => {
   it('reads the effort a Gemini slug carries', () => {
+    expect(formatModelId('anthropic/claude-sonnet-4-5')).toBe('Sonnet 4.5');
+    expect(formatModelId('openai/gpt-5.1')).toBe('GPT-5.1');
     expect(formatModelId('gemini-4-argon-medium')).toBe('Gemini 4 Argon (Medium)');
     expect(formatModelId('gemini-3.8-flash-low')).toBe('Gemini 3.8 Flash (Low)');
     expect(formatModelId('gemini-2.5-flash-lite')).toBe('Gemini 2.5 Flash Lite');

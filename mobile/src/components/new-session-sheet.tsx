@@ -7,6 +7,8 @@ import { t } from '@/lib/i18n';
 import { kindLabel, providerIsBeta, providerLabel, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 const PROVIDERS: Provider[] = ['claude', 'codex', 'gemini'];
+/** pi is offered only by a host that advertises the `pi` capability. */
+const PI: Provider = 'pi';
 
 export interface NewSessionChoice {
   kind: SessionKind;
@@ -18,6 +20,7 @@ export function NewSessionSheet({
   workspaceName,
   busy,
   antigravity = true,
+  offersPi = false,
   onCancel,
   onCreate,
 }: {
@@ -26,6 +29,8 @@ export function NewSessionSheet({
   busy: boolean;
   /** The host runs Antigravity for `gemini` (`hostRunsAntigravity`); else it is named Gemini. */
   antigravity?: boolean;
+  /** The host advertises the `pi` capability. */
+  offersPi?: boolean;
   onCancel: () => void;
   onCreate: (choice: NewSessionChoice) => void;
 }) {
@@ -77,7 +82,7 @@ export function NewSessionSheet({
         <>
           <Text style={styles.label}>{t('phone.newPane.provider')}</Text>
           <View style={styles.chips}>
-            {PROVIDERS.map((value) => (
+            {(offersPi ? [...PROVIDERS, PI] : PROVIDERS).map((value) => (
               <Chip
                 key={value}
                 label={providerLabel(value, antigravity)}

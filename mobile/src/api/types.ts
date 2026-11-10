@@ -55,7 +55,7 @@ export type PaneKind = SessionKind | 'browser' | AgentIOPaneKind;
 export function isAgentIOPane(kind: string): kind is AgentIOPaneKind {
   return kind === 'agent-terminal' || kind === 'agent-browser';
 }
-export type Provider = 'claude' | 'codex' | 'gemini';
+export type Provider = 'claude' | 'codex' | 'gemini' | 'pi';
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error' | 'stopped';
 export type LogEntryKind = 'user' | 'assistant' | 'system' | 'output' | 'error';
 export type SubmitAccepted = 'started' | 'steered' | 'queued';
@@ -91,7 +91,9 @@ export type Capability =
   | 'push'
   | 'fileChanges'
   | 'workMap'
-  | 'appUpdate';
+  | 'appUpdate'
+  /** The host runs pi as a fourth agent (provider `pi`); a phone offers it for a new pane only then. */
+  | 'pi';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -111,6 +113,7 @@ export const CAPABILITIES: readonly Capability[] = [
   'fileChanges',
   'workMap',
   'appUpdate',
+  'pi',
 ] as const;
 
 export interface HostInfo {

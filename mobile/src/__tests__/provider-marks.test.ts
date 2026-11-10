@@ -35,7 +35,7 @@ function onCurvePoints(outline: string): number[] {
 }
 
 describe('provider marks', () => {
-  const names = ['claude', 'codex', 'gemini'] as const;
+  const names = ['claude', 'codex', 'gemini', 'pi'] as const;
 
   it.each(names)('%s is a closed outline of absolute commands', (name) => {
     const outline = providerMarkOutlines[name];

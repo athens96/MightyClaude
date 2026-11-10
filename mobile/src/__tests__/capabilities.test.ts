@@ -13,6 +13,11 @@ function info(capabilities: unknown): HostInfo {
 }
 
 describe('parseCapabilities', () => {
+  it('reads the pi capability only when the host lists it', () => {
+    expect(hasCapability(parseCapabilities(info(['queue', 'pi'])), 'pi')).toBe(true);
+    expect(hasCapability(parseCapabilities(info(['queue'])), 'pi')).toBe(false);
+  });
+
   it('reads the names the contract lists', () => {
     expect(parseCapabilities(info(['queue', 'pane', 'history']))).toEqual([
       'queue',

@@ -383,6 +383,7 @@ const providerLabels: Record<Provider, string> = {
   claude: 'Claude',
   codex: 'Codex',
   gemini: 'Antigravity',
+  pi: 'pi',
 };
 
 /** Brand marks, as used by the Mac app's provider glyphs (Antigravity keeps Gemini's sweep). */
@@ -390,6 +391,7 @@ export const providerColors: Record<Provider, string[]> = {
   claude: ['#D97757'],
   codex: ['#10A37F'],
   gemini: ['#4285F4', '#9B72CB', '#D96570'],
+  pi: ['#8B7CF6'],
 };
 
 /**
@@ -518,11 +520,11 @@ export function providerLabel(provider: string, antigravity = true): string {
 }
 
 /**
- * Claude is official; Codex and Antigravity are beta. The phone's one answer for every beta
+ * Claude is official; Codex, Antigravity and pi are beta. The phone's one answer for every beta
  * badge — the badge is drawn beside the name and never becomes part of `providerLabel`.
  */
 export function providerIsBeta(provider: string): boolean {
-  return provider === 'codex' || provider === 'gemini';
+  return provider === 'codex' || provider === 'gemini' || provider === 'pi';
 }
 
 /**
