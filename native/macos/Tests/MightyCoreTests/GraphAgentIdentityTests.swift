@@ -233,9 +233,8 @@ struct GraphAgentIdentityTests {
         let notice = try #require(runs.last { run in run.noticeRun == true && run.agents.contains { $0.sourceBlockId == agents[1].id } })
         #expect(notice.finalOutput == "done.")
         #expect(notice.agents.first?.identity == expected)
-        // The CLI reports a foreground agent's end as a task notification too, before its result names the model: its
-        // copy is still who the block is.
-        for run in runs.dropFirst() { for copy in run.agents where copy.sourceBlockId == agents[0].id { #expect(copy.identity == expected) } }
+        // The foreground agent's end opens no notice run (`ForegroundAgentNoticeTests`): the request and that one.
+        #expect(runs.count == 2)
         #expect(FlowRoles.subagent(agents[1])?.marks == [.background])
         #expect(FlowRoles.subagent(agents[0])?.marks.isEmpty == true)
         #expect(runs[0].configuredEffort == "default")

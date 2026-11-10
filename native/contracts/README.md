@@ -610,7 +610,13 @@ foreground answer also `agentType`, `totalTokens`, `totalToolUseCount`,
 `is_backgrounded`, `prompt`), `task_progress` (`description`, `last_tool_name`,
 `usage { total_tokens, tool_uses, duration_ms }`) and `task_notification`
 (`status`, `summary`, `output_file`, `usage`) come for a foreground agent as well
-as a background one. A sub-agent's own `assistant` and `user` frames carry
+as a background one: a foreground agent's `task_notification` comes right before
+the Agent call's own result, whose text is the hand-back frame (notes, a line
+opening `[Subagent hand-back]` and ending `The report follows:`, the report
+indented by two spaces, then the CLI's own `agentId:`, `worktreePath:` and
+`<usage>` lines at column zero). The Mac's tracker takes such a notification for
+no notice (the agent was never launched in the background) and the report alone
+for the block's result (`ForegroundAgentNoticeTests`). A sub-agent's own `assistant` and `user` frames carry
 `parent_tool_use_id`, `agent_id` and `subagent_type`; a background agent's
 thinking and text frames come without `--forward-subagent-text`, a foreground
 agent's only with it.

@@ -429,7 +429,7 @@ final class ExecutionGraphTracker {
                 update(child) { node in
                     guard !ExecutionGraphSupport.terminal(node.state) else { return }
                     node.state = block["is_error"] as? Bool == true ? "error" : "completed"
-                    node.output = Self.text(block["content"])
+                    node.output = Self.text(block["content"]).map(Self.report)
                 }
             }
             // Task completion arrives as an injected user message, not a tool event; so does a sub-agent's final report.
@@ -876,7 +876,7 @@ final class ExecutionGraphTracker {
     private func rememberAgentID(_ id: String, block: [String: Any], frame: [String: Any]) {
         let agent: String
         if let text = Self.text(block["content"]), let match = text.firstMatch(of: #/agentId: (?<agent>[A-Za-z0-9_-]+)/#) { agent = String(match.agent) }
-        else if let structured = Self.key((frame["toolUseResult"] as? [String: Any])?["agentId"]) { agent = structured }
+        else if let structured = Self.key(Self.structured(frame)?["agentId"]) { agent = structured }
         else { return }
         if taskAliases[agent] != nil || taskAliases.count < 512 { taskAliases[agent] = id }
     }
@@ -900,24 +900,47 @@ final class ExecutionGraphTracker {
     /// it ran in the foreground) and an isolated agent's worktree (`worktreePath`): the live stream's `tool_use_result`,
     /// a transcript's `toolUseResult`.
     private func identifyLaunch(_ id: String, frame: [String: Any]) {
-        guard let result = (frame["tool_use_result"] as? [String: Any]) ?? (frame["toolUseResult"] as? [String: Any]) else { return }
+        guard let result = Self.structured(frame) else { return }
         let worktree = (result["worktreePath"] as? String).map { !$0.isEmpty } ?? false
         update(id) {
             Self.identify(&$0, type: result["agentType"] as? String, resolvedModel: result["resolvedModel"] as? String,
                           isolation: worktree ? GraphAgentIdentity.isolations[0] : nil)
         }
-        // A copy made before this result (the agent's notification came first) is still who its block is.
-        if let run = copiedIn[id], let identity = nodes[id]?.identity { update(copyID(of: id, in: run)) { $0.identity = identity } }
+    }
+    /// A foreground sub-agent's result as Claude Code hands it to its caller. Since the hand-back frame (`AgentHandback`) the
+    /// report stands under a preamble that opens `[Subagent hand-back]` at the start of a line and ends `The report
+    /// follows:`, every line of it indented by two spaces; the harness's own lines after it (the agent's ID, its worktree,
+    /// its usage) stand at column zero again. The block's result is the report alone. A result without the frame, or a
+    /// frame without a report, is the result as it came.
+    static func report(_ raw: String) -> String {
+        let text = raw.replacingOccurrences(of: "\r\n", with: "\n")
+        guard let frame = text.range(of: AgentHandback.frame),
+              frame.lowerBound == text.startIndex || text[text.index(before: frame.lowerBound)].isNewline,
+              let marker = text.range(of: AgentHandback.marker, range: frame.upperBound..<text.endIndex),
+              let lineEnd = text[marker.upperBound...].firstIndex(of: "\n") else { return raw }
+        var lines: [Substring] = []
+        for line in text[text.index(after: lineEnd)...].split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("  ") { lines.append(line.dropFirst(2)) }
+            else if line.allSatisfy(\.isWhitespace) { lines.append("") }
+            else { break }
+        }
+        let report = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return report.isEmpty ? raw : report
     }
     /// The id of block `id`'s copy in notice run `run`.
     private func copyID(of id: String, in run: String) -> String {
         let joined = run + ":" + id
         return CoreValidation.identifier(joined) ? joined : ExecutionGraphSupport.identifier(run, "copy:" + id)
     }
-    /// Whether an Agent call's result is the acknowledgement of an asynchronous launch: the event's structured `toolUseResult`
-    /// (a transcript's) says `async_launched`, else the result's text opens with "Async agent launched successfully.".
+    /// The structured part of a tool result's event: the live stream's `tool_use_result`, a transcript's `toolUseResult`.
+    private static func structured(_ frame: [String: Any]) -> [String: Any]? {
+        (frame["tool_use_result"] as? [String: Any]) ?? (frame["toolUseResult"] as? [String: Any])
+    }
+    /// Whether an Agent call's result is the acknowledgement of an asynchronous launch: the event's structured result
+    /// (`structured`) says `async_launched`, else the result's text opens with "Async agent launched successfully.". An agent
+    /// so acknowledged is a background agent, whose end is a notice (`settleTasks`); any other settles by this result.
     private static func asyncLaunch(block: [String: Any], frame: [String: Any]) -> Bool {
-        if let result = frame["toolUseResult"] as? [String: Any], result["status"] as? String == "async_launched" || result["isAsync"] as? Bool == true { return true }
+        if let result = structured(frame), result["status"] as? String == "async_launched" || result["isAsync"] as? Bool == true { return true }
         return Self.text(block["content"])?.drop(while: { $0.isWhitespace }).hasPrefix("Async agent launched successfully.") ?? false
     }
     /// A SendMessage's result. One that resumed a background agent that had ended (`resumedAgentId`) is new background work of this
@@ -978,6 +1001,12 @@ final class ExecutionGraphTracker {
                 if notice { joinTurn(.work, name: nil, line: Self.tag(body, "summary") ?? Self.tag(body, "status")) }
                 continue
             }
+            // Claude Code reports a foreground sub-agent's end as it does a background task's, right before the Agent call's
+            // own result (2.1.322). A sub-agent that was never launched in the background (no `run_in_background`, no
+            // asynchronous launch acknowledged) stands in the request's diagram and settles by that result: there is no
+            // finished background work here, so the notification settles nothing, copies nothing and opens no notice run.
+            if kind == "agent", let tool = Self.tag(body, "tool-use-id"), id == ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: tool),
+               !backgroundTools.contains(tool) { continue }
             let status = Self.tag(body, "status")?.lowercased() ?? "completed"
             let state = status == "completed" ? "completed" : ["failed", "error"].contains(status) ? "error" : "stopped"
             let summary = Self.tag(body, "summary")
