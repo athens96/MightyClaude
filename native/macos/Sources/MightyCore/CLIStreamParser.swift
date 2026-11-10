@@ -591,7 +591,16 @@ public final class CLIStreamParser {
                 let message = update["messageId"] as? String
                 if let message, let previous = acpMessage, message != previous { flushText() }
                 if let message { acpMessage = message }
-                guard let content = update["content"] as? [String: Any], content["type"] as? String == "text", let text = content["text"] as? String, !text.isEmpty else { return }
+                guard let content = update["content"] as? [String: Any], content["type"] as? String == "text", var text = content["text"] as? String, !text.isEmpty else { return }
+                // A reply does not begin with the blank lines an agent streams ahead of it.
+                if pendingText.isEmpty { text = String(text.drop(while: \.isNewline)); if text.isEmpty { return } }
+                // Hermes sends a reply it streamed once more, whole, when the turn settles (with a note
+                // appended when a hook added one): the whole takes the streamed text's place.
+                let shown = pendingText.trimmingCharacters(in: .whitespacesAndNewlines), whole = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if shown.utf8.count >= 16, whole.hasPrefix(shown) {
+                    pendingText = ActivitySupport.prefixUTF8(whole, maximumBytes: 131_072); pendingTextTruncated = whole.utf8.count > 131_072
+                    acpReplyTail = String(whole.suffix(8_192)); return
+                }
                 let remaining = max(0, 131_072 - pendingText.utf8.count)
                 if text.utf8.count > remaining { pendingTextTruncated = true }
                 pendingText += ActivitySupport.prefixUTF8(text, maximumBytes: remaining)
@@ -605,7 +614,9 @@ public final class CLIStreamParser {
                 // A settled call that was never announced and says nothing of itself (the close of a
                 // permission card's own bubble) is not a tool row.
                 if !known, state != "running", !(update["kind"] is String), !(update["title"] is String) { return }
-                let toolName = update["kind"] is String || !known ? ACPChannel.toolName(kind: update["kind"] as? String, title: (update["name"] as? String) ?? ACPChannel.titledTool(update["title"] as? String)) : nil
+                var toolName = update["kind"] is String || !known ? ACPChannel.toolName(kind: update["kind"] as? String, title: (update["name"] as? String) ?? ACPChannel.titledTool(update["title"] as? String)) : nil
+                // An update that repeats a kind without a name (Hermes's "other") does not rename the row.
+                if known, toolName == "Tool" { toolName = nil }
                 // Hermes sends no `rawInput` for its own tools: the path, shell line or title stands in.
                 let input: [String: Any]? = (update["rawInput"].flatMap { $0 is NSNull ? nil : $0 }).map(ACPChannel.displayInput) ?? (known ? nil : ACPChannel.describedInput(update))
                 let output = state == "running" ? nil : Self.acpOutput(update)
@@ -640,7 +651,7 @@ public final class CLIStreamParser {
             let detail = (data?["message"] as? String) ?? (data?["details"] as? String) ?? (value["data"] as? String)
             var text = [message, detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
             if provider == "hermes" {
-                authFailure = CLIAuthFailure.hermes(text: text + "\n" + acpReplyTail)
+                authFailure = value["signIn"] as? Bool == true || CLIAuthFailure.hermes(text: text + "\n" + acpReplyTail)
                 // Hermes's gateway names a failed turn only by this word; the reply above said why.
                 if detail == "admitted_turn_failed" { text = L("run.error.hermesTurnFailed") }
                 else if message == "Internal error", let detail, !detail.isEmpty { text = detail }

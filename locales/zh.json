@@ -3442,5 +3442,6 @@
   "run.notice.hermesFullAccessSession": "此 Hermes 会话以完全访问开始，不会询问危险命令。现按当前权限开始新会话。",
   "run.notice.hermesAskingSession": "此 Hermes 会话开始时未启用完全访问，仍会询问危险命令。完全访问从新对话起生效。",
   "run.error.hermesTurnFailed": "Hermes 未能完成此请求。原因见上方的回复。",
-  "acp.channel.questionSkipped": "暂时无法在此窗格回答智能体的提问，已跳过：{question}（{choices}）"
+  "acp.channel.questionSkipped": "暂时无法在此窗格回答智能体的提问，已跳过：{question}（{choices}）",
+  "run.error.hermesNoProvider": "Hermes 尚未连接模型提供方，因此未发送请求。请登录并选择提供方和默认模型。"
 }

@@ -366,7 +366,7 @@ public final class LiveRunRegistry: @unchecked Sendable {
     private struct Entry { let child: NativeChildProcess; let consumer: Task<Void, Never>?; var cancel: (@Sendable () -> Data?)? = nil; var signalled = false }
     /// Seconds a child whose turn runs elsewhere (Hermes's gateway) gets to pass on the
     /// cancel it was just sent, before it is ended.
-    static let cancelGrace: TimeInterval = 1.5
+    static let cancelGrace: TimeInterval = 1
     private let lock = NSLock()
     private var entries: [String: Entry] = [:]
     private var isClosing = false
@@ -457,6 +457,8 @@ private final class ManagedProcess {
     var acp: ACPChannel?
     /// The ACP prompt was answered and the runner ended the agent's server itself.
     var acpEnding = false
+    /// Hermes logs to stderr (INFO lines, a traceback for every failed request): kept out of the pane.
+    var hermesStderr: HermesAgent.StderrFilter?
     /// At most this much read output not yet handed to the line splitter per
     /// run; see `ChildOutputBudget`.
     let outputBudget = ChildOutputBudget(limit: 4 * 1_048_576)
@@ -617,9 +619,13 @@ public actor ProcessRunner {
                 var hermesNotice: String?
                 if request.provider == "hermes", let resume = request.resumeId {
                     let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.homeDirectoryForCurrentUser
-                    let started = HermesAgent.startedWithFullAccess(sessionID: resume, database: HermesAgent.database(home: home, environment: environment))
+                    let database = HermesAgent.database(home: home, environment: environment)
+                    let started = HermesAgent.startedWithFullAccess(sessionID: resume, database: database)
                     let full = request.settings.permissionMode == "fullAccess"
-                    if started == true, !full { launch.resumeId = nil; hermesNotice = L("run.notice.hermesFullAccessSession") }
+                    // A session without an answered turn (its first request failed, say before a provider was
+                    // set up) keeps the provider it was created with and would fail the same way again.
+                    if HermesAgent.messageCount(sessionID: resume, database: database) == 0 { launch.resumeId = nil }
+                    else if started == true, !full { launch.resumeId = nil; hermesNotice = L("run.notice.hermesFullAccessSession") }
                     else if started == false, full { hermesNotice = L("run.notice.hermesAskingSession") }
                 }
                 if codexApprovals {
@@ -715,13 +721,23 @@ public actor ProcessRunner {
                 }
                 if request.provider == "opencode" || request.provider == "hermes" {
                     let hermes = request.provider == "hermes"
+                    if hermes { run.hermesStderr = HermesAgent.StderrFilter() }
                     if let hermesNotice { emitLogSynchronously(run, kind: "system", text: hermesNotice) }
                     run.acp = ACPChannel(runId: run.activityId, request: launch, workspacePath: workspace.path, attachments: attachments, configValues: hermes ? HermesAgent.configValues(request) : OpencodeAgent.configValues(request),
+                        // Hermes without a provider would open a session that can never answer: the run stops as a missing sign-in.
+                        admit: hermes ? { result in
+                            guard HermesAgent.provider(initialize: result) == nil else { return nil }
+                            HermesAgent.forgetModels(at: HermesAgent.modelCacheURL())
+                            return L("run.error.hermesNoProvider")
+                        } : nil,
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
                         event: { [weak run] object in
                             guard let run, !run.finished else { return }
                             // The picker a Hermes session offers is the model menu's list from then on.
                             if hermes, object["type"] as? String == "acp.session" { HermesAgent.saveModels(configOptions: object["configOptions"], to: HermesAgent.modelCacheURL()) }
+                            if hermes, object["type"] as? String == "acp.update", let update = object["update"] as? [String: Any], update["sessionUpdate"] as? String == "config_option_update" {
+                                HermesAgent.saveModels(configOptions: update["configOptions"], to: HermesAgent.modelCacheURL())
+                            }
                             run.parser?.receive(object: object)
                         },
                         emit: { [weak run, onEvent] permission in guard let run else { return }; onEvent(RunEvent(sessionId: run.request.sessionId, type: "permission", permission: permission)) },
@@ -1014,7 +1030,8 @@ public actor ProcessRunner {
             else if let parser = run.parser { parser.push(data) }
             else { emitLog(run, kind: "output", text: run.outputDecoder.push(data)) }
         case .stderr(let data):
-            let text = run.errorDecoder.push(data)
+            var text = run.errorDecoder.push(data)
+            if let filter = run.hermesStderr { text = filter.push(text) }
             run.parser?.receiveStderr(text)
             emitLog(run, kind: "output", text: text)
         case .exit(let code): await finish(run, code: code)
@@ -1084,7 +1101,7 @@ public actor ProcessRunner {
         run.codexPermissions?.flush()
         // The runner ending a server whose prompt was answered is not the channel closing early.
         if !run.acpEnding { run.acp?.flush() }
-        run.finished = true; run.parser?.flush(); emitLog(run, kind: "output", text: run.outputDecoder.flush()); let errorTail = run.errorDecoder.flush(); run.parser?.receiveStderr(errorTail); run.parser?.finishStderr(); emitLog(run, kind: "output", text: errorTail)
+        run.finished = true; run.parser?.flush(); emitLog(run, kind: "output", text: run.outputDecoder.flush()); var errorTail = run.errorDecoder.flush(); if let filter = run.hermesStderr { errorTail = filter.push(errorTail) + filter.finish() }; run.parser?.receiveStderr(errorTail); run.parser?.finishStderr(); emitLog(run, kind: "output", text: errorTail)
         // The run still ends by its exit code; only the stray writer's rest is lost.
         if run.child?.outputAbandoned == true, !run.stopping, !shuttingDown { emitLog(run, kind: "system", text: L("run.notice.outputAbandoned")) }
         run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.acp?.cancelAll(); run.permissionInitializationTask?.cancel(); run.inputWatchdog?.cancel()

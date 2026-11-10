@@ -24,6 +24,9 @@ final class ACPChannel {
     private let attachments: AttachmentPreparation
     /// `session/set_config_option` values sent before the prompt, in order (model, effort, mode).
     private let configValues: [(id: String, value: String)]
+    /// Reads the agent's `initialize` answer before a session is opened: a message stops the run
+    /// there as a missing sign-in (Hermes names no provider it could use).
+    private let admit: (([String: Any]) -> String?)?
     private let write: (Data) -> Void
     private let event: ([String: Any]) -> Void
     private let emit: (ToolPermissionRequest) -> Void
@@ -55,10 +58,10 @@ final class ACPChannel {
     let cancellation = ACPCancellation()
 
     init(runId: String, request: StartRunRequest, workspacePath: String, attachments: AttachmentPreparation, configValues: [(id: String, value: String)],
-         write: @escaping (Data) -> Void, event: @escaping ([String: Any]) -> Void,
+         admit: (([String: Any]) -> String?)? = nil, write: @escaping (Data) -> Void, event: @escaping ([String: Any]) -> Void,
          emit: @escaping (ToolPermissionRequest) -> Void, activity: @escaping (ToolPermissionRequest, String) -> Void,
          warning: @escaping (String) -> Void, fail: @escaping (String) -> Void, completed: @escaping () -> Void) {
-        self.runId = runId; self.request = request; self.workspacePath = workspacePath; self.attachments = attachments; self.configValues = configValues
+        self.runId = runId; self.request = request; self.workspacePath = workspacePath; self.attachments = attachments; self.configValues = configValues; self.admit = admit
         self.write = write; self.event = event; self.emit = emit; self.activity = activity
         self.warning = warning; self.fail = fail; self.completed = completed
     }
@@ -114,6 +117,10 @@ final class ACPChannel {
             let capabilities = result["agentCapabilities"] as? [String: Any] ?? [:]
             canLoad = capabilities["loadSession"] as? Bool == true
             canResume = (capabilities["sessionCapabilities"] as? [String: Any])?["resume"] != nil
+            if let refusal = admit?(result) {
+                event(["type": "acp.error", "method": method, "code": -32000, "message": refusal, "signIn": true])
+                failed = true; cancelAll(); completed(); return
+            }
             openSession()
         case "session/new":
             guard let id = result["sessionId"] as? String, CoreValidation.sessionIdentifier(id) else { failClosed(L("acp.channel.badSession")); return }

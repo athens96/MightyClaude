@@ -111,13 +111,14 @@ public enum CLIAuthFailure {
     }
 
     /// Hermes's own words for a missing or lost model provider, in a failed turn's reply or an ACP
-    /// error: "Hermes is not connected to any AI provider yet", "No LLM provider configured",
+    /// error: "provider 'auto' has no endpoint configured" (what a session created before any
+    /// provider was set up answers, recorded), "Hermes is not connected to any AI provider yet", "No LLM provider configured",
     /// its hints to run `hermes model` / `hermes setup` / `hermes auth add`, a provider's 401 or an
     /// invalid key. A candidate signal only: recovery confirms with the sign-in probe.
     public static func hermes(text: String) -> Bool {
         let lowered = text.prefix(16_384).lowercased()
         if lowered.contains("proxy authentication") { return false }
-        if ["not connected to any ai provider", "no llm provider configured", "no inference provider", "run `hermes model`", "run hermes model", "run `hermes setup`", "run hermes setup",
+        if ["has no endpoint configured", "no endpoint configured", "not connected to any ai provider", "no llm provider configured", "no inference provider", "run `hermes model`", "run hermes model", "run `hermes setup`", "run hermes setup",
             "hermes auth add", "run `hermes auth`", "not logged into", "credentials available", "configure an api key", "api key is missing", "invalid api key", "invalid x-api-key",
             "incorrect api key", "authentication_error", "token has expired", "needs refresh", "please log in", "not logged in"].contains(where: lowered.contains) { return true }
         return lowered.contains("401") && (lowered.contains("unauthorized") || lowered.contains("authentication"))

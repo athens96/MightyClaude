@@ -10,21 +10,27 @@ private final class HermesRecorder<T>: @unchecked Sendable {
     func values() -> [T] { lock.lock(); defer { lock.unlock() }; return items }
 }
 
-/// Hermes Agent (`hermes acp`) as the sixth agent, Mac only: the ACP frames in
-/// native/contracts/fixtures/hermes-acp-*.jsonl (written by hand from Hermes's source,
-/// acp_adapter/* at a2fa0a4b, not recorded), the settings as config options, the approval
-/// cards for dangerous commands and edits, a question skipped, usage as the session's
-/// counters, the sign-in read from `initialize`, the kept model picker, the Mac-only setup
-/// item, the session list read from `state.db` and the cancel sent before a stop.
+/// Hermes Agent (`hermes acp`) as the sixth agent, Mac only. The ACP frames in
+/// native/contracts/fixtures/hermes-acp-*.jsonl are recordings of Hermes 0.23.1 (ids, paths
+/// and the model's name replaced, thought deltas joined): the settings as config options,
+/// the approval cards for an edit and a dangerous command, usage as the session's counters,
+/// a session that cannot answer, the sign-in read from `initialize`, the kept model picker,
+/// the Mac-only setup item, the session list read from `state.db` and the cancel sent
+/// before a stop.
 struct HermesTests {
     static let root: URL = {
         var url = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { url.deleteLastPathComponent() }
         return url
     }()
-    static let sessionID = "20261111_101502_3fa9c1d2"
-    static let earlier = "20261109_181244_a17c90be"
-    static let model = "openrouter:anthropic/claude-sonnet-4.5"
+    /// The sessions of the recordings.
+    static let answerSession = "local-3869e20bb2f7a486741b466fd3689c6722764393b7a2f50bca1fa86853cd1f9b"
+    static let resumedSession = "local-a8a2537a19ce1905c0a99559ca0f2e86197234e68b0931bf190fc6517e91386e"
+    static let staleSession = "local-b3d62fb4c0780d2c11596ef324e3582b301cb89d9993a5daaa93c6431187c278"
+    static let fullAccessSession = "local-dfe43adeddc0d387c5ccf74a66b860e934acba67a28d57f45eb25e0421ef9dc6"
+    /// The recorded session's model as it opens, and as Hermes names it once the endpoint is settled.
+    static let model = "custom:example-model-2.5"
+    static let namedModel = "custom:llm.example.com:example-model-2.5"
 
     static func fixture(_ name: String) throws -> [Data] {
         let data = try Data(contentsOf: root.appendingPathComponent("native/contracts/fixtures/hermes-acp-\(name).jsonl"))
@@ -49,12 +55,12 @@ struct HermesTests {
         func option(_ answer: [String: Any]) -> String? { ((answer["result"] as? [String: Any])?["outcome"] as? [String: Any])?["optionId"] as? String }
     }
 
-    static func channel(_ request: StartRunRequest) throws -> Replay {
+    static func channel(_ request: StartRunRequest, admit: (([String: Any]) -> String?)? = nil) throws -> Replay {
         let result = Replay()
         result.parser = CLIStreamParser(provider: "hermes", log: { result.logs.append(($0, $1)) }, resume: { result.resumes.append($0) }, activityNamespace: "run-hermes",
                                         activity: { result.activities.append($0) }, usage: { result.usage.append($0) }, graph: { result.graph.append($0) }, graphInput: request.input)
         result.channel = ACPChannel(runId: "run-hermes", request: request, workspacePath: "/tmp/project", attachments: try AttachmentPreparation([]),
-                                    configValues: HermesAgent.configValues(request),
+                                    configValues: HermesAgent.configValues(request), admit: admit,
                                     write: { data in result.writes.append((try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]) },
                                     event: { result.parser.receive(object: $0) },
                                     emit: { result.permissions.append($0) }, activity: { result.parser.permissionActivity($0, state: $1) },
@@ -85,7 +91,8 @@ struct HermesTests {
         let new = try #require(run.writes[1]["params"] as? [String: Any])
         #expect(new["cwd"] as? String == "/tmp/project" && (new["mcpServers"] as? [Any])?.isEmpty == true)
         let prompt = try #require(run.writes[2]["params"] as? [String: Any])
-        #expect(prompt["sessionId"] as? String == Self.sessionID)
+        // Hermes's session ids are `local-` and 64 hex digits.
+        #expect(prompt["sessionId"] as? String == Self.answerSession && Self.answerSession.hasPrefix("local-") && Self.answerSession.count == 70)
         #expect(((prompt["prompt"] as? [[String: Any]])?.first)?["text"] as? String == "hi there")
         #expect(run.channel.turnCompleted && !run.channel.failed && run.completed == 1 && run.failures.isEmpty && run.warnings.isEmpty)
         // The turn is over: nothing is left to cancel.
@@ -93,23 +100,28 @@ struct HermesTests {
     }
 
     @Test func theModelTheEffortAndTheEditPolicyGoAsHermessConfigOptions() throws {
-        let request = StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "do it", model: "nous:hermes-4-405b", provider: "hermes",
+        // The recorded session runs `custom:example-model-2.5` at effort max, asking before edits.
+        let request = StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "do it", model: Self.namedModel, provider: "hermes",
                                       settings: RunSettings(effort: "high", permissionMode: "acceptEdits"))
         #expect(HermesAgent.configValues(request).map(\.id) == ["model", "reasoning_effort", "edit_approval_policy"])
         let run = try Self.channel(request)
         run.channel.start()
         let lines = try Self.fixture("answer")
         run.channel.receive(lines[0] + Data([10])); run.channel.receive(lines[1] + Data([10]))
-        func sent(_ index: Int) -> (String?, String?) { let params = run.writes[index]["params"] as? [String: Any]; return (params?["configId"] as? String, params?["value"] as? String) }
-        #expect(sent(2) == ("model", "nous:hermes-4-405b"))
+        func sent(_ index: Int) -> [String?] { let params = run.writes[index]["params"] as? [String: Any]; return [params?["configId"] as? String, params?["value"] as? String] }
+        #expect(sent(2) == ["model", Self.namedModel])
         run.channel.receive(Data(#"{"jsonrpc":"2.0","id":"mighty-3","result":{}}"#.utf8) + Data([10]))
-        #expect(sent(3) == ("reasoning_effort", "high"))
+        #expect(sent(3) == ["reasoning_effort", "high"])
         run.channel.receive(Data(#"{"jsonrpc":"2.0","id":"mighty-4","result":{}}"#.utf8) + Data([10]))
-        #expect(sent(4) == ("edit_approval_policy", "workspace_session"))
+        #expect(sent(4) == ["edit_approval_policy", "workspace_session"])
         // Hermes refuses a control while the session is busy: named, and the request still goes.
         run.channel.receive(Data(#"{"jsonrpc":"2.0","id":"mighty-5","error":{"code":-32603,"message":"Mode changes apply when the session is idle; try again after this turn."}}"#.utf8) + Data([10]))
         #expect(run.methods.last == "session/prompt" && run.warnings.count == 1 && run.warnings[0].contains("idle"))
-        // A model the session's picker does not list is named and left out.
+        // The session's own model and effort are not sent again; a model its picker does not list is named and left out.
+        let same = try Self.channel(StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "do it", model: Self.model, provider: "hermes", settings: RunSettings(effort: "max")))
+        same.channel.start()
+        same.channel.receive(lines[0] + Data([10])); same.channel.receive(lines[1] + Data([10]))
+        #expect(same.methods == ["initialize", "session/new", "session/prompt"] && same.warnings.isEmpty)
         let unknown = try Self.channel(StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "do it", model: "openrouter:gone/model", provider: "hermes"))
         unknown.channel.start()
         unknown.channel.receive(lines[0] + Data([10])); unknown.channel.receive(lines[1] + Data([10]))
@@ -118,34 +130,52 @@ struct HermesTests {
 
     @Test func aResumeIgnoresTheReplayedConversationAndFollowsThePanesEditPolicy() throws {
         var request = StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "go on", provider: "hermes", settings: RunSettings(permissionMode: "acceptEdits"))
-        request.resumeId = Self.earlier
+        request.resumeId = Self.resumedSession
         let run = try Self.replay("resume", request: request)
         #expect(run.methods == ["initialize", "session/resume", "session/set_config_option", "session/prompt"])
-        #expect((run.writes[1]["params"] as? [String: Any])?["sessionId"] as? String == Self.earlier)
+        #expect((run.writes[1]["params"] as? [String: Any])?["sessionId"] as? String == Self.resumedSession)
         #expect((run.writes[2]["params"] as? [String: Any])?["value"] as? String == "workspace_session")
-        // What Hermes replays before it answers the resume is the earlier conversation, not this run's.
-        #expect(run.logs.filter { $0.kind == "assistant" }.map(\.text) == ["Continuing from where we stopped."])
-        #expect(run.resumes == [Self.earlier] && run.channel.turnCompleted && !run.parser.failed)
-        #expect(run.usage.last?.providerSessionId == Self.earlier && run.usage.last?.totalTokens == 40195)
+        // What Hermes replays before it answers the resume (two earlier requests, their tools) is not this run's.
+        #expect(run.logs.filter { $0.kind == "assistant" }.map(\.text) == ["Bye."])
+        #expect(run.activities.allSatisfy { $0.kind == "turn" })
+        #expect(run.resumes == [Self.resumedSession] && run.channel.turnCompleted && !run.parser.failed)
+        // The counters carry on from the session's earlier requests.
+        #expect(run.usage.last?.providerSessionId == Self.resumedSession && run.usage.last?.totalTokens == 46130)
     }
 
     @Test func aMissingSessionToResumeStartsANewOneWithANotice() throws {
         var request = StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "go on", provider: "hermes")
-        request.resumeId = "20250101_000000_deadbeef"
+        request.resumeId = "local-" + String(repeating: "0", count: 64)
         let run = try Self.replay("resume-missing", request: request)
         #expect(run.methods == ["initialize", "session/resume", "session/new", "session/prompt"])
         #expect(run.warnings == [L("acp.channel.newSession")])
-        #expect(run.resumes == [Self.sessionID] && run.logs.filter { $0.kind == "assistant" }.map(\.text) == ["Starting fresh."])
+        #expect(run.resumes.count == 1 && run.resumes[0] != request.resumeId && run.logs.filter { $0.kind == "assistant" }.map(\.text) == ["Hello."])
+    }
+
+    @Test func withoutAProviderTheRunStopsAtInitializeAsAMissingSignIn() throws {
+        // The recorded `initialize` of a Hermes with nothing configured offers its terminal setup alone.
+        let request = StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "hi", provider: "hermes")
+        let run = try Self.channel(request, admit: { HermesAgent.provider(initialize: $0) == nil ? L("run.error.hermesNoProvider") : nil })
+        run.channel.start()
+        run.channel.receive(try Self.fixture("unconfigured")[0] + Data([10]))
+        // No session is opened: one created now would keep a provider that cannot answer.
+        #expect(run.methods == ["initialize"] && run.channel.failed && run.completed == 1 && run.resumes.isEmpty)
+        #expect(run.parser.failed && run.parser.authFailure && run.logs.map(\.text) == [L("run.error.hermesNoProvider")])
+        // A configured Hermes passes.
+        let configured = try Self.channel(request, admit: { HermesAgent.provider(initialize: $0) == nil ? "no" : nil })
+        configured.channel.start()
+        configured.channel.receive(try Self.fixture("answer")[0] + Data([10]))
+        #expect(configured.methods == ["initialize", "session/new"])
     }
 
     // MARK: Updates to the log, the graph and usage
 
     @Test func streamedTextIsLoggedOnceAndThoughtsAreNotCopied() throws {
         let run = try Self.replay("answer")
-        #expect(run.logs.map(\.kind) == ["assistant"] && run.logs.first?.text == "Hello! How can I help with this project?")
-        #expect(run.resumes == [Self.sessionID] && !run.parser.failed)
+        #expect(run.logs.map(\.kind) == ["assistant"] && run.logs.first?.text == "Hi.")
+        #expect(run.resumes == [Self.answerSession] && !run.parser.failed)
         let main = try #require(run.graph.last { $0.kind == "main" })
-        #expect(main.state == "completed" && main.output == "Hello! How can I help with this project?")
+        #expect(main.state == "completed" && main.output == "Hi.")
         // Hermes reports its session's running counts, not the request's: the block carries no tokens.
         #expect(main.usage == nil)
     }
@@ -153,70 +183,118 @@ struct HermesTests {
     @Test func usageIsTheSessionsRunningTokensAndTheContextWithoutACost() throws {
         let run = try Self.replay("answer")
         let last = try #require(run.usage.last)
-        #expect(last.provider == "hermes" && last.source == "hermes.acp" && last.providerSessionId == Self.sessionID && last.model == Self.model)
+        #expect(last.provider == "hermes" && last.source == "hermes.acp" && last.providerSessionId == Self.answerSession)
+        // The session opens as `custom:<model>` and then names the endpoint it settled on.
+        #expect(run.usage.first?.model == Self.model && last.model == Self.namedModel)
         #expect(last.costUSD == nil)
-        #expect(last.contextUsedTokens == 9200 && last.contextWindowTokens == 200000)
-        // `totalTokens` holds the cached input that `inputTokens` leaves out.
-        #expect(last.tokenScope == "session" && last.inputTokens == 9200 && last.outputTokens == 40 && last.cacheReadTokens == 8000 && last.reasoningTokens == 12 && last.totalTokens == 9240)
-        // The ledger counts what the session grew by.
+        #expect(last.contextUsedTokens == 11194 && last.contextWindowTokens == 256000)
+        #expect(last.tokenScope == "session" && last.inputTokens == 11166 && last.outputTokens == 28 && last.totalTokens == 11194)
+        // The ledger counts what the session grew by: the recorded resume of a 34,633-token session ends at 46,130.
         var ledger = UsageLedger()
-        #expect(ledger.record(paneId: "pane", workspaceId: "w", provider: "hermes", model: "default", usage: last)?.tokens == 9240)
+        #expect(ledger.record(paneId: "pane", workspaceId: "w", provider: "hermes", model: "default", usage: last)?.tokens == 11194)
         var next = last; next.totalTokens = 12_000
-        #expect(ledger.record(paneId: "pane", workspaceId: "w", provider: "hermes", model: "default", usage: next)?.tokens == 2760)
+        #expect(ledger.record(paneId: "pane", workspaceId: "w", provider: "hermes", model: "default", usage: next)?.tokens == 806)
+        // A turn cancelled before its first model call reports zeros: they are not the session's counts.
+        let cancelled = try Self.replay("cancel")
+        #expect(cancelled.channel.turnCompleted && !cancelled.parser.failed && cancelled.usage.allSatisfy { $0.totalTokens == nil })
     }
 
-    @Test func toolsAreRowsADangerousCommandAndAnEditAreCardsAndAQuestionIsSkipped() throws {
-        let run = try Self.replay("tools", answer: Self.allowing(true))
-        #expect(run.logs.filter { $0.kind == "assistant" }.map(\.text) == ["I'll read the README, then clean the build.", "The build folder is gone and notes.txt is written."])
+    @Test func toolsAreRowsAndAnEditAndADangerousCommandAreCards() throws {
+        // Recorded with both cards denied: the calls end failed.
+        let run = try Self.replay("tools", answer: Self.allowing(false))
+        // Hermes sends the reply it streamed once more when the turn settles: it is logged once, without the blank lines ahead of it.
+        let replies = run.logs.filter { $0.kind == "assistant" }.map(\.text)
+        #expect(replies.count == 2 && replies[0] == "[tool call]" && replies[1].hasPrefix("Done what could be done;"))
+        #expect(replies[1].components(separatedBy: "Done what could be done;").count == 2)
         // Hermes sends no rawInput for its own tools: the path, the shell line and the title's tool name stand in.
         let read = run.activities.filter { $0.toolName == "Read" }
-        #expect(read.last?.state == "completed" && read.last?.summary == "README.md" && read.last?.output == "Read README.md (42 lines)")
-        let bash = run.activities.filter { $0.toolName == "Bash" && $0.summary == "rm -rf build" }
-        #expect(bash.last?.state == "completed" && bash.last?.kind == "command" && bash.last?.output == "exit 0")
-        let edit = run.activities.filter { $0.toolName == "Edit" && $0.summary == "notes.txt" }
-        #expect(edit.last?.state == "completed")
-        // The plan is the checklist.
-        #expect(run.logs.contains { $0.kind == "system" && $0.text == "[x] Clean the build folder\n[ ] Write notes.txt" })
-        // Two cards: the command Hermes holds back, and the edit with its arguments unwrapped.
+        #expect(read.last?.state == "completed" && read.last?.summary == "/etc/shells" && read.last?.output?.contains("/bin/zsh") == true)
+        let edit = run.activities.filter { $0.toolName == "Edit" && $0.summary == "note.txt" }
+        #expect(edit.first?.state == "running" && edit.last?.state == "error" && edit.last?.output?.contains("Edit approval denied") == true)
+        let bash = run.activities.filter { $0.toolName == "Bash" && $0.summary == "rm -rf ./nothing-here" }
+        #expect(bash.last?.state == "error" && bash.last?.kind == "command" && bash.last?.output?.contains("Command denied by user") == true)
+        // A tool Hermes has no kind for is named by its title, and this one does carry its input.
+        #expect(run.activities.last { $0.toolName == "tool_search" }?.state == "completed")
+        // Two cards: the edit with its arguments unwrapped, and the command Hermes holds back.
         let cards = run.permissions.filter { $0.state == "pending" }
-        #expect(cards.map(\.toolUseId) == ["perm-check-1", "edit-approval-2"] && cards.allSatisfy(\.canAllow))
-        #expect(cards[0].toolName == "Bash" && cards[0].summary == "recursive delete: rm -rf build" && cards[0].inputJSON.contains("\"command\" : \"rm -rf build\""))
-        #expect(ToolPermissionPresentation.make(toolName: cards[0].toolName, inputJSON: cards[0].inputJSON).primaryCode?.value == "rm -rf build")
-        #expect(cards[1].toolName == "Edit" && cards[1].inputJSON.contains("\"path\" : \"notes.txt\"") && !cards[1].inputJSON.contains("\"tool\""))
-        #expect(run.permissions.map(\.state) == ["pending", "allowed", "pending", "allowed"])
-        // Allowed once with Hermes's own option id, never its "for session" or "always".
-        #expect(run.answers.map { $0["id"] as? Int } == [0, 1, 2])
-        #expect(run.answers.map(run.option) == ["allow_once", "allow_once", "skip"])
-        // The card's own bubble settles with the answer; the question leaves no row.
-        #expect(run.activities.last { $0.summary == "recursive delete: rm -rf build" }?.state == "completed")
-        #expect(!run.activities.contains { $0.summary.contains("Commit") })
-        #expect(run.warnings == [L("acp.channel.questionSkipped", ["question": "Commit the change now?", "choices": "Yes / Not yet"])])
-        #expect(!run.parser.failed && run.channel.turnCompleted)
+        #expect(cards.map(\.toolUseId) == ["edit-approval-1", "perm-check-1"] && cards.allSatisfy(\.canAllow))
+        #expect(cards[0].toolName == "Edit" && cards[0].summary == "Approve edit: /private/tmp/project/note.txt")
+        #expect(cards[0].inputJSON.contains("\"path\" : \"note.txt\"") && cards[0].inputJSON.contains("\"content\" : \"hi\"") && !cards[0].inputJSON.contains("\"tool\""))
+        #expect(cards[1].toolName == "Bash" && cards[1].summary == "recursive delete: rm -rf ./nothing-here" && cards[1].inputJSON.contains("\"command\" : \"rm -rf ./nothing-here\""))
+        #expect(ToolPermissionPresentation.make(toolName: cards[1].toolName, inputJSON: cards[1].inputJSON).primaryCode?.value == "rm -rf ./nothing-here")
+        #expect(run.permissions.map(\.state) == ["pending", "denied", "pending", "denied"])
+        // Denied with Hermes's own option id; its number ids are answered as numbers.
+        #expect(run.answers.map { $0["id"] as? Int } == [0, 1] && run.answers.map(run.option) == ["deny", "deny"])
+        // The card's own bubble settles with the answer.
+        #expect(run.activities.last { $0.summary == "recursive delete: rm -rf ./nothing-here" }?.state == "error")
+        #expect(!run.parser.failed && run.channel.turnCompleted && run.usage.last?.totalTokens == 24646)
+        // Allowed once, never "for session" or "always", though the command's card offers them.
+        let allowed = try Self.replay("tools", answer: Self.allowing(true))
+        #expect(allowed.answers.map(allowed.option) == ["allow_once", "allow_once"])
     }
 
-    @Test func aDeniedCardAnswersHermessDenyOnce() throws {
-        let denied = try Self.replay("tools", answer: Self.allowing(false))
-        #expect(denied.answers.map(denied.option) == ["deny", "deny", "skip"])
-        #expect(denied.permissions.map(\.state) == ["pending", "denied", "pending", "denied"])
+    @Test func aQuestionWithChoicesIsSkippedAndNamed() throws {
+        // Not recorded (the recorded model had no clarify tool): the shape is acp_adapter/elicitation.py's.
+        let run = try Self.channel(StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "hi", provider: "hermes"))
+        run.channel.start()
+        let lines = try Self.fixture("answer")
+        run.channel.receive(lines[0] + Data([10])); run.channel.receive(lines[1] + Data([10]))
+        let ask: [String: Any] = ["jsonrpc": "2.0", "id": 2, "method": "session/request_permission", "params": ["sessionId": Self.answerSession,
+            "toolCall": ["toolCallId": "clarify-7c1d", "title": "Commit the change now?", "kind": "other", "status": "pending", "rawInput": ["question": "Commit the change now?", "choices": ["Yes", "Not yet"]]],
+            "options": [["optionId": "choice-0", "name": "Yes", "kind": "allow_once"], ["optionId": "choice-1", "name": "Not yet", "kind": "allow_once"], ["optionId": "skip", "name": "Skip", "kind": "reject_once"]]]]
+        run.channel.receive(try JSONSerialization.data(withJSONObject: ask) + Data([10]))
+        run.channel.receive(Data(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"\#(Self.answerSession)","update":{"sessionUpdate":"tool_call_update","toolCallId":"clarify-7c1d","status":"failed"}}}"#.utf8) + Data([10]))
+        #expect(run.permissions.isEmpty && run.answers.map(run.option) == ["skip"] && run.activities.allSatisfy { $0.kind == "turn" })
+        #expect(run.warnings == [L("acp.channel.questionSkipped", ["question": "Commit the change now?", "choices": "Yes / Not yet"])])
     }
 
     @Test func aTurnThatFailsForAMissingProviderIsALostSignIn() throws {
-        let run = try Self.replay("auth")
+        // Recorded: a session created before any provider was set up, resumed after one was.
+        var request = StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "hi", provider: "hermes")
+        request.resumeId = Self.staleSession
+        let run = try Self.replay("auth", request: request)
         #expect(run.parser.failed && run.parser.authFailure && run.channel.failed && run.completed == 1)
         // The reply said why; the error that follows is only the gateway's word for a failed turn.
-        #expect(run.logs.contains { $0.kind == "assistant" && $0.text.contains("not connected to any AI provider") })
+        #expect(run.logs.first { $0.kind == "assistant" }?.text.hasPrefix("⚠️ provider 'auto' has no endpoint configured") == true)
         #expect(run.logs.last { $0.kind == "error" }?.text == L("run.error.hermesTurnFailed"))
+        #expect(CLIAuthFailure.hermes(text: "⚠️ provider 'auto' has no endpoint configured, so the request is not sent anywhere"))
         #expect(CLIAuthFailure.hermes(text: "No LLM provider configured. Run `hermes model` to select a provider"))
         #expect(CLIAuthFailure.hermes(text: "Run `hermes auth add openai-codex` to re-enable if needed."))
         #expect(CLIAuthFailure.hermes(text: "Error code: 401 - Unauthorized"))
         #expect(!CLIAuthFailure.hermes(text: "admitted_turn_failed"))
         #expect(!CLIAuthFailure.hermes(text: "407 Proxy Authentication Required"))
-        // Another failure keeps Hermes's own words (the Python ACP SDK's `data.details`).
+        // Another failure keeps Hermes's own words (the Python ACP SDK's `data.details`, as recorded for a missing session).
         let other = try Self.channel(StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "hi", provider: "hermes"))
         other.channel.start()
         other.channel.receive(try Self.fixture("answer")[0] + Data([10]))
         other.channel.receive(Data(#"{"jsonrpc":"2.0","id":"mighty-2","error":{"code":-32603,"message":"Internal error","data":{"details":"Gateway could not start: port in use"}}}"#.utf8) + Data([10]))
         #expect(other.parser.failed && !other.parser.authFailure && other.logs.last?.text == "Gateway could not start: port in use")
+    }
+
+    @Test func hermessLogAndTracebacksOnStderrStayOutOfThePane() {
+        // What `hermes acp` wrote to stderr for the failed request above.
+        let filter = HermesAgent.StderrFilter()
+        let recorded = """
+        2026-11-11 01:18:54 [INFO] acp_adapter.entry: Starting hermes-agent ACP adapter
+        2026-11-11 01:18:54 [INFO] hermes_cli.plugins: Plugin 'default' registered delegation
+        2026-11-11 01:18:54 [ERROR] root: Background task failed
+        Traceback (most recent call last):
+          File "/x/venv/lib/python3.14/site-packages/acp/task/supervisor.py", line 51, in _on_done
+            task.result()
+            ~~~~~~~~~~~^^
+          File "/x/venv/lib/python3.14/site-packages/acp/connection.py", line 208, in _run_request
+            raise err from None
+        acp.exceptions.RequestError: Internal error
+
+        """
+        // Arrives in pieces that do not end on lines.
+        let half = recorded.index(recorded.startIndex, offsetBy: 150)
+        #expect(filter.push(String(recorded[..<half])) + filter.push(String(recorded[half...])) + filter.finish() == "")
+        // A start-up failure's own words pass.
+        let missing = "The ACP server can't start: its protocol packages are missing from this install.\nFrom the Hermes environment, run: hermes pm install --extra acp\n"
+        #expect(HermesAgent.StderrFilter().push(missing) == missing)
+        let tail = HermesAgent.StderrFilter()
+        #expect(tail.push("Then restart Hermes.") == "" && tail.finish() == "Then restart Hermes.")
     }
 
     // MARK: Permissions, sign-in, models
@@ -237,11 +315,14 @@ struct HermesTests {
     }
 
     @Test func signInIsTheProviderInitializeNames() throws {
+        // The recorded answers: a configured Hermes names its provider beside the terminal setup, an unconfigured one the setup alone.
+        func result(_ fixture: String) throws -> [String: Any] { try #require((try JSONSerialization.jsonObject(with: try Self.fixture(fixture)[0]) as? [String: Any])?["result"] as? [String: Any]) }
+        #expect(HermesAgent.provider(initialize: try result("answer")) == "custom")
+        #expect(HermesAgent.provider(initialize: try result("unconfigured")) == nil)
         let signedIn = try #require(HermesAgent.parseInitialize(Data("warning line\n".utf8) + Self.probeAnswer(provider: "openrouter")))
         #expect(signedIn.answered && signedIn.provider == "openrouter" && signedIn.version == "0.23.1")
         let status = CLIAccountSupport.hermesStatus(signedIn)
         #expect(status.loggedIn == true && status.account == "openrouter" && status.methodId == CLIAccountMethod.hermesProvider && !status.canSignOut)
-        // Only the terminal setup: no provider is connected.
         let signedOut = try #require(HermesAgent.parseInitialize(Self.probeAnswer(provider: nil)))
         #expect(signedOut.answered && signedOut.provider == nil)
         #expect(CLIAccountSupport.hermesStatus(signedOut).loggedIn == false)
@@ -286,15 +367,24 @@ struct HermesTests {
         #expect(empty.models.map(\.value) == ["default"] && empty.detail == L("provider.catalog.hermesEmpty"))
         let session = try #require((try JSONSerialization.jsonObject(with: try Self.fixture("answer")[1]) as? [String: Any])?["result"] as? [String: Any])
         let models = HermesAgent.models(configOptions: session["configOptions"])
-        #expect(models.map(\.value) == [Self.model, "openrouter:openai/gpt-5.5", "nous:hermes-4-405b"] && models[0].displayName == "Claude Sonnet 4.5")
-        #expect(models[2].description == L("provider.catalog.hermesModelRow", ["provider": "nous"]))
+        // The recorded picker: a custom endpoint's model under both of its ids, and the providers Hermes found credentials for.
+        #expect(models.count == 20 && models.contains { $0.value == Self.model } && models.contains { $0.value == Self.namedModel } && models[0].value == "anthropic:claude-fable-5-2")
+        #expect(models[0].displayName == "Anthropic · claude-fable-5-2" && models[0].description == L("provider.catalog.hermesModelRow", ["provider": "anthropic"]))
+        #expect(models.allSatisfy { CoreValidation.model($0.value) })
+        // A session that held an unusable model listed it first; the next session's picker replaces the whole list.
+        var stale = try #require(session["configOptions"] as? [[String: Any]])
+        let at = try #require(stale.firstIndex { $0["id"] as? String == "model" })
+        stale[at]["options"] = [["name": "Auto · anthropic/claude-opus-4.6", "value": "auto:anthropic/claude-opus-4.6"]] + ((stale[at]["options"] as? [[String: Any]]) ?? [])
+        HermesAgent.saveModels(configOptions: stale, to: cache)
+        #expect(HermesAgent.cachedCatalog(url: cache).models.map(\.value).contains("auto:anthropic/claude-opus-4.6"))
         HermesAgent.saveModels(configOptions: session["configOptions"], to: cache)
         let catalog = HermesAgent.cachedCatalog(url: cache)
         #expect(catalog.source == "cli" && catalog.models.map(\.value) == ["default"] + models.map(\.value))
-        // A session without a picker changes nothing.
+        // A session without a picker changes nothing; a Hermes without a provider drops the list.
         HermesAgent.saveModels(configOptions: [[String: Any]](), to: cache)
-        #expect(HermesAgent.cachedCatalog(url: cache).models.count == 4)
-        #expect(CoreValidation.model(Self.model))
+        #expect(HermesAgent.cachedCatalog(url: cache).models.count == 21)
+        HermesAgent.forgetModels(at: cache)
+        #expect(HermesAgent.cachedCatalog(url: cache).models.map(\.value) == ["default"])
     }
 
     // MARK: Setup
@@ -322,11 +412,13 @@ struct HermesTests {
         #expect(!SetupRowState.isSelectable(.outdated, item: item, platform: .macos))
         #expect(try SetupCatalog.bundled().item("hermes") != nil)
         #expect(ComponentCatalog.installCommand(provider: "hermes")?.contains("--skip-setup") == true)
-        #expect(SetupProber.versionNumbers("Hermes Agent v0.23.1 (2026.11.10)\nInstall directory: /Users/x/.hermes/hermes-agent\nPython: 3.12.7") == [0, 23, 1])
+        #expect(SetupProber.versionNumbers("Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882\nInstall directory: /Users/x/.hermes/hermes-agent\nInstall method: git\nPython: 3.14.9") == [0, 23, 1])
     }
 
     // MARK: Session list
 
+    static let sessionID = answerSession
+    static let earlier = resumedSession
     @Test func acpConversationsOfTheWorkspaceFolderAreListedFromStateDB() throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
         let workspace = directory.appendingPathComponent("project"); try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
@@ -334,8 +426,10 @@ struct HermesTests {
         let data = home.appendingPathComponent(".hermes"); try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
         let path = workspace.resolvingSymlinksInPath().path
         let now = Date(), t = now.timeIntervalSince1970
-        let policy = #"{"session_id":"\#(Self.sessionID)","lineage":["\#(Self.sessionID)"],"policy":{"request_json":"{\"source\":\"acp\",\"yolo\":true}"}}"#
-        let asking = #"{"session_id":"\#(Self.earlier)","policy":{"request_json":"{\"source\":\"acp\"}"}}"#
+        let continued = "local-" + String(repeating: "7", count: 64)
+        // The record's shape as Hermes 0.23.1 writes it; `yolo` is there only for a session created with it.
+        let policy = #"{"policy":{"cwd":"/tmp/project","edit_approval_policy":"ask","request_json":"{\"cwd\":\"/tmp/project\",\"editor\":{},\"source\":\"acp\",\"yolo\":true}","source":"acp"},"session_id":"\#(Self.sessionID)"}"#
+        let asking = #"{"policy":{"request_json":"{\"cwd\":\"/tmp/project\",\"editor\":{},\"source\":\"acp\"}","source":"acp"},"session_id":"\#(Self.earlier)"}"#
         try sqlite(data.appendingPathComponent("state.db"), [
             "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, created_source TEXT, model TEXT, model_config TEXT, parent_session_id TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, cwd TEXT, title TEXT, last_activity_at REAL, archived INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0)",
             "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL)",
@@ -343,7 +437,7 @@ struct HermesTests {
             // The owner stores an editor's thread as `local`, created by `acp`.
             "INSERT INTO sessions VALUES ('\(Self.sessionID)', 'local', 'acp', 'anthropic/claude-sonnet-4.5', NULL, NULL, \(t - 900), 4, '\(path)', 'Clean the build', \(t - 800), 0, 0)",
             // Its compressed continuation: the same conversation, resumed under the first id.
-            "INSERT INTO sessions VALUES ('20261111_103000_77aa11bb', 'local', 'acp', 'anthropic/claude-sonnet-4.5', NULL, '\(Self.sessionID)', \(t - 300), 2, '\(path)', NULL, \(t - 100), 0, 0)",
+            "INSERT INTO sessions VALUES ('\(continued)', 'local', 'acp', 'anthropic/claude-sonnet-4.5', NULL, '\(Self.sessionID)', \(t - 300), 2, '\(path)', NULL, \(t - 100), 0, 0)",
             "INSERT INTO sessions VALUES ('\(Self.earlier)', 'acp', NULL, NULL, '{\"cwd\":\"\(path)\"}', NULL, \(t - 5000), 2, NULL, NULL, NULL, 0, 0)",
             "INSERT INTO sessions VALUES ('20261110_090000_0000cli1', 'cli', 'cli', NULL, NULL, NULL, \(t - 50), 2, '\(path)', 'A terminal chat', \(t - 40), 0, 0)",
             "INSERT INTO sessions VALUES ('20261110_090000_0000else', 'acp', 'acp', NULL, NULL, NULL, \(t - 50), 2, '/elsewhere', 'Other folder', \(t - 40), 0, 0)",
@@ -351,7 +445,7 @@ struct HermesTests {
             "INSERT INTO sessions VALUES ('20261110_090000_0000none', 'acp', 'acp', NULL, NULL, NULL, \(t - 50), 0, '\(path)', 'Never used', \(t - 40), 0, 0)",
             "INSERT INTO messages (session_id, role, content, timestamp) VALUES ('\(Self.sessionID)', 'user', 'clean the build folder', 1)",
             "INSERT INTO messages (session_id, role, content, timestamp) VALUES ('\(Self.sessionID)', 'assistant', 'done', 2)",
-            "INSERT INTO messages (session_id, role, content, timestamp) VALUES ('20261111_103000_77aa11bb', 'user', 'and write notes', 3)",
+            "INSERT INTO messages (session_id, role, content, timestamp) VALUES ('\(continued)', 'user', 'and write notes', \(t - 20))",
             "INSERT INTO messages (session_id, role, content, timestamp) VALUES ('\(Self.earlier)', 'user', '[{\"type\":\"text\",\"text\":\"what is in this picture?\"},{\"type\":\"image_url\"}]', 4)",
             "INSERT INTO state_meta VALUES ('gateway.local_policy.v1:\(Self.sessionID)', '\(policy)')",
             "INSERT INTO state_meta VALUES ('gateway.local_policy.v1:\(Self.earlier)', '\(asking)')",
@@ -360,7 +454,8 @@ struct HermesTests {
         #expect(listing.items.map(\.sessionID) == [Self.sessionID, Self.earlier])
         let first = try #require(listing.items.first)
         #expect(first.title == "clean the build folder" && first.requests == 2 && first.model == "anthropic/claude-sonnet-4.5" && first.provider == "hermes")
-        #expect(abs(first.modified.timeIntervalSince1970 - (t - 100)) < 1)
+        // `last_activity_at` stays near the start: the newest message dates the conversation.
+        #expect(abs(first.modified.timeIntervalSince1970 - (t - 20)) < 1)
         #expect(listing.items.last?.title == "what is in this picture?")
         #expect(ResumableSessions.listing(ResumableSessionQuery(workspacePath: workspace.path, home: home, excluding: [Self.sessionID], now: now), provider: "hermes").items.count == 1)
         // `HERMES_HOME` moves the store.
@@ -369,8 +464,12 @@ struct HermesTests {
         let database = HermesAgent.database(home: home, environment: [:])
         #expect(HermesAgent.startedWithFullAccess(sessionID: Self.sessionID, database: database) == true)
         #expect(HermesAgent.startedWithFullAccess(sessionID: Self.earlier, database: database) == false)
-        #expect(HermesAgent.startedWithFullAccess(sessionID: "20250101_000000_deadbeef", database: database) == nil)
-        #expect(CoreValidation.sessionIdentifier(Self.sessionID) && !CoreValidation.sessionIdentifier("20261111_101502_../x"))
+        #expect(HermesAgent.startedWithFullAccess(sessionID: "local-" + String(repeating: "0", count: 64), database: database) == nil)
+        // A session whose turns all failed holds no messages and is not one to continue.
+        #expect(HermesAgent.messageCount(sessionID: Self.sessionID, database: database) == 4)
+        #expect(HermesAgent.messageCount(sessionID: "20261110_090000_0000none", database: database) == 0)
+        #expect(HermesAgent.messageCount(sessionID: "local-" + String(repeating: "0", count: 64), database: database) == nil)
+        #expect(CoreValidation.sessionIdentifier(Self.sessionID) && !CoreValidation.sessionIdentifier("local-../x"))
     }
 
     // MARK: A run
@@ -394,7 +493,8 @@ struct HermesTests {
         let fixtureFile = Self.root.appendingPathComponent("native/contracts/fixtures/hermes-acp-\(fixture).jsonl").path
         let source = """
         #!/bin/sh
-        if [ "$1" = "--version" ]; then printf 'Hermes Agent v0.23.1 (2026.11.10)\\nInstall directory: /tmp/hermes\\nPython: 3.12.7\\n'; exit 0; fi
+        if [ "$1" = "--version" ]; then printf 'Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882\\nInstall directory: /tmp/hermes\\nInstall method: git\\n'; exit 0; fi
+        printf '2026-11-11 01:18:54 [INFO] acp_adapter.entry: Starting hermes-agent ACP adapter\\n2026-11-11 01:18:54 [ERROR] root: Background task failed\\nTraceback (most recent call last):\\n  File "x.py", line 1, in run\\nacp.exceptions.RequestError: Internal error\\n' >&2
         printf '%s\\n' "$@" > argv.txt
         printf '%s\\n' "${HERMES_YOLO_MODE:-unset}" > yolo.txt
         exec 3<&0
@@ -432,9 +532,13 @@ struct HermesTests {
             try await wait { events.values().contains { $0.status == "completed" || $0.status == "error" } }
             let all = events.values()
             #expect(all.last { $0.type == "status" }?.status == "completed")
-            #expect(all.contains { $0.type == "log" && $0.entry?.kind == "assistant" && $0.entry?.text == "Hello! How can I help with this project?" })
-            #expect(all.contains { $0.type == "resume" && $0.resumeId == Self.sessionID })
-            #expect(all.contains { $0.type == "usage" && $0.usage?.provider == "hermes" && $0.usage?.totalTokens == 9240 })
+            #expect(all.contains { $0.type == "log" && $0.entry?.kind == "assistant" && $0.entry?.text == "Hi." })
+            #expect(all.contains { $0.type == "resume" && $0.resumeId == (mode == "fullAccess" ? Self.fullAccessSession : Self.answerSession) })
+            #expect(all.contains { $0.type == "usage" && $0.usage?.provider == "hermes" && $0.usage?.totalTokens == (mode == "fullAccess" ? 11192 : 11194) })
+            // Hermes's log and tracebacks on stderr are not the pane's.
+            #expect(!all.contains { $0.type == "log" && ($0.entry?.text.contains("[INFO]") == true || $0.entry?.text.contains("Traceback") == true || $0.entry?.text.contains("RequestError") == true) })
+            // The first line of `hermes --version` is the version.
+            #expect(await service.command(provider: "hermes")?.version == "Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882")
             #expect(try String(contentsOf: directory.appendingPathComponent("argv.txt"), encoding: .utf8) == "acp\n")
             // The pane's mode decides, not a HERMES_YOLO_MODE the shell exported.
             #expect(try String(contentsOf: directory.appendingPathComponent("yolo.txt"), encoding: .utf8) == (mode == "fullAccess" ? "1\n" : "unset\n"))
@@ -442,6 +546,34 @@ struct HermesTests {
             // Manual leaves the session's "ask" as it is.
             #expect(stdin.map { $0.contains("\"session/set_config_option\"") } == (mode == "fullAccess" ? [false, false, true, false] : [false, false, false]))
             #expect(stdin.last?.contains("\"session/prompt\"") == true)
+        } catch { await runner.shutdown(); await service.shutdown(); throw error }
+        await runner.shutdown(); await service.shutdown()
+    }
+
+    @Test func aSessionWithoutAnAnsweredTurnIsNotContinued() async throws {
+        // The pane's first request failed before a provider was set up: its session holds no messages
+        // and keeps the provider it was created with, so the next request starts a new one.
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let store = directory.appendingPathComponent(".hermes"); try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+        try sqlite(store.appendingPathComponent("state.db"), [
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, created_source TEXT, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, cwd TEXT)",
+            "CREATE TABLE state_meta (key TEXT PRIMARY KEY, value TEXT)",
+            "INSERT INTO sessions VALUES ('\(Self.staleSession)', 'local', 'acp', 'anthropic/claude-opus-4.6', 1, 0, '\(directory.path)')",
+        ])
+        let binary = try fakeHermes(directory, fixture: "answer")
+        let service = ProviderService(binaryOverrides: ["hermes": binary], environment: ["PATH": "/usr/bin:/bin", "HOME": directory.path])
+        let events = HermesRecorder<RunEvent>()
+        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0) })
+        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+        do {
+            var request = StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "hi there", provider: "hermes")
+            request.resumeId = Self.staleSession
+            try await runner.start(request: request, workspace: workspace)
+            try await wait { events.values().contains { $0.status == "completed" || $0.status == "error" } }
+            #expect(events.values().last { $0.type == "status" }?.status == "completed")
+            let stdin = try String(contentsOf: directory.appendingPathComponent("stdin.txt"), encoding: .utf8).split(separator: "\n").map(String.init)
+            #expect(stdin.count == 3 && stdin[1].contains("\"session/new\"") && !stdin.contains { $0.contains("session/resume") })
+            #expect(events.values().contains { $0.type == "resume" && $0.resumeId == Self.answerSession })
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
         await runner.shutdown(); await service.shutdown()
     }
@@ -476,6 +608,6 @@ struct HermesTests {
         #expect(MightyGraphSupport.providers.contains("hermes") && ResumableSessions.providers.contains("hermes") && !SessionHistory.providers.contains("hermes"))
         #expect(try ProviderService.arguments(StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "hi", provider: "hermes"), pluginDirectory: URL(fileURLWithPath: "/tmp")) == ["acp"])
         #expect(ProviderOptions.fallbackCatalog("hermes").models.map(\.value) == ["default"])
-        #expect(HermesAgent.versionLine("Hermes Agent v0.23.1 (2026.11.10)\nInstall directory: /Users/x/.hermes/hermes-agent\nUp to date") == "Hermes Agent v0.23.1 (2026.11.10)")
+        #expect(HermesAgent.versionLine("Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882\nInstall directory: /Users/x/.hermes/hermes-agent\nUp to date") == "Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882")
     }
 }

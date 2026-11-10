@@ -66,6 +66,35 @@ public enum HermesAgent {
         }
     }
 
+    /// The messages the session holds (`sessions.message_count`): 0 for one whose turns all failed
+    /// or never ran. nil when the session or the database is not there.
+    public static func messageCount(sessionID: String, database: URL) -> Int? {
+        guard CoreValidation.sessionIdentifier(sessionID) else { return nil }
+        return HermesSessions.read(database) { db in HermesSessions.text(db, "SELECT COALESCE(message_count, 0) FROM sessions WHERE id = ?", [sessionID]).flatMap { Int($0) } }
+    }
+
+    /// What Hermes writes to stderr while it serves ACP: its log (`2026-11-11 01:18:54 [INFO] …`)
+    /// and a Python traceback for every request it answers with an error. Neither is for the
+    /// pane, which shows the ACP error itself. Anything else (a start-up failure's own words) passes.
+    final class StderrFilter {
+        private var partial = "", inTraceback = false
+        func push(_ text: String) -> String {
+            var lines = (partial + text).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            partial = String(lines.removeLast().prefix(16_384))
+            return lines.filter(keep).map { $0 + "\n" }.joined()
+        }
+        func finish() -> String { defer { partial = "" }; return partial.isEmpty || !keep(partial) ? "" : partial }
+        private func keep(_ line: String) -> Bool {
+            if line.range(of: "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(,[0-9]+)? \\[[A-Z]+\\]", options: .regularExpression) != nil { inTraceback = false; return false }
+            if line.hasPrefix("Traceback (most recent call last)") { inTraceback = true; return false }
+            if line.hasPrefix("During handling of the above exception") || line.hasPrefix("The above exception was the direct cause") { return false }
+            guard inTraceback else { return !line.trimmingCharacters(in: .whitespaces).isEmpty }
+            // The frames are indented; the first line that is not is the exception itself, the traceback's last.
+            if !(line.first?.isWhitespace ?? true) { inTraceback = false }
+            return false
+        }
+    }
+
     // MARK: Sign-in
 
     public struct Probe: Sendable, Equatable {
@@ -86,12 +115,17 @@ public enum HermesAgent {
         for line in output.split(separator: 10).prefix(64) {
             guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any], object["id"] as? String == "mighty-probe" else { continue }
             guard let result = object["result"] as? [String: Any] else { return Probe(provider: nil, answered: false, timedOut: false, version: nil) }
-            let methods = result["authMethods"] as? [[String: Any]] ?? []
-            let provider = methods.first { ($0["id"] as? String).map { $0 != setupMethod } == true && ($0["type"] as? String ?? "agent") == "agent" }?["id"] as? String
+            let provider = provider(initialize: result)
             let version = (result["agentInfo"] as? [String: Any])?["version"] as? String
             return Probe(provider: provider.map { CLIAccountSupport.clean($0) }, answered: true, timedOut: false, version: version)
         }
         return nil
+    }
+
+    /// The provider an `initialize` result's `authMethods` name: the entry that is not the terminal setup.
+    static func provider(initialize result: [String: Any]) -> String? {
+        let methods = result["authMethods"] as? [[String: Any]] ?? []
+        return methods.first { ($0["id"] as? String).map { !$0.isEmpty && $0 != setupMethod } == true && ($0["type"] as? String ?? "agent") == "agent" }?["id"] as? String
     }
 
     /// Starts `hermes acp`, sends `initialize` alone and reads its answer. No session is
@@ -146,6 +180,8 @@ public enum HermesAgent {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: url, options: .atomic)
     }
+    /// Without a provider the kept picker is a past sign-in's: it goes.
+    public static func forgetModels(at url: URL?) { if let url { try? FileManager.default.removeItem(at: url) } }
     /// "Follow Hermes's settings" and, once a session ran, the models its picker offered.
     public static func cachedCatalog(url: URL?) -> ModelCatalog {
         let fallback = ProviderOptions.fallbackCatalog("hermes")
@@ -313,6 +349,10 @@ enum HermesSessions {
         let marks = Array(repeating: "?", count: ids.count).joined(separator: ",")
         guard !ids.isEmpty, let statement = prepare(db, "SELECT content FROM messages WHERE session_id IN (\(marks)) AND role = 'user' ORDER BY id LIMIT 20000", ids) else { return }
         defer { sqlite3_finalize(statement) }
+        // `last_activity_at` stays near the session's start: the newest message says when it was last used.
+        if let newest = text(db, "SELECT MAX(timestamp) FROM messages WHERE session_id IN (\(marks))", ids).flatMap({ Double($0) }), newest > row.updated.timeIntervalSince1970 {
+            row.updated = Date(timeIntervalSince1970: newest)
+        }
         var count = 0
         while sqlite3_step(statement) == SQLITE_ROW {
             count += 1

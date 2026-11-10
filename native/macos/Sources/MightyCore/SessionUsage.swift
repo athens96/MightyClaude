@@ -306,7 +306,12 @@ final class SessionUsageTracker {
             setModel(model?["currentValue"])
             publish()
         case "acp.update":
-            guard let update = event["update"] as? [String: Any], update["sessionUpdate"] as? String == "usage_update" else { return }
+            guard let update = event["update"] as? [String: Any] else { return }
+            // Hermes names the model it settled on after the session opened (`custom:name` becomes `custom:host:name`).
+            if update["sessionUpdate"] as? String == "config_option_update" {
+                setModel((update["configOptions"] as? [[String: Any]])?.first { $0["id"] as? String == "model" }?["currentValue"]); publish(); return
+            }
+            guard update["sessionUpdate"] as? String == "usage_update" else { return }
             if let used = SessionUsageSupport.count(update["used"]) { value.contextUsedTokens = used }
             if let size = SessionUsageSupport.count(update["size"]), size > 0 { value.contextWindowTokens = size }
             if let cost = update["cost"] as? [String: Any], (cost["currency"] as? String ?? "USD").uppercased() == "USD", let amount = SessionUsageSupport.cost(cost["amount"]) {
@@ -320,6 +325,8 @@ final class SessionUsageTracker {
                 // The session's counters so far (`gateway/session_usage.py`). `inputTokens` leaves the cache out and
                 // `totalTokens` holds it (read and written), so input is the total without the output.
                 let total = SessionUsageSupport.count(usage["totalTokens"])
+                // A turn cancelled before its first model call reports zeros, which are not the session's counts.
+                if (total ?? 0) == 0, input == 0, output == 0 { return }
                 value.tokenScope = "session"
                 value.inputTokens = total.flatMap { $0 >= output ? $0 - output : nil } ?? SessionUsageSupport.sum([input, read ?? 0])
                 value.outputTokens = output; value.cacheReadTokens = read
