@@ -95,7 +95,7 @@ public actor AccountUsageService {
             }
             throw AccountUsageFailure.unavailable(provider == "gemini"
                 ? L("accountUsage.detailAntigravityUnavailable")
-                : L("windows.accountUsage.detailUnsupportedProvider"))
+                : provider == "pi" ? L("accountUsage.detailPiUnavailable") : L("windows.accountUsage.detailUnsupportedProvider"))
         }
         now = { Date() }
     }

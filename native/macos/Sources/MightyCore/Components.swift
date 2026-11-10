@@ -48,6 +48,7 @@ public enum ComponentCatalog {
         case "claude": return "npm install -g @anthropic-ai/claude-code"
         case "codex": return "npm install -g @openai/codex"
         case "gemini": return "curl -fsSL https://antigravity.google/cli/install.sh | bash"
+        case "pi": return "npm install -g @mariozechner/pi-coding-agent"
         default: return nil
         }
     }

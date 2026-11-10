@@ -584,10 +584,17 @@ public actor ProcessRunner {
                     if request.provider == "codex" { run.codexHome = CLIAccountSupport.codexHome(home: home, environment: environment) }
                     else { run.antigravityBrain = AntigravityRecords.brain(home: home) }
                 }
+                // pi exits on a session it cannot find (one that never got an answer is not written):
+                // such a pane starts a new session instead.
+                var launch = request
+                if request.provider == "pi", let resume = request.resumeId {
+                    let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.homeDirectoryForCurrentUser
+                    if PiAgent.sessionFile(id: resume, workspacePath: workspace.path, home: home, environment: environment) == nil { launch.resumeId = nil }
+                }
                 if codexApprovals {
                     arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneBinding, codexHome: run.codexHome)
                 } else {
-                    let prepared = try ProviderInput.prepare(request, pluginDirectory: pluginDirectory, attachments: attachments, allowPermissionPrompts: interactivePermissions, paneMCPBinding: paneBinding, codexHome: run.codexHome)
+                    let prepared = try ProviderInput.prepare(launch, pluginDirectory: pluginDirectory, attachments: attachments, allowPermissionPrompts: interactivePermissions, paneMCPBinding: paneBinding, codexHome: run.codexHome)
                     arguments = prepared.arguments; standardInput = prepared.standardInput
                 }
                 if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
@@ -616,7 +623,9 @@ public actor ProcessRunner {
                     activityNamespace: run.activityId,
                     activity: { [weak self, weak run] activity in guard let self, let run else { return }; self.emitActivitySynchronously(run, activity: activity) },
                     control: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.permissions?.receive(data) },
-                    result: { [weak run] in
+                    result: { [weak self, weak run] in
+                        // pi's turn ended; its stdin closes once nothing follows (compaction, a retry).
+                        if let run, run.request.provider == "pi" { Task { await self?.armPiClose(run) }; return }
                         guard let run, run.permissions != nil else { return }
                         run.receivedClaudeResult = true
                         // The editor starts a separate process for each turn.
@@ -650,7 +659,7 @@ public actor ProcessRunner {
                     antigravityPermission: { [weak run, onEvent] card in
                         guard let run, !run.finalized else { return }
                         onEvent(RunEvent(sessionId: run.request.sessionId, type: "antigravityPermission", antigravityPermission: card))
-                    })
+                    }, piReply: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) })
                 // A Claude run's Edit, Write and MultiEdit results name each file's content before the run changed it;
                 // the first of each file is kept under the run's graph id for the source preview's 변경사항 (FileChanges.swift).
                 if request.provider == "claude", request.kind == "claude", let originals = fileOriginals {
@@ -728,7 +737,7 @@ public actor ProcessRunner {
                     do { try await Task.sleep(for: .seconds(15)) } catch { return }
                     guard let self, let run else { return }; await self.permissionInitializationTimedOut(run)
                 }
-            } else { child.write(standardInput, closeAfter: true) }
+            } else { child.write(standardInput, closeAfter: request.provider != "pi") }
         } catch {
             run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
             run.attachments?.cleanup(); run.attachments = nil
@@ -748,6 +757,15 @@ public actor ProcessRunner {
     /// stdin frame is not open (other providers, attachments, result already
     /// received) reports false so the caller queues the text instead.
     public func steer(sessionId: String, text: String) -> Bool {
+        // pi takes a steer as a `steer` command while its turn is open; it reads it after the
+        // current tool calls, before the next model call.
+        if let run = runs[sessionId], run.request.provider == "pi" {
+            guard !run.finished, !run.stopping, !shuttingDown, !run.inputClosed, run.parser?.piTurnOpen == true,
+                  let child = run.child, child.inputIsOpen, let data = try? ProviderInput.piSteer(text) else { return false }
+            run.lastOutputAt = Date()
+            child.write(data)
+            return true
+        }
         guard let run = runs[sessionId], !run.finished, !run.stopping, !shuttingDown, run.request.provider == "claude",
               let permissions = run.permissions, permissions.initialized, !permissions.failed, !run.inputClosed,
               let child = run.child, child.inputIsOpen, let data = try? ProviderInput.claudeUserMessage(text) else { return false }
@@ -798,6 +816,25 @@ public actor ProcessRunner {
                 if await self.inputIdle(run, after: idle) { return }
             }
         }
+    }
+    /// Closes a pi run's stdin (pi then exits) once its turn is over and it has been silent for
+    /// a second: compaction and an automatic retry come right after `agent_end`.
+    private func armPiClose(_ run: ManagedProcess) {
+        guard !run.inputClosed, !run.finished else { return }
+        run.inputWatchdog?.cancel()
+        run.inputWatchdog = Task { [weak self, weak run] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, let run, !Task.isCancelled else { return }
+                if await self.piIdle(run) { return }
+            }
+        }
+    }
+    private func piIdle(_ run: ManagedProcess) -> Bool {
+        guard !run.inputClosed, !run.finished else { return true }
+        guard run.parser?.piTurnOpen == false, Date().timeIntervalSince(run.lastOutputAt) >= 1 else { return false }
+        run.inputClosed = true; run.child?.closeInput()
+        return true
     }
     private func inputIdle(_ run: ManagedProcess, after idle: Double) -> Bool {
         guard !run.inputClosed, !run.finished else { return true }

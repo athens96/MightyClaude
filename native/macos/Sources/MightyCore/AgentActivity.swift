@@ -93,7 +93,7 @@ public enum ActivitySupport {
         if ["bash", "run_shell_command", "command_execution", "exec_command", "shell", "run_command", "send_command_input", "command_status"].contains(name) { return "command" }
         if ["read", "read_file", "read_many_files", "list_directory", "ls", "view_file", "list_dir", "read_resource", "list_resources"].contains(name) { return "read" }
         if ["edit", "write", "write_file", "replace", "apply_patch", "file_change", "notebookedit", "write_to_file", "replace_file_content", "multi_replace_file_content", "sed_file", "notebook_edit"].contains(name) { return "edit" }
-        if ["grep", "glob", "search_file_content", "glob_search", "grep_search", "find_by_name"].contains(name) { return "search" }
+        if ["grep", "glob", "find", "search_file_content", "glob_search", "grep_search", "find_by_name"].contains(name) { return "search" }
         if ["websearch", "webfetch", "web_search", "google_web_search", "web_fetch", "search_web", "read_url_content"].contains(name) { return "web" }
         // Antigravity's browser tools act on web pages.
         if name.hasPrefix("browser_") || ["open_browser_url", "read_browser_page", "list_browser_pages", "click_browser_pixel", "execute_browser_javascript", "capture_browser_screenshot", "capture_browser_console_logs"].contains(name) { return "web" }

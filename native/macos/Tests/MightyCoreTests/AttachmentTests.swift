@@ -73,7 +73,7 @@ private final class AttachmentEvents: @unchecked Sendable {
         }
     }
 
-    @Test func stagingAndThreeProviderPayloads() throws {
+    @Test func stagingAndFourProviderPayloads() throws {
         let parent = try directory(" space,[test]!"); defer { try? FileManager.default.removeItem(at: parent) }
         let attachments = [try AttachmentSupport.make(name: "picture.png", data: png), try AttachmentSupport.make(name: "file.pdf", data: Data("%PDF-1.7".utf8)), try AttachmentSupport.make(name: "source.swift", data: Data("let count = 1".utf8))]
         let prepared = try AttachmentPreparation(attachments, parent: parent)
@@ -106,6 +106,17 @@ private final class AttachmentEvents: @unchecked Sendable {
                     #expect(!input.arguments.contains("--add-dir"))
                     #expect(String(decoding: input.standardInput, as: UTF8.self).contains(prepared.files[1].url.path.replacingOccurrences(of: "/", with: "\\/")) || String(decoding: input.standardInput, as: UTF8.self).contains(prepared.files[1].url.path))
                     if resume != nil { #expect(input.arguments.contains("resume")) }
+                } else if provider == "pi" {
+                    // pi: pictures ride in the prompt, any other file is named by the path of its copy.
+                    #expect(input.arguments.prefix(2) == ["--mode", "rpc"] && !input.arguments.contains("--add-dir"))
+                    if resume != nil { #expect(input.arguments.suffix(2) == ["--session", "resume-id"]) }
+                    let commands = String(decoding: input.standardInput, as: UTF8.self).split(separator: "\n").map { Data($0.utf8) }
+                    #expect(commands.count == 2 && input.standardInput.last == 10)
+                    let prompt = try #require(JSONSerialization.jsonObject(with: commands[1]) as? [String: Any])
+                    let images = try #require(prompt["images"] as? [[String: Any]])
+                    #expect(images.count == 1 && images[0]["type"] as? String == "image" && images[0]["mimeType"] as? String == "image/png" && images[0]["data"] as? String == attachments[0].dataBase64)
+                    let message = try #require(prompt["message"] as? String)
+                    #expect(prepared.files.dropFirst().allSatisfy { message.contains($0.url.path) } && !message.contains(prepared.files[0].url.path))
                 } else {
                     // Antigravity: the folder is added and the prompt names each copy by its plain path.
                     #expect(input.arguments.suffix(2) == ["--add-dir", folder.path])

@@ -679,12 +679,18 @@ public struct RuntimeInfo: Codable, Sendable, Equatable {
 }
 
 public enum ProviderOptions {
-    public static let ids = ["claude", "codex", "gemini"]
+    public static let ids = ["claude", "codex", "gemini", "pi"]
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
+    /// pi's `--thinking` levels: its effort setting, off included.
+    public static let piThinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"]
+    /// The tools pi's read-only mode leaves on (`--tools`); full access passes none.
+    public static let piReadOnlyTools = "read,grep,find,ls"
     public static let webSearchModes = ["default", "disabled", "cached", "live"]
     /// Schema support preserves saved choices independently of CLI discovery.
     /// Runtime advertisements omit opt-in approval modes until a supported CLI is found.
     public static func permissionModes(provider: String, includeAuto: Bool = true, includeOnRequest: Bool = true) -> [String] {
+        // pi has no approval window: its tools are either read-only (manual) or all on.
+        if provider == "pi" { return ["manual", "fullAccess"] }
         if provider == "codex" { return includeOnRequest ? ["manual", "acceptEdits", "onRequest", "fullAccess"] : ["manual", "acceptEdits", "fullAccess"] }
         if provider == "claude", includeAuto { return ["plan", "manual", "acceptEdits", "auto", "fullAccess"] }
         return ["manual", "plan", "acceptEdits", "fullAccess"]
@@ -692,16 +698,17 @@ public enum ProviderOptions {
     public static func normalizeProvider(_ value: String) -> String { ids.contains(value) ? value : "claude" }
     /// The `gemini` id is kept for stored panes and the wire; on the Mac it is
     /// Google's Antigravity CLI (`agy`), which also runs Claude and GPT-OSS models.
-    public static func label(_ id: String) -> String { ["claude": "Claude", "codex": "Codex", "gemini": "Antigravity"][id] ?? "Claude" }
+    public static func label(_ id: String) -> String { ["claude": "Claude", "codex": "Codex", "gemini": "Antigravity", "pi": "pi"][id] ?? "Claude" }
     /// The executable the Mac runs, finds, version-checks, updates and signs in with.
     public static func executable(_ id: String) -> String { id == "gemini" ? "agy" : id }
-    /// Claude is official; Codex and Antigravity are beta. The one Mac answer every beta badge asks.
+    /// Claude is official; Codex, Antigravity and pi are beta. The one Mac answer every beta badge asks.
     /// The badge is drawn beside the name and never becomes part of `label`.
-    public static func isBeta(_ id: String) -> Bool { id == "codex" || id == "gemini" }
+    public static func isBeta(_ id: String) -> Bool { id == "codex" || id == "gemini" || id == "pi" }
     /// Menu rows cannot host the badge view, so there the badge rides in the row's text.
     public static func betaTitle(_ id: String, _ text: String) -> String { isBeta(id) ? text + " · " + L("badge.beta") : text }
     public static func fallbackCatalog(_ id: String) -> ModelCatalog {
-        let names = id == "codex" ? ["default", "gpt-5.6-sol", "gpt-6-astra"] : id == "gemini" ? ["default"] + antigravityModels.map(\.slug) : ["default", "best", "fable", "opus", "sonnet", "haiku", "opusplan"]
+        // pi lists its models from `pi --list-models` once signed in; until then only its own default.
+        let names = id == "pi" ? ["default"] : id == "codex" ? ["default", "gpt-5.6-sol", "gpt-6-astra"] : id == "gemini" ? ["default"] + antigravityModels.map(\.slug) : ["default", "best", "fable", "opus", "sonnet", "haiku", "opusplan"]
         let named = Dictionary(uniqueKeysWithValues: id == "gemini" ? antigravityModels.map { ($0.slug, $0.name) } : [])
         return ModelCatalog(models: names.map { ModelOption(value: $0, displayName: $0 == "default" ? L("provider.fallback.defaultLabel", ["name": label(id)]) : named[$0] ?? $0, description: $0 == "default" ? (id == "claude" ? L("provider.fallback.claudeDefaultDescription") : L("provider.fallback.sessionDefaultDescription")) : L("provider.fallback.exampleOption"), supportsEffort: $0 == "haiku" ? false : nil) }, detail: L("provider.fallback.exampleDetail"))
     }
@@ -719,6 +726,7 @@ public enum ProviderOptions {
     }
     public static func effortLevels(provider: String, model: String, catalog: ModelCatalog? = nil, registeredModels: [RegisteredModelEntry]) -> [String] {
         if provider == "gemini" { return [] }
+        if provider == "pi" { return catalog?.models.first { $0.value == model }?.supportsEffort == false ? [] : piThinkingLevels }
         let option = catalog?.models.first { $0.value == model || $0.resolvedModel == model }
         if option?.supportsEffort == false { return [] }
         if let levels = option?.supportedEffortLevels { return levels.filter { efforts.contains($0) } }
@@ -734,7 +742,7 @@ public enum ProviderOptions {
     public static func normalizedSettings(provider: String, settings: RunSettings) -> RunSettings {
         var caps = fallbackRuntime(provider).capabilities
         caps.permissionModes = permissionModes(provider: provider)
-        return RunSettings(effort: caps.effort && efforts.contains(settings.effort) ? settings.effort : "default", permissionMode: caps.permissionModes.contains(settings.permissionMode) ? settings.permissionMode : "manual", maxTurns: caps.maxTurns && (1...1000).contains(settings.maxTurns ?? 0) ? settings.maxTurns : nil, maxBudgetUsd: caps.maxBudgetUsd && (settings.maxBudgetUsd ?? 0).isFinite && (settings.maxBudgetUsd ?? 0) > 0 && (settings.maxBudgetUsd ?? 0) <= 10_000 ? settings.maxBudgetUsd : nil, fastMode: caps.fastMode && settings.fastMode, webSearch: caps.webSearch && webSearchModes.contains(settings.webSearch) ? settings.webSearch : "default", networkAccess: caps.networkAccess && ["acceptEdits", "onRequest"].contains(settings.permissionMode) && settings.networkAccess)
+        return RunSettings(effort: caps.effort && (provider == "pi" ? piThinkingLevels : efforts).contains(settings.effort) ? settings.effort : "default", permissionMode: caps.permissionModes.contains(settings.permissionMode) ? settings.permissionMode : "manual", maxTurns: caps.maxTurns && (1...1000).contains(settings.maxTurns ?? 0) ? settings.maxTurns : nil, maxBudgetUsd: caps.maxBudgetUsd && (settings.maxBudgetUsd ?? 0).isFinite && (settings.maxBudgetUsd ?? 0) > 0 && (settings.maxBudgetUsd ?? 0) <= 10_000 ? settings.maxBudgetUsd : nil, fastMode: caps.fastMode && settings.fastMode, webSearch: caps.webSearch && webSearchModes.contains(settings.webSearch) ? settings.webSearch : "default", networkAccess: caps.networkAccess && ["acceptEdits", "onRequest"].contains(settings.permissionMode) && settings.networkAccess)
     }
 }
 
@@ -748,7 +756,7 @@ public enum CoreValidation {
         guard !request.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !request.attachments.isEmpty, request.input.utf8.count <= 400_000, request.input.count <= 100_000, !request.input.contains("\0") else { throw MightyError(L("validation.run.badInput")) }
         if let resume = request.resumeId, !identifier(resume) { throw MightyError(L("validation.run.badResumeId")) }
         let s = request.settings
-        guard (["default"] + ProviderOptions.efforts).contains(s.effort), ["manual", "plan", "acceptEdits", "auto", "onRequest", "fullAccess"].contains(s.permissionMode), ProviderOptions.webSearchModes.contains(s.webSearch), s.maxTurns == nil || (1...1000).contains(s.maxTurns!), s.maxBudgetUsd == nil || (s.maxBudgetUsd!.isFinite && s.maxBudgetUsd! > 0 && s.maxBudgetUsd! <= 10_000) else { throw MightyError(L("wire.startRun.invalidSettings")) }
+        guard (["default"] + (request.provider == "pi" ? ProviderOptions.piThinkingLevels : ProviderOptions.efforts)).contains(s.effort), ["manual", "plan", "acceptEdits", "auto", "onRequest", "fullAccess"].contains(s.permissionMode), ProviderOptions.webSearchModes.contains(s.webSearch), s.maxTurns == nil || (1...1000).contains(s.maxTurns!), s.maxBudgetUsd == nil || (s.maxBudgetUsd!.isFinite && s.maxBudgetUsd! > 0 && s.maxBudgetUsd! <= 10_000) else { throw MightyError(L("wire.startRun.invalidSettings")) }
         if s.permissionMode == "auto", request.kind != "claude" || request.provider != "claude" { throw MightyError(L("wire.startRun.autoModeClaudeOnly")) }
         if let mode = request.permissionModeOverride, mode != "plan" || request.kind != "claude" || request.provider != "claude" { throw MightyError(L("plan.error.overrideClaudeOnly")) }
         if s.permissionMode == "onRequest", request.kind != "claude" || request.provider != "codex" { throw MightyError(L("validation.run.onRequestCodexOnly")) }

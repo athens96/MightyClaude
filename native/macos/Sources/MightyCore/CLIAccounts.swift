@@ -50,6 +50,10 @@ public enum CLIAccountMethod {
     public static let codexAPIKey = "codex-api-key"
     /// Antigravity's one sign-in: a Google account (personal, or Business for Gemini Enterprise).
     public static let geminiGoogle = "gemini-google"
+    /// pi: a subscription sign-in (`/login`), API keys (`auth.json` or the environment), or only models from `models.json`.
+    public static let piSubscription = "pi-subscription"
+    public static let piAPIKey = "pi-api-key"
+    public static let piModels = "pi-models"
 }
 
 public enum CLILoginOption: String, Sendable, CaseIterable {
@@ -141,13 +145,15 @@ public enum CLIAccountSupport {
         case "codex": return "codex login"
         // Antigravity signs in the first time it runs interactively.
         case "gemini": return ProviderOptions.executable(provider)
+        // pi signs in inside itself: the terminal shows `pi`, where `/login` is typed.
+        case "pi": return "pi"
         default: return nil
         }
     }
     /// argv for the CLI's own status / logout command. Antigravity has
     /// neither; its model list stands in for the status (`antigravityStatus`).
     public static func statusArguments(provider: String) -> [String]? {
-        switch provider { case "claude": return ["claude", "auth", "status", "--json"]; case "codex": return ["codex", "login", "status"]; case "gemini": return [ProviderOptions.executable(provider), "models"]; default: return nil }
+        switch provider { case "claude": return ["claude", "auth", "status", "--json"]; case "codex": return ["codex", "login", "status"]; case "gemini": return [ProviderOptions.executable(provider), "models"]; case "pi": return ["pi", "--list-models"]; default: return nil }
     }
     public static func logoutArguments(provider: String) -> [String]? {
         switch provider { case "claude": return ["claude", "auth", "logout"]; case "codex": return ["codex", "logout"]; default: return nil }
@@ -206,6 +212,10 @@ public actor CLIAccountService {
         guard let arguments = CLIAccountSupport.statusArguments(provider: provider) else { return CLIAccountStatus(provider: provider, installed: false, detail: L("settings.cliAccounts.detailUnsupportedProvider")) }
         guard installed(arguments[0], environment: environment) else { return CLIAccountStatus(provider: provider, installed: false, detail: L("settings.cliAccounts.detailNotInstalledTemplate", ["provider": ProviderOptions.label(provider)])) }
         guard let result = await run(arguments, environment: environment, timeout: 20) else { return CLIAccountStatus(provider: provider, detail: L("settings.cliAccounts.detailRunFailed")) }
+        if provider == "pi" {
+            let auth = CLIAccountSupport.boundedData(PiAgent.authFile(home: home, environment: environment))
+            return CLIAccountSupport.piStatus(exitCode: result.exitCode, output: String(decoding: result.stdout + result.stderr, as: UTF8.self), authJSON: auth, environment: environment)
+        }
         if provider == "gemini" { return CLIAccountSupport.antigravityStatus(exitCode: result.exitCode, output: String(decoding: result.stdout + result.stderr, as: UTF8.self)) }
         if provider == "claude" {
             var status = CLIAccountSupport.parseClaudeStatus(result.stdout)
@@ -222,7 +232,7 @@ public actor CLIAccountService {
         return CLIAccountSupport.parseCodexStatus(text: text, authJSON: auth)
     }
 
-    /// Runs the CLI's logout and reports the new status. Antigravity has no
+    /// Runs the CLI's logout and reports the new status. Antigravity and pi (`/logout` inside it) have no
     /// logout command, so its status comes back unchanged.
     public func logout(provider: String) async -> CLIAccountStatus {
         let snapshot = await environmentSnapshot()

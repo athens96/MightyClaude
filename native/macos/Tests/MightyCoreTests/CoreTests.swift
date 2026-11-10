@@ -304,14 +304,17 @@ final class CoreTests {
         """, name: provider)
     }
 
+    /// The agents the run fixtures below were written for; pi has its own (PiTests).
+    static let threeProviders = ["claude", "codex", "gemini"]
+
     @Test func testThreeProviderFixturesUseOnlyMetadataBeforeExplicitPromptAndResumeFromOutput() async throws {
         try await LocaleOverride.$language.withValue(.ko) { () async throws in
             let directory = try temporary(); let events = EventRecorder()
             var binaries: [String: URL] = [:]
-            for provider in ProviderOptions.ids { binaries[provider] = try fakeCLI(provider) }
+            for provider in Self.threeProviders { binaries[provider] = try fakeCLI(provider) }
             let service = ProviderService(binaryOverrides: binaries)
             let info = await service.runtimeInfo()
-            #expect(info.providers?.allSatisfy(\.available) == true)
+            #expect(info.providers?.filter { $0.id != "pi" }.allSatisfy(\.available) == true)
             #expect((info.modelCatalog?.source) == ("cli")); #expect((info.providers?.first { $0.id == "codex" }?.modelCatalog.source) == ("cli"))
             #expect((info.providers?.first { $0.id == "gemini" }?.modelCatalog.models.map(\.value)) == (["default", "gemini-3.8-flash-low"]))
             for provider in ["claude", "codex"] {
@@ -323,11 +326,11 @@ final class CoreTests {
             try FileManager.default.createDirectory(at: plugin, withIntermediateDirectories: true); try Data("{}".utf8).write(to: plugin.appendingPathComponent("plugin.json"))
             let runner = ProcessRunner(providerService: service, pluginDirectory: plugin.deletingLastPathComponent(), onEvent: { events.append($0) })
             let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
-            for provider in ProviderOptions.ids {
+            for provider in Self.threeProviders {
                 try await runner.start(request: StartRunRequest(sessionId: provider, workspaceId: workspace.id, input: "한글 prompt", provider: provider), workspace: workspace)
             }
-            try await waitUntil { ProviderOptions.ids.allSatisfy { events.hasStatus("completed", id: $0) } }
-            for provider in ProviderOptions.ids {
+            try await waitUntil { Self.threeProviders.allSatisfy { events.hasStatus("completed", id: $0) } }
+            for provider in Self.threeProviders {
                 #expect(events.values().contains { $0.sessionId == provider && $0.resumeId == provider + "-session" })
                 #expect(events.values().contains { $0.sessionId == provider && $0.entry?.kind == "assistant" && $0.entry?.provider == provider })
                 let input = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("input"))

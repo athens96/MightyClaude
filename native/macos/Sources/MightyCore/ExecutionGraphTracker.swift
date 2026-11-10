@@ -263,6 +263,7 @@ final class ExecutionGraphTracker {
         guard !finished else { return }
         if provider == "codex" { consumeCodex(value); return }
         if provider == "gemini" { consumeAntigravity(value); return }
+        if provider == "pi" { consumePi(value); return }
         let parentTool = Self.parentToolID(value)
         if let parentTool { ensureAgent(toolID: parentTool) }
         // Over-cap child events are omitted, never reclassified as main text.
@@ -471,6 +472,20 @@ final class ExecutionGraphTracker {
                 }
             }
         }
+    }
+
+    // MARK: pi RPC
+    // pi has no sub-agents: the graph is the request's own block. Each assistant message adds its
+    // usage; the latest message with text is the answer.
+    private func consumePi(_ value: [String: Any]) {
+        guard value["type"] as? String == "message_end", let message = value["message"] as? [String: Any], message["role"] as? String == "assistant" else { return }
+        let key = CLIStreamParser.piMessageKey(message)
+        if let usage = message["usage"] as? [String: Any] {
+            let mapped = ["input_tokens": usage["input"], "output_tokens": usage["output"], "cache_read_input_tokens": usage["cacheRead"], "cache_creation_input_tokens": usage["cacheWrite"]].compactMapValues { $0 }
+            if let tokens = GraphTokenUsage.parse(mapped) { recordUsage(tokens, message: key, node: mainID, model: message["model"] as? String) }
+        }
+        let text = (message["content"] as? [[String: Any]] ?? []).filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined(separator: "\n")
+        if !text.isEmpty { update(mainID) { $0.output = text } }
     }
 
     // MARK: Codex exec JSONL

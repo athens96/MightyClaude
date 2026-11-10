@@ -126,6 +126,22 @@ public struct ProviderInput {
         var data = try JSONSerialization.data(withJSONObject: ["event": "user", "message": ["content": text]], options: [.sortedKeys, .withoutEscapingSlashes])
         data.append(10); return data
     }
+    /// The stdin of a pi RPC run (`pi --mode rpc`): `get_state` first, whose response names the
+    /// session the run continues (its id is the pane's resume id), then the prompt with the
+    /// pictures as `ImageContent`. Stdin stays open until the turn ends: pi exits on its end.
+    public static func piStartup(_ text: String, images: [[String: Any]] = []) throws -> Data {
+        var prompt: [String: Any] = ["type": "prompt", "message": text]
+        if !images.isEmpty { prompt["images"] = images }
+        var data = try JSONSerialization.data(withJSONObject: ["type": "get_state"], options: [.sortedKeys])
+        data.append(10)
+        data.append(try JSONSerialization.data(withJSONObject: prompt, options: [.sortedKeys, .withoutEscapingSlashes]))
+        data.append(10); return data
+    }
+    /// A user message sent while pi works: delivered after the current turn's tool calls.
+    public static func piSteer(_ text: String) throws -> Data {
+        var data = try JSONSerialization.data(withJSONObject: ["type": "steer", "message": text], options: [.sortedKeys, .withoutEscapingSlashes])
+        data.append(10); return data
+    }
     public static func prepare(_ request: StartRunRequest, pluginDirectory: URL, attachments: AttachmentPreparation, allowPermissionPrompts: Bool = false, paneMCPBinding: PaneMCPBinding? = nil, codexHome: URL? = nil) throws -> ProviderInput {
         guard request.provider != "codex" || request.settings.permissionMode != "onRequest" else {
             throw MightyError(L("attachments.error.codexOnRequest"))
@@ -136,6 +152,7 @@ public struct ProviderInput {
                 return ProviderInput(arguments: arguments, standardInput: try claudeUserMessage(request.input))
             }
             if request.provider == "gemini" { return ProviderInput(arguments: arguments, standardInput: try antigravityUserMessage(request.input)) }
+            if request.provider == "pi" { return ProviderInput(arguments: arguments, standardInput: try piStartup(request.input)) }
             return ProviderInput(arguments: arguments, standardInput: Data(request.input.utf8))
         }
         guard attachments.files.map(\.attachment) == request.attachments, let directory = attachments.directory else { throw MightyError(L("attachments.error.notPrepared")) }
@@ -162,6 +179,12 @@ public struct ProviderInput {
             arguments += ["--add-dir", directory.path]
             let references = attachments.files.map { AttachmentSupport.reference($0).replacingOccurrences(of: "\\/", with: "/") }
             return ProviderInput(arguments: arguments, standardInput: try antigravityUserMessage(([prompt] + references).joined(separator: "\n\n")))
+        case "pi":
+            // Pictures go in the prompt itself; any other file is named by the path of its copy.
+            let images = attachments.files.filter { $0.attachment.mediaType.hasPrefix("image/") }
+                .map { ["type": "image", "data": $0.attachment.dataBase64, "mimeType": $0.attachment.mediaType] as [String: Any] }
+            let references = attachments.files.filter { !$0.attachment.mediaType.hasPrefix("image/") }.map { AttachmentSupport.reference($0).replacingOccurrences(of: "\\/", with: "/") }
+            return ProviderInput(arguments: arguments, standardInput: try piStartup(([prompt] + references).joined(separator: "\n\n"), images: images))
         default: throw MightyError(L("attachments.error.unsupportedProvider"))
         }
     }

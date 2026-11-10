@@ -40,6 +40,18 @@ public final class CLIStreamParser {
     /// notice that tells how to add an allow rule by hand.
     private let antigravityPermission: ((AntigravityPermissionRequest) -> Void)?
     private var denials = AntigravityDenialCollector()
+    /// pi (`pi --mode rpc`): the turn is open from `agent_start` to `agent_end`, and while a
+    /// compaction or an automatic retry (which pi announces after `agent_end`) goes on.
+    private var piAgentOpen = false
+    private var piCompacting = false
+    private var piRetrying = false
+    /// The latest assistant message pi ended with `stopReason: error`, until a retry or a later
+    /// message answers it; still set when the process ends, it fails the run.
+    private var piError: String?
+    /// Answers an extension's dialog that no window can show (`piReply`).
+    private let piReply: ((Data) -> Void)?
+    /// The turn is still going: stdin must stay open.
+    public var piTurnOpen: Bool { piAgentOpen || piCompacting || piRetrying }
     /// The text of the latest Claude message the CLI marked as a lost sign-in,
     /// until a result ends its turn (`CLIAuthFailure.claude(result:repeating:)`).
     private var authFailureText: String?
@@ -79,9 +91,10 @@ public final class CLIStreamParser {
                 images: AgentImageCache? = nil, imageRoot: URL? = nil, imageEntry: ((LogEntry) -> Void)? = nil, maximumLineBytes: Int = CLIStreamParser.maximumLineBytes,
                 todos: ((TodoProgress) -> Void)? = nil, background: ((BackgroundWork) -> Void)? = nil, backgroundClock: @escaping () -> Date = Date.init,
                 savedTodos: TodoProgress? = nil, settled: (() -> Void)? = nil, requestedResume: String? = nil,
-                antigravityPermission: ((AntigravityPermissionRequest) -> Void)? = nil) {
+                antigravityPermission: ((AntigravityPermissionRequest) -> Void)? = nil, piReply: ((Data) -> Void)? = nil) {
         self.provider = provider; self.log = log; self.resume = resume; self.requestedResume = requestedResume
         self.antigravityPermission = provider == "gemini" ? antigravityPermission : nil
+        self.piReply = provider == "pi" ? piReply : nil
         self.todos = provider == "claude" || provider == "codex" ? todos : nil; self.background = provider == "claude" ? background : nil
         todoTracker = TodoProgressTracker(progress: savedTodos); self.settled = settled
         backgroundTracker = BackgroundTaskTracker(clock: backgroundClock)
@@ -108,6 +121,8 @@ public final class CLIStreamParser {
     public func flush() {
         if let line = lines.finish() { consume(AgentOutputLine(line)) }
         flushText()
+        // An error pi gave up on is the run's failure; one a retry answered was cleared.
+        if let error = piError { piError = nil; failed = true; log("error", error) }
     }
     /// The CLI's stderr. Only Antigravity reports a lost sign-in there
     /// ("Error: authentication required. Run 'agy' to log in, then retry.").
@@ -547,8 +562,80 @@ public final class CLIStreamParser {
                 log("error", text)
             }
             if type == "turn.completed" { authFailure = false }
+        case "pi": pi(value, type: type)
         default: break
         }
+    }
+
+    /// pi (`pi --mode rpc`, docs/rpc.md): one JSON object per line, commands' `response`s and
+    /// the agent's events. A reply is logged whole, when its text block or message ends;
+    /// thinking text is not copied. Tools are rows in the activity list as for the others.
+    private func pi(_ value: [String: Any], type: String) {
+        let name = ProviderOptions.label(provider)
+        switch type {
+        case "response":
+            // The get_state asked first names the session this run continues.
+            let command = value["command"] as? String ?? ""
+            if value["success"] as? Bool == false {
+                failed = true
+                let text = errorText(value["error"], fallback: L("run.error.providerRunFailed", ["name": name]))
+                log("error", text)
+            } else if command == "get_state", let data = value["data"] as? [String: Any] { resumeIfValid(data["sessionId"]) }
+        case "agent_start":
+            // A retry pi announced has started: the turn itself is open now.
+            piAgentOpen = true; piRetrying = false; turn(L("run.turn.generating", ["name": name]))
+        case "agent_end":
+            piAgentOpen = false; turn(L("run.turn.finishing", ["name": name])); result?()
+        case "message_update":
+            guard let event = value["assistantMessageEvent"] as? [String: Any], event["type"] as? String == "text_end",
+                  let text = event["content"] as? String else { return }
+            emitUnique(text, id: Self.piMessageKey(value["message"]) + ":\(event["contentIndex"] as? Int ?? 0)")
+        case "message_end":
+            guard let message = value["message"] as? [String: Any], message["role"] as? String == "assistant" else { return }
+            let key = Self.piMessageKey(message)
+            for (index, block) in (message["content"] as? [[String: Any]] ?? []).enumerated() where block["type"] as? String == "text" {
+                if let text = block["text"] as? String { emitUnique(text, id: key + ":\(index)") }
+            }
+            if message["stopReason"] as? String == "error" {
+                piError = errorText(message["errorMessage"], fallback: L("run.error.providerRunFailed", ["name": name]))
+            } else { piError = nil }
+        case "tool_execution_start", "tool_execution_update", "tool_execution_end":
+            let ended = type == "tool_execution_end"
+            let toolName = value["toolName"] as? String ?? "Tool"
+            let output = ActivitySupport.output(ended ? value["result"] : value["partialResult"])
+            tool(id: value["toolCallId"] as? String, name: toolName, input: value["args"], state: ended ? (value["isError"] as? Bool == true ? "error" : "completed") : "running", output: output)
+            if activity == nil, ended, let output, !output.isEmpty { log("output", output) }
+        case "compaction_start": piCompacting = true
+        case "compaction_end":
+            piCompacting = false
+            if let message = value["errorMessage"] as? String { log("system", ContextCompaction.title + " · " + errorText(message, fallback: "")); return }
+            guard let result = value["result"] as? [String: Any] else { return }
+            let detail = ContextCompaction.claudeSummary(["trigger": value["reason"] as? String == "manual" ? "manual" : "auto", "pre_tokens": result["tokensBefore"] as Any])
+            log("system", ContextCompaction.title + " · " + detail)
+        case "auto_retry_start":
+            piRetrying = true; piError = nil
+            log("system", L("run.notice.piRetry", ["attempt": "\(value["attempt"] as? Int ?? 0)", "max": "\(value["maxAttempts"] as? Int ?? 0)",
+                                                   "error": ActivitySupport.clean(value["errorMessage"] as? String ?? "", maximumBytes: 512, singleLine: true)]))
+        case "auto_retry_end":
+            piRetrying = false
+            if value["success"] as? Bool == false {
+                let text = errorText(value["finalError"], fallback: L("run.error.providerRunFailed", ["name": name]))
+                failed = true; log("error", text)
+            }
+        case "extension_error": log("system", errorText(value["error"], fallback: ""))
+        case "extension_ui_request":
+            // A dialog (select, confirm, input, editor) waits for an answer no pane can give it.
+            guard ["select", "confirm", "input", "editor"].contains(value["method"] as? String ?? ""), let id = value["id"] as? String,
+                  var data = try? JSONSerialization.data(withJSONObject: ["type": "extension_ui_response", "id": id, "cancelled": true], options: [.sortedKeys]) else { return }
+            data.append(10); piReply?(data)
+            log("system", L("run.notice.piDialogDismissed", ["title": ActivitySupport.clean(value["title"] as? String ?? "", maximumBytes: 256, singleLine: true)]))
+        default: break
+        }
+    }
+    /// Names one pi message across its updates and its end: assistant messages carry no id, only a timestamp.
+    static func piMessageKey(_ message: Any?) -> String {
+        let fields = message as? [String: Any]
+        return "pi:" + String(describing: fields?["responseId"] ?? fields?["timestamp"] ?? "message")
     }
 
     /// Antigravity CLI (`agy --output-format stream-json`): each line names its

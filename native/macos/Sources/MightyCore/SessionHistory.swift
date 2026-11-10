@@ -108,7 +108,8 @@ public enum SessionHistoryError: Error, Equatable {
 /// `CLIStreamParser` and `ExecutionGraphTracker` a live run uses. They are a
 /// view of the record: never saved with the profile and never sent to the phone.
 public enum SessionHistory {
-    public static let providers = MightyGraphSupport.providers
+    /// pi's records are listed for resuming (`ResumableSessions`) but not replayed into the graph yet.
+    public static let providers = ["claude", "codex", "gemini"]
     public static let turnsPerChunk = 10
     public static let maximumChunkBytes = 48 * 1_048_576
     /// A single record line larger than this (a pasted picture, a huge tool

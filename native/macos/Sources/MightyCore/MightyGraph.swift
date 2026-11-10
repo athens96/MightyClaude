@@ -171,8 +171,8 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
 public enum MightyGraphSupport {
     /// AI panes whose runs produce a graph: Claude via stream-json + Mods,
     /// Codex via exec JSONL, Antigravity (`gemini`) via agy's stream-json and
-    /// its sub-agents' transcripts.
-    public static let providers = ["claude", "codex", "gemini"]
+    /// its sub-agents' transcripts, pi via its RPC events (one block, no sub-agents).
+    public static let providers = ["claude", "codex", "gemini", "pi"]
     public static func terminal(_ status: String) -> Bool { ["completed", "error", "stopped"].contains(status) }
 
     /// The child-block kinds the core records; anything else is a sub-agent.

@@ -181,7 +181,8 @@ final class SessionUsageTracker {
     private var claudeResultSeen = false
 
     init(provider: String, callback: ((SessionUsage) -> Void)?) {
-        value = SessionUsage(provider: provider, source: provider == "gemini" ? "antigravity.stream-json" : provider + ".stream-json", tokenScope: provider == "claude" ? "response" : "session")
+        value = SessionUsage(provider: provider, source: provider == "gemini" ? "antigravity.stream-json" : provider == "pi" ? "pi.rpc" : provider + ".stream-json",
+                             tokenScope: provider == "claude" ? "response" : provider == "pi" ? "run" : "session")
         self.callback = callback
     }
     func consume(_ event: [String: Any]) {
@@ -189,6 +190,7 @@ final class SessionUsageTracker {
         guard callback != nil, let type = event[value.provider == "gemini" ? "event" : "type"] as? String else { return }
         switch value.provider {
         case "claude": consumeClaude(event, type: type)
+        case "pi": consumePi(event, type: type)
         case "codex":
             if type == "thread.started" { setIdentity(event["thread_id"]); publish() }
             if type == "turn.completed", let usage = event["usage"] as? [String: Any] {
@@ -224,6 +226,29 @@ final class SessionUsageTracker {
             }
         default: break
         }
+    }
+
+    /// pi reports each assistant message's own usage (`message_end`): the run's figures add them
+    /// up, input counting the cached part as the others do. `get_state` names the session and
+    /// the model's context window.
+    private func consumePi(_ event: [String: Any], type: String) {
+        if type == "response", event["command"] as? String == "get_state", event["success"] as? Bool == true, let data = event["data"] as? [String: Any] {
+            setIdentity(data["sessionId"])
+            if let model = data["model"] as? [String: Any] { setModel(model["id"]); value.contextWindowTokens = SessionUsageSupport.count(model["contextWindow"]) }
+            publish(); return
+        }
+        guard type == "message_end", let message = event["message"] as? [String: Any], message["role"] as? String == "assistant",
+              let usage = message["usage"] as? [String: Any], let fresh = SessionUsageSupport.count(usage["input"]), let output = SessionUsageSupport.count(usage["output"]) else { return }
+        let read = usage["cacheRead"] == nil ? 0 : SessionUsageSupport.count(usage["cacheRead"])
+        let written = usage["cacheWrite"] == nil ? 0 : SessionUsageSupport.count(usage["cacheWrite"])
+        guard let read, let written, let input = SessionUsageSupport.sum([fresh, read, written]) else { return }
+        setModel(message["model"])
+        value.inputTokens = (value.inputTokens ?? 0) + input; value.outputTokens = (value.outputTokens ?? 0) + output
+        value.cacheReadTokens = (value.cacheReadTokens ?? 0) + read; value.cacheWriteTokens = (value.cacheWriteTokens ?? 0) + written
+        value.totalTokens = SessionUsageSupport.sum([value.inputTokens, value.outputTokens])
+        value.contextUsedTokens = input
+        if let cost = SessionUsageSupport.cost((usage["cost"] as? [String: Any])?["total"]) { value.costUSD = (value.costUSD ?? 0) + cost; value.costScope = "run" }
+        publish()
     }
 
     func consumeMod(_ metadata: ModMetadata) {

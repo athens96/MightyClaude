@@ -69,6 +69,28 @@
       }
     },
     {
+      "id": "pi",
+      "group": "agent",
+      "label": "setup.item.pi.title",
+      "description": "setup.item.pi.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "signIn", "provider": "pi" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "pi" },
+          "install": { "kind": "npmGlobal", "package": "@mariozechner/pi-coding-agent" },
+          "prerequisites": ["node"],
+          "source": "https://github.com/badlogic/pi-mono"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "pi" },
+          "install": { "kind": "npmGlobal", "package": "@mariozechner/pi-coding-agent" },
+          "prerequisites": ["node"],
+          "source": "https://github.com/badlogic/pi-mono"
+        }
+      }
+    },
+    {
       "id": "git",
       "group": "prerequisite",
       "label": "setup.item.git.title",

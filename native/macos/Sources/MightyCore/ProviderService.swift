@@ -145,6 +145,7 @@ public actor ProviderService {
                 guard let command = await self.command(provider: provider, workspacePath: workspacePath, snapshot: snapshot), !Task.isCancelled,
                       !self.closing, generation == self.cacheGeneration else { return ProviderOptions.fallbackCatalog(provider) }
                 if provider == "gemini" { return await Self.antigravityCatalog(command: command, environment: snapshot.values, workspace: cwd) }
+                if provider == "pi" { return await Self.piCatalog(command: command, environment: snapshot.values, workspace: cwd) }
                 return await CLIModelProbe.read(command: command, environment: snapshot.values, workspace: cwd)
             }
             entry = CatalogEntry(id: UUID(), created: Date(), task: task, inFlight: true, forced: forceRefresh, environment: snapshot.values)
@@ -289,6 +290,16 @@ public actor ProviderService {
             if let resume = request.resumeId { args += ["--conversation", resume] }
             if let root = request.delegationWorktreeRoot { args += ["--add-dir", root] }
             return args
+        case "pi":
+            // One RPC-mode process per request (`pi --mode rpc`): the prompt, a steer and the
+            // stop travel as JSON lines on stdin (`ProviderInput.piPrompt`). pi has no approval
+            // window, so manual keeps only the read tools and full access leaves every tool on.
+            var args = ["--mode", "rpc"]
+            if request.model != "default" { args += ["--model", request.model] }
+            if s.effort != "default" { args += ["--thinking", s.effort] }
+            if s.permissionMode != "fullAccess" { args += ["--tools", ProviderOptions.piReadOnlyTools] }
+            if let resume = request.resumeId { args += ["--session", resume] }
+            return args
         default: throw MightyError(L("common.unsupportedCli"))
         }
     }
@@ -325,6 +336,27 @@ public actor ProviderService {
         guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: ["models"], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 262_144),
               result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("gemini") }
         return normalizeAntigravityCatalog(String(decoding: result.stdout, as: UTF8.self))
+    }
+    /// `pi --list-models`: a header row (`provider  model  context  max-out  thinking  images`)
+    /// and one row per model, columns padded with spaces. Without a sign-in it prints "No models
+    /// available…", which keeps the fallback (just pi's own default). A model is `provider/id`,
+    /// the form `--model` takes; `thinking: no` means it has no thinking levels.
+    public nonisolated static func normalizePiCatalog(_ text: String) -> ModelCatalog {
+        let fallback = ProviderOptions.fallbackCatalog("pi")
+        var models = [fallback.models[0]]; var seen = Set(["default"])
+        for line in text.split(whereSeparator: \.isNewline).prefix(1_024) {
+            let fields = line.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard fields.count >= 6, fields[0] != "provider", fields[4] == "yes" || fields[4] == "no" else { continue }
+            let value = fields[0] + "/" + fields[1]
+            guard CoreValidation.model(value), seen.insert(value).inserted, models.count <= 512 else { continue }
+            models.append(ModelOption(value: value, displayName: value, description: L("provider.catalog.piModelRow", ["context": fields[2], "output": fields[3]]), supportsEffort: fields[4] == "yes"))
+        }
+        return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.piSource")) : fallback
+    }
+    static func piCatalog(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
+        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: ["--list-models"], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 1_048_576),
+              result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("pi") }
+        return normalizePiCatalog(String(decoding: result.stdout, as: UTF8.self))
     }
     public nonisolated static func normalizeClaudeCatalog(_ rows: [[String: Any]]) -> ModelCatalog {
         let fallback = ProviderOptions.fallbackCatalog("claude")

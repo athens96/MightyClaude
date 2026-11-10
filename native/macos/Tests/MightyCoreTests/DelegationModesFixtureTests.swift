@@ -23,8 +23,8 @@ import Testing
 
     @Test func everyAgentsModesHaveTheFixturesCapabilities() throws {
         let fixture = try Self.load()
-        #expect(fixture.agents == ProviderOptions.ids)
-        #expect(Set(fixture.capabilities.keys) == Set(ProviderOptions.ids))
+        #expect(fixture.agents == DelegationProviders.agentIds)
+        #expect(Set(fixture.capabilities.keys) == Set(DelegationProviders.agentIds))
         for (provider, modes) in fixture.capabilities {
             #expect(Set(modes.keys) == Set(DelegationProviders.startingModes(provider: provider)), "\(provider)")
             for (mode, names) in modes {
@@ -36,11 +36,11 @@ import Testing
 
     @Test func everyParentModesWidestChildModeIsTheFixtures() throws {
         let fixture = try Self.load()
-        #expect(Set(fixture.widestChildMode.keys) == Set(ProviderOptions.ids))
+        #expect(Set(fixture.widestChildMode.keys) == Set(DelegationProviders.agentIds))
         for (parent, modes) in fixture.widestChildMode {
             #expect(Set(modes.keys) == Set(DelegationProviders.startingModes(provider: parent)), "\(parent)")
             for (parentMode, children) in modes {
-                #expect(Set(children.keys) == Set(ProviderOptions.ids), "\(parent) \(parentMode)")
+                #expect(Set(children.keys) == Set(DelegationProviders.agentIds), "\(parent) \(parentMode)")
                 for (child, mode) in children {
                     #expect(DelegationProviders.widestChildMode(child: child, parent: parent, parentMode: parentMode) == mode, "\(child) under \(parent) \(parentMode)")
                 }

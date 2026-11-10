@@ -2,16 +2,17 @@ import Testing
 @testable import MightyCore
 
 struct ProviderBetaTests {
-    @Test func codexAndAntigravityAreBetaAndClaudeIsOfficial() {
+    @Test func codexAntigravityAndPiAreBetaAndClaudeIsOfficial() {
         #expect(!ProviderOptions.isBeta("claude"))
         #expect(ProviderOptions.isBeta("codex"))
         #expect(ProviderOptions.isBeta("gemini"))
         #expect(!ProviderOptions.isBeta("unknown"))
-        #expect(ProviderOptions.ids.filter(ProviderOptions.isBeta) == ["codex", "gemini"])
+        #expect(ProviderOptions.isBeta("pi"))
+        #expect(ProviderOptions.ids.filter(ProviderOptions.isBeta) == ["codex", "gemini", "pi"])
     }
 
     @Test func theBadgeNeverChangesTheProviderName() {
-        #expect(ProviderOptions.ids.map(ProviderOptions.label) == ["Claude", "Codex", "Antigravity"])
+        #expect(ProviderOptions.ids.map(ProviderOptions.label) == ["Claude", "Codex", "Antigravity", "pi"])
     }
 
     @Test func menuTitlesCarryTheBadgeOnlyForBetaProviders() {

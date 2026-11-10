@@ -173,6 +173,9 @@ struct ActivityTests {
                 case "codex":
                     start = ["type": "item.started", "item": ["id": "call", "type": "command_execution", "command": "printf fixture"]]
                     end = ["type": "item.completed", "item": ["id": "call", "type": "command_execution", "command": "printf fixture"]]
+                case "pi":
+                    start = ["type": "tool_execution_start", "toolCallId": "call", "toolName": "bash", "args": ["command": "printf fixture"]]
+                    end = ["type": "tool_execution_end", "toolCallId": "call", "toolName": "bash", "result": ["content": [["type": "text", "text": "fixture"]]], "isError": false]
                 default:
                     start = ["event": "step_update", "step_update": ["step_index": 7, "state": "ACTIVE", "step_type": "tool", "tool_info": ["name": "run_command", "parameters": ["CommandLine": "printf fixture"]]]]
                     end = ["event": "step_update", "step_update": ["step_index": 7, "state": "DONE", "step_type": "tool", "tool_info": ["name": "run_command", "parameters": ["CommandLine": "printf fixture"], "output": "fixture"]]]

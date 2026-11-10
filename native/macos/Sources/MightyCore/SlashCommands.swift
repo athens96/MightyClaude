@@ -107,6 +107,11 @@ public enum SlashCommandCatalog {
                     app("clear", L("slash.builtin.newConversation"), action: .newConversation),
                     app("usage", L("slash.builtin.usage"), action: .showUsage),
                     app("config", L("slash.builtin.settings"), action: .openSettings), rename, prompts, help]
+        case "pi":
+            return [model, app("permissions", L("slash.builtin.permission"), argument: .permission),
+                    app("new", L("slash.builtin.newConversation"), action: .newConversation),
+                    app("session", L("slash.builtin.usage"), action: .showUsage),
+                    app("settings", L("slash.builtin.settings"), action: .openSettings), rename, prompts, help]
         default: return []
         }
     }
@@ -154,6 +159,10 @@ public enum SlashCommandCatalog {
             found += skills(in: agy.appendingPathComponent("builtin/skills"), source: L("slash.source.antigravitySkill"), origin: .user)
             found += skills(in: agy.appendingPathComponent("skills"), source: L("slash.source.antigravitySkill"), origin: .user)
             if let workspace { found += skills(in: workspace.appendingPathComponent(".agents/skills"), source: L("slash.source.projectSkill"), origin: .project) }
+        case "pi":
+            // pi's skills: the user's (~/.pi/agent/skills), then the project's (.pi/skills).
+            found += skills(in: PiAgent.directory(home: home, environment: [:]).appendingPathComponent("skills"), source: L("slash.source.piSkill"), origin: .user)
+            if let workspace { found += skills(in: workspace.appendingPathComponent(".pi/skills"), source: L("slash.source.projectSkill"), origin: .project) }
         default: break
         }
         // Later sources (project) win over earlier ones (user, plugins).

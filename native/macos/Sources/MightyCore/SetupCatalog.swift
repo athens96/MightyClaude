@@ -118,7 +118,7 @@ public struct SetupCatalog: Sendable, Equatable {
     /// marketplace's owner/repo short form, may name: only those the catalog uses.
     public static let allowedRepositories: Set<String> = [
         "Homebrew/install", "Q00/ouroboros", "anthropics/claude-plugins-community",
-        "Yeachan-Heo/oh-my-claudecode", "garrytan/gstack",
+        "Yeachan-Heo/oh-my-claudecode", "garrytan/gstack", "badlogic/pi-mono",
     ]
 
     /// Every label and description key a catalog item may name. Kept here so an
@@ -128,6 +128,7 @@ public struct SetupCatalog: Sendable, Equatable {
         "setup.item.claude.title", "setup.item.claude.detail",
         "setup.item.codex.title", "setup.item.codex.detail",
         "setup.item.agy.title", "setup.item.agy.detail",
+        "setup.item.pi.title", "setup.item.pi.detail",
         "setup.item.git.title", "setup.item.git.detail",
         "setup.item.homebrew.title", "setup.item.homebrew.detail",
         "setup.item.node.title", "setup.item.node.detail",

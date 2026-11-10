@@ -37,8 +37,10 @@ import Foundation
 public enum DelegationProviders {
     /// An agent pane (kind claude) running one of these may delegate by tool.
     static let agentParents: Set<String> = ["claude", "codex"]
-    /// The agents of agent panes that take part at all.
+    /// The agents of agent panes that take part at all. pi does not yet: no worktree child, no delegation tools.
     static let agents: Set<String> = ["claude", "codex", "gemini"]
+    /// Those agents in the app's order (the provider list without pi).
+    static var agentIds: [String] { ProviderOptions.ids.filter(agents.contains) }
 
     /// Every permission mode of any provider, narrowest first: how freely the
     /// agent acts without asking. Modes are compared by it within one agent.
@@ -135,7 +137,7 @@ public enum DelegationProviders {
     /// any agent: its own (``canParentByHuman(kind:provider:mode:)``), or
     /// another with a mode in which its child can change files.
     public static func mayHaveHumanChild(kind: String, provider: String, mode: String) -> Bool {
-        isAgentPane(kind: kind, provider: provider) && ProviderOptions.ids.contains { humanChildMode(child: $0, parent: provider, parentMode: mode, planFirst: false) != nil }
+        isAgentPane(kind: kind, provider: provider) && agentIds.contains { humanChildMode(child: $0, parent: provider, parentMode: mode, planFirst: false) != nil }
     }
 
     /// Whether a running turn of this pane takes text (steer): Claude only.
@@ -207,7 +209,7 @@ public enum DelegationProviders {
     /// going), no mode in which its child could change files, or the cap.
     public static func humanChildChoices(parent: String, parentMode: String, planFirst: Bool, openHumanChildren: Int,
                                          availability: (String) -> DelegationAgentAvailability) -> [DelegationChildChoice] {
-        ProviderOptions.ids.map { agent in
+        agentIds.map { agent in
             let mode = humanChildMode(child: agent, parent: parent, parentMode: parentMode, planFirst: planFirst)
             let blocked: DelegationChildChoice.Blocked?
             switch agent == parent ? .ready : availability(agent) {

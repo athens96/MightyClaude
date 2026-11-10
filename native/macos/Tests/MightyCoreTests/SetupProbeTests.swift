@@ -170,7 +170,7 @@ struct SetupProbeTests {
         for item in catalog.items { all[item.id] = .installed(version: nil) }
         #expect(!SetupFirstRun.shouldPresent(catalog: catalog, results: all, platform: .macos, neverShow: false))
         // Claude is not required: one working agent CLI is enough.
-        var codexOnly = all; codexOnly["claude"] = .missing; codexOnly["agy"] = .missing; codexOnly["glab"] = .missing
+        var codexOnly = all; codexOnly["claude"] = .missing; codexOnly["agy"] = .missing; codexOnly["pi"] = .missing; codexOnly["glab"] = .missing
         #expect(!SetupFirstRun.shouldPresent(catalog: catalog, results: codexOnly, platform: .macos, neverShow: false))
         var oldClaude = codexOnly; oldClaude["claude"] = .outdated(version: "2.0.0", minimum: "2.1.271")
         #expect(!SetupFirstRun.shouldPresent(catalog: catalog, results: oldClaude, platform: .macos, neverShow: false))
@@ -180,7 +180,7 @@ struct SetupProbeTests {
         var license = all; license["git"] = .needsAttention(.xcodeLicense)
         #expect(SetupFirstRun.shouldPresent(catalog: catalog, results: license, platform: .macos, neverShow: false))
         // No agent CLI at all (an out-of-date one cannot run).
-        var none = all; none["claude"] = .outdated(version: "2.0.0", minimum: "2.1.271"); none["codex"] = .missing; none["agy"] = .missing
+        var none = all; none["claude"] = .outdated(version: "2.0.0", minimum: "2.1.271"); none["codex"] = .missing; none["agy"] = .missing; none["pi"] = .missing
         #expect(SetupFirstRun.shouldPresent(catalog: catalog, results: none, platform: .macos, neverShow: false))
         #expect(SetupFirstRun.needsAttention(catalog: catalog, results: none, platform: .macos))
         // "Don't show again" wins; results not read yet never open it.

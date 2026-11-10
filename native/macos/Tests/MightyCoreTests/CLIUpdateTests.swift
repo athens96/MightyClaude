@@ -170,6 +170,18 @@ final class CLIUpdateTests {
         await service.shutdown()
     }
 
+    @Test func piUpdatesItselfWithUpdateSelfWhereverItIsInstalled() async throws {
+        let root = try fixture()
+        try script(versionScript + successfulUpdate, at: root.appendingPathComponent("bin/pi"))
+        let service = CLIUpdateService(environment: environment(root), homeDirectory: root)
+        let inspected = await service.inspect(provider: "pi")
+        #expect(inspected.canUpdate && inspected.method == "pi" && inspected.version == "1.0.0")
+        let updated = await service.update(provider: "pi")
+        #expect(updated.status == "updated" && updated.afterVersion == "2.0.0")
+        #expect(try String(contentsOf: root.appendingPathComponent("arguments"), encoding: .utf8) == "<update>\n<self>\n")
+        await service.shutdown()
+    }
+
     @Test func antigravityElsewhereIsNeverUpdated() async throws {
         let root = try fixture()
         try script(versionScript + "printf 'MUST_NOT_RUN' > \"$FIXTURE_LOG\"\n", at: root.appendingPathComponent("bin/agy"))
