@@ -36,7 +36,7 @@ struct CLILoginRecoveryCard: View {
                     progress(L("loginRecovery.starting"))
                 case .waiting?:
                     automaticNote
-                    progress(state?.terminalSessionId != nil ? L("loginRecovery.antigravityTerminal") : L("loginRecovery.waiting"))
+                    progress(state?.terminalSessionId != nil ? L(CLITerminalSignIn.table[provider]?.waitingKey ?? "loginRecovery.waiting") : L("loginRecovery.waiting"))
                     if let url = state?.url {
                         Link(L("loginRecovery.openLink"), destination: url).help(url.absoluteString)
                             .accessibilityIdentifier("login-link-\(sessionID)")

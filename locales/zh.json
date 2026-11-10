@@ -457,6 +457,8 @@
   "loginRecovery.dismiss": "关闭登录提示",
   "loginRecovery.exited": "登录命令已结束，但无法确认登录成功。",
   "loginRecovery.antigravityTerminal": "已打开 Antigravity 登录终端。请在 agy 打开的浏览器中使用 Google 账户登录。登录后，失败的请求将重新发送。",
+  "loginRecovery.piTerminal": "已打开 pi 登录终端。请在 pi 中输入 /login，选择订阅或输入 API 密钥。登录后，失败的请求将重新发送。",
+  "loginRecovery.piTerminalTitle": "pi 登录 · 输入 /login",
   "loginRecovery.loginButton": "重新登录",
   "loginRecovery.openLink": "浏览器没有打开？打开登录链接",
   "loginRecovery.resendBlockedTemplate": "无法重新发送：{reason}",

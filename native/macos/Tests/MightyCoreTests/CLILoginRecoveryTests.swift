@@ -240,7 +240,56 @@ struct CLIAntigravityAuthFailureTests {
     }
 }
 
-struct CLIAntigravityLoginTests {
+struct CLITerminalSignInTests {
+    private static let signedOutText = "Fetching available models...\nError: Please sign in to view available models. Launch the CLI without arguments to sign in."
+
+    @Test func agySignedOutWithExitZeroReadsSignedOut() {
+        #expect(CLIAccountSupport.antigravityStatus(exitCode: 0, output: Self.signedOutText).loggedIn == false)
+        #expect(CLIAccountSupport.antigravityStatus(exitCode: 1, output: Self.signedOutText).loggedIn == false)
+        #expect(CLIAccountSupport.antigravityStatus(exitCode: 0, output: "Fetching available models...\ngemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n").loggedIn == true)
+        #expect(CLIAccountSupport.antigravityStatus(exitCode: -1, output: "").loggedIn == nil)
+        #expect(CLIAuthFailure.signInCanFix(CLIAccountSupport.antigravityStatus(exitCode: 0, output: Self.signedOutText)))
+    }
+
+    @Test func antigravityMatchesItsNewerPhrases() {
+        for text in ["authentication failed or timed out", "Error: Please sign in to view available models.", "You are not signed in", Self.signedOutText] {
+            #expect(CLIAuthFailure.antigravity(text: text), "\(text)")
+        }
+        #expect(!CLIAuthFailure.antigravity(text: "407 Proxy Authentication Required"))
+    }
+
+    @Test func piMatchesItsSignInFailures() {
+        for text in ["No API key found for anthropic. Use /login or set ANTHROPIC_API_KEY.", "No models available. Use /login or set an API key.", "Please use /login"] {
+            #expect(CLIAuthFailure.pi(text: text), "\(text)")
+        }
+        for text in ["rate limit exceeded", "407 Proxy Authentication Required", "context window exceeded"] {
+            #expect(!CLIAuthFailure.pi(text: text), "\(text)")
+        }
+        let parser = CLIStreamParser(provider: "pi", log: { _, _ in }, resume: { _ in })
+        parser.push(#"{"type":"response","command":"prompt","success":false,"error":"No API key found for anthropic. Use /login or set ANTHROPIC_API_KEY."}"# + "\n")
+        #expect(parser.failed && parser.authFailure)
+        let other = CLIStreamParser(provider: "pi", log: { _, _ in }, resume: { _ in })
+        other.push(#"{"type":"response","command":"prompt","success":false,"error":"rate limit exceeded"}"# + "\n")
+        #expect(other.failed && !other.authFailure)
+    }
+
+    @Test func piSignInCanFixOnlyWhenItsStatusReadsSignedOut() {
+        #expect(CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "pi", loggedIn: false)))
+        #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "pi", loggedIn: true)))
+        #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "pi", detail: "offline")))
+        #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "pi", installed: false, loggedIn: false)))
+    }
+
+    @Test func theTerminalTableAndProviders() {
+        #expect(CLIAuthFailure.providers == ["claude", "codex", "gemini", "pi"])
+        #expect(Set(CLITerminalSignIn.table.keys) == ["gemini", "pi"])
+        #expect(CLITerminalSignIn.table["pi"]?.command == "pi" && CLITerminalSignIn.table["pi"]?.titleKey != nil)
+        #expect(CLITerminalSignIn.table["gemini"]?.command == ProviderOptions.executable("gemini"))
+        #expect(CLITerminalSignIn.table.values.allSatisfy { CLIAuthFailure.providers.contains($0.provider) && L($0.waitingKey) != $0.waitingKey })
+    }
+}
+
+struct CLITerminalLoginTests {
     private let signedOut = CLIAccountStatus(provider: "gemini", loggedIn: false, method: CLIAccountSupport.geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, canSignOut: false)
     private let signedIn = CLIAccountStatus(provider: "gemini", loggedIn: true, method: CLIAccountSupport.geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, canSignOut: false)
 
@@ -249,22 +298,22 @@ struct CLIAntigravityLoginTests {
         let signedOut = signedOut, signedIn = signedIn
         let status: @Sendable () async -> CLIAccountStatus = { reads.update { $0 += 1 }; return signedOut }
         // The status is read once per interval while the terminal stays open, then once more at the limit.
-        let idle = await CLIAntigravityLogin.wait(status: status, isOpen: { true }, interval: 10, limit: 0.3, tick: 0.02)
+        let idle = await CLITerminalLogin.wait(provider: "gemini", status: status, isOpen: { true }, interval: 10, limit: 0.3, tick: 0.02)
         #expect(idle == .timedOut(signedOut))
         #expect(reads.get() == 1)
         // The terminal closed without a sign-in.
-        let closed = await CLIAntigravityLogin.wait(status: status, isOpen: { false }, interval: 10, limit: 20, tick: 0.02)
+        let closed = await CLITerminalLogin.wait(provider: "gemini", status: status, isOpen: { false }, interval: 10, limit: 20, tick: 0.02)
         #expect(closed == .exited(signedOut))
         // The status turns signed in while the terminal is open.
         let turned = LockedBox(false)
-        let task = Task { await CLIAntigravityLogin.wait(status: { turned.get() ? signedIn : signedOut }, isOpen: { true }, interval: 0.05, limit: 20, tick: 0.02) }
+        let task = Task { await CLITerminalLogin.wait(provider: "gemini", status: { turned.get() ? signedIn : signedOut }, isOpen: { true }, interval: 0.05, limit: 20, tick: 0.02) }
         try await Task.sleep(for: .milliseconds(100))
         turned.update { $0 = true }
         #expect(await task.value == .loggedIn(signedIn))
         // Another provider's status never counts.
-        let other = await CLIAntigravityLogin.wait(status: { CLIAccountStatus(provider: "claude", loggedIn: true) }, isOpen: { true }, interval: 0, limit: 0.1, tick: 0.02)
+        let other = await CLITerminalLogin.wait(provider: "gemini", status: { CLIAccountStatus(provider: "claude", loggedIn: true) }, isOpen: { true }, interval: 0, limit: 0.1, tick: 0.02)
         #expect(other == .timedOut(CLIAccountStatus(provider: "claude", loggedIn: true)))
-        let cancelled = Task { await CLIAntigravityLogin.wait(status: status, isOpen: { true }, interval: 1, limit: 20, tick: 0.02) }
+        let cancelled = Task { await CLITerminalLogin.wait(provider: "gemini", status: status, isOpen: { true }, interval: 1, limit: 20, tick: 0.02) }
         cancelled.cancel()
         #expect(await cancelled.value == .cancelled)
     }

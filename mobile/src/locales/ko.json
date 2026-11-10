@@ -457,6 +457,8 @@
   "loginRecovery.dismiss": "로그인 안내 닫기",
   "loginRecovery.exited": "로그인 명령이 끝났지만 로그인을 확인하지 못했습니다.",
   "loginRecovery.antigravityTerminal": "Antigravity 로그인 터미널을 열었습니다. agy가 여는 브라우저에서 Google 계정으로 로그인하세요. 로그인되면 실패한 요청을 다시 보냅니다.",
+  "loginRecovery.piTerminal": "pi 로그인 터미널을 열었습니다. pi에서 /login을 입력해 구독을 고르거나 API 키를 입력하세요. 로그인되면 실패한 요청을 다시 보냅니다.",
+  "loginRecovery.piTerminalTitle": "pi 로그인 · /login 입력",
   "loginRecovery.loginButton": "다시 로그인",
   "loginRecovery.openLink": "브라우저가 열리지 않았다면 로그인 링크 열기",
   "loginRecovery.resendBlockedTemplate": "다시 보내지 못했습니다: {reason}",

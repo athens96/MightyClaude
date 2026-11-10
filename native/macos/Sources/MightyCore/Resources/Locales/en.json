@@ -457,6 +457,8 @@
   "loginRecovery.dismiss": "Dismiss sign-in notice",
   "loginRecovery.exited": "The sign-in command ended, but the sign-in could not be confirmed.",
   "loginRecovery.antigravityTerminal": "An Antigravity sign-in terminal is open. Sign in with your Google account in the browser agy opens. The failed request is sent again once you are signed in.",
+  "loginRecovery.piTerminal": "A pi sign-in terminal is open. In pi, type /login and pick a subscription or enter an API key. The failed request is sent again once you are signed in.",
+  "loginRecovery.piTerminalTitle": "pi sign-in · type /login",
   "loginRecovery.loginButton": "Sign in again",
   "loginRecovery.openLink": "Browser didn't open? Open the sign-in link",
   "loginRecovery.resendBlockedTemplate": "Could not resend: {reason}",

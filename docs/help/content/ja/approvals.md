@@ -73,6 +73,8 @@ CLIのサインインの有効期限が切れてリクエストが失敗する�
 
 すでにほかの場所でサインインしている場合は、{{ui:loginRecovery.resendButton}}をクリックしてください。ブラウザでのサインインが難しい場合は、{{ui:loginRecovery.terminalButton}}を使います。
 
+Antigravityとpiはターミナルでサインインします。失敗したペインの隣にサインイン用のターミナルが開き、Antigravity（agy）は開くブラウザでGoogleアカウントにサインインします。piはターミナルで`/login`と入力し、サブスクリプションを選ぶかAPIキーを入力します。サインインが確認されると、失敗したリクエストが自動的に再送信されます。ターミナルはサインイン後も開いたままです。
+
 > [!tip]
 > {{ui:settings.nav.cli}}タブの{{ui:settings.cliAccounts.autoLoginToggle}}をオンにしておくと、サインインが切れた時点ですぐに再サインインを始めます。
 

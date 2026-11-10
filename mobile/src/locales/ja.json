@@ -457,6 +457,8 @@
   "loginRecovery.dismiss": "サインインの案内を閉じる",
   "loginRecovery.exited": "サインインコマンドは終了しましたが、サインインを確認できませんでした。",
   "loginRecovery.antigravityTerminal": "Antigravityのサインイン用ターミナルを開きました。agyが開くブラウザでGoogleアカウントにサインインしてください。サインインが完了すると、失敗したリクエストを再送信します。",
+  "loginRecovery.piTerminal": "piのサインイン用ターミナルを開きました。piで/loginと入力し、サブスクリプションを選ぶかAPIキーを入力してください。サインインが完了すると、失敗したリクエストを再送信します。",
+  "loginRecovery.piTerminalTitle": "piのサインイン · /loginと入力",
   "loginRecovery.loginButton": "再サインイン",
   "loginRecovery.openLink": "ブラウザが開かない場合はサインインリンクを開く",
   "loginRecovery.resendBlockedTemplate": "再送信できませんでした: {reason}",

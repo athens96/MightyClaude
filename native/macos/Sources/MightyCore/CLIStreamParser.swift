@@ -579,6 +579,7 @@ public final class CLIStreamParser {
             if value["success"] as? Bool == false {
                 failed = true
                 let text = errorText(value["error"], fallback: L("run.error.providerRunFailed", ["name": name]))
+                authFailure = CLIAuthFailure.pi(text: text)
                 log("error", text)
             } else if command == "get_state", let data = value["data"] as? [String: Any] { resumeIfValid(data["sessionId"]) }
         case "agent_start":
@@ -598,7 +599,8 @@ public final class CLIStreamParser {
             }
             if message["stopReason"] as? String == "error" {
                 piError = errorText(message["errorMessage"], fallback: L("run.error.providerRunFailed", ["name": name]))
-            } else { piError = nil }
+                authFailure = piError.map(CLIAuthFailure.pi(text:)) ?? false
+            } else { piError = nil; authFailure = false }
         case "tool_execution_start", "tool_execution_update", "tool_execution_end":
             let ended = type == "tool_execution_end"
             let toolName = value["toolName"] as? String ?? "Tool"
@@ -613,14 +615,14 @@ public final class CLIStreamParser {
             let detail = ContextCompaction.claudeSummary(["trigger": value["reason"] as? String == "manual" ? "manual" : "auto", "pre_tokens": result["tokensBefore"] as Any])
             log("system", ContextCompaction.title + " · " + detail)
         case "auto_retry_start":
-            piRetrying = true; piError = nil
+            piRetrying = true; piError = nil; authFailure = false
             log("system", L("run.notice.piRetry", ["attempt": "\(value["attempt"] as? Int ?? 0)", "max": "\(value["maxAttempts"] as? Int ?? 0)",
                                                    "error": ActivitySupport.clean(value["errorMessage"] as? String ?? "", maximumBytes: 512, singleLine: true)]))
         case "auto_retry_end":
             piRetrying = false
             if value["success"] as? Bool == false {
                 let text = errorText(value["finalError"], fallback: L("run.error.providerRunFailed", ["name": name]))
-                failed = true; log("error", text)
+                failed = true; authFailure = CLIAuthFailure.pi(text: text); log("error", text)
             }
         case "extension_error": log("system", errorText(value["error"], fallback: ""))
         case "extension_ui_request":

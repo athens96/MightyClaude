@@ -247,14 +247,14 @@ struct AntigravityTests {
         // Its own clock, a step per reading, so the 20 s limit is the wait's and not the runner's: a loaded runner that
         // resumes each tick late must not turn three readings into a time-out.
         let clock = SteppingClock(step: 0.01)
-        let outcome = await CLIAntigravityLogin.wait(status: { reads.next() >= 3 ? signedIn : signedOut }, isOpen: { true }, interval: 0, limit: 20, tick: 0.01,
+        let outcome = await CLITerminalLogin.wait(provider: "gemini", status: { reads.next() >= 3 ? signedIn : signedOut }, isOpen: { true }, interval: 0, limit: 20, tick: 0.01,
                                                      now: { clock.next() })
         #expect(outcome == .loggedIn(signedIn))
-        let closed = await CLIAntigravityLogin.wait(status: { signedOut }, isOpen: { false }, interval: 60, limit: 20, tick: 0.01)
+        let closed = await CLITerminalLogin.wait(provider: "gemini", status: { signedOut }, isOpen: { false }, interval: 60, limit: 20, tick: 0.01)
         #expect(closed == .exited(signedOut))
-        let expired = await CLIAntigravityLogin.wait(status: { signedOut }, isOpen: { true }, interval: 60, limit: 0.05, tick: 0.01)
+        let expired = await CLITerminalLogin.wait(provider: "gemini", status: { signedOut }, isOpen: { true }, interval: 60, limit: 0.05, tick: 0.01)
         #expect(expired == .timedOut(signedOut))
-        let cancelled = Task { await CLIAntigravityLogin.wait(status: { signedOut }, isOpen: { true }, interval: 60, limit: 60, tick: 0.01) }
+        let cancelled = Task { await CLITerminalLogin.wait(provider: "gemini", status: { signedOut }, isOpen: { true }, interval: 60, limit: 60, tick: 0.01) }
         cancelled.cancel()
         #expect(await cancelled.value == .cancelled)
     }

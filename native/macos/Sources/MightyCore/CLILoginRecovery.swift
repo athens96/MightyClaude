@@ -75,12 +75,26 @@ public enum CLIAuthFailure {
 
     /// Antigravity CLI's own sign-in failures, in its own words, on stderr, a
     /// plain stdout line or a failed result: "Error: authentication required.
-    /// Run 'agy' to log in, then retry." and "Print mode: auth error: …". A
-    /// sign-in that timed out, or a proxy's "407 Proxy Authentication
-    /// Required", is not a lost sign-in.
+    /// Run 'agy' to log in, then retry.", "Print mode: auth error: …", and a
+    /// headless run's "authentication failed or timed out", "Please sign in to
+    /// view available models. Launch the CLI without arguments to sign in."
+    /// These are candidate signals only: recovery confirms with the live
+    /// status (`agy models`) before it asks for a sign-in, so a sign-in that
+    /// merely timed out does not raise the card. A proxy's "407 Proxy
+    /// Authentication Required" is not a lost sign-in.
     public static func antigravity(text: String) -> Bool {
         let lowered = text.prefix(16_384).lowercased()
-        return lowered.contains("authentication required. run ") || lowered.contains("print mode: auth error")
+        return ["authentication required. run ", "print mode: auth error", "authentication failed or timed out", "please sign in", "not signed in",
+                "sign in to view", "launch the cli without arguments to sign in"].contains(where: lowered.contains)
+    }
+
+    /// pi's own sign-in failures: "No API key found for <provider>. Use /login
+    /// or set an API key", "No models available. Use /login or set an API key",
+    /// as an RPC error or a failed assistant message. A candidate signal only:
+    /// recovery confirms with pi's status (`pi --list-models`).
+    public static func pi(text: String) -> Bool {
+        let lowered = text.prefix(16_384).lowercased()
+        return ["no api key", "no models available", "use /login", "run /login", "please /login"].contains(where: lowered.contains)
     }
 
     /// Whether signing in again can fix a run that failed with a sign-in
@@ -89,27 +103,43 @@ public enum CLIAuthFailure {
     /// Only a method a browser sign-in does not renew does: no CLI, Bedrock /
     /// Vertex / Foundry or a Claude API key (status reports those as
     /// configuration, `accessVerified == false`) or a Codex API-key login.
-    /// Antigravity's status is a live call: only one that reads signed out
-    /// asks for a sign-in; unknown (offline, a timeout) does not open one.
+    /// Antigravity's and pi's status are live calls: only one that reads
+    /// signed out asks for a sign-in; unknown (offline, a timeout) does not open one.
     public static func signInCanFix(_ status: CLIAccountStatus) -> Bool {
         guard status.installed, status.accessVerified != false else { return false }
-        if status.provider == "gemini" { return status.loggedIn == false }
+        if CLITerminalSignIn.table[status.provider] != nil { return status.loggedIn == false }
         return !(status.provider == "codex" && status.methodId == CLIAccountMethod.codexAPIKey)
     }
 
     /// The providers whose lost sign-in raises the card and may start a sign-in.
-    public static let providers = ["claude", "codex", "gemini"]
+    public static let providers = ["claude", "codex", "gemini", "pi"]
 }
 
-/// Antigravity has no sign-in command: its sign-in is the interactive CLI
-/// itself (the browser opens on its first run), so it runs in a terminal the
-/// user sees. Its credentials live in the keychain, so the sign-in is seen by
-/// asking its status (`CLIAccountSupport.antigravityStatus`) every `interval`.
-public enum CLIAntigravityLogin {
+/// A provider whose sign-in is its interactive CLI, so it runs in a terminal
+/// the user sees (a later provider adds one entry here). The command is
+/// `CLIAccountSupport.loginCommand`; the sign-in is seen by asking the
+/// provider's status (`CLIAccountService.status`) every `interval`.
+public struct CLITerminalSignIn: Sendable, Equatable {
+    public let provider: String
+    /// What the recovery card says while the terminal waits.
+    public let waitingKey: String
+    /// The terminal pane's title, when it carries an instruction.
+    public let titleKey: String?
+
+    /// Antigravity opens the browser on its first run. pi signs in inside
+    /// itself: `/login`, then a subscription or an API key.
+    public static let table: [String: CLITerminalSignIn] = [
+        "gemini": CLITerminalSignIn(provider: "gemini", waitingKey: "loginRecovery.antigravityTerminal", titleKey: nil),
+        "pi": CLITerminalSignIn(provider: "pi", waitingKey: "loginRecovery.piTerminal", titleKey: "loginRecovery.piTerminalTitle"),
+    ]
+    public var command: String? { CLIAccountSupport.loginCommand(provider: provider, option: .account) }
+}
+
+public enum CLITerminalLogin {
     /// Waits for a sign-in in the terminal: signed in once the status reads
     /// so; once more when the terminal closed (`exited`) or `limit` passed
     /// (`timedOut`). The terminal being open is checked every `tick`.
-    public static func wait(status: @Sendable () async -> CLIAccountStatus, isOpen: @Sendable () async -> Bool,
+    public static func wait(provider: String, status: @Sendable () async -> CLIAccountStatus, isOpen: @Sendable () async -> Bool,
                             interval: TimeInterval, limit: TimeInterval, tick: TimeInterval = 1,
                             now: @Sendable () -> Date = { Date() }) async -> CLILoginWaitOutcome {
         let started = now()
@@ -123,7 +153,7 @@ public enum CLIAntigravityLogin {
             lastRead = current
             let value = await status()
             guard !Task.isCancelled else { return .cancelled }
-            if value.provider == "gemini", value.loggedIn == true { return .loggedIn(value) }
+            if value.provider == provider, value.loggedIn == true { return .loggedIn(value) }
             if !open { return .exited(value) }
             if expired { return .timedOut(value) }
         }

@@ -117,17 +117,18 @@ public enum CLIAccountSupport {
     /// The method label of Antigravity's Google sign-in.
     public static var geminiGoogleMethod: String { L("windows.cli.method.googleAccount") }
     /// Antigravity has no status command, and its credentials live in the
-    /// keychain, so the app asks it for its model list (`agy models`): that
-    /// works only while signed in, and fails with "authentication required"
-    /// once the sign-in is gone. Anything else (no network, a timeout) stays
-    /// unknown. It has no sign-out command either.
+    /// keychain, so the app asks it for its model list (`agy models`). Signed
+    /// in only for a clean list with exit 0: once the sign-in is gone it says
+    /// so ("Please sign in to view available models"), and newer versions do
+    /// that with exit 0. Anything else (no network, a timeout) stays unknown.
+    /// It has no sign-out command either.
     public static func antigravityStatus(exitCode: Int32, output: String) -> CLIAccountStatus {
         let noSignOut = L("settings.cliAccounts.detailAntigravityNoSignOut")
-        if exitCode == 0 {
-            return CLIAccountStatus(provider: "gemini", loggedIn: true, method: geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, detail: noSignOut, canSignOut: false)
-        }
         if CLIAuthFailure.antigravity(text: output) {
             return CLIAccountStatus(provider: "gemini", loggedIn: false, method: geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, canSignOut: false)
+        }
+        if exitCode == 0 {
+            return CLIAccountStatus(provider: "gemini", loggedIn: true, method: geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, detail: noSignOut, canSignOut: false)
         }
         return CLIAccountStatus(provider: "gemini", detail: exitCode == -1 ? L("settings.cliAccounts.detailAntigravityTimeout") : L("settings.cliAccounts.detailAntigravityUnknown"), canSignOut: false)
     }

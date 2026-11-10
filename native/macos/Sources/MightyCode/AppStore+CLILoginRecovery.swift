@@ -11,7 +11,7 @@ struct BackgroundLoginState: Equatable {
     var asksForCode = false
     /// Started by the app on a lost sign-in, not by the card's button.
     var automatic = false
-    /// Antigravity signs in in this visible terminal pane rather than in the background.
+    /// Antigravity and pi sign in in this visible terminal pane rather than in the background.
     var terminalSessionId: String?
 }
 
@@ -117,7 +117,7 @@ extension AppStore {
         if !loginRequired.values.contains(provider) { cancelBackgroundLogin(provider) }
     }
 
-    /// `sessionId`: the pane whose run lost the sign-in; Antigravity's terminal opens beside it.
+    /// `sessionId`: the pane whose run lost the sign-in; a terminal sign-in opens beside it.
     func startBackgroundLogin(_ provider: String, automatic: Bool = false, sessionId: String? = nil) {
         guard !ending, CLIAuthFailure.providers.contains(provider), backgroundLoginJobs[provider] == nil,
               let command = CLIAccountSupport.loginCommand(provider: provider, option: .account) else { return }
@@ -126,7 +126,7 @@ extension AppStore {
             backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .failed(reason)); return
         }
         cliAccountMessages[provider] = nil
-        if provider == "gemini" { startAntigravityTerminalLogin(id: id, command: command, automatic: automatic, sessionId: sessionId); return }
+        if let terminal = CLITerminalSignIn.table[provider] { startTerminalSignIn(terminal, id: id, command: command, automatic: automatic, sessionId: sessionId); return }
         backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .starting, automatic: automatic)
         let job = BackgroundLoginJob(id: id)
         backgroundLoginJobs[provider] = job
@@ -198,32 +198,33 @@ extension AppStore {
         backgroundLogins.removeValue(forKey: provider)
     }
 
-    /// Antigravity has no sign-in command: its sign-in is the interactive CLI
-    /// (`agy` opens the browser on its first run), which cannot run hidden, so
+    /// A provider of `CLITerminalSignIn.table` has no sign-in command: its sign-in
+    /// is the interactive CLI (`agy` opens the browser on its first run, pi takes
+    /// `/login`), which cannot run hidden, so
     /// it runs in a terminal pane beside the failed pane (to its right, or a tab
     /// in its group when no split fits). It counts as signed in once its status
-    /// reads so (`CLIAntigravityLogin`), and then resends like a background sign-in.
+    /// reads so (`CLITerminalLogin`), and then resends like a background sign-in.
     /// - An automatic start never moves the user: the pane is added without
     ///   being selected, switching workspace or changing the layout mode. With a
     ///   sheet open no pane can be added, so the card just keeps its button and
     ///   nothing is held.
-    /// - The pane of an earlier sign-in, while still open, is used again (and
-    ///   selected for the card's button) instead of stacking another. Nothing is
-    ///   typed into it, since Antigravity may still be running there.
+    /// - The pane of an earlier sign-in of the provider, while still open, is used
+    ///   again (and selected for the card's button) instead of stacking another.
+    ///   Nothing is typed into it, since the CLI may still be running there.
     /// - The pane stays open after signing in, as a Settings sign-in terminal
-    ///   does: it now holds a live Antigravity session the user may be typing in, and
+    ///   does: it now holds a live CLI session the user may be typing in, and
     ///   closing it would end that session. Closing it before signing in ends the wait.
-    private func startAntigravityTerminalLogin(id: UUID, command: String, automatic: Bool, sessionId: String?) {
-        let provider = "gemini"
+    private func startTerminalSignIn(_ terminal: CLITerminalSignIn, id: UUID, command: String, automatic: Bool, sessionId: String?) {
+        let provider = terminal.provider
         let failed = sessionId.flatMap { id in snapshot.sessions.first { $0.id == id } }
-        let reused = antigravityLoginTerminal.flatMap { terminalPaneOpen($0) ? $0 : nil }
+        let reused = loginTerminals[provider].flatMap { terminalPaneOpen($0) ? $0 : nil }
         if reused == nil, automatic, hasBlockingModal { return }
         let job = BackgroundLoginJob(id: id)
         backgroundLoginJobs[provider] = job
         backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .starting, automatic: automatic)
         var pane = reused
         if let reused { if !automatic { selectSession(reused) } }
-        else if automatic { pane = failed.flatMap { insertLoginTerminal(beside: $0) } }
+        else if automatic { pane = failed.flatMap { insertLoginTerminal(beside: $0, title: Self.loginTerminalTitle(terminal)) } }
         // The sign-in terminal runs on this Mac: never in a remote workspace.
         else if let workspaceId = failed?.workspaceId ?? (activeWorkspace?.remote == nil ? activeWorkspace?.id : nil) ?? snapshot.workspaces.first(where: { $0.remote == nil })?.id {
             let group = failed.flatMap { session in layoutForWorkspace(session.workspaceId)?.group(containing: session.id)?.id }
@@ -234,19 +235,19 @@ extension AppStore {
             error = previous
         }
         guard let pane else { failBackgroundLogin(provider, id: id, message: L("loginRecovery.startFailed")); return }
-        antigravityLoginTerminal = pane
+        loginTerminals[provider] = pane
         let service = cliAccountService
         if reused == nil {
-            updateSession(pane) { $0.title = L("loginRecovery.terminalTitle", ["provider": ProviderOptions.label(provider)]) }
+            updateSession(pane) { $0.title = Self.loginTerminalTitle(terminal) }
             // The app wrote this command itself, so it presses Enter for the user (§1.5).
             pendingTerminalInput[pane] = TerminalInput(text: command, autoRun: true)
         }
         backgroundLogins[provider]?.phase = .waiting
         backgroundLogins[provider]?.terminalSessionId = pane
         job.task = Task { [weak self] in
-            let outcome = await CLIAntigravityLogin.wait(status: { await service.status(provider: provider) },
-                                                         isOpen: { [weak self] in await self?.terminalPaneOpen(pane) ?? false },
-                                                         interval: Self.cliLoginPollInterval, limit: Self.cliLoginPollLimit)
+            let outcome = await CLITerminalLogin.wait(provider: provider, status: { await service.status(provider: provider) },
+                                                       isOpen: { [weak self] in await self?.terminalPaneOpen(pane) ?? false },
+                                                       interval: Self.cliLoginPollInterval, limit: Self.cliLoginPollLimit)
             guard let self, self.backgroundLoginJobs[provider]?.id == id else { return }
             switch outcome {
             case .loggedIn(let status):
@@ -267,9 +268,9 @@ extension AppStore {
     /// Adds the sign-in terminal beside `failed` the way an agent's own
     /// terminal pane opens, but leaves the selection, the workspace and the
     /// layout mode as they were. Nil when the layout has no place for it.
-    private func insertLoginTerminal(beside failed: RunSession) -> String? {
+    private func insertLoginTerminal(beside failed: RunSession, title: String) -> String? {
         guard snapshot.sessions.count < 128 else { return nil }
-        let session = RunSession(workspaceId: failed.workspaceId, title: L("loginRecovery.terminalTitle", ["provider": ProviderOptions.label("gemini")]), kind: "shell")
+        let session = RunSession(workspaceId: failed.workspaceId, title: title, kind: "shell")
         reconcilePaneLayout(failed.workspaceId)
         let root = layoutForWorkspace(failed.workspaceId)
         let group = root?.group(containing: failed.id)
@@ -282,6 +283,10 @@ extension AppStore {
         snapshot.sessions.append(session)
         savePaneLayout(next, workspaceId: failed.workspaceId)
         return session.id
+    }
+
+    private static func loginTerminalTitle(_ terminal: CLITerminalSignIn) -> String {
+        L(terminal.titleKey ?? "loginRecovery.terminalTitle", ["provider": ProviderOptions.label(terminal.provider)])
     }
 
     private func terminalPaneOpen(_ id: String) -> Bool {
