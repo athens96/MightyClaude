@@ -35,6 +35,9 @@ section: agent-pane
 ### 사고 강도 {#effort}
 {{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Antigravity에는 없고, pi는 Off, Minimal, Low, Medium, High, XHigh이고, opencode는 모델이 제공하는 변형인 Low, Medium, High, Max이고, Hermes는 Low, Medium, High, XHigh, Max입니다.
 
+### 조언자 {#advisor}
+{{platform:mac}} Claude 창에는 {{ui:composer.effort.label}} 옆에 전구 모양의 {{ui:composer.advisor.label}} 단추가 있습니다. Claude Code의 실험적 기능으로, Claude가 일하는 도중에 다른 모델에게 조언을 구하게 합니다. {{ui:composer.advisor.follow}}(기본값)은 아무것도 넘기지 않고 Claude Code에 설정된 대로 실행합니다. 모델을 고르면 그 모델을 조언자로 쓰고, {{ui:composer.advisor.off}}은 이 창의 요청에서만 조언자를 끕니다. 조언자를 쓰면 토큰을 더 씁니다. 메인 모델보다 낮은 모델을 고르면 Claude Code가 오류를 내고, 그 오류가 창에 나옵니다. 다른 컴퓨터의 작업 공간과 다른 에이전트의 창에는 이 단추가 없습니다.
+
 ### 작업 권한 {#permission}
 권한은 에이전트가 묻지 않고 할 수 있는 일의 범위입니다.
 
@@ -150,6 +153,8 @@ Claude, Codex, Antigravity 창은 {{ui:graph.view.mighty}} 보기로 보입니�
 {{platform:mac}} 카드들 위의 가지에는 그 블록이 하위 에이전트 몇 개에게 어떤 모델로 일을 맡겼고 그중 몇 개가 아직 실행 중인지가 한 줄로 나옵니다. 결과가 나오기 전까지는 결과가 올 자리에 작은 표시가 있습니다. 하위 에이전트가 실행 중이면 보고를 기다리는 중이라고 알려 주고, 모두 끝났는데 메인 세션이 아직 일하는 동안에는 {{ui:graph.return.reviewing}} 표시가 나옵니다. 결과 카드가 생기면 이 표시는 사라지고 가지는 결과 카드로 이어집니다.
 
 {{platform:mac}} Claude 창의 흐름 아래, 입력창 위에는 {{ui:graph.log.title}} 띠가 있습니다. 머리 한 줄은 지금의 상태입니다. 메인 세션의 모델과 상태, 하위 에이전트 가운데 몇 개가 실행 중인지가 역할 색으로 나옵니다. 띠를 펼치면 가장 새 요청에서 최근에 있었던 일 다섯 줄이 시각, 누가(메인 세션의 모델이나 하위 에이전트의 이름), 무엇을(도구 호출, 하위 에이전트의 시작과 끝, 질문, {{ui:graph.block.compact}}, 알림 도착) 순서로 나옵니다. 줄을 누르면 흐름이 그 블록으로 이동합니다. 오른쪽 끝의 단추로 접으면 상태 줄만 남고, 접었는지는 창마다 기억합니다.
+
+{{platform:mac}} 조언자가 켜진 요청, 또는 실제로 조언을 구한 요청에는 왼쪽에 {{ui:graph.identity.role.advisor}} 띠가 섭니다. 머리에는 조언자의 모델과 지금 상태({{ui:graph.advisor.state.onCall}}, {{ui:graph.advisor.state.consulting}})가 나옵니다. 그 아래에는 조언을 구할 때마다 한 줄씩, 누가 구했는지, 언제였고 답까지 얼마나 걸렸는지, 작업의 어느 지점이었는지({{ui:graph.advisor.position.beforeChange}}, {{ui:graph.advisor.position.during}}, {{ui:graph.advisor.position.lastStep}}), 어떻게 끝났는지가 나옵니다. 맨 아래에는 호출 수와 조언자가 읽은 토큰이 나옵니다. 조언은 보통 암호화되어 Claude에게만 전달되므로 내용은 표시되지 않고, 띠가 그렇게 알려 줍니다. 띠에서 조언을 구한 블록까지 점선이 이어지고, 줄을 누르면 그 블록으로 이동합니다. {{ui:graph.log.title}}에도 조언자의 시작과 끝이 한 줄씩 나오고, 상태 줄에 조언자의 상태가 붙습니다.
 
 백그라운드로 시작한 하위 에이전트와 백그라운드 명령(작업)은 도는 동안 요청의 블록으로 그려지지 않고 입력창 위의 백그라운드 작업 줄에 있습니다. Mac의 Claude 창은 하위 에이전트를 위의 카드로도 보여 줍니다. 행에는 종류, 이름, 걸린 시간과 마지막 출력 한 줄이 나오고, 행을 펼치면 실행한 명령(하위 에이전트는 프롬프트 첫 줄)과 출력의 마지막 줄들(최대 6줄)이 나옵니다. 작업이 끝나 알림이 가면 Claude의 답마다 새 {{ui:graph.background.noticeRun}} 다이어그램이 생기고, 끝난 작업마다 블록 하나가 종류 줄(하위 에이전트인지 백그라운드 실행인지와 끝난 상태), 명령, 출력의 마지막 줄들, 하위 에이전트의 보고를 담습니다. {{ui:graph.view.timeline}}에서는 이 다이어그램이 새 행으로, {{ui:graph.view.structure}}에서는 맨 끝의 새 카드(보드)로 붙습니다. 휴대폰의 마이티 보기와 파이프라인도 같습니다.
 

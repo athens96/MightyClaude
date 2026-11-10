@@ -35,6 +35,9 @@ section: agent-pane
 ### 思考强度 {#effort}
 {{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 没有此项；pi 有 Off、Minimal、Low、Medium、High、XHigh；opencode 有 Low、Medium、High、Max，即模型提供的变体；Hermes 有 Low、Medium、High、XHigh、Max。
 
+### 顾问 {#advisor}
+{{platform:mac}} Claude 窗格在{{ui:composer.effort.label}}旁边有一个灯泡形状的{{ui:composer.advisor.label}}按钮。这是 Claude Code 的实验性功能：Claude 在工作过程中向另一个模型征求建议。{{ui:composer.advisor.follow}}（默认）不传递任何内容，按 Claude Code 自己的设置运行。选择某个模型后，它就是顾问；{{ui:composer.advisor.off}}只在这个窗格的请求里关闭顾问。使用顾问会多用令牌。如果选择比主模型弱的模型，Claude Code 会报错，错误会显示在窗格里。其他电脑上的工作区和其他智能体的窗格没有这个按钮。
+
 ### 权限 {#permission}
 权限决定智能体无需询问即可做哪些事。
 
@@ -150,6 +153,8 @@ Claude、Codex 和 Antigravity 窗格都以{{ui:graph.view.mighty}}视图显示�
 {{platform:mac}} 卡片上方的分支上有一行，说明该块把工作交给了多少个子智能体、使用哪个模型，以及其中有多少个仍在运行。在结果出现之前，结果将要出现的位置有一个小标记。子智能体还在运行时，它表示正在等待它们的报告；全部结束而主会话仍在工作时，它显示“{{ui:graph.return.reviewing}}”。结果卡片出现后，这个标记消失，分支连到结果卡片。
 
 {{platform:mac}} 在 Claude 窗格的流程下方、输入框上方，有一条{{ui:graph.log.title}}。它的标题行是当前状态：主会话的模型和状态，以及它的子智能体中有多少个在运行，各用其角色的颜色显示。展开后，它会列出最新请求中最近发生的五件事：时间、是谁（主会话的模型或子智能体的名称）、做了什么（工具调用、子智能体的开始和结束、提问、{{ui:graph.block.compact}}、通知到达）。点击某一行，流程会移到对应的块。用右端的按钮可以把它折叠成只剩状态行，每个窗格会记住是否折叠。
+
+{{platform:mac}} 开启了顾问的请求，或者确实征求过建议的请求，左侧会有一条{{ui:graph.identity.role.advisor}}带。标题栏显示顾问的模型和当前状态（{{ui:graph.advisor.state.onCall}}、{{ui:graph.advisor.state.consulting}}）。下面每征求一次建议就有一行：是谁征求的、什么时候以及等了多久才有答复、处在工作的哪个阶段（{{ui:graph.advisor.position.beforeChange}}、{{ui:graph.advisor.position.during}}、{{ui:graph.advisor.position.lastStep}}），以及结果如何。最下面是调用次数和顾问读取的令牌数。建议通常经加密后只送达 Claude，所以内容不会显示，这条带会说明这一点。带与征求建议的块之间有虚线相连，点击某一行会移到那个块。{{ui:graph.log.title}}里也有顾问开始和结束的两行，状态行会加上顾问的状态。
 
 在后台启动的子智能体和后台命令（任务）在运行期间不会画成请求的块，而是在输入框上方的后台任务条里。在 Mac 的 Claude 窗格中，子智能体还会显示为上面的卡片。每一行显示类型、名称、用时和输出的最后一行；展开一行会显示它运行的命令（子智能体显示提示的第一行）和输出的最后几行（最多 6 行）。任务结束、通知送达 Claude 后，Claude 的每一次回答都会生成一个新的{{ui:graph.background.noticeRun}}图表，每个已结束的任务一个块：类型行（子智能体还是后台命令，以及结束状态）、命令、输出的最后几行，以及子智能体的报告。在{{ui:graph.view.timeline}}中，这个图表是新增的一行；在{{ui:graph.view.structure}}中，它是末尾新增的一张卡片（看板）。手机上的 Mighty 视图和流水线也一样。
 

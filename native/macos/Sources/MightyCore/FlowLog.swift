@@ -147,20 +147,27 @@ public enum FlowLog {
     public static func target(_ row: Row, in runs: [MightyGraphRun], drawn: (String) -> Bool) -> String? {
         if drawn(row.nodeID) { return row.nodeID }
         for index in activity(runs).reversed() {
-            let run = runs[index]
-            let agents = run.flowAgents
-            guard let own = agents.first(where: { MightyGraphLayout.nodeID(run, suffix: "agent:" + $0.id) == row.nodeID }) else { continue }
-            var above = own.parentID, depth = 0
-            while let id = above, depth < 64, let parent = agents.first(where: { $0.id == id }) {
-                let node = MightyGraphLayout.nodeID(run, suffix: "agent:" + parent.id)
-                if drawn(node) { return node }
-                above = parent.parentID
-                depth += 1
-            }
-            let work = MightyGraphLayout.nodeID(run, suffix: MightyGraphLayout.workSuffix)
-            return drawn(work) ? work : nil
+            if let node = drawnNode(row.nodeID, in: runs[index], drawn: drawn) { return node }
+            if runs[index].flowAgents.contains(where: { MightyGraphLayout.nodeID(runs[index], suffix: "agent:" + $0.id) == row.nodeID }) { return nil }
         }
         return nil
+    }
+
+    /// The block of `run` that stands for `nodeID` on the diagram: itself when drawn, else the nearest block above it
+    /// that is, else the run's main session. Nil when `nodeID` is no sub-agent block of the run, or none of them is drawn.
+    public static func drawnNode(_ nodeID: String, in run: MightyGraphRun, drawn: (String) -> Bool) -> String? {
+        if drawn(nodeID) { return nodeID }
+        let agents = run.flowAgents
+        guard let own = agents.first(where: { MightyGraphLayout.nodeID(run, suffix: "agent:" + $0.id) == nodeID }) else { return nil }
+        var above = own.parentID, depth = 0
+        while let id = above, depth < 64, let parent = agents.first(where: { $0.id == id }) {
+            let node = MightyGraphLayout.nodeID(run, suffix: "agent:" + parent.id)
+            if drawn(node) { return node }
+            above = parent.parentID
+            depth += 1
+        }
+        let work = MightyGraphLayout.nodeID(run, suffix: MightyGraphLayout.workSuffix)
+        return drawn(work) ? work : nil
     }
 
     /// What a record of the main session's says in the log: a tool call as the transcript words it, a question it
@@ -204,8 +211,9 @@ public enum FlowLog {
 
     // MARK: Status
 
-    /// What the advisor is doing, for the status line; nil when the session has none.
-    public enum AdvisorState: Equatable, Sendable { case onCall, consulting }
+    /// What the advisor is doing, for the status line (`FlowAdvisor.status`): on call while the activity goes on, at
+    /// work on a consultation, or how often it was consulted once the activity ended. Nil when the session has none.
+    public enum AdvisorState: Equatable, Sendable { case onCall, consulting, consulted(Int) }
 
     /// The strip's header: who is doing what right now, in one line.
     public struct Status: Equatable, Sendable {
@@ -213,7 +221,7 @@ public enum FlowLog {
         public var lead: String
         /// "하위 에이전트 2/3 실행 중", or how many ended; nil when the request delegated to none.
         public var subagents: String?
-        /// "조언자 대기" or "조언자 검토 중"; nil without an advisor.
+        /// "조언자 대기", "조언자 검토 중" or "조언자 호출 2"; nil without an advisor.
         public var advisor: String?
         public var text: String { parts.map(\.text).joined(separator: " · ") }
         /// The line's parts in order, each with the role whose ink it takes.
@@ -245,6 +253,7 @@ public enum FlowLog {
         let advising: String? = switch advisor {
         case .onCall: L("graph.log.advisorOnCall")
         case .consulting: L("graph.log.advisorConsulting")
+        case .consulted(let count): L("graph.log.advisorCalls", ["count": "\(count)"])
         case nil: nil
         }
         return Status(lead: leadName(followed, else: request) + " " + state, subagents: subagents, advisor: advising)

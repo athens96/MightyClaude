@@ -196,7 +196,8 @@ public struct GraphAdvisor: Codable, Sendable, Equatable {
         self.model = model; self.usage = usage; self.calls = calls; self.total = total
     }
     public static let maximumCalls = 32
-    public static let maximumTextBytes = 2 * 1024
+    /// With `maximumCalls`, a run's advice never takes more than its result may.
+    public static let maximumTextBytes = 1024
     public static let maximumTotal = 1_000_000
     public static let states = ["consulting", "done", "declined", "error", "stopped"]
     /// Every consultation seen, kept or not.

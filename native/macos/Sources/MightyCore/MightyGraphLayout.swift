@@ -25,6 +25,8 @@ public struct MightyGraphLayout {
         /// The way back to the main session, where a run's result will go, until the result is there (`FlowReturn`):
         /// a run index. Only with a fan-out.
         case returning(Int)
+        /// The advisor's band beside a run that has an advisor (`FlowAdvisor`): a run index. Only with a fan-out.
+        case advisor(Int)
     }
     public struct Node: Identifiable {
         public let id: String
@@ -38,7 +40,7 @@ public struct MightyGraphLayout {
         public var isFixed: Bool {
             if isCompact { return true }
             switch content {
-            case .history, .delegate, .returning: return true
+            case .history, .delegate, .returning, .advisor: return true
             default: return false
             }
         }
@@ -55,7 +57,7 @@ public struct MightyGraphLayout {
             if isCompact { return false }
             switch content {
             case .request, .work, .agent, .result, .draft, .plan, .planRecord: return true
-            case .resultFiles, .execution, .images, .history, .delegate, .returning: return false
+            case .resultFiles, .execution, .images, .history, .delegate, .returning, .advisor: return false
             }
         }
         /// The least a drag may make it: an answered plan may stay as short as it folds.
@@ -141,8 +143,16 @@ public struct MightyGraphLayout {
         public var joins: Bool = false
         public var id: String { source + "→" + target }
     }
+    /// A dotted connector from an advisor's band to a block that consulted it (`FlowAdvisor.callers`). It is no edge of
+    /// the flow: nothing is laid out by it and no camera follows it.
+    public struct AdvisorLink: Identifiable, Equatable {
+        public let band: String
+        public let target: String
+        public var id: String { band + "⇢" + target }
+    }
     public var nodes: [Node] = []
     public var edges: [Edge] = []
+    public var advisorLinks: [AdvisorLink] = []
     public var size: CGSize = .zero
     /// Node coordinates keep a fixed origin, so a wide tree reaches into
     /// negative x rather than pushing the diagram. The drawn container starts
@@ -307,6 +317,37 @@ public struct MightyGraphLayout {
             if let visible, !visible.intersects(source.union(target)) { return nil }
             return Self.route(from: source, to: target, joins: edge.joins)
         }
+    }
+    /// Every advisor link's route (`advisorRoute`), with the nodes looked up once; with `visible`, one whose whole span
+    /// lies outside it is left out.
+    public func advisorRoutes(in visible: CGRect? = nil) -> [[CGPoint]] {
+        guard !advisorLinks.isEmpty else { return [] }
+        let frames = Dictionary(nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
+        return advisorLinks.compactMap { link in
+            guard let band = frames[link.band], let target = frames[link.target] else { return nil }
+            if let visible, !visible.intersects(band.union(target)) { return nil }
+            return Self.advisorRoute(from: band, to: target, around: nodes.filter { $0.id != link.band && $0.id != link.target }.map(\.frame))
+        }
+    }
+    /// From a band's trailing edge to the block that asked: straight into the block's leading edge at its header's
+    /// height when nothing stands between them; else along the gap above the block's row and down into its top by its
+    /// leading corner, so the line passes over no block of that row.
+    static func advisorRoute(from band: CGRect, to target: CGRect, around others: [CGRect]) -> [CGPoint] {
+        let inset: CGFloat = 8
+        func onBand(_ y: CGFloat) -> CGFloat { min(max(y, band.minY + inset), max(band.minY + inset, band.maxY - inset)) }
+        let level = target.minY + DesignMetrics.Layout.blockHead / 2
+        let path = CGRect(x: band.maxX, y: level - 1, width: max(0, target.minX - band.maxX), height: 2)
+        if level == onBand(level), level <= target.maxY, !others.contains(where: { $0.intersects(path) }) {
+            return [CGPoint(x: band.maxX, y: level), CGPoint(x: target.minX, y: level)]
+        }
+        let lane = target.minY - 6, start = onBand(lane), corner = target.minX + 14
+        var points = [CGPoint(x: band.maxX, y: start)]
+        if start != lane {
+            // The band ends above or below the lane: step over to it right beside the band.
+            let step = band.maxX + FlowAdvisor.gap / 2
+            points += [CGPoint(x: step, y: start), CGPoint(x: step, y: lane)]
+        }
+        return points + [CGPoint(x: corner, y: lane), CGPoint(x: corner, y: target.minY)]
     }
     static func route(from source: CGRect, to target: CGRect, joins: Bool) -> [CGPoint] {
         let start = CGPoint(x: source.midX, y: source.maxY)
@@ -663,6 +704,40 @@ public struct MightyGraphLayout {
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
             result.size.height = max(result.size.height, frame.maxY + 24 - result.originY)
             nextY[runIndex] = frame.maxY + executionGap
+        }
+        // The advisor's band stands left of its run's column, from the 실행 block's top to the run's last block, left of
+        // every card it would share rows with: an attachment as well, so no edge, no centreline, and nothing already
+        // placed moves. Only the leading canvas extent grows. Dotted links go from it to the blocks that asked.
+        if fanOut != nil {
+            func flowRun(_ content: Content) -> Int? {
+                switch content {
+                case .request(let index), .work(let index), .result(let index), .plan(let index), .agent(let index, _), .delegate(let index, _), .returning(let index): index
+                default: nil
+                }
+            }
+            for (runIndex, run) in runs.enumerated() where FlowAdvisor.shows(run) {
+                guard let work = anchor(runIndex) else { continue }
+                let id = nodeID(run, suffix: FlowAdvisor.suffix)
+                guard !result.nodes.contains(where: { $0.id == id }) else { continue }
+                let bottom = result.nodes.filter { flowRun($0.content) == runIndex }.map(\.frame.maxY).max() ?? work.frame.maxY
+                let y = work.frame.minY, height = max(FlowAdvisor.minimumHeight, bottom - y)
+                let left = result.nodes.filter { $0.frame.minY < y + height && $0.frame.maxY > y }.map(\.frame.minX).min() ?? work.frame.minX
+                let frame = CGRect(x: min(left, work.frame.minX) - FlowAdvisor.gap - FlowAdvisor.width, y: y, width: FlowAdvisor.width, height: height)
+                let drawn = Set(result.nodes.map(\.id))
+                result.nodes.append(Node(id: id, content: .advisor(runIndex), frame: frame))
+                var linked = Set<String>()
+                for caller in FlowAdvisor.callers(run) {
+                    // A caller under a folded card is laid out nowhere: the card above it stands for it.
+                    guard let target = FlowLog.drawnNode(caller, in: run, drawn: drawn.contains), linked.insert(target).inserted else { continue }
+                    result.advisorLinks.append(AdvisorLink(band: id, target: target))
+                }
+                let origin = MightyGraphCamera.originX(leadingMinX: frame.minX)
+                if origin < result.originX {
+                    result.size.width += result.originX - origin
+                    result.originX = origin
+                }
+                result.size.height = max(result.size.height, frame.maxY + 24 - result.originY)
+            }
         }
         result.fittedResultID = Self.fittedResultID(runs: runs, viewport: viewport, sharedResultSize: sharedResultSize)
         result.resultLimit = resultLimit

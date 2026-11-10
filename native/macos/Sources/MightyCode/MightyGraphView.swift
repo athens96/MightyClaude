@@ -380,9 +380,9 @@ struct MightyGraphView: View {
                 }
                 // The role view's session log, between the diagram and the composer: who is doing what, and the last
                 // things that happened. Its rows are read only while it is open.
-                if fanOut != nil, let status = FlowLog.status(runs) {
+                if fanOut != nil, let status = FlowLog.status(runs, advisor: FlowAdvisor.status(runs)) {
                     MightyGraphLogStrip(sessionID: sessionID, status: status,
-                                        rows: logOpen ? FlowLog.rows(runs, definitions: agentDefinitions.definitions) : [], open: logOpen,
+                                        rows: logOpen ? FlowLog.rows(runs, definitions: agentDefinitions.definitions, advisor: FlowAdvisor.notes(runs)) : [], open: logOpen,
                                         onToggle: {
                                             onFocus()
                                             onLogOpen(!logOpen)
@@ -677,12 +677,26 @@ struct MightyGraphView: View {
                 .stroke(Palette.ink2.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
             Self.edgePath(split.into)
                 .stroke(Palette.run, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            // An advisor's band to the blocks that asked it: dotted, in the advisor's ink, and no arrow of the flow.
+            Self.linkPath(graph.advisorRoutes(in: visible))
+                .stroke(Palette.flow(.advisor), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [1, 5]))
         }
         // Routed in node coordinates, drawn in the container's, which starts at
         // the diagram's leading edge rather than at x = 0, and at its top
         // rather than at y = 0 once older requests sit above.
         .offset(x: MightyGraphCamera.drawnX(nodeX: 0, originX: graph.originX), y: -graph.originY)
         .allowsHitTesting(false).accessibilityHidden(true)
+    }
+
+    /// Plain polylines, without the arrow head an edge of the flow ends in.
+    private static func linkPath(_ routes: [[CGPoint]]) -> Path {
+        Path { path in
+            for points in routes {
+                guard let start = points.first else { continue }
+                path.move(to: start)
+                for point in points.dropFirst() { path.addLine(to: point) }
+            }
+        }
     }
 
     private static func edgePath(_ routes: [[CGPoint]]) -> Path {
@@ -813,6 +827,17 @@ struct MightyGraphView: View {
             // Where the result will go: the way back to the main session, as it is at this moment.
             if let state = FlowReturn.state(runs[index]) {
                 MightyGraphReturnNode(nodeID: node.id, state: state)
+            }
+        case .advisor(let index):
+            // Beside the run: the advisor its session asks, and each time it was asked.
+            if let band = FlowAdvisor.band(runs[index], definitions: agentDefinitions.definitions) {
+                MightyGraphAdvisorBand(nodeID: node.id, band: band, height: node.frame.height) { caller in
+                    // The block that asked, or what stands for it on the diagram while a folded card hides it.
+                    let drawn = Set(layout.nodes.map(\.id))
+                    guard let id = FlowLog.drawnNode(caller, in: runs[index], drawn: drawn.contains) else { return }
+                    onFocus()
+                    publish(.reaim(nodeID: id, alignTop: false), animated: true)
+                }
             }
         case .plan:
             // The plan alone on the block card, its page scrolling inside;
