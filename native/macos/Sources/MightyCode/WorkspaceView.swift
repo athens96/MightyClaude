@@ -930,7 +930,8 @@ struct WorkspaceAddMenuItems: View {
     let workspace: Workspace
 
     var body: some View {
-        ForEach(ProviderOptions.ids, id: \.self) { provider in
+        // pi runs on this Mac only for now: a remote workspace's menu leaves it out.
+        ForEach(ProviderOptions.ids.filter { workspace.remote == nil || $0 != "pi" }, id: \.self) { provider in
             Button { store.addAgentPane(provider: provider, workspaceId: workspace.id) } label: {
                 Label { Text(ProviderOptions.betaTitle(provider, L("workspace.newAgentPane", ["provider": ProviderOptions.label(provider)]))) } icon: {
                     if let image = ProviderIconImage.image(provider: provider, pointSize: 12) { Image(nsImage: image) }

@@ -721,6 +721,8 @@ final class AppStore: ObservableObject, DelegationHost {
 
     func runBlockedReason(_ session: RunSession, checkRuntime: Bool = true) -> String? {
         guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return L("run.blocked.selectWorkspace") }
+        // pi's RPC run is local for now.
+        if workspace.remote != nil, session.kind != "shell", session.provider == "pi" { return L("run.blocked.piRemote") }
         // A remote pane runs on its host: this Mac's CLI updates and plugin changes never hold it.
         if workspace.remote != nil { return remoteRunBlockedReason(session, workspace: workspace, checkRuntime: checkRuntime) }
         // A delegated child runs only in its own worktree, never in its parent's checkout.

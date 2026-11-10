@@ -474,7 +474,7 @@ func permissionLabel(_ mode: String, provider: String = "claude") -> String {
     if provider == "claude" {
         switch mode { case "plan": return "Plan mode"; case "acceptEdits": return "Accept file edits"; case "auto": return "Auto mode"; case "fullAccess": return "Bypass"; default: return "Always ask" }
     }
-    switch mode { case "plan": return L("permission.label.plan"); case "acceptEdits": return provider == "codex" ? L("permission.label.acceptEditsCodex") : L("permission.label.acceptEdits"); case "onRequest": return L("permission.label.onRequest"); case "fullAccess": return L("permission.label.fullAccess"); default: return provider == "codex" ? L("permission.label.defaultCodex") : L("permission.label.default") }
+    switch mode { case "plan": return L("permission.label.plan"); case "acceptEdits": return provider == "codex" ? L("permission.label.acceptEditsCodex") : L("permission.label.acceptEdits"); case "onRequest": return L("permission.label.onRequest"); case "fullAccess": return L("permission.label.fullAccess"); default: return provider == "codex" || provider == "pi" ? L("permission.label.defaultCodex") : L("permission.label.default") }
 }
 
 func permissionDescription(_ mode: String, provider: String) -> String {
@@ -487,6 +487,8 @@ func permissionDescription(_ mode: String, provider: String) -> String {
         default: return L("permission.claude.default")
         }
     }
+    // pi has no approval window: read-only tools, or every tool without asking.
+    if provider == "pi" { return mode == "fullAccess" ? L("permission.pi.fullAccess") : L("permission.pi.default") }
     if mode == "fullAccess" { return L("permission.other.fullAccess") }
     if provider == "codex", mode == "onRequest" { return L("permission.codex.onRequest") }
     if provider == "codex" { return mode == "acceptEdits" ? L("permission.codex.acceptEdits") : L("permission.codex.default") }

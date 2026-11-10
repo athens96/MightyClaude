@@ -88,6 +88,8 @@ extension AppStore {
         // presses Enter for the user (§1.5).
         pendingTerminalInput[id] = TerminalInput(text: command, autoRun: true)
         endCLILogin(provider)
+        // pi signs in inside itself.
+        if provider == "pi" { cliAccountMessages[provider] = L("settings.cliAccounts.piLoginHint") }
         if settingUpBedrock {
             // Bedrock auth status reports backend configuration, even before
             // AWS credentials work. It cannot complete an OAuth polling flow.

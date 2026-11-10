@@ -354,7 +354,7 @@ struct SessionPaneView: View {
     private func modelMenu(maximumTextWidth: CGFloat) -> some View {
         Menu {
             Section(L("composer.label.runner")) {
-                ForEach(ProviderOptions.ids, id: \.self) { provider in
+                ForEach(ProviderOptions.ids.filter { $0 != "pi" || !store.isRemoteSession(session) }, id: \.self) { provider in
                     Button { store.selectSession(session.id); store.changeProvider(session.id, to: provider) } label: {
                         if provider == session.provider { Label(ProviderOptions.betaTitle(provider, ProviderOptions.label(provider)), systemImage: "checkmark") }
                         else { Text(ProviderOptions.betaTitle(provider, ProviderOptions.label(provider))) }
@@ -1163,7 +1163,7 @@ struct SessionPaneView: View {
 }
 
 func effortLabel(_ effort: String) -> String {
-    switch effort { case "low": return "Low"; case "medium": return "Medium"; case "high": return "High"; case "xhigh": return "XHigh"; case "max": return "Max"; default: return "Auto" }
+    switch effort { case "off": return "Off"; case "minimal": return "Minimal"; case "low": return "Low"; case "medium": return "Medium"; case "high": return "High"; case "xhigh": return "XHigh"; case "max": return "Max"; default: return "Auto" }
 }
 
 /// The last reply's parsed `next:` options, kept while that reply's id and
