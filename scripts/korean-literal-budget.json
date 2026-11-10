@@ -150,6 +150,11 @@
         "또는"
       ],
       "reason": "Matched against the agent's own reply text to split Korean next-action choices, as on macOS and Windows; the English words beside them cover English replies."
+    },
+    {
+      "file": "native/macos/Sources/MightyCore/TerminalPrompt.swift",
+      "literal": "(password|passphrase|passcode|\\bpin\\b|token|secret|비밀번호|암호|パスワード|密码)[^\\n]*[:?：]\\s*$",
+      "reason": "A pattern matched against what a terminal command prints (TerminalPromptDetector): Korean, Japanese and Chinese programs ask for a password in those words. It is never shown."
     }
   ]
 }
