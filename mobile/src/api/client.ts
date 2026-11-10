@@ -10,6 +10,7 @@ import {
 } from '@/api/relay/transport';
 import { appForeground } from '@/api/relay/foreground';
 import { LeasePool, type PoolIdentity } from '@/lib/connection-pool';
+import { appUpdateBody } from '@/lib/app-update';
 import { clientDeviceName } from '@/lib/device';
 import type { DeviceAuthState } from '@/lib/device-token';
 import type { ConnectionRoute } from '@/lib/direct';
@@ -34,6 +35,7 @@ import {
   type GuidedRequest,
   type HostInfo,
   type MessageCommandAction,
+  type MobileAppUpdate,
   type MobileSessionDetail,
   type MobileState,
   type OkResponse,
@@ -305,6 +307,12 @@ export interface MobileClient {
     input: { promptId: string; answer: TerminalPromptAnswerKind; text?: string },
     signal?: AbortSignal,
   ): Promise<OkResponse>;
+  /** Checks the desktop app for an update, or installs it and restarts ("appUpdate" capability); a 409 says why not. */
+  appUpdate(
+    action: 'check' | 'install',
+    confirm?: boolean,
+    signal?: AbortSignal,
+  ): Promise<MobileAppUpdate>;
   /** Gives this host the relay push handle and the kinds this phone wants ("push" capability). */
   registerPush(input: { handle: string; kinds: PushKind[] }, signal?: AbortSignal): Promise<OkResponse>;
   /** Asks this host to stop pushing to this phone. */
@@ -646,6 +654,9 @@ export function createClient(channel: RelayChannel): MobileClient {
         input,
         signal,
       ),
+
+    appUpdate: (action, confirm, signal) =>
+      request<MobileAppUpdate>('POST', '/m1/app-update', appUpdateBody(action, confirm), signal),
 
     registerPush: (input, signal) => request<OkResponse>('POST', '/m1/push/register', input, signal),
     unregisterPush: (signal) => request<OkResponse>('POST', '/m1/push/unregister', {}, signal),

@@ -4,10 +4,14 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeRepairNeeded, type RelayState } from '@/api/relay/transport';
 import type { MobileState } from '@/api/types';
+import { AppUpdateBanner } from '@/components/app-update-banner';
 import { HostWorkspaces } from '@/components/host-workspaces';
 import { ScreenShareEntry } from '@/components/screen-share-entry';
 import { EmptyState, ErrorBanner } from '@/components/ui';
+import { useCapabilities } from '@/hooks/use-capabilities';
 import { useLongPoll } from '@/hooks/use-long-poll';
+import { parseAppUpdate } from '@/lib/app-update';
+import { hasCapability } from '@/lib/capabilities';
 import { t } from '@/lib/i18n';
 import { useForgetRefusedSecret, useHostsStore } from '@/store/hosts';
 import { useHostClient, useHostState, useLiveStore } from '@/store/live';
@@ -27,6 +31,7 @@ export default function HostScreen() {
   const state = useHostState(hostId);
   const applyState = useLiveStore((store) => store.applyState);
   const insets = useSafeAreaInsets();
+  const capabilities = useCapabilities(hostId, client);
 
   const fetchPage = useCallback(
     (since: number | undefined, signal: AbortSignal) => {
@@ -92,6 +97,14 @@ export default function HostScreen() {
         <ErrorBanner message={describeRepairNeeded(poll.error)} />
       ) : poll.error ? (
         <ErrorBanner message={poll.error} />
+      ) : null}
+
+      {hasCapability(capabilities, 'appUpdate') ? (
+        <AppUpdateBanner
+          hostId={host.id}
+          hostName={state?.hostName ?? host.name}
+          update={parseAppUpdate(state?.appUpdate)}
+        />
       ) : null}
 
       <View style={styles.actions}>

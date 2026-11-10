@@ -90,7 +90,8 @@ export type Capability =
   | 'structure'
   | 'push'
   | 'fileChanges'
-  | 'workMap';
+  | 'workMap'
+  | 'appUpdate';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -109,6 +110,7 @@ export const CAPABILITIES: readonly Capability[] = [
   'push',
   'fileChanges',
   'workMap',
+  'appUpdate',
 ] as const;
 
 export interface HostInfo {
@@ -186,6 +188,30 @@ export interface MobileState {
   hostName: string;
   workspaces: MobileWorkspace[];
   sessions: MobileSessionSummary[];
+  /** Where the desktop app's update stands; absent on a build that cannot update itself (docs/phone-desktop-update.md). */
+  appUpdate?: MobileAppUpdate;
+}
+
+export type AppUpdatePhase =
+  | 'idle'
+  | 'checking'
+  | 'upToDate'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'installing'
+  | 'failed';
+
+export interface MobileAppUpdate {
+  phase: AppUpdatePhase;
+  current: string;
+  available?: string;
+  notes?: string;
+  /** 0…1, while downloading. */
+  progress?: number;
+  error?: string;
+  /** Requests running now. */
+  running: number;
 }
 
 export interface LogActivity {
