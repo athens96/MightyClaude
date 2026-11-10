@@ -69,6 +69,7 @@ pi（`pi`）是支持多家模型提供商的开源编码智能体 CLI。
 - 模型：登录后，列表来自 `pi --list-models`，以“提供商/模型”显示，第一项遵循 pi 自身的设置。不支持思考的模型不显示{{ui:composer.effort.label}}。级别为 Off、Minimal、Low、Medium、High、XHigh。
 - 权限：pi 没有审批窗口，所以只有两种模式。{{ui:permission.label.defaultCodex}}模式只启用读取工具（read、grep、find、ls）。{{ui:permission.label.fullAccess}}模式不经询问使用所有工具，也可能触及项目之外。
 - 每次请求都会在窗格的工作文件夹中运行 `pi --mode rpc`，并延续窗格自己的会话，会话保存在 `~/.pi/agent/sessions`。{{ui:resume.choice.resume}}中也会列出该文件夹的 pi 会话。
+- 提问：pi 没有提问工具，因此应用在每次运行时以扩展的形式加入 `ask_user` 工具（不会更改你的 `~/.pi` 设置）。pi 通过它提问时会弹出[提问卡片](approvals.md#questions)，回答后同一请求继续进行。其他扩展打开的选择、确认和输入对话框也以同样的卡片显示。
 - 暂不支持：pi 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开，也没有审批卡。目前只能在 Mac 上使用。
 
 ### opencode {#opencode}
@@ -79,6 +80,7 @@ opencode（`opencode`）是支持多家模型提供商的开源编码智能体 C
 - 模型：列表来自 `opencode models`，以“提供商/模型”显示，第一项遵循 opencode 自身的设置。
 - 权限：所选模式会成为该次请求专用的 opencode 规则，规则留待询问的操作会像 Claude 一样以审批卡出现在窗格中。{{ui:permission.label.default}}在修改文件、执行命令、访问网络和访问项目外内容前询问；{{ui:permission.label.acceptEdits}}修改文件不询问；{{ui:permission.label.plan}}使用不修改文件的 opencode plan 智能体运行；{{ui:permission.label.fullAccess}}从不询问。
 - 每次请求都会在窗格的工作文件夹中运行 `opencode acp`（OpenCode 2，Agent Client Protocol），并延续窗格自己的会话，会话保存在 opencode 的 `opencode.db`。{{ui:resume.choice.resume}}中也会列出该文件夹的 opencode 会话。用量中显示会话费用、正在使用的上下文和该次请求的令牌。
+- 提问：opencode 通过 `question` 工具提问时会弹出[提问卡片](approvals.md#questions)，回答后同一请求继续进行。在卡片上点击{{ui:phone.questionnaire.cancel}}后，opencode 会结束该请求。
 - 暂不支持：opencode 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开。目前只能在 Mac 上使用。
 
 ### Hermes {#hermes}
@@ -89,7 +91,8 @@ Hermes（`hermes`）是 Nous Research 的开源智能体 CLI（Hermes Agent）�
 - 模型：第一项跟随 Hermes 自身的设置（通过 `hermes model` 设定的默认模型）。Hermes 只有打开会话后才给出模型列表，因此发送第一个请求后才会出现 `提供商:模型` 列表。
 - 权限：{{ui:permission.label.default}}在每次修改文件前用窗格中的批准卡片询问；{{ui:permission.label.acceptEdits}}不询问工作文件夹内的修改；{{ui:permission.label.fullAccess}}即 Hermes 的 `--yolo`，危险命令也不询问。危险命令（如 `rm -rf`）按 Hermes 的审批设置（`approvals.mode`）用卡片询问，其他命令和读取不询问。没有仅规划的模式。{{ui:permission.label.fullAccess}}在会话开始时确定，已开始的会话要从新对话起才生效。
 - 每个请求都会在窗格的工作文件夹中运行 `hermes acp`（Agent Client Protocol），并继续该窗格的会话。实际工作由 Hermes 的网关（后台进程）完成，它按需启动，空闲时退出。会话保存在 `~/.hermes/state.db` 中，{{ui:resume.choice.resume}}中也会列出此文件夹的 Hermes 会话。用量显示会话的累计令牌数和正在使用的上下文；Hermes 不报告费用。
-- 暂不支持：Hermes 带选项的提问会被跳过，并在记录中注明。Hermes 窗格不参与[Mighty 编排](delegation.md)，也无法在[远程工作区](remote.md)中打开。目前仅在 Mac 上可用。
+- 提问：Hermes 通过 clarify 工具提问时会弹出[提问卡片](approvals.md#questions)，回答后同一请求继续进行。Hermes 默认在编辑器连接（ACP）中关闭此工具，要使用请在终端中通过 `hermes tools` 打开。
+- 暂不支持：Hermes 窗格不参与[Mighty 编排](delegation.md)，也无法在[远程工作区](remote.md)中打开。目前仅在 Mac 上可用。
 
 ### 更多运行设置 {#run-settings}
 点击 … 按钮会打开{{ui:settings.run.title}}。

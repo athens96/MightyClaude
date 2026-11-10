@@ -61,7 +61,7 @@ ACP를 골랐다. 승인 카드(Claude·Codex가 쓰는 `ToolPermissionRequest` 
 - 요청마다 프로세스 하나: `opencode acp`(cwd = 창의 작업 폴더). `opencode acp`는 자기만의 서버(`opencode serve --stdio`)를 띄우고, 환경을 물려준다.
 - 환경: `OPENCODE_CONFIG_CONTENT={"permissions":[…]}`(아래 권한 표). 2는 이 문서를 사용자·프로젝트 설정 뒤에 읽는다. 사용자 설정 파일은 건드리지 않는다. 사용자가 이미 `OPENCODE_CONFIG_CONTENT`를 쓰고 있었다면 그 요청에서는 앱의 것으로 바뀐다.
 - stdio는 JSON-RPC 2.0, 한 줄에 한 객체(`ACPChannel`, `MightyCore/ACPChannel.swift`). 앱이 보내는 순서:
-  1. `initialize` `{protocolVersion: 1, clientCapabilities: {fs: {readTextFile: false, writeTextFile: false}, terminal: false}, clientInfo}`. elicitation 기능은 알리지 않는다(아래).
+  1. `initialize` `{protocolVersion: 1, clientCapabilities: {fs: {readTextFile: false, writeTextFile: false}, terminal: false, elicitation: {form: {}}}, clientInfo}`. form elicitation을 알려야 `question` 도구가 묻는다(아래 "질문").
   2. 이어하기 id가 없으면 `session/new` `{cwd, mcpServers: []}`.
      - 있으면 `sessionCapabilities.resume`이 있을 때 `session/resume`(2는 있다), 없고 `loadSession`이면 `session/load`(재생되는 update는 무시).
      - cwd가 세션의 폴더와 다르거나 세션이 없어 실패하면, 한 줄 알리고 `session/new`.
@@ -110,8 +110,23 @@ ACP를 골랐다. 승인 카드(Claude·Codex가 쓰는 `ToolPermissionRequest` 
 | 전체 접근(fullAccess) | `*` = allow | 묻지 않는다 |
 
 - `external_directory`는 2에서 기본 allow가 되었으므로 묻는 모드마다 ask 규칙을 명시한다.
-- `question` 도구: 2는 클라이언트가 `clientCapabilities.elicitation.form`을 알릴 때만 `elicitation/create`로 묻는다. 앱은 알리지 않으므로 2가 "이 클라이언트에서는 질문을 보일 수 없다"며 답 없이 이어 간다(실패가 아니다). 앱의 질문 카드로 받는 것은 나중 단계.
+- `question` 도구: 2는 클라이언트가 `clientCapabilities.elicitation.form`을 알릴 때만 `elicitation/create`로 묻는다. 앱이 알리므로 질문 카드로 온다(아래 "질문"). 알리지 않던 때에는 2가 "이 클라이언트에서는 질문을 보일 수 없다"고 도구 결과를 내고 모델이 글로 선택지를 적었다.
 - 기본값은 기본 권한.
+
+## 질문
+
+OpenCode 2.2.7 실물로 확인했고 fixture는 그 녹화다(`opencode-acp-question.jsonl`, `-question-multiple.jsonl`, `-question-dismissed.jsonl`). 근거 소스는 `packages/cli/src/acp/elicitation.ts`.
+
+- 요청(에이전트 → 앱, JSON-RPC 요청, id는 숫자): `elicitation/create` `{mode: "form", sessionId, toolCallId, message: "Questions", requestedSchema: {type: "object", properties, required: []}}`.
+  - 하나 고르기: `q0: {type: "string", title: <머리글>, description: <질문>, oneOf: [{const, title, description}]}`
+  - 여러 개 고르기: `q0: {type: "array", title, description, items: {anyOf: [{const, title, description}]}}`
+  - 직접 쓰기를 받는 질문에는 `q0_custom: {type: "string", title: "<머리글> (other)"}`가 함께 온다. 이것은 질문이 아니라 카드의 "직접 쓰기" 줄이다.
+- 카드(`ACPElicitationForm` → `AgentQuestions`): 속성 하나가 질문 하나다. `title`이 머리글, `description`이 질문, `oneOf`/`anyOf`의 항목이 선택지(`title`이 이름, `const`가 보낼 값)다. `enum`(+`enumNames`), 보기 없는 `string`(입력 칸), `boolean`(예/아니요)도 받는다. JSON 객체에는 순서가 없어 키를 숫자 순으로 정렬한다(`q0, q1, … q10`).
+- 답: `{action: "accept", content: {q0: "Red"}}`, 여러 개는 `{q0: ["Apple", "Cherry"]}`, 직접 쓴 답은 `{q0_custom: "Purple"}`(여러 개 고르기에서는 고른 것과 함께 `{q0: […], q0_custom: "…"}`). `_custom`이 없는 질문에 쓴 답은 카드에서 거절한다(카드는 남는다).
+- 카드의 취소: `{action: "decline"}`. 2는 도구를 `failed`("The user dismissed this question")로 닫고 **턴을 끝낸다**(`session/prompt`의 `stopReason: "cancelled"`). 실행은 실패가 아니라 끝난 것으로 본다.
+- 카드로 보일 수 없는 form(숫자·객체 속성, 질문 8개나 보기 12개 초과, 같은 질문이나 같은 이름의 보기)은 `decline`으로 답하고 한 줄 남긴다(`acp.channel.formDeclined`). 2는 위와 같이 턴을 끝낸다. 알리지 않던 때처럼 모델이 글로 이어 가게 할 방법은 form을 알린 뒤에는 없다.
+- 카드가 떠 있는 동안 그 호출이 `completed`/`failed`가 되거나 에이전트가 요청을 거두면(`$/cancel_request`) 카드를 거둔다. 실행을 멈추면 답 없이 거둔다.
+- 폰: 카드가 Claude의 질문과 같은 `ToolPermissionRequest`라 폰에도 그대로 가고, 폰의 답도 같은 길로 온다.
 
 ## 모델과 사고 강도
 
@@ -137,6 +152,8 @@ ACP를 골랐다. 승인 카드(Claude·Codex가 쓰는 `ToolPermissionRequest` 
 
 ## 실물 CLI 없이 확인하지 못한 것
 
+질문 절의 fixture(`opencode-acp-question*.jsonl`)만 실물 2.2.7의 녹화다(앞의 두 줄, `initialize`와 `session/new`의 답은 아래 fixture의 것을 그대로 썼다).
+
 - fixture(`native/contracts/fixtures/opencode-acp-{answer,tools,auth,resume-missing}.jsonl`)는 녹화가 아니라 **2.2.7 소스에서 옮겨 쓴 것**이다. 실물로 다시 볼 것:
   - 실제 줄 순서와 `messageId` 값
   - `tool_call` 첫 이벤트의 빈 `rawInput`
@@ -155,7 +172,6 @@ ACP를 골랐다. 승인 카드(Claude·Codex가 쓰는 `ToolPermissionRequest` 
 
 - Windows(Core·WinUI)와 폰, 원격 작업 공간의 opencode 창, 위임 자식으로 opencode 고르기.
 - "항상 허용"(allow_always).
-- `elicitation/create`(question 도구)를 앱의 질문 카드로 받기.
 - `_session/steering`으로 실행 중 끼어들기.
 - `SessionHistory`로 이전 요청 불러오기, opencode 스킬의 `/` 명령.
 - Hermes(`hermes acp`)는 같은 `ACPChannel`로 붙였다([Hermes 에이전트 창](hermes-agent.md)). provider별로 바뀌는 것은 argv, 권한 전달 방식, 로그인 판정, 설정의 id다.

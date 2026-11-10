@@ -24,7 +24,7 @@ Nous Research의 [Hermes Agent](https://hermes-agent.nousresearch.com)(명령 `h
 | 토큰 | 요청 전체 합 | **세션 누적** |
 | 비용 | 세션 누적 비용 | 알려 주지 않는다 |
 | 도구의 `rawInput` | 있다 | 자기 도구에는 없다(제목·위치·내용으로 요약한다) |
-| 질문 | elicitation을 알리지 않으면 건너뛴다 | 선택지가 여럿인 승인 요청으로 온다. 앱이 건너뛴다 |
+| 질문 | form elicitation을 알려야 묻는다 | 알리면 form으로, 아니면 선택지가 여럿인 승인 요청으로 온다. 둘 다 질문 카드가 된다. ACP에서는 clarify 도구가 기본으로 꺼져 있다 |
 
 ## 설치와 로그인
 
@@ -53,7 +53,7 @@ Nous Research의 [Hermes Agent](https://hermes-agent.nousresearch.com)(명령 `h
 - `hermes acp`는 이 사용자 홈의 게이트웨이 데몬에 붙는다(`connect_gateway`, 없으면 `idle_exit`로 띄운다). 세션·실행·승인 대기는 데몬의 것이다.
 - 환경: 전체 접근이면 `HERMES_YOLO_MODE=1`, 아니면 그 변수를 **지운다**(셸이 내보낸 값이 창의 선택을 덮지 않게, `HermesAgent.apply`). `~/.hermes/config.yaml`과 `.env`는 건드리지 않는다.
 - stdio는 JSON-RPC 2.0, 한 줄에 한 객체(`ACPChannel`). 앱이 보내는 순서:
-  1. `initialize` `{protocolVersion: 1, clientCapabilities: {fs: {readTextFile: false, writeTextFile: false}, terminal: false}, clientInfo}`. elicitation은 알리지 않는다.
+  1. `initialize` `{protocolVersion: 1, clientCapabilities: {fs: {readTextFile: false, writeTextFile: false}, terminal: false, elicitation: {form: {}}}, clientInfo}`. form elicitation을 알리므로 질문(clarify)이 form으로 온다.
   2. 이어하기 id가 없으면 `session/new` `{cwd, mcpServers: []}`. 있으면 `session/resume`(Hermes는 `sessionCapabilities.resume`을 알린다).
      - Hermes는 resume에 답하기 **전에** 이전 대화를 `session/update`로 다시 보낸다. 세션이 열리기 전에 온 update는 이 요청의 것이 아니므로 버린다.
      - 세션이 없으면 `not_found` 오류가 오고, 한 줄 알리고 `session/new`.
@@ -119,7 +119,13 @@ Hermes에는 승인이 둘 있다.
   - 기록을 읽지 못하면 그대로 잇는다.
 - 카드의 답: 허용 → Hermes의 `allow_once`, 거부 → `deny`(reject_once). "세션 동안 허용"(`allow_session`)과 "항상 허용"(`allow_always`)은 내보이지 않는다.
 - 수정 승인의 `rawInput`은 `{tool, arguments}`다. 카드에는 `arguments`를 풀어 보인다(`ACPChannel.displayInput`). 내용이 64KB를 넘는 쓰기는 카드에 다 보일 수 없어 거부된다(수정 허용 모드에서는 묻지 않으므로 된다).
-- **질문(clarify)**: 앱이 elicitation을 알리지 않으므로 Hermes는 선택지마다 `allow_once` 옵션을 단 승인 요청으로 묻는다. 카드에는 허용이 하나뿐이라 고를 수 없다. `allow_once`가 둘 이상이면 앱이 건너뛰기(reject_once)로 답하고 질문과 선택지를 한 줄 남긴다(`acp.channel.questionSkipped`). Hermes는 답 없이 이어 간다.
+- **질문(clarify)**: 앱의 질문 카드(Claude의 AskUserQuestion과 같은 카드, `AgentQuestions`)로 받는다. 모양은 `acp_adapter/elicitation.py`의 것이고, fixture `hermes-acp-clarify.jsonl`은 0.23.1의 그 함수들(`build_clarify_elicitation`, `build_clarify_permission`)이 만든 프레임이다(모델 녹화가 아니다. 아래 "아직 확인하지 못한 것").
+  - 앱이 `elicitation.form`을 알리므로 `elicitation/create` `{sessionId, mode: "form", message: <질문>, requestedSchema: {type: "object", properties: {answer: …}, required: ["answer"]}}`로 온다. `answer`는 선택지가 있으면 `{type: "string", enum: […]}`, 여러 개 고르기면 `{type: "array", items: {type: "string", enum: […]}}`, 없으면 `{type: "string"}`(입력 칸)이다. `toolCallId`가 없어 활동 행은 만들지 않는다.
+  - 답: `{action: "accept", content: {answer: "Yes"}}`, 여러 개는 `{answer: ["a", "b"]}`. Hermes는 `answer`의 문자열을 `enum`과 맞춰 보지 않으므로 **직접 쓴 답도 같은 `answer`로 간다**(여러 개 고르기에서는 목록의 마지막 항목). 카드의 취소는 `{action: "decline"}`이고 Hermes는 건너뛰기(빈 답)로 읽고 이어 간다.
+  - form을 알리지 않은 클라이언트에는 선택지마다 `allow_once` 옵션(`choice-N`)과 `reject_once`(`skip`)를 단 승인 요청(`toolCallId: clarify-<id>`, `rawInput: {question, choices}`)으로 온다. `allow_once`가 둘 이상이면 이것도 질문 카드로 보이고, 고른 선택지의 `optionId`로 답한다. 이 모양에는 직접 쓴 답을 실을 곳이 없어 카드에서 거절한다. 취소는 `skip`이다.
+  - 카드로 보일 수 없으면(같은 이름의 선택지, 보기 12개 초과) 전처럼 건너뛰기로 답하고 질문과 선택지를 한 줄 남긴다(`acp.channel.questionSkipped`). form이면 `decline`과 `acp.channel.formDeclined`.
+  - **ACP의 Hermes에는 clarify 도구가 기본으로 없다**(`toolsets.py`의 `hermes-acp` = coding 도구에서 clarify를 뺀 것). 사용자가 `hermes tools`로 ACP 플랫폼에 clarify를 켜야 모델이 이 도구를 쓴다. 꺼져 있으면 모델이 글로 묻는다. 앱은 사용자의 Hermes 설정을 바꾸지 않는다.
+  - 폰: 카드가 Claude의 질문과 같은 `ToolPermissionRequest`라 폰에도 그대로 가고, 폰의 답도 같은 길로 온다.
 - 승인은 Hermes의 `approvals.timeout`(기본 300초)이 지나면 Hermes가 스스로 거절한다.
 - 기본값은 기본 권한.
 
@@ -183,7 +189,7 @@ fixture(`native/contracts/fixtures/hermes-acp-{answer,tools,auth,resume,resume-m
 
 ## 아직 확인하지 못한 것
 
-- 질문(clarify)의 승인 요청 모양: 녹화한 모델에는 clarify 도구가 없었다. 소스(`acp_adapter/elicitation.py`)대로 시험한다.
+- 질문(clarify)을 모델이 실제로 묻는 턴: 실물 0.23.1의 ACP 도구 모음에는 clarify가 없어(사용자 설정으로만 켠다) 모델이 "clarify 도구가 없다"며 글로 물었다(form을 알린 실행과 알리지 않은 실행 둘 다). 프레임은 Hermes 자신의 생성 함수로 만들어 시험했고, form을 알려도 보통 실행이 그대로 되는 것은 실물로 확인했다. 답이 간 뒤 게이트웨이의 `clarify.respond`와 턴이 이어지는 것은 확인하지 못했다.
 - 열쇠 없이 쓰는 로컬 끝점(Ollama 등)만 설정한 Hermes가 `authMethods`에 제공자를 내는지. 내지 않으면 앱이 요청을 막는다.
 - 제공자 로그인이 끊겼을 때(만료된 토큰, 틀린 키)의 실제 문구.
 - 압축된 대화의 `parent_session_id` 사슬(가지·하위 에이전트 세션과 섞이지 않는지), WAL 중 읽기.
@@ -196,7 +202,6 @@ fixture(`native/contracts/fixtures/hermes-acp-{answer,tools,auth,resume,resume-m
 
 - Windows(Core·WinUI)와 폰, 원격 작업 공간의 Hermes 창, 위임 자식으로 Hermes 고르기.
 - "세션 동안 허용"·"항상 허용".
-- 질문(clarify)을 앱의 질문 카드로 받기(`elicitation/create`를 알리면 form으로 온다).
 - 세션 없이 모델 목록 받기(Hermes에 그런 명령이 생기면), 서비스 등급(`service_tier`) 설정.
 - 실행 중 끼어들기(`/steer`), Hermes의 `/` 명령(`available_commands_update`).
 - 요청별 토큰과 비용(데몬의 `session.stats`에는 있지만 ACP로 오지 않는다).
@@ -206,7 +211,7 @@ fixture(`native/contracts/fixtures/hermes-acp-{answer,tools,auth,resume,resume-m
 ## Windows가 맞출 것
 
 - 위 argv(`hermes acp`)·JSON-RPC 순서·권한 표(`edit_approval_policy` + `HERMES_YOLO_MODE`), `hermes-acp-*.jsonl` fixture와 같은 기록·사용량·카드.
-- 중지할 때 `session/cancel`을 먼저 보내는 것, 질문 건너뛰기, `{tool, arguments}` 풀기, `rawInput` 없는 도구의 요약, `data.details` 오류 문구.
+- 중지할 때 `session/cancel`을 먼저 보내는 것, 질문 카드(form과 승인 요청 두 모양), `{tool, arguments}` 풀기, `rawInput` 없는 도구의 요약, `data.details` 오류 문구.
 - yolo로 만든 세션을 묻는 창이 잇지 않는 규칙(`state_meta` 읽기).
 - 제공자가 없으면 `initialize`에서 멈추기, 답한 적 없는 세션(`message_count = 0`)을 잇지 않기, stderr의 로그·traceback 거르기, 한 번 더 오는 답을 한 번만 보이기.
 - `setup-catalog-macos.json`의 `hermes` 항목을 Windows 항목과 함께 공유 `setup-catalog.json`으로 옮긴다.

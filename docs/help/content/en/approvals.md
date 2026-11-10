@@ -45,7 +45,7 @@ This differs from Claude. Claude stops before acting and waits for your answer; 
 An Antigravity pane on a [remote workspace](remote.md) changes the settings of the computer that runs it. Each card's allow can be used only once there, and {{ui:antigravity.permission.allowAlways}} is accepted only while {{ui:settings.remote.allowFullAccess}} is on on that computer.
 
 ## Answer questions {#questions}
-When Claude asks you to choose between options, a {{ui:phone.questionnaire.title}} card appears.
+When Claude, pi, opencode or Hermes asks you to choose between options, a {{ui:phone.questionnaire.title}} card appears. A question that asks for a written answer without options shows only the text field.
 
 ![[question-card]]
 

@@ -45,7 +45,7 @@ Antigravity 在工作过程中无法向应用提问。遇到必须询问的操�
 [远程工作区](remote.md)中的 Antigravity 窗格会修改运行它的那台电脑的设置。每张卡片的允许只能使用一次，并且只有那台电脑开启了{{ui:settings.remote.allowFullAccess}}时，才接受{{ui:antigravity.permission.allowAlways}}。
 
 ## 回答问题 {#questions}
-Claude 给出选项向你提问时，会弹出{{ui:phone.questionnaire.title}}卡片。
+Claude、pi、opencode 或 Hermes 给出选项向你提问时，会弹出{{ui:phone.questionnaire.title}}卡片。不带选项、要求填写答案的问题只显示输入框。
 
 ![[question-card]]
 

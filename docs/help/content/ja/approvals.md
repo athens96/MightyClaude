@@ -45,7 +45,7 @@ Claudeとは違う点があります。Claudeは実行の前に止まって答�
 [リモートワークスペース](remote.md)のAntigravityペインは、そのペインを実行しているコンピュータの設定を書き換えます。カードごとの許可は一度しか使えず、{{ui:antigravity.permission.allowAlways}}はそのコンピュータで{{ui:settings.remote.allowFullAccess}}がオンのときだけ受け付けます。
 
 ## 質問に答える {#questions}
-Claudeが選択肢を示して質問すると、{{ui:phone.questionnaire.title}}カードが表示されます。
+Claude、pi、opencode、Hermesが選択肢を示して質問すると、{{ui:phone.questionnaire.title}}カードが表示されます。選択肢なしで答えの記入を求める質問では、入力欄だけが表示されます。
 
 ![[question-card]]
 

@@ -69,6 +69,7 @@ pi(`pi`)は、多くのモデル提供元で使えるオープンソースのコ
 - モデル: サインインすると、`pi --list-models`の一覧が「提供元/モデル」の名前で表示され、先頭の項目はpi自身の設定に従います。思考機能のないモデルでは{{ui:composer.effort.label}}は表示されません。段階はOff、Minimal、Low、Medium、High、XHighです。
 - 権限: piには承認ウィンドウがないため、モードは2つです。{{ui:permission.label.defaultCodex}}モードは読み取りツール(read、grep、find、ls)だけを有効にします。{{ui:permission.label.fullAccess}}モードはすべてのツールを確認なしで使い、プロジェクトの外にも触れられます。
 - リクエストごとにペインの作業フォルダで`pi --mode rpc`を実行し、ペインのセッションを引き継ぎます。セッションは`~/.pi/agent/sessions`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのpiセッションが表示されます。
+- 質問: piには質問ツールがないため、アプリが実行のたびに`ask_user`ツールを拡張機能として追加します（`~/.pi`の設定は変更しません）。piがこのツールで質問すると[質問カード](approvals.md#questions)が表示され、答えると同じリクエストが続きます。ほかの拡張機能が開く選択・確認・入力のダイアログも同じカードで表示されます。
 - まだできないこと: piのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けず、承認カードもありません。今のところMacでのみ動作します。
 
 ### opencode {#opencode}
@@ -79,6 +80,7 @@ opencode(`opencode`)は、多くのモデル提供元で使えるオープンソ
 - モデル: `opencode models`の一覧が「提供元/モデル」の名前で表示され、先頭の項目はopencode自身の設定に従います。
 - 権限: 選んだモードがそのリクエストだけのopencode自身のルールになり、ルールが確認に残した操作はClaudeと同じくペインに承認カードとして届きます。{{ui:permission.label.default}}はファイルの編集、コマンド、Web、プロジェクト外へのアクセスの前に確認し、{{ui:permission.label.acceptEdits}}はファイルの編集を確認せず、{{ui:permission.label.plan}}はファイルを編集しないopencodeのplanエージェントで実行し、{{ui:permission.label.fullAccess}}は確認しません。
 - リクエストごとにペインの作業フォルダで`opencode acp`(OpenCode 2、Agent Client Protocol)を実行し、ペインのセッションを引き継ぎます。セッションはopencodeの`opencode.db`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのopencodeセッションが表示されます。使用量にはセッションの費用、使用中のコンテキスト、リクエストのトークンが表示されます。
+- 質問: opencodeが`question`ツールで質問すると[質問カード](approvals.md#questions)が表示され、答えると同じリクエストが続きます。カードで{{ui:phone.questionnaire.cancel}}をクリックすると、opencodeはそのリクエストを終了します。
 - まだできないこと: opencodeのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けません。今のところMacでのみ動作します。
 
 ### Hermes {#hermes}
@@ -89,7 +91,8 @@ Hermes(`hermes`)は、Nous Researchのオープンソースのエージェント
 - モデル: 最初の項目はHermes自体の設定(`hermes model`で決めた既定のモデル)に従います。Hermesはセッションを開いて初めてモデル一覧を示すため、最初のリクエストを送ったあとから`提供元:モデル`の一覧が表示されます。
 - 権限: {{ui:permission.label.default}}はファイルを変更するたびにペインの承認カードで確認し、{{ui:permission.label.acceptEdits}}は作業フォルダ内の変更を確認せず、{{ui:permission.label.fullAccess}}はHermesの`--yolo`で危険なコマンドも確認しません。危険なコマンド(`rm -rf`など)はHermesの承認設定(`approvals.mode`)に従ってカードで確認し、それ以外のコマンドと読み取りは確認しません。計画専用のモードはありません。{{ui:permission.label.fullAccess}}はセッション開始時に決まるため、すでに始めたセッションには新しい会話から適用されます。
 - リクエストごとにペインの作業フォルダで`hermes acp`(Agent Client Protocol)を実行し、ペインのセッションを引き継ぎます。実際の作業はHermesのゲートウェイ(バックグラウンドプロセス)が行い、必要なときに自動で起動し、使われなくなると終了します。セッションは`~/.hermes/state.db`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのHermesセッションが表示されます。使用量にはセッションの累計トークンと使用中のコンテキストが表示され、費用はHermesが知らせません。
-- まだできないこと: Hermesが選択肢付きで尋ねる質問はスキップし、そのことを記録に残します。Hermesのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けません。現在はMacでのみ動作します。
+- 質問: Hermesがclarifyツールで質問すると[質問カード](approvals.md#questions)が表示され、答えると同じリクエストが続きます。Hermesはエディタ接続（ACP）ではこのツールを既定でオフにしているため、使うにはターミナルの`hermes tools`でオンにします。
+- まだできないこと: Hermesのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けません。現在はMacでのみ動作します。
 
 ### その他の実行設定 {#run-settings}
 …ボタンをクリックすると{{ui:settings.run.title}}が開きます。

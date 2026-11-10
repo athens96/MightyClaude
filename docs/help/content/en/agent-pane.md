@@ -69,6 +69,7 @@ pi (`pi`) is an open-source coding agent CLI that works with many model provider
 - Model: once you are signed in, the list comes from `pi --list-models` as `provider/model`; the first entry follows pi's own settings. A model without thinking shows no {{ui:composer.effort.label}}; the levels are Off, Minimal, Low, Medium, High and XHigh.
 - Permissions: pi has no approval window, so there are two modes. {{ui:permission.label.defaultCodex}} turns on only the read tools (read, grep, find, ls). {{ui:permission.label.fullAccess}} uses every tool without asking, outside the project too.
 - Each request runs `pi --mode rpc` in the pane's folder and continues the pane's own session, saved in `~/.pi/agent/sessions`. {{ui:resume.choice.resume}} lists the pi sessions of the folder as well.
+- Questions: pi has no question tool, so the app adds an `ask_user` tool as an extension of each run (your `~/.pi` settings are not changed). When pi asks through it, the [question card](approvals.md#questions) appears, and your answer continues the same request. Pick, confirm and input dialogs opened by other extensions appear as the same card.
 - Not yet: pi panes take no part in [Mighty Orchestration](delegation.md), cannot be opened in a [remote workspace](remote.md), and show no approval cards. They work on the Mac only for now.
 
 ### opencode {#opencode}
@@ -79,6 +80,7 @@ opencode (`opencode`) is an open-source coding agent CLI that works with many mo
 - Model: the list comes from `opencode models` as `provider/model`; the first entry follows opencode's own settings.
 - Permissions: the mode becomes opencode's own rules for the run, and what they leave to ask comes to the pane as an approval card, as for Claude. {{ui:permission.label.default}} asks before edits, commands, the web and anything outside the project; {{ui:permission.label.acceptEdits}} edits without asking; {{ui:permission.label.plan}} runs opencode's plan agent, which does not edit; {{ui:permission.label.fullAccess}} never asks.
 - Each request starts `opencode acp` in the pane's folder (OpenCode 2, the Agent Client Protocol) and continues the pane's own session, kept in opencode's `opencode.db`. {{ui:resume.choice.resume}} lists the opencode sessions of the folder as well. Usage shows the session's cost, the context in use and the request's tokens.
+- Questions: when opencode asks through its `question` tool, the [question card](approvals.md#questions) appears, and your answer continues the same request. If you click {{ui:phone.questionnaire.cancel}} on the card, opencode ends that request.
 - Not yet: opencode panes take no part in [Mighty Orchestration](delegation.md) and cannot be opened in a [remote workspace](remote.md). They work on the Mac only for now.
 
 ### Hermes {#hermes}
@@ -89,7 +91,8 @@ Hermes (`hermes`) is Nous Research's open-source agent CLI (Hermes Agent). It wo
 - Model: the first entry follows Hermes's own settings (the default model set with `hermes model`). Hermes lists models only once a session is open, so the `provider:model` list appears after the first request.
 - Permissions: {{ui:permission.label.default}} asks with an approval card in the pane before every file edit; {{ui:permission.label.acceptEdits}} does not ask about edits inside the workspace folder; {{ui:permission.label.fullAccess}} is Hermes's `--yolo`, which does not ask about dangerous commands either. Dangerous commands (such as `rm -rf`) are asked about as Hermes's approvals setting (`approvals.mode`) says; other commands and reads are not asked about. There is no plan-only mode. {{ui:permission.label.fullAccess}} is fixed when a session starts, so a session already started gets it from a new conversation.
 - Each request starts `hermes acp` in the pane's folder (the Agent Client Protocol) and continues the pane's own session. The work itself runs in Hermes's gateway, a background process that starts on demand and ends when idle. Sessions are kept in `~/.hermes/state.db`, and {{ui:resume.choice.resume}} lists the Hermes sessions of the folder as well. Usage shows the session's running token counts and the context in use; Hermes does not report cost.
-- Not yet: a question Hermes asks with choices is skipped, and the log says so. Hermes panes take no part in [Mighty Orchestration](delegation.md) and cannot be opened in a [remote workspace](remote.md). They work on the Mac only for now.
+- Questions: when Hermes asks through its clarify tool, the [question card](approvals.md#questions) appears, and your answer continues the same request. Hermes leaves this tool off for editor connections (ACP) by default; turn it on with `hermes tools` in a terminal to use it.
+- Not yet: Hermes panes take no part in [Mighty Orchestration](delegation.md) and cannot be opened in a [remote workspace](remote.md). They work on the Mac only for now.
 
 ### More run settings {#run-settings}
 Click the … button to open {{ui:settings.run.title}}.

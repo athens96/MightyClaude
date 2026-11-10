@@ -45,7 +45,7 @@ Claude와 다른 점이 있습니다. Claude는 실행 전에 멈추고 답을 �
 [원격 워크스페이스](remote.md)의 Antigravity 창은 그 창을 실행하는 컴퓨터의 설정을 고칩니다. 카드 하나의 허용은 한 번만 쓸 수 있고, {{ui:antigravity.permission.allowAlways}}은 그 컴퓨터에서 {{ui:settings.remote.allowFullAccess}}이 켜져 있을 때만 받습니다.
 
 ## 질문에 답하기 {#questions}
-Claude가 선택지를 주고 물으면 {{ui:phone.questionnaire.title}} 카드가 뜹니다.
+Claude, pi, opencode, Hermes가 선택지를 주고 물으면 {{ui:phone.questionnaire.title}} 카드가 뜹니다. 보기 없이 답을 써 달라는 질문에는 입력 칸만 나옵니다.
 
 ![[question-card]]
 
