@@ -90,6 +90,7 @@ extension AppStore {
         endCLILogin(provider)
         // pi signs in inside itself.
         if provider == "pi" { cliAccountMessages[provider] = L("settings.cliAccounts.piLoginHint") }
+        if provider == "opencode" { cliAccountMessages[provider] = L("settings.cliAccounts.opencodeLoginHint") }
         if settingUpBedrock {
             // Bedrock auth status reports backend configuration, even before
             // AWS credentials work. It cannot complete an OAuth polling flow.

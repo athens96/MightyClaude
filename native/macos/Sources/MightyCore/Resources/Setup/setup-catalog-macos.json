@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "note": "Items only the Mac offers so far, read beside setup-catalog.json (the contract Windows embeds as is). An item moves into setup-catalog.json once Windows has it.",
+  "items": [
+    {
+      "id": "opencode",
+      "group": "agent",
+      "label": "setup.item.opencode.title",
+      "description": "setup.item.opencode.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "signIn", "provider": "opencode" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "opencode" },
+          "install": { "kind": "npmGlobal", "package": "opencode-ai" },
+          "prerequisites": ["node"],
+          "source": "https://github.com/anomalyco/opencode"
+        }
+      }
+    }
+  ]
+}

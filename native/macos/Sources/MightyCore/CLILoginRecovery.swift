@@ -97,6 +97,18 @@ public enum CLIAuthFailure {
         return ["no api key", "no models available", "use /login", "run /login", "please /login"].contains(where: lowered.contains)
     }
 
+    /// opencode's own sign-in failures, as an ACP error or a failed call's words: its
+    /// `ProviderAuthError` ("… API key is missing", "Authentication required"), a provider's
+    /// 401 or an invalid key, and its hint to run `opencode auth login`. A candidate signal
+    /// only: recovery confirms with opencode's status (`auth.json` and the environment).
+    public static func opencode(text: String) -> Bool {
+        let lowered = text.prefix(16_384).lowercased()
+        // A proxy's "407 Proxy Authentication Required" is not a lost sign-in.
+        if lowered.contains("proxy authentication") { return false }
+        if ["providerautherror", "authentication required", "auth required", "api key is missing", "invalid api key", "invalid x-api-key", "incorrect api key", "opencode auth login", "token has expired", "please log in", "not logged in"].contains(where: lowered.contains) { return true }
+        return lowered.contains("401") && (lowered.contains("unauthorized") || lowered.contains("authentication"))
+    }
+
     /// Whether signing in again can fix a run that failed with a sign-in
     /// signal. A dropped sign-in usually leaves credentials on disk, so the
     /// status still says signed in (or cannot tell): that does not rule it out.
@@ -112,7 +124,7 @@ public enum CLIAuthFailure {
     }
 
     /// The providers whose lost sign-in raises the card and may start a sign-in.
-    public static let providers = ["claude", "codex", "gemini", "pi"]
+    public static let providers = ["claude", "codex", "gemini", "pi", "opencode"]
 }
 
 /// A provider whose sign-in is its interactive CLI, so it runs in a terminal
@@ -127,10 +139,12 @@ public struct CLITerminalSignIn: Sendable, Equatable {
     public let titleKey: String?
 
     /// Antigravity opens the browser on its first run. pi signs in inside
-    /// itself: `/login`, then a subscription or an API key.
+    /// itself: `/login`, then a subscription or an API key. opencode asks in
+    /// `opencode auth login`: a provider, then its browser sign-in or an API key.
     public static let table: [String: CLITerminalSignIn] = [
         "gemini": CLITerminalSignIn(provider: "gemini", waitingKey: "loginRecovery.antigravityTerminal", titleKey: nil),
         "pi": CLITerminalSignIn(provider: "pi", waitingKey: "loginRecovery.piTerminal", titleKey: "loginRecovery.piTerminalTitle"),
+        "opencode": CLITerminalSignIn(provider: "opencode", waitingKey: "loginRecovery.opencodeTerminal", titleKey: "loginRecovery.opencodeTerminalTitle"),
     ]
     public var command: String? { CLIAccountSupport.loginCommand(provider: provider, option: .account) }
 }

@@ -1,0 +1,5 @@
+{"jsonrpc":"2.0","id":"mighty-1","result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"mcpCapabilities":{"http":true,"sse":true},"promptCapabilities":{"embeddedContext":true,"image":true},"sessionCapabilities":{"close":{},"fork":{},"list":{},"resume":{}}},"authMethods":[{"id":"opencode-login","name":"Login with opencode","description":"Run `opencode auth login` in the terminal","_meta":{"terminal-auth":{"command":"opencode","args":["auth","login"],"label":"OpenCode Login"}}}],"agentInfo":{"name":"OpenCode","version":"1.19.5"}}}
+{"jsonrpc":"2.0","id":"mighty-2","error":{"code":-32603,"message":"Internal error","data":{"message":"Session not found: ses_0000000000000000000000dead"}}}
+{"jsonrpc":"2.0","id":"mighty-3","result":{"sessionId":"ses_9f3c2a1b7e4dQx7Lm2Np8Rt5Vw","configOptions":[]}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_9f3c2a1b7e4dQx7Lm2Np8Rt5Vw","update":{"sessionUpdate":"agent_message_chunk","messageId":"msg_c1","content":{"type":"text","text":"Starting fresh."}}}}
+{"jsonrpc":"2.0","id":"mighty-4","result":{"stopReason":"end_turn","usage":{"inputTokens":800,"outputTokens":4,"totalTokens":804}}}

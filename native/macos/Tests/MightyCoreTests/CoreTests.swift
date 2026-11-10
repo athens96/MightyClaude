@@ -314,7 +314,7 @@ final class CoreTests {
             for provider in Self.threeProviders { binaries[provider] = try fakeCLI(provider) }
             let service = ProviderService(binaryOverrides: binaries)
             let info = await service.runtimeInfo()
-            #expect(info.providers?.filter { $0.id != "pi" }.allSatisfy(\.available) == true)
+            #expect(info.providers?.filter { Self.threeProviders.contains($0.id) }.allSatisfy(\.available) == true)
             #expect((info.modelCatalog?.source) == ("cli")); #expect((info.providers?.first { $0.id == "codex" }?.modelCatalog.source) == ("cli"))
             #expect((info.providers?.first { $0.id == "gemini" }?.modelCatalog.models.map(\.value)) == (["default", "gemini-3.8-flash-low"]))
             for provider in ["claude", "codex"] {

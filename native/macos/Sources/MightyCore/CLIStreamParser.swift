@@ -196,7 +196,7 @@ public final class CLIStreamParser {
         return presented
     }
     private func resumeIfValid(_ value: Any?) {
-        guard let id = value as? String, CoreValidation.identifier(id), id != lastResume else { return }
+        guard let id = value as? String, CoreValidation.sessionIdentifier(id), id != lastResume else { return }
         lastResume = id; resume(id)
     }
     private func emitUnique(_ content: String, id: String) {
@@ -563,8 +563,95 @@ public final class CLIStreamParser {
             }
             if type == "turn.completed" { authFailure = false }
         case "pi": pi(value, type: type)
+        case "opencode": acp(value, type: type)
         default: break
         }
+    }
+
+    /// The message the streamed ACP text belongs to: a new one ends the previous reply.
+    private var acpMessage: String?
+    /// An ACP agent (opencode) through `ACPChannel`: its `session/update`s, the prompt's result
+    /// and a failed call, as `acp.*` events. Text arrives as deltas and is logged whole when the
+    /// message, a tool call or the turn ends; thoughts are not copied.
+    private func acp(_ value: [String: Any], type: String) {
+        let name = ProviderOptions.label(provider)
+        switch type {
+        case "acp.session": resumeIfValid(value["sessionId"])
+        case "acp.prompt": turn(L("run.turn.generating", ["name": name]))
+        case "acp.output": if let text = value["text"] as? String { log("output", text) }
+        case "acp.update":
+            guard let update = value["update"] as? [String: Any] else { return }
+            switch update["sessionUpdate"] as? String {
+            case "agent_message_chunk":
+                let message = update["messageId"] as? String
+                if let message, let previous = acpMessage, message != previous { flushText() }
+                if let message { acpMessage = message }
+                guard let content = update["content"] as? [String: Any], content["type"] as? String == "text", let text = content["text"] as? String, !text.isEmpty else { return }
+                let remaining = max(0, 131_072 - pendingText.utf8.count)
+                if text.utf8.count > remaining { pendingTextTruncated = true }
+                pendingText += ActivitySupport.prefixUTF8(text, maximumBytes: remaining)
+            case "tool_call", "tool_call_update":
+                flushText()
+                guard let id = update["toolCallId"] as? String else { return }
+                let status = update["status"] as? String
+                let state = status == "completed" ? "completed" : status == "failed" ? "error" : "running"
+                let known = toolActivities[ActivitySupport.id(namespace: activityNamespace, key: id)] != nil
+                let toolName = update["kind"] != nil || !known ? ACPChannel.toolName(kind: update["kind"] as? String, title: update["title"] as? String) : nil
+                let input = update["rawInput"].map(ACPChannel.displayInput)
+                let output = state == "running" ? nil : Self.acpOutput(update)
+                tool(id: id, name: toolName, input: input, state: state, output: output)
+                if activity == nil, state != "running", let output, !output.isEmpty { log("output", output) }
+            case "plan":
+                // A plan's entries as the checklist rows other agents show.
+                let entries = (update["entries"] as? [[String: Any]] ?? []).prefix(TodoProgress.maximumItems)
+                let lines = entries.compactMap { entry -> String? in
+                    guard let text = entry["content"] as? String else { return nil }
+                    return (entry["status"] as? String == "completed" ? "[x] " : "[ ] ") + ActivitySupport.clean(text, maximumBytes: 400, singleLine: true)
+                }
+                if !lines.isEmpty { log("system", lines.joined(separator: "\n")) }
+            default: break // thoughts, usage, commands, modes and options are not transcript lines
+            }
+        case "acp.prompt_result":
+            flushText()
+            switch value["stopReason"] as? String {
+            case "max_tokens", "max_turn_requests": log("system", L("run.notice.acpStopped", ["reason": value["stopReason"] as? String ?? ""]))
+            case "refusal": log("system", L("run.notice.acpRefused", ["name": name]))
+            default: break
+            }
+            authFailure = false
+            turn(L("run.turn.finishing", ["name": name]))
+            result?()
+        case "acp.error":
+            flushText()
+            failed = true
+            let message = (value["message"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let detail = ((value["data"] as? [String: Any])?["message"] as? String) ?? (value["data"] as? String)
+            let text = [message, detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+            authFailure = value["code"] as? Int == -32000 || CLIAuthFailure.opencode(text: text)
+            log("error", text.isEmpty ? L("run.error.providerRunFailed", ["name": name]) : String(text.prefix(32_768)))
+        default: break
+        }
+    }
+    /// A settled ACP tool call's result: its text content blocks, a diff's path, or `rawOutput`.
+    static func acpOutput(_ update: [String: Any]) -> String? {
+        var parts: [String] = []
+        for block in (update["content"] as? [[String: Any]] ?? []).prefix(64) {
+            switch block["type"] as? String {
+            case "content":
+                if let inner = block["content"] as? [String: Any], inner["type"] as? String == "text", let text = inner["text"] as? String { parts.append(text) }
+            case "diff": if let path = block["path"] as? String { parts.append(path) }
+            default: break
+            }
+        }
+        if parts.isEmpty, let raw = update["rawOutput"] {
+            if let text = raw as? String { parts.append(text) }
+            else if let fields = raw as? [String: Any] {
+                if let text = (fields["output"] ?? fields["error"]) as? String { parts.append(text) }
+                else { return ActivitySupport.output(fields) }
+            }
+        }
+        let text = parts.joined(separator: "\n")
+        return text.isEmpty ? nil : text
     }
 
     /// pi (`pi --mode rpc`, docs/rpc.md): one JSON object per line, commands' `response`s and

@@ -213,7 +213,7 @@ struct PiTests {
         #expect(ProviderService.normalizePiCatalog(text) == ProviderOptions.fallbackCatalog("pi"))
         #expect(ProviderService.normalizePiCatalog("").models.map(\.value) == ["default"])
         #expect(ProviderOptions.fallbackCatalog("pi").models.map(\.value) == ["default"])
-        #expect(ProviderOptions.label("pi") == "pi" && ProviderOptions.executable("pi") == "pi" && ProviderOptions.ids.last == "pi")
+        #expect(ProviderOptions.label("pi") == "pi" && ProviderOptions.executable("pi") == "pi" && ProviderOptions.ids.dropLast().last == "pi")
     }
 
     // MARK: Sign-in

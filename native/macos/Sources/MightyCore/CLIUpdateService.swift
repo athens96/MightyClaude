@@ -3,7 +3,7 @@ import Foundation
 public struct CLIUpdateInstallation: Sendable, Equatable {
     public var provider: String
     public var version: String?
-    /// native, brew-cask, brew-formula, npm, pi (its own `update self`), unknown, or missing.
+    /// native, brew-cask, brew-formula, npm, pi (its own `update self`), opencode (its own `upgrade`), unknown, or missing.
     public var method: String
     public var executablePath: String?
     public var canUpdate: Bool
@@ -160,6 +160,12 @@ public actor CLIUpdateService {
             installation.method = "pi"; installation.canUpdate = true
             installation.detail = L("settings.cliUpdate.detailPi")
             return CLIUpdatePlan(installation: installation, invocation: CLIUpdateInvocation(executable: command.executable, arguments: ["update", "self"], environment: environment))
+        }
+        if provider == "opencode" {
+            // opencode upgrades itself and finds out how it was installed (npm, Homebrew, its script).
+            installation.method = "opencode"; installation.canUpdate = true
+            installation.detail = L("settings.cliUpdate.detailOpencode")
+            return CLIUpdatePlan(installation: installation, invocation: CLIUpdateInvocation(executable: command.executable, arguments: ["upgrade"], environment: environment))
         }
         if let brew = brewInstallation(resolved, provider: provider) {
             installation.method = brew.cask ? "brew-cask" : "brew-formula"

@@ -12,6 +12,8 @@ struct SetupCatalogTests {
     }()
     static let fixtureURL = root.appendingPathComponent("native/contracts/fixtures/setup-catalog.json")
     static let bundledURL = root.appendingPathComponent("native/macos/Sources/MightyCore/Resources/Setup/setup-catalog.json")
+    /// The Mac's own items beside the contract (`SetupCatalog.macOnlyFileName`).
+    static let macOnlyURL = root.appendingPathComponent("native/macos/Sources/MightyCore/Resources/Setup/setup-catalog-macos.json")
 
     static func fixture() throws -> [String: Any] {
         try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
@@ -42,7 +44,7 @@ struct SetupCatalogTests {
 
     @Test func theAppFindsTheCatalogInItsResourceBundle() throws {
         #expect(ResourceHealthChecker.checkSetupCatalog().found)
-        #expect(try SetupCatalog.bundled() == SetupCatalogDecoder.decode(Data(contentsOf: Self.fixtureURL)))
+        #expect(try SetupCatalog.bundled() == SetupCatalogDecoder.decode(Data(contentsOf: Self.fixtureURL), macOnly: Data(contentsOf: Self.macOnlyURL)))
     }
 
     @Test func theCatalogParsesWithEveryGroupTheUserAskedFor() throws {
@@ -67,7 +69,7 @@ struct SetupCatalogTests {
     }
 
     @Test func everyKnownKeyIsUsedByTheCatalogAndExistsInEveryLanguage() throws {
-        let catalog = try SetupCatalogDecoder.decode(Data(contentsOf: Self.fixtureURL))
+        let catalog = try SetupCatalogDecoder.decode(Data(contentsOf: Self.fixtureURL), macOnly: Data(contentsOf: Self.macOnlyURL))
         let used = Set(catalog.items.flatMap { [$0.labelKey, $0.descriptionKey] })
         #expect(used == SetupCatalog.knownKeys)
         for language in ["ko", "en", "zh", "ja"] {

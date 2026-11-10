@@ -437,6 +437,10 @@ private final class ManagedProcess {
     var parser: CLIStreamParser?
     var permissions: ClaudePermissionChannel?
     var codexPermissions: CodexApprovalChannel?
+    /// An ACP agent's run (opencode): the JSON-RPC channel its stdio carries.
+    var acp: ACPChannel?
+    /// The ACP prompt was answered and the runner ended the agent's server itself.
+    var acpEnding = false
     /// At most this much read output not yet handed to the line splitter per
     /// run; see `ChildOutputBudget`.
     let outputBudget = ChildOutputBudget(limit: 4 * 1_048_576)
@@ -598,6 +602,8 @@ public actor ProcessRunner {
                     arguments = prepared.arguments; standardInput = prepared.standardInput
                 }
                 if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
+                // opencode's rules for this run only, merged over the user's own config.
+                if request.provider == "opencode" { environment["OPENCODE_PERMISSION"] = OpencodeAgent.permissionEnvironment(mode: request.settings.permissionMode) }
                 if interactivePermissions {
                     // The CLI's authoritative "turn over, no background agent left" signal.
                     environment["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1"
@@ -678,6 +684,20 @@ public actor ProcessRunner {
                         fail: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "error", text: message); run.child?.stop() },
                         completed: { [weak run] in run?.permissionInitializationTask?.cancel(); run?.child?.closeInput() })
                 }
+                if request.provider == "opencode" {
+                    run.acp = ACPChannel(runId: run.activityId, request: request, workspacePath: workspace.path, attachments: attachments, configValues: OpencodeAgent.configValues(request),
+                        write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
+                        event: { [weak run] object in guard let run, !run.finished else { return }; run.parser?.receive(object: object) },
+                        emit: { [weak run, onEvent] permission in guard let run else { return }; onEvent(RunEvent(sessionId: run.request.sessionId, type: "permission", permission: permission)) },
+                        activity: { [weak run] permission, state in run?.parser?.permissionActivity(permission, state: state) },
+                        warning: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "system", text: message) },
+                        fail: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "error", text: message); run.child?.stop() },
+                        completed: { [weak self, weak run] in
+                            guard let run else { return }
+                            run.permissionInitializationTask?.cancel()
+                            Task { await self?.endACP(run) }
+                        })
+                }
             }
             // Quit signals the registry before it reaches this actor.
             guard !liveRuns.closing else { throw MightyError(L("common.appClosing")) }
@@ -696,7 +716,7 @@ public actor ProcessRunner {
             // off the actor every pane shares, with large lines' pictures
             // already decoded and cached; only finished lines hop onto it, in
             // order. A shell run's output goes through as it arrives.
-            let lineLimit: Int? = run.codexPermissions != nil ? CodexApprovalChannel.maximumFrameBytes : run.parser != nil ? CLIStreamParser.maximumLineBytes(provider: request.provider) : nil
+            let lineLimit: Int? = run.codexPermissions != nil ? CodexApprovalChannel.maximumFrameBytes : run.acp != nil ? ACPChannel.maximumFrameBytes : run.parser != nil ? CLIStreamParser.maximumLineBytes(provider: request.provider) : nil
             let cache = imageCache
             // Below every user-facing caller (user-initiated): on this actor,
             // a stop, a steer or a permission answer goes ahead of the chunks
@@ -731,15 +751,17 @@ public actor ProcessRunner {
                 if !exited, let self, let run, let rest = lines?.finish(), !rest.isEmpty { await self.receive(rest, run: run) }
             }
             liveRuns.register(request.sessionId, child: child, consumer: run.task)
-            if run.permissions != nil || run.codexPermissions != nil {
-                run.permissions?.start(); run.codexPermissions?.start()
+            if run.permissions != nil || run.codexPermissions != nil || run.acp != nil {
+                run.permissions?.start(); run.codexPermissions?.start(); run.acp?.start()
+                // An ACP agent boots its own server (and may refresh its model list) before it answers.
+                let initialization: Double = run.acp != nil ? 45 : 15
                 run.permissionInitializationTask = Task { [weak self, weak run] in
-                    do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                    do { try await Task.sleep(for: .seconds(initialization)) } catch { return }
                     guard let self, let run else { return }; await self.permissionInitializationTimedOut(run)
                 }
             } else { child.write(standardInput, closeAfter: request.provider != "pi") }
         } catch {
-            run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
+            run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.acp?.cancelAll(); run.permissionInitializationTask?.cancel()
             run.attachments?.cleanup(); run.attachments = nil
             await run.bridge?.stop()
             if run.finished { if !request.attachments.isEmpty { throw CancellationError() }; return }
@@ -789,6 +811,7 @@ public actor ProcessRunner {
         }
         if let permissions = run.permissions { try permissions.respond(requestId: requestId, allow: allow) }
         else if let permissions = run.codexPermissions { try permissions.respond(requestId: requestId, allow: allow) }
+        else if let channel = run.acp { try channel.respond(requestId: requestId, allow: allow) }
         else { throw MightyError(L("run.error.noInteractivePermission")) }
     }
     /// Answers one pending ExitPlanMode request in exactly one local run.
@@ -853,6 +876,23 @@ public actor ProcessRunner {
         guard runs[run.request.sessionId] === run, !run.stopping, !run.finished else { return }
         run.permissions?.initializationTimedOut()
         run.codexPermissions?.initializationTimedOut()
+        run.acp?.initializationTimedOut()
+    }
+    /// The ACP prompt was answered (or failed): stdin closes, and an agent server that is
+    /// still up two seconds later is ended by the runner, which does not make the run fail.
+    private func endACP(_ run: ManagedProcess) {
+        guard !run.inputClosed, !run.finished else { return }
+        run.inputClosed = true; run.child?.closeInput()
+        run.inputWatchdog?.cancel()
+        run.inputWatchdog = Task { [weak self, weak run] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, let run, !Task.isCancelled else { return }
+            await self.terminateACP(run)
+        }
+    }
+    private func terminateACP(_ run: ManagedProcess) {
+        guard !run.finished, let child = run.child, !child.hasExited else { return }
+        run.acpEnding = true; child.stop()
     }
     // The parser is used only inside this actor's synchronous receive/flush path.
     private nonisolated func emitLogSynchronously(_ run: ManagedProcess, kind: String, text: String) { Self.deliverLog(run, kind: kind, text: text, emit: onEvent) }
@@ -906,6 +946,11 @@ public actor ProcessRunner {
                     if let parser = run.parser { parser.withPreparedImages(line.images) { channel.receive(line) } } else { channel.receive(line) }
                 case .tooLong: channel.frameTooLarge()
                 }
+            } else if let channel = run.acp {
+                switch item {
+                case .line(let line): channel.receive(line)
+                case .tooLong: channel.frameTooLarge()
+                }
             } else if let parser = run.parser {
                 switch item {
                 case .line(let line): parser.receive(line)
@@ -920,6 +965,7 @@ public actor ProcessRunner {
         switch event {
         case .stdout(let data):
             if let permissions = run.codexPermissions { permissions.receive(data) }
+            else if let channel = run.acp { channel.receive(data) }
             else if let parser = run.parser { parser.push(data) }
             else { emitLog(run, kind: "output", text: run.outputDecoder.push(data)) }
         case .stderr(let data):
@@ -991,10 +1037,12 @@ public actor ProcessRunner {
             liveRuns.remove(run.request.sessionId, child: child)
         }
         run.codexPermissions?.flush()
+        // The runner ending a server whose prompt was answered is not the channel closing early.
+        if !run.acpEnding { run.acp?.flush() }
         run.finished = true; run.parser?.flush(); emitLog(run, kind: "output", text: run.outputDecoder.flush()); let errorTail = run.errorDecoder.flush(); run.parser?.receiveStderr(errorTail); run.parser?.finishStderr(); emitLog(run, kind: "output", text: errorTail)
         // The run still ends by its exit code; only the stray writer's rest is lost.
         if run.child?.outputAbandoned == true, !run.stopping, !shuttingDown { emitLog(run, kind: "system", text: L("run.notice.outputAbandoned")) }
-        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel(); run.inputWatchdog?.cancel()
+        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.acp?.cancelAll(); run.permissionInitializationTask?.cancel(); run.inputWatchdog?.cancel()
         let incompletePermissionRun = run.permissions != nil && (run.permissions?.initialized != true || !run.receivedClaudeResult)
         if incompletePermissionRun, !run.stopping, !shuttingDown, !run.planCancelled, run.permissions?.failed != true {
             emitLog(run, kind: "error", text: L("run.error.claudeEndedEarly"))
@@ -1003,9 +1051,11 @@ public actor ProcessRunner {
         if incompleteCodexRun, !run.stopping, !shuttingDown, run.codexPermissions?.failed != true {
             emitLog(run, kind: "error", text: L("run.error.codexEndedEarly"))
         }
+        let incompleteACPRun = run.acp != nil && run.acp?.turnCompleted != true
+        let exitedCleanly = code == 0 || (run.acpEnding && run.acp?.turnCompleted == true)
         if let bridge = run.bridge, await bridge.receivedCount == 0, !run.stopping { emitLog(run, kind: "system", text: L("run.warning.noModsEvents")) }
         await run.bridge?.stop()
-        let status = run.stopping || shuttingDown || run.planCancelled ? "stopped" : code == 0 && run.parser?.failed != true && run.permissions?.failed != true && run.codexPermissions?.failed != true && !incompletePermissionRun && !incompleteCodexRun ? "completed" : "error"
+        let status = run.stopping || shuttingDown || run.planCancelled ? "stopped" : exitedCleanly && run.parser?.failed != true && run.permissions?.failed != true && run.codexPermissions?.failed != true && run.acp?.failed != true && !incompletePermissionRun && !incompleteCodexRun && !incompleteACPRun ? "completed" : "error"
         if let watcher = run.codexSessions {
             // Stop the poll task, wait for a read in flight, then read what is
             // left once. No pause first: an exited Codex writes nothing more.
@@ -1043,7 +1093,7 @@ public actor ProcessRunner {
         guard let run = runs[id] else { return }
         if run.finished { await waitForFinalization(run); return }
         run.stopping = true
-        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
+        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.acp?.cancelAll(); run.permissionInitializationTask?.cancel()
         if let child = run.child {
             // Usually signalled already, before the caller reached this actor;
             // the consumer's deadline comes with the signal. Cancelled, it

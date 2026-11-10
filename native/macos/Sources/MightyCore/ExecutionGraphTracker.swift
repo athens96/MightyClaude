@@ -264,6 +264,7 @@ final class ExecutionGraphTracker {
         if provider == "codex" { consumeCodex(value); return }
         if provider == "gemini" { consumeAntigravity(value); return }
         if provider == "pi" { consumePi(value); return }
+        if provider == "opencode" { consumeACP(value); return }
         let parentTool = Self.parentToolID(value)
         if let parentTool { ensureAgent(toolID: parentTool) }
         // Over-cap child events are omitted, never reclassified as main text.
@@ -472,6 +473,15 @@ final class ExecutionGraphTracker {
                 }
             }
         }
+    }
+
+    // MARK: ACP (opencode)
+    // One block for the request: the answer is the streamed text (`antigravityAnswer`), and the
+    // prompt's result carries the last model call's tokens.
+    private func consumeACP(_ value: [String: Any]) {
+        guard value["type"] as? String == "acp.prompt_result", let usage = value["usage"] as? [String: Any] else { return }
+        let mapped = ["input_tokens": usage["inputTokens"], "output_tokens": usage["outputTokens"], "cache_read_input_tokens": usage["cachedReadTokens"], "cache_creation_input_tokens": usage["cachedWriteTokens"]].compactMapValues { $0 }
+        if let tokens = GraphTokenUsage.parse(mapped) { recordUsage(tokens, message: "acp:" + (value["sessionId"] as? String ?? "turn"), node: mainID) }
     }
 
     // MARK: pi RPC
@@ -693,7 +703,7 @@ final class ExecutionGraphTracker {
     /// result's full response when nothing was streamed): the latest one is
     /// the request's answer.
     func antigravityAnswer(_ text: String) {
-        guard !finished, provider == "gemini", !text.isEmpty else { return }
+        guard !finished, provider == "gemini" || provider == "opencode", !text.isEmpty else { return }
         update(mainID) { $0.output = text }
     }
     @discardableResult private func ensureAntigravityAgent(conversation: String) -> String? {

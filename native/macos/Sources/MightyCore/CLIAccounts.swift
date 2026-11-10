@@ -54,6 +54,9 @@ public enum CLIAccountMethod {
     public static let piSubscription = "pi-subscription"
     public static let piAPIKey = "pi-api-key"
     public static let piModels = "pi-models"
+    /// opencode: a subscription sign-in (`opencode auth login` with OAuth) or API keys (`auth.json` or the environment).
+    public static let opencodeSubscription = "opencode-subscription"
+    public static let opencodeAPIKey = "opencode-api-key"
 }
 
 public enum CLILoginOption: String, Sendable, CaseIterable {
@@ -148,13 +151,15 @@ public enum CLIAccountSupport {
         case "gemini": return ProviderOptions.executable(provider)
         // pi signs in inside itself: the terminal shows `pi`, where `/login` is typed.
         case "pi": return "pi"
+        // opencode's own interactive sign-in: a provider picker, then that provider's method.
+        case "opencode": return "opencode auth login"
         default: return nil
         }
     }
     /// argv for the CLI's own status / logout command. Antigravity has
     /// neither; its model list stands in for the status (`antigravityStatus`).
     public static func statusArguments(provider: String) -> [String]? {
-        switch provider { case "claude": return ["claude", "auth", "status", "--json"]; case "codex": return ["codex", "login", "status"]; case "gemini": return [ProviderOptions.executable(provider), "models"]; case "pi": return ["pi", "--list-models"]; default: return nil }
+        switch provider { case "claude": return ["claude", "auth", "status", "--json"]; case "codex": return ["codex", "login", "status"]; case "gemini": return [ProviderOptions.executable(provider), "models"]; case "pi": return ["pi", "--list-models"]; case "opencode": return ["opencode", "auth", "list"]; default: return nil }
     }
     public static func logoutArguments(provider: String) -> [String]? {
         switch provider { case "claude": return ["claude", "auth", "logout"]; case "codex": return ["codex", "logout"]; default: return nil }
@@ -216,6 +221,9 @@ public actor CLIAccountService {
         if provider == "pi" {
             let auth = CLIAccountSupport.boundedData(PiAgent.authFile(home: home, environment: environment))
             return CLIAccountSupport.piStatus(exitCode: result.exitCode, output: String(decoding: result.stdout + result.stderr, as: UTF8.self), authJSON: auth, environment: environment)
+        }
+        if provider == "opencode" {
+            return CLIAccountSupport.opencodeStatus(exitCode: result.exitCode, authJSON: OpencodeAgent.authJSON(home: home, environment: environment), environment: environment)
         }
         if provider == "gemini" { return CLIAccountSupport.antigravityStatus(exitCode: result.exitCode, output: String(decoding: result.stdout + result.stderr, as: UTF8.self)) }
         if provider == "claude" {

@@ -354,7 +354,7 @@ struct SessionPaneView: View {
     private func modelMenu(maximumTextWidth: CGFloat) -> some View {
         Menu {
             Section(L("composer.label.runner")) {
-                ForEach(ProviderOptions.ids.filter { $0 != "pi" || !store.isRemoteSession(session) }, id: \.self) { provider in
+                ForEach(ProviderOptions.ids.filter { !ProviderOptions.isLocalOnly($0) || !store.isRemoteSession(session) }, id: \.self) { provider in
                     Button { store.selectSession(session.id); store.changeProvider(session.id, to: provider) } label: {
                         if provider == session.provider { Label(ProviderOptions.betaTitle(provider, ProviderOptions.label(provider)), systemImage: "checkmark") }
                         else { Text(ProviderOptions.betaTitle(provider, ProviderOptions.label(provider))) }

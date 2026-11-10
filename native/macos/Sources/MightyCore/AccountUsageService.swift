@@ -100,7 +100,8 @@ public actor AccountUsageService {
                 guard let command else { throw AccountUsageFailure.unavailable(L("accountUsage.detailAntigravityNotInstalled")) }
                 return try await Self.antigravity(command: command, environment: environment)
             }
-            throw AccountUsageFailure.unavailable(provider == "pi" ? L("accountUsage.detailPiUnavailable") : L("windows.accountUsage.detailUnsupportedProvider"))
+            throw AccountUsageFailure.unavailable(provider == "pi" ? L("accountUsage.detailPiUnavailable")
+                : provider == "opencode" ? L("accountUsage.detailOpencodeUnavailable") : L("windows.accountUsage.detailUnsupportedProvider"))
         }
         now = { Date() }
     }

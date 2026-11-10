@@ -72,7 +72,7 @@ struct MightyGraphTests {
         var shell = RunSession(workspaceId: "workspace", title: "Shell", kind: "shell")
         shell.beginGraphRun(input: "ls", id: "request-one", configuredModel: "default")
         #expect(shell.graphRuns == nil)
-        #expect(MightyGraphSupport.providers == ["claude", "codex", "gemini", "pi"])
+        #expect(MightyGraphSupport.providers == ["claude", "codex", "gemini", "pi", "opencode"])
     }
 
     @Test func resultWaitsForEveryChildAndAppearsInMainAndResult() {

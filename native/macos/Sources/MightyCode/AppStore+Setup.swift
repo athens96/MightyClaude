@@ -280,6 +280,7 @@ extension AppStore {
         guard !cliAccountBusy.contains(provider), let command = CLIAccountSupport.loginCommand(provider: provider, option: .account) else { return }
         endCLILogin(provider)
         if provider == "pi" { setupMessage = L("settings.cliAccounts.piLoginHint") }
+        if provider == "opencode" { setupMessage = L("settings.cliAccounts.opencodeLoginHint") }
         let id = "setup-login-" + UUID().uuidString
         openSetupTerminal(id: id, title: L("loginRecovery.terminalTitle", ["provider": ProviderOptions.label(provider)]), input: TerminalInput(text: command, autoRun: true))
         watchCLILogin(provider, terminalId: id)

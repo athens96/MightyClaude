@@ -723,6 +723,7 @@ final class AppStore: ObservableObject, DelegationHost {
         guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return L("run.blocked.selectWorkspace") }
         // pi's RPC run is local for now.
         if workspace.remote != nil, session.kind != "shell", session.provider == "pi" { return L("run.blocked.piRemote") }
+        if workspace.remote != nil, session.kind != "shell", session.provider == "opencode" { return L("run.blocked.opencodeRemote") }
         // A remote pane runs on its host: this Mac's CLI updates and plugin changes never hold it.
         if workspace.remote != nil { return remoteRunBlockedReason(session, workspace: workspace, checkRuntime: checkRuntime) }
         // A delegated child runs only in its own worktree, never in its parent's checkout.
@@ -1435,7 +1436,7 @@ final class AppStore: ObservableObject, DelegationHost {
                     }
                     // A child's run, its terminal tool and its MCP binding work in its worktree folder.
                     try await runner.start(request: request, workspace: DelegationPanes.runWorkspace(for: current, in: currentWorkspace),
-                                           allowPermissionPrompts: current.kind == "claude" && (current.provider == "claude" || (current.provider == "codex" && current.settings.permissionMode == "onRequest")))
+                                           allowPermissionPrompts: current.kind == "claude" && ProviderOptions.asksInPane(provider: current.provider, mode: current.settings.permissionMode))
                 }
                 reachedRunner = true
             } catch {
@@ -1657,7 +1658,7 @@ final class AppStore: ObservableObject, DelegationHost {
         }
         guard event.type == "permission", let permission = event.permission,
               let session = snapshot.sessions.first(where: { $0.id == event.sessionId }),
-              session.kind == "claude", (session.provider == "claude" || (session.provider == "codex" && session.settings.permissionMode == "onRequest")),
+              session.kind == "claude", ProviderOptions.asksInPane(provider: session.provider, mode: session.settings.permissionMode),
               snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return }
         var requests = toolPermissions[event.sessionId] ?? []
         let previousFirst = requests.first.map { permissionResponseKey(sessionId: event.sessionId, request: $0) }

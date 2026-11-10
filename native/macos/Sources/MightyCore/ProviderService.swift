@@ -149,6 +149,7 @@ public actor ProviderService {
                       !self.closing, generation == self.cacheGeneration else { return ProviderOptions.fallbackCatalog(provider) }
                 if provider == "gemini" { return await Self.antigravityCatalog(command: command, environment: snapshot.values, workspace: cwd) }
                 if provider == "pi" { return await Self.piCatalog(command: command, environment: snapshot.values, workspace: cwd) }
+                if provider == "opencode" { return await Self.opencodeCatalog(command: command, environment: snapshot.values, workspace: cwd) }
                 return await CLIModelProbe.read(command: command, environment: snapshot.values, workspace: cwd)
             }
             entry = CatalogEntry(id: UUID(), created: Date(), task: task, inFlight: true, forced: forceRefresh, environment: snapshot.values)
@@ -303,6 +304,11 @@ public actor ProviderService {
             if s.permissionMode != "fullAccess" { args += ["--tools", ProviderOptions.piReadOnlyTools] }
             if let resume = request.resumeId { args += ["--session", resume] }
             return args
+        case "opencode":
+            // One ACP server per request (`opencode acp`): the session, the settings and the prompt
+            // travel as JSON-RPC on stdio (`ACPChannel`), the permission mode as the run's
+            // `OPENCODE_PERMISSION` (`OpencodeAgent.permissionRules`).
+            return ["acp"]
         default: throw MightyError(L("common.unsupportedCli"))
         }
     }
@@ -360,6 +366,26 @@ public actor ProviderService {
         guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: ["--list-models"], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 1_048_576),
               result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("pi") }
         return normalizePiCatalog(String(decoding: result.stdout, as: UTF8.self))
+    }
+    /// `opencode models`: one `provider/model` per line, opencode Zen's (`opencode/…`) first.
+    /// Without a sign-in it lists Zen's free models, which still run. Anything that is not a
+    /// `provider/model` (a notice, a refresh line) is left out; an empty list keeps the fallback.
+    public nonisolated static func normalizeOpencodeCatalog(_ text: String) -> ModelCatalog {
+        let fallback = ProviderOptions.fallbackCatalog("opencode")
+        var models = [fallback.models[0]]; var seen = Set(["default"])
+        for line in text.split(whereSeparator: \.isNewline).prefix(4_096) {
+            let value = line.trimmingCharacters(in: .whitespaces)
+            guard let slash = value.firstIndex(of: "/"), slash != value.startIndex, value.index(after: slash) != value.endIndex,
+                  !value.contains(" "), CoreValidation.model(value), seen.insert(value).inserted, models.count <= 1_024 else { continue }
+            let provider = String(value[..<slash])
+            models.append(ModelOption(value: value, displayName: value, description: L("provider.catalog.opencodeModelRow", ["provider": provider])))
+        }
+        return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.opencodeSource")) : fallback
+    }
+    static func opencodeCatalog(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
+        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: ["models"], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 20, maximumBytes: 2_097_152),
+              result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("opencode") }
+        return normalizeOpencodeCatalog(String(decoding: result.stdout, as: UTF8.self))
     }
     public nonisolated static func normalizeClaudeCatalog(_ rows: [[String: Any]]) -> ModelCatalog {
         let fallback = ProviderOptions.fallbackCatalog("claude")

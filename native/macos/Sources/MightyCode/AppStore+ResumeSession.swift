@@ -121,7 +121,7 @@ extension AppStore {
     @discardableResult
     func resumeSession(_ item: ResumableSession, workspaceId: String) -> String? {
         resumePicker = nil
-        guard ResumableSessions.providers.contains(item.provider), CoreValidation.identifier(item.sessionID),
+        guard ResumableSessions.providers.contains(item.provider), CoreValidation.sessionIdentifier(item.sessionID),
               snapshot.workspaces.contains(where: { $0.id == workspaceId }) else { return nil }
         guard !ResumableSessions.inUse(snapshot.sessions).contains(item.sessionID.lowercased()) else {
             error = L("resume.error.inUse"); return nil

@@ -55,7 +55,7 @@ struct RunSettingsView: View {
                             Text(L("settings.remote.runOnHost", ["host": reference.hostName])).font(.ui(size: 11)).foregroundStyle(.secondary)
                         }
                         if currentSession.settings.permissionMode != "fullAccess" {
-                            if session.provider == "claude" || (session.provider == "codex" && currentSession.settings.permissionMode == "onRequest") {
+                            if ProviderOptions.asksInPane(provider: session.provider, mode: currentSession.settings.permissionMode) {
                                 Text(L("settings.run.approvalInApp")).font(.ui(size: 11)).foregroundStyle(.secondary)
                             } else {
                                 Text(L("settings.run.approvalUnsupported")).font(.ui(size: 11)).foregroundStyle(.secondary)
@@ -489,6 +489,15 @@ func permissionDescription(_ mode: String, provider: String) -> String {
     }
     // pi has no approval window: read-only tools, or every tool without asking.
     if provider == "pi" { return mode == "fullAccess" ? L("permission.pi.fullAccess") : L("permission.pi.default") }
+    // opencode's own rules for the run; what they leave at "ask" comes to the pane as a card.
+    if provider == "opencode" {
+        switch mode {
+        case "plan": return L("permission.opencode.plan")
+        case "acceptEdits": return L("permission.opencode.acceptEdits")
+        case "fullAccess": return L("permission.opencode.fullAccess")
+        default: return L("permission.opencode.default")
+        }
+    }
     if mode == "fullAccess" { return L("permission.other.fullAccess") }
     if provider == "codex", mode == "onRequest" { return L("permission.codex.onRequest") }
     if provider == "codex" { return mode == "acceptEdits" ? L("permission.codex.acceptEdits") : L("permission.codex.default") }

@@ -128,7 +128,7 @@ public enum SessionUsageSupport {
         var clean = value
         clean.model = value.model.flatMap { CoreValidation.model($0) ? $0 : nil }
         clean.selectedModel = value.selectedModel.flatMap { CoreValidation.model($0) ? $0 : nil }
-        clean.providerSessionId = value.providerSessionId.flatMap { CoreValidation.identifier($0) ? $0 : nil }
+        clean.providerSessionId = value.providerSessionId.flatMap { CoreValidation.sessionIdentifier($0) ? $0 : nil }
         clean.inputTokens = valid(value.inputTokens); clean.outputTokens = valid(value.outputTokens)
         clean.cacheReadTokens = valid(value.cacheReadTokens); clean.cacheWriteTokens = valid(value.cacheWriteTokens)
         clean.reasoningTokens = valid(value.reasoningTokens); clean.totalTokens = valid(value.totalTokens)
@@ -222,8 +222,8 @@ final class SessionUsageTracker {
     private var claudeResultSeen = false
 
     init(provider: String, callback: ((SessionUsage) -> Void)?) {
-        value = SessionUsage(provider: provider, source: provider == "gemini" ? "antigravity.stream-json" : provider == "pi" ? "pi.rpc" : provider + ".stream-json",
-                             tokenScope: provider == "claude" ? "response" : provider == "pi" ? "run" : "session")
+        value = SessionUsage(provider: provider, source: provider == "gemini" ? "antigravity.stream-json" : provider == "pi" ? "pi.rpc" : provider == "opencode" ? "opencode.acp" : provider + ".stream-json",
+                             tokenScope: provider == "claude" || provider == "opencode" ? "response" : provider == "pi" ? "run" : "session")
         self.callback = callback
     }
     func consume(_ event: [String: Any]) {
@@ -232,6 +232,7 @@ final class SessionUsageTracker {
         switch value.provider {
         case "claude": consumeClaude(event, type: type)
         case "pi": consumePi(event, type: type)
+        case "opencode": consumeACP(event, type: type)
         case "codex":
             if type == "thread.started" { setIdentity(event["thread_id"]); publish() }
             if type == "turn.completed", let usage = event["usage"] as? [String: Any] {
@@ -290,6 +291,39 @@ final class SessionUsageTracker {
         value.contextUsedTokens = input
         if let cost = SessionUsageSupport.cost((usage["cost"] as? [String: Any])?["total"]) { value.costUSD = (value.costUSD ?? 0) + cost; value.costScope = "run" }
         publish()
+    }
+
+    /// An ACP agent (opencode): `usage_update` carries the context in use, its window and the
+    /// session's running cost (session scope, so the ledger counts what grew); the prompt's
+    /// result carries the tokens of the turn's last model call (response scope).
+    private func consumeACP(_ event: [String: Any], type: String) {
+        switch type {
+        case "acp.session":
+            setIdentity(event["sessionId"])
+            let model = (event["configOptions"] as? [[String: Any]])?.first { $0["id"] as? String == "model" || $0["category"] as? String == "model" }
+            setModel(model?["currentValue"])
+            publish()
+        case "acp.update":
+            guard let update = event["update"] as? [String: Any], update["sessionUpdate"] as? String == "usage_update" else { return }
+            if let used = SessionUsageSupport.count(update["used"]) { value.contextUsedTokens = used }
+            if let size = SessionUsageSupport.count(update["size"]), size > 0 { value.contextWindowTokens = size }
+            if let cost = update["cost"] as? [String: Any], (cost["currency"] as? String ?? "USD").uppercased() == "USD", let amount = SessionUsageSupport.cost(cost["amount"]) {
+                value.costUSD = amount; value.costScope = "session"
+            }
+            publish()
+        case "acp.prompt_result":
+            guard let usage = event["usage"] as? [String: Any], let input = SessionUsageSupport.count(usage["inputTokens"]), let output = SessionUsageSupport.count(usage["outputTokens"]) else { return }
+            let read = SessionUsageSupport.count(usage["cachedReadTokens"]), written = SessionUsageSupport.count(usage["cachedWriteTokens"])
+            value.tokenScope = "response"
+            // opencode's `inputTokens` leaves the cached part out (acp/usage.ts buildUsage); here input includes it, as for the others.
+            value.inputTokens = SessionUsageSupport.sum([input, read ?? 0, written ?? 0])
+            value.outputTokens = output
+            value.cacheReadTokens = read; value.cacheWriteTokens = written
+            value.reasoningTokens = SessionUsageSupport.count(usage["thoughtTokens"])
+            value.totalTokens = SessionUsageSupport.count(usage["totalTokens"]) ?? SessionUsageSupport.sum([value.inputTokens, output])
+            publish()
+        default: break
+        }
     }
 
     func consumeMod(_ metadata: ModMetadata) {
@@ -374,7 +408,7 @@ final class SessionUsageTracker {
     }
     private func setModel(_ raw: Any?) { if let model = raw as? String, CoreValidation.model(model) { value.model = model } }
     private func setIdentity(_ raw: Any?) {
-        guard let id = raw as? String, CoreValidation.identifier(id) else { return }
+        guard let id = raw as? String, CoreValidation.sessionIdentifier(id) else { return }
         if let previous = value.providerSessionId, previous != id {
             value = SessionUsage(provider: value.provider, source: value.source, tokenScope: value.provider == "claude" ? "response" : "session")
             lastModSequence = -1; authoritativeModContext = false; claudeResultSeen = false
