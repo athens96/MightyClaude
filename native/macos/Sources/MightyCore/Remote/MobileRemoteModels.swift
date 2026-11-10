@@ -63,7 +63,7 @@ public struct MobileInfo: Codable, Sendable, Equatable {
 /// its name is listed, so a name appears here once the route behind it works.
 public enum MobileCapability {
     public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files",
-                             "structure", "direct", "push", "fileChanges", "workMap"]
+                             "structure", "direct", "push", "fileChanges", "workMap", "appUpdate"]
     /// Listed on top of `all` only by a host whose screen-share engine is
     /// running (`MobileRemoteService.capabilities`).
     public static let screenShare = "screenShare"
@@ -224,9 +224,42 @@ public struct MobileState: Codable, Sendable, Equatable {
     public var hostName: String
     public var workspaces: [MobileWorkspace]
     public var sessions: [MobileSessionSummary]
-    public init(revision: Int, hostName: String, workspaces: [MobileWorkspace], sessions: [MobileSessionSummary]) {
-        self.revision = revision; self.hostName = hostName; self.workspaces = workspaces; self.sessions = sessions
+    /// The desktop app's own update, for the phone's banner; absent from a host that cannot update itself (and older hosts).
+    public var appUpdate: MobileAppUpdate?
+    public init(revision: Int, hostName: String, workspaces: [MobileWorkspace], sessions: [MobileSessionSummary], appUpdate: MobileAppUpdate? = nil) {
+        self.revision = revision; self.hostName = hostName; self.workspaces = workspaces; self.sessions = sessions; self.appUpdate = appUpdate
     }
+}
+
+/// Where the desktop app's update stands, as the phone shows it.
+public struct MobileAppUpdate: Codable, Sendable, Equatable {
+    /// `idle`, `checking`, `upToDate`, `available`, `downloading`, `ready`, `installing` or `failed`.
+    public var phase: String
+    /// The running version.
+    public var current: String
+    /// The newer version on offer, while there is one.
+    public var available: String?
+    /// The update's short notes, at most ``maximumNotes`` characters.
+    public var notes: String?
+    /// 0…1 while downloading.
+    public var progress: Double?
+    public var error: String?
+    /// Requests running now, which an install stops: the phone asks before it sends `confirm`.
+    public var running: Int
+    public static let maximumNotes = 2_000
+    public init(phase: String, current: String, available: String? = nil, notes: String? = nil, progress: Double? = nil, error: String? = nil, running: Int = 0) {
+        self.phase = phase; self.current = current; self.available = available
+        self.notes = notes.map { String($0.prefix(Self.maximumNotes)) }; self.progress = progress; self.error = error; self.running = running
+    }
+}
+
+/// `POST /m1/app-update`: check for the desktop app's update, or install it and restart the app.
+public struct MobileAppUpdateRequest: Codable, Sendable {
+    /// `check` or `install`.
+    public var action: String
+    /// For `install`: the user agreed that the running requests stop.
+    public var confirm: Bool?
+    public init(action: String, confirm: Bool? = nil) { self.action = action; self.confirm = confirm }
 }
 
 public struct MobilePermissionField: Codable, Sendable, Equatable {

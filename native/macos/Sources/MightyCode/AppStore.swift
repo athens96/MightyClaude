@@ -161,7 +161,11 @@ final class AppStore: ObservableObject, DelegationHost {
     /// Each pane's phone `resultFiles` as last looked through (`MobileResultFilesMemo`): a
     /// result is looked through once, not on every long poll. Dropped with the pane.
     var mobileResultFiles: [String: MobileResultFilesMemo] = [:]
-    @Published var appUpdate = AppUpdateState()
+    @Published var appUpdate = AppUpdateState() { didSet { appUpdateChangedForPhone() } }
+    /// The phone asked to install the update: it goes on through download and install by itself.
+    var phoneRequestedAppUpdate = false
+    /// What the phone was last told of the update, so only a change wakes it.
+    var phoneAppUpdateSent: MobileAppUpdate?
     /// Mighty styles (AppStore+Styles.swift): what was found, what was said
     /// yes to, and the per-pane state the guided panel draws from.
     @Published var styleRegistry = StyleRegistry()

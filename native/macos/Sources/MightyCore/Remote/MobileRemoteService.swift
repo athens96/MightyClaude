@@ -38,6 +38,9 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws
     /// Types the answer to the pane's waiting terminal command (``TerminalPrompt``), as its card does.
     func mobileTerminalPrompt(sessionId: String, promptId: String, answer: TerminalPromptAnswer) async throws
+    /// Checks for the desktop app's update, or installs it and restarts the app (`install`); `confirm` says the
+    /// user agreed that running requests stop. Where the update stands afterwards.
+    func mobileAppUpdate(install: Bool, confirm: Bool) async throws -> MobileAppUpdate
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String
     func mobileRemoveQueued(sessionId: String, itemId: String) async throws
     func mobileRunNextQueued(sessionId: String) async throws
@@ -102,6 +105,8 @@ public extension MobileHostDelegate {
     }
     /// A host without plan cards has nothing to answer.
     func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws { throw MightyError(L("plan.error.notPlan")) }
+    /// A host that cannot update itself says so.
+    func mobileAppUpdate(install: Bool, confirm: Bool) async throws -> MobileAppUpdate { throw MightyError(L("appUpdate.mobile.unavailable")) }
     /// A host without terminal prompt cards has no command waiting.
     func mobileTerminalPrompt(sessionId: String, promptId: String, answer: TerminalPromptAnswer) async throws { throw MightyError(L("terminalPrompt.error.gone")) }
     /// A host without 바로 실행 on its rows knows no such row.
@@ -1179,6 +1184,12 @@ public actor MobileRemoteService {
                 guard CoreValidation.identifier(route[3]) else { throw Failure(404, L("remote.error.queueItemNotFound")) }
                 try await perform { try await delegate.mobileRemoveQueued(sessionId: id, itemId: route[3]) }
                 return reply(200, MobileOK())
+            }
+            if method == "POST", route == ["app-update"], url.query == nil {
+                let request = try decode(body, as: MobileAppUpdateRequest.self)
+                guard ["check", "install"].contains(request.action) else { throw Failure(400, L("appUpdate.mobile.badAction")) }
+                do { return reply(200, try await delegate.mobileAppUpdate(install: request.action == "install", confirm: request.confirm == true)) }
+                catch let failure as MightyError { throw Failure(409, failure.message) }
             }
             if method == "POST", route.count == 2, route[0] == "push", url.query == nil {
                 switch route[1] {

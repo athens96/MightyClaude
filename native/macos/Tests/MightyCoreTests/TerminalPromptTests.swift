@@ -105,3 +105,16 @@ private final class FakePromptPane: AgentTerminalPane, @unchecked Sendable {
     func sendSIGKILL(handle: String) {}
     func appendUserTyped(text: String, handle: String) { typed.append(text) }
 }
+
+/// The desktop app's update as the phone sees it.
+@Suite struct MobileAppUpdateTests {
+    @Test func theStateTravelsAsPlainJSONAndKeepsItsNotesShort() throws {
+        let state = MobileAppUpdate(phase: "available", current: "0.4.55", available: "0.4.56", notes: String(repeating: "n", count: 3_000), running: 2)
+        #expect(state.notes?.count == MobileAppUpdate.maximumNotes)
+        let json = try #require(String(data: JSONEncoder().encode(state), encoding: .utf8))
+        #expect(json.contains(#""phase":"available""#) && json.contains(#""running":2"#) && json.contains(#""available":"0.4.56""#))
+        #expect(MobileCapability.all.contains("appUpdate"))
+        let request = try JSONDecoder().decode(MobileAppUpdateRequest.self, from: Data(#"{"action":"install","confirm":true}"#.utf8))
+        #expect(request.action == "install" && request.confirm == true)
+    }
+}

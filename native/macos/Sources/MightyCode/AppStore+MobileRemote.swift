@@ -188,6 +188,9 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         await store.answerQuestionnaire(sessionId: sessionId, request: request, answers: answers)
         try await MainActor.run { try store.mobileCheckPermissionOutcome(sessionId: sessionId, requestId: requestId) }
     }
+    func mobileAppUpdate(install: Bool, confirm: Bool) async throws -> MobileAppUpdate {
+        try await MainActor.run { try self.store.orClosing().phoneAppUpdate(install: install, confirm: confirm) }
+    }
     func mobileTerminalPrompt(sessionId: String, promptId: String, answer: TerminalPromptAnswer) async throws {
         try await MainActor.run {
             let store = try self.store.orClosing()
@@ -485,7 +488,7 @@ extension AppStore {
         ))
         return MobileState(revision: revision, hostName: Host.current().localizedName ?? "Mighty Code Mac",
                            workspaces: RemoteWorkspacePhone.workspaces(snapshot.workspaces).map { MobileWorkspace(id: $0.id, name: $0.name, path: $0.path) },
-                           sessions: sessions)
+                           sessions: sessions, appUpdate: phoneAppUpdateState())
     }
 
     /// A pane the phone may see and act on by id; files panes are Mac-only.
