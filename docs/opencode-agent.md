@@ -52,7 +52,7 @@ OpenCode 1 처리:
 | 스트리밍 | 답 텍스트 delta, 도구 pending→in_progress→completed | 끝난 part만 |
 | 사용량 | 요청 전체 토큰(프롬프트 응답) + 세션 누적 비용(`usage_update`) | step마다 |
 | 이어하기 | `session/resume`(재생 없음), `session/load` | `-s ses_…` |
-| 재사용 | Hermes(`hermes acp`)도 같은 클라이언트 | opencode 전용 |
+| 재사용 | Hermes(`hermes acp`)도 같은 클라이언트([문서](hermes-agent.md)) | opencode 전용 |
 
 ACP를 골랐다. 승인 카드(Claude·Codex가 쓰는 `ToolPermissionRequest` → `ToolPermissionBar`)를 그대로 쓰고, 같은 `ACPChannel`을 Hermes가 다음에 쓴다. 2에서는 요청 전체 토큰이 프롬프트 응답에 오므로 1에서 잃던 정확도도 돌아왔다.
 
@@ -158,7 +158,7 @@ ACP를 골랐다. 승인 카드(Claude·Codex가 쓰는 `ToolPermissionRequest` 
 - `elicitation/create`(question 도구)를 앱의 질문 카드로 받기.
 - `_session/steering`으로 실행 중 끼어들기.
 - `SessionHistory`로 이전 요청 불러오기, opencode 스킬의 `/` 명령.
-- Hermes(`hermes acp`)를 같은 `ACPChannel`로 붙이기. provider별로 바뀌는 것은 argv, 권한 전달 방식, 로그인 판정뿐이게 둔다.
+- Hermes(`hermes acp`)는 같은 `ACPChannel`로 붙였다([Hermes 에이전트 창](hermes-agent.md)). provider별로 바뀌는 것은 argv, 권한 전달 방식, 로그인 판정, 설정의 id다.
 
 ## Windows가 맞출 것
 
