@@ -124,6 +124,11 @@ final class ExecutionGraphTracker {
     /// carries the larger of the two, since the CLI's report of a call may come before the message that makes it.
     private var seenTools: [String: Int] = [:]
     private var reportedTools: [String: Int] = [:]
+    /// The run main block that keeps each consultation of the advisor, by the server tool call's id (`GraphAdvisor`).
+    private var advisorOwners: [String: String] = [:]
+    private var advisorOrder: [String] = []
+    /// The blocks that have called a file-changing tool, for `GraphAdvisorCall.beforeChange`.
+    private var changedFiles = Set<String>()
 
     init(runID: String, input: String?, provider: String = "claude", configuredModel: String? = nil, emit: @escaping (ExecutionGraphNode) -> Void) {
         self.runID = runID; mainID = ExecutionGraphSupport.mainNodeID(runId: runID); self.provider = provider; self.configuredModel = configuredModel; self.emit = emit
@@ -344,7 +349,20 @@ final class ExecutionGraphTracker {
             compaction(key: Self.key(value["uuid"]) ?? "n\(compactions)", owner: current, detail: ContextCompaction.claudeSummary(value["compact_metadata"]))
             return
         }
+        if type == "result", parentTool == nil { advisorTurnEnded(value) }
         if type == "assistant", let message = value["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
+            // The advisor is a server tool: its call and its result are blocks of the caller's own message and make no
+            // tool block. In the order they stand, so a tool call after a consultation says the work went on.
+            for block in blocks {
+                switch block["type"] as? String {
+                case "server_tool_use":
+                    if block["name"] as? String == "advisor", let call = Self.key(block["id"]) { advisorAsked(call, caller: current, root: parentTool == nil) }
+                case "advisor_tool_result":
+                    if let call = Self.key(block["tool_use_id"]) { advisorAnswered(call, content: block["content"]) }
+                case "tool_use": advisorWorked(current, root: parentTool == nil, tool: block["name"] as? String)
+                default: break
+                }
+            }
             // A preamble beside a tool_use is not the reply; wait for a text-only answer.
             if parentTool == nil, !pendingSteers.isEmpty, !blocks.contains(where: { $0["type"] as? String == "tool_use" }), let text = Self.text(blocks), !text.isEmpty {
                 let answered = pendingSteers; pendingSteers.removeAll()
@@ -812,6 +830,110 @@ final class ExecutionGraphTracker {
             if let records {
                 node.usage = replaced.reduce(node.usage ?? GraphTokenUsage()) { $0 - $1.previous + $1.usage }
                 node.responseRecords = records
+            }
+        }
+    }
+
+    // MARK: Advisor
+
+    /// The run main block that keeps a consultation: a notice turn's own run for what its main session asks, else the
+    /// request's, whose blocks the sub-agents are.
+    private func advisorOwner(root: Bool) -> String {
+        guard root, let run = noticeTurn ?? mergeTurn else { return mainID }
+        let id = ExecutionGraphSupport.mainNodeID(runId: run)
+        return nodes[id]?.kind == "main" ? id : mainID
+    }
+    /// `caller` consulted the advisor (a `server_tool_use` block named `advisor`).
+    private func advisorAsked(_ call: String, caller: String, root: Bool) {
+        guard provider == "claude", CoreValidation.identifier(call), advisorOwners[call] == nil else { return }
+        let owner = advisorOwner(root: root)
+        advisorOwners[call] = owner
+        advisorOrder.append(call)
+        if advisorOrder.count > 1_024 { advisorOwners.removeValue(forKey: advisorOrder.removeFirst()) }
+        let asker: String? = root ? nil : caller
+        let time = now, unchanged = !changedFiles.contains(caller)
+        update(owner) { node in
+            var advisor = node.advisor ?? GraphAdvisor()
+            // Asking again is going on with the work: this caller's earlier consultations were not its last step.
+            for index in advisor.calls.indices where advisor.calls[index].caller == asker { advisor.calls[index].followed = true }
+            advisor.total = min(GraphAdvisor.maximumTotal, advisor.count + 1)
+            advisor.calls.append(GraphAdvisorCall(id: call, caller: asker, startedAt: time, state: "consulting", beforeChange: unchanged ? true : nil))
+            node.advisor = advisor
+        }
+    }
+    /// A consultation's result (`advisor_tool_result`): encrypted, the advice as text, or an error with its code.
+    private func advisorAnswered(_ call: String, content: Any?) {
+        guard let owner = advisorOwners[call] else { return }
+        let result = content as? [String: Any]
+        let kind = result?["type"] as? String ?? ""
+        let time = now
+        update(owner) { node in
+            guard var advisor = node.advisor, let index = advisor.calls.firstIndex(where: { $0.id == call }),
+                  advisor.calls[index].state == "consulting" else { return }
+            var value = advisor.calls[index]
+            value.endedAt = time
+            if let code = result?["error_code"] as? String {
+                value.state = "error"; value.errorCode = code
+            } else if kind.contains("error") {
+                value.state = "error"
+            } else {
+                value.state = result?["stop_reason"] as? String == "refusal" ? "declined" : "done"
+                if kind == "advisor_redacted_result" { value.redacted = true }
+                // Only the text the CLI gives: an encrypted reply has none.
+                if kind == "advisor_result", let text = result?["text"] as? String { value.text = text }
+            }
+            advisor.calls[index] = value
+            node.advisor = advisor
+        }
+    }
+    /// `caller` called a tool: its consultations so far were not its last step, and a file-changing tool is remembered.
+    private func advisorWorked(_ caller: String, root: Bool, tool: String?) {
+        guard provider == "claude" else { return }
+        if let tool, RunAudit.kind(tool: tool) == .write { changedFiles.insert(caller) }
+        let owner = advisorOwner(root: root)
+        let asker: String? = root ? nil : caller
+        guard nodes[owner]?.advisor?.calls.contains(where: { $0.caller == asker && $0.followed != true }) == true else { return }
+        update(owner) { node in
+            guard var advisor = node.advisor else { return }
+            for index in advisor.calls.indices where advisor.calls[index].caller == asker { advisor.calls[index].followed = true }
+            node.advisor = advisor
+        }
+    }
+    /// A root turn's result: what it says the advisor's own messages cost (`usage.iterations[]` of type
+    /// `advisor_message`, which also names the advisor's model), and the end of what the main session still had out.
+    private func advisorTurnEnded(_ frame: [String: Any]) {
+        guard provider == "claude" else { return }
+        let owner = advisorOwner(root: true)
+        var tokens = GraphTokenUsage()
+        var model: String?
+        let iterations = (frame["usage"] as? [String: Any])?["iterations"] as? [Any] ?? []
+        for case let iteration as [String: Any] in iterations.prefix(4_096) where iteration["type"] as? String == "advisor_message" {
+            if let usage = GraphTokenUsage.parse(iteration) { tokens = tokens + usage }
+            if let name = iteration["model"] as? String, CoreValidation.model(name) { model = name }
+        }
+        let out = nodes[owner]?.advisor?.calls.contains { $0.caller == nil && $0.state == "consulting" } == true
+        guard !tokens.isEmpty || model != nil || out else { return }
+        let time = now
+        update(owner) { node in
+            var advisor = node.advisor ?? GraphAdvisor()
+            if !tokens.isEmpty { advisor.usage = (advisor.usage ?? GraphTokenUsage()) + tokens }
+            if let model { advisor.model = model }
+            for index in advisor.calls.indices where advisor.calls[index].caller == nil && advisor.calls[index].state == "consulting" {
+                advisor.calls[index].state = "stopped"; advisor.calls[index].endedAt = time
+            }
+            node.advisor = advisor
+        }
+    }
+    /// The process ended: a consultation still out never got its result.
+    private func stopAdvisorCalls() {
+        let time = now
+        for id in order where nodes[id]?.advisor?.calls.contains(where: { $0.state == "consulting" }) == true {
+            update(id) { node in
+                guard var advisor = node.advisor else { return }
+                for index in advisor.calls.indices where advisor.calls[index].state == "consulting" {
+                    advisor.calls[index].state = "stopped"; advisor.calls[index].endedAt = time
+                }
+                node.advisor = advisor
             }
         }
     }
@@ -1386,6 +1508,7 @@ final class ExecutionGraphTracker {
             if let metadata = pending.metadata { apply(metadata, to: id) }
         }
         pendingAgents.removeAll()
+        stopAdvisorCalls()
         for (id, agent) in pendingParents { if let parent = aliases[agent], id != parent { update(id) { $0.parentId = parent } } }
         for id in order where id != mainID {
             guard let node = nodes[id], !ExecutionGraphSupport.terminal(node.state) else { continue }

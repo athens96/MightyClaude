@@ -144,6 +144,94 @@ public struct GraphAgentFigures: Codable, Sendable, Equatable {
     public var ended: Date? { endedAt.flatMap(AgentRunTiming.parseTimestamp) }
 }
 
+/// One consultation of the advisor (Claude Code's server-side advisor tool, `claude --advisor <model>`), as the
+/// stream showed it and nothing more: the advisor's reply usually goes to Claude encrypted, and then there is no text
+/// here to show.
+public struct GraphAdvisorCall: Codable, Sendable, Equatable, Identifiable {
+    /// The server tool call's id (`srvtoolu_…`).
+    public var id: String
+    /// The block that asked: a sub-agent block's id; nil is the run's main session.
+    public var caller: String?
+    /// When the call was seen and when its result was: the frames' own `timestamp`, else the moment they were read.
+    public var startedAt: String?
+    public var endedAt: String?
+    /// `consulting` until its result; then `done` (a reply came), `declined` (the reply was a refusal), `error` (the
+    /// CLI reported an error: `errorCode`) or `stopped` (the turn or the process ended before a result).
+    public var state: String
+    /// The reply came encrypted (`advisor_redacted_result`): it went to Claude and there is no text to show.
+    public var redacted: Bool?
+    /// The advice, when the CLI gave it as text (`advisor_result`), bounded.
+    public var text: String?
+    /// An error result's `error_code`.
+    public var errorCode: String?
+    /// When it asked, the caller had called no file-changing tool yet (Edit, Write, MultiEdit, NotebookEdit).
+    public var beforeChange: Bool?
+    /// The caller called a tool again after it (another consultation counts): it was not the caller's last step.
+    public var followed: Bool?
+
+    public init(id: String, caller: String? = nil, startedAt: String? = nil, endedAt: String? = nil, state: String = "consulting", redacted: Bool? = nil,
+                text: String? = nil, errorCode: String? = nil, beforeChange: Bool? = nil, followed: Bool? = nil) {
+        self.id = id; self.caller = caller; self.startedAt = startedAt; self.endedAt = endedAt; self.state = state; self.redacted = redacted
+        self.text = text; self.errorCode = errorCode; self.beforeChange = beforeChange; self.followed = followed
+    }
+    public var started: Date? { startedAt.flatMap(AgentRunTiming.parseTimestamp) }
+    public var ended: Date? { endedAt.flatMap(AgentRunTiming.parseTimestamp) }
+    var byteCount: Int { id.utf8.count + (caller?.utf8.count ?? 0) + (startedAt?.utf8.count ?? 0) + (endedAt?.utf8.count ?? 0) + state.utf8.count + (text?.utf8.count ?? 0) + (errorCode?.utf8.count ?? 0) }
+}
+
+/// A run's use of the advisor: the consultations the stream showed and what its turns' results said the advisor's own
+/// messages cost. Kept on the run's main block (a notice turn's own run for what its main session asked); a run that
+/// never consulted it carries none, as do older graph events and saves.
+public struct GraphAdvisor: Codable, Sendable, Equatable {
+    /// The advisor's model as a turn's result named it (`usage.iterations[]` of type `advisor_message`).
+    public var model: String?
+    /// The tokens of the advisor's own messages, summed over the results of the run's turns.
+    public var usage: GraphTokenUsage?
+    /// The newest consultations, oldest first, at most `maximumCalls`.
+    public var calls: [GraphAdvisorCall]
+    /// Every consultation seen, when that is more than `calls` keeps.
+    public var total: Int?
+
+    public init(model: String? = nil, usage: GraphTokenUsage? = nil, calls: [GraphAdvisorCall] = [], total: Int? = nil) {
+        self.model = model; self.usage = usage; self.calls = calls; self.total = total
+    }
+    public static let maximumCalls = 32
+    public static let maximumTextBytes = 2 * 1024
+    public static let maximumTotal = 1_000_000
+    public static let states = ["consulting", "done", "declined", "error", "stopped"]
+    /// Every consultation seen, kept or not.
+    public var count: Int { max(total ?? 0, calls.count) }
+    public var isEmpty: Bool { model == nil && usage == nil && calls.isEmpty }
+    var byteCount: Int { (model?.utf8.count ?? 0) + calls.reduce(0) { $0 + $1.byteCount } }
+
+    /// Bounded for the wire and for saves: the newest calls with ids, states and times the app can read back and a
+    /// bounded text; nil when nothing is left. `restoring`: a consultation still out when the app closed never got
+    /// its result.
+    public func normalized(restoring: Bool = false) -> GraphAdvisor? {
+        func time(_ value: String?) -> String? {
+            value.flatMap { $0.utf8.count <= 80 && AgentRunTiming.parseTimestamp($0) != nil ? $0 : nil }
+        }
+        var seen = Set<String>()
+        var kept: [GraphAdvisorCall] = []
+        for call in calls.suffix(Self.maximumCalls) {
+            guard CoreValidation.identifier(call.id), Self.states.contains(call.state), call.caller.map(CoreValidation.identifier) ?? true,
+                  seen.insert(call.id).inserted else { continue }
+            var value = call
+            value.startedAt = time(call.startedAt); value.endedAt = time(call.endedAt)
+            if restoring, value.state == "consulting" { value.state = "stopped" }
+            value.redacted = call.redacted == true ? true : nil
+            value.text = call.text.map { ActivitySupport.clean($0, maximumBytes: Self.maximumTextBytes) }.flatMap { $0.isEmpty ? nil : $0 }
+            value.errorCode = call.errorCode.map { ActivitySupport.clean($0, maximumBytes: 80, singleLine: true) }.flatMap { $0.isEmpty ? nil : $0 }
+            value.beforeChange = call.beforeChange == true ? true : nil
+            value.followed = call.followed == true ? true : nil
+            kept.append(value)
+        }
+        let all = min(Self.maximumTotal, count)
+        let value = GraphAdvisor(model: model.flatMap { CoreValidation.model($0) ? $0 : nil }, usage: usage?.normalized, calls: kept, total: all > kept.count ? all : nil)
+        return value.isEmpty ? nil : value
+    }
+}
+
 /// A request-scoped node snapshot. Missing input/output means the engine did
 /// not report it; display code must not manufacture a prompt or final answer.
 public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
@@ -174,11 +262,15 @@ public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
     public var identity: GraphAgentIdentity?
     /// A sub-agent block's start, end and tool calls (`GraphAgentFigures`); absent as `identity` is.
     public var figures: GraphAgentFigures?
+    /// A run's use of the advisor (`GraphAdvisor`), on its main block; absent on other blocks, in a run that never
+    /// consulted it, in older graph events and in older saves.
+    public var advisor: GraphAdvisor?
 
     public init(id: String, runId: String, parentId: String? = nil, kind: String, state: String, title: String,
                 input: String? = nil, output: String? = nil, entries: [LogEntry] = [], updatedAt: String = mightyTimestamp(), usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil,
                 background: Bool? = nil, outputFile: String? = nil, noticeReply: String? = nil, sourceBlockId: String? = nil, identity: GraphAgentIdentity? = nil,
-                figures: GraphAgentFigures? = nil) {
+                figures: GraphAgentFigures? = nil, advisor: GraphAdvisor? = nil) {
+        self.advisor = advisor
         self.id = id; self.runId = runId; self.parentId = parentId; self.kind = kind; self.state = state
         self.title = title; self.input = input; self.output = output; self.entries = entries; self.updatedAt = updatedAt; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
         self.background = background; self.outputFile = outputFile; self.noticeReply = noticeReply; self.sourceBlockId = sourceBlockId
@@ -227,6 +319,8 @@ public enum ExecutionGraphSupport {
         // Only a sub-agent block has a type, a model of its own and an isolation.
         result.identity = node.kind == "agent" ? node.identity?.normalized : nil
         result.figures = node.kind == "agent" ? node.figures?.normalized : nil
+        // Only a run's main block keeps its consultations of the advisor.
+        result.advisor = node.kind == "main" ? node.advisor?.normalized(restoring: restoring) : nil
         if restoring && !terminal(result.state) { result.state = "stopped" }
         if node.kind == "main" { result.entries = []; return result }
 

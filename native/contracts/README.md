@@ -591,12 +591,14 @@ Recordings of Claude Code 2.1.322 (`--print --verbose --output-format stream-jso
 one frame a line, as the CLI wrote them apart from this: hook and rate-limit
 frames are dropped, the `init` frame is cut to the keys that name the run, the
 session, request, message, tool and agent ids and the paths are replaced, and
-thinking signatures and the credential expiry are cut.
+thinking signatures, the advisor's encrypted content and the credential expiry
+are cut.
 
 | File | What was recorded |
 | --- | --- |
 | `claude-stream-subagents.jsonl` | A foreground and then a background Explore sub-agent (Haiku) with the flags the Mac app runs Claude with (`--input-format stream-json --permission-prompts host --permission-prompt-tool stdio`, stdin left open): the request's `result` comes when its turn ends, the background agent's notification opens a turn of its own. |
 | `claude-stream-fork-worktree.jsonl` | A fork (`subagent_type: "fork"`) and a sub-agent with `isolation: "worktree"`, recorded with a prompt argument and `--forward-subagent-text`, which the app does not pass: the foreground agent's thinking and text frames are there too, and both `result` frames come at the end. |
+| `claude-stream-advisor.jsonl` | One request with the advisor on (`--advisor`: an Opus 5.5 advisor for a Sonnet 5.5 main model): the main session consults the advisor once and answers. |
 
 What they show of a sub-agent, and what the Mac's graph tracker reads
 (`GraphAgentIdentityTests`): the Agent call's input names `subagent_type`,
@@ -620,6 +622,23 @@ for the block's result (`ForegroundAgentNoticeTests`). A sub-agent's own `assist
 `parent_tool_use_id`, `agent_id` and `subagent_type`; a background agent's
 thinking and text frames come without `--forward-subagent-text`, a foreground
 agent's only with it.
+
+What the third shows of the advisor, and what the Mac's graph tracker reads
+(`GraphAdvisorTests`): a consultation is a content block of the caller's own
+`assistant` message, `{"type":"server_tool_use","id":"srvtoolu_…","name":"advisor","input":{}}`,
+and its result a later block of the same message,
+`{"type":"advisor_tool_result","tool_use_id":"srvtoolu_…","content":{…}}`. Each
+block comes as a frame of its own with the message's id and its own
+`timestamp`; here the result came eight seconds after the call. The content
+recorded is `advisor_redacted_result` with `encrypted_content`: the advice goes
+to Claude encrypted and the stream holds no text of it. The other shapes the
+tracker reads are `advisor_result` (`text`, `stop_reason`) and an error type
+with `error_code`; neither is in a recording. The `result` frame's
+`usage.iterations[]` has one entry of `type: "advisor_message"` with the
+advisor's `model` and its tokens between the main model's `message` entries, and
+`modelUsage` has the advisor's model beside the main one. The tracker keeps the
+consultation on the run's main block (`advisor`: who asked, when, how it ended,
+the advisor's model and tokens) and makes no tool block or tool row for it.
 
 ## Help capture demo profile (`fixtures/demo-profile.json`)
 

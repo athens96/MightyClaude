@@ -83,6 +83,13 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     /// A notice run's title, "<kind> · <name>" (`BackgroundNoticeRuns.title(kind:names:)`), its main block's; absent in
     /// request runs and in older saves, whose notice runs read `BackgroundNoticeRuns.genericTitle` (`heading`).
     public var noticeTitle: String?
+    /// The run's use of the advisor: its consultations and what they cost (`GraphAdvisor`). Absent in a run that never
+    /// consulted it and in older saves.
+    public var advisor: GraphAdvisor?
+    /// The advisor's model the request was started with, when one was known to be on: the pane's own choice, else what
+    /// Claude's settings name (`ClaudeAdvisorSettings`). Absent when none was known, when the pane turned it off, in
+    /// older saves and in runs the app did not start.
+    public var configuredAdvisor: String?
     /// `backgroundWaiting` of the run `shown` was made from, whose background blocks it no longer holds. Never saved.
     fileprivate var shownBackgroundWaiting: Int?
     /// The background work of the whole request this run belongs to (`MightyGraphSupport.withBackgroundWaiting`), which a notice run
@@ -111,9 +118,11 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, input, status, rootEntries, agents, resultEntries, sourceRunID, finalOutput, usage, responseRecords, provider, nodeModelLabel, configuredModel, noticeRun, noticeTitle
         case configuredEffort
+        case advisor, configuredAdvisor
     }
     public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, responseRecords: [GraphResponseRecord]? = nil, provider: String? = nil, nodeModelLabel: String? = nil, configuredModel: String? = nil,
-                noticeRun: Bool? = nil, noticeTitle: String? = nil, configuredEffort: String? = nil) {
+                noticeRun: Bool? = nil, noticeTitle: String? = nil, configuredEffort: String? = nil, advisor: GraphAdvisor? = nil, configuredAdvisor: String? = nil) {
+        self.advisor = advisor; self.configuredAdvisor = configuredAdvisor
         self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.responseRecords = responseRecords; self.provider = provider; self.nodeModelLabel = nodeModelLabel; self.configuredModel = configuredModel
         self.noticeRun = noticeRun; self.noticeTitle = noticeTitle; self.configuredEffort = configuredEffort
     }
@@ -347,6 +356,9 @@ public enum MightyGraphSupport {
             if let source = run.sourceRunID, !CoreValidation.identifier(source) { run.sourceRunID = nil }
             run.noticeRun = run.noticeRun == true ? true : nil
             run.configuredEffort = run.configuredEffort.flatMap { CoreValidation.effort($0) ? $0 : nil }
+            run.configuredAdvisor = run.configuredAdvisor.flatMap { CoreValidation.model($0) ? $0 : nil }
+            run.advisor = run.advisor?.normalized(restoring: restoring)
+            budget -= run.advisor?.byteCount ?? 0
             run.noticeTitle = run.noticeRun == true ? run.noticeTitle.map { bounded($0, maximum: 240, budget: &budget) }.flatMap { $0.isEmpty ? nil : $0 } : nil
             // Prefer the actual final answer over older intermediate output.
             run.finalOutput = run.finalOutput.map { bounded($0, maximum: min(32_768, max(0, budget / 3)), budget: &budget) }
@@ -571,12 +583,15 @@ extension RunSession {
     /// `status` "starting" is a request this app sent that reads 전송 중 until its run's
     /// first event (natural submit B1; `recordGraph` moves it on).
     /// `configuredEffort` is the pane's effort setting at that moment, kept for the 실행 block's header.
-    public mutating func beginGraphRun(input: String, id: String = UUID().uuidString, configuredModel: String, configuredEffort: String? = nil, status: String = "running") {
+    /// `configuredAdvisor` is the advisor's model when one is known to be on for the request (`MightyGraphRun.configuredAdvisor`).
+    public mutating func beginGraphRun(input: String, id: String = UUID().uuidString, configuredModel: String, configuredEffort: String? = nil,
+                                       configuredAdvisor: String? = nil, status: String = "running") {
         guard kind == "claude", MightyGraphSupport.providers.contains(provider) else { return }
         if graphRuns == nil { graphRuns = MightyGraphSupport.legacyRuns(self) }
         graphRuns?.append(MightyGraphRun(id: id, input: input, status: status, provider: provider,
                                          nodeModelLabel: GraphModelLabel.nodeModelLabel(cliReportedModel: nil, configuredModel: configuredModel),
-                                         configuredModel: configuredModel, configuredEffort: configuredEffort))
+                                         configuredModel: configuredModel, configuredEffort: configuredEffort,
+                                         configuredAdvisor: provider == "claude" ? configuredAdvisor.flatMap { CoreValidation.model($0) ? $0 : nil } : nil))
         graphRuns = graphRuns.map { MightyGraphSupport.boundedLiveHistory(Array($0.suffix(128))) }
     }
 
@@ -627,7 +642,7 @@ extension RunSession {
                 while index > 0, runs[index - 1].sourceRunID == nil, !MightyGraphSupport.terminal(runs[index - 1].status) { index -= 1 }
                 runs.insert(MightyGraphRun(id: node.runId, input: node.input ?? "", status: node.state, sourceRunID: node.runId, provider: provider,
                                            nodeModelLabel: original?.nodeModelLabel, configuredModel: original?.configuredModel,
-                                           noticeRun: true, configuredEffort: original?.configuredEffort), at: index)
+                                           noticeRun: true, configuredEffort: original?.configuredEffort, configuredAdvisor: original?.configuredAdvisor), at: index)
             } else {
                 // New process identities bind only to the pending request.
                 index = runs.count - 1
@@ -646,6 +661,7 @@ extension RunSession {
                 }
                 if let usage = node.usage { runs[index].usage = usage }
                 if let records = node.responseRecords { runs[index].responseRecords = records }
+                if let advisor = node.advisor { runs[index].advisor = advisor }
                 if let output = node.output, !output.isEmpty { runs[index].finalOutput = output }
             } else {
                 let parent = node.parentId == ExecutionGraphSupport.mainNodeID(runId: node.runId) ? nil : node.parentId
