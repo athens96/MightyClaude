@@ -54,6 +54,17 @@ Claude가 선택지를 주고 물으면 {{ui:phone.questionnaire.title}} 카드�
 3. 질문이 여럿이면 {{ui:phone.questionnaire.next}} 단추로 넘어갑니다.
 4. 모두 답한 뒤 {{ui:phone.questionnaire.submit}}를 누릅니다. 고르기만 해서는 보내지지 않습니다.
 
+## 터미널이 입력을 기다릴 때 {#terminal-prompt}
+
+에이전트가 터미널에서 실행한 명령(또는 답의 셸 블록에서 {{ui:run.shellBlock.run}}을 누른 명령)이 입력을 기다리면, 그 에이전트 창의 입력창 위에 **{{ui:terminalPrompt.title}}** 카드가 뜹니다. 터미널 창으로 가지 않고 카드에서 답하면, 그 답이 터미널에 그대로 입력됩니다. 휴대폰의 같은 창에도 같은 카드가 뜹니다.
+
+- **예/아니오 질문**(`(Y/n)` 같은 것): {{ui:terminalPrompt.yes}} 또는 {{ui:terminalPrompt.no}}를 누릅니다. Enter만 눌렀을 때의 답에는 ({{ui:terminalPrompt.default}})이 붙습니다.
+- **비밀번호**: 가려지는 칸에 입력하고 {{ui:terminalPrompt.send}}를 누릅니다. 입력한 내용은 화면과 대화 기록 어디에도 남지 않습니다.
+- **글 입력**: 칸에 입력하고 {{ui:terminalPrompt.send}}를 누르거나, 기본값을 받아들이려면 {{ui:terminalPrompt.enterOnly}}를 누릅니다.
+- **목록에서 고르기**: {{ui:terminalPrompt.up}}·{{ui:terminalPrompt.down}}로 옮기고 {{ui:terminalPrompt.select}}을 누릅니다.
+
+카드는 명령의 출력이 잠시 멈춘 뒤에 뜨고, 답하거나 명령이 다시 출력하거나 끝나면 사라집니다. 에이전트가 대신 답하는 일은 없습니다. 터미널 창에서 직접 입력해도 됩니다({{ui:terminalPrompt.showTerminal}}).
+
 ## 로그인이 끊겼을 때 {#login-recovery}
 CLI 로그인이 만료되어 요청이 실패하면 입력창 위에 로그인 복구 카드가 뜹니다.
 1. {{ui:loginRecovery.loginButton}}을 누릅니다.

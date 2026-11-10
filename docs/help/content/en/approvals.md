@@ -54,6 +54,17 @@ When Claude asks you to choose between options, a {{ui:phone.questionnaire.title
 3. If there are several questions, go on with {{ui:phone.questionnaire.next}}.
 4. When all are answered, click {{ui:phone.questionnaire.submit}}. Picking alone doesn't send anything.
 
+## When the terminal waits for input {#terminal-prompt}
+
+When a command the agent ran in the terminal (or one you started with {{ui:run.shellBlock.run}} on a shell block in a reply) waits for input, a **{{ui:terminalPrompt.title}}** card appears above that agent pane's composer. Answer on the card instead of going to the terminal pane, and the answer is typed into the terminal as it is. The same card shows in that pane on the phone.
+
+- **Yes/no questions** (like `(Y/n)`): press {{ui:terminalPrompt.yes}} or {{ui:terminalPrompt.no}}. The answer Enter alone would give is marked ({{ui:terminalPrompt.default}}).
+- **Passwords**: type into the hidden field and press {{ui:terminalPrompt.send}}. What you type is never shown or kept in the conversation.
+- **Text**: type and press {{ui:terminalPrompt.send}}, or press {{ui:terminalPrompt.enterOnly}} to take the default.
+- **Lists**: move with {{ui:terminalPrompt.up}} and {{ui:terminalPrompt.down}}, then press {{ui:terminalPrompt.select}}.
+
+The card appears once the command's output has paused for a moment, and goes when you answer, the command prints again or it ends. The agent never answers for you. You can still type in the terminal pane yourself ({{ui:terminalPrompt.showTerminal}}).
+
 ## When the sign-in drops {#login-recovery}
 If a request fails because the CLI sign-in expired, a sign-in recovery card appears above the composer.
 1. Click {{ui:loginRecovery.loginButton}}.

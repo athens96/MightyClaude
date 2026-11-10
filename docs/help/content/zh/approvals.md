@@ -54,6 +54,17 @@ Claude 给出选项向你提问时，会弹出{{ui:phone.questionnaire.title}}�
 3. 如果有多个问题，用{{ui:phone.questionnaire.next}}按钮进入下一题。
 4. 全部回答后，点击{{ui:phone.questionnaire.submit}}。只选择答案不会发送。
 
+## 终端等待输入时 {#terminal-prompt}
+
+当智能体在终端中运行的命令（或你在回复中的 shell 代码块上按 {{ui:run.shellBlock.run}} 运行的命令）等待输入时，该智能体窗格的输入框上方会出现 **{{ui:terminalPrompt.title}}** 卡片。不必切换到终端窗格，直接在卡片上回答，回答就会原样输入到终端。手机上同一窗格也会出现同样的卡片。
+
+- **是/否问题**（如 `(Y/n)`）：按 {{ui:terminalPrompt.yes}} 或 {{ui:terminalPrompt.no}}。只按 Enter 时的回答会标上（{{ui:terminalPrompt.default}}）。
+- **密码**：在隐藏的输入框中输入并按 {{ui:terminalPrompt.send}}。输入内容不会显示，也不会留在对话记录中。
+- **文本输入**：输入后按 {{ui:terminalPrompt.send}}，或按 {{ui:terminalPrompt.enterOnly}} 接受默认值。
+- **从列表中选择**：用 {{ui:terminalPrompt.up}}、{{ui:terminalPrompt.down}} 移动，再按 {{ui:terminalPrompt.select}}。
+
+卡片会在命令输出暂停片刻后出现，回答后、命令再次输出或结束时消失。智能体不会替你回答。你也可以直接在终端窗格中输入（{{ui:terminalPrompt.showTerminal}}）。
+
 ## 登录断开时 {#login-recovery}
 CLI 登录过期导致请求失败时，输入框上方会出现登录恢复卡片。
 1. 点击{{ui:loginRecovery.loginButton}}。

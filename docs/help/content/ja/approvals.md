@@ -54,6 +54,17 @@ Claudeが選択肢を示して質問すると、{{ui:phone.questionnaire.title}}
 3. 質問が複数ある場合は、{{ui:phone.questionnaire.next}}ボタンで次に進みます。
 4. すべて答えたら、{{ui:phone.questionnaire.submit}}をクリックします。選ぶだけでは送信されません。
 
+## ターミナルが入力を待っているとき {#terminal-prompt}
+
+エージェントがターミナルで実行したコマンド（または返答のシェルブロックで {{ui:run.shellBlock.run}} を押して実行したコマンド）が入力を待つと、そのエージェントペインの入力欄の上に **{{ui:terminalPrompt.title}}** カードが表示されます。ターミナルペインに移らずカードで答えると、その答えがそのままターミナルに入力されます。スマートフォンの同じペインにも同じカードが表示されます。
+
+- **はい/いいえの質問**（`(Y/n)` など）：{{ui:terminalPrompt.yes}} または {{ui:terminalPrompt.no}} を押します。Enter だけを押したときの答えには（{{ui:terminalPrompt.default}}）が付きます。
+- **パスワード**：隠された入力欄に入力して {{ui:terminalPrompt.send}} を押します。入力内容は画面にも会話の記録にも残りません。
+- **テキスト入力**：入力して {{ui:terminalPrompt.send}} を押すか、既定値を受け入れるなら {{ui:terminalPrompt.enterOnly}} を押します。
+- **リストから選ぶ**：{{ui:terminalPrompt.up}}・{{ui:terminalPrompt.down}} で移動して {{ui:terminalPrompt.select}} を押します。
+
+カードはコマンドの出力が少し止まったあとに表示され、答えたとき、コマンドが再び出力したとき、終わったときに消えます。エージェントが代わりに答えることはありません。ターミナルペインに直接入力することもできます（{{ui:terminalPrompt.showTerminal}}）。
+
 ## サインインが切れたとき {#login-recovery}
 CLIのサインインの有効期限が切れてリクエストが失敗すると、入力欄の上にサインインを復旧するカードが表示されます。
 1. {{ui:loginRecovery.loginButton}}をクリックします。
