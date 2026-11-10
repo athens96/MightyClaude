@@ -21,9 +21,9 @@ release.say = lambda message: None
 
 LIVE_PAGE = """<body>
   <p>버전 0.4.47</p>
-  <a class="button" href="0.4.47/MightyClaude-macos.zip">Mac</a>
-  <a class="button" href="0.4.47/MightyClaude-windows-x64-setup.exe">Windows</a>
-  <a class="button" href="android/MightyClaude-android.apk" download="MightyClaude-0.4.47.apk">Android</a>
+  <a class="button" href="0.4.47/MightyCode-macos.zip">Mac</a>
+  <a class="button" href="0.4.47/MightyCode-windows-x64-setup.exe">Windows</a>
+  <a class="button" href="android/MightyCode-android.apk" download="MightyCode-0.4.47.apk">Android</a>
   <p>0.4.35 이후 설치한 앱 위에 그대로 업데이트됩니다.</p>
 </body>"""
 
@@ -37,7 +37,7 @@ def make_mac_zip(path, version, marker="", key=None, url=None, engine=True):
             "MightyUpdateManifestURL": f"{release.PUBLIC_BASE}/latest.json" if url is None else url}
     info = {k: v for k, v in info.items() if v != ""} | {"MarkerForTests": marker or "-"}
     with zipfile.ZipFile(path, "w") as z:
-        z.writestr("MightyClaude.app/Contents/Info.plist", plistlib.dumps(info))
+        z.writestr("MightyCode.app/Contents/Info.plist", plistlib.dumps(info))
         if engine:
             z.writestr(release.MAC_ENGINE + "Chromium Embedded Framework", b"engine")
 
@@ -45,7 +45,7 @@ def make_mac_zip(path, version, marker="", key=None, url=None, engine=True):
 class MacPackageTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.path = os.path.join(self.tmp, "MightyClaude-macos.zip")
+        self.path = os.path.join(self.tmp, "MightyCode-macos.zip")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -76,22 +76,22 @@ class PageTests(unittest.TestCase):
     def test_fills_version_links_apk_and_icon(self):
         page = release.render_page("0.4.52", "0.4.50", has_dmg=False)
         self.assertEqual(release.page_version(page), "0.4.52")
-        self.assertIn('href="0.4.52/MightyClaude-macos.zip"', page)
-        self.assertIn('href="0.4.52/MightyClaude-windows-x64-setup.exe"', page)
-        self.assertIn('href="0.4.52/MightyClaude-windows-arm64.zip"', page)
-        self.assertIn('download="MightyClaude-0.4.50.apk"', page)
+        self.assertIn('href="0.4.52/MightyCode-macos.zip"', page)
+        self.assertIn('href="0.4.52/MightyCode-windows-x64-setup.exe"', page)
+        self.assertIn('href="0.4.52/MightyCode-windows-arm64.zip"', page)
+        self.assertIn('download="MightyCode-0.4.50.apk"', page)
         self.assertEqual(release.page_apk_version(page), "0.4.50")
         self.assertIn('src="data:image/png;base64,', page)
         self.assertNotIn("{{", page)
 
     def test_the_dmg_blocks_ship_only_with_a_dmg(self):
         without = release.render_page("0.4.52", "0.4.50", has_dmg=False)
-        self.assertNotIn("MightyClaude-macos.dmg", without)
+        self.assertNotIn("MightyCode-macos.dmg", without)
         self.assertNotIn("dmg-begin", without)
         self.assertNotIn("Apple 공증", without)
         with_dmg = release.render_page("0.4.52", "0.4.50", has_dmg=True)
-        self.assertIn('href="0.4.52/MightyClaude-macos.dmg"', with_dmg)
-        self.assertLess(with_dmg.index("MightyClaude-macos.dmg"), with_dmg.index("MightyClaude-macos.zip"))
+        self.assertIn('href="0.4.52/MightyCode-macos.dmg"', with_dmg)
+        self.assertLess(with_dmg.index("MightyCode-macos.dmg"), with_dmg.index("MightyCode-macos.zip"))
         self.assertIn("Apple 공증", with_dmg)
         self.assertNotIn("dmg-begin", with_dmg)
 
@@ -99,7 +99,7 @@ class PageTests(unittest.TestCase):
         page = release.render_page("0.4.52", "0.4.50", has_dmg=True)
         hrefs = re.findall(r'href="([^"]+)"', page)
         shipped = {f"0.4.52/{n}" for n in release.PACKAGES + release.OPTIONAL_PACKAGES}
-        self.assertTrue(set(hrefs) <= shipped | {"android/MightyClaude-android.apk", "help/"}, hrefs)
+        self.assertTrue(set(hrefs) <= shipped | {"android/MightyCode-android.apk", "help/"}, hrefs)
 
     def test_reads_the_version_of_the_old_and_the_new_page(self):
         self.assertEqual(release.page_version(LIVE_PAGE), "0.4.47")
@@ -147,7 +147,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(payload["version"], "0.4.48")
         self.assertEqual(payload["build"], 1360)
         self.assertEqual(payload["notes"], "- 바뀐 점")
-        self.assertEqual(payload["macos"]["url"], f"{release.PUBLIC_BASE}/0.4.48/MightyClaude-macos.zip")
+        self.assertEqual(payload["macos"]["url"], f"{release.PUBLIC_BASE}/0.4.48/MightyCode-macos.zip")
         self.assertEqual(payload["windows"]["arm64"]["size"], 1002)
 
     def test_wrong_public_key_fails(self):
@@ -166,13 +166,13 @@ class ManifestTests(unittest.TestCase):
             self.verify(tampered)
 
     def test_changed_file_fails_size_and_sha(self):
-        with open(os.path.join(self.folder, "MightyClaude-windows-x64.zip"), "ab") as f:
+        with open(os.path.join(self.folder, "MightyCode-windows-x64.zip"), "ab") as f:
             f.write(b"x")
         with self.assertRaisesRegex(release.ReleaseError, "x64 size.*x64 sha256"):
             self.verify()
 
     def test_same_size_different_bytes_fails_sha(self):
-        path = os.path.join(self.folder, "MightyClaude-macos.zip")
+        path = os.path.join(self.folder, "MightyCode-macos.zip")
         with open(path, "r+b") as f:
             f.write(b"\xff")
         with self.assertRaisesRegex(release.ReleaseError, "macos sha256"):
@@ -273,7 +273,7 @@ class CiManifestTests(unittest.TestCase):
                         "headBranch": "main", "headSha": "a1b2"}
                 return json.dumps([other] + extra(token) + [mine])
             if args[:3] == ["gh", "run", "download"]:
-                self.assertEqual(args[args.index("-n") + 1], "MightyClaude-release-manifest")
+                self.assertEqual(args[args.index("-n") + 1], "MightyCode-release-manifest")
                 target = args[args.index("-D") + 1]
                 os.makedirs(target, exist_ok=True)
                 notes_file = os.path.join(self.temp.name, "ci-notes.md")
@@ -310,7 +310,7 @@ class CiManifestTests(unittest.TestCase):
         with open(os.path.join(self.folder, "latest.json"), encoding="utf-8") as f:
             payload = release.envelope_payload(json.load(f))
         self.assertEqual(payload["notes"], self.notes.strip())
-        self.assertEqual(payload["windows"]["arm64"]["url"], f"{release.PUBLIC_BASE}/0.4.48/MightyClaude-windows-arm64.zip")
+        self.assertEqual(payload["windows"]["arm64"]["url"], f"{release.PUBLIC_BASE}/0.4.48/MightyCode-windows-arm64.zip")
         self.assertEqual([c[3] for c in self.calls if c[:3] == ["gh", "run", "download"]], ["100"])
         self.assertFalse(os.path.exists(os.path.join(self.folder, "_download")))
 
@@ -469,7 +469,7 @@ class StateTests(unittest.TestCase):
                 target = args[args.index("-D") + 1]
                 os.makedirs(target, exist_ok=True)
                 for name in release.ARTIFACTS[args[args.index("-n") + 1]][1]:
-                    if name == "MightyClaude-macos.zip":
+                    if name == "MightyCode-macos.zip":
                         make_mac_zip(os.path.join(target, name), "0.4.48", marker=run_id)
                     elif not name.endswith(".sha256"):
                         with open(os.path.join(target, name), "w", encoding="utf-8") as f:
@@ -488,7 +488,7 @@ class StateTests(unittest.TestCase):
                 release.step_download(state, release.parser().parse_args(["download"]))
             self.assertEqual(downloads, ["1", "2", "2"])
             release.mark_done(state, "manifest")
-            old = state["data"]["files"]["MightyClaude-macos.zip"]["sha256"]
+            old = state["data"]["files"]["MightyCode-macos.zip"]["sha256"]
             # The same runs again: nothing reopens and nothing is fetched again.
             with self.fake_git_and_gh(ok, run_ids=(1, 2)):
                 release.step_ci(state, release.parser().parse_args(["ci"]))
@@ -506,10 +506,10 @@ class StateTests(unittest.TestCase):
             with fake_download("B"):
                 release.step_download(state, release.parser().parse_args(["download"]))
         self.assertEqual(downloads[3:], ["3", "4", "4"])
-        self.assertNotEqual(state["data"]["files"]["MightyClaude-macos.zip"]["sha256"], old)
+        self.assertNotEqual(state["data"]["files"]["MightyCode-macos.zip"]["sha256"], old)
         import plistlib, zipfile
-        with zipfile.ZipFile(os.path.join(folder, "MightyClaude-macos.zip")) as z:
-            self.assertEqual(plistlib.loads(z.read("MightyClaude.app/Contents/Info.plist"))["MarkerForTests"], "B")
+        with zipfile.ZipFile(os.path.join(folder, "MightyCode-macos.zip")) as z:
+            self.assertEqual(plistlib.loads(z.read("MightyCode.app/Contents/Info.plist"))["MarkerForTests"], "B")
 
     def test_publishing_steps_refuse_force(self):
         state = release.load_state("0.4.48")
@@ -523,7 +523,7 @@ class StateTests(unittest.TestCase):
             text = f.read()
         self.assertTrue(text.startswith("{{DATE}} · Mac build {{MAC_BUILD}} · Windows (beta) x64·ARM64 · Android {{ANDROID}}"))
         self.assertIn("<details open>\n<summary><b>한국어</b></summary>", text)
-        filled = release.fill_notes(text, {"DATE": "2026-11-02", "MAC_BUILD": 1360, "SHA:MightyClaude-macos.zip": "ab" * 32})
+        filled = release.fill_notes(text, {"DATE": "2026-11-02", "MAC_BUILD": 1360, "SHA:MightyCode-macos.zip": "ab" * 32})
         self.assertTrue(filled.startswith("2026-11-02 · Mac build 1360 ·"))
         self.assertIn("`" + "ab" * 32 + "`", filled)
         left = release.unfinished_notes(filled)
@@ -533,22 +533,22 @@ class StateTests(unittest.TestCase):
 
     def test_notes_are_rendered_again_from_the_template_each_time(self):
         with open(release.notes_path("0.4.48"), "w", encoding="utf-8-sig") as f:  # a BOM, as Notepad writes
-            f.write("{{DATE}} · Mac build {{MAC_BUILD}} · Android {{ANDROID}}\n{{SHA:MightyClaude-macos.zip}}\n{{ANDROID_ROW}}\n")
+            f.write("{{DATE}} · Mac build {{MAC_BUILD}} · Android {{ANDROID}}\n{{SHA:MightyCode-macos.zip}}\n{{ANDROID_ROW}}\n")
         state = release.load_state("0.4.48")
         state["data"].update(date="2026-11-02", build=1360, previousApk="0.4.47",
-                             files={"MightyClaude-macos.zip": {"sha256": "a" * 64, "size": 1}})
+                             files={"MightyCode-macos.zip": {"sha256": "a" * 64, "size": 1}})
         first = release.render_notes(state)
         self.assertTrue(first.startswith("2026-11-02 · Mac build 1360 · Android 0.4.47\n" + "a" * 64))
         self.assertIn("Android: 0.4.47 APK — https://github.com/athens96/MightyCode/releases/tag/v0.4.47", first)
-        state["data"].update(build=1362, files={"MightyClaude-macos.zip": {"sha256": "b" * 64, "size": 2}},
+        state["data"].update(build=1362, files={"MightyCode-macos.zip": {"sha256": "b" * 64, "size": 2}},
                              apk={"version": "0.4.48", "path": "x.apk", "sha256": "c" * 64, "size": 3})
         second = release.render_notes(state)
         self.assertNotIn("a" * 64, second)
         self.assertIn("Mac build 1362 · Android 0.4.48\n" + "b" * 64, second)
-        self.assertIn("| MightyClaude-0.4.48.apk (Android) | `" + "c" * 64 + "` | 3 |", second)
+        self.assertIn("| MightyCode-0.4.48.apk (Android) | `" + "c" * 64 + "` | 3 |", second)
         with open(release.rendered_notes_path("0.4.48"), encoding="utf-8") as f:
             self.assertEqual(f.read(), second)
-        self.assertIn("{{SHA:MightyClaude-macos.zip}}", release.read_text(release.notes_path("0.4.48")))  # template untouched
+        self.assertIn("{{SHA:MightyCode-macos.zip}}", release.read_text(release.notes_path("0.4.48")))  # template untouched
         with open(release.notes_path("0.4.48"), "w", encoding="utf-8") as f:
             f.write("\n")
         with self.assertRaisesRegex(release.ReleaseError, "비었습니다"):
@@ -570,13 +570,13 @@ class PublishTests(unittest.TestCase):
         self.folder = release.release_dir("0.4.48")
         os.makedirs(self.folder)
         files = {}
-        for name in release.PACKAGES + ["latest.json", "index.html", "MightyClaude-0.4.48.apk"]:
+        for name in release.PACKAGES + ["latest.json", "index.html", "MightyCode-0.4.48.apk"]:
             path = os.path.join(self.folder, name)
             with open(path, "w", encoding="utf-8") as f:
                 f.write("{}" if name == "latest.json" else name)
             if name in release.PACKAGES:
                 files[name] = {"sha256": release.digest(path), "size": os.path.getsize(path)}
-        apk = os.path.join(self.folder, "MightyClaude-0.4.48.apk")
+        apk = os.path.join(self.folder, "MightyCode-0.4.48.apk")
         self.state = {"version": "0.4.48", "done": {s: "x" for s in release.STEPS[:7]},
                       "data": {"build": 1360, "buildCommit": "fix", "files": files, "date": "2026-11-02",
                                "apk": {"version": "0.4.48", "path": apk, "sha256": release.digest(apk), "size": os.path.getsize(apk)}}}
@@ -620,15 +620,21 @@ class PublishTests(unittest.TestCase):
     def test_upload_order_with_apk(self):
         with self.recording_sh():
             self.upload("--yes")
-        self.assertEqual(self.targets()[5:], ["mightyclaude/mightyclaude/latest.json", "mightyclaude/mightyclaude/android/MightyClaude-android.apk",
-                                              "mightyclaude/mightyclaude/index.html", "mightyclaude/mightyclaude/"])
+        self.assertEqual(self.targets()[5:], ["mightycode/mightycode/latest.json", "mightycode/mightycode/android/MightyCode-android.apk",
+                                              "mightycode/mightycode/index.html", "mightycode/mightycode/",
+                                              # Then the address the apps from before the rename read: the same manifest and a page that points on.
+                                              "mightyclaude/mightyclaude/latest.json", "mightyclaude/mightyclaude/index.html", "mightyclaude/mightyclaude/"])
+        legacy = [c for c in self.calls if "mightyclaude/mightyclaude/latest.json" in c][0]
+        self.assertEqual(legacy[legacy.index("--file") + 1], os.path.join(self.folder, "latest.json"))
+        with open(os.path.join(self.folder, "legacy-index.html"), encoding="utf-8") as f:
+            self.assertIn(f'url={release.PUBLIC_BASE}/"', f.read())
         self.assertIn("upload", self.state["done"])
 
     def test_upload_stops_at_the_first_failure(self):
         with self.recording_sh(fail=lambda args: True):
             with self.assertRaisesRegex(release.ReleaseError, "세 번 실패"):
                 self.upload("--yes")
-        self.assertEqual(self.targets(), ["mightyclaude/mightyclaude/0.4.48/MightyClaude-macos.zip"] * 3)
+        self.assertEqual(self.targets(), ["mightycode/mightycode/0.4.48/MightyCode-macos.zip"] * 3)
         self.assertNotIn("upload", self.state["done"])
 
     def test_upload_refuses_an_unreadable_live_manifest_unless_allowed(self):
@@ -656,7 +662,7 @@ class PublishTests(unittest.TestCase):
         with self.recording_sh(), patch.object(release, "MAX_UPLOAD_BYTES", 10):
             with self.assertRaisesRegex(release.ReleaseError, "300 MiB"):
                 self.upload("--dry-run")
-        with open(os.path.join(self.folder, "MightyClaude-windows-x64-setup.exe"), "a", encoding="utf-8") as f:
+        with open(os.path.join(self.folder, "MightyCode-windows-x64-setup.exe"), "a", encoding="utf-8") as f:
             f.write("!")
         with self.recording_sh():
             with self.assertRaisesRegex(release.ReleaseError, "x64-setup.exe.*sha256"):
@@ -699,7 +705,7 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(create[create.index("--target") + 1], "fix")
         self.assertEqual(create[create.index("--notes-file") + 1], release.rendered_notes_path("0.4.48"))
         self.assertEqual(sorted(os.path.basename(p) for p in create[create.index("--notes-file") + 2:]),
-                         sorted(release.PACKAGES + ["MightyClaude-0.4.48.apk"]))
+                         sorted(release.PACKAGES + ["MightyCode-0.4.48.apk"]))
         self.assertEqual(publish, ["gh", "release", "edit", "v0.4.48", "--draft=false", "--latest"])
         self.assertIn("github", self.state["done"])
 
@@ -712,7 +718,7 @@ class PublishTests(unittest.TestCase):
         uploads = [c for c in self.calls if c[:3] == ["gh", "release", "upload"]]
         self.assertEqual(len(uploads), 1)
         self.assertEqual(sorted(os.path.basename(p) for p in uploads[0][4:]),
-                         sorted(release.PACKAGES[3:] + ["MightyClaude-0.4.48.apk"]))
+                         sorted(release.PACKAGES[3:] + ["MightyCode-0.4.48.apk"]))
         self.assertFalse([c for c in self.calls if c[:3] in (["gh", "release", "create"], ["gh", "release", "edit"])])
         self.assertIn("github", self.state["done"])
 
@@ -722,15 +728,15 @@ class UploadPlanTests(unittest.TestCase):
         folder = os.path.join("release", "0.4.48")
         commands = [release.wrangler_command(*entry) for entry in release.upload_plan("0.4.48", folder, apk="app.apk")]
         self.assertEqual([c[4] for c in commands], [
-            "mightyclaude/mightyclaude/0.4.48/MightyClaude-macos.zip",
-            "mightyclaude/mightyclaude/0.4.48/MightyClaude-windows-x64.zip",
-            "mightyclaude/mightyclaude/0.4.48/MightyClaude-windows-arm64.zip",
-            "mightyclaude/mightyclaude/0.4.48/MightyClaude-windows-x64-setup.exe",
-            "mightyclaude/mightyclaude/0.4.48/MightyClaude-windows-arm64-setup.exe",
-            "mightyclaude/mightyclaude/latest.json",
-            "mightyclaude/mightyclaude/android/MightyClaude-android.apk",
-            "mightyclaude/mightyclaude/index.html",
-            "mightyclaude/mightyclaude/",
+            "mightycode/mightycode/0.4.48/MightyCode-macos.zip",
+            "mightycode/mightycode/0.4.48/MightyCode-windows-x64.zip",
+            "mightycode/mightycode/0.4.48/MightyCode-windows-arm64.zip",
+            "mightycode/mightycode/0.4.48/MightyCode-windows-x64-setup.exe",
+            "mightycode/mightycode/0.4.48/MightyCode-windows-arm64-setup.exe",
+            "mightycode/mightycode/latest.json",
+            "mightycode/mightycode/android/MightyCode-android.apk",
+            "mightycode/mightycode/index.html",
+            "mightycode/mightycode/",
         ])
         by_target = {c[4]: c for c in commands}
         for command in commands:
@@ -738,12 +744,12 @@ class UploadPlanTests(unittest.TestCase):
             self.assertEqual(command[-1], "--remote")
 
         def option(target, flag):
-            command = by_target["mightyclaude/mightyclaude/" + target]
+            command = by_target["mightycode/mightycode/" + target]
             return command[command.index(flag) + 1] if flag in command else None
-        self.assertEqual(option("0.4.48/MightyClaude-macos.zip", "--content-type"), "application/zip")
-        self.assertEqual(option("0.4.48/MightyClaude-windows-x64-setup.exe", "--content-type"), "application/vnd.microsoft.portable-executable")
-        self.assertIsNone(option("0.4.48/MightyClaude-macos.zip", "--cache-control"))
-        self.assertEqual(option("android/MightyClaude-android.apk", "--content-type"), "application/vnd.android.package-archive")
+        self.assertEqual(option("0.4.48/MightyCode-macos.zip", "--content-type"), "application/zip")
+        self.assertEqual(option("0.4.48/MightyCode-windows-x64-setup.exe", "--content-type"), "application/vnd.microsoft.portable-executable")
+        self.assertIsNone(option("0.4.48/MightyCode-macos.zip", "--cache-control"))
+        self.assertEqual(option("android/MightyCode-android.apk", "--content-type"), "application/vnd.android.package-archive")
         self.assertEqual(option("latest.json", "--content-type"), "application/json")
         self.assertEqual(option("latest.json", "--cache-control"), "no-cache")
         self.assertEqual(option("index.html", "--content-type"), "text/html; charset=utf-8")
@@ -752,33 +758,33 @@ class UploadPlanTests(unittest.TestCase):
 
     def test_without_apk_the_phone_key_is_left_alone(self):
         keys = [key for key, *_ in release.upload_plan("0.4.48", "f")]
-        self.assertNotIn("mightyclaude/android/MightyClaude-android.apk", keys)
+        self.assertNotIn("mightycode/android/MightyCode-android.apk", keys)
         self.assertEqual(len(keys), 8)
 
 
 class DmgTests(unittest.TestCase):
     """The notarized Mac dmg ships only when the run made it; without it a release is what it always was."""
     FIVE = {name: {"sha256": "0" * 64, "size": 1} for name in release.PACKAGES}
-    WITH_DMG = dict(FIVE, **{"MightyClaude-macos.dmg": {"sha256": "d" * 64, "size": 7}})
+    WITH_DMG = dict(FIVE, **{"MightyCode-macos.dmg": {"sha256": "d" * 64, "size": 7}})
 
     def test_package_names_add_the_dmg_only_when_it_was_made(self):
         self.assertEqual(release.package_names(self.FIVE), release.PACKAGES)
-        self.assertEqual(release.package_names(self.WITH_DMG), release.PACKAGES + ["MightyClaude-macos.dmg"])
+        self.assertEqual(release.package_names(self.WITH_DMG), release.PACKAGES + ["MightyCode-macos.dmg"])
         self.assertTrue(release.has_packages(self.FIVE) and release.has_packages(self.WITH_DMG))
-        self.assertFalse(release.has_packages({k: v for k, v in self.FIVE.items() if k != "MightyClaude-macos.zip"}))
+        self.assertFalse(release.has_packages({k: v for k, v in self.FIVE.items() if k != "MightyCode-macos.zip"}))
         self.assertFalse(release.has_packages(dict(self.FIVE, **{"other.bin": {}})))
 
     def test_the_dmg_goes_up_with_the_packages_before_the_manifest(self):
         plan = release.upload_plan("0.4.52", "f", names=release.package_names(self.WITH_DMG))
         keys = [key for key, *_ in plan]
-        self.assertLess(keys.index("mightyclaude/0.4.52/MightyClaude-macos.dmg"), keys.index("mightyclaude/latest.json"))
-        self.assertEqual(dict((k, t) for k, _, t, _ in plan)["mightyclaude/0.4.52/MightyClaude-macos.dmg"], "application/x-apple-diskimage")
+        self.assertLess(keys.index("mightycode/0.4.52/MightyCode-macos.dmg"), keys.index("mightycode/latest.json"))
+        self.assertEqual(dict((k, t) for k, _, t, _ in plan)["mightycode/0.4.52/MightyCode-macos.dmg"], "application/x-apple-diskimage")
 
     def test_notes_get_a_dmg_row_only_with_a_dmg(self):
         template = "| a | b | c |\n{{DMG_ROW}}{{ANDROID_ROW}}"
         old = {"previousApk": "0.4.50"}
         with_dmg = release.fill_notes(template, release.note_values({"version": "0.4.52", "data": dict(old, files=self.WITH_DMG)}))
-        self.assertIn("| MightyClaude-macos.dmg (Apple Silicon) | `" + "d" * 64 + "` | 7 |\n\nAndroid: 0.4.50", with_dmg)
+        self.assertIn("| MightyCode-macos.dmg (Apple Silicon) | `" + "d" * 64 + "` | 7 |\n\nAndroid: 0.4.50", with_dmg)
         without = release.fill_notes(template, release.note_values({"version": "0.4.52", "data": dict(old, files=self.FIVE)}))
         self.assertNotIn("dmg", without)
         self.assertEqual(release.unfinished_notes(without), [])

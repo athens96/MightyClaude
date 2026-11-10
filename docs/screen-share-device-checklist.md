@@ -193,10 +193,10 @@ Mac 한 대와 안드로이드 휴대폰 한 대로 직접 해 보는 확인표�
 - 대신 Mac 시스템 로그에는 중단 이벤트의 소요 시간이 남습니다(기기와 이유만, 키 입력 없음). 조작 중에 눈에 띄는 글자 `zqx-test-4417` 를 휴대폰으로 입력한 다음 터미널에서:
 
   ```
-  log show --last 15m --predicate 'subsystem == "dev.mightyclaude.native"' | grep -c 'zqx-test-4417'
+  log show --last 15m --predicate 'subsystem == "dev.mightycode.native"' | grep -c 'zqx-test-4417'
   ```
   → **0** 이어야 합니다.
-- 중단 소요 시간 확인(1번·2번 시험 후): `log show --last 15m --predicate 'subsystem == "dev.mightyclaude.native" AND category == "screen-share"' | grep "screen-share stop"` → `completed in N ms`가 1000 이하이면 좋습니다.
+- 중단 소요 시간 확인(1번·2번 시험 후): `log show --last 15m --predicate 'subsystem == "dev.mightycode.native" AND category == "screen-share"' | grep "screen-share stop"` → `completed in N ms`가 1000 이하이면 좋습니다.
 
 ---
 
@@ -208,7 +208,7 @@ Mac 한 대와 안드로이드 휴대폰 한 대로 직접 해 보는 확인표�
 2. [ ] 앱을 연다. macOS가 화면 기록/손쉬운 사용 권한을 **다시 묻지 않는다**.
 3. [ ] Mac 권한 확인 화면에서 네 줄이 여전히 **허용됨**이다.
 4. [ ] 휴대폰에서 "Mac에서 승인 필요" 없이 곧바로 화면 보기가 시작된다. 휴대폰의 허용·권한(보기/조작)과 조작 키 등록도 그대로다.
-5. 다시 묻거나 풀려 있으면: 서명이 달라진 것이므로 두 빌드의 `codesign -dv --verbose=2 /Applications/MightyClaude.app 2>&1 | grep Authority` 결과를 메모하세요: ________
+5. 다시 묻거나 풀려 있으면: 서명이 달라진 것이므로 두 빌드의 `codesign -dv --verbose=2 /Applications/MightyCode.app 2>&1 | grep Authority` 결과를 메모하세요: ________
 
 ---
 

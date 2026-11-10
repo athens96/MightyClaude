@@ -19,8 +19,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = [
     ROOT / "native/macos/Sources/MightyCore/InputMethodSymptom.swift",
-    ROOT / "native/macos/Sources/MightyClaude/InputSessionRecoveryCoordinator.swift",
-    ROOT / "native/macos/Sources/MightyClaude/InputMethodDiagnostics.swift",
+    ROOT / "native/macos/Sources/MightyCode/InputSessionRecoveryCoordinator.swift",
+    ROOT / "native/macos/Sources/MightyCode/InputMethodDiagnostics.swift",
 ]
 
 FIXTURES = r"""

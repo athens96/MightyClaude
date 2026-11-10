@@ -58,9 +58,9 @@ public struct BrowserEngineLocator: Sendable {
 public struct BrowserProfileSupport: Sendable {
     public static func profilePath(workspaceProfileKey: String) -> URL {
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("MightyClaude/browser-profiles/\(workspaceProfileKey)")
+            return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("MightyCode/browser-profiles/\(workspaceProfileKey)")
         }
-        return support.appendingPathComponent("MightyClaude/browser-profiles/\(workspaceProfileKey)")
+        return support.appendingPathComponent("MightyCode/browser-profiles/\(workspaceProfileKey)")
     }
 
     // Removes only the Chromium singleton lock files left by a crash.

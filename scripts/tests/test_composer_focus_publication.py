@@ -15,7 +15,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / 'native/macos/Sources/MightyClaude/SessionPaneView.swift'
+SOURCE = ROOT / 'native/macos/Sources/MightyCode/SessionPaneView.swift'
 
 FIXTURE = r'''
 import AppKit

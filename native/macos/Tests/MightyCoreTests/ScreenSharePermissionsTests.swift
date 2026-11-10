@@ -52,8 +52,8 @@ struct ScreenSharePermissionsTests {
                 == "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
         #expect(ScreenSharePermission.localNetwork.settingsURL().absoluteString
                 == "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork")
-        #expect(ScreenSharePermission.notifications.settingsURL(bundleIdentifier: "dev.mightyclaude.native").absoluteString
-                == "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=dev.mightyclaude.native")
+        #expect(ScreenSharePermission.notifications.settingsURL(bundleIdentifier: "dev.mightycode.native").absoluteString
+                == "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=dev.mightycode.native")
         #expect(ScreenSharePermission.notifications.settingsURL().absoluteString
                 == "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
         #expect(ScreenSharePermission.allCases == [.screenRecording, .accessibility, .localNetwork, .notifications])

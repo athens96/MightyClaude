@@ -233,7 +233,7 @@ public enum AntigravityRuleSafety {
         }
         add(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini", isDirectory: true))
         if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            add(support.appendingPathComponent("MightyClaude Native", isDirectory: true))
+            add(support.appendingPathComponent("MightyCode", isDirectory: true))
         }
         if let app = appDataFolder { add(URL(fileURLWithPath: app, isDirectory: true)) }
         return folders

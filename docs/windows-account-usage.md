@@ -1,7 +1,7 @@
 # Windows 계정 사용량 표시
 
 macOS `AccountUsageService.swift` · `StatusBarUsage.swift` · `AccountUsageSnapshot.swift`
-를 Windows로 옮긴 규칙이다. Core(`native/windows/MightyClaude.Core`)가 모든
+를 Windows로 옮긴 규칙이다. Core(`native/windows/MightyCode.Core`)가 모든
 판단을 하고, WinUI는 Core가 만든 줄을 그리고 입력만 넘긴다.
 
 ## 화면
@@ -72,7 +72,7 @@ macOS `AccountUsageService.swift` · `StatusBarUsage.swift` · `AccountUsageSnap
 
 ## 검사
 
-Mac에서 `dotnet run --project native/windows/MightyClaude.Core.Tests --artifacts-path /tmp/mc-artifacts`
+Mac에서 `dotnet run --project native/windows/MightyCode.Core.Tests --artifacts-path /tmp/mc-artifacts`
 로 도는 `account usage …` 검사 8개. 모두 HTTP 처리기·시계·임시 폴더의 가짜
 자격 증명 파일을 주입하고, 실제 CLI를 실행하거나 네트워크에 나가거나 실제
 사용자 폴더를 읽지 않는다.

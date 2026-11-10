@@ -1,7 +1,7 @@
 {
   "version": 1,
   "source": "native/macos/Sources/MightyCore/DesignTokens.swift",
-  "about": "Concept D design tokens shared by macOS (DesignTokenParityTests) and Windows (Core.Tests DesignTokenVerification). Changing a colour means editing DesignTokens.swift, MightyClaude.Core/DesignTokens.cs and this file; both suites fail otherwise. Spec: docs/design-system/index.html sections 2-5.",
+  "about": "Concept D design tokens shared by macOS (DesignTokenParityTests) and Windows (Core.Tests DesignTokenVerification). Changing a colour means editing DesignTokens.swift, MightyCode.Core/DesignTokens.cs and this file; both suites fail otherwise. Spec: docs/design-system/index.html sections 2-5.",
   "light": {
     "page": "#ECEEF3",
     "card": "#FFFFFF",
@@ -210,7 +210,7 @@
   },
   "windowsOnly": {
     "subtle": {
-      "source": "native/macos/Sources/MightyClaude/Palette.swift:30 (Color.primary.opacity(0.035))",
+      "source": "native/macos/Sources/MightyCode/Palette.swift:30 (Color.primary.opacity(0.035))",
       "light": {
         "color": "#000000",
         "opacity": 0.035
@@ -235,7 +235,7 @@
       ]
     },
     "syntax": {
-      "source": "native/macos/Sources/MightyClaude/FilePaneView.swift:447-450 (AppKit system colours; comments are ink2)",
+      "source": "native/macos/Sources/MightyCode/FilePaneView.swift:447-450 (AppKit system colours; comments are ink2)",
       "light": {
         "keyword": "#FF2D55",
         "string": "#FF9500",
@@ -248,7 +248,7 @@
       }
     },
     "ansi": {
-      "source": "native/macos/Sources/MightyClaude/StatusLineView.swift:68-79 (status-line terminal colours, the same in both themes; 0, 7, 8 and 15 take the ink)",
+      "source": "native/macos/Sources/MightyCode/StatusLineView.swift:68-79 (status-line terminal colours, the same in both themes; 0, 7, 8 and 15 take the ink)",
       "standard": {
         "1": "#DB4C4C",
         "2": "#4CA866",
@@ -260,7 +260,7 @@
       "dimOpacity": 0.5882352941176471
     },
     "terminal": {
-      "source": "native/macos/Sources/MightyClaude/AppStore+Terminals.swift:63-66 (Ghostty's Alabaster on #FAF9F6 by day, its Afterglow on #202020 with #DEDCD8 text and an #E1AB91 cursor by night, as Ghostty's theme files spell them; the Mac reads the presets, Windows these values)",
+      "source": "native/macos/Sources/MightyCode/AppStore+Terminals.swift:63-66 (Ghostty's Alabaster on #FAF9F6 by day, its Afterglow on #202020 with #DEDCD8 text and an #E1AB91 cursor by night, as Ghostty's theme files spell them; the Mac reads the presets, Windows these values)",
       "light": {
         "background": "#FAF9F6",
         "foreground": "#000000",

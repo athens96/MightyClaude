@@ -5,7 +5,7 @@ extension MightyStructure {
     /// tone as a wash under its cards, and every card its own as a tint and a bar down its
     /// leading edge (`DesignMetrics.Pipeline`). The tones are concept D's; there is no colour of
     /// their own. A step still to come takes none and stays on the page's ground. Windows
-    /// (`MightyStructure.Tone` in MightyClaude.Core) and the phone (`pipelineTone`, `stepTone`,
+    /// (`MightyStructure.Tone` in MightyCode.Core) and the phone (`pipelineTone`, `stepTone`,
     /// `columnTone`, `cardTone` in mobile/src/lib) keep the same rules.
     public enum Tone {
         /// A card's status, in the block buckets (`DesignTone(blockStatus:)`): failed is an error,

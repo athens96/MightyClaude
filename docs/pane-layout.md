@@ -33,7 +33,7 @@ Mac의 선택 필드 `paneLayoutModes`와 `paneLayoutActiveSessionIds`는 각각
 Mac 통합 검사는 새 임시 프로필로 실행한다.
 
 ```sh
-release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+release/native-macos/MightyCode.app/Contents/MacOS/MightyCode \
   --layout-smoke-test --smoke-exit --profile /tmp/mighty-layout-smoke
 ```
 

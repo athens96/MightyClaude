@@ -1,0 +1,345 @@
+namespace MightyCode.Core;
+
+/// <summary>
+/// Which agent panes take part in delegation, and how (M/DelegationProviders.swift). A child runs the agent its parent chose:
+/// its own by default, or any of Claude, Codex and Antigravity.
+/// <list type="bullet">
+/// <item>Claude and Codex panes may be parents by agent: their runs get the delegation server, and their delegate call makes
+/// children, of their own agent unless the call names another (<c>agent</c>). A Codex run gets it only where its tool calls can
+/// work: acceptEdits or fullAccess.</item>
+/// <item>Claude, Codex and Antigravity panes may be parents by human: Ctrl+Enter on a busy one runs the text in a new child
+/// worktree of the same agent, in the parent's mode; the worktree button's menu picks any agent, in <see cref="WidestChildMode"/>.
+/// Antigravity has no delegation tools, so its children come only from the human.</item>
+/// <item>A child of the parent's agent may start in a mode no wider than the parent's by rank. A child of another agent may start
+/// in a mode that may do nothing the parent's mode may not (<see cref="Capabilities"/>). A child's mode is always one of its own agent's.</item>
+/// <item>Only a Claude run takes text while it runs (steer), and only delegation's notices and follow-ups are steered into it; nothing a
+/// person sends, from the composer or a phone, joins a running turn.</item>
+/// <item>A Claude child commits its own work. A Codex or Antigravity child cannot commit outside fullAccess, so the app commits
+/// what it leaves when its report changes (<see cref="ChildAutoCommit"/>). Everything that runs or reads the child follows the
+/// child's agent; notices and merges follow the parent's.</item>
+/// <item>A Claude parent's merge tool call follows its CLI's permission mode; any other parent may merge by tool only when its run
+/// started in fullAccess, and is otherwise refused with <c>merge_human_only</c>: the human merges from the child's card.</item>
+/// </list>
+/// </summary>
+public static class DelegationProviders
+{
+    /// <summary>An agent pane (kind claude) running one of these may delegate by tool.</summary>
+    private static readonly HashSet<string> AgentParents = ["claude", "codex"];
+    /// <summary>The agents of agent panes that take part at all.</summary>
+    private static readonly HashSet<string> Agents = ["claude", "codex", "gemini"];
+    /// <summary>Every permission mode of any provider, narrowest first: how freely the agent acts without asking. Modes are compared within one provider.</summary>
+    private static readonly string[] ModeRank = ["plan", "manual", "acceptEdits", "onRequest", "auto", "fullAccess"];
+
+    /// <summary>An agent pane (kind claude) running Claude, Codex or Antigravity.</summary>
+    public static bool IsAgentPane(string kind, string provider) => kind == "claude" && Agents.Contains(provider);
+
+    public static bool CanParentByAgent(string kind, string provider) => kind == "claude" && AgentParents.Contains(provider);
+
+    /// <summary>Whether a run in <paramref name="mode"/> gets the delegation tools: every Claude run, and a Codex run in acceptEdits or fullAccess. Ctrl+Enter does not depend on it.</summary>
+    public static bool AttachesDelegation(string kind, string provider, string mode) => CanParentByAgent(kind, provider) && (provider != "codex" || CodexApprovesTools(mode));
+
+    /// <summary>
+    /// Whether a Codex run in <paramref name="mode"/> approves the delegation server's tools ahead: where it may write and never
+    /// asks (acceptEdits, fullAccess). mighty-terminal's run_in_terminal is approved ahead only in fullAccess
+    /// (<see cref="AgentIOBinding.AppendArguments"/>).
+    /// </summary>
+    public static bool CodexApprovesTools(string mode) => mode is "acceptEdits" or "fullAccess";
+
+    /// <summary>Whether a <paramref name="provider"/> child in <paramref name="mode"/> can change files: any Claude mode (Claude asks the human), Codex acceptEdits, onRequest or fullAccess, Antigravity acceptEdits or fullAccess.</summary>
+    public static bool ChildCanWrite(string provider, string mode) => provider switch
+    {
+        "claude" => true,
+        "codex" => mode is "acceptEdits" or "onRequest" or "fullAccess",
+        "gemini" => mode is "acceptEdits" or "fullAccess",
+        _ => false,
+    };
+
+    /// <summary>Whether the pane, in <paramref name="mode"/> now, may have a child the human starts: an agent pane whose child, in the same mode, can change files.</summary>
+    public static bool CanParentByHuman(string kind, string provider, string mode) => IsAgentPane(kind, provider) && ChildCanWrite(provider, mode);
+
+    /// <summary>Whether a running turn of this pane takes delegation's notices and follow-ups (steer): Claude only. A person's text is always queued.</summary>
+    public static bool CanSteer(string kind, string provider) => kind == "claude" && provider == "claude";
+
+    /// <summary>The modes a child of <paramref name="provider"/> may start in, narrowest first.</summary>
+    public static IReadOnlyList<string> StartingModes(string provider)
+    {
+        var modes = ProviderCatalog.PermissionModes(provider).ToHashSet();
+        return ModeRank.Where(modes.Contains).ToArray();
+    }
+
+    /// <summary>Whether <paramref name="mode"/> lets a <paramref name="provider"/> agent act no more freely than <paramref name="stored"/> does. A mode that is not one of the provider's, on either side, is never no wider.</summary>
+    public static bool IsNoWider(string mode, string stored, string provider) => IsNoWider(mode, provider, stored, provider);
+
+    /// <summary>
+    /// Whether <paramref name="mode"/>, one of the <paramref name="child"/> agent's modes, lets it act no more freely than the
+    /// <paramref name="parent"/> agent's <paramref name="stored"/> mode. For one agent this is its own modes' order; for another,
+    /// the child's mode may do nothing the parent's may not (<see cref="Capabilities"/>). A mode that is not its own agent's, on
+    /// either side, is never no wider.
+    /// </summary>
+    public static bool IsNoWider(string mode, string child, string stored, string parent)
+    {
+        if (!StartingModes(child).Contains(mode) || !StartingModes(parent).Contains(stored)) return false;
+        if (child == parent) return Array.IndexOf(ModeRank, mode) <= Array.IndexOf(ModeRank, stored);
+        return IsCovered(Capabilities(child, mode), Capabilities(parent, stored));
+    }
+
+    /// <summary>
+    /// What a run of <paramref name="provider"/> in <paramref name="mode"/> may do, as the app starts it (M/DelegationProviders.swift
+    /// capabilities). Claude: plan edits nothing until its plan is approved; manual asks before each edit; acceptEdits edits unasked
+    /// and still asks before Bash; auto also runs commands unasked. Codex: manual runs commands unasked but edits nothing; onRequest
+    /// edits in its sandbox unasked and asks to go beyond it; acceptEdits edits and runs commands unasked. Antigravity: plan and
+    /// manual edit nothing; acceptEdits edits unasked. fullAccess is full access for every agent.
+    /// </summary>
+    public static IReadOnlySet<ModeCapability> Capabilities(string provider, string mode) => (provider, mode) switch
+    {
+        ("claude", "manual") => new HashSet<ModeCapability> { ModeCapability.WritesAsking },
+        ("claude", "acceptEdits") or ("codex", "onRequest") or ("gemini", "acceptEdits") => new HashSet<ModeCapability> { ModeCapability.WritesUnasked },
+        ("claude", "auto") or ("codex", "acceptEdits") => new HashSet<ModeCapability> { ModeCapability.WritesUnasked, ModeCapability.RunsUnasked },
+        ("codex", "manual") => new HashSet<ModeCapability> { ModeCapability.RunsUnasked },
+        (_, "fullAccess") => Enum.GetValues<ModeCapability>().ToHashSet(),
+        _ => new HashSet<ModeCapability>(),
+    };
+
+    /// <summary>Whether a mode with <paramref name="child"/> capabilities does nothing a mode with <paramref name="parent"/> capabilities may not: each is the parent's too, except that editing after asking is covered by editing unasked.</summary>
+    public static bool IsCovered(IReadOnlySet<ModeCapability> child, IReadOnlySet<ModeCapability> parent) =>
+        child.All(capability => parent.Contains(capability) || capability == ModeCapability.WritesAsking && parent.Contains(ModeCapability.WritesUnasked));
+
+    /// <summary>
+    /// The widest of the <paramref name="child"/> agent's modes that is no wider than the <paramref name="parent"/> agent's
+    /// <paramref name="parentMode"/> and in which that child can change files, or null when it has none: the one with the most
+    /// capabilities, then the later in its own order. For the parent's own agent it is the last by its own order: the parent's
+    /// mode whenever its child can write in it.
+    /// </summary>
+    public static string? WidestChildMode(string child, string parent, string parentMode)
+    {
+        var fitting = StartingModes(child).Where(mode => IsNoWider(mode, child, parentMode, parent) && ChildCanWrite(child, mode)).ToList();
+        if (child == parent) return fitting.LastOrDefault();
+        return fitting.Select((mode, index) => (Mode: mode, Index: index)).OrderBy(item => Capabilities(child, item.Mode).Count).ThenBy(item => item.Index).Select(item => item.Mode).LastOrDefault();
+    }
+
+    /// <summary>
+    /// The mode a child of the <paramref name="child"/> agent that the human starts from a <paramref name="parent"/> pane in
+    /// <paramref name="parentMode"/> begins in, or null when there is none in which it could change files. A child of the parent's
+    /// own agent starts in the parent's mode, or in plan mode when <paramref name="planFirst"/> and the agent has one, as
+    /// Ctrl+Enter always did; any other agent's in <see cref="WidestChildMode"/>.
+    /// </summary>
+    public static string? HumanChildMode(string child, string parent, string parentMode, bool planFirst)
+    {
+        if (child != parent) return WidestChildMode(child, parent, parentMode);
+        var mode = planFirst && StartingModes(child).Contains("plan") ? "plan" : parentMode;
+        return ChildCanWrite(child, mode) ? mode : null;
+    }
+
+    /// <summary>Whether the pane, in <paramref name="mode"/> now, may have a child the human starts of any agent: its own (<see cref="CanParentByHuman"/>), or another with a mode in which its child can change files.</summary>
+    public static bool MayHaveHumanChild(string kind, string provider, string mode) =>
+        IsAgentPane(kind, provider) && Wire.Providers.Any(agent => HumanChildMode(agent, provider, mode, false) is not null);
+
+    /// <summary>The provider id delegate's <c>agent</c> argument names: claude, codex or antigravity (or Antigravity's provider id, gemini), in any case; null for any other word.</summary>
+    public static string? Agent(string name) => name.Trim().ToLowerInvariant() switch
+    {
+        "claude" => "claude",
+        "codex" => "codex",
+        "antigravity" or "gemini" => "gemini",
+        _ => null,
+    };
+
+    /// <summary>The name the delegation tools give the agent <paramref name="provider"/>: its <c>agent</c> argument's word (antigravity for gemini).</summary>
+    public static string AgentName(string provider) => provider == "gemini" ? "antigravity" : provider;
+
+    /// <summary>
+    /// Whether an agent's CLI can run a child, as the app last learnt it: <paramref name="installed"/> from its CLI search,
+    /// <paramref name="account"/> from its sign-in status. Either one unknown (null) does not hold a child back; the app never asks
+    /// a CLI for this.
+    /// </summary>
+    public static DelegationAgentAvailability Availability(bool? installed, CliAccountStatus? account)
+    {
+        if (installed == false || account is { Installed: false }) return DelegationAgentAvailability.NotInstalled;
+        if (account is { LoggedIn: false }) return DelegationAgentAvailability.SignedOut;
+        return DelegationAgentAvailability.Ready;
+    }
+
+    /// <summary>
+    /// What the worktree button's menu offers on a <paramref name="parent"/> pane in <paramref name="parentMode"/> with
+    /// <paramref name="openHumanChildren"/> open children the human started: one row per agent, Claude, Codex, Antigravity. A row
+    /// says why it cannot run: the agent's CLI (not for the parent's own agent, whose run is going), no mode in which its child
+    /// could change files, or the cap.
+    /// </summary>
+    public static IReadOnlyList<DelegationChildChoice> HumanChildChoices(string parent, string parentMode, bool planFirst, int openHumanChildren, Func<string, DelegationAgentAvailability> availability) =>
+        Wire.Providers.Select(agent =>
+        {
+            var mode = HumanChildMode(agent, parent, parentMode, planFirst);
+            DelegationChildBlock? blocked = (agent == parent ? DelegationAgentAvailability.Ready : availability(agent)) switch
+            {
+                DelegationAgentAvailability.NotInstalled => DelegationChildBlock.NotInstalled,
+                DelegationAgentAvailability.SignedOut => DelegationChildBlock.SignedOut,
+                _ => mode is null ? DelegationChildBlock.NoMode : openHumanChildren >= DelegationCoordinator.MaximumOpenChildren ? DelegationChildBlock.Cap : (DelegationChildBlock?)null,
+            };
+            return new DelegationChildChoice(agent, mode, blocked);
+        }).ToList();
+
+    /// <summary>Whether a <paramref name="provider"/> child in <paramref name="mode"/> can commit on its own branch.</summary>
+    public static bool CanCommit(string provider, string mode) => provider == "claude" || mode == "fullAccess";
+
+    /// <summary>Whether a <paramref name="provider"/> parent whose run started in <paramref name="mode"/> may merge a child by its merge tool.</summary>
+    public static bool AgentMayMerge(string provider, string mode) => provider == "claude" || mode == "fullAccess";
+}
+
+/// <summary>What a run in a permission mode may do on its own, to compare the modes of different agents (<see cref="DelegationProviders.Capabilities"/>).</summary>
+public enum ModeCapability
+{
+    /// <summary>It changes files only after the human approves each change.</summary>
+    WritesAsking,
+    /// <summary>It changes files without asking, sandboxed or not.</summary>
+    WritesUnasked,
+    /// <summary>It runs shell commands without asking the human, sandboxed or not.</summary>
+    RunsUnasked,
+    /// <summary>No sandbox and no asking.</summary>
+    FullAccess,
+}
+
+/// <summary>Whether an agent's CLI can run a child now, as the app last learnt it. Ready is the default, so a host that knows nothing holds no child back.</summary>
+public enum DelegationAgentAvailability
+{
+    Ready,
+    /// <summary>The CLI was not found, or says it is not installed.</summary>
+    NotInstalled,
+    /// <summary>The CLI says it is signed out.</summary>
+    SignedOut,
+}
+
+/// <summary>Why the worktree button's menu cannot run a child of one agent now.</summary>
+public enum DelegationChildBlock
+{
+    NotInstalled,
+    SignedOut,
+    /// <summary>No mode of the agent, no wider than the parent's, lets its child change files.</summary>
+    NoMode,
+    /// <summary>The parent has its 3 open children the human started.</summary>
+    Cap,
+}
+
+/// <summary>One agent the composer's worktree button offers in its menu (M/DelegationProviders.swift DelegationChildChoice).</summary>
+/// <param name="Agent">The provider id.</param>
+/// <param name="Mode">The mode the child would start in; null when none would do.</param>
+/// <param name="Blocked">null when the child can start.</param>
+public sealed record DelegationChildChoice(string Agent, string? Mode, DelegationChildBlock? Blocked);
+
+/// <summary>
+/// The app's commit of a Codex or Antigravity child's work (M/DelegationProviders.swift ChildAutoCommit): when a run of the child
+/// finishes normally with REPORT.md changed and the worktree changed, what it changed is committed on the child's branch before
+/// its head is read for the report. Tracked files go in as changed; new files go in as .gitignore lets them (the notes folder
+/// ignores itself, so TASK.md and REPORT.md never go in), except new files that look like secrets or are over
+/// <see cref="MaximumNewFileBytes"/>, which stay uncommitted and are named to the human. Never with an unresolved conflict, and
+/// never in a folder that is not the child's own worktree.
+/// </summary>
+public static class ChildAutoCommit
+{
+    /// <summary>The largest new file the app commits for a child.</summary>
+    public const long MaximumNewFileBytes = 5_000_000;
+    /// <summary>The longest one git step of the commit may take, in seconds.</summary>
+    private const double Timeout = 300;
+
+    /// <summary>Whether the app commits for the child now. A Claude child commits itself, so never; any other child whose report changed, with changes left and no unmerged path.</summary>
+    public static bool ShouldCommit(string provider, bool reportChanged, bool hasChanges, bool unmerged) => provider != "claude" && reportChanged && hasChanges && !unmerged;
+
+    /// <summary>The message of the commit for report revision <paramref name="revision"/>.</summary>
+    public static string Message(string childId, int revision) => $"mighty: {childId} report r{revision}";
+
+    /// <summary>The name starts that look like a secret.</summary>
+    private static readonly string[] SecretStarts = [".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", "credentials", "secrets."];
+    /// <summary>The name ends that look like a secret.</summary>
+    private static readonly string[] SecretEnds = [".pem", ".key", ".pfx", ".p12", ".ppk"];
+    /// <summary>The whole names that look like a secret.</summary>
+    private static readonly string[] SecretNames = [".npmrc", ".pypirc"];
+
+    /// <summary>
+    /// Whether a new file at <paramref name="path"/> (relative to the worktree) looks like a secret: <c>.env*</c>, <c>*.pem</c>,
+    /// <c>*.key</c>, <c>*.pfx</c>, <c>*.p12</c>, <c>*.ppk</c>, <c>id_rsa*</c>, <c>id_ed25519*</c>, <c>id_ecdsa*</c>, <c>id_dsa*</c>,
+    /// <c>credentials*</c>, <c>secrets.*</c>, <c>.npmrc</c> or <c>.pypirc</c>, in any case.
+    /// </summary>
+    public static bool LooksSecret(string path)
+    {
+        var name = path.Replace('\\', '/').TrimEnd('/').Split('/')[^1].ToLowerInvariant();
+        return SecretStarts.Any(start => name.StartsWith(start, StringComparison.Ordinal)) || SecretEnds.Any(end => name.EndsWith(end, StringComparison.Ordinal)) || SecretNames.Contains(name);
+    }
+
+    /// <summary>What the app found or did in the child's worktree.</summary>
+    public enum Outcome
+    {
+        /// <summary>Nothing to commit, or the child is one that commits itself.</summary>
+        Nothing,
+        Committed,
+        /// <summary><c>git ls-files -u</c> lists paths: a conflict is unresolved, so nothing was committed.</summary>
+        Unmerged,
+        /// <summary>The run stopped or errored: nothing is committed until a run of the child finishes normally.</summary>
+        AfterNormalFinish,
+        /// <summary>Git could not read or commit the worktree, or it is not the child's own (<see cref="Result.Why"/>). Nothing was committed.</summary>
+        Failed,
+    }
+
+    /// <param name="LeftOut">New files left uncommitted: secret-looking or too large.</param>
+    public sealed record Result(Outcome Outcome, IReadOnlyList<string> LeftOut, string? Why = null)
+    {
+        public static Result Of(Outcome outcome) => new(outcome, []);
+        public static Result Failing(string why, IReadOnlyList<string>? leftOut = null) => new(Outcome.Failed, leftOut ?? [], why);
+    }
+
+    /// <summary>
+    /// Commits the worktree at <paramref name="worktreePath"/> for report revision <paramref name="revision"/> when
+    /// <see cref="ShouldCommit"/> says so. The report is known to have changed. A lock file left by a git of the app's own that
+    /// did not finish in time is removed; one there before stops the commit.
+    /// </summary>
+    public static async Task<Result> Run(string worktreePath, string childId, int revision, string provider)
+    {
+        if (provider == "claude") return Result.Of(Outcome.Nothing);
+        if (await DelegationGit.Run(["rev-parse", "--show-toplevel", "--absolute-git-dir"], worktreePath) is not { ExitCode: 0 } top) return Result.Failing("Git could not read the worktree.");
+        var lines = top.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (lines.Length != 2 || !DelegationPaths.Same(DelegationPaths.Canonical(lines[0]), DelegationPaths.Canonical(worktreePath))) return Result.Failing("The child's folder is not its own git worktree.");
+        var lockFile = Path.Combine(lines[1], "index.lock");
+        if (await DelegationGit.Run(["ls-files", "-u"], worktreePath, Timeout) is not { ExitCode: 0 } unmerged
+            || await DelegationGit.Run(["status", "--porcelain", "--untracked-files=normal"], worktreePath, Timeout) is not { ExitCode: 0 } status) return Result.Failing("Git could not read the worktree.");
+        if (unmerged.Stdout.Length > 0) return Result.Of(Outcome.Unmerged);
+        if (!ShouldCommit(provider, true, status.Stdout.Length > 0, false)) return Result.Of(Outcome.Nothing);
+        if (File.Exists(lockFile)) return Result.Failing("Another git is working in the worktree (index.lock).");
+        if (await DelegationGit.Run(["ls-files", "-z", "--others", "--exclude-standard"], worktreePath, Timeout) is not { ExitCode: 0 } others) return Result.Failing("Git could not read the worktree.");
+        var fresh = others.Stdout.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+        var leftOut = fresh.Where(path => LooksSecret(path) || Size(Path.Combine(worktreePath, path)) > MaximumNewFileBytes).ToArray();
+        var taken = fresh.Where(path => !leftOut.Contains(path)).ToArray();
+        Task<string?> Write(IReadOnlyList<string> arguments, string? input = null) => WriteStep(worktreePath, lockFile, arguments, input, Timeout);
+        if (await Write(["add", "-u"]) is { } addFailed) return Result.Failing(addFailed, leftOut);
+        if (taken.Length > 0 && await Write(["--literal-pathspecs", "add", "--pathspec-from-file=-", "--pathspec-file-nul"], string.Join('\0', taken)) is { } newFailed) return Result.Failing(newFailed, leftOut);
+        if (await DelegationGit.Run(["diff", "--cached", "--quiet"], worktreePath, Timeout) is not { ExitCode: 0 or 1 } staged) return Result.Failing("Git could not read the worktree.", leftOut);
+        // Only what was left out changed: nothing to commit.
+        if (staged.ExitCode == 0) return new(Outcome.Nothing, leftOut);
+        // An app commit never waits on a signing prompt or a hook.
+        if (await Write(["-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", Message(childId, revision)]) is { } commitFailed) return Result.Failing(commitFailed, leftOut);
+        return new(Outcome.Committed, leftOut);
+    }
+
+    /// <summary>
+    /// One git write of the commit: null when it went through, otherwise why not. Only a git the app itself killed on its
+    /// deadline has its <c>index.lock</c> removed, since that lock is its own; a lock from any other failure (another git working
+    /// there, one that never started, one that stopped reading its input) is left as it is.
+    /// </summary>
+    public static async Task<string?> WriteStep(string worktreePath, string lockFile, IReadOnlyList<string> arguments, string? input, double timeout)
+    {
+        var run = await DelegationGit.RunDetailed(arguments, worktreePath, timeout, input);
+        switch (run.Failure)
+        {
+            case GitFailure.None: return run.Result!.ExitCode == 0 ? null : DelegationGit.Message(run.Result);
+            case GitFailure.TimedOut:
+                try { File.Delete(lockFile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                return "Git did not finish in time.";
+            case GitFailure.NotStarted: return "Git could not be started.";
+            case GitFailure.BrokenPipe: return run.Result is { ExitCode: not 0 } stopped ? DelegationGit.Message(stopped) : "Git stopped reading the list of new files.";
+            default: return "Git did not finish.";
+        }
+    }
+
+    /// <summary>The size of the file at <paramref name="path"/>, not following a link; 0 when unknown.</summary>
+    private static long Size(string path)
+    {
+        try { var info = new FileInfo(path); return info.Exists && info.LinkTarget is null ? info.Length : 0; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return 0; }
+    }
+}

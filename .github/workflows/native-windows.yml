@@ -65,7 +65,7 @@ jobs:
         # The update address and the public half of the update signing key, as the Mac release
         # build stamps them; the signing key itself never leaves the release machine.
         env:
-          MIGHTY_UPDATE_URL: https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/latest.json
+          MIGHTY_UPDATE_URL: https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/latest.json
           MIGHTY_UPDATE_PUBLIC_KEY: C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4=
         run: ./scripts/build-windows.ps1 -Architecture ${{ matrix.architecture }} -Configuration Release -Installer
       # The WinUI screens are the ui-winui escape hatch and the window without WebView2: a short smoke that they start,
@@ -73,30 +73,30 @@ jobs:
       - name: Launch the WinUI fallback with an isolated profile and check its smoke
         shell: pwsh
         timeout-minutes: 3
-        run: ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-${{ matrix.architecture }}/MightyClaude.exe -ProfileDirectory "$env:RUNNER_TEMP/mighty-windows-smoke-${{ matrix.architecture }}"
+        run: ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-${{ matrix.architecture }}/MightyCode.exe -ProfileDirectory "$env:RUNNER_TEMP/mighty-windows-smoke-${{ matrix.architecture }}"
       - name: Launch the web shell with an isolated profile and check its smoke
         shell: pwsh
         timeout-minutes: 6
-        run: ./scripts/test-native-windows.ps1 -Web -Executable ./release/native-windows-${{ matrix.architecture }}/MightyClaude.exe -ProfileDirectory "$env:RUNNER_TEMP/mighty-windows-web-smoke-${{ matrix.architecture }}"
+        run: ./scripts/test-native-windows.ps1 -Web -Executable ./release/native-windows-${{ matrix.architecture }}/MightyCode.exe -ProfileDirectory "$env:RUNNER_TEMP/mighty-windows-web-smoke-${{ matrix.architecture }}"
       - name: Install the setup program for this user, check it, and uninstall it
         shell: pwsh
         timeout-minutes: 6
-        run: ./scripts/test-windows-installer.ps1 -Setup ./release/MightyClaude-windows-${{ matrix.architecture }}-setup.exe -Version (Get-Content VERSION -Raw).Trim()
+        run: ./scripts/test-windows-installer.ps1 -Setup ./release/MightyCode-windows-${{ matrix.architecture }}-setup.exe -Version (Get-Content VERSION -Raw).Trim()
       - name: Upload distributable
         uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-native-windows-${{ matrix.architecture }}
+          name: MightyCode-native-windows-${{ matrix.architecture }}
           path: |
-            release/MightyClaude-windows-${{ matrix.architecture }}.zip
-            release/MightyClaude-windows-${{ matrix.architecture }}.zip.sha256
-            release/MightyClaude-windows-${{ matrix.architecture }}-setup.exe
-            release/MightyClaude-windows-${{ matrix.architecture }}-setup.exe.sha256
+            release/MightyCode-windows-${{ matrix.architecture }}.zip
+            release/MightyCode-windows-${{ matrix.architecture }}.zip.sha256
+            release/MightyCode-windows-${{ matrix.architecture }}-setup.exe
+            release/MightyCode-windows-${{ matrix.architecture }}-setup.exe.sha256
           if-no-files-found: error
       - name: Upload the WinUI fallback smoke result and screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-windows-${{ matrix.architecture }}-smoke
+          name: MightyCode-windows-${{ matrix.architecture }}-smoke
           # WebView2 can still retire cache files after a failed app exits.
           # Publish the durable evidence only, not its mutable browser profile.
           path: |
@@ -112,7 +112,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-windows-${{ matrix.architecture }}-web-smoke
+          name: MightyCode-windows-${{ matrix.architecture }}-web-smoke
           path: |
             ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/smoke-result.json
             ${{ runner.temp }}/mighty-windows-web-smoke-${{ matrix.architecture }}/smoke*.png

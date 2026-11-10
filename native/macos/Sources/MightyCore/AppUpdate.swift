@@ -171,7 +171,7 @@ final class AppUpdateTransportPolicy: NSObject, URLSessionTaskDelegate, URLSessi
 
 public actor AppUpdateService {
     public static let maximumPackageBytes = 512 * 1024 * 1024
-    public static let packageName = "MightyClaude-macos.zip"
+    public static let packageName = "MightyCode-macos.zip"
     private let session: URLSession
     private let directory: URL
     private let publicKey: Data?
@@ -250,7 +250,7 @@ public actor AppUpdateService {
     public func cancelDownload() { downloadTask?.cancel() }
 
     /// Unpacks the zip next to it and returns the single `.app` inside after
-    /// checking that it is a MightyClaude bundle with a runnable executable.
+    /// checking that it is a MightyCode bundle with a runnable executable.
     /// Symlinks are refused so what was validated is what gets installed.
     public func stage(package: URL, expectedBundleIdentifier: String) async throws -> URL {
         let folder = package.deletingLastPathComponent().appendingPathComponent("staged", isDirectory: true)
@@ -311,7 +311,7 @@ public actor AppUpdateService {
     /// destination again by the time the swap would happen, the bundle is
     /// left alone and the update stays staged for the next quit. "Running" is
     /// a process whose command line starts with the destination's
-    /// `Contents/MacOS/MightyClaude`, except the app's own headless modes
+    /// `Contents/MacOS/MightyCode`, except the app's own headless modes
     /// (`--agent-io-mcp`, `--agent-delegation-mcp`, `--verify-resources`),
     /// which can outlive the window for a moment and do not hold the bundle.
     /// The path is matched byte for byte and case-sensitively, while APFS
@@ -327,12 +327,12 @@ public actor AppUpdateService {
     /// text-input session (Korean composition falling apart into jamo).
     ///
     /// `replacing` is the installed app when the new bundle lands under
-    /// another name (`MightyClaude.app` → `Mighty Code.app` beside it): the
+    /// another name (`MightyCode.app` → `Mighty Code.app` beside it): the
     /// installed app is the one moved aside, checked for running and put back
     /// on failure, an app already at `destination` gives way, and the old
     /// one is deleted once the new one is in place. `runningExecutable` is the
     /// installed app's executable, the one the running check looks for.
-    public static func installScript(stagedApp: URL, destination: URL, replacing: URL? = nil, runningExecutable: String = "MightyClaude", pid: Int32, relaunch: Bool = true) -> String {
+    public static func installScript(stagedApp: URL, destination: URL, replacing: URL? = nil, runningExecutable: String = "MightyCode", pid: Int32, relaunch: Bool = true) -> String {
         func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
         /// `pgrep` and `grep -E` take extended regular expressions; these must match literally.
         func literalPattern(_ value: String) -> String {
@@ -353,7 +353,7 @@ public actor AppUpdateService {
         """
         return """
         #!/bin/sh
-        # MightyClaude update helper: swap the bundle only after the app has quit.
+        # MightyCode update helper: swap the bundle only after the app has quit.
         set -u
         PATH=/usr/bin:/bin; export PATH
         SOURCE=\(quote(stagedApp.path))

@@ -1,0 +1,1660 @@
+using System.IO.Compression;
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using MightyCode.Core;
+
+// Checks for the Windows app self-update. Every name registered in
+// Verification.RunAsync starts with "app update".
+//
+// Nothing here opens a socket: the service is handed an HttpMessageHandler that
+// answers from memory. Nothing here starts a process: the replacement is handed
+// a wait-for-exit and a start-app callback. The key pair is generated for the
+// tests only and never leaves this file.
+internal static class AppUpdateVerification
+{
+    private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
+    private static byte[] Hex(string value) => Convert.FromHexString(value);
+    private static string Temp() { var path = Path.Combine(Path.GetTempPath(), "mighty-appupdate-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
+
+    private static async Task<string> Refused(Func<Task> action, string message)
+    {
+        try { await action(); }
+        catch (Exception error) { return error.Message; }
+        throw new InvalidOperationException(message);
+    }
+
+    // The fixture key pair: generated for these checks only.
+    private static readonly byte[] FixtureSeed = Enumerable.Range(0, 32).Select(i => (byte)(i * 7 + 3)).ToArray();
+    private static readonly byte[] FixtureKey = Ed25519Fixture.PublicKey(FixtureSeed);
+    private static readonly byte[] OtherKey = Ed25519Fixture.PublicKey(Enumerable.Range(0, 32).Select(i => (byte)(i + 1)).ToArray());
+
+    // RFC 8032 section 7.1 vectors: seed, public key, message, signature.
+    private static readonly (string Seed, string Key, string Message, string Signature)[] Rfc8032 =
+    [
+        ("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+         "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+         "",
+         "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"),
+        ("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+         "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+         "72",
+         "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00"),
+        ("c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+         "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+         "af82",
+         "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a"),
+        ("833fe62409237b9d62ec77587520911e9a759cec1d19755b7da901b96dca3d42",
+         "ec172b93ad5e563bf4932c70e1245034c35467ef2efd4d64ebf819683467e2bf",
+         "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+         "dc2a4459e7369633a52b1bf277839a00201009a3efbf3ecb69bea2186c26b58909351fc9ac90b3ecfdfbc7c66431e0303dca179c138ac17ad9bef1177331a704"),
+    ];
+
+    /// The verify-only Ed25519 the client carries answers the RFC 8032 vectors,
+    /// refuses a flipped bit anywhere, and agrees with the fixture signer the
+    /// rest of these checks use.
+    internal static Task Ed25519MatchesTheRfc8032Vectors()
+    {
+        foreach (var (seed, key, message, signature) in Rfc8032)
+        {
+            var publicKey = Hex(key);
+            var bytes = Hex(message);
+            var sig = Hex(signature);
+            Check(Ed25519Verify.Verify(bytes, sig, publicKey), "RFC 8032 vector " + key[..8] + " did not verify");
+
+            // The fixture signer must reproduce the vector, or a manifest signed
+            // with it would prove nothing.
+            Check(Ed25519Fixture.PublicKey(Hex(seed)).SequenceEqual(publicKey), "fixture signer derived another public key");
+            Check(Ed25519Fixture.Sign(Hex(seed), bytes).SequenceEqual(sig), "fixture signer produced another signature");
+
+            var changedMessage = bytes.Length == 0 ? [(byte)1] : bytes.ToArray();
+            if (bytes.Length > 0) changedMessage[0] ^= 0x01;
+            Check(!Ed25519Verify.Verify(changedMessage, sig, publicKey), "a changed message must not verify");
+
+            var changedSignature = sig.ToArray(); changedSignature[0] ^= 0x01;
+            Check(!Ed25519Verify.Verify(bytes, changedSignature, publicKey), "a changed signature must not verify");
+
+            var changedKey = publicKey.ToArray(); changedKey[0] ^= 0x01;
+            Check(!Ed25519Verify.Verify(bytes, sig, changedKey), "another public key must not verify");
+
+            Check(!Ed25519Verify.Verify(bytes, sig[..63], publicKey), "a short signature must not verify");
+            Check(!Ed25519Verify.Verify(bytes, sig, publicKey[..31]), "a short public key must not verify");
+        }
+        return Task.CompletedTask;
+    }
+
+    // — Manifest fixtures —
+
+    private static string PlainManifest(
+        string version = "9.9.9",
+        string? x64Sha = null, long? x64Size = 4096,
+        string? arm64Sha = null, long? arm64Size = 4096,
+        string scheme = "https")
+    {
+        string Asset(string arch, string? sha, long? size)
+        {
+            var parts = new List<string> { $"\"url\":\"{scheme}://updates.example/{version}/MightyCode-windows-{arch}.zip\"" };
+            if (sha is not null) parts.Add($"\"sha256\":\"{sha}\"");
+            if (size is not null) parts.Add($"\"size\":{size}");
+            return "{" + string.Join(",", parts) + "}";
+        }
+        return "{\"version\":\"" + version + "\",\"notes\":\"픽스처 릴리스 노트\",\"windows\":{"
+            + "\"x64\":" + Asset("x64", x64Sha ?? new string('a', 64), x64Size) + ","
+            + "\"arm64\":" + Asset("arm64", arm64Sha ?? new string('b', 64), arm64Size)
+            + "}}";
+    }
+
+    private static byte[] Envelope(string plain, byte[]? seed = null, string format = AppUpdateManifest.EnvelopeFormat)
+    {
+        var payload = Encoding.UTF8.GetBytes(plain);
+        var signature = Ed25519Fixture.Sign(seed ?? FixtureSeed, payload);
+        return JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            format,
+            version = "1",
+            payload = Convert.ToBase64String(payload),
+            signature = Convert.ToBase64String(signature),
+        });
+    }
+
+    /// A signed envelope is accepted; an unsigned manifest, a tampered payload,
+    /// a signature from another key and an unknown envelope format are refused.
+    internal static Task ManifestAcceptsAFixtureSignatureAndRefusesEverythingElse()
+    {
+        var plain = PlainManifest();
+        var manifest = AppUpdateManifest.Parse(Envelope(plain), FixtureKey);
+        Check(manifest.Version == "9.9.9", "the signed manifest version must be read");
+        Check(manifest.Windows.Count == 2, "both Windows architectures must be read");
+        Check(manifest.Notes == "픽스처 릴리스 노트", "the release notes must survive the envelope");
+
+        void Refuse(byte[] data, byte[] key, string what)
+        {
+            try { AppUpdateManifest.Parse(data, key); }
+            catch (InvalidOperationException) { return; }
+            throw new InvalidOperationException(what + " must be refused");
+        }
+
+        Refuse(Encoding.UTF8.GetBytes(plain), FixtureKey, "an unsigned manifest");
+        Refuse(Envelope(plain), OtherKey, "a signature from another key");
+        Refuse(Envelope(plain, format: "mightyclaude-update-v2"), FixtureKey, "an unknown envelope format");
+
+        // A tampered payload: the version is raised without re-signing.
+        var tampered = Envelope(plain);
+        var document = JsonDocument.Parse(tampered).RootElement;
+        var forged = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            format = AppUpdateManifest.EnvelopeFormat,
+            payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(PlainManifest("99.0.0"))),
+            signature = document.GetProperty("signature").GetString(),
+        });
+        Refuse(forged, FixtureKey, "a tampered payload");
+        Refuse("{\"format\":\"mightyclaude-update-v1\",\"payload\":\"not base64!!\",\"signature\":\"AA==\"}"u8.ToArray(),
+            FixtureKey, "a payload that is not base64");
+        return Task.CompletedTask;
+    }
+
+    /// Windows rule 2: an asset without sha256 or without size is refused, and
+    /// so is an asset whose url is not https.
+    internal static Task ManifestRefusesAnAssetWithoutSha256OrSize()
+    {
+        var both = AppUpdateManifest.Parse(Envelope(PlainManifest()), FixtureKey);
+        Check(both.Windows.ContainsKey("x64") && both.Windows.ContainsKey("arm64"), "a complete asset must be kept");
+
+        var noSha = AppUpdateManifest.Parse(Envelope(PlainManifest(x64Sha: "")), FixtureKey);
+        Check(!noSha.Windows.ContainsKey("x64"), "an asset without sha256 must be refused");
+        Check(noSha.Windows.ContainsKey("arm64"), "the other architecture must be unaffected");
+
+        var noSize = AppUpdateManifest.Parse(Envelope(PlainManifest(arm64Size: null)), FixtureKey);
+        Check(!noSize.Windows.ContainsKey("arm64"), "an asset without size must be refused");
+
+        var zeroSize = AppUpdateManifest.Parse(Envelope(PlainManifest(arm64Size: 0)), FixtureKey);
+        Check(!zeroSize.Windows.ContainsKey("arm64"), "an asset with size 0 must be refused");
+
+        var plainHttp = AppUpdateManifest.Parse(Envelope(PlainManifest(scheme: "http")), FixtureKey);
+        Check(plainHttp.Windows.Count == 0, "an http package address must be refused");
+
+        Check(!AppUpdateManifest.Allowed("http://updates.example/latest.json"), "http must not be allowed");
+        Check(!AppUpdateManifest.Allowed("file:///tmp/latest.json"), "a file url must not be allowed");
+        Check(!AppUpdateManifest.Allowed("https:///latest.json"), "an https url without a host must not be allowed");
+        Check(AppUpdateManifest.Allowed("https://updates.example/latest.json"), "an https url must be allowed");
+        return Task.CompletedTask;
+    }
+
+    /// 1.2.0 > 1.2.0-beta.2 > 1.1.9, missing components read as 0, a leading v allowed.
+    internal static Task VersionComparisonOrdersReleasesAndPreReleases()
+    {
+        Check(AppVersion.IsNewer("1.2.0", "1.2.0-beta.2"), "a release must beat its pre-release");
+        Check(AppVersion.IsNewer("1.2.0-beta.2", "1.1.9"), "a pre-release must beat the older release");
+        Check(AppVersion.IsNewer("1.2", "1.1.9"), "a missing component must read as 0");
+        Check(!AppVersion.IsNewer("1.2.0", "1.2"), "1.2 and 1.2.0 are the same version");
+        Check(AppVersion.Normalized("v1.2.3") == "1.2.3", "a leading v must be dropped");
+        Check(AppVersion.Normalized("1.2.3-beta.1") == "1.2.3-beta.1", "a pre-release tag must survive");
+        Check(AppVersion.Normalized("not-a-version") is null, "a non-version must be refused");
+        Check(AppVersion.Normalized(new string('9', 80)) is null, "an over-long version must be refused");
+        return Task.CompletedTask;
+    }
+
+    // — Transport —
+
+    private sealed class FakeHttp(Func<Uri, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        internal readonly List<Uri> Requested = [];
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellation)
+        {
+            Requested.Add(request.RequestUri!);
+            return Task.FromResult(respond(request.RequestUri!));
+        }
+    }
+
+    private static HttpResponseMessage Ok(byte[] body) =>
+        new(HttpStatusCode.OK) { Content = new ByteArrayContent(body) };
+
+    private static HttpResponseMessage RedirectTo(string location)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.Found);
+        response.Headers.Location = new Uri(location);
+        return response;
+    }
+
+    private const string ManifestUrl = "https://updates.example/latest.json";
+
+    /// Windows rule 1: a build with no public key never checks, and the section
+    /// shows one sentence with the button disabled.
+    internal static async Task NoPublicKeyMeansNoCheckAtAll()
+    {
+        var directory = Temp();
+        try
+        {
+            var handler = new FakeHttp(_ => Ok(Envelope(PlainManifest())));
+            using var service = new AppUpdateService(directory, publicKey: null, handler);
+            Check(!service.VerifiesSignatures, "a build without a key must not claim to verify signatures");
+            var message = await Refused(() => service.CheckAsync(ManifestUrl, "0.1.0"), "a key-less build must refuse to check");
+            Check(message == AppUpdateStrings.NoPublicKeyNotice, "the refusal must be the section's own sentence");
+            Check(handler.Requested.Count == 0, "a key-less build must not even ask for the manifest");
+
+            // A key that is not 32 raw bytes is the same as no key.
+            using var stubby = new AppUpdateService(directory, [1, 2, 3], handler);
+            Check(!stubby.VerifiesSignatures, "a malformed key must read as no key");
+
+            var coordinator = new AppUpdateCoordinator(service, "0.1.0", builtInManifestUrl: ManifestUrl);
+            await coordinator.CheckAsync(null);
+            var view = coordinator.Describe(_ => "00:00");
+            Check(!view.SectionEnabled, "the section must be disabled without a key");
+            Check(!view.ButtonEnabled, "the check button must be disabled without a key");
+            Check(view.StatusText == AppUpdateStrings.NoPublicKeyNotice, "the one status sentence must be shown");
+            Check(handler.Requested.Count == 0, "the coordinator must not reach the network without a key");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    /// Windows rule 3: the build's address wins; a user-entered address is
+    /// ignored rather than preferred. Without a built-in address a typed https
+    /// address is used and a non-https one is refused.
+    internal static async Task ABuiltInAddressIgnoresAUserAddress()
+    {
+        var directory = Temp();
+        try
+        {
+            var handler = new FakeHttp(_ => Ok(Envelope(PlainManifest())));
+            using var service = new AppUpdateService(directory, FixtureKey, handler);
+
+            var stamped = new AppUpdateCoordinator(service, "0.1.0", builtInManifestUrl: ManifestUrl);
+            Check(stamped.EffectiveManifestUrl("https://attacker.example/latest.json") == ManifestUrl,
+                "a build with an address must ignore a user address");
+            Check(stamped.Describe(_ => "00:00").BuiltInAddressLine ==
+                AppUpdateStrings.BuiltInAddressTemplate.Replace("{address}", ManifestUrl),
+                "the built-in address line must name the address the build carries");
+            Check(!stamped.Describe(_ => "00:00").AddressFieldEnabled,
+                "the address field must be disabled when the build carries an address");
+
+            await stamped.CheckAsync("https://attacker.example/latest.json");
+            Check(handler.Requested.Single().ToString() == ManifestUrl, "only the built-in address may be requested");
+
+            var open = new AppUpdateCoordinator(service, "0.1.0");
+            Check(open.EffectiveManifestUrl("https://typed.example/latest.json") == "https://typed.example/latest.json",
+                "without a built-in address a typed https address is used");
+            Check(open.EffectiveManifestUrl("http://typed.example/latest.json") is null, "a typed http address is refused");
+            Check(open.EffectiveManifestUrl("  ") is null, "an empty address is refused");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    /// Transport is https only, including every redirect hop.
+    internal static async Task TransportRefusesANonHttpsHop()
+    {
+        var directory = Temp();
+        try
+        {
+            var signed = Envelope(PlainManifest());
+            var downgrade = new FakeHttp(url => url.ToString() == ManifestUrl
+                ? RedirectTo("http://updates.example/latest.json")
+                : Ok(signed));
+            using (var service = new AppUpdateService(directory, FixtureKey, downgrade))
+            {
+                var message = await Refused(() => service.CheckAsync(ManifestUrl, "0.1.0"), "an http hop must be refused");
+                Check(message.Contains("https"), "the refusal must name the transport rule: " + message);
+                Check(downgrade.Requested.Count == 1, "the http hop must not be taken");
+            }
+
+            var mirrored = new FakeHttp(url => url.ToString() == ManifestUrl
+                ? RedirectTo("https://mirror.example/latest.json")
+                : Ok(signed));
+            using (var service = new AppUpdateService(directory, FixtureKey, mirrored))
+            {
+                var availability = await service.CheckAsync(ManifestUrl, "0.1.0");
+                Check(availability.IsNewer, "an https hop must be followed");
+                Check(mirrored.Requested.Count == 2, "the https hop must be taken exactly once");
+            }
+
+            using (var service = new AppUpdateService(directory, FixtureKey, new FakeHttp(_ => Ok(signed))))
+            {
+                await Refused(() => service.CheckAsync("http://updates.example/latest.json", "0.1.0"),
+                    "an http manifest address must be refused");
+                await Refused(() => service.CheckAsync("file:///tmp/latest.json", "0.1.0"),
+                    "a file manifest address must be refused");
+            }
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    // — Download —
+
+    private static string Sha256Of(byte[] bytes) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+
+    /// The bytes on disk are checked against size and sha256; a mismatch, an
+    /// oversized body and a cancelled download all leave nothing behind, and
+    /// other version folders are removed first.
+    internal static async Task DownloadVerifiesTheBytesOnDiskAndCleansUp()
+    {
+        var directory = Temp();
+        try
+        {
+            var package = Encoding.UTF8.GetBytes(new string('p', 5000));
+            var url = "https://updates.example/9.9.9/MightyCode-windows-x64.zip";
+            var handler = new FakeHttp(_ => Ok(package));
+            using var service = new AppUpdateService(directory, FixtureKey, handler);
+
+            // A folder for an older version must be gone after the download.
+            var stale = Path.Combine(service.UpdatesDirectory, "1.0.0");
+            Directory.CreateDirectory(stale);
+            await File.WriteAllTextAsync(Path.Combine(stale, "old.zip"), "stale");
+
+            var good = new AppUpdateAsset(url, Sha256Of(package), package.Length);
+            var seen = new List<double>();
+            var path = await service.DownloadAsync(good, "9.9.9", fraction => seen.Add(fraction));
+            Check(File.Exists(path), "the verified package must be on disk");
+            Check(new FileInfo(path).Length == package.Length, "the package on disk must be the package");
+            Check(!Directory.Exists(stale), "another version folder must be removed");
+            Check(seen.Count > 0 && Math.Abs(seen[^1] - 1) < 0.0001, "progress must end at 1");
+
+            // The same version's package already on disk and matching the signed asset is used again: nothing is downloaded twice.
+            var requests = handler.Requested.Count;
+            Check(await service.DownloadAsync(good, "9.9.9") == path && handler.Requested.Count == requests, "a matching package already on disk must not be downloaded again");
+            // One whose bytes changed since is downloaded afresh.
+            await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes(new string('q', 5000)));
+            Check(await service.DownloadAsync(good, "9.9.9") == path && handler.Requested.Count == requests + 1 && (await File.ReadAllBytesAsync(path)).SequenceEqual(package),
+                "a package whose bytes changed must be downloaded again");
+
+            var wrongDigest = new AppUpdateAsset(url, new string('c', 64), package.Length);
+            var digestMessage = await Refused(() => service.DownloadAsync(wrongDigest, "9.9.9"), "a wrong sha256 must be refused");
+            Check(digestMessage.Contains("SHA-256"), "the refusal must name the digest: " + digestMessage);
+            Check(!Directory.Exists(Path.Combine(service.UpdatesDirectory, "9.9.9")), "a mismatching download must be deleted");
+
+            var wrongSize = new AppUpdateAsset(url, Sha256Of(package), package.Length - 1);
+            await Refused(() => service.DownloadAsync(wrongSize, "9.9.9"), "a body longer than size must be refused");
+            Check(!Directory.Exists(Path.Combine(service.UpdatesDirectory, "9.9.9")), "an oversized download must be deleted");
+
+            var overCap = new AppUpdateAsset(url, Sha256Of(package), AppUpdateService.MaxPackageBytes + 1);
+            var capMessage = await Refused(() => service.DownloadAsync(overCap, "9.9.9"), "an asset over the cap must be refused");
+            Check(capMessage.Contains("너무 큽니다"), "the refusal must name the cap: " + capMessage);
+
+            await Refused(() => service.DownloadAsync(good with { Url = "http://updates.example/p.zip" }, "9.9.9"),
+                "an http package address must be refused");
+
+            // A cancelled download leaves nothing behind.
+            using var cancelled = new CancellationTokenSource();
+            await cancelled.CancelAsync();
+            await Refused(() => service.DownloadAsync(good, "9.9.9", null, cancelled.Token), "a cancelled download must not finish");
+            Check(!Directory.Exists(Path.Combine(service.UpdatesDirectory, "9.9.9")), "a cancelled download must leave nothing behind");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    // — Staging —
+
+    /// A minimal PE header: e_lfanew at 0x3c, then the signature and the machine.
+    private static byte[] FakeExecutable(string architecture)
+    {
+        var bytes = new byte[0x100];
+        bytes[0] = (byte)'M'; bytes[1] = (byte)'Z';
+        BitConverter.GetBytes(0x80).CopyTo(bytes, 0x3c);
+        bytes[0x80] = (byte)'P'; bytes[0x81] = (byte)'E';
+        BitConverter.GetBytes((ushort)(architecture == "arm64" ? 0xaa64 : 0x8664)).CopyTo(bytes, 0x84);
+        return bytes;
+    }
+
+    private static string MakeZip(string folder, string name, Action<ZipArchive> fill)
+    {
+        var path = Path.Combine(folder, name);
+        using var file = File.Create(path);
+        using var zip = new ZipArchive(file, ZipArchiveMode.Create);
+        fill(zip);
+        return path;
+    }
+
+    private static void AddEntry(ZipArchive zip, string name, byte[] bytes, int externalAttributes = 0)
+    {
+        var entry = zip.CreateEntry(name);
+        entry.ExternalAttributes = externalAttributes;
+        using var stream = entry.Open();
+        stream.Write(bytes);
+    }
+
+    /// Staging refuses an entry that escapes its folder, a link entry, a package
+    /// without exactly one MightyCode.exe at the root, and another architecture.
+    internal static Task StagingRefusesAnEscapingEntryOrTheWrongPackage()
+    {
+        var directory = Temp();
+        try
+        {
+            var exe = FakeExecutable("x64");
+            var good = MakeZip(directory, "good.zip", zip =>
+            {
+                AddEntry(zip, "MightyCode.exe", exe);
+                AddEntry(zip, "Assets/mightycode.png", "png"u8.ToArray());
+            });
+            var staged = AppUpdateService.Stage(good, "x64");
+            Check(File.Exists(Path.Combine(staged, "MightyCode.exe")), "the executable must be staged at the root");
+            Check(File.Exists(Path.Combine(staged, "Assets", "mightycode.png")), "a nested file must be staged");
+
+            void Refuse(string name, Action<ZipArchive> fill, string architecture, string what)
+            {
+                var path = MakeZip(directory, name, fill);
+                try { AppUpdateService.Stage(path, architecture); }
+                catch (InvalidOperationException) { return; }
+                throw new InvalidOperationException(what + " must be refused");
+            }
+
+            Refuse("escape.zip", zip =>
+            {
+                AddEntry(zip, "MightyCode.exe", exe);
+                AddEntry(zip, "../escaped.txt", "nope"u8.ToArray());
+            }, "x64", "an entry with a .. segment");
+
+            Refuse("absolute.zip", zip =>
+            {
+                AddEntry(zip, "MightyCode.exe", exe);
+                AddEntry(zip, "/etc/evil", "nope"u8.ToArray());
+            }, "x64", "an entry with an absolute path");
+
+            // S_IFLNK (0xA000) in the high 16 bits marks a symbolic link.
+            Refuse("link.zip", zip =>
+            {
+                AddEntry(zip, "MightyCode.exe", exe);
+                AddEntry(zip, "shortcut", "/etc/passwd"u8.ToArray(), unchecked((int)0xa1ff0000));
+            }, "x64", "a link entry");
+
+            Refuse("none.zip", zip => AddEntry(zip, "Readme.txt", "hello"u8.ToArray()), "x64",
+                "a package with no MightyCode.exe");
+
+            Refuse("two.zip", zip =>
+            {
+                AddEntry(zip, "MightyCode.exe", exe);
+                AddEntry(zip, "tools/MightyCode.exe", exe);
+            }, "x64", "a package with two executables");
+
+            Refuse("deep.zip", zip => AddEntry(zip, "app/bin/MightyCode.exe", exe), "x64",
+                "an executable buried below the expected place");
+
+            // The real Windows zip packs the publish folder, so the app sits one
+            // folder down; staging then returns that folder, not the extraction root.
+            var nested = MakeZip(directory, "nested.zip", zip =>
+            {
+                AddEntry(zip, "native-windows-x64/MightyCode.exe", exe);
+                AddEntry(zip, "native-windows-x64/Assets/mightycode.png", "png"u8.ToArray());
+            });
+            var nestedFolder = AppUpdateService.Stage(nested, "x64");
+            Check(Path.GetFileName(nestedFolder) == "native-windows-x64", "staging must return the app folder");
+            Check(File.Exists(Path.Combine(nestedFolder, "MightyCode.exe")), "the app folder must hold the executable");
+
+            Refuse("arm.zip", zip => AddEntry(zip, "MightyCode.exe", FakeExecutable("arm64")), "x64",
+                "a package for another architecture");
+
+            var armPackage = MakeZip(directory, "arm-ok.zip", zip => AddEntry(zip, "MightyCode.exe", FakeExecutable("arm64")));
+            Check(Directory.Exists(AppUpdateService.Stage(armPackage, "arm64")), "an arm64 package must stage on arm64");
+
+            // This version's package carries MightyCode.exe: it stages, and it is the helper the running app starts.
+            var renamed = MakeZip(directory, "renamed.zip", zip => AddEntry(zip, "native-windows-x64/MightyCode.exe", exe));
+            var renamedFolder = AppUpdateService.Stage(renamed, "x64");
+            Check(File.Exists(Path.Combine(renamedFolder, "MightyCode.exe")), "a package of the renamed version must stage");
+            var plan = AppUpdateInstallPlan.Create(renamedFolder, Path.Combine(directory, "install"), renamed, new string('a', 64), 1, 1);
+            Check(Path.GetFileName(plan.StagedHelperExecutable) == "MightyCode.exe", "the renamed version's own executable must be the helper");
+            // A package of a version from before the rename (MightyClaude.exe only) is no update for this one.
+            Refuse("legacy.zip", zip => AddEntry(zip, "MightyClaude.exe", exe), "x64", "a package with only the executable from before the rename");
+            return Task.CompletedTask;
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    // — Replacement —
+
+    private static void MakeInstall(string path, string marker)
+    {
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "MightyCode.exe"), marker);
+    }
+
+    /// The helper verifies the package again immediately before it replaces the
+    /// install, replaces it, starts the new app and only then removes the backup.
+    internal static async Task ReplacementVerifiesAgainAndReplacesTheInstall()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+            Check(plan.IsValid, "the plan must be valid");
+            Check(plan.HelperArguments[0] == AppUpdateInstallPlan.HelperFlag, "the helper argument list must start with the flag");
+            Check(AppUpdateInstallPlan.TryParse(plan.HelperArguments) == plan with { PreviousExecutable = plan.PreviousExecutable },
+                "the helper must rebuild the same plan from its arguments");
+            Check(AppUpdateReplacement.Plan(plan).Select(move => move.Kind).SequenceEqual(["backup", "install"]),
+                "the plan of moves is backup then install");
+            Check(AppUpdateReplacement.Rollback(plan).Kind == "rollback", "the rollback move undoes the backup");
+            Check(AppUpdateReplacement.ShouldRollback(true, false), "a taken backup with no install must roll back");
+            Check(!AppUpdateReplacement.ShouldRollback(true, true), "a finished install must not roll back");
+            Check(!AppUpdateInstallPlan.HelperEnvironment.Keys.Any(key =>
+                key.Contains("TOKEN", StringComparison.OrdinalIgnoreCase) ||
+                key.Contains("HOME", StringComparison.OrdinalIgnoreCase) ||
+                key.Contains("USER", StringComparison.OrdinalIgnoreCase)),
+                "the helper environment must carry nothing about the user");
+
+            var backupPresentWhenStarted = false;
+            var started = new List<string>();
+            var result = await AppUpdateReplacement.RunAsync(
+                plan,
+                _ => Task.FromResult(true),
+                path =>
+                {
+                    backupPresentWhenStarted = Directory.Exists(plan.BackupDirectory);
+                    started.Add(path);
+                    return Task.CompletedTask;
+                });
+
+            Check(result.Replaced && !result.RolledBack, "the replacement must succeed: " + result.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "new", "the new app must be installed");
+            Check(Directory.Exists(staged), "the staged folder must remain: the helper runs from it");
+            Check(started.SequenceEqual([Path.Combine(install, "MightyCode.exe")]), "the new app must be started once");
+            Check(backupPresentWhenStarted, "the backup must still exist when the new app starts");
+            Check(!Directory.Exists(plan.BackupDirectory), "the backup must be removed once the new app has started");
+            Check(result.Moves.Select(move => move.Kind).SequenceEqual(["backup", "install"]), "the moves must be the plan");
+
+            // A backup the helper could not delete is cleared by the next start.
+            var leftover = plan.BackupDirectory;
+            MakeInstall(leftover, "old");
+            Check(AppUpdateReplacement.PruneBackups(install) == 1, "a leftover backup must be pruned");
+            Check(!Directory.Exists(leftover), "the leftover backup must be gone");
+            Check(Directory.Exists(install), "pruning must not touch the install");
+            Check(AppUpdateReplacement.PruneBackups(install) == 0, "pruning again must find nothing");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// A package whose digest changed after the download, an app that never
+    /// quits, and a failed swap all leave the user on the version they had.
+    internal static async Task ReplacementLeavesTheInstallUntouchedWhenItCannotProceed()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, "package"u8.ToArray());
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of("package"u8.ToArray()), 7, 4242);
+
+            // The package is swapped underneath after the download verified it.
+            await File.WriteAllBytesAsync(package, "swapped"u8.ToArray());
+            var tampered = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask);
+            Check(!tampered.Replaced && !tampered.RolledBack, "a changed package must not be installed");
+            Check(tampered.Error!.Contains("재검증"), "the refusal must name the re-verification: " + tampered.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "old", "the install must be untouched");
+            Check(tampered.Moves.Count == 0, "nothing may be moved when the digest differs");
+
+            await File.WriteAllBytesAsync(package, "package"u8.ToArray());
+            var stillRunning = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(false), _ => Task.CompletedTask);
+            Check(!stillRunning.Replaced, "the swap must not start while the app runs");
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "old", "the install must be untouched");
+
+            // Starting the new app fails: the old one is put back and started.
+            var restarted = new List<string>();
+            var rolled = await AppUpdateReplacement.RunAsync(
+                plan,
+                _ => Task.FromResult(true),
+                path => { restarted.Add(path); throw new IOException("새 앱을 시작하지 못했습니다."); });
+            Check(!rolled.Replaced && rolled.RolledBack, "a failed start must roll back: " + rolled.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "old", "the old app must be back");
+            Check(rolled.Moves.Select(move => move.Kind).SequenceEqual(["backup", "install", "rollback"]),
+                "the rollback move must be recorded");
+            Check(restarted.Count == 2, "the old app must be started after the rollback");
+
+            Check(AppUpdateInstallPlan.TryParse(["--update-helper", "--staged", staged]) is null,
+                "a helper argument list missing values must not produce a plan");
+            Check(AppUpdateInstallPlan.TryParse(["--smoke-test"]) is null, "another argument list must not produce a plan");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    // — Automatic check and the section —
+
+    /// The automatic check is a saved preference with the macOS default, every
+    /// six hours, and never without a public key.
+    internal static async Task AutomaticCheckHappensEverySixHours()
+    {
+        Check(new AppSnapshot().AppUpdateAutoCheck, "the macOS default is on");
+        Check(new AppSnapshot().Version == 1, "the snapshot version must stay 1");
+        var round = JsonSerializer.Deserialize<AppSnapshot>(
+            JsonSerializer.Serialize(new AppSnapshot { AppUpdateAutoCheck = false }, Wire.Json), Wire.Json)!;
+        Check(!round.AppUpdateAutoCheck, "the saved preference must survive a round trip");
+        Check(JsonSerializer.Deserialize<AppSnapshot>("{\"version\":1}", Wire.Json)!.AppUpdateAutoCheck,
+            "a file written before the field existed must load with the macOS default");
+
+        var now = DateTimeOffset.UtcNow;
+        Check(AppUpdateCoordinator.IsDue(true, true, null, now), "a first run is due");
+        Check(AppUpdateCoordinator.IsDue(true, true, now.AddHours(-6), now), "a check six hours old is due");
+        Check(!AppUpdateCoordinator.IsDue(true, true, now.AddHours(-5), now), "a check inside six hours is not due");
+        Check(!AppUpdateCoordinator.IsDue(true, true, now.AddHours(-7), now, now.AddHours(-1)), "a recent failed attempt holds the next check back");
+        Check(!AppUpdateCoordinator.IsDue(false, true, null, now), "the preference off means never");
+        Check(!AppUpdateCoordinator.IsDue(true, false, null, now), "no public key means never");
+
+        var directory = Temp();
+        try
+        {
+            var handler = new FakeHttp(_ => Ok(Envelope(PlainManifest())));
+            using var service = new AppUpdateService(directory, FixtureKey, handler);
+            var coordinator = new AppUpdateCoordinator(service, "0.1.0", builtInManifestUrl: ManifestUrl);
+            Check(await coordinator.CheckAutomaticallyIfDueAsync(null, true, null, now), "the first automatic check runs");
+            Check(coordinator.State.Phase == AppUpdatePhase.Available, "the automatic check must find the new version");
+            Check(coordinator.LastAttempt == now, "the attempt is remembered");
+            Check(!await coordinator.CheckAutomaticallyIfDueAsync(null, true, null, now.AddHours(1)), "an attempt inside six hours holds the next one back even with no saved check");
+            Check(!await coordinator.CheckAutomaticallyIfDueAsync(null, true, now, now), "a second check inside six hours is skipped");
+            Check(handler.Requested.Count == 1, "only one manifest request may be made");
+            Check(coordinator.State.Phase == AppUpdatePhase.Available, "with the switch off a found version waits for the download button");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    /// The section shows the macOS copy for every phase and offers download,
+    /// cancel and install in the right order.
+    internal static async Task SectionShowsTheMacOSCopyForEveryPhase()
+    {
+        var statuses = AppUpdateSmoke.FixtureStates
+            .Select(state => AppUpdatePresentation.Describe(state, true, null, _ => "00:00").StatusText).ToArray();
+        var buttons = AppUpdateSmoke.FixtureStates
+            .Select(state => AppUpdatePresentation.Describe(state, true, null, _ => "00:00").ButtonLabel).ToArray();
+
+        Check(statuses[0] == AppUpdateStrings.Checking, "the checking sentence must be the macOS one");
+        Check(statuses[1] == "새 버전 9.9.9 이 있습니다.", "the available sentence must name the version");
+        Check(statuses[2] == "42% 받는 중…", "the download sentence must carry the percentage");
+        Check(statuses[3] == AppUpdateStrings.StagingProgress, "the staging sentence must be the macOS one");
+        Check(statuses[4] == AppUpdateStrings.StagedTemplate.Replace("{version}", "9.9.9"), "a staged update says it installs at the next launch");
+        Check(AppUpdatePresentation.Describe(AppUpdateSmoke.FixtureStates[4], true, null, _ => "00:00", automatic: false).StatusText
+            == AppUpdateStrings.ReadyTemplate.Replace("{version}", "9.9.9"), "with the switch off a staged update waits for restart now, as on macOS");
+        Check(statuses[5] == AppUpdateStrings.Installing, "the installing sentence must be the macOS one");
+        Check(statuses[6] == AppUpdateStrings.UpToDate, "the up-to-date sentence must be the macOS one");
+        Check(statuses[7] == "업데이트 확인 중 오류가 발생했습니다.", "the failed state shows the error message");
+        Check(statuses[8] == statuses[4], "a failed check beside a staged update keeps the staged sentence");
+        var kept = AppUpdatePresentation.Describe(AppUpdateSmoke.FixtureStates[8], true, null, _ => "00:00");
+        Check(kept.KeptError == "업데이트 확인 중 오류가 발생했습니다." && kept.RetryNotice == AppUpdateStrings.RetryNotice, "the failure and the retry notice sit beside it");
+        Check(buttons.SequenceEqual([
+            AppUpdateStrings.InProgressButton, AppUpdateStrings.DownloadButton, AppUpdateStrings.CancelButton,
+            AppUpdateStrings.InProgressButton, AppUpdateStrings.RestartNowButton, AppUpdateStrings.InProgressButton,
+            AppUpdateStrings.CheckButton, AppUpdateStrings.CheckButton, AppUpdateStrings.RestartNowButton]),
+            "the buttons must follow the macOS order: " + string.Join(", ", buttons));
+
+        var idle = AppUpdatePresentation.Describe(new(), true, null, _ => "00:00");
+        Check(idle.StatusText == AppUpdateStrings.NotCheckedYet, "an unchecked build says so");
+        Check(idle.ButtonLabel == AppUpdateStrings.CheckButton && idle.ButtonEnabled, "the check button is offered when idle");
+        Check(idle.SignatureNotice == AppUpdateStrings.SignatureVerified, "a build with a key says it verifies signatures");
+        var checkedAt = AppUpdatePresentation.Describe(
+            new() { CheckedAt = DateTimeOffset.UnixEpoch }, true, null, _ => "09:30");
+        Check(checkedAt.StatusText == "마지막 확인 09:30", "the last check time is shown");
+        Check(AppUpdatePresentation.Describe(
+            new() { Phase = AppUpdatePhase.Available, Availability = AppUpdateSmoke.FixtureStates[1].Availability },
+            true, null, _ => "00:00").Notes == null, "fixture notes are absent, so no note line is shown");
+
+        // The smoke decision accepts what the section renders and refuses less.
+        var current = true;
+        var outcome = await AppUpdateSmoke.RunAsync(
+            AppUpdateSmoke.ExpectedStatuses, AppUpdateSmoke.ExpectedButtons, true,
+            () => current, value => { current = value; return Task.CompletedTask; });
+        Check(outcome.Restored && current, "the smoke run must put the switch back");
+        await Refused(() => AppUpdateSmoke.RunAsync([], AppUpdateSmoke.ExpectedButtons, true, () => current,
+            value => { current = value; return Task.CompletedTask; }), "a section that rendered nothing must fail the smoke run");
+        await Refused(() => AppUpdateSmoke.RunAsync(AppUpdateSmoke.ExpectedStatuses, AppUpdateSmoke.ExpectedButtons, false,
+            () => current, value => { current = value; return Task.CompletedTask; }),
+            "a key-less build that still checked must fail the smoke run");
+    }
+
+    // — Helper location and copy-based replacement —
+
+    /// StagedHelperExecutable points inside the staged folder, so the running
+    /// app can start the helper from the new version before touching the install.
+    internal static Task AppUpdateHelperExecutableIsInsideTheStagedFolder()
+    {
+        var root = Temp();
+        try
+        {
+            var staged = Path.Combine(root, "staged");
+            var install = Path.Combine(root, "install");
+            var package = Path.Combine(root, "pkg.zip");
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, new string('a', 64), 1, 1);
+            var stagedRoot = Path.GetFullPath(staged.TrimEnd(Path.DirectorySeparatorChar))
+                + Path.DirectorySeparatorChar;
+            Check(Path.GetFullPath(plan.StagedHelperExecutable).StartsWith(stagedRoot, StringComparison.Ordinal),
+                "StagedHelperExecutable must be inside the staged directory");
+            Check(Path.GetFileName(plan.StagedHelperExecutable) == AppUpdateService.ExecutableName,
+                "StagedHelperExecutable must name the application executable");
+            return Task.CompletedTask;
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// The helper copies the staged folder to the install path. The staged
+    /// folder remains because the helper is running from it.
+    internal static async Task AppUpdateHelperCopiesTheStagedFolderToTheInstallPath()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+            File.WriteAllText(Path.Combine(staged, "extra.dll"), "extra");
+            Directory.CreateDirectory(Path.Combine(staged, "Assets"));
+            File.WriteAllText(Path.Combine(staged, "Assets", "icon.png"), "icon");
+
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask);
+
+            Check(result.Replaced && !result.RolledBack, "the copy-based replacement must succeed: " + result.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "new",
+                "the install must hold the new version");
+            Check(File.Exists(Path.Combine(install, "extra.dll")),
+                "every file in the staged folder must be copied to the install");
+            Check(File.Exists(Path.Combine(install, "Assets", "icon.png")),
+                "nested files must be copied to the install");
+            Check(Directory.Exists(staged),
+                "the staged folder must remain after the replacement: the helper runs from it");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// When a copy fails halfway it fails beside the install: the install is
+    /// never touched, the partial copy is removed and the app the user had is
+    /// started again.
+    internal static async Task AppUpdateHelperRollsBackAfterACopyThatFailsHalfWay()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            void HalfWayCopier(string source, string destination)
+            {
+                Directory.CreateDirectory(destination);
+                var exe = Path.Combine(source, AppUpdateService.ExecutableName);
+                if (File.Exists(exe)) File.Copy(exe, Path.Combine(destination, AppUpdateService.ExecutableName));
+                throw new IOException("디스크 공간이 부족해 복사를 중단합니다.");
+            }
+
+            var started = new List<string>();
+            var result = await AppUpdateReplacement.RunAsync(
+                plan, _ => Task.FromResult(true), path => { started.Add(path); return Task.CompletedTask; }, HalfWayCopier);
+
+            Check(!result.Replaced && !result.RolledBack && result.Moves.Count == 0,
+                "a half-way copy must fail before anything is moved: " + result.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "old",
+                "the old install must be untouched");
+            Check(!Directory.Exists(plan.NewDirectory), "the partial copy beside the install must be removed");
+            Check(!Directory.Exists(plan.BackupDirectory), "no backup may be taken");
+            Check(started.SequenceEqual([Path.Combine(install, "MightyCode.exe")]) && result.Started, "the app the user had is started again");
+            Check(result.Error!.Contains("디스크"),
+                "the error must name the copy failure: " + result.Error);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+
+    /// Nothing is moved until the app process has quit. A helper that gives up
+    /// waiting leaves the install exactly as it found it.
+    internal static async Task AppUpdateHelperWaitsForTheAppToQuitBeforeItMovesAnything()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            var started = 0;
+            var result = await AppUpdateReplacement.RunAsync(
+                plan, _ => Task.FromResult(false), _ => { started++; return Task.CompletedTask; });
+
+            Check(!result.Replaced && !result.RolledBack, "a still-running app must stop the replacement");
+            Check(result.Moves.Count == 0, "nothing may be moved while the app is still running");
+            Check(started == 0, "no app may be started while the old one still runs");
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "old",
+                "the install must be untouched while the app is still running");
+            Check(!Directory.Exists(plan.BackupDirectory), "no backup may be taken while the app is still running");
+            Check(result.Error!.Contains("종료"), "the refusal must name the app that did not quit: " + result.Error);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// The package is hashed again after the app has quit and before the install
+    /// folder is renamed aside, so a package changed on disk meanwhile is caught
+    /// while the install is still whole.
+    internal static async Task AppUpdateHelperVerifiesThePackageAgainBeforeTheInstallIsMovedAside()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            // The package is tampered with after the plan was built.
+            await File.WriteAllBytesAsync(package, "tampered"u8.ToArray());
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask);
+
+            Check(!result.Replaced && !result.RolledBack, "a changed package must stop the replacement");
+            Check(result.Moves.Count == 0, "a changed package must be caught before the first move");
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "old",
+                "the install must be untouched when the re-verification fails");
+            Check(!Directory.Exists(plan.BackupDirectory), "no backup may be taken when the re-verification fails");
+            Check(result.Error!.Contains("SHA-256"), "the refusal must name the failed re-verification: " + result.Error);
+
+            // A package that vanished between the download and the swap is refused too.
+            File.Delete(package);
+            var gone = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask);
+            Check(!gone.Replaced && gone.Moves.Count == 0, "a missing package must stop the replacement");
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "old",
+                "the install must be untouched when the package is gone");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// The backup survives until the new app is running. When the new app
+    /// refuses to start, the backup is renamed back and the old app is started.
+    internal static async Task AppUpdateHelperKeepsTheBackupUntilTheNewAppHasStarted()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            var backupAtStart = false;
+            var newVersionAtStart = false;
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), async path =>
+            {
+                backupAtStart = Directory.Exists(plan.BackupDirectory);
+                newVersionAtStart = await File.ReadAllTextAsync(path) == "new";
+            });
+
+            Check(result.Replaced, "the replacement must succeed: " + result.Error);
+            Check(backupAtStart, "the backup must still exist when the new app is started");
+            Check(newVersionAtStart, "the new app must already be in the install path when it is started");
+            Check(result.Started && result.BackupRemoved, "the backup is removed only after the new app started");
+            Check(!Directory.Exists(plan.BackupDirectory), "the backup is cleared once the new app runs");
+
+            // Now the new app refuses to start: the old one must come back.
+            var second = Path.Combine(root, "second");
+            var secondInstall = Path.Combine(second, "MightyCode");
+            var secondStaged = Path.Combine(second, "staged");
+            MakeInstall(secondInstall, "old");
+            MakeInstall(secondStaged, "new");
+            var secondPlan = AppUpdateInstallPlan.Create(
+                secondStaged, secondInstall, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            var attempts = 0;
+            var restart = await AppUpdateReplacement.RunAsync(secondPlan, _ => Task.FromResult(true), _ =>
+            {
+                attempts++;
+                if (attempts == 1) throw new InvalidOperationException("새 앱을 시작하지 못했습니다.");
+                return Task.CompletedTask;
+            });
+
+            Check(!restart.Replaced && restart.RolledBack, "a new app that will not start must roll back: " + restart.Error);
+            Check(restart.Started, "the old app must be started again after the rollback");
+            Check(await File.ReadAllTextAsync(Path.Combine(secondInstall, "MightyCode.exe")) == "old",
+                "the old install must be back in place");
+            Check(!Directory.Exists(secondPlan.BackupDirectory), "the backup is renamed back, not left behind");
+            Check(Directory.Exists(secondStaged), "the staged folder the helper runs from must survive the rollback");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// The whole pipeline, end to end, against a fixture-signed manifest: check,
+    /// download for this machine's architecture, stage, and hand a plan to the
+    /// helper that re-verifies before it replaces.
+    internal static async Task PipelineRunsFromAFixtureSignedManifestToAReadyInstallPlan()
+    {
+        var root = Temp();
+        try
+        {
+            var state = Path.Combine(root, "state");
+            var install = Path.Combine(root, "MightyCode");
+            MakeInstall(install, "old");
+
+            var packagePath = MakeZip(root, "MightyCode-windows-x64.zip",
+                zip => AddEntry(zip, "MightyCode.exe", FakeExecutable("x64")));
+            var packageBytes = await File.ReadAllBytesAsync(packagePath);
+            var manifest = "{\"version\":\"9.9.9\",\"windows\":{\"x64\":{"
+                + "\"url\":\"https://updates.example/9.9.9/MightyCode-windows-x64.zip\","
+                + $"\"sha256\":\"{Sha256Of(packageBytes)}\",\"size\":{packageBytes.Length}}}}}}}";
+
+            var handler = new FakeHttp(url => Ok(url.ToString() == ManifestUrl ? Envelope(manifest) : packageBytes));
+            using var service = new AppUpdateService(state, FixtureKey, handler);
+            var launched = new List<AppUpdateInstallPlan>();
+            var coordinator = new AppUpdateCoordinator(
+                service, "0.1.0", ManifestUrl, "x64", install, plan => { launched.Add(plan); return Task.CompletedTask; });
+
+            await coordinator.PressAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Available, "the check must offer the new version: " + coordinator.State.ErrorMessage);
+
+            await coordinator.PressAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready, "the download must end ready: " + coordinator.State.ErrorMessage);
+            Check(coordinator.State.InstallPlan is not null, "a ready update must carry an install plan");
+            Check(File.Exists(Path.Combine(coordinator.State.StagedDirectory!, "MightyCode.exe")), "the package must be staged");
+
+            await coordinator.PressAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Installing, "the install must hand over to the helper");
+            Check(launched.Count == 1 && launched[0].InstallDirectory == install, "the helper must be given the install folder");
+
+            // The helper re-verifies and replaces, using the plan the app built.
+            var result = await AppUpdateReplacement.RunAsync(launched[0], _ => Task.FromResult(true), _ => Task.CompletedTask);
+            Check(result.Replaced, "the helper must replace the install: " + result.Error);
+            Check(File.Exists(Path.Combine(install, "MightyCode.exe")), "the new app must be in place");
+
+            // A manifest with no asset for this machine is refused.
+            var armOnly = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "arm64", install);
+            await armOnly.PressAsync(null);
+            await armOnly.PressAsync(null);
+            Check(armOnly.State.Phase == AppUpdatePhase.Failed, "a manifest without this architecture must fail");
+            Check(armOnly.State.ErrorMessage!.Contains("arm64"), "the refusal must name the architecture");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// The setup program's uninstall entry follows the app's own updates, and only for the folder setup installed into.
+    internal static Task InstallerEntryFollowsTheAppsOwnUpdates()
+    {
+        const string install = @"C:\Users\me\AppData\Local\Programs\MightyCode";
+        Check(InstallerRegistration.VersionToWrite(install + @"\", "0.4.34", install, "0.4.35") == "0.4.35", "an entry for this folder with an older version takes the app's version");
+        Check(InstallerRegistration.VersionToWrite(install.ToUpperInvariant(), "0.4.34", install + @"\", "0.4.35") == "0.4.35", "folders compare without case and trailing separator");
+        Check(InstallerRegistration.VersionToWrite(install + @"\", "0.4.35", install, "0.4.35") is null, "the same version writes nothing");
+        Check(InstallerRegistration.VersionToWrite(install + @"\", "0.4.34", @"D:\Tools\MightyCode", "0.4.35") is null, "a copy unpacked elsewhere leaves the entry alone");
+        Check(InstallerRegistration.VersionToWrite(null, "0.4.34", install, "0.4.35") is null, "no entry writes nothing");
+        Check(InstallerRegistration.VersionToWrite(install + "Old", "0.4.34", install, "0.4.35") is null, "a folder whose name only starts the same is another folder");
+
+        // The setup script and the app name the same entry, and setup installs where the app can replace itself.
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "native", "windows", "installer", "MightyCode.iss"))) directory = directory.Parent;
+        Check(directory is not null, "the setup script was not found from the test folder");
+        var script = File.ReadAllText(Path.Combine(directory!.FullName, "native", "windows", "installer", "MightyCode.iss"));
+        var key = InstallerRegistration.UninstallKey;
+        var guid = key[(key.LastIndexOf('{') + 1)..key.LastIndexOf('}')];
+        Check(script.Contains("AppId={{" + guid + "}"), "MightyCode.iss AppId must match InstallerRegistration.UninstallKey");
+        Check(script.Contains("PrivilegesRequired=lowest") && script.Contains("DisableDirPage=yes"), "setup installs for this user only, into its fixed folder");
+        return Task.CompletedTask;
+    }
+    // — Fully automatic update (M/AppUpdateAuto.swift, M/AppUpdateAutoSteps.swift) —
+
+    /// The automatic rules are the macOS ones: the same constants, a check every
+    /// six hours after the later of the last check and the last attempt, each
+    /// idle blocker on its own, and the countdown that input alone does not cancel.
+    internal static Task AutomaticPolicyFollowsTheMacOSRules()
+    {
+        Check(AppUpdateAuto.CheckInterval == TimeSpan.FromHours(6) && AppUpdateAuto.Tick == TimeSpan.FromMinutes(10)
+            && AppUpdateAuto.UserIdleDelay == TimeSpan.FromMinutes(5) && AppUpdateAuto.AgentIdleDelay == TimeSpan.FromMinutes(3)
+            && AppUpdateAuto.Countdown == TimeSpan.FromSeconds(60) && AppUpdateAuto.CountdownTick == TimeSpan.FromSeconds(1)
+            && AppUpdateAuto.CountdownGrace == TimeSpan.FromSeconds(5)
+            && AppUpdateAuto.Snooze == TimeSpan.FromHours(4), "the constants must be the macOS ones");
+
+        // The macOS source names the same blockers in the same order and the same constants.
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "native", "macos", "Sources", "MightyCore", "AppUpdateAuto.swift"))) directory = directory.Parent;
+        Check(directory is not null, "AppUpdateAuto.swift was not found from the test folder");
+        var swift = File.ReadAllText(Path.Combine(directory!.FullName, "native", "macos", "Sources", "MightyCore", "AppUpdateAuto.swift")).Replace("\r\n", "\n");
+        var cases = string.Join(", ", Enum.GetValues<AppIdleBlocker>().Select(blocker => char.ToLowerInvariant(blocker.ToString()[0]) + blocker.ToString()[1..]));
+        Check(swift.Contains("case " + cases + "\n"), "AppIdleBlocker must list the macOS cases in the macOS order: " + cases);
+        foreach (var constant in new[] { "checkInterval: TimeInterval = 6 * 60 * 60", "tick: TimeInterval = 10 * 60", "userIdleDelay: TimeInterval = 5 * 60",
+                     "agentIdleDelay: TimeInterval = 3 * 60", "countdown: TimeInterval = 60", "countdownTick: TimeInterval = 1", "countdownGrace: TimeInterval = 5", "snooze: TimeInterval = 4 * 60 * 60" })
+            Check(swift.Contains(constant), "the macOS constant changed: " + constant);
+
+        var now = new DateTimeOffset(2026, 10, 23, 12, 0, 0, TimeSpan.Zero);
+        Check(AppUpdateAuto.CheckDue(true, true, null, null, now), "a first run is due");
+        Check(AppUpdateAuto.CheckDue(true, true, now.AddHours(-6), null, now), "six hours after the last check is due");
+        Check(!AppUpdateAuto.CheckDue(true, true, now.AddHours(-6).AddSeconds(1), null, now), "inside six hours is not due");
+        Check(!AppUpdateAuto.CheckDue(true, true, now.AddDays(-2), now.AddHours(-1), now), "a failed attempt waits for the next cycle");
+        Check(AppUpdateAuto.CheckDue(true, true, now.AddDays(-2), now.AddHours(-6), now), "the next cycle after a failed attempt is due");
+        Check(!AppUpdateAuto.CheckDue(false, true, null, null, now), "the switch off means never");
+        Check(!AppUpdateAuto.CheckDue(true, false, null, null, now), "no key means never");
+        Check(AppUpdateAuto.CheckDue(true, true, now.AddDays(3), null, now), "a check dated in the future (clock set back) is ignored");
+        Check(!AppUpdateAuto.CheckDue(true, true, now.AddDays(3), now.AddHours(-1), now), "a past attempt still holds the next try back");
+
+        Check(AppUpdateAuto.IdleBlockers(new AppIdleFacts(), now).Count == 0 && AppUpdateAuto.IsIdle(new AppIdleFacts(), now), "nothing going on is idle");
+        var alone = new (AppIdleFacts Facts, AppIdleBlocker Blocker)[]
+        {
+            (new() { AgentRuns = 1 }, AppIdleBlocker.AgentRun),
+            (new() { PendingCards = 1 }, AppIdleBlocker.PendingCard),
+            (new() { QueuedInputs = 1 }, AppIdleBlocker.QueuedInput),
+            (new() { Drafts = 1 }, AppIdleBlocker.Draft),
+            (new() { Terminals = 1 }, AppIdleBlocker.Terminal),
+            (new() { CliWork = true }, AppIdleBlocker.CliWork),
+            (new() { ScreenSharing = true }, AppIdleBlocker.Remote),
+            (new() { PhoneUploads = 1 }, AppIdleBlocker.Remote),
+            (new() { RemoteHostRuns = 1 }, AppIdleBlocker.Remote),
+            (new() { SharingWorkspaces = true }, AppIdleBlocker.Remote),
+            (new() { BlockingModal = true }, AppIdleBlocker.Modal),
+            (new() { LastUserInput = now.AddMinutes(-4) }, AppIdleBlocker.UserActive),
+            (new() { LastUserInput = now.AddMinutes(1) }, AppIdleBlocker.UserActive),
+            (new() { LastAgentActivity = now.AddMinutes(-2) }, AppIdleBlocker.RecentAgentActivity),
+        };
+        foreach (var (facts, blocker) in alone)
+            Check(AppUpdateAuto.IdleBlockers(facts, now).SequenceEqual([blocker]), blocker + " must block on its own");
+        Check(AppUpdateAuto.IsIdle(new() { LastUserInput = now.AddMinutes(-5), LastAgentActivity = now.AddMinutes(-3) }, now), "input and runs past their delays are idle");
+        Check(AppUpdateAuto.IdleBlockers(new() { AgentRuns = 1, Drafts = 2, LastUserInput = now }, now)
+            .SequenceEqual([AppIdleBlocker.AgentRun, AppIdleBlocker.Draft, AppIdleBlocker.UserActive]), "the blockers come in the macOS order");
+
+        // The countdown: starts when idle, survives input, cancels on anything else, restarts when it runs out.
+        var idle = AppUpdateRestartState.Idle;
+        Check(AppUpdateAuto.RestartOffer(idle, false, true, [], now) == new AppUpdateRestartDecision(idle, AppUpdateRestartAction.None), "nothing staged offers nothing");
+        Check(AppUpdateAuto.RestartOffer(idle, true, false, [], now).Action == AppUpdateRestartAction.None, "the switch off offers nothing");
+        Check(AppUpdateAuto.RestartOffer(idle, true, true, [AppIdleBlocker.UserActive], now).Action == AppUpdateRestartAction.None, "a busy app is not offered a restart");
+        var started = AppUpdateAuto.RestartOffer(idle, true, true, [], now);
+        Check(started == new AppUpdateRestartDecision(AppUpdateRestartState.CountingDown(now + AppUpdateAuto.Countdown), AppUpdateRestartAction.StartCountdown), "an idle app starts the countdown");
+        var ticked = AppUpdateAuto.RestartOffer(started.State, true, true, [AppIdleBlocker.UserActive], now.AddSeconds(1));
+        Check(ticked == new AppUpdateRestartDecision(started.State, AppUpdateRestartAction.None), "input alone does not cancel a running countdown");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, true, [AppIdleBlocker.UserActive, AppIdleBlocker.Draft], now.AddSeconds(2))
+            == new AppUpdateRestartDecision(idle, AppUpdateRestartAction.Cancel), "any other blocker cancels quietly");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, false, [], now.AddSeconds(2)).Action == AppUpdateRestartAction.Cancel, "the switch going off cancels");
+        Check(AppUpdateAuto.RestartOffer(started.State, false, true, [], now.AddSeconds(2)).Action == AppUpdateRestartAction.Cancel, "an update no longer ready cancels");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, true, [], now.AddSeconds(59)).Action == AppUpdateRestartAction.None, "the countdown runs its sixty seconds");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, true, [], now.AddSeconds(60)) == new AppUpdateRestartDecision(idle, AppUpdateRestartAction.Restart), "the end of the countdown restarts");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, true, [], now.AddSeconds(65)).Action == AppUpdateRestartAction.Restart, "a tick within the grace still restarts");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, true, [], now.AddSeconds(66)) == new AppUpdateRestartDecision(idle, AppUpdateRestartAction.Cancel),
+            "a countdown found past its grace (the computer slept) is cancelled, never acted on");
+
+        var later = AppUpdateAuto.Later(now);
+        Check(later == AppUpdateRestartState.Snoozed(now.AddHours(4)), "later snoozes four hours");
+        Check(AppUpdateAuto.RestartOffer(later, true, true, [], now.AddHours(4).AddSeconds(-1)) == new AppUpdateRestartDecision(later, AppUpdateRestartAction.None), "a snooze holds until it ends");
+        Check(AppUpdateAuto.RestartOffer(later, true, true, [], now.AddHours(4)).Action == AppUpdateRestartAction.StartCountdown, "after the snooze an idle app is asked again");
+
+        Check(AppUpdateAuto.InstallsOnQuit(true, true, true, false), "a staged update installs on quit");
+        Check(!AppUpdateAuto.InstallsOnQuit(false, true, true, false) && !AppUpdateAuto.InstallsOnQuit(true, false, true, false)
+            && !AppUpdateAuto.InstallsOnQuit(true, true, false, false) && !AppUpdateAuto.InstallsOnQuit(true, true, true, true),
+            "nothing staged, the switch off, no key or a shutdown installs nothing on quit");
+        return Task.CompletedTask;
+    }
+
+    /// `--relaunch 0` survives the trip through the helper's argument list; an
+    /// old app that never passes the flag still means "start it again".
+    internal static Task HelperRelaunchFlagRoundTrips()
+    {
+        var plan = AppUpdateInstallPlan.Create(
+            Path.Combine(Path.GetTempPath(), "staged"), Path.Combine(Path.GetTempPath(), "MightyCode"),
+            Path.Combine(Path.GetTempPath(), "package.zip"), new string('c', 64), 10, 4242);
+        Check(plan.Relaunch, "a plan relaunches by default");
+        var quiet = plan with { Relaunch = false };
+        var arguments = quiet.HelperArguments;
+        Check(arguments.Count >= 2 && arguments[^2] == AppUpdateInstallPlan.RelaunchFlag && arguments[^1] == "0", "a plan without relaunch says --relaunch 0");
+        Check(plan.HelperArguments[^1] == "1", "a plan with relaunch says --relaunch 1");
+        Check(AppUpdateInstallPlan.TryParse(arguments) == quiet, "--relaunch 0 must round trip");
+        Check(AppUpdateInstallPlan.TryParse(plan.HelperArguments) == plan, "--relaunch 1 must round trip");
+        Check(AppUpdateInstallPlan.TryParse(plan.HelperArguments.Take(plan.HelperArguments.Count - 2).ToList()) == plan,
+            "an argument list from an app before --relaunch existed must relaunch");
+        Check(AppUpdateInstallPlan.TryParse([.. plan.HelperArguments.Take(plan.HelperArguments.Count - 1), "yes"]) is null,
+            "a --relaunch value other than 1 or 0 must not produce a plan");
+        return Task.CompletedTask;
+    }
+
+    /// The install on quit replaces the install and removes the backup without
+    /// starting the app; when the swap fails the old install is put back and
+    /// still nothing is started.
+    internal static async Task ReplacementWithoutRelaunchNeverStartsTheApp()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242) with { Relaunch = false };
+
+            var started = new List<string>();
+            Task Start(string path) { started.Add(path); return Task.CompletedTask; }
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), Start);
+            Check(result.Replaced && !result.RolledBack, "the install on quit must replace the install: " + result.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "new", "the new app must be in place");
+            Check(started.Count == 0 && !result.Started, "the install on quit must not start the app");
+            Check(result.BackupRemoved && !Directory.Exists(plan.BackupDirectory), "the backup must be removed after a swap without relaunch");
+
+            // A failed copy leaves the install as it was and starts nothing either.
+            MakeInstall(staged, "newer");
+            var failing = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242) with { Relaunch = false };
+            var rolled = await AppUpdateReplacement.RunAsync(failing, _ => Task.FromResult(true), Start,
+                (_, destination) => { Directory.CreateDirectory(destination); throw new IOException("복사 실패"); });
+            Check(!rolled.Replaced && !rolled.RolledBack && rolled.Moves.Count == 0, "a failed copy must stop before anything is moved: " + rolled.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyCode.exe")) == "new", "the install must be the one before the swap");
+            Check(started.Count == 0 && !rolled.Started, "a failed swap without relaunch must not start the app");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// With the switch on a check downloads and stages without asking; a check
+    /// that finds the staged version keeps it ready without a second download; a
+    /// failed check beside a staged update only lands in LastError; quitting
+    /// installs it without a relaunch, and not with the switch off.
+    internal static async Task AStagedUpdateStaysReadyAndInstallsOnQuit()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            MakeInstall(install, "old");
+            var packagePath = MakeZip(root, "MightyCode-windows-x64.zip", zip => AddEntry(zip, "MightyCode.exe", FakeExecutable("x64")));
+            var packageBytes = await File.ReadAllBytesAsync(packagePath);
+            string Manifest(string version) => "{\"version\":\"" + version + "\",\"windows\":{\"x64\":{"
+                + "\"url\":\"https://updates.example/" + version + "/MightyCode-windows-x64.zip\","
+                + $"\"sha256\":\"{Sha256Of(packageBytes)}\",\"size\":{packageBytes.Length}}}}}}}";
+            var manifestVersion = "9.9.9";
+            var fail = false;
+            var handler = new FakeHttp(url =>
+                url.ToString() == ManifestUrl
+                    ? fail ? new HttpResponseMessage(HttpStatusCode.InternalServerError) : Ok(Envelope(Manifest(manifestVersion)))
+                    : Ok(packageBytes));
+            using var service = new AppUpdateService(Path.Combine(root, "state"), FixtureKey, handler);
+            var launched = new List<AppUpdateInstallPlan>();
+            var automatic = true;
+            var coordinator = new AppUpdateCoordinator(
+                service, "0.1.0", ManifestUrl, "x64", install, plan => { launched.Add(plan); return Task.CompletedTask; }, () => automatic);
+
+            var now = DateTimeOffset.UtcNow;
+            Check(await coordinator.CheckAutomaticallyIfDueAsync(null, true, null, now), "the first automatic check runs");
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready, "with the switch on a found version is downloaded and staged: " + coordinator.State.ErrorMessage);
+            var downloads = handler.Requested.Count(url => url.ToString() != ManifestUrl);
+            Check(downloads == 1, "one package download");
+            var view = coordinator.Describe(_ => "00:00");
+            Check(view.StatusText == AppUpdateStrings.StagedTemplate.Replace("{version}", "9.9.9") && view.ButtonLabel == AppUpdateStrings.RestartNowButton,
+                "a staged update says it installs at the next launch and offers restart now");
+
+            await coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready, "the same version keeps the staged update ready");
+            Check(handler.Requested.Count(url => url.ToString() != ManifestUrl) == downloads, "the same version is not downloaded twice");
+
+            fail = true;
+            await coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready && coordinator.State.InstallPlan is not null, "a failed check never drops a staged update");
+            Check(coordinator.State.LastError is { Length: > 0 }, "the failure is kept in LastError");
+            view = coordinator.Describe(_ => "00:00");
+            Check(view.KeptError == coordinator.State.LastError && view.RetryNotice == AppUpdateStrings.RetryNotice, "the section shows the failure and the retry notice");
+            Check(view.StatusText == AppUpdateStrings.StagedTemplate.Replace("{version}", "9.9.9"), "the status still says the update is staged");
+            fail = false;
+
+            automatic = false;
+            Check(!await coordinator.InstallOnQuitAsync(), "with the switch off quitting installs nothing");
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready && launched.Count == 0, "the staged update waits for restart now");
+            automatic = true;
+            Check(!await coordinator.InstallOnQuitAsync(poweringOff: true), "a shutdown leaves the update for the next quit");
+            Check(await coordinator.InstallOnQuitAsync(), "quitting installs the staged update");
+            Check(coordinator.State.Phase == AppUpdatePhase.Installing, "the install hands over to the helper");
+            Check(launched.Count == 1 && !launched[0].Relaunch && launched[0].HelperArguments[^1] == "0", "the helper is started with --relaunch 0");
+            Check(!await coordinator.InstallOnQuitAsync(), "an install under way is not started twice");
+
+            // A failed check with nothing staged is the section's state, with the retry notice while the switch is on.
+            var fresh = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, null, () => true);
+            fail = true;
+            await fresh.CheckAsync(null);
+            Check(fresh.State.Phase == AppUpdatePhase.Failed, "a failed check with nothing staged fails");
+            Check(fresh.Describe(_ => "00:00").RetryNotice == AppUpdateStrings.RetryNotice && fresh.Describe(_ => "00:00").KeptError is null,
+                "the retry notice shows, the error is the status itself");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    private sealed class GatedHttp(Func<Uri, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        internal readonly List<Uri> Requested = [];
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellation)
+        {
+            Requested.Add(request.RequestUri!);
+            return respond(request.RequestUri!);
+        }
+    }
+
+    private static string WindowsManifest(string version, byte[] package, params string[] architectures) =>
+        "{\"version\":\"" + version + "\",\"windows\":{" + string.Join(",", architectures.Select(arch =>
+            "\"" + arch + "\":{\"url\":\"https://updates.example/" + version + "/MightyCode-windows-" + arch + ".zip\","
+            + $"\"sha256\":\"{Sha256Of(package)}\",\"size\":{package.Length}}}")) + "}}";
+
+    private static async Task<(string Install, string Package, AppUpdateInstallPlan Plan)> SwapFixture(string root, bool relaunch)
+    {
+        var install = Path.Combine(root, "MightyCode");
+        var staged = Path.Combine(root, "staged");
+        MakeInstall(install, "old");
+        MakeInstall(staged, "new");
+        var packageBytes = "package"u8.ToArray();
+        var package = Path.Combine(root, "package.zip");
+        await File.WriteAllBytesAsync(package, packageBytes);
+        return (install, package, AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242) with { Relaunch = relaunch });
+    }
+
+    /// The staged folder is copied beside the install first and then renamed in,
+    /// so the install is whole until two renames; an install on quit that finds
+    /// the app running again keeps everything for the next quit; a failed rename
+    /// puts the old install back.
+    internal static async Task HelperCopiesBesideTheInstallAndSwapsByRenaming()
+    {
+        var root = Temp();
+        try
+        {
+            var (install, _, plan) = await SwapFixture(root, relaunch: true);
+            Check(plan.NewDirectory == Path.GetFullPath(install) + ".update-new", "the copy lands beside the install");
+            var installWholeDuringCopy = false;
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask,
+                (source, destination) =>
+                {
+                    installWholeDuringCopy = destination == plan.NewDirectory && File.ReadAllText(Path.Combine(install, "MightyCode.exe")) == "old";
+                    AppUpdateReplacement.CopyDirectory(source, destination);
+                });
+            Check(result.Replaced && installWholeDuringCopy, "the install is whole while the copy runs: " + result.Error);
+            Check(result.Moves.Select(move => (move.Kind, move.From)).SequenceEqual([("backup", plan.InstallDirectory), ("install", plan.NewDirectory)]),
+                "the swap is two renames, the install aside and the copy in");
+            Check(!Directory.Exists(plan.NewDirectory) && Directory.Exists(plan.StagedDirectory), "the copy was renamed in; the staged folder stays");
+
+            // An install on quit that finds the app running again keeps everything for the next quit.
+            var again = Path.Combine(root, "again");
+            var (againInstall, _, quiet) = await SwapFixture(again, relaunch: false);
+            var startedAgain = 0;
+            var asked = false;
+            var skipped = await AppUpdateReplacement.RunAsync(quiet, _ => Task.FromResult(true), _ => { startedAgain++; return Task.CompletedTask; },
+                runningAgain: _ => { asked = true; return Task.FromResult(true); });
+            Check(asked && skipped.Skipped && !skipped.Replaced && !skipped.RolledBack && skipped.Error is null, "a running app skips the swap without an error");
+            Check(skipped.Moves.Count == 0 && startedAgain == 0 && !skipped.Started, "nothing is moved or started");
+            Check(File.ReadAllText(Path.Combine(againInstall, "MightyCode.exe")) == "old", "the install is untouched");
+            Check(!Directory.Exists(quiet.NewDirectory) && Directory.Exists(quiet.StagedDirectory), "the copy is removed and the staged update kept");
+            Check(!Directory.Exists(quiet.BackupDirectory), "no backup is taken");
+            var notAsked = true;
+            var relaunching = await AppUpdateReplacement.RunAsync(quiet with { Relaunch = true }, _ => Task.FromResult(true), _ => Task.CompletedTask,
+                runningAgain: _ => { notAsked = false; return Task.FromResult(true); });
+            Check(notAsked && relaunching.Replaced, "a restart asked for by the user does not look for the app running again");
+
+            // The copy cannot be renamed in: the old install is put back (and started only with a relaunch).
+            foreach (var relaunch in new[] { true, false })
+            {
+                var failing = Path.Combine(root, "failing-" + relaunch);
+                var (failingInstall, _, failingPlan) = await SwapFixture(failing, relaunch);
+                var calls = 0;
+                var starts = new List<string>();
+                // Refused every time it is tried: a refusal for a moment is tried again (HelperRetriesRenamesAndReadsAnUnsureCheckAsRunning).
+                var rolled = await AppUpdateReplacement.RunAsync(failingPlan, _ => Task.FromResult(true), path => { starts.Add(path); return Task.CompletedTask; },
+                    mover: (from, to) => { calls++; if (from == failingPlan.NewDirectory) throw new IOException("이름을 바꾸지 못했습니다."); Directory.Move(from, to); },
+                    moveRetryDelay: TimeSpan.FromMilliseconds(1));
+                Check(!rolled.Replaced && rolled.RolledBack, "a failed rename must roll back: " + rolled.Error);
+                Check(File.ReadAllText(Path.Combine(failingInstall, "MightyCode.exe")) == "old", "the old install is back");
+                Check(!Directory.Exists(failingPlan.BackupDirectory) && !Directory.Exists(failingPlan.NewDirectory), "neither the backup nor the copy is left behind");
+                Check(starts.Count == (relaunch ? 1 : 0) && rolled.Started == relaunch, "the old app is started again only with a relaunch");
+            }
+
+            // The install cannot be moved aside (the app runs from it): nothing changes and the app the user had comes back.
+            var locked = Path.Combine(root, "locked");
+            var (lockedInstall, _, lockedPlan) = await SwapFixture(locked, relaunch: true);
+            var lockedStarts = 0;
+            var refused = await AppUpdateReplacement.RunAsync(lockedPlan, _ => Task.FromResult(true), _ => { lockedStarts++; return Task.CompletedTask; },
+                mover: (_, _) => throw new IOException("다른 프로세스가 사용 중입니다."), moveRetryDelay: TimeSpan.FromMilliseconds(1));
+            Check(!refused.Replaced && !refused.RolledBack && refused.Moves.Count == 0, "a refused first rename moves nothing");
+            Check(File.ReadAllText(Path.Combine(lockedInstall, "MightyCode.exe")) == "old" && !Directory.Exists(lockedPlan.NewDirectory), "the install stays and the copy is removed");
+            Check(lockedStarts == 1, "the app the user had is started again");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// A rename refused for a moment (a scan or the indexer holding a file) is
+    /// tried again, the rollback's too, and given up after `MoveAttempts`; a
+    /// check for the app running again that throws counts as running, so an
+    /// install on quit keeps everything and says why.
+    internal static async Task HelperRetriesRenamesAndReadsAnUnsureCheckAsRunning()
+    {
+        var root = Temp();
+        var quick = TimeSpan.FromMilliseconds(1);
+        try
+        {
+            // The install is refused three times, then moves; the copy goes in after it.
+            var (install, _, plan) = await SwapFixture(Path.Combine(root, "busy"), relaunch: true);
+            var tries = new List<string>();
+            var refusals = 0;
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask,
+                mover: (from, to) => { tries.Add(from); if (refusals++ < 3) throw new UnauthorizedAccessException("잠시 사용 중입니다."); Directory.Move(from, to); },
+                moveRetryDelay: quick);
+            Check(result.Replaced && !result.RolledBack && File.ReadAllText(Path.Combine(install, "MightyCode.exe")) == "new", "a rename refused for a moment goes through: " + result.Error);
+            Check(tries.Count == 5 && tries.Take(4).All(from => from == plan.InstallDirectory) && tries[4] == plan.NewDirectory,
+                $"the install is tried four times, then the copy is renamed in; got {string.Join(", ", tries.Select(Path.GetFileName))}");
+
+            // The copy is refused three times, then goes in.
+            var (newInstall, _, newPlan) = await SwapFixture(Path.Combine(root, "busy-new"), relaunch: false);
+            var newRefusals = 0;
+            var second = await AppUpdateReplacement.RunAsync(newPlan, _ => Task.FromResult(true), _ => Task.CompletedTask,
+                mover: (from, to) => { if (from == newPlan.NewDirectory && newRefusals++ < 3) throw new IOException("잠시 사용 중입니다."); Directory.Move(from, to); },
+                moveRetryDelay: quick);
+            Check(second.Replaced && newRefusals == 4 && File.ReadAllText(Path.Combine(newInstall, "MightyCode.exe")) == "new", "the copy's rename is tried again too: " + second.Error);
+
+            // Refused every time, the copy is given up after MoveAttempts tries, and the rollback's own rename is tried again.
+            var (stuckInstall, _, stuckPlan) = await SwapFixture(Path.Combine(root, "stuck"), relaunch: false);
+            var newTries = 0;
+            var rollbackRefusals = 0;
+            var stuck = await AppUpdateReplacement.RunAsync(stuckPlan, _ => Task.FromResult(true), _ => Task.CompletedTask,
+                mover: (from, to) =>
+                {
+                    if (from == stuckPlan.NewDirectory) { newTries++; throw new IOException("다른 프로세스가 사용 중입니다."); }
+                    if (from == stuckPlan.BackupDirectory && rollbackRefusals++ < 2) throw new IOException("다른 프로세스가 사용 중입니다.");
+                    Directory.Move(from, to);
+                },
+                moveRetryDelay: quick);
+            Check(!stuck.Replaced && stuck.RolledBack && newTries == AppUpdateReplacement.MoveAttempts && rollbackRefusals == 3,
+                $"the copy is tried {AppUpdateReplacement.MoveAttempts} times and the rollback goes through on its third try; got {newTries} and {rollbackRefusals}: {stuck.Error}");
+            Check(File.ReadAllText(Path.Combine(stuckInstall, "MightyCode.exe")) == "old" && !Directory.Exists(stuckPlan.BackupDirectory) && !Directory.Exists(stuckPlan.NewDirectory),
+                "the old install is back and nothing is left beside it");
+
+            // A copy that is not the staged tree (a file missing, or one of another size) is never swapped in: the install
+            // stays, the copy is removed, the staged update kept, and the reason goes to install.log.
+            foreach (var (name, spoil) in new (string, Action<string>)[]
+            {
+                ("missing", copy => File.Delete(Path.Combine(copy, "lib.dll"))),
+                ("short", copy => File.WriteAllText(Path.Combine(copy, "lib.dll"), "x")),
+            })
+            {
+                var (copyInstall, _, copyPlan) = await SwapFixture(Path.Combine(root, "copy-" + name), relaunch: true);
+                await File.WriteAllTextAsync(Path.Combine(copyPlan.StagedDirectory, "lib.dll"), "library");
+                var copyStarts = 0;
+                var spoiled = await AppUpdateReplacement.RunAsync(copyPlan, _ => Task.FromResult(true), _ => { copyStarts++; return Task.CompletedTask; },
+                    (source, destination) => { AppUpdateReplacement.CopyDirectory(source, destination); spoil(destination); });
+                Check(!spoiled.Replaced && !spoiled.RolledBack && spoiled.Moves.Count == 0 && spoiled.Error?.Contains("does not match the staged update", StringComparison.Ordinal) == true,
+                    $"a {name} copy is refused before the renames; got replaced {spoiled.Replaced}, error '{spoiled.Error}'");
+                Check(File.ReadAllText(Path.Combine(copyInstall, "MightyCode.exe")) == "old" && !Directory.Exists(copyPlan.NewDirectory)
+                    && File.Exists(Path.Combine(copyPlan.StagedDirectory, "lib.dll")) && copyStarts == 1 && spoiled.Started,
+                    "the install stays, the copy is removed, the staged update kept, and the app the user had starts again");
+            }
+            Check(AppUpdateReplacement.TreeMismatch(plan.StagedDirectory, plan.StagedDirectory) is null, "a tree matches itself");
+
+            // One helper per install: the mutex name follows the folder, however it is written, and a helper that cannot hold it
+            // leaves at once, skipped, with nothing moved or started and the reason for install.log.
+            var guardName = AppUpdateHelperGuard.MutexName(install);
+            Check(guardName.StartsWith(@"Local\MightyCode-update-helper-", StringComparison.Ordinal) && guardName.Length == @"Local\MightyCode-update-helper-".Length + 32
+                && guardName == AppUpdateHelperGuard.MutexName(install + Path.DirectorySeparatorChar) && guardName == AppUpdateHelperGuard.MutexName(install.ToUpperInvariant())
+                && guardName != AppUpdateHelperGuard.MutexName(install + "-other"), "the helper's mutex is named for its install folder: " + guardName);
+            Check(AppUpdateHelperGuard.Refusal(true) is null, "the helper holding the mutex goes on");
+            Check(AppUpdateHelperGuard.Refusal(false) is { Skipped: true, Replaced: false, RolledBack: false, Started: false, Moves.Count: 0, Error: { } why } && why.Contains("another update helper", StringComparison.Ordinal),
+                "a second helper leaves at once, skipped, moving and starting nothing");
+
+            // A check for the app running again that throws, at once or later, keeps everything and says why.
+            var (unsureInstall, _, unsurePlan) = await SwapFixture(Path.Combine(root, "unsure"), relaunch: false);
+            var starts = 0;
+            foreach (var check in new Func<CancellationToken, Task<bool>>[]
+            {
+                _ => throw new InvalidOperationException("프로세스 목록을 읽지 못했습니다."),
+                async _ => { await Task.Yield(); throw new InvalidOperationException("프로세스 목록을 읽지 못했습니다."); },
+            })
+            {
+                var unsure = await AppUpdateReplacement.RunAsync(unsurePlan, _ => Task.FromResult(true), _ => { starts++; return Task.CompletedTask; }, runningAgain: check);
+                Check(unsure.Skipped && !unsure.Replaced && !unsure.RolledBack && unsure.Moves.Count == 0 && unsure.Error == "프로세스 목록을 읽지 못했습니다." && starts == 0,
+                    $"a check that cannot tell reads as the app running, with its reason; got skipped {unsure.Skipped}, error '{unsure.Error}'");
+                Check(File.ReadAllText(Path.Combine(unsureInstall, "MightyCode.exe")) == "old" && !Directory.Exists(unsurePlan.NewDirectory) && Directory.Exists(unsurePlan.StagedDirectory),
+                    "the install is untouched, the copy removed and the staged update kept");
+            }
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// A version an install on quit kept for the next quit (the app was opened
+    /// again first) is found after the next start, checked against the signed
+    /// manifest and staged again from the package on disk: only the manifest is
+    /// fetched. While staging is busy (the helper still runs from the staged
+    /// folder, or its copy is fresh) it waits without failing, as does any
+    /// download. With the switch off, or nothing newer kept, nothing is checked.
+    internal static async Task AKeptUpdateIsStagedAgainWithoutADownload()
+    {
+        var root = Temp();
+        try
+        {
+            var state = Path.Combine(root, "state");
+            var install = Path.Combine(root, "MightyCode");
+            MakeInstall(install, "old");
+            var packagePath = MakeZip(root, "MightyCode-windows-x64.zip", zip => AddEntry(zip, "MightyCode.exe", FakeExecutable("x64")));
+            var packageBytes = await File.ReadAllBytesAsync(packagePath);
+            var manifest = "{\"version\":\"9.9.9\",\"windows\":{\"x64\":{"
+                + "\"url\":\"https://updates.example/9.9.9/MightyCode-windows-x64.zip\","
+                + $"\"sha256\":\"{Sha256Of(packageBytes)}\",\"size\":{packageBytes.Length}}}}}}}";
+            var handler = new FakeHttp(url => Ok(url.ToString() == ManifestUrl ? Envelope(manifest) : packageBytes));
+            using var service = new AppUpdateService(state, FixtureKey, handler);
+
+            // The run before staged it; its install on quit found the app open again and kept updates/ as it was.
+            var before = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true, () => false);
+            Check(await before.CheckKeptUpdateAsync(null, DateTimeOffset.UtcNow) == AppUpdateKeptCheck.None, "with nothing kept the start checks nothing");
+            await before.CheckAsync(null);
+            Check(before.State.Phase == AppUpdatePhase.Ready, "the run before ends ready: " + before.State.ErrorMessage);
+            Check(service.KeptVersion("0.1.0") == "9.9.9" && service.KeptVersion("9.9.9") is null && service.KeptVersion("10.0.0") is null,
+                "the kept version is found only by a version older than it");
+            // The helper's staged folder, as it runs from it.
+            var helperFile = Path.Combine(before.State.StagedDirectory!, "helper-running.txt");
+            await File.WriteAllTextAsync(helperFile, "in use");
+
+            var off = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => false, () => false);
+            Check(await off.CheckKeptUpdateAsync(null, DateTimeOffset.UtcNow) == AppUpdateKeptCheck.None && off.State.Phase == AppUpdatePhase.Idle, "with the switch off the start checks nothing");
+
+            // While the helper still runs from the staged folder (or its copy is fresh) the kept update waits, tick after tick:
+            // nothing is fetched, unpacked or counted as an attempt, and nothing fails.
+            var busy = true;
+            var requests = handler.Requested.Count;
+            var next = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true, () => busy);
+            for (var tick = 0; tick < 2; tick++)
+                Check(await next.CheckKeptUpdateAsync(null, DateTimeOffset.UtcNow) == AppUpdateKeptCheck.Waiting && next.State.Phase == AppUpdatePhase.Idle
+                    && next.LastAttempt is null && next.State.LastError is null && handler.Requested.Count == requests && File.Exists(helperFile),
+                    "a kept update waits while staging is busy, with nothing fetched, failed or touched");
+
+            // Once the helper is gone the next tick checks it and stages it again from the package on disk.
+            busy = false;
+            var now = DateTimeOffset.UtcNow;
+            Check(await next.CheckKeptUpdateAsync(null, now) == AppUpdateKeptCheck.Checked && next.State.Phase == AppUpdatePhase.Ready && next.State.InstallPlan is not null && next.LastAttempt == now,
+                "the kept update is checked and ready again: " + next.State.ErrorMessage);
+            Check(handler.Requested.Skip(requests).Select(url => url.ToString()).SequenceEqual([ManifestUrl]), "only the manifest is fetched; the package on disk is used again");
+            Check(File.Exists(Path.Combine(next.State.StagedDirectory!, "MightyCode.exe")) && !File.Exists(helperFile), "the package is staged afresh");
+
+            // Any download waits the same way: before it starts nothing under updates/ is touched, and a download that finds
+            // staging busy once it is done leaves the update Available, with no error, until a later tick stages it.
+            await File.WriteAllTextAsync(helperFile, "in use");
+            var answers = new Queue<bool>([true]);
+            var later = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true, () => answers.Count > 0 && answers.Dequeue());
+            await later.CheckAsync(null);
+            Check(later.State.Phase == AppUpdatePhase.Available && later.StagingDeferred && later.State.LastError is null && later.State.ErrorMessage is null && File.Exists(helperFile),
+                $"a download while staging is busy waits without touching updates/; got {later.State.Phase}, deferred {later.StagingDeferred}");
+            answers = new Queue<bool>([false, true]);
+            await later.RetryDeferredStagingAsync();
+            Check(later.State.Phase == AppUpdatePhase.Available && later.StagingDeferred && later.State.LastError is null && File.Exists(helperFile),
+                $"busy again before unpacking, it stays Available and the staged folder is not touched; got {later.State.Phase}");
+            requests = handler.Requested.Count;
+            await later.RetryDeferredStagingAsync();
+            Check(later.State.Phase == AppUpdatePhase.Ready && !later.StagingDeferred && handler.Requested.Count == requests && !File.Exists(helperFile),
+                "a later tick stages it from the package on disk: " + later.State.ErrorMessage);
+
+            // A deferral belongs to the Available it left: a check that fails meanwhile clears it, so the loop's due check runs
+            // again instead of waiting on a retry that has nothing to do.
+            var failing = false;
+            using var flaky = new AppUpdateService(state, FixtureKey, new FakeHttp(url => failing ? new HttpResponseMessage(HttpStatusCode.InternalServerError) : Ok(url.ToString() == ManifestUrl ? Envelope(manifest) : packageBytes)));
+            var stuck = new AppUpdateCoordinator(flaky, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true, () => true);
+            await stuck.CheckAsync(null);
+            Check(stuck.State.Phase == AppUpdatePhase.Available && stuck.StagingDeferred, "deferred while staging is busy");
+            failing = true;
+            await stuck.CheckAsync(null);
+            Check(stuck.State.Phase == AppUpdatePhase.Failed && !stuck.StagingDeferred, $"a failed check clears the deferral; got {stuck.State.Phase}, deferred {stuck.StagingDeferred}");
+            failing = false;
+            Check(await stuck.CheckAutomaticallyIfDueAsync(null, true, null, DateTimeOffset.UtcNow), "the next tick's due check runs");
+
+            // What counts as busy for real: a fresh copy beside the install, not an old one or none.
+            var fresh = Path.GetFullPath(install) + ".update-new";
+            Check(!AppUpdateReplacement.StagingBusy(service.UpdatesDirectory, install), "no copy and no helper: not busy");
+            MakeInstall(fresh, "copying");
+            Check(AppUpdateReplacement.StagingBusy(service.UpdatesDirectory, install), "a copy written just now is busy");
+            Check(!AppUpdateReplacement.StagingBusy(service.UpdatesDirectory, install, DateTime.UtcNow + AppUpdateReplacement.NewCopyGrace + TimeSpan.FromMinutes(1)), "an old copy is not");
+            Directory.Delete(fresh, true);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// An install an interrupted swap left aside (missing, or without its
+    /// executable) is put back from the newest backup, when the helper starts
+    /// and when the app starts; a whole install is never touched.
+    internal static async Task AnInterruptedSwapIsPutBack()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            var older = install + ".backup-20261001T000000000";
+            var newer = install + ".backup-20261020T000000000";
+            Check(!AppUpdateReplacement.RestoreInterruptedInstall(install), "with no backup there is nothing to put back");
+
+            MakeInstall(older, "older");
+            MakeInstall(newer, "newer");
+            Check(AppUpdateReplacement.RestoreInterruptedInstall(install), "a missing install is put back");
+            Check(File.ReadAllText(Path.Combine(install, "MightyCode.exe")) == "newer" && !Directory.Exists(newer) && Directory.Exists(older),
+                "the newest backup is renamed back");
+            Check(!AppUpdateReplacement.RestoreInterruptedInstall(install), "a whole install is left alone");
+            Check(Directory.Exists(older), "a whole install leaves the backups to the pruning");
+
+            File.Delete(Path.Combine(install, "MightyCode.exe"));
+            File.WriteAllText(Path.Combine(install, "half.dll"), "half");
+            Check(AppUpdateReplacement.RestoreInterruptedInstall(install), "an install without its executable is put back");
+            Check(File.ReadAllText(Path.Combine(install, "MightyCode.exe")) == "older" && !File.Exists(Path.Combine(install, "half.dll")),
+                "the half install is replaced by the backup");
+            File.Delete(Path.Combine(install, "MightyCode.exe"));
+            Directory.CreateDirectory(install + ".backup-20261021T000000000");
+            Check(!AppUpdateReplacement.RestoreInterruptedInstall(install), "a backup without the executable is not put back");
+            Directory.Delete(install, true);
+            Directory.Delete(install + ".backup-20261021T000000000");
+
+            // The helper puts the install back before it starts, then swaps as usual.
+            var (helperInstall, _, plan) = await SwapFixture(Path.Combine(root, "helper"), relaunch: false);
+            Directory.Move(helperInstall, helperInstall + ".backup-20261001T000000000");
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask);
+            Check(result.Replaced && result.Moves[0].Kind == "backup", "the helper puts the install back, then backs it up and swaps: " + result.Error);
+            Check(File.ReadAllText(Path.Combine(helperInstall, "MightyCode.exe")) == "new", "the new version is installed");
+            Check(!Directory.Exists(helperInstall + ".backup-20261001T000000000"), "the put-back backup is no longer beside the install");
+
+            // A copy a killed helper left beside the install is cleared with the backups at a later start; one written in the
+            // last minutes may still be filling (an install on quit's helper while the app was opened again) and is kept.
+            MakeInstall(plan.NewDirectory, "partial");
+            AppUpdateReplacement.PruneBackups(helperInstall);
+            Check(Directory.Exists(plan.NewDirectory) && File.Exists(Path.Combine(plan.NewDirectory, "MightyCode.exe")), "a copy written just now is left to the helper writing it");
+            AppUpdateReplacement.PruneBackups(helperInstall, DateTime.UtcNow + AppUpdateReplacement.NewCopyGrace + TimeSpan.FromMinutes(1));
+            Check(!Directory.Exists(plan.NewDirectory) && Directory.Exists(helperInstall), "a leftover copy is pruned, the install stays");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// The decisions after a check, beside a staged update: a newer version for
+    /// another machine keeps the staged one; with nothing staged it is the
+    /// Mac's "blocked" (shown, never downloaded, nothing to retry); a newer
+    /// version for this machine replaces the staged plan and is downloaded; a
+    /// "restart now" during a check keeps the install; the switch off shows
+    /// through Describe; and a run with no install plan installs nothing on quit.
+    internal static async Task ACheckBesideAStagedUpdateDecidesAsOnMacOS()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyCode");
+            MakeInstall(install, "old");
+            var packagePath = MakeZip(root, "MightyCode-windows-x64.zip", zip => AddEntry(zip, "MightyCode.exe", FakeExecutable("x64")));
+            var packageBytes = await File.ReadAllBytesAsync(packagePath);
+            var manifest = WindowsManifest("9.9.9", packageBytes, "x64");
+            Func<Task> gate = () => Task.CompletedTask;
+            var handler = new GatedHttp(async url =>
+            {
+                if (url.ToString() != ManifestUrl) return Ok(packageBytes);
+                await gate();
+                return Ok(Envelope(manifest));
+            });
+            using var service = new AppUpdateService(Path.Combine(root, "state"), FixtureKey, handler);
+            var launched = new List<AppUpdateInstallPlan>();
+            var automatic = true;
+            var coordinator = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install,
+                plan => { launched.Add(plan); return Task.CompletedTask; }, () => automatic);
+            int Downloads() => handler.Requested.Count(url => url.ToString() != ManifestUrl);
+
+            await coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready && Downloads() == 1, "the first version is staged: " + coordinator.State.ErrorMessage);
+            var firstPlan = coordinator.State.InstallPlan;
+
+            // A newer version only for arm64 keeps the staged x64 update, without a download.
+            manifest = WindowsManifest("10.0.0", packageBytes, "arm64");
+            await coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready && coordinator.State.InstallPlan == firstPlan && Downloads() == 1,
+                "a newer version this machine cannot install keeps the staged update ready");
+            Check(coordinator.State.Availability!.Manifest.Version == "9.9.9", "the staged version is still the one shown");
+
+            // A newer version for this machine replaces the staged plan and downloads again.
+            manifest = WindowsManifest("10.0.1", packageBytes, "x64");
+            await coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready && Downloads() == 2, "a newer version is downloaded and staged: " + coordinator.State.ErrorMessage);
+            Check(coordinator.State.Availability!.Manifest.Version == "10.0.1" && coordinator.State.InstallPlan is { } secondPlan && secondPlan != firstPlan,
+                "the newer version's plan replaces the staged one");
+
+            // The switch off shows through the coordinator's own Describe.
+            automatic = false;
+            Check(coordinator.Describe(_ => "00:00").StatusText == AppUpdateStrings.ReadyTemplate.Replace("{version}", "10.0.1"),
+                "with the switch off a staged update waits for restart now");
+            automatic = true;
+            Check(coordinator.Describe(_ => "00:00").StatusText == AppUpdateStrings.StagedTemplate.Replace("{version}", "10.0.1"),
+                "with the switch on it installs at the next launch");
+
+            // "Restart now" while a check from Ready is still running: the late answer leaves the install alone.
+            var release = new TaskCompletionSource();
+            gate = () => release.Task;
+            manifest = WindowsManifest("10.0.2", packageBytes, "x64");
+            var running = coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready, "a staged update stays ready while the check runs");
+            await coordinator.InstallAsync();
+            Check(coordinator.State.Phase == AppUpdatePhase.Installing && launched.Count == 1, "restart now installs during the check");
+            release.SetResult();
+            await running;
+            Check(coordinator.State.Phase == AppUpdatePhase.Installing && Downloads() == 2, "the late check result changes nothing and downloads nothing");
+            gate = () => Task.CompletedTask;
+
+            // Nothing staged and the newer version is only for arm64: blocked, shown, never downloaded, no retry notice.
+            manifest = WindowsManifest("10.0.0", packageBytes, "arm64");
+            var fresh = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, null, () => true);
+            await fresh.CheckAsync(null);
+            Check(fresh.State.Phase == AppUpdatePhase.Failed && fresh.State.ErrorMessage!.Contains("x64"), "a newer version for another machine is blocked with the reason");
+            Check(Downloads() == 2, "a blocked version is never downloaded");
+            var blocked = fresh.Describe(_ => "00:00");
+            Check(blocked.StatusText == fresh.State.ErrorMessage && blocked.RetryNotice is null && blocked.KeptError is null, "a blocked version is no failure to retry");
+
+            // A run without an install plan (dev or portable) installs nothing on quit and says nothing.
+            var noPlan = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", installDirectory: null, plan => { launched.Add(plan); return Task.CompletedTask; }, () => true);
+            manifest = WindowsManifest("9.9.9", packageBytes, "x64");
+            await noPlan.CheckAsync(null);
+            Check(noPlan.State.Phase == AppUpdatePhase.Ready && noPlan.State.InstallPlan is null, "a run without an install folder stages without a plan");
+            var changes = 0;
+            noPlan.StateChanged += () => changes++;
+            Check(!await noPlan.InstallOnQuitAsync() && changes == 0 && noPlan.State.Phase == AppUpdatePhase.Ready, "quitting it changes nothing");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+}

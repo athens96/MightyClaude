@@ -101,7 +101,7 @@ NSTextView와 같은 곳에서 줄을 나눈다: `\n`, `\r`, `\r\n`(한 줄바�
 ## 검사
 
 ```sh
-release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+release/native-macos/MightyCode.app/Contents/MacOS/MightyCode \
   --files-smoke-test --smoke-exit --profile /tmp/mighty-files-smoke
 ```
 
@@ -109,7 +109,7 @@ release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
 
 ## Windows
 
-Windows 앱(`native/windows`)은 같은 창을 같은 규칙으로 보인다. 규칙은 `MightyClaude.Core/WorkspaceFiles.cs`가 macOS `WorkspaceFiles.swift`·`SourceHighlighter.swift`를 그대로 옮긴 것이고, 화면은 `MightyClaude.WinUI/MainWindow.Files.cs`다. 검사는 `FilesPaneVerification.cs`(Core.Tests, macOS `WorkspaceFilesTests`와 같은 벡터)와 GUI 스모크 키 `filesPane`이다.
+Windows 앱(`native/windows`)은 같은 창을 같은 규칙으로 보인다. 규칙은 `MightyCode.Core/WorkspaceFiles.cs`가 macOS `WorkspaceFiles.swift`·`SourceHighlighter.swift`를 그대로 옮긴 것이고, 화면은 `MightyCode.WinUI/MainWindow.Files.cs`다. 검사는 `FilesPaneVerification.cs`(Core.Tests, macOS `WorkspaceFilesTests`와 같은 벡터)와 GUI 스모크 키 `filesPane`이다.
 
 - 여는 방법: **Ctrl+Shift+E**(⇧⌘E의 ⌘를 Ctrl로), 탭 그룹의 `+` 메뉴와 워크스페이스 메뉴의 **파일 창 열기**. 워크스페이스마다 하나이고, 처음 열면 현재 창의 왼쪽으로 분할한다. 저장하지 않으므로 앱을 다시 켜면 없다. 펼친 폴더와 마지막으로 본 파일은 앱이 켜져 있는 동안 기억한다.
 - 경로 규칙: 심볼릭 링크와 정션을 풀어 실제 경로가 루트 안일 때만 보이고 연다. `..`·절대 경로·드라이브 문자·`:`(NTFS 스트림 이름)·NUL은 거절한다. 연 다음에는 핸들의 최종 경로(`GetFinalPathNameByHandle`)가 루트 안인지 다시 보고, 디스크 파일이 아닌 핸들(장치 이름 등)은 "미리볼 수 없는 파일"이다. 숨김 속성 파일도 보인다.

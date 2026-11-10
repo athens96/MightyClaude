@@ -38,7 +38,7 @@ Claude·Codex·Antigravity 창이 실행 중일 때 요청을 쓰고 {{kbd:⌘En
 
 - 실행 중인 창에서 {{kbd:Enter}}는 요청을 대기열에 넣어 지금 작업이 끝난 뒤 실행합니다. 입력창의 안내 문구가 두 키가 하는 일을 보여 줍니다.
 - 새 worktree는 만들 수 있는 곳에서만 씁니다. 커밋이 있는 브랜치가 체크아웃된 git 저장소여야 합니다. 그 밖의 곳(git 저장소가 아님, 커밋이 아직 없음, 브랜치가 아닌 커밋이 체크아웃됨)에서는 {{kbd:⌘Enter}}가 {{kbd:Enter}}처럼 요청을 대기열에 넣습니다.
-- 자식은 부모의 마지막 커밋에서 시작합니다. 브랜치 `mighty/<자식 id>`가 생기고, worktree는 프로젝트 폴더 밖(Mac은 `~/.mightyclaude/worktrees/<자식 id>`, Windows는 `%USERPROFILE%\.mightyclaude\worktrees\<자식 id>`)에 생겨 부모의 작업을 건드리지 않습니다. 부모 폴더에서 아직 커밋하지 않은 변경은 자식에게 가지 않습니다.
+- 자식은 부모의 마지막 커밋에서 시작합니다. 브랜치 `mighty/<자식 id>`가 생기고, worktree는 프로젝트 폴더 밖(Mac은 `~/.mightycode/worktrees/<자식 id>`, Windows는 `%USERPROFILE%\.mightycode\worktrees\<자식 id>`)에 생겨 부모의 작업을 건드리지 않습니다. 부모 폴더에서 아직 커밋하지 않은 변경은 자식에게 가지 않습니다.
 - 창과 같은 에이전트의 자식은 부모 창의 권한 모드로, 부모 창의 모델과 {{ui:composer.effort.label}}로 실행합니다. 모든 요청을 계획 모드로 시작하는 스타일에서는 계획 모드로 시작합니다. 부모와 같은 보기로 열리고, 부모가 마이티 보기에서 스타일을 쓰고 있었다면 같은 스타일로 시작합니다(스타일의 진행 상태는 자식의 첫 요청부터 따로 셉니다). 첨부 파일도 함께 갑니다.
 - 첫 메시지에는 입력한 글이 먼저 오고, 그 뒤에 앱이 자식이 일하는 곳을 알려 주며 끝나면 커밋하고 REPORT.md를 쓰라고 덧붙입니다. 그래야 카드에서 병합할 수 있습니다. 슬래시 명령(`/`로 시작하는 글)은 입력한 그대로 혼자 실행되고, 앱의 안내는 자식 창의 다음 요청으로 따라가므로 명령의 인자가 되지 않습니다.
 - {{platform:mac}} 요청을 다른 에이전트로 실행하려면 {{ui:queue.worktree}} 버튼을 오른쪽 클릭(또는 Control-클릭)해서 Claude, Codex, Antigravity 중에서 고릅니다. {{kbd:⌘Enter}}와 그냥 클릭은 창과 같은 에이전트를 씁니다. 흐리게 표시된 항목은 실행할 수 없는 까닭을 함께 보여 줍니다. CLI가 설치되어 있지 않거나 로그인되어 있지 않은 경우(설정 › CLI에서 확인), 창의 모드가 허용하는 범위 안에서 파일을 바꿀 수 있는 모드가 없는 경우, 직접 시작한 자식이 이미 3개 열려 있는 경우입니다. 다른 에이전트의 자식은 파일을 바꿀 수 있으면서 창의 모드가 허용하지 않는 일은 하지 않는 자기 모드 가운데 가장 넓은 모드로 시작하고([Codex와 Antigravity](#agents)), 그 에이전트의 새 창이 받을 모델과 {{ui:composer.effort.label}}를 쓰며, 창과 같은 보기로 열리지만 스타일은 이어받지 않습니다. 그 자식을 만들거나 시작하지 못하면 글과 첨부 파일은 입력창으로 돌아가고 대화에 까닭이 적힙니다. 창 자신에게는 보내지 않습니다. 창의 에이전트는 그 모드에서 자식을 둘 수 없지만 다른 에이전트는 둘 수 있으면 버튼이 그대로 보이고, 클릭하면 메뉴가 열리며, {{kbd:⌘Enter}}는 요청을 대기열에 넣습니다.
@@ -58,7 +58,7 @@ Claude나 Codex 창(부모)이 일을 나눠 다른 창(자식)에게 맡길 수
 3. 자식 창이 부모 옆에 열리고, 사이드바에서 부모 아래 한 칸 들여 보입니다.
 
 - 부모가 쓰는 도구는 `delegate`(맡기기. `agent`로 자식의 에이전트를 `claude`, `codex`, `antigravity` 중에서 지정할 수 있습니다), `list_children`(자식 목록), `child_status`(상태와 보고서 읽기), `merge`(병합), `follow_up`(후속 지시)입니다. `discard`(폐기)는 부모가 부를 수 없고 사람만 카드에서 합니다.
-- 자식마다 브랜치 `mighty/<자식 id>`와 worktree(Mac은 `~/.mightyclaude/worktrees/<자식 id>`, Windows는 `%USERPROFILE%\.mightyclaude\worktrees\<자식 id>`)가 생깁니다. 자식은 부모의 마지막 커밋에서 시작합니다.
+- 자식마다 브랜치 `mighty/<자식 id>`와 worktree(Mac은 `~/.mightycode/worktrees/<자식 id>`, Windows는 `%USERPROFILE%\.mightycode\worktrees\<자식 id>`)가 생깁니다. 자식은 부모의 마지막 커밋에서 시작합니다.
 - 맡긴 일은 TASK.md에, 결과는 REPORT.md에 적힙니다. 두 파일은 worktree 안의 git이 무시하는 폴더에 있어 커밋되지 않습니다.
 - 자식의 권한 모드는 부모가 고른 모드이고, 부모 창의 모드보다 넓을 수 없습니다. 다른 에이전트의 자식은 부모의 모드가 하지 않는 일을 할 수 없습니다. 부모의 모드가 묻지 않고 파일을 바꿀 때만(편집 수락·auto 모드의 Claude, {{ui:permission.label.onRequest}}·{{ui:permission.label.acceptEditsCodex}} 모드의 Codex, {{ui:permission.label.acceptEdits}} 모드의 Antigravity, {{ui:permission.label.fullAccess}} 모드의 모든 에이전트) 묻지 않고 파일을 바꾸고, 부모의 모드가 파일을 바꿀 수 있을 때만 물어본 뒤 파일을 바꾸며, 부모의 모드가 묻지 않고 셸 명령을 실행할 때만(auto 모드의 Claude, {{ui:permission.label.defaultCodex}}·{{ui:permission.label.acceptEditsCodex}} 모드의 Codex, {{ui:permission.label.fullAccess}} 모드의 모든 에이전트) 묻지 않고 실행하고, {{ui:permission.label.fullAccess}} 모드 아래에서만 전체 권한을 가집니다. 그래서 셸 명령 전에 묻는 Claude의 편집 수락 모드 아래에서 Codex 자식은 {{ui:permission.label.acceptEditsCodex}} 모드가 아니라 {{ui:permission.label.onRequest}} 모드를 받고, 계획 모드나 수동 모드의 Claude 창에는 Codex·Antigravity 자식을 둘 수 없습니다. 넓히는 것은 사람만, 실행과 실행 사이에 자식 창 입력창의 권한 메뉴나 휴대폰 설정에서 할 수 있습니다.
 - 자식 창은 부모 창과 같은 보기({{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}} 중 같은 것)로 열립니다. 부모가 마이티 보기의 {{ui:graph.view.structure}}을 쓰고 있었다면 자식도 {{ui:graph.view.structure}}으로 보입니다.
@@ -150,18 +150,18 @@ Claude에게 맡긴 자식이 보고하거나 시작하지 못하면 부모에�
 부모는 `follow_up` 도구로 Claude에게 맡긴 자식에게 후속 지시를 두 번까지 보낼 수 있습니다. 후속 지시는 알림과 같은 규칙으로 자식 창에 전달되고, 하나에 48 KiB까지입니다. 사람은 자식 창의 입력창에 직접 쓰면 되고, 횟수 제한이 없습니다.
 
 ## 켜고 끄기 {#enable}
-{{platform:mac}} 끄지 않는 한 켜져 있습니다. 설정의 {{ui:settings.nav.general}} 탭에서 {{ui:settings.delegation.toggle}}을 켜고 끕니다. 앱을 다시 열지 않아도 다음에 시작하는 실행부터 적용됩니다. 같은 스위치가 defaults 키 `delegation.enabled`이므로 터미널에서 다음 명령으로 꺼도 되고, `defaults delete dev.mightyclaude.native delegation.enabled`로 다시 켭니다.
+{{platform:mac}} 끄지 않는 한 켜져 있습니다. 설정의 {{ui:settings.nav.general}} 탭에서 {{ui:settings.delegation.toggle}}을 켜고 끕니다. 앱을 다시 열지 않아도 다음에 시작하는 실행부터 적용됩니다. 같은 스위치가 defaults 키 `delegation.enabled`이므로 터미널에서 다음 명령으로 꺼도 되고, `defaults delete dev.mightycode.native delegation.enabled`로 다시 켭니다.
 
 ```sh
-defaults write dev.mightyclaude.native delegation.enabled -bool false
+defaults write dev.mightycode.native delegation.enabled -bool false
 ```
 
 {{platform:mac}} 예전 버전은 그 키를 켜야만 켜졌고, 끄는 방법이 `defaults delete …`였습니다. 이제 그렇게 하면 켜진 채로 남으므로, 계속 꺼 두려면 설정에서 {{ui:settings.delegation.toggle}}을 끄세요.
 
-{{platform:windows}} 끄지 않는 한 켜져 있습니다. 설정의 {{ui:settings.nav.general}} 탭에서 {{ui:settings.delegation.toggle}}을 켜고 끕니다. 앱을 다시 열지 않아도 다음에 시작하는 실행부터 적용됩니다. 같은 스위치가 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 아래의 `delegation.enabled` 값(REG_DWORD)이라서, 0이면 꺼지고 값이 없거나 다른 값이면 켜집니다. 그래서 명령 프롬프트나 PowerShell에서 다음 명령으로 꺼도 되고, `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`로 다시 켭니다.
+{{platform:windows}} 끄지 않는 한 켜져 있습니다. 설정의 {{ui:settings.nav.general}} 탭에서 {{ui:settings.delegation.toggle}}을 켜고 끕니다. 앱을 다시 열지 않아도 다음에 시작하는 실행부터 적용됩니다. 같은 스위치가 `HKEY_CURRENT_USER\Software\MightyCode` 아래의 `delegation.enabled` 값(REG_DWORD)이라서, 0이면 꺼지고 값이 없거나 다른 값이면 켜집니다. 그래서 명령 프롬프트나 PowerShell에서 다음 명령으로 꺼도 되고, `reg delete "HKCU\Software\MightyCode" /v delegation.enabled /f`로 다시 켭니다.
 
 ```
-reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 0 /f
+reg add "HKCU\Software\MightyCode" /v delegation.enabled /t REG_DWORD /d 0 /f
 ```
 
 {{platform:windows}} 예전 버전은 그 값을 1로 넣어야만 켜졌습니다. 그때 넣어 둔 1은 켜진 상태를 그대로 둡니다.

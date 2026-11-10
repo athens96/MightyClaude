@@ -148,7 +148,7 @@ public struct WorkMapRequestInput: Equatable, Sendable {
     }
 }
 
-/// The work map's rules (docs/work-map.md; Windows `MightyClaude.Core/WorkMap.cs`), held by
+/// The work map's rules (docs/work-map.md; Windows `MightyCode.Core/WorkMap.cs`), held by
 /// `native/contracts/fixtures/work-map.json`. Read only: git is asked, nothing is written.
 public enum WorkMap {
     public static let maximumVersions = 12

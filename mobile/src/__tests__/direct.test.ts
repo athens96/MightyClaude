@@ -87,7 +87,7 @@ describe('Tailscale endpoints', () => {
 });
 
 describe('pairing QR with and without direct', () => {
-  const base = `mightyclaude://pair?v=2&sid=${SERVER_ID}&pk=${PUBLIC_KEY_URL}&relay=wss%3A%2F%2Frelay.example.com&key=${'k'.repeat(43)}&name=Studio`;
+  const base = `mightycode://pair?v=2&sid=${SERVER_ID}&pk=${PUBLIC_KEY_URL}&relay=wss%3A%2F%2Frelay.example.com&key=${'k'.repeat(43)}&name=Studio`;
 
   it('reads a QR without direct exactly as before', () => {
     const parsed = parsePairingUrl(base);

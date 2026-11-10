@@ -156,10 +156,10 @@
     ]
   },
   {
-    "line": "◆ Seed seed_71b75e855f18 v1.1.1 final (QA 0.82 advisory) → next: `ooo run` (new worktree /Users/young/Work/MightyClaude-reset, parallel with the UI-stage job job_ad8fc0dd1ab2)",
+    "line": "◆ Seed seed_71b75e855f18 v1.1.1 final (QA 0.82 advisory) → next: `ooo run` (new worktree /Users/young/Work/MightyCode-reset, parallel with the UI-stage job job_ad8fc0dd1ab2)",
     "options": [
       {
-        "label": "`ooo run` (new worktree /Users/young/Work/MightyClaude-reset, parallel with the UI-stage job job_ad8fc0dd1ab2)",
+        "label": "`ooo run` (new worktree /Users/young/Work/MightyCode-reset, parallel with the UI-stage job job_ad8fc0dd1ab2)",
         "fill": "ooo run"
       }
     ]

@@ -2,7 +2,7 @@ import Foundation
 
 /// The rules of the fully automatic app update, kept free of the app so they
 /// can be tested and mirrored one to one by the Windows client
-/// (`MightyClaude.Core/AppUpdateAutoPolicy.cs`: the same constants and the
+/// (`MightyCode.Core/AppUpdateAutoPolicy.cs`: the same constants and the
 /// same names in C# casing — `AppIdleFacts`, `AppIdleBlocker`, `CheckDue`,
 /// `IdleBlockers`, `RestartOffer`, `Later`).
 ///

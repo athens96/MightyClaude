@@ -17,7 +17,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "native/macos/Sources/MightyClaude/LocalTerminalSession.swift"
+SOURCE = ROOT / "native/macos/Sources/MightyCode/LocalTerminalSession.swift"
 
 FIXTURES = r"""
 import AppKit

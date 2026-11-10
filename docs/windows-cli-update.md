@@ -4,8 +4,8 @@ macOS `CLIUpdateService.swift`·`CLIUpdateSettingsView.swift`를 Windows로 옮�
 설치된 CLI만, 그 CLI의 설치 방식으로 업데이트한다. 새로 설치하지 않고,
 권한 상승을 요구하지 않고, 설정 파일을 쓰지 않고, 무관한 패키지를 건드리지 않는다.
 
-구현: `native/windows/MightyClaude.Core/CliUpdateService.cs`,
-문구: `native/windows/MightyClaude.Core/CliUpdateStrings.cs`,
+구현: `native/windows/MightyCode.Core/CliUpdateService.cs`,
+문구: `native/windows/MightyCode.Core/CliUpdateStrings.cs`,
 검사: `cli update …`로 시작하는 Core.Tests 검사 10개 (Mac에서 통과).
 
 ## 설치 방식 인식 규칙 (OS-bound, 각 규칙에 이유 한 줄)

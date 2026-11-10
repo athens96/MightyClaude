@@ -22,14 +22,14 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" || exit 2
 
-PROJ="native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj"
+PROJ="native/windows/MightyCode.WinUI/MightyCode.WinUI.csproj"
 # csproj의 기본값: Configuration=Debug, RuntimeIdentifier=win-x64.
-OBJ="native/windows/MightyClaude.WinUI/obj/Debug/net10.0-windows10.0.19041.0/win-x64/Manifests"
+OBJ="native/windows/MightyCode.WinUI/obj/Debug/net10.0-windows10.0.19041.0/win-x64/Manifests"
 # XAML 표시 컴파일러만 만들어 주는 멤버 — 맥에서만 나는 유일한 오류다.
 EXPECTED='Program\.cs\([0-9]+,[0-9]+\): error CS0103: .*InitializeComponent'
 
 mkdir -p "$OBJ"
-cp native/windows/MightyClaude.WinUI/app.manifest "$OBJ/app.manifest"
+cp native/windows/MightyCode.WinUI/app.manifest "$OBJ/app.manifest"
 touch "$OBJ/app.manifest"
 
 LOG="$(mktemp -t mighty-winui-compile)"

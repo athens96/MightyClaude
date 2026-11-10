@@ -79,7 +79,7 @@ python scripts/release.py verify
 
 ### download
 
-`gh run download`로 `MightyClaude-native-macos`, `MightyClaude-native-windows-x64`, `MightyClaude-native-windows-arm64`를 받는다. 아티팩트마다 어느 실행에서 받았는지 `state.json`에 적어 두고, 파일이 있고 같은 실행에서 받은 것일 때만 다시 받지 않는다(`--redownload`로 강제로 다시 받기). 실행이 바뀌었으면(`ci --commit`) 새로 받는다. 300 MiB(`wrangler r2 object put` 한도)보다 큰 파일이 있으면 여기서 멈춘다 — 크기 게이트(480 MiB)는 통과해도 이 스크립트로는 올릴 수 없다. 서명된 `latest.json`은 `manifest` 단계가 따로 받는다.
+`gh run download`로 `MightyCode-native-macos`, `MightyCode-native-windows-x64`, `MightyCode-native-windows-arm64`를 받는다. 아티팩트마다 어느 실행에서 받았는지 `state.json`에 적어 두고, 파일이 있고 같은 실행에서 받은 것일 때만 다시 받지 않는다(`--redownload`로 강제로 다시 받기). 실행이 바뀌었으면(`ci --commit`) 새로 받는다. 300 MiB(`wrangler r2 object put` 한도)보다 큰 파일이 있으면 여기서 멈춘다 — 크기 게이트(480 MiB)는 통과해도 이 스크립트로는 올릴 수 없다. 서명된 `latest.json`은 `manifest` 단계가 따로 받는다.
 
 ### manifest
 
@@ -93,15 +93,15 @@ gh workflow run release-manifest.yml --ref main -f version=<버전> \
 
 1. 실행 id는 `ci` 단계가 `state.json`의 `runs`에 적어 둔 값이다. 노트는 `release/<버전>/update-notes.md`(BOM은 뺀다)를 base64로 넘긴다 — 여러 줄, 따옴표, `$`가 `-f` 인자와 워크플로 셸을 그대로 지나가게 하려는 것이다. build 번호는 넘기지 않는다: 워크플로가 빌드 커밋에서 직접 센다.
 2. 워크플로의 실행 이름이 `Release manifest <버전> [<request>]`라서, `gh run list --workflow release-manifest.yml --event workflow_dispatch --branch main`에서 main 실행 중 이번 `request` 값이 든 것만 고른다(전에 부른 실행이나 다른 사람이 부른 실행을 잡지 않는다). 같은 값의 실행이 둘 이상이면 멈춘다. 끝날 때까지 보고, 실행 id와 그 커밋을 `state.json`의 `manifestRun`·`manifestRunSha`에 적는다. 실패하면 `gh run view <id> --log-failed`를 알려 주고 멈춘다.
-3. 워크플로(ubuntu, 잡은 `github.ref == refs/heads/main`일 때만, 환경 `release`)는 아무것도 받기 전에 두 실행의 출처를 `gh api repos/<저장소>/actions/runs/<id>`로 확인한다: 워크플로 파일이 `native-macos.yml`·`native-windows.yml`, 이벤트 `push`, 브랜치 `main`, 이 저장소(포크 아님), 완료·성공, 두 실행이 같은 커밋. 그 커밋이 디스패치한 main 커밋의 조상인지, 그 커밋의 `VERSION`이 입력 버전인지 보고, build 번호를 `git rev-list --count <커밋>`으로 센다(`ci` 단계와 같은 셈). 그다음 `run-id`로 아티팩트 세 개를 받아 Windows `.sha256`을 맞춰 보고, 해시를 고정한 `scripts/requirements-sign.txt`의 `cryptography`로(`MIGHTY_SIGNER=cryptography`) 서명한다. 시크릿은 `$RUNNER_TEMP`에 umask 077로 쓰고(비었으면 실패) `always()` 단계에서 지운다. 만든 봉투를 이 스크립트의 `verify_envelope`로 공개 키와 패키지에 대해 확인한 뒤 `latest.json`·`latest.unsigned.json`을 아티팩트 `MightyClaude-release-manifest`로 남긴다. 액션은 모두 커밋 SHA로 고정했다.
-4. 스크립트는 그 아티팩트를 `gh run download <id> -n MightyClaude-release-manifest`로 `release/<버전>/`에 받아, 공개 키(`C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4=`, 앱과 `.github/workflows/native-windows.yml`의 값)로 다시 확인한다. 버전·build(워크플로가 센 값이 `ci`가 적은 값과 같아야 한다)·notes·세 패키지의 url/sha256/크기가 **이 PC가 받은** 파일·노트와 같지 않으면 멈춘다. `upload`도 올리기 전에 같은 확인을 다시 한다.
+3. 워크플로(ubuntu, 잡은 `github.ref == refs/heads/main`일 때만, 환경 `release`)는 아무것도 받기 전에 두 실행의 출처를 `gh api repos/<저장소>/actions/runs/<id>`로 확인한다: 워크플로 파일이 `native-macos.yml`·`native-windows.yml`, 이벤트 `push`, 브랜치 `main`, 이 저장소(포크 아님), 완료·성공, 두 실행이 같은 커밋. 그 커밋이 디스패치한 main 커밋의 조상인지, 그 커밋의 `VERSION`이 입력 버전인지 보고, build 번호를 `git rev-list --count <커밋>`으로 센다(`ci` 단계와 같은 셈). 그다음 `run-id`로 아티팩트 세 개를 받아 Windows `.sha256`을 맞춰 보고, 해시를 고정한 `scripts/requirements-sign.txt`의 `cryptography`로(`MIGHTY_SIGNER=cryptography`) 서명한다. 시크릿은 `$RUNNER_TEMP`에 umask 077로 쓰고(비었으면 실패) `always()` 단계에서 지운다. 만든 봉투를 이 스크립트의 `verify_envelope`로 공개 키와 패키지에 대해 확인한 뒤 `latest.json`·`latest.unsigned.json`을 아티팩트 `MightyCode-release-manifest`로 남긴다. 액션은 모두 커밋 SHA로 고정했다.
+4. 스크립트는 그 아티팩트를 `gh run download <id> -n MightyCode-release-manifest`로 `release/<버전>/`에 받아, 공개 키(`C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4=`, 앱과 `.github/workflows/native-windows.yml`의 값)로 다시 확인한다. 버전·build(워크플로가 센 값이 `ci`가 적은 값과 같아야 한다)·notes·세 패키지의 url/sha256/크기가 **이 PC가 받은** 파일·노트와 같지 않으면 멈춘다. `upload`도 올리기 전에 같은 확인을 다시 한다.
 
 `manifest`를 다시 돌리면 매번 새로 부른다 — `ci`를 다시 해 실행이 바뀌었으면 새 실행 id로 서명한다.
 
 - `--sign-key <경로>`(또는 `check --sign-key`로 기억한 경로): 키 파일이 있을 때만 쓰는 대안. CI를 부르지 않고 `make-update-manifest.py`로 로컬에서 서명한다(swiftc가 없는 Windows에서는 `cryptography`). 확인은 같다. **새 키를 만들어 쓰지 않는다** — 설치된 앱은 지금 공개 키로만 확인하므로 업데이트가 멈춘다.
 
-- `--apk <경로>`: 그 APK를 `release/<버전>/MightyClaude-<버전>.apk`로 복사해 올리기·GitHub 첨부에 넣는다. APK 버전이 릴리스 버전과 다르면 `--apk-version`. 빼려면 `--no-apk`.
-- `--apk`가 없으면 폰 APK(`mightyclaude/android/MightyClaude-android.apk`)는 그대로 두고, 노트의 Android 줄은 공개 페이지의 이전 APK 버전과 그 GitHub 릴리스 링크로 채운다. 노트에 폰 APK가 그대로라고 적어 둔다.
+- `--apk <경로>`: 그 APK를 `release/<버전>/MightyCode-<버전>.apk`로 복사해 올리기·GitHub 첨부에 넣는다. APK 버전이 릴리스 버전과 다르면 `--apk-version`. 빼려면 `--no-apk`.
+- `--apk`가 없으면 폰 APK(`mightycode/android/MightyCode-android.apk`)는 그대로 두고, 노트의 Android 줄은 공개 페이지의 이전 APK 버전과 그 GitHub 릴리스 링크로 채운다. 노트에 폰 APK가 그대로라고 적어 둔다.
 - 릴리스 노트 템플릿(`release/<버전>-notes.md`)은 고치지 않고, `{{DATE}}`·`{{MAC_BUILD}}`·`{{ANDROID}}`·SHA-256·크기 표를 지금 상태로 채운 본문을 `release/<버전>/release-notes.md`에 새로 쓴다. `github`가 같은 일을 다시 해서 그 파일을 쓰므로, 다시 받거나 다시 서명해도 본문의 값이 옛것으로 남지 않는다.
 - 노트 파일은 BOM이 있어도 읽는다. `update-notes.md`가 비었거나 채워지지 않았으면 멈춘다.
 
@@ -113,7 +113,7 @@ gh workflow run release-manifest.yml --ref main -f version=<버전> \
 
 ### upload
 
-`wrangler r2 object put mightyclaude/<키> --file … --content-type … [--cache-control …] --remote`를 아래 순서로 부른다. 앞의 파일이 다 올라가기 전에는 그것을 가리키는 것이 공개되지 않는다. 폰 APK는 고정 키라 옛 APK를 덮어쓰므로, 업데이트(`latest.json`)가 공개된 뒤에 올린다. R2가 가끔 500을 주므로 한 객체에 세 번까지(5초, 10초 쉬고) 다시 시도하고, 세 번 다 실패하면 그 자리에서 멈춘다(뒤의 객체는 보내지 않는다). `upload --yes`를 다시 돌리면 처음부터 다시 올린다(같은 내용을 덮어쓴다).
+`wrangler r2 object put mightycode/<키> --file … --content-type … [--cache-control …] --remote`를 아래 순서로 부른다. 앞의 파일이 다 올라가기 전에는 그것을 가리키는 것이 공개되지 않는다. 폰 APK는 고정 키라 옛 APK를 덮어쓰므로, 업데이트(`latest.json`)가 공개된 뒤에 올린다. R2가 가끔 500을 주므로 한 객체에 세 번까지(5초, 10초 쉬고) 다시 시도하고, 세 번 다 실패하면 그 자리에서 멈춘다(뒤의 객체는 보내지 않는다). `upload --yes`를 다시 돌리면 처음부터 다시 올린다(같은 내용을 덮어쓴다).
 
 아무것도 보내기 전에 확인한다:
 
@@ -123,18 +123,19 @@ gh workflow run release-manifest.yml --ref main -f version=<버전> \
 
 | 순서 | 키 | Content-Type | Cache-Control |
 |---|---|---|---|
-| 1 | `mightyclaude/<버전>/MightyClaude-macos.zip` | `application/zip` | — |
-| 2–3 | `mightyclaude/<버전>/MightyClaude-windows-{x64,arm64}.zip` | `application/zip` | — |
-| 4–5 | `mightyclaude/<버전>/MightyClaude-windows-{x64,arm64}-setup.exe` | `application/vnd.microsoft.portable-executable` | — |
-| 6 | `mightyclaude/latest.json` | `application/json` | `no-cache` |
-| 7 | `mightyclaude/android/MightyClaude-android.apk` (APK가 있을 때만) | `application/vnd.android.package-archive` | `no-cache` |
-| 8–9 | `mightyclaude/index.html`, `mightyclaude/` | `text/html; charset=utf-8` | `no-cache` |
+| 1 | `mightycode/<버전>/MightyCode-macos.zip` | `application/zip` | — |
+| 2–3 | `mightycode/<버전>/MightyCode-windows-{x64,arm64}.zip` | `application/zip` | — |
+| 4–5 | `mightycode/<버전>/MightyCode-windows-{x64,arm64}-setup.exe` | `application/vnd.microsoft.portable-executable` | — |
+| 6 | `mightycode/latest.json` | `application/json` | `no-cache` |
+| 7 | `mightycode/android/MightyCode-android.apk` (APK가 있을 때만) | `application/vnd.android.package-archive` | `no-cache` |
+| 8–9 | `mightycode/index.html`, `mightycode/` | `text/html; charset=utf-8` | `no-cache` |
+| 10–12 | 옛 버킷 `mightyclaude`의 `mightyclaude/latest.json`(같은 파일), `mightyclaude/index.html`·`mightyclaude/`(새 주소로 보내는 페이지 `legacy-index.html`) | `application/json`, `text/html; charset=utf-8` | `no-cache` |
 
-페이지를 `mightyclaude/` 키에도 쓰는 까닭은 공개 버킷 주소가 `index.html`을 붙여 주지 않기 때문이다(`scripts/help/upload.sh`와 같다).
+마지막 세 줄은 이름을 바꾸기 전의 앱(0.4.53 이하)이 업데이트와 내려받기 페이지를 찾는 옛 주소다(`docs/rename-identifiers.md`). 새 주소가 다 올라간 뒤에 쓰고, `verify`가 두 주소의 `latest.json`을 모두 확인한다. 페이지를 `mightycode/` 키에도 쓰는 까닭은 공개 버킷 주소가 `index.html`을 붙여 주지 않기 때문이다(`scripts/help/upload.sh`와 같다).
 
 ### github
 
-노트를 지금 상태로 다시 채워(`release/<버전>/release-notes.md`) `gh release create v<버전> --draft --target <빌드 커밋> --title "Mighty Code <버전>" --notes-file release/<버전>/release-notes.md`에 패키지 다섯 개와(있으면) `MightyClaude-<APK 버전>.apk`를 붙여 초안으로 만들고, 첨부가 다 붙은 뒤 `gh release edit v<버전> --draft=false --latest`로 공개한다. 그래서 파일 없는 릴리스가 공개되는 순간이 없다.
+노트를 지금 상태로 다시 채워(`release/<버전>/release-notes.md`) `gh release create v<버전> --draft --target <빌드 커밋> --title "Mighty Code <버전>" --notes-file release/<버전>/release-notes.md`에 패키지 다섯 개와(있으면) `MightyCode-<APK 버전>.apk`를 붙여 초안으로 만들고, 첨부가 다 붙은 뒤 `gh release edit v<버전> --draft=false --latest`로 공개한다. 그래서 파일 없는 릴리스가 공개되는 순간이 없다.
 
 - 노트에 `(채워 주세요)`, `(fill in)`, `{{…}}`가 남아 있거나 첫 줄의 Android 버전이 APK 유무와 맞지 않으면 멈춘다. 첨부할 파일의 sha256이 기록과 다르면 멈춘다.
 - 같은 태그의 릴리스가 이미 있으면 새로 만들지 않고, 빠진 첨부만 `gh release upload`로 붙이고, 초안이면 공개한다. 할 일이 있는데 `--yes`가 없으면 명령만 보여 주고 멈춘다.
@@ -159,7 +160,7 @@ gh workflow run release-manifest.yml --ref main -f version=<버전> \
 
 브라우저로 받은 Mac 앱이 Gatekeeper 경고 없이 열리려면 Developer ID로 서명하고, hardened runtime을 켜고, Apple 공증을 받아 표(ticket)를 붙여야 한다. main push에서 `native-macos.yml`의 `notarize-macos` 잡이 이 일을 하고 zip과 함께 dmg를 만든다. 저장소 변수 `MIGHTY_MAC_NOTARIZE`가 `1`이 아니면 잡은 돌지 않고 패키지는 지금까지처럼 ad-hoc zip 하나다.
 
-- 빌드 잡은 시크릿 없이 앱을 만들어 `MightyClaude-native-macos-unsigned`로 넘긴다. 공증 잡(환경 `release`, main만)이 그 앱을 `scripts/notarize-macos.sh`로 서명(`scripts/sign-macos.sh --hardened-runtime`, 바이너리마다 `native/macos/Entitlements`의 권한)·공증·staple하고, 업데이트용 `MightyClaude-macos.zip`과 첫 설치용 `MightyClaude-macos.dmg`(서명·공증·staple)를 `MightyClaude-native-macos`로 올린다. 이 실행이 끝나야 `release.py ci`가 성공으로 본다.
+- 빌드 잡은 시크릿 없이 앱을 만들어 `MightyCode-native-macos-unsigned`로 넘긴다. 공증 잡(환경 `release`, main만)이 그 앱을 `scripts/notarize-macos.sh`로 서명(`scripts/sign-macos.sh --hardened-runtime`, 바이너리마다 `native/macos/Entitlements`의 권한)·공증·staple하고, 업데이트용 `MightyCode-macos.zip`과 첫 설치용 `MightyCode-macos.dmg`(서명·공증·staple)를 `MightyCode-native-macos`로 올린다. 이 실행이 끝나야 `release.py ci`가 성공으로 본다.
 - 서명 키 업데이트(`latest.json`)는 zip만 가리킨다. dmg는 `download`가 있으면 받아 업로드(`latest.json` 앞)·GitHub 첨부·노트 표(`{{DMG_ROW}}`)·내려받기 페이지(처음이면 Mac zip 위에 버튼을 넣는다)에 함께 넣는다. 없으면 지금과 같다.
 - 환경 `release`의 시크릿 다섯 개:
 

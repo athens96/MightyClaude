@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../MightyCode.Core/MightyCode.Core.csproj" /></ItemGroup>
+  <!-- The shared execution-graph vectors themselves, embedded straight from the
+       repository root: the checks read the same bytes the macOS suite asserts
+       against, so the two platforms cannot drift apart. -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../contracts/relay-vectors.json" LogicalName="MightyCode.Core.Tests.RelayVectors.json" />
+    <EmbeddedResource Include="../../contracts/graph-vectors.json" LogicalName="MightyCode.Core.Tests.GraphVectors.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/model-labels.json" LogicalName="MightyCode.Core.Tests.ModelLabels.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/next-actions.json" LogicalName="MightyCode.Core.Tests.NextActions.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/claude-plan-mode.json" LogicalName="MightyCode.Core.Tests.ClaudePlanMode.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/push.json" LogicalName="MightyCode.Core.Tests.Push.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/design-tokens.json" LogicalName="MightyCode.Core.Tests.DesignTokens.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/help-site.json" LogicalName="MightyCode.Core.Tests.HelpSite.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/mobile-structure.json" LogicalName="MightyCode.Core.Tests.MobileStructure.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/tailscale-addresses.json" LogicalName="MightyCode.Core.Tests.TailscaleAddresses.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/delegation-modes.json" LogicalName="MightyCode.Core.Tests.DelegationModes.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/agent-notices.json" LogicalName="MightyCode.Core.Tests.AgentNotices.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/workspace-create.json" LogicalName="MightyCode.Core.Tests.WorkspaceCreate.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/antigravity-permissions.json" LogicalName="MightyCode.Core.Tests.AntigravityPermissions.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/pending.json" LogicalName="MightyCode.Core.Tests.Pending.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/background-output.json" LogicalName="MightyCode.Core.Tests.BackgroundOutput.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/ask-targets.json" LogicalName="MightyCode.Core.Tests.AskTargets.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/queue-run-now.json" LogicalName="MightyCode.Core.Tests.QueueRunNow.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/work-map.json" LogicalName="MightyCode.Core.Tests.WorkMap.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/file-diff.json" LogicalName="MightyCode.Core.Tests.FileDiff.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/remote-v2/*.json" LogicalName="MightyCode.Core.Tests.RemoteV2.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../../styles/conformance/**/*.json" LogicalName="MightyCode.Core.Tests.Styles.%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Every manifest of styles/ and every golden of styles/golden, by folder: a file added there is checked without a line here. -->
+    <EmbeddedResource Include="../../../styles/*.json" LogicalName="MightyCode.Core.Tests.Styles.repository.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../styles/golden/*.json" LogicalName="MightyCode.Core.Tests.Styles.golden.%(Filename)%(Extension)" />
+    <!-- The test-only manifests the Mac reads from the same files (StyleFixtures.swift), recorded in styles/golden like a style. -->
+    <EmbeddedResource Include="../../../styles/fixtures/*.json" LogicalName="MightyCode.Core.Tests.Styles.fixtures.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

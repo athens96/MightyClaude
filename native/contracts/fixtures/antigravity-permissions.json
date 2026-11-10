@@ -1201,11 +1201,11 @@
         "verdict": "refused"
       },
       {
-        "rule": "write_file(/Users/me/Library/Application Support/MightyClaude Native/antigravity-temporary-rules.json)",
+        "rule": "write_file(/Users/me/Library/Application Support/MightyCode/antigravity-temporary-rules.json)",
         "verdict": "refused"
       },
       {
-        "rule": "read_file(/Users/me/Library/Application Support/MightyClaude Native)",
+        "rule": "read_file(/Users/me/Library/Application Support/MightyCode)",
         "verdict": "refused"
       },
       {
@@ -1233,7 +1233,7 @@
         "verdict": "refused"
       },
       {
-        "rule": "write_file(C:/Users/me/AppData/Local/MightyClaude/antigravity-temporary-rules.json)",
+        "rule": "write_file(C:/Users/me/AppData/Local/MightyCode/antigravity-temporary-rules.json)",
         "verdict": "refused"
       },
       {
@@ -1598,9 +1598,9 @@
     "context": {
       "protected": [
         "/Users/me/.gemini",
-        "/Users/me/Library/Application Support/MightyClaude Native",
+        "/Users/me/Library/Application Support/MightyCode",
         "C:\\Users\\me\\.gemini",
-        "C:\\Users\\me\\AppData\\Local\\MightyClaude"
+        "C:\\Users\\me\\AppData\\Local\\MightyCode"
       ]
     }
   }

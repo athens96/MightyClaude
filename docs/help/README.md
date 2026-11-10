@@ -1,12 +1,12 @@
 # The help site
 
-The user help for Mighty Code, built into one page per language and published on R2 under `mightyclaude/help/<lang>/`.
+The user help for Mighty Code, built into one page per language and published on R2 under `mightycode/help/<lang>/`.
 
 | Path | What |
 |---|---|
 | `content/<lang>/*.md` | The pages. `ko` is the master; every other language mirrors it. |
 | `content/<lang>/_site.json` | The page chrome: titles, sidebar labels, callout labels. |
-| `shots.json` | The screenshots. CI captures them from the demo profile (`native-macos.yml`, artifact `MightyClaude-macos-help-shots`). |
+| `shots.json` | The screenshots. CI captures them from the demo profile (`native-macos.yml`, artifact `MightyCode-macos-help-shots`). |
 | `site/` | Build output. Git-ignored; uploaded with `scripts/help/upload.sh`. |
 
 ## Build
@@ -14,7 +14,7 @@ The user help for Mighty Code, built into one page per language and published on
 ```sh
 node scripts/help/build.mjs --check                  # validate only
 node scripts/help/build.mjs                          # pages; pictures not encoded before are placeholders
-node scripts/help/build.mjs --shots ~/Downloads/MightyClaude-macos-help-shots   # with the CI pictures (needs cwebp)
+node scripts/help/build.mjs --shots ~/Downloads/MightyCode-macos-help-shots   # with the CI pictures (needs cwebp)
 scripts/help/upload.sh --dry-run                     # list what would be uploaded
 ```
 

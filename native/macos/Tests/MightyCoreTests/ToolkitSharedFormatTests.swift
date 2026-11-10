@@ -5,7 +5,7 @@ import Testing
 // MARK: - Shared fixture
 //
 // This constant is reproduced verbatim in Windows
-// MightyClaude.Core.Tests/ToolkitVerification.cs (SharedFormatFixture).
+// MightyCode.Core.Tests/ToolkitVerification.cs (SharedFormatFixture).
 // Any edit here must be reflected there, and vice-versa.
 private let sharedFixtureJSON = """
     {

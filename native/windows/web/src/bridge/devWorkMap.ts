@@ -10,7 +10,7 @@ const request = (id: string, text: string, commits: string[]): WorkMapRequest =>
 
 const nextCommits = [
   commit('19c184ab', ['windows'], 'windows', 'Settings in the One UI layout', ['native/windows/web/src/native/Surfaces.tsx', 'native/windows/web/src/native/native.css']),
-  commit('739f8792', ['mac'], 'mac', 'Settings in the One UI layout, as Windows draws it', ['native/macos/Sources/MightyClaude/SettingsViews.swift']),
+  commit('739f8792', ['mac'], 'mac', 'Settings in the One UI layout, as Windows draws it', ['native/macos/Sources/MightyCode/SettingsViews.swift']),
   commit('8e444a8d', ['windows', 'phone'], 'windows, phone', 'an HTML file previews as its page', ['native/windows/web/src/panes/files/HtmlView.tsx', 'mobile/src/components/html-view.tsx']),
   commit('5a129f95', ['mac'], 'mac tests', 'no test blocks the cooperative pool', ['native/macos/Tests/TestBlocking.swift']),
   commit('ec51868a', ['ci'], 'release', '0.4.49: One UI settings, HTML files preview as pages', ['VERSION', 'release/0.4.49-notes.md']),

@@ -8,9 +8,20 @@ import Security
 /// asks for Keychain access only then; the app's stable signing identity lets an
 /// "Always Allow" answer last across updates.
 enum RemoteKeychain {
-    private static let service = "dev.mightyclaude.native.remote"
+    private static let service = "dev.mightycode.native.remote"
+    /// Where the app kept the keys before it was renamed to Mighty Code. A key
+    /// found only there is copied to the new service when it is first read
+    /// (macOS asks once, the item belonging to the app under its old id).
+    private static let legacyService = "dev.mightyclaude.native.remote"
 
     static func load(_ id: String) -> String? {
+        if let key = read(id, service: service) { return key }
+        guard let key = read(id, service: legacyService) else { return nil }
+        _ = save(key, id: id)
+        return key
+    }
+
+    private static func read(_ id: String, service: String) -> String? {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id,
                                     kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var result: CFTypeRef?

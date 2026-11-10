@@ -1,4 +1,4 @@
-// The layout rules a drag preview and the scroll area need in the page, ported from MightyClaude.Core/PaneLayout.cs and the
+// The layout rules a drag preview and the scroll area need in the page, ported from MightyCode.Core/PaneLayout.cs and the
 // window's LayoutMinimum (MainWindow.Layout.cs). Saving a move or a share is always the host's (DockSession, ResizeSplit).
 import tokens from '@tokens/design-tokens.json';
 import type { PaneLayoutNode } from '../store/models';

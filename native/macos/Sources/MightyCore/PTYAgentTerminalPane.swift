@@ -27,9 +27,9 @@ public final class PTYAgentTerminalPane: AgentTerminalPane, @unchecked Sendable 
     private let launched: @Sendable (PTYAgentTerminalPane) -> Void
     private let lock = NSLock()
     /// All PTY reads, writes, resizes and closes run here, in order.
-    private let io = DispatchQueue(label: "dev.mightyclaude.agent-terminal.io")
+    private let io = DispatchQueue(label: "dev.mightycode.agent-terminal.io")
     /// Output is handed to subscribers here, in the order it was produced.
-    private let delivery = DispatchQueue(label: "dev.mightyclaude.agent-terminal.view")
+    private let delivery = DispatchQueue(label: "dev.mightycode.agent-terminal.view")
     private var entries: [String: Entry] = [:]
     private var launchOrder: [String] = []
     private var transcript = Data()
@@ -123,7 +123,7 @@ public final class PTYAgentTerminalPane: AgentTerminalPane, @unchecked Sendable 
             emit(Self.header(for: command, after: transcript.last))
         }
         reader.resume()
-        startBlockingThread("dev.mightyclaude.agent-terminal.reaper") { [weak self] in
+        startBlockingThread("dev.mightycode.agent-terminal.reaper") { [weak self] in
             var status: Int32 = 0
             while waitpid(pid, &status, 0) < 0 { if errno != EINTR { status = 127 << 8; break } }
             self?.io.async { self?.exited(handle, status: status) }

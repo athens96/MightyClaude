@@ -20,7 +20,7 @@ path of its worktree). Restore and normalize keep them on agent panes, including
 a child whose parent pane was closed, and drop malformed values. A new pane never
 copies them from its template, and `RunSettings` never carries them. Snapshots
 without them load unchanged. The delegation side file is their authority; the
-Windows app reads and writes them the same way (`MightyClaude.Core/Models.cs`,
+Windows app reads and writes them the same way (`MightyCode.Core/Models.cs`,
 `StateStore.cs`).
 
 A child record in that side file (`delegation-state.json`) may carry
@@ -28,7 +28,7 @@ A child record in that side file (`delegation-state.json`) may carry
 send (⌘Enter on the Mac, Ctrl+Enter on Windows, on a busy Claude, Codex or
 Antigravity pane, with delegation on — on by default in both apps; the Mac's
 defaults key `delegation.enabled` false, or the Windows REG_DWORD
-`delegation.enabled` 0 under `HKCU\Software\MightyClaudeNative`, turns it off).
+`delegation.enabled` 0 under `HKCU\Software\MightyCode`, turns it off).
 Such a child
 sends its parent no notices, the parent's delegation tools neither list it nor
 act on it (merge and follow_up refuse with reason code `human_started`), and it
@@ -89,7 +89,7 @@ Requests travel as `{id, method, path, body?}` → `{id, status, body}`; the hos
 | GET | `/m1/workspaces/{id}/workmap` | Capability `workMap`. The work map of docs/work-map.md for a local workspace: `{protocol, available, reason?, head?, lanes, summarizing?, versions: [{key, version?, tag?, date?, status: released\|releasing\|unreleased, releaseStep?, rangeEnd, total, truncated, counts, commits, topics?, topicsStale, summaryError?, requests}]}`. Each commit has `filesCount` and no `files` (the page-side model keeps them). An unavailable folder answers 200 `{available: false, reason: notGit\|gitFailed}`; a remote or unknown workspace is 404. |
 | POST | `/m1/workspaces/{id}/workmap/summarize` | Capability `workMap`. `{key}` (a version key of the model: a tag name or `next`) → 202 `{protocol, ok: true}` and the summary runs on the host (read it again with the GET above; `summarizing` names the running version); 409 `workMap.error.busy` while the workspace is summarizing another, 400 for a key the model does not have or none, 404 for a remote or unknown workspace. |
 
-Pairing string: `mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url X25519 public key>&relay=<ws(s)://host[:port]>&key=<pairing key>&name=<host name>`. Keys live in `<data>/mobile-remote/` (`mobile-remote.key`, `relay-keypair.json`, `relay-host-token.json`, owner-only). Limits: 64 KiB body, 32 KiB text, 16 KiB request path (a longer one is answered 414 `{code: "badPath"}`, never dropped), 8 in-flight requests per phone, 32 phones, 10 s maximum wait.
+Pairing string: `mightycode://pair?v=2&sid=<serverId>&pk=<base64url X25519 public key>&relay=<ws(s)://host[:port]>&key=<pairing key>&name=<host name>`. Keys live in `<data>/mobile-remote/` (`mobile-remote.key`, `relay-keypair.json`, `relay-host-token.json`, owner-only). Limits: 64 KiB body, 32 KiB text, 16 KiB request path (a longer one is answered 414 `{code: "badPath"}`, never dropped), 8 in-flight requests per phone, 32 phones, 10 s maximum wait.
 
 The file routes reuse the Mac files pane's containment exactly (`WorkspaceFiles.list` / `openFile`: symlinks resolved and refused outside the root, `O_NOFOLLOW|O_NONBLOCK`, regular files only, `F_GETPATH` re-checked, reads through the descriptor); the phone's `path` is refused first when absolute or containing `..` (`outsideWorkspace`), or NUL, over 4,096 bytes, or with an empty or `.` component (`badPath`). Only workspaces the Mac has are served. Every reply body stays under 768 KiB (the relay drops frames over 1 MiB and downloads have no chunking): text is cut further and entries dropped, both marked `truncated`. Errors carry `{protocol, error, code}` with `code` one of `workspaceNotFound` (404), `notFound` (404), `outsideWorkspace` (403), `notReadable` (403), `notDirectory` (400), `badPath` (400, or 414 from the tunnel), `superseded` (409). A path under a folder that does not resolve inside the root (e.g. below a link that leaves it) is always `notFound`, whether or not anything is there; `outsideWorkspace` is only for an item directly in a folder inside the root. Folders are enumerated up to 20,000 names, then `truncated`. Image decodes (bitmap, pdf, svg) hold the one preview slot of their own — text previews and attachment submits never wait for it — and a newer preview from the same phone replaces one still waiting (409 `superseded`); a cancelled request stops between decode steps. Bitmaps over 100 million header pixels are `tooLarge` without decoding; svg/pdf sizes that are not finite, positive and at most 10,000,000 points are `undecodable`; an svg is only drawn when `FilePreviewClassifier.svgLoadsExternalContent` finds no `href`/`src`/`url(` other than `#…` or a non-svg `data:`, no `@import`, entity, identified DOCTYPE, `xml:base` or CSS escape (CoreSVG would otherwise read `file:`, absolute and relative paths), else `undecodable`. Wire types and caps: `MightyCore/Remote/MobileWorkspaceFiles.swift`; full text: `docs/mobile-remote.md` "파일". The phone's highlighter is a port of `SourceHighlighter`, both checked against `fixtures/source-highlight.json`. Wire types: `MightyCore/Remote/MobileRemoteModels.swift`; crypto: `RelayChannel.swift`.
 
@@ -330,7 +330,7 @@ last assistant entry of a finished turn (no user entry after it, pane not
 running) carries one, both clients draw its options as buttons: the Mac under
 the transcript or graph, the phone under that reply in the log view and docked
 above the composer in the Mighty blocks view. A tap fills the composer and never
-sends. Parsers: `MightyCore/NextActions.swift`, `MightyClaude.Core/NextActions.cs`
+sends. Parsers: `MightyCore/NextActions.swift`, `MightyCode.Core/NextActions.cs`
 and `mobile/src/lib/next-actions.ts`. Windows uses native buttons above its
 composer and preserves the existing TextBox, draft and undo history.
 
@@ -488,7 +488,7 @@ capabilities, then the later in its own order; for the parent's own agent, the
 parent's mode whenever its child can write in it), or null when none fits.
 `DelegationModesFixtureTests` (Swift) and `DelegationCrossAgentVerification`
 (Windows Core) read it. Rules: `MightyCore/DelegationProviders.swift`,
-`MightyClaude.Core/DelegationProviders.cs`.
+`MightyCode.Core/DelegationProviders.cs`.
 
 ## Queue run now (`fixtures/queue-run-now.json`)
 
@@ -521,7 +521,7 @@ own name and add the resolved model after ` · `. `[1m]` adds ` (1M)`; a Bedrock
 `model-label.test.ts` (jest) both read the fixture
 `[{model, resolved?, fallback?, expected}]`. The graph vectors below keep the
 catalogue-only names (`ModelUsageFormat` with `versioned: false`); the Mac views
-pass `versioned: true`. macOS, Windows (`MightyClaude.Core/ModelLabel.cs`) and the phone
+pass `versioned: true`. macOS, Windows (`MightyCode.Core/ModelLabel.cs`) and the phone
 read an Antigravity slug's last `low`/`medium`/`high` as its effort
 (`gemini-3.8-flash-low` → `Gemini 3.8 Flash (Low)`, as `agy models` names it), and the
 phone names an Antigravity pane's Claude and GPT-OSS slugs as the Mac's catalogue does
@@ -537,7 +537,7 @@ Help → Mighty Claude 도움말 (⌘?) and Settings → 앱 정보, Windows fro
 sidebar footer's help symbol and F1, the phone from the hosts tab. The fixture is
 `{base, cases: [{language, url}]}`; `HelpSiteTests` (Swift),
 `HelpSiteVerification` (Windows Core) and `help-site.test.ts` (jest) all read it.
-Builders: `MightyCore/HelpSite.swift`, `MightyClaude.Core/HelpSite.cs`,
+Builders: `MightyCore/HelpSite.swift`, `MightyCode.Core/HelpSite.cs`,
 `mobile/src/lib/help-site.ts`.
 
 ## Execution graph vectors (`graph-vectors.json`)
@@ -646,7 +646,7 @@ decides the version), `skill` (a repository pinned to a full `commit`, placed in
 `scope` of `user` or `machine`; machine scope may show Windows' own
 administrator prompt) and `vendorPage` (the app opens the page; nothing runs).
 `commandLineTools`, `appBundle`, `brewFormula`, `brewCask` and `xcode-select`
-are Mac only; the Windows decoder (`MightyClaude.Core/SetupCatalog.cs`) also
+are Mac only; the Windows decoder (`MightyCode.Core/SetupCatalog.cs`) also
 refuses a `skill` recipe under `windows`, as its setup is a POSIX shell script.
 On Windows an `executable` probe also looks in the folders the official
 installers use, with PATHEXT. URLs on github.com and
@@ -661,7 +661,7 @@ the same rules there.
 
 ## Tailscale addresses (`fixtures/tailscale-addresses.json`)
 
-The rule that decides which of this computer's addresses are Tailscale's, shared by the phone's direct path and the remote workspaces. An interface counts only if it carries an address in fd7a:115c:a1e0::/48, which only Tailscale hands out; its addresses in 100.64.0.0/10 and that range then count, each once in its canonical spelling without `%scope`, IPv4 first and each family sorted ordinally. A carrier-grade NAT can put 100.64.0.0/10 on Wi-Fi and other VPNs (Cloudflare WARP's 100.96.0.0/12) on their own tunnel, so the CGNAT range alone never counts. `contains` lists addresses in and out of the two ranges (brackets accepted, `%scope` refused, an IPv4-mapped IPv6 address counts as its IPv4). `cases` are interface lists with each platform's answer: the Mac (`darwin`, `MightyCore/Remote/TailscaleAddresses.swift`, `RemoteWorkspaceAddressFixtureTests`) also requires a `utun` name; Windows (`win32`, `MightyClaude.Core/Remote/TailscaleAddresses.cs`, `TailscaleAddressesVerification`) cannot, as adapters are renamable and the Wintun adapter's type is no named `NetworkInterfaceType`. The two answers differ only in the cases that say so. Every address in the file is fake.
+The rule that decides which of this computer's addresses are Tailscale's, shared by the phone's direct path and the remote workspaces. An interface counts only if it carries an address in fd7a:115c:a1e0::/48, which only Tailscale hands out; its addresses in 100.64.0.0/10 and that range then count, each once in its canonical spelling without `%scope`, IPv4 first and each family sorted ordinally. A carrier-grade NAT can put 100.64.0.0/10 on Wi-Fi and other VPNs (Cloudflare WARP's 100.96.0.0/12) on their own tunnel, so the CGNAT range alone never counts. `contains` lists addresses in and out of the two ranges (brackets accepted, `%scope` refused, an IPv4-mapped IPv6 address counts as its IPv4). `cases` are interface lists with each platform's answer: the Mac (`darwin`, `MightyCore/Remote/TailscaleAddresses.swift`, `RemoteWorkspaceAddressFixtureTests`) also requires a `utun` name; Windows (`win32`, `MightyCode.Core/Remote/TailscaleAddresses.cs`, `TailscaleAddressesVerification`) cannot, as adapters are renamable and the Wintun adapter's type is no named `NetworkInterfaceType`. The two answers differ only in the cases that say so. Every address in the file is fake.
 
 ## Remote workspaces (`fixtures/remote-v2/`)
 
@@ -740,7 +740,7 @@ Readers: `RemoteWireFixtureTests` (Swift), `RemoteWireFixtureVerification` and
 `RemoteWireFixtureTests` also checks that every file in the folder is either named
 by `endpoints.json` or one of the extra bodies listed above.
 Implementations: `MightyCore/Remote/RemoteWorkspaceModels.swift`, `StateRepository.swift`;
-`MightyClaude.Core/Remote/RemoteWorkspaceModels.cs`, `RemoteWireEvents.cs`, `StateStore.cs`.
+`MightyCode.Core/Remote/RemoteWorkspaceModels.cs`, `RemoteWireEvents.cs`, `StateStore.cs`.
 
 ## Antigravity permission cards (`fixtures/antigravity-permissions.json`)
 
@@ -805,7 +805,7 @@ The seal on a host → phone push and the rule that decides what is pushed (docs
 - `seal`: a fake device token, `clientId` and handle; the token's `tokenHash` (hex SHA-256, what the host stores); the derived key `keyB64` (HKDF-SHA256 to 32 bytes; the input key is the 32 raw bytes of the SHA-256 digest, not its 64-character hex text; salt = UTF-8 `clientId`, info `mighty-push-v1`); a fixed 12-byte `nonceB64`; the `aad` (`mighty-push-v1:` + handle); a `plaintext` message (its `id` follows the planner rule, `request:<runId>:<id>`); its `envelope` (base64url of `0x01 ‖ nonce (12 bytes) ‖ ChaCha20-Poly1305 ciphertext ‖ tag (16 bytes)`); `tampered` envelopes (a flipped ciphertext bit, a wrong version byte) that must not open; `otherHandle`, under which the envelope must not open.
 - `planner`: `hostId`, `hostName`, `at`, and `steps`. Each step is the whole list of panes a host sees (`MobilePushPane`: `sessionId`, `workspace`, `title`, `status`, `preview?`, `requests: [{ id, runId, kind, summary, buttons }]`, `signInLost`). `expect` lists the messages that observation sends, in order. Every message also carries `v: 1`, `hostId`, `hostName` and `at` from the top. An expected message may carry `pushSummary`, the summary the pushed bytes carry: `""` when the encoded message (control characters escape to six bytes each) would pass 2048 bytes. A pane missing from one observation is forgotten (coming back is like appearing), but its run and sign-in numbers (`run:<sessionId>:<n>:<kind>`, `signin:<sessionId>:<n>`) keep counting from where they were.
 
-Implementations: Mac `MightyCore/Remote/MobilePush.swift` (`MobilePushSeal`, `MobilePushPlanner`), Windows `MightyClaude.Core/Remote/MobilePush.cs`, phone `mobile/src/lib/push/seal.ts` (opening only). Readers: Swift `MobilePushSealTests`, `MobilePushPlannerTests`; Windows `MobilePushVerification`; jest `push-seal.test.ts`.
+Implementations: Mac `MightyCore/Remote/MobilePush.swift` (`MobilePushSeal`, `MobilePushPlanner`), Windows `MightyCode.Core/Remote/MobilePush.cs`, phone `mobile/src/lib/push/seal.ts` (opening only). Readers: Swift `MobilePushSealTests`, `MobilePushPlannerTests`; Windows `MobilePushVerification`; jest `push-seal.test.ts`.
 
 ## File diff (`fixtures/file-diff.json`)
 
@@ -816,8 +816,8 @@ The source preview's 변경사항 view: what a request changed in one file, as a
 - Rules: CRLF reads as LF (a lone CR stays in its line); lines compare by their exact code points (no Unicode normalization — Swift compares UTF-8 bytes, not `String ==`) and by whether a line break ends them (`noNewline` marks a last line without one); the common start and end are set aside, then Myers' shortest edit script, a step taking the move that reaches further and down (an addition) on a tie; each run of changes is written removals first; 3 lines of context, changes at most 6 equal lines apart share a hunk; a side with no lines starts at the line before it (0 at the top), as git writes it. An edit distance over 2,000 reads as the whole middle removed then added. Identical sides (after CRLF) are `unchanged` with no hunks.
 - The change set around it: `{base: "run"|"head", hunks, added, removed, truncated, unchanged, runId?, headSha?, created?}` or none. `run` is the file before the pane's Claude run first changed it, from the `tool_use_result` (`toolUseResult` in transcripts) `originalFile` of Edit, Write and MultiEdit results (null, or `type: "create"` without it: created, original ""); the first per path per run is kept, at most 1 MiB each, 64 files and 16 MiB per run, under `<data>/file-originals/<sha256(pane id)[..32]>/<sha256(run id)[..32]>/` (`run.json` + `<n>.txt`, written atomically, pruned with the graph's runs, the pane and the workspace). Without one: `head` (`git cat-file blob HEAD:./<path>` under the status probe's safe settings; untracked or no commit yet: all added, `created`), else none. Both sides go through the preview decoder (BOM → UTF-8 → CP949; binary or undecodable: none).
 
-Implementations: Mac `MightyCore/FileDiff.swift`, `FileChanges.swift` (`FileOriginalStore`, `GitHeadFile`, `FileChanges.read`); Windows `MightyClaude.Core/FileDiff.cs`, `FileChanges.cs` (`DesktopService.FileChangesAsync`, web shell `referenceChanges`). Readers: Swift `FileChangesTests`; Windows `FileChangesVerification` (embedded as `MightyClaude.Core.Tests.FileDiff.json`).
+Implementations: Mac `MightyCore/FileDiff.swift`, `FileChanges.swift` (`FileOriginalStore`, `GitHeadFile`, `FileChanges.read`); Windows `MightyCode.Core/FileDiff.cs`, `FileChanges.cs` (`DesktopService.FileChangesAsync`, web shell `referenceChanges`). Readers: Swift `FileChangesTests`; Windows `FileChangesVerification` (embedded as `MightyCode.Core.Tests.FileDiff.json`).
 
 ## Work map (`fixtures/work-map.json`)
 
-The rules of docs/work-map.md that Mac (`MightyCore/WorkMap.swift`, `WorkMapSummary.swift`), Windows (`MightyClaude.Core/WorkMap.cs`, `WorkMapSummary.cs`) and the phone (`src/lib/work-map.ts`, display only) hold alike: the limits (`maximumVersions`, `maximumCommitsPerVersion`, `maximumFilesPerCommit`, `maximumRequests`, `maximumCommitsPerRequest`, `requestTextLength`, `maximumTopics`, `titleLength`, `summaryLength`, `notesLength`, `summaryTimeoutSeconds`), `lanes` and `releaseSteps`, and the cases `laneCases` (a commit title → scope, text, lanes), `tagCases` (which tags are versions, newest first), `versionNameCases` (VERSION file against the newest tag), `releaseStatusCases` (a `release/<v>/state.json` → status and next step), `dotSize` (the overview dot's diameter) and `summaryCases` (a Claude answer → topics; `"@other"` stands for the localized `workMap.topic.other` title). `prompt` is the template of the summary request, word for word. Windows reads them in `WorkMapVerification.cs`.
+The rules of docs/work-map.md that Mac (`MightyCore/WorkMap.swift`, `WorkMapSummary.swift`), Windows (`MightyCode.Core/WorkMap.cs`, `WorkMapSummary.cs`) and the phone (`src/lib/work-map.ts`, display only) hold alike: the limits (`maximumVersions`, `maximumCommitsPerVersion`, `maximumFilesPerCommit`, `maximumRequests`, `maximumCommitsPerRequest`, `requestTextLength`, `maximumTopics`, `titleLength`, `summaryLength`, `notesLength`, `summaryTimeoutSeconds`), `lanes` and `releaseSteps`, and the cases `laneCases` (a commit title → scope, text, lanes), `tagCases` (which tags are versions, newest first), `versionNameCases` (VERSION file against the newest tag), `releaseStatusCases` (a `release/<v>/state.json` → status and next step), `dotSize` (the overview dot's diameter) and `summaryCases` (a Claude answer → topics; `"@other"` stands for the localized `workMap.topic.other` title). `prompt` is the template of the summary request, word for word. Windows reads them in `WorkMapVerification.cs`.

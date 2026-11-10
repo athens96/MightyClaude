@@ -171,7 +171,7 @@ public final class AgentIOSocketServer: @unchecked Sendable {
         }
         lock.lock(); listenFD = fd; stopped = false; lock.unlock()
         let thread = Thread { [weak self] in self?.acceptLoop(fd: fd) }
-        thread.name = "dev.mightyclaude.agent-io"
+        thread.name = "dev.mightycode.agent-io"
         acceptThread = thread
         thread.start()
     }

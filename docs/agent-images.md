@@ -33,7 +33,7 @@
 
 ## 저장과 한도
 
-- 도구가 보낸 base64는 실행기에서 바로 풀어(큰 줄은 모든 창이 함께 쓰는 실행기 액터 밖에서 줄을 자르고 JSON을 읽을 때 함께 풀고 해시를 내어 쓴다) 앱 데이터 폴더의 **그림 캐시**(`~/Library/Application Support/MightyClaude Native/image-cache/<sha256>.<확장자>`)에 한 번만 쓴다. 대화 기록·그래프 기록·저장 상태에는 참조만 남는다: `kind: "image"` 항목의 `images: [{hash, mediaType, width, height, bytes, source, path?}]`와, 그림이 없는 화면을 위한 `text`(`그림 · Read · …`).
+- 도구가 보낸 base64는 실행기에서 바로 풀어(큰 줄은 모든 창이 함께 쓰는 실행기 액터 밖에서 줄을 자르고 JSON을 읽을 때 함께 풀고 해시를 내어 쓴다) 앱 데이터 폴더의 **그림 캐시**(`~/Library/Application Support/MightyCode/image-cache/<sha256>.<확장자>`)에 한 번만 쓴다. 대화 기록·그래프 기록·저장 상태에는 참조만 남는다: `kind: "image"` 항목의 `images: [{hash, mediaType, width, height, bytes, source, path?}]`와, 그림이 없는 화면을 위한 `text`(`그림 · Read · …`).
 - 한도: 그림 하나 20 MB, 항목 하나 16장, 요청(실행) 하나 64장(넘으면 한 번 알리고 이후 그림은 건너뜀), 캐시 전체 200 MB. 캐시가 넘치면 가장 오래 쓰지 않은 그림부터 지운다(그림을 그릴 때마다 사용 시각을 갱신). 캐시 파일은 이름의 해시와 내용이 맞을 때만 쓰고, 같은 그림을 다시 받았을 때 파일 크기나 해시가 맞지 않으면 다시 쓴다.
 - 다시 연 세션은 캐시에 파일이 남아 있으면 그림을 그대로 보여 주고, 없으면 `그림을 더 이상 찾을 수 없음`을 표시한다.
 - 그림이 실린 stream-json 한 줄을 받을 수 있도록 실행기의 한 줄 상한을 64 MiB로, Codex 승인 채널의 프레임 상한을 32 MiB로 올렸다. 그림을 싣지 않는 Gemini는 8 MiB다. 줄 나누기는 `memchr`로 줄바꿈을 찾아 덩어리째 붙이고, 끝난 줄은 버퍼째 넘겨 큰 줄의 메모리를 붙잡지 않는다. 실행기는 읽었지만 줄 나누기에 아직 넘기지 못한 출력이 실행마다 4 MB를 넘으면 파이프 읽기를 멈추고 기다린다(자식은 가득 찬 파이프에서 기다린다). 줄 나누기가 붙잡고 있는 끝나지 않은 줄은 그 4 MB에 들지 않고, 모든 실행이 함께 쓰는 256 MB 한도로 센다. 한도를 넘으면 가장 큰 줄을 가진 실행만 계속 읽어 그 줄을 끝내고(또는 상한에서 자르고), 줄을 붙잡은 다른 실행의 읽기는 기다린다. 그래서 큰 줄도 조각을 잃지 않으며, 전체는 대략 256 MB에 진행 중인 한 줄과 실행마다 4 MB를 더한 만큼으로 묶인다. 끝난 줄을 파싱한 JSON 값은 넘겨질 때까지 잠깐만 산다.
@@ -48,4 +48,4 @@
 
 ## Windows
 
-Windows 앱도 같은 규칙으로 대화 기록 안에 그림을 그린다(`native/windows/MightyClaude.Core/AgentImages.cs`, `MightyClaude.WinUI/AgentPictures.cs`·`AgentTranscript.cs`). 대화 기록이 RichEdit 문서 하나라서 그림은 긴 변 960 픽셀 썸네일(불투명하면 JPEG, 투명하면 PNG)을 문서 안의 그림(`\pict\jpegblip`·`\pict\pngblip`)으로 넣고, 최대 480 × 640으로 그린다. 캐시는 `<상태 폴더>\image-cache\`. 다른 점: 그림의 실제 형식은 ImageIO 대신 파일 머리에서 읽고(png·jpeg·gif·webp·bmp, svg 문서), tiff·heic는 지원하지 않는 형식으로 알린다. 적힌 경로가 먼저 작업 폴더나 임시 폴더 안이어야 디스크를 보므로, 네트워크 공유(`\\host\share\…`) 그림은 연결을 시도하기 전에 거절한다. svg는 대화 기록에 그리지 않고 출처 줄만 남긴다. 그림 누르기·우클릭 메뉴·마이티 모드 그림 미리보기 블록은 아직 없다. 대응 현황과 검사 이름은 [docs/windows-parity.md](windows-parity.md)의 `에이전트 그림 미리보기` 행.
+Windows 앱도 같은 규칙으로 대화 기록 안에 그림을 그린다(`native/windows/MightyCode.Core/AgentImages.cs`, `MightyCode.WinUI/AgentPictures.cs`·`AgentTranscript.cs`). 대화 기록이 RichEdit 문서 하나라서 그림은 긴 변 960 픽셀 썸네일(불투명하면 JPEG, 투명하면 PNG)을 문서 안의 그림(`\pict\jpegblip`·`\pict\pngblip`)으로 넣고, 최대 480 × 640으로 그린다. 캐시는 `<상태 폴더>\image-cache\`. 다른 점: 그림의 실제 형식은 ImageIO 대신 파일 머리에서 읽고(png·jpeg·gif·webp·bmp, svg 문서), tiff·heic는 지원하지 않는 형식으로 알린다. 적힌 경로가 먼저 작업 폴더나 임시 폴더 안이어야 디스크를 보므로, 네트워크 공유(`\\host\share\…`) 그림은 연결을 시도하기 전에 거절한다. svg는 대화 기록에 그리지 않고 출처 줄만 남긴다. 그림 누르기·우클릭 메뉴·마이티 모드 그림 미리보기 블록은 아직 없다. 대응 현황과 검사 이름은 [docs/windows-parity.md](windows-parity.md)의 `에이전트 그림 미리보기` 행.

@@ -4,7 +4,7 @@ import {
   scrollable, StructureNavigation, stepsSummary, taker, userMoving, wheelOrigin, type Page,
 } from './structureMotion';
 
-// Translated from MightyClaude.Core.Tests MightyStructureVerification.cs and MightyStructureBoardVerification.cs.
+// Translated from MightyCode.Core.Tests MightyStructureVerification.cs and MightyStructureBoardVerification.cs.
 const xy = (x: number, y: number) => ({ x, y });
 const page = (originY: number, documentHeight: number, newestBottom: number | null, visibleHeight = 600, newestId: string | null = 'b'): Page => ({ originY, visibleHeight, documentHeight, newestId, newestBottom });
 const column = (id: string, origin: number, document: number): Page => page(origin, document, document - 8, 600, id);

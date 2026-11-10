@@ -1,0 +1,618 @@
+import AppKit
+import SwiftUI
+import MightyCore
+
+struct AgentStatusControls: View {
+    @ObservedObject var companion: AgentCompanion
+    var body: some View {
+        HStack(spacing: DesignMetrics.Spacing.md) {
+            Button { companion.preferences.enabled.toggle() } label: {
+                Image(systemName: companion.preferences.enabled ? "pawprint.fill" : "pawprint")
+                    .foregroundStyle(companion.preferences.enabled ? Palette.accent : .secondary)
+            }.buttonStyle(.plain).help(companion.preferences.enabled ? L("menu.hidePet") : L("companion.status.showPet")).accessibilityLabel(L("companion.status.togglePet"))
+            Button { companion.showsStatus.toggle() } label: {
+                HStack(spacing: DesignMetrics.Spacing.xs) {
+                    Image(systemName: companion.runningCount > 0 ? "waveform.path" : "circle.grid.2x2")
+                    if companion.runningCount > 0 { Text("\(companion.runningCount)").monospacedDigit() }
+                }.padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
+                    .frame(minHeight: DesignMetrics.Layout.hitTarget)
+                    .background(Palette.subtle, in: Capsule())
+            }.buttonStyle(.plain).help(L("companion.status.title")).accessibilityLabel(L("companion.status.title"))
+                .popover(isPresented: $companion.showsStatus, arrowEdge: .top) {
+                    AgentStatusPopover(companion: companion)
+                }
+        }
+    }
+}
+
+struct AgentStatusPopover: View {
+    @ObservedObject var companion: AgentCompanion
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+            HStack {
+                Text(L("companion.status.title")).font(.ui(size: 14, weight: .semibold))
+                Spacer()
+                Text(L("companion.status.busyCount", ["count": "\(companion.runningCount)"])).font(.ui(size: 11)).foregroundStyle(.secondary)
+            }
+            if companion.agents.isEmpty {
+                Text(L("companion.status.empty")).font(.ui(size: 12)).foregroundStyle(.secondary).padding(.vertical, DesignMetrics.Spacing.md)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: DesignMetrics.Spacing.sm) {
+                        ForEach(companion.agents) { agent in
+                            Button { companion.focus(agent.id) } label: {
+                                HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
+                                    PresenceIndicator(status: agent.status).padding(.top, DesignMetrics.Spacing.xxs)
+                                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+                                        HStack { Text(agent.title).font(.ui(size: 12, weight: .medium)); Spacer(); Text(agent.stateLabel).font(.ui(size: 10)).foregroundStyle(.secondary) }
+                                        HStack {
+                                            Text(agent.workspace).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                                            Spacer(minLength: 0)
+                                            if let timing = agent.timing { AgentElapsedView(timing: timing) }
+                                        }
+                                        if let input = agent.input, !input.isEmpty {
+                                            Label(input, systemImage: "arrow.up.right").font(.ui(size: 11)).lineLimit(2)
+                                        }
+                                        Text(agent.summary).font(.ui(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                                    }
+                                    Image(systemName: "arrow.up.forward").font(.ui(size: 9)).foregroundStyle(.tertiary)
+                                }.padding(DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 10))
+                            }.buttonStyle(.plain).accessibilityLabel(L("companion.status.rowAccessibility", ["title": agent.title, "status": agent.stateLabel]))
+                        }
+                    }
+                }.frame(maxHeight: 330)
+            }
+            Divider()
+            Toggle(L("companion.status.petSwitch"), isOn: $companion.preferences.enabled).toggleStyle(.switch).controlSize(.mini)
+        }.padding(DesignMetrics.Inset.popover).frame(width: DesignMetrics.Dialog.popoverWidthL)
+    }
+}
+
+struct CompanionSettingsSection: View {
+    @ObservedObject var companion: AgentCompanion
+    var body: some View {
+        SettingsGroup(L("companion.settings.sectionTitle")) {
+            Toggle(L("companion.settings.enabled"), isOn: $companion.preferences.enabled)
+            HStack(spacing: DesignMetrics.Spacing.lg) {
+                if let pet = companion.selectedPet, let image = pet.frames.first?.first {
+                    Image(nsImage: image).resizable().scaledToFit().frame(width: 58, height: 64)
+                }
+                SettingsRowLabel(L("companion.settings.pet"), caption: L("companion.settings.petsNote"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .trailing, spacing: DesignMetrics.Spacing.sm) {
+                    Picker(L("companion.settings.pet"), selection: $companion.preferences.selectedPet) {
+                        ForEach(companion.pets) { pet in Text(pet.name).tag(pet.id) }
+                    }
+                    .settingsSelect()
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
+                        Button(L("companion.settings.import")) { companion.importPet() }
+                        Button(L("companion.settings.reload")) { companion.reloadPets() }
+                    }
+                }
+            }
+            .settingsRowFrame()
+            Toggle(L("companion.settings.task"), isOn: $companion.preferences.showsTask)
+            Toggle(L("companion.settings.motion"), isOn: $companion.preferences.reducedMotion)
+            Toggle(L("companion.settings.macNotifications"), isOn: $companion.preferences.notifications)
+            WebhookField()
+                .onChange(of: companion.preferences.notifications) { _, enabled in Task { await companion.refreshNotificationStatus(request: enabled) } }
+            SettingsRow(L("windows.notifications.settingsButton"), caption: companion.notificationStatus) {
+                Button(L("windows.notifications.settingsButton")) {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
+                }
+            }
+            if let message = companion.message { Text(message).font(.ui(size: 11)).foregroundStyle(.secondary) }
+        }
+    }
+}
+
+struct PresenceIndicator: View {
+    let status: String
+    var body: some View {
+        Group {
+            if status == "running" { ProgressView().controlSize(.mini).scaleEffect(0.75).frame(width: 15, height: 15) }
+            else { Image(systemName: status == "waiting" ? "hand.raised.fill" : status == "completed" ? "checkmark.circle.fill" : status == "error" ? "exclamationmark.circle.fill" : "circle").foregroundStyle(Palette.text(status)).frame(width: 15, height: 15) }
+        }.accessibilityLabel(presenceLabel(status))
+    }
+}
+
+func presenceLabel(_ state: String) -> String {
+    state == "waiting" ? L("graph.state.waiting") : Palette.status(state)
+}
+
+struct CompanionOverlayView: View {
+    @ObservedObject var companion: AgentCompanion
+    @StateObject private var bubble = CompanionBubbleController()
+    @StateObject private var motion = CompanionPetMotion()
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @ViewState private var epoch = Date()
+    @ViewState private var celebrating = false
+    var body: some View {
+        VStack(spacing: DesignMetrics.Spacing.xxs) {
+            if let approval = companion.visibleApproval, let plan = approval.plan {
+                CompanionPlanBubble(companion: companion, approval: approval, plan: plan)
+            } else if let approval = companion.visibleApproval {
+                CompanionApprovalBubble(companion: companion, approval: approval)
+            } else if companion.preferences.showsTask, bubble.isVisible, let current = companion.shown {
+                CompanionTaskBubble(companion: companion, current: current)
+            } else { Color.clear.frame(height: 86) }
+            Button(action: toggleBubble) {
+                TimelineView(.animation(minimumInterval: 1.0 / 12.0, paused: companion.preferences.reducedMotion || systemReduceMotion)) { timeline in
+                    if let pet = companion.selectedPet,
+                       let image = pet.frame(row: animationRow, elapsed: timeline.date.timeIntervalSince(epoch), reducedMotion: companion.preferences.reducedMotion || systemReduceMotion) {
+                        Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+                    } else { Image(systemName: "pawprint.fill").resizable().scaledToFit().foregroundStyle(Palette.accent).padding(35) }
+                }.frame(width: 125, height: 135)
+            }.buttonStyle(.plain).accessibilityLabel(companion.preferences.showsTask && bubble.isVisible ? L("companion.bubble.hide") : L("companion.bubble.show")).accessibilityIdentifier("pet-toggle-bubble")
+                .background(CompanionPetInteraction(motion: motion, row: animationRow, onClick: toggleBubble).allowsHitTesting(false))
+                .contextMenu { Button(L("menu.hidePet")) { companion.preferences.enabled = false }; Button(L("menu.openAgent")) { companion.focus(companion.shown?.id) } }
+        }.padding(DesignMetrics.Spacing.md).frame(width: panelSize.width, height: panelSize.height, alignment: .bottom)
+            .onChange(of: CompanionBubbleIdentity(companion.shown), initial: true) { _, identity in bubble.synchronize(identity) }
+            .onChange(of: animationRow) { _, _ in epoch = Date() }
+            .onDisappear { motion.endAfterTeardown() }
+            .task(id: CompanionBubbleIdentity(companion.shown)) {
+                celebrating = companion.shown?.status == "completed"
+                if celebrating {
+                    do { try await Task.sleep(for: .seconds(6)) } catch { return }
+                    celebrating = false
+                }
+            }
+    }
+    private var panelSize: CGSize {
+        let size = companion.bubbleSize
+        return CompanionBubbleLayout.panelSize(width: size.width, height: size.height, tall: companion.visibleApproval != nil)
+    }
+    private func toggleBubble() {
+        guard !motion.isDragging else { return }
+        if !companion.preferences.showsTask { companion.preferences.showsTask = true; bubble.show() }
+        else { bubble.toggle() }
+    }
+    private var animationRow: Int {
+        (motion.direction ?? CompanionPetAnimationPolicy.task(companion.shown, celebrating: celebrating)).rawValue
+    }
+}
+
+/// One agent's request and current work. With several agents busy, the pager
+/// row (or a sideways drag or two-finger swipe) turns to the others.
+struct CompanionTaskBubble: View {
+    @ObservedObject var companion: AgentCompanion
+    let current: AgentPresence
+    /// Set while a sideways drag is turning the page, so its mouse-up does not also open the agent.
+    @ViewState private var turning = false
+    @ViewState private var measuredHeight: CGFloat = 0
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                Button { if turning { turning = false } else { companion.focus(current.id) } } label: { content }
+                    .simultaneousGesture(pageDrag)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Self.spokenLabel(current, at: timeline.date))
+                    .accessibilityIdentifier("pet-task-bubble")
+            }
+            CompanionPager(companion: companion)
+        }
+        .padding(DesignMetrics.Inset.popover).foregroundStyle(.primary)
+        .frame(width: size.resolvedWidth, height: size.resolvedHeight, alignment: .top)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.10)))
+        .overlay(CompanionBubbleResizer(companion: companion, measuredHeight: measuredHeight, allowsHeight: true))
+        .background(GeometryReader { geo in Color.clear.onAppear { measuredHeight = geo.size.height }.onChange(of: geo.size.height) { _, new in measuredHeight = new } })
+    }
+    private var size: CompanionBubbleSize { companion.bubbleSize }
+    /// A taller bubble shows more of the request and the work instead of padding.
+    private var lines: Int? { size.resolvedHeight == nil ? 2 : nil }
+
+    /// On the bubble's own button only; the pager's chevrons stay plain clicks.
+    private var pageDrag: some Gesture {
+        DragGesture(minimumDistance: 18)
+            .onChanged { _ in if companion.page != nil { turning = true } }
+            .onEnded { drag in
+                let width = drag.translation.width
+                if companion.page != nil, abs(width) > 36, abs(width) > abs(drag.translation.height) { companion.showNeighbour(width < 0 ? 1 : -1) }
+                // The button's action may run before or after this; either way the flag is gone by the next click.
+                DispatchQueue.main.async { turning = false }
+            }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                PresenceIndicator(status: current.status)
+                // Several agents can be busy at once; the workspace says which one this is.
+                VStack(alignment: .leading, spacing: 1) {
+                    if !current.workspace.isEmpty {
+                        Text(current.workspace).font(.ui(size: 9, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                            .accessibilityIdentifier("pet-workspace-\(current.id)")
+                    }
+                    Text(current.title).font(.ui(size: 11, weight: .semibold)).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                VStack(alignment: .trailing, spacing: DesignMetrics.Spacing.xxs) {
+                    Text(current.stateLabel).font(.ui(size: 9)).foregroundStyle(.secondary)
+                    if let timing = current.timing { AgentElapsedView(timing: timing).accessibilityIdentifier("pet-elapsed-\(current.id)") }
+                }
+            }
+            if let input = current.input, !input.isEmpty {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+                    Text(L("graph.timeline.kind.request")).font(.ui(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, DesignMetrics.Spacing.xxs)
+                    Text(input).font(.ui(size: 11)).lineLimit(lines).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Divider()
+            }
+            HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+                Text(L("transcript.tool.fallback")).font(.ui(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, DesignMetrics.Spacing.xxs)
+                Text(current.summary).font(.ui(size: 11)).lineLimit(lines).frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    static func spokenLabel(_ agent: AgentPresence, at date: Date) -> String {
+        let place = agent.workspace.isEmpty ? "" : L("companion.spoken.place", ["workspace": agent.workspace])
+        let elapsed = agent.timing.map { L("companion.spoken.elapsed", ["time": $0.label(at: date)]) } ?? ""
+        return L("companion.spoken.open", ["place": place, "title": agent.title, "elapsed": elapsed, "input": agent.input ?? L("companion.spoken.noInput"), "summary": agent.summary])
+    }
+}
+
+/// "‹ ● ○ ○ 1 / 3 ›" under a bubble while more than one agent is busy.
+struct CompanionPager: View {
+    @ObservedObject var companion: AgentCompanion
+    var body: some View {
+        if let page = companion.page { pager(page.position, of: page.count) }
+    }
+
+    private func pager(_ position: Int, of count: Int) -> some View {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
+            pageButton("chevron.left", offset: -1, label: L("companion.pager.previous"))
+            Spacer(minLength: 0)
+            if count <= 8 {
+                HStack(spacing: DesignMetrics.Spacing.xs) {
+                    ForEach(1...count, id: \.self) { index in
+                        Circle().fill(index == position ? Palette.accent : Color.primary.opacity(0.22)).frame(width: 5, height: 5)
+                    }
+                }.accessibilityHidden(true)
+            }
+            Text("\(position) / \(count)").font(.ui(size: 9, weight: .medium)).monospacedDigit().foregroundStyle(.secondary)
+                .accessibilityLabel(L("companion.pager.position", ["count": "\(count)", "position": "\(position)"]))
+                .accessibilityIdentifier("pet-page-label")
+            if companion.hiddenApproval != nil {
+                Button { companion.showApprovalAgent() } label: {
+                    Image(systemName: "hand.raised.fill").font(.ui(size: 9)).foregroundStyle(Palette.waitText).frame(width: 16, height: 16).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).help(L("companion.pager.approvalHelp")).accessibilityLabel(L("companion.pager.approvalAccessibility"))
+                .accessibilityIdentifier("pet-page-approval")
+            }
+            Spacer(minLength: 0)
+            pageButton("chevron.right", offset: 1, label: L("companion.pager.next"))
+        }
+    }
+
+    private func pageButton(_ symbol: String, offset: Int, label: String) -> some View {
+        Button { companion.showNeighbour(offset) } label: {
+            Image(systemName: symbol).font(.ui(size: 9, weight: .semibold)).frame(width: 22, height: 16)
+                .background(Palette.subtle, in: Capsule()).contentShape(Capsule())
+        }
+        .buttonStyle(.plain).help(label).accessibilityLabel(label)
+        .accessibilityIdentifier(offset < 0 ? "pet-page-previous" : "pet-page-next")
+    }
+}
+
+/// Approvals and single-choice questions can be answered from the pet without
+/// activating the main window. Everything else opens the pane.
+struct CompanionApprovalBubble: View {
+    @ObservedObject var companion: AgentCompanion
+    let approval: CompanionApproval
+    var body: some View {
+        let presentation = approval.presentation
+        let questionnaire = approval.quickQuestionnaire
+        let question = questionnaire.flatMap { companion.questionProgress.current(in: $0) }
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Image(systemName: questionnaire == nil ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Palette.waitText)
+                Text(Self.title(questionnaire, progress: companion.questionProgress)).font(.ui(size: 11, weight: .semibold)).monospacedDigit()
+                    .accessibilityIdentifier("pet-question-progress")
+                Spacer(minLength: 0)
+                Text(approval.workspaceName.isEmpty ? approval.sessionTitle : approval.workspaceName + " · " + approval.sessionTitle)
+                    .font(.ui(size: 9)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+            }
+            if let question {
+                Text(question.question).font(.ui(size: 11, weight: .medium)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                ForEach(Array(question.options.enumerated()), id: \.offset) { index, option in
+                    CompanionOptionRow(option: option, multiple: question.multiSelect, picked: Self.picked(option.label, question: question, progress: companion.questionProgress)) {
+                        companion.chooseOption(option.label)
+                    }.accessibilityIdentifier("pet-choice-\(index)")
+                }
+            } else {
+                Text(presentation.title + " · " + approval.request.toolName).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                if let headline = presentation.headline {
+                    Text(headline).font(.ui(size: 11, weight: .medium)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
+                if let code = presentation.primaryCode {
+                    Text(code.value).font(.code(size: 10)).lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                } else if presentation.headline == nil {
+                    Text(approval.request.summary).font(.code(size: 10)).lineLimit(3)
+                }
+            }
+            if let error = companion.approvalError { Text(error).font(.ui(size: 9)).foregroundStyle(Palette.errText).lineLimit(2) }
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                // Four buttons share 238pt (258 less the bubble's inset) while a questionnaire is up, so "Open" shrinks to its icon there.
+                Button { companion.openApproval() } label: {
+                    if questionnaire == nil { Text(L("companion.button.open")) } else { Image(systemName: "arrow.up.forward.app") }
+                }
+                .buttonStyle(PaneCardButtonStyle())
+                .help(L("companion.button.openInPane")).accessibilityLabel(L("companion.button.openInPane")).accessibilityIdentifier("pet-approval-open")
+                Spacer(minLength: 0)
+                if companion.approvalBusy { ProgressView().controlSize(.mini) }
+                if let question, let questionnaire {
+                    if companion.questionProgress.index > 0 {
+                        Button(L("companion.question.back")) { companion.previousQuestion() }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-question-back")
+                    }
+                    if companion.needsCommitButton(question, in: questionnaire) {
+                        Button(Self.commitTitle(questionnaire, progress: companion.questionProgress)) { companion.commitQuestion() }
+                            .buttonStyle(PaneCardButtonStyle(accent: true)).disabled(!companion.canCommit(question))
+                            .accessibilityIdentifier("pet-question-next")
+                    }
+                    Button(L("phone.questionnaire.cancel")) { companion.answerApproval(allow: false) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-approval-cancel")
+                } else if questionnaire == nil {
+                    // The pet's panel is never key, where .borderedProminent turns grey: the card styles keep the accent.
+                    Button(L("permission.deny")) { companion.answerApproval(allow: false) }
+                        .buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-approval-deny")
+                    Button(L("permission.allowOnce")) { companion.answerApproval(allow: true) }
+                        .buttonStyle(PaneCardButtonStyle(accent: true)).disabled(!approval.request.canAllow)
+                        .accessibilityIdentifier("pet-approval-allow")
+                } else {
+                    Button(L("phone.questionnaire.cancel")) { companion.answerApproval(allow: false) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-approval-cancel")
+                }
+            }.controlSize(.small).disabled(companion.approvalBusy)
+            CompanionPager(companion: companion)
+        }
+        .padding(DesignMetrics.Inset.popover).frame(width: CompanionBubbleLayout.approvalWidth(companion.bubbleSize.width))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Palette.wait.opacity(0.45)))
+        // The approval keeps its own height; its sides still set the shared width.
+        .overlay(CompanionBubbleResizer(companion: companion, measuredHeight: nil, allowsHeight: false))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("companion.approval.accessibility", ["place": approval.workspaceName.isEmpty ? "" : L("companion.spoken.place", ["workspace": approval.workspaceName]), "title": approval.sessionTitle, "headline": presentation.headline ?? approval.request.summary]))
+        .accessibilityIdentifier("pet-approval-bubble")
+    }
+
+    /// "Choice requested 2/3" while stepping through several questions.
+    static func title(_ questionnaire: UserQuestionnaire?, progress: QuestionnaireProgress) -> String {
+        guard let questionnaire else { return L("companion.approval.title") }
+        let total = questionnaire.questions.count
+        return total > 1 ? L("companion.question.titleProgress", ["current": "\(progress.index + 1)", "total": "\(total)"]) : L("phone.questionnaire.title")
+    }
+    static func commitTitle(_ questionnaire: UserQuestionnaire, progress: QuestionnaireProgress) -> String {
+        progress.index + 1 < questionnaire.questions.count ? L("companion.question.next") : L("composer.send.name")
+    }
+    /// Toggled picks for a multi-choice question; the recorded answer when the user came back to one.
+    static func picked(_ label: String, question: UserQuestionnaire.Question, progress: QuestionnaireProgress) -> Bool {
+        if question.multiSelect { return progress.selected.contains(label) }
+        return progress.answers[question.question]?.selectedOptions.contains(label) == true
+    }
+}
+
+/// Claude's finished plan (ExitPlanMode) in the taller bubble: the plan in small
+/// Markdown, scrolling once it outgrows the window, and the plan card's four answers.
+/// Cancel is the plan's own cancel. A change request needs typing, which the pet
+/// never takes, so 수정 요청 opens the plan card in a window of its own.
+struct CompanionPlanBubble: View {
+    @ObservedObject var companion: AgentCompanion
+    let approval: CompanionApproval
+    let plan: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.waitText)
+                Text(L("plan.card.title")).font(.ui(size: 11, weight: .semibold))
+                if let received = approval.request.receivedAt {
+                    Text(PlanCardSupport.receivedText(received)).font(.ui(size: 9)).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Text(place).font(.ui(size: 9)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+            }
+            // A short plan shows whole; a long one scrolls in the room the window leaves.
+            ViewThatFits(in: .vertical) {
+                planText
+                ScrollView { planText }.frame(maxHeight: .infinity)
+            }
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityIdentifier("pet-plan-text")
+            if let error = companion.approvalError { Text(error).font(.ui(size: 9)).foregroundStyle(Palette.errText).lineLimit(2) }
+            VStack(spacing: DesignMetrics.Spacing.sm) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    Button { companion.openApproval() } label: { Image(systemName: "arrow.up.forward.app") }
+                        .help(L("companion.button.openInPane")).accessibilityLabel(L("companion.button.openInPane")).accessibilityIdentifier("pet-plan-open")
+                    Button { companion.openPlanWindow(revising: false) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                        .help(L("companion.plan.review")).accessibilityLabel(L("companion.plan.review")).accessibilityIdentifier("pet-plan-expand")
+                    Spacer(minLength: 0)
+                    if companion.approvalBusy { ProgressView().controlSize(.mini) }
+                    Button(L("plan.card.cancel")) { companion.answerPlan(.cancel) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-plan-cancel")
+                    Button(L("plan.card.revise")) { companion.openPlanWindow(revising: true) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-plan-revise")
+                }
+                Button { companion.answerPlan(.approveConfirmEach) } label: { Text(L("plan.card.approveConfirm")).frame(maxWidth: .infinity) }
+                    .buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("pet-plan-approve-confirm")
+                Button { companion.answerPlan(.approveAutoEdit) } label: { Text(L("plan.card.approveAuto")).frame(maxWidth: .infinity) }
+                    // Never key, so .borderedProminent would turn grey: the card style keeps the accent.
+                    .buttonStyle(PaneCardButtonStyle(accent: true)).accessibilityIdentifier("pet-plan-approve-auto")
+            }.controlSize(.small).disabled(companion.approvalBusy)
+            CompanionPager(companion: companion)
+        }
+        .padding(DesignMetrics.Inset.popover).frame(width: CompanionBubbleLayout.approvalWidth(companion.bubbleSize.width))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Palette.wait.opacity(0.45)))
+        .overlay(CompanionBubbleResizer(companion: companion, measuredHeight: nil, allowsHeight: false))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("companion.plan.accessibility", ["place": approval.workspaceName.isEmpty ? "" : L("companion.spoken.place", ["workspace": approval.workspaceName]), "title": approval.sessionTitle, "headline": PlanCardSupport.headline(plan)]))
+        .accessibilityIdentifier("pet-plan-bubble")
+    }
+    private var place: String { approval.workspaceName.isEmpty ? approval.sessionTitle : approval.workspaceName + " · " + approval.sessionTitle }
+    private var planText: some View {
+        AgentMarkdownView(source: plan, compact: true)
+            .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
+    }
+}
+
+private struct CompanionOptionRow: View {
+    let option: UserQuestionnaire.Option
+    let multiple: Bool
+    let picked: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+                if multiple { Image(systemName: picked ? "checkmark.square.fill" : "square").font(.ui(size: 10)).foregroundStyle(picked ? Palette.accent : Color.secondary).padding(.top, 1) }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(option.label).font(.ui(size: 11, weight: .medium)).lineLimit(1)
+                    if !option.description.isEmpty { Text(option.description).font(.ui(size: 9)).foregroundStyle(.secondary).lineLimit(1) }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
+            .frame(minHeight: DesignMetrics.Layout.hitTarget)
+            .background(picked ? Palette.accent.opacity(0.16) : Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain).accessibilityLabel(option.label).accessibilityValue(picked ? L("accessibility.selected") : L("accessibility.notSelected"))
+    }
+}
+
+@MainActor
+final class CompanionPanel {
+    // Room for the pager row under either bubble; the extra band is transparent.
+    static let baseHeight = CompanionBubbleLayout.baseHeight
+    static let tallHeight = CompanionBubbleLayout.tallHeight
+    /// The pet and its padding; swipes below this line are over the pet, not a bubble.
+    static let bubbleFloor: CGFloat = 143
+    private let panel: NSPanel
+    private var pager = SwipePager()
+    nonisolated(unsafe) private var scrollMonitor: Any?
+    init(companion: AgentCompanion) {
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 282, height: Self.baseHeight), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.title = "Mighty Code Pet"
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .floating
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.isMovableByWindowBackground = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentView = NSHostingView(rootView: CompanionOverlayView(companion: companion))
+        let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        panel.setFrameOrigin(NSPoint(x: visible.maxX - 300, y: visible.minY + 24))
+        panel.setFrameAutosaveName("MightyCodeCompanion")
+        if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(panel.frame) }) {
+            panel.setFrameOrigin(NSPoint(x: visible.maxX - 300, y: visible.minY + 24))
+        }
+        // A two-finger sideways swipe over the pet turns to the next busy agent.
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self, weak companion] event in
+            // Only over a bubble: a stray scroll on the pet must not reopen one the user closed.
+            guard let self, event.window === self.panel, event.momentumPhase.isEmpty, event.locationInWindow.y > Self.bubbleFloor,
+                  companion?.page != nil else { return event }
+            let phase: SwipePager.Phase = event.phase.contains(.began) ? .began : event.phase.contains(.ended) || event.phase.contains(.cancelled) ? .ended : event.phase.isEmpty ? .none : .changed
+            // A wheel without precise deltas reports lines, not points.
+            let scale: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 12
+            let turn = self.pager.feed(deltaX: event.scrollingDeltaX * scale, deltaY: event.scrollingDeltaY * scale, phase: phase, at: event.timestamp)
+            if turn != 0 { companion?.showNeighbour(turn) }
+            return event
+        }
+    }
+    func setVisible(_ visible: Bool) {
+        if visible { panel.orderFrontRegardless() }
+        else { CompanionPetInteraction.cancel(in: panel.contentView); panel.orderOut(nil) }
+    }
+    /// Which side of the window stays where it is when its width changes.
+    enum Side { case left, right, center }
+    /// Sizes the window around the bubble. It always grows upward; sideways it
+    /// keeps `side` where it is, so a dragged edge follows the pointer.
+    func fit(bubble: CompanionBubbleSize, tall: Bool, keeping side: Side) {
+        let size = CompanionBubbleLayout.panelSize(width: bubble.width, height: bubble.height, tall: tall)
+        let frame = panel.frame
+        guard abs(frame.width - size.width) > 0.5 || abs(frame.height - size.height) > 0.5 else { return }
+        let x = switch side {
+        case .left: frame.minX
+        case .right: frame.maxX - size.width
+        case .center: frame.midX - size.width / 2
+        }
+        panel.setFrame(NSRect(x: x, y: frame.minY, width: size.width, height: size.height), display: true)
+    }
+    deinit { if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) } }
+    func close() {
+        if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
+        scrollMonitor = nil
+        CompanionPetInteraction.cancel(in: panel.contentView); panel.close()
+    }
+}
+
+/// Thin strips along the bubble's top, left and right edges that resize it.
+/// The bottom meets the pet, so it has none. They cover only the edges, so
+/// the bubble's own buttons keep every click. A double click restores the
+/// default size.
+struct CompanionBubbleResizer: View {
+    @ObservedObject var companion: AgentCompanion
+    /// The bubble's drawn height, the start of a first vertical drag.
+    let measuredHeight: CGFloat?
+    let allowsHeight: Bool
+    static let band: CGFloat = 6
+    @ViewState private var drag: (edges: ResizeEdges, start: NSPoint, size: CGSize)?
+
+    var body: some View {
+        ZStack {
+            strip(.left).frame(width: Self.band).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            strip(.right).frame(width: Self.band).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            if allowsHeight {
+                strip(.top).frame(height: Self.band).padding(.horizontal, Self.band * 2).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                strip([.left, .top]).frame(width: Self.band * 2, height: Self.band * 2).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                strip([.right, .top]).frame(width: Self.band * 2, height: Self.band * 2).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+        }
+        .onDisappear { if drag != nil { drag = nil; companion.cancelBubbleResize(keeping: .left) } }
+    }
+
+    private func strip(_ edges: ResizeEdges) -> some View {
+        Color.clear.contentShape(Rectangle())
+            .onHover { inside in (inside ? MightyGraphInteractionProbe.cursor(for: edges) : NSCursor.arrow).set() }
+            .onTapGesture(count: 2) { companion.resizeBubble(to: CompanionBubbleSize(), keeping: .center, finished: true) }
+            .gesture(DragGesture(minimumDistance: 1)
+                .onChanged { _ in resize(edges, finished: false) }
+                .onEnded { _ in resize(edges, finished: true) })
+    }
+
+    /// Measured in screen points from the pointer itself: the window moves
+    /// under it while it resizes, so view coordinates would feed back.
+    private func resize(_ edges: ResizeEdges, finished: Bool) {
+        let side: CompanionPanel.Side = edges.contains(.left) ? .right : .left
+        if drag == nil {
+            let size = companion.bubbleSize
+            drag = (edges, NSEvent.mouseLocation, CGSize(width: size.resolvedWidth, height: size.resolvedHeight ?? measuredHeight ?? CompanionBubbleLayout.minimum.height))
+        }
+        guard let current = drag else { return }
+        let now = NSEvent.mouseLocation
+        let delta = CGSize(width: now.x - current.start.x, height: current.start.y - now.y)
+        let size = edges.size(from: current.size, delta: delta, minimum: CompanionBubbleLayout.minimum, maximum: CompanionBubbleLayout.maximum)
+        // A sideways drag leaves a content-following height as it was.
+        let next = CompanionBubbleSize(width: size.width, height: edges.vertical ? size.height : companion.bubbleSize.height)
+        guard finished else { companion.resizeBubble(to: next, keeping: side, finished: false); return }
+        drag = nil
+        if size == current.size { companion.cancelBubbleResize(keeping: side) }
+        else { companion.resizeBubble(to: next, keeping: side, finished: true) }
+    }
+}
+
+/// The chat webhook a finished run is also posted to (`CompletionWebhook`); empty is off.
+private struct WebhookField: View {
+    @AppStorage(CompletionWebhook.defaultsKey) private var webhook = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+            TextField(L("webhook.placeholder"), text: $webhook).textFieldStyle(.roundedBorder).font(.ui(size: 12))
+            Text(webhook.isEmpty ? L("webhook.note") : CompletionWebhook.validURL(webhook) == nil ? L("webhook.invalid") : L("webhook.note"))
+                .font(.ui(size: 11)).foregroundStyle(!webhook.isEmpty && CompletionWebhook.validURL(webhook) == nil ? Palette.errText : Palette.ink2)
+        }
+    }
+}

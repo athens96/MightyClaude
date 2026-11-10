@@ -1,4 +1,4 @@
-// The frame's model as the host builds it (MightyClaude.WinUI/MainWindow.WebShell.Shell.cs WebShellModel): every word and
+// The frame's model as the host builds it (MightyCode.WinUI/MainWindow.WebShell.Shell.cs WebShellModel): every word and
 // count comes from the WinUI frame's own rules, so the page only lays them out.
 import type { PaneLayoutNode } from '../store/models';
 

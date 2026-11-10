@@ -10,7 +10,7 @@
 # Usage:
 #   scripts/check-release-size.sh [package.zip ...]
 #
-# With no argument it checks release/MightyClaude-macos.zip. Run it after packaging and
+# With no argument it checks release/MightyCode-macos.zip. Run it after packaging and
 # before uploading anything to the release bucket (see docs/app-update.md).
 set -euo pipefail
 
@@ -37,7 +37,7 @@ human_mib() {
 
 packages=("$@")
 if [ "${#packages[@]}" -eq 0 ]; then
-  packages=("$PROJECT_ROOT/release/MightyClaude-macos.zip")
+  packages=("$PROJECT_ROOT/release/MightyCode-macos.zip")
 fi
 
 failed=0

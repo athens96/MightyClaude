@@ -3,11 +3,11 @@ plugins {
   id 'expo-module-gradle-plugin'
 }
 
-group = 'dev.mightyclaude'
+group = 'dev.mightycode'
 version = '1.0.0'
 
 android {
-  namespace "dev.mightyclaude.controlkey"
+  namespace "dev.mightycode.controlkey"
   defaultConfig {
     versionCode 1
     versionName '1.0.0'

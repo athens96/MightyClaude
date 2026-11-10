@@ -45,7 +45,7 @@ public enum ShellProcessProbe {
     /// when missing. Nil (the probe is off) unless it is a real folder, not a
     /// link, owned by this user and closed to everyone else.
     public static func directory(in parent: URL = FileManager.default.temporaryDirectory) -> URL? {
-        let folder = parent.appendingPathComponent("MightyClaude-terminals", isDirectory: true)
+        let folder = parent.appendingPathComponent("MightyCode-terminals", isDirectory: true)
         if mkdir(folder.path, 0o700) != 0, errno != EEXIST { return nil }
         var info = stat()
         guard lstat(folder.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR,

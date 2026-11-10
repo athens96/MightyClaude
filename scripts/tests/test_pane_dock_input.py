@@ -16,7 +16,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "native/macos/Sources/MightyClaude/PaneDockDrag.swift"
+SOURCE = ROOT / "native/macos/Sources/MightyCode/PaneDockDrag.swift"
 MAIN = ROOT / "scripts/tests/pane-dock-input-main.swift"
 
 ORIGINAL_MOUSE_DOWN = r"""    override func mouseDown(with event: NSEvent) {
@@ -61,7 +61,7 @@ def main():
     swiftc = subprocess.check_output(["xcrun", "--find", "swiftc"], text=True).strip()
     sdk = subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip()
     source = SOURCE.read_text()
-    zones = (ROOT / "native/macos/Sources/MightyClaude/PaneDockView.swift").read_text()
+    zones = (ROOT / "native/macos/Sources/MightyCode/PaneDockView.swift").read_text()
     zones = zones[zones.index("enum PaneDockZone:"):zones.index("private enum PaneDockMetrics")]
     production = zones + source
     fixture = MAIN.read_text()

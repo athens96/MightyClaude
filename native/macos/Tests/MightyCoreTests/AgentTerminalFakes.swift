@@ -162,7 +162,7 @@ final class FakeAgentTerminalPane: AgentTerminalPane, @unchecked Sendable {
 
 /// A binding for tests; the socket path and executable are never used by them.
 func testPaneBinding(pane: String = "pane-a", token: String = "testtoken1234", workspaceId: String = "ws-1", workspacePath: String = "/tmp", provider: String = "claude", socketPath: String = "/tmp/mighty.sock") -> PaneMCPBinding {
-    PaneMCPBinding(agentPaneId: pane, token: token, server: PaneMCPServerLocation(socketPath: socketPath, executable: URL(fileURLWithPath: "/Applications/MightyClaude.app/Contents/MacOS/MightyClaude")), workspaceId: workspaceId, workspacePath: workspacePath, provider: provider)
+    PaneMCPBinding(agentPaneId: pane, token: token, server: PaneMCPServerLocation(socketPath: socketPath, executable: URL(fileURLWithPath: "/Applications/MightyCode.app/Contents/MacOS/MightyCode")), workspaceId: workspaceId, workspacePath: workspacePath, provider: provider)
 }
 
 /// A web-open service that opens nothing and answers "in app" without asking.

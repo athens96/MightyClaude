@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "The screens the help site shows, taken by `MightyClaude --help-capture --smoke-exit --profile <dir> -language <ko|en|zh|ja>` with the demo profile (native/contracts/fixtures/demo-profile.json). Each shot is written to <profile>/help-shots/<lang>/<id>-<theme>.png for every theme it lists (light and dark when it lists none). `screen` must be one the capture knows (HelpScreen in MightyCore); an unknown one stops the run. `window` is the main window's content size during the shot. The delegation shots come last: their demo workspace is seeded when the first of them is taken, so no shot before them shows it. The bundled copy is native/macos/Sources/MightyCore/Resources/Help/shots.json and must stay byte-identical.",
+  "note": "The screens the help site shows, taken by `MightyCode --help-capture --smoke-exit --profile <dir> -language <ko|en|zh|ja>` with the demo profile (native/contracts/fixtures/demo-profile.json). Each shot is written to <profile>/help-shots/<lang>/<id>-<theme>.png for every theme it lists (light and dark when it lists none). `screen` must be one the capture knows (HelpScreen in MightyCore); an unknown one stops the run. `window` is the main window's content size during the shot. The delegation shots come last: their demo workspace is seeded when the first of them is taken, so no shot before them shows it. The bundled copy is native/macos/Sources/MightyCore/Resources/Help/shots.json and must stay byte-identical.",
   "sections": [
     "getting-started",
     "layout",

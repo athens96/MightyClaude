@@ -281,7 +281,7 @@
 - [ ] (기기 미확인) 설정 → "구성 요소"에 Claude·Codex·Gemini CLI 줄과 "내 작업 도구 모음" 목록이 보이고, 날 키(`settings.components.…`, `settings.toolkit.…`)가 하나도 보이지 않는다
 - [ ] (기기 미확인) 설치되지 않은 CLI 줄은 상태가 "설치 필요"이고, 그 줄의 "설치 필요" 단추를 누르면 `npm install -g …` 설치 명령이 클립보드에 복사된다
 - [ ] (기기 미확인) 승인한 winget 항목이 "설치"를 누르면 확인 창에 `winget install --exact --id … --scope user …` argv 그대로 보이고, 확인하면 설치된 뒤 결과 표에 "설치됨"이 보인다
-- [ ] (기기 미확인) Mac에서 추가한 brew 항목이 든 `toolkit.json`(또는 Mac 내보내기 파일 가져오기)은 목록에 brew 항목을 보이지 않지만, 승인·삭제·저장 뒤에도 `%APPDATA%\MightyClaudeNative\toolkit.json`에 그 항목이 그대로 남는다
+- [ ] (기기 미확인) Mac에서 추가한 brew 항목이 든 `toolkit.json`(또는 Mac 내보내기 파일 가져오기)은 목록에 brew 항목을 보이지 않지만, 승인·삭제·저장 뒤에도 `%APPDATA%\MightyCode\toolkit.json`에 그 항목이 그대로 남는다
 
 **Windows 기기 확인 항목 (English)**
 
@@ -424,7 +424,7 @@
 ### Windows 빌드·서명·패키징
 - [ ] MSIX 패키지가 생성된다
 - [ ] 코드 서명이 적용되어 설치 시 경고가 없다
-- [ ] winget 패키지로 `winget install MightyClaude`가 동작한다
+- [ ] winget 패키지로 `winget install MightyCode`가 동작한다
 - [ ] 이전 버전에서 업데이트 설치 시 설정이 유지된다
 
 ---
@@ -511,7 +511,7 @@
 
 ### 5c79293 Windows x64 화면 검토 기록
 
-`artifacts/windows-conversion/ci-5c79293/MightyClaude-windows-x64-smoke/`의 작업 현황 2장과 설정 8장을 실제로 검토했다. 캡처된 크기에서 대시보드/모바일 설정의 겹침은 없었다. 대시보드 제공자 마크·워크스페이스 경로/동작 누락은 코드로 보완했다. 밝은 설정의 빈 스타일 목록·펫 선택기와 이전 선택 표시가 남은 캡처는 비동기 데이터 로드 및 네이티브 전환 완료를 기다리지 않던 검증 경로에서 나왔다. 이제 실제 목록·선택된 펫·디코딩된 미리보기를 먼저 확인하고 전환이 끝난 뒤 캡처한다. 새 코드의 시각 결과는 다음 Windows 실행에서 다시 확인해야 한다. 이 실행은 후속 GUI 단계에서 중단됐으므로 전체 GUI 통과나 물리 IME 검증 근거로 사용하지 않는다.
+`artifacts/windows-conversion/ci-5c79293/MightyCode-windows-x64-smoke/`의 작업 현황 2장과 설정 8장을 실제로 검토했다. 캡처된 크기에서 대시보드/모바일 설정의 겹침은 없었다. 대시보드 제공자 마크·워크스페이스 경로/동작 누락은 코드로 보완했다. 밝은 설정의 빈 스타일 목록·펫 선택기와 이전 선택 표시가 남은 캡처는 비동기 데이터 로드 및 네이티브 전환 완료를 기다리지 않던 검증 경로에서 나왔다. 이제 실제 목록·선택된 펫·디코딩된 미리보기를 먼저 확인하고 전환이 끝난 뒤 캡처한다. 새 코드의 시각 결과는 다음 Windows 실행에서 다시 확인해야 한다. 이 실행은 후속 GUI 단계에서 중단됐으므로 전체 GUI 통과나 물리 IME 검증 근거로 사용하지 않는다.
 
 ### 원격 워크스페이스 (Tailscale, 기기 미확인)
 

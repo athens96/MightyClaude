@@ -33,7 +33,7 @@ while [ $# -gt 0 ]; do
 done
 
 SSH=(ssh -i "${KEY}" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "ubuntu@${HOST}")
-REMOTE_DIR="MightyClaude/relay/deploy/oracle"
+REMOTE_DIR="MightyCode/relay/deploy/oracle"
 FAILED=0
 
 step() { printf '\n[%s] %s\n' "$1" "$2"; }

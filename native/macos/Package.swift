@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "MightyClaude",
+    name: "MightyCode",
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "MightyCore", targets: ["MightyCore"]),
-        .executable(name: "MightyClaude", targets: ["MightyClaude"]),
+        .executable(name: "MightyCode", targets: ["MightyCode"]),
     ],
     dependencies: [
         // libghostty-spm 1.5.20260906 (733ae3b), vendored for one patch: its
@@ -23,7 +23,7 @@ let package = Package(
         .target(name: "MightyCore", dependencies: [
             .product(name: "libzstd", package: "zstd"),
         ], resources: [.copy("Resources/Styles"), .copy("Resources/Locales"), .copy("Resources/Help"), .copy("Resources/Setup")]),
-        .executableTarget(name: "MightyClaude", dependencies: [
+        .executableTarget(name: "MightyCode", dependencies: [
             "MightyCore",
             .product(name: "GhosttyTerminal", package: "libghostty-spm"),
             .product(name: "WebRTC", package: "WebRTC"),

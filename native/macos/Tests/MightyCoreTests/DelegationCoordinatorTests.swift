@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import MightyCore
 
-private let appExecutable = URL(fileURLWithPath: "/Applications/MightyClaude.app/Contents/MacOS/MightyClaude")
+private let appExecutable = URL(fileURLWithPath: "/Applications/MightyCode.app/Contents/MacOS/MightyCode")
 private let sixTools = ["delegate", "list_children", "child_status", "merge", "follow_up", "discard"]
 
 private func json(_ line: String?) -> [String: Any]? {

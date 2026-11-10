@@ -5,7 +5,7 @@ import { language as currentLanguage, type Language } from '@/lib/i18n';
  * (`<base>/<lang>/`). The address is pinned by `native/contracts/fixtures/help-site.json`,
  * which the Mac (`HelpSite.swift`) and Windows (`HelpSite.cs`) are held to as well.
  */
-export const HELP_SITE_BASE = 'https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help';
+export const HELP_SITE_BASE = 'https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/help';
 
 /** The guide's folder in `language`, by default the language the phone shows. */
 export function helpSiteUrl(language: Language = currentLanguage()): string {

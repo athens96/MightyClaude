@@ -8,7 +8,7 @@ func ranges(_ predicate: (Unicode.Scalar.Properties) -> Bool) -> String {
     }
     return values.map { "(0x" + String($0.0, radix: 16) + ",0x" + String($0.1, radix: 16) + ")" }.joined(separator: ", ")
 }
-print("namespace MightyClaude.Core;\n")
+print("namespace MightyCode.Core;\n")
 print("// Generated from the reference macOS Swift Unicode.Scalar.Properties emoji tables.\n// A glyph is one grapheme with Emoji on its first scalar and Presentation or VS16.\ninternal static class StyleEmoji\n{")
 print("    private static readonly (int First,int Last)[] Emoji = [" + ranges { $0.isEmoji } + "];")
 print("    private static readonly (int First,int Last)[] Presentation = [" + ranges { $0.isEmojiPresentation } + "];")

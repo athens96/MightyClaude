@@ -8,7 +8,7 @@ section: phone
 Mac과 휴대폰은 릴레이 서버를 거쳐 연결됩니다. 내용은 처음부터 끝까지 암호화되어 릴레이는 내용을 볼 수 없습니다. 공유기 포트를 열거나 VPN을 쓸 필요가 없습니다. Tailscale을 쓰고 있다면 [릴레이 없이 직접](#direct) 연결할 수도 있습니다.
 
 ## 휴대폰 앱 받기 {#get-app}
-[다운로드 페이지](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)에서 Android 앱(APK)을 받아 설치합니다.
+[다운로드 페이지](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/index.html)에서 Android 앱(APK)을 받아 설치합니다.
 
 ## 연결하기 {#pair}
 Mac에서:

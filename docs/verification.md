@@ -5,9 +5,9 @@ Mac과 Windows 네이티브 앱을 검증하는 명령이다. 실제 결과와 �
 | 검사 | 명령 | 범위 |
 | --- | --- | --- |
 | Swift 코어 | `bash scripts/test-native-macos.sh` | 기존 상태 복사·손상 파일 보호, 모델·실행 설정 검증, 세 프로바이더의 스트림 파싱, 실행 취소와 자식 프로세스 정리, Mods 인증 |
-| Mac 앱 실행 | `release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude --smoke-test --smoke-exit --profile <빈 폴더>` | 임시 프로필에서 앱 시작·셸 실행을 확인한다. 실제 AI 요청은 보내지 않는다. |
-| C# 코어 | `dotnet run --project native/windows/MightyClaude.Core.Tests --configuration Release` | 같은 계약의 Windows 구현. Windows 전용 Job Object·콘솔 검사는 다른 운영체제에서 생략한다. |
-| Windows 앱 실행 | `pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release` 후 `pwsh ./scripts/test-native-windows.ps1 -Executable <MightyClaude.exe>` | Windows에서만 실행한다. CI가 x64·ARM64 모두 새 프로필로 GUI 스모크를 실행한다. |
+| Mac 앱 실행 | `release/native-macos/MightyCode.app/Contents/MacOS/MightyCode --smoke-test --smoke-exit --profile <빈 폴더>` | 임시 프로필에서 앱 시작·셸 실행을 확인한다. 실제 AI 요청은 보내지 않는다. |
+| C# 코어 | `dotnet run --project native/windows/MightyCode.Core.Tests --configuration Release` | 같은 계약의 Windows 구현. Windows 전용 Job Object·콘솔 검사는 다른 운영체제에서 생략한다. |
+| Windows 앱 실행 | `pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release` 후 `pwsh ./scripts/test-native-windows.ps1 -Executable <MightyCode.exe>` | Windows에서만 실행한다. CI가 x64·ARM64 모두 새 프로필로 GUI 스모크를 실행한다. |
 | Mod 정적 검사 | 격리된 `CLAUDE_CONFIG_DIR`에서 `claude plugin validate ./mods/mighty-bridge` | Mighty bridge hook 인식. [Mods 분석](claude-mods-analysis.md) |
 | Mod 형식·단위 검사 | `cd mods/mighty-bridge/tests && npm ci && npm run check` (Node 22.6 이상) | `hooks/register.ts`의 strict TypeScript 검사와 `node --test` 단위 테스트 11개(하위 에이전트 그래프·사용량·기존 수신기 메타데이터 계약). macOS CI가 Swift 코어보다 먼저 실행하고, `tests/`는 Mac 앱 번들에 복사하지 않는다. |
 

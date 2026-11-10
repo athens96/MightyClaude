@@ -8,7 +8,7 @@ so every decision is recorded here.
 
 ## Foundation 1 — CLI Runner (`ICliRunner`)
 
-**Interface** (`MightyClaude.Core/CliRunner.cs`):
+**Interface** (`MightyCode.Core/CliRunner.cs`):
 
 ```csharp
 public interface ICliRunner
@@ -51,7 +51,7 @@ Every new `AppSnapshot` field that stores a user preference follows these rules:
 | A malformed JSON token falls back to null, never throws | `LenientNullableBoolConverter` implements this for `bool?` fields. |
 | Sessions and workspaces survive a malformed new field | The decoder reads all fields independently; one bad field cannot corrupt the rest. |
 
-**Fields added by this work** (all in `AppSnapshot`, `MightyClaude.Core/Models.cs`):
+**Fields added by this work** (all in `AppSnapshot`, `MightyCode.Core/Models.cs`):
 
 | Field | Type | Default | Serialised as |
 |-------|------|---------|---------------|
@@ -61,7 +61,7 @@ Every new `AppSnapshot` field that stores a user preference follows these rules:
 
 ## Foundation 3 — Section Registration
 
-**Where the order lives** (`MightyClaude.Core/SettingsSections.cs`):
+**Where the order lives** (`MightyCode.Core/SettingsSections.cs`):
 
 ```csharp
 public sealed record SettingsSectionSlot(string Id, string? WindowsTitle)
@@ -81,7 +81,7 @@ The slot list is in Core, not in WinUI, so the macOS order is a plain fact a
 Mac-side check can read — `settings sections …` in `Core.Tests` proves the order,
 the omissions and the smoke rules without building WinUI.
 
-**Where the controls live** (`MightyClaude.WinUI/MainWindow.Settings.cs`):
+**Where the controls live** (`MightyCode.WinUI/MainWindow.Settings.cs`):
 
 ```csharp
 internal sealed record SettingsSection(string Title, Func<StackPanel> Build);

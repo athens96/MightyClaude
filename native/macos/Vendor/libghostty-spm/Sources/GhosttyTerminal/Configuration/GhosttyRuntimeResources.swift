@@ -25,7 +25,7 @@ public enum GhosttyRuntimeResources {
         setenv("GHOSTTY_RESOURCES_DIR", path, 1)
     }
 
-    // MightyClaude patch: SwiftPM's generated `Bundle.module` only looks beside the
+    // MightyCode patch: SwiftPM's generated `Bundle.module` only looks beside the
     // .app (not in Contents/Resources, where a signed app must keep it) and at the
     // absolute build folder of the machine that compiled it, then traps. A shipped
     // app built on CI has neither, so the first terminal killed it. Search the

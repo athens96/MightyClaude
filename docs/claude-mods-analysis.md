@@ -57,7 +57,7 @@ my-mod/
 
 2026-09-16 사용자의 요청으로 공식 `claude update`를 실행하여 **2.1.263 → 2.1.273**으로 업데이트했다. `claude --version`으로 새 버전을 확인했다. 별도 임시 `CLAUDE_CONFIG_DIR`와 function hooks flag를 사용한 `claude plugin validate ./mods/mighty-bridge`도 통과했으며, 네 개 hook과 `$.env.get`·`$.http.fetch`·`$.session.id`가 인식됐다. 일반 사용자 환경에서 `claude auth status --json`의 로그인 상태도 확인했다. 계정 식별자나 토큰은 출력하지 않았으며 모델 대화를 보내거나 로그인 설정을 변경한 검증은 아니다.
 
-## MightyClaude 설계 제안
+## MightyCode 설계 제안
 
 아래는 위 계약에 근거한 **프로젝트 자체 설계**이며, Anthropic이 제공하는 ADE transport 사양이 아니다.
 
@@ -65,7 +65,7 @@ my-mod/
 flowchart LR
   UI[네이티브 화면\n워크스페이스 · 실행 창] --> Main[앱 코어\n세션 · 프로세스 관리]
   Main --> CLI[Claude Code CLI\nworkspace별 cwd]
-  CLI --> Mod[MightyClaude Mod\n라이프사이클 · 도구 이벤트]
+  CLI --> Mod[MightyCode Mod\n라이프사이클 · 도구 이벤트]
   Mod --> HTTP[127.0.0.1 HTTP receiver\n실행별 임시 토큰]
   HTTP --> Main
   Main --> UI

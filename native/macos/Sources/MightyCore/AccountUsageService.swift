@@ -24,7 +24,7 @@ public final class AccountUsageShapeLog: @unchecked Sendable {
     private let emit: @Sendable (String) -> Void
 
     public static let shared = AccountUsageShapeLog { line in
-        Logger(subsystem: "dev.mightyclaude.native", category: "account-usage").info("\(line, privacy: .public)")
+        Logger(subsystem: "dev.mightycode.native", category: "account-usage").info("\(line, privacy: .public)")
     }
     public init(emit: @escaping @Sendable (String) -> Void) { self.emit = emit }
 

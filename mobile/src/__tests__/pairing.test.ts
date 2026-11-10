@@ -36,12 +36,17 @@ function url(overrides: Record<string, string> = {}): string {
     name: payload.name,
     ...overrides,
   });
-  return `mightyclaude://pair?${params.toString()}`;
+  return `mightycode://pair?${params.toString()}`;
 }
 
 describe('parsePairingUrl (v2)', () => {
   it('parses every field and normalizes the key to standard base64', () => {
     expect(parsePairingUrl(url())).toEqual({ ok: true, value: payload });
+  });
+
+  it('accepts the link a desktop from before the rename still writes', () => {
+    expect(parsePairingUrl(url().replace('mightycode://', 'mightyclaude://'))).toEqual({ ok: true, value: payload });
+    expect(parsePairingUrl(url().replace('mightycode://', 'othercode://')).ok).toBe(false);
   });
 
   it('falls back to the serverId as the name', () => {
@@ -80,7 +85,7 @@ describe('parsePairingUrl (rejections)', () => {
 
   it('rejects non-pairing input', () => {
     expect(parsePairingUrl('https://example.com?sid=a').ok).toBe(false);
-    expect(parsePairingUrl('mightyclaude://pair').ok).toBe(false);
+    expect(parsePairingUrl('mightycode://pair').ok).toBe(false);
     expect(parsePairingUrl('').ok).toBe(false);
   });
 

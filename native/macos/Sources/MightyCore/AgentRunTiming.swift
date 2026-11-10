@@ -52,7 +52,7 @@ public struct AgentRunTiming: Codable, Equatable, Sendable {
         return isApproximate ? L("dashboard.card.approximate", ["time": duration]) : duration
     }
 
-    /// Old versions saved MightyClaude conversation timestamps but no timer.
+    /// Old versions saved MightyCode conversation timestamps but no timer.
     /// Require a last user request and a later response/activity. Configuration
     /// messages and workspace creation time are not evidence of run duration.
     public static func inferred(from logs: [LogEntry], running: Bool = false) -> AgentRunTiming? {

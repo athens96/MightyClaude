@@ -35,7 +35,7 @@ public final class HTTPServer: @unchecked Sendable {
         var peer = ""
         init(_ connection: NWConnection) { self.connection = connection }
     }
-    private let queue = DispatchQueue(label: "dev.mightyclaude.http")
+    private let queue = DispatchQueue(label: "dev.mightycode.http")
     private let address: String
     private let port: UInt16
     private let handler: @Sendable (HTTPRequest) async -> HTTPResponse

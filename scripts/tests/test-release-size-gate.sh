@@ -32,7 +32,7 @@ sparse() {
 }
 
 # 1. 479 MiB passes.
-under="$WORK/MightyClaude-macos-479.zip"
+under="$WORK/MightyCode-macos-479.zip"
 sparse "$under" 479
 if ! out="$("$GATE" "$under" 2>&1)"; then
   fail "the gate rejected a 479 MiB package: $out"
@@ -41,7 +41,7 @@ grep -q "479.0 MiB" <<<"$out" || fail "the gate did not report the 479 MiB size:
 grep -q "^PASS:" <<<"$out" || fail "the gate did not pass a 479 MiB package: $out"
 
 # 2. 481 MiB fails, and says why.
-over="$WORK/MightyClaude-macos-481.zip"
+over="$WORK/MightyCode-macos-481.zip"
 sparse "$over" 481
 if out="$("$GATE" "$over" 2>&1)"; then
   fail "the gate accepted a 481 MiB package: $out"
@@ -52,7 +52,7 @@ grep -q "512 MiB" <<<"$out" || fail "the failure did not name the 512 MiB update
 
 # 3. The boundary belongs to the passing side: 480 MiB exactly is accepted, one byte
 #    more is not.
-boundary="$WORK/MightyClaude-macos-480.zip"
+boundary="$WORK/MightyCode-macos-480.zip"
 sparse "$boundary" 480
 "$GATE" "$boundary" >/dev/null 2>&1 || fail "the gate rejected exactly 480 MiB"
 dd if=/dev/zero of="$WORK/over-by-one.zip" bs=1 count=0 seek=$(( 480 * MIB + 1 )) 2>/dev/null

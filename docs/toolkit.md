@@ -76,7 +76,7 @@ winget install --exact --id <name> --source winget --scope user --accept-source-
 
 ## 저장소
 
-`toolkit.json`은 `workspace-state.json` 옆에 둔다. macOS는 `StateRepository` 앱 데이터 디렉터리, Windows는 StateStore 폴더(`%APPDATA%\MightyClaudeNative`, `--profile`을 주면 그 폴더)다.
+`toolkit.json`은 `workspace-state.json` 옆에 둔다. macOS는 `StateRepository` 앱 데이터 디렉터리, Windows는 StateStore 폴더(`%APPDATA%\MightyCode`, `--profile`을 주면 그 폴더)다.
 
 ```json
 {
@@ -165,7 +165,7 @@ plugin 명령은 `ClaudePluginService`를 거치지 않고 같은 `claude` 실�
 
 ### Windows
 
-Windows는 같은 흐름을 `MightyClaude.Core`의 `ToolkitStore`·`ToolkitRunner`·`ToolkitProbe`로 돌리고, WinUI `MainWindow.Settings.cs`의 구성 요소 칸이 그린다. 번들 mighty-styles가 먼저, 그다음 사용자 항목이다. 승인은 항목의 SHA-256 내용 해시에 묶이고, 계획에는 누락되고 승인된 항목만 오르며, 확인 창 하나가 모든 argv를 먼저 보여 준다. 명령은 `ToolkitRunner.InstallCommands` 한 곳에서만 만들고, 기존 Windows 프로세스 실행기(`ICliRunner`)에 argv 배열로 넘긴다(셸 문자열 없음).
+Windows는 같은 흐름을 `MightyCode.Core`의 `ToolkitStore`·`ToolkitRunner`·`ToolkitProbe`로 돌리고, WinUI `MainWindow.Settings.cs`의 구성 요소 칸이 그린다. 번들 mighty-styles가 먼저, 그다음 사용자 항목이다. 승인은 항목의 SHA-256 내용 해시에 묶이고, 계획에는 누락되고 승인된 항목만 오르며, 확인 창 하나가 모든 argv를 먼저 보여 준다. 명령은 `ToolkitRunner.InstallCommands` 한 곳에서만 만들고, 기존 Windows 프로세스 실행기(`ICliRunner`)에 argv 배열로 넘긴다(셸 문자열 없음).
 
 | 종류 | Windows 명령 |
 |------|------|

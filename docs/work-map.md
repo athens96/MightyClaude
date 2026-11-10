@@ -2,7 +2,7 @@
 
 워크스페이스에서 해 온 일을 **버전 중심**으로 한눈에 보는 창이다. git 기록을 버전 태그(`v0.4.48`…)로 나눠, 버전마다 플랫폼별로 얼마나 일했는지, 릴리스됐는지, 어떤 주제의 일이었는지, 그 일을 시킨 내 요청이 무엇이었는지를 보여 준다. 읽기만 하며 저장소에 아무것도 쓰지 않는다.
 
-모델의 규칙(태그·범위·플랫폼·상태·요약 읽기)은 Mac(`MightyCore/WorkMap.swift`)과 Windows(`MightyClaude.Core/WorkMap.cs`)가 똑같이 구현하고, 둘 다 `native/contracts/fixtures/work-map.json`으로 검사한다. 휴대폰은 같은 모델을 `/m1`로 받는다.
+모델의 규칙(태그·범위·플랫폼·상태·요약 읽기)은 Mac(`MightyCore/WorkMap.swift`)과 Windows(`MightyCode.Core/WorkMap.cs`)가 똑같이 구현하고, 둘 다 `native/contracts/fixtures/work-map.json`으로 검사한다. 휴대폰은 같은 모델을 `/m1`로 받는다.
 
 ## 여는 방법
 
@@ -129,8 +129,8 @@
 
 | | Mac | Windows | 휴대폰 |
 |---|---|---|---|
-| 모델·규칙 | `MightyCore/WorkMap.swift` | `MightyClaude.Core/WorkMap.cs` | `mobile/src/lib/work-map.ts`(표시 규칙만) |
-| 요약 실행·저장 | `MightyCore/WorkMapSummary.swift` | `MightyClaude.Core/WorkMapSummary.cs` | — |
+| 모델·규칙 | `MightyCore/WorkMap.swift` | `MightyCode.Core/WorkMap.cs` | `mobile/src/lib/work-map.ts`(표시 규칙만) |
+| 요약 실행·저장 | `MightyCore/WorkMapSummary.swift` | `MightyCode.Core/WorkMapSummary.cs` | — |
 | 창 | `WorkMapView.swift`, `AppStore+WorkMap.swift` | `MainWindow.WorkMap.cs`, `web/src/panes/workmap/` | `workmap.tsx` |
 | 휴대폰 경로 | `MobileRemoteService.swift` | `MobileDesktopRouter.cs` | `api/client.ts` |
 | 검사 | `WorkMapTests` | `WorkMapVerification.cs` | `work-map.test.ts` |

@@ -5,8 +5,8 @@ const ok = { problem: null, exists: false, locationMissing: false };
 
 describe('workspace create helpers', () => {
   it('follows the URL until the name is edited', () => {
-    expect(nextName('', false, 'MightyClaude')).toBe('MightyClaude');
-    expect(nextName('mine', true, 'MightyClaude')).toBe('mine');
+    expect(nextName('', false, 'MightyCode')).toBe('MightyCode');
+    expect(nextName('mine', true, 'MightyCode')).toBe('mine');
     expect(nextName('old', false, null)).toBe('');
   });
   it('enables 만들기 only for a valid, free target while idle', () => {

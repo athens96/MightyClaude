@@ -2,7 +2,9 @@ import { fromBase64, toBase64, KEY_LENGTH } from '@/api/relay/crypto';
 import { parseDirectParam } from '@/lib/direct';
 import { t } from '@/lib/i18n';
 
-export const PAIRING_SCHEME = 'mightyclaude://pair';
+export const PAIRING_SCHEME = 'mightycode://pair';
+/** What a desktop from before the app was renamed still writes. */
+const LEGACY_PAIRING_SCHEME = 'mightyclaude://pair';
 export const PAIRING_VERSION = 2;
 
 export interface PairingPayload {
@@ -32,7 +34,7 @@ function readParams(raw: string): URLSearchParams | null {
   const queryStart = trimmed.indexOf('?');
   if (queryStart < 0) return null;
   const base = trimmed.slice(0, queryStart).toLowerCase();
-  if (base !== PAIRING_SCHEME && base !== `${PAIRING_SCHEME}/`) return null;
+  if (![PAIRING_SCHEME, LEGACY_PAIRING_SCHEME].some((scheme) => base === scheme || base === `${scheme}/`)) return null;
   return new URLSearchParams(trimmed.slice(queryStart + 1));
 }
 
@@ -47,7 +49,7 @@ export function normalizeRelayUrl(raw: string): string | undefined {
 }
 
 /**
- * Parses `mightyclaude://pair?v=2&sid=…&pk=…&relay=…&key=…&name=…[&direct=…]`.
+ * Parses `mightycode://pair?v=2&sid=…&pk=…&relay=…&key=…&name=…[&direct=…]`.
  * Pure: safe to unit-test without native modules. v1 strings are rejected. A `direct`
  * value that holds no Tailscale endpoint is dropped, never an error: the relay still works.
  */

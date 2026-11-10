@@ -17,9 +17,9 @@ Mighty Code is a desktop app for using Claude Code, Codex CLI and Google's Antig
 > Once the app is open, {{ui:settings.nav.tools}} shows which CLIs are ready. On a Mac you install them right there; on Windows you copy the install commands. You sign in on the {{ui:settings.nav.cli}} tab. See [Settings](settings.md#components).
 
 ## Install {#install}
-1. Get the file for your system from the [download page](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html).
-2. macOS: unzip `MightyClaude-macos.zip`, move `MightyClaude.app` to your Applications folder and open it.
-3. Windows: run `MightyClaude-windows-x64-setup.exe` (`arm64` on ARM PCs) to install, then open the app from the Start menu. See [How Windows differs](windows.md#install) for details.
+1. Get the file for your system from the [download page](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/index.html).
+2. macOS: unzip `MightyCode-macos.zip`, move `MightyCode.app` to your Applications folder and open it.
+3. Windows: run `MightyCode-windows-x64-setup.exe` (`arm64` on ARM PCs) to install, then open the app from the Start menu. See [How Windows differs](windows.md#install) for details.
 
 > [!warning]
 > The app is not notarized by Apple. If macOS blocks it the first time, Control-click the app in Finder and choose **Open**, or allow it in System Settings → Privacy & Security.

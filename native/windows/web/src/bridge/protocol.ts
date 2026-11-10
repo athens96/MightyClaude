@@ -1,4 +1,4 @@
-// The messages between this page and the host (MightyClaude.WinUI/WebBridge.cs), JSON over
+// The messages between this page and the host (MightyCode.WinUI/WebBridge.cs), JSON over
 // chrome.webview.postMessage / PostWebMessageAsJson.
 import type { Card } from '../cards/types';
 import type { ComposerState } from '../composer/types';

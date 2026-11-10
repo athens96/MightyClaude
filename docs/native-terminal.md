@@ -44,7 +44,7 @@ Mighty Code는 사용자가 요청한 Ghostty 엔진을 직접 네이티브 앱�
 빌드한 앱을 새 임시 프로필로 실행하면 실제 네이티브 화면과 셸을 사용하는 검사를 수행한다. 이 검사는 AI 요청이나 사용자 클립보드를 사용하지 않는다.
 
 ```sh
-release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+release/native-macos/MightyCode.app/Contents/MacOS/MightyCode \
   --terminal-smoke-test --smoke-exit --profile /tmp/mighty-terminal-smoke
 ```
 

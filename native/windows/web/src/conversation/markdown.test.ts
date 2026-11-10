@@ -182,7 +182,7 @@ describe('inPath', () => {
   it('reads drives, dot-names and shares as paths, prose and doubled backslashes not', () => {
     expect(inPath('C:\\_x', 2)).toBe(true);
     expect(inPath('"D:\\_y"', 3)).toBe(true);
-    expect(inPath('MightyClaude\\.claude', 12)).toBe(true);
+    expect(inPath('MightyCode\\.claude', 12)).toBe(true);
     expect(inPath('\\\\server\\share', 0)).toBe(true);
     expect(inPath('snake\\_case', 5)).toBe(false);
     expect(inPath('C:\\\\Users\\\\me', 2)).toBe(false);

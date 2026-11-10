@@ -208,7 +208,7 @@ private func openChild(_ id: String, byHuman: Bool = false) -> ChildRecord {
     }
 
     @Test func aStoredKeyReadsAsDefaultsReadsABool() throws {
-        let suite = "dev.mightyclaude.tests.delegation.\(UUID().uuidString)"
+        let suite = "dev.mightycode.tests.delegation.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         #expect(DelegationSwitch.isOn(defaults))

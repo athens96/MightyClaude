@@ -68,7 +68,7 @@ final class MCPStdioServer: @unchecked Sendable {
             inFlight.enter()
             // A call waits on the app for as long as the tool takes (a 12 s
             // run, a 10 s stop), so it gets a thread of its own.
-            startBlockingThread("dev.mightyclaude.mcp.call", qualityOfService: .userInitiated) { [self] in
+            startBlockingThread("dev.mightycode.mcp.call", qualityOfService: .userInitiated) { [self] in
                 write(Self.result(id: id, surface.call(name, arguments: arguments)), fd: outFD)
                 inFlight.leave()
             }

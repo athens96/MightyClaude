@@ -1,4 +1,4 @@
-// The WinUI forms the host draws through the page (MightyClaude.WinUI/WebNative.cs, MainWindow.WebShell.Settings.cs): Settings,
+// The WinUI forms the host draws through the page (MightyCode.WinUI/WebNative.cs, MainWindow.WebShell.Settings.cs): Settings,
 // the setup screen, the sheets and the dialogs of the window's flows. A form arrives as a tree of nodes read off its controls;
 // every input goes back to the control it came from (`nativeAction`), so what it does stays the host's C#.
 

@@ -53,7 +53,7 @@ unknown 문구는 이 앱의 연결 방식 탓으로 돌리며 Anthropic 정책�
 각 프로그램의 첫 번째 성공한(2xx) JSON 응답은 **앱 프로세스당 한 번** 로그에 기록된다. 키 경로와 값 유형(예: `cedar_ember.grants[].resets_left: number`)만 기록하며 실제 값은 절대 포함하지 않는다. 토큰·이메일·org uuid·grant id·숫자 값은 나타나지 않는다.
 
 로그 채널:
-- **macOS**: `os.Logger(subsystem: "dev.mightyclaude.native", category: "account-usage")` — 각 줄은 `info` 수준으로 전송된다.
+- **macOS**: `os.Logger(subsystem: "dev.mightycode.native", category: "account-usage")` — 각 줄은 `info` 수준으로 전송된다.
 - **Windows**: `System.Diagnostics.Trace.WriteLine` — 각 줄에 `account-usage: ` 접두사가 붙는다.
 
 로그는 주입 가능한 싱크(macOS `AccountUsageShapeLog`, Windows `AccountUsageShapeLog`)를 통해 출력되므로 테스트에서 캡처할 수 있다. 설치 간에는 유지되지 않는다(인메모리 플래그).

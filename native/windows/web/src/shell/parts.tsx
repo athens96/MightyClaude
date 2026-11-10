@@ -1,4 +1,4 @@
-// Small pieces the frame draws in many places: the status glyph (MightyClaude.Core/StatusGlyph.cs tones), the beta capsule,
+// Small pieces the frame draws in many places: the status glyph (MightyCode.Core/StatusGlyph.cs tones), the beta capsule,
 // the status counts (StatusCountsView), the Git capsule and one context menu at a time.
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { useServices, useStoreState } from '../app/context';

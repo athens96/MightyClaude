@@ -9,42 +9,42 @@
     "phone": 0
   },
   "exemptFiles": {
-    "native/macos/Sources/MightyClaude/AgentTranscriptDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/ApplicationCopyDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/ClaudePluginDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/CompanionPetDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/ComposerPresentationDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/MightyGraphDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/RenameDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/SessionInfoDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/TerminalCopyDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/ComposerInputTransactionDiagnostics.swift": "A GUI smoke check that ComposerPresentationDiagnostics runs. Its Hangul fixtures exercise IME composition and must stay Korean; its report goes to smoke-result.json.",
-    "native/macos/Sources/MightyClaude/MightyGraphInteractionDiagnostics.swift": "A GUI smoke check that MightyGraphDiagnostics runs. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/MightyStructureInteractionDiagnostics.swift": "A GUI smoke check that MightyGraphDiagnostics runs. Its fixtures and failure messages go to graph-smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/UserQuestionnaireDiagnostics.swift": "A GUI smoke check that AppStore+QuestionSmoke runs. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyClaude/HeaderSettingsDiagnostics.swift": "A GUI smoke step (verifyHeaderSettingsSmoke) with no caller at present. Its failure messages are for smoke-result.json, not the UI.",
-    "native/macos/Sources/MightyClaude/InputSessionRecoveryDiagnostics.swift": "The input-recovery contract harness that scripts/tests/test_input_session_recovery.py builds and runs. Its Hangul fixtures exercise IME composition and must stay Korean.",
-    "native/macos/Sources/MightyClaude/AppStore+*Smoke.swift": "The GUI smoke steps (--smoke-test), one file per area. Their fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/AgentTranscriptDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/ApplicationCopyDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/ClaudePluginDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/CompanionPetDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/ComposerPresentationDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/MightyGraphDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/RenameDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/SessionInfoDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/TerminalCopyDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/ComposerInputTransactionDiagnostics.swift": "A GUI smoke check that ComposerPresentationDiagnostics runs. Its Hangul fixtures exercise IME composition and must stay Korean; its report goes to smoke-result.json.",
+    "native/macos/Sources/MightyCode/MightyGraphInteractionDiagnostics.swift": "A GUI smoke check that MightyGraphDiagnostics runs. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/MightyStructureInteractionDiagnostics.swift": "A GUI smoke check that MightyGraphDiagnostics runs. Its fixtures and failure messages go to graph-smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/UserQuestionnaireDiagnostics.swift": "A GUI smoke check that AppStore+QuestionSmoke runs. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyCode/HeaderSettingsDiagnostics.swift": "A GUI smoke step (verifyHeaderSettingsSmoke) with no caller at present. Its failure messages are for smoke-result.json, not the UI.",
+    "native/macos/Sources/MightyCode/InputSessionRecoveryDiagnostics.swift": "The input-recovery contract harness that scripts/tests/test_input_session_recovery.py builds and runs. Its Hangul fixtures exercise IME composition and must stay Korean.",
+    "native/macos/Sources/MightyCode/AppStore+*Smoke.swift": "The GUI smoke steps (--smoke-test), one file per area. Their fixtures and failure messages go to smoke-result.json, not to the UI.",
     "native/macos/Sources/MightyCore/Styles/*.swift": "frozen style engine v7; localizing needs v8",
     "native/macos/Sources/MightyCore/HangulComposer.swift": "The 2-set Hangul composer's jamo tables: single consonants and vowels it composes into syllables. They are input data, not copy, and must stay Korean.",
-    "native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs": "The WinUI fallback smoke and the components section fixture the web smoke runs (--smoke-test): its Korean is failure messages written to smoke-result.json, not UI.",
-    "native/windows/MightyClaude.WinUI/WindowsScreenTransportSmoke.cs": "The screen-share transport smoke (--smoke-test): its Hangul is the Unicode text fixture sent over the data channel and checked on arrival.",
+    "native/windows/MightyCode.WinUI/MainWindow.Smoke.cs": "The WinUI fallback smoke and the components section fixture the web smoke runs (--smoke-test): its Korean is failure messages written to smoke-result.json, not UI.",
+    "native/windows/MightyCode.WinUI/WindowsScreenTransportSmoke.cs": "The screen-share transport smoke (--smoke-test): its Hangul is the Unicode text fixture sent over the data channel and checked on arrival.",
     "mobile/src/lib/styles.ts": "frozen style engine v7 (the phone renderer, scripts/check-style-freeze.sh); localizing needs v8"
   },
   "exemptRegions": {
-    "native/macos/Sources/MightyClaude/AppStore.swift": "The GUI smoke (runSmokeTest and its composer and attachment checks): fixtures and failure messages for smoke-result.json, not UI.",
-    "native/macos/Sources/MightyClaude/AgentMarkdownView.swift": "AgentMarkdownDiagnostics, the GUI smoke's Markdown fixture, not UI.",
-    "native/windows/MightyClaude.WinUI/MainWindow.AccountUsage.cs": "RunAccountUsageSmoke (--smoke-test): failure messages for smoke-result.json, not UI.",
-    "native/windows/MightyClaude.WinUI/MainWindow.WebShell.Cards.cs": "Korean UTF-8 input smoke fixtures"
+    "native/macos/Sources/MightyCode/AppStore.swift": "The GUI smoke (runSmokeTest and its composer and attachment checks): fixtures and failure messages for smoke-result.json, not UI.",
+    "native/macos/Sources/MightyCode/AgentMarkdownView.swift": "AgentMarkdownDiagnostics, the GUI smoke's Markdown fixture, not UI.",
+    "native/windows/MightyCode.WinUI/MainWindow.AccountUsage.cs": "RunAccountUsageSmoke (--smoke-test): failure messages for smoke-result.json, not UI.",
+    "native/windows/MightyCode.WinUI/MainWindow.WebShell.Cards.cs": "Korean UTF-8 input smoke fixtures"
   },
   "allow": [
     {
-      "file": "native/macos/Sources/MightyClaude/AppStore.swift",
+      "file": "native/macos/Sources/MightyCode/AppStore.swift",
       "literal": "첨부: \\($0.name) (\\(AttachmentImport.sizeLabel($0)))",
       "reason": "The \"첨부: \" line written into the user's log entry is a saved-data marker: MightyCore (SessionHistory, Models) and Windows PaneTitle parse it back to tell the typed request from its attachment lines."
     },
     {
-      "file": "native/macos/Sources/MightyClaude/CompanionPetMotion.swift",
+      "file": "native/macos/Sources/MightyCode/CompanionPetMotion.swift",
       "literals": [
         "읽",
         "검색",
@@ -97,7 +97,7 @@
       "reason": "Matched against the agent's own reply text to split Korean next-action choices; the English words beside them cover English replies."
     },
     {
-      "file": "native/windows/MightyClaude.Core/StatusLineStrings.cs",
+      "file": "native/windows/MightyCode.Core/StatusLineStrings.cs",
       "literals": [
         "프로젝트 로컬 설정",
         "프로젝트 설정",
@@ -106,12 +106,12 @@
       "reason": "StatusLineConfig.Source names: the trust fingerprint a workspace's allowed status-line command is saved under hashes this text (as on macOS), so it stays as written in every language; SourceLabel shows the localized name."
     },
     {
-      "file": "native/windows/MightyClaude.Core/PaneTitle.cs",
+      "file": "native/windows/MightyCode.Core/PaneTitle.cs",
       "literal": "첨부: ",
       "reason": "The \"첨부: \" attachment marker in a saved user log entry (AttachmentSupport.Summary writes it, PaneTitle parses it back), kept as written in every language; spelled with escapes in the source."
     },
     {
-      "file": "native/windows/MightyClaude.Core/NextActions.cs",
+      "file": "native/windows/MightyCode.Core/NextActions.cs",
       "literals": [
         ", 또는 ",
         " — 또는 ",
@@ -124,7 +124,7 @@
       "reason": "Matched against the agent's own reply text to split Korean next-action choices, as on macOS; the English words beside them cover English replies."
     },
     {
-      "file": "native/windows/MightyClaude.Core/Companion.cs",
+      "file": "native/windows/MightyCode.Core/Companion.cs",
       "literals": [
         "읽",
         "검색",
@@ -134,7 +134,7 @@
       "reason": "Matched against activity summaries (Korean summaries kept in saved logs) to choose the companion's reviewing animation, as on macOS; the English words beside them cover English summaries."
     },
     {
-      "file": "native/windows/MightyClaude.Core/Styles/StyleManifest.cs",
+      "file": "native/windows/MightyCode.Core/Styles/StyleManifest.cs",
       "literal": "클러드 플랜",
       "reason": "ReservedNames: the bundled Claude plan style's name exactly as its manifest (claude-plan.json) spells it, matched folded against a non-bundled manifest's name (contract 1.2, as macOS StyleManifestValidator.swift does); it is never shown, so it stays as written in every language."
     },

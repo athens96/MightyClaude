@@ -43,10 +43,10 @@ struct RelayChannelTests {
 
         let key = MobilePairing.generateKey()!
         let offer = MobilePairingOffer(serverId: "host-1", publicKeyB64: first.publicKeyB64, relayURL: "wss://relay.example.com:8443", pairingKey: key, name: "Young의 Mac")
-        #expect(offer.url.hasPrefix("mightyclaude://pair?v=2&sid=host-1&pk="))
+        #expect(offer.url.hasPrefix("mightycode://pair?v=2&sid=host-1&pk="))
         #expect(!offer.url.contains("+") && !offer.url.contains("/ws"))
         #expect(MobilePairingOffer.parse(offer.url) == offer)
-        #expect(MobilePairingOffer.parse("mightyclaude://pair?v=1&host=100.64.0.1&port=43138&key=" + key) == nil)
+        #expect(MobilePairingOffer.parse("mightycode://pair?v=1&host=100.64.0.1&port=43138&key=" + key) == nil)
         #expect(MobilePairingOffer.parse(offer.url.replacingOccurrences(of: "wss://relay.example.com:8443", with: "ftp://x")) == nil)
     }
 

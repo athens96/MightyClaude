@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Write the update manifest (latest.json) the app checks for new versions.
 
-    make-update-manifest.py --macos release/MightyClaude-macos.zip \
-        --base-url https://updates.example.com/mightyclaude/0.2.0 --out release/latest.json \
+    make-update-manifest.py --macos release/MightyCode-macos.zip \
+        --base-url https://updates.example.com/mightycode/0.2.0 --out release/latest.json \
         [--sign-key ~/.config/mightyclaude/update-signing.key] [--version 0.2.0] [--notes-file notes.md] \
         [--windows-x64 …zip] [--windows-arm64 …zip]
     make-update-manifest.py --generate-key ~/.config/mightyclaude/update-signing.key   # prints the public key

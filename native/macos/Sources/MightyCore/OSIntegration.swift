@@ -1,11 +1,13 @@
 import Foundation
 
-/// `mightyclaude://open?path=<folder>&prompt=<text>&agent=<claude|codex|gemini>`:
+/// `mightycode://open?path=<folder>&prompt=<text>&agent=<claude|codex|gemini>`:
 /// opens the folder as a workspace (asking first when it is not one yet) and
 /// puts the text in an agent pane's composer. Nothing is ever sent by a link:
 /// any web page can open one.
 public struct DeepLink: Equatable, Sendable {
-    public static let scheme = "mightyclaude"
+    public static let scheme = "mightycode"
+    /// The scheme from before the app was renamed: the `mighty` shell command an older version installed still opens it.
+    public static let legacyScheme = "mightyclaude"
     public static let maximumPromptBytes = 64 * 1024
 
     public let path: String
@@ -13,7 +15,7 @@ public struct DeepLink: Equatable, Sendable {
     public let agent: String?
 
     public static func parse(_ url: URL) -> DeepLink? {
-        guard url.scheme?.lowercased() == scheme, url.host?.lowercased() == "open",
+        guard [scheme, legacyScheme].contains(url.scheme?.lowercased() ?? ""), url.host?.lowercased() == "open",
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
         guard let raw = value("path"), raw.hasPrefix("/"), !raw.contains("\0") else { return nil }
@@ -46,7 +48,7 @@ public enum ShellCommand {
     dir="$PWD"
     if [ $# -gt 0 ] && [ -d "$1" ]; then dir="$(cd "$1" && pwd)"; shift; fi
     enc() { osascript -l JavaScript -e 'function run(a) { return encodeURIComponent(a[0]) }' "$1"; }
-    url="mightyclaude://open?path=$(enc "$dir")"
+    url="mightycode://open?path=$(enc "$dir")"
     if [ $# -gt 0 ]; then url="$url&prompt=$(enc "$*")"; fi
     exec open "$url"
     """

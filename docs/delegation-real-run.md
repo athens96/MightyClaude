@@ -1,8 +1,8 @@
-defaults delete dev.mightyclaude.native delegation.enabled
+defaults delete dev.mightycode.native delegation.enabled
 
 # 마이티 오케스트레이션(예전 이름: 에이전트 위임) 실제 실행 확인표 (Mac)
 
-맨 위 한 줄은 위임 스위치 `delegation.enabled`를 기본값인 켜짐으로 되돌린다(Mac은 기본으로 켜져 있고, 설정 › 일반의 "마이티 오케스트레이션"으로도 켜고 끈다). 앱을 끈 채로 터미널에서 실행한다. 스위치가 켜져 있으면 Claude 창에서 새 실행을 시작할 때마다 위임 MCP 서버 `mighty-delegation`이 붙는다. 도구는 `delegate`·`list_children`·`child_status`·`merge`·`follow_up`·`discard` 여섯 개다. 끄려면 설정에서 끄거나 `defaults write dev.mightyclaude.native delegation.enabled -bool false`를 실행한다. 꺼도 서버만 떨어지고, 입력창의 ⌘Enter는 Enter처럼 요청을 대기열에 넣는다. 예전 안내대로 `defaults delete`로 꺼 두었던 사용자는 이제 켜진 상태가 되므로, 계속 꺼 두려면 설정 › 일반의 "에이전트 위임"을 끈다. 이미 있는 자식 창은 트리·카드·정리가 그대로 동작한다.
+맨 위 한 줄은 위임 스위치 `delegation.enabled`를 기본값인 켜짐으로 되돌린다(Mac은 기본으로 켜져 있고, 설정 › 일반의 "마이티 오케스트레이션"으로도 켜고 끈다). 앱을 끈 채로 터미널에서 실행한다. 스위치가 켜져 있으면 Claude 창에서 새 실행을 시작할 때마다 위임 MCP 서버 `mighty-delegation`이 붙는다. 도구는 `delegate`·`list_children`·`child_status`·`merge`·`follow_up`·`discard` 여섯 개다. 끄려면 설정에서 끄거나 `defaults write dev.mightycode.native delegation.enabled -bool false`를 실행한다. 꺼도 서버만 떨어지고, 입력창의 ⌘Enter는 Enter처럼 요청을 대기열에 넣는다. 예전 안내대로 `defaults delete`로 꺼 두었던 사용자는 이제 켜진 상태가 되므로, 계속 꺼 두려면 설정 › 일반의 "에이전트 위임"을 끈다. 이미 있는 자식 창은 트리·카드·정리가 그대로 동작한다.
 
 macOS CI는 가짜 Claude로 같은 경로를 확인한다. 헤드리스 시나리오 S1–S3과 `--delegation-smoke-test`를 돌리고, S1·S2가 남긴 기록을 기록 스크립트 `scripts/delegation-record.py`로 판정한다. 이 확인표는 실제 Claude CLI와 모델로 한 번 돌려 보는 실행이다. 스위치는 이제 Mac에서 기본으로 켜져 있다. 실행 중인 Claude 창의 ⌘Enter가 새 worktree의 자식 창을 사람이 직접 띄우는 길이 되었고, 그렇게 띄운 자식은 부모에게 알림을 보내지 않는다(도움말 `delegation.md#worktree`).
 
@@ -18,12 +18,12 @@ git init -b main && echo "# practice" > README.md && git add README.md && git co
 
 - [ ] 디스크 여유가 10 GB 이상이다. 모자라면 `delegate`가 `low_disk`로 거절한다.
 - [ ] Claude 설정의 허용 목록에 `mcp__mighty-delegation__…` 도구가 없다. 있으면 6단계에서 승인 카드가 뜨지 않는다.
-- [ ] 빌드 번호를 적었다: `plutil -extract CFBundleVersion raw /Applications/MightyClaude.app/Contents/Info.plist`
+- [ ] 빌드 번호를 적었다: `plutil -extract CFBundleVersion raw /Applications/MightyCode.app/Contents/Info.plist`
 
 앱을 ⌘Q로 끝낸 뒤 이 시도의 프로필로 연다. 4단계에서 다시 열 때도 같은 명령을 쓴다.
 
 ```sh
-open -a /Applications/MightyClaude.app --args --profile "$RUN/profile"
+open -a /Applications/MightyCode.app --args --profile "$RUN/profile"
 ```
 
 - [ ] `프로젝트 폴더 열기…`로 `$RUN/repo`를 작업 공간에 추가하고 Claude 창을 하나 열었다. 이 창이 부모다.
@@ -51,7 +51,7 @@ open -a /Applications/MightyClaude.app --args --profile "$RUN/profile"
 1. **위임한다.** 고정 부모 프롬프트를 보낸다.
    - [ ] `delegate` 호출에 승인 카드가 뜨지 않는다(auto).
    - [ ] 부모 옆에 자식 창 두 개가 열리고, 사이드바에서 부모 아래 한 칸 들여 보인다.
-   - [ ] 두 자식은 `Auto mode`이고, 각자 `mighty/<자식 id>` 브랜치의 worktree(`~/.mightyclaude/worktrees/<자식 id>`)에서 실행된다.
+   - [ ] 두 자식은 `Auto mode`이고, 각자 `mighty/<자식 id>` 브랜치의 worktree(`~/.mightycode/worktrees/<자식 id>`)에서 실행된다.
    - [ ] 부모 실행이 정상으로 끝난다.
 2. **자식 1의 알림이 오게 둔다.** 자식 2가 질문하면 사이드바에서 `응답 대기`로 보인다. 그 질문("보고해도 될까요?")에는 아직 답하지 않는다.
    - [ ] 자식 1이 `보고함`이 되고, `[Mighty Code notice …] Your child … reported revision 1.`이 부모 대화에 한 번 들어간다. 부모가 쉬고 있었으면 이 알림으로 새 실행이 시작되고, 실행 중이었으면 그 실행으로 바로 전달된다.
@@ -70,7 +70,7 @@ open -a /Applications/MightyClaude.app --args --profile "$RUN/profile"
 7. **자식 2를 카드에서 폐기한다.** 사이드바에서 자식 2 카드의 `폐기…`를 누르고, 확인 창에서 `폐기`를 누른다.
    - [ ] 확인 창이 안에 든 worktree를 밝힌다(`안에 들어 있는 다른 worktree는 없습니다.`).
    - [ ] 자식 2의 창이 닫히고, 브랜치 `mighty/<자식 2 id>`와 그 worktree가 사라진다. 자식 1의 브랜치·worktree와 main의 병합은 그대로다.
-8. **기록한다.** 창은 하나도 닫지 않는다. MightyClaude 저장소 체크아웃에서 기록 스크립트를 돌린다.
+8. **기록한다.** 창은 하나도 닫지 않는다. MightyCode 저장소 체크아웃에서 기록 스크립트를 돌린다.
 
 ```sh
 python3 scripts/delegation-record.py --profile "$RUN/profile" --repo "$RUN/repo" --claude-dir ~/.claude

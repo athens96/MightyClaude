@@ -128,21 +128,21 @@ jobs:
       - name: Download the macOS package
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
-          name: MightyClaude-native-macos
+          name: MightyCode-native-macos
           path: packages/
           run-id: ${{ inputs.macos_run }}
           github-token: ${{ github.token }}
       - name: Download the Windows x64 packages
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
-          name: MightyClaude-native-windows-x64
+          name: MightyCode-native-windows-x64
           path: packages/
           run-id: ${{ inputs.windows_run }}
           github-token: ${{ github.token }}
       - name: Download the Windows ARM64 packages
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
-          name: MightyClaude-native-windows-arm64
+          name: MightyCode-native-windows-arm64
           path: packages/
           run-id: ${{ inputs.windows_run }}
           github-token: ${{ github.token }}
@@ -176,10 +176,10 @@ jobs:
           fi
           (umask 077 && printf '%s' "$MIGHTY_UPDATE_SIGNING_KEY" > "$RUNNER_TEMP/update-signing.key")
           python3 scripts/make-update-manifest.py \
-            --macos packages/MightyClaude-macos.zip \
-            --windows-x64 packages/MightyClaude-windows-x64.zip \
-            --windows-arm64 packages/MightyClaude-windows-arm64.zip \
-            --base-url "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/$VERSION_INPUT" \
+            --macos packages/MightyCode-macos.zip \
+            --windows-x64 packages/MightyCode-windows-x64.zip \
+            --windows-arm64 packages/MightyCode-windows-arm64.zip \
+            --base-url "https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/$VERSION_INPUT" \
             --out out/latest.json --version "$VERSION_INPUT" --build "$BUILD" \
             --notes-file "$RUNNER_TEMP/update-notes.md" --sign-key "$RUNNER_TEMP/update-signing.key"
       - name: Delete the key file
@@ -207,7 +207,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
-          name: MightyClaude-release-manifest
+          name: MightyCode-release-manifest
           path: |
             out/latest.json
             out/latest.unsigned.json

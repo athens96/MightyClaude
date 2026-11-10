@@ -16,7 +16,7 @@ Mighty Code 릴레이(`relay/`)를 Oracle Cloud Always Free 인스턴스에 올�
 ```bash
 brew install oci-cli
 oci session authenticate --region ap-singapore-1 --profile-name mighty   # 브라우저로 로그인. 리전은 가입한 홈 리전
-git clone --depth 1 https://github.com/athens96/MightyCode.git && cd MightyClaude
+git clone --depth 1 https://github.com/athens96/MightyCode.git && cd MightyCode
 bash relay/deploy/oracle/provision.sh --profile mighty --domain mighty-young-relay.duckdns.org
 ```
 
@@ -84,7 +84,7 @@ ssh -i ~/Downloads/ssh-key-XXXX.key ubuntu@<공인-IP>
 
 ```bash
 git clone --depth 1 https://github.com/athens96/MightyCode.git
-bash MightyClaude/relay/deploy/oracle/setup.sh myrelay.duckdns.org
+bash MightyCode/relay/deploy/oracle/setup.sh myrelay.duckdns.org
 ```
 
 스크립트가 하는 일: Docker 설치 → OS 방화벽에서 80·443 개방 → 릴레이 이미지 빌드와 Caddy 시작 → 인증서 발급을 기다렸다가 `https://myrelay.duckdns.org/healthz`가 `ok`인지 확인. 첫 실행은 몇 분 걸립니다. 마지막에 `✔ 완료. Mac의 릴레이 주소: wss://myrelay.duckdns.org`가 나오면 끝입니다.
@@ -97,7 +97,7 @@ Mighty Code → **설정 → 모바일 리모트 → 릴레이**에 `wss://myrel
 
 | 증상 | 확인 |
 |---|---|
-| 스크립트 끝에서 `✘ … ok를 돌려주지 않습니다` | DuckDNS의 IP가 공인 IP와 같은지, 4단계 보안 목록, `sudo docker compose -f ~/MightyClaude/relay/deploy/oracle/compose.yaml logs caddy` |
+| 스크립트 끝에서 `✘ … ok를 돌려주지 않습니다` | DuckDNS의 IP가 공인 IP와 같은지, 4단계 보안 목록, `sudo docker compose -f ~/MightyCode/relay/deploy/oracle/compose.yaml logs caddy` |
 | `curl`이 멈춤(타임아웃) | 4단계 보안 목록. Ubuntu라면 `sudo iptables -L INPUT -n --line-numbers`에서 80·443 ACCEPT가 REJECT보다 위에 있는지 |
 | 인증서 오류(`acme`) | 80 포트가 밖에서 열려 있어야 Let's Encrypt가 확인합니다. 같은 이름으로 너무 자주 재발급하면 한도에 걸리니 한 시간쯤 기다렸다 다시 |
 | `healthz`가 502 | `sudo docker compose … logs relay` |
@@ -107,7 +107,7 @@ Mighty Code → **설정 → 모바일 리모트 → 릴레이**에 `wss://myrel
 ## 업데이트
 
 ```bash
-cd ~/MightyClaude && git pull
+cd ~/MightyCode && git pull
 bash relay/deploy/oracle/setup.sh
 ```
 

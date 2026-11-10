@@ -90,7 +90,7 @@ function setup(dir, { koJson = {}, enJson = {}, zhJson = {}, jaJson = {}, files 
 function setupWindows(dir, extraFiles = {}) {
   setup(dir, {
     files: {
-      'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+      'native/windows/MightyCode.WinUI/MightyCode.WinUI.csproj': CSPROJ,
       ...extraFiles,
     },
   });
@@ -119,8 +119,8 @@ test('L("key")로 부른 없는 키가 실패한다', () => {
   try {
     setup(dir, {
       files: {
-        'native/macos/Sources/MightyClaude/View.swift': 'L("phone.missing.key")\n',
-        'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+        'native/macos/Sources/MightyCode/View.swift': 'L("phone.missing.key")\n',
+        'native/windows/MightyCode.WinUI/MightyCode.WinUI.csproj': CSPROJ,
       },
     });
     const r = run(['--root', dir]);
@@ -137,9 +137,9 @@ test('Locale.Get("key")로 부른 없는 키가 실패한다', () => {
   try {
     setup(dir, {
       files: {
-        'native/windows/MightyClaude.Core/MyClass.cs':
+        'native/windows/MightyCode.Core/MyClass.cs':
           'Locale.Get("win.missing.key");\n',
-        'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+        'native/windows/MightyCode.WinUI/MightyCode.WinUI.csproj': CSPROJ,
       },
     });
     const r = run(['--root', dir]);
@@ -157,7 +157,7 @@ test('t("key")로 부른 없는 키가 실패한다', () => {
     setup(dir, {
       files: {
         'mobile/src/App.tsx': 't("phone.missing.key")\n',
-        'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+        'native/windows/MightyCode.WinUI/MightyCode.WinUI.csproj': CSPROJ,
       },
     });
     const r = run(['--root', dir]);
@@ -173,14 +173,14 @@ test('접촉된 Windows 파일에 한국어 리터럴이 있으면 실패한다'
   const dir = tmpDir();
   try {
     setupWindows(dir, {
-      'native/windows/MightyClaude.Core/MyClass.cs': '// clean\n',
+      'native/windows/MightyCode.Core/MyClass.cs': '// clean\n',
     });
     const g = gitInit(dir);
     const sha = gitCommit(g, 'baseline');
 
     // Korean added after the baseline (uncommitted, unstaged)
     fs.writeFileSync(
-      path.join(dir, 'native/windows/MightyClaude.Core/MyClass.cs'),
+      path.join(dir, 'native/windows/MightyCode.Core/MyClass.cs'),
       'string msg = "안녕하세요";\n',
     );
 
@@ -198,7 +198,7 @@ test('접촉되지 않은 Windows 파일에 한국어가 있어도 통과한다'
   try {
     // A file that has had Korean since the baseline
     setupWindows(dir, {
-      'native/windows/MightyClaude.Core/MyClass.cs': 'string msg = "안녕하세요";\n',
+      'native/windows/MightyCode.Core/MyClass.cs': 'string msg = "안녕하세요";\n',
     });
     const g = gitInit(dir);
     const sha = gitCommit(g, 'baseline');
@@ -216,14 +216,14 @@ test('접촉된 MainWindow.Smoke.cs에 한국어가 있어도 통과한다', () 
   const dir = tmpDir();
   try {
     setupWindows(dir, {
-      'native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs': '// smoke\n',
+      'native/windows/MightyCode.WinUI/MainWindow.Smoke.cs': '// smoke\n',
     });
     const g = gitInit(dir);
     const sha = gitCommit(g, 'baseline');
 
     // Korean added to Smoke.cs after the baseline (uncommitted, unstaged)
     fs.writeFileSync(
-      path.join(dir, 'native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs'),
+      path.join(dir, 'native/windows/MightyCode.WinUI/MainWindow.Smoke.cs'),
       'string msg = "안녕하세요";\n',
     );
     fitBudget(dir); // the new literal is on the WinUI budget; this test is about the touched-file rule
@@ -242,17 +242,17 @@ test('staged 미커밋 Korean 파일이 실패한다 — touched set은 커밋�
   const dir = tmpDir();
   try {
     setupWindows(dir, {
-      'native/windows/MightyClaude.Core/MyClass.cs': '// clean\n',
+      'native/windows/MightyCode.Core/MyClass.cs': '// clean\n',
     });
     const g = gitInit(dir);
     const sha = gitCommit(g, 'baseline');
 
     // Korean added after the baseline, staged with git add but not committed
     fs.writeFileSync(
-      path.join(dir, 'native/windows/MightyClaude.Core/MyClass.cs'),
+      path.join(dir, 'native/windows/MightyCode.Core/MyClass.cs'),
       'string msg = "안녕하세요";\n',
     );
-    execFileSync('git', ['-C', dir, 'add', 'native/windows/MightyClaude.Core/MyClass.cs'], {
+    execFileSync('git', ['-C', dir, 'add', 'native/windows/MightyCode.Core/MyClass.cs'], {
       encoding: 'utf8',
     });
 
@@ -298,15 +298,15 @@ test('MESSAGE_OK — L()로 부른 없는 키: 진단에 클라이언트명·파
   try {
     setup(dir, {
       files: {
-        'native/macos/Sources/MightyClaude/View.swift': 'L("msg.l.gone")\n',
-        'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+        'native/macos/Sources/MightyCode/View.swift': 'L("msg.l.gone")\n',
+        'native/windows/MightyCode.WinUI/MightyCode.WinUI.csproj': CSPROJ,
       },
     });
     const r = run(['--root', dir]);
     assert.notEqual(r.status, 0);
     const out = r.stderr + r.stdout;
     assert.match(out, /macOS app/, '클라이언트명이 출력에 없다');
-    assert.match(out, /native\/macos\/Sources\/MightyClaude\/View\.swift/, '파일 경로가 출력에 없다');
+    assert.match(out, /native\/macos\/Sources\/MightyCode\/View\.swift/, '파일 경로가 출력에 없다');
     assert.match(out, /msg\.l\.gone/, '누락된 키가 출력에 없다');
     assert.ok(/[가-힣]/.test(out), '한글 문자가 출력에 없다');
   } finally {
@@ -319,15 +319,15 @@ test('MESSAGE_OK — Locale.Get()로 부른 없는 키: 진단에 클라이언�
   try {
     setup(dir, {
       files: {
-        'native/windows/MightyClaude.Core/MyClass.cs': 'Locale.Get("win.get.gone");\n',
-        'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+        'native/windows/MightyCode.Core/MyClass.cs': 'Locale.Get("win.get.gone");\n',
+        'native/windows/MightyCode.WinUI/MightyCode.WinUI.csproj': CSPROJ,
       },
     });
     const r = run(['--root', dir]);
     assert.notEqual(r.status, 0);
     const out = r.stderr + r.stdout;
     assert.match(out, /Windows Core/, '클라이언트명이 출력에 없다');
-    assert.match(out, /native\/windows\/MightyClaude\.Core\/MyClass\.cs/, '파일 경로가 출력에 없다');
+    assert.match(out, /native\/windows\/MightyCode\.Core\/MyClass\.cs/, '파일 경로가 출력에 없다');
     assert.match(out, /win\.get\.gone/, '누락된 키가 출력에 없다');
     assert.ok(/[가-힣]/.test(out), '한글 문자가 출력에 없다');
   } finally {
@@ -341,7 +341,7 @@ test('MESSAGE_OK — t()로 부른 없는 키: 진단에 클라이언트명·파
     setup(dir, {
       files: {
         'mobile/src/App.tsx': 't("app.t.gone")\n',
-        'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+        'native/windows/MightyCode.WinUI/MightyCode.WinUI.csproj': CSPROJ,
       },
     });
     const r = run(['--root', dir]);
@@ -382,8 +382,8 @@ test('CRLF로 받은 docs/i18n.md도 --check를 통과한다', () => {
 // ── Translations (zh, ja): a subset of en's keys with en's placeholders ──────────
 // Keys used by a client source so check 4 (unused keys) passes.
 const USED = {
-  'native/macos/Sources/MightyClaude/View.swift': 'L("a.one")\nL("a.two")\n',
-  'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+  'native/macos/Sources/MightyCode/View.swift': 'L("a.one")\nL("a.two")\n',
+  'native/windows/MightyCode.WinUI/MightyCode.WinUI.csproj': CSPROJ,
 };
 const KO = { 'a.one': '하나 {n}', 'a.two': '둘' };
 const EN = { 'a.one': 'One {n}', 'a.two': 'Two' };
@@ -439,7 +439,7 @@ test('a translation copy that differs from the original fails', () => {
 });
 
 // ── The Korean-literal budget (scripts/korean-literal-budget.json) ──────────────
-const APP = 'native/macos/Sources/MightyClaude';
+const APP = 'native/macos/Sources/MightyCode';
 const ZERO_AREAS = { 'macOS app': 0, 'macOS core': 0, 'Windows Core': 0, 'Windows WinUI': 0, phone: 0 };
 const budgetFor = (macApp, extra = {}) => ({ areas: { ...ZERO_AREAS, 'macOS app': macApp }, ...extra });
 const readBudget = (dir) => JSON.parse(fs.readFileSync(path.join(dir, BUDGET_FILE), 'utf8'));
@@ -621,7 +621,7 @@ test('Hangul nested in an interpolation or a """ block counts toward its area', 
       files: {
         ...USED,
         [`${APP}/Nested.swift`]: 'let a = "\\(flag ? "가" : "나")"\nlet b = """\n    블록 글\n    """\n',
-        'native/windows/MightyClaude.Core/Nested.cs': 'var c = $"{(flag ? "가" : "나")}";\n',
+        'native/windows/MightyCode.Core/Nested.cs': 'var c = $"{(flag ? "가" : "나")}";\n',
       },
       koJson: KO,
       enJson: EN,
@@ -639,7 +639,7 @@ test('a C# verbatim string or raw block does not turn later comments into litera
   const dir = tmpDir();
   try {
     const source = 'var path = @"C:\\temp\\";\n// 주석은 세지 않는다\nvar raw = """\n  {"a": "b"}\n  """;\n// 주석도 세지 않는다\n';
-    setup(dir, { budget: budgetFor(0), files: { ...USED, 'native/windows/MightyClaude.Core/Verbatim.cs': source }, koJson: KO, enJson: EN });
+    setup(dir, { budget: budgetFor(0), files: { ...USED, 'native/windows/MightyCode.Core/Verbatim.cs': source }, koJson: KO, enJson: EN });
     const r = run(['--root', dir]);
     assert.equal(r.status, 0, `comments after a verbatim string must not count\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
   } finally {
@@ -662,8 +662,8 @@ test('every exempt glob that matches a file is credited', () => {
 test('a touched Windows file passes when its Korean is allowed or its file is exempt, and fails on any other literal', () => {
   const dir = tmpDir();
   try {
-    const CORE = 'native/windows/MightyClaude.Core';
-    const WINUI = 'native/windows/MightyClaude.WinUI';
+    const CORE = 'native/windows/MightyCode.Core';
+    const WINUI = 'native/windows/MightyCode.WinUI';
     const extra = {
       allow: [{ file: `${CORE}/Names.cs`, literal: '사용자 설정', reason: 'a saved fingerprint input' }],
       exemptFiles: { [`${WINUI}/MainWindow.OtherSmoke.cs`]: 'smoke fixtures' },
@@ -671,7 +671,7 @@ test('a touched Windows file passes when its Korean is allowed or its file is ex
     setup(dir, {
       budget: { areas: ZERO_AREAS, ...extra },
       files: {
-        [`${WINUI}/MightyClaude.WinUI.csproj`]: CSPROJ,
+        [`${WINUI}/MightyCode.WinUI.csproj`]: CSPROJ,
         [`${CORE}/Names.cs`]: 'const string Source = "사용자 설정";\n',
         [`${WINUI}/MainWindow.OtherSmoke.cs`]: 'string sample = "한글 입력";\n',
       },
@@ -689,7 +689,7 @@ test('a touched Windows file passes when its Korean is allowed or its file is ex
     fs.appendFileSync(path.join(dir, `${CORE}/Names.cs`), 'string label = "프로젝트 설정";\n');
     const failed = run(['--root', dir, '--touched-since', sha]);
     assert.notEqual(failed.status, 0, 'an unlisted literal in a touched file must fail');
-    assert.match(failed.stderr, /Windows Core: native\/windows\/MightyClaude\.Core\/Names\.cs에 한국어 하드코딩 문구가 1개 남아 있습니다/);
+    assert.match(failed.stderr, /Windows Core: native\/windows\/MightyCode\.Core\/Names\.cs에 한국어 하드코딩 문구가 1개 남아 있습니다/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -703,11 +703,11 @@ test('Hangul spelled as a Unicode escape counts like Hangul typed out, in C#, Sw
       files: {
         ...USED,
         // Counted: \uXXXX (C#), \u{XXXX} (Swift), both forms in TypeScript, and a run of escapes in one literal.
-        'native/windows/MightyClaude.Core/Escaped.cs': 'var a = "\\uD55C\\uAE00";\nvar b = "plain \\uAC00 text";\n',
+        'native/windows/MightyCode.Core/Escaped.cs': 'var a = "\\uD55C\\uAE00";\nvar b = "plain \\uAC00 text";\n',
         [`${APP}/Escaped.swift`]: 'let a = "\\u{D55C}\\u{AE00}"\n',
         'mobile/src/escaped.ts': "const a = '\\uAC00';\nconst b = `\\u{AC00}`;\n",
         // Not counted: an escaped backslash before u, and escapes outside Hangul (é, a surrogate range).
-        'native/windows/MightyClaude.WinUI/Plain.cs': 'var a = "\\\\uAC00";\nvar b = "caf\\u00e9";\nvar c = "[\\uD800-\\uDBFF]";\n',
+        'native/windows/MightyCode.WinUI/Plain.cs': 'var a = "\\\\uAC00";\nvar b = "caf\\u00e9";\nvar c = "[\\uD800-\\uDBFF]";\n',
       },
       koJson: KO,
       enJson: EN,
@@ -726,7 +726,7 @@ test('Hangul spelled as a Unicode escape counts like Hangul typed out, in C#, Sw
 test('an allow entry names an escaped literal decoded, and a stale one still fails', () => {
   const dir = tmpDir();
   try {
-    const marker = 'native/windows/MightyClaude.Core/Marker.cs';
+    const marker = 'native/windows/MightyCode.Core/Marker.cs';
     const allow = [{ file: marker, literal: '첨부: ', reason: 'saved-data marker' }];
     setup(dir, {
       budget: { areas: ZERO_AREAS, allow },

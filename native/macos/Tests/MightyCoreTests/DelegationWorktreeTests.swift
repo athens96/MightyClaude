@@ -117,7 +117,7 @@ struct DelegationWorktreeTests {
     }
 
     @Test func defaultRootAndFreeSpaceReader() throws {
-        #expect(ChildWorktreeMaker.defaultRoot.path.hasSuffix("/.mightyclaude/worktrees"))
+        #expect(ChildWorktreeMaker.defaultRoot.path.hasSuffix("/.mightycode/worktrees"))
         #expect(ChildWorktreeMaker.defaultRoot.path.hasPrefix(FileManager.default.homeDirectoryForCurrentUser.path))
         let missing = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-missing-\(UUID().uuidString)/a/b")
         let free = try #require(ChildWorktreeMaker.availableBytes(near: missing))

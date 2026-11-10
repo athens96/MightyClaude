@@ -1,5 +1,5 @@
 {
-  "about": "Workspace create rules shared by MightyCore WorkspaceCreate.swift and MightyClaude.Core WorkspaceCreate.cs (docs/superpowers/specs/2026-10-26-workspace-create-design.md).",
+  "about": "Workspace create rules shared by MightyCore WorkspaceCreate.swift and MightyCode.Core WorkspaceCreate.cs (docs/superpowers/specs/2026-10-26-workspace-create-design.md).",
   "repoNames": [
     { "url": "https://github.com/athens96/MightyCode.git", "name": "MightyCode" },
     { "url": "https://github.com/athens96/MightyCode", "name": "MightyCode" },

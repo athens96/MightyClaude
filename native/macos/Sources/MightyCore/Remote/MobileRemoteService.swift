@@ -187,7 +187,7 @@ public actor MobileRemoteService {
     public static let maximumUnauthenticated = 4
     private var statusObserver: (@Sendable (MobileHostStatus) -> Void)?
     private var statusSequence = 0
-    private static let log = Logger(subsystem: "dev.mightyclaude.native", category: "mobile-remote")
+    private static let log = Logger(subsystem: "dev.mightycode.native", category: "mobile-remote")
     private let session: URLSession
     private let uploads: MobileUploadStore
     private let deviceRegistry: MobileDeviceRegistry

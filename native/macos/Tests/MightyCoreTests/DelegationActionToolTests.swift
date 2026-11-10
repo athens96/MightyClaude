@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import MightyCore
 
-private let appExecutable = URL(fileURLWithPath: "/Applications/MightyClaude.app/Contents/MacOS/MightyClaude")
+private let appExecutable = URL(fileURLWithPath: "/Applications/MightyCode.app/Contents/MacOS/MightyCode")
 
 private func json(_ line: String?) -> [String: Any]? {
     line.flatMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }

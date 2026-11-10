@@ -1,5 +1,5 @@
 // The shell code blocks of an agent's reply that get a Run button (spec: run-shell-blocks; the host's half is
-// MightyClaude.Core/ShellBlockRuns.cs and MightyClaude.WinUI/MainWindow.ShellBlockRuns.cs). Pure: which blocks, the command
+// MightyCode.Core/ShellBlockRuns.cs and MightyCode.WinUI/MainWindow.ShellBlockRuns.cs). Pure: which blocks, the command
 // each runs, and its key, `<entryId>#<n>` with n its place among the entry's runnable blocks.
 import type { Block } from './markdown';
 import type { ShellBlockRun } from '../store/models';
@@ -12,7 +12,7 @@ const prompts: Record<ShellPlatform, readonly string[]> = { windows: ['$ ', 'PS>
 /**
  * Text that could show one thing and run another (Trojan source): bidi controls, zero-width and format characters, C0 controls
  * but tab and newline (so also ESC and a lone CR), DEL. A block holding any gets no button; the host refuses the same
- * (MightyClaude.Core/ShellBlockScan.cs IsDeceptive).
+ * (MightyCode.Core/ShellBlockScan.cs IsDeceptive).
  */
 // eslint-disable-next-line no-control-regex
 export const deceptiveCharacters = /[\u202A-\u202E\u2066-\u2069\u200B-\u200F\uFEFF\u2060\u0000-\u0008\u000B-\u001F\u007F]/u;

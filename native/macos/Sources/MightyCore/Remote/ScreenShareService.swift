@@ -125,7 +125,7 @@ public struct ScreenShareIndicatorState: Sendable, Equatable {
 /// join requests, the input path, the menu-bar kill switch and the hotkey all
 /// come through here, and every one of them ends at `ScreenShareHost`.
 public actor ScreenShareService: ScreenShareSafetyTarget {
-    private static let log = Logger(subsystem: "dev.mightyclaude.native", category: "screen-share")
+    private static let log = Logger(subsystem: "dev.mightycode.native", category: "screen-share")
 
     private let store: ScreenShareSettingsStore
     private let host: ScreenShareHost

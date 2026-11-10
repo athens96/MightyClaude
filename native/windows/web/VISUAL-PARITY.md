@@ -7,7 +7,7 @@ follow the Mac.
 ## Capture
 
 ```
-MightyClaude.exe --help-capture --smoke-exit --profile <empty dir under release\> -language ko
+MightyCode.exe --help-capture --smoke-exit --profile <empty dir under release\> -language ko
 ```
 
 `MainWindow.HelpCapture.cs` reads `docs/help/shots.json` and the demo profile (both embedded), seeds the profile's workspaces,

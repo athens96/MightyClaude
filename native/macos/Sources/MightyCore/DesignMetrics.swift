@@ -2,7 +2,7 @@ import CoreGraphics
 
 /// The design contract's geometry (`metrics.spacing`, `metrics.inset` and `metrics.layout` in
 /// native/contracts/fixtures/design-tokens.json), as named constants for the Mac's views. Windows
-/// reads the same table as `DesignMetrics` in MightyClaude.Core; `DesignTokenParityTests` holds
+/// reads the same table as `DesignMetrics` in MightyCode.Core; `DesignTokenParityTests` holds
 /// both this file and the fixture to each other through each namespace's `all`.
 /// Spec: docs/design-system/index.html §4.
 public enum DesignMetrics {
@@ -259,7 +259,7 @@ public enum DesignMetrics {
     /// `pendingShowAfter` and `pendingMinVisible` the pending rule (`PendingDisplay`),
     /// `highlight` how long a highlight stays (the queue row's flash). Reduce Motion drops
     /// the movement only; the pending rule's timing stays. Windows reads the same group as
-    /// `DesignMetrics.Motion` in MightyClaude.Core, the Windows page in theme/tokens and the
+    /// `DesignMetrics.Motion` in MightyCode.Core, the Windows page in theme/tokens and the
     /// phone in mobile/src/theme.
     public enum Motion {
         public static let quick = 150
@@ -286,7 +286,7 @@ public enum DesignMetrics {
     /// `cardTintOpacity`, so a card stands out even in a column of its own tone, with a
     /// `cardBarWidth` bar in the tone's mark down its leading edge
     /// (`MightyStructure.Tone`). Windows reads the same group as `DesignMetrics.Pipeline` in
-    /// MightyClaude.Core and the phone as `pipeline` in mobile/src/theme.
+    /// MightyCode.Core and the phone as `pipeline` in mobile/src/theme.
     public enum Pipeline {
         public static let columnTintOpacity: Double = 0.6
         public static let cardTintOpacity: Double = 0.35

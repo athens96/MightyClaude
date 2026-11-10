@@ -150,7 +150,7 @@ public enum ScreenShareControlKey {
 /// frame. This actor turns the host's decisions into a stream and an injected
 /// event, and tells the phone what happened.
 public actor ScreenShareEngine {
-    private static let log = Logger(subsystem: "dev.mightyclaude.native", category: "screen-share-engine")
+    private static let log = Logger(subsystem: "dev.mightycode.native", category: "screen-share-engine")
 
     /// A peer that has not connected this long after its offer went out is
     /// given up on, so a phone that vanished mid-start never holds capture.

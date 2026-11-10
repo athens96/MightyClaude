@@ -37,7 +37,7 @@ scripts/fetch-browser-engine.sh
 ```
 
 - 캐시는 저장소 **밖**이다. 기본 경로는
-  `~/Library/Caches/MightyClaude/browser-engine/<BrowserEngine.lock의 sha256 앞 16자리>/`
+  `~/Library/Caches/MightyCode/browser-engine/<BrowserEngine.lock의 sha256 앞 16자리>/`
   이고 `MIGHTY_BROWSER_ENGINE_CACHE`로 통째로 바꿀 수 있다. 핀이 바뀌면 lock 파일의 해시가 바뀌므로 캐시 디렉터리도 자동으로 갈린다.
 - 받은 아카이브의 sha256이 lock 값과 다르면 거부하고 0이 아닌 코드로 끝난다.
 - 실행할 때마다 캐시에 있는 두 아카이브를 lock의 sha256과 **다시** 대조한다. 어긋나면 지우고 다시 받는다.
@@ -57,13 +57,13 @@ MIGHTY_BROWSER_ENGINE=1 scripts/build-macos.sh
 번들에 들어가는 것:
 
 ```
-MightyClaude.app/Contents/
+MightyCode.app/Contents/
   Frameworks/
     Chromium Embedded Framework.framework/    ← CEF 프레임워크
-    MightyClaude Helper.app/                  ← 메인 헬퍼
-    MightyClaude Helper (GPU).app/
-    MightyClaude Helper (Renderer).app/
-    MightyClaude Helper (Plugin).app/
+    MightyCode Helper.app/                  ← 메인 헬퍼
+    MightyCode Helper (GPU).app/
+    MightyCode Helper (Renderer).app/
+    MightyCode Helper (Plugin).app/
   Resources/
     browser/node/bin/node                     ← 고정한 Node 런타임
     ThirdPartyLicenses/
@@ -72,8 +72,8 @@ MightyClaude.app/Contents/
 ```
 
 - 헬퍼 앱 네 개는 CEF 프레임워크와 나란히 `Contents/Frameworks/` 안에 있다.
-- 번들 ID는 `dev.mightyclaude.native`에서 파생하며 서로 다르다:
-  `dev.mightyclaude.native.helper`, `.helper.gpu`, `.helper.renderer`, `.helper.plugin`.
+- 번들 ID는 `dev.mightycode.native`에서 파생하며 서로 다르다:
+  `dev.mightycode.native.helper`, `.helper.gpu`, `.helper.renderer`, `.helper.plugin`.
 - 고지 파일은 CEF 배포본의 `LICENSE.txt`·`CREDITS.html`을 그대로 옮긴 것이고, 저장소의 `native/licenses/`와 함께 `ThirdPartyLicenses/`에 모인다.
 - CEF 안쪽 dylib과 헬퍼 앱은 바깥 번들과 따로 서명한다(`--deep`이 닿지 않는다). 그 뒤 앱 전체를 서명하면
   `codesign --verify --deep --strict <앱>`이 통과한다.
@@ -83,7 +83,7 @@ MightyClaude.app/Contents/
 워크스페이스마다 영구 CEF 프로필 디렉터리 하나:
 
 ```
-~/Library/Application Support/MightyClaude/browser-profiles/<workspaceProfileKey>/
+~/Library/Application Support/MightyCode/browser-profiles/<workspaceProfileKey>/
 ```
 
 경로는 `MightyCore`의 `BrowserProfileSupport.profilePath(workspaceProfileKey:)`가 계산한다. Core는 CEF를 import하지 않는다 — 경로만 알고, 엔진 구현은 앱 타깃에 있다.
@@ -126,7 +126,7 @@ MightyClaude.app/Contents/
 
 ### 애플리케이션 클래스
 
-CEF는 macOS에서 `NSApplication` 서브클래스를 요구한다. `MightyApplication`이 그 역할이며 `isHandlingSendEvent`·`setHandlingSendEvent`를 구현한다. `Info.plist`의 `NSPrincipalClass`는 `MightyApplication`을 가리킨다. SwiftUI의 `App.main()`은 이 값만으로는 사용자 앱 클래스를 만들지 않으므로, `MightyClaudeLauncher`가 먼저 `MightyApplication.shared`를 생성한 뒤 SwiftUI 진입점을 호출한다. 브리지는 두 이벤트 메서드를 확인하고 SDK의 `CefAppProtocol`을 등록한다.
+CEF는 macOS에서 `NSApplication` 서브클래스를 요구한다. `MightyApplication`이 그 역할이며 `isHandlingSendEvent`·`setHandlingSendEvent`를 구현한다. `Info.plist`의 `NSPrincipalClass`는 `MightyApplication`을 가리킨다. SwiftUI의 `App.main()`은 이 값만으로는 사용자 앱 클래스를 만들지 않으므로, `MightyCodeLauncher`가 먼저 `MightyApplication.shared`를 생성한 뒤 SwiftUI 진입점을 호출한다. 브리지는 두 이벤트 메서드를 확인하고 SDK의 `CefAppProtocol`을 등록한다.
 
 ### 헬퍼 프로세스
 
@@ -134,7 +134,7 @@ Chromium은 GPU·렌더러·플러그인·유틸리티 서브프로세스를 낳
 
 ### 엔진 수명 주기
 
-엔진을 포함한 빌드는 `MightyClaudeLauncher`에서 SwiftUI의 이벤트 루프가 시작되기 전에 CEF를 초기화한다. 이미 실행 중인 CFRunLoop 안에서 초기화하면 Chromium이 루프 진입 이벤트를 놓치고 종료 시 내부 스택을 잘못 비우므로 탭 생성 시점으로 초기화를 늦추지 않는다. `browser_subprocess_path`는 메인 헬퍼를 가리키고, `root_cache_path`는 `~/Library/Application Support/MightyClaude/browser-profiles`다. 메시지 루프는 초기화 성공 후 main run loop에서 시작한다. `CefBrowserRuntime`이 브리지와 타이머를 프로세스 전체에서 소유한다. 탭이 사라져도 브리지를 `dlclose`하지 않으며, 비동기 `on_before_close`가 끝날 때까지 부모 뷰를 유지한다. 앱 종료 시 타이머를 중단하고 모든 브라우저의 종료 콜백을 처리한 후 CEF를 종료한다. 기본 CEF 종료 동작은 부모 창 전체를 대상으로 하므로 사용자 `do_close`에서 해당 브라우저의 자식 뷰만 제거한다. C API 경계를 넘는 참조 인자는 SDK의 전달 소유권 규칙에 맞춰 유지·해제한다.
+엔진을 포함한 빌드는 `MightyCodeLauncher`에서 SwiftUI의 이벤트 루프가 시작되기 전에 CEF를 초기화한다. 이미 실행 중인 CFRunLoop 안에서 초기화하면 Chromium이 루프 진입 이벤트를 놓치고 종료 시 내부 스택을 잘못 비우므로 탭 생성 시점으로 초기화를 늦추지 않는다. `browser_subprocess_path`는 메인 헬퍼를 가리키고, `root_cache_path`는 `~/Library/Application Support/MightyCode/browser-profiles`다. 메시지 루프는 초기화 성공 후 main run loop에서 시작한다. `CefBrowserRuntime`이 브리지와 타이머를 프로세스 전체에서 소유한다. 탭이 사라져도 브리지를 `dlclose`하지 않으며, 비동기 `on_before_close`가 끝날 때까지 부모 뷰를 유지한다. 앱 종료 시 타이머를 중단하고 모든 브라우저의 종료 콜백을 처리한 후 CEF를 종료한다. 기본 CEF 종료 동작은 부모 창 전체를 대상으로 하므로 사용자 `do_close`에서 해당 브라우저의 자식 뷰만 제거한다. C API 경계를 넘는 참조 인자는 SDK의 전달 소유권 규칙에 맞춰 유지·해제한다.
 
 Chromium은 앱과 같은 프로세스에서 돌기 때문에 Chromium이 죽으면 모든 에이전트 세션도 함께 종료된다. 그래서 CEF는 설정 → 표시의 ‘브라우저 창 사용 (실험)’(`browser.engineEnabled`, 기본값 꺼짐)이 켜져 있을 때만 시작하며, 값은 실행 시 한 번만 읽으므로 바꾼 뒤 앱을 다시 시작해야 적용된다. 꺼져 있으면 브라우저 탭은 켜는 방법을 안내하는 문구만 보여 준다. `--browser-smoke-test` 실행은 설정과 관계없이 엔진을 시작한다. 메시지 펌프 타이머는 공통 run loop 모드에서 돌기 때문에 Chromium이 직접 돌리는 중첩 루프 안에서도 실행될 수 있으므로, `mighty_cef_work`는 `cef_do_message_loop_work`에 재진입하지 않도록 막는다.
 
@@ -171,7 +171,7 @@ Chromium은 앱과 같은 프로세스에서 돌기 때문에 Chromium이 죽으
 
 ## 10. Windows (WebView2)
 
-Windows는 macOS의 손으로 여는 브라우저 탭을 WebView2로 옮긴 것이다(시드 `seed_windows_b2_s5_browser_pane`). 규칙은 모두 `MightyClaude.Core`에 있고(`BrowserAddress`·`BrowserHistory`·`BrowserNavigationState`·`BrowserProfile`·`BrowserEngineService`), WinUI `MainWindow.Browser.cs`는 그것을 그리고 컨트롤을 움직이기만 한다. 에이전트 제어는 없다.
+Windows는 macOS의 손으로 여는 브라우저 탭을 WebView2로 옮긴 것이다(시드 `seed_windows_b2_s5_browser_pane`). 규칙은 모두 `MightyCode.Core`에 있고(`BrowserAddress`·`BrowserHistory`·`BrowserNavigationState`·`BrowserProfile`·`BrowserEngineService`), WinUI `MainWindow.Browser.cs`는 그것을 그리고 컨트롤을 움직이기만 한다. 에이전트 제어는 없다.
 
 ### 탭과 탐색
 
@@ -197,7 +197,7 @@ Windows는 macOS의 손으로 여는 브라우저 탭을 WebView2로 옮긴 것�
 
 ### 프로필 폴더
 
-- 브라우저 창의 WebView2 사용자 데이터 폴더는 `<상태 폴더>\browser-profiles\<workspaceProfileKey>\`다. 상태 폴더는 Windows `StateStore` 폴더(기본 `%APPDATA%\MightyClaudeNative`)이므로 `--profile <경로>`로 실행하면 브라우저 프로필도 그 경로 아래로 격리된다.
+- 브라우저 창의 WebView2 사용자 데이터 폴더는 `<상태 폴더>\browser-profiles\<workspaceProfileKey>\`다. 상태 폴더는 Windows `StateStore` 폴더(기본 `%APPDATA%\MightyCode`)이므로 `--profile <경로>`로 실행하면 브라우저 프로필도 그 경로 아래로 격리된다.
 - 같은 워크스페이스의 창들은 `CoreWebView2Environment` 하나와 폴더 하나를 **함께 쓴다**. 다른 워크스페이스와는 절대 섞이지 않는다.
 - 로그인과 쿠키는 앱을 다시 시작해도 남는다. 앱은 프로필 데이터와 잠금 파일을 **절대 지우지 않는다.**
 - 다른 브라우저(Edge·Chrome 등)의 쿠키나 자격 증명은 어떤 경우에도 가져오지 않는다.
@@ -217,7 +217,7 @@ Windows는 macOS의 손으로 여는 브라우저 탭을 WebView2로 옮긴 것�
 
 ### 검증
 
-- Core: `dotnet run --project native/windows/MightyClaude.Core.Tests`의 `browser …` 테스트 여덟 개(주소, 기록, 프로필 폴더, 설정 기본값·한 번 읽기, 클릭 전 설치 없음, Microsoft 서명 필수, 실패 시 정리, 세션 필드 이름).
+- Core: `dotnet run --project native/windows/MightyCode.Core.Tests`의 `browser …` 테스트 여덟 개(주소, 기록, 프로필 폴더, 설정 기본값·한 번 읽기, 클릭 전 설치 없음, Microsoft 서명 필수, 실패 시 정리, 세션 필드 이름).
 - GUI 스모크 키 `browserPane`: 임시 `--profile`과 스모크 전용으로 켠 설정에서 실제 WebView2로 로컬 페이지 둘을 탐색하고(각 단계의 `NavigationCompleted`를 기다린다), 앱의 뒤로 단추와 같은 길로 뒤로 가서 첫 페이지의 `NavigationCompleted`가 오는지, 프로필 폴더가 임시 상태 폴더 아래인지, 첫 페이지의 스크립트가 부른 `window.open()`이 `NewWindowRequested`를 일으키고 `Handled`로 막혀 새 창이 없는지를 기록한다. 두 페이지는 임시 폴더의 HTML 파일을 `SetVirtualHostNameToFolderMapping`으로 `https://mighty-smoke.invalid/one.html`·`two.html`에 비춘 것이다. `.invalid`는 실제 사이트가 쓸 수 없는 이름이고 매핑은 DNS를 거치지 않으므로 망은 쓰지 않으면서, 실제 https 페이지처럼 엔진 세션 기록이 남는다(최상위 `data:` 주소는 Chromium이 따로 다뤄 뒤로 가기가 탐색을 일으키지 않았다). 런타임 없음 안내와 꺼짐 안내의 문구도 로케일 키 누수 검사에 넣는다. `scripts/test-native-windows.ps1`은 키가 없거나 값이 하나라도 false면 실패시킨다.
 - 기기 확인 항목은 `docs/windows-screen-checklist.md`에 있다.
 

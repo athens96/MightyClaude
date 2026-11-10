@@ -4,7 +4,7 @@ import Foundation
 /// only). It is on unless the human turned it off, in Settings › General or
 /// with its defaults key:
 ///
-///     defaults write dev.mightyclaude.native delegation.enabled -bool false
+///     defaults write dev.mightycode.native delegation.enabled -bool false
 ///
 /// While it is on, each new run in a Claude pane, or a Codex pane in
 /// acceptEdits or fullAccess, also gets the delegation MCP server (``DelegationMCPServer``) beside mighty-terminal, and

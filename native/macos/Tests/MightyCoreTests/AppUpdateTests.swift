@@ -20,10 +20,10 @@ import Testing
     }
 
     @Test func manifestParsingAcceptsTheDocumentedShapeAndVariants() throws {
-        let documented = Data(#"{"version":"0.2.0","build":42,"notes":"Fixes","publishedAt":"2026-09-18T00:00:00Z","minimumSystemVersion":"14.0","macos":{"url":"https://cdn.example.com/m/MightyClaude-macos.zip","sha256":"SHA256:AB"# .utf8) + Data(String(repeating: "c", count: 62).utf8) + Data(#"","size":123},"windows":{"x64":{"url":"https://cdn.example.com/w/x64.zip"},"arm64":"https://cdn.example.com/w/arm64.zip"}}"#.utf8)
+        let documented = Data(#"{"version":"0.2.0","build":42,"notes":"Fixes","publishedAt":"2026-09-18T00:00:00Z","minimumSystemVersion":"14.0","macos":{"url":"https://cdn.example.com/m/MightyCode-macos.zip","sha256":"SHA256:AB"# .utf8) + Data(String(repeating: "c", count: 62).utf8) + Data(#"","size":123},"windows":{"x64":{"url":"https://cdn.example.com/w/x64.zip"},"arm64":"https://cdn.example.com/w/arm64.zip"}}"#.utf8)
         let manifest = try AppUpdateManifest.parse(documented)
         #expect(manifest.version == "0.2.0" && manifest.build == 42 && manifest.notes == "Fixes" && manifest.minimumSystemVersion == "14.0" && !manifest.signed)
-        #expect(manifest.macos?.url.absoluteString == "https://cdn.example.com/m/MightyClaude-macos.zip" && manifest.macos?.size == 123)
+        #expect(manifest.macos?.url.absoluteString == "https://cdn.example.com/m/MightyCode-macos.zip" && manifest.macos?.size == 123)
         #expect(manifest.macos?.sha256 == "ab" + String(repeating: "c", count: 62))
         // Rule 2: windows assets without sha256 and size are rejected.
         #expect(manifest.windows["x64"] == nil && manifest.windows["arm64"] == nil)
@@ -80,7 +80,7 @@ import Testing
         #expect(decision??.url?.host == "cdn.x")
     }
 
-    private func makeFakeApp(at root: URL, name: String = "MightyClaude.app", executable: String = "MightyClaude", bundleId: String = "dev.mightyclaude.native", version: String = "0.2.0") throws -> URL {
+    private func makeFakeApp(at root: URL, name: String = "MightyCode.app", executable: String = "MightyCode", bundleId: String = "dev.mightycode.native", version: String = "0.2.0") throws -> URL {
         let app = root.appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: app.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
         let plist: [String: Any] = ["CFBundleIdentifier": bundleId, "CFBundleExecutable": executable, "CFBundleShortVersionString": version]
@@ -100,7 +100,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: root) }
         let source = root.appendingPathComponent("source", isDirectory: true)
         let app = try makeFakeApp(at: source)
-        let package = root.appendingPathComponent("MightyClaude-macos.zip")
+        let package = root.appendingPathComponent("MightyCode-macos.zip")
         try await zip(app, to: package)
         let data = try Data(contentsOf: package)
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -129,7 +129,7 @@ import Testing
         try FileManager.default.createDirectory(at: updates.appendingPathComponent("0.0.9"), withIntermediateDirectories: true)
         let downloaded = try await service.download(asset, version: "0.2.0")
         #expect(try Data(contentsOf: downloaded) == data)
-        #expect(downloaded.path == updates.appendingPathComponent("0.2.0/MightyClaude-macos.zip").path)
+        #expect(downloaded.path == updates.appendingPathComponent("0.2.0/MightyCode-macos.zip").path)
         #expect(!FileManager.default.fileExists(atPath: updates.appendingPathComponent("0.0.9").path)) // older folders pruned
 
         // A wrong digest or size is refused and nothing is kept; http is refused outright.
@@ -140,27 +140,27 @@ import Testing
         let good = try await service.download(asset, version: "0.2.0")
 
         // Staging finds the bundle and checks its identity; symlinked bundles are refused.
-        let staged = try await service.stage(package: good, expectedBundleIdentifier: "dev.mightyclaude.native")
-        #expect(staged.lastPathComponent == "MightyClaude.app" && FileManager.default.isExecutableFile(atPath: staged.appendingPathComponent("Contents/MacOS/MightyClaude").path))
+        let staged = try await service.stage(package: good, expectedBundleIdentifier: "dev.mightycode.native")
+        #expect(staged.lastPathComponent == "MightyCode.app" && FileManager.default.isExecutableFile(atPath: staged.appendingPathComponent("Contents/MacOS/MightyCode").path))
         await #expect(throws: MightyError.self) { try await service.stage(package: good, expectedBundleIdentifier: "com.example.other") }
         let other = root.appendingPathComponent("other", isDirectory: true)
         let wrong = try makeFakeApp(at: other, bundleId: "com.example.other")
         let wrongZip = root.appendingPathComponent("wrong.zip"); try await zip(wrong, to: wrongZip)
-        await #expect(throws: MightyError.self) { try await service.stage(package: wrongZip, expectedBundleIdentifier: "dev.mightyclaude.native") }
+        await #expect(throws: MightyError.self) { try await service.stage(package: wrongZip, expectedBundleIdentifier: "dev.mightycode.native") }
         let linkRoot = root.appendingPathComponent("links", isDirectory: true)
         try FileManager.default.createDirectory(at: linkRoot, withIntermediateDirectories: true)
-        try FileManager.default.createSymbolicLink(at: linkRoot.appendingPathComponent("MightyClaude.app"), withDestinationURL: app)
-        #expect(throws: MightyError.self) { try AppUpdateService.validate(app: linkRoot.appendingPathComponent("MightyClaude.app"), within: linkRoot, expectedBundleIdentifier: "dev.mightyclaude.native") }
+        try FileManager.default.createSymbolicLink(at: linkRoot.appendingPathComponent("MightyCode.app"), withDestinationURL: app)
+        #expect(throws: MightyError.self) { try AppUpdateService.validate(app: linkRoot.appendingPathComponent("MightyCode.app"), within: linkRoot, expectedBundleIdentifier: "dev.mightycode.native") }
         // Archive the folder itself so the link is an entry of the zip, not resolved by ditto.
         let linkZip = root.appendingPathComponent("link.zip")
         let archived = try await AppUpdateService.run("/usr/bin/ditto", ["-c", "-k", linkRoot.path, linkZip.path])
         #expect(archived.exitCode == 0)
-        await #expect(throws: MightyError.self) { try await service.stage(package: linkZip, expectedBundleIdentifier: "dev.mightyclaude.native") }
+        await #expect(throws: MightyError.self) { try await service.stage(package: linkZip, expectedBundleIdentifier: "dev.mightycode.native") }
         // A link to the plist inside an otherwise real bundle is refused too.
         let plistLinked = try makeFakeApp(at: root.appendingPathComponent("plist-link", isDirectory: true))
         try FileManager.default.removeItem(at: plistLinked.appendingPathComponent("Contents/Info.plist"))
         try FileManager.default.createSymbolicLink(at: plistLinked.appendingPathComponent("Contents/Info.plist"), withDestinationURL: app.appendingPathComponent("Contents/Info.plist"))
-        #expect(throws: MightyError.self) { try AppUpdateService.validate(app: plistLinked, expectedBundleIdentifier: "dev.mightyclaude.native") }
+        #expect(throws: MightyError.self) { try AppUpdateService.validate(app: plistLinked, expectedBundleIdentifier: "dev.mightycode.native") }
         // Manifest addresses must be https when file URLs are not allowed (keyed service, no allowsFileURLs).
         let strict = AppUpdateService(directory: updates, publicKey: key.publicKey.rawRepresentation)
         await #expect(throws: MightyError.self) { try await strict.check(manifestURL: manifestFile, currentVersion: "0.1.0") }
@@ -171,7 +171,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: root) }
         let staged = try makeFakeApp(at: root.appendingPathComponent("updates/0.2.0/staged", isDirectory: true), version: "0.2.0")
         let installed = try makeFakeApp(at: root.appendingPathComponent("Apps (it's here)", isDirectory: true), version: "0.1.0")
-        let package = root.appendingPathComponent("updates/0.2.0/MightyClaude-macos.zip")
+        let package = root.appendingPathComponent("updates/0.2.0/MightyCode-macos.zip")
         try Data("zip".utf8).write(to: package)
         // The helper waits up to five minutes for this pid to go away, so it must be one that is
         // certainly gone: a fixed number can belong to a live process of the same user on a busy
@@ -185,7 +185,7 @@ import Testing
         let script = AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: pid, relaunch: false)
         #expect(script.hasPrefix("#!/bin/sh") && script.contains("PATH=/usr/bin:/bin") && script.contains("PID=\(pid)\n") && script.contains("kill -0 \"$PID\""))
         #expect(script.contains("OLD=\"$DESTINATION.update-old\"") && script.contains("lsregister") && script.contains("\nsleep 2\n"))
-        #expect(script.contains("DESTINATION='" + root.path + "/Apps (it'\\''s here)/MightyClaude.app'"))
+        #expect(script.contains("DESTINATION='" + root.path + "/Apps (it'\\''s here)/MightyCode.app'"))
         #expect(!script.contains("open -n") && AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: 1).contains("open -n \"$DESTINATION\""))
         // Run the real helper: the pid is gone, so it proceeds at once. Its own last word is the
         // completion signal: "Installed: " once the swap is done, or one of its failure lines.
@@ -217,21 +217,21 @@ import Testing
     /// installs it under its own name beside the old app, which it then removes.
     @Test func theOldIdInstallsTheRenamedAppUnderItsNewName() async throws {
         #expect(AppUpdateService.accepts("dev.mightycode.native", for: "dev.mightyclaude.native"))
-        #expect(AppUpdateService.accepts("dev.mightyclaude.native", for: "dev.mightyclaude.native"))
+        #expect(AppUpdateService.accepts("dev.mightycode.native", for: "dev.mightycode.native"))
         #expect(!AppUpdateService.accepts("dev.mightyclaude.native", for: "dev.mightycode.native"))
         #expect(!AppUpdateService.accepts("com.example.other", for: "dev.mightyclaude.native") && !AppUpdateService.accepts(nil, for: "dev.mightyclaude.native"))
 
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("app-rename-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let staged = try makeFakeApp(at: root.appendingPathComponent("updates/0.3.0/staged", isDirectory: true), name: "Mighty Code.app", executable: "MightyCode", bundleId: "dev.mightycode.native", version: "0.3.0")
+        let staged = try makeFakeApp(at: root.appendingPathComponent("updates/0.3.0/staged", isDirectory: true), name: "MightyCode.app", executable: "MightyCode", bundleId: "dev.mightycode.native", version: "0.3.0")
         try AppUpdateService.validate(app: staged, within: root.appendingPathComponent("updates/0.3.0/staged"), expectedBundleIdentifier: "dev.mightyclaude.native")
         let apps = root.appendingPathComponent("Apps", isDirectory: true)
-        let installed = try makeFakeApp(at: apps, version: "0.2.0")
-        let destination = apps.appendingPathComponent("Mighty Code.app", isDirectory: true)
+        let installed = try makeFakeApp(at: apps, name: "MightyClaude.app", executable: "MightyClaude", bundleId: "dev.mightyclaude.native", version: "0.2.0")
+        let destination = apps.appendingPathComponent("MightyCode.app", isDirectory: true)
         let gone = Process()
         gone.executableURL = URL(fileURLWithPath: "/usr/bin/true")
         try gone.run(); gone.waitUntilExit()
-        let script = AppUpdateService.installScript(stagedApp: staged, destination: destination, replacing: installed, pid: gone.processIdentifier, relaunch: false)
+        let script = AppUpdateService.installScript(stagedApp: staged, destination: destination, replacing: installed, runningExecutable: "MightyClaude", pid: gone.processIdentifier, relaunch: false)
         #expect(script.contains("REPLACED='\(installed.path)'") && script.contains("OLD=\"$REPLACED.update-old\""))
         #expect(script.contains("pgrep -lf '^" + installed.path.replacingOccurrences(of: ".", with: "\\.") + "/Contents/MacOS/MightyClaude( |$)'"))
         // The same name as before writes the script it always did.
@@ -252,13 +252,13 @@ import Testing
     /// the app is running from the destination by the time it would swap, it leaves the bundle
     /// alone (the update stays staged for the next quit).
     @Test func installOnQuitNeitherRelaunchesNorSwapsUnderARunningApp() {
-        let staged = URL(fileURLWithPath: "/tmp/updates/0.2.0/staged/MightyClaude.app")
+        let staged = URL(fileURLWithPath: "/tmp/updates/0.2.0/staged/MightyCode.app")
         let destination = URL(fileURLWithPath: "/Applications/Mighty (it's) [1].app")
         let quiet = AppUpdateService.installScript(stagedApp: staged, destination: destination, pid: 42, relaunch: false)
         #expect(!quiet.contains("open -n"))
         // The pattern is the destination's executable at the start of a command line, every regex
         // character escaped; the app's headless modes are filtered out.
-        #expect(quiet.contains("pgrep -lf '^/Applications/Mighty \\(it'\\''s\\) \\[1\\]\\.app/Contents/MacOS/MightyClaude( |$)'"))
+        #expect(quiet.contains("pgrep -lf '^/Applications/Mighty \\(it'\\''s\\) \\[1\\]\\.app/Contents/MacOS/MightyCode( |$)'"))
         #expect(quiet.contains("grep -Ev -- ' (--agent-io-mcp|--agent-delegation-mcp|--verify-resources)( |$)'"))
         #expect(quiet.contains("OLD=\"$DESTINATION.update-old\"") && quiet.contains("mv \"$DESTINATION\" \"$OLD\"") && quiet.contains("mv \"$NEW\" \"$DESTINATION\"") && quiet.contains("rm -rf \"$OLD\""))
         // The running check comes after the new copy is ready and before the old app is moved aside.
@@ -278,7 +278,7 @@ import Testing
         let repair = quiet.range(of: "if [ ! -e \"$DESTINATION\" ] && [ -d \"$OLD\" ]; then")!.lowerBound
         #expect(repair < quiet.range(of: "kill -0 \"$PID\"")!.lowerBound)
         // No copy into a temporary backup any more: the swap is two renames.
-        #expect(!quiet.contains("BACKUP") && !quiet.contains("MightyClaude.app.bak"))
+        #expect(!quiet.contains("BACKUP") && !quiet.contains("MightyCode.app.bak"))
 
         let relaunching = AppUpdateService.installScript(stagedApp: staged, destination: destination, pid: 42, relaunch: true)
         #expect(relaunching.contains("open -n \"$DESTINATION\""))
@@ -301,7 +301,7 @@ import Testing
         }
         let staged = try makeFakeApp(at: root.appendingPathComponent("updates/0.2.0/staged", isDirectory: true), version: "0.2.0")
         let installed = try makeFakeApp(at: root.appendingPathComponent("X (1) [a]", isDirectory: true), version: "0.1.0")
-        let binary = installed.appendingPathComponent("Contents/MacOS/MightyClaude")
+        let binary = installed.appendingPathComponent("Contents/MacOS/MightyCode")
         try FileManager.default.removeItem(at: binary)
         try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/bash"), to: binary)
         // A copied system binary is killed at launch unless it carries its own (ad-hoc) signature.

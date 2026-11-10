@@ -1,9 +1,9 @@
 {
-  "base": "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help",
+  "base": "https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/help",
   "cases": [
-    {"language": "ko", "url": "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/ko/"},
-    {"language": "en", "url": "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/en/"},
-    {"language": "zh", "url": "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/zh/"},
-    {"language": "ja", "url": "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/ja/"}
+    {"language": "ko", "url": "https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/help/ko/"},
+    {"language": "en", "url": "https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/help/en/"},
+    {"language": "zh", "url": "https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/help/zh/"},
+    {"language": "ja", "url": "https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/help/ja/"}
   ]
 }

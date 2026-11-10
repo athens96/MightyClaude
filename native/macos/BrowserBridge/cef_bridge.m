@@ -196,7 +196,7 @@ EXPORT int mighty_cef_load(const char *path) {
     if (g_cef) return 1;
     if (!path || g_stopped) return 0;
     void *library = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-    if (!library) { fprintf(stderr, "MightyClaude: cannot load CEF: %s\n", dlerror()); return 0; }
+    if (!library) { fprintf(stderr, "MightyCode: cannot load CEF: %s\n", dlerror()); return 0; }
     if (!mighty_cef_select_api(library)) { dlclose(library); return 0; }
     g_cef = library; /* process lifetime; never unload live Chromium code */
     char copy[4096];
@@ -224,7 +224,7 @@ static int ensure_initialized(const char *root) {
      * that its custom application implements both required methods. */
     if (![NSApp respondsToSelector:@selector(isHandlingSendEvent)] ||
         ![NSApp respondsToSelector:@selector(setHandlingSendEvent:)]) {
-        fprintf(stderr, "MightyClaude: NSApplication does not implement CEF event handling\n");
+        fprintf(stderr, "MightyCode: NSApplication does not implement CEF event handling\n");
         return 0;
     }
     class_addProtocol([NSApp class], @protocol(CefAppProtocol));
@@ -238,7 +238,7 @@ static int ensure_initialized(const char *root) {
     snprintf(path, sizeof(path), "%s/Chromium Embedded Framework.framework/Resources", g_frameworks);
     cef_str(&settings.resources_dir_path, path);
     cef_str(&settings.locales_dir_path, path);
-    snprintf(path, sizeof(path), "%s/MightyClaude Helper.app/Contents/MacOS/MightyClaude Helper", g_frameworks);
+    snprintf(path, sizeof(path), "%s/MightyCode Helper.app/Contents/MacOS/MightyCode Helper", g_frameworks);
     cef_str(&settings.browser_subprocess_path, path);
     cef_str(&settings.root_cache_path, root);
     cef_main_args_t args = { *_NSGetArgc(), *_NSGetArgv() };
@@ -256,7 +256,7 @@ static int ensure_initialized(const char *root) {
     clear_str(&settings.root_cache_path);
     g_initialized = success;
     if (!success) {
-        fprintf(stderr, "MightyClaude: CEF initialization failed; browser disabled until app restart\n");
+        fprintf(stderr, "MightyCode: CEF initialization failed; browser disabled until app restart\n");
     }
     return success;
 }
@@ -297,7 +297,7 @@ EXPORT void mighty_cef_shutdown(void) {
         }
     }
     if (has_panes()) {
-        fprintf(stderr, "MightyClaude: CEF close timed out; leaving engine loaded until process exit\n");
+        fprintf(stderr, "MightyCode: CEF close timed out; leaving engine loaded until process exit\n");
         return;
     }
     void (*shutdown)(void) = (void (*)(void))dlsym(g_cef, "cef_shutdown");

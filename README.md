@@ -1,10 +1,10 @@
 # Mighty Code
 
-<img src="assets/icons/mightyclaude.png" alt="Mighty Code 너구리" width="128" />
+<img src="assets/icons/mightycode.png" alt="Mighty Code 너구리" width="128" />
 
 **Claude Code · Codex CLI · Gemini CLI를 한 창에서 나란히 쓰는 데스크톱 앱입니다.**
 
-[macOS 빌드](https://github.com/athens96/MightyCode/actions/workflows/native-macos.yml) · [Windows 빌드](https://github.com/athens96/MightyCode/actions/workflows/native-windows.yml) · [도움말](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/) · [다운로드](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/)
+[macOS 빌드](https://github.com/athens96/MightyCode/actions/workflows/native-macos.yml) · [Windows 빌드](https://github.com/athens96/MightyCode/actions/workflows/native-windows.yml) · [도움말](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/help/) · [다운로드](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/)
 
 Mighty Code는 프로젝트 폴더(워크스페이스)마다 여러 실행 창을 열고, 창마다 Claude·Codex·Gemini CLI를 직접 실행해 대화와 설정을 따로 유지합니다. 진행을 블록 다이어그램으로 보는 **마이티 보기**, 정해진 순서로 일을 진행하는 **스타일**(오로보로스·페이퍼신·슈퍼파워·클러드 플랜), 작업 상태를 알려 주는 **데스크톱 펫**, 휴대폰에서 Mac을 다루는 **휴대폰 원격**(화면 보기 포함)이 있습니다. macOS 앱과 Windows 앱(**베타**), Android 휴대폰 앱이 있고, 화면은 한국어·영어·중국어·일본어로 볼 수 있습니다.
 
@@ -16,13 +16,13 @@ Mighty Code는 프로젝트 폴더(워크스페이스)마다 여러 실행 창�
 
 ## 다운로드와 설치
 
-[다운로드 페이지](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/)에서 내 운영체제용 파일을 받습니다.
+[다운로드 페이지](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/)에서 내 운영체제용 파일을 받습니다.
 
 | 파일 | 설치 |
 | --- | --- |
-| `MightyClaude-macos.zip` | 풀고 `MightyClaude.app`을 응용 프로그램 폴더로 옮긴 뒤 엽니다. |
-| `MightyClaude-windows-x64-setup.exe` / `-arm64-setup.exe` (베타) | 실행해서 설치합니다. 관리자 권한 없이 이 사용자에게만 `%LOCALAPPDATA%\Programs\MightyClaude`에 설치되고, 제거는 Windows 설정 → 앱에서 합니다. 대부분의 PC는 x64, Snapdragon 같은 ARM PC는 ARM64입니다. |
-| Windows x64 / ARM64 zip (베타) | 설치 없이 쓸 때: 폴더째 풀고 그 안의 `MightyClaude.exe`를 실행합니다. 함께 든 파일도 필요하므로 exe만 옮기지 마세요. |
+| `MightyCode-macos.zip` | 풀고 `MightyCode.app`을 응용 프로그램 폴더로 옮긴 뒤 엽니다. |
+| `MightyCode-windows-x64-setup.exe` / `-arm64-setup.exe` (베타) | 실행해서 설치합니다. 관리자 권한 없이 이 사용자에게만 `%LOCALAPPDATA%\Programs\MightyCode`에 설치되고, 제거는 Windows 설정 → 앱에서 합니다. 대부분의 PC는 x64, Snapdragon 같은 ARM PC는 ARM64입니다. |
+| Windows x64 / ARM64 zip (베타) | 설치 없이 쓸 때: 폴더째 풀고 그 안의 `MightyCode.exe`를 실행합니다. 함께 든 파일도 필요하므로 exe만 옮기지 마세요. |
 | Android APK | 휴대폰에 받아 설치합니다. 연결 방법은 도움말의 [휴대폰 원격](docs/help/content/ko/phone.md)에 있습니다. |
 
 AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요소**에서도 어떤 CLI가 준비됐는지 보고 명령을 복사할 수 있습니다.
@@ -41,7 +41,7 @@ AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요�
 
 ## 도움말
 
-자세한 사용법은 [도움말 사이트](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/)에 있습니다(한국어·영어·중국어·일본어). 앱에서 고른 언어로 바로 열 수 있습니다.
+자세한 사용법은 [도움말 사이트](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/help/)에 있습니다(한국어·영어·중국어·일본어). 앱에서 고른 언어로 바로 열 수 있습니다.
 
 - Mac: 메뉴 막대의 **Mighty Code 도움말**(⌘?) 또는 **설정 → 앱 정보 → 도움말 열기**
 - Windows: 사이드바 아래의 도움말 단추, F1 또는 **설정 → 앱 정보 → 도움말 열기**
@@ -106,7 +106,7 @@ AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요�
 
 ```sh
 git clone https://github.com/athens96/MightyCode.git
-cd MightyClaude
+cd MightyCode
 ```
 
 ### macOS
@@ -115,7 +115,7 @@ macOS 14 이상과 Swift 6 이상의 도구(Xcode 또는 Command Line Tools)가 
 
 ```sh
 bash scripts/setup-codesign.sh          # 한 번만: 재빌드해도 macOS 권한 허용이 유지되는 로컬 서명 인증서
-bash scripts/build-macos.sh             # release/native-macos/MightyClaude.app
+bash scripts/build-macos.sh             # release/native-macos/MightyCode.app
 bash scripts/test-native-macos.sh --filter "AppUpdateTests|AttachmentTests"
 ```
 
@@ -126,7 +126,7 @@ bash scripts/test-native-macos.sh --filter "AppUpdateTests|AttachmentTests"
 임시 프로필로 앱 시작과 셸 실행을 확인할 수 있습니다. 실제 AI 요청은 보내지 않습니다.
 
 ```sh
-release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+release/native-macos/MightyCode.app/Contents/MacOS/MightyCode \
   --smoke-test --smoke-exit --profile /tmp/mighty-native-smoke
 ```
 
@@ -134,7 +134,7 @@ release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
 
 Windows 10 버전 2004(빌드 19041) 이상 또는 Windows 11, **.NET 10 SDK**, **Node.js 22**, **PowerShell 7**, Windows SDK 빌드 도구(Visual Studio의 Windows 앱 개발 도구 또는 Build Tools)가 필요합니다. Windows App SDK 버전은 프로젝트에서 고정합니다.
 
-창의 화면은 WebView2에 띄운 React 페이지입니다(`native/windows/web`, [README](native/windows/web/README.md)). `dotnet build`·`build-windows.ps1`이 `npm ci`(처음 한 번)와 `npm run build`를 직접 돌려 `Assets\Web`에 넣습니다. 상태 폴더(`%APPDATA%\MightyClaudeNative` 또는 `--profile` 폴더)에 빈 `ui-winui` 파일을 두면 이전 WinUI 화면으로 열립니다(비상구).
+창의 화면은 WebView2에 띄운 React 페이지입니다(`native/windows/web`, [README](native/windows/web/README.md)). `dotnet build`·`build-windows.ps1`이 `npm ci`(처음 한 번)와 `npm run build`를 직접 돌려 `Assets\Web`에 넣습니다. 상태 폴더(`%APPDATA%\MightyCode` 또는 `--profile` 폴더)에 빈 `ui-winui` 파일을 두면 이전 WinUI 화면으로 열립니다(비상구).
 
 ```powershell
 # C# 코어 검사 후 x64 / ARM64 앱 빌드
@@ -142,16 +142,16 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 pwsh ./scripts/build-windows.ps1 -Architecture arm64 -Configuration Release
 
 # 격리된 프로필로 앱 실행 검사: WinUI 비상구가 뜨는지 짧게, 그다음 웹 화면과 그 곁의 동작 전부
-pwsh ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-x64/MightyClaude.exe
-pwsh ./scripts/test-native-windows.ps1 -Web -Executable ./release/native-windows-x64/MightyClaude.exe
+pwsh ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-x64/MightyCode.exe
+pwsh ./scripts/test-native-windows.ps1 -Web -Executable ./release/native-windows-x64/MightyCode.exe
 
 # 웹 화면 검사(빌드 전에도)
 cd native/windows/web; npm ci; npm run typecheck; npm test
 ```
 
-`build-windows.ps1`은 먼저 `MightyClaude.Core.Tests`를 돌린 뒤, self-contained 앱을 `release/native-windows-<아키텍처>/`에, 배포 zip과 SHA-256 파일을 `release/MightyClaude-windows-<아키텍처>.zip`에 만듭니다. 다른 출력 폴더는 `-OutputDirectory`로 지정합니다. `-Installer`를 붙이면 [Inno Setup 6](https://jrsoftware.org/isinfo.php)으로 설치 프로그램 `release/MightyClaude-windows-<아키텍처>-setup.exe`도 만듭니다(`native/windows/installer/MightyClaude.iss`, `ISCC.exe` 경로는 `MIGHTY_ISCC`로 지정 가능). `pwsh ./scripts/test-windows-installer.ps1 -Setup <setup.exe> -Version <버전>`은 그것을 조용히 설치해 확인하고 다시 제거합니다. 이 패키지는 코드 서명하지 않습니다.
+`build-windows.ps1`은 먼저 `MightyCode.Core.Tests`를 돌린 뒤, self-contained 앱을 `release/native-windows-<아키텍처>/`에, 배포 zip과 SHA-256 파일을 `release/MightyCode-windows-<아키텍처>.zip`에 만듭니다. 다른 출력 폴더는 `-OutputDirectory`로 지정합니다. `-Installer`를 붙이면 [Inno Setup 6](https://jrsoftware.org/isinfo.php)으로 설치 프로그램 `release/MightyCode-windows-<아키텍처>-setup.exe`도 만듭니다(`native/windows/installer/MightyCode.iss`, `ISCC.exe` 경로는 `MIGHTY_ISCC`로 지정 가능). `pwsh ./scripts/test-windows-installer.ps1 -Setup <setup.exe> -Version <버전>`은 그것을 조용히 설치해 확인하고 다시 제거합니다. 이 패키지는 코드 서명하지 않습니다.
 
-Mac에서는 Windows 앱을 실행할 수 없지만, C# 코어 검사(`dotnet run --project native/windows/MightyClaude.Core.Tests --configuration Release`)와 WinUI 컴파일 검사(`bash scripts/check-winui-compile.sh`)는 돌릴 수 있습니다.
+Mac에서는 Windows 앱을 실행할 수 없지만, C# 코어 검사(`dotnet run --project native/windows/MightyCode.Core.Tests --configuration Release`)와 WinUI 컴파일 검사(`bash scripts/check-winui-compile.sh`)는 돌릴 수 있습니다.
 
 ### 휴대폰 앱과 릴레이
 
@@ -164,15 +164,15 @@ cd relay && npm install && npm test            # 릴레이 서버 (자세한 내
 
 ## 데이터와 소스 구조
 
-앱의 설정과 기록은 이 컴퓨터에만 저장됩니다. 위치는 **설정 → 앱 정보**에서 보고 열 수 있습니다. 기본 위치는 macOS `~/Library/Application Support/MightyClaude Native/`, Windows `%APPDATA%\MightyClaudeNative\`입니다. 대화 기록 자체는 각 CLI의 세션으로 남습니다.
+앱의 설정과 기록은 이 컴퓨터에만 저장됩니다. 위치는 **설정 → 앱 정보**에서 보고 열 수 있습니다. 기본 위치는 macOS `~/Library/Application Support/MightyCode/`, Windows `%APPDATA%\MightyCode\`입니다. 대화 기록 자체는 각 CLI의 세션으로 남습니다.
 
 ```text
-native/macos/Sources/MightyClaude/       SwiftUI/AppKit 화면·앱 상태
+native/macos/Sources/MightyCode/       SwiftUI/AppKit 화면·앱 상태
 native/macos/Sources/MightyCore/         Swift 실행기·저장·스타일·모바일 리모트·원격 워크스페이스
-native/windows/MightyClaude.WinUI/       Windows 호스트(WebView2 창, 페이지가 부르는 동작)와 이전 WinUI 화면
+native/windows/MightyCode.WinUI/       Windows 호스트(WebView2 창, 페이지가 부르는 동작)와 이전 WinUI 화면
 native/windows/web/                      Windows 창의 React 화면 (Vite + TypeScript)
-native/windows/MightyClaude.Core/        C# 실행기·저장
-native/windows/MightyClaude.Core.Tests/  C# 회귀 검사
+native/windows/MightyCode.Core/        C# 실행기·저장
+native/windows/MightyCode.Core.Tests/  C# 회귀 검사
 native/contracts/                        Mac·Windows 클라이언트가 함께 따르는 JSON 계약과 테스트 벡터(휴대폰도 사용)
 mobile/                                  휴대폰 앱 (React Native + Expo)
 relay/                                   휴대폰 원격용 릴레이 서버

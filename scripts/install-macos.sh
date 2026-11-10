@@ -1,6 +1,6 @@
 #!/bin/bash
 # Replace the installed app only while it is not running. Swapping the bundle
-# underneath a running MightyClaude breaks the macOS input method connection
+# underneath a running MightyCode breaks the macOS input method connection
 # (Korean composition falls apart into jamo) and can leave Keychain and other
 # services confused until the app restarts.
 #
@@ -18,18 +18,18 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="${1:-$PROJECT_ROOT/release/native-macos/MightyClaude.app}"
-DESTINATION="${MIGHTY_INSTALL_PATH:-/Applications/MightyClaude.app}"
-BINARY="$DESTINATION/Contents/MacOS/MightyClaude"
+SOURCE="${1:-$PROJECT_ROOT/release/native-macos/MightyCode.app}"
+DESTINATION="${MIGHTY_INSTALL_PATH:-/Applications/MightyCode.app}"
+BINARY="$DESTINATION/Contents/MacOS/MightyCode"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 # The app's data folder (MIGHTY_DATA_DIR for a --profile folder).
-UPDATES="${MIGHTY_DATA_DIR:-$HOME/Library/Application Support/MightyClaude Native}/updates"
+UPDATES="${MIGHTY_DATA_DIR:-$HOME/Library/Application Support/MightyCode}/updates"
 
 # Serialize the entire wait/copy/relaunch sequence. Two pending installers used
 # to wake on the same app exit and write the same timestamped backup together.
 # Keep the lock inode: unlinking it permits another process to lock a new inode.
 LOCK_KEY="$(printf '%s' "$DESTINATION" | shasum -a 256 | cut -d ' ' -f 1)"
-LOCK_PATH="/tmp/mightyclaude-install-${UID}-${LOCK_KEY}.lock"
+LOCK_PATH="/tmp/mightycode-install-${UID}-${LOCK_KEY}.lock"
 # The shell itself retains the locked file descriptor. A wrapper process would
 # release its lock when cancelled while leaving this child installer running.
 exec 9>"$LOCK_PATH"
@@ -45,7 +45,7 @@ codesign --verify --deep --strict "$SOURCE"
 
 # Guard: verify that the source bundle resolves its resources before touching
 # the installed app. A broken bundle must never replace a working installation.
-VERIFY_OUT="$(cd /tmp && "$SOURCE/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
+VERIFY_OUT="$(cd /tmp && "$SOURCE/Contents/MacOS/MightyCode" --verify-resources 2>&1)"
 VERIFY_EXIT=$?
 echo "$VERIFY_OUT"
 if [ "$VERIFY_EXIT" -ne 0 ]; then
@@ -82,11 +82,11 @@ done
 rm -rf "$UPDATES"/*
 
 # Keep two backups, named so LaunchServices does not treat them as apps.
-ls -dt /tmp/MightyClaude-app-backup-* 2>/dev/null | tail -n +3 | xargs rm -rf 2>/dev/null || true
+ls -dt /tmp/MightyCode-app-backup-* 2>/dev/null | tail -n +3 | xargs rm -rf 2>/dev/null || true
 if [ -d "$DESTINATION" ]; then
-  BACKUP="$(mktemp -d /tmp/MightyClaude-app-backup-XXXXXXXX)"
-  ditto "$DESTINATION" "$BACKUP/MightyClaude.app.bak"
-  echo "이전 앱 백업: $BACKUP/MightyClaude.app.bak (복원: ditto 그 폴더 → $DESTINATION)"
+  BACKUP="$(mktemp -d /tmp/MightyCode-app-backup-XXXXXXXX)"
+  ditto "$DESTINATION" "$BACKUP/MightyCode.app.bak"
+  echo "이전 앱 백업: $BACKUP/MightyCode.app.bak (복원: ditto 그 폴더 → $DESTINATION)"
   rm -rf "$DESTINATION"
 fi
 ditto "$SOURCE" "$DESTINATION"

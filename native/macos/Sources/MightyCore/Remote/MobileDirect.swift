@@ -21,7 +21,7 @@ public enum MobileDirect {
     public static let maximumAuthFailures = 5
     static let authFailureWindow: TimeInterval = 60
     /// The one queue every direct listener and socket runs on.
-    static let queue = DispatchQueue(label: "dev.mightyclaude.mobile-direct")
+    static let queue = DispatchQueue(label: "dev.mightycode.mobile-direct")
     /// At most this many endpoints travel in a QR or an `auth_ok`.
     public static let maximumEndpoints = 8
     /// How often the Tailscale addresses are read again while the path is on, on

@@ -941,7 +941,9 @@ public struct MobileHostStatus: Codable, Sendable, Equatable {
 }
 
 public enum MobilePairing {
-    public static let scheme = "mightyclaude"
+    public static let scheme = "mightycode"
+    /// The scheme a host from before the app was renamed still writes in its pairing link.
+    public static let legacyScheme = "mightyclaude"
     public static func generateKey() -> String? {
         var random = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else { return nil }

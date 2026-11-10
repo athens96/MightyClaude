@@ -1,0 +1,389 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+
+namespace MightyCode.Core;
+
+/// Ephemeral, single-call consent. Never persisted in a snapshot. The original
+/// input stays inside the run's channel.
+/// <param name="CanAnswerPlan">An ExitPlanMode request AnswerPlan can settle.</param>
+/// <param name="ReceivedAt">ISO 8601, when the run's channel received the request.</param>
+public sealed record ToolPermissionRequest(
+    string Id, string RunId, string ToolUseId, string ToolName,
+    string InputJson, string Summary,
+    string? Reason = null, string? BlockedPath = null,
+    string State = "pending", bool CanAllow = true, bool CanAnswerQuestions = false,
+    bool CanAnswerPlan = false, string? ReceivedAt = null)
+{
+    /// <summary>The Markdown plan of an ExitPlanMode request.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? Plan => ToolName == ClaudePlanMode.ToolName ? ClaudePlanMode.Plan(InputJson) : null;
+}
+
+/// Claude Code's supported SDK stdio control protocol. Only can_use_tool asks
+/// reach this surface: the CLI evaluates configured denies and modes before asking.
+/// No settings updates or persistent rules are ever returned; the only mode
+/// change is the session-only setMode of an approved plan (AnswerPlan).
+/// A shared lock serializes parser events, UI responses and stream writes.
+public sealed class ClaudePermissionChannel
+{
+    public const int MaximumInputBytes = 65_536;
+    public const int MaximumPending = 16;
+
+    private sealed record Pending(ToolPermissionRequest Display, JsonElement Input);
+
+    public string RunId { get; }
+    public string InitializationId { get; } = Wire.Id();
+    public bool Initialized { get; private set; }
+    public bool Failed { get; private set; }
+    public IReadOnlyList<ToolPermissionRequest> Waiting { get { lock (sync) return pendingOrder.Select(id => pending[id].Display).ToList(); } }
+
+    private readonly object sync = new();
+    private readonly string prompt;
+    private readonly Action<string> write;
+    private readonly Action<ToolPermissionRequest> emit;
+    private readonly Action<ToolPermissionRequest, string> activity;
+    private readonly Action<string> warning;
+    private readonly Action<string> fail;
+    private readonly Action<PlanRecord> planRecorded;
+    private readonly Func<DateTimeOffset> clock;
+    // The pane's stored permission mode, which an approved plan never goes below.
+    private readonly string paneMode;
+    private readonly Dictionary<string, Pending> pending = [];
+    private readonly List<string> pendingOrder = [];
+    private readonly HashSet<string> seen = [];
+    private bool closed;
+
+    /// <param name="plan">Receives every settled ExitPlanMode request: answered, or cancelled because the CLI withdrew it or the run ended.</param>
+    public ClaudePermissionChannel(string runId, string prompt, Action<string> write,
+        Action<ToolPermissionRequest> emit, Action<ToolPermissionRequest, string> activity,
+        Action<string> warning, Action<string> fail,
+        Action<PlanRecord>? plan = null, Func<DateTimeOffset>? clock = null, string paneMode = "plan")
+    {
+        this.paneMode = paneMode;
+        RunId = runId; this.prompt = prompt; this.write = write;
+        this.emit = emit; this.activity = activity;
+        this.warning = warning; this.fail = fail;
+        planRecorded = plan ?? (_ => { }); this.clock = clock ?? (() => DateTimeOffset.UtcNow);
+    }
+
+    public void Start()
+        => Send(new
+        {
+            type = "control_request", request_id = InitializationId,
+            request = new { subtype = "initialize", hooks = new { }, sdkMcpServers = Array.Empty<object>(), supportedDialogKinds = Array.Empty<string>() }
+        });
+
+    public void InitializationTimedOut()
+    {
+        lock (sync)
+        {
+            if (closed || Initialized) return;
+            FailClosed(ToolPermissionStrings.InitializeTimedOut);
+        }
+    }
+
+    public void Receive(string data)
+    {
+        lock (sync)
+        {
+            if (closed) return;
+            JsonElement envelope;
+            try { using var doc = JsonDocument.Parse(data); envelope = doc.RootElement.Clone(); }
+            catch { return; }
+            if (envelope.ValueKind != JsonValueKind.Object) return;
+            var type = envelope.Text("type");
+            if (type is null) return;
+
+            if (type == "control_response" &&
+                envelope.TryGetProperty("response", out var outerResp) &&
+                outerResp.ValueKind == JsonValueKind.Object &&
+                outerResp.Text("request_id") == InitializationId)
+            {
+                if (Initialized) return;
+                if (outerResp.Text("subtype") != "success") { FailClosed(ToolPermissionStrings.InitializeFailed); return; }
+                Initialized = true;
+                if (outerResp.TryGetProperty("pending_permission_requests", out var replay) &&
+                    replay.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in replay.EnumerateArray())
+                    {
+                        ReceiveRequest(item.Clone());
+                        if (closed) break;
+                    }
+                }
+                if (!closed) write(prompt);
+                return;
+            }
+
+            if (type == "control_cancel_request" && envelope.Text("request_id") is string cancelId)
+            { Settle(cancelId, "cancelled", "stopped"); return; }
+
+            if (type == "control_request") ReceiveRequest(envelope);
+        }
+    }
+
+    private void ReceiveRequest(JsonElement envelope)
+    {
+        if (closed) return;
+        var id = envelope.Text("request_id");
+        var hasRequest = envelope.TryGetProperty("request", out var req) && req.ValueKind == JsonValueKind.Object;
+        var subtype = hasRequest ? req.Text("subtype") : null;
+        if (!Wire.Identifier(id) || !hasRequest || subtype is null)
+        { FailClosed(ToolPermissionStrings.MalformedControlRequest); return; }
+
+        if (!seen.Add(id!)) return;
+        if (seen.Count > 2048) { FailClosed(ToolPermissionStrings.TooManyRequestsInRun); return; }
+
+        if (subtype == "request_user_dialog") { warning(ToolPermissionStrings.UnsupportedDialog); return; }
+        if (subtype == "elicitation")
+        { SendSuccess(id!, new { action = "decline" }); warning(ToolPermissionStrings.DeclinedElicitation); return; }
+        if (subtype != "can_use_tool") { SendError(id!, "This host does not support this control request."); return; }
+
+        var toolName = req.Text("tool_name");
+        var toolUseId = req.Text("tool_use_id");
+        if (string.IsNullOrEmpty(toolName) || Encoding.UTF8.GetByteCount(toolName) > 256 ||
+            !Wire.Identifier(toolUseId) ||
+            !req.TryGetProperty("input", out var inputEl) || inputEl.ValueKind != JsonValueKind.Object)
+        { SendError(id!, "Invalid tool permission request."); warning(ToolPermissionStrings.DeniedMalformedRequest); return; }
+
+        if (pending.Count >= MaximumPending)
+        { Deny(id!, toolUseId!, "Too many pending permission requests."); warning(ToolPermissionStrings.DeniedTooManyPending); return; }
+
+        var displayJson = InputDisplay(inputEl);
+        if (Encoding.UTF8.GetByteCount(displayJson) > MaximumInputBytes)
+        {
+            // A plan the card cannot show whole is never approvable; Claude is asked for a shorter one.
+            if (toolName == ClaudePlanMode.ToolName)
+            {
+                Deny(id!, toolUseId!, ClaudePlanMode.TooLongMessage); warning(Locale.Get("plan.warning.tooLong"));
+                if (ClaudePlanMode.Plan(inputEl) is { } tooLong) RecordCancelled(id!, tooLong, null);
+                return;
+            }
+            Deny(id!, toolUseId!, "Tool input exceeds the host's complete-display limit; permission denied."); warning(ToolPermissionStrings.DeniedOversizedInput); return;
+        }
+
+        var interaction = (req.TryGetProperty("requires_user_interaction", out var ri) && ri.ValueKind == JsonValueKind.True) || toolName == "AskUserQuestion";
+        var details = new[] { req.Text("title"), req.Text("description"), req.Text("decision_reason") }.Where(s => !string.IsNullOrEmpty(s)).Select(s => s!).ToArray();
+        var detailText = string.Join("\n", details);
+        var originalPath = req.Text("blocked_path");
+        var completeMetadata = Encoding.UTF8.GetByteCount(detailText) <= 8192 && Encoding.UTF8.GetByteCount(originalPath ?? "") <= 8192;
+        var canAnswerQuestions = completeMetadata && toolName == "AskUserQuestion" && UserQuestionnaire.Parse(displayJson) is not null;
+        var canAnswerPlan = completeMetadata && toolName == ClaudePlanMode.ToolName && ClaudePlanMode.Plan(inputEl) is not null;
+
+        var reason = ActivitySupport.Clean(detailText, 8192);
+        if (interaction && !canAnswerQuestions && !canAnswerPlan) reason += (reason.Length == 0 ? "" : "\n\n") + ToolPermissionStrings.NeedsSeparateInputScreen;
+        if (!completeMetadata) reason += (reason.Length == 0 ? "" : "\n\n") + ToolPermissionStrings.MetadataTooLarge;
+
+        var storedInput = inputEl.Clone();
+        var value = new ToolPermissionRequest(
+            Id: id!, RunId: RunId, ToolUseId: toolUseId!,
+            ToolName: ActivitySupport.Clean(toolName!, 256, true),
+            InputJson: displayJson,
+            Summary: ActivitySupport.Summary(toolName!, inputEl),
+            Reason: reason.Length == 0 ? null : reason,
+            BlockedPath: originalPath is null ? null : ActivitySupport.Clean(originalPath, 8192),
+            CanAllow: !interaction && completeMetadata,
+            CanAnswerQuestions: canAnswerQuestions,
+            CanAnswerPlan: canAnswerPlan,
+            ReceivedAt: ClaudePlanMode.Timestamp(clock()));
+        pending[id!] = new Pending(value, storedInput);
+        pendingOrder.Add(id!);
+        activity(value, "waiting"); emit(value);
+    }
+
+    public void Respond(string requestId, bool allow)
+    {
+        lock (sync)
+        {
+            if (closed || !pending.TryGetValue(requestId, out var request))
+                throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+            if (allow && !request.Display.CanAllow)
+                throw new InvalidOperationException(ToolPermissionStrings.CannotAllow);
+            if (allow) SendSuccess(requestId, new { behavior = "allow", updatedInput = request.Input, toolUseID = request.Display.ToolUseId });
+            else Deny(requestId, request.Display.ToolUseId, "The user denied this tool request in Mighty Code.");
+            pending.Remove(requestId); pendingOrder.Remove(requestId);
+            var display = request.Display with { State = allow ? "allowed" : "denied" };
+            activity(display, allow ? "running" : "error"); emit(display);
+            // A plan denied from a card that cannot answer plans is still kept.
+            if (!allow && display.CanAnswerPlan && ClaudePlanMode.Plan(request.Input) is { } plan) RecordCancelled(requestId, plan, display.ReceivedAt);
+        }
+    }
+
+    /// <summary>
+    /// Answers one pending ExitPlanMode request. An approval switches the CLI session's mode;
+    /// revise sends the feedback back as the denial.
+    /// </summary>
+    public PlanRecord AnswerPlan(string requestId, PlanDecision decision)
+    {
+        lock (sync)
+        {
+            if (closed || !pending.TryGetValue(requestId, out var request)) throw new InvalidOperationException(Locale.Get("plan.error.settled"));
+            if (!request.Display.CanAnswerPlan || ClaudePlanMode.Plan(request.Input) is not { } plan) throw new InvalidOperationException(Locale.Get("plan.error.notPlan"));
+            // Validation precedes settlement: an empty revise leaves this exact plan answerable.
+            var response = ClaudePlanMode.Response(decision, request.Display.ToolUseId, paneMode);
+            SendSuccess(requestId, response);
+            pending.Remove(requestId); pendingOrder.Remove(requestId);
+            var approved = PlanOutcome.PaneMode(decision.Outcome) is not null;
+            var display = request.Display with { State = approved ? "allowed" : "denied" };
+            activity(display, approved ? "running" : "error"); emit(display);
+            var record = ClaudePlanMode.Record(requestId, RunId, plan, request.Display.ReceivedAt ?? ClaudePlanMode.Timestamp(clock()), ClaudePlanMode.Timestamp(clock()), decision);
+            planRecorded(record);
+            return record;
+        }
+    }
+
+    /// <summary>A follow-up joins only an initialized, still-open Claude stream.</summary>
+    public bool TrySteer(string text)
+    {
+        lock (sync)
+        {
+            if (closed || !Initialized || string.IsNullOrWhiteSpace(text) || text.Length > 100_000 || text.Contains('\0')) return false;
+            try { write(ProviderInput.PromptFrame(text)); return true; }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { return false; }
+        }
+    }
+
+    public void CancelAll()
+    {
+        lock (sync)
+        {
+            if (closed) return;
+            closed = true;
+            foreach (var id in pendingOrder.ToArray()) Settle(id, "cancelled", "stopped");
+        }
+    }
+
+    public void AnswerQuestions(string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers)
+    {
+        lock (sync)
+        {
+            if (closed || !pending.TryGetValue(requestId, out var request)) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+            if (!request.Display.CanAnswerQuestions || UserQuestionnaire.Parse(request.Display.InputJson) is not { } questionnaire)
+                throw new InvalidOperationException(ToolPermissionStrings.CannotAllow);
+            // Validation precedes settlement: an invalid draft leaves this exact request answerable.
+            var validated = questionnaire.ValidateAnswers(answers);
+            var input = request.Input.EnumerateObject().Where(p => p.Name is not ("answers" or "response")).ToDictionary(p => p.Name, p => (object)p.Value.Clone(), StringComparer.Ordinal);
+            input["answers"] = validated;
+            SendSuccess(requestId, new { behavior = "allow", updatedInput = input, toolUseID = request.Display.ToolUseId });
+            pending.Remove(requestId); pendingOrder.Remove(requestId);
+            var display = request.Display with { State = "answered" }; activity(display, "running"); emit(display);
+        }
+    }
+
+    private void Settle(string id, string state, string activityState)
+    {
+        if (!pending.TryGetValue(id, out var p)) return;
+        pending.Remove(id);
+        pendingOrder.Remove(id);
+        var display = p.Display with { State = state };
+        activity(display, activityState); emit(display);
+        if (display.CanAnswerPlan && ClaudePlanMode.Plan(p.Input) is { } plan) RecordCancelled(id, plan, display.ReceivedAt);
+    }
+    private void RecordCancelled(string id, string plan, string? receivedAt)
+    {
+        var now = ClaudePlanMode.Timestamp(clock());
+        planRecorded(ClaudePlanMode.Record(id, RunId, plan, receivedAt ?? now, now, PlanDecision.Cancel));
+    }
+
+    private void FailClosed(string message) { Failed = true; CancelAll(); fail(message); }
+
+    private void SendSuccess(string id, object result) => SendResponse(new { subtype = "success", request_id = id, response = result });
+    private void SendError(string id, string message) => SendResponse(new { subtype = "error", request_id = id, error = message });
+    private void Deny(string id, string toolUseId, string message) => SendSuccess(id, new { behavior = "deny", message, toolUseID = toolUseId });
+
+    private void SendResponse(object response) => Send(new { type = "control_response", response });
+
+    private void Send(object obj)
+    {
+        lock (sync)
+        {
+            try { write(JsonSerializer.Serialize(obj, Wire.Json) + "\n"); }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+            {
+                FailClosed(Locale.Get("questionnaire.error.delivery"));
+                throw new InvalidOperationException(Locale.Get("questionnaire.error.delivery"), ex);
+            }
+        }
+    }
+
+    // Use relaxed encoder so U+202E and other non-ASCII chars stay raw for the
+    // post-process loop below, which then escapes them with lowercase \uXXXX.
+    private static readonly JsonSerializerOptions DisplayBase = new()
+        { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    private static string InputDisplay(JsonElement input)
+    {
+        var json = JsonSerializer.Serialize(input, DisplayBase);
+        // Post-process to escape Unicode format characters (e.g. U+202E RIGHT-TO-LEFT OVERRIDE)
+        // and non-standard control characters, matching the macOS inputDisplay escape logic.
+        var sb = new StringBuilder(json.Length);
+        for (int i = 0; i < json.Length; i++)
+        {
+            char c = json[i];
+            if (char.IsHighSurrogate(c) && i + 1 < json.Length && char.IsLowSurrogate(json[i + 1]))
+            {
+                sb.Append(c); sb.Append(json[++i]);
+            }
+            else
+            {
+                var cat = CharUnicodeInfo.GetUnicodeCategory(c);
+                bool isFormat = cat == UnicodeCategory.Format;
+                bool isNonstandardControl = c < '\x20' && c != '\t' && c != '\n' && c != '\r';
+                if (isFormat || isNonstandardControl) sb.Append($"\\u{(int)c:x4}");
+                else sb.Append(c);
+            }
+        }
+        return sb.ToString();
+    }
+}
+
+/// The Claude arguments (and initial stdin frame) needed to launch with host
+/// permission prompts, and the fallback for paths that keep prompts off.
+public sealed record ProviderInput(List<string> Arguments, byte[] StandardInput)
+{
+    public static ProviderInput Prepare(StartRunRequest value, string pluginDirectory, bool allowPermissionPrompts)
+    {
+        var request = value.Validate();
+        var args = ProviderCatalog.Arguments(request, pluginDirectory);
+        if (allowPermissionPrompts && request.Provider == "claude") HostPrompts(args);
+        return new(args, System.Text.Encoding.UTF8.GetBytes(request.Provider == "gemini" ? AntigravityUserMessage(request.Input) : PromptFrame(request.Input)));
+    }
+
+    /// <summary>
+    /// Rewrites a Claude argument list in place so permission prompts come to
+    /// this host over stdio. Only a launch path that can show the approval bar
+    /// calls this; every other path keeps --permission-prompts none as today.
+    /// </summary>
+    public static List<string> HostPrompts(List<string> arguments)
+    {
+        var noneIdx = arguments.IndexOf("none");
+        if (noneIdx > 0 && arguments[noneIdx - 1] == "--permission-prompts")
+        {
+            arguments[noneIdx] = "host";
+            arguments.AddRange(["--permission-prompt-tool", "stdio"]);
+        }
+        if (!arguments.Contains("--input-format")) arguments.AddRange(["--input-format", "stream-json"]);
+        // A style's own tools are judged at each request here (StyleRunPermissions.AutoAllows): listed at launch, the CLI
+        // would allow them for the whole run, whatever became of the style meanwhile.
+        var allowed = arguments.IndexOf("--allowedTools");
+        if (allowed >= 0 && allowed + 1 < arguments.Count) arguments.RemoveRange(allowed, 2);
+        return arguments;
+    }
+
+    /// <summary>
+    /// The single stream-json user frame the channel sends once the handshake succeeds, and a steer's. Its message names its
+    /// role as the Mac's does (M/MightyCore/Attachments.swift:120): Claude Code 2.1.289 refuses a user message without one
+    /// ("Expected message role 'user', got 'undefined'").
+    /// </summary>
+    public static string PromptFrame(string input)
+        => JsonSerializer.Serialize(new { type = "user", message = new { role = "user", content = input } }, Wire.Json) + "\n";
+
+    /// <summary>
+    /// The one stdin line of an Antigravity run (<c>agy --input-format stream-json</c>, M/MightyCore/Attachments.swift
+    /// antigravityUserMessage): each line is a turn, and closing stdin after it ends the session.
+    /// </summary>
+    public static string AntigravityUserMessage(string text)
+        => JsonSerializer.Serialize(new { @event = "user", message = new { content = text } }, Wire.Json) + "\n";
+}

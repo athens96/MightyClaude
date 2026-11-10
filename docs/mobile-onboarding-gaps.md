@@ -17,10 +17,10 @@ Mighty 블록 화면은 Mac 창이 Mighty 모드일 때만 열렸고, 폰에서 
 ### 무엇이 없었나
 `mobile/assets/images/`의 `icon.png`, `android-icon-foreground.png`,
 `android-icon-monochrome.png`, `favicon.png`가 Expo 템플릿 그대로였습니다.
-데스크톱 너구리 그림(`assets/icons/mightyclaude.png`)과 연결된 것이 없었습니다.
+데스크톱 너구리 그림(`assets/icons/mightycode.png`)과 연결된 것이 없었습니다.
 
 ### 무엇을 바꿨나
-- `scripts/generate-phone-assets.py` — 원본 한 장(`assets/icons/mightyclaude.png`)에서
+- `scripts/generate-phone-assets.py` — 원본 한 장(`assets/icons/mightycode.png`)에서
   모든 폰 이미지를 만드는 생성기. 배경색은 `#0d0d0f`.
   - `icon.png`: 1024×1024, 알파 없음(RGB), `#0d0d0f` 위에 너구리.
   - `android-icon-foreground.png`: 512×512 RGBA, 너구리를 66% 안전 영역 안에 배치.
@@ -33,7 +33,7 @@ Mighty 블록 화면은 Mac 창이 Mighty 모드일 때만 열렸고, 폰에서 
 ### 어떤 검사가 증명하나
 `cd mobile && npx jest src/__tests__/app-assets.test.ts` — PNG 헤더로 파일별 크기와
 색 형식(iOS 아이콘은 불투명)을 확인하고, `asset-sources.json`의 원본 sha256이 현재
-`assets/icons/mightyclaude.png`와 같은지, 디스크의 출력 파일이 생성기가 기록한 sha256과
+`assets/icons/mightycode.png`와 같은지, 디스크의 출력 파일이 생성기가 기록한 sha256과
 같은지, Expo 템플릿 그림의 해시가 하나도 남지 않았는지, `app.json`이 생성된 그림과
 `#0d0d0f` 배경만 가리키는지 확인합니다.
 
@@ -91,7 +91,7 @@ Mac의 모바일 리모트 설정에는 릴레이 입력칸과 (연결된 뒤의
 연결하는 순서는 적혀 있지 않았습니다.
 
 ### 무엇을 바꿨나
-- `native/macos/Sources/MightyClaude/MobileRemoteSettingsView.swift` — 릴레이 입력칸
+- `native/macos/Sources/MightyCode/MobileRemoteSettingsView.swift` — 릴레이 입력칸
   바로 아래에 번호 붙은 네 단계(`connectionGuide`, 접근성 id `settings-mobile-guide`)를
   넣었습니다. 릴레이 주소가 비었거나 잘못됐을 때 QR 대신 안내 문구를 보이는 기존
   동작은 그대로입니다.

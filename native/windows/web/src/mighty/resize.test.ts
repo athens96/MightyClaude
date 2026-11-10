@@ -4,7 +4,7 @@ import {
   pinnedUnit, resizeTarget, resizedSize, vertical,
 } from './resize';
 
-// Translated from MightyClaude.Core.Tests/MightyGraphInteractionVerification.cs.
+// Translated from MightyCode.Core.Tests/MightyGraphInteractionVerification.cs.
 const Frame = { x: 100, y: 100, w: 300, h: 200 };
 
 describe('resize edges (Core ResizeEdgeRules)', () => {

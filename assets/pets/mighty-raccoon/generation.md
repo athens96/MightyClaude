@@ -1,6 +1,6 @@
 # Mighty Raccoon
 
-Generated with the built-in image generation tool through the `hatch-pet` and `imagegen` skills. Reference: `assets/icons/mightyclaude.png`.
+Generated with the built-in image generation tool through the `hatch-pet` and `imagegen` skills. Reference: `assets/icons/mightycode.png`.
 
 Authoritative visual prompt: preserve the raccoon's face, round glasses, striped tail, blue superhero suit and red cape from the app icon. Show a compact, whole-body standing superhero with red boots and the icon's red shield with a yellow M on the chest, without a computer, laptop or extra props. Use the icon's clean outlined cartoon style, readable at desktop pet size. The approved canonical reference grounds every state strip. Flat green chroma is removed by the original hatch-pet extraction pipeline.
 

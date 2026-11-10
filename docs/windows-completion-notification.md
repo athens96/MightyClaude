@@ -19,7 +19,7 @@ Windows App SDK의 `AppNotificationManager`(토스트 알림)를 사용한다.
 
 ## 알림 내용
 
-- 제목: `"MightyClaude · 작업 완료"` (고정)
+- 제목: `"MightyCode · 작업 완료"` (고정)
 - 본문: `"{runTitle}의 작업이 완료되었습니다."` (`{runTitle}`은 세션 제목)
 - 세션 ID는 `launch` 파라미터로 전달되며, 알림 클릭 시 해당 실행 창을 선택한다
 - 프롬프트, 도구 인자, 출력, 프로젝트 경로는 포함되지 않는다

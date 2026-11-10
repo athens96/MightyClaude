@@ -8,7 +8,7 @@ section: phone
 Macとスマートフォンはリレーサーバー経由で接続されます。内容はエンドツーエンドで暗号化されるため、リレーは内容を見ることができません。ルーターのポートを開けたり、VPNを使ったりする必要はありません。Tailscale を使っていれば、[リレーを通さず直接](#direct)接続することもできます。
 
 ## スマートフォンアプリを入手する {#get-app}
-[ダウンロードページ](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)からAndroidアプリ(APK)をダウンロードしてインストールします。
+[ダウンロードページ](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/index.html)からAndroidアプリ(APK)をダウンロードしてインストールします。
 
 ## 接続する {#pair}
 Macで:

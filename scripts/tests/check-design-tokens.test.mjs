@@ -36,8 +36,8 @@ function areas(dir) {
   return JSON.parse(fs.readFileSync(path.join(dir, SPACING_BUDGET), 'utf8')).areas;
 }
 
-const MAC = 'native/macos/Sources/MightyClaude/View.swift';
-const WIN = 'native/windows/MightyClaude.WinUI/MainWindow.View.cs';
+const MAC = 'native/macos/Sources/MightyCode/View.swift';
+const WIN = 'native/windows/MightyCode.WinUI/MainWindow.View.cs';
 const PHONE = 'mobile/src/components/view.tsx';
 
 test('a count above the budget fails', () => {
@@ -130,7 +130,7 @@ test('an exempt region needs a reason and an end', () => {
 
 test('0, 1, tokens, comments, tests and exempt files are not counted', () => {
   const dir = fixture({
-    exemptFiles: { 'native/macos/Sources/MightyClaude/*Diagnostics*.swift': 'smoke fixtures' },
+    exemptFiles: { 'native/macos/Sources/MightyCode/*Diagnostics*.swift': 'smoke fixtures' },
     files: {
       [MAC]: [
         'VStack(spacing: 0) { Text("a").padding(.top, 1).padding(DesignMetrics.Spacing.md) }',
@@ -138,7 +138,7 @@ test('0, 1, tokens, comments, tests and exempt files are not counted', () => {
         'HStack(spacing: DesignMetrics.Spacing.sm) {}',
         '',
       ].join('\n'),
-      'native/macos/Sources/MightyClaude/LayoutDiagnostics.swift': 'Text("a").padding(20)\n',
+      'native/macos/Sources/MightyCode/LayoutDiagnostics.swift': 'Text("a").padding(20)\n',
       'native/macos/Tests/MightyCoreTests/ViewTests.swift': 'Text("a").padding(20)\n',
       [WIN]: 'var a = new Thickness(0, 1, DesignMetrics.Spacing.Md, 0); const double Spacing = 18;\n',
       'mobile/src/__tests__/view.test.tsx': 'const s = { padding: 20 };\n',
@@ -187,10 +187,10 @@ test('a WinUI font size, line height or family set directly fails; TextSize, Tex
 
 test('a font budget only goes down, and its exempt globs must match', () => {
   const dir = fixture({
-    fonts: { exemptFiles: { 'native/windows/MightyClaude.WinUI/*Smoke*.cs': 'fixtures' }, files: { [WIN]: 3 } },
+    fonts: { exemptFiles: { 'native/windows/MightyCode.WinUI/*Smoke*.cs': 'fixtures' }, files: { [WIN]: 3 } },
     files: {
       [WIN]: 'var b = new TextBlock { FontSize = 12 };\n',
-      'native/windows/MightyClaude.WinUI/MainWindow.ViewSmoke.cs': 'var c = new TextBlock { FontSize = 9 };\n',
+      'native/windows/MightyCode.WinUI/MainWindow.ViewSmoke.cs': 'var c = new TextBlock { FontSize = 9 };\n',
     },
   });
   try {
@@ -204,11 +204,11 @@ test('a font budget only goes down, and its exempt globs must match', () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
-  const empty = fixture({ fonts: { exemptFiles: { 'native/windows/MightyClaude.WinUI/Gone.cs': 'removed' }, files: {} } });
+  const empty = fixture({ fonts: { exemptFiles: { 'native/windows/MightyCode.WinUI/Gone.cs': 'removed' }, files: {} } });
   try {
     const r = run(empty);
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /exemptFiles native\/windows\/MightyClaude\.WinUI\/Gone\.cs matches no file/);
+    assert.match(r.stderr, /exemptFiles native\/windows\/MightyCode\.WinUI\/Gone\.cs matches no file/);
   } finally {
     fs.rmSync(empty, { recursive: true, force: true });
   }

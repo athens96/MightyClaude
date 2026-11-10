@@ -10,7 +10,7 @@
 // language from navigator.language. Plain node, no dependencies; images go through `cwebp`
 // when it is installed. docs/help/README.md describes the content conventions.
 //
-// --shots takes the unzipped CI artifact (MightyClaude-macos-help-shots). The capture writes
+// --shots takes the unzipped CI artifact (MightyCode-macos-help-shots). The capture writes
 // <profile>/help-shots/<lang>/<id>-<theme>.png and the artifact keeps the path below the
 // runner's temp folder, so these layouts are all accepted, tried in this order:
 //   <dir>/<lang>/<id>-<theme>.png

@@ -17,7 +17,7 @@ public struct ResourceCheckResult {
     public var warning: String? {
         guard !found else { return nil }
         let tried = triedPaths.map { "  \($0)" }.joined(separator: "\n")
-        return "[MightyClaude] missing resource: \(resource)\n  searched:\n\(tried)"
+        return "[MightyCode] missing resource: \(resource)\n  searched:\n\(tried)"
     }
 }
 

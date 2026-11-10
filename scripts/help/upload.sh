@@ -2,7 +2,7 @@
 # Usage: scripts/help/upload.sh [--dry-run] [site-dir]
 #
 # Uploads the built help site (node scripts/help/build.mjs --shots <dir>) to the R2 bucket
-# `mightyclaude` under `mightyclaude/help/`, the way releases are uploaded:
+# `mightycode` under `mightycode/help/`, the way releases are uploaded:
 # `wrangler r2 object put <bucket>/<key> --file … --remote` (wrangler 4 writes to a local
 # simulator without --remote). wrangler signs in through its own OAuth login; this script
 # reads no keys and prints only the object keys it writes.
@@ -13,8 +13,8 @@
 # Pages are no-cache so a fix shows at once; pictures are cached for an hour.
 set -euo pipefail
 
-BUCKET="mightyclaude"
-PREFIX="mightyclaude/help"
+BUCKET="mightycode"
+PREFIX="mightycode/help"
 DRY_RUN=0
 SITE=""
 for arg in "$@"; do

@@ -1,4 +1,4 @@
-// The sidebar's search (MightyClaude.Core/AddPaneMenu.cs Filtered): name or path, ignoring case and surrounding spaces.
+// The sidebar's search (MightyCode.Core/AddPaneMenu.cs Filtered): name or path, ignoring case and surrounding spaces.
 export function filterWorkspaces<T extends { name: string; path: string }>(workspaces: readonly T[], search: string): T[] {
   const needle = search.trim().toLowerCase();
   if (needle.length === 0) return [...workspaces];

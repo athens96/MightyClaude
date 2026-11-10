@@ -3,7 +3,7 @@ import Darwin
 import Testing
 @testable import MightyCore
 
-private let appExecutable = URL(fileURLWithPath: "/Applications/MightyClaude.app/Contents/MacOS/MightyClaude")
+private let appExecutable = URL(fileURLWithPath: "/Applications/MightyCode.app/Contents/MacOS/MightyCode")
 
 private func delegationBinding(pane: String = "pane-a", token: String = "delegation-fixture-token-0123456789", provider: String = "claude", kind: String = SessionKind.claude, delegation: Bool, socketPath: String = "/tmp/mighty.sock") -> PaneMCPBinding {
     PaneMCPBinding(agentPaneId: pane, token: token, server: PaneMCPServerLocation(socketPath: socketPath, executable: appExecutable), workspaceId: "ws-1", workspacePath: "/tmp", provider: provider, kind: kind, delegation: delegation)
@@ -35,7 +35,7 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
 /// The switch: one defaults key, on unless it is set to false.
 @Suite(.delegationLane) struct DelegationSwitchTests {
     @Test func theSwitchIsOnUntilItsKeyTurnsItOff() throws {
-        let suite = "dev.mightyclaude.tests.delegation.\(UUID().uuidString)"
+        let suite = "dev.mightycode.tests.delegation.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         #expect(DelegationSwitch.defaultsKey == "delegation.enabled")

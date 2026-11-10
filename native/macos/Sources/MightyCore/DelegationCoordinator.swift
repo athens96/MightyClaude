@@ -196,7 +196,7 @@ public actor DelegationCoordinator: DelegationRequestHandler {
 
     public nonisolated let store: DelegationFileStore
     let host: any DelegationHost
-    /// Makes each child's worktree: under `~/.mightyclaude/worktrees` in the
+    /// Makes each child's worktree: under `~/.mightycode/worktrees` in the
     /// app, under a temp folder in tests.
     public nonisolated let worktrees: ChildWorktreeMaker
     /// The children whose run end the host reported and this coordinator has

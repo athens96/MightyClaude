@@ -3,7 +3,7 @@ import { terminalPalette } from '../../theme/tokens';
 
 /**
  * xterm's palettes by theme, from the design tokens (windowsOnly.terminal): the Mac's terminal surface
- * (native/macos/Sources/MightyClaude/AppStore+Terminals.swift:63-66), Ghostty's Afterglow on #202020 with #DEDCD8 text and an
+ * (native/macos/Sources/MightyCode/AppStore+Terminals.swift:63-66), Ghostty's Afterglow on #202020 with #DEDCD8 text and an
  * #E1AB91 cursor by night, its Alabaster on #FAF9F6 by day.
  */
 export const terminalThemes = { dark: terminalPalette('dark'), light: terminalPalette('light') } as const;

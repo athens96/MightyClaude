@@ -63,7 +63,7 @@ jobs:
         if: (success() || failure()) && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
-          path: ~/Library/Caches/MightyClaude/browser-engine
+          path: ~/Library/Caches/MightyCode/browser-engine
           key: browser-engine-${{ hashFiles('native/macos/BrowserEngine.lock') }}
       - name: Fetch the pinned browser engine (main)
         # Like the build step below, also after a failed test step, so the build never lacks the engine.
@@ -75,7 +75,7 @@ jobs:
         if: success() || failure()
         env:
           # The update channel's address and public key, as native-windows.yml stamps them; repository variables override.
-          MIGHTY_UPDATE_URL: ${{ vars.MIGHTY_UPDATE_URL || 'https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/latest.json' }}
+          MIGHTY_UPDATE_URL: ${{ vars.MIGHTY_UPDATE_URL || 'https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/latest.json' }}
           MIGHTY_UPDATE_PUBLIC_KEY: ${{ vars.MIGHTY_UPDATE_PUBLIC_KEY || 'C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4=' }}
           MIGHTY_BROWSER_ENGINE: ${{ (github.ref == 'refs/heads/main' && github.event_name != 'pull_request') && '1' || '' }}
         run: bash scripts/build-macos.sh
@@ -87,7 +87,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, subprocess, sys
-          app = "release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude"
+          app = "release/native-macos/MightyCode.app/Contents/MacOS/MightyCode"
           env = {k: v for k, v in os.environ.items() if not k.startswith("MIGHTY_")}
           requests = [
               {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
@@ -115,7 +115,7 @@ jobs:
       - name: Smoke test isolated native profile
         if: success() || failure()
         timeout-minutes: 3
-        run: release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude --smoke-test --smoke-exit --profile "$RUNNER_TEMP/mighty-native-smoke"
+        run: release/native-macos/MightyCode.app/Contents/MacOS/MightyCode --smoke-test --smoke-exit --profile "$RUNNER_TEMP/mighty-native-smoke"
       - name: Check smoke result
         if: success() || failure()
         run: |
@@ -159,7 +159,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-macos-smoke
+          name: MightyCode-macos-smoke
           path: ${{ runner.temp }}/mighty-native-smoke/
           if-no-files-found: warn
       - name: Smoke test the Ghostty terminal pane
@@ -172,7 +172,7 @@ jobs:
           profile="$RUNNER_TEMP/mighty-terminal-smoke"
           rm -rf "$profile"
           status=0
-          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyCode.app/Contents/MacOS/MightyCode \
               --terminal-smoke-test --smoke-exit --profile "$profile"; then
             echo "::error title=macOS terminal smoke::the app exited non-zero or timed out"
             status=1
@@ -196,7 +196,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-macos-terminal-smoke
+          name: MightyCode-macos-terminal-smoke
           path: ${{ runner.temp }}/mighty-terminal-smoke/
           if-no-files-found: warn
       - name: Smoke test the Mighty diagram
@@ -210,7 +210,7 @@ jobs:
           profile="$RUNNER_TEMP/mighty-graph-smoke"
           rm -rf "$profile"
           status=0
-          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyCode.app/Contents/MacOS/MightyCode \
               --graph-smoke-test --smoke-exit --profile "$profile"; then
             echo "::error title=macOS graph smoke::the app exited non-zero or timed out"
             status=1
@@ -234,7 +234,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-macos-graph-smoke
+          name: MightyCode-macos-graph-smoke
           path: ${{ runner.temp }}/mighty-graph-smoke/
           if-no-files-found: warn
       - name: Smoke test the setup screen
@@ -249,7 +249,7 @@ jobs:
           profile="$RUNNER_TEMP/mighty-setup-smoke"
           rm -rf "$profile"
           status=0
-          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyCode.app/Contents/MacOS/MightyCode \
               --setup-smoke-test --smoke-exit --profile "$profile"; then
             echo "::error title=macOS setup smoke::the app exited non-zero or timed out"
             status=1
@@ -272,7 +272,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-macos-setup-smoke
+          name: MightyCode-macos-setup-smoke
           path: ${{ runner.temp }}/mighty-setup-smoke/
           if-no-files-found: warn
       - name: Smoke test the work map
@@ -286,7 +286,7 @@ jobs:
           profile="$RUNNER_TEMP/mighty-workmap-smoke"
           rm -rf "$profile"
           status=0
-          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyCode.app/Contents/MacOS/MightyCode \
               --workmap-smoke-test --smoke-exit --profile "$profile"; then
             echo "::error title=macOS work map smoke::the app exited non-zero or timed out"
             status=1
@@ -309,7 +309,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-macos-workmap-smoke
+          name: MightyCode-macos-workmap-smoke
           path: ${{ runner.temp }}/mighty-workmap-smoke/
           if-no-files-found: warn
       - name: Smoke test delegation close paths
@@ -335,7 +335,7 @@ jobs:
           fi
           case "$fake" in /*) ;; *) fake="$PWD/$fake" ;; esac
           echo "FakeClaude: $fake"
-          if ! perl -e 'alarm shift; exec @ARGV' 240 release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+          if ! perl -e 'alarm shift; exec @ARGV' 240 release/native-macos/MightyCode.app/Contents/MacOS/MightyCode \
               --delegation-smoke-test --smoke-exit --profile "$profile" --fake-claude "$fake"; then
             echo "::error title=macOS delegation smoke::the app exited non-zero or timed out"
             status=1
@@ -362,7 +362,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-macos-delegation-smoke
+          name: MightyCode-macos-delegation-smoke
           path: ${{ runner.temp }}/mighty-delegation-smoke/delegation-smoke-result.json
           if-no-files-found: warn
       - name: Capture help screenshots in four languages
@@ -373,7 +373,7 @@ jobs:
         timeout-minutes: 30
         run: |
           set -u
-          APP=release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude
+          APP=release/native-macos/MightyCode.app/Contents/MacOS/MightyCode
           status=0
           for lang in ko en zh ja; do
             case "$lang" in zh) tag=zh-Hans ;; *) tag="$lang" ;; esac
@@ -423,20 +423,20 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MightyClaude-macos-help-shots
+          name: MightyCode-macos-help-shots
           path: ${{ runner.temp }}/mighty-help-*/help-shots/
           if-no-files-found: warn
       - name: Package macOS app with executable modes and hidden resources
-        run: ditto -c -k --sequesterRsrc --keepParent release/native-macos/MightyClaude.app release/MightyClaude-macos.zip
+        run: ditto -c -k --sequesterRsrc --keepParent release/native-macos/MightyCode.app release/MightyCode-macos.zip
       - name: Gate the release package size before upload
-        run: scripts/check-release-size.sh release/MightyClaude-macos.zip
+        run: scripts/check-release-size.sh release/MightyCode-macos.zip
       # Without notarization (any branch, or main before the repository variable
       # MIGHTY_MAC_NOTARIZE is 1) this ad-hoc zip is the release package. With it,
       # the zip goes to the notarize-macos job, which signs, notarizes and adds the dmg.
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ (vars.MIGHTY_MAC_NOTARIZE == '1' && github.ref == 'refs/heads/main' && github.event_name == 'push') && 'MightyClaude-native-macos-unsigned' || 'MightyClaude-native-macos' }}
-          path: release/MightyClaude-macos.zip
+          name: ${{ (vars.MIGHTY_MAC_NOTARIZE == '1' && github.ref == 'refs/heads/main' && github.event_name == 'push') && 'MightyCode-native-macos-unsigned' || 'MightyCode-native-macos' }}
+          path: release/MightyCode-macos.zip
           if-no-files-found: error
 
   notarize-macos:
@@ -452,10 +452,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
-          name: MightyClaude-native-macos-unsigned
+          name: MightyCode-native-macos-unsigned
           path: ${{ runner.temp }}/unsigned
       - name: Unpack the built app
-        run: ditto -x -k "$RUNNER_TEMP/unsigned/MightyClaude-macos.zip" "$RUNNER_TEMP/app"
+        run: ditto -x -k "$RUNNER_TEMP/unsigned/MightyCode-macos.zip" "$RUNNER_TEMP/app"
       - name: Put the Developer ID certificate in a temporary keychain
         env:
           P12_BASE64: ${{ secrets.MIGHTY_DEVELOPER_ID_P12 }}
@@ -495,17 +495,17 @@ jobs:
         env:
           MIGHTY_NOTARY_KEY_ID: ${{ secrets.MIGHTY_NOTARY_KEY_ID }}
           MIGHTY_NOTARY_ISSUER_ID: ${{ secrets.MIGHTY_NOTARY_ISSUER_ID }}
-        run: scripts/notarize-macos.sh "$RUNNER_TEMP/app/MightyClaude.app" release
+        run: scripts/notarize-macos.sh "$RUNNER_TEMP/app/MightyCode.app" release
       - name: Gate the release package sizes before upload
         run: |
-          scripts/check-release-size.sh release/MightyClaude-macos.zip
-          scripts/check-release-size.sh release/MightyClaude-macos.dmg
+          scripts/check-release-size.sh release/MightyCode-macos.zip
+          scripts/check-release-size.sh release/MightyCode-macos.dmg
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
-          name: MightyClaude-native-macos
+          name: MightyCode-native-macos
           path: |
-            release/MightyClaude-macos.zip
-            release/MightyClaude-macos.dmg
+            release/MightyCode-macos.zip
+            release/MightyCode-macos.dmg
           if-no-files-found: error
       - name: Remove the keychain and the key
         if: always()

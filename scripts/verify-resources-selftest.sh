@@ -8,8 +8,8 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 
 SCRATCH="$(mktemp -d /tmp/mc-verify-selftest-XXXXXXXX)"
-APP="$SCRATCH/MightyClaude.app"
-BINARY="$APP/Contents/MacOS/MightyClaude"
+APP="$SCRATCH/MightyCode.app"
+BINARY="$APP/Contents/MacOS/MightyCode"
 
 cleanup() { rm -rf "$SCRATCH"; }
 trap cleanup EXIT
@@ -36,14 +36,14 @@ echo "case 1 passed: VERIFY_RESOURCES_OK"
 
 # --- Case 2: Locales removed from MightyCore bundle must exit non-zero ------
 echo "--- case 2: broken Locales ---"
-COPY_NO_LOCALES="$SCRATCH/no-locales/MightyClaude.app"
+COPY_NO_LOCALES="$SCRATCH/no-locales/MightyCode.app"
 mkdir -p "$SCRATCH/no-locales"
 cp -R "$APP" "$COPY_NO_LOCALES"
-CORE_BUNDLE="$COPY_NO_LOCALES/Contents/Resources/MightyClaude_MightyCore.bundle"
+CORE_BUNDLE="$COPY_NO_LOCALES/Contents/Resources/MightyCode_MightyCore.bundle"
 # Remove both layout variants so neither path finds the catalogs.
 rm -rf "$CORE_BUNDLE/Contents/Resources/Locales" "$CORE_BUNDLE/Locales"
 set +e
-NO_LOC_OUT="$(cd "$SCRATCH" && "$COPY_NO_LOCALES/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
+NO_LOC_OUT="$(cd "$SCRATCH" && "$COPY_NO_LOCALES/Contents/MacOS/MightyCode" --verify-resources 2>&1)"
 NO_LOC_EXIT=$?
 set -e
 if [ "$NO_LOC_EXIT" -eq 0 ]; then
@@ -60,12 +60,12 @@ echo "case 2 passed: broken Locales exits non-zero and names the missing resourc
 
 # --- Case 3: pets/mighty-raccoon removed must exit non-zero -----------------
 echo "--- case 3: broken pet ---"
-COPY_NO_PET="$SCRATCH/no-pet/MightyClaude.app"
+COPY_NO_PET="$SCRATCH/no-pet/MightyCode.app"
 mkdir -p "$SCRATCH/no-pet"
 cp -R "$APP" "$COPY_NO_PET"
 rm -rf "$COPY_NO_PET/Contents/Resources/pets/mighty-raccoon"
 set +e
-NO_PET_OUT="$(cd "$SCRATCH" && "$COPY_NO_PET/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
+NO_PET_OUT="$(cd "$SCRATCH" && "$COPY_NO_PET/Contents/MacOS/MightyCode" --verify-resources 2>&1)"
 NO_PET_EXIT=$?
 set -e
 if [ "$NO_PET_EXIT" -eq 0 ]; then

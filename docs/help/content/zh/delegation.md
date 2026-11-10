@@ -38,7 +38,7 @@ section: delegation
 
 - 在运行中的窗格里，{{kbd:Enter}} 会把请求放入队列，等当前任务结束后再运行。输入框的提示文字会说明这两个键的作用。
 - 只有在能创建 worktree 的地方才会使用新的 worktree：必须是检出了有提交的分支的 git 仓库。在其他地方（不是 git 仓库、还没有提交、检出的是提交而不是分支），{{kbd:⌘Enter}} 会像 {{kbd:Enter}} 一样把请求放入队列。
-- 子窗格从父窗格的最后一次提交开始。会创建分支 `mighty/<子窗格 id>`，worktree 位于项目文件夹之外（Mac 上为 `~/.mightyclaude/worktrees/<子窗格 id>`，Windows 上为 `%USERPROFILE%\.mightyclaude\worktrees\<子窗格 id>`），不会动到父窗格的工作。父窗格文件夹中尚未提交的更改不会带给子窗格。
+- 子窗格从父窗格的最后一次提交开始。会创建分支 `mighty/<子窗格 id>`，worktree 位于项目文件夹之外（Mac 上为 `~/.mightycode/worktrees/<子窗格 id>`，Windows 上为 `%USERPROFILE%\.mightycode\worktrees\<子窗格 id>`），不会动到父窗格的工作。父窗格文件夹中尚未提交的更改不会带给子窗格。
 - 与窗格相同代理的子窗格以父窗格的权限模式运行，并使用父窗格的模型和{{ui:composer.effort.label}}。在每个请求都以计划模式开始的样式中，它以计划模式开始。它以与父窗格相同的视图打开；如果父窗格在 Mighty 视图中使用某个样式，它也以同一样式开始（样式的进度从子窗格的第一个请求起单独计算）。附件也会一起带上。
 - 第一条消息先是你输入的文字，随后应用会告诉子窗格在哪里工作，并要求它完成后提交并写入 REPORT.md，这样才能在卡片上合并。斜杠命令（以 `/` 开头的文字）会按你输入的样子单独运行，应用的说明则作为子窗格的下一个请求随后发送，因此不会变成命令的参数。
 - {{platform:mac}} 若要用另一个代理运行请求，请右键点按 {{ui:queue.worktree}} 按钮（或按住 Control 点按），然后选择 Claude、Codex 或 Antigravity。{{kbd:⌘Enter}} 和普通点按仍使用窗格自己的代理。灰色的项目会说明无法运行的原因：其 CLI 未安装或未登录（请查看“设置 › CLI”）、在窗格模式允许的范围内没有能更改文件的模式，或你启动的 3 个子窗格已经打开。另一个代理的子窗格以它自己的模式中能更改文件、且不做窗格模式不允许之事的最宽模式开始（[Codex 和 Antigravity](#agents)），使用该代理的新窗格会得到的模型和{{ui:composer.effort.label}}，并以窗格的视图打开，但不带样式。如果无法创建或启动该子窗格，你的文字和附件会放回输入框，对话中会说明原因；它们绝不会发给窗格本身。如果窗格自己的代理在当前模式下不能有子窗格，而另一个代理可以，按钮仍会显示，点按会打开菜单，{{kbd:⌘Enter}} 会把请求放入队列。
@@ -58,7 +58,7 @@ Claude 或 Codex 窗格（父窗格）也可以把工作拆开，交给其他窗
 3. 子窗格在父窗格旁边打开，并在侧边栏中缩进一格列在父窗格下方。
 
 - 父窗格使用的工具有 `delegate`（交出任务；可以用 `agent` 指定子窗格的代理：`claude`、`codex` 或 `antigravity`）、`list_children`（子窗格列表）、`child_status`（读取状态和报告）、`merge`（合并）和 `follow_up`（后续指示）。父窗格不能调用 `discard`（丢弃），只有你能在卡片上丢弃。
-- 每个子窗格都有一个分支 `mighty/<子窗格 id>` 和一个 worktree（Mac 上为 `~/.mightyclaude/worktrees/<子窗格 id>`，Windows 上为 `%USERPROFILE%\.mightyclaude\worktrees\<子窗格 id>`）。子窗格从父窗格的最后一次提交开始。
+- 每个子窗格都有一个分支 `mighty/<子窗格 id>` 和一个 worktree（Mac 上为 `~/.mightycode/worktrees/<子窗格 id>`，Windows 上为 `%USERPROFILE%\.mightycode\worktrees\<子窗格 id>`）。子窗格从父窗格的最后一次提交开始。
 - 交出的任务写在 TASK.md 中，结果写在 REPORT.md 中。这两个文件位于 worktree 内被 git 忽略的文件夹里，不会被提交。
 - 子窗格的权限模式是父窗格选择的模式，不能比父窗格自己的模式更宽。另一个代理的子窗格不能做父窗格模式不做的事：只有父窗格的模式不经询问就更改文件时（接受编辑或 auto 模式的 Claude、{{ui:permission.label.onRequest}} 或 {{ui:permission.label.acceptEditsCodex}} 模式的 Codex、{{ui:permission.label.acceptEdits}} 模式的 Antigravity、{{ui:permission.label.fullAccess}} 模式的任何代理）才不经询问更改文件，只有父窗格的模式能更改文件时才在询问后更改文件，只有父窗格的模式不经询问就运行 shell 命令时（auto 模式的 Claude、{{ui:permission.label.defaultCodex}} 或 {{ui:permission.label.acceptEditsCodex}} 模式的 Codex、{{ui:permission.label.fullAccess}} 模式的任何代理）才不经询问运行，只有在 {{ui:permission.label.fullAccess}} 下才有完全访问权限。因此在运行 shell 命令前会询问的 Claude 接受编辑模式下，Codex 子窗格得到的是 {{ui:permission.label.onRequest}}，而不是 {{ui:permission.label.acceptEditsCodex}}；计划模式或手动模式的 Claude 窗格完全不能有 Codex 或 Antigravity 子窗格。只有你能在两次运行之间，从子窗格输入框的权限菜单或手机设置中放宽它。
 - 子窗格以与父窗格相同的视图打开（{{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}} 中相同的那一个）。如果父窗格在 Mighty 视图中使用{{ui:graph.view.structure}}，子窗格也显示为{{ui:graph.view.structure}}。
@@ -150,18 +150,18 @@ Mighty 编排也适用于 Codex 和 Antigravity 窗格。默认情况下，子�
 父窗格可以用 `follow_up` 工具给交给 Claude 的子窗格发送最多两条后续指示。后续指示按照与通知相同的规则送到子窗格，每条最多 48 KiB。你可以直接在子窗格的输入框中输入，没有次数限制。
 
 ## 开启和关闭 {#enable}
-{{platform:mac}} 除非你关闭，否则它一直开启。在设置的{{ui:settings.nav.general}}标签页中切换{{ui:settings.delegation.toggle}}；无需重新打开应用，从下一次开始的运行起生效。同一个开关就是 defaults 键 `delegation.enabled`，因此在终端中运行下面的命令也能关闭它，运行 `defaults delete dev.mightyclaude.native delegation.enabled` 则重新开启。
+{{platform:mac}} 除非你关闭，否则它一直开启。在设置的{{ui:settings.nav.general}}标签页中切换{{ui:settings.delegation.toggle}}；无需重新打开应用，从下一次开始的运行起生效。同一个开关就是 defaults 键 `delegation.enabled`，因此在终端中运行下面的命令也能关闭它，运行 `defaults delete dev.mightycode.native delegation.enabled` 则重新开启。
 
 ```sh
-defaults write dev.mightyclaude.native delegation.enabled -bool false
+defaults write dev.mightycode.native delegation.enabled -bool false
 ```
 
 {{platform:mac}} 以前的版本只有设置了该键才会开启，关闭的方法是 `defaults delete …`。现在这样做会让它保持开启，所以要继续关闭，请在设置中关闭{{ui:settings.delegation.toggle}}。
 
-{{platform:windows}} 除非你关闭，否则它一直开启。在设置的{{ui:settings.nav.general}}标签页中切换{{ui:settings.delegation.toggle}}；无需重新打开应用，从下一次开始的运行起生效。同一个开关就是 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 下的 `delegation.enabled` 值（REG_DWORD）：为 0 时关闭，没有这个值或为其他值时开启。因此在命令提示符或 PowerShell 中运行下面的命令也能关闭它，运行 `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f` 则重新开启。
+{{platform:windows}} 除非你关闭，否则它一直开启。在设置的{{ui:settings.nav.general}}标签页中切换{{ui:settings.delegation.toggle}}；无需重新打开应用，从下一次开始的运行起生效。同一个开关就是 `HKEY_CURRENT_USER\Software\MightyCode` 下的 `delegation.enabled` 值（REG_DWORD）：为 0 时关闭，没有这个值或为其他值时开启。因此在命令提示符或 PowerShell 中运行下面的命令也能关闭它，运行 `reg delete "HKCU\Software\MightyCode" /v delegation.enabled /f` 则重新开启。
 
 ```
-reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 0 /f
+reg add "HKCU\Software\MightyCode" /v delegation.enabled /t REG_DWORD /d 0 /f
 ```
 
 {{platform:windows}} 早期版本只有把这个值设为 1 时才开启。那时留下的 1 会让它保持开启。

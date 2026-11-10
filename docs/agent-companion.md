@@ -36,7 +36,7 @@ Preferences are in `companion-settings.json` next to the workspace state. The de
 
 ## References and assets
 
-The interaction and Codex sprite format were checked against the local `amon-dev/amon/macos/Sources/AIMonitor` implementation (`PetOverlay.swift`, `PetSettingsRow.swift`, `CodexPetSpriteLayout.swift`). MightyClaude supplies its own event-driven controller; Amon's log collectors and upload pipeline are not included.
+The interaction and Codex sprite format were checked against the local `amon-dev/amon/macos/Sources/AIMonitor` implementation (`PetOverlay.swift`, `PetSettingsRow.swift`, `CodexPetSpriteLayout.swift`). MightyCode supplies its own event-driven controller; Amon's log collectors and upload pipeline are not included.
 
 The default Mighty Raccoon is generated from the existing app icon as a full-body superhero without a computer. `hatch-pet` and the built-in image generation tool produce separate state strips; deterministic extraction/validation packs a Codex-compatible 1536×1872 atlas. The runtime package is `assets/pets/mighty-raccoon`.
 

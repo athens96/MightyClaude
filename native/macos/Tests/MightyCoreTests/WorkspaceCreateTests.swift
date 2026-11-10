@@ -3,7 +3,7 @@ import Testing
 @testable import MightyCore
 
 /// native/contracts/fixtures/workspace-create.json: the rules for making a workspace from a new folder or a Git address,
-/// shared with MightyClaude.Core WorkspaceCreate.cs (WorkspaceCreateVerification).
+/// shared with MightyCode.Core WorkspaceCreate.cs (WorkspaceCreateVerification).
 struct WorkspaceCreateTests {
     struct Fixture: Decodable {
         struct RepoName: Decodable { let url: String; let name: String? }

@@ -1,8 +1,8 @@
 #!/bin/bash
-# Sign MightyClaude.app with a Developer ID, notarize it, staple it, and package
+# Sign MightyCode.app with a Developer ID, notarize it, staple it, and package
 # it as both the update zip and a drag-to-Applications dmg.
 #
-#   scripts/notarize-macos.sh <MightyClaude.app> <output folder>
+#   scripts/notarize-macos.sh <MightyCode.app> <output folder>
 #
 # Environment:
 #   MIGHTY_CODESIGN_IDENTITY   "Developer ID Application: … (TEAMID)", in a keychain on the search list
@@ -10,8 +10,8 @@
 #   MIGHTY_NOTARY_KEY_ID       its Key ID
 #   MIGHTY_NOTARY_ISSUER_ID    its Issuer ID
 #
-# Writes <output>/MightyClaude-macos.zip (what the app's updater installs) and
-# <output>/MightyClaude-macos.dmg (first install from the download page). The
+# Writes <output>/MightyCode-macos.zip (what the app's updater installs) and
+# <output>/MightyCode-macos.dmg (first install from the download page). The
 # app inside both carries its notarization ticket, so Gatekeeper opens it
 # without a warning even offline; the dmg is signed, notarized and stapled too.
 set -euo pipefail
@@ -46,7 +46,7 @@ notarize() {
 
 echo "== 서명 (Developer ID, hardened runtime)"
 bash "$PROJECT_ROOT/scripts/sign-macos.sh" "$APP" "$MIGHTY_CODESIGN_IDENTITY" --hardened-runtime
-(cd /tmp && "$APP/Contents/MacOS/MightyClaude" --verify-resources >/dev/null)
+(cd /tmp && "$APP/Contents/MacOS/MightyCode" --verify-resources >/dev/null)
 
 echo "== 앱 공증"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$WORK/submit.zip"
@@ -55,8 +55,8 @@ xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 spctl --assess --type execute --verbose=2 "$APP"
 # The update zip holds the stapled app, packed as the old zip was.
-rm -f "$OUT/MightyClaude-macos.zip"
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/MightyClaude-macos.zip"
+rm -f "$OUT/MightyCode-macos.zip"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/MightyCode-macos.zip"
 
 echo "== dmg"
 # The install window (background, arrow, icon places, no toolbar) is written by dmgbuild
@@ -64,16 +64,16 @@ echo "== dmg"
 # DMGBUILD names the tool (the CI job installs scripts/dmg/requirements.txt in a venv).
 DMGBUILD="${DMGBUILD:-dmgbuild}"
 command -v "$DMGBUILD" >/dev/null || { echo "dmgbuild가 없습니다: pip install -r scripts/dmg/requirements.txt" >&2; exit 1; }
-rm -f "$OUT/MightyClaude-macos.dmg"
+rm -f "$OUT/MightyCode-macos.dmg"
 # hdiutil's deprecation notices are dropped; dmgbuild's own exit status still decides.
 "$DMGBUILD" -s "$PROJECT_ROOT/scripts/dmg/settings.py" -D app="$APP" -D background="$PROJECT_ROOT/assets/dmg/background.tiff" \
-    "Mighty Code" "$OUT/MightyClaude-macos.dmg" > >(grep -v "is deprecated" >&2) 2>&1 \
+    "Mighty Code" "$OUT/MightyCode-macos.dmg" > >(grep -v "is deprecated" >&2) 2>&1 \
     || { echo "dmgbuild가 실패했습니다" >&2; exit 1; }
-[ -f "$OUT/MightyClaude-macos.dmg" ] || { echo "dmg를 만들지 못했습니다" >&2; exit 1; }
-codesign --force --timestamp --sign "$MIGHTY_CODESIGN_IDENTITY" "$OUT/MightyClaude-macos.dmg"
-notarize "$OUT/MightyClaude-macos.dmg"
-xcrun stapler staple "$OUT/MightyClaude-macos.dmg"
-xcrun stapler validate "$OUT/MightyClaude-macos.dmg"
-spctl --assess --type open --context context:primary-signature --verbose=2 "$OUT/MightyClaude-macos.dmg"
+[ -f "$OUT/MightyCode-macos.dmg" ] || { echo "dmg를 만들지 못했습니다" >&2; exit 1; }
+codesign --force --timestamp --sign "$MIGHTY_CODESIGN_IDENTITY" "$OUT/MightyCode-macos.dmg"
+notarize "$OUT/MightyCode-macos.dmg"
+xcrun stapler staple "$OUT/MightyCode-macos.dmg"
+xcrun stapler validate "$OUT/MightyCode-macos.dmg"
+spctl --assess --type open --context context:primary-signature --verbose=2 "$OUT/MightyCode-macos.dmg"
 
-ls -l "$OUT"/MightyClaude-macos.zip "$OUT"/MightyClaude-macos.dmg
+ls -l "$OUT"/MightyCode-macos.zip "$OUT"/MightyCode-macos.dmg

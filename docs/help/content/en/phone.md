@@ -8,7 +8,7 @@ With the phone app you can follow and drive Mighty Code on your Mac while you're
 The Mac and the phone connect through a relay server. Everything is encrypted end to end, so the relay can't read it. You don't need to open router ports or use a VPN. If you use Tailscale, the phone can also [connect directly](#direct) without the relay.
 
 ## Get the phone app {#get-app}
-Download the Android app (APK) from the [download page](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html) and install it.
+Download the Android app (APK) from the [download page](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/index.html) and install it.
 
 ## Pair your phone {#pair}
 On the Mac:

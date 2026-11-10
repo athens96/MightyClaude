@@ -2,7 +2,7 @@ import Foundation
 
 /// The rules for adding a workspace from a new folder or a Git address
 /// (docs/superpowers/specs/2026-10-26-workspace-create-design.md), shared with
-/// MightyClaude.Core WorkspaceCreate.cs through native/contracts/fixtures/workspace-create.json.
+/// MightyCode.Core WorkspaceCreate.cs through native/contracts/fixtures/workspace-create.json.
 public enum WorkspaceCreate {
     public enum NameProblem: String, Sendable { case empty, badCharacter, reserved, trailingDotOrSpace, dots, tooLong }
     public enum GitErrorKind: String, Sendable { case gitMissing, invalidURL, auth, notFound, network, other }

@@ -19,14 +19,14 @@ int main(int argc, char **argv) {
     snprintf(framework, sizeof(framework), "%s/Chromium Embedded Framework.framework/Chromium Embedded Framework", path);
     void *library = dlopen(framework, RTLD_NOW | RTLD_GLOBAL);
     if (!library) {
-        fprintf(stderr, "MightyClaude helper: cannot load CEF: %s\n", dlerror());
+        fprintf(stderr, "MightyCode helper: cannot load CEF: %s\n", dlerror());
         return 1;
     }
     if (!mighty_cef_select_api(library)) return 1;
     typedef int (*execute_fn)(const cef_main_args_t *, cef_app_t *, void *);
     execute_fn execute = (execute_fn)dlsym(library, "cef_execute_process");
     if (!execute) {
-        fprintf(stderr, "MightyClaude helper: missing cef_execute_process\n");
+        fprintf(stderr, "MightyCode helper: missing cef_execute_process\n");
         return 1;
     }
     cef_main_args_t args = { argc, argv };

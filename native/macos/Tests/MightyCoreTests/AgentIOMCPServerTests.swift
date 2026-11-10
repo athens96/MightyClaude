@@ -182,7 +182,7 @@ private final class CountingHandler: AgentIORequestHandler, @unchecked Sendable 
 
 /// Per-pane tokens: random, memory-only, bound to one pane, never in argv or logs.
 @Suite(.serialized) struct PaneBindingTests {
-    private let location = PaneMCPServerLocation(socketPath: "/tmp/mc-fixture/io.sock", executable: URL(fileURLWithPath: "/Applications/MightyClaude.app/Contents/MacOS/MightyClaude"))
+    private let location = PaneMCPServerLocation(socketPath: "/tmp/mc-fixture/io.sock", executable: URL(fileURLWithPath: "/Applications/MightyCode.app/Contents/MacOS/MightyCode"))
 
     @Test func tokensAreRandomPerPaneAndARebindRevokesTheOldOne() {
         let bindings = PaneMCPBindingRegistry()
@@ -315,7 +315,7 @@ private final class CountingHandler: AgentIORequestHandler, @unchecked Sendable 
     @Test func socketPathStaysUnderTheUnixLimitAndFallsBackToAShortTmpFolder() {
         let short = URL(fileURLWithPath: "/tmp/mc-profile", isDirectory: true)
         #expect(AgentIOWire.socketPath(dataDirectory: short) == "/tmp/mc-profile/agent-io/io.sock")
-        let long = URL(fileURLWithPath: "/Users/someone/Library/Application Support/" + String(repeating: "MightyClaude Profile ", count: 5), isDirectory: true)
+        let long = URL(fileURLWithPath: "/Users/someone/Library/Application Support/" + String(repeating: "MightyCode Profile ", count: 5), isDirectory: true)
         let fallback = AgentIOWire.socketPath(dataDirectory: long, temporaryDirectory: "/var/folders/xy/abcdefgh/T/")
         #expect(fallback.utf8.count < 104)
         #expect(fallback.hasPrefix("/var/folders/xy/abcdefgh/T/mc-\(getuid())/"))

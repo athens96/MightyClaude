@@ -29,9 +29,9 @@
 //    numbers still written where a spacing goes, per area. A number counts when its value is
 //    2 or more (0 and 1 stay allowed: resets and hairlines); a negative number counts by its size.
 //
-//      macOS    native/macos/Sources/MightyClaude, native/macos/Sources/MightyCore (.swift)
+//      macOS    native/macos/Sources/MightyCode, native/macos/Sources/MightyCore (.swift)
 //               .padding(n)  .padding(.edge, n)  .padding([.edges], n)  spacing: n
-//      Windows  native/windows/MightyClaude.WinUI, native/windows/MightyClaude.Core (.cs)
+//      Windows  native/windows/MightyCode.WinUI, native/windows/MightyCode.Core (.cs)
 //               each number in new Thickness(…)  Spacing = n  RowSpacing = n  ColumnSpacing = n
 //      phone    mobile/src, mobile/app (.ts, .tsx)
 //               padding*: n  margin*: n  gap: n  rowGap: n  columnGap: n
@@ -52,7 +52,7 @@
 // 3. Font literals (scripts/font-literal-budget.json), from the text setting (Settings › General › 글자):
 //    every word the WinUI app draws states its size at scale 1 as TextSize (and TextLineHeight,
 //    TextHeight) and its font as TextFont, which AppText.cs draws at the user's size and font and
-//    changes live. This counts, per file of native/windows/MightyClaude.WinUI, what still sets them
+//    changes live. This counts, per file of native/windows/MightyCode.WinUI, what still sets them
 //    itself and so would not follow the setting:
 //
 //      FontSize = … (or +=, *=)   LineHeight = …   FontFamily = …   new FontFamily(…)   FontSizeProperty and the like
@@ -120,7 +120,7 @@ const sum = (values) => values.reduce((total, value) => total + value, 0);
 
 // ── 1. Colour literals (Windows) ──────────────────────────────────────────────
 const COLOUR_BUDGET = 'scripts/design-token-budget.json';
-const COLOUR_ROOTS = ['native/windows/MightyClaude.WinUI', 'native/windows/MightyClaude.Core'];
+const COLOUR_ROOTS = ['native/windows/MightyCode.WinUI', 'native/windows/MightyCode.Core'];
 
 // Each pattern counts in every file unless it names its `files`.
 const COLOUR_PATTERNS = [
@@ -130,7 +130,7 @@ const COLOUR_PATTERNS = [
   { pattern: /"#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6})"/g },
   { pattern: /\b0x[0-9A-Fa-f]{6}\b/g },
   { pattern: /\bRgb\(\s*[.\d]/g },
-  { pattern: /(?<!\|\s*)\b0x00[0-9A-Fa-f]{6}u?\b(?!\s*\|)/g, files: ['native/windows/MightyClaude.WinUI/CompanionOverlay.cs'] },
+  { pattern: /(?<!\|\s*)\b0x00[0-9A-Fa-f]{6}u?\b(?!\s*\|)/g, files: ['native/windows/MightyCode.WinUI/CompanionOverlay.cs'] },
 ];
 
 function countColours(relative) {
@@ -182,7 +182,7 @@ const LITERAL_SPACING = (value) => Math.abs(Number(value)) >= 2;
 const SPACING_AREAS = [
   {
     label: 'macOS',
-    roots: ['native/macos/Sources/MightyClaude', 'native/macos/Sources/MightyCore'],
+    roots: ['native/macos/Sources/MightyCode', 'native/macos/Sources/MightyCore'],
     extensions: ['.swift'],
     patterns: [
       { pattern: new RegExp(String.raw`\.padding\(\s*${NUMBER}\s*\)`, 'g') },
@@ -192,7 +192,7 @@ const SPACING_AREAS = [
   },
   {
     label: 'Windows',
-    roots: ['native/windows/MightyClaude.WinUI', 'native/windows/MightyClaude.Core'],
+    roots: ['native/windows/MightyCode.WinUI', 'native/windows/MightyCode.Core'],
     extensions: ['.cs'],
     patterns: [
       { pattern: /\bnew\s+(?:[\w.]+\.)?Thickness\(([^()]*)\)/g, each: true },
@@ -347,7 +347,7 @@ if (!spacingBudget || typeof spacingBudget.areas !== 'object' || spacingBudget.a
 
 // ── 3. Font literals (Windows WinUI) ─────────────────────────────────────────
 const FONT_BUDGET = 'scripts/font-literal-budget.json';
-const FONT_ROOT = 'native/windows/MightyClaude.WinUI';
+const FONT_ROOT = 'native/windows/MightyCode.WinUI';
 const FONT_PATTERNS = [
   // An assignment, compound ones too (+=, *=), but not a comparison.
   /\b(?:FontSize|LineHeight|FontFamily)\s*[-+*/]?=(?!=)/g,

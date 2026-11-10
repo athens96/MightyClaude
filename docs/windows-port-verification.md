@@ -27,21 +27,21 @@ Windows 구현은 WinUI 네이티브 입력 컨트롤, ConPTY, WebView2, Windows
 
 ## 배포 파일
 
-[최종 CI의 Artifacts](https://github.com/athens96/MightyCode/actions/runs/37182771471)에서 다음 이름의 배포 아티팩트를 받을 수 있다. GitHub 로그인이 필요할 수 있다. `MightyClaude-windows-*-smoke`는 검증 자료이며 실행 배포본은 아래 두 개다.
+[최종 CI의 Artifacts](https://github.com/athens96/MightyCode/actions/runs/37182771471)에서 다음 이름의 배포 아티팩트를 받을 수 있다. GitHub 로그인이 필요할 수 있다. `MightyCode-windows-*-smoke`는 검증 자료이며 실행 배포본은 아래 두 개다.
 
 | 아티팩트 | 내부 배포 ZIP | ZIP 크기 |
 |---|---|---|
-| `MightyClaude-native-windows-x64` | `MightyClaude-windows-x64.zip` | 117,968,419바이트 |
-| `MightyClaude-native-windows-arm64` | `MightyClaude-windows-arm64.zip` | 114,677,322바이트 |
+| `MightyCode-native-windows-x64` | `MightyCode-windows-x64.zip` | 117,968,419바이트 |
+| `MightyCode-native-windows-arm64` | `MightyCode-windows-arm64.zip` | 114,677,322바이트 |
 
 아래 SHA-256은 GitHub가 감싸서 내려주는 아티팩트 ZIP이 아니라 내부 배포 ZIP의 값이며, 함께 제공한 `.sha256` 파일과 일치한다.
 
 ```text
-2a7cd9858ebda1dc432df1922bbacc3a2d962adfb50613b751c18408f640cad0  MightyClaude-windows-x64.zip
-8cdce41db420ba972400376511f1698c124b6011e0f9d8d0f25df0660d117a43  MightyClaude-windows-arm64.zip
+2a7cd9858ebda1dc432df1922bbacc3a2d962adfb50613b751c18408f640cad0  MightyCode-windows-x64.zip
+8cdce41db420ba972400376511f1698c124b6011e0f9d8d0f25df0660d117a43  MightyCode-windows-arm64.zip
 ```
 
-Windows 아키텍처에 맞는 ZIP 전체를 풀고 `native-windows-x64/MightyClaude.exe` 또는 `native-windows-arm64/MightyClaude.exe`를 실행한다. EXE 하나만 옮기면 안 된다. .NET 10.0.12와 Windows App SDK 구성 요소는 포함되어 있다. WebView2Loader는 포함되지만 WebView2 Evergreen 브라우저 런타임 자체를 담은 배포본은 아니므로 터미널·브라우저 등 해당 기능에는 Windows에 설치된 WebView2 런타임이 필요하다.
+Windows 아키텍처에 맞는 ZIP 전체를 풀고 `native-windows-x64/MightyCode.exe` 또는 `native-windows-arm64/MightyCode.exe`를 실행한다. EXE 하나만 옮기면 안 된다. .NET 10.0.12와 Windows App SDK 구성 요소는 포함되어 있다. WebView2Loader는 포함되지만 WebView2 Evergreen 브라우저 런타임 자체를 담은 배포본은 아니므로 터미널·브라우저 등 해당 기능에는 Windows에 설치된 WebView2 런타임이 필요하다.
 
 현재 파일은 서명 없는 자체 포함 폴더 배포본(`signed: false`, `unpackaged-self-contained-folder`)이다. 앱 업데이트 공개 키와 매니페스트 주소도 이 CI 빌드에 설정하지 않아 `updateChecks: false`, `updateManifestUrl: null`이다. 앱 자체 업데이트 구현은 포함되어 있지만 이 배포본에서는 확인이 비활성화된다. 이는 CLI·플러그인 자동 업데이트와 별개의 설정이다. Authenticode·MSIX/스토어·정식 앱 업데이트 배포 설정은 남아 있다.
 

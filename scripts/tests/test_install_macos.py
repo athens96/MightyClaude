@@ -18,16 +18,16 @@ class InstallerTests(unittest.TestCase):
             bins.mkdir()
             gate = folder / "app-running"
             gate.touch()
-            destination = folder / "Applications/MightyClaude.app"
-            binary = destination / "Contents/MacOS/MightyClaude"
+            destination = folder / "Applications/MightyCode.app"
+            binary = destination / "Contents/MacOS/MightyCode"
             binary.parent.mkdir(parents=True)
             binary.write_text("old")
-            source = folder / "release/MightyClaude.app"
-            source_binary = source / "Contents/MacOS/MightyClaude"
+            source = folder / "release/MightyCode.app"
+            source_binary = source / "Contents/MacOS/MightyCode"
             source_binary.parent.mkdir(parents=True)
             source_binary.write_text("new")
             for name, body in {
-                "ps": 'if [ -f "$FIXTURE_GATE" ]; then printf "%s\\n" "$MIGHTY_INSTALL_PATH/Contents/MacOS/MightyClaude"; fi',
+                "ps": 'if [ -f "$FIXTURE_GATE" ]; then printf "%s\\n" "$MIGHTY_INSTALL_PATH/Contents/MacOS/MightyCode"; fi',
                 "codesign": "exit 0",
                 "open": "exit 0",
                 "lsregister": "exit 0",
@@ -43,8 +43,8 @@ class InstallerTests(unittest.TestCase):
             fixture_script = source_script.replace(
                 "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
                 str(bins / "lsregister"),
-            ).replace("/tmp/MightyClaude-app-backup-", str(folder / "backup-")).replace(
-                '"$SOURCE/Contents/MacOS/MightyClaude" --verify-resources', "echo resources-verified")
+            ).replace("/tmp/MightyCode-app-backup-", str(folder / "backup-")).replace(
+                '"$SOURCE/Contents/MacOS/MightyCode" --verify-resources', "echo resources-verified")
             installer = folder / "install.sh"
             installer.write_text(fixture_script)
             environment = os.environ.copy()
@@ -73,7 +73,7 @@ class InstallerTests(unittest.TestCase):
                         first.terminate()
                         first.wait(timeout=10)
             self.assertEqual(binary.read_text(), "new")
-            backups = list(folder.glob("backup-*/MightyClaude.app.bak/Contents/MacOS/MightyClaude"))
+            backups = list(folder.glob("backup-*/MightyCode.app.bak/Contents/MacOS/MightyCode"))
             self.assertEqual([p.read_text() for p in backups], ["old"])
             # Lock release allows the next update; backup names never collide.
             source_binary.write_text("newer")
@@ -81,7 +81,7 @@ class InstallerTests(unittest.TestCase):
                                    capture_output=True, text=True, timeout=15)
             self.assertEqual(third.returncode, 0, third.stderr)
             self.assertEqual(binary.read_text(), "newer")
-            backups = list(folder.glob("backup-*/MightyClaude.app.bak/Contents/MacOS/MightyClaude"))
+            backups = list(folder.glob("backup-*/MightyCode.app.bak/Contents/MacOS/MightyCode"))
             self.assertEqual(sorted(p.read_text() for p in backups), ["new", "old"])
 
     def test_cancelled_waiter_cannot_install_and_lock_ignores_tmpdir(self):
@@ -93,20 +93,20 @@ class InstallerTests(unittest.TestCase):
             gate = folder / "app-running"
             gate.touch()
             launched = folder / "launched"
-            destination = folder / "Applications/MightyClaude.app"
-            binary = destination / "Contents/MacOS/MightyClaude"
+            destination = folder / "Applications/MightyCode.app"
+            binary = destination / "Contents/MacOS/MightyCode"
             binary.parent.mkdir(parents=True)
             binary.write_text("installed-original")
-            obsolete = folder / "obsolete/MightyClaude.app"
-            obsolete_binary = obsolete / "Contents/MacOS/MightyClaude"
+            obsolete = folder / "obsolete/MightyCode.app"
+            obsolete_binary = obsolete / "Contents/MacOS/MightyCode"
             obsolete_binary.parent.mkdir(parents=True)
             obsolete_binary.write_text("cancelled-update")
-            current = folder / "current/MightyClaude.app"
-            current_binary = current / "Contents/MacOS/MightyClaude"
+            current = folder / "current/MightyCode.app"
+            current_binary = current / "Contents/MacOS/MightyCode"
             current_binary.parent.mkdir(parents=True)
             current_binary.write_text("requested-update")
             for name, body in {
-                "ps": 'if [ -f "$FIXTURE_GATE" ]; then printf "%s\\n" "$MIGHTY_INSTALL_PATH/Contents/MacOS/MightyClaude"; fi',
+                "ps": 'if [ -f "$FIXTURE_GATE" ]; then printf "%s\\n" "$MIGHTY_INSTALL_PATH/Contents/MacOS/MightyCode"; fi',
                 "codesign": "exit 0",
                 "open": 'printf "opened\\n" >> "$FIXTURE_LAUNCHED"',
                 "lsregister": "exit 0",
@@ -117,8 +117,8 @@ class InstallerTests(unittest.TestCase):
             fixture_script = (root / "scripts/install-macos.sh").read_text().replace(
                 "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
                 str(bins / "lsregister"),
-            ).replace("/tmp/MightyClaude-app-backup-", str(folder / "backup-")).replace(
-                '"$SOURCE/Contents/MacOS/MightyClaude" --verify-resources', "echo resources-verified")
+            ).replace("/tmp/MightyCode-app-backup-", str(folder / "backup-")).replace(
+                '"$SOURCE/Contents/MacOS/MightyCode" --verify-resources', "echo resources-verified")
             installer = folder / "install.sh"
             installer.write_text(fixture_script)
             first_tmp = folder / "first-tmp"
@@ -161,7 +161,7 @@ class InstallerTests(unittest.TestCase):
                     self.assertEqual(retry.returncode, 0, retry.stderr)
                     self.assertEqual(binary.read_text(), "requested-update")
                     self.assertEqual(launched.read_text().splitlines(), ["opened"])
-                    backups = list(folder.glob("backup-*/MightyClaude.app.bak/Contents/MacOS/MightyClaude"))
+                    backups = list(folder.glob("backup-*/MightyCode.app.bak/Contents/MacOS/MightyCode"))
                     self.assertEqual([path.read_text() for path in backups], ["installed-original"])
                 finally:
                     # Clean up only this isolated fixture's process group,
@@ -181,15 +181,15 @@ class InstallerTests(unittest.TestCase):
             helper_gate = folder / "helper-running"
             helper_gate.touch()
             data = folder / "data"
-            staged = data / "updates/9.9.9/MightyClaude.app/Contents/MacOS/MightyClaude"
+            staged = data / "updates/9.9.9/MightyCode.app/Contents/MacOS/MightyCode"
             staged.parent.mkdir(parents=True)
             staged.write_text("staged-release")
-            destination = folder / "Applications/MightyClaude.app"
-            binary = destination / "Contents/MacOS/MightyClaude"
+            destination = folder / "Applications/MightyCode.app"
+            binary = destination / "Contents/MacOS/MightyCode"
             binary.parent.mkdir(parents=True)
             binary.write_text("old")
-            source = folder / "release/MightyClaude.app"
-            source_binary = source / "Contents/MacOS/MightyClaude"
+            source = folder / "release/MightyCode.app"
+            source_binary = source / "Contents/MacOS/MightyCode"
             source_binary.parent.mkdir(parents=True)
             source_binary.write_text("dev-build")
             for name, body in {
@@ -205,8 +205,8 @@ class InstallerTests(unittest.TestCase):
             fixture_script = (root / "scripts/install-macos.sh").read_text().replace(
                 "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
                 str(bins / "lsregister"),
-            ).replace("/tmp/MightyClaude-app-backup-", str(folder / "backup-")).replace(
-                '"$SOURCE/Contents/MacOS/MightyClaude" --verify-resources', "echo resources-verified")
+            ).replace("/tmp/MightyCode-app-backup-", str(folder / "backup-")).replace(
+                '"$SOURCE/Contents/MacOS/MightyCode" --verify-resources', "echo resources-verified")
             installer = folder / "install.sh"
             installer.write_text(fixture_script)
             environment = os.environ.copy()
@@ -249,18 +249,18 @@ class InstallerTests(unittest.TestCase):
             app_gate = folder / "app-running"
             data = folder / "data"
             (data / "updates").mkdir(parents=True)
-            destination = folder / "Applications/MightyClaude.app"
-            binary = destination / "Contents/MacOS/MightyClaude"
+            destination = folder / "Applications/MightyCode.app"
+            binary = destination / "Contents/MacOS/MightyCode"
             binary.parent.mkdir(parents=True)
             binary.write_text("old")
-            source = folder / "release/MightyClaude.app"
-            source_binary = source / "Contents/MacOS/MightyClaude"
+            source = folder / "release/MightyCode.app"
+            source_binary = source / "Contents/MacOS/MightyCode"
             source_binary.parent.mkdir(parents=True)
             source_binary.write_text("dev-build")
             for name, body in {
                 # The helper runs first; then (a restart for an update) the app runs again.
                 "ps": 'if [ -f "$FIXTURE_HELPER_GATE" ]; then printf "/bin/sh %s\n" "$MIGHTY_DATA_DIR/updates/9.9.9/install.sh"; fi; '
-                      'if [ -f "$FIXTURE_APP_GATE" ]; then printf "%s\n" "$MIGHTY_INSTALL_PATH/Contents/MacOS/MightyClaude"; fi',
+                      'if [ -f "$FIXTURE_APP_GATE" ]; then printf "%s\n" "$MIGHTY_INSTALL_PATH/Contents/MacOS/MightyCode"; fi',
                 "codesign": "exit 0",
                 "open": "exit 0",
                 "lsregister": "exit 0",
@@ -271,8 +271,8 @@ class InstallerTests(unittest.TestCase):
             fixture_script = (root / "scripts/install-macos.sh").read_text().replace(
                 "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
                 str(bins / "lsregister"),
-            ).replace("/tmp/MightyClaude-app-backup-", str(folder / "backup-")).replace(
-                '"$SOURCE/Contents/MacOS/MightyClaude" --verify-resources', "echo resources-verified")
+            ).replace("/tmp/MightyCode-app-backup-", str(folder / "backup-")).replace(
+                '"$SOURCE/Contents/MacOS/MightyCode" --verify-resources', "echo resources-verified")
             installer = folder / "install.sh"
             installer.write_text(fixture_script)
             environment = os.environ.copy()

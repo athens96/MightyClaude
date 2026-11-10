@@ -94,7 +94,7 @@ function decodeHangulEscapes(source) {
 const CLIENTS = [
   {
     label: 'macOS app',
-    roots: ['native/macos/Sources/MightyClaude'],
+    roots: ['native/macos/Sources/MightyCode'],
     extensions: ['.swift'],
     copies: [],
   },
@@ -106,18 +106,18 @@ const CLIENTS = [
   },
   {
     label: 'Windows Core',
-    roots: ['native/windows/MightyClaude.Core'],
+    roots: ['native/windows/MightyCode.Core'],
     extensions: ['.cs'],
     copies: [],
   },
   {
     label: 'Windows WinUI',
-    roots: ['native/windows/MightyClaude.WinUI'],
+    roots: ['native/windows/MightyCode.WinUI'],
     extensions: ['.cs', '.xaml'],
     // WinUI keeps no copy: it ships the root files themselves as Content. With no copy
     // there is nothing to drift, so the check looks at that link instead.
     copies: [],
-    linkedIn: 'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj',
+    linkedIn: 'native/windows/MightyCode.WinUI/MightyCode.WinUI.csproj',
   },
   {
     label: 'phone',
@@ -622,7 +622,7 @@ if (budget) {
 
 // ── Touched Windows files (--touched-since) ───────────────────────────────────
 if (TOUCHED_SINCE) {
-  const SMOKE_EXEMPT = 'native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs';
+  const SMOKE_EXEMPT = 'native/windows/MightyCode.WinUI/MainWindow.Smoke.cs';
   const windowsClients = CLIENTS.filter(
     (c) => c.label === 'Windows Core' || c.label === 'Windows WinUI',
   );
@@ -716,7 +716,7 @@ function documentation() {
   out.push('| 클라이언트 | 사본 |');
   out.push('| --- | --- |');
   out.push('| macOS | `native/macos/Sources/MightyCore/Resources/Locales` (`Package.swift`의 `.copy`) |');
-  out.push('| Windows | `MightyClaude.WinUI.csproj`의 `Content` 연결 — 뿌리의 파일 자체를 옮기므로 어긋날 수 없다 |');
+  out.push('| Windows | `MightyCode.WinUI.csproj`의 `Content` 연결 — 뿌리의 파일 자체를 옮기므로 어긋날 수 없다 |');
   out.push('| 전화기 | `mobile/src/locales` (`mobile/src/lib/i18n.ts`가 import) |');
   out.push('');
   out.push('`node scripts/check-locales.js`가 네 언어 모두 사본이 원본과 바이트까지 같은지, 키 집합과 자리표가');

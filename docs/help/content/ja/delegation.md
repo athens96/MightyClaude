@@ -38,7 +38,7 @@ Claude・Codex・Antigravityペインの実行中にリクエストを書いて{
 
 - 実行中のペインで{{kbd:Enter}}を押すと、リクエストはキューに入り、今の作業が終わったあとに実行されます。入力欄の案内文に、二つのキーの働きが表示されます。
 - 新しいworktreeは、作れる場所でだけ使います。コミットのあるブランチをチェックアウトしたgitリポジトリである必要があります。それ以外の場所(gitリポジトリでない、まだコミットがない、ブランチではなくコミットをチェックアウトしている)では、{{kbd:⌘Enter}}は{{kbd:Enter}}と同じようにリクエストをキューに入れます。
-- 子は親の最後のコミットから始まります。ブランチ`mighty/<子のid>`ができ、worktreeはプロジェクトフォルダーの外(Macは`~/.mightyclaude/worktrees/<子のid>`、Windowsは`%USERPROFILE%\.mightyclaude\worktrees\<子のid>`)にできるので、親の作業には触れません。親のフォルダーでまだコミットしていない変更は、子には渡りません。
+- 子は親の最後のコミットから始まります。ブランチ`mighty/<子のid>`ができ、worktreeはプロジェクトフォルダーの外(Macは`~/.mightycode/worktrees/<子のid>`、Windowsは`%USERPROFILE%\.mightycode\worktrees\<子のid>`)にできるので、親の作業には触れません。親のフォルダーでまだコミットしていない変更は、子には渡りません。
 - ペインと同じエージェントの子は、親ペインの権限モードで、親ペインのモデルと{{ui:composer.effort.label}}で実行します。すべてのリクエストをプランモードで始めるスタイルでは、プランモードで始まります。親と同じ表示で開き、親がマイティ表示でスタイルを使っていたなら同じスタイルで始まります(スタイルの進み具合は子の最初のリクエストから別に数えます)。添付ファイルも一緒に渡ります。
 - 最初のメッセージは入力したテキストが先に来て、その後にアプリが、子がどこで作業するかを伝え、終わったらコミットしてREPORT.mdを書くよう添えます。そうするとカードからマージできます。スラッシュコマンド(`/`で始まるテキスト)は入力したとおり単独で実行され、アプリの案内は子ペインの次のリクエストとして続くため、コマンドの引数になりません。
 - {{platform:mac}} 別のエージェントでリクエストを実行するには、{{ui:queue.worktree}}ボタンを右クリック(またはControlクリック)して、Claude、Codex、Antigravityから選びます。{{kbd:⌘Enter}}とふつうのクリックは、ペインと同じエージェントのままです。グレーの項目には実行できない理由が出ます。CLIがインストールされていないかサインインしていない(設定 › CLIで確認)、ペインのモードが許す範囲でファイルを変更できるモードがない、自分で始めた子がすでに3つ開いている、のいずれかです。別のエージェントの子は、ファイルを変更でき、ペインのモードが許さないことはしない自分のモードのうち一番広いモードで始まり([CodexとAntigravity](#agents))、そのエージェントの新しいペインが受け取るモデルと{{ui:composer.effort.label}}を使い、ペインと同じ表示で開きますが、スタイルは引き継ぎません。その子を作れないか始められないときは、テキストと添付ファイルは入力欄に戻り、会話に理由が書かれます。ペイン自身には送りません。ペインのエージェントはそのモードで子を持てないが別のエージェントなら持てるときは、ボタンはそのまま表示され、クリックでメニューが開き、{{kbd:⌘Enter}}はリクエストをキューに入れます。
@@ -58,7 +58,7 @@ ClaudeかCodexのペイン(親)が作業を分けて、ほかのペイン(子)�
 3. 子ペインは親の隣に開き、サイドバーでは親の下に一段下げて表示されます。
 
 - 親が使うツールは`delegate`(任せる。`agent`で子のエージェントを`claude`、`codex`、`antigravity`から指定できます)、`list_children`(子の一覧)、`child_status`(状態とレポートを読む)、`merge`(マージ)、`follow_up`(追加の指示)です。`discard`(破棄)は親には使えず、カードからあなただけが行えます。
-- 子ごとにブランチ`mighty/<子のid>`とworktree(Macは`~/.mightyclaude/worktrees/<子のid>`、Windowsは`%USERPROFILE%\.mightyclaude\worktrees\<子のid>`)ができます。子は親の最後のコミットから始まります。
+- 子ごとにブランチ`mighty/<子のid>`とworktree(Macは`~/.mightycode/worktrees/<子のid>`、Windowsは`%USERPROFILE%\.mightycode\worktrees\<子のid>`)ができます。子は親の最後のコミットから始まります。
 - 任せた作業はTASK.mdに、結果はREPORT.mdに書かれます。どちらもworktree内のgitが無視するフォルダーにあり、コミットされません。
 - 子の権限モードは親が選んだモードで、親のペインのモードより広くできません。別のエージェントの子は、親のモードがしないことはできません。親のモードが確認せずにファイルを変更するとき(編集承認モードかautoモードのClaude、{{ui:permission.label.onRequest}}か{{ui:permission.label.acceptEditsCodex}}モードのCodex、{{ui:permission.label.acceptEdits}}モードのAntigravity、{{ui:permission.label.fullAccess}}モードのどのエージェントも)だけ確認せずにファイルを変更し、親のモードがファイルを変更できるときだけ確認したうえでファイルを変更し、親のモードが確認せずにシェルコマンドを実行するとき(autoモードのClaude、{{ui:permission.label.defaultCodex}}か{{ui:permission.label.acceptEditsCodex}}モードのCodex、{{ui:permission.label.fullAccess}}モードのどのエージェントも)だけ確認せずに実行し、{{ui:permission.label.fullAccess}}の下でだけフルアクセスを持ちます。そのため、シェルコマンドの前に確認するClaudeの編集承認モードの下では、Codexの子は{{ui:permission.label.acceptEditsCodex}}ではなく{{ui:permission.label.onRequest}}になり、プランモードか手動モードのClaudeのペインはCodexやAntigravityの子をまったく持てません。広げられるのはあなただけで、実行と実行の合間に、子ペインの入力欄の権限メニューかスマートフォンの設定から行います。
 - 子ペインは親ペインと同じ表示({{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}}のうち同じもの)で開きます。親がマイティ表示の{{ui:graph.view.structure}}を使っていたなら、子も{{ui:graph.view.structure}}で表示されます。
@@ -150,18 +150,18 @@ Claudeに任せた子がレポートしたときと、開始できなかった�
 親は`follow_up`ツールで、Claudeに任せた子に追加の指示を2回まで送れます。追加の指示は通知と同じ決まりで子ペインに届き、一つあたり48 KiBまでです。あなたは子ペインの入力欄に直接書けばよく、回数の制限はありません。
 
 ## オンとオフ {#enable}
-{{platform:mac}} オフにしない限りオンです。設定の{{ui:settings.nav.general}}タブで{{ui:settings.delegation.toggle}}を切り替えます。アプリを開き直さなくても、次に始まる実行から反映されます。同じスイッチがdefaultsキー`delegation.enabled`なので、ターミナルで次のコマンドを実行してもオフにでき、`defaults delete dev.mightyclaude.native delegation.enabled`でオンに戻ります:
+{{platform:mac}} オフにしない限りオンです。設定の{{ui:settings.nav.general}}タブで{{ui:settings.delegation.toggle}}を切り替えます。アプリを開き直さなくても、次に始まる実行から反映されます。同じスイッチがdefaultsキー`delegation.enabled`なので、ターミナルで次のコマンドを実行してもオフにでき、`defaults delete dev.mightycode.native delegation.enabled`でオンに戻ります:
 
 ```sh
-defaults write dev.mightyclaude.native delegation.enabled -bool false
+defaults write dev.mightycode.native delegation.enabled -bool false
 ```
 
 {{platform:mac}} 以前のバージョンはこのキーを設定したときだけオンになり、オフにするには`defaults delete …`を使っていました。今はそうするとオンのままになるので、オフのままにするには設定で{{ui:settings.delegation.toggle}}をオフにしてください。
 
-{{platform:windows}} オフにしない限りオンです。設定の{{ui:settings.nav.general}}タブで{{ui:settings.delegation.toggle}}を切り替えます。アプリを開き直さなくても、次に始まる実行から反映されます。同じスイッチが`HKEY_CURRENT_USER\Software\MightyClaudeNative`の下の`delegation.enabled`の値(REG_DWORD)で、0ならオフ、値がないかほかの値ならオンです。そのため、コマンドプロンプトまたはPowerShellで次のコマンドを実行してもオフにでき、`reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`でオンに戻ります:
+{{platform:windows}} オフにしない限りオンです。設定の{{ui:settings.nav.general}}タブで{{ui:settings.delegation.toggle}}を切り替えます。アプリを開き直さなくても、次に始まる実行から反映されます。同じスイッチが`HKEY_CURRENT_USER\Software\MightyCode`の下の`delegation.enabled`の値(REG_DWORD)で、0ならオフ、値がないかほかの値ならオンです。そのため、コマンドプロンプトまたはPowerShellで次のコマンドを実行してもオフにでき、`reg delete "HKCU\Software\MightyCode" /v delegation.enabled /f`でオンに戻ります:
 
 ```
-reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 0 /f
+reg add "HKCU\Software\MightyCode" /v delegation.enabled /t REG_DWORD /d 0 /f
 ```
 
 {{platform:windows}} 以前のバージョンは、その値を1にしたときだけオンでした。そのときの1が残っていれば、オンのままです。

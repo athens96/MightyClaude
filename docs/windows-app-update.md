@@ -29,7 +29,7 @@ Windows는 그것을 따라가지 않는다.
 
 ## 서명 검증을 무엇으로 하는가
 
-**결정: 클라이언트 안에 검증 전용 Ed25519 구현을 둔다** (`MightyClaude.Core/Ed25519Verify.cs`).
+**결정: 클라이언트 안에 검증 전용 Ed25519 구현을 둔다** (`MightyCode.Core/Ed25519Verify.cs`).
 
 **이유**: .NET 10의 `System.Security.Cryptography`에는 이 앱이 빌드하는 세 대상
 (Windows x64 · Windows arm64 · macOS) 어디에도 Ed25519 기본 제공 API가 없다.
@@ -52,13 +52,13 @@ Windows CNG에도 세 대상 모두에서 쓸 수 있는 Ed25519 경로가 없�
   자동 리디렉션을 끄고 `Location`을 따라가기 **전에** 검사하므로, http로 내려가는 구간은
   따라간 뒤에 알아차리는 것이 아니라 아예 따라가지 않는다. 구간은 최대 5회.
 - **512 MiB 상한.** manifest의 `size`가 넘으면 받지 않고, 받는 도중에도 `size`를 넘는 순간 멈춘다.
-- **저장 위치**는 `<상태 저장 폴더>/updates/<버전>/MightyClaude-windows.zip`이고,
+- **저장 위치**는 `<상태 저장 폴더>/updates/<버전>/MightyCode-windows.zip`이고,
   받기 전에 다른 버전 폴더를 모두 지운다.
 - **디스크에 쓰인 바이트**로 `size`와 `sha256`을 확인한다. 다르면 버전 폴더째 지운다.
 - **취소하면 아무것도 남지 않는다.** 실패한 다운로드도 마찬가지다.
 - **풀기**는 새 폴더에 풀고 다음을 거절한다: 절대 경로 항목, `..` 구간이 있는 항목,
   대상 폴더를 벗어나는 항목, 링크로 저장된 항목(Unix 모드 `S_IFLNK`),
-  `MightyClaude.exe`가 하나가 아니거나 예상 위치에 없는 패키지, 다른 아키텍처용 패키지
+  `MightyCode.exe`가 하나가 아니거나 예상 위치에 없는 패키지, 다른 아키텍처용 패키지
   (PE 머신 타입 `0x8664` = x64, `0xAA64` = arm64).
 
 예상 위치는 zip의 최상위이거나 최상위 폴더 하나 아래다.
@@ -93,7 +93,7 @@ macOS zip이 `.app` 하나를 담는 것과 같은 모양이다.
    도우미가 스테이지된 폴더에서 실행 중이므로 그 폴더를 옮길 수 없어 복사를 쓴다.
    복사 뒤 새 폴더에 실행 파일이 있는지 확인한다. 복사가 중간에 실패하면 새 폴더만 지운다.
 6. `--relaunch 0`(종료할 때 설치)이면 여기서 **앱이 설치 폴더에서 다시 떴는지** 본다
-   (`RunningFromInstallAsync`, 실행 파일 경로가 설치 폴더 안인 `MightyClaude` 프로세스, 최대 30초 기다림).
+   (`RunningFromInstallAsync`, 실행 파일 경로가 설치 폴더 안인 `MightyCode` 프로세스, 최대 30초 기다림).
    아직 있으면 새 폴더를 지우고 업데이트를 스테이지된 채 다음 종료로 미룬다(`Skipped`, 종료 코드 0).
    프로세스를 읽다가 오류가 나면 앱이 실행 중인 것으로 본다. 교체를 건너뛰고 `.update-new`를 지우고 스테이지된 업데이트를
    남긴 채 0으로 끝나며, 그 오류를 `install.log`에 적는다.
@@ -162,18 +162,18 @@ macOS에서 임시 폴더로 그대로 실행해 증명한다 —
 
 ## 설치 프로그램과의 관계
 
-릴리스는 ZIP과 함께 Inno Setup 설치 프로그램(`MightyClaude-windows-<아키텍처>-setup.exe`,
-`native/windows/installer/MightyClaude.iss`)을 낸다. 설치 프로그램은 처음 설치와 제거만 맡고,
+릴리스는 ZIP과 함께 Inno Setup 설치 프로그램(`MightyCode-windows-<아키텍처>-setup.exe`,
+`native/windows/installer/MightyCode.iss`)을 낸다. 설치 프로그램은 처음 설치와 제거만 맡고,
 업데이트는 위의 도우미가 그대로 한다. 그래서 설치 위치가 다음 조건을 지킨다.
 
-- **이 사용자에게만, 승격 없이** `%LOCALAPPDATA%\Programs\MightyClaude`에 설치한다(`PrivilegesRequired=lowest`).
+- **이 사용자에게만, 승격 없이** `%LOCALAPPDATA%\Programs\MightyCode`에 설치한다(`PrivilegesRequired=lowest`).
   도우미가 설치 폴더의 이름을 바꾸고 새 폴더를 복사하려면 그 부모 폴더에 쓸 수 있어야 한다.
   Program Files나 MSIX(`WindowsApps`)에서는 이 순서가 성립하지 않는다.
 - **폴더는 고정이다**(`DisableDirPage=yes`). 설치 프로그램은 설치 전에 폴더를 비우고(`[InstallDelete]`),
   제거는 폴더와 `<설치 폴더>.backup-*`를 통째로 지운다(`[UninstallDelete]`). 업데이트로 바뀐 파일은
   설치 기록에 없기 때문이다. 사용자가 고른 다른 폴더에 이 동작이 닿으면 안 된다. 페이지를 숨기는 것만으로는
   `/DIR=`를 막지 못하므로 `UsePreviousAppDir=no`와 `PrepareToInstall`이 다른 폴더를 거절한다.
-- **제거 프로그램은 설치 폴더 밖**(`%LOCALAPPDATA%\MightyClaudeSetup`, `UninstallFilesDir`)에 둔다.
+- **제거 프로그램은 설치 폴더 밖**(`%LOCALAPPDATA%\MightyCodeSetup`, `UninstallFilesDir`)에 둔다.
   업데이트가 설치 폴더를 ZIP 내용으로 바꾸면 그 안의 `unins000.exe`도 사라지기 때문이다.
 - **설치된 앱 목록의 버전**: 앱은 시작할 때마다 제거 항목
   (`HKCU\…\Uninstall\{F2F99AEF-FB35-4476-A3EE-49453FA0527F}_is1`)의 `InstallLocation`이 자기 폴더일 때만
@@ -249,7 +249,7 @@ Core와 WinUI 양쪽이 모두 들어와 있다.
 
 ## 문구
 
-문구는 전부 `MightyClaude.Core/AppUpdateStrings.cs`에 있고 WinUI는 한국어를 직접 쓰지 않는다.
+문구는 전부 `MightyCode.Core/AppUpdateStrings.cs`에 있고 WinUI는 한국어를 직접 쓰지 않는다.
 `StringsVerification.AppUpdateStringsMatchMacOS`가 macOS 원문과 한 줄씩 대조한다.
 
 | Windows 상수 | macOS 원문 | 비고 |
@@ -295,7 +295,7 @@ manifest를 받지도, 패키지를 내려받지도, 프로세스를 시작하�
 
 ## Core.Tests 검사
 
-`dotnet run --project native/windows/MightyClaude.Core.Tests --artifacts-path /tmp/mc-artifacts`
+`dotnet run --project native/windows/MightyCode.Core.Tests --artifacts-path /tmp/mc-artifacts`
 
 | 검사 이름 | 무엇을 증명하나 |
 |---|---|

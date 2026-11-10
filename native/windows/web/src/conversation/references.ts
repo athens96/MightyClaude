@@ -1,4 +1,4 @@
-// The file a click in the conversation names, and which link destinations are local files: MightyClaude.Core's
+// The file a click in the conversation names, and which link destinations are local files: MightyCode.Core's
 // ReferencePreview.TextTargetAt and ResultFiles.LocalPath, rule for rule. The host still resolves the path against the
 // workspace before anything opens (ReferencePreview.Resolve).
 

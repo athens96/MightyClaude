@@ -23,7 +23,7 @@ def main():
     executable = bundle / "Contents/MacOS/InputRecovery"
     executable.parent.mkdir(parents=True)
     (bundle / "Contents/Info.plist").write_bytes(plistlib.dumps({
-        "CFBundleIdentifier": "dev.mightyclaude.diagnostic.inputrecovery." + uuid.uuid4().hex,
+        "CFBundleIdentifier": "dev.mightycode.diagnostic.inputrecovery." + uuid.uuid4().hex,
         "CFBundleExecutable": executable.name,
         "CFBundlePackageType": "APPL",
         "NSPrincipalClass": "NSApplication",
@@ -32,7 +32,7 @@ def main():
     environment = os.environ.copy()
     environment["CLANG_MODULE_CACHE_PATH"] = str(fixture / "module-cache")
     environment["SWIFTPM_MODULECACHE_OVERRIDE"] = str(fixture / "module-cache")
-    sources = repository / "native/macos/Sources/MightyClaude"
+    sources = repository / "native/macos/Sources/MightyCode"
     # Built without the MightyCore module: the main file stands in for its L() lookup.
     copies = []
     for name in ("InputSessionRecoveryCoordinator.swift", "InputSessionRecoveryDiagnostics.swift"):

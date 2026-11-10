@@ -23,7 +23,7 @@ const { chromium } = require(process.env.MIGHTY_PLAYWRIGHT_MODULE || 'playwright
      }
    }}};
  });
- await page.addScriptTag({path:require('path').resolve(__dirname, '../../native/windows/MightyClaude.WinUI/Assets/ScreenShare/screen.js')});
+ await page.addScriptTag({path:require('path').resolve(__dirname, '../../native/windows/MightyCode.WinUI/Assets/ScreenShare/screen.js')});
  await page.evaluate(()=>window.command('start',{session:{sessionId:'fixture',deviceId:'phone',mode:'control',displayId:1,codec:'H264',quality:{width:128,height:72,fps:15,maxBitrateKbps:1000}},iceServers:[]}));
  await page.waitForFunction(()=>window.phone.connectionState==='connected'&&window.phoneChannel?.readyState==='open',null,{timeout:15000});
  const streams=await page.evaluate(()=>window.receivedStreams.sort()); if(JSON.stringify(streams)!==JSON.stringify(['overview','screen']))throw Error('track identity mismatch '+JSON.stringify(streams));

@@ -1,4 +1,4 @@
-/** Wire types for the MightyClaude mobile protocol ("m1", protocol version 1). */
+/** Wire types for the MightyCode mobile protocol ("m1", protocol version 1). */
 
 export const PROTOCOL_VERSION = 1;
 /** Server-side limit for submitted text. */

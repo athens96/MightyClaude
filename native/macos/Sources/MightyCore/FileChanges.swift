@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 /// What a request changed in one file (the source preview's 변경사항 view, the
-/// phone's `changes`; Windows `MightyClaude.Core/FileChanges.cs`). `base` is
+/// phone's `changes`; Windows `MightyCode.Core/FileChanges.cs`). `base` is
 /// `run` (the file as it was before the run first changed it) or `head` (git's
 /// HEAD, an untracked file read as empty). `runId` names the run of a `run`
 /// base, `headSha` the short commit of a `head` base (nil for a repository with

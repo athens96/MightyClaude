@@ -22,8 +22,13 @@ import argparse, base64, datetime, difflib, hashlib, json, os, re, shutil, subpr
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RELEASE_ROOT = os.path.join(ROOT, "release")
-PUBLIC_BASE = "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude"
-BUCKET = "mightyclaude"
+PUBLIC_BASE = "https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode"
+BUCKET = "mightycode"
+# Where the apps from before the rename to Mighty Code (0.4.53 and older) look for updates and the download page
+# (docs/rename-identifiers.md). Each release also writes its signed latest.json there, whose package addresses point
+# into the new bucket, and a page that sends a visitor on to the new one.
+LEGACY_BASE = "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude"
+LEGACY_BUCKET = "mightyclaude"
 # The public half of the update signing key (also in .github/workflows/native-windows.yml).
 PUBLIC_KEY = "C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4="
 FORMAT = "mightyclaude-update-v1"
@@ -39,22 +44,22 @@ PLACEHOLDER = "(채워 주세요)"
 WORKFLOWS = {"macos": "native-macos.yml", "windows": "native-windows.yml"}
 # Signs latest.json with the repository secret MIGHTY_UPDATE_SIGNING_KEY, the only copy of the private key.
 MANIFEST_WORKFLOW = "release-manifest.yml"
-MANIFEST_ARTIFACT = "MightyClaude-release-manifest"
+MANIFEST_ARTIFACT = "MightyCode-release-manifest"
 ARTIFACTS = {  # artifact name -> (workflow, files inside)
-    "MightyClaude-native-macos": ("macos", ["MightyClaude-macos.zip"]),
-    "MightyClaude-native-windows-x64": ("windows", ["MightyClaude-windows-x64.zip", "MightyClaude-windows-x64.zip.sha256",
-                                                    "MightyClaude-windows-x64-setup.exe", "MightyClaude-windows-x64-setup.exe.sha256"]),
-    "MightyClaude-native-windows-arm64": ("windows", ["MightyClaude-windows-arm64.zip", "MightyClaude-windows-arm64.zip.sha256",
-                                                      "MightyClaude-windows-arm64-setup.exe", "MightyClaude-windows-arm64-setup.exe.sha256"]),
+    "MightyCode-native-macos": ("macos", ["MightyCode-macos.zip"]),
+    "MightyCode-native-windows-x64": ("windows", ["MightyCode-windows-x64.zip", "MightyCode-windows-x64.zip.sha256",
+                                                    "MightyCode-windows-x64-setup.exe", "MightyCode-windows-x64-setup.exe.sha256"]),
+    "MightyCode-native-windows-arm64": ("windows", ["MightyCode-windows-arm64.zip", "MightyCode-windows-arm64.zip.sha256",
+                                                      "MightyCode-windows-arm64-setup.exe", "MightyCode-windows-arm64-setup.exe.sha256"]),
 }
 # The five packages, in upload order; the manifest names the three zips.
-PACKAGES = ["MightyClaude-macos.zip", "MightyClaude-windows-x64.zip", "MightyClaude-windows-arm64.zip",
-            "MightyClaude-windows-x64-setup.exe", "MightyClaude-windows-arm64-setup.exe"]
-MANIFEST_ROLES = {"macos": "MightyClaude-macos.zip", "x64": "MightyClaude-windows-x64.zip", "arm64": "MightyClaude-windows-arm64.zip"}
+PACKAGES = ["MightyCode-macos.zip", "MightyCode-windows-x64.zip", "MightyCode-windows-arm64.zip",
+            "MightyCode-windows-x64-setup.exe", "MightyCode-windows-arm64-setup.exe"]
+MANIFEST_ROLES = {"macos": "MightyCode-macos.zip", "x64": "MightyCode-windows-x64.zip", "arm64": "MightyCode-windows-arm64.zip"}
 # Shipped when the run made them: the Mac dmg comes from the notarize-macos job, which runs only once
 # notarization is set up (repository variable MIGHTY_MAC_NOTARIZE). artifact -> files it may hold.
-OPTIONAL_ARTIFACT_FILES = {"MightyClaude-native-macos": ["MightyClaude-macos.dmg"]}
-OPTIONAL_PACKAGES = ["MightyClaude-macos.dmg"]
+OPTIONAL_ARTIFACT_FILES = {"MightyCode-native-macos": ["MightyCode-macos.dmg"]}
+OPTIONAL_PACKAGES = ["MightyCode-macos.dmg"]
 
 
 class ReleaseError(Exception):
@@ -231,8 +236,8 @@ def update_notes_path(version):
 
 def notes_template(version):
     rows = "\n".join(f"| {name}{' (Apple Silicon)' if 'macos' in name else ''} | `{{{{SHA:{name}}}}}` | {{{{SIZE:{name}}}}} |"
-                     for name in ["MightyClaude-macos.zip", "MightyClaude-windows-x64-setup.exe", "MightyClaude-windows-arm64-setup.exe",
-                                  "MightyClaude-windows-x64.zip", "MightyClaude-windows-arm64.zip"])
+                     for name in ["MightyCode-macos.zip", "MightyCode-windows-x64-setup.exe", "MightyCode-windows-arm64-setup.exe",
+                                  "MightyCode-windows-x64.zip", "MightyCode-windows-arm64.zip"])
     return f"""{{{{DATE}}}} · Mac build {{{{MAC_BUILD}}}} · Windows (beta) x64·ARM64 · Android {{{{ANDROID}}}}
 
 <details open>
@@ -298,12 +303,12 @@ def note_values(state):
         values["MAC_BUILD"] = data["build"]
     for name, info in data.get("files", {}).items():
         values[f"SHA:{name}"], values[f"SIZE:{name}"] = info["sha256"], info["size"]
-    dmg = data.get("files", {}).get("MightyClaude-macos.dmg")
-    values["DMG_ROW"] = f"| MightyClaude-macos.dmg (Apple Silicon) | `{dmg['sha256']}` | {dmg['size']} |\n" if dmg else ""
+    dmg = data.get("files", {}).get("MightyCode-macos.dmg")
+    values["DMG_ROW"] = f"| MightyCode-macos.dmg (Apple Silicon) | `{dmg['sha256']}` | {dmg['size']} |\n" if dmg else ""
     apk, old = data.get("apk"), data.get("previousApk")
     if apk:
         values["ANDROID"] = apk["version"]
-        values["ANDROID_ROW"] = f"| MightyClaude-{apk['version']}.apk (Android) | `{apk['sha256']}` | {apk['size']} |"
+        values["ANDROID_ROW"] = f"| MightyCode-{apk['version']}.apk (Android) | `{apk['sha256']}` | {apk['size']} |"
     elif old:
         values["ANDROID"] = old
         values["ANDROID_ROW"] = f"\nAndroid: {old} APK — https://github.com/{REPO}/releases/tag/v{old}"
@@ -406,7 +411,7 @@ def render_page(version, apk_version, has_dmg, template=None):
 
 
 def page_apk_version(html):
-    found = re.search(r'download="MightyClaude-(\d+\.\d+\.\d+)\.apk"', html)
+    found = re.search(r'download="MightyCode-(\d+\.\d+\.\d+)\.apk"', html)
     return found.group(1) if found else None
 
 
@@ -420,19 +425,38 @@ def upload_plan(version, folder, apk=None, names=PACKAGES):
     """(key, file, content type, cache control) in upload order: packages, latest.json, APK, download page.
     The APK key is fixed (the old one is overwritten), so it goes only once the update itself is live."""
     def entry(key, path, cache=None):
-        return (f"mightyclaude/{key}", path, CONTENT_TYPES[os.path.splitext(path)[1]], cache)
+        return (f"mightycode/{key}", path, CONTENT_TYPES[os.path.splitext(path)[1]], cache)
     plan = [entry(f"{version}/{name}", os.path.join(folder, name)) for name in names]
     plan.append(entry("latest.json", os.path.join(folder, "latest.json"), "no-cache"))
     if apk:
-        plan.append(entry("android/MightyClaude-android.apk", apk, "no-cache"))  # fixed key, so never cached long
+        plan.append(entry("android/MightyCode-android.apk", apk, "no-cache"))  # fixed key, so never cached long
     # The public bucket URL does not add index.html, so the page is also written at the folder key.
     page = os.path.join(folder, "index.html")
-    plan += [entry("index.html", page, "no-cache"), ("mightyclaude/", page, CONTENT_TYPES[".html"], "no-cache")]
+    plan += [entry("index.html", page, "no-cache"), ("mightycode/", page, CONTENT_TYPES[".html"], "no-cache")]
     return plan
 
 
-def wrangler_command(key, path, content_type, cache):
-    command = ["wrangler", "r2", "object", "put", f"{BUCKET}/{key}", "--file", path, "--content-type", content_type]
+def legacy_page():
+    """The page left at the old download address: it sends the visitor on to the new one."""
+    return (f'<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url={PUBLIC_BASE}/">'
+            f'<title>Mighty Code</title></head><body><p>Mighty Code는 <a href="{PUBLIC_BASE}/">{PUBLIC_BASE}/</a>로 옮겼습니다. '
+            f'Mighty Code moved to <a href="{PUBLIC_BASE}/">{PUBLIC_BASE}/</a>.</p></body></html>\n')
+
+
+def legacy_plan(folder):
+    """(bucket, key, file, content type, cache control) for the old address, after the new one is live: the same signed
+    latest.json, so an app from before the rename updates, and the page that points on."""
+    page = os.path.join(folder, "legacy-index.html")
+    with open(page, "w", encoding="utf-8") as f:
+        f.write(legacy_page())
+    html = CONTENT_TYPES[".html"]
+    return [(LEGACY_BUCKET, "mightyclaude/latest.json", os.path.join(folder, "latest.json"), CONTENT_TYPES[".json"], "no-cache"),
+            (LEGACY_BUCKET, "mightyclaude/index.html", page, html, "no-cache"),
+            (LEGACY_BUCKET, "mightyclaude/", page, html, "no-cache")]
+
+
+def wrangler_command(key, path, content_type, cache, bucket=BUCKET):
+    command = ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", path, "--content-type", content_type]
     if cache:
         command += ["--cache-control", cache]
     return command + ["--remote"]
@@ -602,7 +626,7 @@ def read_sha256_file(path):
         return f.read().split()[0].lower()
 
 
-MAC_ENGINE = "MightyClaude.app/Contents/Frameworks/Chromium Embedded Framework.framework/"
+MAC_ENGINE = "MightyCode.app/Contents/Frameworks/Chromium Embedded Framework.framework/"
 
 
 def check_mac_package(path, version):
@@ -610,7 +634,7 @@ def check_mac_package(path, version):
     import plistlib, zipfile
     try:
         with zipfile.ZipFile(path) as z:
-            info = plistlib.loads(z.read("MightyClaude.app/Contents/Info.plist"))
+            info = plistlib.loads(z.read("MightyCode.app/Contents/Info.plist"))
             engine = any(n.startswith(MAC_ENGINE) for n in z.namelist())
     except (OSError, KeyError, zipfile.BadZipFile, plistlib.InvalidFileException) as e:
         raise ReleaseError(f"Mac zip을 읽지 못했습니다: {e}")
@@ -665,7 +689,7 @@ def step_download(state, a):
             raise ReleaseError(f"{name}의 sha256이 .sha256 파일과 다릅니다")
         say(f"  {name:<38} {files[name]['size']:>13,} B  {files[name]['sha256'][:16]}…" + ("  (.sha256 일치)" if compared else ""))
         check_upload_size(path)
-    check_mac_package(os.path.join(folder, "MightyClaude-macos.zip"), state["version"])
+    check_mac_package(os.path.join(folder, "MightyCode-macos.zip"), state["version"])
     state["data"]["files"] = files
     mark_done(state, "download")
     say("다음: release.py manifest [--apk PATH]")
@@ -740,7 +764,7 @@ def step_manifest(state, a):
             raise ReleaseError(f"APK가 없습니다: {a.apk}")
         check_upload_size(a.apk)
         apk_version = a.apk_version or version
-        copy = os.path.join(folder, f"MightyClaude-{apk_version}.apk")
+        copy = os.path.join(folder, f"MightyCode-{apk_version}.apk")
         if os.path.abspath(a.apk) != os.path.abspath(copy):
             shutil.copyfile(a.apk, copy)
         data["apk"] = {"version": apk_version, "path": copy, "sha256": digest(copy), "size": os.path.getsize(copy)}
@@ -786,7 +810,7 @@ def step_page(state, a):
         apk_version = apk["version"] if apk else page_apk_version(live)
         if not apk_version:
             raise ReleaseError("공개 페이지에서 Android APK 버전을 찾지 못했습니다 (--apk로 새 APK를 주세요)")
-        page = render_page(version, apk_version, "MightyClaude-macos.dmg" in files_of(state))
+        page = render_page(version, apk_version, "MightyCode-macos.dmg" in files_of(state))
         for href in re.findall(rf'href="{re.escape(version)}/([^"]+)"', page):
             if href not in package_names(files_of(state)):
                 raise ReleaseError(f"페이지가 올리지 않는 파일을 가리킵니다: {version}/{href}")
@@ -830,18 +854,20 @@ def step_upload(state, a):
             raise ReleaseError(f"공개 latest.json을 확인할 수 없어 멈춥니다 (버전 되돌림 방지): {error}\n"
                                "  그래도 올리려면 --allow-unreadable-live")
         say(f"  (공개 latest.json을 읽지 못했지만 --allow-unreadable-live: {error})")
+    # The old address comes last, once the new one is live.
+    commands = [(BUCKET, *entry) for entry in plan] + legacy_plan(folder)
     if a.dry_run or not a.yes:
-        say(f"올릴 순서 ({len(plan)}개, 아무것도 보내지 않음):")
-        for entry in plan:
-            say("  " + " ".join(f'"{p}"' if " " in p else p for p in wrangler_command(*entry)))
+        say(f"올릴 순서 ({len(commands)}개, 아무것도 보내지 않음):")
+        for bucket, *entry in commands:
+            say("  " + " ".join(f'"{p}"' if " " in p else p for p in wrangler_command(*entry, bucket=bucket)))
         if not a.dry_run:
             raise ReleaseError("올리려면 --yes (wrangler가 로그인되어 있어야 합니다)")
         return
-    for index, entry in enumerate(plan, 1):
-        say(f"  [{index}/{len(plan)}] {BUCKET}/{entry[0]} ({entry[2]})")
+    for index, (bucket, *entry) in enumerate(commands, 1):
+        say(f"  [{index}/{len(commands)}] {bucket}/{entry[0]} ({entry[2]})")
         for attempt in (1, 2, 3):  # R2 answers an occasional 500 "internal error, try again"
             try:
-                sh(wrangler_command(*entry))
+                sh(wrangler_command(*entry, bucket=bucket))
                 break
             except ReleaseError as error:
                 if attempt == 3:
@@ -925,14 +951,15 @@ def step_github(state, a):
 def step_verify(state, a):
     version, folder, data = state["version"], release_dir(state["version"]), state["data"]
     problems = []
-    try:
-        verify_envelope(fetch_json(f"{PUBLIC_BASE}/latest.json"), version, data["build"], folder)
-        say(f"  [v] 공개 latest.json {version}, 서명 확인")
-    except ReleaseError as error:
-        problems.append(str(error))
+    for base in (PUBLIC_BASE, LEGACY_BASE):
+        try:
+            verify_envelope(fetch_json(f"{base}/latest.json"), version, data["build"], folder)
+            say(f"  [v] 공개 latest.json {version}, 서명 확인 ({base})")
+        except ReleaseError as error:
+            problems.append(str(error))
     checks = [(f"{PUBLIC_BASE}/{version}/{n}", info["size"]) for n, info in files_of(state).items()]
     if data.get("apk"):
-        checks.append((f"{PUBLIC_BASE}/android/MightyClaude-android.apk", data["apk"]["size"]))
+        checks.append((f"{PUBLIC_BASE}/android/MightyCode-android.apk", data["apk"]["size"]))
     for url, size in checks:
         try:
             got = head_size(url)

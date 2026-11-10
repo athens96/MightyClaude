@@ -125,7 +125,7 @@ public enum TailscaleAddresses {
     static func tunnelInterfaces(named names: Set<String>) async -> [String: NWInterface] {
         guard !names.isEmpty else { return [:] }
         let monitor = NWPathMonitor(requiredInterfaceType: .other)
-        let queue = DispatchQueue(label: "dev.mightyclaude.tailscale.interface")
+        let queue = DispatchQueue(label: "dev.mightycode.tailscale.interface")
         let once = OnceFlag()
         let found = await withCheckedContinuation { (continuation: CheckedContinuation<[String: NWInterface], Never>) in
             monitor.pathUpdateHandler = { path in

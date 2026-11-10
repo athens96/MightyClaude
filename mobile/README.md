@@ -67,14 +67,14 @@ Mac 쪽 준비는 **설정 → 모바일 리모트**에서 스위치를 켜고 �
 Mac의 **설정 → 모바일 리모트**가 아래 형식(v2)의 페어링 문자열을 QR로 표시합니다.
 
 ```
-mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss://host:port>&key=<pairingKey>&name=<이름>
+mightycode://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss://host:port>&key=<pairingKey>&name=<이름>
 ```
 
 앱에서:
 
 1. 현황 탭 오른쪽 위 **+**, 또는 호스트 탭 아래 **+ 호스트 추가**
 2. **QR 스캔** 탭에서 카메라 권한을 허용하고 Mac 화면의 QR을 비춥니다.
-   - 카메라를 쓸 수 없으면 **링크 붙여넣기** 탭에 `mightyclaude://pair?v=2&…` 링크를 그대로 붙여넣습니다.
+   - 카메라를 쓸 수 없으면 **링크 붙여넣기** 탭에 `mightycode://pair?v=2&…` 링크를 그대로 붙여넣습니다.
 3. 앱이 실제로 릴레이에 접속해 `auth_ok`까지 확인한 뒤 비밀을
    **expo-secure-store**(iOS 키체인 / Android Keystore)에 저장합니다. 호스트가 그 자리에서
    **기기 토큰**을 발급하면 토큰만 남기고 페어링 키는 저장하지 않습니다(아래 **기기 토큰**).
@@ -416,7 +416,7 @@ modules/                 로컬 네이티브 모듈: device-lock(휴대폰 잠�
 
 ## 8. iOS 빌드
 
-- `app.json`: `ios.bundleIdentifier`는 Android `package`와 같은 `xyz.woorizip.mightyclaude`입니다. Firebase
+- `app.json`: `ios.bundleIdentifier`는 Android `package`와 같은 `xyz.woorizip.mightycode`입니다. Firebase
   프로젝트에 이 번들 ID로 iOS 앱이 등록되어 있고, 그 `GoogleService-Info.plist`는 저장소 밖에 두고
   `GOOGLE_SERVICE_INFO_PLIST`로 가리킵니다(Android의 `GOOGLE_SERVICES_JSON`과 같은 방식). React Native
   Firebase 때문에 iOS는 정적 프레임워크로 빌드합니다(`expo-build-properties`의 `ios.useFrameworks: "static"`).

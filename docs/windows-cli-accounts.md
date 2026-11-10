@@ -4,8 +4,8 @@ macOS `CLIAccounts.swift`·`CLIAccountsSettingsView.swift`를 Windows로 옮긴 
 앱은 각 CLI에게 계정 레이블을 묻거나 계정 파일에서 읽을 뿐이며, 토큰을 저장하거나
 표시하거나 기록하거나 전달하지 않는다.
 
-구현: `native/windows/MightyClaude.Core/CliAccounts.cs`,
-문구: `native/windows/MightyClaude.Core/CliAccountStrings.cs`,
+구현: `native/windows/MightyCode.Core/CliAccounts.cs`,
+문구: `native/windows/MightyCode.Core/CliAccountStrings.cs`,
 검사: `cli account …`로 시작하는 Core.Tests 검사 6개 (Mac에서 통과).
 
 ## 상태 출처 (per-provider)
@@ -82,7 +82,7 @@ WinUI는 한국어 문자를 직접 쓰지 않는다.
 같이 **CLI 업데이트 섹션 다음**에 놓인다. 기존 섹션의 제목과 순서는 바뀌지 않는다
 (`settings sections …` 검사).
 
-화면은 `native/windows/MightyClaude.WinUI/MainWindow.Settings.cs`의
+화면은 `native/windows/MightyCode.WinUI/MainWindow.Settings.cs`의
 `BuildCliAccountsSection`이 그린다. 실행 중인 앱은 Core의 `CliAccountsCoordinator`를
 들고 있으며, 섹션이 열릴 때와 로그인 터미널이 닫힌 뒤 상태를 다시 읽고, 섹션의 버튼이
 이 코디네이터를 호출한다. 설치되지 않은 CLI는 `미설치`로, 나머지는 요약

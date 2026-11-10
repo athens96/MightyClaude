@@ -1,0 +1,101 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <Platforms>x64;ARM64</Platforms>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <!-- Resource generation/publish tooling is also needed for an unpackaged app. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <ProjectPriFileName>resources.pri</ProjectPriFileName>
+    <!-- Ship both the .NET and Windows App SDK runtimes beside the executable. -->
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WindowsAppSdkUndockedRegFreeWinRTInitialize>true</WindowsAppSdkUndockedRegFreeWinRTInitialize>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../../assets/icons/MightyCode.ico</ApplicationIcon>
+    <AssemblyName>MightyCode</AssemblyName>
+    <!-- What Windows shows for the exe (Task Manager, file properties); the file name stays MightyCode.exe. -->
+    <AssemblyTitle>Mighty Code</AssemblyTitle>
+    <Product>Mighty Code</Product>
+    <!-- The repo's VERSION, as the release build stamps it with -p:Version (scripts/build-windows.ps1); a build without the file says 0.2.0. -->
+    <Version Condition="Exists('$(MSBuildThisFileDirectory)../../../VERSION')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../../VERSION').Trim())</Version>
+    <Version Condition="'$(Version)' == ''">0.2.0</Version>
+    <RootNamespace>MightyCode.WinUI</RootNamespace>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The update public key and the default manifest address, the way
+         scripts/build-macos.sh stamps Info.plist on macOS. A build without
+         MightyUpdatePublicKey carries no key and never checks for updates. -->
+    <AssemblyMetadata Include="MightyUpdatePublicKey" Value="$(MightyUpdatePublicKey)" Condition="'$(MightyUpdatePublicKey)' != ''" />
+    <AssemblyMetadata Include="MightyUpdateManifestURL" Value="$(MightyUpdateManifestUrl)" Condition="'$(MightyUpdateManifestUrl)' != ''" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Stable 2026-08-13: https://learn.microsoft.com/windows/apps/windows-app-sdk/release-channels -->
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <ProjectReference Include="../MightyCode.Core/MightyCode.Core.csproj" />
+    <Content Include="../../../LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../../assets/icons/MightyCode.ico" Link="Assets/MightyCode.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../../assets/icons/mightycode.png" Link="Assets/mightycode.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../../mods/mighty-bridge/**/*" Exclude="../../../mods/mighty-bridge/tests/**" Link="claude-mods/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- The published app carries the repo-root locale files themselves, so the Windows
+         copy cannot drift from the one source; scripts/check-locales.js asserts these links. -->
+    <Content Include="../../../locales/ko.json" Link="Locales/ko.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../../locales/en.json" Link="Locales/en.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../../locales/zh.json" Link="Locales/zh.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../../locales/ja.json" Link="Locales/ja.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- The GUI smoke feeds recorded claudeStream cases through the execution graph
+         tracker so the Mighty canvas it renders comes from macOS truth, not a fixture. -->
+    <EmbeddedResource Include="../../contracts/graph-vectors.json" LogicalName="MightyCode.WinUI.GraphVectors.json" />
+    <!-- The design-token smoke compares the colours it reads off the element tree with the
+         shared palette fixture itself (Core.Tests and the macOS suite hold the code to it). -->
+    <EmbeddedResource Include="../../contracts/fixtures/design-tokens.json" LogicalName="MightyCode.WinUI.DesignTokens.json" />
+    <!-- The help capture (MainWindow.HelpCapture.cs) reads the help site's shot list and the demo profile the Mac capture reads. -->
+    <EmbeddedResource Include="../../../docs/help/shots.json" LogicalName="MightyCode.WinUI.HelpShots.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/demo-profile.json" LogicalName="MightyCode.WinUI.DemoProfile.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets/ScreenShare/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets/Terminal/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets/pets/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../licenses/BouncyCastle-LICENSE" Link="ThirdPartyLicenses/BouncyCastle-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/ZstdSharp-LICENSE" Link="ThirdPartyLicenses/ZstdSharp-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/zstd-LICENSE" Link="ThirdPartyLicenses/zstd-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/Win2D-LICENSE" Link="ThirdPartyLicenses/Win2D-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/QRCoder-LICENSE" Link="ThirdPartyLicenses/QRCoder-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/lucide-LICENSE" Link="ThirdPartyLicenses/lucide-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- The web shell (WebShell.cs, the window's front end unless the state folder holds ui-winui): native/windows/web is built to dist/ before the build when its
+       sources, the shared locales or the design tokens changed (Inputs/Outputs), npm ci first only on a fresh checkout,
+       and dist/ ships as Assets/Web. The items are added after the build target, so a clean checkout's first build has
+       them too. -p:MightySkipWebBuild=true skips npm (whatever dist/ holds still ships). -->
+  <PropertyGroup>
+    <MightyWebDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../web/'))</MightyWebDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <MightyWebSource Include="$(MightyWebDirectory)src/**/*;$(MightyWebDirectory)index.html;$(MightyWebDirectory)package.json;$(MightyWebDirectory)package-lock.json;$(MightyWebDirectory)vite.config.ts;$(MightyWebDirectory)tsconfig.json" />
+    <MightyWebSource Include="../../../locales/*.json;../../contracts/fixtures/design-tokens.json;../../../mobile/src/lib/provider-marks.ts" />
+  </ItemGroup>
+  <Target Name="MightyBuildWeb" Condition="'$(MightySkipWebBuild)' != 'true'" Inputs="@(MightyWebSource)" Outputs="$(MightyWebDirectory)dist/index.html">
+    <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(MightyWebDirectory)" Condition="!Exists('$(MightyWebDirectory)node_modules')" />
+    <Exec Command="npm run build" WorkingDirectory="$(MightyWebDirectory)" />
+  </Target>
+  <Target Name="MightyIncludeWeb" DependsOnTargets="MightyBuildWeb" BeforeTargets="AssignTargetPaths">
+    <ItemGroup>
+      <!-- Through its own item type: an unqualified %(RecursiveDir) here would batch over every Content item. -->
+      <MightyWebAsset Include="$(MightyWebDirectory)dist/**/*" />
+      <Content Include="@(MightyWebAsset)" Link="Assets/Web/%(MightyWebAsset.RecursiveDir)%(MightyWebAsset.Filename)%(MightyWebAsset.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>

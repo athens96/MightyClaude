@@ -26,7 +26,7 @@ def main():
         ("Selectable.swift", "SelectableTextView.swift", "/// The plain request"),
         ("TerminalFocus.swift", "LocalTerminalView.swift", "struct LocalTerminalPane: View"),
     ]:
-        content = (source / "MightyClaude" / original).read_text()
+        content = (source / "MightyCode" / original).read_text()
         assert content.count(boundary) == 1
         (fixture / filename).write_text(content.split(boundary)[0])
     (fixture / "main.swift").write_text("""import AppKit
@@ -44,7 +44,7 @@ def main():
     command = ["xcrun", "swiftc", "-parse-as-library", "-module-cache-path", str(fixture / "cache"),
                "-I", str(products), "-I", str(products / "include")]
     command += [str(fixture / name) for name in ["Selectable.swift", "TerminalFocus.swift", "main.swift"]]
-    command += [str(source / "MightyClaude" / name) for name in [
+    command += [str(source / "MightyCode" / name) for name in [
         "HostTerminalView.swift", "ApplicationCopyRouter.swift", "ApplicationCopyDiagnostics.swift",
         "InputSessionRecoveryCoordinator.swift"]]
     # Compile the current shortcut policy as a local type, rather than testing

@@ -1,4 +1,4 @@
-// The structure view's pure motion rules, ported rule for rule from MightyClaude.Core: MightyStructurePan (dragging empty
+// The structure view's pure motion rules, ported rule for rule from MightyCode.Core: MightyStructurePan (dragging empty
 // space pans: the page sideways, each column up and down; click slop 3, release grace 0.25 s), MightyStructureWheel (the
 // wheel tracker: settle 0.3 s, stale 1 s) and MightyStructureFollow (PageWatch and ColumnWatch, slack 36: only the newest
 // board follows, each column its own end). Origins are top-down, as a scroller's scrollLeft/scrollTop.

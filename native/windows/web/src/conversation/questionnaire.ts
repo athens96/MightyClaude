@@ -1,4 +1,4 @@
-// MightyClaude.Core's UserQuestionnaire.Parse: the AskUserQuestion input an assistant entry (or a code block in one) may
+// MightyCode.Core's UserQuestionnaire.Parse: the AskUserQuestion input an assistant entry (or a code block in one) may
 // hold, read the way the host reads it, so the conversation shows the same questions the WinUI transcript does.
 import { utf8Length } from './references';
 

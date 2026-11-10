@@ -31,7 +31,7 @@ public struct FileDiffResult: Equatable, Sendable {
 }
 
 /// The line diff of the source preview's 변경사항 view (Windows
-/// `MightyClaude.Core/FileDiff.cs`, native/contracts/fixtures/file-diff.json):
+/// `MightyCode.Core/FileDiff.cs`, native/contracts/fixtures/file-diff.json):
 /// CRLF compared as LF; lines compared by their exact UTF-8 bytes (no Unicode
 /// normalization, unlike `String ==`) and their line break; Myers' shortest
 /// edit script after the common start and end are set aside, each run of

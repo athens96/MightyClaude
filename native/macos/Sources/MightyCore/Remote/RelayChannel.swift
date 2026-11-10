@@ -138,7 +138,7 @@ public struct MobilePairingOffer: Sendable, Equatable {
     }
 
     public static func parse(_ text: String) -> MobilePairingOffer? {
-        guard let components = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)), components.scheme == MobilePairing.scheme, components.host == "pair" else { return nil }
+        guard let components = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)), [MobilePairing.scheme, MobilePairing.legacyScheme].contains(components.scheme ?? ""), components.host == "pair" else { return nil }
         var values: [String: String] = [:]
         for item in components.queryItems ?? [] { values[item.name] = item.value }
         guard values["v"] == String(version), let sid = values["sid"], CoreValidation.identifier(sid), let pk = values["pk"].flatMap(fromBase64url), Data(base64Encoded: pk)?.count == 32,

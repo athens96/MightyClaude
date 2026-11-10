@@ -1,4 +1,4 @@
-// The app's words from the repo's locales/{ko,en,ja,zh}.json, read the way MightyClaude.Core/Locale.cs reads them: the
+// The app's words from the repo's locales/{ko,en,ja,zh}.json, read the way MightyCode.Core/Locale.cs reads them: the
 // chosen language, then its fallbacks (ko alone; en then ko; any other then en then ko), then the key itself; `{name}`
 // placeholders replaced from the substitutions. Each language is its own chunk, loaded only when a lookup order needs it.
 

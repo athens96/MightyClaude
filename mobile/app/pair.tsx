@@ -157,7 +157,7 @@ export default function PairScreen() {
             label={t('phone.pair.linkLabel')}
             value={link}
             onChange={setLink}
-            placeholder="mightyclaude://pair?v=2&sid=…"
+            placeholder="mightycode://pair?v=2&sid=…"
             autoCapitalize="none"
             multiline
           />

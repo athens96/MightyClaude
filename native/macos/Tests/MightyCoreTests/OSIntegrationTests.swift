@@ -5,12 +5,12 @@ import Testing
 /// OS 연결 (`OSIntegration.swift`): the link, the shell command, the webhook.
 struct OSIntegrationTests {
     @Test func linksAreParsedStrictly() throws {
-        let link = try #require(DeepLink.parse(URL(string: "mightyclaude://open?path=/Users/me/app/../app&prompt=fix%20the%20tests&agent=codex")!))
+        let link = try #require(DeepLink.parse(URL(string: "mightycode://open?path=/Users/me/app/../app&prompt=fix%20the%20tests&agent=codex")!))
         #expect(link == DeepLink(path: "/Users/me/app", prompt: "fix the tests", agent: "codex"))
-        #expect(DeepLink.parse(URL(string: "mightyclaude://open?path=relative")!) == nil)
-        #expect(DeepLink.parse(URL(string: "mightyclaude://run?path=/x")!) == nil)
+        #expect(DeepLink.parse(URL(string: "mightycode://open?path=relative")!) == nil)
+        #expect(DeepLink.parse(URL(string: "mightycode://run?path=/x")!) == nil)
         #expect(DeepLink.parse(URL(string: "https://open?path=/x")!) == nil)
-        #expect(DeepLink.parse(URL(string: "mightyclaude://open?path=/x&agent=bash")!)?.agent == nil)
+        #expect(DeepLink.parse(URL(string: "mightycode://open?path=/x&agent=bash")!)?.agent == nil)
         let round = try #require(DeepLink.url(path: "/a b/c", prompt: "한글 & 기호"))
         #expect(DeepLink.parse(round) == DeepLink(path: "/a b/c", prompt: "한글 & 기호", agent: nil))
     }

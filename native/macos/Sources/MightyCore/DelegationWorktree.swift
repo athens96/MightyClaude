@@ -65,14 +65,14 @@ public enum ChildWorktreeOutcome: Sendable, Equatable {
     case failed(String)
 }
 
-/// Makes child worktrees under one root: `~/.mightyclaude/worktrees` in the
+/// Makes child worktrees under one root: `~/.mightycode/worktrees` in the
 /// app, a temp folder in tests and smoke runs. A workspace that is not in a
 /// git checkout, whose branch has no commit yet, whose HEAD is detached, or
 /// whose root volume has under 10 GB free is refused before anything is made.
 public struct ChildWorktreeMaker: Sendable {
     public static let minimumFreeBytes: Int64 = 10_000_000_000
     public static var defaultRoot: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".mightyclaude", isDirectory: true).appendingPathComponent("worktrees", isDirectory: true)
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".mightycode", isDirectory: true).appendingPathComponent("worktrees", isDirectory: true)
     }
 
     public let root: URL

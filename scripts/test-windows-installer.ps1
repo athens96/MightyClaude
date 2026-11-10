@@ -6,7 +6,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Version
 )
 $ErrorActionPreference = 'Stop'
-$installDirectory = Join-Path $env:LOCALAPPDATA 'Programs\MightyClaude'
+$installDirectory = Join-Path $env:LOCALAPPDATA 'Programs\MightyCode'
 $entry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{F2F99AEF-FB35-4476-A3EE-49453FA0527F}_is1'
 if (Test-Path $entry) { throw "Mighty Code is already installed for this user; uninstall it before this check: $installDirectory" }
 if (Test-Path $installDirectory) { throw "The install folder already exists; this check never deletes a folder it did not make: $installDirectory" }
@@ -31,7 +31,7 @@ $oldShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Mighty Clau
 Set-Content $oldShortcut 'old'
 Invoke-Quiet $Setup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$log`"")
 if (Test-Path $oldShortcut) { throw "setup left the shortcut from before the rename: $oldShortcut" }
-foreach ($required in @('MightyClaude.exe', 'MightyClaude.dll', 'resources.pri', 'Microsoft.UI.Xaml.dll', 'Assets\MightyClaude.ico', 'Assets\Web\index.html', 'claude-mods\.claude-plugin\plugin.json')) {
+foreach ($required in @('MightyCode.exe', 'MightyCode.dll', 'resources.pri', 'Microsoft.UI.Xaml.dll', 'Assets\MightyCode.ico', 'Assets\Web\index.html', 'claude-mods\.claude-plugin\plugin.json')) {
     if (-not (Test-Path (Join-Path $installDirectory $required) -PathType Leaf)) { throw "setup did not install $required (log: $log)" }
 }
 $values = Get-ItemProperty $entry

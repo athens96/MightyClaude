@@ -100,8 +100,8 @@ USER_DATA="$(mktemp)"; trap 'rm -f "${ERR}" "${USER_DATA}"' EXIT
 cat > "${USER_DATA}" <<USERDATA
 #!/bin/bash
 apt-get update -qq && apt-get install -y -qq git curl
-sudo -u ubuntu -H git clone -q --depth 1 ${REPO} /home/ubuntu/MightyClaude
-sudo -u ubuntu -H bash /home/ubuntu/MightyClaude/relay/deploy/oracle/setup.sh ${DOMAIN} || true
+sudo -u ubuntu -H git clone -q --depth 1 ${REPO} /home/ubuntu/MightyCode
+sudo -u ubuntu -H bash /home/ubuntu/MightyCode/relay/deploy/oracle/setup.sh ${DOMAIN} || true
 USERDATA
 
 # ── 인스턴스 ────────────────────────────────────────────────────────────────
@@ -203,8 +203,8 @@ else
     say "서버에서 setup.sh를 돌립니다"
     "${SSH[@]}" "cloud-init status --wait >/dev/null 2>&1 || true
         command -v git >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq git; }
-        if [ -d MightyClaude ]; then git -C MightyClaude pull --ff-only -q; else git clone -q --depth 1 ${REPO}; fi
-        bash MightyClaude/relay/deploy/oracle/setup.sh ${DOMAIN}"
+        if [ -d MightyCode ]; then git -C MightyCode pull --ff-only -q; else git clone -q --depth 1 ${REPO}; fi
+        bash MightyCode/relay/deploy/oracle/setup.sh ${DOMAIN}"
 fi
 
 echo ""

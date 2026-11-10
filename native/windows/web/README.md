@@ -14,7 +14,7 @@ npm run typecheck
 npm test             # vitest: store and deltas, bridge, locale, tokens, conversation (Markdown, references, questionnaire, windowing, views), composer (keys, slash palette, attachments, menus, clock), cards (question steps, card keyboard, the cards push), mighty (graph vectors, layout rules, run sharing, render cost), shell (layout geometry, search, shortcuts, chosen pane, dialogs, panel sizes), panes (files tree keys and source spans, terminal keys and output, browser slot bounds, slim kinds), native (views, node placement and controls, text setting)
 ```
 
-`dotnet build` of `MightyClaude.WinUI` runs `npm ci` (only when `node_modules` is missing) and `npm run build` itself
+`dotnet build` of `MightyCode.WinUI` runs `npm ci` (only when `node_modules` is missing) and `npm run build` itself
 when a source, a locale file or the tokens changed, and ships `dist/` as `Assets\Web`. `-p:MightySkipWebBuild=true`
 skips npm and ships whatever `dist/` holds.
 
@@ -23,13 +23,13 @@ Building needs Node 22 (CI pins it with actions/setup-node).
 ## Run in the app
 
 The window shows this page (`WebShell.Configure`). An empty `ui-winui` file in the state folder
-(`%APPDATA%\MightyClaudeNative`, or the `--profile` folder) brings the WinUI screens back; so does a missing WebView2
+(`%APPDATA%\MightyCode`, or the `--profile` folder) brings the WinUI screens back; so does a missing WebView2
 runtime, with the `browser.runtime.missing` message in the error banner. The old opt-in file `ui-web` is still read and
 changes nothing. An empty `web-devtools` file there turns on the developer tools and the context menu.
 
 ## Smoke, perf and CI
 
-- Smoke: `MIGHTY_SMOKE_WEB=1 MightyClaude.exe --smoke-test --smoke-exit --profile <empty dir>` checks the page's DOM
+- Smoke: `MIGHTY_SMOKE_WEB=1 MightyCode.exe --smoke-test --smoke-exit --profile <empty dir>` checks the page's DOM
   (`MainWindow.WebShell*.cs`: conversation and the reference bubble opened from a reply's `src/a.ts:3`, composer, cards, Mighty
   views and a structure card revealed in the diagram, frame, panes with the browser stepping aside under a tab menu opened over
   it, Settings and dialogs), then the live steps beside the page (`MainWindow.WebShell.LiveSmoke.cs`, each under its key and in
@@ -43,7 +43,7 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
   keeps the host's stall probe and GC figures and adds `pageLongTasks` (PerformanceObserver 'longtask': count, sum, max,
   over 100/250 ms). Results go to `release/perf/`.
 - CI (`.github/workflows/native-windows.yml`): `npm ci`, `npm run typecheck` and `npm test` here before the .NET build;
-  the web smoke after the WinUI fallback's, its `smoke-result.json` and pictures uploaded as `MightyClaude-windows-<arch>-web-smoke`. The
+  the web smoke after the WinUI fallback's, its `smoke-result.json` and pictures uploaded as `MightyCode-windows-<arch>-web-smoke`. The
   publish (`scripts/build-windows.ps1`) and the installer check require `Assets/Web/index.html`.
 
 ## Develop
@@ -52,10 +52,10 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
 
 ## Layout
 
-- `src/bridge/` — the host protocol (`protocol.ts`, mirrored by `MightyClaude.WinUI/WebBridge.cs`) and the call/push client.
+- `src/bridge/` — the host protocol (`protocol.ts`, mirrored by `MightyCode.WinUI/WebBridge.cs`) and the call/push client.
 - `src/store/` — wire models (`models.ts`, from the C# records as `Wire.Json` writes them), the pure state reducer and the
   pane deltas (`delta.ts`: a pane's changed fields, and its `logs` / `graphRuns` as dropped, replaced and added records by id;
-  `MightyClaude.WinUI/WebDelta.cs` is the host's half).
+  `MightyCode.WinUI/WebDelta.cs` is the host's half).
 - `src/conversation/` — the agent pane's conversation: Markdown (`markdown.ts`, the WinUI transcript's subset and limits, no
   dependency), file references and questionnaires ported from Core, the windowed list (`virtual.ts`, `Conversation.tsx`). A file
   named in a conversation, a diagram block or a timeline row (`referenceClick.ts`) opens in the pane's reference bubble
@@ -117,8 +117,8 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
   `addMenu`, `addPaneEntry`, `newPane`, `pickFolder`, `connectRemote`, `openSettings`, `openSetup`, `openHelp`, `setTheme`,
   `textSize`, `dismissError`, `dismissResource`, `restartForUpdate`, `postponeUpdate`, `usageRefresh`, `usageDirect`,
   `dialogAnswer`, `resumeRows`. A notification's click pushes `{kind:'select'}`.
-- `src/panes/` — the panes that are not a conversation, under the slim bar with their kind in words (spec §4; the layout's pane slot activates on a press). The host side is `MainWindow.WebShell.Panes.cs`. `files/`: the tree and the preview; folders, the filter and opened folders are the workspace's Core FilePaneTree, listings WorkspaceFiles.List under the workspace, previews FilePreviewLoader and SourceHighlighter (the WinUI pane's caps and notes); Markdown renders with `src/conversation`; pictures, SVG and a PDF's first page come as data URLs; up/down/left/right/Enter as the WinUI tree. `terminal/`: xterm.js 6.0.0 and @xterm/addon-fit 0.11.0 as npm packages, the versions vendored in `MightyClaude.WinUI/Assets/Terminal` (MIT, licences there as `xterm-LICENSE`, `addon-fit-LICENSE`), loaded as their own chunk with the first terminal; the shell's or agent terminal's lifecycle stays the never-shown WinUI view's (PseudoTerminal, flush, exit, restart), which pushes `{kind:'terminal'}` (output as base64 UTF-8, the footer when it changes); a remote workspace's shell keeps the conversation and composer. `browser/`: the toolbar and an empty slot; the host lays a WebView2 of the workspace's browser profile over the slot by the device-pixel bounds the page reports, collapsed while the slot is hidden (another tab, a dialog, a page menu or popover over it — `src/shell/overlay.ts`, the store's `overlays` — the pane gone); BrowserAddress and BrowserHistory decide, `{kind:'browser'}` pushes its state. An agent's links open there too. Host methods: `terminalOpen`, `terminalMessage`, `terminalRestart`, `terminalHistory`, `filesState`, `filesToggle`, `filesReveal`, `filesFilter`, `filesSelect`, `filesRefresh`, `filesPreview`, `filesShowInExplorer`, `filesOpen`, `browserOpen`, `browserNavigate`, `browserBack`, `browserForward`, `browserReload`, `browserBounds`, `browserInstall`.
-- `src/native/` — the host's WinUI forms drawn by the page (`MainWindow.WebShell.Settings.cs`, `MightyClaude.WinUI/WebNative.cs`): Settings (SettingsNavigation's categories, the saved SettingsPane, each category's sections built by SettingsGroups), the setup screen (BuildSetupContent and its never-show box), the plugin browser, the style approval sheet and every ContentDialog a flow shows (`ShowDialogAsync`: terminal history, model id, the settings, setup, styles, phone and screen-share confirmations, attachments, pictures, the plan document), and the companion popover. Each form is built by the WinUI builder and kept in the window's tree behind the page, invisible, so its Loaded handlers, refreshes and timers run; WebNativeReader reads its controls as a node tree (text, switches, segmented pickers, pop-ups, fields, buttons, pull-down menus, grids and boxes with their token colours, pictures such as the pairing QR as data URLs) pushed as `{kind:'native', id, place, view}` when it changed, and plays the page's input back on the same controls (Invoke, Toggle, SelectedIndex, Text), so every rule stays the section's C#. Every popup is drawn in the popup standard (`.omc/plans/popup-standard.md`,
+- `src/panes/` — the panes that are not a conversation, under the slim bar with their kind in words (spec §4; the layout's pane slot activates on a press). The host side is `MainWindow.WebShell.Panes.cs`. `files/`: the tree and the preview; folders, the filter and opened folders are the workspace's Core FilePaneTree, listings WorkspaceFiles.List under the workspace, previews FilePreviewLoader and SourceHighlighter (the WinUI pane's caps and notes); Markdown renders with `src/conversation`; pictures, SVG and a PDF's first page come as data URLs; up/down/left/right/Enter as the WinUI tree. `terminal/`: xterm.js 6.0.0 and @xterm/addon-fit 0.11.0 as npm packages, the versions vendored in `MightyCode.WinUI/Assets/Terminal` (MIT, licences there as `xterm-LICENSE`, `addon-fit-LICENSE`), loaded as their own chunk with the first terminal; the shell's or agent terminal's lifecycle stays the never-shown WinUI view's (PseudoTerminal, flush, exit, restart), which pushes `{kind:'terminal'}` (output as base64 UTF-8, the footer when it changes); a remote workspace's shell keeps the conversation and composer. `browser/`: the toolbar and an empty slot; the host lays a WebView2 of the workspace's browser profile over the slot by the device-pixel bounds the page reports, collapsed while the slot is hidden (another tab, a dialog, a page menu or popover over it — `src/shell/overlay.ts`, the store's `overlays` — the pane gone); BrowserAddress and BrowserHistory decide, `{kind:'browser'}` pushes its state. An agent's links open there too. Host methods: `terminalOpen`, `terminalMessage`, `terminalRestart`, `terminalHistory`, `filesState`, `filesToggle`, `filesReveal`, `filesFilter`, `filesSelect`, `filesRefresh`, `filesPreview`, `filesShowInExplorer`, `filesOpen`, `browserOpen`, `browserNavigate`, `browserBack`, `browserForward`, `browserReload`, `browserBounds`, `browserInstall`.
+- `src/native/` — the host's WinUI forms drawn by the page (`MainWindow.WebShell.Settings.cs`, `MightyCode.WinUI/WebNative.cs`): Settings (SettingsNavigation's categories, the saved SettingsPane, each category's sections built by SettingsGroups), the setup screen (BuildSetupContent and its never-show box), the plugin browser, the style approval sheet and every ContentDialog a flow shows (`ShowDialogAsync`: terminal history, model id, the settings, setup, styles, phone and screen-share confirmations, attachments, pictures, the plan document), and the companion popover. Each form is built by the WinUI builder and kept in the window's tree behind the page, invisible, so its Loaded handlers, refreshes and timers run; WebNativeReader reads its controls as a node tree (text, switches, segmented pickers, pop-ups, fields, buttons, pull-down menus, grids and boxes with their token colours, pictures such as the pairing QR as data URLs) pushed as `{kind:'native', id, place, view}` when it changed, and plays the page's input back on the same controls (Invoke, Toggle, SelectedIndex, Text), so every rule stays the section's C#. Every popup is drawn in the popup standard (`.omc/plans/popup-standard.md`,
   numbers from `metrics.dialog`/`metrics.settings` as `--dialog-*`/`--settings-*`): one dialog (`src/dialogs/DialogShell.tsx`) for
   alerts (A, 400), form sheets (B, 360/460/560) and panels (C: ✕ in the header, dimmed with `dialog.closeBusy` and Esc refused
   while busy, a corner grip, the header's double-click fits the window, the last size kept per panel in the page's storage),
@@ -128,7 +128,7 @@ changes nothing. An empty `web-devtools` file there turns on the developer tools
   (name and caption at the left, the control at the right, 1px rules inset 16). The text setting comes as `{kind:'text'}` and sets `--text-scale`, the `--type-*` sizes and the families (`theme/text.ts`). The status bar's paw and agent capsule come in the frame's model (`companion`). Host methods: `nativeAction`, `nativeNav`, `nativeButton`, `nativeClose`, `nativeState`, `companionStatus`, `companionToggle`.
 - `src/pane/` — one pane (header, conversation or Mighty, cards, composer). `src/i18n/`, `src/theme/` — strings and design tokens.
 - `src/icons/` — the icons in the place of the Mac's SF Symbols: `lucide.ts` holds the Lucide icons the page draws (ISC, `native/licenses/lucide-LICENSE`, shipped in `ThirdPartyLicenses`), generated by `scripts/lucide-icons.mjs` from an unpacked `lucide-static` package (not a dependency); `Icon.tsx` draws one at the Mac's point size. `src/assets/app-icon.png` is the app icon at 64 px for the sidebar's footer.
-- Visual parity with the Mac: `VISUAL-PARITY.md` (the help capture, `MightyClaude.exe --help-capture --smoke-exit --profile <empty dir> -language ko`, MainWindow.HelpCapture.cs).
+- Visual parity with the Mac: `VISUAL-PARITY.md` (the help capture, `MightyCode.exe --help-capture --smoke-exit --profile <empty dir> -language ko`, MainWindow.HelpCapture.cs).
 
 ## Known gaps
 

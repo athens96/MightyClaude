@@ -80,7 +80,7 @@ Mac이나 Windows 컴퓨터 두 대의 Mighty Code를 Tailscale로 이으면, �
 
 - 워크스페이스의 `remote` 값은 `{"version": 2, "connectionId", "workspaceId", "hostName"}`이다(`RemoteWorkspaceReference`). 경로는 호스트의 경로이고 이 컴퓨터의 폴더로 쓰지 않는다(`StateRepository.resolveLocalWorkspace`·`ProcessRunner`가 거절).
 - 2026-09-28 이전에 저장된 `remote`에는 `version`이 없다. 그런 워크스페이스는 지금처럼 불러올 때 창·배치와 함께 버린다(`StateRepository.keepsWorkspace`). 그 뒤 앱이 저장한 로컬 워크스페이스에는 `remote` 키가 없으므로 원격으로 읽힐 일이 없다. 반대로 2026-09-28부터 이 기능 전까지의 앱(0.4.29까지)은 `remote` 값이 있는 워크스페이스를 버리므로, 버전 2 원격 워크스페이스를 로컬 폴더로 착각하지 않는다.
-- 연결 목록(id·이름·주소, 키 없음)은 데이터 폴더의 `remote-connections.json`(권한 600, `version: 2`)에 있다. (Mac) 키는 macOS Keychain(서비스 `dev.mightyclaude.native.remote`, 계정 = 연결 id, 이 기기에서 잠금 해제 후만)에만 있고, 앱 시작 때는 읽지 않는다. Keychain이 거절하면 키는 앱을 끌 때까지만 메모리에 둔다. 앱이 고정된 서명으로 빌드되므로 "항상 허용"은 업데이트 뒤에도 유지된다. Windows의 키 저장은 아래 절의 **저장(Windows)**.
+- 연결 목록(id·이름·주소, 키 없음)은 데이터 폴더의 `remote-connections.json`(권한 600, `version: 2`)에 있다. (Mac) 키는 macOS Keychain(서비스 `dev.mightycode.native.remote`, 계정 = 연결 id, 이 기기에서 잠금 해제 후만)에만 있고, 앱 시작 때는 읽지 않는다. Keychain이 거절하면 키는 앱을 끌 때까지만 메모리에 둔다. 앱이 고정된 서명으로 빌드되므로 "항상 허용"은 업데이트 뒤에도 유지된다. Windows의 키 저장은 아래 절의 **저장(Windows)**.
 
 ## Windows와 Mac↔Windows
 
@@ -88,7 +88,7 @@ Windows 앱도 같은 `/v2/` 프로토콜로 공유하고 연결한다. 그래�
 
 - **화면**: **설정 → 원격 연결 (Tailscale)** 탭(`MainWindow.RemoteWorkspaces.cs`)이 모바일과 펫 사이에 있다. 공유(주소·연결 키·고르기·포트·전체 권한 스위치), 방화벽 규칙, 다른 컴퓨터 연결, 연결한 컴퓨터와 공유 워크스페이스가 한 상자 안에 구역별 제목으로 나뉜다. 3초마다 상태를 다시 읽고, 공유가 스스로 멈췄으면 탭에 그 사실을 적는다. 사이드바 워크스페이스 머리글의 네트워크 단추와 **창 추가** 메뉴의 **다른 컴퓨터 연결…**도 이 탭을 연다.
 - **연결 줄**: 연결한 컴퓨터의 줄은 Mac처럼 이름과 주소만 보인다. 호스트의 OS는 줄이 아니라 원격 워크스페이스(사이드바의 호스트 이름, 머리글의 호스트 배지, 상태 막대 "{호스트} · {OS}에서 실행 · 연결됨/연결 안 됨", 세션 정보의 **실행 컴퓨터**·**실행 컴퓨터 OS**)에 나온다.
-- **호스트(Windows)**: `MightyClaude.Core/Remote/RemoteHostService.cs`가 Tailscale 주소마다 `RemoteHttpListener`(TcpListener, HTTP/1.1, 연결마다 요청 하나)를 그 주소에만 바인딩한다. 받는 순간 상대를 거르고 상대마다 연결 8개, 키 없는 요청의 본문은 읽지 않음, SHA-256 뒤 상수 시간 비교, 상대마다 초당 300번·키가 맞는 요청 전체 600번은 Mac과 같다. 실행은 호스트의 `RunManager`(그 PC의 CLI·로그인, 창별 MCP·위임·그림 캐시 없음)로 한다. 이 PC에서 다른 컴퓨터의 실행이 도는 동안에는 CLI 업데이트(수동·자동)와 플러그인 변경을 미룬다.
+- **호스트(Windows)**: `MightyCode.Core/Remote/RemoteHostService.cs`가 Tailscale 주소마다 `RemoteHttpListener`(TcpListener, HTTP/1.1, 연결마다 요청 하나)를 그 주소에만 바인딩한다. 받는 순간 상대를 거르고 상대마다 연결 8개, 키 없는 요청의 본문은 읽지 않음, SHA-256 뒤 상수 시간 비교, 상대마다 초당 300번·키가 맞는 요청 전체 600번은 Mac과 같다. 실행은 호스트의 `RunManager`(그 PC의 CLI·로그인, 창별 MCP·위임·그림 캐시 없음)로 한다. 이 PC에서 다른 컴퓨터의 실행이 도는 동안에는 CLI 업데이트(수동·자동)와 플러그인 변경을 미룬다.
 - **요청 경로**: Windows 호스트는 요청 경로를 쓰인 그대로 읽는다. 퍼센트 인코딩을 풀지 않고 `#` 조각을 떼지 않으므로, Mac이라면 열어 줬을 경로에 Windows 호스트는 404나 400을 답한다. 달라지는 것은 상태 코드뿐이며, 키·`Origin`·상대 주소 검사를 건너뛰는 길이 아니다.
 - **명령 창**: Windows 호스트에서는 명령마다 시스템 폴더의 `powershell.exe -NoProfile -NonInteractive -Command <글>`을 공유 폴더에서 새로 띄운다(`RemoteCommandShell`, 환경 변수 `NoDefaultCurrentDirectoryInExePath=1`). Mac 호스트는 `$SHELL -l -c`. 창의 빈 화면 안내(`remote.windows.pane.commandNote`)와 상태 막대·세션 정보는 호스트의 OS(`/info`의 `runtime.platform`: `darwin`·`win32`)를 보여 준다.
 - **전체 권한 스위치(Windows 호스트)**: Mac 호스트에서는 Seatbelt가 Codex·Antigravity의 읽기 전용·작업 폴더 쓰기 실행을 가둔다. Windows에서는 그 가둠을 확인할 수 없으므로, Windows 호스트는 **원격에서 전체 권한·명령 실행 허용**이 꺼져 있으면 다른 컴퓨터의 Codex·Antigravity 실행을 권한 모드와 상관없이 실행 전에 403(`remote.windows.host.error.agentNeedsFullAccess`: 다른 권한 모드로는 안 되고 스위치를 켜야 한다는 문구)으로 거절한다(`RemoteHostService.FullAccessRefusal`, 실패 시 닫힘). Claude는 권한 요청으로 묻기 때문에 스위치가 꺼져 있어도 지금처럼 실행된다. Mac 호스트의 규칙은 그대로다.

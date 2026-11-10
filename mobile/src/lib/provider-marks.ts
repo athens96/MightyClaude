@@ -7,7 +7,7 @@ import type { Provider } from '@/api/types';
  * path data as it stands. The Claude and Gemini outlines follow Simple Icons
  * (https://simpleicons.org, CC0 1.0); the Codex pane carries OpenAI's published mark.
  * All three remain trademarks of their owners (Anthropic, OpenAI, Google) and are used
- * only to identify which company's CLI a pane runs; MightyClaude is not affiliated with
+ * only to identify which company's CLI a pane runs; MightyCode is not affiliated with
  * or endorsed by them.
  */
 export const providerMarkOutlines: Record<Provider, string> = {

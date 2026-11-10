@@ -261,7 +261,7 @@ def main():
     args = parser.parse_args()
     report = run(Path.home(), args.apply, reset_models=args.reset_models)
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    print("Existing processes retain their environment. Fully quit MightyClaude and old terminals.")
+    print("Existing processes retain their environment. Fully quit MightyCode and old terminals.")
     print("Open a fresh terminal before configuring Claude Code again.")
     print("In the login terminal, also run: unset AWS_BEARER_TOKEN_BEDROCK CLAUDE_CODE_USE_BEDROCK AWS_REGION")
     if args.reset_models:

@@ -5,13 +5,13 @@
 ## 흐름
 
 1. **확인** — 설정 › 앱 업데이트 › "업데이트 확인", 또는 스위치가 켜져 있으면 자동으로(마지막 확인에서 6시간 뒤, 아래). `latest.json`을 캐시 없이 받아 `version`을 앱의 `CFBundleShortVersionString`과 비교한다. 스위치가 꺼져 있을 때 새 버전이 있으면 상태 표시줄에 "새 버전 x.y.z" 배지가 뜨고, 누르면 설정이 열린다. 스위치가 켜져 있으면 확인이 곧바로 다운로드로 이어진다.
-2. **다운로드** — 이미 같은 버전이 준비되어 있으면 다시 받지 않는다. `macos.url`의 zip을 `<상태 저장 위치>/updates/<버전>/MightyClaude-macos.zip`에 받는다(다른 버전 폴더는 지운다). 디스크에 쓰인 파일의 `size`·`sha256`을 대조하고, 다르면 지운다. 512 MiB 상한. `minimumSystemVersion`보다 macOS가 낮으면 확인 단계에서 안내하고 받지 않는다.
-3. **준비** — zip을 풀어 `.app`이 하나인지, 심볼릭 링크가 아닌지, `CFBundleIdentifier`가 `dev.mightyclaude.native`인지, 실행 파일이 있는지 확인한다.
+2. **다운로드** — 이미 같은 버전이 준비되어 있으면 다시 받지 않는다. `macos.url`의 zip을 `<상태 저장 위치>/updates/<버전>/MightyCode-macos.zip`에 받는다(다른 버전 폴더는 지운다). 디스크에 쓰인 파일의 `size`·`sha256`을 대조하고, 다르면 지운다. 512 MiB 상한. `minimumSystemVersion`보다 macOS가 낮으면 확인 단계에서 안내하고 받지 않는다.
+3. **준비** — zip을 풀어 `.app`이 하나인지, 심볼릭 링크가 아닌지, `CFBundleIdentifier`가 `dev.mightycode.native`인지, 실행 파일이 있는지 확인한다.
 4. **설치** — 세 가지 길이 있다: 사용자가 누르는 "지금 다시 시작"(설정·상태 표시줄), 쉬는 동안의 60초 카운트다운이 끝남(둘 다 `relaunch: true`), 앱을 종료함(`relaunch: false`). 준비된 번들과 패키지의 `size`·`sha256`을 한 번 더 확인한 뒤(해시는 메인 스레드 밖에서) 도우미 셸 스크립트(`AppUpdateService.installScript`)를 `updates/<버전>/install.sh`에 쓰고 최소 환경(PATH=/usr/bin:/bin)으로 분리 실행한다. 도우미는 다음 순서로 일한다.
    1. 설치 위치에 앱이 없고 `<앱>.update-old`만 있으면(이전 도우미가 두 이름 바꾸기 사이에서 끊김) 그것을 먼저 제자리로 되돌린다.
    2. 앱 프로세스가 끝날 때까지 기다린다(최대 5분, 넘으면 건드리지 않고 멈춘다). 끝나면 2초 더 기다린다.
    3. 새 번들을 `<앱>.update-new`로 `ditto` 복사한다.
-   4. `relaunch: false`이면 여기서 앱이 같은 경로에서 다시 떴는지 `pgrep`으로 본다. 명령줄이 `<앱>/Contents/MacOS/MightyClaude`로 시작하는 프로세스가 있으면 복사본을 지우고 업데이트를 다음 종료로 미룬다. 앱 자신의 헤드리스 모드(`--agent-io-mcp`, `--agent-delegation-mcp`, `--verify-resources`)는 창보다 잠깐 오래 남을 수 있고 번들을 붙잡지 않으므로 세지 않는다.
+   4. `relaunch: false`이면 여기서 앱이 같은 경로에서 다시 떴는지 `pgrep`으로 본다. 명령줄이 `<앱>/Contents/MacOS/MightyCode`로 시작하는 프로세스가 있으면 복사본을 지우고 업데이트를 다음 종료로 미룬다. 앱 자신의 헤드리스 모드(`--agent-io-mcp`, `--agent-delegation-mcp`, `--verify-resources`)는 창보다 잠깐 오래 남을 수 있고 번들을 붙잡지 않으므로 세지 않는다.
    5. HUP·INT·TERM을 무시한 채 두 번 이름을 바꾼다: 설치된 앱을 `<앱>.update-old`로 옮기고, `<앱>.update-new`를 제자리로 옮긴다. 두 번째가 실패하면 `.update-old`를 되돌린다.
    6. 성공하면 `.update-old`를 LaunchServices에서 등록 해제하고 지운다. 준비 폴더도 등록 해제하고 지운 뒤, 설치된 앱만 다시 등록한다.
    7. `relaunch: true`면 새 앱을 연다(`open -n`). `relaunch: false`면 열지 않는다.
@@ -20,7 +20,7 @@
 
 ## 자동 업데이트
 
-규칙은 Core `AppUpdateAuto`(`AppUpdateAuto.swift`, `AppUpdateAutoSteps.swift`)에 있고 앱(`AppStore+AppUpdate.swift`)은 그 판단을 따른다. Windows는 같은 상수와 이름을 `MightyClaude.Core/AppUpdateAutoPolicy.cs`에 둔다. 모두 "새 버전을 자동으로 받아 설치" 스위치 뒤에 있다.
+규칙은 Core `AppUpdateAuto`(`AppUpdateAuto.swift`, `AppUpdateAutoSteps.swift`)에 있고 앱(`AppStore+AppUpdate.swift`)은 그 판단을 따른다. Windows는 같은 상수와 이름을 `MightyCode.Core/AppUpdateAutoPolicy.cs`에 둔다. 모두 "새 버전을 자동으로 받아 설치" 스위치 뒤에 있다.
 
 | 값 | |
 |---|---|
@@ -69,7 +69,7 @@
 
 `latest.json`이 신뢰의 뿌리이므로 Ed25519로 서명한다. 배포 빌드에는 공개 키를 넣고(`MIGHTY_UPDATE_PUBLIC_KEY`, Info.plist `MightyUpdatePublicKey`), 그 앱은 **서명된 봉투만** 받는다. **공개 키가 없는 빌드는 업데이트 확인을 전혀 하지 않는다** — `check()`가 즉시 오류를 반환하고, 자동 확인은 예약되지 않으며, 설정 화면에 "이 빌드는 업데이트 확인을 지원하지 않습니다"가 표시되고 확인 버튼은 비활성화된다. 우회 경로는 없다.
 
-배포 중인 키 쌍의 공개 키는 `C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4=`(앱, `.github/workflows/native-windows.yml`, `scripts/release.py`)이고, **개인 키는 GitHub 환경 `release`(main 전용)의 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`와 소유자의 오프라인 백업에만 있다** ([release.md](release.md#서명-키와-github-설정)). 그래서 릴리스의 `latest.json`은 CI가 서명한다: `scripts/release.py manifest`가 `.github/workflows/release-manifest.yml`(`workflow_dispatch` 전용, main에서 `release` 환경으로만 도는 잡)을 부르면, 그 잡이 두 실행이 main push로 만든 같은 커밋의 성공 실행인지 확인한 뒤 그 CI 패키지를 받아 시크릿으로 서명하고 공개 키로 확인한 `latest.json`·`latest.unsigned.json`을 아티팩트 `MightyClaude-release-manifest`로 남긴다([release.md](release.md)의 manifest). **새 키를 만들지 않는다** — 이미 설치된 앱은 박혀 있는 공개 키로만 확인하므로, 다른 키로 서명한 `latest.json`을 받으면 업데이트가 멈춘다. 시크릿을 잃으면 기존 설치본은 수동으로 새 빌드를 깔아야 한다.
+배포 중인 키 쌍의 공개 키는 `C02DD3qWG+A5gJdYwpaEnvpzYugo354CLtUtU+oXmZ4=`(앱, `.github/workflows/native-windows.yml`, `scripts/release.py`)이고, **개인 키는 GitHub 환경 `release`(main 전용)의 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`와 소유자의 오프라인 백업에만 있다** ([release.md](release.md#서명-키와-github-설정)). 그래서 릴리스의 `latest.json`은 CI가 서명한다: `scripts/release.py manifest`가 `.github/workflows/release-manifest.yml`(`workflow_dispatch` 전용, main에서 `release` 환경으로만 도는 잡)을 부르면, 그 잡이 두 실행이 main push로 만든 같은 커밋의 성공 실행인지 확인한 뒤 그 CI 패키지를 받아 시크릿으로 서명하고 공개 키로 확인한 `latest.json`·`latest.unsigned.json`을 아티팩트 `MightyCode-release-manifest`로 남긴다([release.md](release.md)의 manifest). **새 키를 만들지 않는다** — 이미 설치된 앱은 박혀 있는 공개 키로만 확인하므로, 다른 키로 서명한 `latest.json`을 받으면 업데이트가 멈춘다. 시크릿을 잃으면 기존 설치본은 수동으로 새 빌드를 깔아야 한다.
 
 **0.4.48에서 키를 바꿨다.** 0.4.47까지 쓴 키(공개 키 `ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=`)는 그 키만 갖고 있던 Mac을 초기화하면서 잃었고, GitHub 시크릿에도 없었다. 그래서 0.4.47 이하가 설치된 Mac·Windows 앱은 0.4.48의 `latest.json` 서명을 확인하지 못해 앱 안에서 업데이트하지 못한다 — 다운로드 페이지에서 0.4.48을 한 번 직접 설치해야 하고, 그 뒤로는 새 키로 업데이트된다. 휴대폰 APK의 서명은 이 키와 상관없다.
 
@@ -79,8 +79,8 @@
 # (처음 한 번 썼던) 키 쌍 생성 — 지금 키를 바꾸지 말 것. 개인 키는 시크릿 MIGHTY_UPDATE_SIGNING_KEY로, 공개 키는 빌드 변수로
 python3 scripts/make-update-manifest.py --generate-key ~/.config/mightyclaude/update-signing.key
 # 서명된 latest.json (+ 사람이 읽을 latest.unsigned.json)
-python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
-  --base-url https://<cloudflare>/mightyclaude/0.2.0 --out release/latest.json \
+python3 scripts/make-update-manifest.py --macos release/MightyCode-macos.zip \
+  --base-url https://<cloudflare>/mightycode/0.2.0 --out release/latest.json \
   --sign-key ~/.config/mightyclaude/update-signing.key
 ```
 
@@ -101,9 +101,9 @@ python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
   "publishedAt": "2026-09-18T09:00:00Z",
   "minimumSystemVersion": "14.0",
   "notes": "무엇이 바뀌었는지 (설정 화면에 표시)",
-  "macos": { "url": "https://<cloudflare>/mightyclaude/0.2.0/MightyClaude-macos.zip", "sha256": "<hex 64자>", "size": 26395344 },
+  "macos": { "url": "https://<cloudflare>/mightycode/0.2.0/MightyCode-macos.zip", "sha256": "<hex 64자>", "size": 26395344 },
   "windows": {
-    "x64":   { "url": "https://<cloudflare>/mightyclaude/0.2.0/MightyClaude-native-windows-x64.zip", "sha256": "…", "size": 0 },
+    "x64":   { "url": "https://<cloudflare>/mightycode/0.2.0/MightyCode-native-windows-x64.zip", "sha256": "…", "size": 0 },
     "arm64": { "url": "…", "sha256": "…", "size": 0 }
   }
 }
@@ -114,8 +114,8 @@ python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
 `scripts/make-update-manifest.py`가 이 파일을 만든다.
 
 ```bash
-python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
-  --base-url https://<cloudflare>/mightyclaude/0.2.0 --out release/latest.json
+python3 scripts/make-update-manifest.py --macos release/MightyCode-macos.zip \
+  --base-url https://<cloudflare>/mightycode/0.2.0 --out release/latest.json
 ```
 
 ## 버전과 주소를 빌드에 넣기
@@ -129,19 +129,19 @@ python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
 앱은 512 MiB보다 큰 패키지를 아예 받지 않으므로(`AppUpdate.maximumPackageBytes`), 그보다 커진 릴리스는 기존 설치본이 업데이트할 수 없는 죽은 패키지가 된다. 그래서 **패키징 직후, 아무것도 올리기 전에** 480 MiB 게이트를 돌린다. 번들 브라우저 엔진과 WebRTC 프레임워크가 릴리스마다 조금씩 커져도 다음 빌드가 갑자기 설치 불가가 되지 않도록 512 MiB 상한보다 일찍 막는다.
 
 ```bash
-ditto -c -k --sequesterRsrc --keepParent release/native-macos/MightyClaude.app release/MightyClaude-macos.zip
-scripts/check-release-size.sh release/MightyClaude-macos.zip   # 480 MiB를 넘으면 0이 아닌 코드로 끝난다
+ditto -c -k --sequesterRsrc --keepParent release/native-macos/MightyCode.app release/MightyCode-macos.zip
+scripts/check-release-size.sh release/MightyCode-macos.zip   # 480 MiB를 넘으면 0이 아닌 코드로 끝난다
 ```
 
-인자 없이 부르면 `release/MightyClaude-macos.zip`을 본다. 게이트가 실패하면 올리지 않고 패키지를 줄인다(번들 리소스·프레임워크부터). `.github/workflows/native-macos.yml`도 패키징 단계와 아티팩트 업로드 사이에서 같은 스크립트를 돌린다. `scripts/tests/test-release-size-gate.sh`가 479 MiB·481 MiB 희소 파일로 이 경계를 확인한다.
+인자 없이 부르면 `release/MightyCode-macos.zip`을 본다. 게이트가 실패하면 올리지 않고 패키지를 줄인다(번들 리소스·프레임워크부터). `.github/workflows/native-macos.yml`도 패키징 단계와 아티팩트 업로드 사이에서 같은 스크립트를 돌린다. `scripts/tests/test-release-size-gate.sh`가 479 MiB·481 MiB 희소 파일로 이 경계를 확인한다.
 
 ## Cloudflare에 올리기
 
 R2 공개 버킷이나 Pages 어느 쪽이든 같은 폴더 구조면 된다.
 
 ```
-mightyclaude/latest.json                      ← MIGHTY_UPDATE_URL
-mightyclaude/0.2.0/MightyClaude-macos.zip     ← latest.json의 macos.url
+mightycode/latest.json                      ← MIGHTY_UPDATE_URL
+mightycode/0.2.0/MightyCode-macos.zip     ← latest.json의 macos.url
 ```
 
 새 버전을 낼 때: `VERSION`을 올리고 → 빌드·패키징 → `scripts/check-release-size.sh`로 크기 게이트 통과 → `make-update-manifest.py`로 `latest.json` 생성 → 패키지를 버전 폴더에, `latest.json`을 고정 위치에 업로드. `latest.json`은 캐시가 길게 잡히지 않도록 `Cache-Control: no-cache` 정도로 둔다. 실제 릴리스(CI 패키지 받기부터 서명·R2·GitHub 릴리스까지)는 [release.md](release.md)의 `scripts/release.py` 단계를 따른다.
@@ -150,13 +150,13 @@ mightyclaude/0.2.0/MightyClaude-macos.zip     ← latest.json의 macos.url
 
 - 공증하지 않은 빌드(ad-hoc 서명)는 Gatekeeper 격리 속성이 붙으면 실행이 막힐 수 있다. 공증이 켜진 릴리스([release.md](release.md#mac-공증과-dmg))는 Developer ID 서명과 공증 표가 붙어 브라우저로 받아도 열린다. 어느 쪽이든 앱이 직접 내려받은 파일에는 격리 속성이 붙지 않으므로 도우미는 속성을 건드리지 않는다.
 - `updates/` 폴더에는 마지막으로 받은 버전 하나만 남는다.
-- 같은 번들 ID의 앱 복사본(빌드 결과물, 백업)이 LaunchServices에 여러 개 등록되면 입력기 세션이 실행 중인 앱을 다른 번들로 볼 수 있다(한글 자소 분리). 도우미는 옛 번들을 `/tmp`에 백업하지 않고 설치 위치 옆 `<앱>.update-old`로 이름만 바꿔 두었다가, 교체가 끝나면 등록 해제하고 지운다. 준비 폴더의 번들도 등록 해제하고 설치된 앱만 다시 등록하며, 옛 프로세스가 사라진 뒤 2초 기다렸다가 다시 연다. 개발용 `scripts/install-macos.sh`는 여전히 `/tmp/MightyClaude-app-backup-*/MightyClaude.app.bak`에 백업을 두 개까지 남긴다(`.bak`이라 LaunchServices가 앱으로 보지 않는다). `scripts/build-macos.sh`도 빌드 결과물을 등록 해제한다.
+- 같은 번들 ID의 앱 복사본(빌드 결과물, 백업)이 LaunchServices에 여러 개 등록되면 입력기 세션이 실행 중인 앱을 다른 번들로 볼 수 있다(한글 자소 분리). 도우미는 옛 번들을 `/tmp`에 백업하지 않고 설치 위치 옆 `<앱>.update-old`로 이름만 바꿔 두었다가, 교체가 끝나면 등록 해제하고 지운다. 준비 폴더의 번들도 등록 해제하고 설치된 앱만 다시 등록하며, 옛 프로세스가 사라진 뒤 2초 기다렸다가 다시 연다. 개발용 `scripts/install-macos.sh`는 여전히 `/tmp/MightyCode-app-backup-*/MightyCode.app.bak`에 백업을 두 개까지 남긴다(`.bak`이라 LaunchServices가 앱으로 보지 않는다). `scripts/build-macos.sh`도 빌드 결과물을 등록 해제한다.
 - 개발용 `scripts/install-macos.sh`와 종료할 때 설치하는 도우미가 서로 겹치지 않게 한다. 스크립트는 앱이 끝난 뒤 다음 순서로 일한다.
   - `<상태 저장 위치>/updates/` 아래 `install.sh`를 돌리는 도우미가 있으면 그것이 끝날 때까지 기다린다. 도우미가 앱을 다시 열었거나(업데이트를 위한 다시 시작) 사람이 그사이 앱을 다시 열면 그 앱이 끝날 때까지 다시 기다린다. 앱도 도우미도 없을 때까지 함께 확인한다. 도우미가 10분 넘게 보이면 다른 무언가가 그 경로를 잡고 있는 것으로 보고 설치를 멈춘다.
   - 준비된 업데이트(`updates/*`)를 지운다.
   - 그다음 개발 빌드를 복사한다.
 
-  그래서 준비된 릴리스가 개발 빌드를 덮어쓰지 않는다. 지금 덮어쓰는 일도, 다음 종료 때 덮어쓰는 일도 없다. `--profile` 폴더를 쓰면 `MIGHTY_DATA_DIR`로 그 폴더를 알려 준다(기본 `~/Library/Application Support/MightyClaude Native`).
+  그래서 준비된 릴리스가 개발 빌드를 덮어쓰지 않는다. 지금 덮어쓰는 일도, 다음 종료 때 덮어쓰는 일도 없다. `--profile` 폴더를 쓰면 `MIGHTY_DATA_DIR`로 그 폴더를 알려 준다(기본 `~/Library/Application Support/MightyCode`).
 - 실행 중인 앱의 위치에 쓸 수 없으면(예: 읽기 전용 볼륨) 설치 단계에서 안내하고 멈춘다.
 - `pgrep` 비교는 경로를 바이트 그대로, 대소문자를 구분해 맞춘다. APFS는 대소문자와 유니코드 정규화를 접으므로 다른 철자의 경로(`/applications/…`, 분해된 악센트)로 다시 띄운 앱은 보지 못하고, 그때는 이 검사가 생기기 전처럼 교체된다.
 - 스모크 테스트 프로필과 도움말 캡처에서는 자동 확인·받기·설치를 하지 않는다.

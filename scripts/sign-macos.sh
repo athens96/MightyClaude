@@ -1,7 +1,7 @@
 #!/bin/bash
-# Sign MightyClaude.app from the inside out.
+# Sign MightyCode.app from the inside out.
 #
-#   scripts/sign-macos.sh <MightyClaude.app> <identity> [--hardened-runtime]
+#   scripts/sign-macos.sh <MightyCode.app> <identity> [--hardened-runtime]
 #
 # Every nested binary is signed before the bundle that holds it, each with its
 # own entitlements (native/macos/Entitlements), because `codesign --deep` would
@@ -31,7 +31,7 @@ if [ "$HARDENED" = "--hardened-runtime" ]; then
         *)
             WORK="$(mktemp -d)"
             trap 'rm -rf "$WORK"' EXIT
-            for name in MightyClaude Helper Node; do
+            for name in MightyCode Helper Node; do
                 cp "$ENTITLEMENTS/$name.entitlements" "$WORK/$name.entitlements"
                 # PlistBuddy, not plutil: plutil reads the dots in the key as a path.
                 /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$WORK/$name.entitlements"
@@ -81,6 +81,6 @@ for framework in "$APP/Contents/Frameworks/"*.framework; do
     [ "$framework" = "$CEF_FW" ] && continue
     sign "$framework"
 done
-sign_with MightyClaude "$APP"
+sign_with MightyCode "$APP"
 
 codesign --verify --deep --strict "$APP"

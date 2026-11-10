@@ -1,0 +1,560 @@
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
+using MightyCode.Core;
+
+// Behaviour checks for the Claude plugin list. Every name registered in
+// Verification.RunAsync starts with "claude plugin".
+// A fake ICliRunner answers the plugin subcommands, the same idea as the fake
+// claude script in ClaudePluginTests.swift: no real claude, codex, gemini, npm
+// or winget process starts, no network, no real user profile.
+internal static class ClaudePluginVerification
+{
+    private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
+    private static CliRunResult Ok(string output = "") => new(0, output, "", false);
+    private static CliRunResult Failed(string error = "") => new(1, "", error, false);
+    private static CliRunResult TimedOut() => new(-1, "", "", true);
+
+    private sealed class FakeRunner(Func<string, string[], CliRunResult> script) : ICliRunner
+    {
+        internal readonly List<(string Executable, string[] Arguments, string? WorkingDirectory, IReadOnlyDictionary<string, string>? Environment)> Calls = [];
+        internal Func<string, string[], Task<CliRunResult>>? Async;
+        public Task<CliRunResult> RunAsync(string executable, IReadOnlyList<string> arguments, TimeSpan timeout,
+            CancellationToken cancellation = default, IReadOnlyDictionary<string, string>? environment = null,
+            string? workingDirectory = null)
+        {
+            var args = arguments.ToArray();
+            lock (Calls) Calls.Add((executable, args, workingDirectory, environment));
+            cancellation.ThrowIfCancellationRequested();
+            return Async is { } asynchronous ? asynchronous(executable, args) : Task.FromResult(script(executable, args));
+        }
+        internal bool Mutated => Calls.Any(c => c.Arguments.Any(a =>
+            a is "install" or "uninstall" or "remove" or "enable" or "disable" or "update" or "add"));
+    }
+
+    // A PATH whose only entry holds a file named claude, so the reader's
+    // discovery finds one candidate. The fake runner answers it.
+    private static (ClaudePluginReader Reader, string Workspace, string Bin) Fixture(FakeRunner runner, bool installed = true)
+    {
+        var workspace = Verification.Temp();
+        var bin = Verification.Temp();
+        var environment = new Dictionary<string, string> { ["PATH"] = bin, ["FORCE_AUTOUPDATE_PLUGINS"] = "1" };
+        var executable = Path.Combine(bin, "claude");
+        var reader = new ClaudePluginReader(runner, environment,
+            isExecutable: path => installed && path == executable,
+            directoryExists: Directory.Exists);
+        return (reader, workspace, executable);
+    }
+
+    private static string Listing(string workspacePath, string? otherPath = null)
+    {
+        static string Json(string value) => System.Text.Json.JsonSerializer.Serialize(value);
+        return "{\"installed\":["
+            + "{\"id\":\"fmt@sample\",\"scope\":\"user\",\"enabled\":false,\"version\":\"1.2.0\"},"
+            + "{\"id\":\"fmt@sample\",\"scope\":\"project\",\"enabled\":true,\"projectPath\":" + Json(workspacePath) + ",\"errors\":[\"\ud53d\uc2a4\ucc98 \uacbd\uace0\"]},"
+            + "{\"id\":\"fmt@sample\",\"scope\":\"local\",\"enabled\":true,\"projectPath\":" + Json(otherPath ?? "/somewhere/else") + "},"
+            + "{\"id\":\"invalid;touch@sample\",\"scope\":\"user\",\"enabled\":true}"
+            + "],\"available\":["
+            + "{\"pluginId\":\"fmt@sample\",\"name\":\"fmt\",\"marketplaceName\":\"sample\",\"description\":\"Formats source files\",\"version\":\"1.2.0\",\"source\":{\"source\":\"github\"}},"
+            + "{\"pluginId\":\"ghost@nowhere\",\"name\":\"ghost\",\"marketplaceName\":\"nowhere\",\"description\":\"Unregistered marketplace\",\"source\":\"git\"}"
+            + "]}";
+    }
+
+    private const string Markets = "[{\"name\":\"sample\",\"source\":{\"source\":\"github\"}}]";
+
+    private static FakeRunner Healthy(string workspacePath, string? listing = null, string markets = Markets, string version = "2.1.271 (Claude Code)")
+    {
+        var body = listing ?? Listing(workspacePath);
+        return new FakeRunner((_, args) =>
+            args.Contains("--version") ? Ok(version)
+            : args.Contains("marketplace") ? Ok(markets)
+            : Ok(body));
+    }
+
+    // ClaudePluginTests.listsCurrentWorkspaceScopesAndCachedCatalogWithoutMutation
+    internal static async Task ListsWorkspaceScopesAndCachedCatalogWithoutMutation()
+    {
+        var workspace = Verification.Temp();
+        var runner = Healthy(workspace);
+        var (reader, _, executable) = Fixture(runner);
+        var snapshot = await reader.SnapshotAsync(new Workspace { Path = workspace });
+
+        Check(snapshot.Status == ClaudePluginStatus.Ready, "status must be ready: " + snapshot.Status + " / " + snapshot.Detail);
+        Check(snapshot.Detail == PluginStrings.DetailReady, "ready detail must be the macOS sentence");
+        Check(snapshot.CliVersion == "2.1.271 (Claude Code)", "the CLI version is shown: " + snapshot.CliVersion);
+        Check(snapshot.Installed.Count == 2, "user + this workspace's project record only: " + snapshot.Installed.Count);
+        Check(snapshot.Installed.Any(p => p.Scope == "user" && p.Enabled == false), "the user record keeps its disabled flag");
+        Check(snapshot.Installed.Any(p => p.Scope == "project" && p.Errors.SequenceEqual(new[] { "픽스처 경고" })), "row errors survive");
+        Check(!snapshot.Installed.Any(p => p.Scope == "local"), "another project's local record must not be listed");
+        Check(snapshot.Installed.All(p => p.Description == "Formats source files"), "the catalog description fills an installed row");
+        Check(snapshot.Installed.All(p => p.Marketplace == "sample"), "marketplace comes from the plugin id");
+        Check(snapshot.Available.Count == 1 && snapshot.Available[0].Id == "fmt@sample", "only registered marketplaces are offered");
+        Check(snapshot.Available[0].SourceKind == "github", "source kind: " + snapshot.Available[0].SourceKind);
+        Check(snapshot.Marketplaces.Count == 1 && snapshot.Marketplaces[0] == new ClaudePluginMarketplace("sample", "github"), "marketplace row");
+        Check(snapshot.UpdatedAt is { Length: > 0 }, "the read is timestamped");
+
+        Check(runner.Calls.Count == 3, "exactly --version, plugin list and marketplace list: " + runner.Calls.Count);
+        Check(runner.Calls.All(c => c.Executable == executable), "every call uses the discovered CLI");
+        Check(runner.Calls.All(c => c.WorkingDirectory == Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace))), "every call runs in the workspace folder");
+        Check(runner.Calls.Any(c => c.Arguments.SequenceEqual(new[] { "plugin", "list", "--json", "--available" })), "the catalog read needs --available");
+        Check(runner.Calls.Any(c => c.Arguments.SequenceEqual(new[] { "plugin", "marketplace", "list", "--json" })), "marketplaces are only listed");
+        Check(!runner.Mutated, "looking must never install, enable, remove, update or add anything");
+        var environment = runner.Calls[0].Environment!;
+        Check(environment["DISABLE_AUTOUPDATER"] == "1" && environment["CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL"] == "1"
+            && environment["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1" && environment["GIT_TERMINAL_PROMPT"] == "0",
+            "the macOS switches are forced on every call");
+        Check(!environment.ContainsKey("FORCE_AUTOUPDATE_PLUGINS"), "a caller's FORCE_AUTOUPDATE_PLUGINS is dropped");
+    }
+
+    // An ancestor's local record still applies to a nested workspace.
+    internal static async Task NestedWorkspaceSeesItsAncestorsRecord()
+    {
+        var parent = Verification.Temp();
+        var nested = Path.Combine(parent, "packages", "app");
+        Directory.CreateDirectory(nested);
+        var runner = Healthy(nested, Listing(nested, parent));
+        var (reader, _, _) = Fixture(runner);
+        var snapshot = await reader.SnapshotAsync(new Workspace { Path = nested });
+        Check(snapshot.Status == ClaudePluginStatus.Ready, "status: " + snapshot.Status);
+        Check(snapshot.Installed.Any(p => p.Scope == "local"), "the ancestor's local record applies to the nested folder");
+        Check(snapshot.Installed.Count == 3, "user + project + ancestor local: " + snapshot.Installed.Count);
+        Check(snapshot.Installed.Select(p => p.Id).Distinct().Count() == 3, "each scope/path pair is its own row");
+    }
+
+    // ClaudePluginTests.missingOrOldCLIAndEmptySourcesAreExplainedWithoutInstalling
+    internal static async Task MissingOldAndEmptyAreExplainedWithoutInstalling()
+    {
+        var missingRunner = new FakeRunner((_, _) => Ok("never"));
+        var (missing, missingWorkspace, _) = Fixture(missingRunner, installed: false);
+        var absent = await missing.SnapshotAsync(new Workspace { Path = missingWorkspace });
+        Check(absent.Status == ClaudePluginStatus.Missing && absent.Detail == PluginStrings.DetailMissingCli, "a missing CLI is explained: " + absent.Status);
+        Check(missingRunner.Calls.Count == 0, "a missing CLI starts no process");
+
+        var workspace = Verification.Temp();
+        var oldRunner = Healthy(workspace, version: "2.1.267 (Claude Code)");
+        var (old, _, _) = Fixture(oldRunner);
+        var unsupported = await old.SnapshotAsync(new Workspace { Path = workspace });
+        Check(unsupported.Status == ClaudePluginStatus.Unsupported && unsupported.Detail == PluginStrings.DetailUnsupported, "an old CLI is explained: " + unsupported.Status);
+        Check(oldRunner.Calls.Count == 1, "an old CLI is never asked for the list");
+        Check(!oldRunner.Mutated, "an old CLI changes nothing");
+
+        var emptyRunner = Healthy(workspace, """{"installed": [], "available": []}""", "[]");
+        var (empty, _, _) = Fixture(emptyRunner);
+        var none = await empty.SnapshotAsync(new Workspace { Path = workspace });
+        Check(none.Status == ClaudePluginStatus.Ready, "an empty but well-formed answer is ready: " + none.Status);
+        Check(none.Detail == PluginStrings.DetailNoMarketplaces && none.Detail.Contains("marketplace add"), "the empty-sources sentence names marketplace add");
+        Check(none.Marketplaces.Count == 0 && !emptyRunner.Mutated, "nothing was registered on the user's behalf");
+    }
+
+    // ClaudePluginTests.malformedOrOversizedCatalogDoesNotBecomeReadyEmpty
+    internal static async Task MalformedOrOversizedAnswerNeverBecomesAnEmptyList()
+    {
+        var workspace = Verification.Temp();
+        foreach (var body in new[] { "{broken", "[]", """{"installed":[],"available":"wrong"}""", "", """{"available":[]}""" })
+        {
+            var runner = Healthy(workspace, body);
+            var (reader, _, _) = Fixture(runner);
+            var snapshot = await reader.SnapshotAsync(new Workspace { Path = workspace });
+            Check(snapshot.Status == ClaudePluginStatus.Failed, "malformed listing must fail, not read empty: " + body);
+            Check(snapshot.Detail == PluginStrings.DetailMalformed, "malformed listing uses the macOS sentence");
+            Check(!runner.Mutated, "a malformed answer changes nothing");
+        }
+        var badMarkets = Healthy(workspace, markets: "{}");
+        var (marketReader, _, _) = Fixture(badMarkets);
+        Check((await marketReader.SnapshotAsync(new Workspace { Path = workspace })).Status == ClaudePluginStatus.Failed, "a non-array marketplace answer must fail");
+
+        var tooMany = "{\"installed\":[" + string.Join(",", Enumerable.Range(0, 10_001).Select(i => "{\"id\":\"p" + i + "@sample\",\"scope\":\"user\"}")) + "],\"available\":[]}";
+        var oversized = Healthy(workspace, tooMany);
+        var (oversizedReader, _, _) = Fixture(oversized);
+        Check((await oversizedReader.SnapshotAsync(new Workspace { Path = workspace })).Status == ClaudePluginStatus.Failed, "more rows than the cap must fail");
+
+        var huge = new string('x', ClaudePluginSupport.MaximumListingBytes + 1);
+        Check(ClaudePluginSupport.ParseSnapshot(huge, Markets, workspace, "2.1.271").Status == ClaudePluginStatus.Failed, "output past the byte cap must fail");
+    }
+
+    // A CLI that answers nonsense on the pipe, exits badly, or runs too long.
+    internal static async Task FailedRunsAndTimeoutsKeepTheScreenIntact()
+    {
+        var workspace = Verification.Temp();
+
+        var listFailed = new FakeRunner((_, args) => args.Contains("--version") ? Ok("2.1.271") : args.Contains("marketplace") ? Ok(Markets) : Failed("boom"));
+        var (a, _, _) = Fixture(listFailed);
+        var failed = await a.SnapshotAsync(new Workspace { Path = workspace });
+        Check(failed.Status == ClaudePluginStatus.Failed && failed.Detail == PluginStrings.DetailListingFailed, "a failing list call is explained: " + failed.Detail);
+        Check(failed.DiagnosticOutput.Contains("boom"), "the bounded CLI output is kept for the diagnostics disclosure");
+
+        var marketsFailed = new FakeRunner((_, args) => args.Contains("--version") ? Ok("2.1.271") : args.Contains("marketplace") ? Failed("no markets") : Ok(Listing(workspace)));
+        var (b, _, _) = Fixture(marketsFailed);
+        var marketFailure = await b.SnapshotAsync(new Workspace { Path = workspace });
+        Check(marketFailure.Status == ClaudePluginStatus.Failed && marketFailure.Detail == PluginStrings.DetailMarketplacesFailed, "a failing marketplace call is explained");
+
+        var slow = new FakeRunner((_, args) => args.Contains("--version") ? Ok("2.1.271") : TimedOut());
+        var (c, _, _) = Fixture(slow);
+        var timedOut = await c.SnapshotAsync(new Workspace { Path = workspace });
+        Check(timedOut.Status == ClaudePluginStatus.Failed && timedOut.Detail == PluginStrings.DetailIncomplete, "a slow CLI is explained: " + timedOut.Detail);
+
+        var unreadableVersion = new FakeRunner((_, args) => args.Contains("--version") ? Failed("nope") : Ok(Markets));
+        var (d, _, _) = Fixture(unreadableVersion);
+        var unknown = await d.SnapshotAsync(new Workspace { Path = workspace });
+        Check(unknown.Status == ClaudePluginStatus.Failed && unknown.Detail == PluginStrings.DetailUnknownVersion, "an unreadable version is explained");
+
+        var throwing = new FakeRunner((_, _) => throw new IOException("pipe"));
+        var (e, _, _) = Fixture(throwing);
+        Check((await e.SnapshotAsync(new Workspace { Path = workspace })).Status == ClaudePluginStatus.Failed, "a runner that throws never escapes as an exception");
+
+        var gone = new FakeRunner((_, _) => Ok("never"));
+        var (f, _, _) = Fixture(gone);
+        var missingFolder = await f.SnapshotAsync(new Workspace { Path = Path.Combine(workspace, "not-there") });
+        Check(missingFolder.Status == ClaudePluginStatus.Failed && missingFolder.Detail == PluginStrings.DetailMissingWorkspace, "a folder that is gone is explained");
+        var relative = await f.SnapshotAsync(new Workspace { Path = "relative/path" });
+        Check(relative.Detail == PluginStrings.DetailInvalidWorkspace, "a path that is not rooted is refused");
+        Check(gone.Calls.Count == 0, "neither case started a process");
+    }
+
+    // One read at a time: a second request joins the running read.
+    internal static async Task SecondRequestJoinsTheRunningRead()
+    {
+        var workspace = Verification.Temp();
+        var started = new TaskCompletionSource();
+        var release = new TaskCompletionSource<CliRunResult>();
+        var runner = Healthy(workspace);
+        runner.Async = (_, args) =>
+        {
+            if (args.Contains("--version")) return Task.FromResult(Ok("2.1.271"));
+            if (args.Contains("marketplace")) return Task.FromResult(Ok(Markets));
+            started.TrySetResult();
+            return release.Task;
+        };
+        var (reader, _, _) = Fixture(runner);
+        var first = reader.SnapshotAsync(new Workspace { Path = workspace });
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = reader.SnapshotAsync(new Workspace { Path = workspace });
+        Check(ReferenceEquals(first, second), "a second request while one runs is answered from the running one");
+        release.SetResult(Ok(Listing(workspace)));
+        Check((await first).Status == ClaudePluginStatus.Ready && ReferenceEquals(await first, await second), "both callers get the one answer");
+        Check(runner.Calls.Count(c => c.Arguments.Contains("list") && c.Arguments.Contains("--available")) == 1, "only one catalog read ran");
+
+        reader.Shutdown();
+        var afterClose = await reader.SnapshotAsync(new Workspace { Path = workspace });
+        Check(afterClose.Status == ClaudePluginStatus.Cancelled && afterClose.Detail == PluginStrings.DetailCancelled, "a closed reader admits nothing more");
+    }
+
+    // The window: tabs with counts, the marketplace filter with 전체, the search
+    // box, the composed row subtitles and the empty copy.
+    internal static async Task BrowserTabsFilterSearchAndRowsMatchMacOS()
+    {
+        var workspace = Verification.Temp();
+        var (reader, _, _) = Fixture(Healthy(workspace));
+        var browser = new ClaudePluginBrowser("claude", new Workspace { Path = workspace, Name = "Fixture" });
+        Check(browser.Title == "Claude 플러그인", "window title: " + browser.Title);
+        browser.BeginLoad();
+        Check(browser.EmptyMessage == PluginStrings.EmptyLoading, "loading copy");
+        browser.Apply(await reader.SnapshotAsync(browser.Workspace));
+
+        Check(browser.TabLabel(ClaudePluginBrowser.InstalledTab) == "설치됨 2", "installed tab: " + browser.TabLabel(ClaudePluginBrowser.InstalledTab));
+        Check(browser.TabLabel(ClaudePluginBrowser.MarketplaceTab) == "마켓플레이스 1", "marketplace tab: " + browser.TabLabel(ClaudePluginBrowser.MarketplaceTab));
+        Check(browser.Marketplaces.SequenceEqual(new[] { "sample" }), "the filter offers every marketplace the list mentions");
+        Check(browser.MarketplaceFilter == "", "전체 is the empty filter");
+
+        var installed = browser.InstalledRows();
+        Check(installed.Count == 2, "installed rows: " + installed.Count);
+        Check(installed.Any(r => r.Subtitle == "sample · 사용자 · 전체" && r.State == PluginStrings.StateDisabled && r.Version == "1.2.0"), "user row: " + installed[0].Subtitle);
+        Check(installed.Any(r => r.Subtitle == "sample · 프로젝트 · 공유" && r.State == PluginStrings.StateEnabled), "project row");
+        Check(installed.All(r => r.Description == "Formats source files"), "the description is drawn");
+
+        browser.Tab = ClaudePluginBrowser.MarketplaceTab;
+        var available = browser.Rows();
+        Check(available.Count == 1 && available[0].Subtitle == "sample · github", "catalog row shows marketplace and source kind: " + available[0].Subtitle);
+        Check(available[0].State is null, "a catalog row has no enabled badge");
+
+        browser.MarketplaceFilter = "nowhere";
+        Check(browser.Rows().Count == 0 && browser.EmptyMessage == PluginStrings.EmptyFiltered, "an unmatched filter empties the list with the filtered copy");
+        browser.MarketplaceFilter = "sample";
+        Check(browser.Rows().Count == 1, "the filter keeps its own marketplace");
+        browser.Search = "FORMAT";
+        Check(browser.Rows().Count == 1, "search is case-insensitive over name and description");
+        browser.Search = "없는이름";
+        Check(browser.Rows().Count == 0 && browser.EmptyMessage == PluginStrings.EmptyFiltered, "a search with no hit shows the filtered copy");
+
+        browser.Search = ""; browser.MarketplaceFilter = "";
+        Check(browser.StatusText is null, "a ready list shows no status sentence");
+        browser.Apply(new ClaudePluginSnapshot { Status = ClaudePluginStatus.Missing, Detail = PluginStrings.DetailMissingCli });
+        Check(browser.StatusText == PluginStrings.DetailMissingCli, "a failed read explains itself in the macOS words");
+        Check(browser.EmptyMessage == PluginStrings.EmptyFailed, "a failed read offers the reload copy");
+        Check(browser.MarketplaceFilter == "", "a filter the new list no longer offers falls back to 전체");
+    }
+
+    // Asking again re-reads the CLI and replaces the list.
+    internal static async Task ReloadReadsAgainAndReplacesTheList()
+    {
+        var workspace = Verification.Temp();
+        var runner = Healthy(workspace);
+        var (reader, _, _) = Fixture(runner);
+        var browser = new ClaudePluginBrowser("claude", new Workspace { Path = workspace });
+        browser.Apply(await reader.SnapshotAsync(browser.Workspace));
+        Check(browser.InstalledCount == 2, "first read");
+        runner.Async = (_, args) => Task.FromResult(args.Contains("--version") ? Ok("2.1.271")
+            : args.Contains("marketplace") ? Ok(Markets)
+            : Ok("""{"installed": [], "available": []}"""));
+        browser.BeginLoad();
+        browser.Apply(await reader.SnapshotAsync(browser.Workspace));
+        Check(browser.InstalledCount == 0 && browser.IsReady, "the reload replaced the list: " + browser.InstalledCount);
+        Check(runner.Calls.Count == 6, "the reload ran the same three reads again: " + runner.Calls.Count);
+        Check(!runner.Mutated, "a reload changes nothing either");
+    }
+
+    // The palette offers /plugin for Claude and /plugins for Codex.
+    internal static Task PaletteOffersPluginForBothProviders()
+    {
+        Check(SlashPalette.Builtins("claude").Any(c => c.Action == SlashCommandAction.OpenPlugins && c.Invocation == "plugin"),
+            "the Claude palette offers /plugin");
+        Check(SlashPalette.Builtins("codex").Any(c => c.Action == SlashCommandAction.OpenPlugins && c.Invocation == "plugins"),
+            "the Codex palette now offers /plugins");
+        Check(!SlashPalette.Builtins("gemini").Any(c => c.Action == SlashCommandAction.OpenPlugins),
+            "Gemini has no plugin browser on macOS either");
+        Check(SlashCommandCatalog.Builtins("codex").Any(c => c.Action == SlashCommandAction.OpenPlugins),
+            "the macOS catalog itself is left untouched");
+        return Task.CompletedTask;
+    }
+
+    // Korean copy: every PluginStrings constant is the macOS literal.
+    internal static Task StringsMatchMacOS()
+    {
+        // ClaudePluginView.swift and ClaudePluginService.swift, by field name.
+        var macOS = new Dictionary<string, string>
+        {
+            ["TitleTemplate"] = "{provider} 플러그인",
+            ["TabInstalled"] = "설치됨",
+            ["TabMarketplace"] = "마켓플레이스",
+            ["TabCountTemplate"] = "{title} {count}",
+            ["SearchPlaceholder"] = "이름 또는 설명 검색",
+            ["FilterAll"] = "전체",
+            ["ButtonReload"] = "목록 새로고침",
+            ["ButtonClose"] = "닫기",
+            ["DiagnosticsDisclosure"] = "명령 실행 상세",
+            ["MarketplaceHelpLink"] = "마켓플레이스 추가 방법",
+            ["DirectInstall"] = "직접 설치",
+            ["SubtitleTemplate"] = "{left} · {right}",
+            ["ScopeLocal"] = "로컬 · 나만",
+            ["ScopeProject"] = "프로젝트 · 공유",
+            ["ScopeUser"] = "사용자 · 전체",
+            ["ScopeManaged"] = "관리자 관리",
+            ["StateEnabled"] = "활성",
+            ["StateDisabled"] = "비활성",
+            ["StateUnknown"] = "상태 미확인",
+            ["NoDescription"] = "설명이 제공되지 않았습니다.",
+            ["EmptyLoading"] = "플러그인 목록을 불러오는 중…",
+            ["EmptyFailed"] = "목록을 불러오지 못했습니다. 목록 새로고침으로 다시 확인하세요.",
+            ["EmptyFiltered"] = "검색 조건에 맞는 플러그인이 없습니다.",
+            ["EmptyInstalled"] = "설치된 플러그인이 없습니다.",
+            ["EmptyAvailable"] = "등록된 마켓플레이스에서 제공한 플러그인이 없습니다.",
+            ["ProgressLoading"] = "목록을 불러오는 중…",
+            ["FooterNote"] = "현재 폴더의 설정과 저장된 목록입니다. 새 설치는 다음 Claude 실행부터 적용됩니다.",
+            ["DetailReady"] = "현재 작업 폴더의 CLI 설정과 등록된 마켓플레이스의 캐시 목록입니다. 이미 실행 중인 세션의 로드 상태와 다를 수 있습니다.",
+            ["DetailNoMarketplaces"] = "등록된 마켓플레이스가 없습니다. Claude CLI에서 marketplace add로 등록한 뒤 목록을 다시 읽으세요.",
+            // OS-bound substitution, recorded in docs/windows-plugins.md:
+            // macOS reads "이 Mac의 설치는 변경하지 않습니다."
+            ["DetailCancelled"] = "플러그인 조회를 취소했습니다.",
+            ["DetailFailed"] = "플러그인 목록을 읽지 못했습니다.",
+            ["DetailInvalidWorkspace"] = "로컬 작업 폴더가 올바르지 않습니다.",
+            ["DetailMissingWorkspace"] = "작업 폴더를 찾지 못했습니다.",
+            ["DetailMissingCli"] = "Claude CLI가 설치되어 있지 않습니다. 먼저 CLI를 설치하세요.",
+            ["DetailUnknownVersion"] = "설치된 Claude CLI 버전을 확인하지 못했습니다.",
+            ["DetailUnsupported"] = "이 플러그인 관리 화면은 JSON 설치 결과를 지원하는 Claude Code 2.1.268 이상이 필요합니다.",
+            ["DetailListingFailed"] = "Claude CLI에서 플러그인 목록을 읽지 못했습니다.",
+            ["DetailMarketplacesFailed"] = "등록된 마켓플레이스 목록을 읽지 못했습니다.",
+            ["DetailMalformed"] = "플러그인 목록 형식 또는 크기가 올바르지 않습니다. 빈 목록으로 처리하지 않았습니다.",
+            ["DetailIncomplete"] = "플러그인 작업을 완료하지 못했습니다. 실행 시간·출력 한도 또는 CLI 접근 상태를 확인하세요.",
+            // The install and the marketplace refresh (ClaudePluginView.swift
+            // controls, ClaudePluginService.swift results).
+            ["ScopePickerLabel"] = "설치 범위",
+            ["ScopeLocalOption"] = "로컬 · 이 워크스페이스, 나만",
+            ["ScopeProjectOption"] = "프로젝트 · 팀과 공유",
+            ["ScopeUserOption"] = "사용자 · 모든 프로젝트",
+            ["ScopeNoteLocal"] = "현재 워크스페이스에만 적용하며 팀의 공유 설정은 바꾸지 않습니다.",
+            ["ScopeNoteProject"] = "프로젝트 설정에 기록해 팀과 같은 플러그인을 사용합니다.",
+            // OS-bound substitution, recorded in docs/windows-plugins.md:
+            // macOS reads "이 Mac의 모든 프로젝트에서 ...".
+            ["ScopeNoteUser"] = "이 PC의 모든 프로젝트에서 사용하는 사용자 설정에 설치합니다.",
+            ["ButtonInstall"] = "설치",
+            ["ButtonInstalling"] = "설치 중…",
+            ["ButtonMarketplaceRefresh"] = "마켓플레이스 새로고침",
+            ["ButtonCancelOperation"] = "작업 취소",
+            ["ButtonCancelling"] = "취소 중…",
+            ["ProgressInstalling"] = "플러그인 설치 중…",
+            ["ProgressRefreshing"] = "마켓플레이스 갱신 중…",
+            ["ProgressCancelling"] = "작업을 취소하는 중…",
+            ["NoRefreshableMarketplaces"] = "새로고침할 등록된 마켓플레이스가 없습니다.",
+            ["SelectPluginAndScopeAgain"] = "목록에서 플러그인과 설치 범위를 다시 선택하세요.",
+            ["LoadListFirst"] = "플러그인 목록을 먼저 불러오세요.",
+            ["MarketplacesRefreshedTemplate"] = "{count}개 마켓플레이스의 목록을 갱신했습니다.",
+            ["OperationBusy"] = "다른 플러그인 작업이 진행 중입니다.",
+            ["OperationCancelled"] = "플러그인 작업을 취소했습니다.",
+            ["OperationCancelledByUser"] = "작업을 취소했습니다. 이미 반영된 변경이 있을 수 있어 목록을 다시 확인합니다.",
+            ["InstallBadIdOrScope"] = "플러그인 이름 또는 설치 범위가 올바르지 않습니다.",
+            ["InstallNotFound"] = "현재 등록된 마켓플레이스 목록에서 이 플러그인을 찾지 못했습니다. 목록을 다시 확인하세요.",
+            ["InstallSkipped"] = "선택한 범위에 이미 설치되어 있습니다. 비활성 상태라면 Claude CLI에서 활성화하세요.",
+            ["InstallCommandRequired"] = "이 플러그인은 추가 명령 실행 동의가 필요합니다. Claude CLI에서 표시된 명령을 확인한 뒤 설치하세요. 앱은 자동 승인하지 않습니다.",
+            ["InstallUnconfirmed"] = "설치 결과를 확인하지 못했습니다. 목록을 다시 읽어 설치 상태를 확인하세요.",
+            ["InstallFailed"] = "플러그인 설치에 실패했습니다. 네트워크·권한·조직 정책을 확인하세요.",
+            ["InstallSucceeded"] = "플러그인을 설치했습니다. 다음 Claude 실행부터 적용됩니다.",
+            ["MarketplaceBadName"] = "마켓플레이스 이름이 올바르지 않습니다.",
+            ["MarketplaceNotRegistered"] = "등록되지 않은 마켓플레이스입니다. 기존 등록 목록에서 선택하세요.",
+            ["MarketplaceRefreshFailed"] = "마켓플레이스 새로고침에 실패했습니다. 네트워크 상태와 접근 권한을 확인하세요.",
+            ["MarketplaceRefreshSucceeded"] = "선택한 마켓플레이스 목록을 새로고침했습니다.",
+        };
+
+        var actual = typeof(PluginStrings)
+            .GetProperties(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.PropertyType == typeof(string))
+            .ToDictionary(f => f.Name, f => (string)f.GetValue(null)!);
+
+        var seen = new Dictionary<string, string>();
+        foreach (var (name, value) in actual)
+        {
+            Check(value.Length > 0, "PluginStrings." + name + " is empty");
+            Check(!seen.TryGetValue(value, out var twin), "PluginStrings." + name + " duplicates " + (seen.TryGetValue(value, out var t) ? t : ""));
+            seen[value] = name;
+            Check(macOS.TryGetValue(name, out var expected), "PluginStrings." + name + " mirrors no macOS literal");
+            Check(value == expected, "PluginStrings." + name + " differs from macOS: " + value);
+        }
+        foreach (var name in macOS.Keys) Check(actual.ContainsKey(name), "PluginStrings is missing " + name);
+        Check(actual.Count == macOS.Count, "the copy table and the class must hold the same fields");
+        return Task.CompletedTask;
+    }
+
+    // Where this source file sits, so the WinUI surface can be read from the
+    // checkout. Core.Tests never builds WinUI — WinUI builds only on Windows —
+    // so the window is proven here the way a Mac can prove it: by what the file
+    // that draws it says.
+    private static string WinUIFolder([CallerFilePath] string here = "") =>
+        Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(here)!)!, "MightyCode.WinUI");
+
+    /// The same folder, for the codex plugin checks.
+    internal static string WinUISource() => WinUIFolder();
+
+    /// Every automation id part the window's source builds, so a control added
+    /// later is judged by the same rule.
+    internal static IReadOnlyList<string> WindowAutomationParts(string source) =>
+        [.. Regex.Matches(source, PluginIdPattern).Select(m => m.Groups[1].Value)];
+
+    internal const string PluginIdPattern = "PluginAutomationId\\(provider, \"([^\"]+)\"";
+
+    // The plugin window is a real WinUI surface, it reaches the user from the
+    // running app rather than from the smoke check, it types none of its own
+    // Korean, and the smoke run drives that same window under claudePluginList.
+    internal static Task WindowIsARealWinUISurfaceWiredIntoTheApp()
+    {
+        var winui = WinUIFolder();
+        Check(Directory.Exists(winui), "the WinUI project folder is missing: " + winui);
+
+        var file = Path.Combine(winui, "MainWindow.Plugins.cs");
+        Check(File.Exists(file), "MainWindow.Plugins.cs draws the plugin window and must exist");
+        var source = File.ReadAllText(file);
+
+        // A real surface built from real controls, not a placeholder.
+        Check(source.Contains("new ContentDialog"), "the plugin window must be a ContentDialog");
+        foreach (var control in new[] { "new Button", "new TextBox", "new ComboBox", "new ScrollViewer", "new StackPanel" })
+            Check(source.Contains(control), "the plugin window must draw a " + control);
+
+        // Every visible word is read from PluginStrings...
+        foreach (var name in new[]
+                 {
+                     "ButtonClose", "ButtonReload", "SearchPlaceholder", "FilterAll",
+                     "ProgressLoading", "DiagnosticsDisclosure", "MarketplaceHelpLink",
+                 })
+            Check(source.Contains("PluginStrings." + name), "the window must read PluginStrings." + name);
+        Check(source.Contains("browser.FooterNote"),
+            "the footer sentence is the provider's, so the window must read it from ClaudePluginBrowser");
+
+        // ...and no copy is typed into WinUI as a literal of its own.
+        foreach (var field in typeof(PluginStrings).GetProperties(BindingFlags.Public | BindingFlags.Static)
+                     .Where(f => f.PropertyType == typeof(string)))
+            Check(!source.Contains("\"" + (string)field.GetValue(null)! + "\""),
+                "PluginStrings." + field.Name + " is typed into WinUI instead of read from Core");
+
+        // The title and the tab counts are Core's decision, not the window's.
+        Check(source.Contains("browser.Title") && source.Contains("browser.TabLabel("),
+            "the window must take its title and tab labels from ClaudePluginBrowser");
+
+        // The feature is reached from real app events. A window only the smoke
+        // check opens is an unfinished feature.
+        var palette = File.ReadAllText(Path.Combine(winui, "MainWindow.SlashPalette.cs"));
+        Check(palette.Contains("SlashCommandAction.OpenPlugins") && palette.Contains("OpenPluginBrowser("),
+            "/plugin must open the plugin window from the palette");
+        Check(File.ReadAllText(Path.Combine(winui, "MainWindow.cs")).Contains("OpenPluginBrowser("),
+            "the run pane menu must open the plugin window");
+
+        // The web smoke's live steps record claudePluginList and drive that same window.
+        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.WebShell.LiveSmoke.cs"));
+        Check(smoke.Contains("ClaudePluginSmokeOutcome.ResultKey") && smoke.Contains("RunClaudePluginSmoke()"),
+            "the smoke run must record the plugin result under claudePluginList");
+        Check(source.Contains("await ShowPluginBrowser(\"claude\", workspace"),
+            "the smoke run must drive the same window the app opens");
+        Check(source.Contains("smokePluginRead = beforeRead") && source.Contains("smokePluginDialog = beforeDialog"),
+            "the smoke run must put back the two hooks it set");
+
+        // The window offers only the two changes macOS has, and it proves it
+        // with Core's rule rather than a substring. Every id this file builds is
+        // read straight out of the source, so a control added later is judged too.
+        Check(source.Contains("ClaudePluginSupport.NamesAChange("),
+            "the read-only guard must ask Core what an id names");
+        var parts = Regex.Matches(source, @"PluginAutomationId\(provider, ""([^""]+)""")
+            .Select(m => m.Groups[1].Value).ToList();
+        Check(parts.Count >= 9, "the window should carry an automation id on each of its controls, found " + parts.Count);
+        Check(parts.Contains("tab-installed") && parts.Contains("marketplace-filter") && parts.Contains("reload"),
+            "the installed tab, the marketplace filter and the reload button must each carry an id");
+        foreach (var part in parts)
+        {
+            var id = ClaudePluginSupport.AutomationId("claude", part);
+            Check(!ClaudePluginSupport.NamesAChange(id, "claude") || ClaudePluginSupport.NamesAllowedChange(id, "claude"),
+                "the window must offer no change beyond install, scope and marketplace refresh: " + part);
+        }
+
+        // The rule still catches every changing control...
+        foreach (var change in new[] { "install-fmt", "uninstall", "scope-picker", "marketplace-refresh", "add-marketplace", "enable-fmt" })
+            Check(ClaudePluginSupport.NamesAChange(ClaudePluginSupport.AutomationId("claude", change), "claude"),
+                "a changing control must be caught: " + change);
+
+        // ...and only the two macOS mutations are allowed through.
+        foreach (var allowed in new[] { "install-fmt", "scope-picker", "refresh-marketplaces" })
+            Check(ClaudePluginSupport.NamesAllowedChange(ClaudePluginSupport.AutomationId("claude", allowed), "claude"),
+                "the macOS change must be allowed: " + allowed);
+        foreach (var invented in new[] { "uninstall", "enable-fmt", "disable-fmt", "add-marketplace", "remove-marketplace" })
+            Check(!ClaudePluginSupport.NamesAllowedChange(ClaudePluginSupport.AutomationId("claude", invented), "claude"),
+                "a change macOS does not have must stay refused: " + invented);
+        Check(!ClaudePluginSupport.NamesAllowedChange(ClaudePluginSupport.AutomationId("claude", "reload"), "claude"),
+            "a control that changes nothing never counts as an allowed change");
+        Check(!ClaudePluginSupport.NamesAChange("codex-plugin-install", "claude"),
+            "one provider's window never judges another's ids");
+
+        // The fixture the smoke run shows: installed and available plugins, and
+        // a status the window can show when the CLI is missing. No CLI starts.
+        Check(source.Contains("PluginSmokeSnapshot") && source.Contains("ClaudePluginStatus.Missing"),
+            "the smoke run must show a fixture snapshot and an error status");
+        Check(source.Contains("smokePluginRead") && source.Contains("is { } fixture"),
+            "the fixture must replace the CLI read so no claude process starts");
+        return Task.CompletedTask;
+    }
+
+    // The model shapes the Codex feature and the marketplace feature reuse.
+    internal static Task ModelsStayReusable()
+    {
+        var installed = new ClaudeInstalledPlugin { PluginId = "fmt@sample", Name = "fmt", Scope = "local", ProjectPath = "/a" };
+        var twin = installed with { ProjectPath = "/a/b" };
+        Check(installed.Id != twin.Id, "the row key separates two paths");
+        Check(new ClaudeInstalledPlugin { PluginId = "a@b", Scope = "x|y" }.Id != new ClaudeInstalledPlugin { PluginId = "a@b|x", Scope = "y" }.Id,
+            "the row key is length-prefixed so no field can forge another row");
+        Check(new ClaudePluginSnapshot().Status == ClaudePluginStatus.Failed, "a default snapshot is never ready");
+        var operation = new ClaudePluginOperationResult("succeeded", "d");
+        Check(operation.Output == "" && operation.Status == "succeeded", "the operation result shape is ready for the marketplace feature");
+        Check(ClaudePluginSupport.PluginParts("fmt@sample") == ("fmt", "sample"), "plugin id split");
+        Check(ClaudePluginSupport.PluginParts("fmt") is null && ClaudePluginSupport.PluginParts("a@b@c") is null && ClaudePluginSupport.PluginParts("!@b") is null, "a bad plugin id is refused");
+        Check(ClaudePluginSupport.SupportedVersion("2.1.268") && ClaudePluginSupport.SupportedVersion("2.2.0 (Claude Code)") && !ClaudePluginSupport.SupportedVersion("2.1.267") && !ClaudePluginSupport.SupportedVersion("x"), "version gate");
+        Check(ClaudePluginSupport.Display("a\u0000b\u001Bc", 100) == "abc", "control characters never reach the screen");
+        Check(ClaudePluginSupport.Display(new string('a', 50), 10).Length == 10, "display text is bounded");
+        Check(ClaudePluginBrowser.ScopeLabel("managed") == PluginStrings.ScopeManaged && ClaudePluginBrowser.ScopeLabel("session") == "session", "scope labels");
+        Check(ClaudePluginSmokeOutcome.ResultKey == "claudePluginList", "the smoke key is claudePluginList");
+        return Task.CompletedTask;
+    }
+}

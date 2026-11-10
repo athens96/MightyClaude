@@ -1,6 +1,6 @@
 # dmgbuild settings for the Mighty Code install window (scripts/notarize-macos.sh).
 #
-#   dmgbuild -s scripts/dmg/settings.py -D app=<MightyClaude.app> -D background=<tiff> "Mighty Code" <out.dmg>
+#   dmgbuild -s scripts/dmg/settings.py -D app=<MightyCode.app> -D background=<tiff> "Mighty Code" <out.dmg>
 #
 # A 660×400 window with no toolbar, sidebar or status bar; the app on the left and an
 # Applications link on the right at the positions scripts/dmg/make-background.swift
@@ -14,7 +14,7 @@ format = "UDZO"
 filesystem = "HFS+"
 files = [application]
 symlinks = {"Applications": "/Applications"}
-icon = os.path.join(application, "Contents", "Resources", "MightyClaude.icns")
+icon = os.path.join(application, "Contents", "Resources", "MightyCode.icns")
 badge_icon = None
 
 background = defines["background"]  # noqa: F821

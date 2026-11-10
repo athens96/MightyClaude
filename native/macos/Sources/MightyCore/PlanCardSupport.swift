@@ -147,7 +147,7 @@ public enum PlanCardSupport {
             }
         guard matches else {
             // Logged, never a trap: the rows still show, in the task list's own words.
-            Logger(subsystem: "dev.mightyclaude.native", category: "background-work").error("background strip rows no longer line up with the task list")
+            Logger(subsystem: "dev.mightycode.native", category: "background-work").error("background strip rows no longer line up with the task list")
             return tasks.map { BackgroundStripRow(task: $0) }
         }
         let runID = run.map { $0.sourceRunID ?? $0.id }

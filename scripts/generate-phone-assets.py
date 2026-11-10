@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Phone asset generator for MightyClaude mobile app.
-Generates all required assets from assets/icons/mightyclaude.png.
+Phone asset generator for MightyCode mobile app.
+Generates all required assets from assets/icons/mightycode.png.
 
 Usage (from repo root):
     python3 scripts/generate-phone-assets.py
@@ -21,7 +21,7 @@ except ImportError:
     sys.exit(1)
 
 REPO_ROOT = Path(__file__).parent.parent
-SOURCE = REPO_ROOT / "assets" / "icons" / "mightyclaude.png"
+SOURCE = REPO_ROOT / "assets" / "icons" / "mightycode.png"
 OUT_DIR = REPO_ROOT / "mobile" / "assets" / "images"
 SOURCES_JSON = OUT_DIR / "asset-sources.json"
 
@@ -126,7 +126,7 @@ def main() -> None:
         info["sha256"] = sha256_of(OUT_DIR / name)
 
     manifest = {
-        "source": "assets/icons/mightyclaude.png",
+        "source": "assets/icons/mightycode.png",
         "source_sha256": source_hash,
         "outputs": outputs,
     }

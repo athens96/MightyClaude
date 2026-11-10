@@ -8,7 +8,7 @@ section: phone
 Mac 与手机通过中继服务器连接。内容全程端到端加密，中继无法查看内容。无需在路由器上开放端口，也无需使用 VPN。如果你在用 Tailscale，手机也可以[不经中继直接连接](#direct)。
 
 ## 获取手机应用 {#get-app}
-从[下载页面](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)下载 Android 应用（APK）并安装。
+从[下载页面](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/index.html)下载 Android 应用（APK）并安装。
 
 ## 连接手机 {#pair}
 在 Mac 上：

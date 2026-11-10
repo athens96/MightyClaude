@@ -29,19 +29,19 @@ function readPngInfo(filePath: string): PngInfo {
 
 const REPO_ROOT = path.resolve(__dirname, '../../../');
 const ASSETS_DIR = path.join(REPO_ROOT, 'mobile', 'assets', 'images');
-const SOURCE_PNG = path.join(REPO_ROOT, 'assets', 'icons', 'mightyclaude.png');
+const SOURCE_PNG = path.join(REPO_ROOT, 'assets', 'icons', 'mightycode.png');
 
 describe('phone assets generated from raccoon artwork', () => {
   it('asset-sources.json records the raccoon artwork as source', () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.join(ASSETS_DIR, 'asset-sources.json'), 'utf8'),
     );
-    expect(manifest.source).toBe('assets/icons/mightyclaude.png');
+    expect(manifest.source).toBe('assets/icons/mightycode.png');
     expect(typeof manifest.source_sha256).toBe('string');
     expect(manifest.source_sha256).toHaveLength(64);
   });
 
-  it('source sha256 in asset-sources.json matches actual mightyclaude.png', () => {
+  it('source sha256 in asset-sources.json matches actual mightycode.png', () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.join(ASSETS_DIR, 'asset-sources.json'), 'utf8'),
     );

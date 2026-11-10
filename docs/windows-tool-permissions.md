@@ -1,6 +1,6 @@
 # Windows — Claude 추가 권한 요청의 앱 내 승인
 
-macOS(`ToolPermissions.swift`, `ToolPermissionBar.swift`)와 같은 화면·문구·동작을 Windows에 옮긴 기록이다. 코드는 `MightyClaude.Core/ToolPermissions.cs`·`ToolPermissionPresentation.cs`·`ToolPermissionStrings.cs`, 화면은 `MightyClaude.WinUI/MainWindow.ToolPermission.cs`다.
+macOS(`ToolPermissions.swift`, `ToolPermissionBar.swift`)와 같은 화면·문구·동작을 Windows에 옮긴 기록이다. 코드는 `MightyCode.Core/ToolPermissions.cs`·`ToolPermissionPresentation.cs`·`ToolPermissionStrings.cs`, 화면은 `MightyCode.WinUI/MainWindow.ToolPermission.cs`다.
 
 ## 닫힌 쪽으로 실패한다
 

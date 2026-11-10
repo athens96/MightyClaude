@@ -1,6 +1,6 @@
 {
   "platforms": ["android"],
   "android": {
-    "modules": ["dev.mightyclaude.devicelock.DeviceLockModule"]
+    "modules": ["dev.mightycode.devicelock.DeviceLockModule"]
   }
 }

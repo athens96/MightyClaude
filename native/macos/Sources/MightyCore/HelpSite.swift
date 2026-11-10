@@ -4,7 +4,7 @@ import Foundation
 /// (`<base>/<lang>/`). The address is pinned by `native/contracts/fixtures/help-site.json`,
 /// which Windows (`HelpSite.cs`) and the phone (`help-site.ts`) are held to as well.
 public enum HelpSite {
-    public static let base = "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help"
+    public static let base = "https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/help"
 
     /// The guide's folder in `language`; "system" reads the English folder.
     public static func url(for language: AppLanguage) -> URL {

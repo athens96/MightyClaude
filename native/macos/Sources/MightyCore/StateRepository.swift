@@ -13,7 +13,7 @@ public actor StateRepository {
 
     public nonisolated static func defaultLegacyStateURL() -> URL? {
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
-        return ["MightyClaude", "mighty-claude"].map { support.appendingPathComponent($0).appendingPathComponent("workspace-state.json") }.first { FileManager.default.fileExists(atPath: $0.path) }
+        return ["MightyCode", "mighty-claude"].map { support.appendingPathComponent($0).appendingPathComponent("workspace-state.json") }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     public init(directory: URL, legacyStateURL: URL? = StateRepository.defaultLegacyStateURL()) {

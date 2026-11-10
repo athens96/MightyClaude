@@ -42,4 +42,4 @@
 - **다른 곳에서 실행 중인 세션**: 터미널의 `claude`·`codex`처럼 앱 밖에서 아직 실행 중인 세션도 목록에 나오고 고를 수 있다. 앱은 다른 프로세스가 그 세션을 쓰고 있는지 알 수 없으므로 막지 않는다. 두 곳에서 같은 세션을 동시에 이어가면 서로의 최근 대화를 모른 채 답하고, 기록이 섞이거나 갈라질 수 있다. 그래서 2분 안에 수정된 기록에는 **방금 수정됨 — 다른 곳에서 실행 중일 수 있음**을 표시한다. 이어가기 전에 다른 곳의 실행을 끝내는 것이 안전하다.
 - Codex 기록은 날짜 폴더를 4,000개까지 본다.
 
-코드: `MightyCore/ResumableSessions.swift`(목록·제외·숨김·제목·창 설정, `KnownSessionIDs`), `MightyCore/AddAgentPane.swift`(묻는 실행기와 묻지 않는 경우), `MightyClaude/ResumeSessionSheet.swift`(고르는 창과 목록), `MightyClaude/AppStore+ResumeSession.swift`, `MightyClaude/WorkspaceView.swift`(`WorkspaceAddMenuItems`). 테스트: `ResumableSessionsTests`, `AddAgentPaneTests`.
+코드: `MightyCore/ResumableSessions.swift`(목록·제외·숨김·제목·창 설정, `KnownSessionIDs`), `MightyCore/AddAgentPane.swift`(묻는 실행기와 묻지 않는 경우), `MightyCode/ResumeSessionSheet.swift`(고르는 창과 목록), `MightyCode/AppStore+ResumeSession.swift`, `MightyCode/WorkspaceView.swift`(`WorkspaceAddMenuItems`). 테스트: `ResumableSessionsTests`, `AddAgentPaneTests`.

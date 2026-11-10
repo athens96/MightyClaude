@@ -97,11 +97,11 @@ Mighty Code를 "AI CLI를 감싼 개발 도구"로 보고, 지금까지 구현�
 
 ## 9. OS·외부 연결 — 우선순위 낮음
 
-**비어 있는 것.** URL 스킴, 셸 명령, macOS 단축어(App Intents), 서비스 메뉴가 없다(`mightyclaude://`·`AppIntent` 0곳). 푸시는 휴대폰만 받고 Slack·Discord 웹훅은 없다.
+**비어 있는 것.** URL 스킴, 셸 명령, macOS 단축어(App Intents), 서비스 메뉴가 없다(`mightycode://`·`AppIntent` 0곳). 푸시는 휴대폰만 받고 Slack·Discord 웹훅은 없다.
 
 **제안.**
 - `mighty .` 셸 명령(설치는 설정 → 구성 요소): 지금 폴더를 워크스페이스로 열기, `mighty "요청"`으로 바로 보내기.
-- `mightyclaude://open?path=…&prompt=…` — 이슈 트래커·문서에서 링크 한 번으로 요청 시작.
+- `mightycode://open?path=…&prompt=…` — 이슈 트래커·문서에서 링크 한 번으로 요청 시작.
 - 단축어 동작 "Mighty Code에 요청 보내기", Finder 빠른 동작 "이 폴더에서 Claude 열기".
 - 완료·실패 알림을 웹훅으로도 보내기(내용은 제목만, 휴대폰 푸시와 같은 범위).
 

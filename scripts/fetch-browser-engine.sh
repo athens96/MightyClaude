@@ -1,6 +1,6 @@
 #!/bin/bash
 # Download and verify the pinned CEF and Node runtime archives.
-# Cache location: ~/Library/Caches/MightyClaude/browser-engine/<16-hex-lock-prefix>/
+# Cache location: ~/Library/Caches/MightyCode/browser-engine/<16-hex-lock-prefix>/
 # Override with MIGHTY_BROWSER_ENGINE_CACHE.
 # Second run with a warm cache prints "cache hit" and exits without downloading.
 set -euo pipefail
@@ -16,7 +16,7 @@ fi
 # Derive cache directory from the first 16 hex chars of the lock file's sha256.
 LOCK_SHA256="$(shasum -a 256 "$LOCK_FILE" | awk '{print $1}')"
 LOCK_PREFIX="${LOCK_SHA256:0:16}"
-CACHE_DIR="${MIGHTY_BROWSER_ENGINE_CACHE:-$HOME/Library/Caches/MightyClaude/browser-engine/$LOCK_PREFIX}"
+CACHE_DIR="${MIGHTY_BROWSER_ENGINE_CACHE:-$HOME/Library/Caches/MightyCode/browser-engine/$LOCK_PREFIX}"
 mkdir -p "$CACHE_DIR"
 
 # Parse lock values.

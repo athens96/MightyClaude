@@ -8,7 +8,7 @@ SWIFT_EXECUTABLE="$(xcrun --find swift)"
 BUILD_CONFIGURATION="${BUILD_CONFIGURATION:-release}"
 BUILD_SCRATCH="${MIGHTY_BUILD_SCRATCH:-$PROJECT_ROOT/native/macos/.build}"
 MODULE_CACHE="$BUILD_SCRATCH/module-cache"
-APP_PATH="${MIGHTY_MACOS_APP_PATH:-$PROJECT_ROOT/release/native-macos/MightyClaude.app}"
+APP_PATH="${MIGHTY_MACOS_APP_PATH:-$PROJECT_ROOT/release/native-macos/MightyCode.app}"
 mkdir -p "$MODULE_CACHE"
 export CLANG_MODULE_CACHE_PATH="$MODULE_CACHE"
 export SWIFTPM_MODULECACHE_OVERRIDE="$MODULE_CACHE"
@@ -17,10 +17,10 @@ bash "$PROJECT_ROOT/scripts/package-icons.sh"
 "$SWIFT_EXECUTABLE" build --disable-sandbox --package-path "$PROJECT_ROOT/native/macos" --scratch-path "$BUILD_SCRATCH" -c "$BUILD_CONFIGURATION" -Xswiftc -module-cache-path -Xswiftc "$MODULE_CACHE"
 BIN_PATH="$("$SWIFT_EXECUTABLE" build --disable-sandbox --package-path "$PROJECT_ROOT/native/macos" --scratch-path "$BUILD_SCRATCH" -c "$BUILD_CONFIGURATION" --show-bin-path)"
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources/mods"
-cp "$BIN_PATH/MightyClaude" "$APP_PATH/Contents/MacOS/MightyClaude"
+cp "$BIN_PATH/MightyCode" "$APP_PATH/Contents/MacOS/MightyCode"
 # `ditto` merges rather than replaces, so a Styles/ left by an earlier build
 # would satisfy the gate below even after the manifests stopped being packaged.
-STYLE_BUNDLE="$APP_PATH/Contents/Resources/MightyClaude_MightyCore.bundle"
+STYLE_BUNDLE="$APP_PATH/Contents/Resources/MightyCode_MightyCore.bundle"
 rm -rf "$STYLE_BUNDLE/Contents/Resources/Styles" "$STYLE_BUNDLE/Styles"
 # SwiftPM resource bundles contain Ghostty's terminfo and shell integration.
 # They must travel with the app; a development checkout is not a runtime dependency.
@@ -41,8 +41,8 @@ for style_name in ouroboros claude-plan; do
   fi
 done
 ditto "$PROJECT_ROOT/native/licenses" "$APP_PATH/Contents/Resources/ThirdPartyLicenses"
-cp "$PROJECT_ROOT/assets/icons/MightyClaude.icns" "$APP_PATH/Contents/Resources/MightyClaude.icns"
-cp "$PROJECT_ROOT/assets/icons/mightyclaude.png" "$APP_PATH/Contents/Resources/mightyclaude.png"
+cp "$PROJECT_ROOT/assets/icons/MightyCode.icns" "$APP_PATH/Contents/Resources/MightyCode.icns"
+cp "$PROJECT_ROOT/assets/icons/mightycode.png" "$APP_PATH/Contents/Resources/mightycode.png"
 if [ -d "$PROJECT_ROOT/assets/pets" ]; then
   ditto "$PROJECT_ROOT/assets/pets" "$APP_PATH/Contents/Resources/pets"
 fi
@@ -54,12 +54,13 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <plist version="1.0"><dict>
 <key>CFBundleName</key><string>Mighty Code</string>
 <key>CFBundleDisplayName</key><string>Mighty Code</string>
-<key>CFBundleIdentifier</key><string>dev.mightyclaude.native</string>
+<key>LSHasLocalizedDisplayName</key><true/>
+<key>CFBundleIdentifier</key><string>dev.mightycode.native</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
 <key>CFBundleLocalizations</key><array><string>ko</string><string>en</string><string>zh-Hans</string><string>ja</string></array>
-<key>CFBundleExecutable</key><string>MightyClaude</string>
+<key>CFBundleExecutable</key><string>MightyCode</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleIconFile</key><string>MightyClaude.icns</string>
+<key>CFBundleIconFile</key><string>MightyCode.icns</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -68,7 +69,7 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>NSLocalNetworkUsageDescription</key><string>같은 Wi-Fi의 휴대폰과 화면 공유를 연결하려면 로컬 네트워크 접근이 필요합니다.</string>
 <key>NSBonjourServices</key><array><string>_mightyclaude._tcp</string></array>
-<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>dev.mightyclaude.native.link</string><key>CFBundleURLSchemes</key><array><string>mightyclaude</string></array></dict></array>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>dev.mightycode.native.link</string><key>CFBundleURLSchemes</key><array><string>mightycode</string><string>mightyclaude</string></array></dict></array>
 <key>NSAppleEventsUsageDescription</key><string>터미널에서 실행한 명령이 다른 앱을 제어하려고 합니다.</string>
 <key>NSMicrophoneUsageDescription</key><string>터미널에서 실행한 명령이 마이크를 사용하려고 합니다.</string>
 <key>NSCameraUsageDescription</key><string>터미널에서 실행한 명령이 카메라를 사용하려고 합니다.</string>
@@ -103,8 +104,8 @@ if [ ! -d "$WEBRTC_FRAMEWORK" ]; then
 fi
 mkdir -p "$APP_PATH/Contents/Frameworks"
 ditto "$WEBRTC_FRAMEWORK" "$APP_PATH/Contents/Frameworks/WebRTC.framework"
-if ! otool -l "$APP_PATH/Contents/MacOS/MightyClaude" | grep -q "@executable_path/../Frameworks"; then
-  install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_PATH/Contents/MacOS/MightyClaude"
+if ! otool -l "$APP_PATH/Contents/MacOS/MightyCode" | grep -q "@executable_path/../Frameworks"; then
+  install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_PATH/Contents/MacOS/MightyCode"
 fi
 
 # Browser engine bundling: CEF framework, helper stubs, pinned Node, licence notices.
@@ -115,7 +116,7 @@ if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
     NODE_URL="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['node']['url'])" "$LOCK_FILE")"
     NODE_VERSION="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['node']['version'])" "$LOCK_FILE")"
     LOCK_HASH="$(shasum -a 256 "$LOCK_FILE" | awk '{print $1}')"
-    ENGINE_CACHE="${MIGHTY_BROWSER_ENGINE_CACHE:-$HOME/Library/Caches/MightyClaude/browser-engine/${LOCK_HASH:0:16}}"
+    ENGINE_CACHE="${MIGHTY_BROWSER_ENGINE_CACHE:-$HOME/Library/Caches/MightyCode/browser-engine/${LOCK_HASH:0:16}}"
     CEF_ARCHIVE="$ENGINE_CACHE/$(basename "$CEF_URL")"
     NODE_ARCHIVE="$ENGINE_CACHE/$(basename "$NODE_URL")"
     if [ ! -f "$CEF_ARCHIVE" ] || [ ! -f "$NODE_ARCHIVE" ]; then
@@ -177,10 +178,10 @@ if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
 </dict></plist>
 PLIST
     }
-    make_helper "MightyClaude Helper"           "dev.mightyclaude.native.helper"
-    make_helper "MightyClaude Helper (GPU)"      "dev.mightyclaude.native.helper.gpu"
-    make_helper "MightyClaude Helper (Renderer)" "dev.mightyclaude.native.helper.renderer"
-    make_helper "MightyClaude Helper (Plugin)"   "dev.mightyclaude.native.helper.plugin"
+    make_helper "MightyCode Helper"           "dev.mightycode.native.helper"
+    make_helper "MightyCode Helper (GPU)"      "dev.mightycode.native.helper.gpu"
+    make_helper "MightyCode Helper (Renderer)" "dev.mightycode.native.helper.renderer"
+    make_helper "MightyCode Helper (Plugin)"   "dev.mightycode.native.helper.plugin"
     rm -rf "$EXTRACT_TEMP"
     trap - EXIT
 fi
@@ -203,7 +204,7 @@ case "$CODESIGN_IDENTITY" in "Developer ID Application"*) HARDENED_RUNTIME="--ha
 bash "$PROJECT_ROOT/scripts/sign-macos.sh" "$APP_PATH" "$CODESIGN_IDENTITY" $HARDENED_RUNTIME
 # Verify that the packaged app can resolve its locale catalogs and default pet
 # through its own binary before reporting a successful build.
-VERIFY_OUT="$(cd /tmp && "$APP_PATH/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
+VERIFY_OUT="$(cd /tmp && "$APP_PATH/Contents/MacOS/MightyCode" --verify-resources 2>&1)"
 VERIFY_EXIT=$?
 echo "$VERIFY_OUT"
 if [ "$VERIFY_EXIT" -ne 0 ]; then

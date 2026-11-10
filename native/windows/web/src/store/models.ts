@@ -1,4 +1,4 @@
-// The C# wire records (MightyClaude.Core) as the host serializes them with `Wire.Json`: JsonSerializerDefaults.Web
+// The C# wire records (MightyCode.Core) as the host serializes them with `Wire.Json`: JsonSerializerDefaults.Web
 // (camelCase), nulls omitted. A field the C# side may leave null is optional here; dictionary keys keep their case.
 // Field names come from Models.cs, PaneLayout.cs, AgentActivity.cs, ToolPermissions.cs, MightyGraph.cs,
 // ExecutionGraph.cs, ClaudePlanMode.cs, SessionUsage.cs, AgentImages.cs and AntigravityPermissions.cs.
@@ -250,7 +250,7 @@ export interface RunSession {
   backgroundWork?: BackgroundWork;
   parentSessionId?: string;
   workingFolder?: string;
-  /** The shell blocks of the agent's replies the user ran (MightyClaude.Core/ShellBlockRuns.cs), one per block key. */
+  /** The shell blocks of the agent's replies the user ran (MightyCode.Core/ShellBlockRuns.cs), one per block key. */
   shellRuns?: ShellBlockRun[];
 }
 

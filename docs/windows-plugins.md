@@ -29,7 +29,7 @@ No difference in copy, visible behaviour or scope — macOS words used as-is.
 
 ## Model types
 
-These types live in `MightyClaude.Core` and are shared unchanged by the Codex
+These types live in `MightyCode.Core` and are shared unchanged by the Codex
 plugin feature and the marketplace feature. Their public surface must not change
 when those features are added; they extend the types with new methods, not new
 fields.
@@ -383,7 +383,7 @@ feature and have rows 23 and 24 in `docs/windows-parity.md` as `보류`.
 | No app action is left out of the palette | `SlashPalette.UnavailableActions` is asserted empty |
 
 13 `codex plugin …` checks, inside a Core suite of 205 that passes on this Mac
-with `dotnet run --project native/windows/MightyClaude.Core.Tests
+with `dotnet run --project native/windows/MightyCode.Core.Tests
 --artifacts-path /tmp/mc-artifacts`. No real `claude`, `codex`, `gemini`, `npm`
 or `winget` process starts, no network is touched, and the real user profile is
 never read: every check uses the fake `ICliRunner` over a temporary folder.

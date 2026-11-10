@@ -112,7 +112,7 @@ SWIFT
 xcrun clang -dynamiclib "$TEST_DIR/bridge.c" -o "$TEST_DIR/FakeCEFBridge.dylib"
 xcrun swiftc -parse-as-library -target "$(uname -m)-apple-macosx14.0" \
   -module-cache-path "$TEST_DIR/module-cache" \
-  "$ROOT/native/macos/Sources/MightyClaude/CefBrowserRuntime.swift" \
+  "$ROOT/native/macos/Sources/MightyCode/CefBrowserRuntime.swift" \
   "$TEST_DIR/main.swift" -o "$TEST_DIR/browser-runtime-test"
 MIGHTY_FAKE_LOG="$TEST_DIR/success.log" "$TEST_DIR/browser-runtime-test" "$TEST_DIR/FakeCEFBridge.dylib"
 MIGHTY_FAKE_LOG="$TEST_DIR/failure.log" MIGHTY_FAKE_INIT_FAIL=1 "$TEST_DIR/browser-runtime-test" "$TEST_DIR/FakeCEFBridge.dylib"

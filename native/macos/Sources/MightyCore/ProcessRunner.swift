@@ -11,11 +11,11 @@ public struct ProcessResult: Sendable {
 /// that group before exec, so stop never races a post-launch setpgid call.
 final class NativeChildProcess: @unchecked Sendable {
     private let lock = NSLock()
-    private let writer = DispatchQueue(label: "dev.mightyclaude.stdin")
+    private let writer = DispatchQueue(label: "dev.mightycode.stdin")
     /// The exit report, the stop's SIGKILL and wait timeouts run here, a
     /// serial queue of this child's own: work on the global queues waits
     /// whenever they are saturated, and a child's end must not.
-    private let control = DispatchQueue(label: "dev.mightyclaude.child")
+    private let control = DispatchQueue(label: "dev.mightycode.child")
     private var stdinFD: Int32 = -1
     /// Set under `lock` when a close is requested, before the writer queue
     /// runs it, so `inputIsOpen` never waits on that queue.
@@ -91,7 +91,7 @@ final class NativeChildProcess: @unchecked Sendable {
             read(fd: output[0], group: readers, callback: stdout)
             read(fd: errors[0], group: readers, callback: stderr)
             let reaped = childPID
-            startBlockingThread("dev.mightyclaude.child.reaper") { [self] in
+            startBlockingThread("dev.mightycode.child.reaper") { [self] in
                 var status: Int32 = 0
                 while waitpid(reaped, &status, 0) < 0 { if errno != EINTR { status = 127 << 8; break } }
                 lock.lock(); exitedAt = Date(); if status & 0x7f != 0 { signal = status & 0x7f }; lock.unlock()
@@ -111,7 +111,7 @@ final class NativeChildProcess: @unchecked Sendable {
     private func read(fd: Int32, group: DispatchGroup, callback: @escaping @Sendable (Data) -> Void) {
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
         group.enter()
-        startBlockingThread("dev.mightyclaude.child.reader") { [self] in
+        startBlockingThread("dev.mightycode.child.reader") { [self] in
             defer { Darwin.close(fd); group.leave() }
             var bytes = [UInt8](repeating: 0, count: 16_384)
             // Time the callback held this thread after the child exited. A

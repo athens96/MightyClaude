@@ -65,7 +65,7 @@ Ouroboros 플러그인(`ouroboros@ouroboros`)과 `uvx`가 필요하다. 없으�
 | 범용 엔진(디코딩·검증·평가·투영·레지스트리·신뢰 저장소) | `native/macos/Sources/MightyCore/Styles/*.swift` |
 | 질문 진행 상태(`QuestionnaireProgress`, 매니페스트와 무관한 공유 컴포넌트) | `native/macos/Sources/MightyCore/QuestionnaireProgress.swift` |
 | 질문 블록(`question` 노드) | `ExecutionGraphTracker.swift`, `ExecutionGraph.swift`, `MightyGraph.swift`, `MightyGraphView.swift` |
-| 스타일 전환, 승인, 프롬프트 전송, 질문 응답, 자동 허용, 설치 터미널 | `native/macos/Sources/MightyClaude/AppStore+Styles.swift` |
-| 범용 패널, 행동 칩, 선택기(메뉴) | `native/macos/Sources/MightyClaude/GuidedPanel.swift`, `GuidedActionChip.swift`, `SessionPaneView.swift` |
-| 승인 시트, 스타일 설정 화면 | `native/macos/Sources/MightyClaude/StyleApprovalSheet.swift`, `StyleSettingsSection.swift` |
+| 스타일 전환, 승인, 프롬프트 전송, 질문 응답, 자동 허용, 설치 터미널 | `native/macos/Sources/MightyCode/AppStore+Styles.swift` |
+| 범용 패널, 행동 칩, 선택기(메뉴) | `native/macos/Sources/MightyCode/GuidedPanel.swift`, `GuidedActionChip.swift`, `SessionPaneView.swift` |
+| 승인 시트, 스타일 설정 화면 | `native/macos/Sources/MightyCode/StyleApprovalSheet.swift`, `StyleSettingsSection.swift` |
 | 테스트(값 보존 확인) | `native/macos/Tests/MightyCoreTests/StylesOuroborosTests.swift`, `StylesBundledTests.swift`, `StyleGoldenContractTests.swift` |
