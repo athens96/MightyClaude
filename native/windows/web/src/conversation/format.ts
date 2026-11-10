@@ -33,7 +33,7 @@ export function entryTime(timestamp: string, language: string): string {
 
 /** The provider's short name (ProviderMark.Label). */
 export function providerLabel(provider: string): string {
-  return provider === 'codex' ? 'Codex' : provider === 'gemini' ? 'Antigravity' : 'Claude';
+  return provider === 'codex' ? 'Codex' : provider === 'gemini' ? 'Antigravity' : provider === 'pi' ? 'pi' : 'Claude';
 }
 
 /** The text split into lines as the transcript splits them. */

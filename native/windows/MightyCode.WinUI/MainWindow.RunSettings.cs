@@ -238,6 +238,8 @@ public sealed partial class MainWindow
         private static string PermissionDescription(string provider, string mode)
         {
             if (provider == "claude") return Locale.Get(mode switch { "plan" => "permission.claude.plan", "acceptEdits" => "permission.claude.acceptEdits", "auto" => "permission.claude.auto", "fullAccess" => "permission.claude.fullAccess", _ => "permission.claude.default" });
+            // pi has no approval window: read-only tools, or every tool without asking.
+            if (provider == "pi") return Locale.Get(mode == "fullAccess" ? "permission.pi.fullAccess" : "permission.pi.default");
             if (mode == "fullAccess") return Locale.Get("permission.other.fullAccess");
             if (provider == "codex") return Locale.Get(mode == "onRequest" ? "permission.codex.onRequest" : mode == "acceptEdits" ? "permission.codex.acceptEdits" : "permission.codex.default");
             // Headless Antigravity declines what it would ask about instead of asking.

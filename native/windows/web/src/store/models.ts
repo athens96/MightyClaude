@@ -5,7 +5,7 @@
 
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error' | 'stopped';
 export type LogKind = 'user' | 'assistant' | 'system' | 'output' | 'error' | 'image';
-export type ProviderId = 'claude' | 'codex' | 'gemini';
+export type ProviderId = 'claude' | 'codex' | 'gemini' | 'pi';
 
 export interface RemoteWorkspaceReference {
   connectionId: string;

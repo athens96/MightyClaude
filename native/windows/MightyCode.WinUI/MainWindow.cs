@@ -752,11 +752,11 @@ public sealed partial class MainWindow : Window
             {
                 "plan" => Locale.Get("permission.label.plan"), "onRequest" => Locale.Get("permission.label.onRequest"), "fullAccess" => Locale.Get("permission.label.fullAccess"),
                 "acceptEdits" => Locale.Get(provider == "codex" ? "permission.label.acceptEditsCodex" : "permission.label.acceptEdits"),
-                _ => Locale.Get(provider == "codex" ? "permission.label.defaultCodex" : "permission.label.default"),
+                _ => Locale.Get(provider is "codex" or "pi" ? "permission.label.defaultCodex" : "permission.label.default"),
             };
         }
         /// <summary>A thinking effort's name on its pill and in its menu: the CLI's own level names (M/SessionPaneView.swift:899-901).</summary>
-        private static string EffortLabel(string effort) => effort switch { "low" => "Low", "medium" => "Medium", "high" => "High", "xhigh" => "XHigh", "max" => "Max", _ => "Auto" };
+        private static string EffortLabel(string effort) => effort switch { "off" => "Off", "minimal" => "Minimal", "low" => "Low", "medium" => "Medium", "high" => "High", "xhigh" => "XHigh", "max" => "Max", _ => "Auto" };
         private static string PermissionHelp(string provider, string mode) => mode switch { "onRequest" => Locale.Get("permission.codex.onRequest"), "manual" => provider == "codex" ? Locale.Get("composer.permissionHelp.manualCodex") : Locale.Get("composer.permissionHelp.manual"), "plan" => Locale.Get("composer.permissionHelp.plan"), "acceptEdits" => provider == "codex" ? Locale.Get("composer.permissionHelp.acceptEditsCodex") : Locale.Get("composer.permissionHelp.acceptEdits"), "auto" => Locale.Get("composer.permissionHelp.auto"), "fullAccess" => Locale.Get("composer.permissionHelp.fullAccess"), _ => "" };
         /// Model names registered in saved state, for the effort list. Workspace
         /// entries come first and an app entry whose name is already present is
@@ -842,7 +842,8 @@ public sealed partial class MainWindow : Window
         private MenuFlyout ModelMenu(RunSession pane, ModelCatalog catalog)
         {
             var rows = new List<MenuFlyoutItemBase> { MenuHeader(Locale.Get("composer.label.runner")) };
-            foreach (var value in Wire.Providers) rows.Add(Choice(ProviderCatalog.BetaLabel(value, ProviderMark.Label(value)), () => ChangeProvider(value), pane.Provider == value));
+            // pi runs on this PC only for now: a remote workspace's pane does not offer it.
+            foreach (var value in Wire.Providers.Where(p => p != "pi" || !owner.service.IsRemoteSession(pane.Id))) rows.Add(Choice(ProviderCatalog.BetaLabel(value, ProviderMark.Label(value)), () => ChangeProvider(value), pane.Provider == value));
             rows.Add(new MenuFlyoutSeparator());
             var refresh = Item(Locale.Get(refreshingPaneModels ? "composer.model.refreshing" : "composer.model.refresh"), RefreshPaneModels); refresh.IsEnabled = !refreshingPaneModels;
             rows.Add(refresh); rows.Add(new MenuFlyoutSeparator());

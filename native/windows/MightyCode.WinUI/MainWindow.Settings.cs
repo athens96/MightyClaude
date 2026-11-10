@@ -631,7 +631,7 @@ public sealed partial class MainWindow
                 ? status
                 : new CliAccountStatus { Provider = p, Detail = CliAccountStrings.StatusChecking }).ToArray());
 
-    internal static readonly string[] CliAccountProviders = ["claude", "codex", "gemini"];
+    internal static readonly string[] CliAccountProviders = ["claude", "codex", "gemini", "pi"];
     internal const string AccountRowIdPrefix = "cli-account-row-";
 
     // Called by OpenSettings (via BuildCliAccountsSectionFromState) and by the smoke

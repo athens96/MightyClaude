@@ -275,7 +275,7 @@ function EmptyPane({ session }: { session: RunSession }) {
   const { t } = useServices();
   if (session.kind !== 'claude' && session.kind !== 'shell') return <div className="conversation" data-testid="conversation" data-entry-count={0} />;
   const shell = session.kind === 'shell';
-  const beta = !shell && (session.provider === 'codex' || session.provider === 'gemini');
+  const beta = !shell && (session.provider === 'codex' || session.provider === 'gemini' || session.provider === 'pi');
   return (
     <div className="conversation" data-testid="conversation" data-entry-count={0}>
       <div className="pane-empty" data-testid="pane-empty">
