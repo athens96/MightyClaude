@@ -32,6 +32,8 @@ import {
   type QueuedItem,
   type QuestionAnswers,
   type SettingsPatch,
+  type TerminalPrompt,
+  type TerminalPromptAnswerKind,
   type StructureItem,
   type SubmitMode,
 } from '@/api/types';
@@ -46,6 +48,7 @@ import { NextActionChips } from '@/components/next-action-chips';
 import { AntigravityPermissionCard } from '@/components/antigravity-permission-card';
 import { PermissionCard } from '@/components/permission-card';
 import { PlanCard } from '@/components/plan-card';
+import { TerminalPromptCard } from '@/components/terminal-prompt-card';
 import { QuestionnaireCard } from '@/components/questionnaire-card';
 import { QueuedList } from '@/components/queued-list';
 import {
@@ -85,6 +88,7 @@ import { t } from '@/lib/i18n';
 import { runNowOf } from '@/lib/queue';
 import { pushViewing } from '@/lib/push/runtime';
 import { answeredToast, isPlanRequest, pendingPlan, planAnswerBody } from '@/lib/plan';
+import { terminalPromptBody } from '@/lib/terminal-prompt';
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
 import { hostFiltersBackground, parseBackgroundDone, parseBackgroundWork } from '@/lib/background-work';
 import { defaultView, isQuietNotice, normalizeMighty } from '@/lib/mighty';
@@ -770,6 +774,27 @@ export default function SessionScreen() {
       }
     },
     [client, poll, sessionId, settle],
+  );
+
+  /** One answer to the terminal prompt card; a 409 shows its text and the next refresh drops the card. */
+  const answerTerminalPrompt = useCallback(
+    async (prompt: TerminalPrompt, answer: TerminalPromptAnswerKind, text?: string) => {
+      const body = terminalPromptBody(prompt, answer, text);
+      if (!client || !sessionId || !body || decidingRef.current) return;
+      decidingRef.current = true;
+      setDeciding(true);
+      try {
+        await client.answerTerminalPrompt(sessionId, body);
+        poll.refresh();
+      } catch (error) {
+        showToast(describeError(error), 'error');
+        poll.refresh();
+      } finally {
+        decidingRef.current = false;
+        setDeciding(false);
+      }
+    },
+    [client, poll, sessionId],
   );
 
   const askOptions = useMemo(
@@ -1502,6 +1527,14 @@ export default function SessionScreen() {
             busy={deciding}
             maxBodyHeight={questionBodyHeight}
             onAnswer={(decision, feedback) => void answerPlan(planRequest.id, planRequest.runId, decision, feedback)}
+          />
+        ) : null}
+        {detail?.terminalPrompt ? (
+          <TerminalPromptCard
+            key={detail.terminalPrompt.id}
+            prompt={detail.terminalPrompt}
+            busy={deciding}
+            onAnswer={(answer, text) => void answerTerminalPrompt(detail.terminalPrompt!, answer, text)}
           />
         ) : null}
         {!questionPending && !planPending && panel ? (

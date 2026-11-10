@@ -736,12 +736,25 @@ export interface CompletedUpload {
   attachment: UploadAttachment;
 }
 
+/** A command in the pane's terminal waiting for input (docs/terminal-prompts.md). */
+export type TerminalPromptKind = 'yesNo' | 'secret' | 'text' | 'choice';
+export type TerminalPromptAnswerKind = 'yes' | 'no' | 'text' | 'up' | 'down' | 'enter' | 'space';
+export interface TerminalPrompt {
+  id: string;
+  handle: string;
+  text: string;
+  options: string[];
+  kind: TerminalPromptKind;
+  defaultYes?: boolean;
+}
+
 export interface MobileSessionDetail {
   protocol: number;
   revision: number;
   session: MobileSessionSummary;
   entries: LogEntry[];
   permissions: MobilePermission[];
+  terminalPrompt?: TerminalPrompt;
   queued: QueuedItem[];
   usage?: MobileUsage;
   elapsedSeconds?: number;

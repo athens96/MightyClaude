@@ -40,6 +40,7 @@ import {
   type RunNowResponse,
   type Provider,
   type PlanDecisionKind,
+  type TerminalPromptAnswerKind,
   type QuestionAnswers,
   type SessionKind,
   type SettingsPatch,
@@ -296,6 +297,12 @@ export interface MobileClient {
   answerPlan(
     sessionId: string,
     input: { requestId: string; runId: string; decision: PlanDecisionKind; feedback?: string },
+    signal?: AbortSignal,
+  ): Promise<OkResponse>;
+  /** Answers the terminal prompt card; `text` goes with `text` only (a 409 means the card is gone). */
+  answerTerminalPrompt(
+    sessionId: string,
+    input: { promptId: string; answer: TerminalPromptAnswerKind; text?: string },
     signal?: AbortSignal,
   ): Promise<OkResponse>;
   /** Gives this host the relay push handle and the kinds this phone wants ("push" capability). */
@@ -628,6 +635,14 @@ export function createClient(channel: RelayChannel): MobileClient {
       request<OkResponse>(
         'POST',
         `/m1/sessions/${encodeURIComponent(sessionId)}/plan`,
+        input,
+        signal,
+      ),
+
+    answerTerminalPrompt: (sessionId, input, signal) =>
+      request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/terminal-prompt`,
         input,
         signal,
       ),
