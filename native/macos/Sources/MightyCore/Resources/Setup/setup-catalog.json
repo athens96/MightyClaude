@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "note": "The tools the first-run setup screen (필요한 도구) checks and installs. It ships with the app and is read-only: nothing the user edits adds an item. Every kind is a closed set: probes are executable (on the login shell's PATH, optionally with a minimum version), claudePlugin (a user-scope record in ~/.claude/plugins/installed_plugins.json whose ID starts with the prefix), skill (~/.claude/skills/<name>/SKILL.md), commandLineTools (xcode-select -p, then git --version) and appBundle (the app in /Applications or ~/Applications, or its executable on the PATH; Mac only, as are commandLineTools, brewFormula and brewCask; on Windows an executable is also looked for in the folders its official installer uses); installs are argv (a closed list of programs, each with its own allowed options), officialScript (a fixed https URL on an allow-listed host, fetched with curl over https only and run with bash or sh, or PowerShell on Windows), brewFormula, brewCask, npmGlobal (npm's public registry), claudePlugin (marketplace + plugin ID), skill (a repository pinned to a commit, placed in ~/.claude/skills/<folder>, then an optional fixed script inside it), winget (Windows only: an exact package ID from the winget source in user or machine scope; a machine-scope package may show Windows' own administrator prompt, never one the app raises) and vendorPage (the app opens the page; nothing runs). URLs on github.com and raw.githubusercontent.com, and a marketplace's owner/repo short form, must name a repository the app allows. Plugins installed through a marketplace are not pinned: the marketplace decides the version. `prerequisites` are item IDs the install needs on that platform and must not form a cycle. `source` is the official page the command was taken from, or the pinned version or commit. The label and description keys must be ones the app knows (SetupCatalog.knownKeys). Required means: Git (the command line tools on a Mac), plus at least one working agent CLI (the first-run rule). The bundled copy is native/macos/Sources/MightyCore/Resources/Setup/setup-catalog.json and must stay byte-identical.",
+  "note": "The tools the first-run setup screen (필요한 도구) checks and installs. It ships with the app and is read-only: nothing the user edits adds an item. Every kind is a closed set: probes are executable (on the login shell's PATH, optionally with a minimum version), claudePlugin (a user-scope record in ~/.claude/plugins/installed_plugins.json whose ID starts with the prefix), skill (~/.claude/skills/<name>/SKILL.md), commandLineTools (xcode-select -p, then git --version) and appBundle (the app in /Applications or ~/Applications, or its executable on the PATH; Mac only, as are commandLineTools, brewFormula and brewCask; on Windows an executable is also looked for in the folders its official installer uses); installs are argv (a closed list of programs, each with its own allowed options), officialScript (a fixed https URL on an allow-listed host, fetched with curl over https only and run with bash or sh, or PowerShell on Windows), brewFormula, brewCask, npmGlobal (npm's public registry), claudePlugin (marketplace + plugin ID), skill (a repository pinned to a commit, placed in ~/.claude/skills/<folder>, then an optional fixed script inside it), winget (Windows only: an exact package ID from the winget source in user or machine scope; a machine-scope package may show Windows' own administrator prompt, never one the app raises) and vendorPage (the app opens the page; nothing runs). URLs on github.com and raw.githubusercontent.com, and a marketplace's owner/repo short form, must name a repository the app allows. Plugins installed through a marketplace are not pinned: the marketplace decides the version. `prerequisites` are item IDs the install needs on that platform and must not form a cycle. `source` is the official page the command was taken from, or the pinned version or commit. The label and description keys must be ones the app knows (SetupCatalog.knownKeys). Required means: Git (the command line tools on a Mac), plus at least one working agent CLI (the first-run rule). opencode is OpenCode 2 (@opencode/cli): an OpenCode 1 below 2.0.0 reads out of date and may be picked to install again (its own upgrade stays on 1), and the install removes an npm OpenCode 1 (opencode-ai) first (SetupCatalog.reinstalledWhenOutdated, npmReplaces). hermes is Hermes Agent (Nous Research): its official installers bring their own uv and Python (on Windows its own Git too, so only the Mac needs the git item first) and are run without their setup wizard and gateway service (--skip-setup on the Mac, -NonInteractive on Windows: SetupCatalog.scriptArguments), so the app offers the sign-in itself. The bundled copy is native/macos/Sources/MightyCore/Resources/Setup/setup-catalog.json and must stay byte-identical.",
   "items": [
     {
       "id": "claude",
@@ -87,6 +87,50 @@
           "install": { "kind": "npmGlobal", "package": "@mariozechner/pi-coding-agent" },
           "prerequisites": ["node"],
           "source": "https://github.com/badlogic/pi-mono"
+        }
+      }
+    },
+    {
+      "id": "opencode",
+      "group": "agent",
+      "label": "setup.item.opencode.title",
+      "description": "setup.item.opencode.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "signIn", "provider": "opencode" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "opencode", "minimumVersion": "2.0.0" },
+          "install": { "kind": "npmGlobal", "package": "@opencode/cli" },
+          "prerequisites": ["node"],
+          "source": "https://github.com/anomalyco/opencode"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "opencode", "minimumVersion": "2.0.0" },
+          "install": { "kind": "npmGlobal", "package": "@opencode/cli" },
+          "prerequisites": ["node"],
+          "source": "https://github.com/anomalyco/opencode"
+        }
+      }
+    },
+    {
+      "id": "hermes",
+      "group": "agent",
+      "label": "setup.item.hermes.title",
+      "description": "setup.item.hermes.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "signIn", "provider": "hermes" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "hermes", "minimumVersion": "0.23.0" },
+          "install": { "kind": "officialScript", "url": "https://hermes-agent.nousresearch.com/install.sh", "shell": "bash" },
+          "prerequisites": ["git"],
+          "source": "https://github.com/NousResearch/hermes-agent"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "hermes", "minimumVersion": "0.23.0" },
+          "install": { "kind": "officialScript", "url": "https://hermes-agent.nousresearch.com/install.ps1", "shell": "powershell" },
+          "prerequisites": [],
+          "source": "https://github.com/NousResearch/hermes-agent"
         }
       }
     },

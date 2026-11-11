@@ -89,6 +89,7 @@ public static class SetupScript
     /// <summary>
     /// Where the official installers put what they install, which a running process's PATH may not list yet: Claude Code's and uv's
     /// <c>%USERPROFILE%\.local\bin</c>, Codex's <c>%LOCALAPPDATA%\Programs\OpenAI\Codex\bin</c>, Antigravity's <c>%LOCALAPPDATA%\agy\bin</c>,
+    /// Hermes Agent's <c>%LOCALAPPDATA%\hermes\bin</c> (<c>$HERMES_HOME\bin</c> when that is set, <see cref="CliDiscovery.HermesInstallFolder"/>),
     /// npm's <c>%APPDATA%\npm</c>, winget's links, Git for Windows (user and machine), Node.js, GitHub CLI and Tailscale.
     /// </summary>
     public static IReadOnlyList<string> WellKnownFolders(IReadOnlyDictionary<string, string> environment)
@@ -100,6 +101,7 @@ public static class SetupScript
         Add("USERPROFILE", ".local", "bin");
         Add("LOCALAPPDATA", "Programs", "OpenAI", "Codex", "bin");
         Add("LOCALAPPDATA", "agy", "bin");
+        if (CliDiscovery.HermesInstallFolder(variables) is { } hermes) folders.Add(hermes);
         Add("APPDATA", "npm");
         Add("LOCALAPPDATA", "Microsoft", "WinGet", "Links");
         Add("LOCALAPPDATA", "Programs", "Git", "cmd");
@@ -115,7 +117,8 @@ public static class SetupScript
     /// whose settings could steer an install), the installers' folders after the PATH the window already has, npm's public
     /// registry, TLS 1.2, the system's PowerShell, and the two functions every official script goes through: one fetches over
     /// https only, following each redirect itself so none can lead to http, and one writes the script as a new file in this
-    /// folder and runs it in a PowerShell of its own, so an <c>exit</c> in it ends that step and not the whole install.
+    /// folder and runs it in a PowerShell of its own, so an <c>exit</c> in it ends that step and not the whole install. The options
+    /// the app gives a script (<see cref="SetupCatalog.ScriptArguments"/>) follow its path, so they bind to the script's own parameters.
     /// </summary>
     public static IReadOnlyList<string> Preamble(IReadOnlyDictionary<string, string> environment) =>
     [
@@ -131,10 +134,10 @@ public static class SetupScript
             + "if ($code -ne 200) { throw ('HTTP ' + $code + ': ' + $Url) }; $body = $response.GetResponseStream(); $memory = [IO.MemoryStream]::new(); $buffer = New-Object byte[] 65536; "
             + "try { while (($read = $body.Read($buffer, 0, $buffer.Length)) -gt 0) { $memory.Write($buffer, 0, $read); if ($memory.Length -gt " + MaxScriptBytes + ") { throw ('larger than 16 MB: ' + $Url) } }; "
             + "return [Text.Encoding]::UTF8.GetString($memory.ToArray()).TrimStart([char]0xFEFF) } finally { $memory.Dispose(); $body.Dispose() } } finally { $response.Dispose() } }; throw ('too many redirects: ' + $Url) }",
-        "function Invoke-MightyScript([string]$Url) { $text = Get-MightyHttps $Url; $file = Join-Path $PSScriptRoot ('step-' + [Guid]::NewGuid().ToString('N') + '.ps1'); "
+        "function Invoke-MightyScript([string]$Url, [string[]]$ScriptArguments = @()) { $text = Get-MightyHttps $Url; $file = Join-Path $PSScriptRoot ('step-' + [Guid]::NewGuid().ToString('N') + '.ps1'); "
             + "$stream = [IO.File]::Open($file, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); "
             + "try { $bytes = [byte[]]([Text.UTF8Encoding]::new($true).GetPreamble() + [Text.Encoding]::UTF8.GetBytes($text)); $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }; "
-            + "try { & $mightyPowerShell -NoProfile -ExecutionPolicy Bypass -File $file } finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue } }",
+            + "try { & $mightyPowerShell -NoProfile -ExecutionPolicy Bypass -File $file @ScriptArguments } finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue } }",
     ];
 
     /// <summary>The steps for <paramref name="ids"/> in that order; items that only open a page, or have no Windows entry, are left out.</summary>
@@ -147,9 +150,13 @@ public static class SetupScript
     {
         // The program is one of the catalog's few (npx here); xcode-select is the Mac's.
         SetupRecipe.Argv argv when argv.Arguments.Count > 0 && argv.Arguments[0] != "xcode-select" => string.Join(" ", argv.Arguments.Take(1).Concat(argv.Arguments.Skip(1).Select(Quote))),
-        // Fetched first and run as a file of its own, so its own questions still read the window.
-        SetupRecipe.OfficialScript { Shell: "powershell" } script => "Invoke-MightyScript " + Quote(script.Url.AbsoluteUri),
-        SetupRecipe.NpmGlobal npm => "npm install -g " + Quote(npm.Package),
+        // Fetched first and run as a file of its own, so its own questions still read the window. The options the app gives it
+        // (Hermes's -NonInteractive) are handed to that file, where they bind as the script's parameters.
+        SetupRecipe.OfficialScript { Shell: "powershell" } script => "Invoke-MightyScript " + Quote(script.Url.AbsoluteUri)
+            + (SetupCatalog.ScriptArguments.TryGetValue(script.Url.AbsoluteUri, out var options) ? " -ScriptArguments @(" + string.Join(", ", options.Select(Quote)) + ")" : ""),
+        // A package that takes over another's command removes that one first (npm will not let two global packages own one
+        // command); one that is not there is no error, and the install's own exit code is the step's.
+        SetupRecipe.NpmGlobal npm => (SetupCatalog.NpmReplaces.TryGetValue(npm.Package, out var replaced) ? "npm uninstall -g " + Quote(replaced) + " *> $null; " : "") + "npm install -g " + Quote(npm.Package),
         // An already added marketplace is fine; the install decides. The marketplace, not the app, decides the plugin's version.
         SetupRecipe.ClaudePlugin plugin => $"claude plugin marketplace add {Quote(plugin.Marketplace)}; claude plugin install {Quote(plugin.Plugin)} --scope user",
         // The exact package from the winget source; a machine-scope one may show Windows' own administrator prompt.

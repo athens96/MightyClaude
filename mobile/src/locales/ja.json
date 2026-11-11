@@ -3105,6 +3105,7 @@
   "setup.windows.item.gh.detail": "エージェントが GitHub の Issue や PR を扱うときに使います。winget ですべてのユーザー向けにインストールするため、Windows が管理者の確認画面を表示することがあります。",
   "setup.windows.item.git.detail": "ワークツリー、コミット、スキルのダウンロードに使い、Claude Code の Bash ツールはその Git Bash で動きます。winget でこのユーザーにだけインストールします。",
   "setup.windows.item.glab.detail": "エージェントが GitLab の Issue や MR を扱うときに使います。winget でこのユーザーにだけインストールします。",
+  "setup.windows.item.hermes.detail": "Nous Research のオープンソースのエージェント CLI です。公式の PowerShell インストールスクリプトが専用の Git と Python と一緒に %LOCALAPPDATA%\\hermes へインストールし、ブラウザーツール（Chromium）もダウンロードするため数分かかります。インストール後のログイン手順でモデルプロバイダーを選びます。",
   "setup.windows.item.node.detail": "npx でインストールするツールや MCP サーバーに必要です。winget ですべてのユーザー向けに LTS をインストールするため、Windows が管理者の確認画面を表示することがあります。",
   "setup.windows.script.close": "Enter キーを押すとこのウィンドウを閉じます。",
   "setup.windows.subtitle": "Mighty Code が使うエージェント CLI とツールです。Git とエージェント CLI が 1 つあれば始められます。足りないものを選ぶと、別の PowerShell ウィンドウでインストールします。インストールできたかどうかは、コマンドの結果ではなく再確認した状態で判断します。",

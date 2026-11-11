@@ -399,29 +399,28 @@ struct OpencodeTests {
 
     // MARK: Setup
 
-    @Test func theMacOnlySetupItemInstallsOpencodeWithNpmAfterNodeAndLeavesTheContractAlone() throws {
-        let shared = try Data(contentsOf: Self.root.appendingPathComponent("native/contracts/fixtures/setup-catalog.json"))
-        let macOnly = try Data(contentsOf: Self.root.appendingPathComponent("native/macos/Sources/MightyCore/Resources/Setup/setup-catalog-macos.json"))
-        // Windows embeds the contract: opencode is not in it yet.
-        #expect(try SetupCatalogDecoder.decode(shared).item("opencode") == nil)
-        let catalog = try SetupCatalogDecoder.decode(shared, macOnly: macOnly)
+    @Test func theSharedSetupItemInstallsOpencodeWithNpmAfterNodeOnTheMacAndWindows() throws {
+        // The contract Windows embeds holds the item: a macOS and a Windows entry alike.
+        let catalog = try SetupCatalogDecoder.decode(Data(contentsOf: Self.root.appendingPathComponent("native/contracts/fixtures/setup-catalog.json")))
         let item = try #require(catalog.item("opencode"))
-        #expect(item.group == .agent && !item.required && item.provider == "opencode" && item.platforms[.windows] == nil)
-        let entry = try #require(item.platforms[.macos])
-        #expect(entry.probe == .executable(name: "opencode", minimumVersion: "2.0.0") && entry.install == .npmGlobal("@opencode/cli") && entry.prerequisites == ["node"])
+        #expect(item.group == .agent && !item.required && item.provider == "opencode")
+        #expect(item.labelKey == "setup.item.opencode.title" && item.descriptionKey == "setup.item.opencode.detail")
+        for platform in SetupPlatform.allCases {
+            let entry = try #require(item.platforms[platform], "opencode has no \(platform) entry")
+            #expect(entry.probe == .executable(name: "opencode", minimumVersion: "2.0.0") && entry.install == .npmGlobal("@opencode/cli") && entry.prerequisites == ["node"])
+            #expect(entry.source == URL(string: "https://github.com/anomalyco/opencode"))
+        }
         // OpenCode 1 (npm opencode-ai) owns the same command: it goes first, and an OpenCode 1 reads out of date and may be picked.
-        #expect(SetupScript.body(entry) == "npm uninstall -g 'opencode-ai' >/dev/null 2>&1; npm install -g '@opencode/cli'")
-        #expect(SetupRowState.isSelectable(.outdated, item: item, platform: .macos))
+        #expect(SetupScript.body(try #require(item.platforms[.macos])) == "npm uninstall -g 'opencode-ai' >/dev/null 2>&1; npm install -g '@opencode/cli'")
+        #expect(SetupRowState.isSelectable(.outdated, item: item, platform: .macos) && SetupRowState.isSelectable(.outdated, item: item, platform: .windows))
         #expect(!SetupRowState.isSelectable(.outdated, item: try #require(catalog.item("pi")), platform: .macos))
         // After pi, among the agents.
         let agents = catalog.items.filter { $0.group == .agent }.map(\.id)
         #expect(agents.firstIndex(of: "opencode").map { $0 > 0 && agents[$0 - 1] == "pi" } == true)
         #expect(SetupPlan.order(selected: ["opencode"], catalog: catalog, platform: .macos, isSatisfied: { $0 == "git" }) == ["homebrew", "node", "opencode"])
-        #expect(try SetupCatalog.bundled().item("opencode") != nil)
+        #expect(SetupPlan.order(selected: ["opencode"], catalog: catalog, platform: .windows, isSatisfied: { _ in false }) == ["node", "opencode"])
+        #expect(try SetupCatalog.bundled().item("opencode") == item)
         #expect(ComponentCatalog.installCommand(provider: "opencode") == "npm install -g @opencode/cli")
-        // A Mac-only item names the Mac alone.
-        let both = String(decoding: macOnly, as: UTF8.self).replacingOccurrences(of: "\"macos\": {", with: "\"windows\": { \"probe\": { \"kind\": \"executable\", \"name\": \"opencode\" }, \"install\": { \"kind\": \"npmGlobal\", \"package\": \"opencode-ai\" }, \"prerequisites\": [\"node\"], \"source\": \"https://github.com/anomalyco/opencode\" }, \"macos\": {")
-        #expect(throws: (any Error).self) { try SetupCatalogDecoder.decode(shared, macOnly: Data(both.utf8)) }
     }
 
     // MARK: Session list

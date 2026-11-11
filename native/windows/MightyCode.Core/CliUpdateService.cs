@@ -295,9 +295,8 @@ public sealed partial class CliUpdateService
             catch (OperationCanceledException) { throw; }
             catch (Exception) { continue; }
             if (run.ExitCode != 0 || run.TimedOut) continue;
-            var text = run.Output.Trim();
-            // hermes --version goes on past its first line (its folder, Python, update status): only that line is the version.
-            if (provider == "hermes") text = HermesAccounts.VersionLine(text);
+            // Only Hermes's first line is its version, as the runtime reads it (CliDiscovery.VersionText).
+            var text = CliDiscovery.VersionText(ProviderCatalog.Executable(provider), run.Output);
             if (text.Length == 0) continue;
             return new InstalledCommand(path, text.Length > VersionTextCap ? text[..VersionTextCap] : text);
         }

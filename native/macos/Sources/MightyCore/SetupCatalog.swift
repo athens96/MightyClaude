@@ -100,12 +100,9 @@ public struct SetupCatalog: Sendable, Equatable {
 
     /// The file's name in the MightyCore bundle's Setup/ folder.
     public static let fileName = "setup-catalog.json"
-    /// Items only the Mac offers so far, beside the shared catalog in Setup/: the shared
-    /// file stays the contract Windows embeds as is (an item Windows does not know yet
-    /// would stop its decoder). An item moves into the shared file once Windows has it.
-    public static let macOnlyFileName = "setup-catalog-macos.json"
     /// npm packages whose install replaces an older package owning the same command:
     /// OpenCode 2 (`@opencode/cli`) takes `opencode` over from OpenCode 1 (`opencode-ai`).
+    /// Windows keeps the same table (MightyCode.Core/SetupCatalog.cs NpmReplaces).
     public static let npmReplaces: [String: String] = ["@opencode/cli": OpencodeAgent.legacyPackage]
     /// Agent CLIs that an out-of-date copy cannot update into (OpenCode 1's own upgrade stays
     /// on 1): their row is offered for install again instead of the CLI update.
@@ -113,6 +110,7 @@ public struct SetupCatalog: Sendable, Equatable {
     /// The options an official script is run with, by its URL. Hermes's installer otherwise
     /// ends in its own setup wizard and installs a background gateway service; the app
     /// offers the sign-in (`hermes model`) itself, and `hermes acp` starts the gateway on demand.
+    /// Windows runs install.ps1 with its `-NonInteractive` (MightyCode.Core/SetupCatalog.cs ScriptArguments).
     public static let scriptArguments: [String: [String]] = ["https://hermes-agent.nousresearch.com/install.sh": ["--skip-setup"]]
 
     /// Hosts an official script, a vendor page, a marketplace URL or a skill's
@@ -162,39 +160,18 @@ public struct SetupCatalog: Sendable, Equatable {
     public static func bundled() throws -> SetupCatalog {
         let result = ResourceHealthChecker.checkSetupCatalog()
         guard let path = result.resolvedPath else { throw MightyError(result.warning ?? "missing Setup/\(fileName)") }
-        let shared = URL(fileURLWithPath: path)
-        let macOnly = shared.deletingLastPathComponent().appendingPathComponent(macOnlyFileName)
-        return try SetupCatalogDecoder.decode(Data(contentsOf: shared), macOnly: try? Data(contentsOf: macOnly))
+        return try SetupCatalogDecoder.decode(Data(contentsOf: URL(fileURLWithPath: path)))
     }
 }
 
 public enum SetupCatalogDecoder {
-    /// The shared catalog, with the Mac-only items (`SetupCatalog.macOnlyFileName`) when
-    /// given: each has a macOS entry alone and goes after the shared items of its group, and
-    /// the whole is checked as one catalog (prerequisites, IDs, cycles).
-    public static func decode(_ data: Data, macOnly: Data? = nil) throws -> SetupCatalog {
-        var items = try rawItems(data, at: "catalog").enumerated().map { try item($0.element, at: "items[\($0.offset)]") }
-        if let macOnly {
-            for (index, raw) in try rawItems(macOnly, at: "macOnly").enumerated() {
-                let added = try item(raw, at: "macOnly.items[\(index)]")
-                guard Set(added.platforms.keys) == [.macos] else { throw fail("macOnly.items[\(index)] must have a macOS entry alone") }
-                let at = items.lastIndex { $0.group == added.group }.map { $0 + 1 } ?? items.endIndex
-                items.insert(added, at: at)
-            }
-        }
-        return try validated(items)
-    }
-
-    private static func rawItems(_ data: Data, at path: String) throws -> [[String: Any]] {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw fail("the \(path) is not a JSON object") }
-        try keys(root, allowed: ["schema", "note", "items"], at: path)
+    public static func decode(_ data: Data) throws -> SetupCatalog {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw fail("the catalog is not a JSON object") }
+        try keys(root, allowed: ["schema", "note", "items"], at: "catalog")
         guard root["schema"] as? Int == 1 else { throw fail("schema must be 1") }
         guard let rawItems = root["items"] as? [[String: Any]], !rawItems.isEmpty, rawItems.count <= 64 else { throw fail("items must be 1 to 64 objects") }
-        return rawItems
-    }
-
-    private static func validated(_ items: [SetupItem]) throws -> SetupCatalog {
-        guard items.count <= 64 else { throw fail("items must be 1 to 64 objects") }
+        var items: [SetupItem] = []
+        for (index, raw) in rawItems.enumerated() { items.append(try item(raw, at: "items[\(index)]")) }
         let ids = items.map(\.id)
         guard Set(ids).count == ids.count else { throw fail("item IDs repeat") }
         for item in items {

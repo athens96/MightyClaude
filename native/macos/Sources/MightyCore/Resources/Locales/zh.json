@@ -3105,6 +3105,7 @@
   "setup.windows.item.gh.detail": "代理处理 GitHub 议题和拉取请求时使用。通过 winget 为所有用户安装，因此 Windows 可能会弹出管理员确认窗口。",
   "setup.windows.item.git.detail": "用于工作树、提交和下载技能，Claude Code 的 Bash 工具也使用其中的 Git Bash。通过 winget 仅为当前用户安装。",
   "setup.windows.item.glab.detail": "代理处理 GitLab 议题和合并请求时使用。通过 winget 仅为当前用户安装。",
+  "setup.windows.item.hermes.detail": "Nous Research 的开源智能体 CLI。官方 PowerShell 安装脚本会连同自带的 Git 和 Python 一起装到 %LOCALAPPDATA%\\hermes，并下载浏览器工具（Chromium），需要几分钟。安装后在登录步骤里选择模型提供方。",
   "setup.windows.item.node.detail": "通过 npx 安装的工具和 MCP 服务器需要它。通过 winget 为所有用户安装 LTS 版本，因此 Windows 可能会弹出管理员确认窗口。",
   "setup.windows.script.close": "按 Enter 键关闭此窗口。",
   "setup.windows.subtitle": "Mighty Code 使用的代理 CLI 和工具。有 Git 和一个代理 CLI 即可开始。选择缺少的项目，在单独的 PowerShell 窗口中安装。是否已安装以重新检查的状态为准，而不是命令的结果。",

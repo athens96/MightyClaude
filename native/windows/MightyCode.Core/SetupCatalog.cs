@@ -77,7 +77,7 @@ public sealed class SetupCatalog(IReadOnlyList<SetupItem> items)
     /// <summary>Hosts an official script, a vendor page, a marketplace URL or a skill's repository may live on. The catalog cannot add one.</summary>
     public static readonly IReadOnlySet<string> AllowedHosts = new HashSet<string>(StringComparer.Ordinal)
     {
-        "claude.ai", "chatgpt.com", "antigravity.google", "raw.githubusercontent.com", "astral.sh", "bun.com", "github.com", "tailscale.com",
+        "claude.ai", "chatgpt.com", "antigravity.google", "raw.githubusercontent.com", "astral.sh", "bun.com", "github.com", "tailscale.com", "hermes-agent.nousresearch.com",
     };
     /// <summary>The only programs an <c>argv</c> install may start, each with the only options it may be given.</summary>
     public static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> AllowedFlags = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
@@ -89,12 +89,35 @@ public sealed class SetupCatalog(IReadOnlyList<SetupItem> items)
     public static readonly IReadOnlySet<string> AllowedRepositories = new HashSet<string>(StringComparer.Ordinal)
     {
         "Homebrew/install", "Q00/ouroboros", "anthropics/claude-plugins-community", "Yeachan-Heo/oh-my-claudecode", "garrytan/gstack", "badlogic/pi-mono",
+        "NousResearch/hermes-agent",
+    };
+    /// <summary>
+    /// npm packages whose install replaces an older package owning the same command, which npm will not let two global packages share
+    /// (M/MightyCore/SetupCatalog.swift npmReplaces): OpenCode 2 (<c>@opencode/cli</c>) takes <c>opencode</c> over from OpenCode 1
+    /// (<c>opencode-ai</c>), which is uninstalled first; one that is not there is no error.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> NpmReplaces = new Dictionary<string, string>(StringComparer.Ordinal) { ["@opencode/cli"] = "opencode-ai" };
+    /// <summary>
+    /// Agent CLIs that an out-of-date copy cannot update into (OpenCode 1's own upgrade stays on 1): their row may be picked for install
+    /// again, beside the CLI update every old agent CLI offers (M/MightyCore/SetupCatalog.swift reinstalledWhenOutdated).
+    /// </summary>
+    public static readonly IReadOnlySet<string> ReinstalledWhenOutdated = new HashSet<string>(StringComparer.Ordinal) { "opencode" };
+    /// <summary>
+    /// The options an official script is run with, by its URL (M/MightyCore/SetupCatalog.swift scriptArguments): Hermes's install.ps1
+    /// otherwise ends in its own setup wizard and installs its gateway as a service. <c>-NonInteractive</c> (its deprecated alias is
+    /// <c>-SkipSetup</c>, as the Mac's install.sh takes <c>--skip-setup</c>) skips both: the app offers the sign-in (<c>hermes model</c>)
+    /// itself, and <c>hermes acp</c> starts the gateway when it needs one.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> ScriptArguments = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+    {
+        ["https://hermes-agent.nousresearch.com/install.ps1"] = ["-NonInteractive"],
     };
     /// <summary>Every label and description key a catalog item may name, as the Mac keeps them (SetupCatalog.knownKeys).</summary>
     public static readonly IReadOnlySet<string> KnownKeys = new HashSet<string>(StringComparer.Ordinal)
     {
         "setup.item.claude.title", "setup.item.claude.detail", "setup.item.codex.title", "setup.item.codex.detail",
-        "setup.item.agy.title", "setup.item.agy.detail", "setup.item.pi.title", "setup.item.pi.detail", "setup.item.git.title", "setup.item.git.detail",
+        "setup.item.agy.title", "setup.item.agy.detail", "setup.item.pi.title", "setup.item.pi.detail",
+        "setup.item.opencode.title", "setup.item.opencode.detail", "setup.item.hermes.title", "setup.item.hermes.detail", "setup.item.git.title", "setup.item.git.detail",
         "setup.item.homebrew.title", "setup.item.homebrew.detail", "setup.item.node.title", "setup.item.node.detail",
         "setup.item.bun.title", "setup.item.bun.detail", "setup.item.uv.title", "setup.item.uv.detail",
         "setup.item.ouroboros.title", "setup.item.ouroboros.detail", "setup.item.omc.title", "setup.item.omc.detail",
@@ -114,6 +137,8 @@ public sealed class SetupCatalog(IReadOnlyList<SetupItem> items)
     {
         ["codex"] = "setup.windows.item.codex.detail", ["agy"] = "setup.windows.item.agy.detail", ["git"] = "setup.windows.item.git.detail",
         ["node"] = "setup.windows.item.node.detail", ["gh"] = "setup.windows.item.gh.detail", ["glab"] = "setup.windows.item.glab.detail",
+        // Its PowerShell installer puts it in %LOCALAPPDATA%\hermes and brings its own Git: the Mac's words name ~/.hermes and Git first.
+        ["hermes"] = "setup.windows.item.hermes.detail",
     };
     public static string TitleKey(SetupItem item) => WindowsTitles.GetValueOrDefault(item.Id) ?? item.LabelKey;
     public static string DetailKey(SetupItem item) => WindowsDetails.GetValueOrDefault(item.Id) ?? item.DescriptionKey;

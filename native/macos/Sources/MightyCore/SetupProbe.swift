@@ -68,7 +68,9 @@ public struct SetupProber: Sendable {
             guard !copies.isEmpty else { return .missing }
             var version: String?
             for copy in copies where !Task.isCancelled {
-                if let text = await versionText(copy) { version = text; break }
+                // Hermes prints its install folder, Python and update status after its version line;
+                // only that line is kept, as ProviderService keeps it, so the row and the runtime agree.
+                if let text = await versionText(copy).map({ name == "hermes" ? HermesAgent.versionLine($0) : $0 }), !text.isEmpty { version = text; break }
             }
             guard let minimum else { return .installed(version: version) }
             guard let version else { return .unverified(minimum: minimum) }

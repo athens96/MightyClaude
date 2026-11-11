@@ -439,7 +439,8 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         var directories = (CliEnvironment.Current().GetValueOrDefault("PATH") ?? "").Split(Path.PathSeparator).Concat([Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm")]).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToArray();
         // Antigravity's installer adds its folder to PATH for new sessions only, so the folder it installs to is looked in as well.
         if (provider == "gemini" && OperatingSystem.IsWindows()) directories = [.. directories, AntigravityInstallFolder(CliEnvironment.Current())];
-        var candidates = directories.Select(path => new CliCommand(Path.Combine(path, Executable(provider) + (OperatingSystem.IsWindows() ? provider == "pi" ? ".cmd" : ".exe" : "")), [])).ToList();
+        // pi's npm shim, opencode's binary or shim and Hermes's launchers in its installer's folder: CliDiscovery.Files names each CLI's files.
+        var candidates = CliDiscovery.Files(provider, directories, OperatingSystem.IsWindows(), CliEnvironment.Current()).Select(path => new CliCommand(path, [])).ToList();
         // npm's global install leaves only claude.cmd on PATH; the executable it forwards to sits inside the package.
         if (OperatingSystem.IsWindows() && provider == "claude") candidates.AddRange(directories.Select(path => new CliCommand(Path.Combine(path, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"), [])));
         if (OperatingSystem.IsWindows() && provider == "codex")
@@ -458,7 +459,9 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
                 var stderr = DrainAsync(child.Error, timeout.Token);
                 var text = await ReadBoundedAsync(child.Output, 16384, timeout.Token);
                 var code = await child.Completion.WaitAsync(timeout.Token); await stderr;
-                if (code == 0 && text.Trim().Length > 0) return candidate with { Version = Wire.Clean(text.Trim(), 160) };
+                // Hermes prints its install folder, Python and update status after its version line: only that line is kept.
+                var version = CliDiscovery.VersionText(Executable(provider), text);
+                if (code == 0 && version.Length > 0) return candidate with { Version = Wire.Clean(version, 160) };
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested) { }
             catch (IOException) { }

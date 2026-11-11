@@ -44,7 +44,8 @@ public sealed class SetupProber(IReadOnlyDictionary<string, string> environment,
                 foreach (var copy in copies)
                 {
                     cancellation.ThrowIfCancellationRequested();
-                    if (await (versionReader ?? ReadVersionAsync)(copy, cancellation) is { } text) { version = text; break; }
+                    // Hermes's version is its first line (CliDiscovery.VersionText), as the runtime keeps it, so the row and the runtime agree.
+                    if (await (versionReader ?? ReadVersionAsync)(copy, cancellation) is { } text && CliDiscovery.VersionText(executable.Name, text) is { Length: > 0 } line) { version = line; break; }
                 }
                 if (executable.MinimumVersion is not { } minimum) return SetupProbeResult.Installed(version);
                 if (version is null) return new(SetupProbeState.Unverified, null, minimum);
@@ -150,12 +151,15 @@ public static class SetupRows
         _ => !inRun ? SetupRowState.Missing : runFinished ? SetupRowState.Failed : SetupRowState.Installing,
     };
 
-    /// <summary>Whether the row's box may be ticked: what is missing or failed, and an out-of-date tool that is not an agent CLI (those get the CLI update instead).</summary>
+    /// <summary>
+    /// Whether the row's box may be ticked: what is missing or failed, and an out-of-date tool that is not an agent CLI (those get the CLI
+    /// update instead), or one its own update cannot bring up to date (OpenCode 1 to 2, <see cref="SetupCatalog.ReinstalledWhenOutdated"/>).
+    /// </summary>
     public static bool IsSelectable(SetupRowState state, SetupItem item) =>
         item.Entry(SetupPlatform.Windows)?.Install.RunsInTerminal == true && state switch
         {
             SetupRowState.Missing or SetupRowState.Failed => true,
-            SetupRowState.Outdated => item.Provider is null,
+            SetupRowState.Outdated => item.Provider is null || SetupCatalog.ReinstalledWhenOutdated.Contains(item.Id),
             _ => false,
         };
 
