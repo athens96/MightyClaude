@@ -10,6 +10,7 @@ import {
 } from '@/api/types';
 import { parseBackground } from '@/lib/background-output';
 import { shownBlocks } from '@/lib/background-work';
+import { parseAdvisor, parseCard, parseDelegate, parseFlowLog, parseReturning, parseRole } from '@/lib/flow-roles';
 import { t } from '@/lib/i18n';
 import { parseResultFiles } from '@/lib/result-files';
 import {
@@ -366,6 +367,13 @@ function parseBlock(raw: unknown): MobileBlock | undefined {
   const nodeModelLabel = inlineText(raw.nodeModelLabel, 240);
   if (nodeModelLabel.length > 0) block.nodeModelLabel = nodeModelLabel;
   Object.assign(block, parseBackground(raw, MAX_BLOCK_OUTPUT));
+  // The role view (`roles=1`): who the block is, its compact row, the line over the rows it delegated to.
+  const role = parseRole(raw.role);
+  if (role) block.role = role;
+  const card = parseCard(raw.card);
+  if (card) block.card = card;
+  const delegate = parseDelegate(raw.delegate);
+  if (delegate) block.delegate = delegate;
   return block;
 }
 
@@ -400,6 +408,10 @@ function parseRun(raw: unknown, filtering: boolean): MobileMightyRun | undefined
   if (result.trim().length > 0) run.result = result;
   const resultFiles = parseResultFiles(raw.resultFiles);
   if (resultFiles) run.resultFiles = resultFiles;
+  const returning = parseReturning(raw.returning);
+  if (returning) run.returning = returning;
+  const advisor = parseAdvisor(raw.advisor);
+  if (advisor) run.advisor = advisor;
   return run;
 }
 
@@ -408,16 +420,22 @@ function parseRun(raw: unknown, filtering: boolean): MobileMightyRun | undefined
  * can draw; otherwise every list is present (possibly empty) and every string is safe
  * to render. `filtering`: the host leaves background blocks out of a request itself
  * (`hostFiltersBackground`), so a request draws none; false keeps what an older host sent.
+ * A payload with the role view's fan-out (`fanOut`) carries a request's background blocks on
+ * purpose, as compact rows, so nothing of it is filtered.
  */
 export function normalizeMighty(raw: unknown, filtering = false): MobileMighty | undefined {
   if (!isRecord(raw)) return undefined;
+  const fanOut = raw.fanOut === true;
   const mighty: MobileMighty = {
     style: inlineText(raw.style, 40),
     runs: arrayOf(raw.runs)
-      .map((run) => parseRun(run, filtering))
+      .map((run) => parseRun(run, filtering && !fanOut))
       .filter((run): run is MobileMightyRun => run !== undefined)
       .slice(-MAX_RUNS),
   };
+  if (fanOut) mighty.fanOut = true;
+  const log = parseFlowLog(raw.log);
+  if (log) mighty.log = log;
   const styleId = inlineText(raw.styleId, 40);
   if (styleId.length > 0) mighty.styleId = styleId;
   const panel = normalizeStylePanel(raw.panel);

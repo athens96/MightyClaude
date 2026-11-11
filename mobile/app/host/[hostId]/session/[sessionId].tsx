@@ -41,6 +41,7 @@ import { Composer } from '@/components/composer';
 import { LogEntryView } from '@/components/log-entry-view';
 import { GuidedPanel } from '@/components/guided-panel';
 import { BackgroundStrip } from '@/components/background-strip';
+import { FlowLogStrip } from '@/components/flow-roles';
 import { MightyRunList } from '@/components/mighty-blocks';
 import { PendingRequestView } from '@/components/pending-request';
 import { MightyStructureView } from '@/components/structure-view';
@@ -337,6 +338,10 @@ export default function SessionScreen() {
   // "style": the host drives the pane from a style manifest and sends `panel`. Without
   // it the built-in two still arrive as their old payloads and are read through those.
   const canStyle = hasCapability(capabilities, 'style');
+  // "roles": the host sends the role view to a phone that asks (`roles=1`): who each block is, a Claude pane's background work as
+  // compact rows under its request, the delegate lines, the way back, the advisor and the log's status line. An older host does not
+  // know the name and would refuse it, so it is asked only here.
+  const canRoles = hasCapability(capabilities, 'roles');
   const canPush = hasCapability(capabilities, 'push');
 
   /** Back to where we came from, or to the host when this screen was deep-linked into. */
@@ -363,6 +368,7 @@ export default function SessionScreen() {
           since,
           wait: since === undefined ? 0 : 10,
           ...(asked ? { structure: structureQuery(heldStructureRef.current) } : {}),
+          ...(canRoles ? { roles: true } : {}),
           signal,
         });
         if (asked) {
@@ -383,7 +389,7 @@ export default function SessionScreen() {
         throw error;
       }
     },
-    [client, paneGone, sessionId],
+    [canRoles, client, paneGone, sessionId],
   );
 
   const onData = useCallback(
@@ -1432,6 +1438,7 @@ export default function SessionScreen() {
       >
         <View collapsable={false} style={styles.body}>
           {mighty && view !== 'log' ? <BackgroundStrip work={backgroundWork} done={backgroundDone} /> : null}
+          {view === 'blocks' && mighty?.log ? <FlowLogStrip log={mighty.log} /> : null}
           {view === 'structure' && mighty ? (
             <MightyStructureView
               state={shownStructureState}
