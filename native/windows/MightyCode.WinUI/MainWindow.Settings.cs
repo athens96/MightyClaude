@@ -631,7 +631,7 @@ public sealed partial class MainWindow
                 ? status
                 : new CliAccountStatus { Provider = p, Detail = CliAccountStrings.StatusChecking }).ToArray());
 
-    internal static readonly string[] CliAccountProviders = ["claude", "codex", "gemini", "pi"];
+    internal static readonly string[] CliAccountProviders = ["claude", "codex", "gemini", "pi", "opencode", "hermes"];
     internal const string AccountRowIdPrefix = "cli-account-row-";
 
     // Called by OpenSettings (via BuildCliAccountsSectionFromState) and by the smoke
@@ -861,6 +861,8 @@ public sealed partial class MainWindow
         }
         finally { accountChanges.TryRemove(provider, out _); }
         if (option == CliLoginOption.Bedrock || !opened.Task.IsCompleted) { await RefreshCliAccounts(); NoteTerminalSignIn(provider); return; }
+        // pi, opencode and Hermes ask in the terminal: the row says what to do there (M/AppStore+CLIAccounts.swift startCLILogin).
+        if (CliAccountSupport.LoginHint(provider) is { } hint) accountMessages[provider] = hint;
         // Only the console host's window ends with the sign-in's process; a Windows Terminal tab hands off at once. The wait goes on
         // by itself: the button that opened the terminal is done, and its row shows only the pending line and "cancel waiting".
         var closed = await opened.Task ? window : null;

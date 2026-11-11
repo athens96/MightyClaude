@@ -61,6 +61,11 @@ public static class CliAccountMethod
     public const string PiSubscription = "pi-subscription";
     public const string PiApiKey = "pi-api-key";
     public const string PiModels = "pi-models";
+    /// <summary>opencode: a subscription sign-in (<c>opencode auth login</c> with OAuth) or API keys (stored in its database, or in the environment).</summary>
+    public const string OpencodeSubscription = "opencode-subscription";
+    public const string OpencodeApiKey = "opencode-api-key";
+    /// <summary>Hermes: the model provider <c>hermes model</c> set up (a Nous Portal or other OAuth sign-in, or an API key).</summary>
+    public const string HermesProvider = "hermes-provider";
 }
 
 /// Parsing helpers that depend only on data — no I/O, no runner.
@@ -175,17 +180,59 @@ public static class CliAccountSupport
     }
 
     /// argv for the CLI's own status command; Antigravity's model list stands in for its status (AntigravityStatus).
-    /// The first element is the executable name; the rest are arguments.
+    /// The first element is the executable name; the rest are arguments. opencode's <c>--standalone</c> reads the list without
+    /// starting OpenCode 2's background service; Hermes has no status command, so its ACP server is asked (HermesAccounts.ProbeAsync).
     public static IReadOnlyList<string>? StatusArguments(string provider) => provider switch
     {
         "claude" => ["claude", "auth", "status", "--json"],
         "codex" => ["codex", "login", "status"],
         "gemini" => ["agy", "models"],
         "pi" => ["pi", "--list-models"],
+        "opencode" => ["opencode", "auth", "list", "--format", "json", "--standalone"],
+        "hermes" => ["hermes", "acp"],
         _ => null,
     };
 
-    /// argv for the CLI's own logout command (Antigravity has none).
+    /// <summary>
+    /// What a sign-in started in a terminal asks of the user there, said in the account's row (M/AppStore+CLIAccounts.swift
+    /// startCLILogin): pi signs in inside itself (<c>/login</c>), opencode in <c>opencode auth login</c>, Hermes in <c>hermes model</c>.
+    /// Null for a CLI whose sign-in is its browser's.
+    /// </summary>
+    public static string? LoginHint(string provider) => provider switch
+    {
+        "pi" => Locale.Get("settings.cliAccounts.piLoginHint"),
+        "opencode" => Locale.Get("settings.cliAccounts.opencodeLoginHint"),
+        "hermes" => Locale.Get("settings.cliAccounts.hermesLoginHint"),
+        _ => null,
+    };
+
+    /// <summary>
+    /// Where a CLI's own installer leaves it, looked in when that folder is not on PATH yet (an installer's PATH change reaches new
+    /// sessions only): opencode's npm shim <c>opencode.cmd</c> in npm's global folder <c>%APPDATA%\npm</c> (it runs
+    /// <c>node_modules\@opencode\cli\bin\opencode.exe</c>), and Hermes's <c>hermes.exe</c>, or the <c>hermes.cmd</c> its installer falls back
+    /// to, in <c>$HERMES_HOME\bin</c>, by default <c>%LOCALAPPDATA%\hermes\bin</c> (Hermes's scripts/install.ps1). The folders are the
+    /// environment's, else, on Windows, the user profile's.
+    /// </summary>
+    public static IReadOnlyList<string> InstallerCopies(string name, IReadOnlyDictionary<string, string> environment)
+    {
+        static string? Rooted(string? path) => path is { Length: > 0 } && !path.Contains('\0') && Path.IsPathRooted(path) ? path : null;
+        string? Folder(string variable, Environment.SpecialFolder folder) =>
+            Rooted(environment.GetValueOrDefault(variable)) ?? (OperatingSystem.IsWindows() ? Rooted(Environment.GetFolderPath(folder)) : null);
+        switch (name)
+        {
+            case "opencode":
+                return Folder("APPDATA", Environment.SpecialFolder.ApplicationData) is { } roaming ? [Path.Combine(roaming, "npm", "opencode.cmd")] : [];
+            case "hermes":
+                var hermesHome = Rooted(environment.GetValueOrDefault("HERMES_HOME"))
+                    ?? (Folder("LOCALAPPDATA", Environment.SpecialFolder.LocalApplicationData) is { } local ? Path.Combine(local, "hermes") : null);
+                return hermesHome is null ? [] : [Path.Combine(hermesHome, "bin", "hermes.exe"), Path.Combine(hermesHome, "bin", "hermes.cmd")];
+            default:
+                return [];
+        }
+    }
+
+    /// argv for the CLI's own logout command. Antigravity, pi, opencode and Hermes have none the app runs: their rows say how to
+    /// sign out in a terminal (<c>/logout</c> in agy or pi, <c>opencode auth logout</c>, <c>hermes auth</c>).
     public static IReadOnlyList<string>? LogoutArguments(string provider) => provider switch
     {
         "claude" => ["claude", "auth", "logout"],
@@ -275,29 +322,35 @@ public static class CliAccountSupport
 }
 
 /// Reads the account status for each CLI using the shared runner (Antigravity:
-/// its model list). The coordinator is the live type the section and CliAccountsCoordinator
-/// wire to; tests inject a FakeRunner and a temporary home folder.
+/// its model list; Hermes: its ACP server's answer to initialize). The coordinator is the live type the section and CliAccountsCoordinator
+/// wire to; tests inject a FakeRunner, a Hermes probe and a temporary home folder.
 public sealed class CliAccountsCoordinator
 {
     private readonly ICliRunner runner;
     private readonly string home;
     private readonly IReadOnlyDictionary<string, string>? fixedEnvironment;
+    private readonly Func<CliCommand, IReadOnlyDictionary<string, string>, CancellationToken, Task<HermesAccounts.Probe?>> hermesProbe;
     private IReadOnlyDictionary<string, string> environment => fixedEnvironment ?? CliEnvironment.Current();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CliAccountStatus> statuses = new();
 
     private static readonly TimeSpan StatusTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan LogoutTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan VersionTimeout = TimeSpan.FromSeconds(10);
 
     public IReadOnlyDictionary<string, CliAccountStatus> Statuses => statuses;
 
+    /// <param name="hermesProbe">Asks a found <c>hermes</c> for its sign-in; by default <see cref="HermesAccounts.ProbeAsync"/> in the
+    /// temporary folder, within <see cref="HermesAccounts.ProbeTimeout"/>.</param>
     public CliAccountsCoordinator(
         ICliRunner runner,
         IReadOnlyDictionary<string, string>? environment = null,
-        string? home = null)
+        string? home = null,
+        Func<CliCommand, IReadOnlyDictionary<string, string>, CancellationToken, Task<HermesAccounts.Probe?>>? hermesProbe = null)
     {
         this.runner = runner;
         this.fixedEnvironment = environment;
         this.home = home ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        this.hermesProbe = hermesProbe ?? ((command, values, token) => HermesAccounts.ProbeAsync(command, values, Path.GetTempPath(), HermesAccounts.ProbeTimeout, token));
     }
 
     private static Dictionary<string, string> Runtime()
@@ -334,6 +387,10 @@ public sealed class CliAccountsCoordinator
             return new CliAccountStatus { Provider = provider, Installed = false, Detail = detail, CanSignOut = false };
         }
 
+        // Hermes has no status command: its ACP server's initialize answer names the provider whose credentials resolve
+        // (M/CLIAccounts.swift status). The server is started and asked alone, never through the runner, which gives no standard input.
+        if (provider == "hermes") return HermesAccounts.Status(await hermesProbe(new CliCommand(binary, []), environment, cancellation));
+
         var env = new Dictionary<string, string>(environment) { ["NO_COLOR"] = "1", ["CI"] = "1" };
         CliRunResult result;
         try { result = await runner.RunAsync(binary, argv.Skip(1).ToList(), StatusTimeout, cancellation, env, home); }
@@ -341,6 +398,22 @@ public sealed class CliAccountsCoordinator
         catch { return new CliAccountStatus { Provider = provider, Detail = CliAccountStrings.DetailRunFailed }; }
 
         if (provider == "pi") return PiAccounts.Status(result.ExitCode, result.Output + "\n" + result.ErrorOutput, CliAccountSupport.BoundedFileText(PiAgent.AuthFile(home, environment)), environment, result.TimedOut);
+        if (provider == "opencode")
+        {
+            // A list that is not JSON may be OpenCode 1, which has no --format: its version says (M/CLIAccounts.swift status).
+            string? version = null;
+            if (OpencodeAccounts.Connections(result.Output) is null)
+            {
+                try
+                {
+                    var named = await runner.RunAsync(binary, ["--version"], VersionTimeout, cancellation, env, home);
+                    if (named.ExitCode == 0 && !named.TimedOut) version = named.Output.Trim();
+                }
+                catch (OperationCanceledException) { throw; }
+                catch { }
+            }
+            return OpencodeAccounts.Status(result.ExitCode, result.Output, version, result.TimedOut);
+        }
         if (provider == "gemini") return CliAccountSupport.AntigravityStatus(result.ExitCode, result.Output + "\n" + result.ErrorOutput, result.TimedOut);
         if (provider == "claude")
         {
@@ -428,7 +501,8 @@ public sealed class CliAccountsCoordinator
         if (name == "agy" && OperatingSystem.IsWindows() && Path.Combine(ProviderCatalog.AntigravityInstallFolder(environment), "agy.exe") is var installed && File.Exists(installed)) return installed;
         // npm's global folder, where pi.cmd is, is looked in as the CLIs are found (ProviderCatalog.DiscoverAsync).
         if (name == "pi" && OperatingSystem.IsWindows() && Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm", "pi.cmd") is var shim && File.Exists(shim)) return shim;
-        return null;
+        // opencode.cmd in npm's global folder too, and Hermes in its installer's bin folder.
+        return CliAccountSupport.InstallerCopies(name, environment).FirstOrDefault(File.Exists);
     }
 }
 
