@@ -24,7 +24,7 @@ extension AppStore {
                     self.cliAccounts[provider] = status
                     if status.loggedIn == true, status.accessVerified != false {
                         // A sign-in terminal still pending is confirmed by this read.
-                        if self.cliLoginPending.contains(provider) { self.autoLoginGate.succeeded(provider: provider) }
+                        if self.cliLoginPending.contains(provider) { self.autoLoginGate.succeeded(provider: provider); self.modelsAfterAccountChange(provider) }
                         self.endCLILogin(provider)
                     }
                 }
@@ -54,7 +54,7 @@ extension AppStore {
                 guard let self else { return }
                 self.cliAccounts[provider] = status
                 self.cliAccountBusy.remove(provider)
-                self.invalidateLocalModels(provider: provider)
+                self.modelsAfterAccountChange(provider)
                 if status.loggedIn == true { self.cliAccountMessages[provider] = L("settings.cliAccounts.signOutUnconfirmed") }
                 else if let option { self.startCLILogin(provider, option: option) }
             }
@@ -120,7 +120,7 @@ extension AppStore {
                     self.cliAccounts[provider] = status
                     if status.loggedIn == true, status.accessVerified != false {
                         self.autoLoginGate.succeeded(provider: provider)
-                        self.invalidateLocalModels(provider: provider)
+                        self.modelsAfterAccountChange(provider)
                         self.endCLILogin(provider)
                         // Panes whose run lost this sign-in get their request back.
                         if startedSignedOut, self.loginRequired.values.contains(provider) || !self.loginRetries.sessions(provider: provider).isEmpty {

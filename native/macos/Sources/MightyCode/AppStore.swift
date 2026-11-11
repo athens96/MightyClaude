@@ -352,7 +352,8 @@ final class AppStore: ObservableObject, DelegationHost {
     /// directory (`FileOriginalStore`), for the source preview's 변경사항.
     let fileOriginals: FileOriginalStore
     let fileStore = ModelSettingsFileStore()
-    let providers = ProviderService(binaryOverrides: AppStore.delegationSmokeBinaryOverrides())
+    /// Keeps the last list each CLI gave, and Hermes's picker, in the profile folder (`dataDirectory`).
+    let providers: ProviderService
     let pluginDirectory: URL
     private var loading = false
     private(set) var ending = false
@@ -548,6 +549,7 @@ final class AppStore: ObservableObject, DelegationHost {
             if !moved.worktrees.isEmpty { Task.detached { await RenameMigration.repairWorktrees(moved.worktrees) } }
         }
         dataDirectory = profile.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? support.appendingPathComponent("MightyCode", isDirectory: true)
+        providers = ProviderService(binaryOverrides: AppStore.delegationSmokeBinaryOverrides(), storageDirectory: dataDirectory)
         // No Antigravity file rule may reach this folder (it holds the temporary-rule ledger).
         AntigravityRuleSafety.appDataFolder = dataDirectory.path
         repository = StateRepository(directory: dataDirectory, legacyStateURL: profile == nil ? StateRepository.defaultLegacyStateURL() : nil)
@@ -1618,6 +1620,7 @@ final class AppStore: ObservableObject, DelegationHost {
         if event.type == "status", let status = event.status, status != "running" { settleQueue(event.sessionId, status: status) }
         // Files a finished run wrote may now be readable pictures.
         if event.type == "status", ["completed", "error", "stopped"].contains(event.status ?? "") { AgentImageLibrary.shared.forgetMissingFiles() }
+        if event.type == "status", ["completed", "error", "stopped"].contains(event.status ?? "") { modelsAfterRunEnded(event.sessionId) }
         // A remote run that failed may have lost its connection: show what the connection says now.
         if event.type == "status", event.status == "error", isRemoteSession(event.sessionId) { Task { await reloadRemoteState() } }
     }

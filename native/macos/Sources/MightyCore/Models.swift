@@ -637,7 +637,17 @@ public struct ModelCatalog: Codable, Sendable, Equatable {
     public var source: String
     public var models: [ModelOption]
     public var detail: String
-    public init(source: String = "fallback", models: [ModelOption] = [], detail: String = "") { self.source = source; self.models = models; self.detail = detail }
+    /// Why the latest read of the CLI's list failed, in one line; nil on the list that read gave (or before any read).
+    /// With `source` "cli" these are the last models the CLI gave, kept (`listedAt`); otherwise the built-in list.
+    /// Both are optional on the wire: an older peer leaves them out, and ignores them.
+    public var readFailure: String?
+    /// When the CLI gave a kept list (ISO 8601).
+    public var listedAt: String?
+    public init(source: String = "fallback", models: [ModelOption] = [], detail: String = "", readFailure: String? = nil, listedAt: String? = nil) {
+        self.source = source; self.models = models; self.detail = detail; self.readFailure = readFailure; self.listedAt = listedAt
+    }
+    /// The list the CLI gave on its latest read: the only kind that may retire a model a pane saved.
+    public var isFresh: Bool { source == "cli" && readFailure == nil }
 }
 public typealias ClaudeModelOption = ModelOption
 public typealias ClaudeModelCatalog = ModelCatalog

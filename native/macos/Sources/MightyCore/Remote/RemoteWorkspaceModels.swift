@@ -215,6 +215,8 @@ enum RemoteWorkspaceValidation {
         for provider in value.runtime.providers ?? [] {
             guard ProviderOptions.ids.contains(provider.id), provider.name.count <= 120, provider.detail.count <= 2_000, (provider.version?.count ?? 0) <= 80,
                   provider.modelCatalog.models.count <= 128, provider.modelCatalog.detail.count <= 2_000,
+                  // A newer host says why its latest read failed and when a kept list was read; an older one says neither.
+                  (provider.modelCatalog.readFailure?.count ?? 0) <= 2_000, (provider.modelCatalog.listedAt?.count ?? 0) <= 64,
                   provider.modelCatalog.models.allSatisfy({ CoreValidation.model($0.value) && $0.displayName.count <= 160 && $0.description.count <= 2_400 }),
                   provider.capabilities.permissionModes.allSatisfy({ permissionMode($0, provider: provider.id) }) else {
                 throw MightyError(L("remote.connect.error.badRuntime"))

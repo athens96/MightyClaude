@@ -32,7 +32,19 @@ public actor ProviderService {
     private var catalogs: [CatalogKey: CatalogEntry] = [:]
     private var cacheGeneration = 0
     private var closing = false
-    public init(binaryOverrides: [String: URL] = [:], environment: [String: String]? = nil, environmentResolver: CLIEnvironmentResolver = .shared, versionProbeTimeout: TimeInterval = 4) { self.binaryOverrides = binaryOverrides; self.fixedEnvironment = environment; self.environmentResolver = environmentResolver; self.versionProbeTimeout = versionProbeTimeout }
+    /// Where the app keeps what it learns from the CLIs: the last list each gave (`KeptModelLists`) and Hermes's
+    /// picker. nil (tests, helpers) keeps the lists in memory only and has no Hermes picker.
+    private let storageDirectory: URL?
+    /// The picker the last Hermes session offered (`HermesAgent.saveModels`), in the storage folder.
+    public nonisolated let hermesModelCacheURL: URL?
+    /// Loaded from the storage folder on first use.
+    private var keptLists: KeptModelLists?
+    private var keptWrittenAt: Date?
+    public init(binaryOverrides: [String: URL] = [:], environment: [String: String]? = nil, environmentResolver: CLIEnvironmentResolver = .shared, versionProbeTimeout: TimeInterval = 4, storageDirectory: URL? = nil) {
+        self.binaryOverrides = binaryOverrides; self.fixedEnvironment = environment; self.environmentResolver = environmentResolver; self.versionProbeTimeout = versionProbeTimeout
+        self.storageDirectory = storageDirectory
+        self.hermesModelCacheURL = storageDirectory?.appendingPathComponent(HermesAgent.modelCacheFileName)
+    }
 
     public nonisolated static func runtimeEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
@@ -144,24 +156,125 @@ public actor ProviderService {
                let oldest = catalogs.min(by: { $0.value.created < $1.value.created }) {
                 oldest.value.task.cancel(); catalogs.removeValue(forKey: oldest.key)
             }
-            let generation = cacheGeneration
+            let generation = cacheGeneration, id = UUID()
             let task = Task<ModelCatalog, Never> {
-                guard let command = await self.command(provider: provider, workspacePath: workspacePath, snapshot: snapshot), !Task.isCancelled,
-                      !self.closing, generation == self.cacheGeneration else { return ProviderOptions.fallbackCatalog(provider) }
-                if provider == "gemini" { return await Self.antigravityCatalog(command: command, environment: snapshot.values, workspace: cwd) }
-                if provider == "pi" { return await Self.piCatalog(command: command, environment: snapshot.values, workspace: cwd) }
-                if provider == "opencode" { return await Self.opencodeCatalog(command: command, environment: snapshot.values, workspace: cwd) }
-                // Hermes lists models only inside a session: the picker its last session offered is kept and read here.
-                if provider == "hermes" { return HermesAgent.cachedCatalog(url: HermesAgent.modelCacheURL()) }
-                return await CLIModelProbe.read(command: command, environment: snapshot.values, workspace: cwd)
+                let read = await self.readModelList(provider: provider, workspacePath: workspacePath, snapshot: snapshot, workspace: cwd, generation: generation)
+                // A read that a newer one superseded, or an invalidation dropped, answers nothing and keeps nothing.
+                guard !Task.isCancelled, !self.closing, generation == self.cacheGeneration, self.catalogs[key]?.id == id else { return ProviderOptions.fallbackCatalog(provider) }
+                return self.settle(read, provider: provider, workspace: cwd?.path)
             }
-            entry = CatalogEntry(id: UUID(), created: Date(), task: task, inFlight: true, forced: forceRefresh, environment: snapshot.values)
+            entry = CatalogEntry(id: id, created: Date(), task: task, inFlight: true, forced: forceRefresh, environment: snapshot.values)
             catalogs[key] = entry
         }
         let value = await entry.task.value
         guard !closing, catalogs[key]?.id == entry.id else { return ProviderOptions.fallbackCatalog(provider) }
         catalogs[key]?.inFlight = false
         return value
+    }
+
+    /// One read of the provider's model list: its CLI's answer, or why there is none.
+    private func readModelList(provider: String, workspacePath: String?, snapshot: CLIEnvironmentSnapshot, workspace: URL?, generation: Int) async -> ModelListRead {
+        guard let command = await command(provider: provider, workspacePath: workspacePath, snapshot: snapshot) else {
+            return .failed(L("run.error.cliExecutableMissing", ["name": ProviderOptions.label(provider)]))
+        }
+        guard !Task.isCancelled, !closing, generation == cacheGeneration else { return .failed(CancellationError().localizedDescription) }
+        switch provider {
+        // Hermes lists models only inside a session: the picker its last session offered is kept and read here.
+        case "hermes": return .listed(HermesAgent.cachedCatalog(url: hermesModelCacheURL))
+        case "claude", "codex": return await CLIModelProbe.read(command: command, environment: snapshot.values, workspace: workspace)
+        default: return await Self.readListCommand(provider: provider, command: command, environment: snapshot.values, workspace: workspace)
+        }
+    }
+
+    /// A list the CLI gave is kept as its newest; a read that failed answers with the list kept for this workspace
+    /// (else the provider's newest anywhere), or the built-in list, either marked with why the read failed.
+    private func settle(_ read: ModelListRead, provider: String, workspace: String?) -> ModelCatalog {
+        switch read {
+        case .listed(let catalog):
+            if catalog.isFresh, provider != "hermes" { keep(catalog, provider: provider, workspace: workspace) }
+            return catalog
+        case .failed(let reason):
+            if provider != "hermes", let entry = loadedKeptLists().list(provider: provider, workspace: workspace) { return KeptModelLists.kept(entry, reason: reason) }
+            var fallback = ProviderOptions.fallbackCatalog(provider)
+            fallback.readFailure = reason
+            return fallback
+        }
+    }
+
+    private func keep(_ catalog: ModelCatalog, provider: String, workspace: String?) {
+        var lists = loadedKeptLists()
+        let now = Date()
+        let write = lists.remember(catalog, provider: provider, workspace: workspace, at: now, writtenAt: keptWrittenAt)
+        keptLists = lists
+        guard write, let url = KeptModelLists.url(in: storageDirectory), let data = lists.encoded() else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        keptWrittenAt = now
+    }
+
+    private func loadedKeptLists() -> KeptModelLists {
+        if let keptLists { return keptLists }
+        let loaded = KeptModelLists.load(from: KeptModelLists.url(in: storageDirectory))
+        keptLists = loaded
+        return loaded
+    }
+
+    /// The arguments (after the executable) of each CLI's model-list read. Each was run against the CLI named here,
+    /// and ModelListProbeTests pins them: a flag one CLI takes is not another's (agy 1.5.5 refuses `models --standalone`).
+    /// - claude 2.1.322: a headless stream-json session that is sent only `initialize` (its answer lists the models).
+    /// - codex 0.167.0: `app-server` over stdio, `initialize` then `model/list`.
+    /// - agy 1.5.5: `models`. pi 1.5.2: `--list-models`. opencode 2.2.7: `models --standalone`, without starting
+    ///   OpenCode 2's background service.
+    /// - Hermes 0.23.1 has no list command (nil): the picker its last session offered is read instead.
+    public nonisolated static func modelListArguments(_ provider: String) -> [String]? {
+        switch provider {
+        case "claude": return ["--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-prompts", "none", "--tools", "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence", "--safe-mode"]
+        case "codex": return ["app-server", "--listen", "stdio://"]
+        case "gemini": return ["models"]
+        case "pi": return ["--list-models"]
+        case "opencode": return ["models", "--standalone"]
+        default: return nil
+        }
+    }
+
+    /// The command a model-list read runs, as its failure names it.
+    nonisolated static func modelListCommand(_ provider: String) -> String {
+        let executable = ProviderOptions.executable(provider)
+        guard provider != "claude", let arguments = modelListArguments(provider) else { return executable }
+        return ([executable] + arguments).joined(separator: " ")
+    }
+
+    /// The one line the model menu's help shows for a read that failed: the command, what went wrong, and the line
+    /// of the CLI's output that says why. The home folder reads `~`.
+    public nonisolated static func readFailure(_ provider: String, problem: String, output: String = "") -> String {
+        var text = modelListCommand(provider) + ": " + problem
+        if let line = tellingLine(output) { text += " · " + line }
+        return ActivitySupport.clean(DiagnosticsSummary.redact(text), maximumBytes: 400, singleLine: true)
+    }
+
+    /// The line of a CLI's output that says why it failed: the last that names an error, else the first that says anything.
+    nonisolated static func tellingLine(_ output: String) -> String? {
+        let lines = output.split(whereSeparator: \.isNewline).suffix(200).map { ActivitySupport.clean(String($0), maximumBytes: 240, singleLine: true) }.filter { !$0.isEmpty }
+        return lines.last { $0.range(of: "error", options: .caseInsensitive) != nil } ?? lines.first
+    }
+
+    /// `agy models`, `pi --list-models` and `opencode models --standalone`: one command whose standard output is the list.
+    /// A non-zero exit, a timeout, too much output or no models in it is a failed read.
+    static func readListCommand(provider: String, command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelListRead {
+        guard let arguments = modelListArguments(provider) else { return .failed(readFailure(provider, problem: L("provider.catalog.failure.noModels"))) }
+        let timeout: TimeInterval = provider == "opencode" ? 20 : 15
+        let limit = provider == "opencode" ? 2_097_152 : provider == "pi" ? 1_048_576 : 262_144
+        let result: ProcessResult
+        do {
+            result = try await ProcessCapture.run(executable: command.executable, arguments: arguments, environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: timeout, maximumBytes: limit)
+        } catch { return .failed(readFailure(provider, problem: error.localizedDescription)) }
+        let stdout = String(decoding: result.stdout, as: UTF8.self), stderr = String(decoding: result.stderr, as: UTF8.self)
+        guard result.exitCode == 0 else {
+            return .failed(readFailure(provider, problem: L("provider.catalog.failure.exit", ["code": "\(result.exitCode)"]), output: stderr.isEmpty ? stdout : stderr))
+        }
+        let catalog = provider == "gemini" ? normalizeAntigravityCatalog(stdout) : provider == "pi" ? normalizePiCatalog(stdout) : normalizeOpencodeCatalog(stdout)
+        return catalog.isFresh ? .listed(catalog) : .failed(readFailure(provider, problem: L("provider.catalog.failure.noModels"), output: stdout + "\n" + stderr))
     }
 
     public func providerRuntime(provider: String, workspacePath: String? = nil, forceRefresh: Bool = false) async -> ProviderRuntime {
@@ -210,24 +323,6 @@ public actor ProviderService {
     public func discardModelCatalogs(provider: String) async {
         let keys = Set(catalogs.keys.filter { $0.provider == provider }).union(commands.keys.filter { $0.provider == provider })
         for key in keys { await invalidateModelCatalog(provider: provider, workspacePath: key.workspacePath) }
-    }
-
-    /// The arguments (after the executable) of each CLI's model-list read. Each was run against the CLI named here,
-    /// and ModelListProbeTests pins them: a flag one CLI takes is not another's (agy 1.5.5 refuses `models --standalone`).
-    /// - claude 2.1.322: a headless stream-json session that is sent only `initialize` (its answer lists the models).
-    /// - codex 0.167.0: `app-server` over stdio, `initialize` then `model/list`.
-    /// - agy 1.5.5: `models`. pi 1.5.2: `--list-models`. opencode 2.2.7: `models --standalone`, without starting
-    ///   OpenCode 2's background service.
-    /// - Hermes 0.23.1 has no list command (nil): the picker its last session offered is read instead.
-    public nonisolated static func modelListArguments(_ provider: String) -> [String]? {
-        switch provider {
-        case "claude": return ["--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-prompts", "none", "--tools", "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence", "--safe-mode"]
-        case "codex": return ["app-server", "--listen", "stdio://"]
-        case "gemini": return ["models"]
-        case "pi": return ["--list-models"]
-        case "opencode": return ["models", "--standalone"]
-        default: return nil
-        }
     }
 
     /// `phaseModels` nil takes the request's own, which is how the app launches.
@@ -378,11 +473,6 @@ public actor ProviderService {
         }
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.antigravitySource")) : fallback
     }
-    static func antigravityCatalog(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
-        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: modelListArguments("gemini") ?? [], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 262_144),
-              result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("gemini") }
-        return normalizeAntigravityCatalog(String(decoding: result.stdout, as: UTF8.self))
-    }
     /// `pi --list-models`: a header row (`provider  model  context  max-out  thinking  images`)
     /// and one row per model, columns padded with spaces. Without a sign-in it prints "No models
     /// available…", which keeps the fallback (just pi's own default). A model is `provider/id`,
@@ -399,11 +489,6 @@ public actor ProviderService {
         }
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.piSource")) : fallback
     }
-    static func piCatalog(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
-        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: modelListArguments("pi") ?? [], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 1_048_576),
-              result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("pi") }
-        return normalizePiCatalog(String(decoding: result.stdout, as: UTF8.self))
-    }
     /// `opencode models --standalone` (without OpenCode 2's background service): one `provider/model` per line.
     /// Without a sign-in it lists Zen's free models, which still run. Anything that is not a
     /// `provider/model` (a notice, a refresh line) is left out; an empty list keeps the fallback.
@@ -418,11 +503,6 @@ public actor ProviderService {
             models.append(ModelOption(value: value, displayName: value, description: L("provider.catalog.opencodeModelRow", ["provider": provider])))
         }
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.opencodeSource")) : fallback
-    }
-    static func opencodeCatalog(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
-        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: modelListArguments("opencode") ?? [], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 20, maximumBytes: 2_097_152),
-              result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("opencode") }
-        return normalizeOpencodeCatalog(String(decoding: result.stdout, as: UTF8.self))
     }
     public nonisolated static func normalizeClaudeCatalog(_ rows: [[String: Any]]) -> ModelCatalog {
         let fallback = ProviderOptions.fallbackCatalog("claude")
@@ -442,80 +522,128 @@ public actor ProviderService {
     }
 }
 
+/// What one model-list read gave: the CLI's list, or why there is none (one line, for the model menu's help).
+enum ModelListRead: Sendable, Equatable {
+    case listed(ModelCatalog)
+    case failed(String)
+}
+
+/// Claude's and Codex's model lists come from a short session with the CLI (`ProviderService.modelListArguments`):
+/// Claude answers `initialize` with its models; Codex's app-server answers `initialize`, then `model/list`.
 private final class CLIModelProbe: @unchecked Sendable {
+    /// How long the CLI may take to answer before the read counts as failed.
+    static let answerTimeout: TimeInterval = 6
+    /// How a read ended, worded only once it is back in the caller's task (`read`).
+    private enum Outcome {
+        case listed(ModelCatalog)
+        case exited(Int32, String)
+        case refused(String?)
+        case noModels, tooMuch, timedOut, cancelled
+    }
     private let provider: String
     private let requestId = UUID().uuidString
     private let lock = NSLock()
     private var child: NativeChildProcess?
     private var buffer = Data()
+    private var errors = Data()
     private var bytes = 0
     private var expected = 1
     private var rows: [[String: Any]] = []
-    private var result: ModelCatalog?
-    private var finished = false
-    private var continuation: CheckedContinuation<ModelCatalog?, Never>?
+    private var result: Outcome?
+    private var continuation: CheckedContinuation<Outcome, Never>?
     private init(provider: String) { self.provider = provider }
 
-    private func attach(_ process: NativeChildProcess) { lock.lock(); child = process; let closed = finished; lock.unlock(); if closed { process.stop() } }
+    private func attach(_ process: NativeChildProcess) { lock.lock(); child = process; let closed = result != nil; lock.unlock(); if closed { process.stop() } }
     private func send(_ value: [String: Any]) { guard let data = try? JSONSerialization.data(withJSONObject: value) else { return }; child?.write(data + Data([10])) }
-    private func complete(_ result: ModelCatalog?) { lock.lock(); finishLocked(result); lock.unlock() }
-    private func finishLocked(_ value: ModelCatalog?) {
-        guard !finished else { return }
-        finished = true; result = value; let pending = continuation; continuation = nil
-        pending?.resume(returning: value)
+    private func complete(_ outcome: Outcome) { lock.lock(); finishLocked(outcome); lock.unlock() }
+    private func finishLocked(_ outcome: Outcome) {
+        guard result == nil else { return }
+        result = outcome; let pending = continuation; continuation = nil
+        pending?.resume(returning: outcome)
+    }
+    /// The end of what the CLI wrote to standard error, for a failure's reason.
+    private func consumeError(_ data: Data) {
+        lock.lock(); defer { lock.unlock() }
+        errors.append(data)
+        if errors.count > 8_192 { errors = Data(errors.suffix(8_192)) }
+    }
+    /// The CLI ended before it answered (its output was read to the end before this is called).
+    private func exited(_ code: Int32) {
+        lock.lock(); defer { lock.unlock() }
+        finishLocked(.exited(code, String(decoding: errors, as: UTF8.self)))
     }
     private func consume(_ data: Data) {
         lock.lock(); defer { lock.unlock() }
-        guard !finished else { return }
+        guard result == nil else { return }
         bytes += data.count
-        guard bytes <= 1024 * 1024 else { finishLocked(nil); return }
+        guard bytes <= 1024 * 1024 else { finishLocked(.tooMuch); return }
         buffer.append(data)
         while let newline = buffer.firstIndex(of: 10) {
             let line = Data(buffer[..<newline]); buffer.removeSubrange(...newline)
             guard let event = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
             if provider == "claude" {
                 guard event["type"] as? String == "control_response", let response = event["response"] as? [String: Any], response["request_id"] as? String == requestId else { continue }
-                guard response["subtype"] as? String == "success", let payload = response["response"] as? [String: Any], let models = payload["models"] as? [[String: Any]] else { finishLocked(nil); return }
-                finishLocked(ProviderService.normalizeClaudeCatalog(models)); return
+                guard response["subtype"] as? String == "success" else { finishLocked(.refused(response["error"] as? String)); return }
+                guard let payload = response["response"] as? [String: Any], let models = payload["models"] as? [[String: Any]] else { finishLocked(.noModels); return }
+                let catalog = ProviderService.normalizeClaudeCatalog(models)
+                finishLocked(catalog.isFresh ? .listed(catalog) : .noModels); return
             }
             guard event["id"] as? Int == expected else { continue }
-            if event["error"] != nil { finishLocked(nil); return }
+            if let error = event["error"] { finishLocked(.refused((error as? [String: Any])?["message"] as? String)); return }
             if expected == 1 {
                 send(["method": "initialized"]); expected += 1
                 send(["id": expected, "method": "model/list", "params": ["limit": 64, "includeHidden": false]])
             } else {
-                guard let result = event["result"] as? [String: Any], let data = result["data"] as? [[String: Any]] else { finishLocked(nil); return }
+                guard let result = event["result"] as? [String: Any], let data = result["data"] as? [[String: Any]] else { finishLocked(.noModels); return }
                 rows += data.prefix(max(0, 128 - rows.count))
                 if let cursor = result["nextCursor"] as? String, !cursor.isEmpty, cursor.count < 4096, expected < 5, rows.count < 128 {
                     expected += 1; send(["id": expected, "method": "model/list", "params": ["limit": 64, "includeHidden": false, "cursor": cursor]])
-                } else { finishLocked(ProviderService.normalizeCodexCatalog(rows)); return }
+                } else {
+                    let catalog = ProviderService.normalizeCodexCatalog(rows)
+                    finishLocked(catalog.isFresh ? .listed(catalog) : .noModels); return
+                }
             }
         }
     }
-    private func wait() async -> ModelCatalog? {
+    private func wait() async -> Outcome {
         await withCheckedContinuation { continuation in
             lock.lock()
-            if finished { let result = result; lock.unlock(); continuation.resume(returning: result) }
+            if let result { lock.unlock(); continuation.resume(returning: result) }
             else { self.continuation = continuation; lock.unlock() }
         }
     }
-    static func read(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
+    /// The outcome in words, in the caller's task (where a test's language override applies).
+    private func worded(_ outcome: Outcome) -> ModelListRead {
+        let problem: String, output: String
+        switch outcome {
+        case .listed(let catalog): return .listed(catalog)
+        case .exited(let code, let errors): problem = L("provider.catalog.failure.exit", ["code": "\(code)"]); output = errors
+        case .refused(let message): problem = message.flatMap { $0.isEmpty ? nil : $0 } ?? L("provider.catalog.failure.noModels"); output = ""
+        case .noModels: problem = L("provider.catalog.failure.noModels"); output = ""
+        case .tooMuch: problem = L("process.error.outputLimit"); output = ""
+        case .timedOut: problem = L("process.error.timeout"); output = ""
+        case .cancelled: problem = CancellationError().localizedDescription; output = ""
+        }
+        return .failed(ProviderService.readFailure(provider, problem: problem, output: output))
+    }
+    static func read(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelListRead {
         let state = CLIModelProbe(provider: command.provider)
         return await withTaskCancellationHandler(operation: {
             do {
                 try Task.checkCancellation()
                 let claude = command.provider == "claude"
-                let arguments = ProviderService.modelListArguments(command.provider) ?? []
+                guard let arguments = ProviderService.modelListArguments(command.provider) else { return state.worded(.noModels) }
                 var env = environment
                 if claude { env.merge(ProviderService.quietClaudeEnvironment) { _, new in new } }
-                let child = try NativeChildProcess(executable: command.executable, arguments: arguments, environment: env, cwd: workspace ?? FileManager.default.temporaryDirectory, stdout: { state.consume($0) }, stderr: { _ in }, exited: { _ in state.complete(nil) })
+                let child = try NativeChildProcess(executable: command.executable, arguments: arguments, environment: env, cwd: workspace ?? FileManager.default.temporaryDirectory,
+                                                   stdout: { state.consume($0) }, stderr: { state.consumeError($0) }, exited: { state.exited($0) })
                 state.attach(child)
                 if claude { state.send(["type": "control_request", "request_id": state.requestId, "request": ["subtype": "initialize", "hooks": [:], "sdkMcpServers": []]]) }
                 else { state.send(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "mighty_claude_native", "title": "Mighty Code", "version": "0.1.0"]]]) }
-                let timeout = Task { do { try await Task.sleep(nanoseconds: 6_000_000_000); state.complete(nil) } catch { } }
-                let result = await state.wait(); timeout.cancel(); child.stop(); _ = await child.wait(timeout: 2)
-                return result ?? ProviderOptions.fallbackCatalog(command.provider)
-            } catch { return ProviderOptions.fallbackCatalog(command.provider) }
-        }, onCancel: { state.complete(nil) })
+                let timeout = Task { do { try await Task.sleep(nanoseconds: UInt64(answerTimeout * 1_000_000_000)); state.complete(.timedOut) } catch { } }
+                let outcome = await state.wait(); timeout.cancel(); child.stop(); _ = await child.wait(timeout: 2)
+                return state.worded(outcome)
+            } catch { return .failed(ProviderService.readFailure(command.provider, problem: error.localizedDescription)) }
+        }, onCancel: { state.complete(.cancelled) })
     }
 }

@@ -742,6 +742,8 @@ public actor ProcessRunner {
                 }
                 if request.provider == "opencode" || request.provider == "hermes" {
                     let hermes = request.provider == "hermes"
+                    // Where the app keeps Hermes's picker (none for a ProviderService without a storage folder).
+                    let hermesModels = providerService.hermesModelCacheURL
                     if hermes { run.hermesStderr = HermesAgent.StderrFilter() }
                     if let hermesNotice { emitLogSynchronously(run, kind: "system", text: hermesNotice) }
                     switch hermesQuestions.first {
@@ -754,16 +756,16 @@ public actor ProcessRunner {
                         freeChoices: hermes, promptNote: hermes && hermesQuestions.asks ? HermesQuestionTool.promptNote : nil,
                         admit: hermes ? { result in
                             guard HermesAgent.provider(initialize: result) == nil else { return nil }
-                            HermesAgent.forgetModels(at: HermesAgent.modelCacheURL())
+                            HermesAgent.forgetModels(at: hermesModels)
                             return L("run.error.hermesNoProvider")
                         } : nil,
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
                         event: { [weak run] object in
                             guard let run, !run.finished else { return }
                             // The picker a Hermes session offers is the model menu's list from then on.
-                            if hermes, object["type"] as? String == "acp.session" { HermesAgent.saveModels(configOptions: object["configOptions"], to: HermesAgent.modelCacheURL()) }
+                            if hermes, object["type"] as? String == "acp.session" { HermesAgent.saveModels(configOptions: object["configOptions"], to: hermesModels) }
                             if hermes, object["type"] as? String == "acp.update", let update = object["update"] as? [String: Any], update["sessionUpdate"] as? String == "config_option_update" {
-                                HermesAgent.saveModels(configOptions: update["configOptions"], to: HermesAgent.modelCacheURL())
+                                HermesAgent.saveModels(configOptions: update["configOptions"], to: hermesModels)
                             }
                             run.parser?.receive(object: object)
                         },

@@ -59,8 +59,13 @@ final class LocalModelCatalogRefresh {
         entries[key] = entry
         if invalidate { entry.revision &+= 1; entry.loadedAt = .distantPast }
         if let task = entry.task { return task }
-        let lifetime: TimeInterval = force ? 2 : 60
-        if let value = entry.value, value.modelCatalog.source == "cli", Date().timeIntervalSince(entry.loadedAt) < lifetime { return Task { value } }
+        // A list the CLI just gave is used again for 2 s by a forced request (a pane selected, the refresh button) and
+        // for 60 s by any other (a run about to start). After a read that failed (the built-in or a kept list), a forced
+        // request reads again at once, and a run about to start does not wait for the CLI to fail again within 15 s.
+        if let value = entry.value {
+            let lifetime: TimeInterval = value.modelCatalog.isFresh ? (force ? 2 : 60) : (force ? 0 : 15)
+            if Date().timeIntervalSince(entry.loadedAt) < lifetime { return Task { value } }
+        }
         let task = Task { [weak self] () -> ProviderRuntime? in
             guard let self else { return nil }
             // Combine selection and focus notifications from one UI operation.

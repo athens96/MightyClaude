@@ -151,11 +151,10 @@ public enum HermesAgent {
 
     // MARK: Models
 
-    /// Where the model picker of the last Hermes session is kept (the app's own folder): Hermes
-    /// has no command that lists models without opening a session.
-    public static func modelCacheURL() -> URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("MightyCode/hermes-models.json")
-    }
+    /// The file in the app's folder (`ProviderService.hermesModelCacheURL`) that keeps the model picker of the last
+    /// Hermes session: Hermes has no command that lists models without opening a session. A ProviderService without
+    /// a storage folder (tests) has none, so a fake Hermes never writes over the user's picker.
+    public static let modelCacheFileName = "hermes-models.json"
     /// The `model` option of a session's `configOptions` as picker rows: `provider:model` ids
     /// with Hermes's own names.
     public static func models(configOptions: Any?) -> [ModelOption] {

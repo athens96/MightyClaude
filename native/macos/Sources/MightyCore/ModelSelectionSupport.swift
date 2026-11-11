@@ -8,10 +8,11 @@ public struct ModelSelectionResolution: Sendable, Equatable {
 
 public enum ModelSelectionSupport {
     /// Only successful CLI metadata can retire a previously offered model.
-    /// Custom IDs survive missing or inconclusive discovery results.
+    /// Custom IDs survive missing or inconclusive discovery results, and a kept
+    /// older list (`readFailure` set: the newest read failed) changes nothing.
     public static func reconcile(model: String, effort: String, previous: ModelCatalog?, refreshed: ModelCatalog, provider: String? = nil) -> ModelSelectionResolution {
         let original = ModelSelectionResolution(model: model, effort: effort)
-        guard refreshed.source == "cli" else { return original }
+        guard refreshed.isFresh else { return original }
         let prior = previous?.models.first { $0.value == model || $0.resolvedModel == model }
         let directMatch = refreshed.models.first { $0.value == model }
             ?? refreshed.models.first { $0.value != "default" && $0.resolvedModel == model }

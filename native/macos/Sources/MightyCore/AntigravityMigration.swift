@@ -22,9 +22,9 @@ public enum AntigravityMigration {
     }
 
     /// A pane's model agy's live list no longer has: the run would fail, so it
-    /// starts on agy's default instead. Only the CLI's own list decides; the
-    /// fallback list may lag behind it.
+    /// starts on agy's default instead. Only the list the CLI gave on its latest
+    /// read decides; the fallback list, and a kept older list, may lag behind it.
     public static func modelUnavailable(_ model: String, catalog: ModelCatalog) -> Bool {
-        model != "default" && catalog.source == "cli" && !catalog.models.contains { $0.value == model }
+        model != "default" && catalog.isFresh && !catalog.models.contains { $0.value == model }
     }
 }

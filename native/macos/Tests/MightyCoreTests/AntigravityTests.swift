@@ -236,9 +236,15 @@ struct AntigravityTests {
         let service = ProviderService(environment: environment)
         let command = await service.command(provider: "gemini")
         #expect(command?.executable == agy && command?.version == "1.3.6")
-        #expect(await service.modelCatalog(provider: "gemini").source == "fallback") // signed out: the list fails
+        let signedOut = await service.modelCatalog(provider: "gemini")
+        #expect(signedOut.source == "fallback" && signedOut.readFailure?.contains("authentication required") == true) // signed out: the list fails
         try FileManager.default.removeItem(at: bin.appendingPathComponent("signed-out"))
-        #expect(await service.modelCatalog(provider: "gemini", forceRefresh: true).models.map(\.value) == ["default", "gemini-3.8-flash-low"])
+        let listed = await service.modelCatalog(provider: "gemini", forceRefresh: true)
+        #expect(listed.isFresh && listed.models.map(\.value) == ["default", "gemini-3.8-flash-low"])
+        // Signed out again: the list just read stays, marked as kept.
+        try Data().write(to: bin.appendingPathComponent("signed-out"))
+        let kept = await service.modelCatalog(provider: "gemini", forceRefresh: true)
+        #expect(kept.source == "cli" && kept.models == listed.models && kept.readFailure?.contains("authentication required") == true)
         await service.shutdown()
     }
 

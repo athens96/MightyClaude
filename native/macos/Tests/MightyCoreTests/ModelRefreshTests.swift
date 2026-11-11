@@ -157,7 +157,9 @@ struct ModelRefreshTests {
         await service.invalidateCaches()
         #expect(await old.value.source == "fallback")
         try FileManager.default.removeItem(at: folder.appendingPathComponent("catalog.json"))
-        #expect(await service.modelCatalog(provider: "claude", workspacePath: folder.path, forceRefresh: true).source == "fallback")
+        // The read the invalidation dropped kept nothing: the failed read has only the built-in list, and says why.
+        let failed = await service.modelCatalog(provider: "claude", workspacePath: folder.path, forceRefresh: true)
+        #expect(failed.source == "fallback" && failed.readFailure?.hasPrefix("claude: ") == true)
         await service.shutdown()
     }
 
@@ -173,6 +175,10 @@ struct ModelRefreshTests {
         #expect(fresh.available && fresh.modelCatalog.models.last?.value == "account-two")
         #expect(await old.value.modelCatalog.source == "fallback")
         #expect(calls(folder, "codex") == 2 && calls(folder, "claude") == 0)
+        // A later read that fails keeps the new account's list, never the one the superseded read was getting.
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("catalog.json"))
+        let kept = await service.modelCatalog(provider: "codex", workspacePath: folder.path, forceRefresh: true)
+        #expect(kept.source == "cli" && kept.models.last?.value == "account-two" && kept.readFailure != nil && !kept.isFresh)
         await service.shutdown()
     }
 

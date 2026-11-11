@@ -364,6 +364,10 @@ struct SessionPaneView: View {
             Button(store.isRefreshingModels(for: session) ? L("composer.model.refreshing") : L("composer.model.refresh")) {
                 store.refreshModels(for: session.id, invalidate: true)
             }.disabled(store.isRefreshingModels(for: session))
+            // A menu's text row is drawn muted and cannot be picked: the built-in or a kept list, and why the read failed.
+            if let notice = store.modelListNotice(for: session) {
+                Text(verbatim: notice.line).help(notice.help).accessibilityHint(notice.help)
+            }
             Section(L("composer.label.model")) {
                 ForEach(models) { model in
                     Button {

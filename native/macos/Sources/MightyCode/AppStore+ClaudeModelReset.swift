@@ -32,7 +32,8 @@ extension AppStore {
             var failed = 0
             for task in tasks {
                 let result = await task.value
-                if result?.modelCatalog.source != "cli" { failed += 1 }
+                // A kept older list is not a reload.
+                if result?.modelCatalog.isFresh != true { failed += 1 }
             }
             claudeModelResetInProgress = false
             modelRefreshRevision &+= 1

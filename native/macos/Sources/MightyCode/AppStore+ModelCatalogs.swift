@@ -30,6 +30,31 @@ extension AppStore {
         if let session = snapshot.sessions.first(where: { $0.id == snapshot.activeSessionId }), provider == nil || session.provider == provider { refreshModels(for: session.id) }
     }
 
+    /// A sign-in or sign-out changed what the provider's CLI lists: every list ProviderService read before it goes
+    /// (each workspace's, and the one without a workspace that the runtime summary and another computer's panes
+    /// get), then the local menus read again, so no read begun before the change answers for it.
+    func modelsAfterAccountChange(_ provider: String) {
+        Task { [weak self] in
+            guard let self else { return }
+            await self.providers.discardModelCatalogs(provider: provider)
+            guard !self.ending else { return }
+            self.invalidateLocalModels(provider: provider)
+        }
+    }
+
+    /// A Hermes session keeps the picker it offered as the menu's list (`HermesAgent.saveModels`): read it again
+    /// when the run ends, so the models a first request brought are in the menu without a manual refresh.
+    func modelsAfterRunEnded(_ sessionID: String) {
+        guard snapshot.sessions.first(where: { $0.id == sessionID })?.provider == "hermes", !isRemoteSession(sessionID) else { return }
+        invalidateLocalModels(provider: "hermes")
+    }
+
+    /// The muted line under the model menu's refresh button: the built-in list after a read that failed, or the
+    /// last list the CLI gave when a newer read failed (help: why). Nothing for a list the CLI just gave.
+    func modelListNotice(for session: RunSession) -> ModelListNotice? {
+        providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.notice()
+    }
+
     func acceptLocalModels(_ key: LocalModelContext, previous: ProviderRuntime?, refreshed: ProviderRuntime) {
         guard !ending, let workspace = snapshot.workspaces.first(where: { $0.id == key.workspaceID }), workspace.remote == nil, workspace.path == key.path else { return }
         modelRefreshRevision &+= 1
