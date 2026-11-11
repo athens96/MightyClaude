@@ -90,13 +90,14 @@ internal sealed class SessionUsageTracker
     private long lastModSequence = -1;
     private bool authoritativeContext, resultSeen;
     internal SessionUsageTracker(string provider, Action<SessionUsage>? callback) { value = Initial(provider); this.callback = callback; }
-    private static SessionUsage Initial(string provider) => new() { Provider = provider, Source = provider == "gemini" ? "antigravity.stream-json" : provider == "pi" ? "pi.rpc" : provider + ".stream-json", TokenScope = provider == "claude" ? "response" : provider == "pi" ? "run" : "session" };
+    private static SessionUsage Initial(string provider) => new() { Provider = provider, Source = provider == "gemini" ? "antigravity.stream-json" : provider == "pi" ? "pi.rpc" : provider is "opencode" or "hermes" ? provider + ".acp" : provider + ".stream-json", TokenScope = provider == "claude" ? "response" : provider is "pi" or "opencode" ? "run" : "session" };
     internal void Consume(JsonElement root)
     {
         if (callback is null) return;
         var type = root.Text("type");
         if (value.Provider == "claude") { Claude(root, type); return; }
         if (value.Provider == "pi") { Pi(root, type); return; }
+        if (value.Provider is "opencode" or "hermes") { Acp(root, type); return; }
         if (value.Provider == "codex")
         {
             if (type == "thread.started") { Identity(root.Text("thread_id")); Publish(); }
@@ -144,6 +145,62 @@ internal sealed class SessionUsageTracker
         value = value with { InputTokens = inputTotal, OutputTokens = outputTotal, CacheReadTokens = (value.CacheReadTokens ?? 0) + read, CacheWriteTokens = (value.CacheWriteTokens ?? 0) + written, TotalTokens = SessionUsageSupport.Sum([inputTotal, outputTotal]), ContextUsedTokens = input };
         if (SessionUsageSupport.Cost(MetadataJson.Number(MetadataJson.Property(usage, "cost"), "total")) is { } cost) value = value with { CostUSD = (value.CostUSD ?? 0) + cost, CostScope = "run" };
         Publish();
+    }
+    /// <summary>
+    /// An ACP agent (M/MightyCore/SessionUsage.swift consumeACP): <c>usage_update</c> carries the context in use and its window, and from
+    /// OpenCode 2 the session's running cost; the prompt's result carries tokens: OpenCode 2's are the turn's, every model call summed (run
+    /// scope); Hermes's are its session's running counts (session scope), and it reports no cost.
+    /// </summary>
+    private void Acp(JsonElement root, string? type)
+    {
+        static JsonElement Option(JsonElement options, Func<JsonElement, bool> match) =>
+            options.ValueKind == JsonValueKind.Array ? options.EnumerateArray().FirstOrDefault(o => o.ValueKind == JsonValueKind.Object && match(o)) : default;
+        switch (type)
+        {
+            case "acp.session":
+                Identity(root.Text("sessionId"));
+                var options = MetadataJson.Property(root, "configOptions");
+                var model = Option(options, o => o.Text("id") == "model");
+                if (model.ValueKind == JsonValueKind.Undefined) model = Option(options, o => o.Text("category") == "model");
+                if (model.ValueKind == JsonValueKind.Object) Model(model.Text("currentValue"));
+                Publish();
+                break;
+            case "acp.update":
+                if (MetadataJson.Property(root, "update") is not { ValueKind: JsonValueKind.Object } update) return;
+                // Hermes names the model it settled on after the session opened (`custom:name` becomes `custom:host:name`).
+                if (update.Text("sessionUpdate") == "config_option_update")
+                {
+                    if (Option(MetadataJson.Property(update, "configOptions"), o => o.Text("id") == "model") is { ValueKind: JsonValueKind.Object } chosen) Model(chosen.Text("currentValue"));
+                    Publish(); return;
+                }
+                if (update.Text("sessionUpdate") != "usage_update") return;
+                if (SessionUsageSupport.Count(update, "used") is { } used) value = value with { ContextUsedTokens = used };
+                if (SessionUsageSupport.Count(update, "size") is { } size && size > 0) value = value with { ContextWindowTokens = size };
+                if (MetadataJson.Property(update, "cost") is { ValueKind: JsonValueKind.Object } cost && (cost.Text("currency") ?? "USD").Equals("USD", StringComparison.OrdinalIgnoreCase)
+                    && SessionUsageSupport.Cost(MetadataJson.Number(cost, "amount")) is { } amount) value = value with { CostUSD = amount, CostScope = "session" };
+                Publish();
+                break;
+            case "acp.prompt_result":
+                if (MetadataJson.Property(root, "usage") is not { ValueKind: JsonValueKind.Object } usage || SessionUsageSupport.Count(usage, "inputTokens") is not { } input
+                    || SessionUsageSupport.Count(usage, "outputTokens") is not { } output) return;
+                var read = SessionUsageSupport.Count(usage, "cachedReadTokens"); var written = SessionUsageSupport.Count(usage, "cachedWriteTokens");
+                if (value.Provider == "hermes")
+                {
+                    // The session's counters so far (gateway/session_usage.py). `inputTokens` leaves the cache out and `totalTokens` holds it
+                    // (read and written), so input is the total without the output.
+                    var total = SessionUsageSupport.Count(usage, "totalTokens");
+                    // A turn cancelled before its first model call reports zeros, which are not the session's counts.
+                    if ((total ?? 0) == 0 && input == 0 && output == 0) return;
+                    var sessionInput = total is { } t && t >= output ? t - output : SessionUsageSupport.Sum([input, read ?? 0]);
+                    value = value with { TokenScope = "session", InputTokens = sessionInput, OutputTokens = output, CacheReadTokens = read, ReasoningTokens = SessionUsageSupport.Count(usage, "thoughtTokens"), TotalTokens = SessionUsageSupport.Sum([sessionInput, output]) };
+                    Publish(); return;
+                }
+                // opencode's `inputTokens` leaves the cached part out (core session/usage.ts); here input includes it, as for the others.
+                var runInput = SessionUsageSupport.Sum([input, read ?? 0, written ?? 0]);
+                value = value with { TokenScope = "run", InputTokens = runInput, OutputTokens = output, CacheReadTokens = read, CacheWriteTokens = written, ReasoningTokens = SessionUsageSupport.Count(usage, "thoughtTokens"), TotalTokens = SessionUsageSupport.Count(usage, "totalTokens") ?? SessionUsageSupport.Sum([runInput, output]) };
+                Publish();
+                break;
+        }
     }
     internal void ConsumeMod(JsonElement root)
     {

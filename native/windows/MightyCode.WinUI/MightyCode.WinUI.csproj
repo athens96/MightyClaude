@@ -46,6 +46,8 @@
     <Content Include="../../../LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../../assets/icons/MightyCode.ico" Link="Assets/MightyCode.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../../assets/icons/mightycode.png" Link="Assets/mightycode.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- pi's ask_user extension and opencode's question instructions: the Mac bundle's own files (Resources/Agents), not copies (AgentFiles). -->
+    <Content Include="../../macos/Sources/MightyCore/Resources/Agents/*" Link="Agents/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../../mods/mighty-bridge/**/*" Exclude="../../../mods/mighty-bridge/tests/**" Link="claude-mods/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!-- The published app carries the repo-root locale files themselves, so the Windows
          copy cannot drift from the one source; scripts/check-locales.js asserts these links. -->

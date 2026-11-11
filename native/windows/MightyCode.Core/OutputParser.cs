@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 
 namespace MightyCode.Core;
 
-public sealed class OutputParser
+public sealed partial class OutputParser
 {
     private readonly string provider, activityNamespace;
     private readonly Action<string, string> log;
@@ -322,6 +322,7 @@ public sealed class OutputParser
                 if (type is "turn.failed" or "error") { Failed = true; log("error", root.TryGetProperty("error", out var error) ? Error(error, Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Codex" })) : root.Text("message") ?? Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Codex" })); }
             }
             else if (provider == "pi") Pi(root, type);
+            else if (provider is "opencode" or "hermes") Acp(root, type);
             else if (root.Text("event") is { } kind) Antigravity(root, kind);
         }
         catch (JsonException) { log("output", line); }

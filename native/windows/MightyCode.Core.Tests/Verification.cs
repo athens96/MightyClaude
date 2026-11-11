@@ -495,6 +495,24 @@ internal static class Verification
         await Test("pi: a steer is written while the turn is open and refused before and after", PiVerification.ASteerIsWrittenWhileTheTurnIsOpenAndRefusedBeforeAndAfter);
         await Test("pi: stopping a run ends it stopped, and a resume of a missing session starts a new one", PiVerification.StoppingARunEndsItStoppedAndAResumeOfAMissingSessionStartsANewOne);
         await Test("pi: neither a delegation child nor a parent, not in a remote workspace, advertised to the phone", PiVerification.PiIsNeitherADelegationChildNorAParentNorInARemoteWorkspaceAndTheHostAdvertisesIt);
+        await Test("acp opencode: a new session is initialize, session/new and one prompt; text, resume and usage", AcpVerification.ANewOpencodeSessionIsInitializeThenSessionNewThenOnePrompt);
+        await Test("acp opencode: settings go as config options and one the agent lacks is named and skipped", AcpVerification.OpencodeSettingsGoAsConfigOptionsAndOneTheAgentLacksIsNamedAndSkipped);
+        await Test("acp opencode: a missing session to resume starts a new one with a notice", AcpVerification.AMissingOpencodeSessionToResumeStartsANewOneWithANotice);
+        await Test("acp opencode: the question tool is the question card (pick, typed, several, declined)", AcpVerification.OpencodesQuestionToolIsTheQuestionCard);
+        await Test("acp opencode: a form the card cannot ask is declined and a withdrawn question leaves no card", AcpVerification.AFormTheCardCannotAskIsDeclinedAndAWithdrawnQuestionLeavesNoCard);
+        await Test("acp opencode: tools are rows and an ask is the approval card answered once", AcpVerification.OpencodeToolsAreRowsAndAnAskIsTheApprovalCardAnsweredOnce);
+        await Test("acp opencode: a signed-out run fails as a lost sign-in; requests not offered are refused", AcpVerification.ASignedOutOpencodeRunFailsAsALostSignIn);
+        await Test("acp opencode: permission modes are its rules for the run, with the question instructions", AcpVerification.OpencodesPermissionModesAreItsRulesForTheRun);
+        await Test("acp hermes: a new session is initialize, session/new and one prompt; running counts and the context", AcpVerification.ANewHermesSessionIsInitializeThenSessionNewThenOnePrompt);
+        await Test("acp hermes: the model, the effort and the edit policy go as config options", AcpVerification.HermessModelEffortAndEditPolicyGoAsConfigOptions);
+        await Test("acp hermes: a resume ignores the replayed conversation; a missing one starts anew", AcpVerification.AHermesResumeIgnoresTheReplayedConversation);
+        await Test("acp hermes: without a provider the run stops at initialize as a missing sign-in", AcpVerification.WithoutAProviderHermesStopsAtInitializeAsAMissingSignIn);
+        await Test("acp hermes: tools are rows and an edit and a dangerous command are cards", AcpVerification.HermesToolsAreRowsAndAnEditAndADangerousCommandAreCards);
+        await Test("acp hermes: clarify is the question card (recorded, declined, withdrawn, built forms and approval)", AcpVerification.HermessClarifyIsTheQuestionCard);
+        await Test("acp hermes: the note about the card follows the request", AcpVerification.TheNoteAboutTheCardFollowsTheRequest);
+        await Test("acp hermes: its log and tracebacks on stderr stay out of the pane; yolo and edit policy", AcpVerification.HermessLogAndTracebacksOnStderrStayOutOfThePane);
+        await Test("acp hermes: the model menu is the picker the last session offered", AcpVerification.TheHermesMenuIsThePickerTheLastSessionOffered);
+        await Test("acp hermes: the clarify config value is the Mac's", AcpVerification.TheClarifyConfigValueIsTheMacs);
         // Antigravity permission cards, ported from the Mac's AntigravityPermissionTests over the shared fixture.
         await Test("antigravity cards: every fixture turn gives its actions", AntigravityPermissionVerification.EveryFixtureTurnGivesItsActions);
         await Test("antigravity cards: without a card the older notice stays", AntigravityPermissionVerification.WithoutACardTheOlderNoticeStays);
