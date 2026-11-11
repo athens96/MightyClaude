@@ -699,6 +699,26 @@ return node 340 × 34 at the result's place; the band 248 wide, 28 left of what
 shares its rows, from the 실행 block's top to the run's last block and at
 least 140 high.
 
+## The phone's role view (`fixtures/mobile-roles.json`)
+
+What a host sends a phone that asks for the role view (`GET
+/m1/sessions/{id}?roles=1`, capability `roles`; docs/mobile-remote.md "역할
+보기"), in Korean, for the saved runs of each case: a Claude pane whose second
+request fans its background work out (a running Explore sub-agent with a child,
+a background command with its output lines, a background worktree agent), an
+earlier request whose ended background agent was copied into its notice run,
+the advisor's one consultation and the session log; and a Codex pane, where
+every block says who it is and nothing fans out. `expect` lists of each run its
+id and status, of each block its id, kind, title, status, background flag and
+the role view's `role`, `card` and `delegate`, of each run its `returning` and
+`advisor`, and the payload's `fanOut` and `log`; a key absent there is absent
+on the wire. Inks are design token names, times milliseconds since 1970 (the
+stored timestamps, so both hosts write the same numbers). The Mac
+(`MobileFlowTests`, `MobileMightySupport.runs(roles:)` and `MobileFlow.log`)
+and the Windows Core (`MobileFlowVerification`, embedded by the test project)
+produce exactly this JSON from the runs, and the phone
+(`mobile/src/__tests__/flow-roles.test.ts`) reads it and renders it.
+
 ## Help capture demo profile (`fixtures/demo-profile.json`)
 
 The demo state the macOS `--help-capture` mode loads to take the help site's
