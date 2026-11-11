@@ -283,10 +283,16 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         env["CLAUDE_CODE_SAFE_MODE"] = "1"; env["CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL"] = "1"; env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"; env["CLAUDE_CODE_SKIP_PROMPT_HISTORY"] = "1";
         return env;
     }
+    /// <summary>
+    /// The environment of a CLI the app runs (the model lists, the version checks, the runs). <c>DISABLE_TELEMETRY</c> is left out on
+    /// purpose (M/MightyCore/ProviderService.swift quietClaudeEnvironment): with it Claude Code skips fetching the account's current
+    /// model configuration and answers with its built-in list, so a model released after the CLI was built (Fable 5.2 on 2.1.322)
+    /// never reaches the model menu, and the <c>fable</c> alias reads as the older model.
+    /// </summary>
     public static Dictionary<string, string> QuietEnvironment()
     {
         var environment = CliEnvironment.Current();
-        foreach (var key in new[] { "DISABLE_AUTOUPDATER", "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING", "NO_UPDATE_NOTIFIER" }) environment[key] = "1";
+        foreach (var key in new[] { "DISABLE_AUTOUPDATER", "DISABLE_ERROR_REPORTING", "NO_UPDATE_NOTIFIER" }) environment[key] = "1";
         return environment;
     }
     public static async Task<string> ReadBoundedAsync(StreamReader reader, int limit, CancellationToken token)

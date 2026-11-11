@@ -324,6 +324,7 @@ internal static class Verification
         await Test("toolkit add takes one entry object as the Mac does", ToolkitFileVerification.AddTakesOneEntryObjectAsTheMacDoes);
         await Test("composer parity: a pane's model and effort follow a newly read list", ComposerParityVerification.ModelSelectionFollowsTheNewList);
         await Test("composer parity: a model list is read again when it must be", ComposerParityVerification.ModelListIsReadAgainWhenItMustBe);
+        await Test("model list probe: Claude's read lets the CLI fetch the account's current models (no DISABLE_TELEMETRY)", ModelListProbeVerification.TheProbeLetsTheCliFetchTheAccountsCurrentModels);
         await Test("composer parity: a built-in slash command sent in full never reaches the CLI", ComposerParityVerification.SentBuiltinNeverReachesTheCli);
         await Test("composer parity: a transcript keeps the newest 400 entries", ComposerParityVerification.TranscriptKeepsTheNewestFourHundred);
         await Test("composer parity: compaction, collaboration, rate limits and over-long lines reach the pane", ComposerParityVerification.StreamEventsReachTheTranscript);
