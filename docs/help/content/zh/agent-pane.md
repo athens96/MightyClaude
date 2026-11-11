@@ -36,7 +36,7 @@ section: agent-pane
 {{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 没有此项；pi 有 Off、Minimal、Low、Medium、High、XHigh；opencode 有 Low、Medium、High、Max，即模型提供的变体；Hermes 有 Low、Medium、High、XHigh、Max。
 
 ### 顾问 {#advisor}
-{{platform:mac}} Claude 窗格在{{ui:composer.effort.label}}旁边有一个灯泡形状的{{ui:composer.advisor.label}}按钮。这是 Claude Code 的实验性功能：Claude 在工作过程中向另一个模型征求建议。{{ui:composer.advisor.follow}}（默认）不传递任何内容，按 Claude Code 自己的设置运行。选择某个模型后，它就是顾问；{{ui:composer.advisor.off}}只在这个窗格的请求里关闭顾问。使用顾问会多用令牌。如果选择比主模型弱的模型，Claude Code 会报错，错误会显示在窗格里。其他电脑上的工作区和其他智能体的窗格没有这个按钮。
+Claude 窗格在{{ui:composer.effort.label}}旁边有一个灯泡形状的{{ui:composer.advisor.label}}按钮。这是 Claude Code 的实验性功能：Claude 在工作过程中向另一个模型征求建议。{{ui:composer.advisor.follow}}（默认）不传递任何内容，按 Claude Code 自己的设置运行。选择某个模型后，它就是顾问；{{ui:composer.advisor.off}}只在这个窗格的请求里关闭顾问。使用顾问会多用令牌。如果选择比主模型弱的模型，Claude Code 会报错，错误会显示在窗格里。其他电脑上的工作区和其他智能体的窗格没有这个按钮。
 
 ### 权限 {#permission}
 权限决定智能体无需询问即可做哪些事。
@@ -146,15 +146,15 @@ Claude、Codex 和 Antigravity 窗格都以{{ui:graph.view.mighty}}视图显示�
 ### Mighty 流程 {#diagram}
 每个请求生成一个请求块，其正下方是{{ui:graph.block.execution}}块。请求块只包含发出的请求；智能体因该请求所做的事（消息、工具调用、进度）显示在{{ui:graph.block.execution}}块中。子智能体和后台任务从{{ui:graph.block.execution}}块下方分支出来。请求结束后，会附上{{ui:graph.block.result}}卡片。
 
-{{platform:mac}} {{ui:graph.block.execution}}块和子智能体块的标题栏显示是谁在工作。左端的色条和图标的颜色表示角色（主会话、子智能体）。标题后面是子智能体的类型（Explore、自定义智能体的名称等）以及后台、分叉、worktree 标记；{{ui:graph.block.execution}}块上还有窗格所选的思考强度。模型与令牌数一起显示，尚无响应时，请求的模型后面会标注“请求”。自定义智能体的定义文件里若有 `color`，就用那个颜色。块较窄时这些标记先隐藏，把指针移到图标上可以看到完整内容。
+{{ui:graph.block.execution}}块和子智能体块的标题栏显示是谁在工作。左端的色条和图标的颜色表示角色（主会话、子智能体）。标题后面是子智能体的类型（Explore、自定义智能体的名称等）以及后台、分叉、worktree 标记；{{ui:graph.block.execution}}块上还有窗格所选的思考强度。模型与令牌数一起显示，尚无响应时，请求的模型后面会标注“请求”。自定义智能体的定义文件里若有 `color`，就用那个颜色。块较窄时这些标记先隐藏，把指针移到图标上可以看到完整内容。
 
-{{platform:mac}} 在 Claude 窗格的流程中，运行中的子智能体会以小卡片的形式并排显示在启动它的块下方。在后台启动的子智能体也显示在这里。卡片上有名称、类型和模型、当前正在做的事（一行），以及状态和已用时间、工具调用次数、令牌数。只显示应用实际看到的数值，没有进度百分比。点击卡片可展开为完整的块，用块标题栏的{{ui:graph.card.fold}}按钮可以折叠回去。前台子智能体结束后和以前一样变成块。后台子智能体结束后仍是卡片，点击会转到{{ui:graph.background.noticeRun}}图表中的完整块。在后台运行的命令（等待 CI、构建应用、开发服务器等）也以灰色卡片出现在同一行，显示其说明、命令、该命令最后输出的一行，以及已运行的时间，或结束状态和退出码。
+在 Claude 窗格的流程中，运行中的子智能体会以小卡片的形式并排显示在启动它的块下方。在后台启动的子智能体也显示在这里。卡片上有名称、类型和模型、当前正在做的事（一行），以及状态和已用时间、工具调用次数、令牌数。只显示应用实际看到的数值，没有进度百分比。点击卡片可展开为完整的块，用块标题栏的{{ui:graph.card.fold}}按钮可以折叠回去。前台子智能体结束后和以前一样变成块。后台子智能体结束后仍是卡片，点击会转到{{ui:graph.background.noticeRun}}图表中的完整块。在后台运行的命令（等待 CI、构建应用、开发服务器等）也以灰色卡片出现在同一行，显示其说明、命令、该命令最后输出的一行，以及已运行的时间，或结束状态和退出码。
 
-{{platform:mac}} 卡片上方的分支上有一行，说明该块把工作交给了多少个子智能体、使用哪个模型，以及其中有多少个仍在运行。如果同一行里还有后台命令，则显示共有多少个在并行运行，以及其中子智能体和任务各有多少个。在结果出现之前，结果将要出现的位置有一个小标记。子智能体还在运行时，它表示正在等待它们的报告；全部结束而主会话仍在工作时，它显示“{{ui:graph.return.reviewing}}”。结果卡片出现后，这个标记消失，分支连到结果卡片。
+卡片上方的分支上有一行，说明该块把工作交给了多少个子智能体、使用哪个模型，以及其中有多少个仍在运行。如果同一行里还有后台命令，则显示共有多少个在并行运行，以及其中子智能体和任务各有多少个。在结果出现之前，结果将要出现的位置有一个小标记。子智能体还在运行时，它表示正在等待它们的报告；全部结束而主会话仍在工作时，它显示“{{ui:graph.return.reviewing}}”。结果卡片出现后，这个标记消失，分支连到结果卡片。
 
-{{platform:mac}} 在 Claude 窗格的流程下方、输入框上方，有一条{{ui:graph.log.title}}。它的标题行是当前状态：主会话的模型和状态、它的子智能体中有多少个在运行，以及有多少个后台命令在运行，各用其角色的颜色显示。展开后，它会列出最新请求中最近发生的五件事：时间、是谁（主会话的模型或子智能体的名称）、做了什么（工具调用、子智能体的开始和结束、提问、{{ui:graph.block.compact}}、通知到达）。点击某一行，流程会移到对应的块。用右端的按钮可以把它折叠成只剩状态行，每个窗格会记住是否折叠。
+在 Claude 窗格的流程下方、输入框上方，有一条{{ui:graph.log.title}}。它的标题行是当前状态：主会话的模型和状态、它的子智能体中有多少个在运行，以及有多少个后台命令在运行，各用其角色的颜色显示。展开后，它会列出最新请求中最近发生的五件事：时间、是谁（主会话的模型或子智能体的名称）、做了什么（工具调用、子智能体的开始和结束、提问、{{ui:graph.block.compact}}、通知到达）。点击某一行，流程会移到对应的块。用右端的按钮可以把它折叠成只剩状态行，每个窗格会记住是否折叠。
 
-{{platform:mac}} 开启了顾问的请求，或者确实征求过建议的请求，左侧会有一条{{ui:graph.identity.role.advisor}}带。标题栏显示顾问的模型和当前状态（{{ui:graph.advisor.state.onCall}}、{{ui:graph.advisor.state.consulting}}）。下面每征求一次建议就有一行：是谁征求的、什么时候以及等了多久才有答复、处在工作的哪个阶段（{{ui:graph.advisor.position.beforeChange}}、{{ui:graph.advisor.position.during}}、{{ui:graph.advisor.position.lastStep}}），以及结果如何。最下面是调用次数和顾问读取的令牌数。建议通常经加密后只送达 Claude，所以内容不会显示，这条带会说明这一点。带与征求建议的块之间有虚线相连，点击某一行会移到那个块。{{ui:graph.log.title}}里也有顾问开始和结束的两行，状态行会加上顾问的状态。
+开启了顾问的请求，或者确实征求过建议的请求，左侧会有一条{{ui:graph.identity.role.advisor}}带。标题栏显示顾问的模型和当前状态（{{ui:graph.advisor.state.onCall}}、{{ui:graph.advisor.state.consulting}}）。下面每征求一次建议就有一行：是谁征求的、什么时候以及等了多久才有答复、处在工作的哪个阶段（{{ui:graph.advisor.position.beforeChange}}、{{ui:graph.advisor.position.during}}、{{ui:graph.advisor.position.lastStep}}），以及结果如何。最下面是调用次数和顾问读取的令牌数。建议通常经加密后只送达 Claude，所以内容不会显示，这条带会说明这一点。带与征求建议的块之间有虚线相连，点击某一行会移到那个块。{{ui:graph.log.title}}里也有顾问开始和结束的两行，状态行会加上顾问的状态。
 
 在后台启动的子智能体和后台命令（任务）在运行期间不会画成请求的块，而是在输入框上方的后台任务条里。在 Mac 的 Claude 窗格中，子智能体还会显示为上面的卡片。每一行显示类型、名称、用时和输出的最后一行；展开一行会显示它运行的命令（子智能体显示提示的第一行）和输出的最后几行（最多 6 行）。任务结束、通知送达 Claude 后，Claude 的每一次回答都会生成一个新的{{ui:graph.background.noticeRun}}图表，每个已结束的任务一个块：类型行（子智能体还是后台命令，以及结束状态）、命令、输出的最后几行，以及子智能体的报告。在{{ui:graph.view.timeline}}中，这个图表是新增的一行；在{{ui:graph.view.structure}}中，它是末尾新增的一张卡片（看板）。手机上的 Mighty 视图和流水线也一样。
 

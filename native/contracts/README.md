@@ -663,6 +663,39 @@ message's final usage, `iterations` included; a transcript has no `result`
 line. The tracker reads both when a line carries them (requests read back from
 the transcript) and counts a message's advisor tokens once.
 
+The Windows Core replays the same four recordings through its own graph tracker
+(`native/windows/MightyCode.Core.Tests/FlowTrackerVerification.cs`, embedded
+from here by the test project) and expects what the Mac's tests expect: the
+sub-agents' identity, figures and the two runs of the sub-agents' recording, the
+fork's and the worktree agent's marks, the commands' start, end and exit code,
+and the advisor's one consultation with its model and tokens.
+
+## Role view layout (`fixtures/flow-vectors.json`)
+
+The role view's layout of a Claude pane's flow (docs/mighty-mode.md "역할
+보기") for the same runs on the two sides that lay it out on Windows: the Core
+(`MightyGraphLayout.Make` with `fanOut`, read by the WinUI host for the copy it
+sends the page) and the web page (`native/windows/web/src/mighty/layout.ts`
+`makeLayout` with `fanOut`, which draws it). Each case is the pane's runs in
+their wire shape, whether the pane runs, and the cards the user opened (as node
+suffixes); `expect` is every node in order with its kind, frame and whether it
+is a compact card, every edge, the advisor's dotted links, the canvas size and
+its origin. `splitsExecution` is on, there is no draft and nothing is expanded.
+The cases: a running background sub-agent as a card under the 실행 block's
+delegate line; a foreground sub-agent opened into its block with its own line
+over its row; a folded card that draws nothing under it; the release row (an
+ended background agent and two running commands in launch order, into the
+return node); a finished request keeping its background card above its result,
+with its notice run under it; the advisor's band linked to the 실행 block and,
+through a folded card, to the sub-agent that asked; a band of a request that
+delegated nothing. The web suite (`flow.test.ts`) and the Core suite read the
+file where it lives; numbers compare within 0.001. The geometry is the Mac's
+(`MightyGraphFanOutTests`, `FlowLinesTests`, `FlowAdvisorTests`): the delegate
+line 18 under its block, 340 × 24, its row 26 under it; a card 236 × 86; the
+return node 340 × 34 at the result's place; the band 248 wide, 28 left of what
+shares its rows, from the 실행 block's top to the run's last block and at
+least 140 high.
+
 ## Help capture demo profile (`fixtures/demo-profile.json`)
 
 The demo state the macOS `--help-capture` mode loads to take the help site's
