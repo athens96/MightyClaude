@@ -91,6 +91,13 @@ public final class CLIStreamParser {
     private var interruptedResultExpected = false
     /// A background task the CLI reported as started is still running.
     public var backgroundRunning: Bool { !backgroundTracker.work.running.isEmpty }
+    /// The CLI's last word on its session (`session_state_changed`, which the app asks Claude for): nil until it says one.
+    private var sessionState: String?
+    /// The CLI said it is not idle: a turn still runs or is about to (a notice turn after the request's result), or waits for
+    /// an answer, or a background agent still runs. Its `idle` comes only after all of them, so until then the run's input
+    /// stays open: a turn may still ask, start background work or resume an agent, and closed input would leave that work to
+    /// Claude Code's own limit (it stops background work 10 minutes after the last turn once its input is closed).
+    public var cliBusy: Bool { sessionState.map { $0 != "idle" } ?? false }
     func suppressInterruptedResult(_ value: Bool = true) { interruptedResultExpected = value }
 
     public init(provider: String, log: @escaping (String, String) -> Void, resume: @escaping (String) -> Void, activityNamespace: String = UUID().uuidString, activity: ((AgentActivity) -> Void)? = nil, control: ((Data) -> Void)? = nil, result: (() -> Void)? = nil, activityClock: (() -> TimeInterval)? = nil, usage: ((SessionUsage) -> Void)? = nil, graph: ((ExecutionGraphNode) -> Void)? = nil, graphInput: String? = nil, configuredModel: String? = nil,
@@ -482,6 +489,7 @@ public final class CLIStreamParser {
             if type == "system", value["subtype"] as? String == "permission_denied" {
                 tool(id: value["tool_use_id"] as? String, name: value["tool_name"] as? String, state: "error", output: errorText(value["message"], fallback: L("run.tool.claudeDenied")))
             } else if type == "system", value["subtype"] as? String == "session_state_changed" {
+                if !claudeChild, let state = value["state"] as? String, !state.isEmpty, state.utf8.count <= 64 { sessionState = state }
                 if value["state"] as? String == "idle" { settled?() }
             } else if type == "system", value["subtype"] as? String == "compact_boundary" {
                 if !claudeChild { log("system", ContextCompaction.title + " · " + ContextCompaction.claudeSummary(value["compact_metadata"])) }

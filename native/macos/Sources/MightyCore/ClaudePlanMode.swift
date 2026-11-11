@@ -481,10 +481,16 @@ public struct BackgroundWork: Codable, Sendable, Equatable {
 /// Reads Claude Code's `system` task events (`task_started`, `task_updated`,
 /// `task_progress`, `task_notification`, `background_tasks_changed`). A task
 /// the CLI registered in the foreground (a blocking Agent call) stays out until
-/// it is moved to the background.
+/// it is moved to the background. A task that ended and starts again runs
+/// again: a background agent resumed by `SendMessage` keeps its task id, and
+/// Claude Code (2.1.322) lists and starts the new run under a run id of its own
+/// (`run_id`, native/contracts/fixtures/claude-stream-resumed-agent.jsonl).
 public final class BackgroundTaskTracker {
     public private(set) var work = BackgroundWork()
     private var hidden: [String: BackgroundTask] = [:]
+    /// The CLI's run id of each listed task's latest run, when its events carry one: a report of an earlier run never
+    /// touches a later one.
+    private var runs: [String: String] = [:]
     private let clock: () -> Date
     public init(clock: @escaping () -> Date = Date.init) { self.clock = clock }
 
@@ -508,6 +514,8 @@ public final class BackgroundTaskTracker {
         }
     }
     private var now: String { ClaudePlanMode.timestamp(clock()) }
+    /// The run an event names (`run_id`), when it names a valid one.
+    static func runID(_ frame: [String: Any]) -> String? { (frame["run_id"] as? String).flatMap { validID($0) ? $0 : nil } }
 
     /// One stream-json frame; the new state when the visible tasks changed.
     public func consume(_ frame: [String: Any]) -> BackgroundWork? {
@@ -516,13 +524,20 @@ public final class BackgroundTaskTracker {
         switch subtype {
         case "task_started":
             guard let id = frame["task_id"] as? String, Self.validID(id), frame["ambient"] as? Bool != true, hidden[id] == nil else { break }
-            if let listed = index(id) {
-                // The level event listed it first: fill in what only the start carries.
+            let run = Self.runID(frame)
+            if var listed = index(id) {
+                // A task that ended starts again in the background: a new run (an agent resumed by SendMessage), unless the
+                // start names the very run that ended.
+                if work.tasks[listed].status != "running", frame["is_backgrounded"] as? Bool != false, run == nil || run != runs[id] {
+                    listed = restart(listed, run: run, description: frame["description"] as? String)
+                }
+                // The level event listed it first (or started it again): fill in what only the start carries.
                 if work.tasks[listed].toolUseId == nil, let tool = frame["tool_use_id"] as? String, CoreValidation.identifier(tool) { work.tasks[listed].toolUseId = tool }
                 if let type = frame["task_type"] as? String { work.tasks[listed].kind = Self.kind(type) }
                 if work.tasks[listed].description.isEmpty, let description = frame["description"] as? String {
                     work.tasks[listed].description = ActivitySupport.clean(description, maximumBytes: 1_024, singleLine: true)
                 }
+                if let run, runs[id] == nil { runs[id] = run }
                 break
             }
             let task = BackgroundTask(id: id, toolUseId: (frame["tool_use_id"] as? String).flatMap { CoreValidation.identifier($0) ? $0 : nil },
@@ -530,27 +545,29 @@ public final class BackgroundTaskTracker {
                                       description: ActivitySupport.clean(frame["description"] as? String ?? "", maximumBytes: 1_024, singleLine: true),
                                       startedAt: now)
             if frame["is_backgrounded"] as? Bool == false { if hidden.count < 256 { hidden[id] = task } }
-            else { insert(task) }
+            else { insert(task, run: run) }
         case "task_updated":
             guard let id = frame["task_id"] as? String, let patch = frame["patch"] as? [String: Any] else { break }
-            if patch["is_backgrounded"] as? Bool == true, let task = hidden.removeValue(forKey: id) { insert(task) }
+            if patch["is_backgrounded"] as? Bool == true, let task = hidden.removeValue(forKey: id) { insert(task, run: Self.runID(frame)) }
             if var task = hidden[id] {
                 // Still in the foreground: keep its state for a later move.
                 if let description = patch["description"] as? String { task.description = ActivitySupport.clean(description, maximumBytes: 1_024, singleLine: true) }
                 if let status = Self.status(patch["status"] as? String), status != "running" { hidden.removeValue(forKey: id) } else { hidden[id] = task }
                 break
             }
+            guard current(id, frame) else { break }
             update(id) { task in
                 if let description = patch["description"] as? String { task.description = ActivitySupport.clean(description, maximumBytes: 1_024, singleLine: true) }
                 if let status = Self.status(patch["status"] as? String) { finish(&task, status: status) }
                 if task.status == "failed", task.summary == nil, let error = patch["error"] as? String { task.summary = ActivitySupport.clean(error, maximumBytes: 4_096) }
             }
         case "task_progress":
-            guard let id = frame["task_id"] as? String, let description = frame["description"] as? String else { break }
+            guard let id = frame["task_id"] as? String, let description = frame["description"] as? String, current(id, frame) else { break }
             update(id) { $0.description = ActivitySupport.clean(description, maximumBytes: 1_024, singleLine: true) }
         case "task_notification":
             guard let id = frame["task_id"] as? String else { break }
             hidden.removeValue(forKey: id)
+            guard current(id, frame) else { break }
             update(id) { task in
                 // Only the report that ends the task may set its summary.
                 guard task.status == "running" else { return }
@@ -561,15 +578,44 @@ public final class BackgroundTaskTracker {
                 }
             }
         case "background_tasks_changed":
-            // A level signal: what is listed is live and in the background.
+            // A level signal: what is listed is live and in the background. A task that ended, listed under a run of its own
+            // that is not the one that ended, runs again.
             for case let row as [String: Any] in frame["tasks"] as? [Any] ?? [] {
-                guard let id = row["task_id"] as? String, Self.validID(id), row["ambient"] as? Bool != true, index(id) == nil else { continue }
+                guard let id = row["task_id"] as? String, Self.validID(id), row["ambient"] as? Bool != true else { continue }
+                let run = Self.runID(row)
+                if let listed = index(id) {
+                    if work.tasks[listed].status != "running", let run, let ended = runs[id], run != ended {
+                        restart(listed, run: run, description: row["description"] as? String)
+                    }
+                    continue
+                }
                 insert(hidden.removeValue(forKey: id) ?? BackgroundTask(id: id, kind: Self.kind(row["task_type"] as? String),
-                    description: ActivitySupport.clean(row["description"] as? String ?? "", maximumBytes: 1_024, singleLine: true), startedAt: now))
+                    description: ActivitySupport.clean(row["description"] as? String ?? "", maximumBytes: 1_024, singleLine: true), startedAt: now), run: run)
             }
         default: break
         }
         return work != before ? work : nil
+    }
+
+    /// Whether `frame` reports on task `id`'s latest run: it names no run, or the task's run is not known, or they agree.
+    private func current(_ id: String, _ frame: [String: Any]) -> Bool {
+        guard let run = Self.runID(frame), let latest = runs[id] else { return true }
+        return run == latest
+    }
+
+    /// The listed task at `index` runs again: a new run (`run`), started now, last among the tasks in start order, with no end,
+    /// summary or tool call yet (its start names the call). Returns where it stands now.
+    @discardableResult
+    private func restart(_ index: Int, run: String?, description: String?) -> Int {
+        var task = work.tasks.remove(at: index)
+        task.status = "running"; task.startedAt = now; task.endedAt = nil; task.summary = nil; task.toolUseId = nil
+        if let description {
+            let text = ActivitySupport.clean(description, maximumBytes: 1_024, singleLine: true)
+            if !text.isEmpty { task.description = text }
+        }
+        runs[task.id] = run
+        work.tasks.append(task)
+        return work.tasks.count - 1
     }
 
     /// The request's own result arrived (not a task notification's).
@@ -595,17 +641,18 @@ public final class BackgroundTaskTracker {
     }
 
     private func index(_ id: String) -> Int? { work.tasks.firstIndex { $0.id == id } }
-    private func insert(_ task: BackgroundTask) {
+    private func insert(_ task: BackgroundTask, run: String?) {
         work.tasks.append(task)
+        if let run { runs[task.id] = run }
         while work.tasks.count > BackgroundWork.maximumTasks {
-            work.tasks.remove(at: work.tasks.firstIndex { $0.status != "running" } ?? 0)
+            runs.removeValue(forKey: work.tasks.remove(at: work.tasks.firstIndex { $0.status != "running" } ?? 0).id)
         }
     }
     private func update(_ id: String, _ change: (inout BackgroundTask) -> Void) {
         guard let index = index(id) else { return }
         change(&work.tasks[index])
     }
-    /// A settled task never runs again; a late or repeated report is ignored.
+    /// A settled task stays settled until it starts again (`restart`); a late or repeated report is ignored.
     private func finish(_ task: inout BackgroundTask, status: String) {
         guard task.status == "running", status != "running" else { return }
         task.status = status; task.endedAt = now

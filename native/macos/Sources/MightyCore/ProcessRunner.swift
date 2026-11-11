@@ -468,14 +468,18 @@ private final class ManagedProcess {
     /// The user cancelled a plan: the run ends `stopped` however the CLI ends it.
     var planCancelled = false
     /// stdin and the approval channel are closed: the CLI may exit now. While
-    /// the request's own result is in but background tasks still run, both
-    /// stay open, so the follow-up turns can still ask and new input can join.
+    /// the request's own result is in but background tasks still run, or the
+    /// CLI has not said it is idle (a notice turn may still come), both stay
+    /// open, so the follow-up turns can still ask and new input can join.
     var inputClosed = false
     var lastOutputAt = Date()
     var inputWatchdog: Task<Void, Never>?
-    /// Close input once the request answered and no background task runs.
-    func settleInput() {
-        guard receivedClaudeResult, !inputClosed, permissions != nil, parser?.backgroundRunning != true else { return }
+    /// Close input once the request answered, no background task runs and the CLI is not busy (`CLIStreamParser.cliBusy`:
+    /// it said so, and its `idle` has not come yet). `afterSilence`: the input watchdog's close, which does not wait for the
+    /// CLI's word.
+    func settleInput(afterSilence: Bool = false) {
+        guard receivedClaudeResult, !inputClosed, permissions != nil, parser?.backgroundRunning != true,
+              afterSilence || parser?.cliBusy != true else { return }
         inputClosed = true; inputWatchdog?.cancel(); inputWatchdog = nil
         permissions?.cancelAll(); permissionInitializationTask?.cancel(); child?.closeInput()
     }
@@ -682,8 +686,11 @@ public actor ProcessRunner {
                         // The editor starts a separate process for each turn.
                         // EOF only after its real result keeps approval replies
                         // possible while allowing one-shot shutdown afterwards;
-                        // background tasks still running keep it open longer.
+                        // background tasks still running, or a CLI that is not
+                        // idle yet, keep it open longer (its `idle` closes it).
                         run.settleInput()
+                        // Should that word never come, the watchdog closes input after a silence, as after background work.
+                        if !run.inputClosed, run.parser?.backgroundRunning != true { Task { await self?.armInputWatchdog(run) } }
                     }, usage: { [weak run, onEvent] usage in
                         guard let run, !run.finished else { return }
                         onEvent(RunEvent(sessionId: run.request.sessionId, type: "usage", usage: usage))
@@ -953,7 +960,7 @@ public actor ProcessRunner {
     private func inputIdle(_ run: ManagedProcess, after idle: Double) -> Bool {
         guard !run.inputClosed, !run.finished else { return true }
         guard Date().timeIntervalSince(run.lastOutputAt) >= idle else { return false }
-        run.settleInput()
+        run.settleInput(afterSilence: true)
         return true
     }
     public func answerUserQuestions(sessionId: String, runId: String, requestId: String, answers: [String: UserQuestionAnswer]) async throws {
