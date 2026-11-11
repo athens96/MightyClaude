@@ -22,8 +22,10 @@
 .provider-mark.brand[data-provider="claude"] { color: var(--provider-claude); }
 .provider-mark.brand[data-provider="codex"] { color: var(--provider-codex); }
 .provider-mark.brand[data-provider="gemini"] { color: var(--provider-gemini); }
-/* pi's violet (Core ProviderMark.Colors); design-tokens.json carries no entry for it yet. */
+/* pi's violet, opencode's grey and Hermes's gold (Core ProviderMark.Colors); design-tokens.json carries no entry for them yet. */
 .provider-mark.brand[data-provider="pi"] { color: #8B7CF6; }
+.provider-mark.brand[data-provider="opencode"] { color: #8A8F98; }
+.provider-mark.brand[data-provider="hermes"] { color: #D9A441; }
 
 .tool-chip {
   display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-md); row-gap: var(--space-xxs); min-height: 28px;

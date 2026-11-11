@@ -33,7 +33,19 @@ export function entryTime(timestamp: string, language: string): string {
 
 /** The provider's short name (ProviderMark.Label). */
 export function providerLabel(provider: string): string {
-  return provider === 'codex' ? 'Codex' : provider === 'gemini' ? 'Antigravity' : provider === 'pi' ? 'pi' : 'Claude';
+  switch (provider) {
+    case 'codex': return 'Codex';
+    case 'gemini': return 'Antigravity';
+    case 'pi': return 'pi';
+    case 'opencode': return 'opencode';
+    case 'hermes': return 'Hermes';
+    default: return 'Claude';
+  }
+}
+
+/** An agent still in beta, whose name carries the beta capsule (ProviderCatalog.IsBeta): every one but Claude. */
+export function providerIsBeta(provider: string): boolean {
+  return provider === 'codex' || provider === 'gemini' || provider === 'pi' || provider === 'opencode' || provider === 'hermes';
 }
 
 /** The text split into lines as the transcript splits them. */

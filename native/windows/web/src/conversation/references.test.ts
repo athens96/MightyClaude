@@ -74,11 +74,17 @@ describe('parseQuestionnaire', () => {
     expect(parseQuestionnaire('[1]')).toBeNull();
   });
 
-  it('holds the counts: 1-4 questions, 2-4 options', () => {
+  it('holds the counts: 1-8 questions, each of up to 12 options or none (a typed answer)', () => {
+    const questions = (count: number) => Array.from({ length: count }, (_, i) => question({ question: 'q' + i }));
+    const options = (count: number) => Array.from({ length: count }, (_, i) => option('L' + i));
     expect(parse({ questions: [] })).toBeNull();
-    expect(parse({ questions: Array.from({ length: 5 }, (_, i) => question({ question: 'q' + i })) })).toBeNull();
-    expect(parse({ questions: [question({ options: [option('A')] })] })).toBeNull();
-    expect(parse({ questions: [question({ options: ['A', 'B', 'C', 'D', 'E'].map((l) => option(l)) })] })).toBeNull();
+    expect(parse({ questions: questions(8) })).toHaveLength(8);
+    expect(parse({ questions: questions(9) })).toBeNull();
+    expect(parse({ questions: [question({ options: [] })] })?.[0]?.options).toEqual([]);
+    expect(parse({ questions: [question({ options: options(1) })] })?.[0]?.options).toHaveLength(1);
+    expect(parse({ questions: [question({ options: options(12) })] })?.[0]?.options).toHaveLength(12);
+    expect(parse({ questions: [question({ options: options(13) })] })).toBeNull();
+    expect(parse({ questions: [question({ options: undefined })] })).toBeNull();
   });
 
   it('needs every field with its type', () => {

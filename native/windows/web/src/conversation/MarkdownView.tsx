@@ -33,14 +33,16 @@ export function Questionnaire({ questions }: { questions: readonly Question[] })
             {`${index + 1}. ${question.header}  ·  ${t(question.multiSelect ? 'phone.questionnaire.multiple' : 'phone.questionnaire.single')}`}
           </div>
           <div className="questionnaire-title" data-text="">{question.question}</div>
-          <ul className={'questionnaire-options' + (question.multiSelect ? ' multiple' : '')}>
-            {question.options.map((option) => (
-              <li key={option.label}>
-                <div className="questionnaire-label" data-text="">{option.label}</div>
-                {option.description.length > 0 && <div className="questionnaire-description" data-text="">{option.description}</div>}
-              </li>
-            ))}
-          </ul>
+          {question.options.length > 0 && (
+            <ul className={'questionnaire-options' + (question.multiSelect ? ' multiple' : '')}>
+              {question.options.map((option) => (
+                <li key={option.label}>
+                  <div className="questionnaire-label" data-text="">{option.label}</div>
+                  {option.description.length > 0 && <div className="questionnaire-description" data-text="">{option.description}</div>}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       ))}
     </div>

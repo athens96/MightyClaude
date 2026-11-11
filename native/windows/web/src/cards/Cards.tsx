@@ -90,11 +90,11 @@ export function Cards({ paneId }: { paneId: string }) {
 
 /**
  * The permission host's keyboard (WaitCard, RestoreCardFocus): a press on the card's words or background puts the keyboard on
- * it (the chosen answer, else the first answer tile, else the first button); the arrows move between the card's answers and
- * Enter on a single question's answer picks it and goes on to Next or Send (keys.ts). When the card is drawn again (each pick
- * redraws it, Next turns into Send) with the keyboard in it, it stays there, on the same answer or the first one. Focus
- * elsewhere is left alone, so a card arriving never takes the keyboard from the composer. Keys in the card stay in the card:
- * the window's shortcuts do not see them.
+ * it (the chosen answer, else the first answer tile or the words of a question with nothing to pick, else the first button); the
+ * arrows move between the card's answers and Enter on a single question's answer picks it and goes on to Next or Send (keys.ts).
+ * When the card is drawn again (each pick redraws it, Next turns into Send) with the keyboard in it, it stays there, on the same
+ * answer or the first one. Focus elsewhere is left alone, so a card arriving never takes the keyboard from the composer. Keys in
+ * the card stay in the card: the window's shortcuts do not see them, and in a text box they are the text's.
  */
 function KeyboardCard({ children }: { children: ReactNode }) {
   const host = useRef<HTMLDivElement>(null);
@@ -135,7 +135,7 @@ function KeyboardCard({ children }: { children: ReactNode }) {
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     event.stopPropagation();
     const target = event.target as HTMLElement;
-    if (!target.dataset.answer) return;
+    if (!target.dataset.answer || target.tagName === 'TEXTAREA') return;
     const list = answers().filter(enabled);
     const action = cardKey(event.key, target.getAttribute('role'), list.indexOf(target), list.length, event.altKey || event.ctrlKey || event.metaKey);
     if (!action) return;
@@ -343,39 +343,49 @@ function Permission({ card, reply }: { card: PermissionCard; reply: Reply }) {
   );
 }
 
-function Questionnaire({ card, reply }: { card: QuestionnaireCard; reply: Reply }) {
+/**
+ * The question card (MainWindow.Questionnaire.cs, M/UserQuestionnaireCard.swift), one question at a time: a dot per question (up to
+ * eight), the question's tiles (up to twelve, two a row where there is room) and its own-answer tile, or only the typed answer;
+ * Cancel, Back and Next or Send answers. The host checks the answers.
+ */
+export function Questionnaire({ card, reply }: { card: QuestionnaireCard; reply: Reply }) {
   const { t } = useServices();
   const [draft, setDraft] = useState<draftOf.QuestionDraft>(draftOf.emptyDraft);
   const { state, running: sending, run } = usePendingAction();
   const [error, setError] = useState<string | null>(null);
-  const total = card.questions.length;
+  const questions = card.questions;
+  const total = questions.length;
   const step = Math.min(draft.step, total - 1);
-  const question = card.questions[step];
+  const question = questions[step];
   if (!question) return null;
   const last = step + 1 === total;
   const picks = draft.picks[step] ?? [];
   const custom = draft.custom[step] === true;
+  // Another agent's question may offer nothing to pick (M/UserQuestionnaireCard.swift): no tiles, no "single or multiple" and no
+  // own-answer tile, only the typed answer, open from the start and needed to go on.
+  const choices = question.options.length > 0;
+  const typed = draftOf.typing(draft, questions, step);
   const change = (next: draftOf.QuestionDraft) => { setError(null); setDraft(next); };
-  const submit = () => run(async () => refused(await reply('questionnaireAnswer', { requestId: card.requestId, answers: draftOf.answers(draft, card.questions) }), setError));
-  const forward = () => (last ? void submit() : change(draftOf.next(draft, total)));
-  const enabled = !sending && (last ? draftOf.canSubmit(draft, total) : draftOf.answered(draft, step));
+  const submit = () => run(async () => refused(await reply('questionnaireAnswer', { requestId: card.requestId, answers: draftOf.answers(draft, questions) }), setError));
+  const forward = () => (last ? void submit() : change(draftOf.next(draft, questions)));
+  const enabled = !sending && (last ? draftOf.canSubmit(draft, questions) : draftOf.answered(draft, questions, step));
   return (
     <div className="wait-card" data-card="questionnaire" data-request-id={card.requestId}>
-      <div className="wait-card-title">
+      <div className="wait-card-title question-head">
         <Badge>?</Badge>
         <strong className="card-title">{t('phone.questionnaire.title')}</strong>
         <span className="card-waiting">{total > 1 ? t('phone.questionnaire.progress', { current: step + 1, total }) : t('questionnaire.oneQuestion')}</span>
         {total > 1 && (
           <span className="question-dots">
-            {card.questions.map((_, index) => (
+            {questions.map((_, index) => (
               <button
                 type="button"
                 key={index}
                 data-answer={'step-' + index}
-                className={'question-dot' + (index === step ? ' now' : draftOf.answered(draft, index) ? ' done' : '')}
+                className={'question-dot' + (index === step ? ' now' : draftOf.answered(draft, questions, index) ? ' done' : '')}
                 aria-label={t('phone.questionnaire.jump', { index: index + 1 })}
-                disabled={sending || !draftOf.canJump(draft, index)}
-                onClick={() => change(draftOf.jump(draft, index))}
+                disabled={sending || !draftOf.canJump(draft, questions, index)}
+                onClick={() => change(draftOf.jump(draft, questions, index))}
               >{index + 1}</button>
             ))}
           </span>
@@ -386,51 +396,56 @@ function Questionnaire({ card, reply }: { card: QuestionnaireCard; reply: Reply 
       <div className="question-section">
         <div className="question-kind">
           <span className="question-header">{question.header}</span>
-          <span className="card-waiting">{t(question.multiSelect ? 'phone.questionnaire.multiple' : 'phone.questionnaire.single')}</span>
+          {choices && <span className="card-waiting">{t(question.multiSelect ? 'phone.questionnaire.multiple' : 'phone.questionnaire.single')}</span>}
         </div>
         <div className="question-text">{question.question}</div>
-        <div className="question-choices" role={question.multiSelect ? 'group' : 'radiogroup'}>
-          {question.options.map((option, index) => {
-            const on = picks.includes(option.label);
-            return (
-              <button
-                type="button"
-                key={option.label}
-                role={question.multiSelect ? 'checkbox' : 'radio'}
-                aria-checked={on}
-                data-answer={`option-${step}-${index}`}
-                data-option={index}
-                className={'question-choice' + (on ? ' on' : '')}
-                disabled={sending}
-                onClick={() => change(draftOf.pick(draft, question, option.label))}
-              >
-                <span className="question-mark" aria-hidden="true">{question.multiSelect ? (on ? '☑' : '☐') : on ? '◉' : '○'}</span>
-                <span className="question-words"><strong>{option.label}</strong>{option.description && <span>{option.description}</span>}</span>
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            role={question.multiSelect ? 'checkbox' : 'radio'}
-            aria-checked={custom}
-            data-answer={'custom-' + step}
-            className={'question-choice' + (custom ? ' on' : '')}
-            title={t('phone.questionnaire.customHint')}
-            disabled={sending}
-            onClick={() => change(draftOf.toggleCustom(draft, question))}
-          >
-            <span className="question-mark" aria-hidden="true">{question.multiSelect ? (custom ? '☑' : '☐') : custom ? '◉' : '○'}</span>
-            <span className="question-words"><strong>{t('phone.questionnaire.custom')}</strong></span>
-          </button>
-        </div>
-        {custom && (
+        {choices && (
+          <div className="question-choices" role={question.multiSelect ? 'group' : 'radiogroup'}>
+            {question.options.map((option, index) => {
+              const on = picks.includes(option.label);
+              return (
+                <button
+                  type="button"
+                  key={option.label}
+                  role={question.multiSelect ? 'checkbox' : 'radio'}
+                  aria-checked={on}
+                  data-answer={`option-${step}-${index}`}
+                  data-option={index}
+                  className={'question-choice' + (on ? ' on' : '')}
+                  disabled={sending}
+                  onClick={() => change(draftOf.pick(draft, question, option.label))}
+                >
+                  <span className="question-mark" aria-hidden="true">{question.multiSelect ? (on ? '☑' : '☐') : on ? '◉' : '○'}</span>
+                  <span className="question-words"><strong>{option.label}</strong>{option.description && <span>{option.description}</span>}</span>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              role={question.multiSelect ? 'checkbox' : 'radio'}
+              aria-checked={custom}
+              data-answer={'custom-' + step}
+              className={'question-choice' + (custom ? ' on' : '')}
+              title={t('phone.questionnaire.customHint')}
+              disabled={sending}
+              onClick={() => change(draftOf.toggleCustom(draft, question))}
+            >
+              <span className="question-mark" aria-hidden="true">{question.multiSelect ? (custom ? '☑' : '☐') : custom ? '◉' : '○'}</span>
+              <span className="question-words"><strong>{t('phone.questionnaire.custom')}</strong></span>
+            </button>
+          </div>
+        )}
+        {typed && (
           <textarea
             className="card-text"
             data-testid="questionnaire-custom-text"
+            // With nothing to pick the words are the step's answer, where the card's keyboard goes (keys.ts restoreIndex).
+            data-answer={choices ? undefined : 'typed-' + step}
             value={draft.text[step] ?? ''}
             maxLength={8192}
             placeholder={t('phone.questionnaire.customPlaceholder')}
             aria-label={t('phone.questionnaire.customLabel', { header: question.header })}
+            aria-required={choices ? undefined : true}
             disabled={sending}
             onChange={(event) => change(draftOf.setText(draft, event.target.value))}
           />

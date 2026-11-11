@@ -54,14 +54,18 @@
 .card-text { width: 100%; min-height: 56px; max-height: 120px; resize: vertical; font: inherit; font-size: 12px; color: var(--ink); background: var(--card); border: var(--stroke-line) solid var(--line); border-radius: var(--radius-row); padding: var(--space-xs) var(--space-sm); box-sizing: border-box; }
 .card-text::placeholder { color: var(--ink3); }
 
-/* The question card (Questionnaire.cs): dots, then the answers as tiles two a row where there is room. */
+/* The question card (Questionnaire.cs): dots, then the answers as tiles two a row where there is room. Up to eight dots: where
+   they do not fit beside the title and the progress, they go on to a line of their own rather than squeezing the words. */
+.question-head { flex-wrap: wrap; row-gap: var(--space-xs); }
+.question-head > .card-waiting { white-space: nowrap; }
 .question-dots { display: inline-flex; gap: var(--space-xs); }
 .question-dot { width: 18px; height: 18px; border-radius: 9px; border: 0; padding: 0; font-size: 10px; font-weight: 700; background: var(--track); color: var(--ink2); font-variant-numeric: tabular-nums; cursor: default; }
 .question-dot.done { background: var(--wait-soft); color: var(--wait-text); }
 .question-dot.now { background: var(--wait); color: var(--on-wait); }
 .question-dot:disabled { opacity: 0.45; }
-/* The question viewport is 300 high as the Mac's (M/UserQuestionnaireCard.swift), yielding down to 56 in a short pane. */
-.question-section { display: flex; flex-direction: column; gap: var(--space-sm); flex: 0 1 300px; height: 300px; min-height: 56px; overflow-y: auto; }
+/* The question viewport is sized to the question up to 300 high as the Mac's (M/UserQuestionnaireCard.swift), so a typed answer
+   alone or twelve tiles both look right, yielding down to 56 in a short pane. */
+.question-section { display: flex; flex-direction: column; gap: var(--space-sm); flex: 0 1 auto; max-height: 300px; min-height: 56px; overflow-y: auto; }
 .question-kind { display: flex; align-items: center; gap: var(--space-sm); }
 .question-header { flex: 1; font-size: 11px; font-weight: 600; color: var(--wait-text); }
 .question-text { font-size: 14.5px; font-weight: 700; user-select: text; }
@@ -79,7 +83,7 @@
 
 /* The plan card (PlanCard.cs): the plan on the raised page, then the four answers, the accent one last. */
 .plan-document { flex: 0 1 auto; background: var(--card-raised); border-radius: var(--radius-entry); padding: var(--space-sm) var(--space-md); max-height: 260px; overflow-y: auto; min-height: 40px; user-select: text; }
-.wait-card > :not(.plan-document) { flex: none; }
+.wait-card > :not(.plan-document, .question-section) { flex: none; }
 .plan-revise { display: flex; flex-direction: column; gap: var(--space-sm); }
 .plan-revise-actions { display: flex; justify-content: flex-end; gap: var(--space-sm); }
 .plan-answers { position: relative; display: flex; justify-content: flex-end; align-items: center; gap: var(--space-sm); }

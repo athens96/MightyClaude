@@ -72,4 +72,11 @@ describe('Entry', () => {
     expect(html).toContain('data-questionnaire');
     expect(html).toContain('questionnaire-options multiple');
   });
+
+  it('draws a question with nothing to pick as its words, with no empty list', () => {
+    const text = JSON.stringify({ questions: [{ header: 'Name', question: 'What should the branch be called?', multiSelect: false, options: [] }] });
+    const html = render({ id: 'q', kind: 'assistant', text, timestamp: '' });
+    expect(html).toContain('What should the branch be called?');
+    expect(html).not.toContain('questionnaire-options');
+  });
 });

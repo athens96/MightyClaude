@@ -1,6 +1,11 @@
 // MightyCode.Core's UserQuestionnaire.Parse: the AskUserQuestion input an assistant entry (or a code block in one) may
-// hold, read the way the host reads it, so the conversation shows the same questions the WinUI transcript does.
+// hold, read the way the host reads it, so the conversation shows the same questions the WinUI transcript does. Its bounds
+// are the question card's: up to eight questions of up to twelve options, or none (a typed answer).
 import { utf8Length } from './references';
+
+/** UserQuestionnaire.MaximumQuestions and MaximumOptions. */
+const maximumQuestions = 8;
+const maximumOptions = 12;
 
 export interface QuestionOption {
   label: string;
@@ -37,12 +42,12 @@ export function parseQuestionnaire(input: string): Question[] | null {
   } catch {
     return null;
   }
-  if (!isObject(root) || !Array.isArray(root.questions) || root.questions.length < 1 || root.questions.length > 4) return null;
+  if (!isObject(root) || !Array.isArray(root.questions) || root.questions.length < 1 || root.questions.length > maximumQuestions) return null;
   const result: Question[] = [];
   for (const item of root.questions as unknown[]) {
     if (!isObject(item) || !valid(item.header, 256) || !valid(item.question, 8192) || typeof item.multiSelect !== 'boolean') return null;
     const options = item.options;
-    if (!Array.isArray(options) || options.length < 2 || options.length > 4) return null;
+    if (!Array.isArray(options) || options.length > maximumOptions) return null;
     const choices: QuestionOption[] = [];
     for (const option of options as unknown[]) {
       if (!isObject(option) || !valid(option.label, 1024) || !valid(option.description, 8192, true)) return null;
