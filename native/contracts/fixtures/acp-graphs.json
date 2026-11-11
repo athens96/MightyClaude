@@ -1,0 +1,348 @@
+{
+  "about": "The Mighty graph of an ACP agent's run (opencode, Hermes) for each shared recording (native/contracts/fixtures/opencode-acp-*.jsonl, hermes-acp-*.jsonl), replayed through the ACP channel, the stream parser and the graph tracker with the case's request and no card answered: what the tracker emitted last for each block, in the order the blocks first came. A request of these agents is one block (kind main, titled by the agent's name): the streamed answer is its output, opencode's prompt result its tokens, Hermes's none (it reports its session's running totals); tool calls, questions and sub-agents' text are not blocks. The run ends completed when the turn completed and nothing failed, else in error. The Mac (MightyCoreTests AcpGraphTests) and the Windows Core (AcpGraphVerification) produce exactly these from the recordings.",
+  "cases": [
+    {
+      "provider": "opencode",
+      "recording": "answer",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "output": "Hello! How can I help with this project?",
+            "state": "completed",
+            "title": "opencode",
+            "usage": {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "inputTokens": 1203,
+              "outputTokens": 18
+            }
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "opencode",
+      "recording": "tools",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "output": "One test fails because main returns 1.",
+            "state": "completed",
+            "title": "opencode",
+            "usage": {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 2048,
+              "inputTokens": 3100,
+              "outputTokens": 95
+            }
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "opencode",
+      "recording": "question",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "output": "Great choice — red it is.",
+            "state": "completed",
+            "title": "opencode",
+            "usage": {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 18176,
+              "inputTokens": 3683,
+              "outputTokens": 114
+            }
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "opencode",
+      "recording": "question-multiple",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "output": "You picked apple.",
+            "state": "completed",
+            "title": "opencode",
+            "usage": {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 21632,
+              "inputTokens": 232,
+              "outputTokens": 114
+            }
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "opencode",
+      "recording": "question-dismissed",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "state": "completed",
+            "title": "opencode",
+            "usage": {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 10752,
+              "inputTokens": 106,
+              "outputTokens": 112
+            }
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "opencode",
+      "recording": "resume-missing",
+      "request": {
+        "input": "go on",
+        "resumeId": "ses_0000000000000000000000dead"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "go on",
+            "kind": "main",
+            "output": "Starting fresh.",
+            "state": "completed",
+            "title": "opencode",
+            "usage": {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "inputTokens": 800,
+              "outputTokens": 4
+            }
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "opencode",
+      "recording": "auth",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "state": "error",
+            "title": "opencode"
+          }
+        ],
+        "state": "error"
+      }
+    },
+    {
+      "provider": "hermes",
+      "recording": "answer",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "output": "Hi.",
+            "state": "completed",
+            "title": "Hermes"
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "hermes",
+      "recording": "tools",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "output": "Done what could be done; three of the four steps hit gates, and here's the honest status:\n\n1. **/etc/shells** — read it fine. It's the standard macOS list: comments about chpass(1)/ftpd, then `/bin/bash`, `/bin/csh`, `/bin/dash`, `/bin/ksh`, `/bin/sh`, `/bin/tcsh`, `/bin/zsh` (11 lines, 189 bytes).\n\n2. **note.txt** — the write was **denied by your ACP client** (\"Edit approval denied by ACP client; file was not modified\"). I did not create the file. If you want, I can retry the write — but if the client denied it once, it'll likely deny again unless you've changed the setting, so your call.\n\n3. **rm -rf ./nothing-here** — the terminal tool **blocked it**, reporting you did not consent (\"Command denied by user... Do NOT retry\"). It did not run, and I won't retry it or reach the same outcome by another route. Nothing was deleted.\n\n4. **Clarify tool** — I don't have one. I checked my available/deferred tools (browser, session search, terminal, todo, process, vault, connectors...) and none can pose a question with choices. So I'll just ask directly, as you requested with those two options:\n\n**Do you prefer tea or coffee?** (call it in your next message and I'll take it as your answer)\n\nNet: file read ✅, note.txt ❌ (client denied), rm ❌ (denied, not run), question asked below since no clarify tool exists.\n\n⚠️ File-mutation verifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\n  • `note.txt` — [write_file] Edit approval denied by ACP client; file was not modified.",
+            "state": "completed",
+            "title": "Hermes"
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "hermes",
+      "recording": "clarify",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "output": "저장해둠: **작은 웹 앱/CLI 툴** 쪽, 답변은 **짧고 핵심만**. 취향은 arXiv 논문 요약이었네.\n\n현재 디렉터리는 빈 npm/TS 스캐폴드(package.json, tsconfig.json)라, 뭘 만들지 아이디어만 정해지면 바로 골라도 되고 — 지금 상태에서 시작하고 싶으면 \"계획부터 쫙\" 뽑아줄게.",
+            "state": "completed",
+            "title": "Hermes"
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "hermes",
+      "recording": "clarify-declined",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "output": "선택지 카드가 안 닿았네요 — 그냥 답해주셔도 돼요. 뭘 도와드릴까요? 브레인스토밍, 코드, 검색·조사, 글쓰기·번역·요약 중에서 골라주시고.",
+            "state": "completed",
+            "title": "Hermes"
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "hermes",
+      "recording": "cancel",
+      "request": {
+        "input": "hi there"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "state": "completed",
+            "title": "Hermes"
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "hermes",
+      "recording": "full-access",
+      "request": {
+        "input": "hi there",
+        "permissionMode": "fullAccess"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi there",
+            "kind": "main",
+            "output": "Hi.",
+            "state": "completed",
+            "title": "Hermes"
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "hermes",
+      "recording": "resume",
+      "request": {
+        "input": "go on",
+        "permissionMode": "acceptEdits",
+        "resumeId": "local-a8a2537a19ce1905c0a99559ca0f2e86197234e68b0931bf190fc6517e91386e"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "go on",
+            "kind": "main",
+            "output": "Bye.",
+            "state": "completed",
+            "title": "Hermes"
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "hermes",
+      "recording": "resume-missing",
+      "request": {
+        "input": "go on",
+        "resumeId": "local-0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "go on",
+            "kind": "main",
+            "output": "Hello.",
+            "state": "completed",
+            "title": "Hermes"
+          }
+        ],
+        "state": "completed"
+      }
+    },
+    {
+      "provider": "hermes",
+      "recording": "auth",
+      "request": {
+        "input": "hi",
+        "resumeId": "local-b3d62fb4c0780d2c11596ef324e3582b301cb89d9993a5daaa93c6431187c278"
+      },
+      "expect": {
+        "blocks": [
+          {
+            "input": "hi",
+            "kind": "main",
+            "output": "⚠️ provider 'auto' has no endpoint configured, so the request is not sent anywhere (it would otherwise fall back to OpenRouter). Set providers.auto.base_url or model.base_url in config.yaml.\n\nYour request was not processed. Send it again if you still want me to carry it out.",
+            "state": "error",
+            "title": "Hermes"
+          }
+        ],
+        "state": "error"
+      }
+    }
+  ]
+}
