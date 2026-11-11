@@ -576,8 +576,13 @@ def step_push(state, a):
 
 
 def find_run(workflow, commit):
-    runs = json.loads(sh(["gh", "run", "list", "--commit", commit, "--workflow", workflow, "--event", "push",
-                          "--json", "databaseId,status,conclusion,url,headBranch,createdAt", "--limit", "20"]) or "[]")
+    # The commit's push run, or a run started by hand on main for the same commit (a push run GitHub left queued, as
+    # 0.4.57's fd01f1d3 runs were): the newest of them.
+    runs = []
+    for event in ("push", "workflow_dispatch"):
+        found = json.loads(sh(["gh", "run", "list", "--commit", commit, "--workflow", workflow, "--event", event,
+                               "--json", "databaseId,status,conclusion,url,headBranch,createdAt", "--limit", "20"]) or "[]")
+        runs += [r for r in found if event == "push" or r.get("headBranch") == "main"]
     runs.sort(key=lambda r: (r.get("headBranch") == "main", r.get("createdAt", "")), reverse=True)
     return runs[0] if runs else None
 
