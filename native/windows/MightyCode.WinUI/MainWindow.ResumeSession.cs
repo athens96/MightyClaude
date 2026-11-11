@@ -15,9 +15,14 @@ public sealed partial class MainWindow
 
     private ResumableSessionQuery ResumeQuery(Workspace workspace)
     {
+        var environment = PaneView.HistoryEnvironment();
+        // opencode's and Hermes's databases move with these as the CLIs' own do; a smoke's own history home stands alone, as for Claude and Codex.
+        if (PaneView.HistoryHomeOverride is null)
+            foreach (var key in ResumableSessions.StoreVariables)
+                if (Environment.GetEnvironmentVariable(key) is { Length: > 0 } value) environment[key] = value;
         return new ResumableSessionQuery(LocalFolder(workspace))
         {
-            Environment = PaneView.HistoryEnvironment(),
+            Environment = environment,
             Home = PaneView.HistoryHomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             Excluding = ResumableSessions.InUse(service.Snapshot.Sessions),
             Known = service.KnownSessions(),
