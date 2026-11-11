@@ -29,6 +29,8 @@
 - **검색**: 제목에 검색어의 모든 단어가 들어 있는 세션만 남긴다(대소문자·전각 무시).
 - **비어 있을 때**: 고르는 창은 세션이 있을 때만 나오므로 보통은 비지 않는다. 그 사이 다른 창이 남은 세션을 가져가 비면 "이어갈 수 있는 세션이 없습니다"와 함께, 최근 60일 동안 이 폴더에 기록된 세션이 없거나 열린 창이 모두 이어가고 있다는 이유를 보여 준다.
 
+- **Windows의 opencode·Hermes**(2026-11-11, `ResumableSessions.cs`·`AcpSessions.cs`): 창 추가는 여섯 실행기(Claude·Codex·Antigravity·pi·opencode·Hermes)에 묻는다. opencode는 `opencode.db`(`$OPENCODE_DB`, 아니면 `$XDG_DATA_HOME/opencode` 또는 `%USERPROFILE%\.local\share\opencode`; OpenCode 2.2.7에 Windows 분기가 없다)의 `session_v2`에서 이 폴더의 최상위 세션을, Hermes는 `state.db`(`$HERMES_HOME`, 아니면 `%LOCALAPPDATA%\hermes` + `HERMES_DATA_DIR_SUFFIX`)의 ACP 세션을 Mac 규칙대로(60일, 보관·숨김·하위 세션 제외, 압축된 대화는 첫 id 아래 한 줄, 첫 요청에서 앱의 안내 문단을 뗀 제목) 읽기 전용으로 읽는다. Windows만 다른 점: 폴더는 대소문자와 `/`·`\`를 가리지 않고 비교한다. WinUI의 목록 요청은 데이터 위치 변수(`XDG_DATA_HOME`, `OPENCODE_DB`, `HERMES_HOME`, `HERMES_DATA_DIR_SUFFIX`, `LOCALAPPDATA`)를 넘긴다. Hermes의 저장된 프로필(`active_profile`)은 두 앱 모두 따르지 않는다.
+
 ## 새 창
 
 - 새 창은 보통의 **창 추가**와 같이 같은 실행기의 최근 창에서 모델·사고 강도·권한·보기 모드를 이어받고, `resumeId`만 고른 세션으로 정한다.
