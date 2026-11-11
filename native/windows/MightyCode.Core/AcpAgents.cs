@@ -32,8 +32,7 @@ public static class OpencodeAgent
     public const string QuestionInstructionsName = "opencode-questions.md";
 
     /// <summary>Whether <c>opencode --version</c> (<c>opencode v2.2.7</c>; OpenCode 1 printed <c>1.19.5</c>) names OpenCode 2.</summary>
-    public static bool IsSupported(string? version) => Major(version) is { } major && major >= MinimumMajor;
-    public static int? Major(string? version) => version is not null && Regex.Match(version, @"(\d+)\.\d+") is { Success: true } match && int.TryParse(match.Groups[1].Value, out var major) ? major : null;
+    public static bool IsSupported(string? version) => version is not null && SetupProber.VersionNumbers(version) is [var major, ..] && major >= MinimumMajor;
 
     /// <summary>
     /// The pane's permission mode as OpenCode 2's ordered rules (<c>permissions</c>, the last match wins), given to the run alone in

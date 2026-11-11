@@ -33,7 +33,7 @@ public static class HermesAccounts
     /// <c>hermes --version</c> prints its version first (<c>Hermes Agent v0.23.1 (2026.9.24) · stable · local …</c>), then its install
     /// folder, Python and update status: the first line is the version.
     /// </summary>
-    public static string VersionLine(string output) => output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? "";
+    public static string VersionLine(string output) => HermesAgent.VersionLine(output);
 
     /// <summary>
     /// The <c>initialize</c> answer among the lines <c>hermes acp</c> printed (a log line or a warning may come first): the answer to

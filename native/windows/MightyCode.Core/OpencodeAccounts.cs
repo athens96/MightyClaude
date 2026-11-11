@@ -11,10 +11,10 @@ namespace MightyCode.Core;
 public static class OpencodeAccounts
 {
     /// <summary>The first OpenCode 2 release: an older <c>opencode</c> is OpenCode 1.</summary>
-    public const int MinimumMajor = 2;
+    public const int MinimumMajor = OpencodeAgent.MinimumMajor;
 
     /// <summary>Whether <c>opencode --version</c> (<c>opencode v2.2.7</c>; OpenCode 1 printed <c>1.19.5</c>) names OpenCode 2.</summary>
-    public static bool IsSupported(string version) => SetupProber.VersionNumbers(version) is [var major, ..] && major >= MinimumMajor;
+    public static bool IsSupported(string version) => OpencodeAgent.IsSupported(version);
 
     /// <summary>The integrations with a live connection, sorted; whether one is a subscription (OAuth) sign-in; whether all are environment keys.</summary>
     public sealed record Listed(IReadOnlyList<string> Integrations, bool Subscription, bool EnvironmentOnly);
