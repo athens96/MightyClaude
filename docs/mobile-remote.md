@@ -350,7 +350,7 @@ MobileBackgroundWork { id, kind: "agent" | "run", title, status: "running", star
 
 #### 역할 보기 (`roles`)
 
-데스크톱 흐름의 역할 보기([mighty-mode.md](mighty-mode.md) "역할 보기 (맥·Windows)")를 휴대폰 목록에 맞게 보낸다. **폰은 얇은 렌더러다**: 낱말과 모델 이름은 호스트가 데스크톱과 같은 함수로 짓고(맥 `FlowRoles`·`FlowCard`·`FlowDelegation`·`FlowReturn`·`FlowAdvisor`·`FlowLog`, Windows Core의 같은 이름), 폰은 목록에 놓고, 잉크를 자기 팔레트로 옮기고, 압축 행의 경과 시간을 자기 시계로 1초마다 읽는다. 입구는 맥 `MightyCore/Remote/MobileFlow.swift`, Windows `MightyCode.Core/Remote/MobileFlow.cs`이고 필드 이름과 모양은 같다.
+데스크톱 흐름의 역할 보기([mighty-mode.md](mighty-mode.md) "역할 보기 (맥·Windows)")를 휴대폰 목록에 맞게 보낸다. **폰은 얇은 렌더러다**: 낱말과 모델 이름은 호스트가 데스크톱과 같은 함수로 짓고(맥 `FlowRoles`·`FlowCard`·`FlowDelegation`·`FlowReturn`·`FlowSteps`·`FlowLog`, Windows Core의 같은 이름), 폰은 목록에 놓고, 잉크를 자기 팔레트로 옮기고, 압축 행의 경과 시간을 자기 시계로 1초마다 읽는다. 입구는 맥 `MightyCore/Remote/MobileFlow.swift`, Windows `MightyCode.Core/Remote/MobileFlow.cs`이고 필드 이름과 모양은 같다.
 
 **묻는 폰에게만.** `capabilities`에 `"roles"`가 있는 호스트(이번 맥·Windows 앱)만 안다. 휴대폰은 그 호스트에만 세션 상세를 `GET /m1/sessions/{id}?since=…&wait=…&roles=1`로 묻는다(`structure`와 함께 써도 된다). `roles`는 숫자이고 1 이상이면 묻는 것, 0이면 묻지 않는 것이다. 다른 라우트(`/m1/state` 등)에서 이 이름과 숫자가 아닌 값은 400이다(구버전 호스트는 모르는 이름을 400으로 거절하므로 폰은 capability를 보고서만 붙인다). 묻지 않는 폰(이번 릴리스 전의 폰)은 지금까지와 같은 페이로드를 받는다.
 
@@ -361,14 +361,17 @@ MobileMighty     { …, fanOut?: true,                       // runs가 역할 �
                    log?: { status: [{ text, ink }],        // 세션 로그의 상태 줄 부분들("Sonnet 5.5 실행 중", "작업 2개 실행 중", "조언자 대기")
                            rows: [{ id, at, who, ink, what }] } }   // 가장 새 활동의 마지막 다섯 줄, 오래된 것부터
 MobileMightyRun  { …, returning?: { text, waiting },       // 결과가 올 자리의 복귀 줄, 결과가 생기기 전까지(FlowReturn)
-                   advisor?: { header, state?: "consulting" | "onCall", rows: [{ id, caller, ink, at?, seconds?, line, state }],
-                               calls, totals, note?, empty? } }    // 조언자 띠(FlowAdvisor.band): rows는 남긴 호출 전부, calls는 본 호출 수
+                   progress?: { title, heading, request, stateWord, status, count?,   // 진행 상황(FlowSteps.progress): 요청 실행에만, 알림 실행에는 없다
+                                rows: [{ index, text, state: "done" | "current" | "pending" | "stopped" | "failed", startedAt?, endedAt? }],
+                                hidden, more?, running } }
 MobileBlock      { …, role?: { name: "lead" | "subagent" | "task", ink, identity?, marks?: ["background" | "fork" | "worktree"], summary },
-                   card?: { activity?, before: [string], after: [string], startedAt?, endedAt?, nested?, copy?: { runId, blockId } },
+                   card?: { activity?, before: [string], after: [string], startedAt?, endedAt?, nested?, copy?: { runId, blockId },
+                            step? },                         // step: 요청의 단계에서 띄웠으면 그 단계("2. 노트 작성", FlowSteps.stepLabel)
                    delegate?: { head, parts?: [{ text, ink }], model?, progress?, text } }
 ```
 
 - **`role`**은 모든 에이전트 창의 블록에 간다: main 블록은 메인(`identity`는 마지막으로 답한 모델과 창의 사고 강도, `Sonnet 5.5 · 사고 강도 · High`, `FlowLog.leadName`), 하위 에이전트는 종류 · 모델(`FlowCard.identityLine`, `Explore · Haiku 5.5`)과 표시, 백그라운드 명령은 Claude 창에서만 `작업 · <명령>`. `summary`는 화면 낭독기가 읽는 한 문장(`FlowIdentity.summary`)이다.
+- **`progress`**(2026-11-12)는 Claude 창의 요청 실행마다 간다: 데스크톱의 진행 상황 패널과 같은 함수로 지은 글(`요청 27`, 요청의 첫 줄, 상태, 끝난 수/전체 수, 단계마다 글과 상태와 시각, 보이지 않는 단계 수와 `외 N개`). 폰은 마이티 보기 위에 고정 패널로 그린다: 새 요청이 생기면 그 요청을, 사용자가 목록을 직접 끌면 보이는 목록의 위 1/3에 걸린 요청을(알림 실행은 앞 요청의 것으로) 보인다. 요청 줄을 누르면 그 요청으로 스크롤한다. 끝난 단계는 걸린 시간, 진행 중인 단계는 폰의 시계로 흐르는 시간이다. 조언자는 앱에서 뺐다: 호스트는 `advisor`와 상태 줄의 조언자 부분을 보내지 않는다.
 - **`fanOut`**은 Claude 창에만 붙는다. 그때 요청의 실행은 `shownAgents`가 덜어 내던 백그라운드 하위 에이전트·명령과 그 아래 블록을 기록된 순서(띄운 순서) 그대로 싣고, 휴대폰은 그 실행의 `background` 블록을 숨기지 않는다(`hostFiltersBackground`보다 앞선다). 다른 에이전트 창과 묻지 않는 폰에는 지금의 규칙(알림 실행에만 백그라운드 블록) 그대로다.
 - **`card`**는 압축 행이 되는 블록에만 붙는다(`FlowCard.foldsToCard`): 요청의 백그라운드 하위 에이전트와 백그라운드 명령은 늘, 포그라운드 하위 에이전트는 도는 동안. `before`·`after`는 마지막 줄의 시간 앞뒤 낱말(`FlowCard.figureParts`: `실행 중`, 끝난 명령의 `종료 코드 0`; `도구 3`, `토큰 12K`)이고, 폰은 그 사이에 시간을 넣는다: 도는 동안 `startedAt`부터 지금까지, 끝나면 `startedAt`부터 `endedAt`까지(`45초`, `3분 12초`, 데스크톱의 `FlowCard.elapsed`와 같은 낱말 `styles.state.elapsed*`). `activity`는 지금 하는 일(끝나면 답의 첫 줄, 명령은 마지막 출력 줄), `nested`는 그 아래 하위 에이전트 수 `(+N)`, `copy`는 끝난 백그라운드 블록의 사본이 있는 알림 실행(이 페이로드의 실행 가운데)이다.
 - **`delegate`**는 일을 맡긴 블록(main 블록이나 하위 에이전트)에 붙는 줄이다(`FlowDelegation`): `하위 에이전트 3개에 위임 · Haiku 5.5 · 2/3 실행 중`, 명령만이면 `작업 2개 실행 · …`, 섞이면 `3개 병렬 · 하위 에이전트 1 · 작업 2 · …`.

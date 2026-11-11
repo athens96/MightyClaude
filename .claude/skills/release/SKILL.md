@@ -15,6 +15,13 @@ argument-hint: "[version]"
 - The version: the one the user named, else the next patch after `VERSION`. Say which before step 1.
 - The user asked for this release: that is what allows the `--yes` steps. Without it, run none of them.
 
+## The checklist
+
+Before step 1, make the task list with one task per step below (TaskCreate, or TodoWrite where the task tools are off), in this order and
+in these words: 점검, 노트 작성, 버전 커밋, 푸시, CI와 APK, 노트 검토, CI 실패 수정, 배포, 맥 업데이트. Mark a task in progress when you start
+its step and completed when it is done (one that does not apply, such as 7 when CI passed, is completed when you pass it). Mighty Code's
+role view draws each task as a card on the request's spine, with the agents and background commands started during it beside it.
+
 ## Steps
 
 1. `python scripts/release.py check --version <version>` makes the two note templates.
