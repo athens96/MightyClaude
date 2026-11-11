@@ -160,17 +160,17 @@ public static class CliAccountSupport
 
     /// <summary>
     /// Antigravity has no status command, and its credentials live in the system's credential store, so the app asks it for
-    /// its model list (<c>agy models</c>, M/CLIAccounts.swift antigravityStatus): that works only while signed in, and fails with
-    /// "authentication required" once the sign-in is gone. Anything else (no network, a timeout) stays unknown. It has no
-    /// sign-out command either.
+    /// its model list (<c>agy models</c>, M/CLIAccounts.swift antigravityStatus). Signed in only for a clean list with exit 0: once the
+    /// sign-in is gone it says so ("Please sign in to view available models"), and agy 1.5.x does that with exit 0. Anything else (no
+    /// network, a timeout) stays unknown. It has no sign-out command either.
     /// </summary>
     public static CliAccountStatus AntigravityStatus(int exitCode, string output, bool timedOut = false)
     {
         var noSignOut = Locale.Get("settings.cliAccounts.detailAntigravityNoSignOut");
-        if (exitCode == 0 && !timedOut)
-            return new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle, Detail = noSignOut, CanSignOut = false };
         if (CliAuthFailure.Antigravity(output))
             return new CliAccountStatus { Provider = "gemini", LoggedIn = false, Method = GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle, CanSignOut = false };
+        if (exitCode == 0 && !timedOut)
+            return new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle, Detail = noSignOut, CanSignOut = false };
         return new CliAccountStatus { Provider = "gemini", Detail = Locale.Get(timedOut ? "settings.cliAccounts.detailAntigravityTimeout" : "settings.cliAccounts.detailAntigravityUnknown"), CanSignOut = false };
     }
 
@@ -361,20 +361,22 @@ public sealed class CliAccountsCoordinator
     /// returns when the user closes that window. The app never types or receives
     /// credentials; it only starts the command. The argv is handed over as a
     /// separate argument list, so no command line is built from text.
-    /// `directory`: the folder the command starts in (Antigravity's terminal sign-in
-    /// opens in the failed pane's workspace). `opened` runs once the window is
+    /// `directory`: the folder the command starts in (a terminal sign-in from a
+    /// failed pane opens in its workspace). `opened` runs once the window is
     /// up, with true when the returned task ends with that window (the console
-    /// host; a Windows Terminal tab hands off and returns at once).
-    public async Task StartSignInAsync(IReadOnlyList<string> loginArgv, CancellationToken cancellation = default, string? directory = null, Action<bool>? opened = null)
+    /// host; a Windows Terminal tab hands off and returns at once). `title`: the
+    /// Windows Terminal tab's title (CliTerminalSignIn.Title), when there is one.
+    public async Task StartSignInAsync(IReadOnlyList<string> loginArgv, CancellationToken cancellation = default, string? directory = null, Action<bool>? opened = null, string? title = null)
     {
         if (fixedEnvironment is null) await CliEnvironment.RefreshAsync(true, cancellation);
         if (directory is not null && !Directory.Exists(directory)) directory = null;
-        // agy may sit only in its installer's folder, which reaches PATH for new sessions only: it is started by its full path.
-        var resolved = loginArgv is ["agy", ..] ? FindBinary("agy") : null;
+        // A terminal sign-in's CLI is started by its full path: agy may sit only in its installer's folder, which reaches PATH for new
+        // sessions only, and pi is an npm shim (pi.cmd) the console host cannot find by name.
+        var resolved = loginArgv is [var name, ..] && CliTerminalSignIn.Table.Values.Any(entry => entry.Command is [var command, ..] && command == name) ? FindBinary(name) : null;
         if (resolved is not null) loginArgv = [resolved, .. loginArgv.Skip(1)];
         // Windows Terminal by the full path found along the PATH, the console host by the system folder's: never a bare name.
         var terminal = loginArgv.Contains("/setup-bedrock") ? null : FindBinary("wt");
-        var plan = CliAccountTerminal.LaunchPlan(loginArgv, terminal is not null, directory, resolved, terminal);
+        var plan = CliAccountTerminal.LaunchPlan(loginArgv, terminal is not null, directory, resolved, terminal, title);
         var info = new System.Diagnostics.ProcessStartInfo(plan.Executable) { UseShellExecute = false };
         if (directory is not null) info.WorkingDirectory = directory;
         foreach (var value in plan.Arguments) info.ArgumentList.Add(value);
@@ -420,6 +422,8 @@ public sealed class CliAccountsCoordinator
         }
         // Antigravity's installer folder reaches PATH for new sessions only.
         if (name == "agy" && OperatingSystem.IsWindows() && Path.Combine(ProviderCatalog.AntigravityInstallFolder(environment), "agy.exe") is var installed && File.Exists(installed)) return installed;
+        // npm's global folder, where pi.cmd is, is looked in as the CLIs are found (ProviderCatalog.DiscoverAsync).
+        if (name == "pi" && OperatingSystem.IsWindows() && Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm", "pi.cmd") is var shim && File.Exists(shim)) return shim;
         return null;
     }
 }
@@ -509,17 +513,27 @@ public static class CliAccountTerminal
     /// too, so it runs in conhost instead.
     /// `windowsTerminal` is the full path of wt.exe as it was found along the PATH; the
     /// console host and cmd.exe are started from the system folder. A bare name is
-    /// only left where no path is known (the checks).
+    /// only left where no path is known (the checks). A resolved .cmd/.bat shim
+    /// (pi.cmd) runs through `cmd /c` in either window. `title` names the Windows
+    /// Terminal tab (`--title`) unless Windows Terminal would split it; the console
+    /// host takes none.
     public static (string Executable, IReadOnlyList<string> Arguments) LaunchPlan(
-        IReadOnlyList<string> loginArgv, bool windowsTerminalAvailable, string? directory = null, string? resolvedBinary = null, string? windowsTerminal = null)
+        IReadOnlyList<string> loginArgv, bool windowsTerminalAvailable, string? directory = null, string? resolvedBinary = null, string? windowsTerminal = null, string? title = null)
     {
         if (loginArgv.Count == 0 || loginArgv[0].Length == 0)
             throw new ArgumentException("a login command is required", nameof(loginArgv));
         static bool Splits(string? text) => text is not null && (text.Contains(';') || text.Contains('%'));
+        var shim = resolvedBinary is not null && WindowsCommand.IsBatch(resolvedBinary);
         if (windowsTerminalAvailable && !Splits(resolvedBinary) && !Splits(windowsTerminal) && !loginArgv.Any(Splits))
-            return (windowsTerminal ?? "wt.exe", directory is null || Splits(directory) ? ["new-tab", "--", .. loginArgv] : ["new-tab", "-d", directory, "--", .. loginArgv]);
+        {
+            List<string> tab = ["new-tab"];
+            if (title is { Length: > 0 } && !Splits(title)) tab.AddRange(["--title", title]);
+            if (directory is not null && !Splits(directory)) tab.AddRange(["-d", directory]);
+            tab.Add("--");
+            tab.AddRange(shim ? [WindowsCommand.CommandInterpreter(), "/c", resolvedBinary!, .. loginArgv.Skip(1)] : loginArgv);
+            return (windowsTerminal ?? "wt.exe", tab);
+        }
         if (resolvedBinary is null) return (ConsoleHost, [.. loginArgv]);
-        var shim = resolvedBinary.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || resolvedBinary.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
         return (ConsoleHost, shim ? [WindowsCommand.CommandInterpreter(), "/c", resolvedBinary, .. loginArgv.Skip(1)] : [resolvedBinary, .. loginArgv.Skip(1)]);
     }
 

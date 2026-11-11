@@ -121,23 +121,29 @@ internal static class CliLoginRecoveryVerification
         Check(book.Settled("pane") is { Request.Provider: "gemini" }, "an Antigravity request is kept for its retry");
         return Task.CompletedTask;
     }
-    /// <summary>The terminal sign-in waits for agy's status to read signed in (M/MightyCore/Tests AntigravityTests.theTerminalSignInWaitsForTheStatus).</summary>
+    /// <summary>The terminal sign-in waits for its provider's status to read signed in (M/MightyCore/Tests AntigravityTests.theTerminalSignInWaitsForTheStatus, CLITerminalLoginTests).</summary>
     internal static async Task AntigravitySignInIsItsStatusReadingSignedIn()
     {
         var signedOut = new CliAccountStatus { Provider = "gemini", LoggedIn = false, MethodId = CliAccountMethod.GeminiGoogle, CanSignOut = false };
         var signedIn = signedOut with { LoggedIn = true };
         var reads = 0;
-        var outcome = await CliAntigravityLogin.RunAsync(_ => Task.FromResult(++reads >= 3 ? signedIn : signedOut), () => true, interval: TimeSpan.Zero, limit: TimeSpan.FromSeconds(20), tick: TimeSpan.FromMilliseconds(10));
+        var outcome = await CliTerminalSignIn.WaitAsync("gemini", _ => Task.FromResult(++reads >= 3 ? signedIn : signedOut), () => true, interval: TimeSpan.Zero, limit: TimeSpan.FromSeconds(20), tick: TimeSpan.FromMilliseconds(10));
         Check(outcome.Outcome == CliLoginOutcome.LoggedIn && outcome.Status == signedIn, "the status reading signed in ends the wait signed in");
-        var closed = await CliAntigravityLogin.RunAsync(_ => Task.FromResult(signedOut), () => false, interval: TimeSpan.FromSeconds(60), tick: TimeSpan.FromMilliseconds(10));
+        var closed = await CliTerminalSignIn.WaitAsync("gemini", _ => Task.FromResult(signedOut), () => false, interval: TimeSpan.FromSeconds(60), tick: TimeSpan.FromMilliseconds(10));
         Check(closed.Outcome == CliLoginOutcome.Exited && closed.Status == signedOut, "a closed terminal without a sign-in ends the wait");
-        var expired = await CliAntigravityLogin.RunAsync(_ => Task.FromResult(signedOut), () => true, interval: TimeSpan.FromSeconds(60), limit: TimeSpan.FromMilliseconds(50), tick: TimeSpan.FromMilliseconds(10));
+        var expired = await CliTerminalSignIn.WaitAsync("gemini", _ => Task.FromResult(signedOut), () => true, interval: TimeSpan.FromSeconds(60), limit: TimeSpan.FromMilliseconds(50), tick: TimeSpan.FromMilliseconds(10));
         Check(expired.Outcome == CliLoginOutcome.TimedOut, "the limit ends the wait");
         var polled = 0;
-        var slow = await CliAntigravityLogin.RunAsync(_ => { polled++; return Task.FromResult(signedOut); }, () => true, interval: TimeSpan.FromSeconds(60), limit: TimeSpan.FromMilliseconds(200), tick: TimeSpan.FromMilliseconds(10));
+        var slow = await CliTerminalSignIn.WaitAsync("gemini", _ => { polled++; return Task.FromResult(signedOut); }, () => true, interval: TimeSpan.FromSeconds(60), limit: TimeSpan.FromMilliseconds(200), tick: TimeSpan.FromMilliseconds(10));
         Check(slow.Outcome == CliLoginOutcome.TimedOut && polled == 1, "the status is read only every interval, and once more at the limit; got " + polled);
+        // Another provider's status never counts.
+        var claude = new CliAccountStatus { Provider = "claude", LoggedIn = true };
+        var other = await CliTerminalSignIn.WaitAsync("gemini", _ => Task.FromResult(claude), () => true, interval: TimeSpan.Zero, limit: TimeSpan.FromMilliseconds(100), tick: TimeSpan.FromMilliseconds(10));
+        Check(other.Outcome == CliLoginOutcome.TimedOut && other.Status == claude, "another provider's sign-in is not this one's");
+        var pi = await CliTerminalSignIn.WaitAsync("pi", _ => Task.FromResult(new CliAccountStatus { Provider = "pi", LoggedIn = true }), () => true, interval: TimeSpan.Zero, limit: TimeSpan.FromSeconds(20), tick: TimeSpan.FromMilliseconds(10));
+        Check(pi.Outcome == CliLoginOutcome.LoggedIn, "pi's terminal sign-in ends with pi's status");
         using var cancel = new CancellationTokenSource(); cancel.Cancel();
-        try { await CliAntigravityLogin.RunAsync(_ => Task.FromResult(signedOut), () => true, cancel.Token); throw new InvalidOperationException("cancel was ignored"); } catch (OperationCanceledException) { }
+        try { await CliTerminalSignIn.WaitAsync("gemini", _ => Task.FromResult(signedOut), () => true, cancel.Token); throw new InvalidOperationException("cancel was ignored"); } catch (OperationCanceledException) { }
         var plan = CliAccountTerminal.LaunchPlan(CliAccountSupport.LoginArguments("gemini")!, windowsTerminalAvailable: true, directory: @"C:\Projects\app");
         Check(plan.Arguments.SequenceEqual(["new-tab", "-d", @"C:\Projects\app", "--", "agy"]), "the Antigravity sign-in terminal starts in the pane's workspace");
         Check(CliAccountTerminal.LaunchPlan(["agy"], true, @"C:\a;b").Arguments.SequenceEqual(["new-tab", "--", "agy"]), "a folder Windows Terminal would split is not passed on");
@@ -215,5 +221,105 @@ internal static class CliLoginRecoveryVerification
         Check(transition.Outcome == CliLoginOutcome.LoggedIn, "signed-out to signed-in transition confirms a still-running login");
         using var cancel = new CancellationTokenSource(); cancel.Cancel();
         try { await CliLoginWait.RunAsync(() => true, () => null, SignedIn, cancel.Token); throw new InvalidOperationException("cancel was ignored"); } catch (OperationCanceledException) { }
+    }
+
+    private const string AgySignedOut = "Fetching available models...\nError: Please sign in to view available models. Launch the CLI without arguments to sign in.";
+
+    /// <summary>agy 1.5.x says it is signed out with exit 0, and its newer phrases are a lost sign-in (M/MightyCore/Tests CLITerminalSignInTests).</summary>
+    internal static Task AgySignedOutWithExitZeroReadsSignedOut()
+    {
+        Check(CliAccountSupport.AntigravityStatus(0, AgySignedOut).LoggedIn == false, "exit 0 with its sign-in words is signed out");
+        Check(CliAccountSupport.AntigravityStatus(1, AgySignedOut).LoggedIn == false, "and with exit 1");
+        Check(CliAccountSupport.AntigravityStatus(0, "Fetching available models...\ngemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n").LoggedIn == true, "a clean list with exit 0 is signed in");
+        Check(CliAccountSupport.AntigravityStatus(-1, "").LoggedIn is null && CliAccountSupport.AntigravityStatus(0, "", timedOut: true).LoggedIn is null, "a failure or a timeout stays unknown");
+        Check(CliAuthFailure.SignInCanFix(CliAccountSupport.AntigravityStatus(0, AgySignedOut)), "a sign-in can fix it");
+        foreach (var text in new[] { "authentication failed or timed out", "Error: Please sign in to view available models.", "You are not signed in", AgySignedOut })
+            Check(CliAuthFailure.Antigravity(text) && CliAuthFailure.Matches("gemini", text), "agy's newer words: " + text);
+        Check(!CliAuthFailure.Antigravity("407 Proxy Authentication Required"), "a proxy's 407 is not a lost sign-in");
+        return Task.CompletedTask;
+    }
+
+    private static string PiMessageEnd(string? error) => JsonSerializer.Serialize(new { type = "message_end", message = new { role = "assistant", content = Array.Empty<object>(), stopReason = error is null ? "stop" : "error", errorMessage = error } }, Wire.Json);
+
+    /// <summary>pi's own sign-in failures, read from its RPC stream where the Mac's parser reads them, and the table of terminal sign-ins.</summary>
+    internal static Task PiSignInFailuresAndTheTerminalTable()
+    {
+        foreach (var text in new[] { "No API key found for anthropic. Use /login or set ANTHROPIC_API_KEY.", "No models available. Use /login or set an API key.", "Please use /login" })
+            Check(CliAuthFailure.Pi(text), "pi's sign-in failure: " + text);
+        foreach (var text in new[] { "rate limit exceeded", "407 Proxy Authentication Required", "context window exceeded" })
+            Check(!CliAuthFailure.Pi(text), "not pi's sign-in failure: " + text);
+        var rejected = new OutputParser("pi", (_, _) => { }, _ => { });
+        rejected.Parse("""{"type":"response","command":"prompt","success":false,"error":"No API key found for anthropic. Use /login or set ANTHROPIC_API_KEY."}""");
+        Check(rejected.Failed && rejected.AuthenticationFailure, "a prompt pi refuses for its sign-in is a lost sign-in");
+        var other = new OutputParser("pi", (_, _) => { }, _ => { });
+        other.Parse("""{"type":"response","command":"prompt","success":false,"error":"rate limit exceeded"}""");
+        Check(other.Failed && !other.AuthenticationFailure, "another refusal is not");
+        // A message that ended in it, until a retry starts or a later message answers; a retry that gave up on it.
+        var turn = new OutputParser("pi", (_, _) => { }, _ => { });
+        turn.Parse(PiMessageEnd("No models available. Use /login or set an API key."));
+        Check(turn.AuthenticationFailure, "a message that ended in it");
+        turn.Parse("""{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"delayMs":1000,"errorMessage":"No models available."}""");
+        Check(!turn.AuthenticationFailure, "a retry starting clears it");
+        turn.Parse(PiMessageEnd("No API key found for openai. Use /login."));
+        turn.Parse(PiMessageEnd(null));
+        Check(!turn.AuthenticationFailure, "a later answer clears it");
+        turn.Parse("""{"type":"auto_retry_end","success":false,"attempt":3,"finalError":"No API key found for openai. Use /login."}""");
+        Check(turn.Failed && turn.AuthenticationFailure, "a retry that gave up on it");
+        var claudeParser = new OutputParser("claude", (_, _) => { }, _ => { });
+        claudeParser.Parse("""{"type":"response","command":"prompt","success":false,"error":"No API key found. Use /login"}""");
+        Check(!claudeParser.AuthenticationFailure, "only pi's stream is read this way");
+
+        Check(CliAuthFailure.SignInCanFix(new() { Provider = "pi", LoggedIn = false }) && !CliAuthFailure.SignInCanFix(new() { Provider = "pi", LoggedIn = true }), "pi: only a signed-out status asks for a sign-in");
+        Check(!CliAuthFailure.SignInCanFix(new() { Provider = "pi", Detail = "offline" }) && !CliAuthFailure.SignInCanFix(new() { Provider = "pi", Installed = false, LoggedIn = false }), "unknown or no CLI opens none");
+        Check(CliAuthFailure.SignInCanFix(PiAccounts.Status(0, "No models available. Use /login to log in.", null, new Dictionary<string, string>())), "pi's own no-models reading can be fixed by signing in");
+
+        Check(CliAuthFailure.Providers.SequenceEqual(["claude", "codex", "gemini", "pi"]), "the providers whose lost sign-in raises the card");
+        Check(CliTerminalSignIn.Table.Keys.Order().SequenceEqual(["gemini", "pi"]), "Antigravity and pi sign in in a terminal");
+        Check(CliTerminalSignIn.Table["pi"].Command?.SequenceEqual(["pi"]) == true && CliTerminalSignIn.Table["pi"].TitleKey is not null, "pi's terminal runs pi, titled with what to type");
+        Check(CliTerminalSignIn.Table["gemini"].Command?.SequenceEqual([ProviderCatalog.Executable("gemini")]) == true, "Antigravity's runs agy");
+        Check(CliTerminalSignIn.Table.Values.All(entry => CliAuthFailure.Providers.Contains(entry.Provider) && Locale.Get(entry.WaitingKey) != entry.WaitingKey), "each has its card sentence");
+        Check(CliTerminalSignIn.WaitingText("pi") == Locale.Get("loginRecovery.piTerminal") && CliTerminalSignIn.WaitingText("gemini") == Locale.Get("loginRecovery.antigravityTerminal")
+            && CliTerminalSignIn.WaitingText("claude") == Locale.Get("loginRecovery.waiting"), "the card's words while it waits");
+        Check(CliTerminalSignIn.Table["pi"].Title == Locale.Get("loginRecovery.piTerminalTitle")
+            && CliTerminalSignIn.Table["gemini"].Title == Locale.Get("loginRecovery.terminalTitle", new Dictionary<string, string> { ["provider"] = "Antigravity" }), "the terminal's title");
+        var book = new CliLoginRetryBook();
+        book.Sent(new StartRunRequest("pane", "workspace", "claude", "again", [], Provider: "pi"));
+        Check(book.Settled("pane") is { Request.Provider: "pi" }, "a pi request is kept for its retry");
+        var gate = new CliAutoLoginGate(); var now = DateTimeOffset.UnixEpoch.AddDays(10000);
+        Check(gate.ShouldStart("pi", true, new() { Provider = "pi", LoggedIn = false }, false, now) && !gate.ShouldStart("pi", true, new() { Provider = "pi" }, false, now), "pi's sign-in starts only for a signed-out status");
+
+        // pi.cmd by its full path through cmd /c, in Windows Terminal or the console host; the tab says what to type.
+        var shim = @"C:\Users\me\AppData\Roaming\npm\pi.cmd"; var cmd = WindowsCommand.CommandInterpreter();
+        var title = CliTerminalSignIn.Table["pi"].Title;
+        var tab = CliAccountTerminal.LaunchPlan([shim], true, @"C:\Projects\app", shim, @"C:\wt.exe", title);
+        Check(tab.Executable == @"C:\wt.exe" && tab.Arguments.SequenceEqual(["new-tab", "--title", title, "-d", @"C:\Projects\app", "--", cmd, "/c", shim]), "Windows Terminal: " + string.Join(" | ", tab.Arguments));
+        var host = CliAccountTerminal.LaunchPlan([shim], false, @"C:\Projects\app", shim, null, title);
+        Check(host.Executable == CliAccountTerminal.ConsoleHost && host.Arguments.SequenceEqual([cmd, "/c", shim]), "the console host: " + string.Join(" | ", host.Arguments));
+        Check(CliAccountTerminal.LaunchPlan(["agy"], true, null, null, null, "a;b").Arguments.SequenceEqual(["new-tab", "--", "agy"]), "a title Windows Terminal would split is left out");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>A pi run whose turn ended on its own sign-in failure ends with the authentication reason; another failure does not.</summary>
+    internal static async Task PiFakeCliRunLostItsSignIn()
+    {
+        var directory = Verification.Temp(); var workspace = new Workspace { Path = directory };
+        try
+        {
+            foreach (var (error, expected) in new[] { ("No API key found for anthropic. Use /login or set ANTHROPIC_API_KEY.", (string?)"authentication"), ("rate limit exceeded", null) })
+            {
+                var fixture = Path.Combine(directory, "pi-" + (expected ?? "other") + ".jsonl");
+                await File.WriteAllLinesAsync(fixture, ["""{"id":"s1","type":"response","command":"get_state","success":true,"data":{"sessionId":"0197c1d2-7f3a-7c4e-9b1a-5d2e8f6a4b30"}}""", """{"type":"agent_start"}""", PiMessageEnd(error), """{"type":"agent_end","messages":[]}"""]);
+                var events = new ConcurrentQueue<RunEvent>();
+                await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self(["--fake-cli", "pi", Path.Combine(directory, "record-" + (expected ?? "other")), "--pi-fixture", fixture])));
+                await using (var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue))
+                {
+                    await manager.StartAsync(new("pi-pane", workspace.Id, "claude", "hello", [], Provider: "pi"));
+                    await Verification.Until(() => events.Any(e => e.Type == "status" && e.Status is "completed" or "error" or "stopped"), 30000);
+                }
+                var last = events.Last(e => e.Type == "status");
+                Check(last.Status == "error" && last.Reason == expected, $"{error}: expected error with reason {expected ?? "none"}, got {last.Status} with {last.Reason ?? "none"}");
+            }
+        }
+        finally { try { Directory.Delete(directory, true); } catch (IOException) { } }
     }
 }

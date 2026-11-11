@@ -73,7 +73,9 @@ CLI 登录过期导致请求失败时，输入框上方会出现登录恢复卡�
 
 如果已经在其他地方登录，请点击{{ui:loginRecovery.resendButton}}。如果浏览器登录有困难，请使用{{ui:loginRecovery.terminalButton}}。
 
-Antigravity、pi、opencode 和 Hermes 在终端中登录。登录终端会在失败的窗格旁边打开：Antigravity（agy）会打开浏览器，请用 Google 账户登录；pi 则在终端中输入 `/login`，选择订阅或输入 API 密钥；opencode 会运行 `opencode auth login`，先选择提供商，再登录或输入 API 密钥；Hermes 会运行 `hermes model`，先选择模型提供商并登录，再选择默认模型。确认登录后，失败的请求会自动重新发送。登录后该终端仍保持打开。
+{{platform:mac}} Antigravity、pi、opencode 和 Hermes 在终端中登录。登录终端会在失败的窗格旁边打开：Antigravity（agy）会打开浏览器，请用 Google 账户登录；pi 则在终端中输入 `/login`，选择订阅或输入 API 密钥；opencode 会运行 `opencode auth login`，先选择提供商，再登录或输入 API 密钥；Hermes 会运行 `hermes model`，先选择模型提供商并登录，再选择默认模型。确认登录后，失败的请求会自动重新发送。登录后该终端仍保持打开。
+
+{{platform:windows}} 在 Windows 上，Antigravity 和 pi 在终端中登录。登录终端会在单独的窗口中（若已安装 Windows Terminal，则为新标签页）于失败窗格的文件夹中打开：Antigravity（agy）会打开浏览器，请用 Google 账户登录；pi 则输入 `/login`，选择订阅或输入 API 密钥。确认登录后，失败的请求会自动重新发送。应用不会关闭该终端。
 
 > [!tip]
 > 打开{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliAccounts.autoLoginToggle}}后，登录一断开就会立即重新开始登录。

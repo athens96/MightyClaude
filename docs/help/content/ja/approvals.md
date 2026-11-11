@@ -73,7 +73,9 @@ CLIのサインインの有効期限が切れてリクエストが失敗する�
 
 すでにほかの場所でサインインしている場合は、{{ui:loginRecovery.resendButton}}をクリックしてください。ブラウザでのサインインが難しい場合は、{{ui:loginRecovery.terminalButton}}を使います。
 
-Antigravity、pi、opencode、Hermesはターミナルでサインインします。失敗したペインの隣にサインイン用のターミナルが開き、Antigravity（agy）は開くブラウザでGoogleアカウントにサインインします。piはターミナルで`/login`と入力し、サブスクリプションを選ぶかAPIキーを入力します。opencodeは`opencode auth login`が実行されるので、提供元を選んでからサインインするかAPIキーを入力します。Hermesは`hermes model`が実行されるので、モデルの提供元を選んでサインインし、既定のモデルを選びます。サインインが確認されると、失敗したリクエストが自動的に再送信されます。ターミナルはサインイン後も開いたままです。
+{{platform:mac}} Antigravity、pi、opencode、Hermesはターミナルでサインインします。失敗したペインの隣にサインイン用のターミナルが開き、Antigravity（agy）は開くブラウザでGoogleアカウントにサインインします。piはターミナルで`/login`と入力し、サブスクリプションを選ぶかAPIキーを入力します。opencodeは`opencode auth login`が実行されるので、提供元を選んでからサインインするかAPIキーを入力します。Hermesは`hermes model`が実行されるので、モデルの提供元を選んでサインインし、既定のモデルを選びます。サインインが確認されると、失敗したリクエストが自動的に再送信されます。ターミナルはサインイン後も開いたままです。
+
+{{platform:windows}} Windowsでは、Antigravityとpiがターミナルでサインインします。サインイン用のターミナルは別のウィンドウ（Windows Terminalがあれば新しいタブ）で、失敗したペインのフォルダーに開きます。Antigravity（agy）は開くブラウザでGoogleアカウントにサインインします。piは`/login`と入力し、サブスクリプションを選ぶかAPIキーを入力します。サインインが確認されると、失敗したリクエストが自動的に再送信されます。アプリはこのターミナルを閉じません。
 
 > [!tip]
 > {{ui:settings.nav.cli}}タブの{{ui:settings.cliAccounts.autoLoginToggle}}をオンにしておくと、サインインが切れた時点ですぐに再サインインを始めます。

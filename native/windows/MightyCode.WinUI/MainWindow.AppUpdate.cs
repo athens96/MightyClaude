@@ -703,7 +703,7 @@ public sealed partial class MainWindow
         // A shell running a command (the terminal probe keeps its status), agent terminals at work, setup, sign-ins.
         var terminals = state.Sessions.Count(s => s.Kind == "shell" && s.Status == "running")
             + agentTerminals.Values.Count(terminal => terminal.IsRunning) + (SetupRunning ? 1 : 0)
-            + loginBusy.Count + accountLoginWaits.Count + accountChanges.Count + (antigravityLoginWindow is { Open: true } ? 1 : 0);
+            + loginBusy.Count + accountLoginWaits.Count + accountChanges.Count + loginWindows.Values.Count(window => window.Open);
         var cliWork = AnyCliUpdateRunning || manuallyUpdatingProvider is not null || pluginOperations.IsRunning || claudeModelReset || toolkitRunning;
         var host = remoteHost?.Current();
         var dialog = root.XamlRoot is { } xamlRoot && VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot).Any(popup => popup.Child is ContentDialog);

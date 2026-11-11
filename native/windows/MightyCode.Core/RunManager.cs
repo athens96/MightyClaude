@@ -228,7 +228,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 if (tracker?.BuildRun() is { } graphRun) emit(new(request.SessionId, "graph_run", GraphRun: graphRun));
                 // Each notice run its background work opened (BackgroundNoticeRuns) is a run of its own.
                 foreach (var notice in tracker?.TakeNoticeRuns() ?? []) emit(new(request.SessionId, "graph_run", GraphRun: notice));
-                lock (run.NodeGate) { run.Finished = true; emit(RunEvent.State(request.SessionId, state, state == "error" && run.AuthenticationFailure ? "authentication" : null)); }
+                // pi's sign-in failure is read from its RPC stream, where a later message or a retry clears it (OutputParser.AuthenticationFailure).
+                lock (run.NodeGate) { run.Finished = true; emit(RunEvent.State(request.SessionId, state, state == "error" && (run.AuthenticationFailure || parser.AuthenticationFailure) ? "authentication" : null)); }
             }
         }
         // The live graph as it is now, when it changed since the last one sent; false once the run is ending (Finish sends the last).

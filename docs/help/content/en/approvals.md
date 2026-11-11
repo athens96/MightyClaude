@@ -73,7 +73,9 @@ If a request fails because the CLI sign-in expired, a sign-in recovery card appe
 
 If you already signed in somewhere else, click {{ui:loginRecovery.resendButton}}. If the browser sign-in doesn't work for you, use {{ui:loginRecovery.terminalButton}}.
 
-Antigravity, pi, opencode and Hermes sign in in a terminal. A sign-in terminal opens beside the failed pane. Antigravity (agy) opens a browser where you sign in with your Google account. In pi, type `/login` in the terminal and pick a subscription or enter an API key. opencode runs `opencode auth login`: pick a provider, then sign in or enter an API key. Hermes runs `hermes model`: pick a model provider, sign in, then pick a default model. Once the sign-in is confirmed, the failed request is sent again automatically. The terminal stays open after you sign in.
+{{platform:mac}} Antigravity, pi, opencode and Hermes sign in in a terminal. A sign-in terminal opens beside the failed pane. Antigravity (agy) opens a browser where you sign in with your Google account. In pi, type `/login` in the terminal and pick a subscription or enter an API key. opencode runs `opencode auth login`: pick a provider, then sign in or enter an API key. Hermes runs `hermes model`: pick a model provider, sign in, then pick a default model. Once the sign-in is confirmed, the failed request is sent again automatically. The terminal stays open after you sign in.
+
+{{platform:windows}} On Windows, Antigravity and pi sign in in a terminal. The sign-in terminal opens in a window of its own (a new tab when Windows Terminal is installed), in the failed pane's folder. Antigravity (agy) opens a browser where you sign in with your Google account. In pi, type `/login` and pick a subscription or enter an API key. Once the sign-in is confirmed, the failed request is sent again automatically. The app leaves the terminal open.
 
 > [!tip]
 > Turn on {{ui:settings.cliAccounts.autoLoginToggle}} on the {{ui:settings.nav.cli}} tab and sign-in starts again the moment it drops.

@@ -563,13 +563,15 @@ public sealed partial class MainWindow
             if (job is not null)
             {
                 if (job.Automatic) lines.Add(new(Locale.Get("loginRecovery.autoStarted"), "ink2", false));
-                lines.Add(new(Locale.Get(job.Phase == "starting" ? "loginRecovery.starting" : job.Terminal ? "loginRecovery.antigravityTerminal" : "loginRecovery.waiting"), "ink2", true));
+                lines.Add(new(job.Phase == "starting" ? Locale.Get("loginRecovery.starting") : job.Terminal ? CliTerminalSignIn.WaitingText(provider) : Locale.Get("loginRecovery.waiting"), "ink2", true));
             }
             else if (failure is not null) lines.Add(new(failure, "wait", false));
             else lines.Add(new(Locale.Get(pending ? "loginRecovery.terminalPending" : "loginRecovery.body"), "ink2", false));
+            // A terminal sign-in (Antigravity, pi) has no second terminal button.
+            var inTerminal = CliTerminalSignIn.Table.ContainsKey(provider);
             var buttons = job is not null
-                ? provider != "gemini" ? new[] { "cancel", "terminal" } : ["cancel"]
-                : failure is not null && provider != "gemini" ? ["login", "terminal", "resend"] : ["login", "resend"];
+                ? !inTerminal ? new[] { "cancel", "terminal" } : ["cancel"]
+                : failure is not null && !inTerminal ? ["login", "terminal", "resend"] : ["login", "resend"];
             return new(Locale.Get("loginRecovery.title", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(provider) }), lines, progress?.Url?.AbsoluteUri, progress?.AsksForCode == true, buttons, !pending);
         }
 

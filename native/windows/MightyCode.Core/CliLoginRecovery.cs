@@ -10,7 +10,7 @@ public static class CliAuthFailure
 {
     public static bool IsAuthenticationFailure(string text) => Claude(text) || Codex(text);
     /// <summary>The providers whose lost sign-in raises the card and may start a sign-in.</summary>
-    public static readonly IReadOnlyList<string> Providers = ["claude", "codex", "gemini"];
+    public static readonly IReadOnlyList<string> Providers = ["claude", "codex", "gemini", "pi"];
     private static string Bounded(string text) => text[..Math.Min(text.Length, 16_384)].ToLowerInvariant();
     private static bool ExternalDenial(string text) => text.Contains("bedrock") || text.Contains("service control policy") || text.Contains("explicit deny");
     public static bool Claude(string text)
@@ -27,13 +27,26 @@ public static class CliAuthFailure
     }
     /// <summary>
     /// Antigravity CLI's own sign-in failures, in its own words, on stderr, a plain stdout line or a failed result
-    /// (M/CLILoginRecovery.swift antigravity(text:)): "Error: authentication required. Run 'agy' to log in, then retry." and
-    /// "Print mode: auth error: …". A sign-in that timed out, or a proxy's "407 Proxy Authentication Required", is not a lost sign-in.
+    /// (M/CLILoginRecovery.swift antigravity(text:)): "Error: authentication required. Run 'agy' to log in, then retry.",
+    /// "Print mode: auth error: …", and a headless run's "authentication failed or timed out", "Please sign in to view available models.
+    /// Launch the CLI without arguments to sign in." These are candidate signals only: recovery confirms with the live status
+    /// (<c>agy models</c>) before it asks for a sign-in. A proxy's "407 Proxy Authentication Required" is not a lost sign-in.
     /// </summary>
     public static bool Antigravity(string text)
     {
         var value = Bounded(text);
-        return value.Contains("authentication required. run ", StringComparison.Ordinal) || value.Contains("print mode: auth error", StringComparison.Ordinal);
+        return new[] { "authentication required. run ", "print mode: auth error", "authentication failed or timed out", "please sign in", "not signed in",
+            "sign in to view", "launch the cli without arguments to sign in" }.Any(phrase => value.Contains(phrase, StringComparison.Ordinal));
+    }
+    /// <summary>
+    /// pi's own sign-in failures (M/CLILoginRecovery.swift pi(text:)): "No API key found for &lt;provider&gt;. Use /login or set an API key",
+    /// "No models available. Use /login or set an API key", as an RPC error or a failed assistant message. A candidate signal only: recovery
+    /// confirms with pi's status (<c>pi --list-models</c>).
+    /// </summary>
+    public static bool Pi(string text)
+    {
+        var value = Bounded(text);
+        return new[] { "no api key", "no models available", "use /login", "run /login", "please /login" }.Any(phrase => value.Contains(phrase, StringComparison.Ordinal));
     }
     /// <summary>An Antigravity stream-json line that is the run's successful result: it clears an earlier sign-in signal, as on the Mac.</summary>
     public static bool AntigravitySucceeded(string line)
@@ -94,12 +107,12 @@ public static class CliAuthFailure
     }
     /// <summary>
     /// Whether signing in again can fix a run that failed with a sign-in error (M/CLILoginRecovery.swift signInCanFix): a Codex
-    /// API-key login cannot. Antigravity's status is a live call: only one that reads signed out asks for a sign-in; unknown
-    /// (offline, a timeout) does not open one.
+    /// API-key login cannot. Antigravity's and pi's status are live calls (<see cref="CliTerminalSignIn.Table"/>): only one that reads
+    /// signed out asks for a sign-in; unknown (offline, a timeout) does not open one.
     /// </summary>
     public static bool SignInCanFix(CliAccountStatus status) => Providers.Contains(status.Provider) && status.Installed && status.AccessVerified != false
         && !(status.Provider == "codex" && status.MethodId == CliAccountMethod.CodexApiKey)
-        && (status.Provider != "gemini" || status.LoggedIn == false);
+        && (!CliTerminalSignIn.Table.ContainsKey(status.Provider) || status.LoggedIn == false);
 }
 
 /// Whether a lost sign-in starts its provider's background sign-in by itself (M/CLILoginRecovery.swift
@@ -265,17 +278,34 @@ public static class CliTerminalLogin
 }
 
 /// <summary>
-/// Antigravity has no sign-in command: its sign-in is the interactive CLI itself (the browser opens on its first run), so it
-/// runs in a terminal the user sees (M/CLILoginRecovery.swift CLIAntigravityLogin). Its credentials live in the system's
-/// credential store, so the sign-in is seen by asking its status (<see cref="CliAccountSupport.AntigravityStatus"/>) every interval.
+/// A provider whose sign-in is its interactive CLI, so it runs in a terminal the user sees (M/CLILoginRecovery.swift CLITerminalSignIn;
+/// a later provider adds one entry here). The command is <see cref="CliAccountSupport.LoginArguments"/>; the sign-in is seen by asking the
+/// provider's status every interval (<see cref="WaitAsync"/>): Antigravity's credentials live in the system's credential store, pi's in
+/// its auth.json or the environment.
 /// </summary>
-public static class CliAntigravityLogin
+/// <param name="WaitingKey">What the sign-in card says while the terminal waits.</param>
+/// <param name="TitleKey">The terminal's title, when it carries an instruction.</param>
+public sealed record CliTerminalSignIn(string Provider, string WaitingKey, string? TitleKey)
 {
+    /// <summary>Antigravity opens the browser on its first run. pi signs in inside itself: <c>/login</c>, then a subscription or an API key.</summary>
+    public static readonly IReadOnlyDictionary<string, CliTerminalSignIn> Table = new Dictionary<string, CliTerminalSignIn>
+    {
+        ["gemini"] = new("gemini", "loginRecovery.antigravityTerminal", null),
+        ["pi"] = new("pi", "loginRecovery.piTerminal", "loginRecovery.piTerminalTitle"),
+    };
+    /// <summary>The command the terminal runs.</summary>
+    public IReadOnlyList<string>? Command => CliAccountSupport.LoginArguments(Provider);
+    /// <summary>The terminal's title: the table's instruction, else "&lt;provider&gt; 로그인".</summary>
+    public string Title => Locale.Get(TitleKey ?? "loginRecovery.terminalTitle", new Dictionary<string, string> { ["provider"] = ProviderMark.Label(Provider) });
+    /// <summary>What the sign-in card says while its sign-in waits: the provider's terminal sentence, or the background sign-in's.</summary>
+    public static string WaitingText(string provider) => Locale.Get(Table.TryGetValue(provider, out var terminal) ? terminal.WaitingKey : "loginRecovery.waiting");
+
     /// <summary>
-    /// Waits for a sign-in in the terminal: signed in once the status reads so; once more when the terminal closed (Exited)
-    /// or the limit passed (TimedOut). The terminal being open is checked every tick. Cancellation throws.
+    /// Waits for a sign-in in the terminal (M/CLILoginRecovery.swift CLITerminalLogin.wait): signed in once <paramref name="provider"/>'s
+    /// status reads so (another provider's never counts); once more when the terminal closed (Exited) or the limit passed (TimedOut). The
+    /// terminal being open is checked every tick. Cancellation throws.
     /// </summary>
-    public static async Task<CliLoginWaitResult> RunAsync(Func<CancellationToken, Task<CliAccountStatus>> status, Func<bool> open, CancellationToken cancellation = default,
+    public static async Task<CliLoginWaitResult> WaitAsync(string provider, Func<CancellationToken, Task<CliAccountStatus>> status, Func<bool> open, CancellationToken cancellation = default,
         TimeSpan? interval = null, TimeSpan? limit = null, TimeSpan? tick = null)
     {
         var watch = Stopwatch.StartNew(); var lastRead = TimeSpan.Zero;
@@ -287,7 +317,7 @@ public static class CliAntigravityLogin
             if (active && !expired && watch.Elapsed - lastRead < polling) continue;
             lastRead = watch.Elapsed;
             var value = await status(cancellation); cancellation.ThrowIfCancellationRequested();
-            if (value.Provider == "gemini" && value.LoggedIn == true) return new(CliLoginOutcome.LoggedIn, value);
+            if (value.Provider == provider && value.LoggedIn == true) return new(CliLoginOutcome.LoggedIn, value);
             if (!active) return new(CliLoginOutcome.Exited, value);
             if (expired) return new(CliLoginOutcome.TimedOut, value);
         }

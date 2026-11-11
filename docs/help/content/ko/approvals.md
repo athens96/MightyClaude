@@ -73,7 +73,9 @@ CLI 로그인이 만료되어 요청이 실패하면 입력창 위에 로그인 
 
 이미 다른 곳에서 로그인했다면 {{ui:loginRecovery.resendButton}}를 누르세요. 브라우저 로그인이 어려우면 {{ui:loginRecovery.terminalButton}}을 씁니다.
 
-Antigravity, pi, opencode, Hermes는 터미널에서 로그인합니다. 실패한 창 옆에 로그인 터미널이 열리고, Antigravity(agy)는 열리는 브라우저에서 Google 계정으로 로그인합니다. pi는 터미널에서 `/login`을 입력해 구독을 고르거나 API 키를 입력합니다. opencode는 `opencode auth login`이 실행되어 제공자를 고른 뒤 로그인하거나 API 키를 입력합니다. Hermes는 `hermes model`이 실행되어 모델 제공자를 고르고 로그인한 뒤 기본 모델을 고릅니다. 로그인이 확인되면 실패한 요청을 저절로 다시 보냅니다. 이 터미널은 로그인 뒤에도 열려 있습니다.
+{{platform:mac}} Antigravity, pi, opencode, Hermes는 터미널에서 로그인합니다. 실패한 창 옆에 로그인 터미널이 열리고, Antigravity(agy)는 열리는 브라우저에서 Google 계정으로 로그인합니다. pi는 터미널에서 `/login`을 입력해 구독을 고르거나 API 키를 입력합니다. opencode는 `opencode auth login`이 실행되어 제공자를 고른 뒤 로그인하거나 API 키를 입력합니다. Hermes는 `hermes model`이 실행되어 모델 제공자를 고르고 로그인한 뒤 기본 모델을 고릅니다. 로그인이 확인되면 실패한 요청을 저절로 다시 보냅니다. 이 터미널은 로그인 뒤에도 열려 있습니다.
+
+{{platform:windows}} Windows에서는 Antigravity와 pi가 터미널에서 로그인합니다. 로그인 터미널이 따로 창으로(Windows Terminal이 있으면 새 탭으로) 실패한 창의 폴더에서 열리고, Antigravity(agy)는 열리는 브라우저에서 Google 계정으로 로그인합니다. pi는 `/login`을 입력해 구독을 고르거나 API 키를 입력합니다. 로그인이 확인되면 실패한 요청을 저절로 다시 보냅니다. 앱은 이 터미널을 닫지 않습니다.
 
 > [!tip]
 > {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliAccounts.autoLoginToggle}}을 켜 두면 로그인이 끊긴 순간 바로 다시 로그인을 시작합니다.

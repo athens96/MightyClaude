@@ -58,6 +58,12 @@ public sealed class OutputParser
     private int storedImages;
     private bool imageLimitNoted;
     public bool Failed { get; private set; }
+    /// <summary>
+    /// pi's own sign-in failure as its RPC stream said it last (M/MightyCore/CLIStreamParser.swift authFailure): a rejected command, an
+    /// assistant message that ended in such an error or a retry that gave up on one ("No API key found …. Use /login", "No models
+    /// available …"); a later message, or a retry starting, clears it. A failed run with it set lost its sign-in.
+    /// </summary>
+    public bool AuthenticationFailure { get; private set; }
     /// <summary>A plan the user cancelled interrupts the turn; that interruption is not a failure.</summary>
     public bool SuppressInterruptedResult { get; set; }
     /// <summary>The workspace folder a picture named only by path must lie in (with the temporary folder).</summary>
@@ -512,7 +518,10 @@ public sealed class OutputParser
             case "response":
                 // The get_state asked first names the session this run continues.
                 if (root.TryGetProperty("success", out var success) && success.ValueKind == JsonValueKind.False)
-                { Failed = true; log("error", Error(MetadataJson.Property(root, "error"), Locale.Get("run.error.providerRunFailed", name))); }
+                {
+                    var rejected = Error(MetadataJson.Property(root, "error"), Locale.Get("run.error.providerRunFailed", name));
+                    Failed = true; AuthenticationFailure = CliAuthFailure.Pi(rejected); log("error", rejected);
+                }
                 else if (root.Text("command") == "get_state" && MetadataJson.Property(root, "data") is { ValueKind: JsonValueKind.Object } data) Resume(data.Text("sessionId"));
                 break;
             case "agent_start":
@@ -535,6 +544,7 @@ public sealed class OutputParser
                     foreach (var block in blocks.EnumerateArray()) { if (block.Text("type") == "text" && block.Text("text") is { } blockText) Assistant(blockText, key + ":" + index); index++; }
                 }
                 piError = message.Text("stopReason") == "error" ? Error(MetadataJson.Property(message, "errorMessage"), Locale.Get("run.error.providerRunFailed", name)) : null;
+                AuthenticationFailure = piError is { } messageError && CliAuthFailure.Pi(messageError);
                 break;
             case "tool_execution_start": case "tool_execution_update": case "tool_execution_end":
                 var ended = type == "tool_execution_end";
@@ -550,12 +560,16 @@ public sealed class OutputParser
                     log("system", ContextCompaction.Title + " · " + ContextCompaction.ClaudeSummary(JsonSerializer.SerializeToElement(new { trigger = root.Text("reason") == "manual" ? "manual" : "auto", pre_tokens = MetadataJson.Integer(result, "tokensBefore") })));
                 break;
             case "auto_retry_start":
-                piRetrying = true; piError = null;
+                piRetrying = true; piError = null; AuthenticationFailure = false;
                 log("system", Locale.Get("run.notice.piRetry", new Dictionary<string, string> { ["attempt"] = (MetadataJson.Integer(root, "attempt") ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture), ["max"] = (MetadataJson.Integer(root, "maxAttempts") ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture), ["error"] = ActivitySupport.Clean(root.Text("errorMessage") ?? "", 512, true) }));
                 break;
             case "auto_retry_end":
                 piRetrying = false;
-                if (root.TryGetProperty("success", out var retried) && retried.ValueKind == JsonValueKind.False) { Failed = true; log("error", Error(MetadataJson.Property(root, "finalError"), Locale.Get("run.error.providerRunFailed", name))); }
+                if (root.TryGetProperty("success", out var retried) && retried.ValueKind == JsonValueKind.False)
+                {
+                    var final = Error(MetadataJson.Property(root, "finalError"), Locale.Get("run.error.providerRunFailed", name));
+                    Failed = true; AuthenticationFailure = CliAuthFailure.Pi(final); log("error", final);
+                }
                 break;
             case "extension_error": log("system", Error(MetadataJson.Property(root, "error"), "")); break;
             case "extension_ui_request":

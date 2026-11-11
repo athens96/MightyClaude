@@ -452,6 +452,9 @@ internal static class Verification
         await Test("Login recovery automatic start once per provider with cooldown", CliLoginRecoveryVerification.AutomaticStartOncePerProviderWithCooldown);
         await Test("Login recovery Antigravity sign-in failures, and only a signed-out status asks for a sign-in", CliLoginRecoveryVerification.GeminiSignalsAndMethods);
         await Test("Login recovery Antigravity sign-in is its status reading signed in", CliLoginRecoveryVerification.AntigravitySignInIsItsStatusReadingSignedIn);
+        await Test("Login recovery Antigravity signed out with exit 0, and its newer sign-in words", CliLoginRecoveryVerification.AgySignedOutWithExitZeroReadsSignedOut);
+        await Test("Login recovery pi's own sign-in failures from its RPC stream, and the terminal sign-in table", CliLoginRecoveryVerification.PiSignInFailuresAndTheTerminalTable);
+        await Test("Login recovery pi fake CLI run: a turn that ended on pi's sign-in failure is the reason, another failure is not", CliLoginRecoveryVerification.PiFakeCliRunLostItsSignIn);
         await Test("Login recovery Antigravity fake CLI run: the sign-in message on stderr is the reason, the same words as an answer are not", CliLoginRecoveryVerification.GeminiFakeCliRunRaisesTheReasonFromStderrOnly);
         await Test("Login recovery Claude fake CLI run: a result repeating the marked sign-in failure keeps the reason, whatever its words", CliLoginRecoveryVerification.ClaudeFakeCliRunKeepsTheReasonWhenTheResultRepeatsTheMarkedFailure);
         // The `gemini` provider runs Antigravity CLI (agy), ported from the Mac's AntigravityTests and AntigravityGraphTests.

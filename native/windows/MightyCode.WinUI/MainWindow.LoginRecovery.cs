@@ -23,9 +23,10 @@ public sealed partial class MainWindow
     // An automatic start held back only because another run of the provider was still going, per provider;
     // it is tried again once the provider is idle (ResumeDeferredAutoLogin).
     private readonly Dictionary<string, (CliLoginRetry Retry, CliAccountStatus Status)> deferredAutoLogins = [];
-    // The console window Antigravity's last sign-in opened; while it is still open a new start waits on it instead of opening another.
-    private AntigravityLoginWindow? antigravityLoginWindow;
-    private sealed class AntigravityLoginWindow
+    // The console window each terminal sign-in's last start opened (CliTerminalSignIn.Table: Antigravity, pi); while it is still open a
+    // new start of that provider waits on it instead of opening another.
+    private readonly Dictionary<string, TerminalLoginWindow> loginWindows = [];
+    private sealed class TerminalLoginWindow
     {
         internal Task Exit = Task.CompletedTask;
         // True once the console host opened it: its closing then ends Exit (a Windows Terminal tab hands off at once).
@@ -38,7 +39,7 @@ public sealed partial class MainWindow
         internal CliBackgroundLogin? Process;
         internal string Phase = "starting";
         internal bool Automatic;
-        // Antigravity signs in in the external sign-in terminal rather than a hidden one.
+        // Antigravity and pi sign in in the external sign-in terminal rather than a hidden one (CliTerminalSignIn.Table).
         internal bool Terminal;
         internal Task Task = Task.CompletedTask;
     }
@@ -133,10 +134,10 @@ public sealed partial class MainWindow
         _ = StartBackgroundLogin(provider, automatic: true, session: retry.Request.SessionId);
     }
     /// <summary>The provider's automatic sign-in, running or still shutting down; a send cancels it (M sends never wait on one).</summary>
-    /// Antigravity's terminal sign-in runs nothing in the background, so sends never wait on it (StartAdmitted).
+    /// A terminal sign-in (Antigravity, pi) runs nothing in the background, so sends never wait on it (StartAdmitted).
     private LoginJob? AutomaticLoginOf(string provider) =>
         loginJobs.GetValueOrDefault(provider) is { Automatic: true, Terminal: false } job ? job : loginBusy.GetValueOrDefault(provider) is { Automatic: true, Terminal: false } ending ? ending : null;
-    /// <summary>session: the pane whose run lost the sign-in; Antigravity's terminal starts in its workspace.</summary>
+    /// <summary>session: the pane whose run lost the sign-in; a terminal sign-in starts in its workspace.</summary>
     private Task StartBackgroundLogin(string provider, bool automatic = false, string? session = null)
     {
         if (closing || loginJobs.ContainsKey(provider) || !CliAuthFailure.Providers.Contains(provider)) return Task.CompletedTask;
@@ -147,8 +148,8 @@ public sealed partial class MainWindow
         {
             loginFailures[provider] = Locale.Get(AnyCliUpdateRunning ? "loginRecovery.updating" : "loginRecovery.busy"); RefreshLoginCards(); return Task.CompletedTask;
         }
-        var job = new LoginJob { Automatic = automatic, Terminal = provider == "gemini" }; loginJobs[provider] = job; loginBusy[provider] = job; loginFailures.Remove(provider);
-        job.Task = job.Terminal ? RunAntigravityTerminalLogin(job, session) : RunBackgroundLogin(provider, job); TrackLoginTask(job.Task); RefreshLoginCards();
+        var job = new LoginJob { Automatic = automatic, Terminal = CliTerminalSignIn.Table.ContainsKey(provider) }; loginJobs[provider] = job; loginBusy[provider] = job; loginFailures.Remove(provider);
+        job.Task = job.Terminal ? RunTerminalSignIn(CliTerminalSignIn.Table[provider], job, session) : RunBackgroundLogin(provider, job); TrackLoginTask(job.Task); RefreshLoginCards();
         return Task.CompletedTask;
     }
     private async Task RunBackgroundLogin(string provider, LoginJob job)
@@ -214,39 +215,39 @@ public sealed partial class MainWindow
             await ResendLoginRequest(id);
     }
     /// <summary>
-    /// Antigravity has no sign-in command (M/AppStore+CLILoginRecovery.swift startAntigravityTerminalLogin): its sign-in is the
-    /// interactive CLI (agy opens the browser on its first run), which cannot run hidden, so it runs in the external sign-in
-    /// terminal that Settings opens, started in the failed pane's workspace. It is opened only when agy's status reads signed
-    /// out, counts once the status reads signed in (CliAntigravityLogin), then resends like a background sign-in. The window stays the user's:
-    /// the app does not close it (the CLI in it is now a live session) and does not read its closing as the end, since
-    /// a Windows Terminal tab hands off at once; the wait ends signed in, cancelled or after ten minutes. A console-host
-    /// window is the exception: it is known to close with its process, so closing it ends the wait, and while it is still
-    /// open a new start waits on it again instead of opening another window.
+    /// A provider of <see cref="CliTerminalSignIn.Table"/> has no sign-in command (M/AppStore+CLILoginRecovery.swift startTerminalSignIn): its
+    /// sign-in is the interactive CLI (agy opens the browser on its first run, pi takes <c>/login</c>), which cannot run hidden, so it runs
+    /// in the external sign-in terminal that Settings opens, started in the failed pane's workspace and titled as the table says. It is
+    /// opened only when the provider's status reads signed out, counts once the status reads signed in (CliTerminalSignIn.WaitAsync), then
+    /// resends like a background sign-in. The window stays the user's: the app does not close it (the CLI in it is now a live session) and
+    /// does not read its closing as the end, since a Windows Terminal tab hands off at once; the wait ends signed in, cancelled or after ten
+    /// minutes. A console-host window is the exception: it is known to close with its process, so closing it ends the wait, and while it is
+    /// still open a new start of the provider waits on it again instead of opening another window.
     /// </summary>
-    private async Task RunAntigravityTerminalLogin(LoginJob job, string? session)
+    private async Task RunTerminalSignIn(CliTerminalSignIn terminal, LoginJob job, string? session)
     {
-        const string provider = "gemini";
+        var provider = terminal.Provider;
         var cancellation = job.Cancellation.Token;
-        AntigravityLoginWindow? window = null;
+        TerminalLoginWindow? window = null;
         try
         {
             if (!CliAuthFailure.SignInCanFix(await accountsCoordinator.StatusAsync(provider, cancellation))) throw new InvalidOperationException();
-            var argv = CliAccountSupport.LoginArguments(provider) ?? throw new InvalidOperationException();
+            var argv = terminal.Command ?? throw new InvalidOperationException();
             var state = service.Snapshot;
             var workspace = state.Sessions.FirstOrDefault(p => p.Id == session)?.WorkspaceId ?? state.ActiveWorkspaceId;
             // The sign-in runs on this PC: never in a remote workspace's path, which is its host's.
             var directory = LocalPath(state.Workspaces.FirstOrDefault(w => w.Id == workspace));
             cancellation.ThrowIfCancellationRequested();
-            if (antigravityLoginWindow is { Open: true } open) window = open;
+            if (loginWindows.GetValueOrDefault(provider) is { Open: true } open) window = open;
             else
             {
-                var opened = new AntigravityLoginWindow(); window = antigravityLoginWindow = opened;
-                opened.Exit = accountsCoordinator.StartSignInAsync(argv, CancellationToken.None, directory, value => opened.ClosesWithWindow = value);
+                var opened = new TerminalLoginWindow(); window = loginWindows[provider] = opened;
+                opened.Exit = accountsCoordinator.StartSignInAsync(argv, CancellationToken.None, directory, value => opened.ClosesWithWindow = value, terminal.Title);
                 // Not tracked: shutting down never waits for the user's window.
                 _ = opened.Exit.ContinueWith(exit => _ = exit.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
             }
             job.Phase = "waiting"; RefreshLoginCards();
-            var outcome = await CliAntigravityLogin.RunAsync(token => accountsCoordinator.StatusAsync(provider, token),
+            var outcome = await CliTerminalSignIn.WaitAsync(provider, token => accountsCoordinator.StatusAsync(provider, token),
                 () => !window.Exit.IsFaulted && !(window.ClosesWithWindow && window.Exit.IsCompleted), cancellation);
             cancellation.ThrowIfCancellationRequested();
             if (loginJobs.GetValueOrDefault(provider) != job) return;
@@ -350,11 +351,11 @@ public sealed partial class MainWindow
             if (job is not null)
             {
                 if (job.Automatic) words.Children.Add(Line(Locale.Get("loginRecovery.autoStarted"), ink2));
-                // Antigravity's terminal sentence is long: a star column lets it wrap beside the ring.
+                // A terminal sign-in's sentence is long: a star column lets it wrap beside the ring.
                 var busy = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 busy.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); busy.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
                 busy.Children.Add(new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = ink2 });
-                var state = Line(Locale.Get(job.Phase == "starting" ? "loginRecovery.starting" : job.Terminal ? "loginRecovery.antigravityTerminal" : "loginRecovery.waiting"), ink2);
+                var state = Line(job.Phase == "starting" ? Locale.Get("loginRecovery.starting") : job.Terminal ? CliTerminalSignIn.WaitingText(provider) : Locale.Get("loginRecovery.waiting"), ink2);
                 Grid.SetColumn(state, 1); busy.Children.Add(state); words.Children.Add(busy);
             }
             else if (failure is not null) words.Children.Add(Line(failure, wait));
@@ -381,14 +382,14 @@ public sealed partial class MainWindow
             {
                 // Sends of the provider wait while its sign-in runs, so resending is offered again once it ends.
                 buttons.Children.Add(Small(Locale.Get("loginRecovery.cancel"), () => { owner.CancelBackgroundLogin(provider); owner.RefreshLoginCards(); return Task.CompletedTask; }));
-                // Antigravity signs in in a terminal already, so it has no second terminal button.
-                if (provider != "gemini") buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
+                // Antigravity and pi sign in in a terminal already, so they have no second terminal button.
+                if (!CliTerminalSignIn.Table.ContainsKey(provider)) buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
             }
             else
             {
                 var login = Small(Locale.Get("loginRecovery.loginButton"), () => owner.StartBackgroundLogin(provider, session: id)); login.IsEnabled = !pending;
                 buttons.Children.Add(login);
-                if (failure is not null && provider != "gemini") buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
+                if (failure is not null && !CliTerminalSignIn.Table.ContainsKey(provider)) buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
                 var resend = Small(Locale.Get("loginRecovery.resendButton"), () => owner.ResendLoginRequest(id)); ToolTipService.SetToolTip(resend, Locale.Get("loginRecovery.resendHelp")); buttons.Children.Add(resend);
             }
             var dismiss = owner.SafeButton("×", () => { owner.DismissLoginRecovery(id); return Task.CompletedTask; });
