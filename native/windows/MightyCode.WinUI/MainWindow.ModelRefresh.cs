@@ -38,6 +38,16 @@ public sealed partial class MainWindow
     /// </summary>
     private void ModelsAfterAccountChange(string provider) => modelRefreshes?.Invalidate(provider);
 
+    /// <summary>
+    /// Hermes lists its models only inside a session: the picker a run's session offered is kept (HermesAgent.SaveModels), and when the run ends
+    /// the pane's list is read again, so the models a first request brought are in the menu without a manual refresh (M/AppStore+ModelCatalogs.swift).
+    /// </summary>
+    private void RefreshModelsAfterHermesRun(RunEvent value)
+    {
+        if (value.Type != "status" || value.Status is not ("completed" or "error" or "stopped")) return;
+        if (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == value.SessionId) is { Kind: "claude", Provider: "hermes" }) RefreshModels(value.SessionId, invalidate: true);
+    }
+
     /// <summary>Reads a pane's model list again; <paramref name="invalidate"/> when the one in hand is known to be another agent's or account's (M/AppStore+ModelCatalogs.swift:10-19).</summary>
     private void RefreshModels(string sessionId, bool invalidate = false)
     {

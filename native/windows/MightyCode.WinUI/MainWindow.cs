@@ -85,7 +85,7 @@ public sealed partial class MainWindow : Window
         });
         PerfLog.Configure(StateDirectory); WebShell.Configure(StateDirectory, new WebView2RuntimeLocator().GetRuntimeVersion() is not null);
         InitializeLoginRecovery(); InitializeDelegation();
-        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; using var perf = PerfLog.Measure("run event " + value.Type); RecordProviderActivity(value); ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane) && (value.Type == "status" ? pane.Refresh() : pane.QueueRefresh())) { pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
+        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; using var perf = PerfLog.Measure("run event " + value.Type); RecordProviderActivity(value); ReceiveLoginSignal(value); RefreshModelsAfterHermesRun(value); if (views.TryGetValue(value.SessionId, out var pane) && (value.Type == "status" ? pane.Refresh() : pane.QueueRefresh())) { pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
         // they are ephemeral, so they reach the pane that can show the bar and
         // nowhere else — not the snapshot.

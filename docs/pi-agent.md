@@ -48,7 +48,7 @@ pi에는 승인 창이 없다. 모드 두 가지:
 - 세션은 pi 기본 위치(`~/.pi/agent/sessions/`)에 둔다. 창을 다시 열면 저장한 세션 파일로 이어 간다.
 - "이전 세션 이어가기" 목록에 그 폴더의 pi 세션도 나온다(session-format.md의 헤더와 첫 사용자 메시지로 제목).
 
-## 질문 (Mac)
+## 질문 (Mac · Windows)
 
 pi에는 질문 도구가 없다. 앱이 두 가지를 한다. pi 1.5.2 실물로 확인했고 fixture는 그 녹화다(`pi-rpc-question.jsonl`, `pi-rpc-dialogs.jsonl`).
 
@@ -69,6 +69,13 @@ pi에는 질문 도구가 없다. 앱이 두 가지를 한다. pi 1.5.2 실물�
 - 창에 카드가 뜨는 조건: 창은 승인을 창에서 묻는 에이전트(`ProviderOptions.asksInPane`)의 요청만 받았고 pi는 거기에 없어서, 처음에는 `ask_user`가 물어도 카드 없이 실행만 기다렸다. 질문(`canAnswerQuestions`)은 어느 에이전트 것이든 창에 닿는다(`ProviderOptions.showsInPane`).
 - 모델이 보기를 글로 적지 않게: 확장의 `promptGuidelines`가 "사용자가 보기 중에서 고르게 할 때(퀴즈·객관식, 선호, 결정)는 `ask_user`를 부른다"를 시스템 프롬프트의 규칙에 더한다. 실물 1.5.2에서 "선택하는 문제를 내"와 "선택하는 질문을 해줘" 여섯 번 모두 도구로 물었다.
 - 폰: 카드가 `ToolPermissionRequest`(`AskUserQuestion`, `canAnswerQuestions`)라 `MobilePermission.questionnaire`로 그대로 가고, 폰의 답도 같은 길(`answerUserQuestions`)로 온다.
+
+Windows(2026-11-11 반영, `native/windows/MightyCode.Core`):
+
+- 확장은 복사하지 않고 Mac 번들의 `Resources/Agents/pi-ask-user.js`를 그대로 앱 옆 `Agents\`에 싣는다(WinUI·검사 프로젝트의 링크된 Content, `AgentFiles.Find`). 인자는 Mac과 같다: `--tools read,grep,find,ls,ask_user`(읽기 전용일 때)와 `--extension <경로>`, 파일이 없으면 둘 다 붙이지 않는다(`ProviderCatalog.Arguments`).
+- 대화상자는 `PiDialogChannel`(`PiDialogChannel.cs`)이 질문 카드로 바꾼다. 표의 select·confirm·input, 앱 도구의 직접 쓴 답과 여러 개 고르기(`", "`로 이어 보냄), 다른 확장의 select는 보기 하나만, 취소는 `cancelled`, `timeout`이 지나면 카드를 거두고 `run.notice.piDialogTimedOut`, `ask_user` 호출이 끝나면(`tool_execution_end`) 카드를 거둔다. editor, 보기 12개 초과, 카드를 받을 창이 없는 실행(머리 없는 실행)은 전처럼 취소하고 한 줄 남긴다.
+- Windows의 창은 원래 어느 에이전트의 요청이든 카드로 받으므로(`ShowsInPane`에 해당하는 거름이 없다) pi 질문도 그대로 창에 닿고, 답은 `RespondToToolPermission`·`AnswerQuestionnaire`로 간다. 질문 카드(웹 화면과 WinUI 카드)는 보기 없는 질문(입력 칸만)과 보기 12개·질문 8개까지 받는다.
+- 검사: `PiDialogVerification`이 `pi-rpc-question.jsonl`·`pi-rpc-dialogs.jsonl`을 Mac 결과와 같게 재생하고, pi 인자 검사는 확장이 있을 때와 없을 때를 둘 다 본다. 실제 pi 1.5.2를 Windows에서 돌린 확인은 아직이다.
 
 ## 1단계에 넣지 않는 것
 
