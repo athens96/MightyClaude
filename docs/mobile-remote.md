@@ -107,7 +107,9 @@ MobilePermission {
 
 기존 라우트와 필드는 그대로다. 아래는 모두 **추가**이며, 새 필드는 전부 선택(optional)이다. 업데이트하지 않은 휴대폰 앱은 모르는 필드를 무시하고 지금처럼 동작한다. 휴대폰은 `/m1/info`의 `capabilities`에 이름이 있을 때만 해당 기능을 보여 준다(없으면 구버전 호스트).
 
-`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`, `"push"`, `"fileChanges"`, `"workMap"`.
+`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`, `"push"`, `"fileChanges"`, `"workMap"`, `"appUpdate"`, `"pi"`, `"opencode"`, `"hermes"`.
+
+`"pi"`, `"opencode"`, `"hermes"`는 호스트가 그 에이전트를 돌린다는 뜻이다(Mac·Windows, `ProviderOptions.ids`). 휴대폰은 새 창 시트의 에이전트 칩에 Claude·Codex·Antigravity를 늘 내보이고, 이 세 이름은 호스트가 알릴 때만 그 뒤에 데스크톱의 순서로 더한다(`newPaneProviders`). `POST /m1/workspaces/{id}/sessions`의 `provider`가 그 id다. 셋은 그 컴퓨터에서만 도는 에이전트(`ProviderOptions.isLocalOnly`)인데, 호스트는 휴대폰에 자기 작업 공간과 그 창만 알리므로(`RemoteWorkspacePhone`) 휴대폰이 원격 작업 공간에 만들 일이 없다. 이름·브랜드 색·마크·베타 배지는 데스크톱의 `ProviderMark`와 같다(`mobile/src/theme`, `mobile/src/lib/provider-marks.ts`). 권한 모드와 사고 강도의 이름은 호스트가 보내는 `settings.options`의 이름 그대로이고(Hermes는 계획 모드가 없다), 이 에이전트들의 질문도 `MobilePermission.questionnaire`로 같은 질문 카드가 된다. 휴대폰은 모르는 provider 문자열도 이름을 그대로, 마크 없이 중립 색으로 그린다.
 
 `"fileChanges"`는 호스트의 `GET /m1/workspaces/{id}/file`이 `changes=1`(과 `session`·`run`)을 받아 미리보기에 `changes`를 붙인다는 뜻이다(Mac·Windows, 아래 "파일"). 이 이름이 없는 호스트에 `changes=1`을 보내면 400이다.
 

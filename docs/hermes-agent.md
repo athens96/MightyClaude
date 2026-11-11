@@ -7,7 +7,7 @@ Nous Research의 [Hermes Agent](https://hermes-agent.nousresearch.com)(명령 `h
 ## 식별자
 
 - provider id `hermes`, 화면 이름 `Hermes`, 실행 파일 `hermes`. 베타 배지, 금색(0xD9A441) 날개 달린 H 마크, SF Symbol `paperplane`.
-- `ProviderOptions.ids`의 여섯 번째. pi·opencode처럼 원격 작업 공간에서는 고를 수 없다(`ProviderOptions.isLocalOnly`, `run.blocked.hermesRemote`). 위임에 참여하지 않는다. 폰 capability에는 아직 넣지 않았다.
+- `ProviderOptions.ids`의 여섯 번째. pi·opencode처럼 원격 작업 공간에서는 고를 수 없다(`ProviderOptions.isLocalOnly`, `run.blocked.hermesRemote`). 위임에 참여하지 않는다. 호스트(Mac·Windows)는 폰 capability `hermes`를 알리고, 폰은 그 이름이 있는 호스트에서만 새 창의 에이전트로 Hermes를 내보인다(이름, 금색 날개 달린 H 마크, 베타 배지; 원격 작업 공간은 호스트가 폰에 알리지 않는다). 권한 모드(계획 모드 없음)와 사고 강도의 이름은 호스트가 보내는 선택지 그대로이고, 질문 카드는 다른 에이전트와 같은 카드다([mobile-remote.md](mobile-remote.md)).
 
 ## Hermes가 opencode와 다른 점
 
@@ -215,7 +215,7 @@ fixture(`native/contracts/fixtures/hermes-acp-{answer,tools,auth,resume,resume-m
 
 ## 나중 단계
 
-- Windows(Core·WinUI)와 폰, 원격 작업 공간의 Hermes 창, 위임 자식으로 Hermes 고르기.
+- 원격 작업 공간의 Hermes 창, 위임 자식으로 Hermes 고르기(Windows는 아래 "Windows", 폰은 위 첫 절).
 - "세션 동안 허용"·"항상 허용".
 - 세션 없이 모델 목록 받기(Hermes에 그런 명령이 생기면), 서비스 등급(`service_tier`) 설정.
 - 실행 중 끼어들기(`/steer`), Hermes의 `/` 명령(`available_commands_update`).
