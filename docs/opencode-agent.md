@@ -177,10 +177,10 @@ OpenCode 2.2.7 실물로 확인했고 fixture는 그 녹화다(`opencode-acp-que
 - `SessionHistory`로 이전 요청 불러오기, opencode 스킬의 `/` 명령.
 - Hermes(`hermes acp`)는 같은 `ACPChannel`로 붙였다([Hermes 에이전트 창](hermes-agent.md)). provider별로 바뀌는 것은 argv, 권한 전달 방식, 로그인 판정, 설정의 id다.
 
-## Windows가 맞출 것
+## Windows (2026-11-11 반영)
 
-- 위 argv(`opencode acp`)·JSON-RPC 순서·`OPENCODE_CONFIG_CONTENT` 권한 표, `opencode-acp-*.jsonl` fixture와 같은 기록·사용량·카드.
-- `setup-catalog-macos.json`의 `opencode` 항목을 Windows 항목과 함께 공유 `setup-catalog.json`으로 옮긴다.
-  - Windows 항목: npmGlobal `@opencode/cli`, prerequisites `["node"]`, minimumVersion `2.0.0`, 1 제거 처리.
-  - Windows의 `SetupCatalog.KnownKeys`, `Wire.Providers`에도 더한다.
-- `ses_` 세션 id를 받는 검증, `auth list --format json` 로그인 판정, `session_v2` 세션 목록(Windows의 데이터 폴더 확인 필요).
+- 실행: 같은 argv(`opencode acp`)·JSON-RPC 순서·`OPENCODE_CONFIG_CONTENT` 권한 표(`OpencodeAgent`, `AcpAgents.cs`)로, 같은 클라이언트(`AcpChannel.cs`)가 `opencode-acp-*.jsonl` fixture를 Mac과 같은 기록·사용량·카드로 재생한다(`AcpVerification`). 질문 안내 파일은 복사하지 않고 Mac 번들의 `Resources/Agents/opencode-questions.md`를 앱 옆 `Agents\`에 싣는다. OpenCode 1이면 실행하지 않고 `run.error.opencodeV1`.
+- 데이터 폴더(OpenCode 2.2.7 바이너리 안의 소스로 확인): Windows에도 따로 분기가 없어 `$XDG_DATA_HOME/opencode`, 없으면 `os.homedir()`(`%USERPROFILE%`)의 `.local\share\opencode`이고, DB는 `$OPENCODE_DB`(상대 경로면 데이터 폴더 기준, `:memory:`는 없음) 아니면 `opencode.db`다. 이어가기 목록은 거기서 읽는다(`OpencodeSessions`, `AcpSessions.cs`).
+- `ses_` 세션 id는 `Wire.SessionIdentifier`가 받는다(실행 요청, 저장된 창, resume 이벤트, 파서).
+- 로그인 판정·업데이트·계정 사용량은 [CLI 계정](cli-accounts.md)의 Windows 목록, 모델 목록은 `ProviderCatalog.OpencodeCatalog`.
+- Windows PC에서만 확인할 것: npm 심 `opencode.cmd`(cmd.exe를 거친다)로 실제 실행, 첫 실행의 부팅 시간(45초 안), 실제 `opencode.db` 읽기, 마이티 그래프 블록(흐름 쪽 이식 뒤).

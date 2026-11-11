@@ -223,13 +223,14 @@ fixture(`native/contracts/fixtures/hermes-acp-{answer,tools,auth,resume,resume-m
 - `SessionHistory`로 이전 요청 불러오기, 터미널·메신저에서 만든 Hermes 세션 잇기.
 - 프로필(`hermes -p`) 고르기. 지금은 `$HERMES_HOME`이나 기본 프로필만 쓴다.
 
-## Windows가 맞출 것
+## Windows (2026-11-11 반영)
 
-- 위 argv(`hermes acp`)·JSON-RPC 순서·권한 표(`edit_approval_policy` + `HERMES_YOLO_MODE`), `hermes-acp-*.jsonl` fixture와 같은 기록·사용량·카드.
-- 중지할 때 `session/cancel`을 먼저 보내는 것, 질문 카드(form과 승인 요청 두 모양), `{tool, arguments}` 풀기, `rawInput` 없는 도구의 요약, `data.details` 오류 문구.
-- yolo로 만든 세션을 묻는 창이 잇지 않는 규칙(`state_meta` 읽기).
-- 제공자가 없으면 `initialize`에서 멈추기, 답한 적 없는 세션(`message_count = 0`)을 잇지 않기, stderr의 로그·traceback 거르기, 한 번 더 오는 답을 한 번만 보이기.
-- `setup-catalog-macos.json`의 `hermes` 항목을 Windows 항목과 함께 공유 `setup-catalog.json`으로 옮긴다.
-  - Hermes의 Windows 설치기(`setup-hermes.ps1`)와 옵션, 데이터 폴더 위치는 따로 확인해야 한다.
-  - Windows의 `SetupCatalog.KnownKeys`, `Wire.Providers`, 허용 호스트에도 더한다.
-- `initialize`로 읽는 로그인 판정, 세션이 준 모델 목록 간직하기, `state.db` 세션 목록.
+Hermes Agent는 Windows에서 그대로 돈다. 그렇게 판단한 근거(소스 `main`): README가 Windows를 지원한다고 적고, ACP 진입점(`acp_adapter/entry.py`)에 win32 분기가 있고, 게이트웨이는 Windows에서 이름 있는 파이프로 붙으며(`gateway/runtime_bootstrap_windows.py`), PowerShell 설치기 `scripts/install.ps1`이 있다. 설치기는 홈을 `%LOCALAPPDATA%\hermes`(`HERMES_HOME`이 바꾼다)로, 저장소를 그 아래 `hermes-agent`로 두고, 사용자 명령을 `%LOCALAPPDATA%\hermes\bin`에 `hermes.exe`(pip가 깨졌으면 `hermes.cmd`)로 놓은 뒤 그 폴더를 사용자 PATH에 더한다(새 세션부터). `-NonInteractive`(옛 이름 `-SkipSetup`)가 Mac의 `--skip-setup`에 해당한다. `state.db`와 `config.yaml`은 홈에 있다.
+
+- 실행: 같은 argv(`hermes acp`)·JSON-RPC 순서·권한 표(`edit_approval_policy` + `HERMES_YOLO_MODE`, `HermesAgent`), `hermes-acp-*.jsonl` fixture와 같은 기록·사용량·카드(`AcpVerification`). 중지는 `session/cancel`을 먼저 쓰고 1초 뒤 프로세스를 끝낸다(`RunManager.StopHermes`), 초기화 제한 90초, stderr의 로그·traceback은 창에 옮기지 않는다(`HermesAgent.StderrFilter`).
+- 질문 카드: form과 승인 요청 두 모양, `{tool, arguments}` 풀기, `rawInput` 없는 도구의 요약, `data.details` 오류 문구, 한 번 더 오는 답을 한 번만.
+- 제공자가 없으면 initialize에서 멈추고(`run.error.hermesNoProvider`) 간직한 피커를 지운다. 답한 적 없는 세션(`message_count = 0`)과 yolo 세션을 묻는 창이 잇는 경우는 새 세션(`HermesAgent.Resume`, `state.db`는 `HermesSessions`가 읽는다).
+- clarify: 앱 실행마다 Hermes(실행 파일·`HERMES_HOME`)별로 한 번 `hermes config get --json platform_toolsets.acp`, 없으면 Mac과 같은 `["hermes-acp","clarify","x_search"]`(`kanban`이 옛 목록에 있으면 더함)를 `hermes config set`으로 쓰고 다시 읽어 확인(`HermesQuestionTool`), 켜진 동안 요청 뒤에 안내 문단.
+- 모델 피커는 앱 프로필 폴더의 `hermes-models.json`(`%APPDATA%\MightyCode`)에 간직하고 Hermes 실행이 끝나면 창의 목록을 다시 읽는다.
+- 로그인 판정(initialize의 `authMethods`)·업데이트(`hermes update --yes`)·계정 사용량 없음은 [CLI 계정](cli-accounts.md)의 Windows 목록, 세션 목록은 `HermesSessions`(`AcpSessions.cs`).
+- Windows PC에서만 확인할 것: 설치기를 앱으로 끝까지 돌리기, 게이트웨이 데몬 첫 기동 시간(이름 있는 파이프), `hermes.cmd` 대체 실행 파일로 넘기는 `config set` JSON 인자, 실제 턴과 clarify, 마이티 그래프 블록(흐름 쪽 이식 뒤).
