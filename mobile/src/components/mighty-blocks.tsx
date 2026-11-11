@@ -13,14 +13,14 @@ import {
 import type { MobileBlock, MobileCopyRef, MobileMightyRun, MobileResultFile } from '@/api/types';
 import { AssistantMarkdown } from '@/components/assistant-markdown';
 import { NoticeReply, RunHead } from '@/components/background-run';
-import { AdvisorCard, CardLines, DelegateRow, ReturnRow, RoleBar } from '@/components/flow-roles';
+import { AdvisorCard, CardLines, DelegateRow, ProgressPanel, ReturnRow, RoleBar } from '@/components/flow-roles';
 import { ResultFiles } from '@/components/result-files';
 import { StatusChip } from '@/components/status-chip';
 import { EmptyState } from '@/components/ui';
 import { formatDuration } from '@/components/log-entry-view';
 import type { EndScrollable, FollowBottomProps } from '@/hooks/use-follow-bottom';
 import { FOLDED_REPLY_LINES, backgroundLabel, shownTail } from '@/lib/background-output';
-import { identityLine, stillRunning } from '@/lib/flow-roles';
+import { identityLine, progressRunIndex, stillRunning } from '@/lib/flow-roles';
 import { t } from '@/lib/i18n';
 import { toneOf } from '@/lib/status-tone';
 import { runTally, timelineNode, type TimelineNode } from '@/lib/timeline';
@@ -602,9 +602,78 @@ export function MightyRunList({
     [listRef],
   );
 
-  return (
+  // The progress panel (the desktops' rule): a new request it shows whatever else is in view, until the reader scrolls themselves; then the
+  // request a third of the way down the visible list. Rows and the header are measured as they lay out; only a change of the request
+  // panel's run re-renders.
+  const progressShown = runs.some((run) => run.progress);
+  const newestRequest = [...runs].reverse().find((run) => run.progress)?.id;
+  const [pinned, setPinned] = useState<string>();
+  const seenNewest = useRef(newestRequest);
+  useEffect(() => {
+    if (newestRequest !== undefined && newestRequest !== seenNewest.current) setPinned(newestRequest);
+    seenNewest.current = newestRequest;
+  }, [newestRequest]);
+  const heights = useRef(new Map<string, number>());
+  const headerHeight = useRef(0);
+  const scrolled = useRef<{ offset: number; viewport: number } | undefined>(undefined);
+  const [focusIndex, setFocusIndex] = useState<number>();
+  const refocus = useCallback(() => {
+    const at = scrolled.current;
+    const next = progressRunIndex(runs, undefined, at && {
+      ...at,
+      headerHeight: headerHeight.current,
+      heights: runs.map((run) => heights.current.get(run.id)),
+    });
+    setFocusIndex((current) => (current === next ? current : next));
+  }, [runs]);
+  const pinnedIndex = pinned === undefined ? -1 : runs.findIndex((run) => run.id === pinned);
+  const panelIndex = progressRunIndex(runs, pinnedIndex >= 0 ? pinnedIndex : focusIndex, undefined);
+  const panelRun = panelIndex === undefined ? undefined : runs[panelIndex];
+  const onScroll = useCallback(
+    (event: Parameters<FollowBottomProps['onScroll']>[0]) => {
+      follow?.onScroll(event);
+      const { contentOffset, layoutMeasurement } = event.nativeEvent;
+      scrolled.current = { offset: contentOffset.y, viewport: layoutMeasurement.height };
+      if (progressShown) refocus();
+    },
+    [follow, progressShown, refocus],
+  );
+  const onScrollBeginDrag = useCallback(() => {
+    follow?.onScrollBeginDrag();
+    // The reader's own scroll: the panel reads the request in view again.
+    setPinned(undefined);
+  }, [follow]);
+  const panel =
+    progressShown && panelRun?.progress ? (
+      <ProgressPanel
+        progress={panelRun.progress}
+        onRequest={() => {
+          try {
+            list.current?.scrollToIndex({ index: panelIndex!, animated: true, viewPosition: 0 });
+          } catch {
+            // Not measured yet: the list's own fallback goes near it.
+          }
+        }}
+      />
+    ) : null;
+  const measuredHeader =
+    header && progressShown ? (
+      <View
+        onLayout={(event) => {
+          headerHeight.current = event.nativeEvent.layout.height;
+        }}
+      >
+        {header}
+      </View>
+    ) : (
+      header
+    );
+
+  const flatList = (
     <FlatList
       {...follow}
+      onScroll={onScroll}
+      onScrollBeginDrag={onScrollBeginDrag}
       ref={attach}
       data={runs}
       onScrollToIndexFailed={(info) => {
@@ -622,7 +691,12 @@ export function MightyRunList({
       removeClippedSubviews={false}
       extraData={focus}
       renderItem={({ item, index }) => (
-        <View style={styles.listItem}>
+        <View
+          style={styles.listItem}
+          onLayout={(event) => {
+            heights.current.set(item.id, event.nativeEvent.layout.height);
+          }}
+        >
           <RunGroup
             run={item}
             ordinal={ordinals[index] ?? index + 1}
@@ -635,7 +709,7 @@ export function MightyRunList({
       )}
       contentContainerStyle={contentContainerStyle}
       keyboardShouldPersistTaps="handled"
-      ListHeaderComponent={header}
+      ListHeaderComponent={measuredHeader}
       ListHeaderComponentStyle={headerStyle}
       ListEmptyComponent={
         <EmptyState
@@ -646,11 +720,19 @@ export function MightyRunList({
       ListFooterComponent={footer}
     />
   );
+  if (!panel) return flatList;
+  return (
+    <View style={styles.withPanel}>
+      {panel}
+      {flatList}
+    </View>
+  );
 }
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     listItem: { paddingBottom: spacing.sm },
+    withPanel: { flex: 1 },
     // A request is a card of its own: its heading, then its timeline.
     run: {
       ...cardShadow,

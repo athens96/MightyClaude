@@ -10,7 +10,7 @@ import {
 } from '@/api/types';
 import { parseBackground } from '@/lib/background-output';
 import { shownBlocks } from '@/lib/background-work';
-import { parseAdvisor, parseCard, parseDelegate, parseFlowLog, parseReturning, parseRole } from '@/lib/flow-roles';
+import { parseAdvisor, parseCard, parseDelegate, parseFlowLog, parseProgress, parseReturning, parseRole } from '@/lib/flow-roles';
 import { t } from '@/lib/i18n';
 import { parseResultFiles } from '@/lib/result-files';
 import {
@@ -410,6 +410,8 @@ function parseRun(raw: unknown, filtering: boolean): MobileMightyRun | undefined
   if (resultFiles) run.resultFiles = resultFiles;
   const returning = parseReturning(raw.returning);
   if (returning) run.returning = returning;
+  const progress = notice ? undefined : parseProgress(raw.progress);
+  if (progress) run.progress = progress;
   const advisor = parseAdvisor(raw.advisor);
   if (advisor) run.advisor = advisor;
   return run;

@@ -7,6 +7,8 @@ import type {
   MobileFlowLog,
   MobileFlowLogRow,
   MobileInkedText,
+  MobileProgress,
+  MobileProgressRow,
   MobileReturn,
 } from '@/api/types';
 import { t } from '@/lib/i18n';
@@ -86,7 +88,92 @@ export function parseCard(raw: unknown): MobileBlockCard | undefined {
   const runId = inlineText(copy?.runId, 200);
   const blockId = inlineText(copy?.blockId, 200);
   if (runId.length > 0 && blockId.length > 0) card.copy = { runId, blockId };
+  const step = inlineText(value.step, MAX_WORD);
+  if (step.length > 0) card.step = step;
   return card;
+}
+
+/** The most plan rows kept from a host (the desktops show twelve). */
+export const MAX_PROGRESS_ROWS = 12;
+const PROGRESS_STATES = ['done', 'current', 'pending', 'stopped', 'failed'] as const;
+
+export function parseProgress(raw: unknown): MobileProgress | undefined {
+  const value = record(raw);
+  const heading = inlineText(value?.heading, MAX_WORD);
+  if (!value || heading.length === 0) return undefined;
+  const rows = (Array.isArray(value.rows) ? value.rows : [])
+    .map((item): MobileProgressRow | undefined => {
+      const row = record(item);
+      const text = inlineText(row?.text, MAX_LINE);
+      const state = inlineText(row?.state, 20);
+      if (!row || text.length === 0 || !(PROGRESS_STATES as readonly string[]).includes(state)) return undefined;
+      const parsed: MobileProgressRow = {
+        index: typeof row.index === 'number' && Number.isInteger(row.index) && row.index >= 0 ? row.index : 0,
+        text,
+        state: state as MobileProgressRow['state'],
+      };
+      const startedAt = moment(row.startedAt);
+      if (startedAt !== undefined) parsed.startedAt = startedAt;
+      const endedAt = moment(row.endedAt);
+      if (endedAt !== undefined) parsed.endedAt = endedAt;
+      return parsed;
+    })
+    .filter((row): row is MobileProgressRow => row !== undefined)
+    .slice(0, MAX_PROGRESS_ROWS);
+  const progress: MobileProgress = {
+    title: inlineText(value.title, MAX_WORD),
+    heading,
+    request: inlineText(value.request, MAX_LINE),
+    stateWord: inlineText(value.stateWord, MAX_WORD),
+    status: inlineText(value.status, 20) || 'running',
+    rows,
+    hidden: typeof value.hidden === 'number' && Number.isInteger(value.hidden) && value.hidden > 0 ? Math.min(value.hidden, 9_999) : 0,
+    running: value.running === true,
+  };
+  const countText = inlineText(value.count, 20);
+  if (countText.length > 0) progress.count = countText;
+  const more = inlineText(value.more, MAX_WORD);
+  if (more.length > 0 && progress.hidden > 0) progress.more = more;
+  return progress;
+}
+
+/** A plan row's time: since it began while it is the step in progress and the request runs (on the phone's clock), how long it took once
+ * it ended, nothing for a step not begun. */
+export function progressTime(row: Pick<MobileProgressRow, 'state' | 'startedAt' | 'endedAt'>, running: boolean, now: number): string | undefined {
+  if (row.startedAt === undefined) return undefined;
+  if (row.state === 'current' && running && row.endedAt === undefined) return elapsedText(row.startedAt, now);
+  return row.endedAt !== undefined && row.endedAt >= row.startedAt ? elapsedText(row.startedAt, row.endedAt) : undefined;
+}
+
+/**
+ * Which run the progress panel is about (the desktops' rule): `pinned`, a new request, until the reader scrolls; else the run whose rows
+ * cross a third of the way down the visible list (`heights` are the runs' measured rows in order, under a header `headerHeight` tall),
+ * else the nearest; else the newest. Runs without progress (notice runs) give way to the request before them.
+ */
+export function progressRunIndex(
+  runs: readonly { progress?: MobileProgress }[],
+  pinned: number | undefined,
+  scroll: { offset: number; viewport: number; headerHeight: number; heights: readonly (number | undefined)[] } | undefined,
+): number | undefined {
+  const own = (index: number): number | undefined => {
+    for (let at = Math.min(index, runs.length - 1); at >= 0; at--) if (runs[at]?.progress) return at;
+    return undefined;
+  };
+  const newest = own(runs.length - 1);
+  if (pinned !== undefined && runs[pinned]?.progress) return pinned;
+  if (!scroll || scroll.viewport <= 0 || scroll.heights.some((height) => height === undefined)) return newest;
+  const line = scroll.offset + scroll.viewport / 3;
+  let top = scroll.headerHeight;
+  let nearest: { index: number; distance: number } | undefined;
+  for (let index = 0; index < runs.length; index++) {
+    const height = scroll.heights[index] ?? 0;
+    const bottom = top + height;
+    if (top <= line && line <= bottom) return own(index) ?? newest;
+    const distance = Math.min(Math.abs(top - line), Math.abs(bottom - line));
+    if (!nearest || distance < nearest.distance) nearest = { index, distance };
+    top = bottom;
+  }
+  return nearest ? own(nearest.index) ?? newest : newest;
 }
 
 export function parseDelegate(raw: unknown): MobileDelegateLine | undefined {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import type { MobileAdvisor, MobileBlock, MobileBlockCard, MobileDelegateLine, MobileFlowLog, MobileReturn } from '@/api/types';
+import type { MobileAdvisor, MobileBlock, MobileBlockCard, MobileDelegateLine, MobileFlowLog, MobileProgress, MobileProgressRow, MobileReturn } from '@/api/types';
 import { useNow } from '@/hooks/use-now';
 import {
   advisorShown,
@@ -8,9 +8,11 @@ import {
   cardFigures,
   inkColor,
   logClock,
+  progressTime,
   statusText,
   stillRunning,
 } from '@/lib/flow-roles';
+import { toneOf } from '@/lib/status-tone';
 import { t } from '@/lib/i18n';
 import { monoText, radius, spacing, toneColors, useStyles, usePalette, type Palette } from '@/theme';
 
@@ -38,6 +40,16 @@ export function CardLines({ block, card, identity, task }: { block: MobileBlock;
   const now = useNow(1000, running && card.startedAt !== undefined);
   return (
     <>
+      {card.step ? (
+        <Text
+          numberOfLines={1}
+          style={styles.cardStep}
+          accessibilityLabel={t('graph.card.inStep', { step: card.step })}
+          testID={`mighty-card-step-${block.id}`}
+        >
+          {`↳ ${card.step}`}
+        </Text>
+      ) : null}
       {identity ? (
         <Text numberOfLines={1} style={[styles.cardIdentity, task && styles.mono]} testID={`mighty-card-identity-${block.id}`}>
           {identity}
@@ -199,8 +211,119 @@ const RAIL_COLUMN = 34;
 /** The small node the way back stands on. */
 const RETURN_NODE = 11;
 
+/**
+ * The progress panel pinned over a session's Mighty view (the desktops' `MightyGraphProgressPanel`): the request it is about ("요청 27", its
+ * state and first line; a tap goes to it), then its plan, a line a step with its mark and its time (the step in progress keeps time on the
+ * phone's clock), and the line that counts the steps left out. Folded, the header and the request line stay.
+ */
+export function ProgressPanel({ progress, onRequest }: { progress: MobileProgress; onRequest?: () => void }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const [folded, setFolded] = useState(false);
+  const ticking = progress.running && progress.rows.some((row) => row.state === 'current' && row.startedAt !== undefined && row.endedAt === undefined);
+  const now = useNow(1000, ticking);
+  const tone = toneColors(palette, toneOf(progress.status));
+  return (
+    <View style={styles.progress} testID="mighty-progress">
+      <View style={styles.progressHead}>
+        <Text style={styles.progressTitle}>{progress.title}</Text>
+        {progress.count ? <Text style={styles.progressCount}>{progress.count}</Text> : null}
+        <View style={styles.flex} />
+        {progress.rows.length > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t(folded ? 'graph.steps.expand' : 'graph.steps.collapse')}
+            hitSlop={8}
+            onPress={() => setFolded((value) => !value)}
+            testID="mighty-progress-fold"
+          >
+            <Text style={styles.progressFold}>{folded ? '⌄' : '⌃'}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <Pressable accessibilityRole="button" onPress={onRequest} disabled={!onRequest} testID="mighty-progress-request">
+        <View style={styles.progressRequestRow}>
+          <Text style={styles.progressHeading}>{progress.heading}</Text>
+          <View style={[styles.progressPill, { backgroundColor: tone.soft }]}>
+            <Text style={[styles.progressPillText, { color: tone.ink }]}>{progress.stateWord}</Text>
+          </View>
+        </View>
+        {progress.request ? (
+          <Text numberOfLines={2} style={styles.progressRequest}>
+            {progress.request}
+          </Text>
+        ) : null}
+      </Pressable>
+      {!folded && progress.rows.length > 0 ? (
+        <View style={styles.progressRows}>
+          {progress.rows.map((row) => (
+            <ProgressLine key={row.index} row={row} time={progressTime(row, progress.running, now)} />
+          ))}
+          {progress.more ? <Text style={styles.progressMore}>{progress.more}</Text> : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function ProgressLine({ row, time }: { row: MobileProgressRow; time: string | undefined }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const mark = { done: '✓', current: '●', pending: '○', stopped: '■', failed: '!' }[row.state];
+  const color = {
+    done: toneColors(palette, 'done').fill,
+    current: toneColors(palette, 'run').fill,
+    pending: palette.textFaint,
+    stopped: toneColors(palette, 'stop').fill,
+    failed: toneColors(palette, 'err').fill,
+  }[row.state];
+  return (
+    <View
+      style={[styles.progressRow, row.state === 'current' && { backgroundColor: toneColors(palette, 'run').soft }]}
+      testID={`mighty-progress-row-${row.index}`}
+    >
+      <Text style={[styles.progressMark, { color }]}>{mark}</Text>
+      <Text
+        numberOfLines={1}
+        style={[styles.progressText, row.state === 'pending' && styles.progressPending, row.state === 'current' && styles.progressCurrent]}
+      >
+        {row.text}
+      </Text>
+      {time ? <Text style={styles.progressTime}>{time}</Text> : null}
+    </View>
+  );
+}
+
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
+    flex: { flex: 1 },
+    progress: {
+      backgroundColor: palette.surfaceRaised,
+      borderRadius: radius.lg,
+      gap: spacing.xs,
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    progressHead: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+    progressTitle: { color: palette.text, fontSize: 13, fontWeight: '800' },
+    progressCount: { color: palette.textMuted, fontSize: 12, fontWeight: '600' },
+    progressFold: { color: palette.textMuted, fontSize: 14, fontWeight: '700' },
+    progressRequestRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+    progressHeading: { color: palette.text, fontSize: 12.5, fontWeight: '700' },
+    progressPill: { borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 1 },
+    progressPillText: { fontSize: 11, fontWeight: '700' },
+    progressRequest: { color: palette.textMuted, fontSize: 12.5, lineHeight: 17 },
+    progressRows: { gap: spacing.xs, paddingTop: spacing.xs },
+    progressRow: { alignItems: 'center', borderRadius: radius.md, flexDirection: 'row', gap: spacing.sm, minHeight: 24, paddingHorizontal: spacing.xs },
+    progressMark: { fontSize: 12, fontWeight: '800', textAlign: 'center', width: 14 },
+    progressText: { color: palette.text, flex: 1, fontSize: 12.5 },
+    progressPending: { color: palette.textFaint },
+    progressCurrent: { fontWeight: '700' },
+    progressTime: { color: palette.textFaint, fontSize: 11 },
+    progressMore: { color: palette.textFaint, fontSize: 11.5, paddingHorizontal: spacing.xs },
+    cardStep: { color: palette.blockTask, fontSize: 11.5, fontWeight: '700' },
     bar: { bottom: 0, left: 0, position: 'absolute', top: 0, width: 3 },
     mono: { ...monoText, fontSize: 11.5, lineHeight: 16 },
     cardIdentity: { color: palette.textMuted, fontSize: 12 },

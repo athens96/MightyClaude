@@ -486,6 +486,41 @@ export interface MobileBlockCard {
   /** Sub-agents under it. */
   nested?: number;
   copy?: MobileCopyRef;
+  /** The step of the request's plan it was launched in ("2. 노트 작성"); absent otherwise and from older hosts. */
+  step?: string;
+}
+
+/** One step of a request's plan (`FlowSteps.Progress.Row`). */
+export interface MobileProgressRow {
+  /** The step's index among the request's steps. */
+  index: number;
+  /** "3. 버전 커밋"; the step in progress reads what it is doing while it runs. */
+  text: string;
+  state: 'done' | 'current' | 'pending' | 'stopped' | 'failed';
+  /** Milliseconds since 1970: when it began and ended. */
+  startedAt?: number;
+  endedAt?: number;
+}
+
+/** A request's progress (`FlowSteps.Progress`): the panel pinned over the session's Mighty view. */
+export interface MobileProgress {
+  /** "진행 상황". */
+  title: string;
+  /** "요청 27". */
+  heading: string;
+  /** The request's first line. */
+  request: string;
+  stateWord: string;
+  /** A status bucket, or `waiting` while the request awaits its notices. */
+  status: string;
+  /** "2/3"; absent for a request without a plan. */
+  count?: string;
+  rows: MobileProgressRow[];
+  /** Steps the rows leave out, and the line that counts them. */
+  hidden: number;
+  more?: string;
+  /** The activity still goes on: the time of the step in progress runs on the phone's clock. */
+  running: boolean;
 }
 
 /** The line over the rows a block delegated to (`FlowDelegation`). */
@@ -589,6 +624,8 @@ export interface MobileMightyRun {
   awaitingNotice?: MobileAwaitingNotice;
   /** The role view: the way back where the result will come, while it is not there. */
   returning?: MobileReturn;
+  /** The role view: a request's progress (never a notice run's); absent from older hosts. */
+  progress?: MobileProgress;
   /** The role view: the run's advisor. */
   advisor?: MobileAdvisor;
 }

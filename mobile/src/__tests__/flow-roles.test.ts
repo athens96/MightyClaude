@@ -21,6 +21,9 @@ import {
   parseCard,
   parseDelegate,
   parseFlowLog,
+  parseProgress,
+  progressRunIndex,
+  progressTime,
   parseReturning,
   parseRole,
 } from '@/lib/flow-roles';
@@ -35,7 +38,7 @@ import { darkPalette, lightPalette } from '@/theme';
 const fixture = JSON.parse(
   readFileSync(resolve(__dirname, '../../../native/contracts/fixtures/mobile-roles.json'), 'utf8'),
 ) as { cases: { name: string; expect: Record<string, unknown> }[] };
-const [claudeCase, codexCase] = fixture.cases;
+const [claudeCase, codexCase, planCase] = fixture.cases;
 
 /** The case's payload as a host sends it: the fixture's keys and a plain style. */
 function payload(expect: Record<string, unknown>): Record<string, unknown> {
@@ -96,13 +99,15 @@ describe('the shared fixture, as the phone reads it', () => {
     const [request, notice, running] = mighty.runs;
     expect(request!.blocks[0]!.role).toEqual({ name: 'lead', ink: 'taskText', identity: 'Sonnet 5.5 · 사고 강도 · High', summary: '메인 · 사고 강도 · High' });
     expect(request!.blocks[1]!.card?.copy).toEqual({ runId: 'r1:notice:1', blockId: 'r1:notice:1:bg' });
-    expect(notice!.blocks[1]!.card).toBeUndefined();
+    // A notice run's copy is a compact row too, until it is opened.
+    expect(notice!.blocks[1]!.card).toMatchObject({ before: ['완료'] });
     expect(running!.blocks.find((block) => block.id === 'scout')!.card).toMatchObject({ nested: 1, before: ['실행 중'], after: ['도구 3', '토큰 12K'] });
     expect(running!.blocks.find((block) => block.id === 'wt')!.role?.marks).toEqual(['background', 'worktree']);
     expect(running!.blocks[0]!.delegate?.parts?.map((part) => part.ink)).toEqual(['agentText', 'ink2']);
     expect(running!.returning).toEqual({ text: '병렬 4/4 실행 중 · 보고를 기다리는 중', waiting: true });
-    expect(running!.advisor).toMatchObject({ header: '조언자 · Opus 5.5 · 대기 중', state: 'onCall', calls: 1, totals: '호출 1 · 읽은 토큰 34K' });
-    expect(mighty.log?.status.map((part) => part.text).join(' · ')).toBe('Sonnet 5.5 실행 중 · 하위 에이전트 3/3 실행 중 · 작업 1개 실행 중 · 조언자 대기');
+    // The hosts no longer send an advisor.
+    expect(running!.advisor).toBeUndefined();
+    expect(mighty.log?.status.map((part) => part.text).join(' · ')).toBe('Sonnet 5.5 실행 중 · 하위 에이전트 3/3 실행 중 · 작업 1개 실행 중');
     expect(mighty.log?.rows).toHaveLength(5);
   });
 
@@ -177,14 +182,9 @@ describe('the flow with the role view', () => {
     expect(bar('ci')).toBe(lightPalette.textMuted);
   });
 
-  it('sums the advisor up under its request', () => {
+  it('draws no advisor: the hosts send none', () => {
     const view = mount();
-    const card = textOf(byTestID(view, 'mighty-advisor'));
-    expect(card).toContain('조언자 · Opus 5.5 · 대기 중');
-    expect(card).toContain(`메인 · ${logClock(1_794_304_990_000)} · 7초`);
-    expect(card).toContain('파일 변경 전 · 조언 전달 · 내용 비표시');
-    expect(card).toContain('조언은 암호화되어 Claude에게만 전달됩니다. 내용은 표시되지 않습니다.');
-    expect(card).toContain('호출 1 · 읽은 토큰 34K');
+    expect(view.root.findAll((node) => node.props.testID === 'mighty-advisor')).toHaveLength(0);
   });
 
   it('opens an ended background row’s copy in its notice run', () => {
@@ -234,14 +234,14 @@ describe('the session log strip', () => {
     });
     const view = renderer!;
     const status = byTestID(view, 'mighty-log-status');
-    expect(textOf(status)).toBe('Sonnet 5.5 실행 중 · 하위 에이전트 3/3 실행 중 · 작업 1개 실행 중 · 조언자 대기');
+    expect(textOf(status)).toBe('Sonnet 5.5 실행 중 · 하위 에이전트 3/3 실행 중 · 작업 1개 실행 중');
     const inks = status.findAllByType(Text).slice(1).map((text) => StyleSheet.flatten(text.props.style).color);
-    expect(inks).toEqual([lightPalette.blockTask, lightPalette.blockAgent, lightPalette.textMuted, lightPalette.blockSteer]);
+    expect(inks).toEqual([lightPalette.blockTask, lightPalette.blockAgent, lightPalette.textMuted]);
     expect(texts(view)).not.toContain(logClock(log.rows[0]!.at));
     press(byTestID(view, 'mighty-log'));
     const shown = texts(view);
     expect(shown).toContain(logClock(log.rows[0]!.at));
-    expect(shown.join('')).toContain('조언자 · Opus 5.5  조언 전달 · 내용 비표시');
+    expect(shown.join('')).not.toContain('조언자');
     expect(shown.join('')).toContain('로그 읽기  시작');
   });
 });
@@ -301,3 +301,65 @@ describe('reading the role view defensively', () => {
     expect(older.runs[0]!.blocks[0]!.role).toBeUndefined();
   });
 });
+
+describe('the progress panel', () => {
+  const runs = normalizeMighty(payload(planCase!.expect), true)!.runs;
+  // The step in progress began at 10:00:10.5Z; the phone's clock reads 20 seconds after that.
+  const began = 1_794_477_610_500;
+  let renderer: ReactTestRenderer | undefined;
+  beforeEach(() => jest.useFakeTimers({ now: began + 20_000 }));
+  afterEach(() => {
+    act(() => renderer?.unmount());
+    renderer = undefined;
+    jest.useRealTimers();
+  });
+
+  it('reads the request’s progress and the step a row was launched in', () => {
+    const progress = runs[0]!.progress!;
+    expect(progress).toMatchObject({ title: '진행 상황', heading: '요청 1', request: '릴리스 해줘', stateWord: '실행 중', count: '1/3', running: true, hidden: 0 });
+    expect(progress.rows.map((row) => [row.text, row.state])).toEqual([
+      ['1. 점검', 'done'],
+      ['2. 노트 쓰는 중', 'current'],
+      ['3. CI', 'pending'],
+    ]);
+    expect(runs[0]!.blocks.find((block) => block.id === 'notes')!.card?.step).toBe('2. 노트 작성');
+    expect(parseProgress({ heading: '요청 2', rows: [{ text: 'x', state: 'unknown' }], hidden: 3, more: '외 3개' })).toMatchObject({ rows: [], hidden: 3, more: '외 3개' });
+    expect(parseProgress({ rows: [] })).toBeUndefined();
+  });
+
+  it('pins the panel over the list: the request, its steps with their times, and the step on the row', () => {
+    act(() => {
+      renderer = TestRenderer.create(createElement(MightyRunList, { runs }));
+    });
+    const panel = textOf(byTestID(renderer!, 'mighty-progress'));
+    expect(panel).toContain('진행 상황');
+    expect(panel).toContain('1/3');
+    expect(panel).toContain('요청 1');
+    expect(panel).toContain('릴리스 해줘');
+    expect(textOf(byTestID(renderer!, 'mighty-progress-row-0'))).toBe('✓1. 점검10초');
+    expect(textOf(byTestID(renderer!, 'mighty-progress-row-1'))).toBe('●2. 노트 쓰는 중20초');
+    expect(textOf(byTestID(renderer!, 'mighty-progress-row-2'))).toBe('○3. CI');
+    expect(textOf(byTestID(renderer!, 'mighty-card-step-notes'))).toBe('↳ 2. 노트 작성');
+    // Folded, the request line stays and the steps go.
+    press(byTestID(renderer!, 'mighty-progress-fold'));
+    expect(renderer!.root.findAll((node) => node.props.testID === 'mighty-progress-row-0')).toHaveLength(0);
+    expect(textOf(byTestID(renderer!, 'mighty-progress'))).toContain('요청 1');
+  });
+
+  it('is about the pinned request, else the one a third of the way down the list, else the newest', () => {
+    const three = [{ progress: runs[0]!.progress }, {}, { progress: runs[0]!.progress }];
+    const heights = [400, 100, 300];
+    expect(progressRunIndex(three, undefined, undefined)).toBe(2);
+    expect(progressRunIndex(three, 0, { offset: 900, viewport: 600, headerHeight: 0, heights })).toBe(0);
+    // A third of 600 from the top: 200 is in the first request.
+    expect(progressRunIndex(three, undefined, { offset: 0, viewport: 600, headerHeight: 0, heights })).toBe(0);
+    // 450 is in the notice run, which answers for the request before it.
+    expect(progressRunIndex(three, undefined, { offset: 250, viewport: 600, headerHeight: 0, heights })).toBe(0);
+    expect(progressRunIndex(three, undefined, { offset: 400, viewport: 600, headerHeight: 0, heights })).toBe(2);
+    // Rows not measured yet: the newest.
+    expect(progressRunIndex(three, undefined, { offset: 0, viewport: 600, headerHeight: 0, heights: [400, undefined, 300] })).toBe(2);
+    expect(progressTime({ state: 'done', startedAt: 0, endedAt: 3_000 }, true, 99_000)).toBe('3초');
+    expect(progressTime({ state: 'pending' }, true, 0)).toBeUndefined();
+  });
+});
+
