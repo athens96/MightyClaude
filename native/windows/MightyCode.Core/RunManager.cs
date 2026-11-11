@@ -760,7 +760,11 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     {
         if (!Wire.Identifier(sessionId)) throw new ArgumentException(Locale.Get("run.error.invalidId"));
         if (!runs.TryGetValue(sessionId, out var run)) return;
-        run.Cancel.Cancel(); run.Child?.Kill();
+        run.Cancel.Cancel();
+        // Hermes's turn runs in its gateway: the token's registration writes session/cancel and ends the process a second
+        // later (StopHermes). Ending it here as well would close its stdin before Hermes read the cancel, and the turn
+        // would go on in the gateway (M/ProcessRunner.swift cancelGrace).
+        if (run.Request.Provider != "hermes") run.Child?.Kill();
         try { await run.Task.WaitAsync(TimeSpan.FromSeconds(10)); } catch (TimeoutException) { run.Child?.Kill(); throw new TimeoutException(Locale.Get("run.error.stopTimeout")); }
     }
     public async ValueTask DisposeAsync() { string[] active; lock (lifecycle) { disposed = true; active = runs.Keys.ToArray(); } await Task.WhenAll(active.Select(StopAsync)); await bridge.DisposeAsync(); }
