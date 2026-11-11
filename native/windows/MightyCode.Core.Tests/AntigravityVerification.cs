@@ -531,32 +531,13 @@ internal static class AntigravityVerification
         return Task.CompletedTask;
     });
 
-    /// <summary>Writes the fixture <c>conversation_summaries.db</c> with the system's own SQLite, as agy's own table is shaped.</summary>
+    /// <summary>Writes the fixture <c>conversation_summaries.db</c> with the system's own SQLite (<see cref="TestSqlite"/>), as agy's own table is shaped.</summary>
     private static class TestDatabase
     {
-        [UnmanagedFunctionPointer(CallingConvention.Winapi)] private delegate int Open(byte[] filename, out nint db, int flags, nint vfs);
-        [UnmanagedFunctionPointer(CallingConvention.Winapi)] private delegate int Exec(nint db, byte[] sql, nint callback, nint argument, nint error);
-        [UnmanagedFunctionPointer(CallingConvention.Winapi)] private delegate int Close(nint db);
-        internal static bool Create(string path, IEnumerable<(string Id, string Title, string[] Uris, string Parent)> rows)
-        {
-            var names = OperatingSystem.IsWindows() ? new[] { "winsqlite3.dll" } : OperatingSystem.IsMacOS() ? ["/usr/lib/libsqlite3.dylib"] : ["libsqlite3.so.0"];
-            var library = names.Select(name => NativeLibrary.TryLoad(name, out var handle) ? handle : 0).FirstOrDefault(handle => handle != 0);
-            if (library == 0) return false;
-            var open = Marshal.GetDelegateForFunctionPointer<Open>(NativeLibrary.GetExport(library, "sqlite3_open_v2"));
-            var exec = Marshal.GetDelegateForFunctionPointer<Exec>(NativeLibrary.GetExport(library, "sqlite3_exec"));
-            var close = Marshal.GetDelegateForFunctionPointer<Close>(NativeLibrary.GetExport(library, "sqlite3_close"));
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            static byte[] Utf8(string value) => Encoding.UTF8.GetBytes(value + "\0");
-            if (open(Utf8(path), out var db, 0x2 | 0x4, 0) != 0) return false;
-            try
-            {
-                bool Run(string sql) => exec(db, Utf8(sql), 0, 0, 0) == 0;
-                if (!Run("CREATE TABLE `conversation_summaries` (`conversation_id` text,`title` text NOT NULL DEFAULT \"\",`step_count` integer NOT NULL DEFAULT 0,`workspace_uris` text NOT NULL,`agent_name` text NOT NULL DEFAULT \"\",`parent_conversation_id` text NOT NULL DEFAULT \"\",PRIMARY KEY (`conversation_id`))")) return false;
-                foreach (var row in rows)
-                    if (!Run($"INSERT INTO conversation_summaries (conversation_id, title, workspace_uris, parent_conversation_id) VALUES ('{row.Id}', '{row.Title}', '{JsonSerializer.Serialize(row.Uris).Replace("'", "''")}', '{row.Parent}')")) return false;
-                return true;
-            }
-            finally { close(db); }
-        }
+        internal static bool Create(string path, IEnumerable<(string Id, string Title, string[] Uris, string Parent)> rows) => TestSqlite.Write(path,
+        [
+            "CREATE TABLE `conversation_summaries` (`conversation_id` text,`title` text NOT NULL DEFAULT \"\",`step_count` integer NOT NULL DEFAULT 0,`workspace_uris` text NOT NULL,`agent_name` text NOT NULL DEFAULT \"\",`parent_conversation_id` text NOT NULL DEFAULT \"\",PRIMARY KEY (`conversation_id`))",
+            .. rows.Select(row => $"INSERT INTO conversation_summaries (conversation_id, title, workspace_uris, parent_conversation_id) VALUES ('{row.Id}', '{row.Title}', '{JsonSerializer.Serialize(row.Uris).Replace("'", "''")}', '{row.Parent}')"),
+        ]);
     }
 }

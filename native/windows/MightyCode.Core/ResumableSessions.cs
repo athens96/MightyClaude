@@ -6,8 +6,8 @@ using Microsoft.Win32.SafeHandles;
 namespace MightyCode.Core;
 
 /// <summary>
-/// An earlier Claude, Codex or Antigravity session recorded for a workspace folder that
-/// a new pane can continue with <c>--resume</c> / <c>exec resume</c> / <c>--conversation</c>.
+/// An earlier Claude, Codex, Antigravity, pi, opencode or Hermes session recorded for a workspace folder that a new pane can
+/// continue with <c>--resume</c> / <c>exec resume</c> / <c>--conversation</c> / <c>--session</c> / ACP's <c>session/resume</c>.
 /// </summary>
 public sealed record ResumableSession(string Provider, string SessionID, string? Title, DateTimeOffset Modified, int? Requests, string? Model, string Path, bool Automated = false)
 {
@@ -48,7 +48,12 @@ public sealed record ResumableSessionQuery(string WorkspacePath)
 /// </summary>
 public static class ResumableSessions
 {
-    public static readonly string[] Providers = ["claude", "codex", "gemini", "pi"];
+    public static readonly string[] Providers = ["claude", "codex", "gemini", "pi", "opencode", "hermes"];
+    /// <summary>
+    /// The variables the opencode and Hermes lists find their databases by (<see cref="OpencodeSessions.Database"/>,
+    /// <see cref="HermesSessions.StateDatabase(IReadOnlyDictionary{string, string})"/>): a session list's environment carries them besides the history's.
+    /// </summary>
+    public static readonly string[] StoreVariables = ["XDG_DATA_HOME", "OPENCODE_DB", "HERMES_HOME", "HERMES_DATA_DIR_SUFFIX", "LOCALAPPDATA"];
     public static readonly TimeSpan MaximumAge = TimeSpan.FromDays(60);
     public const int MaximumCandidates = 600;
     public const int MaximumScanned = 6_000;
@@ -70,15 +75,21 @@ public static class ResumableSessions
     {
         var budget = CountBudget;
         var claude = Claude(query, ref budget, token); var codex = Codex(query, ref budget, token); var antigravity = Antigravity(query, ref budget, token); var pi = Pi(query, ref budget, token);
-        var items = claude.Items.Concat(codex.Items).Concat(antigravity.Items).Concat(pi.Items).OrderByDescending(i => i.Modified).ThenBy(i => i.Id, StringComparer.Ordinal).ToList();
-        return new(items, claude.Hidden + codex.Hidden + antigravity.Hidden + pi.Hidden);
+        var opencode = Opencode(query, token); var hermes = Hermes(query, token);
+        var items = claude.Items.Concat(codex.Items).Concat(antigravity.Items).Concat(pi.Items).Concat(opencode.Items).Concat(hermes.Items)
+            .OrderByDescending(i => i.Modified).ThenBy(i => i.Id, StringComparer.Ordinal).ToList();
+        return new(items, claude.Hidden + codex.Hidden + antigravity.Hidden + pi.Hidden + opencode.Hidden + hermes.Hidden);
     }
 
     /// One agent's sessions alone: the other agent's records are not read.
     public static ResumableSessionListing Listing(ResumableSessionQuery query, string provider, CancellationToken token = default)
     {
         var budget = CountBudget;
-        return provider switch { "claude" => Claude(query, ref budget, token), "codex" => Codex(query, ref budget, token), "gemini" => Antigravity(query, ref budget, token), "pi" => Pi(query, ref budget, token), _ => ResumableSessionListing.Empty };
+        return provider switch
+        {
+            "claude" => Claude(query, ref budget, token), "codex" => Codex(query, ref budget, token), "gemini" => Antigravity(query, ref budget, token), "pi" => Pi(query, ref budget, token),
+            "opencode" => Opencode(query, token), "hermes" => Hermes(query, token), _ => ResumableSessionListing.Empty,
+        };
     }
 
     /// <summary>
@@ -411,6 +422,56 @@ public static class ResumableSessions
         return model is not null && Wire.Model(model) ? model : null;
     }
 
+    // ── opencode ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The root sessions OpenCode 2's <c>opencode.db</c> keeps for the workspace folder (<c>session_v2.directory</c>), newest first
+    /// (M/MightyCore/OpencodeSupport.swift ResumableSessions.opencode). The first user message is the title, else opencode's own unless it is
+    /// still its placeholder; the request count is the user messages, and a session without one is left out.
+    /// </summary>
+    private static ResumableSessionListing Opencode(ResumableSessionQuery query, CancellationToken token)
+    {
+        if (OpencodeSessions.Database(query.Environment, query.Home) is not { } database) return ResumableSessionListing.Empty;
+        var rows = OpencodeSessions.Rows(database, WorkspacePaths(query.WorkspacePath), query.Now - query.MaximumAge, Math.Min(query.MaximumScanned, 2_000), !query.HeadOnly);
+        return Listed("opencode", database, rows?.Select(r => (r.Id, r.Title, r.Updated, r.Requests, r.Prompt, r.Model)), query, token);
+    }
+
+    // ── Hermes ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The conversations Hermes's ACP server lists for the workspace folder (<c>state.db</c>, sessions an ACP client created), newest first
+    /// (M/MightyCore/HermesSupport.swift ResumableSessions.hermes). A compressed conversation is listed once, under its first row's id, which ACP resumes.
+    /// </summary>
+    private static ResumableSessionListing Hermes(ResumableSessionQuery query, CancellationToken token)
+    {
+        var database = HermesSessions.StateDatabase(query.Environment, query.Home);
+        var paths = WorkspacePaths(query.WorkspacePath);
+        // Conversations share a few folders: each is resolved once.
+        var matched = new Dictionary<string, bool>(StringComparer.Ordinal);
+        bool Here(string cwd) => matched.TryGetValue(cwd, out var known) ? known : matched[cwd] = Matches(cwd, paths);
+        var rows = HermesSessions.Rows(database, Here, query.Now - query.MaximumAge, Math.Min(query.MaximumScanned, 2_000), !query.HeadOnly, token);
+        return Listed("hermes", database, rows?.Select(r => (r.Id, r.Title, r.Updated, r.Requests, r.Prompt, r.Model)), query, token);
+    }
+
+    /// <summary>A database's rows as the list's: open panes' sessions and ones without a request left out, automated ones hidden unless asked for.</summary>
+    private static ResumableSessionListing Listed(string provider, string database, IEnumerable<(string Id, string Title, DateTimeOffset Updated, int? Requests, string? Prompt, string? Model)>? rows,
+        ResumableSessionQuery query, CancellationToken token)
+    {
+        if (rows is null) return ResumableSessionListing.Empty;
+        var items = new List<ResumableSession>(); var hidden = 0;
+        foreach (var row in rows)
+        {
+            if (items.Count >= query.MaximumSessions || token.IsCancellationRequested) break;
+            var lowered = row.Id.ToLowerInvariant();
+            if (!Wire.SessionIdentifier(row.Id) || query.Excluding.Contains(lowered) || row.Requests == 0) continue;
+            var title = row.Prompt ?? (row.Title.Length == 0 ? null : row.Title);
+            var automated = !query.Known.Contains(lowered) && AutomatedPrompt(row.Prompt);
+            if (automated && !query.IncludeAutomated) { hidden++; continue; }
+            items.Add(new ResumableSession(provider, row.Id, title is null ? null : OneLine(title), row.Updated, row.Requests, row.Model, database, automated));
+        }
+        return new(items, hidden);
+    }
+
     // ── reading ───────────────────────────────────────────────────────────
 
     private static string Normalized(string path)
@@ -476,7 +537,7 @@ public static class KnownSessionIDs
             var info = new FileInfo(path);
             if (!info.Exists || info.Length > MaximumFileBytes || info.LinkTarget is not null) return [];
             var ids = JsonSerializer.Deserialize<List<string>>(File.ReadAllBytes(path)) ?? [];
-            return ids.Where(Wire.Identifier).TakeLast(Maximum).ToList();
+            return ids.Where(Wire.SessionIdentifier).TakeLast(Maximum).ToList();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return []; }
     }
@@ -484,7 +545,7 @@ public static class KnownSessionIDs
     /// the limit; null when nothing changes.
     public static List<string>? Adding(string id, IReadOnlyList<string> ids)
     {
-        if (!Wire.Identifier(id) || ids.Any(known => string.Equals(known, id, StringComparison.OrdinalIgnoreCase))) return null;
+        if (!Wire.SessionIdentifier(id) || ids.Any(known => string.Equals(known, id, StringComparison.OrdinalIgnoreCase))) return null;
         return ids.Append(id).TakeLast(Maximum).ToList();
     }
     public static void Save(IReadOnlyList<string> ids, string path)
