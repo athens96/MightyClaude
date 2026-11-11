@@ -391,13 +391,17 @@ public sealed record BackgroundWork(IReadOnlyList<BackgroundTask> Tasks, bool Tu
 /// <summary>
 /// Reads Claude Code's `system` task events (task_started, task_updated, task_progress, task_notification,
 /// background_tasks_changed). A task the CLI registered in the foreground (a blocking Agent call) stays out
-/// until it is moved to the background.
+/// until it is moved to the background. A task that ended and starts again runs again: a background agent
+/// resumed by SendMessage keeps its task id, and Claude Code (2.1.322) lists and starts the new run under a
+/// run id of its own (run_id, native/contracts/fixtures/claude-stream-resumed-agent.jsonl; macOS BackgroundTaskTracker).
 /// </summary>
 public sealed class BackgroundTaskTracker(Func<DateTimeOffset>? clock = null)
 {
     private readonly Func<DateTimeOffset> clock = clock ?? (() => DateTimeOffset.UtcNow);
     private readonly List<BackgroundTask> tasks = [];
     private readonly Dictionary<string, BackgroundTask> hidden = [];
+    /// <summary>The CLI's run id of each listed task's latest run, when its events carry one: a report of an earlier run never touches a later one.</summary>
+    private readonly Dictionary<string, string> runs = new(StringComparer.Ordinal);
     private bool turnEnded;
     public BackgroundWork Work => new(tasks.ToList(), turnEnded);
 
@@ -418,6 +422,8 @@ public sealed class BackgroundTaskTracker(Func<DateTimeOffset>? clock = null)
     };
     private string Now => ClaudePlanMode.Timestamp(clock());
     private static string Description(string? value) => ActivitySupport.Clean(value ?? "", 1024, true);
+    /// <summary>The run an event names (run_id), when it names a valid one.</summary>
+    internal static string? RunId(JsonElement frame) => frame.Text("run_id") is { } run && ValidId(run) ? run : null;
 
     /// <summary>One stream-json frame; the new state when the visible tasks changed.</summary>
     public BackgroundWork? Consume(JsonElement frame)
@@ -427,27 +433,35 @@ public sealed class BackgroundTaskTracker(Func<DateTimeOffset>? clock = null)
         switch (subtype)
         {
             case "task_started":
+            {
                 if (frame.Text("task_id") is not { } id || !ValidId(id) || MetadataJson.Flag(frame, "ambient") || hidden.ContainsKey(id)) break;
+                var run = RunId(frame);
                 if (Index(id) is var existing and >= 0)
                 {
-                    // The level event listed it first: fill in what only the start carries.
+                    // A task that ended starts again in the background: a new run (an agent resumed by SendMessage), unless the
+                    // start names the very run that ended.
+                    if (tasks[existing].Status != "running" && MetadataJson.Property(frame, "is_backgrounded").ValueKind != JsonValueKind.False
+                        && (run is null || run != runs.GetValueOrDefault(id))) existing = Restart(existing, run, frame.Text("description"));
+                    // The level event listed it first (or started it again): fill in what only the start carries.
                     var known = tasks[existing];
                     if (known.ToolUseId is null && Wire.Identifier(frame.Text("tool_use_id"))) known = known with { ToolUseId = frame.Text("tool_use_id") };
                     if (frame.Text("task_type") is { } type) known = known with { Kind = KindOf(type) };
                     if (known.Description.Length == 0 && frame.Text("description") is { } d) known = known with { Description = Description(d) };
                     tasks[existing] = known;
+                    if (run is not null) runs.TryAdd(id, run);
                     break;
                 }
                 var task = new BackgroundTask(id, KindOf(frame.Text("task_type")), Description(frame.Text("description")), Now, ToolUseId: Wire.Identifier(frame.Text("tool_use_id")) ? frame.Text("tool_use_id") : null);
                 if (MetadataJson.Property(frame, "is_backgrounded").ValueKind == JsonValueKind.False) { if (hidden.Count < 256) hidden[id] = task; }
-                else Insert(task);
+                else Insert(task, run);
                 break;
+            }
             case "task_updated":
             {
                 if (frame.Text("task_id") is not { } updated) break;
                 var patch = MetadataJson.Property(frame, "patch");
                 if (patch.ValueKind != JsonValueKind.Object) break;
-                if (MetadataJson.Flag(patch, "is_backgrounded") && hidden.Remove(updated, out var moved)) Insert(moved);
+                if (MetadataJson.Flag(patch, "is_backgrounded") && hidden.Remove(updated, out var moved)) Insert(moved, RunId(frame));
                 if (hidden.TryGetValue(updated, out var waiting))
                 {
                     // Still in the foreground: keep its state for a later move.
@@ -455,6 +469,7 @@ public sealed class BackgroundTaskTracker(Func<DateTimeOffset>? clock = null)
                     if (StatusOf(patch.Text("status")) is { } s && s != "running") hidden.Remove(updated); else hidden[updated] = waiting;
                     break;
                 }
+                if (!Current(updated, frame)) break;
                 Update(updated, t =>
                 {
                     if (patch.Text("description") is { } d) t = t with { Description = Description(d) };
@@ -465,11 +480,12 @@ public sealed class BackgroundTaskTracker(Func<DateTimeOffset>? clock = null)
                 break;
             }
             case "task_progress":
-                if (frame.Text("task_id") is { } progressed && frame.Text("description") is { } description) Update(progressed, t => t with { Description = Description(description) });
+                if (frame.Text("task_id") is { } progressed && frame.Text("description") is { } description && Current(progressed, frame)) Update(progressed, t => t with { Description = Description(description) });
                 break;
             case "task_notification":
                 if (frame.Text("task_id") is not { } notified) break;
                 hidden.Remove(notified);
+                if (!Current(notified, frame)) break;
                 Update(notified, t =>
                 {
                     // Only the report that ends the task may set its summary.
@@ -480,13 +496,20 @@ public sealed class BackgroundTaskTracker(Func<DateTimeOffset>? clock = null)
                 });
                 break;
             case "background_tasks_changed":
-                // A level signal: what is listed is live and in the background.
+                // A level signal: what is listed is live and in the background. A task that ended, listed under a run of its own
+                // that is not the one that ended, runs again.
                 var live = MetadataJson.Property(frame, "tasks");
                 if (live.ValueKind != JsonValueKind.Array) break;
                 foreach (var row in live.EnumerateArray())
                 {
-                    if (row.Text("task_id") is not { } listed || !ValidId(listed) || MetadataJson.Flag(row, "ambient") || Index(listed) >= 0) continue;
-                    Insert(hidden.Remove(listed, out var known) ? known : new BackgroundTask(listed, KindOf(row.Text("task_type")), Description(row.Text("description")), Now));
+                    if (row.Text("task_id") is not { } listed || !ValidId(listed) || MetadataJson.Flag(row, "ambient")) continue;
+                    var listedRun = RunId(row);
+                    if (Index(listed) is var at and >= 0)
+                    {
+                        if (tasks[at].Status != "running" && listedRun is not null && runs.TryGetValue(listed, out var ended) && listedRun != ended) Restart(at, listedRun, row.Text("description"));
+                        continue;
+                    }
+                    Insert(hidden.Remove(listed, out var known) ? known : new BackgroundTask(listed, KindOf(row.Text("task_type")), Description(row.Text("description")), Now), listedRun);
                 }
                 break;
         }
@@ -519,13 +542,33 @@ public sealed class BackgroundTaskTracker(Func<DateTimeOffset>? clock = null)
     }
 
     private int Index(string id) => tasks.FindIndex(t => t.Id == id);
-    private void Insert(BackgroundTask task)
+    private void Insert(BackgroundTask task, string? run)
     {
         tasks.Add(task);
-        while (tasks.Count > BackgroundWork.MaximumTasks) { var settled = tasks.FindIndex(t => t.Status != "running"); tasks.RemoveAt(settled >= 0 ? settled : 0); }
+        if (run is not null) runs[task.Id] = run;
+        while (tasks.Count > BackgroundWork.MaximumTasks)
+        {
+            var settled = tasks.FindIndex(t => t.Status != "running");
+            var at = settled >= 0 ? settled : 0;
+            runs.Remove(tasks[at].Id); tasks.RemoveAt(at);
+        }
     }
     private void Update(string id, Func<BackgroundTask, BackgroundTask> change) { var index = Index(id); if (index >= 0) tasks[index] = change(tasks[index]); }
-    /// <summary>A settled task never runs again; a late or repeated report is ignored.</summary>
+    /// <summary>Whether <paramref name="frame"/> reports on task <paramref name="id"/>'s latest run: it names no run, or the task's run is not known, or they agree.</summary>
+    private bool Current(string id, JsonElement frame) => RunId(frame) is not { } run || !runs.TryGetValue(id, out var latest) || run == latest;
+    /// <summary>The listed task at <paramref name="index"/> runs again: a new run, started now, last among the tasks in start order, with no end, summary or
+    /// tool call yet (its start names the call). Returns where it stands now.</summary>
+    private int Restart(int index, string? run, string? description)
+    {
+        var task = tasks[index];
+        tasks.RemoveAt(index);
+        var text = description is null ? "" : Description(description);
+        task = task with { Status = "running", StartedAt = Now, EndedAt = null, Summary = null, ToolUseId = null, Description = text.Length > 0 ? text : task.Description };
+        if (run is null) runs.Remove(task.Id); else runs[task.Id] = run;
+        tasks.Add(task);
+        return tasks.Count - 1;
+    }
+    /// <summary>A settled task stays settled until it starts again (Restart); a late or repeated report is ignored.</summary>
     private BackgroundTask Finish(BackgroundTask task, string status) => task.Status != "running" || status == "running" ? task : task with { Status = status, EndedAt = Now };
 }
 

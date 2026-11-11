@@ -1005,6 +1005,311 @@
           }
         ]
       }
+    },
+    {
+      "name": "an agent resumed by SendMessage runs again under its task id and a run id of its own (claude-stream-resumed-agent.jsonl)",
+      "steps": [
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "tool_use_id": "toolu_launch",
+          "description": "Count",
+          "is_backgrounded": true,
+          "task_type": "local_agent"
+        },
+        {
+          "step": "turnEnded"
+        },
+        {
+          "type": "system",
+          "subtype": "task_updated",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "patch": {
+            "status": "completed",
+            "end_time": 1794396610985
+          }
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "tool_use_id": "toolu_launch",
+          "status": "completed",
+          "summary": "one"
+        },
+        {
+          "type": "system",
+          "subtype": "background_tasks_changed",
+          "tasks": [
+            {
+              "task_id": "agent1",
+              "run_id": "run-2",
+              "task_type": "local_agent",
+              "description": "Count"
+            }
+          ]
+        },
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "agent1",
+          "run_id": "run-2",
+          "tool_use_id": "toolu_send",
+          "description": "Count",
+          "is_backgrounded": true,
+          "task_type": "local_agent"
+        },
+        {
+          "type": "system",
+          "subtype": "task_progress",
+          "task_id": "agent1",
+          "run_id": "run-2",
+          "tool_use_id": "toolu_send",
+          "description": "Counting on"
+        }
+      ],
+      "expected": {
+        "turnEnded": true,
+        "tasks": [
+          {
+            "id": "agent1",
+            "toolUseId": "toolu_send",
+            "kind": "agent",
+            "description": "Counting on",
+            "status": "running",
+            "ended": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "a late report of the earlier run leaves the resumed run running, and the resumed run's own notification ends it",
+      "steps": [
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "tool_use_id": "toolu_launch",
+          "description": "Count",
+          "is_backgrounded": true,
+          "task_type": "local_agent"
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "tool_use_id": "toolu_launch",
+          "status": "completed",
+          "summary": "one"
+        },
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "agent1",
+          "run_id": "run-2",
+          "tool_use_id": "toolu_send",
+          "description": "Count",
+          "is_backgrounded": true,
+          "task_type": "local_agent"
+        },
+        {
+          "type": "system",
+          "subtype": "task_updated",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "patch": {
+            "status": "failed",
+            "error": "late"
+          }
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "status": "failed",
+          "summary": "late repeat"
+        },
+        {
+          "type": "system",
+          "subtype": "task_progress",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "description": "stale"
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "agent1",
+          "run_id": "run-2",
+          "tool_use_id": "toolu_send",
+          "status": "completed",
+          "summary": "two"
+        }
+      ],
+      "expected": {
+        "turnEnded": false,
+        "tasks": [
+          {
+            "id": "agent1",
+            "toolUseId": "toolu_send",
+            "kind": "agent",
+            "description": "Count",
+            "status": "completed",
+            "summary": "two",
+            "ended": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "a start or a listing of the very run that ended does not start it again",
+      "steps": [
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "tool_use_id": "toolu_launch",
+          "description": "Count",
+          "is_backgrounded": true,
+          "task_type": "local_agent"
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "tool_use_id": "toolu_launch",
+          "status": "completed",
+          "summary": "one"
+        },
+        {
+          "type": "system",
+          "subtype": "background_tasks_changed",
+          "tasks": [
+            {
+              "task_id": "agent1",
+              "run_id": "run-1",
+              "task_type": "local_agent",
+              "description": "Count"
+            }
+          ]
+        },
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "agent1",
+          "run_id": "run-1",
+          "tool_use_id": "toolu_launch",
+          "description": "Count",
+          "is_backgrounded": true,
+          "task_type": "local_agent"
+        },
+        {
+          "step": "finish"
+        }
+      ],
+      "expected": {
+        "turnEnded": false,
+        "tasks": [
+          {
+            "id": "agent1",
+            "toolUseId": "toolu_launch",
+            "kind": "agent",
+            "description": "Count",
+            "status": "completed",
+            "summary": "one",
+            "ended": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "without run ids a new start of an ended task runs it again, a listing does not, and it is last in start order",
+      "steps": [
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "old1",
+          "tool_use_id": "toolu_old",
+          "description": "Audit",
+          "is_backgrounded": true,
+          "task_type": "local_agent"
+        },
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "sh2",
+          "tool_use_id": "toolu_sh",
+          "description": "npm run dev",
+          "is_backgrounded": true,
+          "task_type": "local_bash"
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "old1",
+          "tool_use_id": "toolu_old",
+          "status": "completed",
+          "summary": "ok"
+        },
+        {
+          "type": "system",
+          "subtype": "background_tasks_changed",
+          "tasks": [
+            {
+              "task_id": "old1",
+              "task_type": "local_agent",
+              "description": "Audit"
+            },
+            {
+              "task_id": "sh2",
+              "task_type": "local_bash",
+              "description": "npm run dev"
+            }
+          ]
+        },
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "old1",
+          "tool_use_id": "toolu_again",
+          "description": "Audit again",
+          "is_backgrounded": true,
+          "task_type": "local_agent"
+        },
+        {
+          "step": "finish"
+        }
+      ],
+      "expected": {
+        "turnEnded": false,
+        "tasks": [
+          {
+            "id": "sh2",
+            "toolUseId": "toolu_sh",
+            "kind": "shell",
+            "description": "npm run dev",
+            "status": "unknown",
+            "ended": true
+          },
+          {
+            "id": "old1",
+            "toolUseId": "toolu_again",
+            "kind": "agent",
+            "description": "Audit again",
+            "status": "unknown",
+            "ended": true
+          }
+        ]
+      }
     }
   ]
 }

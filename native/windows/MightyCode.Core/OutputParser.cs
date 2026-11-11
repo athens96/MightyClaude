@@ -672,6 +672,23 @@ public static class ClaudeStream
         }
         catch (JsonException) { return false; }
     }
+    /// <summary>
+    /// The CLI's word on its session in a top-level `session_state_changed` frame (which the app asks Claude for): idle, running or
+    /// requires_action; null for any other frame.
+    /// </summary>
+    public static string? SessionState(JsonElement frame) =>
+        frame.ValueKind == JsonValueKind.Object && frame.Text("type") == "system" && frame.Text("subtype") == "session_state_changed"
+        && MetadataJson.Property(frame, "parent_tool_use_id").ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+        && frame.Text("state") is { Length: > 0 and <= 64 } state ? state : null;
+    /// <summary>
+    /// Whether a Claude run's input (stdin and the approval channel) closes at a settle point: the request answered, no background task
+    /// runs, and the CLI is not busy — it said it is idle, or never says (<paramref name="sessionState"/> is its last word). Claude Code
+    /// says idle only after the last notice turn and background agent, so a notice turn still to come after a result with nothing running
+    /// can resume an agent or start work and keep the input; closed, Claude Code stops background work 10 minutes after the last turn
+    /// (macOS ManagedProcess.settleInput, CLIStreamParser.cliBusy).
+    /// </summary>
+    public static bool ClosesInput(bool turnResultSeen, bool backgroundRunning, string? sessionState) =>
+        turnResultSeen && !backgroundRunning && sessionState is null or "idle";
     /// <summary>The CLI's own end-of-turn result — not a background task notification, not a sub-agent.</summary>
     public static bool IsTurnResult(string line)
     {

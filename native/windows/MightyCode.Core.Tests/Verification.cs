@@ -83,6 +83,33 @@ internal static class Verification
                         Environment.ExitCode = 1;
                         return;
                     }
+                    case "user" when line.Contains("resumed agent fixture", StringComparison.Ordinal):
+                    {
+                        // The recorded order (claude-stream-resumed-agent.jsonl): the agent ends before the request's result, the notice
+                        // turn after it resumes the agent, and idle comes only after the resumed agent's own notice turn. Input closed
+                        // before that read fails the run (exit 24), as Claude Code would stop the agent once its input closed.
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"session_state_changed\",\"state\":\"running\"}");
+                        Console.WriteLine("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"Agent\",\"input\":{\"description\":\"Count\",\"prompt\":\"Count.\",\"run_in_background\":true}}]}}");
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"agent1\",\"run_id\":\"run-1\",\"tool_use_id\":\"toolu_1\",\"description\":\"Count\",\"is_backgrounded\":true,\"task_type\":\"local_agent\"}");
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"agent1\",\"run_id\":\"run-1\",\"patch\":{\"status\":\"completed\"}}");
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"agent1\",\"run_id\":\"run-1\",\"tool_use_id\":\"toolu_1\",\"status\":\"completed\",\"summary\":\"one\"}");
+                        Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"launched\"}");
+                        await Task.Delay(400);
+                        Console.WriteLine("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_2\",\"name\":\"SendMessage\",\"input\":{\"to\":\"agent1\",\"summary\":\"Count on\",\"message\":\"Count on.\"}}]}}");
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"agent1\",\"run_id\":\"run-2\",\"task_type\":\"local_agent\",\"description\":\"Count\"}]}");
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"agent1\",\"run_id\":\"run-2\",\"tool_use_id\":\"toolu_2\",\"description\":\"Count\",\"is_backgrounded\":true,\"task_type\":\"local_agent\"}");
+                        Console.WriteLine("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_2\",\"content\":\"{\\\"success\\\":true,\\\"resumedAgentId\\\":\\\"agent1\\\"}\"}]}}");
+                        Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"resumed\",\"origin\":{\"kind\":\"task-notification\",\"runId\":\"run-1\"}}");
+                        var resumedFollow = await Console.In.ReadLineAsync();
+                        if (resumedFollow is null) { Environment.Exit(24); return; }
+                        await File.WriteAllTextAsync(record + ".follow", resumedFollow);
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"agent1\",\"run_id\":\"run-2\",\"patch\":{\"status\":\"completed\"}}");
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"agent1\",\"run_id\":\"run-2\",\"tool_use_id\":\"toolu_2\",\"status\":\"completed\",\"summary\":\"two\"}");
+                        Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"done\",\"origin\":{\"kind\":\"task-notification\",\"runId\":\"run-2\"}}");
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"session_state_changed\",\"state\":\"idle\"}");
+                        while (await Console.In.ReadLineAsync() is { } extra) await File.AppendAllTextAsync(record + ".extra", extra + "\n");
+                        return;
+                    }
                     case "user" when line.Contains("background stop fixture", StringComparison.Ordinal):
                         // The turn ends while a background shell still runs; only a stop ends the process.
                         await File.WriteAllTextAsync(record + ".pid", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -1011,6 +1038,10 @@ internal static class Verification
         await Test("plan mode state round-trips and old snapshots still load", ClaudePlanModeVerification.SavedStateRoundTripsAndOldSnapshotsLoad);
         await Test("plan mode runner answers a fake CLI's plan and reports its checklist and background work", ClaudePlanModeVerification.RunnerAnswersAPlanAndReportsProgress);
         await Test("plan mode stopping a pane waiting on background work ends everything", ClaudePlanModeVerification.StoppingAPaneWaitingOnBackgroundWorkEndsEverything);
+        await Test("resumed agent: the recording is the resume as Claude Code reports it (claude-stream-resumed-agent)", ResumedAgentVerification.TheRecordingIsTheResumeAsClaudeCodeReportsIt);
+        await Test("resumed agent: one resumed from a notice turn keeps the pane waiting, the queue holding and the input open until its notification", ResumedAgentVerification.AnAgentResumedFromANoticeTurnKeepsThePaneWaitingUntilItsNotification);
+        await Test("resumed agent: one resumed from a steered turn waits once that turn ends", ResumedAgentVerification.AnAgentResumedFromASteeredTurnWaitsOnceThatTurnEnds);
+        await Test("resumed agent: the runner keeps the input open for a notice turn's resumed agent until the CLI is idle", ResumedAgentVerification.TheRunnerKeepsTheInputOpenForAResumedAgent);
         await Test("plan card helpers pick the plan, place it and read its outcome", PlanCardVerification.Helpers);
         await Test("plan card takes the result's place in the diagram", PlanCardVerification.LayoutPlacesThePlanCard);
         await Test("plan block fits the pane like the newest result", PlanCardVerification.PlanFitsThePaneLikeTheResult);

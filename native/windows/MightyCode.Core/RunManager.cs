@@ -66,9 +66,12 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         internal volatile bool Finalizing, Finished;
         // The user cancelled a plan: the run ends stopped however the CLI ends it.
         internal volatile bool PlanCancelled;
-        // stdin and the approval channel close only once the request's own result is in and no background
-        // task runs, so follow-up turns can still ask and new input can join (macOS ManagedProcess.settleInput).
+        // stdin and the approval channel close only once the request's own result is in, no background
+        // task runs and the CLI said it is idle (if it says), so follow-up turns can still ask, resume an agent
+        // and take new input (macOS ManagedProcess.settleInput).
         internal volatile bool TurnResultSeen;
+        /// <summary>The CLI's last word on its session (ClaudeStream.SessionState): null until it says one.</summary>
+        internal volatile string? CliState;
         internal long LastOutputTicks = Environment.TickCount64;
         internal readonly object InputGate = new();
         internal OutputParser? Parser;
@@ -416,7 +419,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     paneMode: request.Settings!.PermissionMode);
             }
             bool BackgroundRunning() { lock (planGate) return backgroundTracker.Work.Running.Count > 0; }
-            void SettleInput() { if (run.TurnResultSeen && !BackgroundRunning()) CloseChannel(run, child); }
+            void SettleInput() { if (ClaudeStream.ClosesInput(run.TurnResultSeen, BackgroundRunning(), run.CliState)) CloseChannel(run, child); }
             void Consume(string line)
             {
                 line = run.PaneBinding?.Redact(line) ?? line;
@@ -433,6 +436,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     if (tracker is not null && tracker.NoticeRevision != notices) PublishGraph(false);
                     if (request.Provider == "claude")
                     {
+                        if (ClaudeStream.SessionState(frame) is { } state) run.CliState = state;
                         ReadPlanMode(frame);
                         // As on the Mac, only the run's own turn decides: never a sub-agent's frame or a background task's notification result.
                         if (!ClaudeStream.IsNotificationResult(frame) && MetadataJson.Property(frame, "parent_tool_use_id").ValueKind is System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null)
@@ -525,8 +529,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 run.Permissions?.Start(); run.CodexPermissions?.Start();
                 if (interactive) _ = Task.Run(async () =>
                 {
-                    // Closes input once the CLI is silent for BackgroundIdleClose after its last background task ended
-                    // (a follow-up turn's own result or `session_state_changed: idle` normally closes it first).
+                    // Closes input once the CLI is silent for BackgroundIdleClose after the request's result with no background
+                    // task running, whatever it last said of its session (`session_state_changed: idle` normally closes it first).
                     var idle = BackgroundIdleClose.TotalMilliseconds;
                     try
                     {
