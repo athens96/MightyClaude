@@ -183,8 +183,10 @@ public actor RemoteClientService {
             throw MightyError(L("remote.connect.error.notViaTailscale"))
         }
         let data = try await RemoteTransport.request(target, key: key, method: "GET", path: RemoteProtocol.pathPrefix + "info")
-        let info: RemoteWireInfo
+        var info: RemoteWireInfo
         do { info = try JSONDecoder().decode(RemoteWireInfo.self, from: data) } catch { throw MightyError(L("remote.connect.error.notMighty")) }
+        // An older host may send a provider's whole list (opencode lists hundreds): its first models are kept, the host is not refused.
+        info.runtime = RemoteWorkspaceValidation.bounded(info.runtime)
         try RemoteWorkspaceValidation.info(info)
         return (target, info)
     }

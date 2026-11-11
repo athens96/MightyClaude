@@ -33,7 +33,7 @@ section: agent-pane
 모델 칩을 누르면 {{ui:composer.label.runner}}(Claude, Codex, Antigravity, pi, opencode, Hermes)와 {{ui:composer.label.model}} 항목을 고를 수 있습니다. 목록이 맞지 않으면 {{ui:composer.model.refresh}}을 누르세요. 에이전트를 바꾸면 대화가 새로 시작됩니다.
 
 ### 사고 강도 {#effort}
-{{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Antigravity에는 없고, pi는 Off, Minimal, Low, Medium, High, XHigh이고, opencode는 모델이 제공하는 변형인 Low, Medium, High, Max이고, Hermes는 Low, Medium, High, XHigh, Max입니다.
+{{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Codex 모델이 알리면 {{ui:composer.effort.ultra}}도 있습니다. 가장 깊이 생각하면서 일의 일부를 Codex 자신의 하위 에이전트에게 맡길 수 있어 사용량이 더 들 수 있습니다. Antigravity에는 없고, pi는 Off, Minimal, Low, Medium, High, XHigh이고, opencode는 모델이 제공하는 변형인 Low, Medium, High, Max이고, Hermes는 Low, Medium, High, XHigh, Max입니다.
 
 ### 조언자 {#advisor}
 Claude 창에는 {{ui:composer.effort.label}} 옆에 전구 모양의 {{ui:composer.advisor.label}} 단추가 있습니다. Claude Code의 실험적 기능으로, Claude가 일하는 도중에 다른 모델에게 조언을 구하게 합니다. {{ui:composer.advisor.follow}}(기본값)은 아무것도 넘기지 않고 Claude Code에 설정된 대로 실행합니다. 모델을 고르면 그 모델을 조언자로 쓰고, {{ui:composer.advisor.off}}은 이 창의 요청에서만 조언자를 끕니다. 조언자를 쓰면 토큰을 더 씁니다. 메인 모델보다 낮은 모델을 고르면 Claude Code가 오류를 내고, 그 오류가 창에 나옵니다. 다른 컴퓨터의 작업 공간과 다른 에이전트의 창에는 이 단추가 없습니다.

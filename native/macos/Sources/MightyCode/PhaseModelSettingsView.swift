@@ -187,7 +187,8 @@ private struct PhaseModelProviderBlock: View {
         }
     }
 
-    /// The levels the CLI names; for Codex the ones its models advertise.
+    /// The levels the CLI names; for Codex the ones its models advertise. Not Codex's `ultra`: these knobs go to every run
+    /// whatever its model (a sub-agent's included), and a remote host older than it refuses a run that carries it.
     private func effortLevels(including current: String) -> [String] {
         var levels = ProviderOptions.efforts
         if provider == "codex" {

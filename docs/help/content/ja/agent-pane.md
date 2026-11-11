@@ -33,7 +33,7 @@ section: agent-pane
 モデルのチップをクリックすると、{{ui:composer.label.runner}}(Claude、Codex、Antigravity、pi、opencode、Hermes)と{{ui:composer.label.model}}を選べます。一覧が正しくない場合は{{ui:composer.model.refresh}}をクリックしてください。エージェントを変更すると、会話は新しく始まります。
 
 ### 思考レベル {#effort}
-{{ui:composer.effort.label}}は、モデルがどれだけ深く考えるかを決めます。Auto、Low、Medium、High、XHigh、Maxから選びます。モデルが対応している段階だけが表示されます。Antigravityにはなく、piはOff、Minimal、Low、Medium、High、XHighで、opencodeはモデルが提供するバリアントのLow、Medium、High、Maxで、HermesはLow、Medium、High、XHigh、Maxです。
+{{ui:composer.effort.label}}は、モデルがどれだけ深く考えるかを決めます。Auto、Low、Medium、High、XHigh、Maxから選びます。モデルが対応している段階だけが表示されます。Codexのモデルが対応していれば{{ui:composer.effort.ultra}}もあります。最も深く考え、作業の一部をCodex自身のサブエージェントに任せることがあるため、使用量が増えることがあります。Antigravityにはなく、piはOff、Minimal、Low、Medium、High、XHighで、opencodeはモデルが提供するバリアントのLow、Medium、High、Maxで、HermesはLow、Medium、High、XHigh、Maxです。
 
 ### アドバイザー {#advisor}
 Claude ペインには、{{ui:composer.effort.label}}の隣に電球の形の{{ui:composer.advisor.label}}ボタンがあります。Claude Codeの実験的な機能で、Claudeが作業の途中で別のモデルに助言を求めるようにします。{{ui:composer.advisor.follow}}（既定）は何も渡さず、Claude Codeの設定どおりに実行します。モデルを選ぶとそのモデルがアドバイザーになり、{{ui:composer.advisor.off}}はこのペインのリクエストでだけアドバイザーを切ります。アドバイザーを使うとトークンを多く使います。メインモデルより低いモデルを選ぶとClaude Codeがエラーを出し、そのエラーがペインに表示されます。別のコンピューターのワークスペースと、ほかのエージェントのペインには、このボタンはありません。

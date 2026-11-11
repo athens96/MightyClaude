@@ -91,6 +91,7 @@
   "composer.effort.label": "思考强度",
   "composer.effort.menu": "思考强度 · {effort}",
   "composer.effort.unknownLevels": "无法确认此模型支持的级别，因此使用 Auto。",
+  "composer.effort.ultra": "Ultra · 自动委派",
   "composer.advisor.label": "顾问",
   "composer.advisor.follow": "跟随 Claude 的设置",
   "composer.advisor.off": "关闭",
