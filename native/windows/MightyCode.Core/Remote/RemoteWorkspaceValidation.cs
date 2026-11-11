@@ -38,6 +38,8 @@ public static class RemoteWorkspaceValidation
         foreach (var provider in value.Runtime.Providers ?? [])
             if (provider is null || !Wire.Providers.Contains(provider.Id) || provider.Name is not { Length: <= 120 } || provider.Detail is not { Length: <= 2_000 } || (provider.Version?.Length ?? 0) > 80
                 || provider.ModelCatalog?.Models is null || provider.ModelCatalog.Models.Count > 128 || provider.ModelCatalog.Detail is not { Length: <= 2_000 }
+                // A newer host says why its latest read failed and when a kept list was read; an older one says neither.
+                || (provider.ModelCatalog.ReadFailure?.Length ?? 0) > 2_000 || (provider.ModelCatalog.ListedAt?.Length ?? 0) > 64
                 || !provider.ModelCatalog.Models.All(m => m is not null && Wire.Model(m.Value) && m.DisplayName is { Length: <= 160 } && m.Description is { Length: <= 2_400 })
                 || provider.Capabilities?.PermissionModes is null || !provider.Capabilities.PermissionModes.All(mode => mode is not null && PermissionMode(mode, provider.Id)))
                 throw new InvalidDataException(Locale.Get("remote.connect.error.badRuntime"));

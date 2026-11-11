@@ -13,13 +13,14 @@ public static class ModelSelectionSupport
     public static bool IsOfficialClaudeModel(string value) => ProviderCatalog.Fallback("claude").Models.Any(m => m.Value == value) || OfficialClaude.IsMatch(value);
 
     /// <summary>
-    /// The model and effort a pane keeps under a newly read list. Only a list the CLI itself gave can retire a model it offered
-    /// before; a custom id survives a missing or inconclusive reading.
+    /// The model and effort a pane keeps under a newly read list. Only a list the CLI itself gave on its latest read can retire a model
+    /// it offered before; a custom id survives a missing or inconclusive reading, and a kept older list (ReadFailure set: the newest read
+    /// failed) changes nothing.
     /// </summary>
     public static ModelSelectionResolution Reconcile(string model, string effort, ModelCatalog? previous, ModelCatalog refreshed, string? provider = null)
     {
         var original = new ModelSelectionResolution(model, effort);
-        if (refreshed.Source != "cli") return original;
+        if (!refreshed.IsFresh) return original;
         var prior = previous?.Models.FirstOrDefault(m => m.Value == model || m.ResolvedModel == model);
         var direct = refreshed.Models.FirstOrDefault(m => m.Value == model) ?? refreshed.Models.FirstOrDefault(m => m.Value != "default" && m.ResolvedModel == model);
         // Bedrock's list can hold concrete regional ids while the CLI still takes the stable aliases: a missing row must not
@@ -61,9 +62,9 @@ public sealed record ModelContext(string WorkspaceId, string Path, string Provid
 /// Reads each context's model list one probe at a time (M/LocalModelCatalogRefresh.swift). Requests made while a probe runs share
 /// it; an invalidating request during a probe makes it read again before it answers, so it never answers with the list from
 /// before; and a list the CLI gave is used again for 2 s by a forced request (a pane selected) and for 60 s by any other (a run
-/// about to start). A reading that failed, or gave only the fallback list (offline, signed out), is not asked again by a run
-/// about to start for <see cref="FailedLifetime"/>, so each send does not wait for the CLI to fail anew; a selection asks again.
-/// <c>changed</c> hears every new list with the one before it.
+/// about to start). A reading that failed, or gave only the fallback list or a kept older one (offline, signed out), is not asked
+/// again by a run about to start for <see cref="FailedLifetime"/>, so each send does not wait for the CLI to fail anew; a selection
+/// asks again. <c>changed</c> hears every new list with the one before it.
 /// </summary>
 public sealed class ModelCatalogRefresh(Func<ModelContext, Task<ProviderRuntime>> loader, Action<ModelContext, ProviderRuntime?, ProviderRuntime> changed, Func<DateTimeOffset>? clock = null)
 {
@@ -94,7 +95,7 @@ public sealed class ModelCatalogRefresh(Func<ModelContext, Task<ProviderRuntime>
             if (!entries.TryGetValue(key, out var entry)) entries[key] = entry = new();
             if (invalidate) { entry.Revision++; entry.LoadedAt = DateTimeOffset.MinValue; }
             if (entry.Probe is { } running) return running;
-            if (entry.Value is { } value && Now - entry.LoadedAt < (value.ModelCatalog.Source == "cli" ? force ? ForcedLifetime : Lifetime : force ? TimeSpan.Zero : FailedLifetime)) return Task.FromResult<ProviderRuntime?>(value);
+            if (entry.Value is { } value && Now - entry.LoadedAt < (value.ModelCatalog.IsFresh ? force ? ForcedLifetime : Lifetime : force ? TimeSpan.Zero : FailedLifetime)) return Task.FromResult<ProviderRuntime?>(value);
             if (!force && !invalidate && Now - entry.FailedAt < FailedLifetime) return Task.FromResult<ProviderRuntime?>(null);
             return entry.Probe = ProbeAsync(key, entry);
         }
@@ -129,6 +130,17 @@ public sealed class ModelCatalogRefresh(Func<ModelContext, Task<ProviderRuntime>
             if (entry.Probe is null) entry.LoadedRevision = entry.Revision;
         }
         changed(key, previous, value);
+    }
+    /// <summary>
+    /// The lists in hand are old (M/LocalModelCatalogRefresh.swift invalidate): of <paramref name="provider"/> in every workspace, or of every
+    /// provider. A sign-in or sign-out changed what that CLI lists (M/AppStore+ModelCatalogs.swift modelsAfterAccountChange), so none is
+    /// used again, a running probe reads again before it answers, and the next request reads anew, a run's included.
+    /// </summary>
+    public void Invalidate(string? provider = null)
+    {
+        lock (sync)
+            foreach (var (key, entry) in entries)
+                if (provider is null || key.Provider == provider) { entry.Revision++; entry.LoadedAt = DateTimeOffset.MinValue; entry.FailedAt = DateTimeOffset.MinValue; }
     }
     public void Shutdown() { lock (sync) { stopped = true; entries.Clear(); } }
 

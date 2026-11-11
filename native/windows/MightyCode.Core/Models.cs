@@ -458,7 +458,16 @@ public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = n
         || Type == "antigravityPermission" && AntigravityPermission is { } card && RemoteWorkspaceValidation.AntigravityCard(card));
 }
 public sealed record ModelOption(string Value, string DisplayName, string Description, string? ResolvedModel = null, bool? SupportsEffort = null, string[]? SupportedEffortLevels = null);
-public sealed record ModelCatalog(string Source, List<ModelOption> Models, string Detail);
+/// <summary>
+/// A provider's model list (M/MightyCore/Models.swift ModelCatalog). <c>ReadFailure</c>: why the latest read of the CLI's list failed,
+/// in one line; null on the list that read gave (or before any read). With Source "cli" these are the last models the CLI gave, kept
+/// (<c>ListedAt</c>, ISO 8601); otherwise the built-in list. Both are optional on the wire: an older peer leaves them out, and ignores them.
+/// </summary>
+public sealed record ModelCatalog(string Source, List<ModelOption> Models, string Detail, string? ReadFailure = null, string? ListedAt = null)
+{
+    /// <summary>The list the CLI gave on its latest read: the only kind that may retire a model a pane saved.</summary>
+    [JsonIgnore] public bool IsFresh => Source == "cli" && ReadFailure is null;
+}
 public sealed record ProviderCapabilities(bool Effort, string[] PermissionModes, bool MaxTurns, bool MaxBudgetUsd, bool Resume, bool FastMode = false, bool WebSearch = false, bool NetworkAccess = false, bool Attachments = false);
 public sealed record ProviderRuntime(string Id, string Name, bool Available, string? Version, string Detail, ModelCatalog ModelCatalog, ProviderCapabilities Capabilities);
 public sealed record ModsInfo(string Status, string MinimumVersion, string Detail);

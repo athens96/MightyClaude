@@ -325,6 +325,18 @@ internal static class Verification
         await Test("composer parity: a pane's model and effort follow a newly read list", ComposerParityVerification.ModelSelectionFollowsTheNewList);
         await Test("composer parity: a model list is read again when it must be", ComposerParityVerification.ModelListIsReadAgainWhenItMustBe);
         await Test("model list probe: Claude's read lets the CLI fetch the account's current models (no DISABLE_TELEMETRY)", ModelListProbeVerification.TheProbeLetsTheCliFetchTheAccountsCurrentModels);
+        await Test("model list probe: every read runs the arguments its CLI was checked with (agy models, never --standalone)", ModelListProbeVerification.EveryReadRunsTheArgumentsItsCliWasCheckedWith);
+        await Test("model list probe: the real CLIs' recorded output reaches each list (native/contracts/fixtures/model-list-*)", ModelListProbeVerification.TheRealCliOutputsReachEachList);
+        await Test("model list probe: a failed read names the command and the line that says why", ModelListProbeVerification.AFailedReadNamesTheCommandAndTheLineThatSaysWhy);
+        await Test("model list probe: a fake CLI that refuses other arguments gives its recorded list", ModelListProbeVerification.AFakeCliGivesItsFixtureList);
+        await Test("model list probe: agy refuses the opencode flag and its own read lists", ModelListProbeVerification.AgyRefusesTheOpencodeFlagAndItsOwnReadLists);
+        await Test("model list probe: a failed read keeps the last list, marked, and a restart still has it", ModelListProbeVerification.AFailedReadKeepsTheLastListMarkedAndARestartStillHasIt);
+        await Test("model list probe: a missing CLI or no models is a failed read too", ModelListProbeVerification.AMissingCliOrNoModelsIsAFailedReadToo);
+        await Test("model list probe: the kept lists file is bounded and read tolerantly", ModelListProbeVerification.TheKeptListsFileIsBoundedAndReadTolerantly);
+        await Test("model list probe: a kept list retires nothing", ModelListProbeVerification.AKeptListRetiresNothing);
+        await Test("model list probe: the menu line says which list it is", ModelListProbeVerification.TheMenuLineSaysWhichListItIs);
+        await Test("model list probe: a sign-in or sign-out drops that provider's lists in every workspace", ModelListProbeVerification.ASignInOrSignOutDropsThatProvidersLists);
+        await Test("model list probe: readFailure and listedAt are additive on the wire", ModelListProbeVerification.TheNewFieldsAreAdditiveOnTheWire);
         await Test("composer parity: a built-in slash command sent in full never reaches the CLI", ComposerParityVerification.SentBuiltinNeverReachesTheCli);
         await Test("composer parity: a transcript keeps the newest 400 entries", ComposerParityVerification.TranscriptKeepsTheNewestFourHundred);
         await Test("composer parity: compaction, collaboration, rate limits and over-long lines reach the pane", ComposerParityVerification.StreamEventsReachTheTranscript);

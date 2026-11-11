@@ -7,7 +7,13 @@ namespace MightyCode.Core;
 
 public sealed record CliCommand(string Binary, string[] Prefix, string? Version = null);
 
-public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliCommand?>>? finder = null) : IAsyncDisposable
+/// <summary>The agents' CLIs: where each is, its model list and the arguments a run gets (M/MightyCore/ProviderService.swift).</summary>
+/// <param name="finder">Finds a provider's CLI; null looks along the user's PATH and the installers' folders.</param>
+/// <param name="storageDirectory">
+/// Where the last list each CLI gave is kept (<see cref="KeptModelLists"/>, the profile folder); null (the checks, helpers) keeps the
+/// lists in memory only.
+/// </param>
+public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliCommand?>>? finder = null, string? storageDirectory = null) : IAsyncDisposable
 {
     private readonly CancellationTokenSource closing = new();
     private readonly SemaphoreSlim gate = new(1);
@@ -16,6 +22,11 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     private string? cachedDirectory;
     private DateTimeOffset refreshed;
     private Task? shutdown;
+    /// <summary>The last list each CLI gave, loaded from <c>storageDirectory</c> on first use; guarded by <see cref="keptGate"/>.</summary>
+    private KeptModelLists? keptLists;
+    /// <summary>When the kept lists' file was last written.</summary>
+    private DateTimeOffset? keptWrittenAt;
+    private readonly object keptGate = new();
     /// <summary>
     /// The <c>gemini</c> id is kept for saved panes and the wire; it runs Google's Antigravity CLI (<c>agy</c>), which also runs
     /// Claude and GPT-OSS models (M/MightyCore/Models.swift ProviderOptions.label/executable).
@@ -66,9 +77,9 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         ("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)"),
     ];
     /// <summary>
-    /// <c>agy models</c> (M/MightyCore/ProviderService.swift normalizeAntigravityCatalog): a "Fetching available models..." line,
-    /// then one <c>slug&lt;TAB&gt;Display Name</c> line per model. It needs the network and a sign-in; anything else keeps the
-    /// fallback list.
+    /// <c>agy models</c> (M/MightyCore/ProviderService.swift normalizeAntigravityCatalog): one <c>slug&lt;TAB&gt;Display Name</c> line per
+    /// model on standard output (agy 1.5.5 writes its "Fetching available models..." line to standard error; an older agy wrote it first
+    /// on standard output). It needs the network and a sign-in; anything else keeps the fallback list.
     /// </summary>
     public static ModelCatalog AntigravityCatalog(string text)
     {
@@ -82,21 +93,9 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         }
         return models.Count > 1 ? new("cli", models, Locale.Get("provider.catalog.antigravitySource")) : fallback;
     }
-    /// <summary>Asks <c>agy models</c> for its list (15 s), or keeps the fallback list.</summary>
-    public static async Task<ModelCatalog> ReadAntigravityModelsAsync(CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(15));
-        try
-        {
-            await using var child = ChildProcess.Start(ChildProcess.StartInfo(command.Binary, command.Prefix.Concat(["models"]), workingDirectory ?? Path.GetTempPath(), QuietEnvironment()));
-            child.Input.Close();
-            var stderr = DrainAsync(child.Error, timeout.Token); _ = stderr.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
-            var text = await ReadBoundedAsync(child.Output, 262_144, timeout.Token);
-            if (await child.Completion.WaitAsync(timeout.Token) == 0) return AntigravityCatalog(text);
-        }
-        catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidDataException or System.ComponentModel.Win32Exception or InvalidOperationException) { }
-        return Fallback("gemini");
-    }
+    /// <summary>Asks <c>agy models</c> for its list (15 s): the list, or the fallback list marked with why (<see cref="ReadListCommandAsync"/>).</summary>
+    public static Task<ModelCatalog> ReadAntigravityModelsAsync(CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null) =>
+        ReadListCommandAsync("gemini", command, cancellation, workingDirectory);
     /// <summary>
     /// Starts a CLI with its pipes. pi is an npm shim (<c>pi.cmd</c>), which CreateProcess does not run: a batch file goes through
     /// cmd.exe with every argument quoted (<see cref="WindowsCommand.Launch"/>), as the other tools' shims do.
@@ -131,20 +130,116 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         }
         return models.Count > 1 ? new("cli", models, Locale.Get("provider.catalog.piSource")) : fallback;
     }
-    /// <summary>Asks <c>pi --list-models</c> for its list (15 s), or keeps the fallback list.</summary>
-    public static async Task<ModelCatalog> ReadPiModelsAsync(CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null)
+    /// <summary>Asks <c>pi --list-models</c> for its list (15 s): the list, or the fallback list marked with why (<see cref="ReadListCommandAsync"/>).</summary>
+    public static Task<ModelCatalog> ReadPiModelsAsync(CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null) =>
+        ReadListCommandAsync("pi", command, cancellation, workingDirectory);
+
+    /// <summary>
+    /// The arguments (after the executable and its prefix) of each CLI's model-list read (M/MightyCore/ProviderService.swift
+    /// modelListArguments). Each was run against the CLI named here, and ModelListProbeVerification pins them: a flag one CLI takes is
+    /// not another's (agy 1.5.5 refuses <c>models --standalone</c>, "flags provided but not defined").
+    /// <list type="bullet">
+    /// <item>claude 2.1.322: the headless stream-json launch the work map's summary shares (<see cref="ClaudeHeadlessArguments"/>), sent only
+    /// <c>initialize</c> (its answer lists the models).</item>
+    /// <item>codex 0.167.0: <c>app-server</c> over stdio, <c>initialize</c> then <c>model/list</c>.</item>
+    /// <item>agy 1.5.5: <c>models</c>. pi 1.5.2: <c>--list-models</c>.</item>
+    /// </list>
+    /// </summary>
+    public static IReadOnlyList<string>? ModelListArguments(string provider) => provider switch
     {
+        "claude" => ClaudeHeadlessArguments,
+        "codex" => ["app-server", "--listen", "stdio://"],
+        "gemini" => ["models"],
+        "pi" => ["--list-models"],
+        _ => null,
+    };
+
+    /// <summary>The command a model-list read runs, as its failure names it (Claude's long headless launch is just <c>claude</c>).</summary>
+    public static string ModelListCommand(string provider)
+    {
+        var executable = Executable(provider);
+        return provider == "claude" || ModelListArguments(provider) is not { } arguments ? executable : string.Join(' ', [executable, .. arguments]);
+    }
+
+    /// <summary>
+    /// The one line the model menu's help shows for a read that failed (M/MightyCore/ProviderService.swift readFailure): the command, what
+    /// went wrong, and the line of the CLI's output that says why. The home folder reads <c>~</c>.
+    /// </summary>
+    public static string ReadFailure(string provider, string problem, string output = "")
+    {
+        var text = ModelListCommand(provider) + ": " + problem;
+        if (TellingLine(output) is { } line) text += " · " + line;
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (home.Length > 1 && home != "/") text = text.Replace(home, "~", OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        return ActivitySupport.Clean(text, 400, singleLine: true);
+    }
+
+    /// <summary>The line of a CLI's output that says why it failed: the last that names an error, else the first that says anything.</summary>
+    public static string? TellingLine(string output)
+    {
+        var lines = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).TakeLast(200).Select(line => ActivitySupport.Clean(line, 240, singleLine: true)).Where(line => line.Length > 0).ToList();
+        return lines.LastOrDefault(line => line.Contains("error", StringComparison.OrdinalIgnoreCase)) ?? lines.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// <c>agy models</c> and <c>pi --list-models</c> (M/MightyCore/ProviderService.swift readListCommand): one command whose standard output is
+    /// the list. A non-zero exit, a timeout, too much output or no models in it is a failed read: the fallback list marked with why
+    /// (<see cref="ModelCatalog.ReadFailure"/>), which the catalog replaces with the last list the CLI gave when it has one.
+    /// </summary>
+    public static async Task<ModelCatalog> ReadListCommandAsync(string provider, CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null)
+    {
+        string problem, output = "";
+        if (ModelListArguments(provider) is not { } arguments) return Fallback(provider) with { ReadFailure = ReadFailure(provider, Locale.Get("provider.catalog.failure.noModels")) };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(15));
         try
         {
-            await using var child = StartCli(command.Binary, command.Prefix.Concat(["--list-models"]), workingDirectory ?? Path.GetTempPath(), QuietEnvironment());
+            await using var child = StartCli(command.Binary, command.Prefix.Concat(arguments), workingDirectory ?? Path.GetTempPath(), QuietEnvironment());
             child.Input.Close();
-            var stderr = DrainAsync(child.Error, timeout.Token); _ = stderr.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
-            var text = await ReadBoundedAsync(child.Output, 1_048_576, timeout.Token);
-            if (await child.Completion.WaitAsync(timeout.Token) == 0) return PiCatalog(text);
+            var errors = new ErrorTail(child.Error, timeout.Token);
+            var text = await ReadBoundedAsync(child.Output, provider == "pi" ? 1_048_576 : 262_144, timeout.Token);
+            var code = await child.Completion.WaitAsync(timeout.Token);
+            if (code == 0)
+            {
+                var catalog = provider == "pi" ? PiCatalog(text) : AntigravityCatalog(text);
+                if (catalog.IsFresh) return catalog;
+                problem = Locale.Get("provider.catalog.failure.noModels"); output = text + "\n" + await errors.TextAsync();
+            }
+            else
+            {
+                problem = Locale.Get("provider.catalog.failure.exit", new Dictionary<string, string> { ["code"] = code.ToString(CultureInfo.InvariantCulture) });
+                var stderr = await errors.TextAsync(); output = stderr.Trim().Length > 0 ? stderr : text;
+            }
         }
-        catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidDataException or System.ComponentModel.Win32Exception or InvalidOperationException) { }
-        return Fallback("pi");
+        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested) { problem = Locale.Get("process.error.timeout"); }
+        catch (InvalidDataException) { problem = Locale.Get("process.error.outputLimit"); }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or System.ComponentModel.Win32Exception or InvalidOperationException) { problem = ex.Message; }
+        return Fallback(provider) with { ReadFailure = ReadFailure(provider, problem, output) };
+    }
+
+    /// <summary>A CLI's standard error read to its end, its last 8 KiB kept for a failure's reason.</summary>
+    private sealed class ErrorTail
+    {
+        private const int Keep = 8_192;
+        private readonly System.Text.StringBuilder text = new();
+        private readonly Task pump;
+        internal ErrorTail(StreamReader reader, CancellationToken token)
+        {
+            pump = PumpAsync(reader, token);
+            _ = pump.ContinueWith(t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+        }
+        private async Task PumpAsync(StreamReader reader, CancellationToken token)
+        {
+            var buffer = new char[4096]; int count;
+            while ((count = await reader.ReadAsync(buffer.AsMemory(), token)) > 0)
+                lock (text) { text.Append(buffer, 0, count); if (text.Length > Keep) text.Remove(0, text.Length - Keep); }
+        }
+        /// <summary>What the CLI wrote there, once it closed it or a second passed (a child of its own may keep it open).</summary>
+        internal async Task<string> TextAsync()
+        {
+            try { await pump.WaitAsync(TimeSpan.FromSeconds(1)); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { }
+            lock (text) return text.ToString();
+        }
     }
     public static string[] Efforts(string provider, string model, ModelCatalog catalog) =>
         Efforts(provider, model, catalog, null);
@@ -205,18 +300,48 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             if (!force && cachedDirectory == directory && cached is not null && DateTimeOffset.UtcNow - refreshed < TimeSpan.FromMinutes(1)) return cached;
             if (force) lock (commands) commands.Clear();
             var providers = new List<ProviderRuntime>();
-            foreach (var id in Wire.Providers) providers.Add(await ReadProviderAsync(id, directory));
+            foreach (var id in Wire.Providers) providers.Add(await ReadProviderAsync(id, directory, workingDirectory));
             cached = Info(providers);
             cachedDirectory = directory; refreshed = DateTimeOffset.UtcNow; return cached;
         }
         finally { gate.Release(); }
     }
-    private async Task<ProviderRuntime> ReadProviderAsync(string id, string directory)
+    /// <param name="directory">The folder the CLI runs in.</param>
+    /// <param name="workspace">The workspace folder whose list it is, for the kept lists; null for a read outside any.</param>
+    private async Task<ProviderRuntime> ReadProviderAsync(string id, string directory, string? workspace)
     {
         var command = await FindAsync(id, closing.Token);
-        var catalog = command is null ? Fallback(id) : id == "gemini" ? await ReadAntigravityModelsAsync(command, closing.Token, directory) : id == "pi" ? await ReadPiModelsAsync(command, closing.Token, directory) : await ReadModelsAsync(id, command, closing.Token, directory);
+        var read = command is null ? Fallback(id) with { ReadFailure = Locale.Get("run.error.cliExecutableMissing", new Dictionary<string, string> { ["name"] = ProviderMark.Label(id) }) }
+            : id is "gemini" or "pi" ? await ReadListCommandAsync(id, command, closing.Token, directory) : await ReadModelsAsync(id, command, closing.Token, directory);
+        var catalog = await SettleAsync(id, read, workspace);
         return new(id, Name(id), command is not null && (id != "claude" || SupportsMods(command.Version)), command?.Version, command is null ? Locale.Get("provider.notInstalled") : id == "claude" && !SupportsMods(command.Version) ? Locale.Get("provider.unsupportedVersion") : Locale.Get("provider.available"), catalog, Capabilities(id, command?.Version));
     }
+
+    /// <summary>
+    /// A list the CLI gave is kept as its newest; a read that failed answers with the list kept for this workspace (else the provider's
+    /// newest anywhere), or the built-in list, either marked with why the read failed (M/MightyCore/ProviderService.swift settle).
+    /// </summary>
+    private async Task<ModelCatalog> SettleAsync(string provider, ModelCatalog read, string? workspace)
+    {
+        if (read.IsFresh) { await KeepAsync(read, provider, workspace); return read; }
+        var reason = read.ReadFailure ?? ReadFailure(provider, Locale.Get("provider.catalog.failure.noModels"));
+        KeptModelLists.Entry? entry;
+        lock (keptGate) entry = LoadedKeptLists().List(provider, workspace);
+        return entry is not null ? KeptModelLists.Kept(entry, reason) : Fallback(provider) with { ReadFailure = reason };
+    }
+
+    /// <summary>Keeps a list the CLI just gave, writing the file (in the storage folder only) when it changed or is five minutes old.</summary>
+    private async Task KeepAsync(ModelCatalog catalog, string provider, string? workspace)
+    {
+        var now = DateTimeOffset.UtcNow; byte[]? data = null;
+        lock (keptGate) { var lists = LoadedKeptLists(); if (lists.Remember(catalog, provider, workspace, now, keptWrittenAt) && storageDirectory is not null) data = lists.Encoded(); }
+        if (data is null || KeptModelLists.FilePath(storageDirectory) is not { } path) return;
+        try { await StateStore.AtomicWriteAsync(path, data); lock (keptGate) keptWrittenAt = now; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* The list is still kept in memory; the next change writes it. */ }
+    }
+
+    /// <summary>The kept lists, read from the storage folder the first time (called under <see cref="keptGate"/>).</summary>
+    private KeptModelLists LoadedKeptLists() => keptLists ??= KeptModelLists.Load(KeptModelLists.FilePath(storageDirectory));
     private static RuntimeInfo Info(List<ProviderRuntime> providers)
     {
         var claude = providers[0];
@@ -237,7 +362,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         {
             if (rediscover) lock (commands) commands.Remove(provider);
             var directory = workingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var value = await ReadProviderAsync(provider, directory);
+            var value = await ReadProviderAsync(provider, directory, workingDirectory);
             if (cached is not null && cachedDirectory == directory) cached = With(cached, value);
             return value;
         }
@@ -302,61 +427,102 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         return result.ToString();
     }
     public static async Task DrainAsync(StreamReader reader, CancellationToken token) { var buffer = new char[4096]; while (await reader.ReadAsync(buffer.AsMemory(), token) > 0) { } }
-    /// <summary>A provider's model list from its CLI, or the fallback list; <paramref name="limit"/> (7 s) bounds the read unless the caller's token does (Timeout.InfiniteTimeSpan).</summary>
+    /// <summary>
+    /// Claude's and Codex's model lists come from a short session with the CLI (<see cref="ModelListArguments"/>): Claude answers
+    /// <c>initialize</c> with its models; Codex's app-server answers <c>initialize</c>, then <c>model/list</c>. <paramref name="limit"/> (7 s)
+    /// bounds the read unless the caller's token does (Timeout.InfiniteTimeSpan). A CLI that ends first, refuses, times out, says too
+    /// much or lists no model is a failed read: the fallback list marked with why (M/MightyCore/ProviderService.swift CLIModelProbe).
+    /// </summary>
     public static async Task<ModelCatalog> ReadModelsAsync(string provider, CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null, TimeSpan? limit = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(limit ?? TimeSpan.FromSeconds(7));
         var token = timeout.Token;
-        var args = provider == "codex" ? new List<string> { "app-server", "--listen", "stdio://" } : [.. ClaudeHeadlessArguments];
         var env = provider == "claude" ? ClaudeHeadlessEnvironment() : QuietEnvironment();
+        var noModels = Locale.Get("provider.catalog.failure.noModels");
+        string problem, output = "";
         try
         {
+            if (ModelListArguments(provider) is not { } args) return Fallback(provider) with { ReadFailure = ReadFailure(provider, noModels) };
             await using var child = ChildProcess.Start(ChildProcess.StartInfo(command.Binary, command.Prefix.Concat(args), workingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), env));
-            var drain = DrainAsync(child.Error, token); _ = drain.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+            var errors = new ErrorTail(child.Error, token);
+            // A CLI that already ended takes no more input: what it wrote and its exit code say why.
+            async Task Send(string line) { try { await child.Input.WriteLineAsync(line); } catch (Exception ex) when (ex is IOException or ObjectDisposedException) { } }
             var requestId = Wire.Id(); var expected = 1; var pages = 0; var models = Fallback(provider).Models.Take(1).ToList();
-            await child.Input.WriteLineAsync(provider == "codex" ? JsonSerializer.Serialize(new { id = expected, method = "initialize", @params = new { clientInfo = new { name = "mighty_claude", title = "Mighty Code", version = "0.1.0" } } }, Wire.Json) : JsonSerializer.Serialize(new { type = "control_request", request_id = requestId, request = new { subtype = "initialize" } }, Wire.Json));
-            var total = 0;
+            await Send(provider == "codex" ? JsonSerializer.Serialize(new { id = expected, method = "initialize", @params = new { clientInfo = new { name = "mighty_claude", title = "Mighty Code", version = "0.1.0" } } }, Wire.Json) : JsonSerializer.Serialize(new { type = "control_request", request_id = requestId, request = new { subtype = "initialize" } }, Wire.Json));
+            var total = 0; string? answer = null;
             await foreach (var line in OutputParser.LinesAsync(child.Output, token))
             {
-                total += line.Length; if (total > 2 * 1024 * 1024) break;
-                using var document = JsonDocument.Parse(line); var root = document.RootElement;
+                total += line.Length; if (total > 2 * 1024 * 1024) { answer = Locale.Get("process.error.outputLimit"); break; }
+                JsonElement root;
+                try { using var document = JsonDocument.Parse(line); root = document.RootElement.Clone(); } catch (JsonException) { continue; }
                 if (provider == "claude")
                 {
-                    if (root.Text("type") != "control_response" || !root.TryGetProperty("response", out var response) || response.Text("request_id") != requestId || !response.TryGetProperty("response", out var payload) || !payload.TryGetProperty("models", out var rows)) continue;
-                    return ClaudeCatalog(rows);
+                    if (root.Text("type") != "control_response" || MetadataJson.Property(root, "response") is not { ValueKind: JsonValueKind.Object } response || response.Text("request_id") != requestId) continue;
+                    if (response.Text("subtype") != "success") { answer = response.Text("error") is { Length: > 0 } refusal ? refusal : noModels; break; }
+                    if (MetadataJson.Property(response, "response") is not { ValueKind: JsonValueKind.Object } payload || MetadataJson.Property(payload, "models") is not { ValueKind: JsonValueKind.Array } rows) { answer = noModels; break; }
+                    var catalog = ClaudeCatalog(rows);
+                    if (catalog.IsFresh) return catalog;
+                    answer = noModels; break;
                 }
                 if (!root.TryGetProperty("id", out var id) || !id.TryGetInt32(out var number) || number != expected) continue;
-                if (root.TryGetProperty("error", out _)) break;
+                if (root.TryGetProperty("error", out var error)) { answer = error.Text("message") is { Length: > 0 } message ? message : noModels; break; }
                 if (expected == 1)
                 {
-                    await child.Input.WriteLineAsync("{\"method\":\"initialized\"}");
-                    await child.Input.WriteLineAsync(JsonSerializer.Serialize(new { id = ++expected, method = "model/list", @params = new { limit = 64, includeHidden = false } }, Wire.Json));
+                    await Send("{\"method\":\"initialized\"}");
+                    await Send(JsonSerializer.Serialize(new { id = ++expected, method = "model/list", @params = new { limit = 64, includeHidden = false } }, Wire.Json));
                 }
-                else if (root.TryGetProperty("result", out var result) && result.TryGetProperty("data", out var data))
+                else if (MetadataJson.Property(root, "result") is { ValueKind: JsonValueKind.Object } result && MetadataJson.Property(result, "data") is { ValueKind: JsonValueKind.Array } data)
                 {
                     AddCodexModels(models, data);
-                    if (++pages < 4 && models.Count < 128 && result.Text("nextCursor") is { Length: > 0 and < 4096 } cursor) await child.Input.WriteLineAsync(JsonSerializer.Serialize(new { id = ++expected, method = "model/list", @params = new { limit = 64, includeHidden = false, cursor } }, Wire.Json));
-                    else return new("cli", models.DistinctBy(m => m.Value).ToList(), Locale.Get("provider.codexCliSource"));
+                    if (++pages < 4 && models.Count < 128 && result.Text("nextCursor") is { Length: > 0 and < 4096 } cursor) await Send(JsonSerializer.Serialize(new { id = ++expected, method = "model/list", @params = new { limit = 64, includeHidden = false, cursor } }, Wire.Json));
+                    else
+                    {
+                        var catalog = CodexCatalog(models);
+                        if (catalog.IsFresh) return catalog;
+                        answer = noModels; break;
+                    }
                 }
+                else { answer = noModels; break; }
+            }
+            if (answer is not null) problem = answer;
+            else
+            {
+                // The CLI closed its output before it answered: it ended, and its exit code and its last error line say why.
+                var code = await child.Completion.WaitAsync(token);
+                problem = Locale.Get("provider.catalog.failure.exit", new Dictionary<string, string> { ["code"] = code.ToString(CultureInfo.InvariantCulture) });
+                output = await errors.TextAsync();
             }
         }
-        catch (Exception ex) when (ex is IOException or OperationCanceledException or JsonException or System.ComponentModel.Win32Exception or InvalidOperationException) { }
-        return Fallback(provider);
+        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested) { problem = Locale.Get("process.error.timeout"); }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or System.ComponentModel.Win32Exception or InvalidOperationException) { problem = ex.Message; }
+        return Fallback(provider) with { ReadFailure = ReadFailure(provider, problem, output) };
     }
     // The CLI's own "default" row only lends the fallback "<name> 설정 따름" row the model it
     // stands for (macOS ProviderService.normalizeClaudeCatalog), so the label reads
-    // "Claude 설정 따름 · Opus 5.5" while the value sent stays "default".
+    // "Claude 설정 따름 · Opus 5.5" while the value sent stays "default". An answer with no
+    // model at all is the fallback list (a failed read).
     public static ModelCatalog ClaudeCatalog(JsonElement rows)
     {
-        var models = Fallback("claude").Models.Take(1).ToList();
+        var models = Fallback("claude").Models.Take(1).ToList(); var listed = false;
         foreach (var row in rows.EnumerateArray().Take(128))
         {
             if (ReadModel(row, "claude") is not { } model) continue;
+            listed = true;
             if (model.Value == "default") models[0] = models[0] with { ResolvedModel = model.ResolvedModel, SupportsEffort = model.SupportsEffort, SupportedEffortLevels = model.SupportedEffortLevels };
             else models.Add(model);
         }
-        return new("cli", models.DistinctBy(m => m.Value).ToList(), Locale.Get("provider.claudeCliSource"));
+        return listed ? new("cli", models.DistinctBy(m => m.Value).ToList(), Locale.Get("provider.claudeCliSource")) : Fallback("claude");
     }
+    /// <summary>Codex's <c>model/list</c> rows as the menu's list (M/MightyCore/ProviderService.swift normalizeCodexCatalog).</summary>
+    public static ModelCatalog CodexCatalog(JsonElement data)
+    {
+        var models = Fallback("codex").Models.Take(1).ToList();
+        AddCodexModels(models, data);
+        return CodexCatalog(models);
+    }
+    /// <summary>Its default row and the models Codex listed; none listed is the fallback list (a failed read).</summary>
+    private static ModelCatalog CodexCatalog(List<ModelOption> models) =>
+        models.Count > 1 ? new("cli", models.DistinctBy(m => m.Value).ToList(), Locale.Get("provider.codexCliSource")) : Fallback("codex");
     // Codex marks its default with isDefault; the fallback default row resolves to it
     // (macOS ProviderService.normalizeCodexCatalog).
     public static void AddCodexModels(List<ModelOption> models, JsonElement data)

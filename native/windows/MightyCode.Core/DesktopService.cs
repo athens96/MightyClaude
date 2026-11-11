@@ -53,7 +53,8 @@ public sealed partial class DesktopService : IAsyncDisposable
     /// <param name="antigravitySettings">agy's settings file; null is the user profile's (<see cref="AntigravityRuleLeases.DefaultSettingsPath"/>). Checks pass a temporary one.</param>
     public DesktopService(string directory, string? legacyDirectory, string pluginDirectory, ProviderCatalog? providers = null, Func<bool>? delegationEnabled = null, ChildWorktreeMaker? worktrees = null, string? antigravitySettings = null)
     {
-        store = new(directory, legacyDirectory); Providers = providers ?? new(); Images = new(Path.Combine(directory, "image-cache")); this.pluginDirectory = pluginDirectory;
+        // The last list each CLI gave is kept in the profile folder (KeptModelLists), so a read that fails after a restart still shows it.
+        store = new(directory, legacyDirectory); Providers = providers ?? new(storageDirectory: directory); Images = new(Path.Combine(directory, "image-cache")); this.pluginDirectory = pluginDirectory;
         // The rules a continuation adds for a while are recorded in the app's data folder first, so a crash leaves nothing a next launch does not take out.
         AntigravityRules = new(antigravitySettings ?? AntigravityRuleLeases.DefaultSettingsPath(), Path.Combine(directory, "antigravity-temporary-rules.json"));
         // No Antigravity file rule may reach this folder (it holds that ledger).

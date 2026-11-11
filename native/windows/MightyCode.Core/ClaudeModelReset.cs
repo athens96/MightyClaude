@@ -23,7 +23,7 @@ public static class ClaudeModelReset
     /// Reads every workspace's list, since each folder can have its own CLI settings, and returns the result sentence.
     /// Each read starts on the thread pool (a CLI starts there, never on the caller's thread), at most
     /// <see cref="Concurrency"/> at a time, and is given a token that ends with <paramref name="cancellation"/> or after
-    /// <paramref name="timeout"/> (<see cref="ReadTimeout"/>). A list that did not come from the CLI counts as not read:
+    /// <paramref name="timeout"/> (<see cref="ReadTimeout"/>). A list the CLI did not give on this read counts as not read:
     /// as timed out when its time ran out, else as a sign-in or setup the CLI still needs. A cancelled reset throws.
     /// </summary>
     public static async Task<string> ReloadAsync(IReadOnlyList<Workspace> workspaces, Func<Workspace, CancellationToken, Task<ModelCatalog>> read, CancellationToken cancellation = default, TimeSpan? timeout = null)
@@ -38,7 +38,8 @@ public static class ClaudeModelReset
                 deadline.CancelAfter(timeout ?? ReadTimeout);
                 var catalog = await Task.Run(() => read(workspace, deadline.Token), CancellationToken.None);
                 cancellation.ThrowIfCancellationRequested();
-                return (catalog.Source == "cli", catalog.Source != "cli" && deadline.IsCancellationRequested);
+                // A kept older list is not a reload.
+                return (catalog.IsFresh, !catalog.IsFresh && deadline.IsCancellationRequested);
             }
             finally { gate.Release(); }
         }

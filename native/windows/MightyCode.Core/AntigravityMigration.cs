@@ -27,9 +27,9 @@ public static class AntigravityMigration
     }
 
     /// <summary>
-    /// A pane's model agy's live list no longer has: the run would fail, so it starts on agy's default instead. Only the CLI's
-    /// own list decides; the fallback list may lag behind it.
+    /// A pane's model agy's live list no longer has: the run would fail, so it starts on agy's default instead. Only the list the CLI
+    /// gave on its latest read decides; the fallback list, and a kept older list, may lag behind it.
     /// </summary>
     public static bool ModelUnavailable(string model, ModelCatalog catalog) =>
-        model != "default" && catalog.Source == "cli" && !catalog.Models.Any(option => option.Value == model);
+        model != "default" && catalog.IsFresh && !catalog.Models.Any(option => option.Value == model);
 }
