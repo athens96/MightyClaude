@@ -219,14 +219,18 @@ public enum FlowLog {
     public struct Status: Equatable, Sendable {
         /// "Haiku 5.5 실행 중": the main session and its state.
         public var lead: String
-        /// "하위 에이전트 2/3 실행 중", or how many ended; nil when the request delegated to none.
+        /// "하위 에이전트 2/3 실행 중", or how many ended once nothing of the request's row runs; nil when the request
+        /// delegated to none.
         public var subagents: String?
+        /// "작업 2개 실행 중" while background commands of the request run; nil otherwise.
+        public var tasks: String?
         /// "조언자 대기", "조언자 검토 중" or "조언자 호출 2"; nil without an advisor.
         public var advisor: String?
         public var text: String { parts.map(\.text).joined(separator: " · ") }
         /// The line's parts in order, each with the role whose ink it takes.
         public var parts: [Part] {
-            [Part(role: .lead, text: lead)] + [subagents.map { Part(role: .subagent, text: $0) }, advisor.map { Part(role: .advisor, text: $0) }].compactMap { $0 }
+            [Part(role: .lead, text: lead)] + [subagents.map { Part(role: .subagent, text: $0) }, tasks.map { Part(role: .task, text: $0) },
+                                               advisor.map { Part(role: .advisor, text: $0) }].compactMap { $0 }
         }
         public struct Part: Equatable, Sendable {
             public var role: FlowRole
@@ -245,10 +249,15 @@ public enum FlowLog {
         if !MightyGraphSupport.terminal(followed.status) { state = FlowCard.stateWord(MobileMightySupport.status(followed.status)) }
         else if BackgroundNoticeRuns.awaitingNotice(request, in: runs) != nil { state = BackgroundNoticeRuns.stateWord }
         else { state = FlowCard.stateWord(MobileMightySupport.status(request.status)) }
-        var subagents: String?
+        var subagents: String?, tasks: String?
         if let back = FlowReturn.state(request) {
-            subagents = back.running > 0 ? L("graph.log.subagentsRunning", ["running": "\(back.running)", "total": "\(back.total)"])
-                : L("graph.log.subagentsDone", ["total": "\(back.total)"])
+            if back.subagentsRunning > 0 {
+                subagents = L("graph.log.subagentsRunning", ["running": "\(back.subagentsRunning)", "total": "\(back.subagents)"])
+            } else if back.subagents > 0, back.tasksRunning == 0 {
+                // Ended sub-agents are worth a word once nothing else of the row runs.
+                subagents = L("graph.log.subagentsDone", ["total": "\(back.subagents)"])
+            }
+            if back.tasksRunning > 0 { tasks = L("graph.log.tasksRunning", ["count": "\(back.tasksRunning)"]) }
         }
         let advising: String? = switch advisor {
         case .onCall: L("graph.log.advisorOnCall")
@@ -256,6 +265,6 @@ public enum FlowLog {
         case .consulted(let count): L("graph.log.advisorCalls", ["count": "\(count)"])
         case nil: nil
         }
-        return Status(lead: leadName(followed, else: request) + " " + state, subagents: subagents, advisor: advising)
+        return Status(lead: leadName(followed, else: request) + " " + state, subagents: subagents, tasks: tasks, advisor: advising)
     }
 }

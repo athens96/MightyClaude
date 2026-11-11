@@ -74,9 +74,9 @@ struct FlowLinesTests {
         let agents = [agent("first"), agent("bg", background: true), agent("nested", parent: "first"), agent("deep", parent: "nested"),
                       agent("note", kind: "compact"), agent("task", background: true, kind: "task"), agent("orphan", parent: "ghost"), agent("self", parent: "self")]
         let shown = run("r", agents: agents).shown
-        // The main session's: no parent, an unknown one, or itself, in launch order, background or not; never a block
-        // that is no sub-agent.
-        #expect(FlowDelegation.children(of: FlowDelegation.mainKey, in: shown).map(\.id) == ["first", "bg", "orphan", "self"])
+        // The main session's: no parent, an unknown one, or itself, in launch order, background or not, and the commands
+        // it runs in the background; never another block.
+        #expect(FlowDelegation.children(of: FlowDelegation.mainKey, in: shown).map(\.id) == ["first", "bg", "task", "orphan", "self"])
         #expect(FlowDelegation.children(of: "first", in: shown).map(\.id) == ["nested"])
         #expect(FlowDelegation.children(of: "nested", in: shown).map(\.id) == ["deep"])
         #expect(FlowDelegation.children(of: "deep", in: shown).isEmpty)
@@ -99,7 +99,7 @@ struct FlowLinesTests {
             #expect(back.text == "메인으로 복귀 · 검토 중")
             // A run that delegated to nobody has no way back to show, and neither has a notice run.
             #expect(FlowReturn.state(run("r")) == nil)
-            #expect(FlowReturn.state(run("r", agents: [agent("task", background: true, kind: "task"), agent("note", kind: "compact")])) == nil)
+            #expect(FlowReturn.state(run("r", agents: [agent("note", kind: "compact"), agent("ask", kind: "question")])) == nil)
             #expect(FlowReturn.state(run("r:notice:1", agents: [agent("copy", status: "completed", background: true, source: "x")], notice: true)) == nil)
             // A background sub-agent counts, through the run as views draw it.
             #expect(FlowReturn.state(run("r", agents: [agent("bg", background: true)]).shown)?.total == 1)

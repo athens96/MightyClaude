@@ -1,12 +1,13 @@
 import CoreGraphics
 import Foundation
 
-/// A sub-agent as the flow diagram's compact card: who is working, what it is doing right now and how far it is,
-/// in four lines. A running sub-agent is a card; one that ran in the foreground becomes its full block when it
-/// ends, as it always was, and one that ran in the background stays a card, since its full block is the copy in
-/// its notice run (`BackgroundNoticeRuns`). Every figure on it is one the app observed: the time since it saw the
-/// agent start, the tool calls it counted, the tokens the CLI reported. Nothing is estimated and nothing is a
-/// percentage: an agent does not say how much of its work is left.
+/// A sub-agent, or a command the session runs in the background, as the flow diagram's compact card: who is working,
+/// what it is doing right now and how far it is, in four lines. A running sub-agent is a card; one that ran in the
+/// foreground becomes its full block when it ends, as it always was, and one that ran in the background stays a card,
+/// since its full block is the copy in its notice run (`BackgroundNoticeRuns`). A background command is a card from
+/// its launch on, for the same reason. Every figure on it is one the app observed: the time since it saw the agent
+/// start, the tool calls it counted, the tokens the CLI reported, the exit code the CLI named. Nothing is estimated
+/// and nothing is a percentage: an agent does not say how much of its work is left.
 public enum FlowCard {
     /// The card's size in the diagram. It is never dragged: opened, the block has its own saved size.
     public static let size = CGSize(width: 236, height: 86)
@@ -19,10 +20,12 @@ public enum FlowCard {
         return true
     }
 
-    /// Whether the block has a card to fold back to: a request's own background sub-agent at any time, a foreground
-    /// one while it runs.
+    /// Whether the block has a card to fold back to: a request's own background sub-agent or background command at any
+    /// time, a foreground sub-agent while it runs.
     public static func foldsToCard(_ agent: MightyGraphAgent) -> Bool {
-        guard agent.isSubagent, agent.sourceBlockId == nil else { return false }
+        guard agent.sourceBlockId == nil else { return false }
+        if agent.isTask { return true }
+        guard agent.isSubagent else { return false }
         return agent.background == true || !MightyGraphLayout.terminal(agent.status)
     }
 
@@ -48,12 +51,18 @@ public enum FlowCard {
         public var ink: FlowInk
         /// The whole identity in one line, for the tooltip (`FlowIdentity.summary`).
         public var summary: String
+        /// A background command's card: its second line is the command (the view sets it as code) and its figures are
+        /// its exit code and time.
+        public var isTask = false
+        public var exitCode: Int? = nil
 
         public var running: Bool { !MightyGraphLayout.terminal(status) }
     }
 
-    /// The card of `agent`, a block of `run`. `definition` is the custom agent its type names (`AgentDefinitions`).
-    public static func content(_ agent: MightyGraphAgent, in run: MightyGraphRun, definition: AgentDefinition? = nil) -> Content {
+    /// The card of `agent`, a block of `run`. `definition` is the custom agent its type names (`AgentDefinitions`);
+    /// `output` the last lines a background command wrote (`BackgroundOutputTail`), which the app reads apart.
+    public static func content(_ agent: MightyGraphAgent, in run: MightyGraphRun, definition: AgentDefinition? = nil, output: [String] = []) -> Content {
+        if let who = FlowRoles.task(agent) { return task(agent, who: who, output: output) }
         let who = FlowRoles.subagent(agent, definition: definition)
         let status = MobileMightySupport.status(agent.status)
         let running = !MightyGraphLayout.terminal(status)
@@ -62,6 +71,27 @@ public enum FlowCard {
                        startedAt: agent.figures?.started, endedAt: agent.figures?.ended, toolCalls: agent.figures?.toolCalls,
                        tokens: agent.usage.flatMap { $0.isEmpty ? nil : $0.total }, nested: nested(under: agent, in: run),
                        marks: who?.marks ?? [], ink: who?.ink ?? FlowRoles.ink(.subagent), summary: who?.summary ?? "")
+    }
+
+    /// A background command's card: its description (else its command), `작업 · <the command's first line>`, the last
+    /// line it wrote, and its state with its exit code and time.
+    static func task(_ agent: MightyGraphAgent, who: FlowIdentity, output: [String]) -> Content {
+        let status = MobileMightySupport.status(agent.status)
+        let command = line(firstLine(agent.shownInput)).map { L("graph.card.task", ["command": $0]) } ?? FlowRoles.roleName(.task)
+        return Content(title: MightyGraphSupport.blockTitle(agent), identity: command, activity: lastOutput(output), status: status,
+                       stateWord: stateWord(status), startedAt: agent.figures?.started, endedAt: agent.figures?.ended, toolCalls: nil, tokens: nil,
+                       nested: 0, marks: who.marks, ink: who.ink, summary: who.summary, isTask: true, exitCode: agent.figures?.exitCode)
+    }
+
+    /// The last line a background command wrote, without the line Claude Code adds once it exits
+    /// (`[exited with code 0]`): its exit code is the card's figure.
+    public static func lastOutput(_ lines: [String]) -> String? {
+        for raw in lines.reversed() {
+            let text = raw.trimmingCharacters(in: .whitespaces)
+            if text.isEmpty || text.wholeMatch(of: #/\[exited with code -?[0-9]+\]/#) != nil { continue }
+            return line(text)
+        }
+        return nil
     }
 
     /// "Explore · Haiku 5.5": a sub-agent's type and its model, whichever is known. The model is the one its own
@@ -147,6 +177,8 @@ public enum FlowCard {
     /// read against `now`; once it ended, how long it ran. A figure the app does not have is left out.
     public static func figures(_ content: Content, now: Date) -> String {
         var parts = [content.stateWord]
+        // A command that ended says how it exited, before how long it took.
+        if content.isTask, !content.running, let code = content.exitCode { parts.append(L("graph.card.exitCode", ["code": "\(code)"])) }
         if let start = content.startedAt {
             if content.running { parts.append(StyleWidgetPresentation.elapsed(from: start, to: now)) }
             else if let end = content.endedAt, end >= start { parts.append(StyleWidgetPresentation.elapsed(from: start, to: end)) }

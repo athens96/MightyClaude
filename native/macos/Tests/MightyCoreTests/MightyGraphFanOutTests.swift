@@ -37,16 +37,16 @@ struct MightyGraphFanOutTests {
         // Every other view draws what it drew.
         #expect(shown.agents.map(\.id) == ["fg", "late"])
         #expect(BackgroundNoticeRuns.shownAgents(request).map(\.id) == ["fg", "late"])
-        // The flow draws them too: the same blocks at the same indexes, then the background sub-agents and what is under
-        // them. A background run and what is under it stay with the strip and the notice runs.
-        #expect(shown.flowAgents.map(\.id) == ["fg", "late", "bg", "bg-child"])
+        // The flow draws them too: the same blocks at the same indexes, then the background sub-agents and background
+        // commands and what is under them.
+        #expect(shown.flowAgents.map(\.id) == ["fg", "late", "bg", "bg-child", "task", "task-child"])
         #expect(Array(shown.flowAgents.prefix(shown.agents.count)) == shown.agents)
         // Each stands where it was launched.
-        #expect(shown.flowAgents.indices.map(shown.flowOrder) == [0, 5, 1, 2])
-        #expect(BackgroundNoticeRuns.fanOut(request) == [1, 2])
+        #expect(shown.flowAgents.indices.map(shown.flowOrder) == [0, 5, 1, 2, 3, 4])
+        #expect(BackgroundNoticeRuns.fanOut(request) == [1, 2, 3, 4])
         // Shown again, it is the same run.
         #expect(shown.shown == shown)
-        #expect(shown.shown.flowAgents.map(\.id) == ["fg", "late", "bg", "bg-child"])
+        #expect(shown.shown.flowAgents.map(\.id) == ["fg", "late", "bg", "bg-child", "task", "task-child"])
     }
 
     @Test func aRunThatHidesNothingAndANoticeRunHaveOnlyTheirOwnBlocks() {
@@ -57,8 +57,8 @@ struct MightyGraphFanOutTests {
         let notice = run("r:notice:1", agents: [agent("copy", background: true, source: "bg")], notice: true)
         #expect(notice.shown.flowAgents.map(\.id) == ["copy"])
         #expect(BackgroundNoticeRuns.fanOut(notice).isEmpty)
-        // Only tasks in the background: nothing fans out.
-        #expect(run("t", agents: [agent("task", background: true, kind: "task")]).shown.flowAgents.isEmpty)
+        // Only commands in the background: they fan out alone.
+        #expect(run("t", agents: [agent("task", background: true, kind: "task")]).shown.flowAgents.map(\.id) == ["task"])
     }
 
     @Test func theStatusRulesReadTheSameWithAFanOut() {
@@ -215,11 +215,26 @@ struct MightyGraphFanOutTests {
         #expect(FlowCard.copyNodeID(of: shown[0].flowAgents[0], in: shown) == copy.id)
     }
 
-    @Test func aBackgroundRunStaysOutOfTheRow() {
-        let request = run("r", agents: [agent("task", status: "running", background: true, kind: "task"), agent("bg", status: "running", background: true)], status: "running")
+    @Test func aBackgroundCommandStandsInTheRowAsACardInLaunchOrder() throws {
+        let request = run("r", agents: [agent("task", status: "running", background: true, kind: "task"), agent("bg", status: "running", background: true),
+                                        agent("fg", status: "completed")], status: "running")
         let graph = layout([request], running: true)
-        #expect(node(graph, id(request, "task")) == nil)
-        #expect(node(graph, id(request, "bg"))?.isCompact == true)
+        let task = try #require(node(graph, id(request, "task"))), bg = try #require(node(graph, id(request, "bg"))), fg = try #require(node(graph, id(request, "fg")))
+        #expect(task.isCompact && task.frame.size == FlowCard.size && bg.isCompact && !fg.isCompact)
+        // One row, as they were launched.
+        #expect(task.frame.minY == bg.frame.minY && task.frame.minY == fg.frame.minY)
+        #expect(task.frame.maxX < bg.frame.minX && bg.frame.maxX < fg.frame.minX)
+        // The branch says so, and the way back counts it.
+        #expect(node(graph, line(request)) != nil)
+        #expect(node(graph, MightyGraphLayout.nodeID(request, suffix: MightyGraphLayout.returnSuffix)) != nil)
+        // The edge into a running command's card is live, as into a running sub-agent's.
+        let live = MightyGraphLayout.liveNodeIDs([request.shown], fanOut: true)
+        #expect(live.contains(task.id) && live.contains(bg.id) && !live.contains(fg.id))
+        // Opened, it is its full block in place.
+        let opened = layout([request], running: true, opened: [task.id])
+        #expect(node(opened, task.id)?.isCompact == false)
+        // Without a fan-out, as every other view, it is not there.
+        #expect(MightyGraphLayout.make(runs: [request.shown], draft: "", running: true, expanded: [], splitsExecution: true).nodes.contains { $0.id == task.id } == false)
     }
 
     @Test func theFollowedBlockIsTheLowestOfTheNewestWorkCardsIncluded() throws {

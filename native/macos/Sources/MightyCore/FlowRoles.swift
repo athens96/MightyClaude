@@ -1,14 +1,16 @@
 import CoreGraphics
 import Foundation
 
-/// Who works in a flow diagram: the main session that took the request, the sub-agents it delegates to, and the
-/// advisor a Claude session may consult. One ink per role, on every block's header, on the delegate line, in the
-/// session log.
+/// Who works in a flow diagram: the main session that took the request, the sub-agents it delegates to, the commands
+/// it runs in the background, and the advisor a Claude session may consult. One ink per role, on every block's header,
+/// on the delegate line, in the session log.
 public enum FlowRole: String, Sendable, CaseIterable {
     /// The pane's own agent: a request's 실행 block.
     case lead
     /// An agent another agent started (Claude's Agent tool, a Codex or Antigravity sub-agent).
     case subagent
+    /// A shell command a Claude session runs in the background (`run_in_background` on Bash): a task block.
+    case task
     /// The model a Claude session asks for advice (`claude --advisor`).
     case advisor
 }
@@ -17,9 +19,12 @@ public enum FlowRole: String, Sendable, CaseIterable {
 /// own: every case is one of concept D's text-safe inks (`DesignPalette`), held to AA by `DesignTokenContrastTests`.
 public enum FlowInk: String, Sendable, CaseIterable {
     case task, agent, steer, accent, done, err, wait, question
+    /// The secondary ink: a background command's, which is no agent's and no state's.
+    case neutral
 
     public var token: KeyPath<DesignPalette, DesignColor> {
         switch self {
+        case .neutral: \.ink2
         case .task: \.taskText
         case .agent: \.agentText
         case .steer: \.steerText
@@ -94,12 +99,14 @@ public struct FlowIdentity: Equatable, Sendable {
 }
 
 public enum FlowRoles {
-    /// The role's ink: teal for the lead, violet for sub-agents (as their blocks always were), pink for the advisor.
-    /// Three inks far apart in hue in both appearances, and none of them a state's colour (blue runs, amber waits).
+    /// The role's ink: teal for the lead, violet for sub-agents (as their blocks always were), the palette's secondary
+    /// grey for background commands (which teal would make read as the main session), pink for the advisor. Inks far
+    /// apart in both appearances, and none of them a state's colour (blue runs, amber waits).
     public static func ink(_ role: FlowRole) -> FlowInk {
         switch role {
         case .lead: .task
         case .subagent: .agent
+        case .task: .neutral
         case .advisor: .steer
         }
     }
@@ -132,6 +139,7 @@ public enum FlowRoles {
         switch role {
         case .lead: L("graph.identity.role.lead")
         case .subagent: L("graph.block.agent")
+        case .task: L("graph.identity.role.task")
         case .advisor: L("graph.identity.role.advisor")
         }
     }
@@ -198,6 +206,15 @@ public enum FlowRoles {
         parts += marks.map(\.word)
         return FlowIdentity(role: .subagent, ink: ink(.subagent, color: definition?.color), type: type, typeChip: chip, modelLabel: model,
                             marks: marks, summary: parts.joined(separator: " · "))
+    }
+
+    /// A background command's identity in the role view: the neutral ink, its background mark, and in words its role
+    /// and the first line of its command. Nil for a block that is no background command.
+    public static func task(_ agent: MightyGraphAgent) -> FlowIdentity? {
+        guard agent.isTask else { return nil }
+        let marks = marks(agent)
+        let parts = [roleName(.task)] + marks.map(\.word) + [FlowCard.line(FlowCard.firstLine(agent.shownInput))].compactMap { $0 }
+        return FlowIdentity(role: .task, ink: ink(.task), marks: marks, summary: parts.joined(separator: " · "))
     }
 
     /// The types the blocks of `runs` name, for looking their definitions up (`AgentDefinitions.load`).

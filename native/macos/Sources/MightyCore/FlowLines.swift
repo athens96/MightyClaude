@@ -1,8 +1,9 @@
 import CoreGraphics
 import Foundation
 
-/// The line on the branch from a block to the sub-agents it handed work to: how many, on which model, and how many
-/// of them still run. It stands between the block and its fan-out row (`MightyGraphLayout.make(fanOut:)`).
+/// The line on the branch from a block to the sub-agents it handed work to and the commands it runs in the background:
+/// how many, on which model, and how many of them still run. It stands between the block and its fan-out row
+/// (`MightyGraphLayout.make(fanOut:)`).
 public enum FlowDelegation {
     /// The line's node in the diagram: as wide as its longest wording needs, one line tall.
     public static let size = CGSize(width: 340, height: 24)
@@ -11,29 +12,36 @@ public enum FlowDelegation {
 
     /// What the line says.
     public struct Line: Equatable, Sendable {
-        /// The sub-agents the block delegated to, and how many of them have not ended.
+        /// The sub-agents and background commands of the row, and how many of them have not ended.
         public var count: Int
         public var running: Int
-        /// "하위 에이전트 3개에 위임".
+        /// "하위 에이전트 3개에 위임", "작업 2개 실행", or "3개 병렬" for a row of both.
         public var head: String
-        /// The one model all of them share ("Haiku 5.5", or "Haiku · 요청" while none has answered), or how many models
-        /// they are on ("모델 2종"); nil when none names a model.
+        /// A row of both: how many of each, each in its role's ink ("하위 에이전트 1", "작업 2").
+        public var parts: [Part] = []
+        /// The one model all the sub-agents share ("Haiku 5.5", or "Haiku · 요청" while none has answered), or how many
+        /// models they are on ("모델 2종"); nil when none names a model and in a row that holds commands.
         public var model: String?
         /// "2/3 실행 중" while any of them runs.
         public var progress: String?
         /// The whole line, as VoiceOver reads it.
-        public var text: String { ([head, model, progress].compactMap { $0 }).joined(separator: " · ") }
+        public var text: String { ([head] + parts.map(\.text) + [model, progress].compactMap { $0 }).joined(separator: " · ") }
+
+        public struct Part: Equatable, Sendable {
+            public var role: FlowRole
+            public var text: String
+        }
     }
 
-    /// The sub-agents block `key` of `run` delegated to: the ones the flow draws right under it, in launch order. A
-    /// copy in a notice run is no delegation, and neither is a block that is no sub-agent.
+    /// The sub-agents block `key` of `run` delegated to and the commands it runs in the background: the ones the flow
+    /// draws right under it, in launch order. A copy in a notice run is no delegation, and neither is any other block.
     public static func children(of key: String, in run: MightyGraphRun) -> [MightyGraphAgent] {
         guard run.noticeRun != true else { return [] }
         let agents = run.flowAgents
         let ids = Set(agents.map(\.id))
         let order = agents.indices.sorted { run.flowOrder($0) < run.flowOrder($1) }
         return order.map { agents[$0] }.filter { agent in
-            guard agent.isSubagent, agent.sourceBlockId == nil else { return false }
+            guard agent.isSubagent || agent.isTask, agent.sourceBlockId == nil else { return false }
             // The layout's own rule for what hangs off the main block: no parent, an unknown one, or itself.
             if key == mainKey { return agent.parentID.map { !ids.contains($0) || $0 == agent.id } ?? true }
             return agent.parentID == key && agent.id != key
@@ -41,13 +49,26 @@ public enum FlowDelegation {
     }
 
     /// The line for `children`, nil when there are none. `definitions` are the custom agents their types name
-    /// (`AgentDefinitions`), whose model stands in for a call that asked for none.
+    /// (`AgentDefinitions`), whose model stands in for a call that asked for none. A row of sub-agents alone says whom it
+    /// delegated to and on which model; a row of commands alone how many it runs; a row of both how many run side by
+    /// side, and how many of each.
     public static func line(_ children: [MightyGraphAgent], definitions: [String: AgentDefinition] = [:]) -> Line? {
         guard !children.isEmpty else { return nil }
         let running = children.filter { !MightyGraphLayout.terminal($0.status) }.count
-        let head = children.count == 1 ? L("graph.delegate.one") : L("graph.delegate.many", ["count": "\(children.count)"])
-        return Line(count: children.count, running: running, head: head, model: model(children, definitions: definitions),
-                    progress: running > 0 ? L("graph.delegate.running", ["running": "\(running)", "total": "\(children.count)"]) : nil)
+        let progress = running > 0 ? L("graph.delegate.running", ["running": "\(running)", "total": "\(children.count)"]) : nil
+        let tasks = children.filter(\.isTask).count, agents = children.count - tasks
+        if tasks == 0 {
+            let head = children.count == 1 ? L("graph.delegate.one") : L("graph.delegate.many", ["count": "\(children.count)"])
+            return Line(count: children.count, running: running, head: head, model: model(children, definitions: definitions), progress: progress)
+        }
+        if agents == 0 {
+            let head = tasks == 1 ? L("graph.delegate.task") : L("graph.delegate.tasks", ["count": "\(tasks)"])
+            return Line(count: children.count, running: running, head: head, progress: progress)
+        }
+        return Line(count: children.count, running: running, head: L("graph.delegate.parallel", ["count": "\(children.count)"]),
+                    parts: [Line.Part(role: .subagent, text: L("graph.delegate.partAgents", ["count": "\(agents)"])),
+                            Line.Part(role: .task, text: L("graph.delegate.partTasks", ["count": "\(tasks)"]))],
+                    progress: progress)
     }
 
     /// The model the sub-agents share, or how many they are on. A model the CLI named (a block's own responses, the
@@ -80,22 +101,31 @@ public enum FlowReturn {
     public static let size = CGSize(width: 340, height: 34)
 
     public struct State: Equatable, Sendable {
-        /// The run's sub-agents, at any depth, and how many of them have not ended.
+        /// The run's sub-agents, at any depth, and its background commands, and how many of them have not ended.
         public var total: Int
         public var running: Int
-        /// "하위 에이전트 2/3 실행 중 · 보고를 기다리는 중" while any runs; "메인으로 복귀 · 검토 중" once all ended and the
-        /// main session's turn goes on.
+        /// The same two of the sub-agents alone and of the commands alone.
+        public var subagents: Int
+        public var subagentsRunning: Int
+        public var tasks: Int
+        public var tasksRunning: Int
+        /// "하위 에이전트 2/3 실행 중 · 보고를 기다리는 중", or "병렬 2/3 실행 중 · 보고를 기다리는 중" when commands are among
+        /// them, while any runs; "메인으로 복귀 · 검토 중" once all ended and the main session's turn goes on.
         public var text: String
         public var waiting: Bool { running > 0 }
     }
 
-    /// The state of `run`'s way back, nil for a run that delegated to no sub-agent and for a notice run.
+    /// The state of `run`'s way back, nil for a run that delegated to no sub-agent and runs no command in the
+    /// background, and for a notice run.
     public static func state(_ run: MightyGraphRun) -> State? {
         guard run.noticeRun != true else { return nil }
-        let agents = run.flowAgents.filter { $0.isSubagent && $0.sourceBlockId == nil }
-        guard !agents.isEmpty else { return nil }
-        let running = agents.filter { !MightyGraphLayout.terminal($0.status) }.count
-        let text = running > 0 ? L("graph.return.waiting", ["running": "\(running)", "total": "\(agents.count)"]) : L("graph.return.reviewing")
-        return State(total: agents.count, running: running, text: text)
+        let blocks = run.flowAgents.filter { ($0.isSubagent || $0.isTask) && $0.sourceBlockId == nil }
+        guard !blocks.isEmpty else { return nil }
+        let live = blocks.filter { !MightyGraphLayout.terminal($0.status) }
+        let tasks = blocks.filter(\.isTask).count, tasksRunning = live.filter(\.isTask).count
+        let counts = ["running": "\(live.count)", "total": "\(blocks.count)"]
+        let text = live.isEmpty ? L("graph.return.reviewing") : tasks > 0 ? L("graph.return.parallel", counts) : L("graph.return.waiting", counts)
+        return State(total: blocks.count, running: live.count, subagents: blocks.count - tasks, subagentsRunning: live.count - tasksRunning,
+                     tasks: tasks, tasksRunning: tasksRunning, text: text)
     }
 }

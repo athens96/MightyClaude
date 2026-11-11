@@ -598,6 +598,7 @@ are cut.
 | --- | --- |
 | `claude-stream-subagents.jsonl` | A foreground and then a background Explore sub-agent (Haiku) with the flags the Mac app runs Claude with (`--input-format stream-json --permission-prompts host --permission-prompt-tool stdio`, stdin left open): the request's `result` comes when its turn ends, the background agent's notification opens a turn of its own. |
 | `claude-stream-fork-worktree.jsonl` | A fork (`subagent_type: "fork"`) and a sub-agent with `isolation: "worktree"`, recorded with a prompt argument and `--forward-subagent-text`, which the app does not pass: the foreground agent's thinking and text frames are there too, and both `result` frames come at the end. |
+| `claude-stream-background-commands.jsonl` | Two shell commands started with `run_in_background` (Haiku 5.5, the app's flags, stdin left open): one exits 0, one exits 3; both notifications come after the request's `result` and open the turns that answer them. |
 | `claude-stream-advisor.jsonl` | One request with the advisor on (`--advisor`: an Opus 5.5 advisor for a Sonnet 5.5 main model): the main session consults the advisor once and answers. |
 
 What they show of a sub-agent, and what the Mac's graph tracker reads
@@ -623,7 +624,22 @@ for the block's result (`ForegroundAgentNoticeTests`). A sub-agent's own `assist
 thinking and text frames come without `--forward-subagent-text`, a foreground
 agent's only with it.
 
-What the third shows of the advisor, and what the Mac's graph tracker reads
+What the background commands' recording shows, and what the Mac's graph
+tracker reads (`FlowTaskTests`): the Bash call's input names `command`,
+`description` and `run_in_background: true`; its result says `Command running in
+background with ID: <id>. Output is being written to: <path>` and carries a
+structured `tool_use_result` with `backgroundTaskId`. The `system` frames
+`background_tasks_changed` (the list of running tasks) and `task_started`
+(`task_type: "local_bash"`, `tool_use_id`, `description`, `is_backgrounded`) come
+at the launch; at the end `task_updated` (`patch { status, end_time }`, the end in
+milliseconds since 1970) and then `task_notification` (`status` `completed` or
+`failed`, `output_file`, `summary` such as `Background command "…" completed (exit
+code 0)` or `… failed with exit code 3`). `system` frames carry no `timestamp`.
+The output file ends with a line the CLI adds, `[exited with code N]`. The tracker
+keeps a command's start (its call's frame), its end (`end_time`) and the exit code
+its summary names on the task block (`figures`).
+
+What the advisor's recording shows, and what the Mac's graph tracker reads
 (`GraphAdvisorTests`): a consultation is a content block of the caller's own
 `assistant` message, `{"type":"server_tool_use","id":"srvtoolu_…","name":"advisor","input":{}}`,
 and its result a later block of the same message,

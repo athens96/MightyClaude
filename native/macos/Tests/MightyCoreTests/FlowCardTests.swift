@@ -46,10 +46,16 @@ struct FlowCardTests {
     @Test func aNoticeRunsCopyAndABlockThatIsNoSubagentAreNeverCards() {
         #expect(!FlowCard.isCompact(agent(status: "completed", background: true, source: "original"), opened: false))
         #expect(!FlowCard.isCompact(agent(status: "running", background: true, source: "original"), opened: false))
-        for kind in MightyGraphSupport.childKinds {
+        // A background command is the one other kind with a card: the request's own, running or ended, until opened.
+        for kind in MightyGraphSupport.childKinds where kind != "task" {
             #expect(!FlowCard.isCompact(agent(status: "running", background: true, kind: kind), opened: false), "\(kind)")
             #expect(!FlowCard.foldsToCard(agent(status: "running", kind: kind)), "\(kind)")
         }
+        for status in ["running", "completed", "error"] {
+            #expect(FlowCard.isCompact(agent(status: status, background: true, kind: "task"), opened: false), "\(status)")
+            #expect(!FlowCard.isCompact(agent(status: status, background: true, kind: "task"), opened: true), "\(status)")
+        }
+        #expect(!FlowCard.isCompact(agent(status: "completed", background: true, kind: "task", source: "original"), opened: false))
     }
 
     // MARK: What the card says
@@ -160,15 +166,22 @@ struct FlowCardTests {
                 == GraphAgentFigures(startedAt: "2026-11-10T18:56:44.496Z"))
         #expect(GraphAgentFigures(startedAt: "2026-11-10T18:56:44Z").started != nil)
         #expect(GraphAgentFigures().isEmpty)
-        // Only a sub-agent block keeps figures, on the wire and in a save.
-        let task = ExecutionGraphNode(id: "n", runId: "r", kind: "task", state: "running", title: "t", figures: GraphAgentFigures(toolCalls: 2))
-        #expect(ExecutionGraphSupport.normalized(task)?.figures == nil)
+        #expect(GraphAgentFigures(exitCode: 3).normalized == GraphAgentFigures(exitCode: 3))
+        #expect(GraphAgentFigures(exitCode: Int(Int32.max) + 1).normalized == nil)
+        #expect(!GraphAgentFigures(exitCode: 0).isEmpty)
+        // A sub-agent block and a background command's keep figures, on the wire and in a save; no other block does.
+        let task = ExecutionGraphNode(id: "n", runId: "r", kind: "task", state: "running", title: "t", figures: GraphAgentFigures(exitCode: 2))
+        #expect(ExecutionGraphSupport.normalized(task)?.figures == GraphAgentFigures(exitCode: 2))
+        let steer = ExecutionGraphNode(id: "s", runId: "r", kind: "steer", state: "running", title: "s", figures: GraphAgentFigures(toolCalls: 2))
+        #expect(ExecutionGraphSupport.normalized(steer)?.figures == nil)
         var budget = 100_000
         let saved = MightyGraphSupport.normalized([MightyGraphRun(id: "r", status: "completed", agents: [
             agent("a", status: "completed", figures: GraphAgentFigures(startedAt: "2026-11-10T18:56:44Z", endedAt: "soon", toolCalls: 4)),
-            agent("t", status: "completed", kind: "task", figures: GraphAgentFigures(toolCalls: 4))])], restoring: true, budget: &budget)
+            agent("t", status: "completed", kind: "task", figures: GraphAgentFigures(startedAt: "2026-11-10T18:56:44Z", exitCode: 0)),
+            agent("q", status: "completed", kind: "question", figures: GraphAgentFigures(toolCalls: 4))])], restoring: true, budget: &budget)
         #expect(saved[0].agents[0].figures == GraphAgentFigures(startedAt: "2026-11-10T18:56:44Z", toolCalls: 4))
-        #expect(saved[0].agents[1].figures == nil)
+        #expect(saved[0].agents[1].figures == GraphAgentFigures(startedAt: "2026-11-10T18:56:44Z", exitCode: 0))
+        #expect(saved[0].agents[2].figures == nil)
     }
 
     @Test func olderSavesHaveNoFiguresAndABlockWithoutThemEncodesNone() throws {

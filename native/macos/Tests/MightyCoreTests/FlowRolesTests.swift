@@ -12,13 +12,15 @@ struct FlowRolesTests {
         return MightyGraphAgent(id: "a", title: title, kind: kind, background: background ? true : nil, identity: identity.isEmpty ? nil : identity)
     }
 
-    @Test func theThreeRolesTakeThreeInksThatDifferInBothAppearances() {
+    @Test func theFourRolesTakeFourInksThatDifferInBothAppearances() {
         let inks = FlowRole.allCases.map(FlowRoles.ink)
-        #expect(Set(inks).count == 3)
+        #expect(Set(inks).count == 4)
         #expect(FlowRoles.ink(.subagent) == .agent)
+        // A background command is none of the agents: the palette's secondary ink, not the lead's teal.
+        #expect(FlowRoles.ink(.task) == .neutral && FlowRoles.ink(.task) != FlowRoles.ink(.lead))
         for palette in [DesignTokens.light, DesignTokens.dark] {
             let colours = inks.map { palette[keyPath: $0.token] }
-            #expect(Set(colours).count == 3)
+            #expect(Set(colours).count == 4)
             // Words on a card: each is one of the palette's AA inks.
             for colour in colours { #expect(colour.contrast(with: palette.card) >= 4.5) }
         }

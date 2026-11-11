@@ -379,7 +379,7 @@ public enum MightyGraphSupport {
                 if !["task", "steer", "compact", "question"].contains(agent.kind ?? "") { agent.kind = nil }
                 agent.identity = agent.kind == nil ? agent.identity?.normalized : nil
                 budget -= agent.identity?.byteCount ?? 0
-                agent.figures = agent.kind == nil ? agent.figures?.normalized : nil
+                agent.figures = agent.kind == nil || agent.kind == "task" ? agent.figures?.normalized : nil
                 agent.usage = agent.usage?.normalized
                 agent.activityGeneration = ExecutionGraphSupport.normalizedGeneration(agent.activityGeneration)
                 if restoring && !terminal(agent.status) { agent.status = "stopped" }

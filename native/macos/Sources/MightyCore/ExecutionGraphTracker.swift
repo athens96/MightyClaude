@@ -213,8 +213,8 @@ final class ExecutionGraphTracker {
         let id = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: toolID)
         guard nodes[id] == nil else { return id }
         guard nodes.count < ExecutionGraphSupport.maximumNodes else { return nil }
-        // A Claude sub-agent's block keeps when it was first seen, for its card's elapsed time.
-        let figures = kind == "agent" && provider == "claude" ? GraphAgentFigures(startedAt: now) : nil
+        // A Claude sub-agent's or background command's block keeps when it was first seen, for its card's elapsed time.
+        let figures = ["agent", "task"].contains(kind) && provider == "claude" ? GraphAgentFigures(startedAt: now) : nil
         let value = ExecutionGraphNode(id: id, runId: runID, kind: kind, state: "running", title: title, figures: figures)
         nodes[id] = value; order.append(id); emit(value)
         return id
@@ -265,8 +265,8 @@ final class ExecutionGraphTracker {
             value.state = previous.state; value.output = previous.output ?? value.output
         } else if !restart, ExecutionGraphSupport.terminal(previous.state), !ExecutionGraphSupport.terminal(value.state),
                   !(continuing && provider == "gemini" && previous.kind == "agent" && previous.state == "completed" && value.state == "running") { value.state = previous.state }
-        // A Claude sub-agent's block keeps when it was seen to end, once.
-        if provider == "claude", value.kind == "agent", !ExecutionGraphSupport.terminal(previous.state), ExecutionGraphSupport.terminal(value.state),
+        // A Claude sub-agent's or background command's block keeps when it was seen to end, once.
+        if provider == "claude", ["agent", "task"].contains(value.kind), !ExecutionGraphSupport.terminal(previous.state), ExecutionGraphSupport.terminal(value.state),
            value.figures?.endedAt == nil {
             var figures = value.figures ?? GraphAgentFigures()
             figures.endedAt = now
@@ -477,6 +477,21 @@ final class ExecutionGraphTracker {
             settleTasks(in: body + "</task-notification>", notice: parentTool == nil)
         } else if type == "system", value["subtype"] as? String == "task_progress" {
             reportTools(value)
+        } else if type == "system", value["subtype"] as? String == "task_updated", let task = Self.key(value["task_id"]),
+                  let end = (value["patch"] as? [String: Any])?["end_time"] as? NSNumber {
+            // A background command's end as the CLI timed it (milliseconds since 1970), just before its notification: the
+            // block ends at that time, not at whenever the app read the notification.
+            let seconds = end.doubleValue / 1_000
+            if let id = taskAliases[task], nodes[id]?.kind == "task", nodes[id]?.figures?.endedAt == nil, seconds.isFinite, (0...4_102_444_800).contains(seconds) {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let time = formatter.string(from: Date(timeIntervalSince1970: seconds))
+                update(id) { node in
+                    var figures = node.figures ?? GraphAgentFigures()
+                    figures.endedAt = time
+                    node.figures = figures
+                }
+            }
         } else if type == "system", value["subtype"] as? String == "task_started", let tool = Self.key(value["tool_use_id"]) {
             // The CLI names the type it started the agent as, which a call without `subagent_type` leaves unsaid.
             let child = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: tool)
@@ -1202,11 +1217,18 @@ final class ExecutionGraphTracker {
                 addNotice(for: id, root: notice)
             } else {
                 let file = Self.tag(body, "output-file")
+                // "Background command "…" completed (exit code 0)", "… failed with exit code 3".
+                let code = summary.flatMap { $0.firstMatch(of: #/exit code (?<code>-?[0-9]{1,10})/#) }.flatMap { Int($0.code) }
                 update(id) { node in
                     if let file { node.outputFile = file }
                     guard !ExecutionGraphSupport.terminal(node.state) else { return }
                     node.state = state
                     if let summary { node.output = summary }
+                    if provider == "claude", let code {
+                        var figures = node.figures ?? GraphAgentFigures()
+                        figures.exitCode = code
+                        node.figures = figures
+                    }
                 }
                 addNotice(for: id, root: notice)
             }

@@ -115,9 +115,10 @@ public struct GraphAgentIdentity: Codable, Sendable, Equatable {
     var byteCount: Int { (type?.utf8.count ?? 0) + (requestedModel?.utf8.count ?? 0) + (resolvedModel?.utf8.count ?? 0) + (isolation?.utf8.count ?? 0) }
 }
 
-/// The figures a sub-agent block keeps of its own run, for the flow diagram's compact card (`FlowCard`): when the
-/// app saw it start and end, and how many tools it called so far. Each is what was observed, never an estimate; a
-/// block without any carries none (older events and saves, Codex and Antigravity sub-agents).
+/// The figures a sub-agent block, or a background command's (a task block), keeps of its own run, for the flow
+/// diagram's compact card (`FlowCard`): when the app saw it start and end, how many tools it called so far, and how a
+/// command exited. Each is what was observed, never an estimate; a block without any carries none (older events and
+/// saves, Codex and Antigravity sub-agents).
 public struct GraphAgentFigures: Codable, Sendable, Equatable {
     /// When the Agent call that started it was seen: that frame's own `timestamp`, else the moment the app read it.
     public var startedAt: String?
@@ -125,19 +126,23 @@ public struct GraphAgentFigures: Codable, Sendable, Equatable {
     public var endedAt: String?
     /// Tool calls of its own so far: the tool_use blocks of its messages, or the count the CLI reports when that is more.
     public var toolCalls: Int?
+    /// A background command's exit code, as its notification says it ("completed (exit code 0)", "failed with exit
+    /// code 3"); nil while it runs, for a sub-agent, and when the CLI named none.
+    public var exitCode: Int?
 
-    public init(startedAt: String? = nil, endedAt: String? = nil, toolCalls: Int? = nil) {
-        self.startedAt = startedAt; self.endedAt = endedAt; self.toolCalls = toolCalls
+    public init(startedAt: String? = nil, endedAt: String? = nil, toolCalls: Int? = nil, exitCode: Int? = nil) {
+        self.startedAt = startedAt; self.endedAt = endedAt; self.toolCalls = toolCalls; self.exitCode = exitCode
     }
     public static let maximumToolCalls = 1_000_000
-    public var isEmpty: Bool { startedAt == nil && endedAt == nil && toolCalls == nil }
+    public var isEmpty: Bool { startedAt == nil && endedAt == nil && toolCalls == nil && exitCode == nil }
     /// A timestamp the app can read back, a count in range; nil when nothing is left.
     public var normalized: GraphAgentFigures? {
         func time(_ value: String?) -> String? {
             value.flatMap { $0.utf8.count <= 80 && AgentRunTiming.parseTimestamp($0) != nil ? $0 : nil }
         }
         let value = GraphAgentFigures(startedAt: time(startedAt), endedAt: time(endedAt),
-                                      toolCalls: toolCalls.flatMap { (0...Self.maximumToolCalls).contains($0) ? $0 : nil })
+                                      toolCalls: toolCalls.flatMap { (0...Self.maximumToolCalls).contains($0) ? $0 : nil },
+                                      exitCode: exitCode.flatMap { (Int(Int32.min)...Int(Int32.max)).contains($0) ? $0 : nil })
         return value.isEmpty ? nil : value
     }
     public var started: Date? { startedAt.flatMap(AgentRunTiming.parseTimestamp) }
@@ -261,7 +266,8 @@ public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
     public var sourceBlockId: String?
     /// Who a sub-agent block is (`GraphAgentIdentity`); absent on other blocks, in older graph events and in older saves.
     public var identity: GraphAgentIdentity?
-    /// A sub-agent block's start, end and tool calls (`GraphAgentFigures`); absent as `identity` is.
+    /// A sub-agent block's start, end and tool calls, a background command's start, end and exit code
+    /// (`GraphAgentFigures`); absent on other blocks, in older graph events and in older saves.
     public var figures: GraphAgentFigures?
     /// A run's use of the advisor (`GraphAdvisor`), on its main block; absent on other blocks, in a run that never
     /// consulted it, in older graph events and in older saves.
@@ -319,7 +325,7 @@ public enum ExecutionGraphSupport {
         result.sourceBlockId = node.sourceBlockId.flatMap { CoreValidation.identifier($0) ? $0 : nil }
         // Only a sub-agent block has a type, a model of its own and an isolation.
         result.identity = node.kind == "agent" ? node.identity?.normalized : nil
-        result.figures = node.kind == "agent" ? node.figures?.normalized : nil
+        result.figures = ["agent", "task"].contains(node.kind) ? node.figures?.normalized : nil
         // Only a run's main block keeps its consultations of the advisor.
         result.advisor = node.kind == "main" ? node.advisor?.normalized(restoring: restoring) : nil
         if restoring && !terminal(result.state) { result.state = "stopped" }
