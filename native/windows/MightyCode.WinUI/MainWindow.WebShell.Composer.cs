@@ -403,6 +403,8 @@ public sealed partial class MainWindow
             {
                 MenuFlyoutSubItem sub => new { kind = "submenu", text = sub.Text, enabled = sub.IsEnabled, items = sub.Items.Select(Row).ToArray() },
                 ToggleMenuFlyoutItem choice => new { kind = "choice", text = choice.Text, enabled = choice.IsEnabled, @checked = choice.IsChecked, help = ToolTipService.GetToolTip(choice) as string },
+                // The model list's notice (MenuNote): a muted line with why the read failed as its help.
+                MenuFlyoutItem { Tag: ModelListNotice notice } => new { kind = "note", text = notice.Line, help = notice.Help },
                 MenuFlyoutItem { Tag: null } header => new { kind = "header", text = header.Text },
                 // The options menu's last row opens the run settings, which the page draws itself.
                 MenuFlyoutItem more when more.Text == Locale.Get("composer.runSettings.more") => new { kind = "runSettings", text = more.Text },

@@ -37,6 +37,8 @@
 .menu-check { width: 14px; flex: none; color: var(--accent); }
 .menu-chevron { margin-left: auto; color: var(--ink3); }
 .menu-header { padding: var(--space-sm) var(--space-md) var(--space-xxs); font-size: var(--type-pill); font-weight: 600; color: var(--ink3); }
+/* The model list's notice under its refresh row: muted, in line with the rows' words (after the check column), not a row to pick. */
+.menu-note { padding: 0 var(--space-sm) var(--space-xs) calc(var(--space-sm) + 14px + var(--space-xs)); font-size: var(--type-small); color: var(--ink3); cursor: default; }
 .menu-separator { height: var(--stroke-line); margin: var(--space-xs) 0; background: var(--line); }
 .menu-nested { padding-left: var(--space-md); }
 

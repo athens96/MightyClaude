@@ -3,8 +3,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ServicesContext, type AppServices } from '../app/context';
 import { translator } from '../i18n/locale';
-import { RunSettingsPopover } from './Toolbar';
-import { clearUnsupported, contextLabel, unsupportedSettings, type RunSettingsInfo } from './menus';
+import { MenuList, RunSettingsPopover } from './Toolbar';
+import { clearUnsupported, contextLabel, unsupportedSettings, type MenuRow, type RunSettingsInfo } from './menus';
 
 const info = (over: Partial<RunSettingsInfo> = {}): RunSettingsInfo => ({
   provider: 'Claude', beta: false, model: 'Default', modelDescription: null, modelSource: '', permission: '', permissionDescription: '', approval: null,
@@ -38,6 +38,25 @@ describe('run settings', () => {
     expect(idle).not.toContain('disabled=""');
     expect(idle).not.toContain('Wait until the run finishes.');
     expect(idle).toContain('value="17"');
+  });
+});
+
+describe('model menu', () => {
+  it('draws the list notice under the refresh row as a muted line with why as its tooltip, never a row to pick', () => {
+    const rows: MenuRow[] = [
+      { kind: 'action', text: '모델 목록 새로고침', enabled: true },
+      { kind: 'note', text: '이전 목록 · 새로 읽지 못했습니다 (5분 전 목록)', help: 'agy models: 종료 코드 1 · Error: authentication required.' },
+      { kind: 'separator' },
+      { kind: 'header', text: '모델' },
+    ];
+    const chosen: number[][] = [];
+    const html = renderToStaticMarkup(createElement(MenuList, { rows, path: [], choose: (path: number[]) => { chosen.push(path); } }));
+    expect(html).toContain('<div class="menu-note" title="agy models: 종료 코드 1 · Error: authentication required.">이전 목록 · 새로 읽지 못했습니다 (5분 전 목록)</div>');
+    expect(html.match(/<button/g)?.length).toBe(1);
+    // A note an older host sends without its help still reads.
+    const bare = renderToStaticMarkup(createElement(MenuList, { rows: [{ kind: 'note', text: '기본 목록 · CLI에서 목록을 읽지 못했습니다' }], path: [], choose: () => {} }));
+    expect(bare).toBe('<div class="menu-note">기본 목록 · CLI에서 목록을 읽지 못했습니다</div>');
+    expect(chosen).toEqual([]);
   });
 });
 

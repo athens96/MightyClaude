@@ -23,6 +23,8 @@ export interface Pills {
 export type MenuRow =
   | { kind: 'separator' }
   | { kind: 'header'; text: string }
+  /** A muted line that cannot be picked, its help as the tooltip: the model list's notice (M/SessionPaneView.swift:367-370). */
+  | { kind: 'note'; text: string; help?: string | null }
   | { kind: 'choice'; text: string; enabled: boolean; checked: boolean; help?: string | null }
   | { kind: 'action'; text: string; enabled: boolean; help?: string | null }
   | { kind: 'runSettings'; text: string }

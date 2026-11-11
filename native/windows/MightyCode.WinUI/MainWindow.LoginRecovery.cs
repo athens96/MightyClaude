@@ -202,6 +202,7 @@ public sealed partial class MainWindow
     {
         autoLogin.Succeeded(provider, DateTimeOffset.UtcNow); loginJobs.Remove(provider); loginFailures.Remove(provider);
         if (loginBusy.GetValueOrDefault(provider) == job) loginBusy.TryRemove(provider, out _);
+        ModelsAfterAccountChange(provider);
         await RefreshCliAccounts();
         if (closing) return;
         await ResendWaitingLoginRequests(provider);

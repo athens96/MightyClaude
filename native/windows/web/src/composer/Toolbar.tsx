@@ -27,6 +27,8 @@ export function MenuList({ rows, path, choose }: { rows: MenuRow[]; path: number
         switch (row.kind) {
           case 'separator': return <div key={index} className="menu-separator" role="separator" />;
           case 'header': return <div key={index} className="menu-header">{row.text}</div>;
+          // The built-in or a kept model list, and why the read failed as its help (MainWindow.cs MenuNote).
+          case 'note': return <div key={index} className="menu-note" title={row.help ?? undefined}>{row.text}</div>;
           case 'submenu':
             return (
               <div key={index} className="menu-submenu">

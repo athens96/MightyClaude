@@ -31,6 +31,13 @@ public sealed partial class MainWindow
         return service.Providers.RefreshProviderAsync(key.Provider, key.Path);
     }
 
+    /// <summary>
+    /// A sign-in or sign-out changed what the provider's CLI lists (M/AppStore+ModelCatalogs.swift modelsAfterAccountChange): every list of it in
+    /// hand goes, whatever its workspace, so no reading begun before the change answers for it. The whole-runtime reading that follows
+    /// (ReloadProviderModels) brings the active workspace's lists anew; another workspace's are read again when they are asked for.
+    /// </summary>
+    private void ModelsAfterAccountChange(string provider) => modelRefreshes?.Invalidate(provider);
+
     /// <summary>Reads a pane's model list again; <paramref name="invalidate"/> when the one in hand is known to be another agent's or account's (M/AppStore+ModelCatalogs.swift:10-19).</summary>
     private void RefreshModels(string sessionId, bool invalidate = false)
     {

@@ -742,6 +742,17 @@ public sealed partial class MainWindow : Window
             return item;
         }
         /// <summary>
+        /// The model list's notice in its menu (M/SessionPaneView.swift:367-370): a muted line that cannot be chosen, why the read failed as its
+        /// tooltip and help text. Its tag is the notice, so the page draws it as a note row (WebMenu).
+        /// </summary>
+        private MenuFlyoutItem MenuNote(ModelListNotice notice)
+        {
+            var item = new MenuFlyoutItem { Text = notice.Line, IsEnabled = false, Tag = notice };
+            ToolTipService.SetToolTip(item, notice.Help); AutomationProperties.SetHelpText(item, notice.Help);
+            owner.SetResourcesOnce(item, [("MenuFlyoutItemForegroundDisabled", owner.brushes.Brush(DesignToken.Ink3))]);
+            return item;
+        }
+        /// <summary>
         /// A permission mode's name (M/SettingsViews.swift:341-346): the Claude CLI's own mode names for Claude, in
         /// every language as on the Mac, and the shared labels for the other agents.
         /// </summary>
@@ -846,7 +857,10 @@ public sealed partial class MainWindow : Window
             foreach (var value in Wire.Providers.Where(p => p != "pi" || !owner.service.IsRemoteSession(pane.Id))) rows.Add(Choice(ProviderCatalog.BetaLabel(value, ProviderMark.Label(value)), () => ChangeProvider(value), pane.Provider == value));
             rows.Add(new MenuFlyoutSeparator());
             var refresh = Item(Locale.Get(refreshingPaneModels ? "composer.model.refreshing" : "composer.model.refresh"), RefreshPaneModels); refresh.IsEnabled = !refreshingPaneModels;
-            rows.Add(refresh); rows.Add(new MenuFlyoutSeparator());
+            rows.Add(refresh);
+            // A muted line that cannot be picked (M/SessionPaneView.swift:367-370): the built-in or a kept list, and why the read failed.
+            if (catalog.Notice() is { } notice) rows.Add(MenuNote(notice));
+            rows.Add(new MenuFlyoutSeparator());
             rows.Add(MenuHeader(Locale.Get("composer.label.model")));
             foreach (var row in ModelLabel.PickerOptions(pane, catalog)) rows.Add(Choice(row.DisplayName, () => ChangeModel(row.Value), pane.Model == row.Value, row.Description.Length > 0 ? row.Description : null));
             if (pane.Provider != "gemini") { rows.Add(new MenuFlyoutSeparator()); rows.Add(Item(Locale.Get("composer.model.enterIdMenu"), CustomModel)); }

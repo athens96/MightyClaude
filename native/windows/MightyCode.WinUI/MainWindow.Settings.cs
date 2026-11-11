@@ -884,6 +884,8 @@ public sealed partial class MainWindow
         catch (OperationCanceledException) when (wait.IsCancellationRequested) { }
         finally { if (accountLoginWaits.GetValueOrDefault(provider) == wait) accountLoginWaits.Remove(provider); }
         if (closing) return;
+        // Signed in: the provider's lists in hand go before they are read again (M/AppStore+CLIAccounts.swift:24, 120).
+        if (result?.Outcome == CliLoginOutcome.LoggedIn) ModelsAfterAccountChange(provider);
         await RefreshCliAccounts(); Redraw();
         NoteTerminalSignIn(provider);
         if (result is not null && CliTerminalLogin.Resends(result)) await ResendWaitingLoginRequests(provider);
@@ -921,7 +923,7 @@ public sealed partial class MainWindow
         CliAccountStatus after;
         // A sign-in still waited on ends with the sign-out (M endCLILogin).
         if (accountLoginWaits.Remove(provider, out var waiting)) waiting.Cancel();
-        try { after = await accountsCoordinator.LogoutAsync(provider); await RefreshCliAccounts(); }
+        try { after = await accountsCoordinator.LogoutAsync(provider); ModelsAfterAccountChange(provider); await RefreshCliAccounts(); }
         finally { accountChanges.TryRemove(provider, out _); }
         if (after.LoggedIn == true) accountMessages[provider] = Locale.Get("settings.cliAccounts.signOutUnconfirmed");
         else if (relogin) await StartCliSignIn(provider, CliLoginOption.Account);
