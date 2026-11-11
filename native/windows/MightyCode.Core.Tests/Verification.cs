@@ -1224,6 +1224,12 @@ internal static class Verification
         await Test("resume picker hides nested Ouroboros runs unless every session is shown", SessionHistoryVerification.ResumePickerHidesNestedOuroborosRunsUnlessEverySessionIsShown);
         await Test("resume picker lists only this folder's sessions, newest first, minus open panes", SessionHistoryVerification.ResumePickerListsOnlyThisFoldersSessionsNewestFirstMinusOpenPanes);
         await Test("resume picker continues the session in a new pane and remembers it", SessionHistoryVerification.ResumingContinuesTheSessionInANewPaneAndRemembersIt);
+        await Test("resume picker lists opencode's root sessions of this folder from opencode.db, newest first, titled by their first request", AcpSessionsVerification.OpencodeListsTheRootSessionsOfTheWorkspaceFolder);
+        await Test("resume picker finds opencode.db where OpenCode 2 keeps it: OPENCODE_DB, else XDG_DATA_HOME or ~/.local/share/opencode, Windows too", AcpSessionsVerification.OpencodeFindsItsDatabaseWhereOpenCodeKeepsIt);
+        await Test("resume picker lists Hermes's ACP conversations of this folder from state.db, a compressed one once under its first id", AcpSessionsVerification.HermesListsTheAcpConversationsOfTheWorkspaceFolder);
+        await Test("resume picker reads only the state.db columns a Hermes version has", AcpSessionsVerification.HermesReadsOnlyTheColumnsItsVersionHas);
+        await Test("hermes: state.db is in HERMES_HOME, else %LOCALAPPDATA%\\hermes (~/.hermes off Windows)", AcpSessionsVerification.HermesFindsItsHomeWhereHermesKeepsIt);
+        await Test("hermes: a run reads whether a session started with yolo and how many messages it holds", AcpSessionsVerification.HermesReadsYoloAndTheMessageCountOfASession);
         // native/contracts/fixtures/help-site.json is the help address macOS and the phone share.
         await Test("help site: every language opens its folder of the shared base in native/contracts/fixtures/help-site.json", HelpSiteVerification.EveryLanguageOpensItsFolderOfTheSharedBase);
         await Test("help site: the current guide follows the chosen language", HelpSiteVerification.TheCurrentGuideFollowsTheChosenLanguage);
