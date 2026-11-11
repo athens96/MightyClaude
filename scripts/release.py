@@ -582,7 +582,7 @@ def find_run(workflow, commit):
     for event in ("push", "workflow_dispatch"):
         found = json.loads(sh(["gh", "run", "list", "--commit", commit, "--workflow", workflow, "--event", event,
                                "--json", "databaseId,status,conclusion,url,headBranch,createdAt", "--limit", "20"]) or "[]")
-        runs += [r for r in found if event == "push" or r.get("headBranch") == "main"]
+        runs += [r for r in found if (event == "push" or r.get("headBranch") == "main") and r.get("conclusion") != "cancelled"]
     runs.sort(key=lambda r: (r.get("headBranch") == "main", r.get("createdAt", "")), reverse=True)
     return runs[0] if runs else None
 
