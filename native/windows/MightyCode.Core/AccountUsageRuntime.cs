@@ -74,8 +74,13 @@ public static class AccountUsageRuntime
                     ?? throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailAntigravityNotInstalled);
                 return await AntigravityAccountProbe.ReadAsync(command, environment(), cancellation);
             }
+            // pi, opencode and Hermes have no account usage to read: each request's (or Hermes's session's) tokens are in the pane's usage.
             case "pi":
                 throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, Locale.Get("accountUsage.detailPiUnavailable"));
+            case "opencode":
+                throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, Locale.Get("accountUsage.detailOpencodeUnavailable"));
+            case "hermes":
+                throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, Locale.Get("accountUsage.detailHermesUnavailable"));
             default:
                 throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailUnsupportedProvider);
         }

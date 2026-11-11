@@ -1276,6 +1276,14 @@ internal static class Verification
         await Test("cli account commands are the CLIs own", CliAccountVerification.CommandsAreTheCLIsOwn);
         await Test("cli account coordinator reads statuses and calls logout", CliAccountVerification.CoordinatorReadsStatusesAndCallsLogout);
         await Test("cli account smoke shows fixture statuses and confirmation flow works", CliAccountVerification.SmokeShowsFixtureStatusesAndConfirmationFlowWorks);
+        await Test("cli account opencode: auth list names the sign-ins, none is Zen's free models only, OpenCode 1 asks for OpenCode 2", AcpAgentAccountVerification.OpencodeSignInIsWhatAuthListNamesAndOtherwiseZensFreeModelsOnly);
+        await Test("cli account opencode: the coordinator asks auth list from npm's shim, and its version only when the list is not JSON", AcpAgentAccountVerification.TheCoordinatorAsksAuthListAndAsksItsVersionOnlyWhenTheListIsNotJson);
+        await Test("cli account hermes: the provider its ACP server's initialize names, the setup alone signed out, no answer unknown", AcpAgentAccountVerification.HermesSignInIsTheProviderItsAcpServerNames);
+        await Test("cli account hermes: the probe writes initialize once, reads the answer and closes the server's input", AcpAgentAccountVerification.TheProbeWritesInitializeOnceReadsTheAnswerAndClosesItsInput);
+        await Test("cli account hermes: the coordinator finds hermes where its installer puts it and asks its ACP server", AcpAgentAccountVerification.TheCoordinatorFindsHermesWhereItsInstallerPutsItAndAsksItsAcpServer);
+        await Test("cli account section on Windows lists every provider and says what a terminal sign-in asks", AcpAgentAccountVerification.TheWindowsAccountsSectionListsEveryProvider);
+        await Test("cli update opencode upgrades itself, OpenCode 1 is left to the setup screen, Hermes updates with update --yes", AcpAgentAccountVerification.OpencodeUpgradesItselfOpenCode1IsLeftToTheSetupScreenAndHermesUpdatesWithYes);
+        await Test("account usage opencode and Hermes have none, and no CLI is asked", AcpAgentAccountVerification.OpencodeAndHermesHaveNoAccountUsageAndNoCliIsAsked);
         await Test("account usage strings match macOS", StringsVerification.AccountUsageStringsMatchMacOS);
         await Test("notification and usage copy follows saved language", LocalizedStatusVerification.LanguageChangesReachNotificationsAndUsage);
         await Test("account usage secret never reaches a snapshot, a log line or an error", AccountUsageVerification.Secret);

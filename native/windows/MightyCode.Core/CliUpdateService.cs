@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace MightyCode.Core;
 
 /// One recognised installation of a provider CLI.
-/// Method is native, winget, npm, unknown or missing.
+/// Method is native, winget, npm, pi (its own update self), opencode (its own upgrade), hermes (its own update), unknown or missing.
 public sealed record CliUpdateInstallation(
     string Provider,
     string? Version = null,
@@ -84,6 +84,8 @@ public sealed partial class CliUpdateService
         "codex" => "Codex",
         "gemini" => "Antigravity",
         "pi" => "pi",
+        "opencode" => "opencode",
+        "hermes" => "Hermes",
         _ => "Claude",
     };
 
@@ -220,6 +222,23 @@ public sealed partial class CliUpdateService
                 new CliUpdateInvocation(command.Path, ["update", "self"]));
         }
 
+        if (provider == "opencode")
+        {
+            // OpenCode 1 (npm opencode-ai) is replaced from the setup screen: its own upgrade stays on 1 (M/CLIUpdateService.swift).
+            if (!OpencodeAccounts.IsSupported(command.Version))
+                return (installation with { Method = "opencode", Detail = Locale.Get("settings.cliUpdate.detailOpencodeV1") }, null);
+            // OpenCode 2 upgrades itself, finds out how it was installed (npm, its script) and asks nothing.
+            return (installation with { Method = "opencode", CanUpdate = true, Detail = Locale.Get("settings.cliUpdate.detailOpencode") },
+                new CliUpdateInvocation(command.Path, ["upgrade"]));
+        }
+
+        if (provider == "hermes")
+        {
+            // Hermes updates its own checkout and environment; --yes keeps it from waiting on a prompt.
+            return (installation with { Method = "hermes", CanUpdate = true, Detail = Locale.Get("settings.cliUpdate.detailHermes") },
+                new CliUpdateInvocation(command.Path, ["update", "--yes"]));
+        }
+
         if (WingetPackage(resolved) is { } package)
         {
             installation = installation with { Method = "winget" };
@@ -277,6 +296,8 @@ public sealed partial class CliUpdateService
             catch (Exception) { continue; }
             if (run.ExitCode != 0 || run.TimedOut) continue;
             var text = run.Output.Trim();
+            // hermes --version goes on past its first line (its folder, Python, update status): only that line is the version.
+            if (provider == "hermes") text = HermesAccounts.VersionLine(text);
             if (text.Length == 0) continue;
             return new InstalledCommand(path, text.Length > VersionTextCap ? text[..VersionTextCap] : text);
         }
@@ -299,6 +320,8 @@ public sealed partial class CliUpdateService
         // Antigravity's installer folder reaches PATH for new sessions only.
         if (name == "agy" && environment.TryGetValue("LOCALAPPDATA", out var local) && System.IO.Path.IsPathRooted(local) && !local.Contains('\0'))
             yield return System.IO.Path.Combine(ProviderCatalog.AntigravityInstallFolder(environment), "agy.exe");
+        // So do npm's global folder (opencode.cmd) and Hermes's own bin folder.
+        foreach (var copy in CliAccountSupport.InstallerCopies(name, environment)) yield return copy;
     }
 
     // winget installs a package under ...\WinGet\Packages\<PackageIdentifier>_<hash>\

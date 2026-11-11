@@ -426,9 +426,9 @@ internal static class CliUpdateVerification
 
         gates[Wire.Providers[1]].SetResult();
         await Verification.Until(() => coordinator.Results.Count == 2);
-        Check(coordinator.IsUpdating, "two of four results must not end the run");
+        Check(coordinator.IsUpdating, "two of the providers' results must not end the run");
 
-        gates[Wire.Providers[2]].SetResult(); gates[Wire.Providers[3]].SetResult();
+        foreach (var provider in Wire.Providers.Skip(2)) gates[provider].SetResult();
         await Verification.Until(() => !coordinator.IsUpdating);
         Check(coordinator.Results.Count == Wire.Providers.Length, "every provider must leave a result");
         Check(coordinator.ButtonLabel == CliUpdateStrings.UpdateButton, "the finished button must read 업데이트 하기 again");
@@ -448,7 +448,7 @@ internal static class CliUpdateVerification
         await Verification.Until(() => !coordinator.IsUpdating);
 
         Check(coordinator.Results.Select(r => r.Provider).SequenceEqual(Wire.Providers), "a failure must not cut the run short");
-        Check(coordinator.Results.Select(r => r.Status).SequenceEqual(["updated", "failed", "updated", "updated"]), "the failure must be kept next to the successes");
+        Check(coordinator.Results.Select(r => r.Status).SequenceEqual(["updated", "failed", .. Enumerable.Repeat("updated", Wire.Providers.Length - 2)]), "the failure must be kept next to the successes");
         var failed = coordinator.Results.Single(r => r.Status == "failed");
         Check(CliUpdateService.ResultRow(failed) == "Codex · " + CliUpdateStrings.StatusFailed, "the failed row must read 업데이트 실패: " + CliUpdateService.ResultRow(failed));
         Check(CliUpdateService.VersionChange(failed) is null, "a failed provider shows no version line");
