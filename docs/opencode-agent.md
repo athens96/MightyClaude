@@ -34,8 +34,8 @@ OpenCode 1 처리:
 
 ## 설치와 로그인
 
-- 구성 요소 항목 `opencode`: group `agent`, need `optional`, macOS만: probe executable `opencode` (minimumVersion `2.0.0`), install `npmGlobal` `@opencode/cli`, prerequisites `["node"]`(Homebrew → Node.js → opencode), source `https://github.com/anomalyco/opencode`, afterInstall `signIn` provider `opencode`.
-- **이 항목은 공유 계약 `native/contracts/fixtures/setup-catalog.json`이 아니라 Mac 전용 `native/macos/Sources/MightyCore/Resources/Setup/setup-catalog-macos.json`에 있다.** Windows는 계약 파일을 그대로 넣어 쓰고, 모르는 라벨 키·provider가 있으면 디코더가 멈춘다. `SetupCatalogDecoder.decode(_:macOnly:)`가 둘을 합쳐 검사한다(ID, 선행 항목, 순환). Mac 전용 항목은 macOS 항목만 가질 수 있고, 같은 group의 끝(pi 뒤)에 놓인다.
+- 구성 요소 항목 `opencode`: group `agent`, need `optional`, macOS: probe executable `opencode` (minimumVersion `2.0.0`), install `npmGlobal` `@opencode/cli`, prerequisites `["node"]`(Homebrew → Node.js → opencode), source `https://github.com/anomalyco/opencode`, afterInstall `signIn` provider `opencode`.
+- **이 항목은 공유 계약 `native/contracts/fixtures/setup-catalog.json`(Mac 사본과 바이트까지 같다)에 있다**(2026-11-11, 처음에는 Mac 전용 `setup-catalog-macos.json`에 있었고 그 파일과 디코더의 병합은 없앴다). Windows 항목: npmGlobal `@opencode/cli`, prerequisites Windows의 Node.js 항목, minimumVersion `2.0.0`, 설치 단계 `npm uninstall -g 'opencode-ai' *> $null; npm install -g '@opencode/cli'`(1을 먼저 지우고, 설치의 종료 코드가 단계를 정한다), 오래된 opencode는 Windows에서도 설치 항목으로 다시 고를 수 있다. Windows가 찾는 순서(PATH의 폴더마다): `opencode.exe`, npm 패키지 안의 진짜 바이너리 `node_modules\@opencode\cli\bin\opencode.exe`(cmd.exe를 거치지 않는다), `opencode.cmd`(npm으로 깐 OpenCode 1에는 이것만 있어 오래됨으로 보인다).
 - 업데이트 `opencode upgrade`(묻지 않고, 설치 방식을 스스로 찾는다), 버전 `opencode --version` → `opencode v2.2.7`.
 - 로그인 판정(`CLIAccountSupport.opencodeStatus`): `opencode auth list --format json --standalone`. `--standalone`은 2의 백그라운드 서비스를 띄우지 않으려고 붙인다. 출력은 `[{id, name, connections: [{type: "credential", method: "oauth"|"key"|…, status?} | {type: "env", name}]}]`이다.
   - `status.status == "needs_auth"`가 아닌 연결이 하나라도 있는 integration을 로그인으로 보고, 이름만 보인다(자격 증명 값은 이 출력에 없다).
@@ -181,6 +181,7 @@ OpenCode 2.2.7 실물로 확인했고 fixture는 그 녹화다(`opencode-acp-que
 
 - 실행: 같은 argv(`opencode acp`)·JSON-RPC 순서·`OPENCODE_CONFIG_CONTENT` 권한 표(`OpencodeAgent`, `AcpAgents.cs`)로, 같은 클라이언트(`AcpChannel.cs`)가 `opencode-acp-*.jsonl` fixture를 Mac과 같은 기록·사용량·카드로 재생한다(`AcpVerification`). 질문 안내 파일은 복사하지 않고 Mac 번들의 `Resources/Agents/opencode-questions.md`를 앱 옆 `Agents\`에 싣는다. OpenCode 1이면 실행하지 않고 `run.error.opencodeV1`.
 - 데이터 폴더(OpenCode 2.2.7 바이너리 안의 소스로 확인): Windows에도 따로 분기가 없어 `$XDG_DATA_HOME/opencode`, 없으면 `os.homedir()`(`%USERPROFILE%`)의 `.local\share\opencode`이고, DB는 `$OPENCODE_DB`(상대 경로면 데이터 폴더 기준, `:memory:`는 없음) 아니면 `opencode.db`다. 이어가기 목록은 거기서 읽는다(`OpencodeSessions`, `AcpSessions.cs`).
+- 구성 요소 항목은 공유 계약의 Windows 항목이다(위 "설치와 로그인": Node.js 뒤 npm, OpenCode 1 제거, 찾는 순서).
 - `ses_` 세션 id는 `Wire.SessionIdentifier`가 받는다(실행 요청, 저장된 창, resume 이벤트, 파서).
 - 로그인 판정·업데이트·계정 사용량은 [CLI 계정](cli-accounts.md)의 Windows 목록, 모델 목록은 `ProviderCatalog.OpencodeCatalog`.
 - Windows PC에서만 확인할 것: npm 심 `opencode.cmd`(cmd.exe를 거친다)로 실제 실행, 첫 실행의 부팅 시간(45초 안), 실제 `opencode.db` 읽기, 마이티 그래프 블록(흐름 쪽 이식 뒤).
