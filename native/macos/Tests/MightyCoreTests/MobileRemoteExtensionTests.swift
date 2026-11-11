@@ -627,15 +627,16 @@ struct MobileRemoteExtensionTests {
         #expect(MobileMightySupport.digest([run]) != withAgent)
     }
 
-    /// The phone draws no background block in the request that started it: its steps wake no long poll there,
-    /// while the same block in a notice run does, and a new block in the request still counts.
-    @Test func theMightyDigestIgnoresARequestsHiddenBackgroundBlocks() {
+    /// A phone that draws the role view (`roles=1`) draws a request's background blocks as compact rows: their steps wake
+    /// the long poll there too, as the same block's do in a notice run, and a new block in the request still counts. (An
+    /// older phone, which leaves them to the strip, only wakes once more.)
+    @Test func theMightyDigestMovesWithARequestsBackgroundBlocks() {
         var background = agent("bg", kind: "task", status: "running")
         background.background = true
         var request = MightyGraphRun(id: "r", status: "completed", agents: [agent("fg", kind: nil, status: "completed"), background])
         let first = MobileMightySupport.digest([request])
         request.agents[1].entries.append(LogEntry(id: "b1", kind: "assistant", text: "compiling"))
-        #expect(MobileMightySupport.digest([request]) == first)
+        #expect(MobileMightySupport.digest([request]) != first)
         // Its end moves the request's waiting count (현재까지의 결과 → 최종 결과), which the phone draws.
         request.agents[1].status = "completed"
         let ended = MobileMightySupport.digest([request])

@@ -161,6 +161,9 @@ final class AppStore: ObservableObject, DelegationHost {
     /// Each pane's phone `resultFiles` as last looked through (`MobileResultFilesMemo`): a
     /// result is looked through once, not on every long poll. Dropped with the pane.
     var mobileResultFiles: [String: MobileResultFilesMemo] = [:]
+    /// Each pane's custom agents for the phone's role view (`mobileFlowDefinitions`): the key they were read for (the
+    /// folder and the types the blocks name) and what was read, read off the main actor when the key changes.
+    var mobileFlowDefinitions: [String: (key: String, definitions: [String: AgentDefinition])] = [:]
     @Published var appUpdate = AppUpdateState() { didSet { appUpdateChangedForPhone() } }
     /// The phone asked to install the update: it goes on through download and install by itself.
     var phoneRequestedAppUpdate = false
@@ -855,7 +858,7 @@ final class AppStore: ObservableObject, DelegationHost {
             Task.detached(priority: .utility) { originals.forget(sessionId: id) }
             if let closing, FilePaneKind.isFilePane(closing.kind) { filePaneModels[closing.workspaceId]?.releasePreview() }
             drafts.removeValue(forKey: id)
-            statusLines.removeValue(forKey: id); mobileResultFiles.removeValue(forKey: id)
+            statusLines.removeValue(forKey: id); mobileResultFiles.removeValue(forKey: id); mobileFlowDefinitions.removeValue(forKey: id)
             pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); forgetLoginRecovery(id); guidedProgress.removeValue(forKey: id)
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id)
@@ -916,7 +919,7 @@ final class AppStore: ObservableObject, DelegationHost {
             for session in snapshot.sessions where session.workspaceId == workspace.id {
                 await runner.revokePaneMCPBinding(agentPaneId: session.id)
                 drafts.removeValue(forKey: session.id)
-                statusLines.removeValue(forKey: session.id); mobileResultFiles.removeValue(forKey: session.id)
+                statusLines.removeValue(forKey: session.id); mobileResultFiles.removeValue(forKey: session.id); mobileFlowDefinitions.removeValue(forKey: session.id)
                 pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id); forgetLoginRecovery(session.id); guidedProgress.removeValue(forKey: session.id)
                 discardAttachments(session.id)
                 queuedInputs.removeValue(forKey: session.id)

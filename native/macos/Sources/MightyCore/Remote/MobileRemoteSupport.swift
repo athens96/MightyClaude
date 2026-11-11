@@ -283,13 +283,24 @@ public enum MobileMightySupport {
     /// run (`BackgroundNoticeRuns.shownAgents`), whose main block takes the run's heading (`BackgroundNoticeRuns.heading`).
     /// `outputTails`: a background run's last output lines by block id (`AppStore.backgroundOutput`),
     /// held in host memory only; the output file's path never reaches the wire.
-    public static func blocks(_ run: MightyGraphRun, ordinal: Int, outputTails: [String: [String]] = [:]) -> [MobileBlock] {
+    /// `roles`: a phone that asked for the role view (`MobileFlow`): every block says who it is, and with `fanOut` (a
+    /// Claude pane) a request carries its background blocks too, in the order they were launched, as the flow draws
+    /// them, with their compact rows and the delegate lines. `request` is the request a notice run answers for, `window`
+    /// the runs the payload carries (where a finished background row's copy is looked for).
+    public static func blocks(_ run: MightyGraphRun, ordinal: Int, outputTails: [String: [String]] = [:], roles: MobileFlow.Roles? = nil,
+                              request: MightyGraphRun? = nil, window: [MightyGraphRun] = []) -> [MobileBlock] {
         let mainStatus = status(run.status)
         let title = run.noticeRun == true ? BackgroundNoticeRuns.heading(run) : L("remote.block.request", ["ordinal": String(ordinal)])
-        var result = [MobileBlock(id: run.id + ":main", kind: "main", title: title, status: mainStatus,
-                                  summary: summary(run.input), output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus),
-                                  nodeModelLabel: run.nodeModelLabel, activity: activity(run.rootEntries, status: mainStatus))]
-        for agent in BackgroundNoticeRuns.shownAgents(run) {
+        var main = MobileBlock(id: run.id + ":main", kind: "main", title: title, status: mainStatus,
+                               summary: summary(run.input), output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus),
+                               nodeModelLabel: run.nodeModelLabel, activity: activity(run.rootEntries, status: mainStatus))
+        if let roles {
+            main.role = MobileFlow.lead(run, request: request)
+            main.delegate = MobileFlow.delegate(FlowDelegation.mainKey, in: run, roles: roles)
+        }
+        var result = [main]
+        // The fan-out: a raw run's blocks as they were recorded, background ones in their place.
+        for agent in roles?.fanOut == true ? run.agents : BackgroundNoticeRuns.shownAgents(run) {
             let state = status(agent.status)
             var block = MobileBlock(id: agent.id, kind: MightyGraphSupport.blockKind(agent), title: MightyGraphSupport.blockTitle(agent),
                                     status: state, summary: summary(agent.input), output: output(answer(agent.entries)),
@@ -297,6 +308,12 @@ public enum MobileMightySupport {
             block.background = agent.background == true ? true : nil
             block.outputTail = agent.isTask ? outputTail(outputTails[agent.id]) : nil
             block.noticeReply = output(agent.noticeReply)
+            if let roles {
+                let lines = outputTails[agent.id] ?? []
+                block.role = MobileFlow.role(agent, in: run, roles: roles, output: lines)
+                block.card = MobileFlow.card(agent, in: run, window: window, roles: roles, output: lines)
+                if agent.isSubagent { block.delegate = MobileFlow.delegate(agent.id, in: run, roles: roles) }
+            }
             result.append(block)
         }
         return result
@@ -319,24 +336,38 @@ public enum MobileMightySupport {
     /// With the pane's `resultFiles` memo a result is looked through once, and
     /// the memo drops the runs this call no longer looks up.
     public static func runs(_ source: [MightyGraphRun], outputTails: [String: [String]] = [:], workspaceRoot: URL? = nil, resultFiles memo: MobileResultFilesMemo? = nil,
-                            title: (String) -> String? = { _ in nil }) -> [MobileMightyRun] {
+                            roles: MobileFlow.Roles? = nil, title: (String) -> String? = { _ in nil }) -> [MobileMightyRun] {
         let values = MightyGraphSupport.withBackgroundWaiting(source)
         let window = values.suffix(MobileWire.mightyRuns)
         let offset = values.count - window.count
         let ordinals = MightyGraphSupport.requestOrdinals(values)
         let carried = carriesResult(Array(window))
+        // The request each run belongs to (a notice run answers for the request before it), for the lead's name.
+        var requests: [Int?] = []
+        var latest: Int?
+        for (index, run) in values.enumerated() {
+            if run.noticeRun != true { latest = index }
+            requests.append(latest)
+        }
+        let carriedRuns = Array(window)
         let projected: [MobileMightyRun] = window.enumerated().map { index, run in
             let state = status(run.status)
             let notice = run.noticeRun == true
             let result: String? = carried(index) && settled(state) ? output(run.finalOutput, maximum: MobileWire.maximumRunResult) : nil
+            let request = requests[offset + index].map { values[$0] }
             var mobile = MobileMightyRun(id: run.id, input: ActivitySupport.clean(run.input, maximumBytes: MobileWire.maximumText),
                                          title: notice ? BackgroundNoticeRuns.heading(run) : title(run.input),
-                                         status: state, blocks: blocks(run, ordinal: ordinals[offset + index], outputTails: outputTails),
+                                         status: state, blocks: blocks(run, ordinal: ordinals[offset + index], outputTails: outputTails, roles: roles,
+                                                                       request: request, window: carriedRuns),
                                          result: result)
             mobile.noticeRun = notice ? true : nil
             mobile.backgroundWaiting = run.backgroundWaiting > 0 ? run.backgroundWaiting : nil
             mobile.resultFiles = result == nil ? nil : runResultFiles(run, workspaceRoot: workspaceRoot, memo: memo)
             mobile.awaitingNotice = MobileAwaitingNotice(BackgroundNoticeRuns.awaitingNotice(run, in: values))
+            if let roles {
+                mobile.returning = MobileFlow.returning(run, roles: roles)
+                mobile.advisor = MobileFlow.advisor(run, roles: roles)
+            }
             return mobile
         }
         memo?.prune()
@@ -386,8 +417,8 @@ public enum MobileMightySupport {
     /// final answer length: that run carries `result`, and an answer landing
     /// after its status has already moved must still wake the phone.
     /// Hashed rather than joined: this runs on every snapshot publish, which
-    /// during a stream is every token, so it allocates nothing but the shown
-    /// blocks of a run that holds background work.
+    /// during a stream is every token, so it allocates nothing: every block of
+    /// a run is read in place, background ones included (the role view draws them).
     public static func digest(_ source: [MightyGraphRun]) -> Int {
         var hasher = Hasher()
         let values = MightyGraphSupport.withBackgroundWaiting(source)
@@ -400,13 +431,20 @@ public enum MobileMightySupport {
             hasher.combine(run.rootEntries.count); hasher.combine(run.rootEntries.last?.id)
             // The result card's 현재까지의 결과 count and a notice run's title move without a new record.
             hasher.combine(run.backgroundWaiting); hasher.combine(run.noticeTitle)
-            // The blocks the phone draws: a request's background blocks wait for their notice run (the strip shows them meanwhile).
-            for agent in BackgroundNoticeRuns.shownAgents(run) {
+            // Every block, a request's background blocks included: the role view draws them (`roles=1`, `MobileFlow`), and
+            // an older phone that leaves them out only wakes once more.
+            for agent in run.agents {
                 hasher.combine(agent.id); hasher.combine(agent.status); hasher.combine(agent.kind)
                 hasher.combine(agent.entries.count); hasher.combine(agent.entries.last?.id)
                 // Claude's reply to a task's notice can land with no new record on the block.
                 hasher.combine(agent.noticeReply?.utf8.count)
+                // A compact row's figures and model move with the CLI's reports, not always with a record.
+                hasher.combine(agent.figures?.toolCalls); hasher.combine(agent.figures?.endedAt); hasher.combine(agent.usage?.total)
+                hasher.combine(agent.identity?.resolvedModel)
             }
+            // The advisor's band and the status line move with each consultation.
+            hasher.combine(run.advisor?.count); hasher.combine(run.advisor?.usage?.total)
+            for call in run.advisor?.calls ?? [] { hasher.combine(call.id); hasher.combine(call.state) }
         }
         return hasher.finalize()
     }
@@ -436,6 +474,8 @@ public enum MobileMightySupport {
             hasher.combine(run.entries); hasher.combine(run.lastEntry)
             // `digest(_:)`'s waiting count and notice title, which a legacy run never has.
             hasher.combine(0); hasher.combine(String?.none)
+            // Its advisor's count and tokens, which a legacy run never has either.
+            hasher.combine(Int?.none); hasher.combine(Int?.none)
         }
         return hasher.finalize()
     }

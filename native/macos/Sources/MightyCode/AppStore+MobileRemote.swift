@@ -97,6 +97,9 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
     func mobileSession(id: String, structure: Bool) async -> MobileSessionDetail? {
         await MainActor.run { store?.mobileSessionDetail(id, structure: structure) }
     }
+    func mobileSession(id: String, structure: Bool, roles: Bool) async -> MobileSessionDetail? {
+        await MainActor.run { store?.mobileSessionDetail(id, structure: structure, roles: roles) }
+    }
     func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String {
         try await mobileSubmitReceipt(sessionId: sessionId, text: text, mode: mode, attachments: attachments).outcome
     }
@@ -496,8 +499,9 @@ extension AppStore {
         snapshot.sessions.first { $0.id == id && !FilePaneKind.isReadOnlyPane($0.kind) && !isRemoteWorkspace($0.workspaceId) }
     }
 
-    /// `structure`: the phone asked for the structure view (`?structure=`); only then is it built.
-    func mobileSessionDetail(_ id: String, structure: Bool = false) -> MobileSessionDetail? {
+    /// `structure`: the phone asked for the structure view (`?structure=`); only then is it built. `roles`: the phone
+    /// draws the role view (`?roles=1`, `MobileFlow`).
+    func mobileSessionDetail(_ id: String, structure: Bool = false, roles: Bool = false) -> MobileSessionDetail? {
         guard let session = mobilePane(id) else { return nil }
         let revision = mobileTracking.sessionRevisions[id, default: 1]
         let summary = mobileTracking.summaries[id] ?? mobileSummary(session, revision: revision)
@@ -519,7 +523,7 @@ extension AppStore {
                                    permissions: permissions, queued: DelegationQueueRows.mobileItems(held: delegationHeld[id] ?? [], queued: queuedInputs[id] ?? []) { runNow[$0] ?? .hidden },
                                    usage: mobileUsage(session), elapsedSeconds: session.runTiming?.elapsed(),
                                    hasOlder: MobileRemoteSupport.hasOlder(entryCount: session.logs.count), settings: mobileSettings(session),
-                                   mighty: mobileMighty(session, structure: structure),
+                                   mighty: mobileMighty(session, structure: structure, roles: roles),
                                    statusLine: mobileStatusLine(id), rateLimits: MobileRemoteSupport.rateLimits(session.sessionUsage?.rateLimits ?? []),
                                    askTargets: targets.map { MobileAskTarget(id: $0.id, label: $0.label) },
                                    askTarget: AskTargets.effective(saved: session.askTarget, available: targets)?.id,
@@ -563,7 +567,7 @@ extension AppStore {
     /// The Mighty view of a pane: its style, its newest runs as blocks, and the
     /// guided panel the Mac would draw beside the composer. Absent for panes
     /// the Mac is not showing in Mighty view — the phone shows the transcript.
-    func mobileMighty(_ session: RunSession, structure: Bool = false) -> MobileMighty? {
+    func mobileMighty(_ session: RunSession, structure: Bool = false, roles: Bool = false) -> MobileMighty? {
         guard MobileRemoteSupport.sendsMighty(kind: session.kind, agentViewMode: session.agentViewMode) else { return nil }
         let style = mobileStyle(session)
         // The saved graph as it stands, not `mightyGraphRuns`: that property
@@ -575,17 +579,24 @@ extension AppStore {
         let root = snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) }
         // Each result is looked through once (`mobileResultFiles`), not on every long poll.
         let memo = mobileResultFilesMemo(session.id)
+        // The role view for a phone that draws it: every pane's blocks say who they are, a Claude pane's flow also fans
+        // its background work out under the request (`MightyGraphView`'s `fanOut`), with its log.
+        let flow: MobileFlow.Roles? = roles
+            ? MobileFlow.Roles(fanOut: session.provider == "claude", definitions: mobileFlowDefinitions(session, runs: saved, root: root)) : nil
+        let log = flow?.fanOut == true ? MobileFlow.log(saved, definitions: flow?.definitions ?? [:]) : nil
         // Only a pane that really runs an approved style carries a panel (§7.3)
         // — and only such a pane gets style prefixes on its request blocks, so
         // the registry sweep is behind the same gate (§1.10).
         guard let registered = guidedStyle(session) else {
             let built = structure ? mobileStructure(session, runs: saved, style: nil) : nil
-            return MobileMighty(style: style, runs: MobileMightySupport.runs(saved, outputTails: backgroundOutput.lines(forPane: session.id), workspaceRoot: root, resultFiles: memo) { _ in nil },
-                                structure: built?.value, structureTag: built?.tag)
+            return MobileMighty(style: style, runs: MobileMightySupport.runs(saved, outputTails: backgroundOutput.lines(forPane: session.id), workspaceRoot: root, resultFiles: memo,
+                                                                              roles: flow) { _ in nil },
+                                structure: built?.value, structureTag: built?.tag, fanOut: flow?.fanOut, log: log)
         }
         let runnable = styleRegistry.runnableInPrecedence(workspace: styleWorkspaceRef(session))
         let titles = StyleRequestTitles(styles: runnable)
-        let runs = MobileMightySupport.runs(saved, outputTails: backgroundOutput.lines(forPane: session.id), workspaceRoot: root, resultFiles: memo) { titles.prefix($0) }
+        let runs = MobileMightySupport.runs(saved, outputTails: backgroundOutput.lines(forPane: session.id), workspaceRoot: root, resultFiles: memo,
+                                            roles: flow) { titles.prefix($0) }
         // The Mac reads these when the style is chosen; a pane only ever
         // watched from a phone has never triggered that read.
         if stylePrerequisite(registered, for: session) == nil { refreshStylePrerequisites(registered, for: session) }
@@ -594,7 +605,34 @@ extension AppStore {
         let built = structure ? mobileStructure(session, runs: saved, style: registered, titles: titles, runnable: runnable) : nil
         return MobileMighty(style: style, styleId: registered.id, runs: runs, panel: panel,
                             ouroboros: MobileLegacyStyleAdapter.payload(style: registered, panel: panel),
-                            structure: built?.value, structureTag: built?.tag)
+                            structure: built?.value, structureTag: built?.tag, fanOut: flow?.fanOut, log: log)
+    }
+
+    /// The custom agents a pane's blocks name, for the phone's role view (`AgentDefinitions`: their colour takes the
+    /// sub-agent ink's place, their model stands in for a call that asked for none). Read off the main actor when the
+    /// folder or the types change, the last ones read meanwhile; once read, the pane's revision moves so the phone
+    /// reads them (`mobileMightyDigest`). A remote workspace's agents are on its own host: none.
+    func mobileFlowDefinitions(_ session: RunSession, runs: [MightyGraphRun], root: URL?) -> [String: AgentDefinition] {
+        let types = FlowRoles.types(runs)
+        let key = (root?.path ?? "") + "\n" + types.sorted().joined(separator: "\n")
+        let kept = mobileFlowDefinitions[session.id]
+        if let kept, kept.key == key { return kept.definitions }
+        let last = kept?.definitions ?? [:]
+        guard let root, !types.isEmpty else {
+            mobileFlowDefinitions[session.id] = (key, [:])
+            return [:]
+        }
+        mobileFlowDefinitions[session.id] = (key, last)
+        let id = session.id
+        Task { [weak self] in
+            let found = await Task.detached(priority: .utility) {
+                AgentDefinitions.load(types: types, workspace: root, configDirectory: AgentDefinitions.configDirectory())
+            }.value
+            guard let self, self.mobileFlowDefinitions[id]?.key == key, found != last else { return }
+            self.mobileFlowDefinitions[id] = (key, found)
+            self.mobileObserve()
+        }
+        return last
     }
 
     /// The pane's `resultFiles` memo, made on first use. A pane closed some way
@@ -669,6 +707,10 @@ extension AppStore {
         // by identity alone rather than rebuilding them: this runs on every
         // snapshot publish — during a stream, every token.
         hasher.combine(MobileMightySupport.digest(session: session))
+        // The custom agents read for the phone's role view (`mobileFlowDefinitions`): their colours and models.
+        if let definitions = mobileFlowDefinitions[session.id]?.definitions {
+            for (type, definition) in definitions.sorted(by: { $0.key < $1.key }) { hasher.combine(type); hasher.combine(definition.color); hasher.combine(definition.model) }
+        }
         // A background run's last output lines live on this Mac alone, beside the graph:
         // their revision, not the lines, which moves at most once per 3 s a pane.
         hasher.combine(backgroundOutput.phoneRevision(forPane: session.id))

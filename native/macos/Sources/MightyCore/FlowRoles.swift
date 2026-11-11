@@ -35,6 +35,22 @@ public enum FlowInk: String, Sendable, CaseIterable {
         case .question: \.questionText
         }
     }
+
+    /// The design token's name (`native/contracts/fixtures/design-tokens.json`), as a client that keeps its own palette
+    /// reads the ink: the phone's role view, Windows' page (`FlowRoles.Token`).
+    public var tokenName: String {
+        switch self {
+        case .neutral: "ink2"
+        case .task: "taskText"
+        case .agent: "agentText"
+        case .steer: "steerText"
+        case .accent: "accent"
+        case .done: "doneText"
+        case .err: "errText"
+        case .wait: "waitText"
+        case .question: "questionText"
+        }
+    }
 }
 
 /// A small mark on a sub-agent's header: how it runs, beside what it is.

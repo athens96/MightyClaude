@@ -63,7 +63,7 @@ public struct MobileInfo: Codable, Sendable, Equatable {
 /// its name is listed, so a name appears here once the route behind it works.
 public enum MobileCapability {
     public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files",
-                             "structure", "direct", "push", "fileChanges", "workMap", "appUpdate", "pi", "opencode", "hermes"]
+                             "structure", "direct", "push", "fileChanges", "workMap", "appUpdate", "pi", "opencode", "hermes", "roles"]
     /// Listed on top of `all` only by a host whose screen-share engine is
     /// running (`MobileRemoteService.capabilities`).
     public static let screenShare = "screenShare"
@@ -469,6 +469,11 @@ public struct MobileBlock: Codable, Sendable, Equatable, Identifiable {
     public var outputTail: [String]?
     /// Claude's reply to the task's notice, bounded like `output`.
     public var noticeReply: String?
+    /// The role view (`MobileFlow`), only for a phone that asked with `roles=1`: who the block is; its compact row (a
+    /// request's background sub-agent or command, a running sub-agent); the line over the rows it delegated to.
+    public var role: MobileBlockRole?
+    public var card: MobileBlockCard?
+    public var delegate: MobileDelegateLine?
     public init(id: String, kind: String, title: String, status: String, summary: String? = nil, output: String? = nil, durationMs: Double? = nil, nodeModelLabel: String? = nil, activity: [String]? = nil,
                 background: Bool? = nil, outputTail: [String]? = nil, noticeReply: String? = nil) {
         self.id = id; self.kind = kind; self.title = title; self.status = status
@@ -505,6 +510,10 @@ public struct MobileMightyRun: Codable, Sendable, Equatable, Identifiable {
     /// The request awaits the notices of its background work (`BackgroundNoticeRuns.awaitingNotice`): its result card is
     /// the 알림 대기 block. Absent otherwise (and from older hosts).
     public var awaitingNotice: MobileAwaitingNotice?
+    /// The role view (`MobileFlow`, `roles=1` on a Claude pane): the way back where the result will come, while it is not
+    /// there; the run's advisor.
+    public var returning: MobileReturn?
+    public var advisor: MobileAdvisor?
     public init(id: String, input: String, title: String? = nil, status: String, blocks: [MobileBlock], result: String? = nil, noticeRun: Bool? = nil) {
         self.id = id; self.input = input; self.title = title; self.status = status; self.blocks = blocks; self.result = result
         self.noticeRun = noticeRun == true ? true : nil
@@ -669,11 +678,18 @@ public struct MobileMighty: Codable, Sendable, Equatable {
     /// The tag of the pane's structure as it stands (0: nothing to draw); present exactly
     /// when the phone asked for the structure.
     public var structureTag: Int?
+    /// `true` when the runs carry the role view's fan-out (`roles=1` on a Claude pane): a request's background blocks
+    /// travel in it, as the desktops' flow draws them (`BackgroundNoticeRuns.fanOut`). Absent otherwise: then a request
+    /// carries none (`shownAgents`), as an older phone expects.
+    public var fanOut: Bool?
+    /// The session log strip's status line and last rows (`MobileFlow.log`), with `fanOut`.
+    public var log: MobileFlowLog?
     public init(style: String, styleId: String = MobileWire.cliStyle, runs: [MobileMightyRun], panel: StylePanel? = nil,
                 ouroboros: MobileOuroboros? = nil, structure: MobileStructure? = nil,
-                structureTag: Int? = nil) {
+                structureTag: Int? = nil, fanOut: Bool? = nil, log: MobileFlowLog? = nil) {
         self.style = style; self.styleId = styleId; self.runs = runs; self.panel = panel
         self.ouroboros = ouroboros; self.structure = structure; self.structureTag = structureTag
+        self.fanOut = fanOut == true ? true : nil; self.log = log
     }
 }
 

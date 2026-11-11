@@ -1,0 +1,620 @@
+{
+  "about": "The role view a host sends a phone that asked for it (GET /m1/sessions/{id}?roles=1, capability \"roles\"; docs/mobile-remote.md \"역할 보기\"): for the saved runs of a case, in Korean, what the Mighty payload carries. Both hosts produce it from the runs (the Mac MobileFlowTests, Windows Core MobileFlowVerification) and the phone renders it (mobile/src/__tests__/flow-roles.test.ts). `expect` lists of each run its id and status, and of each block id, kind, title, status, background and the role view's role, card and delegate; of each run its returning and advisor; and the payload's fanOut and log. A key that is absent here is absent on the wire. `outputTails` are a background command's last output lines by block id, which a host holds in memory. Times on the wire are milliseconds since 1970.",
+  "cases": [
+    {
+      "name": "a Claude request fans its background work out under the request, with the delegate lines, the way back, the advisor and the log",
+      "provider": "claude",
+      "outputTails": {
+        "ci": [
+          "build 1/3",
+          "build 2/3 ok"
+        ]
+      },
+      "runs": [
+        {
+          "id": "r1",
+          "input": "로그인 버그 찾아 줘",
+          "status": "completed",
+          "finalOutput": "세 곳에서 찾았습니다.",
+          "provider": "claude",
+          "configuredEffort": "high",
+          "rootEntries": [],
+          "resultEntries": [],
+          "responseRecords": [
+            {
+              "responseId": "m1",
+              "model": "claude-sonnet-5-5",
+              "usage": {
+                "inputTokens": 1000,
+                "outputTokens": 200,
+                "cacheReadTokens": 0,
+                "cacheCreationTokens": 0
+              },
+              "activityIds": [],
+              "markedAsConfigured": false
+            }
+          ],
+          "agents": [
+            {
+              "id": "bg",
+              "title": "로그인 코드 찾기",
+              "input": "로그인 처리 코드를 찾아라",
+              "status": "completed",
+              "background": true,
+              "identity": {
+                "type": "Explore",
+                "resolvedModel": "claude-haiku-5-5"
+              },
+              "figures": {
+                "startedAt": "2026-11-10T10:00:00Z",
+                "endedAt": "2026-11-10T10:01:30Z",
+                "toolCalls": 4
+              },
+              "usage": {
+                "inputTokens": 12000,
+                "outputTokens": 345,
+                "cacheReadTokens": 0,
+                "cacheCreationTokens": 0
+              },
+              "entries": [
+                {
+                  "id": "bg-answer",
+                  "kind": "assistant",
+                  "text": "세 곳을 찾았습니다.\n자세한 내용은 아래.",
+                  "timestamp": "2026-11-10T10:01:29Z"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "r1:notice:1",
+          "input": "로그인 코드 찾기 · 완료",
+          "status": "completed",
+          "finalOutput": "확인했습니다.",
+          "provider": "claude",
+          "configuredEffort": "high",
+          "noticeRun": true,
+          "noticeTitle": "백그라운드 작업 완료 · 로그인 코드 찾기",
+          "rootEntries": [
+            {
+              "id": "notice-answer",
+              "kind": "assistant",
+              "text": "확인했습니다.",
+              "timestamp": "2026-11-10T10:01:40Z"
+            }
+          ],
+          "resultEntries": [],
+          "agents": [
+            {
+              "id": "r1:notice:1:bg",
+              "title": "로그인 코드 찾기",
+              "input": "로그인 처리 코드를 찾아라",
+              "status": "completed",
+              "background": true,
+              "sourceBlockId": "bg",
+              "identity": {
+                "type": "Explore",
+                "resolvedModel": "claude-haiku-5-5"
+              },
+              "entries": []
+            }
+          ]
+        },
+        {
+          "id": "r2",
+          "input": "고치고 릴리스 준비해 줘",
+          "status": "running",
+          "provider": "claude",
+          "configuredEffort": "high",
+          "configuredAdvisor": "opus",
+          "responseRecords": [
+            {
+              "responseId": "m2",
+              "model": "claude-sonnet-5-5",
+              "usage": {
+                "inputTokens": 2000,
+                "outputTokens": 100,
+                "cacheReadTokens": 0,
+                "cacheCreationTokens": 0
+              },
+              "activityIds": [
+                "t-read"
+              ],
+              "markedAsConfigured": false
+            }
+          ],
+          "rootEntries": [
+            {
+              "id": "r2-read",
+              "kind": "output",
+              "text": "",
+              "timestamp": "2026-11-10T10:03:00Z",
+              "activity": {
+                "id": "t-read",
+                "provider": "claude",
+                "kind": "read",
+                "state": "completed",
+                "toolName": "Read",
+                "summary": "src/login.ts"
+              }
+            }
+          ],
+          "resultEntries": [],
+          "advisor": {
+            "model": "claude-opus-5-5",
+            "usage": {
+              "inputTokens": 34000,
+              "outputTokens": 570,
+              "cacheReadTokens": 0,
+              "cacheCreationTokens": 0
+            },
+            "calls": [
+              {
+                "id": "srvtoolu_1",
+                "state": "done",
+                "startedAt": "2026-11-10T10:03:10Z",
+                "endedAt": "2026-11-10T10:03:17Z",
+                "redacted": true,
+                "beforeChange": true
+              }
+            ]
+          },
+          "agents": [
+            {
+              "id": "scout",
+              "title": "테스트 살피기",
+              "input": "실패하는 테스트를 찾아라",
+              "status": "running",
+              "identity": {
+                "type": "Explore",
+                "requestedModel": "haiku"
+              },
+              "figures": {
+                "startedAt": "2026-11-10T10:04:00Z",
+                "toolCalls": 3
+              },
+              "usage": {
+                "inputTokens": 12000,
+                "outputTokens": 345,
+                "cacheReadTokens": 0,
+                "cacheCreationTokens": 0
+              },
+              "responseRecords": [
+                {
+                  "responseId": "s1",
+                  "model": "claude-haiku-5-5",
+                  "usage": {
+                    "inputTokens": 12000,
+                    "outputTokens": 345,
+                    "cacheReadTokens": 0,
+                    "cacheCreationTokens": 0
+                  },
+                  "activityIds": [
+                    "t-grep"
+                  ],
+                  "markedAsConfigured": false
+                }
+              ],
+              "entries": [
+                {
+                  "id": "scout-grep",
+                  "kind": "output",
+                  "text": "",
+                  "timestamp": "2026-11-10T10:04:20Z",
+                  "activity": {
+                    "id": "t-grep",
+                    "provider": "claude",
+                    "kind": "search",
+                    "state": "completed",
+                    "toolName": "Grep",
+                    "summary": "login.test"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "ci",
+              "title": "CI 대기",
+              "input": "python3 scripts/release.py ci",
+              "status": "running",
+              "kind": "task",
+              "background": true,
+              "figures": {
+                "startedAt": "2026-11-10T10:04:30Z"
+              },
+              "entries": []
+            },
+            {
+              "id": "wt",
+              "title": "릴리스 노트 쓰기",
+              "input": "릴리스 노트를 써라\n자세히",
+              "status": "running",
+              "background": true,
+              "identity": {
+                "type": "general-purpose",
+                "resolvedModel": "claude-sonnet-5-5",
+                "isolation": "worktree"
+              },
+              "figures": {
+                "startedAt": "2026-11-10T10:05:00Z"
+              },
+              "entries": []
+            },
+            {
+              "id": "deep",
+              "parentID": "scout",
+              "title": "로그 읽기",
+              "input": "로그를 읽어라",
+              "status": "running",
+              "figures": {
+                "startedAt": "2026-11-10T10:05:10Z"
+              },
+              "entries": []
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "fanOut": true,
+        "log": {
+          "rows": [
+            {
+              "at": 1794304997000,
+              "id": "2:r2:advisor:srvtoolu_1:end",
+              "ink": "steerText",
+              "what": "조언 전달 · 내용 비표시",
+              "who": "조언자 · Opus 5.5"
+            },
+            {
+              "at": 1794305040000,
+              "id": "2:r2:agent:scout:start",
+              "ink": "agentText",
+              "what": "시작 · Explore · Haiku 5.5",
+              "who": "테스트 살피기"
+            },
+            {
+              "at": 1794305060000,
+              "id": "2:r2:agent:scout:scout-grep",
+              "ink": "agentText",
+              "what": "login.test",
+              "who": "테스트 살피기"
+            },
+            {
+              "at": 1794305100000,
+              "id": "2:r2:agent:wt:start",
+              "ink": "agentText",
+              "what": "시작 · general-purpose · Sonnet 5.5",
+              "who": "릴리스 노트 쓰기"
+            },
+            {
+              "at": 1794305110000,
+              "id": "2:r2:agent:deep:start",
+              "ink": "agentText",
+              "what": "시작",
+              "who": "로그 읽기"
+            }
+          ],
+          "status": [
+            {
+              "ink": "taskText",
+              "text": "Sonnet 5.5 실행 중"
+            },
+            {
+              "ink": "agentText",
+              "text": "하위 에이전트 3/3 실행 중"
+            },
+            {
+              "ink": "ink2",
+              "text": "작업 1개 실행 중"
+            },
+            {
+              "ink": "steerText",
+              "text": "조언자 대기"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "blocks": [
+              {
+                "delegate": {
+                  "head": "하위 에이전트 1개에 위임",
+                  "model": "Haiku 5.5",
+                  "text": "하위 에이전트 1개에 위임 · Haiku 5.5"
+                },
+                "id": "r1:main",
+                "kind": "main",
+                "role": {
+                  "identity": "Sonnet 5.5 · 사고 강도 · High",
+                  "ink": "taskText",
+                  "name": "lead",
+                  "summary": "메인 · 사고 강도 · High"
+                },
+                "status": "completed",
+                "title": "요청 1"
+              },
+              {
+                "background": true,
+                "card": {
+                  "activity": "세 곳을 찾았습니다.",
+                  "after": [
+                    "도구 4",
+                    "토큰 12K"
+                  ],
+                  "before": [
+                    "완료"
+                  ],
+                  "copy": {
+                    "blockId": "r1:notice:1:bg",
+                    "runId": "r1:notice:1"
+                  },
+                  "endedAt": 1794304890000,
+                  "startedAt": 1794304800000
+                },
+                "id": "bg",
+                "kind": "agent",
+                "role": {
+                  "identity": "Explore · Haiku 5.5",
+                  "ink": "agentText",
+                  "marks": [
+                    "background"
+                  ],
+                  "name": "subagent",
+                  "summary": "하위 에이전트 · Explore · Haiku 5.5 · 백그라운드"
+                },
+                "status": "completed",
+                "title": "로그인 코드 찾기"
+              }
+            ],
+            "id": "r1",
+            "status": "completed"
+          },
+          {
+            "blocks": [
+              {
+                "id": "r1:notice:1:main",
+                "kind": "main",
+                "role": {
+                  "identity": "Sonnet 5.5 · 사고 강도 · High",
+                  "ink": "taskText",
+                  "name": "lead",
+                  "summary": "메인 · 사고 강도 · High"
+                },
+                "status": "completed",
+                "title": "백그라운드 작업 완료 · 로그인 코드 찾기"
+              },
+              {
+                "background": true,
+                "id": "r1:notice:1:bg",
+                "kind": "agent",
+                "role": {
+                  "identity": "Explore · Haiku 5.5",
+                  "ink": "agentText",
+                  "marks": [
+                    "background"
+                  ],
+                  "name": "subagent",
+                  "summary": "하위 에이전트 · Explore · Haiku 5.5 · 백그라운드"
+                },
+                "status": "completed",
+                "title": "로그인 코드 찾기"
+              }
+            ],
+            "id": "r1:notice:1",
+            "status": "completed"
+          },
+          {
+            "advisor": {
+              "calls": 1,
+              "header": "조언자 · Opus 5.5 · 대기 중",
+              "note": "조언은 암호화되어 Claude에게만 전달됩니다. 내용은 표시되지 않습니다.",
+              "rows": [
+                {
+                  "at": 1794304990000,
+                  "caller": "메인",
+                  "id": "srvtoolu_1",
+                  "ink": "taskText",
+                  "line": "파일 변경 전 · 조언 전달 · 내용 비표시",
+                  "seconds": 7,
+                  "state": "done"
+                }
+              ],
+              "state": "onCall",
+              "totals": "호출 1 · 읽은 토큰 34K"
+            },
+            "blocks": [
+              {
+                "delegate": {
+                  "head": "3개 병렬",
+                  "parts": [
+                    {
+                      "ink": "agentText",
+                      "text": "하위 에이전트 2"
+                    },
+                    {
+                      "ink": "ink2",
+                      "text": "작업 1"
+                    }
+                  ],
+                  "progress": "3/3 실행 중",
+                  "text": "3개 병렬 · 하위 에이전트 2 · 작업 1 · 3/3 실행 중"
+                },
+                "id": "r2:main",
+                "kind": "main",
+                "role": {
+                  "identity": "Sonnet 5.5 · 사고 강도 · High",
+                  "ink": "taskText",
+                  "name": "lead",
+                  "summary": "메인 · 사고 강도 · High"
+                },
+                "status": "running",
+                "title": "요청 2"
+              },
+              {
+                "card": {
+                  "activity": "login.test",
+                  "after": [
+                    "도구 3",
+                    "토큰 12K"
+                  ],
+                  "before": [
+                    "실행 중"
+                  ],
+                  "nested": 1,
+                  "startedAt": 1794305040000
+                },
+                "delegate": {
+                  "head": "하위 에이전트 1개에 위임",
+                  "progress": "1/1 실행 중",
+                  "text": "하위 에이전트 1개에 위임 · 1/1 실행 중"
+                },
+                "id": "scout",
+                "kind": "agent",
+                "role": {
+                  "identity": "Explore · Haiku 5.5",
+                  "ink": "agentText",
+                  "name": "subagent",
+                  "summary": "하위 에이전트 · Explore · 요청한 모델 Haiku"
+                },
+                "status": "running",
+                "title": "테스트 살피기"
+              },
+              {
+                "background": true,
+                "card": {
+                  "activity": "build 2/3 ok",
+                  "after": [],
+                  "before": [
+                    "실행 중"
+                  ],
+                  "startedAt": 1794305070000
+                },
+                "id": "ci",
+                "kind": "task",
+                "role": {
+                  "identity": "작업 · python3 scripts/release.py ci",
+                  "ink": "ink2",
+                  "marks": [
+                    "background"
+                  ],
+                  "name": "task",
+                  "summary": "작업 · 백그라운드 · python3 scripts/release.py ci"
+                },
+                "status": "running",
+                "title": "CI 대기"
+              },
+              {
+                "background": true,
+                "card": {
+                  "activity": "릴리스 노트를 써라",
+                  "after": [],
+                  "before": [
+                    "실행 중"
+                  ],
+                  "startedAt": 1794305100000
+                },
+                "id": "wt",
+                "kind": "agent",
+                "role": {
+                  "identity": "general-purpose · Sonnet 5.5",
+                  "ink": "agentText",
+                  "marks": [
+                    "background",
+                    "worktree"
+                  ],
+                  "name": "subagent",
+                  "summary": "하위 에이전트 · general-purpose · Sonnet 5.5 · 백그라운드 · worktree"
+                },
+                "status": "running",
+                "title": "릴리스 노트 쓰기"
+              },
+              {
+                "card": {
+                  "activity": "로그를 읽어라",
+                  "after": [],
+                  "before": [
+                    "실행 중"
+                  ],
+                  "startedAt": 1794305110000
+                },
+                "id": "deep",
+                "kind": "agent",
+                "role": {
+                  "ink": "agentText",
+                  "name": "subagent",
+                  "summary": "하위 에이전트"
+                },
+                "status": "running",
+                "title": "로그 읽기"
+              }
+            ],
+            "id": "r2",
+            "returning": {
+              "text": "병렬 4/4 실행 중 · 보고를 기다리는 중",
+              "waiting": true
+            },
+            "status": "running"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a Codex pane: every block says who it is, and nothing fans out",
+      "provider": "codex",
+      "runs": [
+        {
+          "id": "c1",
+          "input": "타입 오류 고쳐 줘",
+          "status": "running",
+          "provider": "codex",
+          "configuredEffort": "medium",
+          "rootEntries": [],
+          "resultEntries": [],
+          "agents": [
+            {
+              "id": "sub",
+              "title": "타입 검사",
+              "input": "tsc를 돌려라",
+              "status": "running",
+              "entries": []
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "runs": [
+          {
+            "blocks": [
+              {
+                "id": "c1:main",
+                "kind": "main",
+                "role": {
+                  "identity": "Codex · 사고 강도 · Medium",
+                  "ink": "taskText",
+                  "name": "lead",
+                  "summary": "메인 · 사고 강도 · Medium"
+                },
+                "status": "running",
+                "title": "요청 1"
+              },
+              {
+                "id": "sub",
+                "kind": "agent",
+                "role": {
+                  "ink": "agentText",
+                  "name": "subagent",
+                  "summary": "하위 에이전트"
+                },
+                "status": "running",
+                "title": "타입 검사"
+              }
+            ],
+            "id": "c1",
+            "status": "running"
+          }
+        ]
+      }
+    }
+  ]
+}
