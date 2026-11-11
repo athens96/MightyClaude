@@ -1,5 +1,5 @@
 {
- "about": "The role view's layout (MightyGraphLayout.Make with fanOut, the web page's makeLayout with fanOut) for the same runs on every platform that lays it out: the Windows Core (C#) and the Windows web page (TypeScript) both assert these frames, cards, delegate lines, return nodes, advisor bands and dotted links. splitsExecution is on, no draft, nothing expanded; opened lists the node suffixes of cards the user opened.",
+ "about": "The role view's layout (MightyGraphLayout.Make with fanOut, the web page's makeLayout with fanOut) for the same runs on every platform that lays it out: the Mac (MightyCoreTests FlowVectorTests), the Windows Core (C#) and the Windows web page (TypeScript) all assert these frames, cards, delegate lines, return nodes, advisor bands and dotted links. splitsExecution is on, no draft, nothing expanded; opened lists the node suffixes of cards the user opened.",
  "cases": [
   {
    "name": "a running background sub-agent is a card under the delegate line of the 실행 block",

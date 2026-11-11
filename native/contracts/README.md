@@ -673,7 +673,8 @@ and the advisor's one consultation with its model and tokens.
 ## Role view layout (`fixtures/flow-vectors.json`)
 
 The role view's layout of a Claude pane's flow (docs/mighty-mode.md "역할
-보기") for the same runs on the two sides that lay it out on Windows: the Core
+보기") for the same runs on every side that lays it out: the Mac
+(`MightyGraphLayout.make(fanOut:)`), and on Windows the Core
 (`MightyGraphLayout.Make` with `fanOut`, read by the WinUI host for the copy it
 sends the page) and the web page (`native/windows/web/src/mighty/layout.ts`
 `makeLayout` with `fanOut`, which draws it). Each case is the pane's runs in
@@ -688,8 +689,10 @@ ended background agent and two running commands in launch order, into the
 return node); a finished request keeping its background card above its result,
 with its notice run under it; the advisor's band linked to the 실행 block and,
 through a folded card, to the sub-agent that asked; a band of a request that
-delegated nothing. The web suite (`flow.test.ts`) and the Core suite read the
-file where it lives; numbers compare within 0.001. The geometry is the Mac's
+delegated nothing. The Mac suite (`FlowVectorTests`), the Windows Core suite
+(`FlowVectorVerification`) and the web suite (`flow.test.ts`) read the file
+where it lives and lay out each case's runs as written; numbers compare within
+0.001, and a Mac failure names each node that moved and by how much. The geometry is the Mac's
 (`MightyGraphFanOutTests`, `FlowLinesTests`, `FlowAdvisorTests`): the delegate
 line 18 under its block, 340 × 24, its row 26 under it; a card 236 × 86; the
 return node 340 × 34 at the result's place; the band 248 wide, 28 left of what
