@@ -23,7 +23,9 @@ public sealed partial class MainWindow
         var directory = Path.Combine(StateDirectory, "mobile-remote");
         // Catalog: this PC's CLI lists — a phone's summaries cover local panes only (RemoteWorkspacePhone), never a remote workspace's.
         mobileRouter = new(service, directory, Environment.MachineName, MobileAction, MobileExtras) { AppVersion = AppVersionText, ImagePreview = MakeMobileImagePreview, QueueCount = id => views.TryGetValue(id, out var pane) ? pane.MobileQueuedCount : 0, Structure = MobileStructureFor,
-            Catalog = pane => Runtime(pane.Provider)?.ModelCatalog, Digest = pane => pane.Kind == "claude" && views.TryGetValue(pane.Id, out var view) ? view.MobileDigest() : null, ActiveStyle = MobileRunningStyle };
+            Catalog = pane => Runtime(pane.Provider)?.ModelCatalog, Digest = pane => pane.Kind == "claude" && views.TryGetValue(pane.Id, out var view) ? view.MobileDigest() : null, ActiveStyle = MobileRunningStyle,
+            // A phone that draws the role view (roles=1): the same extras with the role view in their Mighty payload (MobileFlow).
+            RoleExtras = pane => pane.Kind == "claude" ? MobilePane(pane.Id).MobileSnapshot(roles: true) : new([]) };
         mobileHost = new(directory, Environment.MachineName, MobileDesktopRouter.Capabilities, MobileRoute) { AppVersion = AppVersionText };
         mobileRouter.HostId = mobileHost.HostId;
         // The work map (docs/work-map.md) is the one the page shows: same model, same one-at-a-time summary.
@@ -708,6 +710,8 @@ public sealed partial class MainWindow
             // A background run's output lines live in the host's memory, not in the runs: they move the pane too, through their
             // revision, which moves at most once per 3 s a pane.
             mighty.Add(owner.BackgroundOutputPhoneRevisionFor(pane.Id));
+            // The custom agents read for the phone's role view (MobileFlowDefinitions): their colours and models.
+            foreach (var (type, definition) in mobileFlowDefinitions.OrderBy(d => d.Key, StringComparer.Ordinal)) { mighty.Add(type); mighty.Add(definition.Color); mighty.Add(definition.Model); }
             // The detail's backgroundWork: the running tasks, what they are and the block each meets.
             foreach (var task in pane.BackgroundWork?.Running ?? []) { mighty.Add(task.Id); mighty.Add(task.Description); mighty.Add(task.ToolUseId); mighty.Add(task.Kind); }
             // The detail's backgroundDone: the strip's finished count while it shows (M/AppStore+MobileRemote.swift mobileBackgroundDigest).
@@ -724,7 +728,38 @@ public sealed partial class MainWindow
         }
         /// <summary>The runs' resultFiles as last looked through, kept until a result changes; it goes with the pane.</summary>
         private readonly MobileResultFilesMemo mobileResultFiles = new();
-        internal MobilePaneExtras MobileSnapshot()
+        /// <summary>The custom agents the pane's blocks name, for the phone's role view (AgentDefinitions), read off this thread when the types or the
+        /// folder change; until then the last ones read. Apart from the page's own (FlowDefinitions), whose runs may hold older requests the phone is not
+        /// sent: one cache read for both would read again on every turn of either (M/AppStore+MobileRemote.swift mobileFlowDefinitions).</summary>
+        private IReadOnlyDictionary<string, AgentDefinition> mobileFlowDefinitions = new Dictionary<string, AgentDefinition>();
+        private string? mobileFlowDefinitionsKey;
+        private IReadOnlyDictionary<string, AgentDefinition> MobileFlowDefinitions(IReadOnlyList<MightyGraphRun> runs, string? root)
+        {
+            var types = FlowRoles.Types(runs);
+            var key = (root ?? "") + "\n" + string.Join("\n", types.Order(StringComparer.Ordinal));
+            if (key == mobileFlowDefinitionsKey) return mobileFlowDefinitions;
+            mobileFlowDefinitionsKey = key;
+            // Another computer's agents are not on this one.
+            if (root is null || types.Count == 0) return mobileFlowDefinitions = new Dictionary<string, AgentDefinition>();
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            _ = Task.Run(() =>
+            {
+                Dictionary<string, AgentDefinition>? found = null;
+                try { found = AgentDefinitions.Load(types, root, ClaudeAdvisorSettings.ConfigDirectory(home)); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
+                Container.DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (found is null || !QueuePaneAlive || mobileFlowDefinitionsKey != key) return;
+                    mobileFlowDefinitions = found;
+                    // The pane's digest reads them: the phone is told at the next pass.
+                    owner.mobileRouter?.Changed();
+                });
+            });
+            return mobileFlowDefinitions;
+        }
+        /// <param name="roles">The phone draws the role view (roles=1, MobileFlow): every block says who it is, and a Claude pane's request fans its
+        /// background work out under it, with its log (M/AppStore+MobileRemote.swift mobileMighty).</param>
+        internal MobilePaneExtras MobileSnapshot(bool roles = false)
         {
             var pane = Session; var style = MobileActiveStyle; var styleId = style?.Id ?? MobileWire.CliStyle; var options = MobileOptions(pane);
             var settings = new MobileSettings(!MobileBusy, pane.Model, pane.Settings.PermissionMode, options.Efforts is null ? null : pane.Settings.Effort, MobileRemoteSupport.ViewMode(pane.AgentViewMode), MobileRemoteSupport.Style(styleId), styleId, options);
@@ -734,7 +769,11 @@ public sealed partial class MainWindow
             var legacy = style is null ? null : MobileLegacyStyleAdapter.Payload(style, GuidedPhase(style), stylePrerequisites?.Ready ?? false);
             // A run's resultFiles are looked for in the pane's own folder, as the desktop's 결과에 나온 파일 panel: none for a remote workspace.
             // Each result is looked through once (mobileResultFiles), not on every long poll.
-            var mighty = new { style = MobileRemoteSupport.Style(styleId), styleId, runs = MobileMightySupport.Runs(MobileMightySupport.SavedRuns(pane), styles is null ? null : input => StylePresentation.RequestPrefix(styles, input), owner.BackgroundOutputFor(pane.Id), LocalPath(Workspace), mobileResultFiles), panel = MobileStylePanel(style), ouroboros = legacy };
+            var saved = MobileMightySupport.SavedRuns(pane); var root = LocalPath(Workspace);
+            MobileFlow.Roles? flow = roles ? new(pane.Provider == "claude", MobileFlowDefinitions(saved, root)) : null;
+            var fanOut = flow?.FanOut == true;
+            var mighty = new { style = MobileRemoteSupport.Style(styleId), styleId, runs = MobileMightySupport.Runs(saved, styles is null ? null : input => StylePresentation.RequestPrefix(styles, input), owner.BackgroundOutputFor(pane.Id), root, mobileResultFiles, flow), panel = MobileStylePanel(style), ouroboros = legacy,
+                fanOut = fanOut ? true : (bool?)null, log = fanOut ? MobileFlow.Log(saved, flow!.Definitions) : null };
             var statusLine = Refresher?.Result is { } statusResult ? new { lines = statusResult.Lines.Select(line => line.Select(s => new { s.Text, fg = Terminal(s.Foreground) is { } color ? $"#{color.R:X2}{color.G:X2}{color.B:X2}" : null, bold = s.Bold })) } : null;
             // The 보낼 대상 switch needs the pane's catalogue, which a pane only ever read from the phone has not scanned (M/AppStore+MobileRemote.swift mobileSession).
             owner.RefreshAskCatalog(pane);

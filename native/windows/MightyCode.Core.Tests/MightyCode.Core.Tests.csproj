@@ -18,6 +18,7 @@
     <EmbeddedResource Include="../../contracts/fixtures/design-tokens.json" LogicalName="MightyCode.Core.Tests.DesignTokens.json" />
     <EmbeddedResource Include="../../contracts/fixtures/help-site.json" LogicalName="MightyCode.Core.Tests.HelpSite.json" />
     <EmbeddedResource Include="../../contracts/fixtures/mobile-structure.json" LogicalName="MightyCode.Core.Tests.MobileStructure.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/mobile-roles.json" LogicalName="MightyCode.Core.Tests.MobileRoles.json" />
     <EmbeddedResource Include="../../contracts/fixtures/tailscale-addresses.json" LogicalName="MightyCode.Core.Tests.TailscaleAddresses.json" />
     <EmbeddedResource Include="../../contracts/fixtures/delegation-modes.json" LogicalName="MightyCode.Core.Tests.DelegationModes.json" />
     <EmbeddedResource Include="../../contracts/fixtures/agent-notices.json" LogicalName="MightyCode.Core.Tests.AgentNotices.json" />

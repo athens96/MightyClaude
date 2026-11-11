@@ -34,13 +34,16 @@ public sealed record MobileDesktopAction(string SessionId, string Action, JsonEl
 public sealed class MobileDesktopRouter : IDisposable
 {
     public Func<string[]>? ExtraCapabilities { get; set; }
-    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push", "fileChanges", "workMap", "appUpdate", "pi", "opencode", "hermes"];
+    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct", "push", "fileChanges", "workMap", "appUpdate", "pi", "opencode", "hermes", "roles"];
     /// <summary>The direct path's endpoints for /m1/info (docs/mobile-remote.md, "direct"); empty when there is no host or it does not listen.</summary>
     public Func<IReadOnlyList<string>>? DirectEndpoints { get; set; }
     /// <summary>The largest reply body the host sends; a session detail over it sheds its structure first (<see cref="SessionReply"/>).</summary>
     public const int MaximumReplyBytes = MobileWire.MaximumReplyBytes;
     /// <summary>The pane's structure view for a phone that asked for it with <c>?structure=&lt;tag&gt;</c>; null for a pane with no Mighty payload.</summary>
     public Func<RunSession, MobileStructureCache.Built?>? Structure { get; set; }
+    /// <summary>The pane's extras with the role view in its Mighty payload (<see cref="MobileFlow"/>: who each block is, a Claude pane's fan-out and
+    /// log) for a phone that asked for it with <c>?roles=1</c>; without it such a phone gets the plain extras.</summary>
+    public Func<RunSession, MobilePaneExtras>? RoleExtras { get; set; }
     private readonly DesktopService service;
     private readonly Func<MobileDesktopAction, CancellationToken, Task<object?>> action;
     private readonly Func<RunSession, MobilePaneExtras> extra;
@@ -204,15 +207,17 @@ public sealed class MobileDesktopRouter : IDisposable
             if (method == "GET" && route.SequenceEqual(new[] { "m1", "info" })) return Reply(new { protocol = 1, hostId = HostId, hostName = HostName, appVersion = AppVersion, platform = "win32", capabilities = Capabilities.Concat(ExtraCapabilities?.Invoke() ?? []).Distinct().ToArray(), direct = DirectEndpoints?.Invoke() ?? [] });
             if (method == "GET" && (route.SequenceEqual(new[] { "m1", "state" }) || route.Length == 3 && route[1] == "sessions"))
             {
-                // `structure` (the tag of the structure the phone holds, 0 for none) is taken only by the session detail.
-                if (query.Keys.Any(k => k is not ("since" or "wait") && !(k == "structure" && route[1] == "sessions"))) throw new MobileRequestException(400, "Unexpected poll argument.");
+                // `structure` (the tag of the structure the phone holds, 0 for none) and `roles` (1: the phone draws the role view, MobileFlow) are
+                // taken only by the session detail.
+                if (query.Keys.Any(k => k is not ("since" or "wait") && !(k is "structure" or "roles" && route[1] == "sessions"))) throw new MobileRequestException(400, "Unexpected poll argument.");
                 var since = Number(query, "since", 0, long.MaxValue, 0); var wait = Number(query, "wait", 0, 10, 0);
                 long? asked = query.ContainsKey("structure") ? Number(query, "structure", 0, 999_999_999_999, 0) : null;
+                var roles = query.ContainsKey("roles") && Number(query, "roles", 0, 999_999_999_999, 0) > 0;
                 // Each scope waits on its own revision: the list on the state's, a pane on that pane's.
                 var state = route[1] == "state"; if (!state) _ = Session(route[2]);
                 long Current() { Observe(); return state ? StateRevision : SessionRevision(route[2]); }
                 if (Current() <= since && wait > 0) { var until = DateTime.UtcNow.AddSeconds(wait); while (Current() <= since && DateTime.UtcNow < until) await Task.Delay(100, token); }
-                token.ThrowIfCancellationRequested(); return state ? Reply(State()) : SessionReply(Session(route[2]), asked);
+                token.ThrowIfCancellationRequested(); return state ? Reply(State()) : SessionReply(Session(route[2]), asked, roles);
             }
             if (method == "POST" && route.SequenceEqual(new[] { "m1", "app-update" }) && query.Count == 0)
             {
@@ -458,9 +463,9 @@ public sealed class MobileDesktopRouter : IDisposable
     /// holds; a detail that would pass <see cref="MaximumReplyBytes"/> sheds the structure first, keeping the tag so the phone
     /// knows it is behind.
     /// </summary>
-    private MobileReply SessionReply(RunSession pane, long? asked)
+    private MobileReply SessionReply(RunSession pane, long? asked, bool roles = false)
     {
-        var detail = extra(pane); var built = asked is null || detail.Mighty is null ? null : Structure?.Invoke(pane);
+        var detail = roles && RoleExtras is { } withRoles ? withRoles(pane) : extra(pane); var built = asked is null || detail.Mighty is null ? null : Structure?.Invoke(pane);
         var structure = built is not null && built.Tag != asked ? built.Value : null;
         var reply = Reply(Detail(pane, detail, structure, built?.Tag));
         return reply.Status == 413 && structure is not null ? Reply(Detail(pane, detail, null, built?.Tag)) : reply;

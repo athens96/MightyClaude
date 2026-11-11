@@ -160,11 +160,13 @@ internal static class BackgroundNoticeRunsVerification
         var opening = new MightyGraphRun { Id = "r:notice:2", Status = "running", NoticeRun = true };
         MightyGraphSupport.RefreshResult(opening);
         Check(!MightyGraphLayout.HasResult(opening) && opening.ResultEntries.Count == 0, "a first notice turn still waiting has no card");
-        // The phone draws no background block in the request that started it: its steps wake no long poll there, the notice run's do.
+        // A phone that draws the role view (roles=1, MobileFlow) draws a request's background blocks as compact rows: their steps wake the long
+        // poll there too, as the notice run's do (an older phone, which leaves them to the strip, only wakes once more).
         var digested = Runs()[0];
         var before = MobileMightySupport.Digest([digested]);
         digested.Agents[1].Entries.Add(new LogEntry("b1", "assistant", "compiling", "2026-10-28T00:00:00Z", "claude"));
-        Same(MobileMightySupport.Digest([digested]), before, "a request's hidden background block does not move the digest");
+        Check(MobileMightySupport.Digest([digested]) != before, "a request's background block's step moves the digest");
+        before = MobileMightySupport.Digest([digested]);
         // Its end moves the request's waiting count (현재까지의 결과 → 최종 결과), which the phone draws.
         digested.Agents[1].Status = "completed";
         var ended = MobileMightySupport.Digest([digested]);

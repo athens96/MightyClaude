@@ -432,6 +432,10 @@ internal static class Verification
         await Test("Mobile structure: bounds and budget", MobileStructureVerification.BoundsAndBudget);
         await Test("Mobile structure: rebuilt only when the structure moves", MobileStructureVerification.CacheRebuildsOnlyWhenTheStructureMoves);
         await Test("Mobile structure: sent only when asked and changed, shed first", MobileStructureVerification.RouteSendsTheStructureOnlyWhenAskedAndChanged);
+        await Test("Mobile role view: the shared fixture (native/contracts/fixtures/mobile-roles.json) is what Windows sends", MobileFlowVerification.TheSharedFixtureIsWhatWindowsSends);
+        await Test("Mobile role view: an older phone gets the payload it always got, another agent's pane fans nothing out", MobileFlowVerification.OlderPhonesAndOtherAgents);
+        await Test("Mobile role view: the digest moves with the fan-out and the advisor", MobileFlowVerification.DigestMovesWithTheFanOutAndTheAdvisor);
+        await Test("Mobile role view: roles=1 is the session detail's alone", MobileFlowVerification.RouteTakesRolesOnTheSessionDetailAlone);
         await Test("Mobile host: runs carry the Mac's shape and caps", MobileHostVerification.RunsCarryTheMacsShapeAndCaps);
         await Test("Mobile host: runs carry the result files the desktop lists", MobileHostVerification.RunsCarryTheResultFilesTheDesktopLists);
         await Test("Mobile host: a pane without a graph is grouped from its transcript", MobileHostVerification.APaneWithoutAGraphIsGroupedFromItsTranscript);
