@@ -32,8 +32,11 @@ public static class MobileWire
 /// <param name="Background"><c>true</c> for a background sub-agent and every task block; absent otherwise.</param>
 /// <param name="OutputTail">A task block's last output lines (at most <see cref="BackgroundOutputTail.MaxLines"/>), read on the host; absent when none were read. The output file itself is never sent.</param>
 /// <param name="NoticeReply">Claude's reply to the task's notice, bounded like <c>Output</c>.</param>
+/// <param name="Role">The role view (<see cref="MobileFlow"/>), only for a phone that asked with <c>roles=1</c>: who the block is.</param>
+/// <param name="Card">Its compact row: a request's background sub-agent or command, a running sub-agent.</param>
+/// <param name="Delegate">The line over the rows it delegated to.</param>
 public sealed record MobileBlock(string Id, string Kind, string Title, string Status, string? Summary = null, string? Output = null, double? DurationMs = null, string? NodeModelLabel = null, IReadOnlyList<string>? Activity = null,
-    bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null);
+    bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, MobileBlockRole? Role = null, MobileBlockCard? Card = null, MobileDelegateLine? Delegate = null);
 /// <summary>One request of the pane. <c>Result</c> is carried only by the newest request and the notice runs after it once each has
 /// settled. <c>NoticeRun</c> is <c>true</c> for Claude's reply to finished background work (<see cref="MightyGraphRun.NoticeRun"/>): not a
 /// request, so it takes no request number; its <c>Title</c> and its <c>main</c> block's are its heading (<see cref="BackgroundNoticeRuns.Heading(MightyGraphRun)"/>).
@@ -41,9 +44,10 @@ public sealed record MobileBlock(string Id, string Kind, string Title, string St
 /// (<see cref="MightyGraphSupport.BackgroundWaiting"/>): its result card reads 현재까지의 결과 meanwhile. <c>AwaitingNotice</c>: the request awaits the notices of
 /// its background work (<see cref="BackgroundNoticeRuns.AwaitingNotice"/>): its result card is the 알림 대기 block. Each absent when none (and from older hosts).
 /// <c>ResultFiles</c> is the desktop's 결과에 나온 파일 list for a run that carries <c>Result</c> and completed (<see cref="MobileMightySupport.RunResultFiles"/>).
-/// Absent when it names none, on a workspace of another computer, and from older hosts.</summary>
+/// Absent when it names none, on a workspace of another computer, and from older hosts. <c>Returning</c> and <c>Advisor</c>: the role view
+/// (<see cref="MobileFlow"/>, <c>roles=1</c> on a Claude pane): the way back where the result will come, while it is not there, and the run's advisor.</summary>
 public sealed record MobileMightyRun(string Id, string Input, string? Title, string Status, IReadOnlyList<MobileBlock> Blocks, string? Result = null, bool? NoticeRun = null,
-    int? BackgroundWaiting = null, IReadOnlyList<MobileResultFile>? ResultFiles = null, MobileAwaitingNotice? AwaitingNotice = null);
+    int? BackgroundWaiting = null, IReadOnlyList<MobileResultFile>? ResultFiles = null, MobileAwaitingNotice? AwaitingNotice = null, MobileReturn? Returning = null, MobileAdvisor? Advisor = null);
 /// <summary>One file a run's final result names: <c>Path</c> relative to the workspace root, joined with "/" — what
 /// <c>GET /m1/workspaces/{id}/file?path=</c> takes — and the line the result pointed at, if any.</summary>
 public sealed record MobileResultFile(string Path, int? Line = null);
@@ -181,21 +185,33 @@ public static class MobileMightySupport
     /// <paramref name="outputTails"/>: a background run's last output lines by block id, held in host memory only; the output
     /// file's path never reaches the wire.
     /// </summary>
-    public static IReadOnlyList<MobileBlock> Blocks(MightyGraphRun run, int ordinal, IReadOnlyDictionary<string, IReadOnlyList<string>>? outputTails = null)
+    /// <param name="roles">A phone that asked for the role view (<see cref="MobileFlow"/>): every block says who it is, and with <c>FanOut</c> (a Claude
+    /// pane) a request carries its background blocks too, in the order they were launched, as the flow draws them, with their compact rows and the
+    /// delegate lines (M/MightyCore/Remote/MobileRemoteSupport.swift blocks).</param>
+    /// <param name="request">The request a notice run answers for, for the lead's name.</param>
+    /// <param name="window">The runs the payload carries, where a finished background row's copy is looked for.</param>
+    public static IReadOnlyList<MobileBlock> Blocks(MightyGraphRun run, int ordinal, IReadOnlyDictionary<string, IReadOnlyList<string>>? outputTails = null, MobileFlow.Roles? roles = null,
+        MightyGraphRun? request = null, IReadOnlyList<MightyGraphRun>? window = null)
     {
         var main = Status(run.Status);
         var result = new List<MobileBlock>
         {
             new(run.Id + ":main", "main", run.NoticeRun == true ? BackgroundNoticeRuns.Heading(run) : Locale.Get("remote.block.request", new Dictionary<string, string> { ["ordinal"] = ordinal.ToString(CultureInfo.InvariantCulture) }), main,
-                Summary(run.Input), Output(run.FinalOutput), Duration(run.RootEntries, main), run.NodeModelLabel, Activity(run.RootEntries, main)),
+                Summary(run.Input), Output(run.FinalOutput), Duration(run.RootEntries, main), run.NodeModelLabel, Activity(run.RootEntries, main),
+                Role: roles is null ? null : MobileFlow.Lead(run, request), Delegate: roles is null ? null : MobileFlow.Delegate(FlowDelegation.MainKey, run, roles)),
         };
-        foreach (var agent in BackgroundNoticeRuns.ShownAgents(run))
+        // The fan-out: a raw run's blocks as they were recorded, background ones in their place.
+        foreach (var agent in roles?.FanOut == true ? run.Agents : BackgroundNoticeRuns.ShownAgents(run))
         {
             var state = Status(agent.Status);
+            var lines = outputTails?.GetValueOrDefault(agent.Id);
             result.Add(new(agent.Id, MightyGraphSupport.BlockKind(agent), MightyGraphSupport.BlockTitle(agent), state, Summary(agent.Input), Output(Answer(agent.Entries)), Duration(agent.Entries, state), Activity: Activity(agent.Entries, state),
                 Background: agent.Background == true ? true : (bool?)null,
-                OutputTail: agent.IsTask ? OutputTail(outputTails?.GetValueOrDefault(agent.Id)) : null,
-                NoticeReply: Output(agent.NoticeReply)));
+                OutputTail: agent.IsTask ? OutputTail(lines) : null,
+                NoticeReply: Output(agent.NoticeReply),
+                Role: roles is null ? null : MobileFlow.Role(agent, run, roles, lines),
+                Card: roles is null ? null : MobileFlow.Card(agent, run, window ?? [], roles, lines),
+                Delegate: roles is not null && agent.IsSubagent ? MobileFlow.Delegate(agent.Id, run, roles) : null));
         }
         return result;
     }
@@ -213,18 +229,24 @@ public static class MobileMightySupport
     /// <paramref name="resultFiles"/> memo a result is looked through once, and the memo drops the runs this call no longer looks up.
     /// </summary>
     public static IReadOnlyList<MobileMightyRun> Runs(IReadOnlyList<MightyGraphRun> values, Func<string, string?>? title = null, IReadOnlyDictionary<string, IReadOnlyList<string>>? outputTails = null, string? workspaceRoot = null,
-        MobileResultFilesMemo? resultFiles = null)
+        MobileResultFilesMemo? resultFiles = null, MobileFlow.Roles? roles = null)
     {
         values = MightyGraphSupport.WithBackgroundWaiting(values);
         var offset = Math.Max(0, values.Count - MobileWire.MightyRuns); var result = new List<MobileMightyRun>();
         var ordinals = MightyGraphSupport.RequestOrdinals(values); var carried = FirstCarried(values, offset);
+        var window = values.Skip(offset).ToList();
+        // The request each run belongs to (a notice run answers for the request before it), for the lead's name.
+        var requests = new int?[values.Count]; int? latest = null;
+        for (var index = 0; index < values.Count; index++) { if (values[index].NoticeRun != true) latest = index; requests[index] = latest; }
         for (var index = offset; index < values.Count; index++)
         {
             var run = values[index]; var state = Status(run.Status); var notice = run.NoticeRun == true; var waiting = MightyGraphSupport.BackgroundWaiting(run);
             var output = index >= carried && Settled(state) ? Output(run.FinalOutput, MobileWire.MaximumRunResult) : null;
-            result.Add(new(run.Id, ActivitySupport.Clean(run.Input, MobileWire.MaximumText), notice ? BackgroundNoticeRuns.Heading(run) : title?.Invoke(run.Input), state, Blocks(run, ordinals[index], outputTails),
+            var request = requests[index] is { } at ? values[at] : null;
+            result.Add(new(run.Id, ActivitySupport.Clean(run.Input, MobileWire.MaximumText), notice ? BackgroundNoticeRuns.Heading(run) : title?.Invoke(run.Input), state, Blocks(run, ordinals[index], outputTails, roles, request, window),
                 output, notice ? true : null, waiting > 0 ? waiting : null, output is null ? null : RunResultFiles(run, workspaceRoot, resultFiles),
-                MobileAwaitingNotice.From(BackgroundNoticeRuns.AwaitingNotice(run, values))));
+                MobileAwaitingNotice.From(BackgroundNoticeRuns.AwaitingNotice(run, values)),
+                roles is null ? null : MobileFlow.Returning(run, roles), roles is null ? null : MobileFlow.Advisor(run, roles)));
         }
         resultFiles?.Prune();
         return result;
@@ -312,9 +334,17 @@ public static class MobileMightySupport
             hash.Add(run.Id); hash.Add(run.Status); hash.Add(run.Agents.Count); hash.Add(run.RootEntries.Count); hash.Add(run.RootEntries.Count > 0 ? run.RootEntries[^1].Id : null);
             // The result card's 현재까지의 결과 count and a notice run's title move without a new record.
             hash.Add(MightyGraphSupport.BackgroundWaiting(run)); hash.Add(run.NoticeTitle);
-            // The blocks the phone draws: a request's background blocks wait for their notice run (the strip shows them meanwhile).
-            // Claude's reply to a task's notice can land with no new record on the block.
-            foreach (var agent in BackgroundNoticeRuns.ShownAgents(run)) { hash.Add(agent.Id); hash.Add(agent.Status); hash.Add(agent.Kind); hash.Add(agent.Entries.Count); hash.Add(agent.Entries.Count > 0 ? agent.Entries[^1].Id : null); hash.Add(agent.NoticeReply?.Length); }
+            // Every block, a request's background blocks included: the role view draws them (roles=1, MobileFlow), and an older phone that leaves
+            // them out only wakes once more. Claude's reply to a task's notice can land with no new record on the block, and a compact row's figures
+            // and model move with the CLI's reports.
+            foreach (var agent in run.Agents)
+            {
+                hash.Add(agent.Id); hash.Add(agent.Status); hash.Add(agent.Kind); hash.Add(agent.Entries.Count); hash.Add(agent.Entries.Count > 0 ? agent.Entries[^1].Id : null); hash.Add(agent.NoticeReply?.Length);
+                hash.Add(agent.Figures?.ToolCalls); hash.Add(agent.Figures?.EndedAt); hash.Add(agent.Usage?.Total); hash.Add(agent.Identity?.ResolvedModel);
+            }
+            // The advisor's band and the status line move with each consultation.
+            hash.Add(run.Advisor?.Count); hash.Add(run.Advisor?.Usage?.Total);
+            foreach (var call in run.Advisor?.Consultations ?? []) { hash.Add(call.Id); hash.Add(call.State); }
         }
         return hash.ToHashCode();
     }
@@ -346,8 +376,8 @@ public static class MobileMightySupport
                     if (session.Logs[at].Kind == "assistant") { length = session.Logs[at].Text.Length; break; }
             hash.Add(length);
         }
-        // Digest(values)'s waiting count and notice title, which a legacy run never has.
-        for (var at = 0; at < ids.Count; at++) { hash.Add(ids[at].Id); hash.Add(at == ids.Count - 1 ? status : "completed"); hash.Add(0); hash.Add(ids[at].Entries); hash.Add(ids[at].Last); hash.Add(0); hash.Add((string?)null); }
+        // Digest(values)'s waiting count and notice title, and its advisor's count and tokens, which a legacy run never has.
+        for (var at = 0; at < ids.Count; at++) { hash.Add(ids[at].Id); hash.Add(at == ids.Count - 1 ? status : "completed"); hash.Add(0); hash.Add(ids[at].Entries); hash.Add(ids[at].Last); hash.Add(0); hash.Add((string?)null); hash.Add((int?)null); hash.Add((long?)null); }
         return hash.ToHashCode();
     }
 }

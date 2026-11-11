@@ -107,7 +107,11 @@ MobilePermission {
 
 기존 라우트와 필드는 그대로다. 아래는 모두 **추가**이며, 새 필드는 전부 선택(optional)이다. 업데이트하지 않은 휴대폰 앱은 모르는 필드를 무시하고 지금처럼 동작한다. 휴대폰은 `/m1/info`의 `capabilities`에 이름이 있을 때만 해당 기능을 보여 준다(없으면 구버전 호스트).
 
-`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`, `"push"`, `"fileChanges"`, `"workMap"`.
+`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`, `"push"`, `"fileChanges"`, `"workMap"`, `"appUpdate"`, `"pi"`, `"opencode"`, `"hermes"`, `"roles"`.
+
+`"roles"`는 호스트가 세션 상세의 `roles=1`을 알고, 그렇게 물은 휴대폰에게 마이티 페이로드의 역할 보기(블록의 `role`·`card`·`delegate`, 실행의 `returning`·`advisor`, 페이로드의 `fanOut`·`log`)를 보낸다는 뜻이다(Mac·Windows). 이 이름이 없는 호스트에 `roles`를 보내면 400이다. 아래 "역할 보기".
+
+`"pi"`, `"opencode"`, `"hermes"`는 호스트가 그 에이전트를 돌린다는 뜻이다(Mac·Windows, `ProviderOptions.ids`). 휴대폰은 새 창 시트의 에이전트 칩에 Claude·Codex·Antigravity를 늘 내보이고, 이 세 이름은 호스트가 알릴 때만 그 뒤에 데스크톱의 순서로 더한다(`newPaneProviders`). `POST /m1/workspaces/{id}/sessions`의 `provider`가 그 id다. 셋은 그 컴퓨터에서만 도는 에이전트(`ProviderOptions.isLocalOnly`)인데, 호스트는 휴대폰에 자기 작업 공간과 그 창만 알리므로(`RemoteWorkspacePhone`) 휴대폰이 원격 작업 공간에 만들 일이 없다. 이름·브랜드 색·마크·베타 배지는 데스크톱의 `ProviderMark`와 같다(`mobile/src/theme`, `mobile/src/lib/provider-marks.ts`). 권한 모드와 사고 강도의 이름은 호스트가 보내는 `settings.options`의 이름 그대로이고(Hermes는 계획 모드가 없다), 이 에이전트들의 질문도 `MobilePermission.questionnaire`로 같은 질문 카드가 된다. 휴대폰은 모르는 provider 문자열도 이름을 그대로, 마크 없이 중립 색으로 그린다.
 
 `"fileChanges"`는 호스트의 `GET /m1/workspaces/{id}/file`이 `changes=1`(과 `session`·`run`)을 받아 미리보기에 `changes`를 붙인다는 뜻이다(Mac·Windows, 아래 "파일"). 이 이름이 없는 호스트에 `changes=1`을 보내면 400이다.
 
@@ -195,7 +199,7 @@ MobileMighty {
   style: "cli" | "ouroboros",
   styleId: string,                                                       // 아래 "스타일" 절
   runs: [{ id, input, title?, status, blocks: [MobileBlock], result?, noticeRun?: true, backgroundWaiting?: number,
-           resultFiles?: [{ path, line?: number }] }],                // 최근 20개 요청, 시간순
+           resultFiles?: [{ path, line?: number }], returning?, advisor? }],   // 최근 20개 요청, 시간순. returning·advisor는 아래 "역할 보기"(roles=1로 물었을 때만)
                                              // noticeRun(선택, 추가 필드)은 끝난 백그라운드 작업에 Claude가 답한 실행(알림 실행)에만 실리는 `true`.
                                              //   요청이 아니므로 요청 번호를 세지 않는다. 아래 "백그라운드 작업과 알림 실행" 절
                                              // title은 요청에서는 스타일이 붙인 이름이고, 알림 실행에서는 그 실행의 제목("백그라운드 작업 완료 · lint")이다.
@@ -235,10 +239,12 @@ MobileMighty {
   panel?: MobileStylePanel,                                              // 아래 "스타일" 절
   ouroboros?: { phase, ready: boolean, takesText: [skill], next: [{ skill, title, help }], all: [{ skill, title, help }] },
   structure?: MobileStructure,                                           // 아래 "구조 보기" 절 — ?structure=로 물었을 때만, 바뀌었을 때만
-  structureTag?: number                                                  // ?structure=로 물었을 때만. 0은 그릴 것이 없음
+  structureTag?: number,                                                 // ?structure=로 물었을 때만. 0은 그릴 것이 없음
+  fanOut?: true, log?: { status, rows }                                   // 아래 "역할 보기" 절 — roles=1로 물었을 때만, Claude 창에만
 }
 MobileBlock { id, kind, title, status, summary?, output?, durationMs?, nodeModelLabel?, activity?: [string],
-              background?: true, outputTail?: [string], noticeReply?: string }
+              background?: true, outputTail?: [string], noticeReply?: string,
+              role?, card?, delegate? }                // 셋은 아래 "역할 보기" 절 — roles=1로 물었을 때만
                                              // output은 2 000자까지. durationMs는 끝난 블록만(첫 기록~마지막 기록)
                                              // summary는 그 블록이 받은 지시를 한 줄로 편 것(1 000바이트까지): 하위 블록은 프롬프트, main 블록은 요청 자체
                                              // activity(선택, 추가 필드)는 running·waiting 블록에만 실리는 최근 단계 최대 8줄, 오래된 것부터.
@@ -337,10 +343,52 @@ MobileBackgroundWork { id, kind: "agent" | "run", title, status: "running", star
   | 예전 | 새 | 필드가 없으니 "최종 결과"다. | `title`이 없으니 "백그라운드 작업 완료"다. |
 
   예전 호스트에서는 "알림 이후" 절이 여전히 결과 안에 있고, 휴대폰은 그 글을 그대로 보인다.
-- **요청의 실행에는 백그라운드 블록이 없다.** 호스트는 `background: true` 블록을 알림 실행에만 싣는다. 휴대폰도 같은 규칙으로 `noticeRun`이 아닌 실행의 `background` 블록·노드(와 그 아래 노드)를 그리지 않되, **새 호스트라는 증거가 있을 때만** 그렇다: 세부 정보에 `backgroundWork`나 `backgroundDone`이 있거나 페이로드의 어느 실행이 `noticeRun: true`일 때(`hostFiltersBackground`, `shownBlocks`·`shownNodes`). 모두 없으면 알림 실행이 생기기 전의 호스트이므로, 그 호스트가 요청에 그대로 둔 백그라운드 블록을 휴대폰이 숨기지 않는다(숨기면 볼 곳이 없다).
+- **요청의 실행에는 백그라운드 블록이 없다.** 호스트는 `background: true` 블록을 알림 실행에만 싣는다. 휴대폰도 같은 규칙으로 `noticeRun`이 아닌 실행의 `background` 블록·노드(와 그 아래 노드)를 그리지 않되, **새 호스트라는 증거가 있을 때만** 그렇다: 세부 정보에 `backgroundWork`나 `backgroundDone`이 있거나 페이로드의 어느 실행이 `noticeRun: true`일 때(`hostFiltersBackground`, `shownBlocks`·`shownNodes`). 모두 없으면 알림 실행이 생기기 전의 호스트이므로, 그 호스트가 요청에 그대로 둔 백그라운드 블록을 휴대폰이 숨기지 않는다(숨기면 볼 곳이 없다). 역할 보기를 물은 휴대폰(`roles=1`)이 받는 Claude 창의 페이로드만 예외다: `fanOut: true`인 페이로드의 요청은 자기 백그라운드 블록을 압축 행으로 싣고, 휴대폰은 그것을 숨기지 않는다(아래 "역할 보기").
 - **조용한 알림 실행**(상태가 completed이고 답이 빈 것: 다른 요청의 턴 안에서 받은 알림)은 결과 카드가 없고 따라가지 않는다. 다시 열려 도는 알림 실행은 도는 동안 앞의 답을 그대로 보인다. 화면이 따라가는 가장 최근 실행은 가장 최근 **요청**이거나, 그 뒤의 조용하지 않은 알림 실행이다.
 - 알림 실행은 사용자 요청이 아니다: 요청 번호·펫·"내가 보낸 것" 판정에 들지 않는다(휴대폰은 보낸 글의 실행을 찾을 때 알림 실행을 건너뛴다).
 - 구버전 호스트는 `backgroundWork`와 `noticeRun`을 보내지 않는다. 신버전 휴대폰은 띠를 그리지 않고 요청의 백그라운드 블록을 숨기지도 않으며(위), 구버전 휴대폰은 두 필드를 무시한다. 그래서 **이번 릴리스 전의 휴대폰이 새 호스트에 붙으면** 도는 백그라운드 작업이 어디에도 보이지 않는다: 호스트가 요청의 실행에서 그 블록을 빼고, 휴대폰은 띠를 그리지 못하므로 작업이 끝나 알림 실행이 올 때까지 기다려야 한다. 또 알림 실행을 일반 요청으로 보아 "요청 n"으로 번호를 매기거나 흐름·파이프라인이 그 실행을 따라갈 수 있다. 이런 휴대폰은 앱을 업데이트해야 한다. 공유 픽스처는 `native/contracts/fixtures/background-output.json`이다.
+
+#### 역할 보기 (`roles`)
+
+데스크톱 흐름의 역할 보기([mighty-mode.md](mighty-mode.md) "역할 보기 (맥·Windows)")를 휴대폰 목록에 맞게 보낸다. **폰은 얇은 렌더러다**: 낱말과 모델 이름은 호스트가 데스크톱과 같은 함수로 짓고(맥 `FlowRoles`·`FlowCard`·`FlowDelegation`·`FlowReturn`·`FlowAdvisor`·`FlowLog`, Windows Core의 같은 이름), 폰은 목록에 놓고, 잉크를 자기 팔레트로 옮기고, 압축 행의 경과 시간을 자기 시계로 1초마다 읽는다. 입구는 맥 `MightyCore/Remote/MobileFlow.swift`, Windows `MightyCode.Core/Remote/MobileFlow.cs`이고 필드 이름과 모양은 같다.
+
+**묻는 폰에게만.** `capabilities`에 `"roles"`가 있는 호스트(이번 맥·Windows 앱)만 안다. 휴대폰은 그 호스트에만 세션 상세를 `GET /m1/sessions/{id}?since=…&wait=…&roles=1`로 묻는다(`structure`와 함께 써도 된다). `roles`는 숫자이고 1 이상이면 묻는 것, 0이면 묻지 않는 것이다. 다른 라우트(`/m1/state` 등)에서 이 이름과 숫자가 아닌 값은 400이다(구버전 호스트는 모르는 이름을 400으로 거절하므로 폰은 capability를 보고서만 붙인다). 묻지 않는 폰(이번 릴리스 전의 폰)은 지금까지와 같은 페이로드를 받는다.
+
+**무엇이 오나.** 모두 선택 필드이고, 없는 값은 싣지 않는다. 잉크는 디자인 토큰 이름(`taskText` 메인, `agentText` 하위 에이전트, `ink2` 작업, `steerText` 조언자, 직접 만든 에이전트의 색이면 `errText`·`accent`·`doneText`·`waitText`·`agentText`·`questionText`·`steerText`·`taskText`), 시각은 1970년부터의 밀리초다.
+
+```
+MobileMighty     { …, fanOut?: true,                       // runs가 역할 보기의 펼침을 싣는다(Claude 창): 요청이 자기 백그라운드 블록을 띄운 순서대로 가진다
+                   log?: { status: [{ text, ink }],        // 세션 로그의 상태 줄 부분들("Sonnet 5.5 실행 중", "작업 2개 실행 중", "조언자 대기")
+                           rows: [{ id, at, who, ink, what }] } }   // 가장 새 활동의 마지막 다섯 줄, 오래된 것부터
+MobileMightyRun  { …, returning?: { text, waiting },       // 결과가 올 자리의 복귀 줄, 결과가 생기기 전까지(FlowReturn)
+                   advisor?: { header, state?: "consulting" | "onCall", rows: [{ id, caller, ink, at?, seconds?, line, state }],
+                               calls, totals, note?, empty? } }    // 조언자 띠(FlowAdvisor.band): rows는 남긴 호출 전부, calls는 본 호출 수
+MobileBlock      { …, role?: { name: "lead" | "subagent" | "task", ink, identity?, marks?: ["background" | "fork" | "worktree"], summary },
+                   card?: { activity?, before: [string], after: [string], startedAt?, endedAt?, nested?, copy?: { runId, blockId } },
+                   delegate?: { head, parts?: [{ text, ink }], model?, progress?, text } }
+```
+
+- **`role`**은 모든 에이전트 창의 블록에 간다: main 블록은 메인(`identity`는 마지막으로 답한 모델과 창의 사고 강도, `Sonnet 5.5 · 사고 강도 · High`, `FlowLog.leadName`), 하위 에이전트는 종류 · 모델(`FlowCard.identityLine`, `Explore · Haiku 5.5`)과 표시, 백그라운드 명령은 Claude 창에서만 `작업 · <명령>`. `summary`는 화면 낭독기가 읽는 한 문장(`FlowIdentity.summary`)이다.
+- **`fanOut`**은 Claude 창에만 붙는다. 그때 요청의 실행은 `shownAgents`가 덜어 내던 백그라운드 하위 에이전트·명령과 그 아래 블록을 기록된 순서(띄운 순서) 그대로 싣고, 휴대폰은 그 실행의 `background` 블록을 숨기지 않는다(`hostFiltersBackground`보다 앞선다). 다른 에이전트 창과 묻지 않는 폰에는 지금의 규칙(알림 실행에만 백그라운드 블록) 그대로다.
+- **`card`**는 압축 행이 되는 블록에만 붙는다(`FlowCard.foldsToCard`): 요청의 백그라운드 하위 에이전트와 백그라운드 명령은 늘, 포그라운드 하위 에이전트는 도는 동안. `before`·`after`는 마지막 줄의 시간 앞뒤 낱말(`FlowCard.figureParts`: `실행 중`, 끝난 명령의 `종료 코드 0`; `도구 3`, `토큰 12K`)이고, 폰은 그 사이에 시간을 넣는다: 도는 동안 `startedAt`부터 지금까지, 끝나면 `startedAt`부터 `endedAt`까지(`45초`, `3분 12초`, 데스크톱의 `FlowCard.elapsed`와 같은 낱말 `styles.state.elapsed*`). `activity`는 지금 하는 일(끝나면 답의 첫 줄, 명령은 마지막 출력 줄), `nested`는 그 아래 하위 에이전트 수 `(+N)`, `copy`는 끝난 백그라운드 블록의 사본이 있는 알림 실행(이 페이로드의 실행 가운데)이다.
+- **`delegate`**는 일을 맡긴 블록(main 블록이나 하위 에이전트)에 붙는 줄이다(`FlowDelegation`): `하위 에이전트 3개에 위임 · Haiku 5.5 · 2/3 실행 중`, 명령만이면 `작업 2개 실행 · …`, 섞이면 `3개 병렬 · 하위 에이전트 1 · 작업 2 · …`.
+- **`returning`**은 결과가 아직 없는 요청에만 있다(`MightyGraphLayout.hasResult`가 거짓이고 `FlowReturn.state`가 있을 때). 답을 기다리는 계획이 그 자리에 있어도 보낸다(폰은 계획을 카드로 따로 그린다). 알림 실행에는 없다.
+- **`advisor`**는 조언자가 켜진 채 시작했거나 스트림에서 조언자가 보인 실행에 있다(`FlowAdvisor.shows`). `seconds`는 답까지 걸린 초를 버림한 정수다.
+- **`log`**는 창의 모든 실행(보내는 20개가 아니라)에서 짓는다(`FlowLog.status`·`rows`를 `shownRuns`로). 요청이 없는 창에는 없다.
+- **직접 만든 에이전트**(`AgentDefinitions`)의 색과 모델은 호스트가 휴대폰 몫으로 따로, 메인 스레드 밖에서 읽는다(맥 `AppStore.mobileFlowDefinitions`, Windows WinUI `MobileFlowDefinitions`: 폴더와 블록이 말한 종류가 바뀔 때만). 다 읽으면 그 창의 리비전이 올라 폰이 다시 받는다. 원격 워크스페이스는 읽지 않는다(폰에는 원래 오지 않는다).
+- **롱 폴.** mighty 요약값은 이제 실행의 모든 블록(요청의 백그라운드 블록 포함)과 그 수치(`figures.toolCalls`·`endedAt`, 토큰, CLI가 정한 모델), 조언자의 호출 수·상태·토큰을 센다. 압축 행의 경과 시간은 폰이 재므로 요약값에 들지 않는다. 예전 폰은 그 블록을 그리지 않지만 한 번 더 깰 뿐이다.
+
+**폰이 그리는 것**(`mobile/src/lib/flow-roles.ts`, `mobile/src/components/flow-roles.tsx`, `mighty-blocks.tsx`): 블록 카드 왼쪽 끝에 `role.ink`의 띠와 제목 아래 한 줄(`identity`와 표시의 낱말 `graph.identity.word.*`). `card`가 있는 블록은 요지 대신 압축 행의 줄(이름과 `(+N)`, 종류 · 모델이나 명령, 지금 하는 일, 상태 · 시간 · 수치)을 보이고, 누르면 그 자리에서 펼치되 끝난 백그라운드 행은 목록이 `copy`의 알림 실행으로 가서 사본을 연다(목록에 그 실행이 없으면 그 자리에서 펼친다). `delegate`는 그 블록 바로 아래의 작은 줄(`↳`, 부분마다 그 잉크, 모델은 하위 에이전트 잉크, 진행은 실행 파랑), `returning`은 목록 끝 결과가 올 자리의 행(도는 동안 실행 파랑 테두리), `advisor`는 단계 아래 결과 카드 위의 요약 카드(가장 새 호출 셋과 `이전 호출 N개`, 암호화 안내, 합계), `log`는 블록 보기 맨 위 백그라운드 작업 줄 아래의 상태 줄이고 누르면 마지막 줄들(시각은 폰의 시계)이 펼쳐진다. 끝난 요청의 단계가 접혀 있어도 도는 압축 행은 그 아래에 남는다. 모르는 잉크는 중립 잉크, 모르는 표시는 빼고, 형식이 틀린 필드는 버린다(화면을 깨뜨리지 않는다).
+
+**버전이 어긋날 때**
+
+| 호스트 | 휴대폰 | 보이는 것 |
+| --- | --- | --- |
+| 새 | 새 | `roles=1`로 묻고 역할 보기를 그린다. |
+| 새 | 예전 | 묻지 않으니 페이로드가 지금과 같다. 요청의 백그라운드 블록은 알림 실행이 올 때까지 띠에만 있다. 롱 폴은 백그라운드 블록의 진행에도 깬다. |
+| 예전 | 새 | `capabilities`에 `"roles"`가 없으니 묻지 않고 지금처럼 그린다. |
+
+공유 픽스처 `native/contracts/fixtures/mobile-roles.json`: 같은 저장 실행(Claude 요청 둘과 알림 실행 하나, Codex 요청 하나)에서 맥(`MobileFlowTests`)과 Windows Core(`MobileFlowVerification`)가 같은 JSON을 만들어 내고, 폰(`flow-roles.test.ts`)이 그것을 읽어 그린다.
 
 ### 스타일 (style)
 
@@ -666,9 +714,12 @@ MobilePushMessage {
 - `MightyCore/Styles/StylePanelProjection.swift`: `MobileMighty.panel`이 되는 `StylePanel`의 모양과 골든 직렬화. Mac 패널과 같은 함수가 만든다(스타일 엔진 계약: [mighty-styles.md](mighty-styles.md) §5.6·§7.3).
 - `MightyCore/Remote/MobileLegacyStyleAdapter.swift`: 번들 Ouroboros의 `mighty.ouroboros`를 같은 투영에서 만드는 레거시 어댑터.
 - `MightyCore/Remote/MobileStructure.swift`: `mighty.structure`의 모양·한도와 창별 캐시(`MobileStructureCache`). `MightyStructure.make`의 결과를 그대로 줄인다.
+- `MightyCore/Remote/MobileFlow.swift`: 역할 보기(`roles=1`)의 모양과 그것을 짓는 함수(`MobileFlow.lead`·`role`·`card`·`delegate`·`returning`·`advisor`·`log`, `MobileMightySupport.blocks(roles:)`). 앱의 `AppStore.mobileMighty(roles:)`가 부르고, 직접 만든 에이전트의 정의는 `AppStore.mobileFlowDefinitions`가 메인 액터 밖에서 읽는다. Windows는 `MightyCode.Core/Remote/MobileFlow.cs`(같은 모양), `MobileDesktopRouter.RoleExtras`, WinUI `MobileSnapshot(roles)`·`MobileFlowDefinitions`.
 
 ## 모바일 앱
 
 `mobile/README.md`를 참고한다. 화면은 페어링(QR/링크 붙여넣기) → 호스트 → 워크스페이스·세션 목록 → 세션 상세(대화, 권한·질문 카드, 입력창, 중지)이고, 워크스페이스마다 읽기 전용 파일 목록 → 파일 미리보기가 있다. 마이티 보기의 범용 스타일 패널은 `mobile/src/lib/styles.ts`(정규화·뷰 모델)와 `mobile/src/components/guided-panel.tsx`·`guided-action-chip.tsx`가 그린다. 세션 화면의 보기 전환은 대화·블록·구조 셋이고, 파이프라인(구조) 보기는 `mobile/src/lib/structure.ts`(방어적 정규화와 단계 모양·접기 규칙), `mobile/src/lib/pipeline-board.ts`(보드 묶기와 보드·열 이동, Mac `MightyStructure.boards`·`Navigation`과 같은 규칙)와 `mobile/src/components/structure-view.tsx`가 그린다: 보드 하나씩(스타일 없는 창은 요청 하나, 스타일 창은 파이프라인 하나), 맨 위에 ◀ ▶와 목록을 여는 "요청 3 / 7"·"파이프라인 2 / 3", 오래된 보드를 보는 동안 새 보드가 오면 "새 요청"·"새 파이프라인" 배지(누르면 가장 최근 보드로). 그 아래 보드 상태(파이프라인은 이름도), 단계 칩 줄(상태 색, 카드 수, 이어지는 선; 누르면 그 열로), 그리고 열마다 화면 너비 한 쪽씩 옆으로 넘기는 카드 목록. 처음에는 보드의 지금 단계 열이 열리고, 사용자가 다른 열로 옮기기 전까지 지금 단계를 따라간다. 카드는 Mac처럼 겹치지 않게 말한다: 요청 카드는 요청 내용만, 실행 카드는 상태부터, 결과 카드는 실패·중지일 때만 제목, 하위 에이전트 카드는 중첩이면 "… 아래". 실행 중인 카드·하위 에이전트는 실행 색 테두리가 숨 쉬듯 깜박인다(네이티브 애니메이션). 스타일 창의 끝난 요청 카드는 한 장으로 접힌다. 맨 아래에 있을 때만 새 내용을 따라가고, 사용자가 위로 올리면 그대로 둔다. 따라가기는 보드·열마다 따로 기억한다(`FollowMemory`). 고른 보드는 id와 그 보드의 요청들로 들고(새 요청이 와도 그대로), 가장 최근 보드로 돌아오면 놓아서 다시 새 보드를 따라간다.
+
+역할 보기는 `mobile/src/lib/flow-roles.ts`(방어적 정규화, 잉크를 팔레트로 옮기기, 압축 행의 시간과 줄, 로그의 시각)와 `mobile/src/components/flow-roles.tsx`(역할 띠, 압축 행의 줄, 위임 줄, 복귀 행, 조언자 카드, 상태 줄)가 맡고, `mobile/src/components/mighty-blocks.tsx`가 목록에 놓는다(끝난 백그라운드 행에서 사본으로 가기 포함). 세션 화면은 호스트가 `roles`를 알릴 때만 `roles=1`로 묻는다.
 
 Tailscale 직접 연결은 `mobile/src/lib/direct.ts`(끝점 거르기·QR 값 읽기)와 `mobile/src/api/relay/transport.ts`(직접 끝점 경주, 릴레이로 넘어가기, `route`)가 맡고, 호스트별 끝점은 `mobile/src/store/hosts.ts`의 `PairedHost.directEndpoints`(이 필드가 없는 예전 항목은 그대로 읽히고, `auth_ok`가 목록을 주면 채워진다)에 저장된다.

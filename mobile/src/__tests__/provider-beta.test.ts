@@ -1,5 +1,5 @@
 import { resetLanguage, t } from '@/lib/i18n';
-import { providerIsBeta, providerLabel } from '@/theme';
+import { darkPalette, providerColorsFor, providerIsBeta, providerLabel } from '@/theme';
 
 describe('beta providers', () => {
   afterEach(() => {
@@ -11,11 +11,26 @@ describe('beta providers', () => {
     expect(providerLabel('pi', false)).toBe('pi');
   });
 
-  it('marks Codex and Antigravity as beta and keeps Claude official', () => {
+  it('names opencode and Hermes as the desktops do', () => {
+    expect(providerLabel('opencode')).toBe('opencode');
+    expect(providerLabel('hermes', false)).toBe('Hermes');
+  });
+
+  it("gives opencode and Hermes the desktops' brand colours, and an unknown agent the neutral one", () => {
+    // The Mac's ProviderMark.colors and Windows' ProviderMark.Colors.
+    expect(providerColorsFor(darkPalette, 'opencode')).toEqual(['#8A8F98']);
+    expect(providerColorsFor(darkPalette, 'hermes')).toEqual(['#D9A441']);
+    for (const unknown of ['rovo', '', 'constructor', '__proto__']) expect(providerColorsFor(darkPalette, unknown)).toEqual([darkPalette.textMuted]);
+    expect(providerLabel('constructor')).toBe('constructor');
+  });
+
+  it('marks every agent but Claude as beta', () => {
     expect(providerIsBeta('claude')).toBe(false);
     expect(providerIsBeta('codex')).toBe(true);
     expect(providerIsBeta('gemini')).toBe(true);
     expect(providerIsBeta('pi')).toBe(true);
+    expect(providerIsBeta('opencode')).toBe(true);
+    expect(providerIsBeta('hermes')).toBe(true);
     expect(providerIsBeta('')).toBe(false);
     expect(providerIsBeta('constructor')).toBe(false);
   });

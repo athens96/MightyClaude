@@ -459,6 +459,10 @@ internal static class Verification
         await Test("Mobile structure: bounds and budget", MobileStructureVerification.BoundsAndBudget);
         await Test("Mobile structure: rebuilt only when the structure moves", MobileStructureVerification.CacheRebuildsOnlyWhenTheStructureMoves);
         await Test("Mobile structure: sent only when asked and changed, shed first", MobileStructureVerification.RouteSendsTheStructureOnlyWhenAskedAndChanged);
+        await Test("Mobile role view: the shared fixture (native/contracts/fixtures/mobile-roles.json) is what Windows sends", MobileFlowVerification.TheSharedFixtureIsWhatWindowsSends);
+        await Test("Mobile role view: an older phone gets the payload it always got, another agent's pane fans nothing out", MobileFlowVerification.OlderPhonesAndOtherAgents);
+        await Test("Mobile role view: the digest moves with the fan-out and the advisor", MobileFlowVerification.DigestMovesWithTheFanOutAndTheAdvisor);
+        await Test("Mobile role view: roles=1 is the session detail's alone", MobileFlowVerification.RouteTakesRolesOnTheSessionDetailAlone);
         await Test("Mobile host: runs carry the Mac's shape and caps", MobileHostVerification.RunsCarryTheMacsShapeAndCaps);
         await Test("Mobile host: runs carry the result files the desktop lists", MobileHostVerification.RunsCarryTheResultFilesTheDesktopLists);
         await Test("Mobile host: a pane without a graph is grouped from its transcript", MobileHostVerification.APaneWithoutAGraphIsGroupedFromItsTranscript);
@@ -564,6 +568,8 @@ internal static class Verification
         await Test("pi questions: the app's tool takes a typed answer and several picks, any other select only its options", PiDialogVerification.TheAppsToolTakesATypedAnswerAndSeveralPicksAndAnyOtherSelectOnlyItsOptions);
         await Test("pi questions: confirm and input are cards, a timed dialog closes itself, an editor is still cancelled", PiDialogVerification.ConfirmAndInputAreCardsATimedDialogClosesItselfAndAnEditorIsStillCancelled);
         await Test("pi questions: the shipped extension is loaded for each run and the read-only list names its tool", PiDialogVerification.TheShippedExtensionIsLoadedForEachRunAndTheReadOnlyListNamesItsTool);
+        await Test("acp graph: every opencode and Hermes recording is the Mac's graph (native/contracts/fixtures/acp-graphs.json)", AcpGraphVerification.EveryRecordingIsTheMacsGraph);
+        await Test("acp graph: opencode and Hermes panes draw the graph, their request block in their own name", AcpGraphVerification.OpencodeAndHermesPanesDrawTheGraph);
         await Test("acp opencode: a new session is initialize, session/new and one prompt; text, resume and usage", AcpVerification.ANewOpencodeSessionIsInitializeThenSessionNewThenOnePrompt);
         await Test("acp opencode: settings go as config options and one the agent lacks is named and skipped", AcpVerification.OpencodeSettingsGoAsConfigOptionsAndOneTheAgentLacksIsNamedAndSkipped);
         await Test("acp opencode: a missing session to resume starts a new one with a notice", AcpVerification.AMissingOpencodeSessionToResumeStartsANewOneWithANotice);
@@ -584,10 +590,11 @@ internal static class Verification
         await Test("acp hermes: the clarify config value is the Mac's", AcpVerification.TheClarifyConfigValueIsTheMacs);
         await Test("acp: attached copies are named in the prompt and pictures are image blocks", AcpVerification.AttachedCopiesAreNamedInThePromptAndPicturesAreImageBlocks);
         await Test("acp hermes: a session is continued only where its yolo and its answers allow", AcpVerification.AHermesSessionIsContinuedOnlyWhereItsYoloAndAnswerAllow);
-        await Test("acp run: an opencode run speaks ACP and completes whether its server exits or is ended", AcpRunVerification.AnOpencodeRunSpeaksAcpAndCompletesWhetherTheServerExitsOrIsEnded);
+        await Test("acp run: an opencode run speaks ACP, completes whether its server exits or is ended, and its graph is the answer with its tokens", AcpRunVerification.AnOpencodeRunSpeaksAcpAndCompletesWhetherTheServerExitsOrIsEnded);
+        await Test("acp run: an opencode request's block keeps its replies and tool rows, a sub-agent's text kept out", AcpRunVerification.AnOpencodeRunsBlockKeepsItsRepliesAndToolRows);
         await Test("acp run: a signed-out opencode run ends in error with the sign-in reason", AcpRunVerification.ASignedOutOpencodeRunEndsInErrorWithTheSignInReason);
         await Test("acp run: an OpenCode 1 is not run and asks for OpenCode 2", AcpRunVerification.AnOpenCode1IsNotRunAndAsksForOpenCode2);
-        await Test("acp run: Hermes gets full access as yolo, its edit policy, and clarify turned on once", AcpRunVerification.AHermesRunGivesFullAccessAsYoloAndTurnsClarifyOnOnce);
+        await Test("acp run: Hermes gets full access as yolo, its edit policy, clarify turned on once, and a graph of its answer without tokens", AcpRunVerification.AHermesRunGivesFullAccessAsYoloAndTurnsClarifyOnOnce);
         await Test("acp run: a stop tells Hermes to cancel the turn before the process ends", AcpRunVerification.AStopTellsHermesToCancelTheTurnBeforeTheProcessEnds);
         // Antigravity permission cards, ported from the Mac's AntigravityPermissionTests over the shared fixture.
         await Test("antigravity cards: every fixture turn gives its actions", AntigravityPermissionVerification.EveryFixtureTurnGivesItsActions);

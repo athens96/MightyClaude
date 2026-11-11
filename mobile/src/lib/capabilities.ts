@@ -1,4 +1,4 @@
-import { CAPABILITIES, type Capability, type HostInfo } from '@/api/types';
+import { CAPABILITIES, type Capability, type HostInfo, type Provider } from '@/api/types';
 
 const KNOWN = new Set<string>(CAPABILITIES);
 
@@ -23,4 +23,19 @@ export function hasCapability(
   name: Capability,
 ): boolean {
   return capabilities !== undefined && capabilities.includes(name);
+}
+
+/** The agents every host with the `pane` route runs, in the desktops' order. */
+const BASE_PROVIDERS: readonly Provider[] = ['claude', 'codex', 'gemini'];
+/** The later agents, each offered only by a host that lists its name as a capability. */
+const LISTED_PROVIDERS: readonly (Provider & Capability)[] = ['pi', 'opencode', 'hermes'];
+
+/**
+ * The agents a new pane may run on this host: the three every host runs, then pi, opencode and Hermes where the
+ * host lists them (the desktops' `ProviderOptions.ids` order). These three run on the host's own computer only
+ * (`ProviderOptions.isLocalOnly`); a host lists only its own workspaces to a phone, so no workspace offered here
+ * is another computer's.
+ */
+export function newPaneProviders(capabilities: readonly Capability[] | undefined): Provider[] {
+  return [...BASE_PROVIDERS, ...LISTED_PROVIDERS.filter((name) => hasCapability(capabilities, name))];
 }

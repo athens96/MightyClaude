@@ -8,7 +8,7 @@ import { Icon } from '@/components/icons';
 import { SessionRow } from '@/components/session-card';
 import { Button, EmptyState } from '@/components/ui';
 import { useCapabilities, useRunsAntigravity } from '@/hooks/use-capabilities';
-import { hasCapability } from '@/lib/capabilities';
+import { hasCapability, newPaneProviders } from '@/lib/capabilities';
 import { t } from '@/lib/i18n';
 import { groupSessionsByWorkspace } from '@/lib/merge';
 import { workspaceMute } from '@/lib/push/workspace-mute';
@@ -162,7 +162,7 @@ export function HostWorkspaces({
         workspaceName={activeWorkspace?.workspace.name ?? ''}
         busy={creating}
         antigravity={antigravity}
-        offersPi={hasCapability(capabilities, 'pi')}
+        providers={newPaneProviders(capabilities)}
         onCancel={() => setCreatingFor(undefined)}
         onCreate={(choice) => void createSession(choice)}
       />

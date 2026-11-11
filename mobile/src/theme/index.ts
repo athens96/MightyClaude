@@ -384,14 +384,21 @@ const providerLabels: Record<Provider, string> = {
   codex: 'Codex',
   gemini: 'Antigravity',
   pi: 'pi',
+  opencode: 'opencode',
+  hermes: 'Hermes',
 };
 
-/** Brand marks, as used by the Mac app's provider glyphs (Antigravity keeps Gemini's sweep). */
+/**
+ * Brand marks, as the desktops draw their provider glyphs (the Mac's `ProviderMark.colors`, Windows'
+ * `ProviderMark.Colors`; Antigravity keeps Gemini's sweep).
+ */
 export const providerColors: Record<Provider, string[]> = {
   claude: ['#D97757'],
   codex: ['#10A37F'],
   gemini: ['#4285F4', '#9B72CB', '#D96570'],
   pi: ['#8B7CF6'],
+  opencode: ['#8A8F98'],
+  hermes: ['#D9A441'],
 };
 
 /**
@@ -519,12 +526,15 @@ export function providerLabel(provider: string, antigravity = true): string {
   return labelFor(providerLabels, provider);
 }
 
+/** The beta agents: every one but Claude (the desktops' `ProviderOptions.isBeta`). */
+const BETA_PROVIDERS: readonly string[] = ['codex', 'gemini', 'pi', 'opencode', 'hermes'];
+
 /**
- * Claude is official; Codex, Antigravity and pi are beta. The phone's one answer for every beta
- * badge — the badge is drawn beside the name and never becomes part of `providerLabel`.
+ * Claude is official; Codex, Antigravity, pi, opencode and Hermes are beta. The phone's one answer for
+ * every beta badge — the badge is drawn beside the name and never becomes part of `providerLabel`.
  */
 export function providerIsBeta(provider: string): boolean {
-  return provider === 'codex' || provider === 'gemini' || provider === 'pi';
+  return BETA_PROVIDERS.includes(provider);
 }
 
 /**

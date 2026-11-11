@@ -195,7 +195,9 @@ mightycode://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss://h
   `action`이 없으면 입력창에 `/이름 `만 넣습니다.
 - 프로바이더 표시는 Mac과 **같은 아웃라인**을 브랜드 색으로 그립니다(Claude `#D97757`,
   Codex `#10A37F`, Antigravity(`gemini` id)는 Gemini의 `#4285F4`→`#9B72CB`→`#D96570`
-  그라디언트를 왼쪽 아래에서 오른쪽 위로). 아웃라인 데이터는 Mac의 `MightyCore/ProviderMark.swift`와 같은 24×24 경로로
+  그라디언트를 왼쪽 아래에서 오른쪽 위로, pi `#8B7CF6`의 π, opencode `#8A8F98`의 블록 O, Hermes `#D9A441`의 날개 달린 H).
+  Claude 말고는 모두 베타 배지가 붙고, 새 창의 에이전트 칩은 Claude·Codex·Antigravity 뒤에 호스트가
+  `pi`·`opencode`·`hermes` 기능을 알릴 때만 그 에이전트를 더합니다(`newPaneProviders`). 아웃라인 데이터는 Mac의 `MightyCore/ProviderMark.swift`와 같은 24×24 경로로
   `src/lib/provider-marks.ts`에 있고, `react-native-svg`로 그립니다.
   **모르는 프로바이더는 아웃라인이 없으므로 중립 칩**으로 둡니다.
 
@@ -211,6 +213,15 @@ mightycode://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss://h
 `블록 5개 · 끝남 3`처럼 **폰이 가진 블록만** 셉니다 — 호스트가 앞으로 몇 개가 더 올지 알려 주지
 않으므로 `3 / 5` 같은 진행률로 그리지 않습니다.
 **계약에 없는 종류·상태는 중립 색으로, 호스트가 보낸 단어 그대로** 그립니다.
+
+호스트가 `roles` 기능을 알리면 폰은 세션 상세를 `roles=1`로 묻고 **역할 보기**를 그립니다
+(`lib/flow-roles.ts`, `components/flow-roles.tsx`, [`docs/mobile-remote.md`](../docs/mobile-remote.md) "역할 보기"):
+블록 카드 왼쪽 끝의 역할 잉크 띠(메인 청록 · 하위 에이전트 보라나 직접 만든 에이전트의 색 · 작업 회색)와
+제목 아래 `Explore · Haiku 5.5 · 백그라운드` 한 줄, Claude 요청의 도는 하위 에이전트와 백그라운드 명령의
+**압축 행**(이름과 `(+N)`, 종류 · 모델이나 명령, 지금 하는 일, `실행 중 · 42초 · 도구 3 · 토큰 12K` — 시간은
+폰의 시계로 1초마다), 일을 맡긴 블록 아래의 위임 줄, 결과가 올 자리의 복귀 행, 요청 아래의 조언자 요약,
+블록 보기 맨 위의 상태 줄(누르면 마지막 줄들). 끝난 백그라운드 행을 누르면 그 사본이 있는 알림 실행으로 갑니다.
+낱말은 모두 호스트가 데스크톱과 같은 함수로 지어 보내고, 폰은 놓고 잉크를 팔레트로 옮기고 시간만 잽니다.
 
 끝난 요청의 결과 카드 아래에는 호스트가 실행의 `resultFiles`로 보낸 **결과에 나온 파일** 목록이 붙습니다.
 Mac·Windows의 결과 옆 패널과 같은 함수로 호스트가 찾은 워크스페이스 파일이며, 폰은 경로를 글에서 읽지 않습니다.
@@ -380,6 +391,7 @@ src/
              antigravity-permission-card.tsx(Antigravity 권한 카드)
              push-root.tsx(푸시 시작·동기화·알림 탭 열기·세션 보는 중 알림)
              mighty-blocks.tsx(요청·블록 타임라인), result-files.tsx(결과에 나온 파일), structure-view.tsx(파이프라인 보드), guided-panel.tsx
+             flow-roles.tsx(역할 보기: 역할 띠, 압축 행, 위임 줄, 복귀 행, 조언자 카드, 상태 줄)
   hooks/     use-long-poll.ts (AbortController + 포커스 + notify 연동)
              use-capabilities.ts (호스트별 /m1/info 캐시)
              use-attachments.ts (picker → 한도 → 청크 업로드 → uploadId)
@@ -388,6 +400,7 @@ src/
              status-tone.ts(상태 → 다섯 색 + 중립)
              capabilities.ts, history.ts, questionnaire.ts, status-line.ts, commands.ts
              mighty.ts(블록·패널 파싱과 라벨), result-files.ts(resultFiles 읽기·행·열 화면), uploads.ts(한도·청크 계획·업로드 진행)
+             flow-roles.ts(역할 보기 읽기, 잉크 → 팔레트, 압축 행의 시간과 줄, 로그 시각)
              file-slices.ts(expo-file-system 범위 읽기), device-token.ts, host-secrets.ts
              provider-marks.ts(프로바이더 마크 24×24 아웃라인)
              antigravity-permission.ts(Antigravity 카드 읽기·답 본문)

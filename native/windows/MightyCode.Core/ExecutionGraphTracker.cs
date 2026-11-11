@@ -231,7 +231,8 @@ public sealed partial class ExecutionGraphTracker
         var main = new ExecutionGraphNode(mainID, runID, null, "main", "running", ProviderLabel(provider)) { Input = input };
         if (ExecutionGraphSupport.Normalized(main) is { } normalized) { nodes[mainID] = normalized; order.Add(mainID); emit(normalized); }
     }
-    private static string ProviderLabel(string id) => id switch { "codex" => "Codex", "gemini" => "Antigravity", "pi" => "pi", _ => "Claude" };
+    /// <summary>The request block's title: the agent's own name (M/MightyCore/ExecutionGraphTracker.swift init, ProviderOptions.label).</summary>
+    private static string ProviderLabel(string id) => ProviderMark.Label(id);
 
     /// <summary>The effort the request starts with, when it is not the pane's own: Settings › Models gives its effort to a pane left on Auto, after
     /// the tracker was made (macOS RunSession.noteGraphRunEffort). A word that is no effort changes nothing.</summary>
@@ -453,6 +454,9 @@ public sealed partial class ExecutionGraphTracker
         if (Provider == "codex") { ConsumeCodex(value); return; }
         if (Provider == "gemini") { ConsumeAntigravity(value); return; }
         if (Provider == "pi") { ConsumePi(value); return; }
+        if (Provider == "opencode") { ConsumeAcp(value); return; }
+        // Hermes reports its session's running token counts, not the request's: the block carries none.
+        if (Provider == "hermes") return;
         var parentTool = Key(MetadataJson.Property(value, "parent_tool_use_id"));
         if (parentTool is not null) EnsureAgent(parentTool);
         // Over-cap child events are omitted, never reclassified as main text.

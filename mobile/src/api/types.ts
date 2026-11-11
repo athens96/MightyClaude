@@ -55,7 +55,7 @@ export type PaneKind = SessionKind | 'browser' | AgentIOPaneKind;
 export function isAgentIOPane(kind: string): kind is AgentIOPaneKind {
   return kind === 'agent-terminal' || kind === 'agent-browser';
 }
-export type Provider = 'claude' | 'codex' | 'gemini' | 'pi';
+export type Provider = 'claude' | 'codex' | 'gemini' | 'pi' | 'opencode' | 'hermes';
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error' | 'stopped';
 export type LogEntryKind = 'user' | 'assistant' | 'system' | 'output' | 'error';
 export type SubmitAccepted = 'started' | 'steered' | 'queued';
@@ -93,7 +93,17 @@ export type Capability =
   | 'workMap'
   | 'appUpdate'
   /** The host runs pi as a fourth agent (provider `pi`); a phone offers it for a new pane only then. */
-  | 'pi';
+  | 'pi'
+  /** The host runs opencode (provider `opencode`); a phone offers it for a new pane only then. */
+  | 'opencode'
+  /** The host runs Hermes Agent (provider `hermes`); a phone offers it for a new pane only then. */
+  | 'hermes'
+  /**
+   * The host sends the role view (docs/mobile-remote.md "역할 보기") to a phone that asks with `roles=1`: who each block is, a
+   * Claude pane's background work fanned out under its request as compact rows, the delegate lines, the way back, the advisor
+   * and the session log's status line. A phone asks only a host that lists it (an older host answers 400 to the name).
+   */
+  | 'roles';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -114,6 +124,9 @@ export const CAPABILITIES: readonly Capability[] = [
   'workMap',
   'appUpdate',
   'pi',
+  'opencode',
+  'hermes',
+  'roles',
 ] as const;
 
 export interface HostInfo {
@@ -426,6 +439,116 @@ export interface MobileBlock {
   outputTail?: string[];
   /** Claude's reply to the task's notice, clipped like `output`. */
   noticeReply?: string;
+  /** The role view (`roles=1`): who the block is. Absent from a host that does not send it. */
+  role?: MobileBlockRole;
+  /** The role view: the block's compact row (a request's background sub-agent or command, a sub-agent still running). */
+  card?: MobileBlockCard;
+  /** The role view: the line over the rows this block delegated to. */
+  delegate?: MobileDelegateLine;
+}
+
+/** A word in its ink: a design token name (`taskText`, `agentText`, `ink2`, `steerText`, …) the phone maps onto its palette. */
+export interface MobileInkedText {
+  text: string;
+  ink: string;
+}
+
+/** Who a block is, in the desktops' words (`FlowRoles`). */
+export interface MobileBlockRole {
+  /** `lead`, `subagent` or `task`; a word this app does not know draws in the neutral ink. */
+  name: string;
+  /** The role's ink, or a custom agent's own colour, as a design token name. */
+  ink: string;
+  /** One line: the lead's model and effort, a sub-agent's "Explore · Haiku 5.5", a background command's "작업 · <command>". */
+  identity?: string;
+  /** `background`, `fork`, `worktree`, in that order. */
+  marks?: string[];
+  /** The whole identity in one line, for a screen reader. */
+  summary: string;
+}
+
+/** A finished background block's full copy in a notice run: where its compact row leads. */
+export interface MobileCopyRef {
+  runId: string;
+  blockId: string;
+}
+
+/** A compact row (`FlowCard`): what it does now, and its figures around a time the phone keeps against its own clock. */
+export interface MobileBlockCard {
+  activity?: string;
+  /** The figures' words before the time ("실행 중"; a command's "종료 코드 0"). */
+  before: string[];
+  /** And after it ("도구 3", "토큰 12K"). */
+  after: string[];
+  /** Milliseconds since 1970: the time runs from here while the block runs, and to `endedAt` once it ended. */
+  startedAt?: number;
+  endedAt?: number;
+  /** Sub-agents under it. */
+  nested?: number;
+  copy?: MobileCopyRef;
+}
+
+/** The line over the rows a block delegated to (`FlowDelegation`). */
+export interface MobileDelegateLine {
+  head: string;
+  parts?: MobileInkedText[];
+  /** The model the sub-agents share, or how many they are on: drawn in the sub-agent ink. */
+  model?: string;
+  /** "2/3 실행 중" while any of them runs: drawn in the running blue. */
+  progress?: string;
+  /** The whole line, for a screen reader. */
+  text: string;
+}
+
+/** The way back where a request's result will come, while it is not there (`FlowReturn`). */
+export interface MobileReturn {
+  text: string;
+  /** Something it handed work to still runs. */
+  waiting: boolean;
+}
+
+/** One consultation of the advisor. */
+export interface MobileAdvisorRow {
+  id: string;
+  caller: string;
+  ink: string;
+  /** Milliseconds since 1970 when it was asked. */
+  at?: number;
+  /** Whole seconds the reply took, once it came. */
+  seconds?: number;
+  /** Where in the caller's work, and how it ended. */
+  line: string;
+  state: string;
+}
+
+/** A run's advisor (`FlowAdvisor`). */
+export interface MobileAdvisor {
+  header: string;
+  /** `consulting` or `onCall` while the run goes on; absent once everything ended. */
+  state?: string;
+  rows: MobileAdvisorRow[];
+  /** Every consultation seen, more than `rows` once older ones were let go. */
+  calls: number;
+  totals: string;
+  /** The reply went to Claude encrypted, and nothing of it is shown. */
+  note?: string;
+  /** What it says in its rows' place before any consultation. */
+  empty?: string;
+}
+
+/** One row of the session log: when (milliseconds since 1970), who, in whose ink, and what. */
+export interface MobileFlowLogRow {
+  id: string;
+  at: number;
+  who: string;
+  ink: string;
+  what: string;
+}
+
+/** The session log strip (`FlowLog`): the status line in parts, and the newest activity's last rows. */
+export interface MobileFlowLog {
+  status: MobileInkedText[];
+  rows: MobileFlowLogRow[];
 }
 
 export interface MobileMightyRun {
@@ -464,6 +587,10 @@ export interface MobileMightyRun {
    * its result card is the 알림 대기 block. Absent otherwise (and from older hosts).
    */
   awaitingNotice?: MobileAwaitingNotice;
+  /** The role view: the way back where the result will come, while it is not there. */
+  returning?: MobileReturn;
+  /** The role view: the run's advisor. */
+  advisor?: MobileAdvisor;
 }
 
 /** One file a run's result names: `path` is workspace-relative, `/`-joined — what the file preview route takes. */
@@ -727,6 +854,13 @@ export interface MobileMighty {
    */
   panelUnreadable?: boolean;
   ouroboros?: MobileOuroboros;
+  /**
+   * The runs carry the role view's fan-out (`roles=1` on a Claude pane): a request holds its background blocks, so the phone
+   * draws them there as compact rows instead of leaving them to their notice run.
+   */
+  fanOut?: true;
+  /** The role view's session log strip: its status line and last rows. */
+  log?: MobileFlowLog;
 }
 
 /** Body of `POST /guided`; `text` is left out when the action takes none. */

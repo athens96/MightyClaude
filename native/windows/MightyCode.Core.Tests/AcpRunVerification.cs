@@ -62,6 +62,11 @@ internal static class AcpRunVerification
     private static ProviderCatalog Fake(string provider, string state, string fixture, string version, params string[] options) =>
         new((asked, _) => Task.FromResult<CliCommand?>(asked == provider ? Verification.Self(["--fake-acp", state, AcpVerification.FixturePath(provider, fixture), .. options]) with { Version = version } : null));
     private static string[] Lines(string path) => File.Exists(path) ? File.ReadAllLines(path).Where(l => l.Length > 0).ToArray() : [];
+    /// <summary>The request's graph as the pane last got it: RunManager feeds the channel's events to the tracker and the parser's shown reply to
+    /// its answer (AcpGraphVerification replays every recording through the same wiring).</summary>
+    private static MightyGraphRun? LastGraph(IEnumerable<RunEvent> events) => events.LastOrDefault(e => e.Type == "graph_run")?.GraphRun;
+    private static string Described(MightyGraphRun? run) =>
+        run is null ? "no graph" : JsonSerializer.Serialize(new { run.Provider, run.Status, run.Input, run.FinalOutput, run.Usage, blocks = run.Agents.Count });
 
     internal static async Task AnOpencodeRunSpeaksAcpAndCompletesWhetherTheServerExitsOrIsEnded()
     {
@@ -82,6 +87,10 @@ internal static class AcpRunVerification
                 Check(all.Any(e => e.Type == "log" && e.Entry is { Kind: "assistant", Text: "Hello! How can I help with this project?" }), "the answer");
                 Check(all.Any(e => e.Type == "resume" && e.ResumeId == AcpVerification.OpencodeSession), "the session");
                 Check(all.Any(e => e.Type == "usage" && e.Usage is { Provider: "opencode", CostUSD: 0.0123 }), "usage");
+                // The pane's graph: the request's one block with the answer and the turn's tokens.
+                var graph = LastGraph(all);
+                Check(graph is { Provider: "opencode", Status: "completed", Input: "hi there", FinalOutput: "Hello! How can I help with this project?", Agents.Count: 0, Usage: { InputTokens: 1203, OutputTokens: 18 } },
+                    "the graph: " + Described(graph));
                 Check(JsonSerializer.Deserialize<string[]>(File.ReadAllText(Path.Combine(directory, "argv.json")))!.SequenceEqual(["acp"]), "argv is acp");
                 var env = JsonSerializer.Deserialize<Dictionary<string, string?>>(File.ReadAllText(Path.Combine(directory, "env.json")))!;
                 Check(env["OPENCODE_CONFIG_CONTENT"] == OpencodeAgent.ConfigContent("manual", AgentFiles.Find(OpencodeAgent.QuestionInstructionsName)), "the run's rules: " + env["OPENCODE_CONFIG_CONTENT"]);
@@ -90,6 +99,36 @@ internal static class AcpRunVerification
             }
             finally { try { Directory.Delete(directory, true); } catch (IOException) { } }
         }
+    }
+
+    /// <summary>The request's block of an opencode run as its pane keeps it (M/MightyGraph.swift recordGraph "log"): the replies and the tool
+    /// rows the transcript shows since the request, a sub-agent's own text kept out, the answer and the turn's tokens; the card nobody answered
+    /// goes when its call settles, which then reads completed.</summary>
+    internal static async Task AnOpencodeRunsBlockKeepsItsRepliesAndToolRows()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var events = new ConcurrentQueue<RunEvent>(); var workspace = new Workspace { Path = directory };
+            var snapshot = new AppSnapshot { Version = 1, Workspaces = [workspace], Sessions = [new RunSession { Id = "pane", WorkspaceId = workspace.Id, Provider = "opencode", Kind = "claude", Model = "default" }] };
+            // The composer records the request itself, as the app does.
+            snapshot = snapshot.Apply(RunEvent.Log("pane", "user", "hi there", "opencode"));
+            await using var catalog = Fake("opencode", directory, "tools", "opencode v2.2.7");
+            await using (var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue, _ => { }))
+            {
+                await manager.StartAsync(new("pane", workspace.Id, "claude", "hi there", [], Provider: "opencode"));
+                await Verification.Until(() => events.Any(Ended), 30_000);
+            }
+            foreach (var value in events) snapshot = snapshot.Apply(value);
+            var run = snapshot.Sessions.Single().GraphRuns?.SingleOrDefault();
+            Check(run is { Provider: "opencode", Status: "completed", FinalOutput: "One test fails because main returns 1.", Agents.Count: 0, Usage: { InputTokens: 3100, OutputTokens: 95, CacheReadTokens: 2048 } },
+                "the run: " + Described(run));
+            var replies = run!.RootEntries.Where(e => e.Kind == "assistant").Select(e => e.Text).ToList();
+            Check(replies.SequenceEqual(["Let me run the tests.", "One test fails because main returns 1."]), "the replies: " + string.Join(" | ", replies));
+            var rows = run.RootEntries.Where(e => e.Activity is { Kind: not "turn" }).Select(e => e.Activity!.ToolName + " " + e.Activity.State).ToList();
+            Check(rows.SequenceEqual(["Read completed", "Bash completed", "Edit error"]), "the tool rows: " + string.Join(" | ", rows));
+        }
+        finally { try { Directory.Delete(directory, true); } catch (IOException) { } }
     }
 
     internal static async Task ASignedOutOpencodeRunEndsInErrorWithTheSignInReason()
@@ -146,6 +185,9 @@ internal static class AcpRunVerification
                 }
                 var all = events.ToList();
                 Check(all.Last(e => e.Type == "status").Status == "completed", mode + ": completed: " + string.Join(" | ", all.Where(e => e.Type is "status" or "log").Select(e => e.Status ?? e.Entry?.Kind + ": " + e.Entry?.Text)));
+                // The pane's graph: the request's one block with the answer, and no tokens (Hermes reports its session's running totals).
+                var graph = LastGraph(all);
+                Check(graph is { Provider: "hermes", Status: "completed", Input: "hi there", FinalOutput: "Hi.", Agents.Count: 0, Usage: null }, mode + ": the graph: " + Described(graph));
                 var env = JsonSerializer.Deserialize<Dictionary<string, string?>>(File.ReadAllText(Path.Combine(directory, "env.json")))!;
                 Check(env["HERMES_YOLO_MODE"] == (mode == "fullAccess" ? "1" : null), mode + ": yolo " + env["HERMES_YOLO_MODE"]);
                 var stdin = Lines(Path.Combine(directory, "stdin.txt"));

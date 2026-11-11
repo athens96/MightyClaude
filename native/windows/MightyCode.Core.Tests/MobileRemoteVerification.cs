@@ -108,6 +108,11 @@ internal static class MobileRemoteVerification
             Check((await Route("POST", "/m1/sessions/pane/submit", new { text = "hello", mode = "invented" })).Status == 400 && actions.Count == 0, "invalid submit mode never reaches composer");
             Check((await Route("POST", "/m1/sessions/pane/submit", new { text = "한글 request", mode = "queue" })).Status == 202 && actions.Single().Body.Text("text") == "한글 request", "valid submit routes complete UTF-8 text");
             Check((await Route("POST", $"/m1/workspaces/{workspace.Id}/sessions", new { kind = "shell" })).Status == 409, "phone cannot start local terminal");
+            // The later agents: each is listed by name, so a phone offers it for a new pane, and the create route makes a pane of each.
+            foreach (var provider in new[] { "pi", "opencode", "hermes" })
+                Check(MobileDesktopRouter.Capabilities.Contains(provider) && (await Route("POST", $"/m1/workspaces/{workspace.Id}/sessions", new { kind = "claude", provider })).Status == 201
+                    && actions[^1].Action == "create" && actions[^1].Body.Text("provider") == provider, "the phone may create a pane of " + provider);
+            Check((await Route("POST", $"/m1/workspaces/{workspace.Id}/sessions", new { kind = "claude", provider = "rovo" })).Status == 400, "an agent the host does not run is refused");
             Check((await Route("GET", $"/m1/workspaces/{workspace.Id}/file?path=hello.txt")).Status == 200, "workspace text is previewed");
             Check((await Route("GET", $"/m1/workspaces/{workspace.Id}/file?path=..%2Foutside.txt")).Status == 403, "workspace escape is rejected");
             Check((await Route("GET", "/m1/screen-share/status")).Status == 503 && !MobileDesktopRouter.Capabilities.Contains("screenShare"), "unsupported capture is not advertised");

@@ -410,6 +410,21 @@ struct MobileRemoteTests {
         #expect(advertised.isDisjoint(with: ["notifications", "terminal"]))
     }
 
+    /// pi, opencode and Hermes are each listed by name, and the create route makes a pane of each: a phone offers one
+    /// for a new pane only on a host that lists it.
+    @Test func theLaterAgentsAreListedAndThePhoneMayCreateTheirPanes() async throws {
+        let host = FakeMobileHost()
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for provider in ["pi", "opencode", "hermes"] {
+            #expect(MobileCapability.all.contains(provider))
+            let created = try await call(service, "POST", "/m1/workspaces/workspace-1/sessions", body: ["kind": "claude", "provider": provider])
+            #expect(created.0 == 201)
+        }
+        #expect(try await call(service, "POST", "/m1/workspaces/workspace-1/sessions", body: ["kind": "claude", "provider": "rovo"]).0 == 400)
+        #expect(host.recorded().suffix(3) == ["create:workspace-1:claude:pi", "create:workspace-1:claude:opencode", "create:workspace-1:claude:hermes"])
+    }
+
     @Test func theGuidedRouteBuildsTheMacsOwnPromptAndRefusesTheRest() async throws {
         let host = FakeMobileHost()
         let (service, directory) = await service(host)

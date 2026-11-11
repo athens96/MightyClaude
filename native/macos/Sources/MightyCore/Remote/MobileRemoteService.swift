@@ -11,6 +11,9 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     /// The detail with the pane's structure view built in (`mighty.structure` and its
     /// tag), for a phone that asked for it; the service decides whether it is sent.
     func mobileSession(id: String, structure: Bool) async -> MobileSessionDetail?
+    /// The detail with the role view in its Mighty payload (`MobileFlow`: who each block is, a Claude pane's fan-out, its
+    /// log), for a phone that asked for it with `roles=1`; an older phone never asks and gets the payload it reads.
+    func mobileSession(id: String, structure: Bool, roles: Bool) async -> MobileSessionDetail?
     /// Returns what actually happened — "started" or "queued" — so the phone
     /// shows what the host did. A busy pane always queues, whatever `mode`
     /// says ("steer" from an older phone is queued too). `mode` is already checked against `MobileWire.submitModes`, and the
@@ -85,6 +88,8 @@ public extension MobileHostDelegate {
     }
     /// A host without a structure view answers the plain detail.
     func mobileSession(id: String, structure: Bool) async -> MobileSessionDetail? { await mobileSession(id: id) }
+    /// A host without the role view answers the detail it has.
+    func mobileSession(id: String, structure: Bool, roles: Bool) async -> MobileSessionDetail? { await mobileSession(id: id, structure: structure) }
     /// No drawing: an svg preview is `unsupported` ("undecodable").
     var mobileSVGRasterizer: MobileWorkspaceFiles.SVGRasterizer? { nil }
     /// A host without run originals diffs against git's HEAD alone.
@@ -1028,20 +1033,22 @@ public actor MobileRemoteService {
         guard let body, body.count <= (limit ?? Self.bodyLimit) else { throw Failure(body == nil ? 400 : 413, body == nil ? L("remote.error.bodyRequired") : L("remote.error.bodyTooLarge")) }
         do { return try JSONDecoder().decode(type, from: body) } catch { throw Failure(400, L("remote.error.badBody")) }
     }
-    /// `structure` (the tag of the structure the phone holds, 0 for none) is taken only
-    /// where `structure` allows it: the session detail.
-    private static func pollArguments(_ url: URLComponents, structure allowsStructure: Bool = false) throws -> (since: Int, wait: TimeInterval, structure: Int?) {
-        var since = 0; var wait: TimeInterval = 0; var structure: Int?
+    /// `structure` (the tag of the structure the phone holds, 0 for none) and `roles` (1: the
+    /// phone draws the role view, `MobileFlow`; 0 or absent: it does not) are taken only
+    /// where `structure` allows them: the session detail.
+    private static func pollArguments(_ url: URLComponents, structure allowsStructure: Bool = false) throws -> (since: Int, wait: TimeInterval, structure: Int?, roles: Bool) {
+        var since = 0; var wait: TimeInterval = 0; var structure: Int?; var roles = false
         for item in url.queryItems ?? [] {
             guard let value = item.value, value.range(of: "^[0-9]{1,12}$", options: .regularExpression) != nil, let number = Int(value) else { throw Failure(400, L("remote.error.badQueryValue")) }
             switch item.name {
             case "since": since = number
             case "wait": wait = min(Double(number), maximumWait)
             case "structure" where allowsStructure: structure = number
+            case "roles" where allowsStructure: roles = number > 0
             default: throw Failure(400, L("remote.error.unknownQuery"))
             }
         }
-        return (since, wait, structure)
+        return (since, wait, structure, roles)
     }
     private static func entriesArguments(_ url: URLComponents) throws -> (before: String, limit: Int) {
         var before: String?
@@ -1151,10 +1158,10 @@ public actor MobileRemoteService {
                 let id = try sessionID(route[1])
                 let poll = try Self.pollArguments(url, structure: true)
                 let wantsStructure = poll.structure != nil
-                guard var detail = await delegate.mobileSession(id: id, structure: wantsStructure) else { throw Failure(404, L("remote.error.paneNotFound")) }
+                guard var detail = await delegate.mobileSession(id: id, structure: wantsStructure, roles: poll.roles) else { throw Failure(404, L("remote.error.paneNotFound")) }
                 if detail.revision <= poll.since {
                     await wait(scope: "session:" + id, beyond: poll.since, seconds: poll.wait)
-                    guard let fresh = await delegate.mobileSession(id: id, structure: wantsStructure) else { throw Failure(404, L("remote.error.paneNotFound")) }
+                    guard let fresh = await delegate.mobileSession(id: id, structure: wantsStructure, roles: poll.roles) else { throw Failure(404, L("remote.error.paneNotFound")) }
                     detail = fresh
                 }
                 return reply(200, MobileRemoteSupport.outgoing(detail, asked: poll.structure))

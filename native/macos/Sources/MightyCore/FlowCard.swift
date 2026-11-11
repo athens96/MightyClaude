@@ -176,16 +176,29 @@ public enum FlowCard {
     /// The card's last line: its state, then the figures it has. While it runs the time is the time since it started,
     /// read against `now`; once it ended, how long it ran. A figure the app does not have is left out.
     public static func figures(_ content: Content, now: Date) -> String {
-        var parts = [content.stateWord]
+        let (before, after) = figureParts(content)
+        return (before + [elapsed(content, now: now)].compactMap { $0 } + after).joined(separator: " · ")
+    }
+
+    /// The card's last line before and after its time: its state (and a command's exit code), then the tools and the
+    /// tokens. A view that keeps its own clock (the phone, Windows' page) puts the time between them, read once a second.
+    public static func figureParts(_ content: Content) -> (before: [String], after: [String]) {
+        var before = [content.stateWord]
         // A command that ended says how it exited, before how long it took.
-        if content.isTask, !content.running, let code = content.exitCode { parts.append(L("graph.card.exitCode", ["code": "\(code)"])) }
-        if let start = content.startedAt {
-            if content.running { parts.append(StyleWidgetPresentation.elapsed(from: start, to: now)) }
-            else if let end = content.endedAt, end >= start { parts.append(StyleWidgetPresentation.elapsed(from: start, to: end)) }
-        }
-        if let tools = content.toolCalls, tools > 0 { parts.append(L("graph.card.tools", ["count": "\(tools)"])) }
-        if let tokens = content.tokens { parts.append(L("graph.usage.summary", ["total": GraphTokenUsage.compact(tokens)])) }
-        return parts.joined(separator: " · ")
+        if content.isTask, !content.running, let code = content.exitCode { before.append(L("graph.card.exitCode", ["code": "\(code)"])) }
+        var after: [String] = []
+        if let tools = content.toolCalls, tools > 0 { after.append(L("graph.card.tools", ["count": "\(tools)"])) }
+        if let tokens = content.tokens { after.append(L("graph.usage.summary", ["total": GraphTokenUsage.compact(tokens)])) }
+        return (before, after)
+    }
+
+    /// The card's time: while it runs the time since it started, read against `now`; once it ended, how long it ran.
+    /// Nil when the app does not have it.
+    public static func elapsed(_ content: Content, now: Date) -> String? {
+        guard let start = content.startedAt else { return nil }
+        if content.running { return StyleWidgetPresentation.elapsed(from: start, to: now) }
+        guard let end = content.endedAt, end >= start else { return nil }
+        return StyleWidgetPresentation.elapsed(from: start, to: end)
     }
 
     /// The node of `agent`'s full copy in a notice run (`ExecutionGraphNode.sourceBlockId`), the newest when a later

@@ -91,6 +91,11 @@ export interface PollOptions {
    * for the structure view, naming the tag of the one already held (0 for none).
    */
   structure?: number;
+  /**
+   * Session detail only, and only against a host with the "roles" capability: ask for the role view (`roles=1`), which this app
+   * draws in its flow.
+   */
+  roles?: boolean;
   signal?: AbortSignal;
 }
 
@@ -157,6 +162,7 @@ function pollQuery(options: PollOptions | undefined): string {
   if (options?.structure !== undefined && Number.isInteger(options.structure) && options.structure >= 0) {
     params.set('structure', String(options.structure));
   }
+  if (options?.roles === true) params.set('roles', '1');
   return `?${params.toString()}`;
 }
 

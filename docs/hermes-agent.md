@@ -7,7 +7,7 @@ Nous Research의 [Hermes Agent](https://hermes-agent.nousresearch.com)(명령 `h
 ## 식별자
 
 - provider id `hermes`, 화면 이름 `Hermes`, 실행 파일 `hermes`. 베타 배지, 금색(0xD9A441) 날개 달린 H 마크, SF Symbol `paperplane`.
-- `ProviderOptions.ids`의 여섯 번째. pi·opencode처럼 원격 작업 공간에서는 고를 수 없다(`ProviderOptions.isLocalOnly`, `run.blocked.hermesRemote`). 위임에 참여하지 않는다. 폰 capability에는 아직 넣지 않았다.
+- `ProviderOptions.ids`의 여섯 번째. pi·opencode처럼 원격 작업 공간에서는 고를 수 없다(`ProviderOptions.isLocalOnly`, `run.blocked.hermesRemote`). 위임에 참여하지 않는다. 호스트(Mac·Windows)는 폰 capability `hermes`를 알리고, 폰은 그 이름이 있는 호스트에서만 새 창의 에이전트로 Hermes를 내보인다(이름, 금색 날개 달린 H 마크, 베타 배지; 원격 작업 공간은 호스트가 폰에 알리지 않는다). 권한 모드(계획 모드 없음)와 사고 강도의 이름은 호스트가 보내는 선택지 그대로이고, 질문 카드는 다른 에이전트와 같은 카드다([mobile-remote.md](mobile-remote.md)).
 
 ## Hermes가 opencode와 다른 점
 
@@ -215,7 +215,7 @@ fixture(`native/contracts/fixtures/hermes-acp-{answer,tools,auth,resume,resume-m
 
 ## 나중 단계
 
-- Windows(Core·WinUI)와 폰, 원격 작업 공간의 Hermes 창, 위임 자식으로 Hermes 고르기.
+- 원격 작업 공간의 Hermes 창, 위임 자식으로 Hermes 고르기(Windows는 아래 "Windows", 폰은 위 첫 절).
 - "세션 동안 허용"·"항상 허용".
 - 세션 없이 모델 목록 받기(Hermes에 그런 명령이 생기면), 서비스 등급(`service_tier`) 설정.
 - 실행 중 끼어들기(`/steer`), Hermes의 `/` 명령(`available_commands_update`).
@@ -233,4 +233,5 @@ Hermes Agent는 Windows에서 그대로 돈다. 그렇게 판단한 근거(소�
 - clarify: 앱 실행마다 Hermes(실행 파일·`HERMES_HOME`)별로 한 번 `hermes config get --json platform_toolsets.acp`, 없으면 Mac과 같은 `["hermes-acp","clarify","x_search"]`(`kanban`이 옛 목록에 있으면 더함)를 `hermes config set`으로 쓰고 다시 읽어 확인(`HermesQuestionTool`), 켜진 동안 요청 뒤에 안내 문단.
 - 모델 피커는 앱 프로필 폴더의 `hermes-models.json`(`%APPDATA%\MightyCode`)에 간직하고 Hermes 실행이 끝나면 창의 목록을 다시 읽는다.
 - 로그인 판정(initialize의 `authMethods`)·업데이트(`hermes update --yes`)·계정 사용량 없음은 [CLI 계정](cli-accounts.md)의 Windows 목록, 세션 목록은 `HermesSessions`(`AcpSessions.cs`).
-- Windows PC에서만 확인할 것: 설치기를 앱으로 끝까지 돌리기, 게이트웨이 데몬 첫 기동 시간(이름 있는 파이프), `hermes.cmd` 대체 실행 파일로 넘기는 `config set` JSON 인자, 실제 턴과 clarify, 마이티 그래프 블록(흐름 쪽 이식 뒤).
+- 마이티 흐름: Mac처럼 요청 하나가 블록 하나다(제목 `Hermes`). 답은 파서가 보인 글(한 번 더 오는 답은 한 번만), 토큰은 싣지 않는다(Hermes는 세션의 누계를 알려 준다), 도구 호출은 요청의 행이고 clarify는 카드다(`ExecutionGraphTracker.Acp.cs`, `MightyGraphSupport.Providers`, 웹 `drawsDiagram`). 역할 보기의 펼침 줄·위임 줄·조언자는 Claude 창의 것이라 없고, 실행 블록은 메인 잉크와 사고 강도를 받는다. 아홉 녹화를 Mac `AcpGraphTests`와 같은 블록으로 재생하고(`native/contracts/fixtures/acp-graphs.json`, `AcpGraphVerification`), 실제 `RunManager`로 돈 대역 실행이 창에 넘기는 그래프도 본다(`AcpRunVerification`).
+- Windows PC에서만 확인할 것: 설치기를 앱으로 끝까지 돌리기, 게이트웨이 데몬 첫 기동 시간(이름 있는 파이프), `hermes.cmd` 대체 실행 파일로 넘기는 `config set` JSON 인자, 실제 턴과 clarify, 실제 실행의 마이티 흐름.
