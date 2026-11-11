@@ -6,7 +6,7 @@ import type { ViewChoice } from '../store/store';
 import { shownInMighty } from '../pending/requests';
 import { nodeId, RequestStep } from './layout';
 import { newestRequestRun } from './notice';
-import { Diagram, type Aim } from './Diagram';
+import { Diagram, type Aim, type DiagramMemory } from './Diagram';
 import { Structure } from './Structure';
 import { Timeline } from './Timeline';
 import { emptyMighty } from './types';
@@ -53,6 +53,11 @@ export function MightyView({ session }: { session: RunSession }) {
   // count of own sends every view moves on (B2).
   const pending = shownInMighty(stored.pending[session.id]);
   const own = stored.ownSubmits[session.id] ?? 0;
+  // What the diagram keeps while the timeline or the pipeline shows (macOS MightyGraphView openedCards, resultHeights): the cards the user opened
+  // and the newest result's measured height, so it comes back as it was.
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  const [measured, setMeasured] = useState<Record<string, number>>({});
+  const memory = useMemo<DiagramMemory>(() => ({ opened, setOpened, measured, setMeasured }), [opened, measured]);
   // A block the diagram opens on next (a timeline row opened, a structure card revealed): selected, the camera on it.
   const [aim, setAim] = useState<Aim | null>(null);
   const aimed = useCallback(() => setAim(null), []);
@@ -94,7 +99,7 @@ export function MightyView({ session }: { session: RunSession }) {
         <span className="mighty-header">{mighty.inputs?.header ?? t('graph.view.mighty')}</span>
         <span className="mighty-summary" title={mighty.inputs?.summaryHelp} data-testid="mighty-summary">{mighty.inputs?.summary ?? ''}</span>
       </div>
-      {presentation === 'diagram' ? <Diagram session={session} mighty={mighty} aim={aim} onAimed={aimed} pending={pending} own={own} />
+      {presentation === 'diagram' ? <Diagram session={session} mighty={mighty} memory={memory} aim={aim} onAimed={aimed} pending={pending} own={own} />
         : presentation === 'timeline' ? <Timeline session={session} groups={mighty.timeline} older={mighty.older} history={mighty.inputs?.history} onOpenRow={aimAt} pending={pending} own={own} />
           : <Structure boards={mighty.structure} onReveal={reveal} pending={pending} session={session} own={own} />}
     </div>

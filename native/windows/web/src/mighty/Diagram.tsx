@@ -1,10 +1,10 @@
-import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { Icon } from '../icons/Icon';
 import { useServices, useStoreState } from '../app/context';
 import type { GraphBlockSize, MightyGraphRun, RunSession } from '../store/models';
 import { Block, type BlockActions, type BlockExtra } from './Block';
 import {
-  FollowWatch, cameraOffset, cameraTween, centredX, dotFirst, dotRadius, dotStep, dotsShown, followTargetID, runsChanged, showsTop, trimAnchor,
+  FollowWatch, aimLanding, cameraOffset, cameraTween, centredX, dotFirst, dotRadius, dotStep, dotsShown, followTargetID, runsChanged, showsTop, trimAnchor,
   wheelScrollTarget, zoomAnchored, zoomIn, zoomLabel, zoomOut, ZoomDefault, ZoomMax, ZoomMin, type Point,
 } from './camera';
 import {
@@ -34,8 +34,26 @@ const blockRun = (target: Element) => {
   return id ? runOf(id) : null;
 };
 
-/** A block the diagram opens on (MightyGraphCamera.Anchor.Reaim): selected, the camera on it; its request when it is not drawn. */
+/**
+ * A block the diagram opens on (MightyGraphCamera.Anchor.Reaim): selected, the camera on it. A block drawn as a card opens into its block first, as a
+ * click on the card does; in the role view a block a folded card hides stands behind that card, which opens (FlowLog.drawnNode); else its request.
+ */
 export interface Aim { nodeId: string; fallbackNodeId?: string }
+
+/**
+ * What the diagram keeps for its pane while the timeline or the pipeline shows, as the Mac's MightyGraphView keeps its own state across its view
+ * modes (openedCards, resultHeights): the cards the user opened and the newest result's measured height, so the diagram comes back as it was and a
+ * reveal from another view lands on the layout the user left.
+ */
+export interface DiagramMemory {
+  opened: ReadonlySet<string>;
+  setOpened: Dispatch<SetStateAction<ReadonlySet<string>>>;
+  measured: Readonly<Record<string, number>>;
+  setMeasured: Dispatch<SetStateAction<Record<string, number>>>;
+}
+
+/** The point of an aimed block held in place while the diagram settles: its top-left corner, where its header starts. */
+const HeldCorner = { x: 0, y: 0 };
 
 interface Drag { id: string; edges: Edges; start: Size; origin: { x: number; y: number }; layout: Layout; target: 'result' | 'plan' | 'block' }
 
@@ -94,8 +112,8 @@ export function pendingCopies(request: PendingRequest, id: string, standIn: bool
  * and the SVG's transforms directly, so moving the view draws no block; blocks draw only when their props change, and a
  * block off screen draws its header alone.
  */
-export function Diagram({ session, mighty, aim, onAimed, pending: request, own = 0 }: {
-  session: RunSession; mighty: MightyPane; aim?: Aim | null; onAimed?: () => void;
+export function Diagram({ session, mighty, memory, aim, onAimed, pending: request, own = 0 }: {
+  session: RunSession; mighty: MightyPane; memory: DiagramMemory; aim?: Aim | null; onAimed?: () => void;
   /** The request the composer sent that the host's run has not replaced yet: drawn as the newest run. */
   pending?: PendingRequest;
   /** Counts the pane's own sends: each moves the camera to the new request over motion.scroll. */
@@ -121,16 +139,21 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
   const [viewport, setViewport] = useState<Size>({ w: 0, h: 0 });
   const [zoom, setZoom] = useState(ZoomDefault);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
-  /** The cards the user opened into their full blocks, while the app runs (macOS MightyGraphView openedCards). */
-  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  /** The cards the user opened into their full blocks (macOS MightyGraphView openedCards) and the newest result's measured height, kept by the
+   * Mighty view while another view shows. */
+  const { opened, setOpened, measured, setMeasured } = memory;
   const [selected, setSelected] = useState<string | null>(null);
   const [visibleKey, setVisibleKey] = useState('');
   const [live, setLive] = useState<{ id: string; size: GraphBlockSize; target: Drag['target'] } | null>(null);
   const [pending, setPending] = useState<{ sizes: Record<string, GraphBlockSize> | null; base: unknown } | null>(null);
-  const [measured, setMeasured] = useState<Record<string, number>>({});
   const drag = useRef<Drag | null>(null);
   /** The corner across from a drag's sides, kept at its place on screen while and after the drag until the view is moved. */
   const pin = useRef<{ id: string; unit: { x: number; y: number }; anchor: Point } | null>(null);
+  /**
+   * The block an aim landed on, kept where it landed while the diagram settles under it until the view is moved: the newest result is measured
+   * only once it is drawn, the session log strip comes with the host's next push, a copy may come later, and each moves what stands below.
+   */
+  const held = useRef<{ id: string; anchor: Point } | null>(null);
   // A file named in a block opens in the pane's reference bubble; kept in a ref so the blocks' actions keep their identity.
   const referenceShown = useContext(ReferenceContext);
   const showReference = useRef(referenceShown);
@@ -259,6 +282,8 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     const previous = runIds.current;
     const change = runsChanged(previous, ids, watch.current.following);
     runIds.current = ids;
+    // A send, and a request that came or went, move the camera by their own rules: an aimed block is held no longer.
+    if (ownSend || change !== 'none') held.current = null;
     if (change === 'first' || change === 'follow') {
       watch.current.start();
       camera.current = { ...camera.current, x: centredX(viewport, zoom) };
@@ -272,15 +297,24 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     if (next) camera.current = next;
     // A block asked for from another view: after the run-id rules, so a send is followed first and this wins.
     if (aim) {
-      const id = frameOf(aim.nodeId) ? aim.nodeId : aim.fallbackNodeId && frameOf(aim.fallbackNodeId) ? aim.fallbackNodeId : null;
-      const target = frameOf(id);
-      if (id && target) {
+      const landing = aimLanding(aim, layout, runs, fanOut, opened);
+      if (landing && 'open' in landing) {
+        // A card opens into its block, as a click on it does; the aim lands on that block in the next pass.
+        setOpened((s) => new Set(s).add(landing.open));
+      } else if (landing) {
+        const target = landing.land;
         pin.current = null;
-        camera.current = cameraOffset(target, viewport, zoom, false);
+        camera.current = cameraOffset(target.frame, viewport, zoom, false);
         watch.current.moved(targetID, frameOf(targetID), camera.current, viewport, zoom);
-        setSelected(id);
+        setSelected(target.id);
+        // Not following from there: the block stays where it landed while what is drawn above it settles, until the view is moved.
+        held.current = watch.current.following ? null : { id: target.id, anchor: pinnedAnchor(HeldCorner, target.frame, camera.current, zoom) };
         onAimed?.();
       }
+    } else if (held.current) {
+      const frame = frameOf(held.current.id);
+      if (frame) camera.current = pinnedCamera(held.current.anchor, HeldCorner, frame, zoom);
+      else held.current = null;
     }
     // A resized block: the layout recentres it, the camera keeps the corner across from the dragged sides where it was.
     const pinned = pin.current;
@@ -302,6 +336,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
 
   const userMoved = useCallback(() => {
     pin.current = null;
+    held.current = null;
     const l = layoutRef.current;
     const targetID = followTargetID(l, shared.current);
     watch.current.moved(targetID, frameOf(targetID), camera.current, { w: viewportRef.current?.clientWidth ?? 0, h: viewportRef.current?.clientHeight ?? 0 }, zoomRef.current);
@@ -323,6 +358,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     if (!node || vp.w <= 0 || vp.h <= 0) return;
     stopTween();
     pin.current = null;
+    held.current = null;
     camera.current = cameraOffset(node.frame, vp, zoomRef.current, false);
     const targetID = followTargetID(l, shared.current);
     watch.current.moved(targetID, frameOf(targetID), camera.current, vp, zoomRef.current);
@@ -333,7 +369,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
   const openCard = useCallback((id: string, open: boolean) => {
     watch.current.userChangedLayout();
     setOpened((s) => { if (s.has(id) === open) return s; const n = new Set(s); if (open) n.add(id); else n.delete(id); return n; });
-  }, []);
+  }, [setOpened]);
   /** A card's click: a finished background block's copy in its notice run, shown and selected; any other card opens in place. */
   const activateCard = useCallback((id: string, copy: string | undefined) => {
     if (copy && layoutRef.current.nodes.some((n) => n.id === copy)) reveal(copy);
@@ -351,6 +387,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
 
   const pan = useCallback((dx: number, dy: number) => {
     stopTween();
+    held.current = null;
     camera.current = { x: camera.current.x + dx, y: camera.current.y + dy };
     applyCamera();
   }, [applyCamera, stopTween]);
@@ -399,6 +436,8 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
   };
   const onPointerDown = (event: React.PointerEvent) => {
     if (event.button !== 0) return;
+    // The user acts in the view: an aimed block is held no longer.
+    held.current = null;
     const hit = resizeAt(event.clientX, event.clientY);
     if (hit && !(event.target as Element).closest('button')) { actions.startResize(hit.id, hit.edges, event); return; }
     const block = (event.target as Element).closest('[data-block-id]') as HTMLElement | null;
@@ -473,6 +512,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
       const target = id === latestResultID(shared.current) ? 'result' : node.kind === 'plan' ? 'plan' : 'block';
       drag.current = { id, edges, start: { w: node.frame.w, h: node.frame.h }, origin: { x: event.clientX, y: event.clientY }, layout: l, target };
       const unit = pinnedUnit(edges);
+      held.current = null;
       pin.current = { id, unit, anchor: pinnedAnchor(unit, node.frame, camera.current, zoomRef.current) };
       watch.current.userChangedLayout();
       setSelected(id);
@@ -492,7 +532,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     loadOlder() { void bridge.call('mightyLoadOlder', { paneId }); },
     measured(id, height) { setMeasured((m) => (Math.abs((m[id] ?? -1) - height) < 1 ? m : { ...m, [id]: height })); },
     foldToCard(id) { openCard(id, false); },
-  }), [bridge, paneId, openCard]);
+  }), [bridge, paneId, openCard, setMeasured]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key !== 'Escape') return;
@@ -502,6 +542,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
   const setZoomTo = (next: number) => {
     const vp = { w: viewportRef.current?.clientWidth ?? 0, h: viewportRef.current?.clientHeight ?? 0 };
     pin.current = null;
+    held.current = null;
     stopTween();
     camera.current = zoomAnchored(camera.current, vp, zoom, next);
     watch.current.stop();

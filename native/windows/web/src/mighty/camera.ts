@@ -3,7 +3,8 @@
 // screen = node × zoom + camera.
 import type { MightyGraphRun } from '../store/models';
 import { followRunIndex } from './notice';
-import { CentreX, HistoryNodeID, ExecutionSuffix, ImagesSuffix, PlanRecordSuffix, PendingNodeID, WorkKind, maxY, nodeId, type Layout, type Rect, type Size } from './layout';
+import { CentreX, HistoryNodeID, ExecutionSuffix, ImagesSuffix, PlanRecordSuffix, PendingNodeID, WorkKind, maxY, nodeId, runOf, type Layout, type LayoutNode, type Rect, type Size } from './layout';
+import { drawnNode } from './flow';
 import { ease } from '../theme/tokens';
 
 export interface Point { x: number; y: number }
@@ -47,6 +48,25 @@ export function trimAnchor(previousRunIDs: readonly string[], runIDs: readonly s
   if (last !== (previousRunIDs[previousRunIDs.length - 1] ?? null) || sameSet) return hold;
   if (runIDs.length > previousRunIDs.length && runIDs.slice(runIDs.length - previousRunIDs.length).every((id, i) => id === previousRunIDs[i])) return hold;
   return reaimAnchor(last, selectedNodeID, layoutNodeIDs);
+}
+
+/**
+ * Where an aim from another view lands (Diagram's Aim: a pipeline card's reveal, a timeline row, a steer): on the block asked for; a block drawn as a
+ * card opens into its block first, as a click on the card does (`open`, then it lands); in the role view a block a folded card hides stands behind the
+ * nearest drawn card, or its 실행 block (flow.ts drawnNode, as a log row's click); else on the fallback, its request. Null while none of them is drawn.
+ */
+export function aimLanding(aim: { nodeId: string; fallbackNodeId?: string }, layout: Layout, runs: readonly MightyGraphRun[], fanOut: boolean,
+  opened: ReadonlySet<string>): { open: string } | { land: LayoutNode } | null {
+  const node = (id: string | null | undefined) => (id ? layout.nodes.find((n) => n.id === id) ?? null : null);
+  let target = node(aim.nodeId);
+  if (!target && fanOut) {
+    const run = runs.find((r) => r.id === runOf(aim.nodeId));
+    const drawn = new Set(layout.nodes.map((n) => n.id));
+    target = run ? node(drawnNode(aim.nodeId, run, (suffix) => nodeId(run.id, suffix), (id) => drawn.has(id))) : null;
+  }
+  target ??= node(aim.fallbackNodeId);
+  if (!target) return null;
+  return target.compact && !opened.has(target.id) ? { open: target.id } : { land: target };
 }
 
 export function resizeAnchor(fittedResultID: string | null, targetID: string | null, targetAlignTop: boolean, frames: Readonly<Record<string, Rect>>): Anchor {

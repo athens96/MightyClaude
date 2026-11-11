@@ -35,7 +35,8 @@ internal sealed record WebMightyAC(string Title, string Status, string StatusWor
 internal sealed record WebMightyHistory(string Text, bool Acts, string Phase);
 
 /// <summary>What the page's layout needs besides the runs it holds, and the toolbar's words. <c>FanOut</c>: the role view (a Claude pane), whose session log
-/// strip is <c>Log</c> (Core FlowCopy.LogOf; none without a request, and only for the diagram).</summary>
+/// strip is <c>Log</c> (Core FlowCopy.LogOf; none without a request). The log goes in every view, so the strip stands under the diagram the moment it shows
+/// again (the Mac draws it from the pane's runs) instead of coming with the next push and shrinking the diagram under a camera that just landed.</summary>
 internal sealed record WebMightyInputs(string? PlanRunID, IReadOnlyList<object> PlanRecords, IReadOnlyList<object> Galleries, IReadOnlyList<object> Executions,
     string? ResultFilesRunID, Dictionary<string, List<WebMightyFile>> Files, int Older, int RetainedStart, WebMightyHistory? History, string Summary, string SummaryHelp,
     Dictionary<string, WebMightyExecution> ExecutionCards, bool Animations, string Header, bool? FanOut = null, FlowCopy.Log? Log = null);
@@ -179,7 +180,8 @@ public sealed partial class MainWindow
     /// The Mighty part of the web smoke: the fixture pane gets three finished requests and one running (no CLI, no AI request)
     /// and is put in Mighty mode. The page must draw every block, the edges (one into a running block) and the activity
     /// outline; a streamed change of one sub-agent's entry must draw that block again and no other (each block counts its draws
-    /// in data-renders) with a small delta; the log and the pipeline views must draw the requests. Then a request whose background
+    /// in data-renders) with a small delta; the log and the pipeline views must draw the requests, and a pipeline card's reveal must bring the diagram back
+    /// with its block selected and kept in view, the card opened before the views changed still open. Then a request whose background
     /// command runs, and then ended with its notice turn not answered yet, must draw its result as the 알림 대기 block, and as the
     /// plain result once the notice run answered (BackgroundNoticeRuns.AwaitingNotice).
     /// </summary>
@@ -254,11 +256,18 @@ public sealed partial class MainWindow
             var timeline = await Wait("document.querySelectorAll('[data-testid=timeline-group]').length === 4");
             await core.ExecuteScriptAsync("document.querySelector('button[data-presentation=structure]')?.click()");
             var structure = await Wait("document.querySelectorAll('[data-testid=mighty-structure] [data-column-id]').length >= 3");
-            // A card's reveal: the diagram shows again with that block selected and the camera on it.
+            // A card's reveal: the diagram shows again with that block selected and the camera on it, and it is still there once the diagram settled under it
+            // (the newest result is measured when it is first drawn, which moves what stands below it): a block in view for a frame or two is no reveal.
             var revealClicked = structure && await core.ExecuteScriptAsync("(() => { const b = document.querySelector('[data-testid=mighty-structure] [data-card-id] [data-testid=structure-reveal]'); b?.click(); return !!b; })()") == "true";
-            var revealed = revealClicked && await Wait("(() => { if (document.querySelector('[data-testid=mighty]')?.dataset.presentation !== 'diagram') return false; const v = document.querySelector('[data-testid=mighty-diagram] .mighty-viewport')?.getBoundingClientRect(); const b = document.querySelector('[data-testid=mighty-diagram] .mighty-block.selected')?.getBoundingClientRect(); "
-                + "return !!v && !!b && b.bottom > v.top && b.top < v.bottom && b.right > v.left && b.left < v.right; })()");
-            result["mightyViews"] = new { timeline, structure, revealClicked, revealed, mode = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId)?.GraphViewMode };
+            const string RevealedBlock = "(() => { if (document.querySelector('[data-testid=mighty]')?.dataset.presentation !== 'diagram') return false; const v = document.querySelector('[data-testid=mighty-diagram] .mighty-viewport')?.getBoundingClientRect(); const b = document.querySelector('[data-testid=mighty-diagram] .mighty-block.selected')?.getBoundingClientRect(); "
+                + "return !!v && !!b && b.bottom > v.top && b.top < v.bottom && b.right > v.left && b.left < v.right; })()";
+            var revealed = revealClicked && await Wait(RevealedBlock);
+            if (revealed) { await Task.Delay(1000); revealed = await core.ExecuteScriptAsync(RevealedBlock) == "true"; }
+            var revealedAt = await Read("(() => { const box = (e) => { const r = e?.getBoundingClientRect(); return r ? [Math.round(r.top), Math.round(r.bottom)] : null; }; const s = document.querySelector('[data-testid=mighty-diagram] .mighty-block.selected'); "
+                + "return JSON.stringify({ selected: s?.dataset.blockId ?? null, block: box(s), viewport: box(document.querySelector('[data-testid=mighty-diagram] .mighty-viewport')) }); })()");
+            // The writer opened before the views changed is open still: the diagram keeps the cards the user opened while another view shows (macOS openedCards).
+            var cardKept = await core.ExecuteScriptAsync($"!!document.querySelector('.mighty-block[data-block-id=\"{writerId}\"]')") == "true";
+            result["mightyViews"] = new { timeline, structure, revealClicked, revealed, revealedAt, cardKept, mode = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId)?.GraphViewMode };
             // The 알림 대기 block: the request's own answer is in while its background command runs, then the command ended and its
             // notice turn runs, then that turn answered. Only the first two await notices; the third is the 최종 결과 again.
             MightyGraphRun Awaited(string task) => new()
@@ -284,7 +293,7 @@ public sealed partial class MainWindow
             var settledResult = await Wait(Kind("result", "!e.querySelector('[data-testid=mighty-awaiting]')"));
             var awaitingLook = await Read($"(() => {{ const e = {resultBlock}; return JSON.stringify({{ kind: e?.dataset.kind ?? null, className: e?.className ?? null }}); }})()");
             result["mightyAwaiting"] = new { awaitingRunning, awaitingAnswer, settledResult, after = awaitingLook };
-            return drawn && cardOpened && onlyChanged && stepsShown && timeline && structure && revealed && awaitingRunning && awaitingAnswer && settledResult;
+            return drawn && cardOpened && onlyChanged && stepsShown && timeline && structure && revealed && cardKept && awaitingRunning && awaitingAnswer && settledResult;
         }
         finally
         {
@@ -418,7 +427,7 @@ public sealed partial class MainWindow
                 executions.Select(e => (object)new { runID = e.RunID, key = e.Key }).ToList(),
                 graphResultFilesRunId, files.ToDictionary(f => f.Key, f => f.Value.Select(file => new WebMightyFile(file.Path, file.Line)).ToList()),
                 older.Count, older.Count, history, summary, MightyGraphBlockModel.ToolbarHelp(retained), cards, AnimationsEnabled, header,
-                fanOut ? true : null, fanOut && presentation == "diagram" ? FlowCopy.LogOf(runs, pane.FlowLogCollapsed == true, definitions) : null);
+                fanOut ? true : null, fanOut ? FlowCopy.LogOf(runs, pane.FlowLogCollapsed == true, definitions) : null);
             var olderKey = older.Count + ":" + string.Join(",", older.Select(run => run.Id + "/" + run.Status + "/" + run.Agents.Count));
             return new(copy, inputs, olderKey, older,
                 presentation == "timeline" ? WebTimeline(pane, runs, older.Count, catalog) : null,
