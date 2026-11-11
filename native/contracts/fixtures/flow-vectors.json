@@ -1,0 +1,964 @@
+{
+ "about": "The role view's layout (MightyGraphLayout.Make with fanOut, the web page's makeLayout with fanOut) for the same runs on every platform that lays it out: the Mac (MightyCoreTests FlowVectorTests), the Windows Core (C#) and the Windows web page (TypeScript) all assert these frames, cards, delegate lines, return nodes, advisor bands and dotted links. splitsExecution is on, no draft, nothing expanded; opened lists the node suffixes of cards the user opened.",
+ "cases": [
+  {
+   "name": "a running background sub-agent is a card under the delegate line of the 실행 block",
+   "running": true,
+   "opened": [],
+   "runs": [
+    {
+     "id": "r",
+     "input": "요청 r",
+     "status": "running",
+     "provider": "claude",
+     "rootEntries": [],
+     "resultEntries": [],
+     "agents": [
+      {
+       "id": "bg",
+       "title": "bg",
+       "input": "확인",
+       "status": "running",
+       "entries": [],
+       "background": true
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "nodes": [
+     {
+      "id": "1:r:request",
+      "kind": "request",
+      "x": 24,
+      "y": 24,
+      "w": 500,
+      "h": 140
+     },
+     {
+      "id": "1:r:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 196,
+      "w": 500,
+      "h": 280
+     },
+     {
+      "id": "1:r:delegate:main",
+      "kind": "delegate",
+      "x": 104,
+      "y": 494,
+      "w": 340,
+      "h": 24
+     },
+     {
+      "id": "1:r:agent:bg",
+      "kind": "agent",
+      "x": 156,
+      "y": 544,
+      "w": 236,
+      "h": 86,
+      "compact": true
+     },
+     {
+      "id": "1:r:return",
+      "kind": "return",
+      "x": 104,
+      "y": 662,
+      "w": 340,
+      "h": 34
+     }
+    ],
+    "edges": [
+     {
+      "source": "1:r:request",
+      "target": "1:r:execution",
+      "joins": false
+     },
+     {
+      "source": "1:r:execution",
+      "target": "1:r:delegate:main",
+      "joins": false
+     },
+     {
+      "source": "1:r:delegate:main",
+      "target": "1:r:agent:bg",
+      "joins": false
+     },
+     {
+      "source": "1:r:agent:bg",
+      "target": "1:r:return",
+      "joins": true
+     }
+    ],
+    "advisorLinks": [],
+    "size": {
+     "w": 548,
+     "h": 720
+    },
+    "originX": 0,
+    "originY": 0
+   }
+  },
+  {
+   "name": "a running foreground sub-agent opened into its block has its own line over its row, and its running child is a card",
+   "running": true,
+   "opened": [
+    "agent:fg"
+   ],
+   "runs": [
+    {
+     "id": "r",
+     "input": "요청 r",
+     "status": "running",
+     "provider": "claude",
+     "rootEntries": [],
+     "resultEntries": [],
+     "agents": [
+      {
+       "id": "fg",
+       "title": "fg",
+       "input": "확인",
+       "status": "running",
+       "entries": []
+      },
+      {
+       "id": "child",
+       "parentID": "fg",
+       "title": "child",
+       "input": "확인",
+       "status": "running",
+       "entries": []
+      },
+      {
+       "id": "done",
+       "title": "done",
+       "input": "확인",
+       "status": "completed",
+       "entries": []
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "nodes": [
+     {
+      "id": "1:r:request",
+      "kind": "request",
+      "x": 24,
+      "y": 24,
+      "w": 500,
+      "h": 140
+     },
+     {
+      "id": "1:r:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 196,
+      "w": 500,
+      "h": 280
+     },
+     {
+      "id": "1:r:delegate:main",
+      "kind": "delegate",
+      "x": 104,
+      "y": 494,
+      "w": 340,
+      "h": 24
+     },
+     {
+      "id": "1:r:agent:fg",
+      "kind": "agent",
+      "x": -96,
+      "y": 544,
+      "w": 360,
+      "h": 240
+     },
+     {
+      "id": "1:r:delegate:fg",
+      "kind": "delegate",
+      "x": -86,
+      "y": 802,
+      "w": 340,
+      "h": 24
+     },
+     {
+      "id": "1:r:agent:child",
+      "kind": "agent",
+      "x": -34,
+      "y": 852,
+      "w": 236,
+      "h": 86,
+      "compact": true
+     },
+     {
+      "id": "1:r:agent:done",
+      "kind": "agent",
+      "x": 284,
+      "y": 544,
+      "w": 360,
+      "h": 240
+     },
+     {
+      "id": "1:r:return",
+      "kind": "return",
+      "x": 104,
+      "y": 970,
+      "w": 340,
+      "h": 34
+     }
+    ],
+    "edges": [
+     {
+      "source": "1:r:request",
+      "target": "1:r:execution",
+      "joins": false
+     },
+     {
+      "source": "1:r:execution",
+      "target": "1:r:delegate:main",
+      "joins": false
+     },
+     {
+      "source": "1:r:delegate:main",
+      "target": "1:r:agent:fg",
+      "joins": false
+     },
+     {
+      "source": "1:r:agent:fg",
+      "target": "1:r:delegate:fg",
+      "joins": false
+     },
+     {
+      "source": "1:r:delegate:fg",
+      "target": "1:r:agent:child",
+      "joins": false
+     },
+     {
+      "source": "1:r:delegate:main",
+      "target": "1:r:agent:done",
+      "joins": false
+     },
+     {
+      "source": "1:r:agent:child",
+      "target": "1:r:return",
+      "joins": true
+     },
+     {
+      "source": "1:r:agent:done",
+      "target": "1:r:return",
+      "joins": true
+     }
+    ],
+    "advisorLinks": [],
+    "size": {
+     "w": 788,
+     "h": 1028
+    },
+    "originX": -120,
+    "originY": 0
+   }
+  },
+  {
+   "name": "a folded card counts what is under it and draws none of it",
+   "running": true,
+   "opened": [],
+   "runs": [
+    {
+     "id": "r",
+     "input": "요청 r",
+     "status": "running",
+     "provider": "claude",
+     "rootEntries": [],
+     "resultEntries": [],
+     "agents": [
+      {
+       "id": "scout",
+       "title": "scout",
+       "input": "확인",
+       "status": "running",
+       "entries": []
+      },
+      {
+       "id": "watch",
+       "parentID": "scout",
+       "title": "watch",
+       "input": "tail -f log",
+       "status": "running",
+       "entries": [],
+       "kind": "task",
+       "background": true
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "nodes": [
+     {
+      "id": "1:r:request",
+      "kind": "request",
+      "x": 24,
+      "y": 24,
+      "w": 500,
+      "h": 140
+     },
+     {
+      "id": "1:r:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 196,
+      "w": 500,
+      "h": 280
+     },
+     {
+      "id": "1:r:delegate:main",
+      "kind": "delegate",
+      "x": 104,
+      "y": 494,
+      "w": 340,
+      "h": 24
+     },
+     {
+      "id": "1:r:agent:scout",
+      "kind": "agent",
+      "x": 156,
+      "y": 544,
+      "w": 236,
+      "h": 86,
+      "compact": true
+     },
+     {
+      "id": "1:r:return",
+      "kind": "return",
+      "x": 104,
+      "y": 662,
+      "w": 340,
+      "h": 34
+     }
+    ],
+    "edges": [
+     {
+      "source": "1:r:request",
+      "target": "1:r:execution",
+      "joins": false
+     },
+     {
+      "source": "1:r:execution",
+      "target": "1:r:delegate:main",
+      "joins": false
+     },
+     {
+      "source": "1:r:delegate:main",
+      "target": "1:r:agent:scout",
+      "joins": false
+     },
+     {
+      "source": "1:r:agent:scout",
+      "target": "1:r:return",
+      "joins": true
+     }
+    ],
+    "advisorLinks": [],
+    "size": {
+     "w": 548,
+     "h": 720
+    },
+    "originX": 0,
+    "originY": 0
+   }
+  },
+  {
+   "name": "the release row: an ended background agent and two running commands in launch order, into the return node",
+   "running": true,
+   "opened": [],
+   "runs": [
+    {
+     "id": "r",
+     "input": "요청 r",
+     "status": "running",
+     "provider": "claude",
+     "rootEntries": [],
+     "resultEntries": [],
+     "agents": [
+      {
+       "id": "notes",
+       "title": "notes",
+       "input": "확인",
+       "status": "completed",
+       "entries": [],
+       "background": true
+      },
+      {
+       "id": "ci",
+       "title": "CI 대기",
+       "input": "python3 scripts/release.py ci",
+       "status": "running",
+       "entries": [],
+       "kind": "task",
+       "background": true
+      },
+      {
+       "id": "apk",
+       "title": "폰 APK 빌드",
+       "input": "eas build",
+       "status": "running",
+       "entries": [],
+       "kind": "task",
+       "background": true
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "nodes": [
+     {
+      "id": "1:r:request",
+      "kind": "request",
+      "x": 24,
+      "y": 24,
+      "w": 500,
+      "h": 140
+     },
+     {
+      "id": "1:r:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 196,
+      "w": 500,
+      "h": 280
+     },
+     {
+      "id": "1:r:delegate:main",
+      "kind": "delegate",
+      "x": 104,
+      "y": 494,
+      "w": 340,
+      "h": 24
+     },
+     {
+      "id": "1:r:agent:notes",
+      "kind": "agent",
+      "x": -100,
+      "y": 544,
+      "w": 236,
+      "h": 86,
+      "compact": true
+     },
+     {
+      "id": "1:r:agent:ci",
+      "kind": "agent",
+      "x": 156,
+      "y": 544,
+      "w": 236,
+      "h": 86,
+      "compact": true
+     },
+     {
+      "id": "1:r:agent:apk",
+      "kind": "agent",
+      "x": 412,
+      "y": 544,
+      "w": 236,
+      "h": 86,
+      "compact": true
+     },
+     {
+      "id": "1:r:return",
+      "kind": "return",
+      "x": 104,
+      "y": 662,
+      "w": 340,
+      "h": 34
+     }
+    ],
+    "edges": [
+     {
+      "source": "1:r:request",
+      "target": "1:r:execution",
+      "joins": false
+     },
+     {
+      "source": "1:r:execution",
+      "target": "1:r:delegate:main",
+      "joins": false
+     },
+     {
+      "source": "1:r:delegate:main",
+      "target": "1:r:agent:notes",
+      "joins": false
+     },
+     {
+      "source": "1:r:delegate:main",
+      "target": "1:r:agent:ci",
+      "joins": false
+     },
+     {
+      "source": "1:r:delegate:main",
+      "target": "1:r:agent:apk",
+      "joins": false
+     },
+     {
+      "source": "1:r:agent:notes",
+      "target": "1:r:return",
+      "joins": true
+     },
+     {
+      "source": "1:r:agent:ci",
+      "target": "1:r:return",
+      "joins": true
+     },
+     {
+      "source": "1:r:agent:apk",
+      "target": "1:r:return",
+      "joins": true
+     }
+    ],
+    "advisorLinks": [],
+    "size": {
+     "w": 796,
+     "h": 720
+    },
+    "originX": -124,
+    "originY": 0
+   }
+  },
+  {
+   "name": "a finished request keeps its background card and leads it into the result, and a later request stands under it",
+   "running": false,
+   "opened": [],
+   "runs": [
+    {
+     "id": "r1",
+     "input": "요청 r1",
+     "status": "completed",
+     "finalOutput": "결과 r1",
+     "provider": "claude",
+     "rootEntries": [],
+     "resultEntries": [],
+     "agents": [
+      {
+       "id": "bg",
+       "title": "bg",
+       "input": "확인",
+       "status": "completed",
+       "entries": [],
+       "background": true
+      },
+      {
+       "id": "fg",
+       "title": "fg",
+       "input": "확인",
+       "status": "completed",
+       "entries": []
+      }
+     ]
+    },
+    {
+     "id": "r1:notice:1",
+     "input": "백그라운드 작업 완료",
+     "status": "completed",
+     "finalOutput": "done",
+     "provider": "claude",
+     "noticeRun": true,
+     "rootEntries": [],
+     "resultEntries": [],
+     "agents": [
+      {
+       "id": "copy",
+       "title": "bg",
+       "input": "확인",
+       "status": "completed",
+       "entries": [],
+       "background": true,
+       "sourceBlockId": "bg"
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "nodes": [
+     {
+      "id": "2:r1:request",
+      "kind": "request",
+      "x": 24,
+      "y": 24,
+      "w": 500,
+      "h": 140
+     },
+     {
+      "id": "2:r1:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 196,
+      "w": 500,
+      "h": 280
+     },
+     {
+      "id": "2:r1:delegate:main",
+      "kind": "delegate",
+      "x": 104,
+      "y": 494,
+      "w": 340,
+      "h": 24
+     },
+     {
+      "id": "2:r1:agent:bg",
+      "kind": "agent",
+      "x": -34,
+      "y": 544,
+      "w": 236,
+      "h": 86,
+      "compact": true
+     },
+     {
+      "id": "2:r1:agent:fg",
+      "kind": "agent",
+      "x": 222,
+      "y": 544,
+      "w": 360,
+      "h": 240
+     },
+     {
+      "id": "2:r1:result",
+      "kind": "result",
+      "x": 24,
+      "y": 816,
+      "w": 500,
+      "h": 200
+     },
+     {
+      "id": "11:r1:notice:1:request",
+      "kind": "request",
+      "x": 24,
+      "y": 1048,
+      "w": 500,
+      "h": 140
+     },
+     {
+      "id": "11:r1:notice:1:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 1220,
+      "w": 500,
+      "h": 280
+     },
+     {
+      "id": "11:r1:notice:1:agent:copy",
+      "kind": "agent",
+      "x": 94,
+      "y": 1532,
+      "w": 360,
+      "h": 240
+     },
+     {
+      "id": "11:r1:notice:1:result",
+      "kind": "result",
+      "x": 24,
+      "y": 1804,
+      "w": 500,
+      "h": 200
+     },
+     {
+      "id": "pending-input",
+      "kind": "draft",
+      "x": 24,
+      "y": 2036,
+      "w": 500,
+      "h": 140
+     }
+    ],
+    "edges": [
+     {
+      "source": "2:r1:request",
+      "target": "2:r1:execution",
+      "joins": false
+     },
+     {
+      "source": "2:r1:execution",
+      "target": "2:r1:delegate:main",
+      "joins": false
+     },
+     {
+      "source": "2:r1:delegate:main",
+      "target": "2:r1:agent:bg",
+      "joins": false
+     },
+     {
+      "source": "2:r1:delegate:main",
+      "target": "2:r1:agent:fg",
+      "joins": false
+     },
+     {
+      "source": "2:r1:agent:bg",
+      "target": "2:r1:result",
+      "joins": true
+     },
+     {
+      "source": "2:r1:agent:fg",
+      "target": "2:r1:result",
+      "joins": true
+     },
+     {
+      "source": "2:r1:result",
+      "target": "11:r1:notice:1:request",
+      "joins": true
+     },
+     {
+      "source": "11:r1:notice:1:request",
+      "target": "11:r1:notice:1:execution",
+      "joins": false
+     },
+     {
+      "source": "11:r1:notice:1:execution",
+      "target": "11:r1:notice:1:agent:copy",
+      "joins": false
+     },
+     {
+      "source": "11:r1:notice:1:agent:copy",
+      "target": "11:r1:notice:1:result",
+      "joins": true
+     },
+     {
+      "source": "11:r1:notice:1:result",
+      "target": "pending-input",
+      "joins": true
+     }
+    ],
+    "advisorLinks": [],
+    "size": {
+     "w": 664,
+     "h": 2200
+    },
+    "originX": -58,
+    "originY": 0
+   }
+  },
+  {
+   "name": "the advisor's band beside a run, linked to the 실행 block and, through a folded card, to a sub-agent that asked",
+   "running": true,
+   "opened": [],
+   "runs": [
+    {
+     "id": "r",
+     "input": "요청 r",
+     "status": "running",
+     "provider": "claude",
+     "configuredAdvisor": "opus",
+     "rootEntries": [],
+     "resultEntries": [],
+     "advisor": {
+      "model": "claude-opus-5-5",
+      "calls": [
+       {
+        "id": "srvtoolu_a",
+        "state": "done",
+        "startedAt": "2026-11-10T10:00:00Z",
+        "endedAt": "2026-11-10T10:00:07Z"
+       },
+       {
+        "id": "srvtoolu_b",
+        "caller": "deep",
+        "state": "consulting",
+        "startedAt": "2026-11-10T10:01:00Z"
+       }
+      ]
+     },
+     "agents": [
+      {
+       "id": "scout",
+       "title": "scout",
+       "input": "확인",
+       "status": "running",
+       "entries": []
+      },
+      {
+       "id": "deep",
+       "parentID": "scout",
+       "title": "deep",
+       "input": "확인",
+       "status": "running",
+       "entries": []
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "nodes": [
+     {
+      "id": "1:r:request",
+      "kind": "request",
+      "x": 24,
+      "y": 24,
+      "w": 500,
+      "h": 140
+     },
+     {
+      "id": "1:r:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 196,
+      "w": 500,
+      "h": 280
+     },
+     {
+      "id": "1:r:delegate:main",
+      "kind": "delegate",
+      "x": 104,
+      "y": 494,
+      "w": 340,
+      "h": 24
+     },
+     {
+      "id": "1:r:agent:scout",
+      "kind": "agent",
+      "x": 156,
+      "y": 544,
+      "w": 236,
+      "h": 86,
+      "compact": true
+     },
+     {
+      "id": "1:r:return",
+      "kind": "return",
+      "x": 104,
+      "y": 662,
+      "w": 340,
+      "h": 34
+     },
+     {
+      "id": "1:r:advisor",
+      "kind": "advisor",
+      "x": -252,
+      "y": 196,
+      "w": 248,
+      "h": 500
+     }
+    ],
+    "edges": [
+     {
+      "source": "1:r:request",
+      "target": "1:r:execution",
+      "joins": false
+     },
+     {
+      "source": "1:r:execution",
+      "target": "1:r:delegate:main",
+      "joins": false
+     },
+     {
+      "source": "1:r:delegate:main",
+      "target": "1:r:agent:scout",
+      "joins": false
+     },
+     {
+      "source": "1:r:agent:scout",
+      "target": "1:r:return",
+      "joins": true
+     }
+    ],
+    "advisorLinks": [
+     {
+      "band": "1:r:advisor",
+      "target": "1:r:execution"
+     },
+     {
+      "band": "1:r:advisor",
+      "target": "1:r:agent:scout"
+     }
+    ],
+    "size": {
+     "w": 824,
+     "h": 720
+    },
+    "originX": -276,
+    "originY": 0
+   }
+  },
+  {
+   "name": "a request started with the advisor on and nothing delegated: its band from the 실행 block, at least its least height",
+   "running": false,
+   "opened": [],
+   "runs": [
+    {
+     "id": "r",
+     "input": "요청 r",
+     "status": "completed",
+     "finalOutput": "결과 r",
+     "provider": "claude",
+     "configuredAdvisor": "opus",
+     "rootEntries": [],
+     "resultEntries": [],
+     "agents": []
+    }
+   ],
+   "expect": {
+    "nodes": [
+     {
+      "id": "1:r:request",
+      "kind": "request",
+      "x": 24,
+      "y": 24,
+      "w": 500,
+      "h": 140
+     },
+     {
+      "id": "1:r:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 196,
+      "w": 500,
+      "h": 280
+     },
+     {
+      "id": "1:r:result",
+      "kind": "result",
+      "x": 24,
+      "y": 508,
+      "w": 500,
+      "h": 200
+     },
+     {
+      "id": "pending-input",
+      "kind": "draft",
+      "x": 24,
+      "y": 740,
+      "w": 500,
+      "h": 140
+     },
+     {
+      "id": "1:r:advisor",
+      "kind": "advisor",
+      "x": -252,
+      "y": 196,
+      "w": 248,
+      "h": 512
+     }
+    ],
+    "edges": [
+     {
+      "source": "1:r:request",
+      "target": "1:r:execution",
+      "joins": false
+     },
+     {
+      "source": "1:r:execution",
+      "target": "1:r:result",
+      "joins": true
+     },
+     {
+      "source": "1:r:result",
+      "target": "pending-input",
+      "joins": true
+     }
+    ],
+    "advisorLinks": [],
+    "size": {
+     "w": 824,
+     "h": 904
+    },
+    "originX": -276,
+    "originY": 0
+   }
+  }
+ ]
+}

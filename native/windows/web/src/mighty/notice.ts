@@ -4,6 +4,7 @@
 // blocks as data, but no view draws them there. A notice run is no request: it takes no number and never the newest
 // request's place. Pure; the same rules as Core MightyGraphSupport.
 import type { MightyGraphAgent, MightyGraphRun } from '../store/models';
+import type { FlowRun } from './flow';
 
 const ended = (status: string) => status === 'completed' || status === 'error' || status === 'stopped';
 
@@ -20,10 +21,18 @@ export function shownAgents(run: MightyGraphRun): MightyGraphAgent[] {
   return run.agents.filter((agent) => !hidden.has(agent.id));
 }
 
-/** The run as views draw it: the same object when nothing is hidden. */
+/**
+ * The run as views draw it: the same object when nothing is hidden. It carries what the role view still draws of the blocks that went
+ * (flow.ts flowAgents: the background ones and what hangs under them, Core BackgroundNoticeRuns.FanOut) and where every block stood.
+ */
 export function shownRun(run: MightyGraphRun): MightyGraphRun {
   const agents = shownAgents(run);
-  return agents.length === run.agents.length ? run : { ...run, agents };
+  if (agents.length === run.agents.length) return run;
+  const kept = new Set(agents.map((agent) => agent.id));
+  const stayed: number[] = [], went: number[] = [];
+  run.agents.forEach((agent, index) => (kept.has(agent.id) ? stayed : went).push(index));
+  const shown: FlowRun = { ...run, agents, fanOut: went.map((index) => run.agents[index]!), flowOrder: [...stayed, ...went] };
+  return shown;
 }
 
 /** The runs as views draw them; the same list when no run holds a background block. */

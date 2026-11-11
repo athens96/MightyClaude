@@ -15,6 +15,8 @@ import { isResizable, runOf, terminal, visibleImages } from './layout';
 import type { MightyBlockCopy, MightyExecutionCard, MightyFile } from './types';
 import type { PlanRecord as PresentedPlanRecord } from '../cards/types';
 import { BottomRight, type Edges } from './resize';
+import { headerFit } from './flow';
+import { inkVar, markIcon } from './FlowParts';
 import { useMenu } from '../shell/parts';
 import { Pending } from '../pending/Pending';
 import type { PendingState } from '../pending/display';
@@ -31,6 +33,8 @@ export interface BlockActions {
   openFile(file: MightyFile, runId: string | null): void;
   loadOlder(): void;
   measured(id: string, height: number): void;
+  /** A block the user opened from its card folds back to it (the role view's 카드로 접기). */
+  foldToCard(id: string): void;
 }
 
 /** What only some kinds draw; each part keeps its object while it does not change. */
@@ -68,6 +72,8 @@ export interface BlockProps {
   selected: boolean;
   expanded: boolean;
   running: boolean;
+  /** The role view drew this block opened from its card: its header folds it back. */
+  foldable?: boolean;
   actions: BlockActions;
 }
 
@@ -339,7 +345,7 @@ function Body({ recorded, ...props }: BlockProps & { recorded?: PresentedPlanRec
                 {command !== '' && <div className="mighty-run-command" title={extra.input} data-testid="mighty-run-command">{command}</div>}
                 {tail.length > 0 && <div className="mighty-run-tail" data-testid="mighty-run-output">{tail.map((line, index) => <div key={index}>{line === '' ? ' ' : line}</div>)}</div>}
               </div>
-            ) : extra.input && kind !== 'result' && kind !== 'work' && <div className="mighty-band">{extra.input}</div>}
+            ) : extra.input && kind !== 'result' && kind !== 'work' && <div className="mighty-band" style={copy?.flow?.role ? { background: `color-mix(in srgb, ${inkVar(copy.flow.role.ink)} 6%, transparent)` } : undefined}>{extra.input}</div>}
             {any ? <Transcript entries={entries} paneId={paneId} provider={provider} running={running} />
               : kind === 'result' && extra.finalOutput ? <div className="mighty-pad"><Markdown text={extra.finalOutput} /></div>
                 : run && tail.length > 0 && !terminal(status) ? null
@@ -399,13 +405,23 @@ export const Block = memo(function Block(props: BlockProps) {
   const documentPlan = recorded?.plan ?? (kind === 'plan' ? extra.markdown : undefined);
   // A result whose request awaits notices is drawn as its own kind, the 알림 대기 block; it still acts as the result it stands in for.
   const shownKind = kind === 'result' && copy?.awaiting ? 'awaitingNotice' : kind;
+  // Who the block is (Core FlowCopy.Role): its role's ink as a bar and on its icon, and the chips that fit beside what the header always shows
+  // (flow.ts headerFit): the marks, the lead's effort, the type, which give way first in a narrow block.
+  const role = copy?.flow?.role;
+  const ink = role ? inkVar(role.ink) : undefined;
+  const showsPill = !extra.pending && !!copy?.state && status !== '' && kind !== 'result';
+  const buttons = (resizable && !extra.fitted ? 1 : 0) + (props.foldable ? 1 : 0);
+  const fit = role ? headerFit(w, copy?.title ?? '', showsPill ? copy?.state ?? null : null, copy?.capsule ?? null, buttons, role) : null;
   return (
     <div className={`mighty-block kind-${shownKind} tone-${tone}${copy?.soFar ? ' so-far' : ''}${selected ? ' selected' : ''}${copy?.outline === 'marching' || copy?.outline === 'solid' ? ' halo' : ''}`}
       data-block-id={id} data-kind={shownKind} data-renders={renders.current} data-changed={changed} data-visible={props.visible ? '1' : '0'}
       data-pending-request={extra.pending ? id : undefined}
       style={{ left: x, top: y, width: w, height: h }} title={copy?.fromRecord ? t('graph.history.tag') : undefined}>
-      <div className="mighty-head">
-        <span className={'mighty-symbol kind-' + (copy?.notice ? 'task' : shownKind)} aria-hidden="true"><Icon name={copy?.notice ? 'terminal' : blockSymbol(shownKind, copy?.soFar ? 'idle' : tone)} size={14} weight={1.75} /></span>
+      <div className={'mighty-head' + (role ? ' with-role' : '')}>
+        {role && <span className="flow-head-bar" style={{ background: ink }} aria-hidden="true" />}
+        <span className={'mighty-symbol kind-' + (copy?.notice ? 'task' : shownKind)} style={role ? { color: ink } : undefined}
+          aria-hidden={role ? undefined : 'true'} role={role ? 'img' : undefined} aria-label={role?.summary} title={role?.summary} data-testid={role ? 'mighty-role-' + id : undefined}>
+          <Icon name={copy?.notice ? 'terminal' : blockSymbol(shownKind, copy?.soFar ? 'idle' : tone)} size={14} weight={1.75} /></span>
         <span className="mighty-title">
           {/* "요청 2 · Claude": the provider's mark before its name (ProviderBadgeIcon.labelled), else before the title. */}
           {copy?.provider && (copy.title ?? '').lastIndexOf(providerLabel(copy.provider)) > 0
@@ -413,6 +429,20 @@ export const Block = memo(function Block(props: BlockProps) {
             : <>{copy?.provider && <ProviderMark provider={copy.provider} size={12} />}{copy?.title ?? ''}</>}
           {kind === 'resultFiles' && (extra.files?.length ?? 0) > 0 && <span className="mighty-title-count">{extra.files?.length}</span>}
         </span>
+        {role && fit?.showsMarks && role.marks.map((mark) => (
+          <span key={mark.name} className="flow-mark" title={mark.help} aria-label={mark.help} data-testid={'mighty-mark-' + mark.name + '-' + id}><Icon name={markIcon(mark.name)} size={10} weight={2} /></span>
+        ))}
+        {role?.effort && fit?.showsEffort && (
+          <span className="flow-effort" title={role.effortHelp} aria-label={role.effortHelp} data-testid={'mighty-effort-' + id}><Icon name="brain" size={10} weight={2} />{role.effort}</span>
+        )}
+        {/* Last before the spacer, in exactly the room the header's fit gave it: a longer type is cut inside its capsule. */}
+        {role?.typeChip && fit?.typeWidth != null && (
+          <span className="flow-type-box" style={{ width: fit.typeWidth }}>
+            <span className="flow-type" style={{ color: ink, background: `color-mix(in srgb, ${ink} 12%, transparent)` }} title={role.type ?? role.typeChip} aria-label={role.type ?? role.typeChip}
+              data-testid={'mighty-type-' + id}>{role.typeChip}</span>
+          </span>
+        )}
+        {role && <span className="flow-head-spacer" />}
         <span className="mighty-controls">
           {/* A sent request: nothing while it is new, then 전송 중 by the pending rule, its failure at once (MightyStatusMark). */}
           {extra.pending ? <Pending state={extra.pending} /> : <Indicator kind={copy?.indicator ?? 'none'} />}
@@ -435,6 +465,10 @@ export const Block = memo(function Block(props: BlockProps) {
           {resizable && !extra.fitted && (
             <button className="mighty-icon" data-expand="" title={t(expanded ? 'graph.block.collapse' : 'graph.block.expand')} aria-label={t(expanded ? 'graph.block.collapse' : 'graph.block.expand')}
               onClick={() => actions.toggleExpand(id, !expanded)}><Icon name={expanded ? 'fold-vertical' : 'unfold-vertical'} size={14} weight={1.75} /></button>
+          )}
+          {props.foldable && (
+            <button className="mighty-icon" data-testid={'mighty-compact-' + id} title={t('graph.card.fold')} aria-label={t('graph.card.fold')}
+              onClick={() => actions.foldToCard(id)}><Icon name="minimize-2" size={13} weight={1.75} /></button>
           )}
         </span>
       </div>

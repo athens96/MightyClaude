@@ -92,6 +92,8 @@ public sealed partial class ExecutionGraphTracker
     }
     private static readonly Regex TaskLaunch = new(@"background with ID: (?<task>[A-Za-z0-9_-]+)");
     private static readonly Regex AgentLaunch = new(@"agentId: (?<agent>[A-Za-z0-9_-]+)");
+    /// <summary>A background command's exit code in its notification's summary.</summary>
+    private static readonly Regex ExitCodePattern = new(@"exit code (?<code>-?[0-9]{1,10})");
     /// <summary>Where a background run writes its output: the rest of the line, as a path may hold spaces.</summary>
     private static readonly Regex OutputLaunch = new(@"Output is being written to: (?<path>[^\r\n]+)");
     private readonly object sync = new();
@@ -156,6 +158,9 @@ public sealed partial class ExecutionGraphTracker
     private readonly List<string> noticeRuns = [];
     /// <summary>Each copied block's latest notice run.</summary>
     private readonly Dictionary<string, string> copiedIn = [];
+    /// <summary>The block each of the CLI's task runs settled (a live <c>task_notification</c>'s <c>run_id</c>): the result of the turn that
+    /// answers a notification names that run (<c>origin.runId</c>), and finds by it the notice run that already holds the work (macOS taskRuns).</summary>
+    private readonly Dictionary<string, string> taskRuns = [];
     /// <summary>What opened a notice run and what it names while it holds no copy (<see cref="BackgroundNoticeRuns.Title(string, IReadOnlyList{string})"/>).</summary>
     /// <c>Senders</c> says who each name stands for (its agent block, or the name when no block sent it), so a sender is named once.
     private sealed record NoticeOpening(BackgroundNoticeRuns.Opener Opener, IReadOnlyList<string> Names, IReadOnlyList<string> Lines, IReadOnlyList<string> Senders);
@@ -188,16 +193,59 @@ public sealed partial class ExecutionGraphTracker
     private int unnamedUsage;
     private int compactions;
     private bool finished;
+    /// <summary>The <c>timestamp</c> of the frame being read, when it carries one: a block starts and ends at the time its frame names (a
+    /// recorded line's own), else at the moment it is read (macOS frameTime).</summary>
+    private string? frameTime;
+    /// <summary>Tool calls already counted for their agent block (<see cref="GraphAgentFigures.ToolCalls"/>): a message is sent more than once.</summary>
+    private readonly HashSet<string> countedTools = new(StringComparer.Ordinal);
+    private readonly List<string> countedOrder = [];
+    /// <summary>Each agent block's tool calls as its own messages showed them, and as the CLI last reported them: the block carries the larger
+    /// of the two, since the CLI's report of a call may come before the message that makes it.</summary>
+    private readonly Dictionary<string, int> seenTools = [];
+    private readonly Dictionary<string, int> reportedTools = [];
+    /// <summary>The run main block that keeps each consultation of the advisor, by the server tool call's id (<see cref="GraphAdvisor"/>).</summary>
+    private readonly Dictionary<string, string> advisorOwners = [];
+    private readonly List<string> advisorOrder = [];
+    /// <summary>The blocks that have called a file-changing tool, for <see cref="GraphAdvisorCall.BeforeChange"/>.</summary>
+    private readonly HashSet<string> changedFiles = new(StringComparer.Ordinal);
+    /// <summary>What the advisor's own messages cost, by the run main block that keeps it, from the two places that say so: a message's own usage
+    /// (a transcript line's, by owner and message id, each message once) and a turn's result (the live stream's). The block carries the larger
+    /// of the two sums, so a stream that had both would not count twice.</summary>
+    private readonly Dictionary<string, GraphTokenUsage> advisorMessageUsage = [];
+    private readonly List<string> advisorMessageOrder = [];
+    private readonly Dictionary<string, GraphTokenUsage> advisorMessageSum = [];
+    private readonly Dictionary<string, GraphTokenUsage> advisorResultSum = [];
+    /// <summary>The pane's effort and the advisor the request started with (<see cref="MightyGraphRun.ConfiguredEffort"/>,
+    /// <see cref="MightyGraphRun.ConfiguredAdvisor"/>): every run this tracker builds carries them, its notice runs as their request does.</summary>
+    private string? configuredEffort;
+    private string? configuredAdvisor;
 
-    public ExecutionGraphTracker(string runID, string? input, string provider, string? configuredModel, Action<ExecutionGraphNode> emit)
+    public ExecutionGraphTracker(string runID, string? input, string provider, string? configuredModel, Action<ExecutionGraphNode> emit,
+        string? configuredEffort = null, string? configuredAdvisor = null)
     {
         this.runID = runID; mainID = ExecutionGraphSupport.MainNodeID(runID); Provider = provider; this.configuredModel = configuredModel;
+        this.configuredEffort = MightyGraphSupport.ValidEffort(configuredEffort) ? configuredEffort : null;
+        this.configuredAdvisor = provider == "claude" && Wire.Model(configuredAdvisor) ? configuredAdvisor : null;
         // Every node goes out as it changes; a notice run's (BackgroundNoticeRuns) also marks that run for TakeNoticeRuns.
         this.emit = node => { if (node.RunId != runID) changedNoticeRuns.Add(node.RunId); emit(node); };
         var main = new ExecutionGraphNode(mainID, runID, null, "main", "running", ProviderLabel(provider)) { Input = input };
         if (ExecutionGraphSupport.Normalized(main) is { } normalized) { nodes[mainID] = normalized; order.Add(mainID); emit(normalized); }
     }
     private static string ProviderLabel(string id) => id switch { "codex" => "Codex", "gemini" => "Antigravity", "pi" => "pi", _ => "Claude" };
+
+    /// <summary>The effort the request starts with, when it is not the pane's own: Settings › Models gives its effort to a pane left on Auto, after
+    /// the tracker was made (macOS RunSession.noteGraphRunEffort). A word that is no effort changes nothing.</summary>
+    public void NoteEffort(string? effort)
+    {
+        lock (sync) if (MightyGraphSupport.ValidEffort(effort)) configuredEffort = effort;
+    }
+
+    /// <summary>The advisor the request starts with, once Claude's settings were read for a pane that follows them
+    /// (<see cref="ClaudeAdvisorSettings.Configured"/>); null when none is known to be on (macOS RunSession.noteGraphRunAdvisor).</summary>
+    public void NoteAdvisor(string? model)
+    {
+        lock (sync) configuredAdvisor = Provider == "claude" && Wire.Model(model) ? model : null;
+    }
     private static string Prefix(string value, int count) => ExecutionGraphSupport.Prefix(value, count);
 
     /// A message the user sent while the turn ran. Claude reads it from stdin
@@ -283,9 +331,41 @@ public sealed partial class ExecutionGraphTracker
         var id = ExecutionGraphSupport.AgentNodeID(runID, toolID);
         if (nodes.ContainsKey(id)) return id;
         if (nodes.Count >= ExecutionGraphSupport.MaximumNodes) return null;
-        var value = new ExecutionGraphNode(id, runID, null, kind, "running", title);
+        // A Claude sub-agent's or background command's block keeps when it was first seen, for its card's elapsed time (macOS ensureNode).
+        var value = new ExecutionGraphNode(id, runID, null, kind, "running", title) { Figures = kind is "agent" or "task" && Provider == "claude" ? new GraphAgentFigures(Now) : null };
         nodes[id] = value; order.Add(id); emit(value);
         return id;
+    }
+    /// <summary>The time of the frame being read, else now.</summary>
+    private string Now => frameTime ?? Wire.Now();
+    private static string? FrameTime(JsonElement value) => GraphTime.Kept(value.Text("timestamp"));
+    /// <summary>One more tool call of sub-agent block <paramref name="node"/>, counted once however often its message is sent (macOS countTool).</summary>
+    private void CountTool(string tool, string node)
+    {
+        if (Provider != "claude" || nodes.GetValueOrDefault(node)?.Kind != "agent" || !countedTools.Add(tool)) return;
+        countedOrder.Add(tool);
+        if (countedOrder.Count > 4_096) { countedTools.Remove(countedOrder[0]); countedOrder.RemoveAt(0); }
+        seenTools[node] = seenTools.GetValueOrDefault(node) + 1;
+        PublishTools(node);
+    }
+    /// <summary>The block's tool calls: what its messages showed or what the CLI reported, whichever is more.</summary>
+    private void PublishTools(string node)
+    {
+        var count = Math.Min(GraphAgentFigures.MaximumToolCalls, Math.Max(seenTools.GetValueOrDefault(node), reportedTools.GetValueOrDefault(node)));
+        if (count <= 0 || count == nodes.GetValueOrDefault(node)?.Figures?.ToolCalls) return;
+        Update(node, value => value with { Figures = (value.Figures ?? new()) with { ToolCalls = count } });
+    }
+    /// <summary>The CLI's own count of an agent's tool calls (<c>task_progress</c> and <c>task_notification</c>: <c>usage.tool_uses</c>), taken when it
+    /// is more than was counted from the agent's messages (a message that never reached the stream).</summary>
+    private void ReportTools(JsonElement frame)
+    {
+        if (Key(MetadataJson.Property(frame, "tool_use_id")) is not { } tool) return;
+        var uses = MetadataJson.Property(MetadataJson.Property(frame, "usage"), "tool_uses");
+        if (uses.ValueKind != JsonValueKind.Number || !uses.TryGetInt32(out var count) || count <= 0) return;
+        var node = ExecutionGraphSupport.AgentNodeID(runID, tool);
+        if (Provider != "claude" || nodes.GetValueOrDefault(node)?.Kind != "agent" || count <= reportedTools.GetValueOrDefault(node)) return;
+        reportedTools[node] = count;
+        PublishTools(node);
     }
     /// <param name="continuing">An Antigravity sub-agent that answered while helpers it started were still out goes on with the same assignment when one reports.</param>
     private void Update(string id, Func<ExecutionGraphNode, ExecutionGraphNode> change, bool reopening = false, bool continuing = false)
@@ -298,6 +378,10 @@ public sealed partial class ExecutionGraphTracker
         if (!restart && previous.State is "error" or "stopped" && value.State != previous.State) value = value with { State = previous.State, Output = previous.Output ?? value.Output };
         else if (!restart && ExecutionGraphSupport.Terminal(previous.State) && !ExecutionGraphSupport.Terminal(value.State)
             && !(continuing && Provider == "gemini" && previous.Kind == "agent" && previous.State == "completed" && value.State == "running")) value = value with { State = previous.State };
+        // A Claude sub-agent's or background command's block keeps when it was seen to end, once (macOS update).
+        if (Provider == "claude" && value.Kind is "agent" or "task" && !ExecutionGraphSupport.Terminal(previous.State) && ExecutionGraphSupport.Terminal(value.State)
+            && value.Figures?.EndedAt is null)
+            value = value with { Figures = (value.Figures ?? new()) with { EndedAt = Now } };
         if (ExecutionGraphSupport.Normalized(value) is not { } normalized || normalized.Equals(previous)) return;
         normalized = normalized with { UpdatedAt = Wire.Now() }; nodes[id] = normalized; emit(normalized);
     }
@@ -353,7 +437,16 @@ public sealed partial class ExecutionGraphTracker
 
     /// Observe hierarchy before the stream parser creates the corresponding tool
     /// activity, so child tool rows take the same route as child Markdown.
-    public void Consume(JsonElement value) { lock (sync) ConsumeLocked(value); }
+    public void Consume(JsonElement value)
+    {
+        lock (sync)
+        {
+            // A frame's own time stands for "now" while it is read (macOS consume's frameTime).
+            frameTime = Provider == "claude" && value.ValueKind == JsonValueKind.Object ? FrameTime(value) : null;
+            try { ConsumeLocked(value); }
+            finally { frameTime = null; }
+        }
+    }
     private void ConsumeLocked(JsonElement value)
     {
         if (finished || value.ValueKind != JsonValueKind.Object) return;
@@ -383,9 +476,26 @@ public sealed partial class ExecutionGraphTracker
             Compaction(Key(MetadataJson.Property(value, "uuid")) ?? "n" + compactions, current, ContextCompaction.ClaudeSummary(MetadataJson.Property(value, "compact_metadata")));
             return;
         }
+        if (type == "result" && parentTool is null) AdvisorTurnEnded(value);
         if (type == "assistant" && message.ValueKind == JsonValueKind.Object && Objects(MetadataJson.Property(message, "content")) is { } blocks)
         {
             var content = MetadataJson.Property(message, "content");
+            AdvisorNoted(value, message, parentTool is null);
+            // The advisor is a server tool: its call and its result are blocks of the caller's own message and make no tool block. In the order
+            // they stand, so a tool call after a consultation says the work went on (macOS).
+            foreach (var block in blocks)
+            {
+                switch (block.Text("type"))
+                {
+                    case "server_tool_use":
+                        if (block.Text("name") == "advisor" && Key(MetadataJson.Property(block, "id")) is { } call) AdvisorAsked(call, current, parentTool is null);
+                        break;
+                    case "advisor_tool_result":
+                        if (Key(MetadataJson.Property(block, "tool_use_id")) is { } answered) AdvisorAnswered(answered, MetadataJson.Property(block, "content"));
+                        break;
+                    case "tool_use": AdvisorWorked(current, parentTool is null, block.Text("name")); break;
+                }
+            }
             // A preamble beside a tool_use is not the reply; wait for a text-only answer.
             if (parentTool is null && pendingSteers.Count > 0 && !blocks.Any(b => b.Text("type") == "tool_use") && Text(content) is { Length: > 0 } reply)
             {
@@ -401,6 +511,7 @@ public sealed partial class ExecutionGraphTracker
             {
                 if (Key(MetadataJson.Property(block, "id")) is not { } toolID) continue;
                 RememberTool(toolID, owner);
+                if (parentTool is not null && current != mainID) CountTool(toolID, current);
                 var input = MetadataJson.Property(block, "input");
                 if (input.ValueKind != JsonValueKind.Object) input = default;
                 var background = IsTrue(input, "run_in_background");
@@ -417,7 +528,8 @@ public sealed partial class ExecutionGraphTracker
                         // The first key present wins, as in the macOS `??` chain.
                         var named = new[] { "name", "description", "subagent_type" }.Select(k => MetadataJson.Property(input, k)).FirstOrDefault(p => p.ValueKind != JsonValueKind.Undefined);
                         if (named.ValueKind == JsonValueKind.String && named.GetString() is { Length: > 0 } title) node = node with { Title = title };
-                        return node;
+                        // Who it is, as the call says it: its type, the model it asks for and its isolation.
+                        return Identify(node, type: input.Text("subagent_type"), requestedModel: input.Text("model"), isolation: input.Text("isolation"), replacing: true);
                     });
                 }
                 else if (block.Text("name") == "AskUserQuestion" && EnsureNode(toolID, "question", Locale.Get("graph.block.question")) is { } question)
@@ -461,6 +573,7 @@ public sealed partial class ExecutionGraphTracker
                 var child = ExecutionGraphSupport.AgentNodeID(runID, toolID);
                 if (!nodes.TryGetValue(child, out var node)) continue;
                 var output = Text(MetadataJson.Property(block, "content"));
+                if (node.Kind == "agent") IdentifyLaunch(child, value);
                 if (node.Kind == "task") { AcknowledgeTask(child, block); continue; }
                 if (node.Kind == "question")
                 {
@@ -476,7 +589,7 @@ public sealed partial class ExecutionGraphTracker
                     Update(child, n => n with { Background = true });
                 }
                 if (backgroundTools.Contains(toolID)) { RememberAgentID(child, block, value); continue; }
-                Update(child, n => ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = IsTrue(block, "is_error") ? "error" : "completed", Output = output });
+                Update(child, n => ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = IsTrue(block, "is_error") ? "error" : "completed", Output = output is null ? null : Report(output) });
             }
             // Task completion arrives as an injected user message, not a tool event; so does a sub-agent's final report.
             // Either settles its block and copies it into a notice run; only a root-level one opens a notice turn (macOS).
@@ -490,12 +603,34 @@ public sealed partial class ExecutionGraphTracker
         {
             // The live stream (no --replay-user-messages) carries a task's end as this event, not as the injected user message: the same
             // notification, so it settles the block the same way (macOS the `task_notification` system event).
+            ReportTools(value);
             var summary = value.Text("summary");
             var tool = Key(MetadataJson.Property(value, "tool_use_id"));
+            var taskRun = Key(MetadataJson.Property(value, "run_id"));
             var file = value.Text("output_file");
             SettleTasks("<task-notification><task-id>" + notifiedTask + "</task-id>" + (tool is null ? "" : "<tool-use-id>" + tool + "</tool-use-id>")
-                + (file is { Length: > 0 } ? "<output-file>" + file + "</output-file>" : "") + "<status>" + (value.Text("status") ?? "completed") + "</status>"
+                + (taskRun is null ? "" : "<run-id>" + taskRun + "</run-id>") + (file is { Length: > 0 } ? "<output-file>" + file + "</output-file>" : "") + "<status>" + (value.Text("status") ?? "completed") + "</status>"
                 + (summary is { Length: > 0 } ? "<summary>" + summary + "</summary>" : "") + "</task-notification>", parentTool is null);
+        }
+        else if (type == "system" && value.Text("subtype") == "task_progress") ReportTools(value);
+        else if (type == "system" && value.Text("subtype") == "task_updated" && Key(MetadataJson.Property(value, "task_id")) is { } updatedTask
+            && MetadataJson.Property(MetadataJson.Property(value, "patch"), "end_time") is { ValueKind: JsonValueKind.Number } endTime && endTime.TryGetDouble(out var milliseconds))
+        {
+            // A background command's end as the CLI timed it (milliseconds since 1970), just before its notification: the block ends at that
+            // time, not at whenever the app read the notification (macOS).
+            var seconds = milliseconds / 1_000;
+            if (taskAliases.GetValueOrDefault(updatedTask) is { } id && nodes.GetValueOrDefault(id) is { Kind: "task" } ended && ended.Figures?.EndedAt is null
+                && double.IsFinite(seconds) && seconds is >= 0 and <= 4_102_444_800)
+            {
+                var time = DateTimeOffset.FromUnixTimeMilliseconds((long)Math.Round(seconds * 1_000)).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+                Update(id, node => node with { Figures = (node.Figures ?? new()) with { EndedAt = time } });
+            }
+        }
+        else if (type == "system" && value.Text("subtype") == "task_started" && Key(MetadataJson.Property(value, "tool_use_id")) is { } startedTool)
+        {
+            // The CLI names the type it started the agent as, which a call without `subagent_type` leaves unsaid (macOS).
+            var child = ExecutionGraphSupport.AgentNodeID(runID, startedTool);
+            if (nodes.GetValueOrDefault(child)?.Kind == "agent") Update(child, node => Identify(node, type: value.Text("subagent_type")));
         }
         else if (type == "result" && (ClaudeStream.IsNotificationResult(value) || parentTool is null && (noticeTurn is not null || mergeTurn is not null)))
         {
@@ -531,6 +666,11 @@ public sealed partial class ExecutionGraphTracker
             }
             var peer = MetadataJson.Property(value, "origin") is { ValueKind: JsonValueKind.Object } origin && origin.Text("kind") == "peer";
             var opener = peer ? BackgroundNoticeRuns.Opener.Message : BackgroundNoticeRuns.Opener.Work;
+            // Claude Code answers each notification in a turn of its own. When two pieces of work end close together, both notices come
+            // before the first turn's answer and join its run; the second turn brings no notice of its own, only its result naming its
+            // notification's task run (origin.runId). That answer goes on in the run that already holds the work, as a later turn about
+            // blocks an earlier run holds does (mergeTurn): no empty run (macOS).
+            if (!peer && lines.Count == 0 && HeldRun(value) is { } earlier) { AnswerAgain(earlier, lines, answer, failed); return; }
             if (opener == BackgroundNoticeRuns.Opener.Message && MessageRun(lines) is { } again) { AnswerAgain(again, lines, answer, failed); return; }
             var (names, senders) = Senders(lines);
             bool OpenOwn(bool reserving)
@@ -710,7 +850,17 @@ public sealed partial class ExecutionGraphTracker
     {
         if (!nodes.ContainsKey(node)) return;
         GraphTokenUsage? previous = messageUsage.TryGetValue(message, out var known) ? known : null;
-        if (previous == usage) return;
+        // A message comes as several events that share its id, one content block each (its thinking, then each of its tool calls): the tool
+        // calls it names are the union over those events, in the order they came, so the message's record names every call it made and not
+        // only the ones its first event carried (macOS noteUsage).
+        var named = false;
+        if (previous is not null && activityIds is { Count: > 0 })
+        {
+            var ids = (messageActivityIds.GetValueOrDefault(message) ?? []).ToList();
+            foreach (var id in activityIds) if (!ids.Contains(id)) { ids.Add(id); named = true; }
+            if (named) messageActivityIds[message] = ids;
+        }
+        if (previous == usage && !named) return;
         if (previous is null)
         {
             messageOrder.Add(message);
@@ -754,15 +904,67 @@ public sealed partial class ExecutionGraphTracker
     private void RememberAgentID(string id, JsonElement block, JsonElement frame)
     {
         var agent = Text(MetadataJson.Property(block, "content")) is { } text && AgentLaunch.Match(text) is { Success: true } match ? match.Groups["agent"].Value
-            : Key(MetadataJson.Property(MetadataJson.Property(frame, "toolUseResult"), "agentId"));
+            : Key(MetadataJson.Property(Structured(frame), "agentId"));
         if (agent is null) return;
         if (taskAliases.ContainsKey(agent) || taskAliases.Count < 512) taskAliases[agent] = id;
     }
-    /// <summary>Whether an Agent call's result is the acknowledgement of an asynchronous launch: the event's structured <c>toolUseResult</c>
-    /// (a transcript's) says <c>async_launched</c>, else the result's text opens with <see cref="AsyncLaunchText"/>.</summary>
+    /// <summary>The structured part of a tool result's event: the live stream's <c>tool_use_result</c>, a transcript's <c>toolUseResult</c> (macOS structured).</summary>
+    private static JsonElement Structured(JsonElement frame) =>
+        MetadataJson.Property(frame, "tool_use_result") is { ValueKind: JsonValueKind.Object } live ? live : MetadataJson.Property(frame, "toolUseResult");
+    /// <summary>What the CLI said about who an agent block is (<see cref="GraphAgentIdentity"/>), added to what the block holds. <paramref name="replacing"/>:
+    /// the Agent call's own words, which a repeated event restates; any other source only fills what is still unsaid. The model that runs is always
+    /// the CLI's latest word (macOS identify).</summary>
+    private static ExecutionGraphNode Identify(ExecutionGraphNode node, string? type = null, string? requestedModel = null, string? resolvedModel = null,
+        string? isolation = null, bool replacing = false)
+    {
+        var identity = node.Identity ?? new GraphAgentIdentity();
+        string? Value(string? incoming, string? current) => incoming is not { Length: > 0 } ? current : replacing || current is null ? incoming : current;
+        identity = identity with
+        {
+            Type = Value(type, identity.Type), RequestedModel = Value(requestedModel, identity.RequestedModel),
+            ResolvedModel = resolvedModel is { Length: > 0 } ? resolvedModel : identity.ResolvedModel, Isolation = Value(isolation, identity.Isolation),
+        };
+        return node with { Identity = identity.IsEmpty ? null : identity };
+    }
+    /// <summary>An Agent call's result names the model the CLI resolved for the agent (<c>resolvedModel</c>), its type (<c>agentType</c>, when it ran in
+    /// the foreground) and an isolated agent's worktree (<c>worktreePath</c>): the live stream's <c>tool_use_result</c>, a transcript's
+    /// <c>toolUseResult</c> (macOS identifyLaunch).</summary>
+    private void IdentifyLaunch(string id, JsonElement frame)
+    {
+        var result = Structured(frame);
+        if (result.ValueKind != JsonValueKind.Object) return;
+        var worktree = result.Text("worktreePath") is { Length: > 0 };
+        Update(id, node => Identify(node, type: result.Text("agentType"), resolvedModel: result.Text("resolvedModel"), isolation: worktree ? GraphAgentIdentity.Isolations[0] : null));
+    }
+    /// <summary>A foreground sub-agent's result as Claude Code hands it to its caller. Since the hand-back frame (<see cref="AgentHandback"/>) the report
+    /// stands under a preamble that opens <c>[Subagent hand-back]</c> at the start of a line and ends <c>The report follows:</c>, every line of it
+    /// indented by two spaces; the harness's own lines after it (the agent's ID, its worktree, its usage) stand at column zero again. The block's
+    /// result is the report alone. A result without the frame, or a frame without a report, is the result as it came (macOS report).</summary>
+    internal static string Report(string raw)
+    {
+        var text = raw.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var frame = text.IndexOf(AgentHandback.Frame, StringComparison.Ordinal);
+        if (frame < 0 || frame > 0 && text[frame - 1] is not ('\n' or '\r' or '\u2028' or '\u2029' or '\u0085' or '\v' or '\f')) return raw;
+        var marker = text.IndexOf(AgentHandback.Marker, frame + AgentHandback.Frame.Length, StringComparison.Ordinal);
+        if (marker < 0) return raw;
+        var lineEnd = text.IndexOf('\n', marker + AgentHandback.Marker.Length);
+        if (lineEnd < 0) return raw;
+        var lines = new List<string>();
+        foreach (var line in text[(lineEnd + 1)..].Split('\n'))
+        {
+            if (line.StartsWith("  ", StringComparison.Ordinal)) lines.Add(line[2..]);
+            else if (line.All(char.IsWhiteSpace)) lines.Add("");
+            else break;
+        }
+        var report = string.Join("\n", lines).Trim();
+        return report.Length == 0 ? raw : report;
+    }
+    /// <summary>Whether an Agent call's result is the acknowledgement of an asynchronous launch: the event's structured result (<see cref="Structured"/>)
+    /// says <c>async_launched</c>, else the result's text opens with <see cref="AsyncLaunchText"/>. An agent so acknowledged is a background agent,
+    /// whose end is a notice (<see cref="SettleTasks"/>); any other settles by this result.</summary>
     private static bool AsyncLaunch(JsonElement block, JsonElement frame)
     {
-        var result = MetadataJson.Property(frame, "toolUseResult");
+        var result = Structured(frame);
         if (result.ValueKind == JsonValueKind.Object && (result.Text("status") == "async_launched" || IsTrue(result, "isAsync"))) return true;
         return Text(MetadataJson.Property(block, "content")) is { } text && text.TrimStart().StartsWith(AsyncLaunchText, StringComparison.Ordinal);
     }
@@ -790,6 +992,8 @@ public sealed partial class ExecutionGraphTracker
             // Without a summary the agent's earlier block in this run names it better than an ID.
             Title = sent.Summary is { Length: > 0 } summary ? summary : earlier?.Title is { Length: > 0 } title ? title : sent.To ?? node.Title,
             Input = sent.Message ?? node.Input,
+            // The same agent goes on: it is who its earlier block in this run was (macOS resumeAgent).
+            Identity = node.Identity ?? earlier?.Identity,
         });
     }
     /// <summary>The agent a SendMessage result says it resumed: the result's JSON text, else the event's <c>toolUseResult</c> (a transcript's).</summary>
@@ -832,6 +1036,12 @@ public sealed partial class ExecutionGraphTracker
                 if (notice) JoinTurn(BackgroundNoticeRuns.Opener.Work, null, Tag(body, "summary") ?? Tag(body, "status"));
                 continue;
             }
+            if (Tag(body, "run-id") is { } taskRun && (taskRuns.ContainsKey(taskRun) || taskRuns.Count < 512)) taskRuns[taskRun] = id;
+            // Claude Code reports a foreground sub-agent's end as it does a background task's, right before the Agent call's own result (2.1.322).
+            // A sub-agent that was never launched in the background (no `run_in_background`, no asynchronous launch acknowledged) stands in the
+            // request's diagram and settles by that result: there is no finished background work here, so the notification settles nothing,
+            // copies nothing and opens no notice run (macOS settleTasks).
+            if (kind == "agent" && Tag(body, "tool-use-id") is { } foreground && id == ExecutionGraphSupport.AgentNodeID(runID, foreground) && !backgroundTools.Contains(foreground)) continue;
             var status = Tag(body, "status")?.ToLowerInvariant() ?? "completed";
             var state = status == "completed" ? "completed" : status is "failed" or "error" ? "error" : "stopped";
             var summary = Tag(body, "summary");
@@ -846,10 +1056,14 @@ public sealed partial class ExecutionGraphTracker
             else
             {
                 var file = Tag(body, "output-file");
+                // "Background command "…" completed (exit code 0)", "… failed with exit code 3" (macOS).
+                int? code = summary is not null && ExitCodePattern.Match(summary) is { Success: true } exit && int.TryParse(exit.Groups["code"].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
                 Update(id, n =>
                 {
                     if (file is not null) n = n with { OutputFile = file };
-                    return ExecutionGraphSupport.Terminal(n.State) ? n : n with { State = state, Output = summary ?? n.Output };
+                    if (ExecutionGraphSupport.Terminal(n.State)) return n;
+                    n = n with { State = state, Output = summary ?? n.Output };
+                    return Provider == "claude" && code is { } exitCode ? n with { Figures = (n.Figures ?? new()) with { ExitCode = exitCode } } : n;
                 });
                 AddNotice(id, notice);
             }
@@ -906,6 +1120,7 @@ public sealed partial class ExecutionGraphTracker
             var copy = new ExecutionGraphNode(copyID, run, main, block.Kind, block.State, block.Title)
             {
                 Input = block.Input, Output = block.Output, Background = true, OutputFile = block.OutputFile, SourceBlockId = id,
+                Identity = block.Identity, Figures = block.Figures,
             };
             if (ExecutionGraphSupport.Normalized(copy) is not { } normalized) return;
             nodes[copyID] = normalized; order.Add(copyID); emit(normalized);
@@ -915,7 +1130,7 @@ public sealed partial class ExecutionGraphTracker
             // A run holding a copy is named after the work, no longer an agent's messages alone.
             messageAgents.Remove(run);
         }
-        else Update(copyID, n => n with { Title = block.Title, Input = block.Input, State = block.State, Output = block.Output, OutputFile = block.OutputFile });
+        else Update(copyID, n => n with { Title = block.Title, Input = block.Input, State = block.State, Output = block.Output, OutputFile = block.OutputFile, Identity = block.Identity, Figures = block.Figures });
         Describe(run);
     }
     /// <summary>A notice run's title and request lines: its opener's lines, then each copied block and how it ended. A run holding copies is
@@ -970,6 +1185,11 @@ public sealed partial class ExecutionGraphTracker
         if (SoleAgent(lines) is { } agent && messageAgents.GetValueOrDefault(latest) == agent && LatestNoticeRun == latest) return latest;
         return messageRunCount >= MessageRunLimit ? latest : null;
     }
+    /// <summary>The notice run that already holds the work a notification turn's result answers: the block of the task run its <c>origin.runId</c>
+    /// names (<see cref="taskRuns"/>), as its latest notice run copied it (<see cref="copiedIn"/>) (macOS heldRun).</summary>
+    private string? HeldRun(JsonElement result) =>
+        MetadataJson.Property(result, "origin") is { ValueKind: JsonValueKind.Object } origin && Key(MetadataJson.Property(origin, "runId")) is { } task
+        && taskRuns.GetValueOrDefault(task) is { } block && copiedIn.GetValueOrDefault(block) is { } run && nodes.ContainsKey(ExecutionGraphSupport.MainNodeID(run)) ? run : null;
     /// <summary>The latest notice run opened, if any.</summary>
     private string? LatestNoticeRun => noticeIndex > 0 && BackgroundNoticeRuns.RunID(runID, noticeIndex) is var run && nodes.ContainsKey(ExecutionGraphSupport.MainNodeID(run)) ? run : null;
     /// <summary>The one agent block that sent every one of these lines, if they all came from one.</summary>
@@ -1137,6 +1357,13 @@ public sealed partial class ExecutionGraphTracker
         if (metadata.Output is not null) node = node with { Output = metadata.Output };
         var state = metadata.Phase == "starting" ? "running" : metadata.Phase;
         if (ActivitySupport.States.Contains(state)) node = node with { State = state };
+        // Mods names the agent's type, the model the call asked for (while it starts) and the one the CLI resolved (once it runs, and with
+        // its answer). A start that failed names no model that ran (macOS).
+        if (node.Kind == "agent")
+        {
+            var ran = metadata.Phase is "running" or "completed";
+            node = Identify(node, type: metadata.AgentType, requestedModel: metadata.Phase == "starting" ? metadata.Model : null, resolvedModel: ran ? metadata.Model : null);
+        }
         return node;
     });
 
@@ -1226,6 +1453,7 @@ public sealed partial class ExecutionGraphTracker
             if (pending.Metadata is { } metadata) Apply(metadata, id);
         }
         pendingAgents.Clear();
+        StopAdvisorCalls();
         foreach (var (id, agent) in pendingParents.ToList())
             if (aliases.TryGetValue(agent, out var parent) && id != parent) Update(id, n => n with { ParentId = parent });
         foreach (var id in order.Where(i => i != mainID).ToList())
@@ -1304,6 +1532,11 @@ public sealed partial class ExecutionGraphTracker
             NoticeRun = notice ? true : null,
             // A notice run's title is its main block's, named after the work it reports on (BackgroundNoticeRuns.Title).
             NoticeTitle = notice && main.Title.Length > 0 ? main.Title : null,
+            // The pane's effort and advisor the request started with, its notice runs as their request (macOS recordGraph); the run's own
+            // consultations of the advisor, on its main block.
+            ConfiguredEffort = configuredEffort,
+            ConfiguredAdvisor = configuredAdvisor,
+            Advisor = main.Advisor,
         };
         foreach (var nodeID in order.Where(value => value != mainOf))
         {
@@ -1324,6 +1557,8 @@ public sealed partial class ExecutionGraphTracker
                 OutputFile = node.OutputFile,
                 NoticeReply = node.NoticeReply,
                 SourceBlockId = node.SourceBlockId,
+                Identity = node.Identity,
+                Figures = node.Figures,
             };
             if (node.Output is { Length: > 0 } output)
             {

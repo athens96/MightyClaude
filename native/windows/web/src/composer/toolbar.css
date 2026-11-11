@@ -18,6 +18,8 @@
 .composer-resume { display: inline-grid; place-items: center; width: 16px; height: var(--layout-toolbar); color: var(--ink2); }
 .composer-pill:focus-visible, .context-ring:focus-visible { outline: var(--stroke-focus) solid var(--accent); }
 .pill-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The advisor pill names a chosen model in at most this much (M/ComposerControls.swift advisorTextWidth). */
+.pill-advisor { max-width: 60px; }
 .composer-pill-problem { color: var(--err-text); font-size: var(--type-small); }
 .context-ring { display: inline-grid; place-items: center; width: var(--layout-toolbar); height: var(--layout-toolbar); flex: none; border: 0; border-radius: 50%; padding: 0; background: transparent; color: var(--ink); cursor: default; }
 .context-ring-arc { stroke: var(--accent); }

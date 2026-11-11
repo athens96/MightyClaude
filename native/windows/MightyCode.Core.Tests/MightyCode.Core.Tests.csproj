@@ -30,6 +30,10 @@
     <EmbeddedResource Include="../../contracts/fixtures/work-map.json" LogicalName="MightyCode.Core.Tests.WorkMap.json" />
     <EmbeddedResource Include="../../contracts/fixtures/file-diff.json" LogicalName="MightyCode.Core.Tests.FileDiff.json" />
     <EmbeddedResource Include="../../contracts/fixtures/remote-v2/*.json" LogicalName="MightyCode.Core.Tests.RemoteV2.%(Filename)%(Extension)" />
+    <!-- Real Claude Code 2.1.322 streams the macOS role-view tests replay too (GraphAgentIdentityTests, FlowTaskTests, GraphAdvisorTests). -->
+    <EmbeddedResource Include="../../contracts/fixtures/claude-stream-*.jsonl" LogicalName="MightyCode.Core.Tests.%(Filename)%(Extension)" />
+    <!-- The role view's layout, which the web page's tests read too (native/windows/web/src/mighty/flow.test.ts). -->
+    <EmbeddedResource Include="../../contracts/fixtures/flow-vectors.json" LogicalName="MightyCode.Core.Tests.FlowVectors.json" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../../styles/conformance/**/*.json" LogicalName="MightyCode.Core.Tests.Styles.%(RecursiveDir)%(Filename)%(Extension)" />

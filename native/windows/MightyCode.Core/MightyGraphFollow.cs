@@ -34,8 +34,10 @@ public static class MightyGraphFollow
         // a quiet notice run never takes the camera from the request.
         var newest = MightyGraphLayout.NodeID(runs[MightyGraphSupport.FollowRunIndex(runs) ?? runs.Count - 1], "");
         MightyGraphLayout.Node? best = null;
+        // The return node stands where the result will: it is the run's lowest block until then. A delegate line is a label on a branch, never a
+        // block to follow (macOS MightyGraphFollow run(of:)).
         foreach (var node in layout.Nodes)
-            if (node.Kind is "request" or MightyGraphLayout.WorkKind or "result" or "plan" or "agent" && node.Id.StartsWith(newest, StringComparison.Ordinal)
+            if (node.Kind is "request" or MightyGraphLayout.WorkKind or "result" or "plan" or "agent" or MightyGraphLayout.ReturnKind && node.Id.StartsWith(newest, StringComparison.Ordinal)
                 && node.Frame.MaxY >= (best?.Frame.MaxY ?? double.NegativeInfinity)) best = node;
         return best?.Id;
     }

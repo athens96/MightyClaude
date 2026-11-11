@@ -65,7 +65,9 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     {
         var v = value ?? new(); var caps = Capabilities(provider);
         var permission = PermissionModes(provider).Contains(v.PermissionMode) ? v.PermissionMode : "manual";
-        return new(caps.Effort && Wire.RunEfforts(provider).Contains(v.Effort) ? v.Effort : "default", permission, caps.MaxTurns && v.MaxTurns is >= 1 and <= 1000 ? v.MaxTurns : null, caps.MaxBudgetUsd && v.MaxBudgetUsd is > 0 and <= 10000 ? v.MaxBudgetUsd : null, caps.FastMode && v.FastMode, caps.WebSearch && v.WebSearch is "disabled" or "cached" or "live" ? v.WebSearch : "default", caps.NetworkAccess && permission is ("acceptEdits" or "onRequest") && v.NetworkAccess);
+        return new(caps.Effort && Wire.RunEfforts(provider).Contains(v.Effort) ? v.Effort : "default", permission, caps.MaxTurns && v.MaxTurns is >= 1 and <= 1000 ? v.MaxTurns : null, caps.MaxBudgetUsd && v.MaxBudgetUsd is > 0 and <= 10000 ? v.MaxBudgetUsd : null, caps.FastMode && v.FastMode, caps.WebSearch && v.WebSearch is "disabled" or "cached" or "live" ? v.WebSearch : "default", caps.NetworkAccess && permission is ("acceptEdits" or "onRequest") && v.NetworkAccess,
+            // Only Claude has an advisor: a model's name, or off (macOS normalizedSettings).
+            provider == "claude" && Wire.Model(v.Advisor) ? v.Advisor : null);
     }
     public static ModelCatalog Fallback(string provider)
     {
@@ -630,6 +632,14 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             // Build a single --settings env JSON merging effort + phase model aliases.
             var env = new Dictionary<string, string?>();
             if (settings.Effort != "default") { args.AddRange(["--effort", settings.Effort]); env["CLAUDE_CODE_EFFORT_LEVEL"] = settings.Effort; }
+            // The advisor, as the pane chose it: a model is named beside the main one, off is the CLI's own switch for this run alone, and a pane
+            // that follows Claude's settings passes nothing. The CLI checks the model itself (an advisor weaker than the main model is refused in
+            // its own words) (macOS ProviderService.arguments).
+            if (settings.Advisor is { } advisor)
+            {
+                if (advisor == RunSettings.AdvisorOff) env[ClaudeAdvisorSettings.DisableVariable] = "1";
+                else args.AddRange(["--advisor", advisor]);
+            }
             if (phaseModels is not null)
             {
                 if (phaseModels.ClaudeOpusAlias != "default") env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = phaseModels.ClaudeOpusAlias;

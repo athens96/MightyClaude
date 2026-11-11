@@ -121,4 +121,15 @@ public static class BackgroundNoticeRuns
         }
         return run.Agents.Where(agent => !hidden.Contains(agent.Id)).ToList();
     }
+
+    /// <summary>The blocks <see cref="ShownAgents"/> hides that the flow diagram still draws, by index into the run's agents: a request's
+    /// background sub-agents and background commands (task blocks), and the blocks under them, live while they run and after they ended
+    /// (<see cref="MightyGraphRun.FlowAgents"/>, <see cref="FlowCard"/>). Every other view leaves them to the strip and the notice runs, as
+    /// before (macOS BackgroundNoticeRuns.fanOut).</summary>
+    public static List<int> FanOut(MightyGraphRun run)
+    {
+        if (run.NoticeRun == true || !run.Agents.Any(agent => agent.Background == true)) return [];
+        var shown = ShownAgents(run).Select(agent => agent.Id).ToHashSet(StringComparer.Ordinal);
+        return Enumerable.Range(0, run.Agents.Count).Where(index => !shown.Contains(run.Agents[index].Id)).ToList();
+    }
 }

@@ -94,6 +94,161 @@ public sealed record GraphResponseRecord(
 }
 
 /// <summary>
+/// Who a sub-agent block is, as the CLI said it: the Agent call's <c>subagent_type</c>, <c>model</c> and <c>isolation</c>, and the
+/// model the CLI resolved when it launched the agent. Every part is optional; a block without any carries none (older graph events
+/// and saves, Codex and Antigravity sub-agents). <see cref="FlowRoles"/> reads it for the flow diagram (macOS GraphAgentIdentity).
+/// </summary>
+public sealed record GraphAgentIdentity(
+    [property: JsonPropertyName("type")] string? Type = null,
+    [property: JsonPropertyName("requestedModel")] string? RequestedModel = null,
+    [property: JsonPropertyName("resolvedModel")] string? ResolvedModel = null,
+    [property: JsonPropertyName("isolation")] string? Isolation = null)
+{
+    /// <summary>The Agent call's type for a fork of the calling session.</summary>
+    public const string ForkType = "fork";
+    public static readonly string[] Isolations = ["worktree", "remote"];
+    /// <summary>A fork inherits its caller's whole conversation and model.</summary>
+    [JsonIgnore] public bool IsFork => Type == ForkType;
+    [JsonIgnore] public bool IsEmpty => Type is null && RequestedModel is null && ResolvedModel is null && Isolation is null;
+    /// <summary>Bounded for the wire and for saves: a type on one line, model names the CLI could name, a known isolation. Null when nothing is left.</summary>
+    // Internal: a record prints its public members, and each normalized value has one of its own.
+    [JsonIgnore] internal GraphAgentIdentity? Normalized
+    {
+        get
+        {
+            static string? Model(string? value) => Wire.Model(value) ? value : null;
+            var type = Type is null ? null : ActivitySupport.Clean(Type, 160, true) is { Length: > 0 } clean ? clean : null;
+            var value = new GraphAgentIdentity(type, Model(RequestedModel), Model(ResolvedModel), Isolation is not null && Isolations.Contains(Isolation) ? Isolation : null);
+            return value.IsEmpty ? null : value;
+        }
+    }
+    [JsonIgnore] internal int ByteCount => Bytes(Type) + Bytes(RequestedModel) + Bytes(ResolvedModel) + Bytes(Isolation);
+    private static int Bytes(string? value) => value is null ? 0 : Encoding.UTF8.GetByteCount(value);
+}
+
+/// <summary>
+/// The figures a sub-agent block, or a background command's (a task block), keeps of its own run, for the flow diagram's compact card
+/// (<see cref="FlowCard"/>): when the app saw it start and end, how many tools it called so far, and how a command exited. Each is what was
+/// observed, never an estimate; a block without any carries none (macOS GraphAgentFigures).
+/// </summary>
+public sealed record GraphAgentFigures(
+    [property: JsonPropertyName("startedAt")] string? StartedAt = null,
+    [property: JsonPropertyName("endedAt")] string? EndedAt = null,
+    [property: JsonPropertyName("toolCalls")] int? ToolCalls = null,
+    [property: JsonPropertyName("exitCode")] int? ExitCode = null)
+{
+    public const int MaximumToolCalls = 1_000_000;
+    [JsonIgnore] public bool IsEmpty => StartedAt is null && EndedAt is null && ToolCalls is null && ExitCode is null;
+    /// <summary>A timestamp the app can read back, a count in range; null when nothing is left.</summary>
+    [JsonIgnore] internal GraphAgentFigures? Normalized
+    {
+        get
+        {
+            var value = new GraphAgentFigures(GraphTime.Kept(StartedAt), GraphTime.Kept(EndedAt), ToolCalls is >= 0 and <= MaximumToolCalls ? ToolCalls : null, ExitCode);
+            return value.IsEmpty ? null : value;
+        }
+    }
+    [JsonIgnore] public DateTimeOffset? Started => AgentRunTiming.Parse(StartedAt);
+    [JsonIgnore] public DateTimeOffset? Ended => AgentRunTiming.Parse(EndedAt);
+}
+
+/// <summary>A time a graph record keeps: one the app can read back, at most 80 bytes (macOS AgentRunTiming.parseTimestamp in the normalizers).</summary>
+internal static class GraphTime
+{
+    internal static string? Kept(string? value) => value is not null && Encoding.UTF8.GetByteCount(value) <= 80 && AgentRunTiming.Parse(value) is not null ? value : null;
+}
+
+/// <summary>
+/// One consultation of the advisor (Claude Code's server-side advisor tool, <c>claude --advisor &lt;model&gt;</c>), as the stream showed it and
+/// nothing more: the advisor's reply usually goes to Claude encrypted, and then there is no text here to show (macOS GraphAdvisorCall).
+/// </summary>
+/// <param name="Id">The server tool call's id (<c>srvtoolu_…</c>).</param>
+/// <param name="Caller">The block that asked: a sub-agent block's id; null is the run's main session.</param>
+/// <param name="State"><c>consulting</c> until its result; then <c>done</c>, <c>declined</c> (a refusal), <c>error</c> (<paramref name="ErrorCode"/>) or <c>stopped</c> (the turn or the process ended first).</param>
+/// <param name="Redacted">The reply came encrypted (<c>advisor_redacted_result</c>): it went to Claude and there is no text to show.</param>
+/// <param name="Text">The advice, when the CLI gave it as text (<c>advisor_result</c>), bounded.</param>
+/// <param name="BeforeChange">When it asked, the caller had called no file-changing tool yet (Edit, Write, MultiEdit, NotebookEdit).</param>
+/// <param name="Followed">The caller called a tool again after it (another consultation counts): it was not the caller's last step.</param>
+public sealed record GraphAdvisorCall(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("caller")] string? Caller = null,
+    [property: JsonPropertyName("startedAt")] string? StartedAt = null,
+    [property: JsonPropertyName("endedAt")] string? EndedAt = null,
+    [property: JsonPropertyName("state")] string State = "consulting",
+    [property: JsonPropertyName("redacted")] bool? Redacted = null,
+    [property: JsonPropertyName("text")] string? Text = null,
+    [property: JsonPropertyName("errorCode")] string? ErrorCode = null,
+    [property: JsonPropertyName("beforeChange")] bool? BeforeChange = null,
+    [property: JsonPropertyName("followed")] bool? Followed = null)
+{
+    [JsonIgnore] public DateTimeOffset? Started => AgentRunTiming.Parse(StartedAt);
+    [JsonIgnore] public DateTimeOffset? Ended => AgentRunTiming.Parse(EndedAt);
+    [JsonIgnore] internal int ByteCount => Bytes(Id) + Bytes(Caller) + Bytes(StartedAt) + Bytes(EndedAt) + Bytes(State) + Bytes(Text) + Bytes(ErrorCode);
+    private static int Bytes(string? value) => value is null ? 0 : Encoding.UTF8.GetByteCount(value);
+}
+
+/// <summary>
+/// A run's use of the advisor: the consultations the stream showed and what its turns' results said the advisor's own messages cost. Kept on
+/// the run's main block (a notice turn's own run for what its main session asked); a run that never consulted it carries none, as do older
+/// graph events and saves (macOS GraphAdvisor).
+/// </summary>
+/// <param name="Model">The advisor's model as a turn's result named it (<c>usage.iterations[]</c> of type <c>advisor_message</c>).</param>
+/// <param name="Usage">The tokens of the advisor's own messages, summed over the results of the run's turns.</param>
+/// <param name="Calls">The newest consultations, oldest first, at most <see cref="MaximumCalls"/>.</param>
+/// <param name="Total">Every consultation seen, when that is more than <paramref name="Calls"/> keeps.</param>
+public sealed record GraphAdvisor(
+    [property: JsonPropertyName("model")] string? Model = null,
+    [property: JsonPropertyName("usage")] GraphTokenUsage? Usage = null,
+    List<GraphAdvisorCall>? Calls = null,
+    [property: JsonPropertyName("total")] int? Total = null)
+{
+    /// <summary>The calls, an empty list when none came: always written, as the Mac's decoder needs the key (its <c>calls</c> is no optional).</summary>
+    [JsonPropertyName("calls")] public List<GraphAdvisorCall>? Calls { get; init; } = Calls ?? [];
+    public const int MaximumCalls = 32;
+    /// <summary>With <see cref="MaximumCalls"/>, a run's advice never takes more than its result may.</summary>
+    public const int MaximumTextBytes = 1024;
+    public const int MaximumTotal = 1_000_000;
+    public static readonly string[] States = ["consulting", "done", "declined", "error", "stopped"];
+    /// <summary>The calls, never null (an older or a hand-written record may leave them out).</summary>
+    [JsonIgnore] public IReadOnlyList<GraphAdvisorCall> Consultations => Calls ?? [];
+    /// <summary>Every consultation seen, kept or not.</summary>
+    [JsonIgnore] public int Count => Math.Max(Total ?? 0, Consultations.Count);
+    [JsonIgnore] public bool IsEmpty => Model is null && Usage is null && Consultations.Count == 0;
+    [JsonIgnore] internal int ByteCount => (Model is null ? 0 : Encoding.UTF8.GetByteCount(Model)) + Consultations.Sum(c => c.ByteCount);
+
+    /// <summary>Bounded for the wire and for saves: the newest calls with ids, states and times the app can read back and a bounded text; null
+    /// when nothing is left. <paramref name="restoring"/>: a consultation still out when the app closed never got its result.</summary>
+    public GraphAdvisor? Normalized(bool restoring = false)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var kept = new List<GraphAdvisorCall>();
+        foreach (var call in Consultations.TakeLast(MaximumCalls))
+        {
+            if (call is null || !Wire.Identifier(call.Id) || !States.Contains(call.State) || call.Caller is { } caller && !Wire.Identifier(caller) || !seen.Add(call.Id)) continue;
+            string? Optional(string? text, int bytes, bool line = false) => text is null ? null : ActivitySupport.Clean(text, bytes, line) is { Length: > 0 } clean ? clean : null;
+            kept.Add(call with
+            {
+                StartedAt = GraphTime.Kept(call.StartedAt), EndedAt = GraphTime.Kept(call.EndedAt),
+                State = restoring && call.State == "consulting" ? "stopped" : call.State,
+                Redacted = call.Redacted == true ? true : null,
+                Text = Optional(call.Text, MaximumTextBytes),
+                ErrorCode = Optional(call.ErrorCode, 80, true),
+                BeforeChange = call.BeforeChange == true ? true : null,
+                Followed = call.Followed == true ? true : null,
+            });
+        }
+        var all = Math.Min(MaximumTotal, Count);
+        var value = new GraphAdvisor(Wire.Model(Model) ? Model : null, Usage?.Normalized, kept, all > kept.Count ? all : null);
+        return value.IsEmpty ? null : value;
+    }
+
+    /// Structural equality (macOS GraphAdvisor: Equatable): the synthesized comparison would compare the calls by reference.
+    public bool Equals(GraphAdvisor? other) =>
+        other is not null && Model == other.Model && Equals(Usage, other.Usage) && Total == other.Total && Consultations.SequenceEqual(other.Consultations);
+    public override int GetHashCode() => HashCode.Combine(Model, Usage, Total, Consultations.Count);
+}
+
+/// <summary>
 /// A request-scoped node snapshot. A missing input/output means the engine did
 /// not report it; display code must not manufacture a prompt or final answer.
 /// </summary>
@@ -128,6 +283,14 @@ public sealed record ExecutionGraphNode
     [JsonPropertyName("noticeReply")] public string? NoticeReply { get; init; }
     /// <summary>A copy in a notice run (<see cref="BackgroundNoticeRuns"/>): the id of the finished background block it copies.</summary>
     [JsonPropertyName("sourceBlockId")] public string? SourceBlockId { get; init; }
+    /// <summary>Who a sub-agent block is (<see cref="GraphAgentIdentity"/>); absent on other blocks, in older graph events and in older saves.</summary>
+    [JsonPropertyName("identity")] public GraphAgentIdentity? Identity { get; init; }
+    /// <summary>A sub-agent block's start, end and tool calls, a background command's start, end and exit code (<see cref="GraphAgentFigures"/>);
+    /// absent on other blocks, in older graph events and in older saves.</summary>
+    [JsonPropertyName("figures")] public GraphAgentFigures? Figures { get; init; }
+    /// <summary>A run's use of the advisor (<see cref="GraphAdvisor"/>), on its main block; absent on other blocks, in a run that never consulted
+    /// it, in older graph events and in older saves.</summary>
+    [JsonPropertyName("advisor")] public GraphAdvisor? Advisor { get; init; }
 
     /// Structural equality (macOS ExecutionGraphNode: Equatable) — the synthesized
     /// record comparison would compare the lists by reference.
@@ -136,6 +299,7 @@ public sealed record ExecutionGraphNode
         && State == other.State && Title == other.Title && Input == other.Input && Output == other.Output
         && Equals(Usage, other.Usage) && ActivityGeneration == other.ActivityGeneration
         && Background == other.Background && OutputFile == other.OutputFile && NoticeReply == other.NoticeReply && SourceBlockId == other.SourceBlockId
+        && Equals(Identity, other.Identity) && Equals(Figures, other.Figures) && Equals(Advisor, other.Advisor)
         && GraphEquality.Records(ResponseRecords, other.ResponseRecords)
         && GraphEquality.Entries(Entries, other.Entries);
     public override int GetHashCode() => HashCode.Combine(Id, RunId, ParentId, Kind, State, Title, Entries.Count);
@@ -203,12 +367,17 @@ public static class ExecutionGraphSupport
             OutputFile = node.OutputFile is { } file && Bytes(file) <= 4096 && file.IndexOfAny(MightyStructure.Newlines) < 0 ? file : null,
             NoticeReply = node.NoticeReply is null ? null : ActivitySupport.Clean(node.NoticeReply, MaximumOutputBytes),
             SourceBlockId = node.SourceBlockId is { } source && Wire.Identifier(source) ? source : null,
+            // Only a sub-agent block has a type, a model of its own and an isolation; a sub-agent's or a task's its figures; a run's main
+            // block its consultations of the advisor (macOS).
+            Identity = node.Kind == "agent" ? node.Identity?.Normalized : null,
+            Figures = node.Kind is "agent" or "task" ? node.Figures?.Normalized : null,
+            Advisor = node.Kind == "main" ? node.Advisor?.Normalized(restoring) : null,
         };
         if (restoring && !Terminal(result.State)) result = result with { State = "stopped" };
         if (node.Kind == "main") return result with { Entries = [] };
 
         var remaining = MaximumNodeBytes - Bytes(result.Title) - Bytes(result.Input) - Bytes(result.Output)
-            - Bytes(result.OutputFile) - Bytes(result.NoticeReply) - Bytes(result.SourceBlockId);
+            - Bytes(result.OutputFile) - Bytes(result.NoticeReply) - Bytes(result.SourceBlockId) - (result.Identity?.ByteCount ?? 0);
         var seen = new HashSet<string>();
         var entries = new List<LogEntry>();
         foreach (var original in node.Entries.TakeLast(MaximumEntries).Reverse())

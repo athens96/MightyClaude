@@ -171,7 +171,10 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             graphActivity: (value, toolId) => tracker?.Activity(value, toolId) == true,
             graphImages: (entry, toolId, parentToolId) => tracker?.Images(entry, toolId, parentToolId) == true);
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
-            tracker = new ExecutionGraphTracker(Wire.Identifier(request.GraphRunId) ? request.GraphRunId! : Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), node => { Interlocked.Exchange(ref graphDirty, 1); HandOver(run, node); });
+            tracker = new ExecutionGraphTracker(Wire.Identifier(request.GraphRunId) ? request.GraphRunId! : Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), node => { Interlocked.Exchange(ref graphDirty, 1); HandOver(run, node); },
+                // The pane's effort and its own advisor choice the request starts with (macOS beginGraphRun); a pane that follows Claude's settings learns
+                // its advisor once the workspace is known, below.
+                request.Settings?.Effort, request.Provider == "claude" ? ClaudeAdvisorSettings.Configured(request.Settings?.Advisor, false, () => null) : null);
         run.Tracker = tracker;
         // Claude's (or Codex's) execution checklist and Claude's background tasks (ClaudePlanMode.cs).
         var planGate = new object();
@@ -304,6 +307,17 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             var environment = ProviderCatalog.QuietEnvironment();
             codexHome = request.Provider == "codex" ? CliAccountSupport.CodexHome(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment) : null;
             antigravityBrain = request.Provider == "gemini" ? AntigravityRecords.Brain(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) : null;
+            // Whether an advisor is on for this request, for its diagram, when the pane follows Claude's settings: what %USERPROFILE%\.claude\settings.json
+            // and the working folder's .claude\settings.json and settings.local.json name, unless the run's environment turns it off. Read only, never
+            // written (macOS AppStore noteGraphRunAdvisor).
+            if (tracker is not null && request.Provider == "claude" && request.Kind == "claude" && request.Settings?.Advisor is null)
+            {
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                var advisorFolder = workspace.Path;
+                var disabled = ClaudeAdvisorSettings.Truthy(environment.GetValueOrDefault(ClaudeAdvisorSettings.DisableVariable));
+                var configDirectory = ClaudeAdvisorSettings.ConfigDirectory(home, environment);
+                tracker.NoteAdvisor(ClaudeAdvisorSettings.Configured(null, disabled, () => ClaudeAdvisorSettings.Model(advisorFolder, configDirectory)));
+            }
             if (tracker is not null) graphTask = PublishGraphs();
             string binary; IEnumerable<string> arguments; var interactive = false;
             // Read once: the launch below must quote the arguments PowerShell was given, never hand its text to cmd /s /c.
@@ -330,6 +344,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     var runtime = await providers.GetRuntimeAsync(workingDirectory: workspace.Path); token.ThrowIfCancellationRequested();
                     var catalog = runtime.Providers.Single(p => p.Id == request.Provider).ModelCatalog;
                     request = PhaseModelPreferences.ResolveEffort(request, catalog);
+                    // The 실행 block names the effort the run starts with, which Settings › Models gives a pane left on Auto (macOS noteGraphRunEffort).
+                    tracker?.NoteEffort(request.Settings!.Effort);
                     // A level the list does not name for the model is refused; a Haiku model that takes none, in Haiku's words.
                     if (ProviderCatalog.EffortRefusal(request.Provider, PhaseModelPreferences.EffectiveModel(request), request.Settings!.Effort, catalog, request.RegisteredModels) is { } refusal)
                         throw new ArgumentException(refusal);
@@ -343,6 +359,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     environment["CLAUDE_CODE_ENABLE_FUNCTION_HOOKS"] = "1"; environment["MIGHTY_CLAUDE_BRIDGE_URL"] = mod.Url; environment["MIGHTY_CLAUDE_BRIDGE_TOKEN"] = mod.Token; environment["MIGHTY_CLAUDE_RUN_ID"] = mod.Id;
                     environment["MIGHTY_CLAUDE_ACTIVITY"] = "1"; environment["MIGHTY_CLAUDE_USAGE"] = "1"; environment["MIGHTY_CLAUDE_GRAPH"] = "1";
                     if (request.Settings!.Effort != "default") environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.Settings.Effort;
+                    // A pane that turned the advisor off: for this run's process alone (macOS ProcessRunner).
+                    if (request.Settings!.Advisor == RunSettings.AdvisorOff) environment[ClaudeAdvisorSettings.DisableVariable] = "1";
                 }
                 if (request.Attachments is { Count: > 0 } files) { attachments = await StagedAttachments.CreateAsync(files, token); token.ThrowIfCancellationRequested(); input = attachments.InputFor(request); }
                 binary = command.Binary;

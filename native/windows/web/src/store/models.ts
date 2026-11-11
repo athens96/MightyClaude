@@ -48,6 +48,8 @@ export interface RunSettings {
   fastMode?: boolean;
   webSearch?: string;
   networkAccess?: boolean;
+  /** A Claude pane's advisor (Core RunSettings.Advisor): absent follows Claude's settings, a model's name is passed as --advisor, "off" turns it off. */
+  advisor?: string;
 }
 
 export interface AgentActivity {
@@ -131,6 +133,44 @@ export interface GraphResponseRecord {
   markedAsConfigured: boolean;
 }
 
+/** Who a sub-agent block is, as the CLI said it (Core GraphAgentIdentity, macOS GraphAgentIdentity): every part optional. */
+export interface GraphAgentIdentity {
+  type?: string;
+  requestedModel?: string;
+  resolvedModel?: string;
+  isolation?: string;
+}
+
+/** A sub-agent's or a background command's own start, end, tool calls and exit code, as the app saw them (Core GraphAgentFigures). */
+export interface GraphAgentFigures {
+  startedAt?: string;
+  endedAt?: string;
+  toolCalls?: number;
+  exitCode?: number;
+}
+
+/** One consultation of the advisor (Core GraphAdvisorCall). */
+export interface GraphAdvisorCall {
+  id: string;
+  caller?: string;
+  startedAt?: string;
+  endedAt?: string;
+  state: string;
+  redacted?: boolean;
+  text?: string;
+  errorCode?: string;
+  beforeChange?: boolean;
+  followed?: boolean;
+}
+
+/** A run's use of the advisor, on its main block (Core GraphAdvisor). */
+export interface GraphAdvisor {
+  model?: string;
+  usage?: GraphTokenUsage;
+  calls?: GraphAdvisorCall[];
+  total?: number;
+}
+
 export interface MightyGraphAgent {
   id: string;
   parentID?: string;
@@ -148,6 +188,10 @@ export interface MightyGraphAgent {
   noticeReply?: string;
   /** A copy in a notice run: the id of the finished background block it copies. */
   sourceBlockId?: string;
+  /** Who a sub-agent is (absent on other blocks and in older saves). */
+  identity?: GraphAgentIdentity;
+  /** A sub-agent's or a task's start, end, tool calls and exit code (absent on other blocks and in older saves). */
+  figures?: GraphAgentFigures;
 }
 
 export interface MightyGraphRun {
@@ -168,6 +212,12 @@ export interface MightyGraphRun {
   noticeRun?: boolean;
   /** A notice run's title, "<kind> · <name>" (Core BackgroundNoticeRuns.Title); absent in request runs and older saves. */
   noticeTitle?: string;
+  /** The pane's effort when the request started ("default" when the CLI decides); absent in older saves. */
+  configuredEffort?: string;
+  /** The run's consultations of the advisor (absent in a run that never consulted it). */
+  advisor?: GraphAdvisor;
+  /** The advisor's model the request started with, when one was known to be on. */
+  configuredAdvisor?: string;
 }
 
 export interface GraphBlockSize {
@@ -242,6 +292,8 @@ export interface RunSession {
   graphBlockSizes?: Record<string, GraphBlockSize>;
   graphSizesLayout?: number;
   graphViewMode?: string;
+  /** The flow's session log folded to its status line (written only when folded). */
+  flowLogCollapsed?: boolean;
   workspaceProfileKey?: string;
   ownerSessionId?: string;
   titleMode?: string;

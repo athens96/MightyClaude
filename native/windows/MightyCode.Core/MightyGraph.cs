@@ -23,8 +23,16 @@ public sealed class MightyGraphAgent
     [JsonPropertyName("noticeReply")] public string? NoticeReply { get; set; }
     /// <summary>A copy in a notice run: the finished background block it copies (<see cref="ExecutionGraphNode.SourceBlockId"/>).</summary>
     [JsonPropertyName("sourceBlockId")] public string? SourceBlockId { get; set; }
+    /// <summary>Who a sub-agent is: its type, the model it asked for and runs with, its isolation (<see cref="GraphAgentIdentity"/>). Absent on
+    /// other blocks and in older saves.</summary>
+    [JsonPropertyName("identity")] public GraphAgentIdentity? Identity { get; set; }
+    /// <summary>A sub-agent's own start, end and tool calls, a background command's start, end and exit code (<see cref="GraphAgentFigures"/>),
+    /// for its compact card. Absent as <see cref="Identity"/> is.</summary>
+    [JsonPropertyName("figures")] public GraphAgentFigures? Figures { get; set; }
 
     [JsonIgnore] public bool IsTask => Kind == "task";
+    /// <summary>A sub-agent: a block that is none of the kinds the core records apart (macOS MightyGraphAgent.isSubagent).</summary>
+    [JsonIgnore] public bool IsSubagent => MightyGraphSupport.BlockKind(this) == "agent";
     /// <summary>A sub-agent started with <c>run_in_background</c> (macOS MightyGraphAgent.isBackgroundAgent).</summary>
     [JsonIgnore] public bool IsBackgroundAgent => Kind is null && Background == true;
 
@@ -35,7 +43,7 @@ public sealed class MightyGraphAgent
         Id = Id, ParentID = ParentID, Title = Title, Input = Input, Status = Status, Entries = [.. Entries],
         Kind = Kind, Usage = Usage, ActivityGeneration = ActivityGeneration,
         ResponseRecords = ResponseRecords is null ? null : [.. ResponseRecords],
-        Background = Background, OutputFile = OutputFile, NoticeReply = NoticeReply, SourceBlockId = SourceBlockId,
+        Background = Background, OutputFile = OutputFile, NoticeReply = NoticeReply, SourceBlockId = SourceBlockId, Identity = Identity, Figures = Figures,
     };
 }
 
@@ -59,6 +67,28 @@ public sealed class MightyGraphRun
     /// <summary>A notice run's title, "&lt;kind&gt; · &lt;name&gt;" (<see cref="BackgroundNoticeRuns.Title(string, IReadOnlyList{string})"/>), its main block's; absent in request runs
     /// and in older saves, whose notice runs read <see cref="BackgroundNoticeRuns.GenericTitle"/> (<see cref="BackgroundNoticeRuns.Heading(MightyGraphRun)"/>).</summary>
     [JsonPropertyName("noticeTitle")] public string? NoticeTitle { get; set; }
+    /// <summary>The effort the pane was set to when the request started ("default" when the CLI decides), as <see cref="ConfiguredModel"/> is the
+    /// model (macOS MightyGraphRun.configuredEffort). Absent in older saves and in runs the app did not start.</summary>
+    [JsonPropertyName("configuredEffort")] public string? ConfiguredEffort { get; set; }
+    /// <summary>The run's use of the advisor: its consultations and what they cost (<see cref="GraphAdvisor"/>). Absent in a run that never
+    /// consulted it and in older saves.</summary>
+    [JsonPropertyName("advisor")] public GraphAdvisor? Advisor { get; set; }
+    /// <summary>The advisor's model the request was started with, when one was known to be on: the pane's own choice, else what Claude's
+    /// settings name (<see cref="ClaudeAdvisorSettings"/>). Absent when none was known, when the pane turned it off, in older saves and in
+    /// runs the app did not start.</summary>
+    [JsonPropertyName("configuredAdvisor")] public string? ConfiguredAdvisor { get; set; }
+    /// <summary>The background sub-agents and commands <see cref="Shown"/> took out of <see cref="Agents"/>, with the blocks under them, in the order
+    /// they stood: the flow diagram alone still draws them, under the block that launched them (<see cref="FlowAgents"/>). Never saved.</summary>
+    [JsonIgnore] internal List<MightyGraphAgent>? ShownFanOut { get; set; }
+    /// <summary>Where each of <see cref="FlowAgents"/> stood among the run's blocks before <see cref="Shown"/> took the background ones out. Never saved.</summary>
+    [JsonIgnore] internal List<int>? ShownFlowOrder { get; set; }
+    /// <summary>Every block the flow diagram draws for the run: the ones every view draws (<see cref="Agents"/>, at the same indexes), then the
+    /// background sub-agents and commands and what hangs under them, which the other views leave to the strip and the notice runs
+    /// (<see cref="BackgroundNoticeRuns.FanOut"/>). A run that hides nothing has only its agents (macOS MightyGraphRun.flowAgents).</summary>
+    [JsonIgnore] public IReadOnlyList<MightyGraphAgent> FlowAgents => ShownFanOut is { } fanOut ? [.. Agents, .. fanOut] : Agents;
+    /// <summary>The place <c>FlowAgents[index]</c> had among the run's blocks as they were recorded, by which the flow orders the blocks of one
+    /// row: a background block stands where it was launched, not after the others (macOS MightyGraphRun.flowOrder).</summary>
+    public int FlowOrder(int index) => ShownFlowOrder is { } order && index >= 0 && index < order.Count ? order[index] : index;
     /// <summary><see cref="BackgroundWaiting"/> of the run <see cref="Shown"/> was made from, whose background blocks it no longer holds. Never saved.</summary>
     [JsonIgnore] internal int? ShownBackgroundWaiting { get; set; }
     /// <summary>The background work of the whole request this run belongs to (<see cref="MightyGraphSupport.WithBackgroundWaiting"/>), which a notice run reads
@@ -74,7 +104,8 @@ public sealed class MightyGraphRun
         ResultEntries = [.. ResultEntries], SourceRunID = SourceRunID, FinalOutput = FinalOutput, Usage = Usage,
         ResponseRecords = ResponseRecords is null ? null : [.. ResponseRecords], Provider = Provider,
         NodeModelLabel = NodeModelLabel, ConfiguredModel = ConfiguredModel, NoticeRun = NoticeRun, NoticeTitle = NoticeTitle, ShownBackgroundWaiting = ShownBackgroundWaiting, RequestBackgroundWaiting = RequestBackgroundWaiting,
-        ShownAwaiting = ShownAwaiting,
+        ShownAwaiting = ShownAwaiting, ConfiguredEffort = ConfiguredEffort, Advisor = Advisor, ConfiguredAdvisor = ConfiguredAdvisor,
+        ShownFanOut = ShownFanOut is null ? null : [.. ShownFanOut.Select(a => a.Copy())], ShownFlowOrder = ShownFlowOrder is null ? null : [.. ShownFlowOrder],
     };
     /// Tokens of the main block alone; this adds every child block.
     [JsonIgnore] public GraphTokenUsage? TotalUsage
@@ -100,6 +131,11 @@ public sealed class MightyGraphRun
             var run = (MightyGraphRun)MemberwiseClone();
             run.ShownBackgroundWaiting = MightyGraphSupport.Held(this);
             run.ShownAwaiting = BackgroundNoticeRuns.AwaitingNotice(this, [this]);
+            // What the flow diagram still draws of the blocks that went, and where every block stood (macOS shown).
+            var fanOut = BackgroundNoticeRuns.FanOut(this);
+            var kept = agents.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
+            run.ShownFanOut = fanOut.Select(index => Agents[index]).ToList();
+            run.ShownFlowOrder = [.. Enumerable.Range(0, Agents.Count).Where(index => kept.Contains(Agents[index].Id)), .. fanOut];
             run.Agents = agents;
             return run;
         }
@@ -306,6 +342,8 @@ public static class MightyGraphSupport
     }
 
     private static readonly string[] ValidStates = ["idle", "running", "waiting", "completed", "error", "stopped"];
+    /// <summary>An effort a pane of any provider may be set to: "default" (the CLI decides) or one of the levels (macOS CoreValidation.effort).</summary>
+    public static bool ValidEffort(string? value) => value is not null && (value == "default" || Wire.Efforts.Contains(value) || Wire.PiThinkingLevels.Contains(value));
     private static readonly string[] ValidKinds = ["task", "steer", "compact", "question"];
 
     public const int LiveHistoryLimit = 2 * 1024 * 1024;
@@ -378,7 +416,12 @@ public static class MightyGraphSupport
                 Agents = [],
                 ResponseRecords = run.ResponseRecords,
                 NoticeRun = run.NoticeRun == true ? true : null,
+                ConfiguredEffort = run.ConfiguredEffort is { } effort && ValidEffort(effort) ? effort : null,
+                ConfiguredAdvisor = Wire.Model(run.ConfiguredAdvisor) ? run.ConfiguredAdvisor : null,
             };
+            // The advisor's record is kept whole or not at all: a consultation without its text would read as one whose reply had none (macOS).
+            r.Advisor = run.Advisor?.Normalized(restoring) is { } advisor && advisor.ByteCount <= Math.Max(0, budget) ? advisor : null;
+            budget -= r.Advisor?.ByteCount ?? 0;
             r.NoticeTitle = r.NoticeRun == true && run.NoticeTitle is { } noticeTitle && Bounded(noticeTitle, 240, ref budget) is { Length: > 0 } title ? title : null;
 
             var resolvedProvider = provider ?? run.Provider
@@ -408,6 +451,10 @@ public static class MightyGraphSupport
                     Background = agent.Background == true ? true : null,
                     SourceBlockId = agent.SourceBlockId is { } source && Wire.Identifier(source) ? source : null,
                 };
+                // Only a sub-agent has a type, a model of its own and an isolation; a sub-agent and a task their figures (macOS).
+                a.Identity = a.Kind is null ? agent.Identity?.Normalized : null;
+                budget -= a.Identity?.ByteCount ?? 0;
+                a.Figures = a.Kind is null or "task" ? agent.Figures?.Normalized : null;
                 a.NoticeReply = agent.NoticeReply is { } reply && Bounded(reply, 32_768, ref budget) is { Length: > 0 } bounded ? bounded : null;
                 a.OutputFile = agent.OutputFile is { } file && Bytes(file) <= 4096 && file.IndexOfAny(MightyStructure.Newlines) < 0 ? file : null;
                 budget -= Bytes(a.OutputFile);
