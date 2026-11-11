@@ -391,8 +391,10 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         return entry is not null ? KeptModelLists.Kept(entry, reason) : Fallback(provider) with { ReadFailure = reason };
     }
 
-    /// <summary>The picker the last Hermes session offered, kept in the storage folder (none without one: the checks never read a user's).</summary>
-    private ModelCatalog HermesModels() => Fallback("hermes");
+    /// <summary>Where the picker the last Hermes session offered is kept: the storage folder (none without one, so a checks' fake Hermes never writes over a user's).</summary>
+    public string? HermesModelCache => storageDirectory is null ? null : Path.Combine(storageDirectory, HermesAgent.ModelCacheFileName);
+    /// <summary>The picker the last Hermes session offered (M/MightyCore/HermesSupport.swift cachedCatalog).</summary>
+    private ModelCatalog HermesModels() => HermesAgent.CachedCatalog(HermesModelCache);
 
     /// <summary>Keeps a list the CLI just gave, writing the file (in the storage folder only) when it changed or is five minutes old.</summary>
     private async Task KeepAsync(ModelCatalog catalog, string provider, string? workspace)
@@ -677,6 +679,14 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             if (settings.Effort != "default") args.AddRange(["--thinking", settings.Effort]);
             if (settings.PermissionMode != "fullAccess") args.AddRange(["--tools", Wire.PiReadOnlyTools]);
             if (request.ResumeId is not null) args.AddRange(["--session", request.ResumeId]);
+            return args;
+        }
+        else if (IsAcp(request.Provider))
+        {
+            // One ACP server per request (`opencode acp`, OpenCode 2; `hermes acp`, a viewer of Hermes's gateway, which it starts when needed):
+            // the session, the settings and the prompt travel as JSON-RPC on stdio (AcpChannel); the permission mode as opencode's run config
+            // (OPENCODE_CONFIG_CONTENT) or Hermes's edit policy and HERMES_YOLO_MODE.
+            args.Add("acp");
             return args;
         }
         else

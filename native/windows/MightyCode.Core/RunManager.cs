@@ -43,6 +43,12 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         internal AgentIOBinding? PaneBinding;
         internal ClaudePermissionChannel? Permissions;
         internal CodexApprovalChannel? CodexPermissions;
+        /// <summary>An ACP agent's run (opencode, Hermes): the JSON-RPC channel its stdio carries.</summary>
+        internal AcpChannel? Acp;
+        /// <summary>The ACP prompt was answered and the runner ended the agent's server itself (not a failure).</summary>
+        internal volatile bool AcpEnding;
+        /// <summary>stdin of an ACP run was closed after its prompt's answer.</summary>
+        internal int AcpInputClosed;
         internal bool ProtocolFailed;
         internal bool AuthenticationFailure;
         /// <summary>The latest Claude message the CLI marked as a lost sign-in, until a result ends its turn.</summary>
@@ -142,6 +148,9 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         var request = run.Request; var token = run.Cancel.Token; var codexApprovals = request.Provider == "codex" && request.Settings!.PermissionMode == "onRequest"; ModBridge.Connection? mod = null; StagedAttachments? attachments = null; var input = request.Input; Exception? startFailure = null;
         var startedAt = DateTimeOffset.UtcNow;
         ExecutionGraphTracker? tracker = null;
+        // An ACP run's request as launched (a Hermes session that cannot be continued is started anew) and Hermes's clarify tool.
+        StartRunRequest? acpLaunch = null;
+        (HermesQuestionTool.Outcome? First, IReadOnlyList<string>? List, bool Asks) hermesQuestions = (null, null, false);
         var graphDirty = 0;
         var graphGate = new object();
         CodexSessionWatcher? watcher = null;
@@ -298,6 +307,10 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 var command = await providers.FindAsync(request.Provider, token) ?? throw new InvalidOperationException(Locale.Get("run.error.cliNotInstalled", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(request.Provider) }));
                 token.ThrowIfCancellationRequested();
                 if (codexApprovals && !ProviderCatalog.SupportsCodexApprovals(command.Version)) throw new InvalidOperationException("Codex approval requests require stable Codex CLI 0.153.4 or later.");
+                // OpenCode 1 (`opencode-ai`) shares the command but not the files, permissions or credentials: it is replaced, not run.
+                if (request.Provider == "opencode" && !OpencodeAgent.IsSupported(command.Version)) throw new InvalidOperationException(Locale.Get("run.error.opencodeV1", new Dictionary<string, string> { ["version"] = command.Version ?? "" }));
+                // Hermes asks questions only with its clarify tool on for editor sessions: looked at once per launch.
+                if (request.Provider == "hermes") hermesQuestions = await HermesQuestionTool.EnsureAsync(command, environment, workspace.Path, token);
                 if (request.Settings!.Effort != "default" || PhaseModelPreferences.MainEffort(request) is not null)
                 {
                     var runtime = await providers.GetRuntimeAsync(workingDirectory: workspace.Path); token.ThrowIfCancellationRequested();
@@ -322,7 +335,11 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 if (request.Provider == "pi" && attachments is null) input = ProviderInput.PiStartup(input);
                 // pi exits on a session it cannot find (one that never got an answer is not written): such a pane starts a new session.
                 var launch = request.Provider == "pi" && request.ResumeId is { } piResume && PiAgent.SessionFile(piResume, workspace.Path, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment) is null ? request with { ResumeId = null } : request;
-                var providerArguments = codexApprovals ? ProviderCatalog.Arguments(launch, pluginDirectory) : attachments?.ArgumentsFor(launch, pluginDirectory) ?? ProviderCatalog.Arguments(launch, pluginDirectory);
+                acpLaunch = launch;
+                // OpenCode 2's rules for this run only, read after the user's own config; Hermes's `--yolo` for a session this run creates.
+                if (request.Provider == "opencode") environment["OPENCODE_CONFIG_CONTENT"] = OpencodeAgent.ConfigContent(request.Settings!.PermissionMode, AgentFiles.Find(OpencodeAgent.QuestionInstructionsName));
+                if (request.Provider == "hermes") HermesAgent.Apply(request.Settings!.PermissionMode, environment);
+                var providerArguments = codexApprovals || ProviderCatalog.IsAcp(request.Provider) ? ProviderCatalog.Arguments(launch, pluginDirectory) : attachments?.ArgumentsFor(launch, pluginDirectory) ?? ProviderCatalog.Arguments(launch, pluginDirectory);
                 if (request.Provider is "claude" or "codex" && AgentIOBindingFactory?.Invoke(request, workspace) is { } binding)
                 {
                     run.PaneBinding = binding;
@@ -340,7 +357,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             token.ThrowIfCancellationRequested();
             await using var child = request.Kind == "shell" ? ChildProcess.Start(ChildProcess.StartInfo(binary, arguments, workspace.Path, environment), OperatingSystem.IsWindows() && !powerShell ? request.Input : null) : ProviderCatalog.StartCli(binary, arguments, workspace.Path, environment);
             run.Child = child; token.ThrowIfCancellationRequested();
-            using var stop = token.Register(child.Kill);
+            // Hermes's turn runs in its gateway, which outlives this process: it is told to cancel the turn before the process ends.
+            using var stop = token.Register(() => { if (request.Provider == "hermes") StopHermes(run, child); else child.Kill(); });
             if (interactive)
             {
                 // Fail closed: the prompt itself is only written after a
@@ -409,16 +427,20 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     message => { run.ProtocolFailed = true; Log(run, "error", message); run.Cancel.Cancel(); },
                     () => { try { child.Input.Close(); } catch (IOException) { } catch (ObjectDisposedException) { } });
             }
+            var hermes = request.Provider == "hermes";
+            var hermesStderr = hermes ? new HermesAgent.StderrFilter() : null;
+            if (ProviderCatalog.IsAcp(request.Provider) && acpLaunch is not null) run.Acp = StartAcp(run, child, acpLaunch, workspace.Path, attachments, hermesQuestions, Consume);
             emit(RunEvent.State(request.SessionId, "running"));
             if (request.Kind != "shell") Activity(run, new(run.ActivityId, request.Provider, "turn", "running", Locale.Get("run.activity.running", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(request.Provider) })));
             // The process is up: what the start changed in the diagram goes with it, not with the loop's next pass.
             if (tracker is not null) PublishGraph(false);
             // An agent's stream-json line may carry a whole picture in base64.
-            var output = PumpAsync(child.Output, request.Kind == "shell" ? 1024 * 1024 : codexApprovals ? CodexApprovalChannel.MaximumFrameBytes : OutputParser.MaximumLineBytes(request.Provider), line =>
+            var output = PumpAsync(child.Output, request.Kind == "shell" ? 1024 * 1024 : codexApprovals ? CodexApprovalChannel.MaximumFrameBytes : run.Acp is not null ? AcpChannel.MaximumFrameBytes : OutputParser.MaximumLineBytes(request.Provider), line =>
             {
                 if (run.Finalizing) return;
                 if (request.Kind == "shell") { Log(run, "output", line); return; }
                 if (run.CodexPermissions is { } codex) { codex.Receive(line); return; }
+                if (run.Acp is { } acp) { Interlocked.Exchange(ref run.LastOutputTicks, Environment.TickCount64); acp.Receive(line); return; }
                 run.Permissions?.Receive(line);
                 // Antigravity prints a lost sign-in as a plain line, never as JSON; a cut-off JSON line may quote anything, so it never counts.
                 if (request.Provider == "gemini")
@@ -435,7 +457,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     if (ClaudeStream.IsTurnResult(line)) run.TurnResultSeen = true;
                     SettleInput();
                 }
-            }, token, request.Kind == "shell" ? null : () => { if (!run.Finalizing) Log(run, "system", Locale.Get("run.notice.lineTooLong")); });
+            }, token, request.Kind == "shell" ? null : () => { if (run.Finalizing) return; if (run.Acp is { } acp) acp.FrameTooLarge(); else Log(run, "system", Locale.Get("run.notice.lineTooLong")); });
             var error = PumpAsync(child.Error, 1024 * 1024, line =>
             {
                 // Only Antigravity reports a lost sign-in on stderr ("Error: authentication required. Run 'agy' to log in, then retry."),
@@ -445,9 +467,17 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     if (CliAuthFailure.Antigravity(line)) run.AuthenticationFailure = true;
                     parser.AntigravityStderr(line);
                 }
+                // Hermes logs to stderr (INFO lines, a traceback for every failed request): kept out of the pane.
+                if (hermesStderr is not null && !hermesStderr.Keep(line)) return;
                 Log(run, "output", line);
             }, token);
-            if (interactive || codexApprovals)
+            if (run.Acp is { } channel)
+            {
+                channel.Start();
+                // An ACP agent boots its own server (and may refresh its model list) before it answers; Hermes may have to start its gateway first.
+                _ = Task.Delay(TimeSpan.FromSeconds(hermes ? 90 : 45), token).ContinueWith(delay => { if (!delay.IsCanceled && !run.Finished) channel.InitializationTimedOut(); }, TaskScheduler.Default);
+            }
+            else if (interactive || codexApprovals)
             {
                 run.Permissions?.Start(); run.CodexPermissions?.Start();
                 if (interactive) _ = Task.Run(async () =>
@@ -480,13 +510,18 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 else child.Input.Close();
             }
             run.Accepted?.TrySetResult();
-            var code = await child.Completion.WaitAsync(token);
+            // Hermes's turn runs in its gateway: a stop sends session/cancel first and ends the process a second later (StopAcp), so the run waits for the exit itself.
+            var code = hermes ? await child.Completion : await child.Completion.WaitAsync(token);
+            token.ThrowIfCancellationRequested();
             child.Kill(); // Close descendants that inherited stdout after their parent exited.
             await Task.WhenAll(output, error).WaitAsync(TimeSpan.FromSeconds(3), token); parser.Flush();
             run.CodexPermissions?.Flush();
+            if (!run.AcpEnding) run.Acp?.Flush();
             CloseChannel(run, child);
             if (mod is { Received: 0 }) Log(run, "system", Locale.Get("run.warning.noModEvents"));
-            Finish(run.PlanCancelled ? "stopped" : code == 0 && !parser.Failed && !run.ProtocolFailed && (!codexApprovals || run.CodexPermissions?.TurnCompleted == true) ? "completed" : "error");
+            // An ACP server the runner ended after the prompt's answer did not fail (M/ProcessRunner.swift acpEnding).
+            var exitedCleanly = code == 0 || run.AcpEnding && run.Acp?.TurnCompleted == true;
+            Finish(run.PlanCancelled ? "stopped" : exitedCleanly && !parser.Failed && !run.ProtocolFailed && (!codexApprovals || run.CodexPermissions?.TurnCompleted == true) && (run.Acp is null || run.Acp.TurnCompleted && !run.Acp.Failed) ? "completed" : "error");
         }
         catch (OperationCanceledException ex) { startFailure = ex; Finish(run.ProtocolFailed ? "error" : "stopped"); }
         catch (Exception ex) { startFailure = ex; Log(run, "error", ex.Message); Finish(run.Cancel.IsCancellationRequested && !run.ProtocolFailed ? "stopped" : "error"); }
@@ -498,6 +533,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             run.Tracker = null;
             run.Permissions?.CancelAll(); run.Permissions = null;
             run.CodexPermissions?.CancelAll(); run.CodexPermissions = null;
+            run.Acp?.CancelAll(); run.Acp = null;
             mod?.Dispose(); run.Child = null;
             try { if (attachments is not null) await attachments.DisposeAsync(); }
             catch (IOException) { Log(run, "error", Locale.Get("run.error.attachmentCleanupFailed")); }
@@ -515,6 +551,77 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceWarning("run graph node: " + ex.GetType().Name); }
         }
     }
+    /// <summary>
+    /// The ACP channel of an opencode or Hermes run (M/MightyCore/ProcessRunner.swift): its prompt (the request, the attachments' copies and
+    /// pictures, Hermes's clarify note), its settings, the notices the run starts with, Hermes's admission (no provider, no session) and picker,
+    /// and where its frames, events, cards and end go.
+    /// </summary>
+    private AcpChannel StartAcp(Run run, ChildProcess child, StartRunRequest launch, string workspacePath, StagedAttachments? attachments,
+        (HermesQuestionTool.Outcome? First, IReadOnlyList<string>? List, bool Asks) hermesQuestions, Action<string> consume)
+    {
+        var request = run.Request; var hermes = request.Provider == "hermes";
+        var models = hermes ? providers.HermesModelCache : null;
+        switch (hermesQuestions.First)
+        {
+            case HermesQuestionTool.Outcome.Enabled: Log(run, "system", Locale.Get("run.notice.hermesClarifyEnabled", new Dictionary<string, string> { ["key"] = HermesQuestionTool.Key, ["value"] = string.Join(", ", hermesQuestions.List ?? []) })); break;
+            case HermesQuestionTool.Outcome.Missing: Log(run, "system", Locale.Get("run.notice.hermesClarifyMissing", new Dictionary<string, string> { ["key"] = HermesQuestionTool.Key })); break;
+        }
+        static bool Picture((RunAttachment Attachment, string Path) file) => file.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal);
+        IReadOnlyList<(RunAttachment Attachment, string Path)> files = attachments?.Files ?? [];
+        // Each copy by its plain path (a staged path never holds a quote), as Antigravity and pi read theirs.
+        var references = files.Where(file => !Picture(file)).Select(file => "Attached file " + System.Text.Json.JsonSerializer.Serialize(file.Attachment.Name, Wire.Json) + ": \"" + file.Path + "\" (read this copy as needed).");
+        var prompt = AcpChannel.PromptText(request.Input, references, hermes && hermesQuestions.Asks ? HermesQuestionTool.PromptNote : null);
+        // Cards carry the pane as their run, as Claude's and Codex's do (the window finds the pane by it).
+        return new AcpChannel(request.SessionId, launch.ResumeId, workspacePath, prompt, files.Where(Picture).Select(file => (file.Attachment.MediaType, file.Attachment.DataBase64)).ToList(),
+            hermes ? HermesAgent.ConfigValues(launch) : OpencodeAgent.ConfigValues(launch),
+            text => { lock (run.InputGate) { if (run.Finished || Volatile.Read(ref run.AcpInputClosed) != 0) return; try { child.Input.Write(text); child.Input.Flush(); } catch (IOException) { } catch (ObjectDisposedException) { } } },
+            line =>
+            {
+                if (run.Finished) return;
+                // The picker a Hermes session offers is the model menu's list from then on.
+                if (hermes && models is not null)
+                    try
+                    {
+                        var value = System.Text.Json.Nodes.JsonNode.Parse(line);
+                        if (value?["type"]?.GetValue<string>() == "acp.session") HermesAgent.SaveModels(value["configOptions"], models);
+                        else if (value?["type"]?.GetValue<string>() == "acp.update" && value["update"]?["sessionUpdate"]?.GetValue<string>() == "config_option_update") HermesAgent.SaveModels(value["update"]!["configOptions"], models);
+                    }
+                    catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException) { }
+                consume(line);
+            },
+            value => { if (!run.Finished) permissionRequested?.Invoke(value); },
+            (value, state) => run.Parser?.PermissionActivity(value, state),
+            message => Log(run, "system", message),
+            message =>
+            {
+                run.ProtocolFailed = true; Log(run, "error", message);
+                if (hermes) StopHermes(run, child); else child.Kill();
+            },
+            () => EndAcp(run, child),
+            // Hermes without a provider would open a session that can never answer: the run stops as a missing sign-in.
+            hermes ? result => { if (HermesAgent.Provider(result) is not null) return null; HermesAgent.ForgetModels(models); return Locale.Get("run.error.hermesNoProvider"); } : null,
+            freeChoices: hermes);
+    }
+    /// <summary>The ACP prompt was answered (or failed): stdin closes, and an agent server still up two seconds later is ended by the runner, which does not fail the run.</summary>
+    private static void EndAcp(Run run, ChildProcess child)
+    {
+        lock (run.InputGate)
+        {
+            if (run.Finished || Interlocked.Exchange(ref run.AcpInputClosed, 1) != 0) return;
+            try { child.Input.Close(); } catch (IOException) { } catch (ObjectDisposedException) { }
+        }
+        _ = Task.Delay(TimeSpan.FromSeconds(2)).ContinueWith(_ => { if (run.Finished || child.Completion.IsCompleted) return; run.AcpEnding = true; child.Kill(); }, TaskScheduler.Default);
+    }
+    /// <summary>Hermes's turn runs in its gateway: <c>session/cancel</c> goes first, and the process ends a second later (M/ProcessRunner.swift cancelGrace).</summary>
+    private static void StopHermes(Run run, ChildProcess child)
+    {
+        if (run.Acp?.Cancellation.Take() is not { } frame) { child.Kill(); return; }
+        lock (run.InputGate)
+        {
+            try { if (Volatile.Read(ref run.AcpInputClosed) == 0) { child.Input.Write(frame); child.Input.Flush(); } } catch (IOException) { } catch (ObjectDisposedException) { }
+        }
+        _ = Task.Delay(TimeSpan.FromSeconds(1)).ContinueWith(_ => child.Kill(), TaskScheduler.Default);
+    }
     /// <summary>Settles every waiting request and sends the CLI end-of-input.</summary>
     private static void CloseChannel(Run run, ChildProcess child)
     {
@@ -530,6 +637,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     {
         if (!runs.TryGetValue(sessionId, out var run)) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
         if (run.CodexPermissions is { } codex) codex.Respond(requestId, allow);
+        else if (run.Acp is { } acp) acp.Respond(requestId, allow);
         else if (run.Permissions is { } channel) channel.Respond(requestId, allow);
         else throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
     }
@@ -580,10 +688,12 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         try { return channel.AnswerPlan(requestId, decision); }
         catch { if (cancelling) { run.PlanCancelled = false; if (run.Parser is { } parser) parser.SuppressInterruptedResult = false; } throw; }
     }
+    /// <summary>Claude's AskUserQuestion, an ACP agent's form or clarify (opencode, Hermes), or a pi extension's dialog.</summary>
     public void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers)
     {
-        if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested || run.Request.Provider != "claude" || run.Permissions is not { } channel)
-            throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+        if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+        if (run.Acp is { } acp) { acp.AnswerQuestions(requestId, answers); return; }
+        if (run.Request.Provider != "claude" || run.Permissions is not { } channel) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
         channel.AnswerQuestions(requestId, answers);
     }
     private static void FeedMod(ExecutionGraphTracker tracker, System.Text.Json.JsonElement root)

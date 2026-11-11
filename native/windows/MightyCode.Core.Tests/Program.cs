@@ -21,6 +21,8 @@ if (args is ["--group-child", var groupPid])
 if (args.Contains("--codex-approval-fixture")) { await CodexApprovalVerification.FakeCliAsync(args); return; }
 if (args.FirstOrDefault() == "--runtime-parity-cli") { await RuntimeParityVerification.FakeCliAsync(); return; }
 if (args.Length >= 2 && args[0] == "--workmap-fake") { await WorkMapVerification.FakeClaudeAsync(args[1], args.Skip(2).ToArray()); return; }
+// opencode or Hermes answering the ACP channel with a recorded fixture (AcpRunVerification).
+if (args.Length >= 3 && args[0] == "--fake-acp") { await AcpRunVerification.FakeAcpAsync(args[1], args[2], args.Skip(3).ToArray()); return; }
 if (args.Length >= 3 && args[0] == "--fake-cli") { await Verification.FakeCliAsync(args[1], args[2], args.Skip(3).ToArray()); return; }
 // The four CLIs' model-list reads, answered with the real CLIs' recorded output (native/contracts/fixtures/model-list-*).
 if (args.Length >= 3 && args[0] == "--model-list-cli") { await ModelListProbeVerification.FakeCliAsync(args[1], args[2], args.Skip(3).ToArray()); return; }

@@ -513,6 +513,11 @@ internal static class Verification
         await Test("acp hermes: its log and tracebacks on stderr stay out of the pane; yolo and edit policy", AcpVerification.HermessLogAndTracebacksOnStderrStayOutOfThePane);
         await Test("acp hermes: the model menu is the picker the last session offered", AcpVerification.TheHermesMenuIsThePickerTheLastSessionOffered);
         await Test("acp hermes: the clarify config value is the Mac's", AcpVerification.TheClarifyConfigValueIsTheMacs);
+        await Test("acp run: an opencode run speaks ACP and completes whether its server exits or is ended", AcpRunVerification.AnOpencodeRunSpeaksAcpAndCompletesWhetherTheServerExitsOrIsEnded);
+        await Test("acp run: a signed-out opencode run ends in error with the sign-in reason", AcpRunVerification.ASignedOutOpencodeRunEndsInErrorWithTheSignInReason);
+        await Test("acp run: an OpenCode 1 is not run and asks for OpenCode 2", AcpRunVerification.AnOpenCode1IsNotRunAndAsksForOpenCode2);
+        await Test("acp run: Hermes gets full access as yolo, its edit policy, and clarify turned on once", AcpRunVerification.AHermesRunGivesFullAccessAsYoloAndTurnsClarifyOnOnce);
+        await Test("acp run: a stop tells Hermes to cancel the turn before the process ends", AcpRunVerification.AStopTellsHermesToCancelTheTurnBeforeTheProcessEnds);
         // Antigravity permission cards, ported from the Mac's AntigravityPermissionTests over the shared fixture.
         await Test("antigravity cards: every fixture turn gives its actions", AntigravityPermissionVerification.EveryFixtureTurnGivesItsActions);
         await Test("antigravity cards: without a card the older notice stays", AntigravityPermissionVerification.WithoutACardTheOlderNoticeStays);
