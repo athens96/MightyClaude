@@ -101,6 +101,36 @@ internal static class AcpRunVerification
         }
     }
 
+    /// <summary>The request's block of an opencode run as its pane keeps it (M/MightyGraph.swift recordGraph "log"): the replies and the tool
+    /// rows the transcript shows since the request, a sub-agent's own text kept out, the answer and the turn's tokens; the card nobody answered
+    /// goes when its call settles, which then reads completed.</summary>
+    internal static async Task AnOpencodeRunsBlockKeepsItsRepliesAndToolRows()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var events = new ConcurrentQueue<RunEvent>(); var workspace = new Workspace { Path = directory };
+            var snapshot = new AppSnapshot { Version = 1, Workspaces = [workspace], Sessions = [new RunSession { Id = "pane", WorkspaceId = workspace.Id, Provider = "opencode", Kind = "claude", Model = "default" }] };
+            // The composer records the request itself, as the app does.
+            snapshot = snapshot.Apply(RunEvent.Log("pane", "user", "hi there", "opencode"));
+            await using var catalog = Fake("opencode", directory, "tools", "opencode v2.2.7");
+            await using (var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue, _ => { }))
+            {
+                await manager.StartAsync(new("pane", workspace.Id, "claude", "hi there", [], Provider: "opencode"));
+                await Verification.Until(() => events.Any(Ended), 30_000);
+            }
+            foreach (var value in events) snapshot = snapshot.Apply(value);
+            var run = snapshot.Sessions.Single().GraphRuns?.SingleOrDefault();
+            Check(run is { Provider: "opencode", Status: "completed", FinalOutput: "One test fails because main returns 1.", Agents.Count: 0, Usage: { InputTokens: 3100, OutputTokens: 95, CacheReadTokens: 2048 } },
+                "the run: " + Described(run));
+            var replies = run!.RootEntries.Where(e => e.Kind == "assistant").Select(e => e.Text).ToList();
+            Check(replies.SequenceEqual(["Let me run the tests.", "One test fails because main returns 1."]), "the replies: " + string.Join(" | ", replies));
+            var rows = run.RootEntries.Where(e => e.Activity is { Kind: not "turn" }).Select(e => e.Activity!.ToolName + " " + e.Activity.State).ToList();
+            Check(rows.SequenceEqual(["Read completed", "Bash completed", "Edit error"]), "the tool rows: " + string.Join(" | ", rows));
+        }
+        finally { try { Directory.Delete(directory, true); } catch (IOException) { } }
+    }
+
     internal static async Task ASignedOutOpencodeRunEndsInErrorWithTheSignInReason()
     {
         var directory = Verification.Temp();
