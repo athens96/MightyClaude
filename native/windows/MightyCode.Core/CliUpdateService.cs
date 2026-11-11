@@ -276,7 +276,8 @@ public sealed partial class CliUpdateService
             catch (OperationCanceledException) { throw; }
             catch (Exception) { continue; }
             if (run.ExitCode != 0 || run.TimedOut) continue;
-            var text = run.Output.Trim();
+            // Only Hermes's first line is its version, as the runtime reads it (CliDiscovery.VersionText).
+            var text = CliDiscovery.VersionText(ProviderCatalog.Executable(provider), run.Output);
             if (text.Length == 0) continue;
             return new InstalledCommand(path, text.Length > VersionTextCap ? text[..VersionTextCap] : text);
         }

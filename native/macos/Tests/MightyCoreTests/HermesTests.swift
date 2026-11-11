@@ -533,16 +533,21 @@ struct HermesTests {
 
     // MARK: Setup
 
-    @Test func theMacOnlySetupItemRunsHermessInstallerWithoutItsWizardAfterGit() throws {
-        let shared = try Data(contentsOf: Self.root.appendingPathComponent("native/contracts/fixtures/setup-catalog.json"))
-        let macOnly = try Data(contentsOf: Self.root.appendingPathComponent("native/macos/Sources/MightyCore/Resources/Setup/setup-catalog-macos.json"))
-        #expect(try SetupCatalogDecoder.decode(shared).item("hermes") == nil)
-        let catalog = try SetupCatalogDecoder.decode(shared, macOnly: macOnly)
+    @Test func theSharedSetupItemRunsHermessInstallerWithoutItsWizardAfterGitOnTheMac() throws {
+        // The contract Windows embeds holds the item, each platform with its own official installer.
+        let catalog = try SetupCatalogDecoder.decode(Data(contentsOf: Self.root.appendingPathComponent("native/contracts/fixtures/setup-catalog.json")))
         let item = try #require(catalog.item("hermes"))
-        #expect(item.group == .agent && !item.required && item.provider == "hermes" && item.platforms[.windows] == nil)
+        #expect(item.group == .agent && !item.required && item.provider == "hermes")
+        #expect(item.labelKey == "setup.item.hermes.title" && item.descriptionKey == "setup.item.hermes.detail")
         let entry = try #require(item.platforms[.macos])
         let url = try #require(URL(string: "https://hermes-agent.nousresearch.com/install.sh"))
         #expect(entry.probe == .executable(name: "hermes", minimumVersion: "0.23.0") && entry.install == .officialScript(url: url, shell: "bash") && entry.prerequisites == ["git"])
+        // Windows: install.ps1 in PowerShell, which stages its own Git, so nothing goes first.
+        let windows = try #require(item.platforms[.windows])
+        let script = try #require(URL(string: "https://hermes-agent.nousresearch.com/install.ps1"))
+        #expect(windows.probe == .executable(name: "hermes", minimumVersion: "0.23.0") && windows.install == .officialScript(url: script, shell: "powershell") && windows.prerequisites.isEmpty)
+        #expect(entry.source == URL(string: "https://github.com/NousResearch/hermes-agent") && windows.source == entry.source)
+        #expect(SetupPlan.order(selected: ["hermes"], catalog: catalog, platform: .windows, isSatisfied: { _ in false }) == ["hermes"])
         // The script is fetched, then run with the option that leaves the sign-in to the app.
         let body = try #require(SetupScript.body(entry))
         #expect(body.hasPrefix("mighty_script=\"$(\(SetupScript.curl) 'https://hermes-agent.nousresearch.com/install.sh')\"") && body.hasSuffix("/bin/bash -c \"$mighty_script\" mighty-install '--skip-setup'"))
@@ -554,9 +559,26 @@ struct HermesTests {
         #expect(SetupPlan.order(selected: ["hermes"], catalog: catalog, platform: .macos, isSatisfied: { _ in false }) == ["git", "hermes"])
         // An out-of-date Hermes updates itself (`hermes update`); it is not installed over.
         #expect(!SetupRowState.isSelectable(.outdated, item: item, platform: .macos))
-        #expect(try SetupCatalog.bundled().item("hermes") != nil)
+        #expect(try SetupCatalog.bundled().item("hermes") == item)
         #expect(ComponentCatalog.installCommand(provider: "hermes")?.contains("--skip-setup") == true)
         #expect(SetupProber.versionNumbers("Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882\nInstall directory: /Users/x/.hermes/hermes-agent\nInstall method: git\nPython: 3.14.9") == [0, 23, 1])
+    }
+
+    /// The setup row keeps the version line alone, as the runtime does (ProviderService), so the two agree
+    /// and the row does not show Hermes's install folder, Python and update status.
+    @Test func theSetupProbeKeepsHermessVersionLineAlone() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let bin = directory.appendingPathComponent("bin"); try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let hermes = bin.appendingPathComponent("hermes")
+        try Data("#!/bin/sh\n[ \"$1\" = --version ] || exit 2\nprintf 'Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882\\nInstall directory: /Users/x/.hermes/hermes-agent\\nInstall method: git\\nPython: 3.14.9\\nUp to date\\n'\n".utf8).write(to: hermes)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hermes.path)
+        let prober = SetupProber(environment: ["PATH": bin.path + ":/usr/bin:/bin", "HOME": directory.path], home: directory, versionTimeout: 10, commandLineToolsPath: { nil }, gitVersion: { nil })
+        let line = "Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882"
+        #expect(await prober.probe(.executable(name: "hermes", minimumVersion: "0.23.0")) == .installed(version: line))
+        #expect(await prober.probe(.executable(name: "hermes", minimumVersion: "0.24.0")) == .outdated(version: line, minimum: "0.24.0"))
+        var runtime = ProviderOptions.fallbackRuntime("hermes"); runtime.version = line
+        let catalog = try SetupCatalog.bundled()
+        #expect(!SetupRuntimeSync.isStale(runtime: [runtime], catalog: catalog, results: ["hermes": .installed(version: line)]))
     }
 
     // MARK: Session list
