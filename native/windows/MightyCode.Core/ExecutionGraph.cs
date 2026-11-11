@@ -199,9 +199,11 @@ public sealed record GraphAdvisorCall(
 public sealed record GraphAdvisor(
     [property: JsonPropertyName("model")] string? Model = null,
     [property: JsonPropertyName("usage")] GraphTokenUsage? Usage = null,
-    [property: JsonPropertyName("calls")] List<GraphAdvisorCall>? Calls = null,
+    List<GraphAdvisorCall>? Calls = null,
     [property: JsonPropertyName("total")] int? Total = null)
 {
+    /// <summary>The calls, an empty list when none came: always written, as the Mac's decoder needs the key (its <c>calls</c> is no optional).</summary>
+    [JsonPropertyName("calls")] public List<GraphAdvisorCall>? Calls { get; init; } = Calls ?? [];
     public const int MaximumCalls = 32;
     /// <summary>With <see cref="MaximumCalls"/>, a run's advice never takes more than its result may.</summary>
     public const int MaximumTextBytes = 1024;

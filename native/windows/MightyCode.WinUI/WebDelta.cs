@@ -78,6 +78,8 @@ internal static class WebDelta
     internal static bool SameRun(MightyGraphRun a, MightyGraphRun b) => ReferenceEquals(a, b)
         || a.Id == b.Id && a.Input == b.Input && a.Status == b.Status && a.SourceRunID == b.SourceRunID && a.FinalOutput == b.FinalOutput
             && a.Provider == b.Provider && a.NodeModelLabel == b.NodeModelLabel && a.ConfiguredModel == b.ConfiguredModel && a.NoticeRun == b.NoticeRun && a.NoticeTitle == b.NoticeTitle && Equals(a.Usage, b.Usage)
+            // The role view reads them (Core FlowRoles, FlowAdvisor): the run's effort and its advisor.
+            && a.ConfiguredEffort == b.ConfiguredEffort && a.ConfiguredAdvisor == b.ConfiguredAdvisor && Equals(a.Advisor, b.Advisor)
             && SameList(a.RootEntries, b.RootEntries, SameEntry) && SameList(a.ResultEntries, b.ResultEntries, SameEntry)
             && SameList(a.Agents, b.Agents, SameAgent) && SameList(a.ResponseRecords, b.ResponseRecords, (x, y) => Equals(x, y));
 
@@ -85,6 +87,7 @@ internal static class WebDelta
         || a.Id == b.Id && a.ParentID == b.ParentID && a.Title == b.Title && a.Input == b.Input && a.Status == b.Status && a.Kind == b.Kind
             && Equals(a.Usage, b.Usage) && a.ActivityGeneration == b.ActivityGeneration
             && a.Background == b.Background && a.NoticeReply == b.NoticeReply && a.SourceBlockId == b.SourceBlockId
+            && Equals(a.Identity, b.Identity) && Equals(a.Figures, b.Figures)
             && SameList(a.Entries, b.Entries, SameEntry) && SameList(a.ResponseRecords, b.ResponseRecords, (x, y) => Equals(x, y));
 
     /// <summary>A run as the page holds it: a task block's output file stays on this side (never shown, never on the page).</summary>

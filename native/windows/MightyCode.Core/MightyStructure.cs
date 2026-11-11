@@ -32,12 +32,13 @@ public static partial class MightyStructure
     /// <summary>One block of a cluster, flattened depth-first; <see cref="NodeId"/> is the diagram node it stands for.</summary>
     /// <param name="Background">A background sub-agent or a task (<see cref="MightyGraphAgent.Background"/>).</param>
     /// <param name="NoticeReply">Claude's reply to a task's notice (<see cref="MightyGraphAgent.NoticeReply"/>).</param>
+    /// <param name="AgentType">A sub-agent's type as its diagram header's chip words it (<see cref="FlowRoles.Subagent"/>), when it named one (macOS Node.agentType).</param>
     public sealed record Node(string AgentId, int AgentIndex, string NodeId, int Depth, string Title, string Status, string Kind,
-        Excerpt? Prompt, Excerpt? Output, IReadOnlyList<ActivityLine> Activity, string? Model, bool Background = false, Excerpt? NoticeReply = null)
+        Excerpt? Prompt, Excerpt? Output, IReadOnlyList<ActivityLine> Activity, string? Model, bool Background = false, Excerpt? NoticeReply = null, string? AgentType = null)
     {
         public bool Equals(Node? other) => other is not null && AgentId == other.AgentId && AgentIndex == other.AgentIndex && NodeId == other.NodeId && Depth == other.Depth
             && Title == other.Title && Status == other.Status && Kind == other.Kind && Prompt == other.Prompt && Output == other.Output && Model == other.Model && Activity.SequenceEqual(other.Activity)
-            && Background == other.Background && NoticeReply == other.NoticeReply;
+            && Background == other.Background && NoticeReply == other.NoticeReply && AgentType == other.AgentType;
         public override int GetHashCode() => HashCode.Combine(NodeId, Depth, Status, Activity.Count);
     }
 
@@ -403,7 +404,7 @@ public static partial class MightyStructure
             nodes.Add(new(agent.Id, index, MightyGraphLayout.NodeID(run, "agent:" + agent.Id), depth, MightyGraphSupport.BlockTitle(agent), MightyTimeline.Status(agent.Status),
                 MightyGraphSupport.BlockKind(agent), ExcerptOf(MightyGraphSupport.ShownInput(agent), PromptBytes, PromptLines), Reply(agent.Entries) is { } reply ? ExcerptOf(reply, OutputBytes, OutputLines) : null,
                 Activity(agent.Entries, NodeActivity), agent.ResponseRecords?.Select(record => record.Model).FirstOrDefault(model => !string.IsNullOrEmpty(model)),
-                agent.Background == true, agent.NoticeReply is { } notice ? ExcerptOf(notice, OutputBytes, OutputLines) : null));
+                agent.Background == true, agent.NoticeReply is { } notice ? ExcerptOf(notice, OutputBytes, OutputLines) : null, FlowRoles.Subagent(agent)?.TypeChip));
             foreach (var child in children.GetValueOrDefault(agent.Id) ?? []) if (child != index) Walk(child, depth + 1, nodes);
         }
         void Start(int index)

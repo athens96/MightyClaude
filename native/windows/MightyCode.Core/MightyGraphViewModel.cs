@@ -370,10 +370,12 @@ public static class MightyGraphBlockModel
                         MightyGraphActivity.Outline(run.Status, animationsEnabled), run.Status));
                     break;
                 case "agent" when run is not null && run.Agents.FirstOrDefault(a => a.Id == agentId) is { } agent:
+                    // Before its own responses name the model that answered, a sub-agent shows the model the CLI resolved, else the alias it asked
+                    // for marked 요청 (macOS FlowIdentity.modelLabel, GraphModelLabel.AgentModelLabel).
                     blocks.Add(new(node.Id, MightyGraphSupport.BlockKind(agent), node.Frame, MightyGraphSupport.BlockTitle(agent),
                         StateLabel(agent.Status), MightyGraphSupport.ShownInput(agent),
                         agent.Entries.Where(e => e.Kind != "user").ToList(),
-                        ModelUsageFormat.BlockCapsule(agent.Usage, agent.ResponseRecords ?? [], null, catalog, versioned: true),
+                        ModelUsageFormat.BlockCapsule(agent.Usage, agent.ResponseRecords ?? [], FlowRoles.Subagent(agent)?.ModelLabel, catalog, versioned: true),
                         Help(agent.Usage, agent.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),
                         MightyGraphViewModel.BlockIndicator(agent.Status, animationsEnabled), null,
                         MightyGraphActivity.Outline(agent.Status, animationsEnabled), agent.Status));

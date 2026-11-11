@@ -17,11 +17,12 @@ namespace MightyCode.WinUI;
 /// (<c>NoticeReply</c>). Its output file never reaches the page's copy. A notice run's request block (BackgroundNoticeRuns) says so (<c>Notice</c>):
 /// it wears the task's terminal symbol and no provider mark. A result whose request awaits notices carries its rows (<c>Awaiting</c>): the page
 /// draws it as the 알림 대기 block. A result that is the result so far says so (<c>SoFar</c>, <see cref="MightyGraphBlock.SoFar"/>): its strip and
-/// symbol are neutral. Each is absent otherwise.
+/// symbol are neutral. Each is absent otherwise. <c>Flow</c> is the role view's copy of the node (Core FlowCopy.Block): who a 실행 or sub-agent block is,
+/// a card's lines, a delegate line, the return node or the advisor's band; a delegate line, a return node and a band have no other copy of their own.
 /// </summary>
 internal sealed record WebMightyBlock(string Kind, string Title, string State, string? Capsule, string Help, string Indicator, string Outline, string Status, string Tone,
     string? FilesRunId, string? RecordId, bool FromRecord, string? Provider, bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, bool? Notice = null,
-    WebMightyAwaiting? Awaiting = null, bool? SoFar = null);
+    WebMightyAwaiting? Awaiting = null, bool? SoFar = null, FlowCopy.Block? Flow = null);
 /// <summary>A 알림 대기 result's rows (<see cref="BackgroundNoticeRuns.Awaiting"/>): each awaited task's title, status and word, and the progress line.</summary>
 internal sealed record WebMightyAwaiting(IReadOnlyList<WebMightyAwaitedTask> Tasks, string Progress);
 internal sealed record WebMightyAwaitedTask(string Title, string Status, string Word);
@@ -33,13 +34,16 @@ internal sealed record WebMightyExecution(string Status, string StatusWord, stri
 internal sealed record WebMightyAC(string Title, string Status, string StatusWord, int Depth);
 internal sealed record WebMightyHistory(string Text, bool Acts, string Phase);
 
-/// <summary>What the page's layout needs besides the runs it holds, and the toolbar's words.</summary>
+/// <summary>What the page's layout needs besides the runs it holds, and the toolbar's words. <c>FanOut</c>: the role view (a Claude pane), whose session log
+/// strip is <c>Log</c> (Core FlowCopy.LogOf; none without a request, and only for the diagram).</summary>
 internal sealed record WebMightyInputs(string? PlanRunID, IReadOnlyList<object> PlanRecords, IReadOnlyList<object> Galleries, IReadOnlyList<object> Executions,
     string? ResultFilesRunID, Dictionary<string, List<WebMightyFile>> Files, int Older, int RetainedStart, WebMightyHistory? History, string Summary, string SummaryHelp,
-    Dictionary<string, WebMightyExecution> ExecutionCards, bool Animations, string Header);
+    Dictionary<string, WebMightyExecution> ExecutionCards, bool Animations, string Header, bool? FanOut = null, FlowCopy.Log? Log = null);
 
+/// <summary>One 기록 row; <c>Ink</c> is its block's role ink (a design token's name, Core FlowRoles.Token) as the diagram's header wears it, absent for a
+/// block that is no 실행 or sub-agent block.</summary>
 internal sealed record WebTimelineRow(string NodeId, string Kind, string KindLabel, string Title, string Status, string StatusWord, string Tone, bool Ring, string? Rail,
-    string? Latest, string? Duration, string? Capsule, string? Input, int? AgentIndex);
+    string? Latest, string? Duration, string? Capsule, string? Input, int? AgentIndex, string? Ink = null);
 /// <summary>One 기록 group; <c>NoticeRun</c> marks Claude's reply to finished background work (BackgroundNoticeRuns), absent for a request.
 /// <c>ResultTitle</c> is its result head's title (<see cref="MightyGraphBlockModel.ResultTitle"/>): 알림 대기 중 while the request awaits notices, 현재까지의 결과
 /// with the count while background work of its request still runs.</summary>
@@ -109,6 +113,8 @@ public sealed partial class MainWindow
             return null;
         });
         bridge.Register("mightyTimelineFlip", args => { WebPane(args.Text("paneId")).WebTimelineFlip(args.Text("runId") ?? ""); MightyDirty(args.Text("paneId")); return Task.FromResult<object?>(null); });
+        // The session log strip under a Claude pane's flow, folded to its status line or opened (RunSession.FlowLogCollapsed, kept with the pane).
+        bridge.Register("mightyLogCollapsed", async args => { await WebPane(args.Text("paneId")).WebLogCollapsed(Flag(args, "collapsed")); MightyDirty(args.Text("paneId")); return null; });
     }
 
     private void MightyDirty(string? paneId) { if (paneId is not null && webMighty.TryGetValue(paneId, out var sent)) sent.Dirty = true; }
@@ -340,10 +346,13 @@ public sealed partial class MainWindow
             var root = LocalPath(Workspace);
             var galleries = MightyGraphImages.Galleries(runs, root, older.Count);
             var records = PlanCardSupport.DiagramRecords(pane.PlanHistory, runs);
+            // A Claude pane's flow is its role view (docs/mighty-mode.md "역할 보기"): cards, delegate lines, the return node and the advisor's band. The page
+            // decides which card is open; every card is laid out open here, so every block it may open has its copy.
+            var fanOut = pane.Kind == "claude" && pane.Provider == "claude";
             // The copy is the layout's blocks; frames do not matter here, so the layout is made without a viewport.
             var layout = MightyGraphLayout.Make(runs, pane.Draft, pane.Status == "running", graphExpanded, graphResultFilesRunId, splitsExecution: true,
                 planRunID: planRunId, planRecords: records, galleries: galleries, executions: executions.Select(link => (link.RunID, link.Key)).ToList(),
-                retainedStart: older.Count, history: ShowsHistoryBlock(pane, retained));
+                retainedStart: older.Count, history: ShowsHistoryBlock(pane, retained), fanOut: fanOut ? new MightyGraphLayout.FanOut(OpenAll: true) : null);
             graphPlanNodeId = planRunId is null ? null : MightyGraphBlockSize.NodeId(planRunId, MightyGraphLayout.PlanSuffix);
             graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
             var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
@@ -355,6 +364,9 @@ public sealed partial class MainWindow
                 foreach (var agent in run.Agents)
                     if (agent.IsTask || agent.IsBackgroundAgent) background.TryAdd(MightyGraphLayout.NodeID(run, "agent:" + agent.Id), agent);
             var copy = new Dictionary<string, WebMightyBlock>(StringComparer.Ordinal);
+            // Who each block is, and the role view's own nodes (Core FlowCopy), with the custom agents the blocks' types name (read off this thread).
+            var definitions = FlowDefinitions(runs, LocalPath(DelegationPanes.RunWorkspace(pane, Workspace)));
+            var flow = FlowCopy.Blocks(layout, runs, fanOut, definitions, block => tails.GetValueOrDefault(block) ?? []);
             var ordinals = MightyGraphSupport.RequestOrdinals(runs);
             var cards = new Dictionary<string, WebMightyExecution>(StringComparer.Ordinal);
             foreach (var raw in blocks)
@@ -376,7 +388,14 @@ public sealed partial class MainWindow
                     held is null ? (bool?)null : true, held is { IsTask: true } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(held.Id)) : null,
                     held?.NoticeReply is { Length: > 0 } reply ? reply : null, notice ? true : null,
                     block.Awaiting is { } awaiting ? new WebMightyAwaiting(awaiting.Tasks.Select(task => new WebMightyAwaitedTask(task.Title, task.Status, task.Word)).ToList(), awaiting.Progress) : null,
-                    block.SoFar ? true : null);
+                    block.SoFar ? true : null, flow.GetValueOrDefault(block.Id));
+            }
+            // A delegate line, a return node and an advisor's band have only their role-view copy.
+            foreach (var node in layout.Nodes)
+            {
+                if (node.Kind is not (MightyGraphLayout.DelegateKind or MightyGraphLayout.ReturnKind or MightyGraphLayout.AdvisorKind) || flow.GetValueOrDefault(node.Id) is not { } own) continue;
+                var tone = node.Kind == MightyGraphLayout.ReturnKind || own.Advisor?.Consulting == true ? "run" : "idle";
+                copy[node.Id] = new(node.Kind, "", "", null, "", "none", MightyGraphActivity.None, "", tone, null, null, false, null, Flow: own);
             }
             WebMightyHistory? history = null;
             if (ShowsHistoryBlock(pane, retained))
@@ -393,12 +412,44 @@ public sealed partial class MainWindow
                 galleries.Select(g => (object)new { runID = g.RunID, step = g.Step, count = g.Count }).ToList(),
                 executions.Select(e => (object)new { runID = e.RunID, key = e.Key }).ToList(),
                 graphResultFilesRunId, files.ToDictionary(f => f.Key, f => f.Value.Select(file => new WebMightyFile(file.Path, file.Line)).ToList()),
-                older.Count, older.Count, history, summary, MightyGraphBlockModel.ToolbarHelp(retained), cards, AnimationsEnabled, header);
+                older.Count, older.Count, history, summary, MightyGraphBlockModel.ToolbarHelp(retained), cards, AnimationsEnabled, header,
+                fanOut ? true : null, fanOut && presentation == "diagram" ? FlowCopy.LogOf(runs, pane.FlowLogCollapsed == true, definitions) : null);
             var olderKey = older.Count + ":" + string.Join(",", older.Select(run => run.Id + "/" + run.Status + "/" + run.Agents.Count));
             return new(copy, inputs, olderKey, older,
                 presentation == "timeline" ? WebTimeline(pane, runs, older.Count, catalog) : null,
                 presentation == "structure" ? WebStructure(pane, runs) : null);
         }
+
+        /// <summary>The custom agents the pane's blocks name (AgentDefinitions: the working folder's .claude\agents, the user's, a plugin's), read off this
+        /// thread when the types or the folder change; until then the last ones read (M/MightyGraphIdentityView.swift MightyGraphAgentDefinitionsModel).</summary>
+        private IReadOnlyDictionary<string, AgentDefinition> flowDefinitions = new Dictionary<string, AgentDefinition>();
+        private string? flowDefinitionsKey;
+        private IReadOnlyDictionary<string, AgentDefinition> FlowDefinitions(IReadOnlyList<MightyGraphRun> runs, string? root)
+        {
+            var types = FlowRoles.Types(MightyGraphSupport.ShownRuns(runs));
+            var key = (root ?? "") + "\n" + string.Join("\n", types.Order(StringComparer.Ordinal));
+            if (key == flowDefinitionsKey) return flowDefinitions;
+            flowDefinitionsKey = key;
+            // Another computer's agents are not on this one.
+            if (root is null || types.Count == 0) return flowDefinitions = new Dictionary<string, AgentDefinition>();
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            _ = Task.Run(() =>
+            {
+                Dictionary<string, AgentDefinition>? found = null;
+                try { found = AgentDefinitions.Load(types, root, ClaudeAdvisorSettings.ConfigDirectory(home)); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
+                Container.DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (found is null || !QueuePaneAlive || flowDefinitionsKey != key) return;
+                    flowDefinitions = found;
+                    owner.MightyDirty(id);
+                });
+            });
+            return flowDefinitions;
+        }
+
+        /// <summary>The session log strip folded to its status line or opened, kept with the pane (RunSession.FlowLogCollapsed).</summary>
+        internal Task WebLogCollapsed(bool collapsed) => owner.Act(async () => await Change(p => FlowCopy.Collapse(p, collapsed)));
 
         /// <summary>A background execution's card (BuildOuroborosCard), its words built here.</summary>
         private WebMightyExecution WebExecutionCard(string key, OuroborosExecutionLink link, bool listOpen)
@@ -454,12 +505,17 @@ public sealed partial class MainWindow
                 var rows = group.Rows.Select(row =>
                 {
                     var agent = row.AgentIndex is { } at && at < run.Agents.Count ? run.Agents[at] : null;
+                    // Who the block is, as its diagram header says it: a sub-agent's type and marks, the main session's effort, and its role's ink
+                    // (M/MightyGraphView.swift timelineMeta, timelineLook).
+                    var who = agent is not null ? FlowRoles.Subagent(agent, agent.Identity?.Type is { } type ? flowDefinitions.GetValueOrDefault(type) : null) : row.IsExecution ? FlowRoles.Lead(run) : null;
                     var capsule = row.IsExecution ? ModelUsageFormat.BlockCapsule(run.Usage, run.ResponseRecords ?? [], run.NodeModelLabel, catalog, versioned: true)
-                        : agent is not null ? ModelUsageFormat.BlockCapsule(agent.Usage, agent.ResponseRecords ?? [], null, catalog, versioned: true) : null;
-                    return new WebTimelineRow(row.NodeId, row.Kind, MightyTimeline.KindLabel(row.Kind, agent?.Input), row.Title, row.Status,
+                        : agent is not null ? ModelUsageFormat.BlockCapsule(agent.Usage, agent.ResponseRecords ?? [], who?.ModelLabel, catalog, versioned: true) : null;
+                    var kindWords = new[] { MightyTimeline.KindLabel(row.Kind, agent?.Input), who?.TypeChip, who?.Effort }.OfType<string>().Concat(who?.Marks.Select(FlowRoles.Word) ?? []);
+                    return new WebTimelineRow(row.NodeId, row.Kind, string.Join(" · ", kindWords.Where(word => word.Length > 0)), row.Title, row.Status,
                         row.Status == MightyTimeline.RequestStatus ? "" : MightyGraphBlockModel.StateLabel(row.Status), Tone(row.Node.Tone), row.Node.Ring,
                         row.Node.Rail is { } rail ? Tone(rail) : null, row.Latest, MightyTimeline.DurationLabel(row.DurationMs), capsule,
-                        (agent is null ? null : MightyGraphSupport.ShownInput(agent)) ?? (row.Kind == "main" ? run.Input : null), row.AgentIndex);
+                        (agent is null ? null : MightyGraphSupport.ShownInput(agent)) ?? (row.Kind == "main" ? run.Input : null), row.AgentIndex,
+                        who is null ? null : FlowRoles.Token(who.Ink));
                 }).ToList();
                 var tally = Locale.Get("phone.blocks.tally", new Dictionary<string, string> { ["total"] = group.Tally.Total.ToString(), ["settled"] = group.Tally.Settled.ToString() });
                 var total = run.TotalUsage;
@@ -508,7 +564,8 @@ public sealed partial class MainWindow
                     Locale.Get("graph.structure.tally", new Dictionary<string, string> { ["agents"] = item.Tally.Agents.ToString(), ["tools"] = item.Tally.Tools.ToString() }),
                     item.Finished, MightyStructure.Fold.ResultLine(item),
                     // A task notice's title already names its kind (MightyStructure.Kept keeps no other steer).
-                    node?.Kind, node is null ? null : string.Join(" · ", new[] { node.Kind == "steer" ? null : MightyTimeline.KindLabel(node.Kind, null), model }.Where(p => !string.IsNullOrEmpty(p))),
+                    // A sub-agent's type follows its kind, as its diagram header names it (M/MightyStructureView.swift meta).
+                    node?.Kind, node is null ? null : string.Join(" · ", new[] { node.Kind == "steer" ? null : MightyTimeline.KindLabel(node.Kind, null), node.AgentType, model }.Where(p => !string.IsNullOrEmpty(p))),
                     node?.Depth ?? 0, node?.Prompt?.Preview, item.ExecutionNodeId, MightyGraphLayout.NodeID(runs[item.RunIndex], "result"), ToneWord(MightyStructure.Tone.OfCard(card, column)),
                     node is { Background: true } ? true : (bool?)null, node is { Kind: "task" } ? MobileMightySupport.OutputTail(tails.GetValueOrDefault(node.AgentId)) : null, node?.NoticeReply?.Text,
                     card.Kind is MightyStructure.CardKind.Result or MightyStructure.CardKind.Summary ? MightyGraphBlockModel.ResultTitle(item.Status, item.BackgroundWaiting, item.Awaiting) : null,

@@ -857,6 +857,27 @@ public sealed partial class MainWindow : Window
         private IEnumerable<MenuFlyoutItemBase> EffortChoices(RunSession pane, string[] levels) =>
             new[] { "default" }.Concat(levels).Select(value => (MenuFlyoutItemBase)Choice(EffortLabel(value), () => ChangeSettings(s => s with { Effort = value }), pane.Settings.Effort == value, value == "default" ? Locale.Get("composer.effort.auto") : null)).ToList();
 
+        /// <summary>
+        /// A Claude pane's advisor (M/SessionPaneView.swift advisorOptions, Core ComposerAdvisor): Claude 설정 따름, the pane's Claude models, 끔, each
+        /// part apart, then what choosing one means as a line that cannot be chosen.
+        /// </summary>
+        private IEnumerable<MenuFlyoutItemBase> AdvisorChoices(RunSession pane, ModelCatalog catalog)
+        {
+            var rows = new List<MenuFlyoutItemBase> { MenuHeader(Locale.Get("composer.advisor.label")) };
+            var options = ComposerAdvisor.Options(pane, catalog);
+            for (var index = 0; index < options.Count; index++)
+            {
+                if (index == 1 || index == options.Count - 1) rows.Add(new MenuFlyoutSeparator());
+                var value = options[index].Value;
+                rows.Add(Choice(options[index].Label, () => ChangeSettings(s => ComposerAdvisor.Apply(s, value)), options[index].Selected));
+            }
+            rows.Add(new MenuFlyoutSeparator());
+            var note = Item(Locale.Get("composer.advisor.note"), () => Task.CompletedTask);
+            note.IsEnabled = false;
+            rows.Add(note);
+            return rows;
+        }
+
         /// <summary>The permission modes this runner takes, in the Mac's order (M/SessionPaneView.swift:385-392).</summary>
         private IEnumerable<MenuFlyoutItemBase> PermissionChoices(RunSession pane, ProviderCapabilities caps)
         {
@@ -877,6 +898,14 @@ public sealed partial class MainWindow : Window
                 var efforts = new MenuFlyoutSubItem { Text = Locale.Get("composer.effort.label") + " · " + EffortLabel(pane.Settings.Effort), IsEnabled = levels.Length > 0 || pane.Settings.Effort != "default" };
                 foreach (var row in EffortChoices(pane, levels)) efforts.Items.Add(row);
                 rows.Add(efforts);
+            }
+            // A Claude pane on this computer names its advisor beside its effort (M/SessionPaneView.swift overflowMenu).
+            if (ComposerAdvisor.Shows(pane, owner.service.IsRemoteSession(pane.Id)))
+            {
+                var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+                var advisors = new MenuFlyoutSubItem { Text = Locale.Get("composer.advisor.menu", new Dictionary<string, string> { ["value"] = ComposerAdvisor.Label(pane.Settings.Advisor, ComposerAdvisor.Models(pane, catalog)) }) };
+                foreach (var row in AdvisorChoices(pane, catalog)) advisors.Items.Add(row);
+                rows.Add(advisors);
             }
             var permissions = new MenuFlyoutSubItem { Text = Locale.Get("composer.label.permission") + " · " + PermissionLabel(pane.Provider, pane.Settings.PermissionMode) };
             foreach (var row in PermissionChoices(pane, caps)) permissions.Items.Add(row);

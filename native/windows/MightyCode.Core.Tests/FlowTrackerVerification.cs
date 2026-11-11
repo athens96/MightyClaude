@@ -627,6 +627,9 @@ internal static class FlowTrackerVerification
         Check(normal.Total == 6 && normal.Count == 6, "six seen");
         SameList(record.Normalized(true)!.Consultations.Select(c => c.State), ["stopped", "error"], "restored");
         Same(new GraphAdvisor().Normalized(), null, "nothing");
+        // The record always writes its calls, as the Mac's decoder needs them, and one written without them reads back with none.
+        Check(JsonSerializer.Serialize(new GraphAdvisor("claude-opus-5-5"), Wire.Json).Contains("\"calls\":[]"), "an advisor without consultations writes an empty list");
+        Same(JsonSerializer.Deserialize<GraphAdvisor>("""{"model":"claude-opus-5-5"}""", Wire.Json)!.Calls?.Count, 0, "an advisor read without calls has none");
         var run = new MightyGraphRun { Id = "r1", Input = "go", Status = "running", Provider = "claude", Advisor = record, ConfiguredAdvisor = "opus" };
         var decoded = JsonSerializer.Deserialize<MightyGraphRun>(JsonSerializer.Serialize(run, Wire.Json), Wire.Json)!;
         Check(Equals(decoded.Advisor, record) && decoded.ConfiguredAdvisor == "opus", "a run carries it through a save");

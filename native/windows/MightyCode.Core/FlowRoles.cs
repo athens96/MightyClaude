@@ -72,7 +72,7 @@ public static class FlowRoles
     };
 
     /// <summary>The colours a Claude Code agent definition may name (<c>color:</c> in its frontmatter).</summary>
-    public static readonly string[] Colors = ["red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"];
+    public static readonly string[] AgentColors = ["red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"];
 
     /// <summary>A custom agent's colour as a palette ink; null for a colour Claude Code does not have. Yellow and orange are the palette's two ambers
     /// (<c>waitText</c>, <c>questionText</c>), which hold the same value today.</summary>

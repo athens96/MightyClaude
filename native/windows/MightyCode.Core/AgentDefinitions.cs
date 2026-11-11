@@ -5,7 +5,7 @@ namespace MightyCode.Core;
 
 /// <summary>A custom sub-agent as its definition file's frontmatter says it: only what the flow diagram draws of it (macOS AgentDefinition).</summary>
 /// <param name="Name">The name an Agent call's <c>subagent_type</c> uses: the frontmatter's <c>name</c>, else the file's own.</param>
-/// <param name="Color">One of Claude Code's agent colours (<see cref="FlowRoles.Colors"/>); null when the file names none, or one Claude Code lacks.</param>
+/// <param name="Color">One of Claude Code's agent colours (<see cref="FlowRoles.AgentColors"/>); null when the file names none, or one Claude Code lacks.</param>
 /// <param name="Model">The model the definition asks for (an alias, a model id or <c>inherit</c>); null when it names none.</param>
 public sealed record AgentDefinition(string Name, string? Color = null, string? Model = null);
 
@@ -20,7 +20,7 @@ public static class AgentDefinitions
 {
     public const int MaximumBytes = 16 * 1024;
     public const int MaximumFiles = 256;
-    private const int MaximumLines = 80;
+    internal const int MaximumLines = 80;
     private const int MaximumPluginIndexBytes = 1024 * 1024;
     private static readonly char[] LineBreaks = ['\n', '\r', '\v', '\f', '\u0085', '\u2028', '\u2029'];
 
@@ -53,7 +53,7 @@ public static class AgentDefinitions
         if (name.Length == 0) return null;
         var color = fields.GetValueOrDefault("color")?.ToLowerInvariant();
         var model = fields.GetValueOrDefault("model");
-        return new AgentDefinition(name, color is not null && FlowRoles.Colors.Contains(color) ? color : null, Wire.Model(model) ? model : null);
+        return new AgentDefinition(name, color is not null && FlowRoles.AgentColors.Contains(color) ? color : null, Wire.Model(model) ? model : null);
     }
 
     /// <summary>Swift's <c>split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)</c>, where "\r\n" is one break.</summary>
