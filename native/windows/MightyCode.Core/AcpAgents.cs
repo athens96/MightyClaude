@@ -11,13 +11,12 @@ namespace MightyCode.Core;
 /// </summary>
 public static class AgentFiles
 {
-    /// <summary>Overrides where the files are looked for (the checks point it at the repository's own folder).</summary>
+    /// <summary>Overrides where the files are looked for: when set, the only folder looked in.</summary>
     public static string? Directory { get; set; }
     public static string? Find(string name)
     {
-        foreach (var folder in new[] { Directory, Path.Combine(AppContext.BaseDirectory, "Agents") })
-            if (folder is not null && Path.Combine(folder, name) is var path && File.Exists(path)) return path;
-        return null;
+        var path = Path.Combine(Directory ?? Path.Combine(AppContext.BaseDirectory, "Agents"), name);
+        return File.Exists(path) ? path : null;
     }
 }
 

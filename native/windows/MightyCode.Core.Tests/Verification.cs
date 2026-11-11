@@ -495,6 +495,10 @@ internal static class Verification
         await Test("pi: a steer is written while the turn is open and refused before and after", PiVerification.ASteerIsWrittenWhileTheTurnIsOpenAndRefusedBeforeAndAfter);
         await Test("pi: stopping a run ends it stopped, and a resume of a missing session starts a new one", PiVerification.StoppingARunEndsItStoppedAndAResumeOfAMissingSessionStartsANewOne);
         await Test("pi: neither a delegation child nor a parent, not in a remote workspace, advertised to the phone", PiVerification.PiIsNeitherADelegationChildNorAParentNorInARemoteWorkspaceAndTheHostAdvertisesIt);
+        await Test("pi questions: the ask_user tool is the question card and its answer goes back as the dialog's value", PiDialogVerification.TheAskUserToolIsTheQuestionCardAndItsAnswerGoesBackAsTheDialogsValue);
+        await Test("pi questions: the app's tool takes a typed answer and several picks, any other select only its options", PiDialogVerification.TheAppsToolTakesATypedAnswerAndSeveralPicksAndAnyOtherSelectOnlyItsOptions);
+        await Test("pi questions: confirm and input are cards, a timed dialog closes itself, an editor is still cancelled", PiDialogVerification.ConfirmAndInputAreCardsATimedDialogClosesItselfAndAnEditorIsStillCancelled);
+        await Test("pi questions: the shipped extension is loaded for each run and the read-only list names its tool", PiDialogVerification.TheShippedExtensionIsLoadedForEachRunAndTheReadOnlyListNamesItsTool);
         await Test("acp opencode: a new session is initialize, session/new and one prompt; text, resume and usage", AcpVerification.ANewOpencodeSessionIsInitializeThenSessionNewThenOnePrompt);
         await Test("acp opencode: settings go as config options and one the agent lacks is named and skipped", AcpVerification.OpencodeSettingsGoAsConfigOptionsAndOneTheAgentLacksIsNamedAndSkipped);
         await Test("acp opencode: a missing session to resume starts a new one with a notice", AcpVerification.AMissingOpencodeSessionToResumeStartsANewOneWithANotice);

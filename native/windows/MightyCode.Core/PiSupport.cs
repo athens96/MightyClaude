@@ -9,6 +9,10 @@ namespace MightyCode.Core;
 /// </summary>
 public static class PiAgent
 {
+    /// <summary>The app's question tool for pi (the shipped Agents/pi-ask-user.js, the Mac bundle's own file): loaded with <c>--extension</c> for each run.</summary>
+    public const string QuestionExtensionName = "pi-ask-user.js";
+    /// <summary>The tool that extension registers; the read-only allowlist names it, or <c>--tools</c> would leave it off.</summary>
+    public const string QuestionTool = "ask_user";
     /// <summary>The API key variables pi reads. Any one non-empty counts as a sign-in; the Cloudflare and Azure companions alone do not.</summary>
     public static readonly string[] ApiKeyVariables =
     [

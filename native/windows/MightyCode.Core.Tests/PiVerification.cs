@@ -134,10 +134,16 @@ internal static class PiVerification
 
     internal static Task PermissionsBecomeTheToolAllowlistAndThinkingLevelsAreTheEffort()
     {
+        // The shapes without the shipped ask_user extension (PiDialogVerification checks them with it).
+        var bare = Verification.Temp(); var shipped = AgentFiles.Directory; AgentFiles.Directory = bare;
+        try { Shapes(); } finally { AgentFiles.Directory = shipped; Directory.Delete(bare, true); }
+        static void Shapes()
+        {
         Check(ProviderCatalog.Arguments(Request("manual"), "").SequenceEqual(["--mode", "rpc", "--tools", "read,grep,find,ls"]), "read-only");
         Check(ProviderCatalog.Arguments(Request("fullAccess"), "").SequenceEqual(["--mode", "rpc"]), "full access leaves every tool on");
         Check(ProviderCatalog.Arguments(Request("manual", "anthropic/claude-sonnet-4-5", "high", SessionId), "").SequenceEqual(["--mode", "rpc", "--model", "anthropic/claude-sonnet-4-5", "--thinking", "high", "--tools", "read,grep,find,ls", "--session", SessionId]), "model, thinking, tools, session");
         Check(ProviderCatalog.Arguments(Request("fullAccess", effort: "off"), "").SequenceEqual(["--mode", "rpc", "--thinking", "off"]), "off is a level");
+        }
         Check(ProviderCatalog.PermissionModes("pi").SequenceEqual(["manual", "fullAccess"]), "the two modes pi has");
         Check(ProviderCatalog.NormalizeSettings("pi", new RunSettings(Effort: "minimal", PermissionMode: "acceptEdits")).PermissionMode == "manual", "another mode is not pi's");
         Check(ProviderCatalog.NormalizeSettings("pi", new RunSettings(Effort: "minimal", PermissionMode: "fullAccess")).Effort == "minimal" && ProviderCatalog.NormalizeSettings("claude", new RunSettings(Effort: "minimal")).Effort == "default", "minimal is pi's level only");
@@ -391,7 +397,8 @@ internal static class PiVerification
             Check(all.Any(e => e.Type == "usage" && e.Usage is { Provider: "pi", OutputTokens: 18 }), "the usage");
             Check(all.Any(e => e.Type == "graph_run" && e.GraphRun is { Provider: "pi" }), "the graph");
             var argv = JsonSerializer.Deserialize<string[]>(File.ReadAllText(record + ".args"))!;
-            Check(argv.SkipWhile(a => a != "--mode").SequenceEqual(["--mode", "rpc", "--tools", "read,grep,find,ls"]), "argv: " + string.Join(" ", argv));
+            // The app's ask_user extension rides along, and the read-only list names its tool.
+            Check(argv.SkipWhile(a => a != "--mode").SequenceEqual(["--mode", "rpc", "--tools", "read,grep,find,ls,ask_user", "--extension", AgentFiles.Find(PiAgent.QuestionExtensionName)!]), "argv: " + string.Join(" ", argv));
             var stdin = Lines(record + ".stdin");
             Check(stdin.Length == 2 && stdin[0] == "{\"type\":\"get_state\"}" && stdin[1].Contains("\"message\":\"hi there\""), "stdin: get_state then the prompt");
         }
@@ -437,7 +444,7 @@ internal static class PiVerification
                 Check(events.Last(e => e.Type == "status").Status == "stopped", "stopped");
             }
             var argv = JsonSerializer.Deserialize<string[]>(File.ReadAllText(record + ".args"))!;
-            Check(argv.SkipWhile(a => a != "--mode").TakeWhile(a => a != "--pi-fixture").SequenceEqual(["--mode", "rpc"]) || argv.SkipWhile(a => a != "--mode").SequenceEqual(["--mode", "rpc"]), "no --session: " + string.Join(" ", argv));
+            Check(argv.SkipWhile(a => a != "--mode").SequenceEqual(["--mode", "rpc", "--extension", AgentFiles.Find(PiAgent.QuestionExtensionName)!]), "no --session: " + string.Join(" ", argv));
             Check(!argv.Contains("--session"), "the missing session is dropped");
         }
         finally { try { Directory.Delete(directory, true); } catch (IOException) { } }

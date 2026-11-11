@@ -45,6 +45,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         internal CodexApprovalChannel? CodexPermissions;
         /// <summary>An ACP agent's run (opencode, Hermes): the JSON-RPC channel its stdio carries.</summary>
         internal AcpChannel? Acp;
+        /// <summary>A pi run's extension dialogs (its <c>ask_user</c> tool among them) as the pane's question card.</summary>
+        internal PiDialogChannel? PiDialogs;
         /// <summary>The ACP prompt was answered and the runner ended the agent's server itself (not a failure).</summary>
         internal volatile bool AcpEnding;
         /// <summary>stdin of an ACP run was closed after its prompt's answer.</summary>
@@ -177,6 +179,18 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         // The list names the request whose stream changed it: the diagram draws it only over that request's run.
         var todoRunId = tracker?.RunID ?? (Wire.Identifier(request.GraphRunId) ? request.GraphRunId : null);
         run.Parser = parser;
+        // pi's dialogs reach the pane's question card where a pane can answer it; a headless run cancels them as before.
+        if (request.Provider == "pi" && request.Kind != "shell" && permissionRequested is not null)
+        {
+            var dialogs = new PiDialogChannel(request.SessionId,
+                text => { lock (run.InputGate) { if (run.Finished || run.PiInputClosed || run.Child is not { } pi) return; try { pi.Input.Write(text); pi.Input.Flush(); } catch (IOException) { } catch (ObjectDisposedException) { } } },
+                value => { if (!run.Finished) permissionRequested(value); },
+                (value, state) => parser.PermissionActivity(value, state),
+                message => Log(run, "system", message),
+                // pi answers a dialog with a deadline itself when it passes: the card goes then too.
+                (id, seconds) => _ = Task.Delay(TimeSpan.FromSeconds(Math.Min(seconds, 86_400))).ContinueWith(_ => run.PiDialogs?.TimedOut(id), TaskScheduler.Default));
+            run.PiDialogs = dialogs; parser.PiDialogs = dialogs;
+        }
         var backgroundTracker = new BackgroundTaskTracker();
         run.TurnReopened = () => { lock (planGate) if (!run.Finished && backgroundTracker.Reopen() is { } work) emit(new(request.SessionId, "background", Background: work)); };
         void ReadPlanMode(System.Text.Json.JsonElement frame)
@@ -534,6 +548,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             run.Permissions?.CancelAll(); run.Permissions = null;
             run.CodexPermissions?.CancelAll(); run.CodexPermissions = null;
             run.Acp?.CancelAll(); run.Acp = null;
+            run.PiDialogs?.CancelAll(); run.PiDialogs = null;
             mod?.Dispose(); run.Child = null;
             try { if (attachments is not null) await attachments.DisposeAsync(); }
             catch (IOException) { Log(run, "error", Locale.Get("run.error.attachmentCleanupFailed")); }
@@ -638,6 +653,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         if (!runs.TryGetValue(sessionId, out var run)) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
         if (run.CodexPermissions is { } codex) codex.Respond(requestId, allow);
         else if (run.Acp is { } acp) acp.Respond(requestId, allow);
+        else if (run.PiDialogs is { } dialogs) dialogs.Respond(requestId, allow);
         else if (run.Permissions is { } channel) channel.Respond(requestId, allow);
         else throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
     }
@@ -693,6 +709,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     {
         if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
         if (run.Acp is { } acp) { acp.AnswerQuestions(requestId, answers); return; }
+        if (run.PiDialogs is { } dialogs) { dialogs.AnswerQuestions(requestId, answers); return; }
         if (run.Request.Provider != "claude" || run.Permissions is not { } channel) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
         channel.AnswerQuestions(requestId, answers);
     }

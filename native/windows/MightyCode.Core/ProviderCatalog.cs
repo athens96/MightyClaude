@@ -677,7 +677,11 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             args.AddRange(["--mode", "rpc"]);
             if (request.Model != "default") args.AddRange(["--model", request.Model]);
             if (settings.Effort != "default") args.AddRange(["--thinking", settings.Effort]);
-            if (settings.PermissionMode != "fullAccess") args.AddRange(["--tools", Wire.PiReadOnlyTools]);
+            // The app's question tool (`ask_user`) rides along as an extension of this run only; the read-only allowlist names it, or `--tools`
+            // would leave it off. Without the shipped file pi runs without the tool.
+            var questions = AgentFiles.Find(PiAgent.QuestionExtensionName);
+            if (settings.PermissionMode != "fullAccess") args.AddRange(["--tools", Wire.PiReadOnlyTools + (questions is null ? "" : "," + PiAgent.QuestionTool)]);
+            if (questions is not null) args.AddRange(["--extension", questions]);
             if (request.ResumeId is not null) args.AddRange(["--session", request.ResumeId]);
             return args;
         }

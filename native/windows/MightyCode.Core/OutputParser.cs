@@ -50,6 +50,10 @@ public sealed partial class OutputParser
     private string? piError;
     /// <summary>Answers an extension's dialog that no window can show (one JSON line, newline included).</summary>
     private readonly Action<string>? piReply;
+    /// <summary>pi's dialogs as the pane's question card (M/MightyCore/CLIStreamParser.swift piDialogs); without it every dialog is cancelled as before.</summary>
+    public PiDialogChannel? PiDialogs { get; set; }
+    /// <summary>The app's <c>ask_user</c> calls that are running: a dialog titled with one's question belongs to it.</summary>
+    private readonly Dictionary<string, (string Question, bool Multiple)> piAsking = [];
     /// <summary>The turn is still going: stdin must stay open.</summary>
     public bool PiTurnOpen { get { lock (sync) return piAgentOpen || piCompacting || piRetrying; } }
     /// <summary>pi's <c>agent_end</c> has come (stdin closes after the quiet that follows it).</summary>
@@ -549,6 +553,12 @@ public sealed partial class OutputParser
                 break;
             case "tool_execution_start": case "tool_execution_update": case "tool_execution_end":
                 var ended = type == "tool_execution_end";
+                if (root.Text("toolName") == PiAgent.QuestionTool && root.Text("toolCallId") is { } asker)
+                {
+                    if (ended) { piAsking.Remove(asker); PiDialogs?.ToolEnded(asker); }
+                    else if (MetadataJson.Property(root, "args") is { ValueKind: JsonValueKind.Object } asked && asked.Text("question") is { } question)
+                        piAsking[asker] = (question.Trim(), MetadataJson.Flag(asked, "multiple"));
+                }
                 var output = ActivitySupport.Output(MetadataJson.Property(root, ended ? "result" : "partialResult"));
                 Tool(root.Text("toolCallId"), ended ? MetadataJson.Flag(root, "isError") ? "error" : "completed" : "running", root.Text("toolName") ?? "Tool", MetadataJson.Property(root, "args"), output);
                 if (activity is null && ended && output is { Length: > 0 }) log("output", output);
@@ -574,8 +584,12 @@ public sealed partial class OutputParser
                 break;
             case "extension_error": log("system", Error(MetadataJson.Property(root, "error"), "")); break;
             case "extension_ui_request":
-                // A dialog (select, confirm, input, editor) waits for an answer no pane can give it.
+                // A dialog waits for an answer: select, confirm and input are the pane's question card; an editor, or one the card cannot show,
+                // gets the answer no pane can give it.
                 if (root.Text("method") is not ("select" or "confirm" or "input" or "editor") || root.Text("id") is not { } dialog) break;
+                var title = (root.Text("title") ?? "").Trim();
+                var asking = piAsking.Where(p => p.Value.Question == title).Select(p => new PiDialogChannel.Asking(p.Key, p.Value.Multiple)).FirstOrDefault();
+                if (PiDialogs?.Receive(root, asking) == true) break;
                 piReply?.Invoke(JsonSerializer.Serialize(new { type = "extension_ui_response", id = dialog, cancelled = true }, Wire.Json) + "\n");
                 log("system", Locale.Get("run.notice.piDialogDismissed", new Dictionary<string, string> { ["title"] = ActivitySupport.Clean(root.Text("title") ?? "", 256, true) }));
                 break;
