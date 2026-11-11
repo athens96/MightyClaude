@@ -17,6 +17,8 @@ internal static class AcpSessionsVerification
     private static string Text(string value) => "'" + value.Replace("'", "''") + "'";
     private static string Number(double value) => value.ToString("R", CultureInfo.InvariantCulture);
     private static string Ids(ResumableSessionListing listing) => string.Join("|", listing.Items.Select(i => i.SessionID)) + " hidden " + listing.Hidden;
+    /// <summary>The path with its ASCII letters in capitals: the case SQLite's NOCASE folds, whatever the user folder is called.</summary>
+    private static string Capitals(string path) => new(path.Select(c => c is >= 'a' and <= 'z' ? (char)(c - 32) : c).ToArray());
 
     // ── opencode ──────────────────────────────────────────────────────────
 
@@ -39,7 +41,7 @@ internal static class AcpSessionsVerification
             var seq = 0;
             string Message(string session, string type, string data) => $"INSERT INTO session_message VALUES ('msg_{++seq}', {Text(session)}, {Text(type)}, {seq}, 1, 1, {Text(data)})";
             // A folder spelled with the other slash and letter case is the same folder on Windows alone.
-            var spelled = (OperatingSystem.IsWindows() ? workspace.Replace('\\', '/') : workspace).ToUpperInvariant();
+            var spelled = Capitals(OperatingSystem.IsWindows() ? workspace.Replace('\\', '/') : workspace);
             Check(TestSqlite.Write(database,
                 "CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, parent_id TEXT, slug TEXT, directory TEXT, title TEXT, version TEXT, model TEXT, time_created INTEGER, time_updated INTEGER, time_archived INTEGER)",
                 "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, time_updated INTEGER, data TEXT)",
@@ -161,7 +163,7 @@ internal static class AcpSessionsVerification
             Row(Noted, "local", "acp", null, null, null, t - 2_000, 2, workspace, "Quiz me", t - 1_990),
             Row(Pictured, "local", "acp", null, null, null, t - 3_000, 2, workspace, "Screenshot question", t - 2_990),
             Row(Nested, "local", "acp", null, null, null, t - 4_000, 2, workspace, "Nested", t - 3_990),
-            Row(Cased, "local", "acp", null, null, null, t - 6_000, 2, workspace.ToUpperInvariant(), "Cased", t - 5_990),
+            Row(Cased, "local", "acp", null, null, null, t - 6_000, 2, Capitals(workspace), "Cased", t - 5_990),
             Row("20261110_090000_0000cli1", "cli", "cli", null, null, null, t - 50, 2, workspace, "A terminal chat", t - 40),
             Row("20261110_090000_0000else", "acp", "acp", null, null, null, t - 50, 2, Path.Combine(root, "elsewhere"), "Other folder", t - 40),
             Row("20261110_090000_0000arch", "acp", "acp", null, null, null, t - 50, 2, workspace, "Archived", t - 40, archived: 1),
