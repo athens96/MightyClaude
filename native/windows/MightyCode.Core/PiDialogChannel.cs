@@ -57,9 +57,11 @@ public sealed class PiDialogChannel(string runId, Action<string> write, Action<T
 
     public void AnswerQuestions(string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers)
     {
+        Pending ask;
         lock (sync)
         {
-            if (closed || !pending.TryGetValue(requestId, out var ask)) throw new InvalidOperationException(Locale.Get("permission.error.questionGone"));
+            if (closed || !pending.TryGetValue(requestId, out var asked)) throw new InvalidOperationException(Locale.Get("permission.error.questionGone"));
+            ask = asked;
             var answer = AgentQuestions.Answers(ask.Display, answers).Values.FirstOrDefault();
             var response = new JsonObject { ["type"] = "extension_ui_response", ["id"] = ask.DialogId };
             switch (ask.Method)
@@ -80,25 +82,28 @@ public sealed class PiDialogChannel(string runId, Action<string> write, Action<T
             }
             pending.Remove(requestId);
             Send(response);
-            var display = ask.Display with { State = "answered" };
-            if (ask.Asking is not null) activity(display, "running");
-            emit(display);
         }
+        // After the lock: the activity row is the parser's, which hands this channel its dialogs under its own lock.
+        var display = ask.Display with { State = "answered" };
+        if (ask.Asking is not null) activity(display, "running");
+        emit(display);
     }
 
     /// <summary>The card's Cancel: pi reads the dialog as dismissed.</summary>
     public void Respond(string requestId, bool allow)
     {
+        Pending ask;
         lock (sync)
         {
-            if (closed || !pending.TryGetValue(requestId, out var ask)) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+            if (closed || !pending.TryGetValue(requestId, out var asked)) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
             if (allow) throw new InvalidOperationException(Locale.Get("permission.error.noAnswers"));
+            ask = asked;
             pending.Remove(requestId);
             Send(new JsonObject { ["type"] = "extension_ui_response", ["id"] = ask.DialogId, ["cancelled"] = true });
-            var display = ask.Display with { State = "denied" };
-            if (ask.Asking is not null) activity(display, "running");
-            emit(display);
         }
+        var display = ask.Display with { State = "denied" };
+        if (ask.Asking is not null) activity(display, "running");
+        emit(display);
     }
 
     /// <summary>pi answered the dialog itself when its deadline passed.</summary>
