@@ -494,6 +494,18 @@ internal static class AcpVerification
         return Task.CompletedTask;
     }
 
+    internal static Task AHermesSessionIsContinuedOnlyWhereItsYoloAndAnswerAllow()
+    {
+        const string id = HermesResumed;
+        Check(HermesAgent.Resume(id, "manual", 0, false) == (null, null) && HermesAgent.Resume(id, "fullAccess", 0, true) == (null, null), "a session that never answered is not continued");
+        Check(HermesAgent.Resume(id, "manual", 3, true) == (null, "run.notice.hermesFullAccessSession"), "a yolo session is not continued by a pane that asks");
+        Check(HermesAgent.Resume(id, "acceptEdits", 3, true) == (null, "run.notice.hermesFullAccessSession"), "nor by one that accepts edits");
+        Check(HermesAgent.Resume(id, "fullAccess", 3, false) == (id, "run.notice.hermesAskingSession"), "an asking session is continued and still asks");
+        Check(HermesAgent.Resume(id, "fullAccess", 3, true) == (id, null) && HermesAgent.Resume(id, "manual", 3, false) == (id, null), "matching sessions are continued");
+        Check(HermesAgent.Resume(id, "manual", null, null) == (id, null), "an unreadable record changes nothing");
+        return Task.CompletedTask;
+    }
+
     internal static Task TheClarifyConfigValueIsTheMacs()
     {
         Check(HermesQuestionTool.Value([]).SequenceEqual(["hermes-acp", "clarify", "x_search"]) && HermesQuestionTool.Value(["kanban"]).SequenceEqual(["hermes-acp", "clarify", "x_search", "kanban"]), "the saved list");

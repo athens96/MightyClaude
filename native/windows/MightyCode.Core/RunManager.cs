@@ -151,7 +151,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         var startedAt = DateTimeOffset.UtcNow;
         ExecutionGraphTracker? tracker = null;
         // An ACP run's request as launched (a Hermes session that cannot be continued is started anew) and Hermes's clarify tool.
-        StartRunRequest? acpLaunch = null;
+        StartRunRequest? acpLaunch = null; string? hermesNotice = null;
         (HermesQuestionTool.Outcome? First, IReadOnlyList<string>? List, bool Asks) hermesQuestions = (null, null, false);
         var graphDirty = 0;
         var graphGate = new object();
@@ -349,6 +349,16 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 if (request.Provider == "pi" && attachments is null) input = ProviderInput.PiStartup(input);
                 // pi exits on a session it cannot find (one that never got an answer is not written): such a pane starts a new session.
                 var launch = request.Provider == "pi" && request.ResumeId is { } piResume && PiAgent.SessionFile(piResume, workspace.Path, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment) is null ? request with { ResumeId = null } : request;
+                // Hermes fixes `--yolo` when a session starts: a session that started with it is not continued by a pane that asks (it would not
+                // ask), one that started without it keeps asking; a session whose first request never got an answer is not continued (it keeps
+                // the provider it was made with and fails again). A record that cannot be read changes nothing (M/ProcessRunner.swift).
+                if (request.Provider == "hermes" && launch.ResumeId is { } hermesResume)
+                {
+                    var database = HermesSessions.StateDatabase(environment);
+                    var (resumeId, notice) = HermesAgent.Resume(hermesResume, request.Settings!.PermissionMode, HermesSessions.MessageCount(database, hermesResume), HermesSessions.StartedWithFullAccess(database, hermesResume));
+                    launch = launch with { ResumeId = resumeId };
+                    if (notice is not null) hermesNotice = Locale.Get(notice);
+                }
                 acpLaunch = launch;
                 // OpenCode 2's rules for this run only, read after the user's own config; Hermes's `--yolo` for a session this run creates.
                 if (request.Provider == "opencode") environment["OPENCODE_CONFIG_CONTENT"] = OpencodeAgent.ConfigContent(request.Settings!.PermissionMode, AgentFiles.Find(OpencodeAgent.QuestionInstructionsName));
@@ -443,6 +453,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             }
             var hermes = request.Provider == "hermes";
             var hermesStderr = hermes ? new HermesAgent.StderrFilter() : null;
+            if (hermesNotice is not null) Log(run, "system", hermesNotice);
             if (ProviderCatalog.IsAcp(request.Provider) && acpLaunch is not null) run.Acp = StartAcp(run, child, acpLaunch, workspace.Path, attachments, hermesQuestions, Consume);
             emit(RunEvent.State(request.SessionId, "running"));
             if (request.Kind != "shell") Activity(run, new(run.ActivityId, request.Provider, "turn", "running", Locale.Get("run.activity.running", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(request.Provider) })));

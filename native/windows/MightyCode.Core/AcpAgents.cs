@@ -111,6 +111,20 @@ public static class HermesAgent
         return values;
     }
 
+    /// <summary>
+    /// Whether a run continues the pane's Hermes session, and what the pane is told (M/ProcessRunner.swift): Hermes fixes <c>--yolo</c> when a
+    /// session starts, so one that started with it is not continued by a pane that asks (a new session, run.notice.hermesFullAccessSession),
+    /// and one that started without it keeps asking in a full-access pane (continued, run.notice.hermesAskingSession); a session whose first
+    /// request never got an answer (<c>message_count</c> 0) keeps the provider it was made with and is not continued. Unreadable records change nothing.
+    /// </summary>
+    public static (string? ResumeId, string? NoticeKey) Resume(string resumeId, string mode, int? messageCount, bool? startedWithFullAccess)
+    {
+        var full = mode == "fullAccess";
+        if (messageCount == 0) return (null, null);
+        if (startedWithFullAccess == true && !full) return (null, "run.notice.hermesFullAccessSession");
+        return (resumeId, startedWithFullAccess == false && full ? "run.notice.hermesAskingSession" : null);
+    }
+
     /// <summary>The provider an <c>initialize</c> result's <c>authMethods</c> name: the entry that is not the terminal setup.</summary>
     public static string? Provider(JsonObject result)
     {

@@ -517,6 +517,7 @@ internal static class Verification
         await Test("acp hermes: its log and tracebacks on stderr stay out of the pane; yolo and edit policy", AcpVerification.HermessLogAndTracebacksOnStderrStayOutOfThePane);
         await Test("acp hermes: the model menu is the picker the last session offered", AcpVerification.TheHermesMenuIsThePickerTheLastSessionOffered);
         await Test("acp hermes: the clarify config value is the Mac's", AcpVerification.TheClarifyConfigValueIsTheMacs);
+        await Test("acp hermes: a session is continued only where its yolo and its answers allow", AcpVerification.AHermesSessionIsContinuedOnlyWhereItsYoloAndAnswerAllow);
         await Test("acp run: an opencode run speaks ACP and completes whether its server exits or is ended", AcpRunVerification.AnOpencodeRunSpeaksAcpAndCompletesWhetherTheServerExitsOrIsEnded);
         await Test("acp run: a signed-out opencode run ends in error with the sign-in reason", AcpRunVerification.ASignedOutOpencodeRunEndsInErrorWithTheSignInReason);
         await Test("acp run: an OpenCode 1 is not run and asks for OpenCode 2", AcpRunVerification.AnOpenCode1IsNotRunAndAsksForOpenCode2);
