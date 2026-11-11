@@ -337,6 +337,14 @@ internal static class Verification
         await Test("model list probe: the menu line says which list it is", ModelListProbeVerification.TheMenuLineSaysWhichListItIs);
         await Test("model list probe: a sign-in or sign-out drops that provider's lists in every workspace", ModelListProbeVerification.ASignInOrSignOutDropsThatProvidersLists);
         await Test("model list probe: readFailure and listedAt are additive on the wire", ModelListProbeVerification.TheNewFieldsAreAdditiveOnTheWire);
+        await Test("model effort: Haiku 5.5 takes the levels Claude Code names, Haiku 4.5 none", ModelEffortVerification.Haiku55TakesTheLevelsClaudeCodeNamesAndHaiku45None);
+        await Test("model effort: a Haiku run with an effort is checked against the CLI's list", ModelEffortVerification.AHaikuRunWithAnEffortIsCheckedAgainstTheCLIsList);
+        await Test("model effort: Codex's list keeps ultra for the models that name it", ModelEffortVerification.CodexsListKeepsUltraForTheModelsThatNameIt);
+        await Test("model effort: no other agent is offered ultra", ModelEffortVerification.NoOtherAgentIsOfferedUltra);
+        await Test("model effort: a Codex run passes ultra as it passes every effort", ModelEffortVerification.ACodexRunPassesUltraAsItPassesEveryEffort);
+        await Test("model effort: ultra is named in every language and reaches the status line", ModelEffortVerification.UltraIsNamedInEveryLanguageAndReachesTheStatusLine);
+        await Test("remote model lists: an older host's long lists are cut to what a local read keeps", RemoteModelListBoundVerification.AnOlderHostsLongListsAreCutToWhatALocalReadKeeps);
+        await Test("remote model lists: the bound is what each read of its CLI keeps", RemoteModelListBoundVerification.TheBoundIsWhatEachReadOfItsCLIKeeps);
         await Test("composer parity: a built-in slash command sent in full never reaches the CLI", ComposerParityVerification.SentBuiltinNeverReachesTheCli);
         await Test("composer parity: a transcript keeps the newest 400 entries", ComposerParityVerification.TranscriptKeepsTheNewestFourHundred);
         await Test("composer parity: compaction, collaboration, rate limits and over-long lines reach the pane", ComposerParityVerification.StreamEventsReachTheTranscript);

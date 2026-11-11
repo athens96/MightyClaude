@@ -442,7 +442,7 @@ public sealed partial class MainWindow
             {
                 provider = pane.Provider, model = selection,
                 modelTip = ProviderCatalog.BetaLabel(pane.Provider, ProviderMark.Label(pane.Provider)) + " · " + selection + (selectedModel?.Description is { Length: > 0 } description ? "\n" + description : ""),
-                showsEffort = capabilities.Effort || pane.Settings.Effort != "default", effort = EffortLabel(pane.Settings.Effort), effortEnabled = levels.Length > 0 || pane.Settings.Effort != "default",
+                showsEffort = capabilities.Effort || pane.Settings.Effort != "default", effort = EffortPillLabel(pane.Settings.Effort), effortEnabled = levels.Length > 0 || pane.Settings.Effort != "default",
                 effortTip = levels.Length == 0 ? Locale.Get("composer.effort.unknownLevels") : Locale.Get("composer.effort.label") + " · " + Locale.Get("settings.run.appliesNextRequest"),
                 permission = PermissionLabel(pane.Provider, pane.Settings.PermissionMode), permissionHelp = PermissionHelp(pane.Provider, pane.Settings.PermissionMode), unlocked = pane.Settings.PermissionMode == "fullAccess",
                 showsFast = pane.Provider == "codex" && (capabilities.FastMode || pane.Settings.FastMode), fast = pane.Settings.FastMode, fastEnabled = Capabilities.FastMode || pane.Settings.FastMode,

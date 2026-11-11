@@ -287,6 +287,8 @@ public sealed partial class RemoteClientService : IAsyncDisposable
         RemoteWireInfo? info;
         try { info = JsonSerializer.Deserialize<RemoteWireInfo>(data, RemoteWire.Json); }
         catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException) { throw new InvalidDataException(Locale.Get("remote.connect.error.notMighty")); }
+        // An older host may send a provider's whole list (opencode lists hundreds): its first models are kept, the host is not refused.
+        if (info?.Runtime is { } hostRuntime) info = info with { Runtime = RemoteWorkspaceValidation.Bounded(hostRuntime) };
         RemoteWorkspaceValidation.Info(info);
         return (target, info!);
     }

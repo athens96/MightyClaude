@@ -108,12 +108,9 @@ Windows(2026-11-11 반영, `native/windows/MightyCode.Core`):
 - 새로 읽은 목록(`ModelCatalog.IsFresh`)만 `ModelSelectionSupport.Reconcile`, Antigravity의 실행 전 기본값 전환(`AntigravityMigration.ModelUnavailable`), Claude 모델 초기화의 성공 판정(`ClaudeModelReset`)을 바꿉니다. 실패한 결과(기본·이전 목록)는 보내기 직전 확인에서 15초 동안 다시 쓰고, 창 선택과 새로고침 단추는 바로 다시 읽습니다(`ModelCatalogRefresh`).
 - 메뉴의 흐린 줄: WinUI 메뉴는 새로고침 아래 비활성 항목(`MenuNote`, 이유는 툴팁·도움말 텍스트), 웹 화면은 `note` 행(`title`이 이유). 원격 창은 호스트의 실패를 같은 줄로 보입니다.
 - 로그인 확인(설정의 터미널 로그인 대기가 로그인으로 끝남)·로그아웃·로그인 복구의 로그인 때 그 제공자의 목록을 워크스페이스와 관계없이 버리고(`ModelCatalogRefresh.Invalidate`), 이어지는 전체 읽기가 지금 워크스페이스의 목록을 새로 가져옵니다.
+- 추론 강도는 CLI 목록대로(Mac dae01abe): Claude 목록 정규화(`ProviderCatalog.ReadModel`)와 강도 단계(`ProviderCatalog.Efforts`)는 CLI가 준 `supportsEffort`·단계를 그대로 쓰고, 이름으로 끄는 옛 규칙은 CLI가 그 Haiku에 대해 아무 말도 하지 않을 때만 남습니다(`ProviderCatalog.SilentHaiku`). Haiku 강도 거절(`validation.run.haikuEffort`)은 `StartRunRequest.Validate`의 이름 검사에서 목록을 아는 실행 직전 확인(`ProviderCatalog.EffortRefusal`, `RunManager`)으로 옮겼습니다.
+- Codex `ultra`(Mac 95538a91): `Wire.CodexEfforts`(공통 다섯 단계와 `ultra`)를 Codex의 목록 정규화·강도 단계·실행 검사(`Wire.RunEfforts`)·저장 정규화(`ProviderCatalog.NormalizeSettings`)가 받고, 다른 강도처럼 `-c model_reasoning_effort="ultra"`·app-server `turn/start`의 `effort`로 넘깁니다. 메뉴(WinUI·웹 화면)와 휴대폰 선택지는 `composer.effort.ultra`, 입력창 알약은 `Ultra`, 상태 줄 JSON의 `effort.level`에도 들어갑니다. 다른 제공자와 단계별 모델의 강도(`PhaseModelPreferences`)에는 주지 않습니다(`ModelEffortVerification`).
 - opencode·Hermes는 Windows에 아직 없습니다(2부).
-
-Windows가 따라야 할 것(아직 하지 않음):
-
-- Haiku 추론 강도를 CLI 목록대로: `ProviderCatalog.cs`의 Claude 목록 정규화(`value.Contains("haiku")`이면 강도를 끈다)와 강도 단계(`model.Contains("haiku")`이면 없음), `Models.cs`의 실행 검사(`Model.Contains("haiku")`에 강도가 있으면 거절)가 아직 이름으로 판정합니다. CLI가 `supportsEffort`나 단계를 주면 그대로 쓰고 아무 말도 없을 때만 옛 규칙을 남기며, Haiku 거절은 목록을 아는 실행 직전 확인으로 옮겨야 합니다.
-- Codex `ultra`: `Models.cs`의 `Efforts`(다섯 단계)가 Codex 목록의 `ultra`를 거르고 실행 검사도 거절합니다. Codex 모델에만 받아(목록 정규화, 강도 단계, 실행 검사, 저장 정규화; 단계별 모델의 강도에는 넣지 않는다) 다른 강도처럼 `-c model_reasoning_effort`·app-server `effort`로 넘기고, 메뉴 이름은 `composer.effort.ultra`, 상태 줄(`StatusLine.cs`의 `s_validEfforts`)에도 넣어야 합니다. 다른 제공자에는 주지 않습니다.
 
 ### Bedrock 인증 진단
 

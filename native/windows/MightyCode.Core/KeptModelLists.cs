@@ -22,7 +22,7 @@ public sealed class KeptModelLists
     public const int MaximumBytes = 2 * 1_048_576;
     public const int MaximumEntries = 24;
     /// <summary>The most rows a list keeps (the largest a reader gives, opencode's default and 1 024 models).</summary>
-    public const int MaximumModels = 1_025;
+    public static readonly int MaximumModels = 1 + Wire.ListedModelLimit("opencode");
     /// <summary>A list read again unchanged is written again only once the file is this old.</summary>
     public static readonly TimeSpan RewriteAge = TimeSpan.FromMinutes(5);
 

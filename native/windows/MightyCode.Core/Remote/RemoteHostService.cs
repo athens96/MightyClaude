@@ -338,7 +338,8 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
     {
         var shared = SharedWorkspaces();
         RuntimeInfo runtime;
-        try { runtime = await options.Runtime().WaitAsync(RuntimeDeadline); }
+        // Each provider's list as long as a client keeps it (RemoteWorkspaceValidation.Bounded).
+        try { runtime = RemoteWorkspaceValidation.Bounded(await options.Runtime().WaitAsync(RuntimeDeadline)); }
         catch (TimeoutException) { throw new HostFailure(503, RemoteWindowsStrings.Timeout); }
         lock (gate) if (revision != generation) throw new HostFailure(503, Locale.Get("remote.host.error.stopped"));
         var name = RemoteText.Cut(options.HostName, 120);

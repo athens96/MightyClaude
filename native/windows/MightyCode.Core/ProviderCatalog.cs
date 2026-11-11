@@ -54,7 +54,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     {
         var v = value ?? new(); var caps = Capabilities(provider);
         var permission = PermissionModes(provider).Contains(v.PermissionMode) ? v.PermissionMode : "manual";
-        return new(caps.Effort && (provider == "pi" ? Wire.PiThinkingLevels : Wire.Efforts).Contains(v.Effort) ? v.Effort : "default", permission, caps.MaxTurns && v.MaxTurns is >= 1 and <= 1000 ? v.MaxTurns : null, caps.MaxBudgetUsd && v.MaxBudgetUsd is > 0 and <= 10000 ? v.MaxBudgetUsd : null, caps.FastMode && v.FastMode, caps.WebSearch && v.WebSearch is "disabled" or "cached" or "live" ? v.WebSearch : "default", caps.NetworkAccess && permission is ("acceptEdits" or "onRequest") && v.NetworkAccess);
+        return new(caps.Effort && Wire.RunEfforts(provider).Contains(v.Effort) ? v.Effort : "default", permission, caps.MaxTurns && v.MaxTurns is >= 1 and <= 1000 ? v.MaxTurns : null, caps.MaxBudgetUsd && v.MaxBudgetUsd is > 0 and <= 10000 ? v.MaxBudgetUsd : null, caps.FastMode && v.FastMode, caps.WebSearch && v.WebSearch is "disabled" or "cached" or "live" ? v.WebSearch : "default", caps.NetworkAccess && permission is ("acceptEdits" or "onRequest") && v.NetworkAccess);
     }
     public static ModelCatalog Fallback(string provider)
     {
@@ -88,7 +88,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         foreach (var line in text.Split('\n').Take(256))
         {
             var fields = line.Split('\t', 2).Select(field => field.Trim(' ', '\t', '\r')).ToArray();
-            if (fields.Length != 2 || !Wire.Model(fields[0]) || fields[1].Length == 0 || models.Count > 128 || !seen.Add(fields[0])) continue;
+            if (fields.Length != 2 || !Wire.Model(fields[0]) || fields[1].Length == 0 || models.Count > Wire.ListedModelLimit("gemini") || !seen.Add(fields[0])) continue;
             models.Add(new(fields[0], Wire.Clean(fields[1], 160), ""));
         }
         return models.Count > 1 ? new("cli", models, Locale.Get("provider.catalog.antigravitySource")) : fallback;
@@ -125,7 +125,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             var fields = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             if (fields.Length < 6 || fields[0] == "provider" || fields[4] is not ("yes" or "no")) continue;
             var value = fields[0] + "/" + fields[1];
-            if (!Wire.Model(value) || models.Count > 512 || !seen.Add(value)) continue;
+            if (!Wire.Model(value) || models.Count > Wire.ListedModelLimit("pi") || !seen.Add(value)) continue;
             models.Add(new(value, value, Locale.Get("provider.catalog.piModelRow", new Dictionary<string, string> { ["context"] = fields[2], ["output"] = fields[3] }), SupportsEffort: fields[4] == "yes"));
         }
         return models.Count > 1 ? new("cli", models, Locale.Get("provider.catalog.piSource")) : fallback;
@@ -250,7 +250,8 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         if (provider == "pi") return catalog.Models.FirstOrDefault(m => m.Value == model)?.SupportsEffort == false ? [] : Wire.PiThinkingLevels;
         var row = catalog.Models.FirstOrDefault(m => m.Value == model || m.ResolvedModel == model);
         if (row?.SupportsEffort == false) return [];
-        if (row?.SupportedEffortLevels is { } levels) return levels.Where(Wire.Efforts.Contains).Distinct().ToArray();
+        // A Codex model's list may name `ultra`; Claude's never offers it, whatever its list says.
+        if (row?.SupportedEffortLevels is { } levels) return levels.Where((provider == "codex" ? Wire.CodexEfforts : Wire.Efforts).Contains).Distinct().ToArray();
         if (row is null && registeredModels is not null)
         {
             var reg = registeredModels.FirstOrDefault(r => r.Name == model);
@@ -260,10 +261,28 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
                 return (reg.SupportedEffortLevels ?? []).Where(Wire.Efforts.Contains).ToArray();
             }
         }
-        if (provider == "codex" || model.Contains("haiku", StringComparison.OrdinalIgnoreCase)) return [];
+        if (provider == "codex" || SilentHaiku(model, row?.SupportsEffort, row?.SupportedEffortLevels)) return [];
         if (Regex.IsMatch(model, @"(opus|sonnet)[-.]4[-.]6")) return ["low", "medium", "high", "max"];
         return Regex.IsMatch(model, @"^(default|best|fable|opus|sonnet|opusplan)(\[1m\])?$|fable[-.]5|opus[-.](5|4[-.][78])|sonnet[-.]5") ? Wire.Efforts : row?.SupportsEffort == true ? ["low", "medium", "high"] : [];
     }
+    /// <summary>
+    /// Why a run's effort cannot go with its model, by the list of its workspace (M/MightyCore/Models.swift validateSelection), or null: a level the
+    /// list does not name for that model, or, for a Haiku model that takes no effort at all (one the CLI says nothing about), Haiku's own words.
+    /// </summary>
+    public static string? EffortRefusal(string provider, string model, string effort, ModelCatalog catalog, IReadOnlyList<RegisteredModelEntry>? registeredModels)
+    {
+        if (effort == "default") return null;
+        var levels = Efforts(provider, model, catalog, registeredModels);
+        if (levels.Contains(effort)) return null;
+        return Locale.Get(provider == "claude" && levels.Length == 0 && model.Contains("haiku", StringComparison.OrdinalIgnoreCase) ? "validation.run.haikuEffort" : "run.error.effortNotSupported");
+    }
+    /// <summary>
+    /// A Haiku model the CLI says nothing about (M/MightyCore/Models.swift silentHaiku): no <c>supportsEffort</c> and no levels in its list, or no
+    /// list that names it. Haiku took no effort before Claude Code named levels for it, so such a model still takes none; what the CLI says wins
+    /// (2.1.322 gives Haiku 5.5 low to max, and nothing for Haiku 4.5).
+    /// </summary>
+    public static bool SilentHaiku(string model, bool? supportsEffort, string[]? levels) =>
+        supportsEffort is null && levels is null && model.Contains("haiku", StringComparison.OrdinalIgnoreCase);
     public static bool SupportsMods(string? version) => Regex.Match(version ?? "", @"(?<!\d)(\d+)\.(\d+)\.(\d+)(?![\d-])") is { Success: true } m && Version.Parse($"{m.Groups[1]}.{m.Groups[2]}.{m.Groups[3]}") >= new Version(2, 1, 271);
 
     public static bool SupportsCodexApprovals(string? version) => Regex.Match(version ?? "", @"(?<!\d)(\d+)\.(\d+)\.(\d+)(?![\d-])") is { Success: true } m && Version.Parse($"{m.Groups[1]}.{m.Groups[2]}.{m.Groups[3]}") >= new Version(0, 153, 4);
@@ -474,7 +493,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
                 else if (MetadataJson.Property(root, "result") is { ValueKind: JsonValueKind.Object } result && MetadataJson.Property(result, "data") is { ValueKind: JsonValueKind.Array } data)
                 {
                     AddCodexModels(models, data);
-                    if (++pages < 4 && models.Count < 128 && result.Text("nextCursor") is { Length: > 0 and < 4096 } cursor) await Send(JsonSerializer.Serialize(new { id = ++expected, method = "model/list", @params = new { limit = 64, includeHidden = false, cursor } }, Wire.Json));
+                    if (++pages < 4 && models.Count < 1 + Wire.ListedModelLimit("codex") && result.Text("nextCursor") is { Length: > 0 and < 4096 } cursor) await Send(JsonSerializer.Serialize(new { id = ++expected, method = "model/list", @params = new { limit = 64, includeHidden = false, cursor } }, Wire.Json));
                     else
                     {
                         var catalog = CodexCatalog(models);
@@ -504,7 +523,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     public static ModelCatalog ClaudeCatalog(JsonElement rows)
     {
         var models = Fallback("claude").Models.Take(1).ToList(); var listed = false;
-        foreach (var row in rows.EnumerateArray().Take(128))
+        foreach (var row in rows.EnumerateArray().Take(Wire.ListedModelLimit("claude")))
         {
             if (ReadModel(row, "claude") is not { } model) continue;
             listed = true;
@@ -527,7 +546,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     // (macOS ProviderService.normalizeCodexCatalog).
     public static void AddCodexModels(List<ModelOption> models, JsonElement data)
     {
-        foreach (var row in data.EnumerateArray().Take(128 - models.Count))
+        foreach (var row in data.EnumerateArray().Take(Math.Max(0, 1 + Wire.ListedModelLimit("codex") - models.Count)))
         {
             if (ReadModel(row, "codex") is not { } model) continue;
             models.Add(model);
@@ -539,11 +558,15 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     {
         var value = row.Text(provider == "codex" ? "model" : "value");
         if (!Wire.Model(value) || row.TryGetProperty("hidden", out var hidden) && hidden.ValueKind == JsonValueKind.True) return null;
-        string[]? efforts = null;
-        if (row.TryGetProperty(provider == "codex" ? "supportedReasoningEfforts" : "supportedEffortLevels", out var levels) && levels.ValueKind == JsonValueKind.Array) efforts = levels.EnumerateArray().Select(l => provider == "codex" ? l.Text("reasoningEffort") : l.ValueKind == JsonValueKind.String ? l.GetString() : null).Where(s => s is not null && Wire.Efforts.Contains(s)).Cast<string>().Distinct().ToArray();
-        var support = row.TryGetProperty("supportsEffort", out var supported) && supported.ValueKind is JsonValueKind.True or JsonValueKind.False ? supported.GetBoolean() : efforts is not null ? efforts.Length > 0 : (bool?)null;
-        if (value!.Contains("haiku")) { support = false; efforts = []; }
-        return new(value, Wire.Clean(row.Text("displayName") ?? value, 160), Wire.Clean(row.Text("description"), 2400), Wire.Model(row.Text("resolvedModel")) ? row.Text("resolvedModel") : null, support, efforts);
+        // The efforts the CLI names for the model: Codex's `ultra` among them (Wire.CodexEfforts), never for Claude.
+        string[]? efforts = null; var known = provider == "codex" ? Wire.CodexEfforts : Wire.Efforts;
+        if (row.TryGetProperty(provider == "codex" ? "supportedReasoningEfforts" : "supportedEffortLevels", out var levels) && levels.ValueKind == JsonValueKind.Array) efforts = levels.EnumerateArray().Select(l => provider == "codex" ? l.Text("reasoningEffort") : l.ValueKind == JsonValueKind.String ? l.GetString() : null).Where(s => s is not null && known.Contains(s)).Cast<string>().Distinct().ToArray();
+        bool? said = row.TryGetProperty("supportsEffort", out var supported) && supported.ValueKind is JsonValueKind.True or JsonValueKind.False ? supported.GetBoolean() : null;
+        var support = said ?? (efforts is not null ? efforts.Length > 0 : null);
+        // What the CLI says about a model's effort wins: Claude Code 2.1.322 gives Haiku 5.5 low to max. A Haiku model it says nothing about
+        // (Haiku 4.5 there) keeps the old rule, no effort.
+        if (provider == "claude" && SilentHaiku(value!, said, efforts)) { support = false; efforts = []; }
+        return new(value!, Wire.Clean(row.Text("displayName") ?? value, 160), Wire.Clean(row.Text("description"), 2400), Wire.Model(row.Text("resolvedModel")) ? row.Text("resolvedModel") : null, support, efforts);
     }
     public static List<string> Arguments(StartRunRequest value, string pluginDirectory, PhaseModelsSnapshot? phaseModels = null)
     {

@@ -303,7 +303,9 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     var runtime = await providers.GetRuntimeAsync(workingDirectory: workspace.Path); token.ThrowIfCancellationRequested();
                     var catalog = runtime.Providers.Single(p => p.Id == request.Provider).ModelCatalog;
                     request = PhaseModelPreferences.ResolveEffort(request, catalog);
-                    if (request.Settings!.Effort != "default" && !ProviderCatalog.Efforts(request.Provider, PhaseModelPreferences.EffectiveModel(request), catalog, request.RegisteredModels).Contains(request.Settings.Effort)) throw new ArgumentException(Locale.Get("run.error.effortNotSupported"));
+                    // A level the list does not name for the model is refused; a Haiku model that takes none, in Haiku's words.
+                    if (ProviderCatalog.EffortRefusal(request.Provider, PhaseModelPreferences.EffectiveModel(request), request.Settings!.Effort, catalog, request.RegisteredModels) is { } refusal)
+                        throw new ArgumentException(refusal);
                 }
                 if (request.Provider == "claude")
                 {

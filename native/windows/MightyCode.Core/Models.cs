@@ -19,6 +19,18 @@ public static class Wire
     /// <summary>The tools pi's read-only mode leaves on (<c>--tools</c>); full access passes none.</summary>
     public const string PiReadOnlyTools = "read,grep,find,ls";
     public static readonly string[] Efforts = ["low", "medium", "high", "xhigh", "max"];
+    /// <summary>
+    /// Codex's reasoning efforts (M/MightyCore/Models.swift codexEfforts): the shared five and <c>ultra</c>, which Codex 0.167.0 lists for most
+    /// of its models ("Maximum reasoning with automatic task delegation"). No other agent is offered it.
+    /// </summary>
+    public static readonly string[] CodexEfforts = [.. Efforts, "ultra"];
+    /// <summary>The efforts a pane of <paramref name="provider"/> may be set to besides "default": pi's thinking levels, Codex's own, else the shared five.</summary>
+    public static string[] RunEfforts(string provider) => provider == "pi" ? PiThinkingLevels : provider == "codex" ? CodexEfforts : Efforts;
+    /// <summary>
+    /// The most models a provider's list keeps besides its own default (M/MightyCore/Models.swift listedModelLimit): what each read of that CLI
+    /// keeps, so a list holds at most one more. A remote host sends no more, and its client keeps no more of an older host's longer list.
+    /// </summary>
+    public static int ListedModelLimit(string provider) => provider switch { "opencode" or "hermes" => 1_024, "pi" => 512, _ => 128 };
 }
 
 /// <summary>
@@ -423,13 +435,14 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
         if (!Wire.Identifier(SessionId) || !Wire.Identifier(WorkspaceId) || Kind is not ("claude" or "shell") || !Wire.Model(Model) || !Wire.Providers.Contains(Provider) || ResumeId is not null && !Wire.Identifier(ResumeId)) throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
         if (Input is null || string.IsNullOrWhiteSpace(Input) && files is null || Input.Length > 100000 || Input.Contains('\0')) throw new ArgumentException(Locale.Get("wire.startRun.emptyInput"));
         if (Kind == "shell" && files is not null) throw new ArgumentException(Locale.Get("wire.startRun.attachmentAiOnly"));
-        if (settings.Effort != "default" && !(Provider == "pi" ? Wire.PiThinkingLevels : Wire.Efforts).Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "onRequest" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
+        if (settings.Effort != "default" && !Wire.RunEfforts(Provider).Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "onRequest" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
         if (settings.PermissionMode == "onRequest" && (Provider != "codex" || Kind != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
         if (settings.PermissionMode == "auto" && (Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.autoModeClaudeOnly"));
         if (PermissionModeOverride is { } mode && (mode != "plan" || Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("plan.error.overrideClaudeOnly"));
         if (WorkingFolder is not null && (Kind != "claude" || !DelegationPanes.IsWorkingFolder(WorkingFolder))) throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
         if ((Provider != "codex" || Kind != "claude") && (settings.FastMode || settings.WebSearch != "default" || settings.NetworkAccess) || settings.NetworkAccess && settings.PermissionMode is not ("acceptEdits" or "onRequest")) throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
-        if (Kind == "claude" && (Provider != "claude" && (settings.MaxTurns is not null || settings.MaxBudgetUsd is not null) || Provider == "codex" && settings.PermissionMode == "plan" || Provider == "gemini" && settings.Effort != "default" || Provider == "claude" && Model.Contains("haiku", StringComparison.OrdinalIgnoreCase) && settings.Effort != "default")) throw new ArgumentException(Locale.Get("wire.startRun.unsupportedSettings"));
+        if (Kind == "claude" && (Provider != "claude" && (settings.MaxTurns is not null || settings.MaxBudgetUsd is not null) || Provider == "codex" && settings.PermissionMode == "plan" || Provider == "gemini" && settings.Effort != "default")) throw new ArgumentException(Locale.Get("wire.startRun.unsupportedSettings"));
+        // Whether a model takes the effort (Haiku among them) is its CLI list's to say, in the check before a run (RunManager).
         if (StyleAutoAllow is { Count: > 0 } grants && (Provider != "claude" || Kind != "claude" || grants.Count > 32 || grants.Any(g => !StyleRunPermissions.ValidWireName(g))))
             throw new ArgumentException("Invalid local style tool permissions.");
         return this with { Settings = settings, Attachments = files, StyleAutoAllow = StyleAutoAllow is { Count: > 0 } validGrants ? Array.AsReadOnly(validGrants.ToArray()) : null };

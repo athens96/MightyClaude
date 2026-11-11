@@ -766,8 +766,13 @@ public sealed partial class MainWindow : Window
                 _ => Locale.Get(provider is "codex" or "pi" ? "permission.label.defaultCodex" : "permission.label.default"),
             };
         }
-        /// <summary>A thinking effort's name on its pill and in its menu: the CLI's own level names (M/SessionPaneView.swift:899-901).</summary>
-        private static string EffortLabel(string effort) => effort switch { "off" => "Off", "minimal" => "Minimal", "low" => "Low", "medium" => "Medium", "high" => "High", "xhigh" => "XHigh", "max" => "Max", _ => "Auto" };
+        /// <summary>
+        /// A thinking effort's name in its menu: the CLI's own level names (M/SessionPaneView.swift effortLabel). Codex's <c>ultra</c> says in
+        /// words that it also hands work to sub-agents of its own (<c>composer.effort.ultra</c>).
+        /// </summary>
+        private static string EffortLabel(string effort) => effort switch { "off" => "Off", "minimal" => "Minimal", "low" => "Low", "medium" => "Medium", "high" => "High", "xhigh" => "XHigh", "max" => "Max", "ultra" => Locale.Get("composer.effort.ultra"), _ => "Auto" };
+        /// <summary>The effort pill's title (M/SessionPaneView.swift effortPillTitle): the level's short name, <c>ultra</c> as short as the others.</summary>
+        private static string EffortPillLabel(string effort) => effort == "ultra" ? "Ultra" : EffortLabel(effort);
         private static string PermissionHelp(string provider, string mode) => mode switch { "onRequest" => Locale.Get("permission.codex.onRequest"), "manual" => provider == "codex" ? Locale.Get("composer.permissionHelp.manualCodex") : Locale.Get("composer.permissionHelp.manual"), "plan" => Locale.Get("composer.permissionHelp.plan"), "acceptEdits" => provider == "codex" ? Locale.Get("composer.permissionHelp.acceptEditsCodex") : Locale.Get("composer.permissionHelp.acceptEdits"), "auto" => Locale.Get("composer.permissionHelp.auto"), "fullAccess" => Locale.Get("composer.permissionHelp.fullAccess"), _ => "" };
         /// Model names registered in saved state, for the effort list. Workspace
         /// entries come first and an app entry whose name is already present is
@@ -812,7 +817,7 @@ public sealed partial class MainWindow : Window
             model.Flyout = ModelMenu(pane, catalog);
 
             var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot));
-            Label(effort, EffortLabel(pane.Settings.Effort), Locale.Get("composer.effort.label"));
+            Label(effort, EffortPillLabel(pane.Settings.Effort), Locale.Get("composer.effort.label"));
             if (pane.Settings.Effort != "default" && !levels.Contains(pane.Settings.Effort)) AutomationProperties.SetName(effort, AutomationProperties.GetName(effort) + Locale.Get("composer.effort.unverifiedSuffix"));
             // What the pill does, or why it is off (M/SessionPaneView.swift:377).
             ToolTipService.SetToolTip(effort, levels.Length == 0 ? Locale.Get("composer.effort.unknownLevels") : Locale.Get("composer.effort.label") + " · " + Locale.Get("settings.run.appliesNextRequest"));
@@ -888,7 +893,7 @@ public sealed partial class MainWindow : Window
             var rows = new List<MenuFlyoutItemBase>();
             if (caps.Effort || pane.Settings.Effort != "default")
             {
-                var efforts = new MenuFlyoutSubItem { Text = Locale.Get("composer.effort.label") + " · " + EffortLabel(pane.Settings.Effort), IsEnabled = levels.Length > 0 || pane.Settings.Effort != "default" };
+                var efforts = new MenuFlyoutSubItem { Text = Locale.Get("composer.effort.label") + " · " + EffortPillLabel(pane.Settings.Effort), IsEnabled = levels.Length > 0 || pane.Settings.Effort != "default" };
                 foreach (var row in EffortChoices(pane, levels)) efforts.Items.Add(row);
                 rows.Add(efforts);
             }

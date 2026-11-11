@@ -92,8 +92,8 @@ internal static class ModelListProbeVerification
         Check(codex.IsFresh && codex.Models.Select(m => m.Value).SequenceEqual(["default", "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-6.1-terra", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"]),
             "codex: " + string.Join(", ", codex.Models.Select(m => m.Value)));
         Check(codex.Models[0].ResolvedModel == "gpt-6.1-sol", "codex: the default is the row it marks isDefault");
-        // codex lists an `ultra` effort the app has no setting for; the others stay.
-        Check(codex.Models[1].SupportedEffortLevels?.SequenceEqual(["low", "medium", "high", "xhigh", "max"]) == true, "codex: " + string.Join(", ", codex.Models[1].SupportedEffortLevels ?? []));
+        // codex lists `ultra` ("Maximum reasoning with automatic task delegation") for this model, which a Codex pane may take.
+        Check(codex.Models[1].SupportedEffortLevels?.SequenceEqual(["low", "medium", "high", "xhigh", "max", "ultra"]) == true, "codex: " + string.Join(", ", codex.Models[1].SupportedEffortLevels ?? []));
 
         var claudeLines = Fixture("model-list-claude.jsonl").Split('\n', StringSplitOptions.RemoveEmptyEntries);
         using var initialize = JsonDocument.Parse(claudeLines[1]);

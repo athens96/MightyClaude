@@ -37,12 +37,35 @@ public static class RemoteWorkspaceValidation
             throw new InvalidDataException(Locale.Get("remote.connect.error.notMighty"));
         foreach (var provider in value.Runtime.Providers ?? [])
             if (provider is null || !Wire.Providers.Contains(provider.Id) || provider.Name is not { Length: <= 120 } || provider.Detail is not { Length: <= 2_000 } || (provider.Version?.Length ?? 0) > 80
-                || provider.ModelCatalog?.Models is null || provider.ModelCatalog.Models.Count > 128 || provider.ModelCatalog.Detail is not { Length: <= 2_000 }
+                // A longer list is cut before this (Bounded), never refused: one long list (opencode lists hundreds) would drop the whole host.
+                || provider.ModelCatalog?.Models is null || provider.ModelCatalog.Models.Count > MaximumModels(provider.Id) || provider.ModelCatalog.Detail is not { Length: <= 2_000 }
                 // A newer host says why its latest read failed and when a kept list was read; an older one says neither.
                 || (provider.ModelCatalog.ReadFailure?.Length ?? 0) > 2_000 || (provider.ModelCatalog.ListedAt?.Length ?? 0) > 64
                 || !provider.ModelCatalog.Models.All(m => m is not null && Wire.Model(m.Value) && m.DisplayName is { Length: <= 160 } && m.Description is { Length: <= 2_400 })
                 || provider.Capabilities?.PermissionModes is null || !provider.Capabilities.PermissionModes.All(mode => mode is not null && PermissionMode(mode, provider.Id)))
                 throw new InvalidDataException(Locale.Get("remote.connect.error.badRuntime"));
+    }
+
+    /// <summary>
+    /// The most models one provider's list holds on the wire (M/Remote/RemoteWorkspaceModels.swift maximumModels): its own default and as many of
+    /// the CLI's as this app's own read of that CLI keeps (opencode and Hermes 1,024, pi 512, the others 128).
+    /// </summary>
+    public static int MaximumModels(string provider) => 1 + Wire.ListedModelLimit(provider);
+
+    /// <summary>
+    /// A host's runtime with each provider's model list cut to its first <see cref="MaximumModels"/> (M/Remote/RemoteWorkspaceModels.swift
+    /// bounded). The host sends no more, and a client keeps an older host's longer list to that many instead of refusing its whole /info.
+    /// </summary>
+    public static RuntimeInfo Bounded(RuntimeInfo runtime)
+    {
+        static ModelCatalog? Cut(ModelCatalog? catalog, string provider) =>
+            catalog?.Models is { } models && models.Count > MaximumModels(provider) ? catalog with { Models = models.Take(MaximumModels(provider)).ToList() } : catalog;
+        return runtime with
+        {
+            // The older field, Claude's list again.
+            ModelCatalog = Cut(runtime.ModelCatalog, "claude"),
+            Providers = runtime.Providers?.Select(provider => provider is null ? provider! : provider with { ModelCatalog = Cut(provider.ModelCatalog, provider.Id)! }).ToList()!,
+        };
     }
 
     /// <summary>Settings → Models as the client sent it: every value a model name or "default", every effort a known one.</summary>

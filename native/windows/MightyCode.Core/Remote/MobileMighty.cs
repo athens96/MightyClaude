@@ -445,7 +445,7 @@ public static class MobileRemoteSupport
     /// <summary>Absent when the provider has no reasoning-effort setting at all, so the phone shows no picker rather than one with a single dead choice.</summary>
     public static IReadOnlyList<MobileOption>? EffortOptions(bool supported, IEnumerable<string> levels)
         => supported ? [new("default", EffortLabel("default")), .. levels.Select(level => new MobileOption(level, EffortLabel(level)))] : null;
-    public static string EffortLabel(string effort) => effort switch { "low" => "Low", "medium" => "Medium", "high" => "High", "xhigh" => "XHigh", "max" => "Max", _ => "Auto" };
+    public static string EffortLabel(string effort) => effort switch { "low" => "Low", "medium" => "Medium", "high" => "High", "xhigh" => "XHigh", "max" => "Max", "ultra" => Locale.Get("composer.effort.ultra"), _ => "Auto" };
 
     /// <summary>
     /// The style a settings request leaves the pane with (M/MightyCode/AppStore+MobileRemote.swift:783-795).

@@ -319,7 +319,8 @@ public static class StatusLineSupport
         return obj.ToJsonString();
     }
 
-    private static readonly HashSet<string> s_validEfforts = ["low", "medium", "high", "xhigh", "max"];
+    // Claude Code's five levels, and Codex's `ultra` for a Codex pane set to it (M/MightyCore/StatusLine.swift).
+    private static readonly HashSet<string> s_validEfforts = [.. Wire.CodexEfforts];
 
     private static DateTimeOffset? TryParseIso8601(string s)
     {
