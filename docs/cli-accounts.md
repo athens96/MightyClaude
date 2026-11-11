@@ -96,13 +96,15 @@ CLI 탐색·모델 조회·실제 실행은 해당 작업 폴더의 로그인 �
 
 확인했지만 이번에 바꾸지 않은 것: Claude 2.1.322는 Haiku 5.5가 추론 강도(low~max)를 지원한다고 답하지만, 앱은 이름에 `haiku`가 든 모델의 추론 강도를 모두 끕니다(`normalizeClaudeCatalog`, `validation.run.haikuEffort`). Codex 0.167.0은 `ultra` 강도를 알리지만 앱의 강도 목록에 없어 빠집니다.
 
-Windows가 따라야 할 것(아직 하지 않음):
+Windows(2026-11-11 반영, `native/windows/MightyCode.Core`):
 
-- `native/windows/MightyCode.Core/ProviderCatalog.cs`의 `QuietEnvironment()`가 Claude 모델 목록 조회(`ClaudeHeadlessEnvironment`)에도 `DISABLE_TELEMETRY=1`을 넣습니다. Claude가 내장 목록으로 답해 Fable 5.2가 빠지므로, Claude 조회에서는 빼야 합니다(Mac의 `quietClaudeEnvironment`).
-- 실패한 읽기에 이전 목록 간직(`readFailure`·`listedAt`, 저장 파일), 메뉴의 흐린 줄(`composer.model.listFallback`·`composer.model.listKept`, 이유는 도움말), 이유 문구(`provider.catalog.failure.exit`·`provider.catalog.failure.noModels`).
-- `ModelSelectionSupport.Reconcile`과 Antigravity의 실행 전 기본값 전환이 `Source == "cli"`가 아니라 새로 읽은 목록(`readFailure` 없음)만 믿도록.
-- 로그인 완료·로그아웃 때 그 제공자의 목록 캐시를 워크스페이스와 관계없이 버리기.
-- 목록 명령 인자를 고정하는 테스트(agy는 `models`만 받는다).
+- CLI 환경(`ProviderCatalog.QuietEnvironment()`)에 `DISABLE_TELEMETRY`를 넣지 않습니다. 같은 환경을 쓰는 Claude 목록 조회(`ClaudeHeadlessEnvironment`)·버전 확인·실행 모두 그렇습니다(Mac의 실행도 넣지 않는다).
+- 목록 명령 표 `ProviderCatalog.ModelListArguments`: codex·agy·pi는 위 표와 같고, Claude는 Windows가 원래 쓰던 headless 인자(`--print --verbose --input-format stream-json --output-format stream-json --no-session-persistence --permission-mode dontAsk --permission-prompts none --strict-mcp-config --mcp-config {"mcpServers":{}} --tools "" --safe-mode`, 작업 지도 요약과 공유)에 `initialize` 하나입니다. 이 인자를 claude 2.1.322에 그대로 실행해 확인했습니다(`DISABLE_TELEMETRY` 없이 Fable 5.2가 든 14개, 있으면 내장 목록 5개). `ModelListProbeVerification`이 표를 고정하고, 같은 픽스처를 Windows 정규화기로 읽어 Mac과 같은 결과를 확인하며, 다른 인자를 거절하는 가짜 CLI(테스트 프로그램 자신, `--model-list-cli`)로 끝까지 읽습니다.
+- 실패한 읽기의 이유(`ProviderCatalog.ReadFailure`, 같은 문구 키)와 이전 목록 간직(`KeptModelLists.cs`): 저장 파일은 `%APPDATA%\MightyCode\model-lists.json`(프로필 폴더, 같은 한도와 형식), 이 사용자의 프로필 폴더 안에 있고 Mac/Linux 검사에서는 권한 0600으로 씁니다. `ModelCatalog.ReadFailure`·`ListedAt`은 같은 이름의 선택 필드이고, Windows 클라이언트도 호스트가 보낸 값을 2,000·64자로 제한해 받습니다.
+- 새로 읽은 목록(`ModelCatalog.IsFresh`)만 `ModelSelectionSupport.Reconcile`, Antigravity의 실행 전 기본값 전환(`AntigravityMigration.ModelUnavailable`), Claude 모델 초기화의 성공 판정(`ClaudeModelReset`)을 바꿉니다. 실패한 결과(기본·이전 목록)는 보내기 직전 확인에서 15초 동안 다시 쓰고, 창 선택과 새로고침 단추는 바로 다시 읽습니다(`ModelCatalogRefresh`).
+- 메뉴의 흐린 줄: WinUI 메뉴는 새로고침 아래 비활성 항목(`MenuNote`, 이유는 툴팁·도움말 텍스트), 웹 화면은 `note` 행(`title`이 이유). 원격 창은 호스트의 실패를 같은 줄로 보입니다.
+- 로그인 확인(설정의 터미널 로그인 대기가 로그인으로 끝남)·로그아웃·로그인 복구의 로그인 때 그 제공자의 목록을 워크스페이스와 관계없이 버리고(`ModelCatalogRefresh.Invalidate`), 이어지는 전체 읽기가 지금 워크스페이스의 목록을 새로 가져옵니다.
+- opencode·Hermes는 Windows에 아직 없습니다(2부).
 
 ### Bedrock 인증 진단
 
