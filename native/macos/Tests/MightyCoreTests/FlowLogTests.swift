@@ -290,4 +290,16 @@ struct FlowLogTests {
         let damaged = #"{"id":"p","workspaceId":"w","title":"Claude","flowLogCollapsed":"yes"}"#
         #expect(try JSONDecoder().decode(RunSession.self, from: Data(damaged.utf8)).flowLogCollapsed == nil)
     }
+
+    @Test func aShortPaneKeepsTheDiagramAndShowsTheStripsStatusLineAlone() {
+        // The Mac strip: a 23 pt header and 96 pt of rows; the diagram keeps 160 pt before the rows show.
+        let head = 23.0, rows = 96.0
+        #expect(FlowLog.rowsFit(room: head + rows + FlowLog.diagramRoom, head: head, rows: rows))
+        #expect(FlowLog.rowsFit(room: 900, head: head, rows: rows))
+        // A flow no taller than the open strip: before, the strip kept its rows and left the diagram 0 pt.
+        #expect(!FlowLog.rowsFit(room: head + rows + FlowLog.diagramRoom - 1, head: head, rows: rows))
+        #expect(!FlowLog.rowsFit(room: head + rows, head: head, rows: rows))
+        // Not measured yet: the rows show.
+        #expect(FlowLog.rowsFit(room: 0, head: head, rows: rows))
+    }
 }

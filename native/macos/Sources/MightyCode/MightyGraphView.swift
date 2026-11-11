@@ -136,6 +136,8 @@ struct MightyGraphView: View {
     /// The custom agents the pane's blocks name: their colours on those blocks' headers (`FlowRoles.subagent`).
     @StateObject private var agentDefinitions = MightyGraphAgentDefinitionsModel()
     @ViewState private var canvasViewport: CGSize?
+    /// The log strip shows its status line alone: the pane is too short for its rows beside the diagram (`FlowLog.rowsFit`).
+    @ViewState private var logSqueezed = false
     /// Timeline rows opened to show what their diagram card holds.
     @ViewState private var timelineOpen = Set<String>()
     /// Requests whose fold differs from the default: the newest open, the rest folded.
@@ -354,8 +356,8 @@ struct MightyGraphView: View {
                 // following camera keeps its block above the composer, any other stays.
                 .background(GeometryReader { geo in
                     Color.clear
-                        .onAppear { canvasViewport = geo.size }
-                        .onChange(of: geo.size) { _, new in canvasViewport = new }
+                        .onAppear { canvasViewport = geo.size; squeezeLog(canvasHeight: geo.size.height) }
+                        .onChange(of: geo.size) { _, new in canvasViewport = new; squeezeLog(canvasHeight: new.height) }
                 })
                 // A plan waiting for an answer is what the user has to read next.
                 .onChange(of: planNodeID) { _, id in
@@ -382,7 +384,8 @@ struct MightyGraphView: View {
                 // things that happened. Its rows are read only while it is open.
                 if fanOut != nil, let status = FlowLog.status(runs, advisor: FlowAdvisor.status(runs)) {
                     MightyGraphLogStrip(sessionID: sessionID, status: status,
-                                        rows: logOpen ? FlowLog.rows(runs, definitions: agentDefinitions.definitions, advisor: FlowAdvisor.notes(runs)) : [], open: logOpen,
+                                        rows: logOpen && !logSqueezed ? FlowLog.rows(runs, definitions: agentDefinitions.definitions, advisor: FlowAdvisor.notes(runs)) : [], open: logOpen,
+                                        squeezed: logSqueezed,
                                         onToggle: {
                                             onFocus()
                                             onLogOpen(!logOpen)
@@ -567,6 +570,15 @@ struct MightyGraphView: View {
 
     /// The layout moved every card off screen while the camera stood still —
     /// a trim, a collapsed card, anything else that shortens the document.
+    /// The log strip's rows only while the flow keeps the diagram its room (`FlowLog.rowsFit`). The flow is the canvas and the
+    /// strip as it stands now, so a strip that folds or opens leaves the answer as it was and the strip never flickers.
+    private func squeezeLog(canvasHeight: CGFloat) {
+        guard fanOut != nil, canvasHeight > 0 else { return }
+        let strip = MightyGraphLogStrip.headerHeight + (logOpen && !logSqueezed ? MightyGraphLogStrip.rowsHeight : 0)
+        let squeeze = !FlowLog.rowsFit(room: Double(canvasHeight + strip), head: Double(MightyGraphLogStrip.headerHeight), rows: Double(MightyGraphLogStrip.rowsHeight))
+        if squeeze != logSqueezed { logSqueezed = squeeze }
+    }
+
     private func reaim(_ graph: MightyGraphLayout, after loss: MightyGraphCamera.StrandedWatch.Loss) {
         // A request that arrived since the detection aims the camera itself, and a
         // following camera keeps its own block on screen.

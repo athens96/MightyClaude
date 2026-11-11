@@ -59,6 +59,16 @@ public enum FlowLog {
 
     /// The rows the strip shows when it is open.
     public static let visibleRows = 5
+    /// What the diagram's own view keeps of the pane's flow before the strip shows its rows (Windows `flow.ts` LogDiagramRoom).
+    public static let diagramRoom: Double = 160
+
+    /// Whether the strip shows its rows in a flow `room` points high (the diagram's view and the strip under it), the strip's
+    /// header being `head` and its rows `rows` high: only while the diagram still keeps `diagramRoom` beside them. A shorter pane
+    /// shows the strip's status line alone, whatever the pane's fold, so the log never takes the diagram's whole height; an
+    /// unmeasured flow (0) shows them (Windows `logRowsFit`).
+    public static func rowsFit(room: Double, head: Double, rows: Double) -> Bool {
+        room <= 0 || room >= head + rows + diagramRoom
+    }
     /// The most a row's words hold; the view cuts what does not fit its width.
     static let lineBytes = 240
 

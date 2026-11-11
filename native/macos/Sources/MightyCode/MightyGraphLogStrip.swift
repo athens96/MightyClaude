@@ -10,12 +10,18 @@ struct MightyGraphLogStrip: View {
     /// The rows of an open strip, oldest first.
     let rows: [FlowLog.Row]
     let open: Bool
+    /// The pane is too short for the rows beside the diagram (`FlowLog.rowsFit`): the status line alone, and no fold button —
+    /// the pane's fold comes back with the room.
+    var squeezed = false
     let onToggle: () -> Void
     let onReveal: (FlowLog.Row) -> Void
 
     /// One row's height. An open strip keeps room for `FlowLog.visibleRows` of them, so the diagram over it does not
     /// move as the rows come in.
     private static let rowHeight: CGFloat = 18
+    /// The header line with the divider over it, and an open strip's rows with theirs: what `FlowLog.rowsFit` weighs.
+    static let headerHeight: CGFloat = 1 + DesignMetrics.Layout.hitTarget
+    static let rowsHeight: CGFloat = 1 + CGFloat(FlowLog.visibleRows) * rowHeight + 2 * DesignMetrics.Spacing.xxs
     /// The column of who did it: a model's name fits whole, a longer agent name is cut.
     private static let whoWidth: CGFloat = 132
 
@@ -23,7 +29,7 @@ struct MightyGraphLogStrip: View {
         VStack(alignment: .leading, spacing: 0) {
             Divider().overlay(Palette.border)
             header
-            if open {
+            if open && !squeezed {
                 Divider().overlay(Palette.border)
                 list
             }
@@ -42,12 +48,14 @@ struct MightyGraphLogStrip: View {
                 .accessibilityIdentifier("mighty-log-status-\(sessionID)")
             Spacer(minLength: DesignMetrics.Spacing.xs)
             // The strip stands at the pane's foot and opens upward.
+            if !squeezed {
             Button(action: onToggle) { Image(systemName: open ? "chevron.down" : "chevron.up") }
                 .buttonStyle(.plain).foregroundStyle(Palette.ink2)
                 .frame(width: DesignMetrics.Layout.hitTarget, height: DesignMetrics.Layout.hitTarget).contentShape(Rectangle())
                 .help(open ? L("graph.log.hide") : L("graph.log.show"))
                 .accessibilityLabel(open ? L("graph.log.hide") : L("graph.log.show"))
                 .accessibilityIdentifier("mighty-log-toggle-\(sessionID)")
+            }
         }
         .padding(.horizontal, DesignMetrics.Inset.graphBarH)
     }
