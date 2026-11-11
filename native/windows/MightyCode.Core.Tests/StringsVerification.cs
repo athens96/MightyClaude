@@ -301,6 +301,13 @@ internal static class StringsVerification
         ["DetailRateLimited"] = "조회가 제한되었습니다. 잠시 후 자동으로 다시 확인합니다.",
         ["DetailLastKnownSuffix"] = " 마지막으로 확인한 값입니다.",
         ["DetailAntigravityUnavailable"] = "Antigravity CLI는 이 연결 방식에서 계정 한도를 제공하지 않습니다. 터미널의 agy에서 /usage로 확인하세요.",
+        // Antigravity's own limits (AccountUsageService.swift antigravity, RateLimitWindowLabel's grouped windows).
+        ["GroupWindowTemplate"] = "{group} · {window}",
+        ["AntigravityGroupGemini"] = "Gemini",
+        ["AntigravityGroupClaudeGpt"] = "Claude·GPT",
+        ["DetailAntigravity"] = "Antigravity 계정 한도",
+        ["DetailAntigravityNotInstalled"] = "Antigravity CLI(agy)를 설치하고 로그인하세요.",
+        ["DetailAntigravityNoWindows"] = "이 계정은 사용 한도 기간을 제공하지 않습니다.",
         ["DetailUnsupportedProvider"] = "지원하지 않는 계정입니다.",
         ["DetailCodexNotInstalled"] = "Codex CLI를 설치하고 로그인하세요.",
         ["DetailCodexNeedsChatGPT"] = "ChatGPT로 Codex CLI에 로그인하면 계정 한도를 확인할 수 있습니다.",

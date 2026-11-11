@@ -27,7 +27,7 @@ macOS `AccountUsageService.swift` · `StatusBarUsage.swift` · `AccountUsageSnap
 | --- | --- |
 | Claude | 실행 중 CLI가 보고한 한도(`SessionUsage.RateLimits`)만 |
 | Codex | 자기 CLI의 `codex app-server`에 stdio로 물어본 값 |
-| Gemini | macOS와 같은 문장 — `/stats`에서 확인하라는 안내 |
+| Antigravity (`gemini`) | 자기 CLI에 `agy -p /usage --output-format json`으로 물어본 값(macOS와 같음): 모델 그룹마다 5시간·주간 창(`session@gemini`, `weekly@claude_gpt`처럼 묶인 종류, 표시는 `Gemini · 세션`, `Claude·GPT · 주간`). 칩과 작업 현황 막대는 창마다 가장 많이 쓴 그룹을, 팝오버는 모든 그룹을 보인다. 임시 폴더에서 실행해 프로젝트 설정을 읽지 않고, 모델을 부르지 않으며(20초, 1 MiB), 출력은 해석 뒤 버린다. agy가 없으면 설치·로그인 안내, 로그아웃이면 로그인 확인 문장(`AntigravityAccountProbe`) |
 
 켠 뒤에만 `https://api.anthropic.com`에 직접 묻는다.
 

@@ -86,6 +86,10 @@ public static class AccountUsageSupport
     /// The macOS RateLimitWindowLabel, in the selected app language.
     public static string WindowLabel(string kind)
     {
+        // A grouped window, "<window>@<group>" (Antigravity's model groups share one 5-hour and one weekly limit each): the group, then the window.
+        if (kind.IndexOf('@') is var at and >= 0)
+            // The window first: a group keeps agy's own name, which may hold any text.
+            return AccountUsageStrings.GroupWindowTemplate.Replace("{window}", WindowLabel(kind[..at])).Replace("{group}", GroupLabel(kind[(at + 1)..]));
         var lowered = kind.ToLowerInvariant();
         switch (lowered)
         {
@@ -101,6 +105,17 @@ public static class AccountUsageSupport
         if (lowered.Length > 1 && lowered[^1] == 'h' && lowered[..^1].All(char.IsAsciiDigit)) return Locale.Get("windows.accountUsage.hours", new Dictionary<string, string> { ["count"] = lowered[..^1] });
         return kind.Replace('_', ' ');
     }
+    /// <summary>The window part of a grouped kind ("session@gemini" → "session"); other kinds as they are.</summary>
+    public static string Window(string kind) => kind.IndexOf('@') is var at and >= 0 ? kind[..at] : kind;
+    /// <summary>Whether the kind is one group's window ("session@gemini").</summary>
+    public static bool Grouped(string kind) => kind.Contains('@');
+    /// <summary>Antigravity's two known groups read in the app's language; any other group keeps agy's own name.</summary>
+    public static string GroupLabel(string group) => group switch
+    {
+        "gemini" => AccountUsageStrings.AntigravityGroupGemini,
+        "claude_gpt" => AccountUsageStrings.AntigravityGroupClaudeGpt,
+        _ => group,
+    };
     public static string Percent(double value) => ((int)Math.Round(value, MidpointRounding.AwayFromZero)).ToString();
 }
 
@@ -382,6 +397,107 @@ public static class CodexAccountProbe
             }
             else return Map(account, result);
         }
+    }
+}
+
+/// <summary>
+/// Antigravity's own read of its quota (M/MightyCore/AccountUsageService.swift antigravity): <c>agy -p /usage --output-format json</c>,
+/// answered locally without a model call. It runs in the temporary folder so no project's configuration is read, with the CLI's own
+/// sign-in; the output is parsed and dropped, never logged.
+/// </summary>
+public static class AntigravityAccountProbe
+{
+    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
+    public static readonly IReadOnlyList<string> Arguments = ["-p", "/usage", "--output-format", "json"];
+
+    public static async Task<AccountUsageSnapshot> ReadAsync(CliCommand command, IReadOnlyDictionary<string, string> environment, CancellationToken cancellation = default, TimeSpan? timeout = null)
+    {
+        var quiet = new Dictionary<string, string>(environment) { ["NO_COLOR"] = "1", ["CI"] = "1" };
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation); deadline.CancelAfter(timeout ?? Timeout);
+        string stdout, stderr = "";
+        try
+        {
+            await using var child = ProviderCatalog.StartCli(command.Binary, command.Prefix.Concat(Arguments), Path.GetTempPath(), quiet);
+            child.Input.Close();
+            var errors = ProviderCatalog.ReadBoundedAsync(child.Error, AccountUsageSupport.MaximumBodyBytes, deadline.Token);
+            _ = errors.ContinueWith(t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            stdout = await ProviderCatalog.ReadBoundedAsync(child.Output, AccountUsageSupport.MaximumBodyBytes, deadline.Token);
+            await child.Completion.WaitAsync(deadline.Token);
+            // What it said on standard error, once it closed it or a second passed: only a sign-in failure is read from it.
+            try { stderr = await errors.WaitAsync(TimeSpan.FromSeconds(1), cancellation); }
+            catch (Exception ex) when (ex is TimeoutException or IOException or InvalidDataException or ObjectDisposedException || ex is OperationCanceledException && !cancellation.IsCancellationRequested) { }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidDataException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        { throw new AccountUsageFailure(AccountUsageFailureKind.Network, AccountUsageStrings.DetailRefreshFailed); }
+        return Map(stdout, stderr);
+    }
+
+    /// <summary>
+    /// Each agy group ("Gemini Models", "Claude and GPT models") has its own 5-hour and weekly bucket; a window's kind is
+    /// <c>&lt;window&gt;@&lt;group&gt;</c>, so the four stay apart and read "Gemini · 세션", "Claude·GPT · 주간". A signed-out agy is a sign-in to
+    /// check; anything that is not its reply is an invalid response.
+    /// </summary>
+    public static AccountUsageSnapshot Map(string stdout, string stderr = "")
+    {
+        if (Groups(stdout) is not { } groups)
+        {
+            if (CliAuthFailure.Antigravity(stdout[..Math.Min(stdout.Length, 65_536)] + stderr[..Math.Min(stderr.Length, 65_536)]))
+                throw new AccountUsageFailure(AccountUsageFailureKind.Authentication, AccountUsageStrings.DetailAuthentication);
+            throw new AccountUsageFailure(AccountUsageFailureKind.InvalidResponse, AccountUsageStrings.DetailRefreshFailed);
+        }
+        var windows = new List<AccountUsageWindow>();
+        foreach (var group in groups.Take(16))
+        {
+            if (MetadataJson.Property(group, "buckets") is not { ValueKind: JsonValueKind.Array } buckets) continue;
+            var name = AccountUsageSupport.Text(group.Text("name"));
+            foreach (var bucket in buckets.EnumerateArray().Take(16))
+            {
+                if (AccountUsageSupport.Number(bucket, "remaining_fraction") is not { } remaining || remaining < -0.001 || remaining > 1.001
+                    || GroupToken(name, AccountUsageSupport.Text(bucket.Text("id"))) is not { } token) continue;
+                var (window, minutes) = AccountUsageSupport.Text(bucket.Text("window"))?.ToLowerInvariant() switch
+                {
+                    "5h" => ("session", (int?)300),
+                    "weekly" => ("weekly", (int?)10080),
+                    "daily" => ("daily", (int?)1440),
+                    { } other => (new string(other.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray()), (int?)null),
+                    null => ("", (int?)null),
+                };
+                if (window.Length == 0) continue;
+                var kind = window + "@" + token;
+                if (windows.Any(w => w.Kind == kind)) continue;
+                windows.Add(new AccountUsageWindow(kind, Math.Clamp((1 - remaining) * 100, 0, 100), AccountUsageSupport.Reset(MetadataJson.Property(bucket, "reset_time")), minutes));
+            }
+        }
+        return new AccountUsageSnapshot
+        {
+            Provider = "gemini",
+            Windows = windows,
+            Status = windows.Count == 0 ? "unavailable" : "available",
+            Detail = windows.Count == 0 ? AccountUsageStrings.DetailAntigravityNoWindows : AccountUsageStrings.DetailAntigravity,
+        };
+    }
+
+    /// <summary><c>command.data.groups</c> of a successful <c>/usage</c> reply, or null for anything else (a line of noise around it is allowed).</summary>
+    private static List<JsonElement>? Groups(string text)
+    {
+        if (System.Text.Encoding.UTF8.GetByteCount(text) > AccountUsageSupport.MaximumBodyBytes) return null;
+        static JsonElement? Parse(string value) { try { using var document = JsonDocument.Parse(value); return document.RootElement.Clone(); } catch (JsonException) { return null; } }
+        var root = Parse(text);
+        if (root is null && text.IndexOf('{') is var start and >= 0 && text.LastIndexOf('}') is var end && start < end) root = Parse(text[start..(end + 1)]);
+        if (root is not { ValueKind: JsonValueKind.Object } value || value.Text("status") is { } status && !status.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase)) return null;
+        if (MetadataJson.Property(value, "command") is not { ValueKind: JsonValueKind.Object } command || MetadataJson.Property(command, "data") is not { ValueKind: JsonValueKind.Object } data
+            || MetadataJson.Property(data, "groups") is not { ValueKind: JsonValueKind.Array } groups) return null;
+        return groups.EnumerateArray().Where(group => group.ValueKind == JsonValueKind.Object).ToList();
+    }
+
+    /// <summary>The known groups by name or bucket id; any other keeps agy's own group name.</summary>
+    private static string? GroupToken(string? name, string? bucketId)
+    {
+        var lowered = name?.ToLowerInvariant() ?? ""; var id = bucketId?.ToLowerInvariant() ?? "";
+        if (lowered.StartsWith("gemini", StringComparison.Ordinal) || id.StartsWith("gemini-", StringComparison.Ordinal)) return "gemini";
+        if (lowered.Contains("claude", StringComparison.Ordinal) && lowered.Contains("gpt", StringComparison.Ordinal) || id.StartsWith("3p-", StringComparison.Ordinal)) return "claude_gpt";
+        return name is null ? null : name.Replace('@', ' ')[..Math.Min(name.Length, 40)];
     }
 }
 

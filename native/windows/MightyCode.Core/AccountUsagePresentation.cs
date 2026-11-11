@@ -166,10 +166,26 @@ public sealed class AccountUsageStatus : IAsyncDisposable
                 AccountUsageSupport.WindowLabel(w.Kind), AccountUsageSupport.Percent(w.UsedPercent) + "%", Math.Clamp(w.UsedPercent / 100, 0, 1), w.UsedPercent >= 90)).ToList()))
             .Where(row => row.Bars.Count > 0).ToList();
 
-    /// The two windows worth a chip: the session window, then the weekly one.
-    public static IReadOnlyList<AccountUsageWindow> Leading(IReadOnlyList<AccountUsageWindow> windows) =>
-        windows.Where(w => w.Kind != "spend_limit").OrderBy(w => Rank(w.Kind)).Take(2).ToList();
-    private static int Rank(string kind) => kind.ToLowerInvariant() switch
+    /// <summary>
+    /// The two windows worth a chip: the session window, then the weekly one (M/MightyCore/SessionUsage.swift RateLimitWindowLabel.leading).
+    /// Grouped windows (Antigravity's model groups) give the most-used group of each, so the chip shows the limit that runs out first;
+    /// the popover lists every group.
+    /// </summary>
+    public static IReadOnlyList<AccountUsageWindow> Leading(IReadOnlyList<AccountUsageWindow> windows)
+    {
+        var ranked = windows.Select((window, index) => (window, index)).Where(item => item.window.Kind != "spend_limit").ToList();
+        ranked.Sort((a, b) =>
+        {
+            var (ra, rb) = (Rank(a.window.Kind), Rank(b.window.Kind));
+            if (ra != rb) return ra.CompareTo(rb);
+            if (AccountUsageSupport.Grouped(a.window.Kind) && AccountUsageSupport.Grouped(b.window.Kind) && a.window.UsedPercent != b.window.UsedPercent) return b.window.UsedPercent.CompareTo(a.window.UsedPercent);
+            return a.index.CompareTo(b.index);
+        });
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        return ranked.Select(item => item.window).Where(window => !AccountUsageSupport.Grouped(window.Kind) || seen.Add(AccountUsageSupport.WindowLabel(AccountUsageSupport.Window(window.Kind)))).Take(2).ToList();
+    }
+    // Ranked by what the window is (its window part for a grouped one), not by its label in the current language.
+    private static int Rank(string kind) => AccountUsageSupport.Window(kind).ToLowerInvariant() switch
     { "session" or "five_hour" or "5h" or "primary" => 0, "weekly" or "seven_day" or "7d" or "secondary" => 1, _ => 2 };
 
     private static bool IsSessionReport(string? detail) => new[] { "en", "ko" }.Any(language =>

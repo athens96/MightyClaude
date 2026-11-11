@@ -68,7 +68,12 @@ public static class AccountUsageRuntime
                 return await CodexAccountProbe.ReadAsync(() => new CodexStdio(command, workingDirectory), CodexAccountProbe.Timeout, cancellation);
             }
             case "gemini":
-                throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailAntigravityUnavailable);
+            {
+                // Antigravity answers /usage itself, locally and without a model call (AntigravityAccountProbe).
+                var command = await find("gemini", cancellation)
+                    ?? throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailAntigravityNotInstalled);
+                return await AntigravityAccountProbe.ReadAsync(command, environment(), cancellation);
+            }
             case "pi":
                 throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, Locale.Get("accountUsage.detailPiUnavailable"));
             default:

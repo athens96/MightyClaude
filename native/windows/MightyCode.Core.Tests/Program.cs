@@ -24,6 +24,8 @@ if (args.Length >= 2 && args[0] == "--workmap-fake") { await WorkMapVerification
 if (args.Length >= 3 && args[0] == "--fake-cli") { await Verification.FakeCliAsync(args[1], args[2], args.Skip(3).ToArray()); return; }
 // The four CLIs' model-list reads, answered with the real CLIs' recorded output (native/contracts/fixtures/model-list-*).
 if (args.Length >= 3 && args[0] == "--model-list-cli") { await ModelListProbeVerification.FakeCliAsync(args[1], args[2], args.Skip(3).ToArray()); return; }
+// agy answering /usage as agy 1.5.5 does, for the account usage probe.
+if (args.Length >= 2 && args[0] == "--agy-usage-cli") { await AntigravityAccountUsageVerification.FakeAgyUsageAsync(args[1], args.Skip(2).ToArray()); return; }
 // The scripted Claude of the delegation checks, and the app's delegation server it reaches, as the app binary runs it.
 if (args.Length >= 2 && args[0] == DelegationFakeClaude.Argument) { Environment.ExitCode = await DelegationFakeClaude.RunAsync(args[1], args.Skip(2).ToArray()); return; }
 if (args.SequenceEqual([DelegationMcp.HeadlessArgument])) { Environment.ExitCode = await DelegationMcp.MainAsync(); return; }await Verification.RunAsync();

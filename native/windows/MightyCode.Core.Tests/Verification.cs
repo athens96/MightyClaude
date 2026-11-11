@@ -1277,6 +1277,11 @@ internal static class Verification
         await Test("account usage claude reads quota and profile from the credentials file", AccountUsageVerification.ClaudeReadsQuotaAndProfileFromTheCredentialsFile);
         await Test("account usage failure keeps the last known value and backs off", AccountUsageVerification.FailureKeepsTheLastKnownValueAndBacksOff);
         await Test("account usage codex is asked through its own app-server", AccountUsageVerification.CodexIsAskedThroughItsOwnAppServer);
+        await Test("account usage antigravity: agy's /usage reply gives each group's 5-hour and weekly window", AntigravityAccountUsageVerification.TheUsageReplyGivesFourGroupedWindows);
+        await Test("account usage antigravity: the chip keeps the session window then the weekly one, the most-used group of each", AntigravityAccountUsageVerification.LeadingKeepsUngroupedOrder);
+        await Test("account usage antigravity: invalid buckets are skipped and an unknown group keeps its name", AntigravityAccountUsageVerification.InvalidBucketsAreSkippedAndUnknownGroupsKeepTheirName);
+        await Test("account usage antigravity: signed out is a sign-in to check, anything else an invalid reply", AntigravityAccountUsageVerification.SignedOutReadsAsAuthenticationAndGarbageAsInvalid);
+        await Test("account usage antigravity: the app's probe runs agy -p /usage in the temporary folder, and the chip and card show it", AntigravityAccountUsageVerification.TheAppsProbeRunsAgyUsage);
         await Test("account usage closing the app cancels pending reads", AccountUsageVerification.ClosingTheAppCancelsPendingReads);
         await Test("usage reset renders the seven states from the shared keys", AccountUsageVerification.UsageResetRendersSevenStates);
         await Test("usageReset unknown", AccountUsageVerification.UsageResetUnknown);

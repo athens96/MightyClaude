@@ -36,6 +36,13 @@ public static class AccountUsageStrings
     public static string DetailRateLimited => Locale.Get("windows.accountUsage.detailRateLimited");
     public static string DetailLastKnownSuffix => Locale.Get("windows.accountUsage.detailLastKnownSuffix");
     public static string DetailAntigravityUnavailable => Locale.Get("accountUsage.detailAntigravityUnavailable");
+    /// <summary>A grouped window's label (Antigravity's model groups): "{group} · {window}".</summary>
+    public static string GroupWindowTemplate => Locale.Get("accountUsage.groupWindow");
+    public static string AntigravityGroupGemini => Locale.Get("accountUsage.antigravityGroupGemini");
+    public static string AntigravityGroupClaudeGpt => Locale.Get("accountUsage.antigravityGroupClaudeGPT");
+    public static string DetailAntigravity => Locale.Get("accountUsage.detailAntigravity");
+    public static string DetailAntigravityNotInstalled => Locale.Get("accountUsage.detailAntigravityNotInstalled");
+    public static string DetailAntigravityNoWindows => Locale.Get("accountUsage.detailAntigravityNoWindows");
     public static string DetailUnsupportedProvider => Locale.Get("windows.accountUsage.detailUnsupportedProvider");
     public static string DetailCodexNotInstalled => Locale.Get("windows.accountUsage.detailCodexNotInstalled");
     public static string DetailCodexNeedsChatGPT => Locale.Get("windows.accountUsage.detailCodexNeedsChatGPT");
