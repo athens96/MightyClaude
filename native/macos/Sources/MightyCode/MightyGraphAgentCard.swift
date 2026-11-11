@@ -1,9 +1,10 @@
 import MightyCore
 import SwiftUI
 
-/// A sub-agent as the flow's compact card (`FlowCard`): its name, who it is, what it is doing right now, and its
-/// state with the figures the app has. A click opens it: a finished background agent's card goes to its full copy
-/// in the notice run, any other opens into its block in place. The running outline is the block's own.
+/// A sub-agent, or a command the session runs in the background, as the flow's compact card (`FlowCard`): its name,
+/// who it is (a command: its command line, set as code), what it is doing right now, and its state with the figures the
+/// app has. A click opens it: a finished background agent's or command's card goes to its full copy in the notice run,
+/// any other opens into its block in place. The running outline is the block's own.
 struct MightyGraphAgentCard: View {
     let nodeID: String
     let content: FlowCard.Content
@@ -40,7 +41,9 @@ struct MightyGraphAgentCard: View {
                         .accessibilityIdentifier("mighty-expand-\(nodeID)")
                 }
                 if let identity = content.identity {
-                    Text(verbatim: identity).font(.ui(size: 10, weight: .semibold)).foregroundStyle(ink).lineLimit(1).truncationMode(.tail)
+                    // A command's line is code, in the command's own quiet ink; an agent's is who it is, in its role's.
+                    Text(verbatim: identity).font(content.isTask ? .code(size: 10) : .ui(size: 10, weight: .semibold))
+                        .foregroundStyle(content.isTask ? Palette.ink2 : ink).lineLimit(1).truncationMode(.tail)
                         .accessibilityIdentifier("mighty-card-identity-\(nodeID)")
                 }
                 Text(verbatim: content.activity ?? " ").font(.code(size: 10.5)).foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
@@ -96,6 +99,11 @@ struct MightyGraphDelegateLine: View {
         HStack(spacing: DesignMetrics.Spacing.xs) {
             Image(systemName: "arrow.turn.down.right").font(.ui(size: 9, weight: .semibold)).foregroundStyle(Palette.flow(.subagent))
             Text(verbatim: line.head).foregroundStyle(Palette.ink)
+            // A row of sub-agents and commands: how many of each, in each one's ink.
+            ForEach(Array(line.parts.enumerated()), id: \.offset) { _, part in
+                Text(verbatim: "·").foregroundStyle(Palette.ink2)
+                Text(verbatim: part.text).foregroundStyle(Palette.flow(part.role))
+            }
             if let model = line.model {
                 Text(verbatim: "·").foregroundStyle(Palette.ink2)
                 Text(verbatim: model).foregroundStyle(Palette.flow(.subagent))

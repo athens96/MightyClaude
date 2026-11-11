@@ -764,7 +764,9 @@ struct MightyGraphView: View {
                 // A running sub-agent, or a background one of this request: its card. A finished background agent's full
                 // block is the copy in its notice run, where the click goes; any other card opens in place.
                 let copy = agent.background == true && MightyGraphLayout.terminal(agent.status) ? FlowCard.copyNodeID(of: agent, in: runs) : nil
-                MightyGraphAgentCard(nodeID: node.id, content: FlowCard.content(agent, in: run, definition: definition(agent)),
+                // A background command's card shows the last line it wrote, as the strip above the composer reads it.
+                MightyGraphAgentCard(nodeID: node.id, content: FlowCard.content(agent, in: run, definition: definition(agent),
+                                                                                output: agent.isTask ? backgroundOutput.lines[agent.id] ?? [] : []),
                                      onActivate: {
                                          onFocus()
                                          // The copy is shown and selected, so it is plain which block the card led to.
@@ -777,8 +779,9 @@ struct MightyGraphView: View {
                 let look = Self.agentPresentation(agent)
                 let runID = run.sourceRunID ?? run.id
                 let agentChildBlocks = GraphChildBlocks.map(responseRecords: agent.responseRecords, agents: agents, runId: runID)
-                // A sub-agent wears its role's ink (its own colour, when its definition names one), its type and its marks.
-                let who = identity(agent)
+                // A sub-agent wears its role's ink (its own colour, when its definition names one), its type and its marks;
+                // in a Claude pane's role view a background command wears its own neutral ink and its mark.
+                let who = identity(agent) ?? (fanOut != nil ? FlowRoles.task(agent) : nil)
                 transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.shownInput, entries: agent.entries,
                                tint: who.map { Palette.flow($0.ink) } ?? look.tint, usage: agent.usage,
                                records: agent.responseRecords ?? [], nodeModelLabel: who?.modelLabel, childBlocks: agentChildBlocks,
