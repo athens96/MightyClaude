@@ -1,13 +1,13 @@
-// The role view's own nodes on the page (macOS MightyGraphAgentCard, MightyGraphDelegateLine, MightyGraphReturnNode, MightyGraphAdvisorBand,
-// MightyGraphLogStrip): a running sub-agent's or a background command's card, the delegate line, the return node, the advisor's band beside a run
-// and the session log under the flow. Their words are the host's (Core FlowCopy); what reads the clock or the drawn height is here (flow.ts).
+// The role view's own nodes on the page (macOS MightyGraphAgentCard, MightyGraphDelegateLine, MightyGraphProgressPanel, MightyGraphLogStrip): a
+// block folded to its card (a sub-agent, a background command, the 실행 block, a step), the delegate line, a request's plan column and the session
+// log under the flow. Their words are the host's (Core FlowCopy); what reads the clock or the drawn height is here (flow.ts).
 import { memo, useEffect, useState } from 'react';
 import { Icon, type IconName } from '../icons/Icon';
 import { useServices } from '../app/context';
 import { kebab } from '../theme/tokens';
 import { dashForCard, dashOffset } from './camera';
-import { advisorVisible, cardFigures, LogRows } from './flow';
-import type { FlowAdvisorCopy, FlowBackCopy, FlowCardCopy, FlowLineCopy, FlowLogCopy, FlowMarkCopy } from './types';
+import { cardTime, elapsed, LogRows } from './flow';
+import type { FlowCardCopy, FlowLineCopy, FlowLogCopy, FlowMarkCopy, FlowProgressCopy, FlowProgressRowCopy } from './types';
 
 /** A design token's colour (Core FlowRoles.Token, a role's or a custom agent's ink). */
 export const inkVar = (token: string) => `var(--${kebab(token)})`;
@@ -15,11 +15,15 @@ export const inkVar = (token: string) => `var(--${kebab(token)})`;
 /** The symbol each mark is drawn with (macOS FlowMark.symbol). */
 export const markIcon = (name: FlowMarkCopy['name']): IconName => (name === 'background' ? 'square-stack' : name === 'fork' ? 'copy' : 'git-branch');
 
-/** The status tone a card's dot and figures take (macOS DesignTone(blockStatus:)). */
-const tone = (status: string) => (status === 'completed' ? 'done' : status === 'error' ? 'err' : status === 'stopped' ? 'stop' : status === 'waiting' ? 'wait' : 'run');
+/** The status tone a card's pill and figures take (macOS DesignTone(blockStatus:)); a step not begun is idle. */
+const tone = (card: FlowCardCopy) => {
+  if (card.pending) return 'idle';
+  const status = card.status;
+  return status === 'completed' ? 'done' : status === 'error' ? 'err' : status === 'stopped' ? 'stop' : status === 'waiting' ? 'wait' : 'run';
+};
 
 /** The running edge over a fixed node: the blocks' marching dashes (Block.tsx Outline). */
-function Marching({ w, h, radius = 10 }: { w: number; h: number; radius?: number }) {
+function Marching({ w, h, radius = 11 }: { w: number; h: number; radius?: number }) {
   if (w <= 2 || h <= 2) return null;
   const dash = dashForCard(w, h);
   const period = -dashOffset(1, dash);
@@ -41,54 +45,67 @@ function useNow(running: boolean): number {
   return now;
 }
 
-/** The card's last line: its state and its figures. Only this line reads the clock, so the time that passes draws nothing else. */
+/** The card's second line: who it is (a command: its command line, set as code), then its figures — a command's exit code, the time read against the
+ * page's clock, the tools and the tokens; the state is the header's pill. Only this line reads the clock. */
 function CardFigures({ card, nodeId }: { card: FlowCardCopy; nodeId: string }) {
   const { t } = useServices();
-  const now = useNow(card.running && card.startedAt !== undefined);
-  const shade = tone(card.status);
+  const now = useNow(card.running && card.startedAt !== undefined && !card.pending);
+  const time = cardTime(t, card, now);
+  const figures = [...card.before.slice(1), ...(time === null ? [] : [time]), ...card.after].join(' · ');
   return (
-    <div className={'flow-card-figures tone-' + shade} data-testid={'mighty-card-figures-' + nodeId}>
-      <span className={'flow-card-dot tone-' + shade} aria-hidden="true" />
-      <span className="flow-card-figures-text">{cardFigures(t, card, now)}</span>
+    <div className="flow-card-figures" data-testid={'mighty-card-figures-' + nodeId}>
+      {card.identity && (
+        <span className={'flow-card-identity' + (card.isTask ? ' code' : '')} style={card.isTask ? undefined : { color: inkVar(card.ink) }} title={card.identity}
+          data-testid={'mighty-card-identity-' + nodeId}>{card.identity}</span>
+      )}
+      {card.identity && figures !== '' && <span className="flow-dot-sep">·</span>}
+      {figures !== '' && <span className="flow-card-figures-text">{figures}</span>}
     </div>
   );
 }
 
 /**
- * A running sub-agent's, a background sub-agent's or a background command's compact card (FlowCard): its name, who it is (a command's line set as
- * code), what it is doing now, its state and figures. A click goes to a finished background block's copy, else opens the block in place; the
- * expand button always opens it in place. Never selected or resized: a wheel over it pans.
+ * A block of the role view folded to its card (FlowCard): a sub-agent, a background command, the 실행 block or a step. It wears the full block's frame
+ * — the same header with its glyph in the role's ink, title, nested count, marks, status pill and open button, the same corners — and holds two lines
+ * under it: what it is doing (or did) now, and who it is with its figures. A click goes to a finished background block's copy, else opens the block in
+ * place; the open button always opens it in place. Never selected or resized: a wheel over it pans.
  */
-export const FlowCardNode = memo(function FlowCardNode({ id, x, y, w, h, card, outline, onActivate, onOpen }: {
-  id: string; x: number; y: number; w: number; h: number; card: FlowCardCopy; outline: boolean;
+export const FlowCardNode = memo(function FlowCardNode({ id, kind = 'agent', icon, x, y, w, h, card, outline, onActivate, onOpen }: {
+  id: string; kind?: string; icon: IconName; x: number; y: number; w: number; h: number; card: FlowCardCopy; outline: boolean;
   onActivate: (id: string, copy: string | undefined) => void; onOpen: (id: string) => void;
 }) {
   const { t } = useServices();
   const ink = inkVar(card.ink);
+  const shade = tone(card);
+  // What the main session said reads as text in the card's own ink; a command is code, quieter; a step not begun says so.
+  const activity = card.activity ?? (card.pending ? card.stateWord : undefined);
   return (
-    <div className="mighty-flow-card" data-block-id={id} data-kind="agent" data-fixed="1" data-testid={'mighty-node-' + id} role="button" tabIndex={-1}
+    <div className={'mighty-flow-card tone-' + shade + (card.pending ? ' pending' : '')} data-block-id={id} data-kind={kind} data-fixed="1" data-testid={'mighty-node-' + id}
+      role="button" tabIndex={-1} data-pending={card.pending ? '1' : undefined}
       style={{ left: x, top: y, width: w, height: h }} title={card.summary ? card.summary + '\n' + card.activateHelp : card.activateHelp}
-      aria-label={[card.title, card.identity, card.activity].filter(Boolean).join(', ')}
+      aria-label={[card.title, card.stateWord, card.identity, card.activity].filter(Boolean).join(', ')}
       onClick={(event) => { if (!(event.target as Element).closest('button')) onActivate(id, card.copyNodeId); }}>
-      <span className="flow-bar" style={{ background: ink }} aria-hidden="true" />
-      <div className="flow-card-body">
-        <div className="flow-card-head">
-          <span className="flow-card-title">{card.title}</span>
-          {card.nested > 0 && <span className="flow-card-nested" title={card.nestedHelp} aria-label={card.nestedHelp} data-testid={'mighty-card-nested-' + id}>(+{card.nested})</span>}
-          <span className="flow-card-spacer" />
-          {card.marks.map((mark) => <span key={mark.name} className="flow-mark" title={mark.help} aria-label={mark.help}><Icon name={markIcon(mark.name)} size={10} weight={2} /></span>)}
+      <div className="mighty-head flow-card-head">
+        <span className="mighty-symbol" style={{ color: ink }} aria-hidden="true"><Icon name={icon} size={14} weight={1.75} /></span>
+        <span className="mighty-title flow-card-title">{card.title}</span>
+        {card.nested > 0 && <span className="flow-card-nested" title={card.nestedHelp} aria-label={card.nestedHelp} data-testid={'mighty-card-nested-' + id}>(+{card.nested})</span>}
+        {card.marks.map((mark) => <span key={mark.name} className="flow-mark" title={mark.help} aria-label={mark.help}><Icon name={markIcon(mark.name)} size={10} weight={2} /></span>)}
+        <span className="flow-head-spacer" />
+        <span className="mighty-controls">
+          <span className={'mighty-pill tone-' + shade} data-testid={'mighty-card-state-' + id}>{card.stateWord}</span>
           <button type="button" className="mighty-icon flow-card-open" title={t('graph.card.open')} aria-label={t('graph.card.open')} data-testid={'mighty-expand-' + id}
-            onClick={() => onOpen(id)}><Icon name="unfold-vertical" size={12} weight={1.75} /></button>
-        </div>
-        {card.identity && (
-          // A command's line is code, in its own quiet ink; an agent's is who it is, in its role's.
-          <div className={'flow-card-identity' + (card.isTask ? ' code' : '')} style={card.isTask ? undefined : { color: ink }} title={card.identity} data-testid={'mighty-card-identity-' + id}>{card.identity}</div>
-        )}
-        <div className="flow-card-activity" title={card.activity} data-testid={'mighty-card-activity-' + id}>{card.activity ?? ' '}</div>
-        <span className="flow-card-spacer" />
+            onClick={() => onOpen(id)}><Icon name="unfold-vertical" size={14} weight={1.75} /></button>
+        </span>
+      </div>
+      <div className="flow-card-body">
+        {/* The step of the request's plan it was launched in: what it is part of. */}
+        {card.step && <div className="flow-card-step" title={card.stepHelp ?? card.step} data-testid={'mighty-card-step-' + id}>
+          <Icon name="corner-down-right" size={10} weight={2} /><span>{card.step}</span>
+        </div>}
+        <div className={'flow-card-activity' + (card.prose || card.activity === undefined ? ' prose' : '')} title={card.activity} data-testid={'mighty-card-activity-' + id}>{activity ?? ' '}</div>
         <CardFigures card={card} nodeId={id} />
       </div>
-      {outline && <Marching w={w} h={h} />}
+      {outline && !card.pending && <Marching w={w} h={h} />}
     </div>
   );
 });
@@ -107,61 +124,75 @@ export const DelegateLineNode = memo(function DelegateLineNode({ id, x, y, w, h,
   );
 });
 
-/** The return node where the result will go (FlowReturn): the lead's ink and the running edge, since it stands only while the run goes on. */
-export const ReturnNode = memo(function ReturnNode({ id, x, y, w, h, back }: { id: string; x: number; y: number; w: number; h: number; back: FlowBackCopy }) {
-  return (
-    <div className="mighty-flow-return" data-block-id={id} data-kind="return" data-fixed="1" data-testid={'mighty-node-' + id} title={back.text} aria-label={back.text}
-      style={{ left: x, top: y, width: w, height: h }}>
-      <Icon name={back.waiting ? 'hourglass' : 'undo-2'} size={11} weight={2} />
-      <span className="flow-return-text">{back.text}</span>
-      <Marching w={w} h={h} />
-    </div>
-  );
-});
+/** A step's time in the progress panel: how long it took once it ended, the time since it began while it runs (read once a second), nothing for a
+ * step not begun. */
+function ProgressTime({ row, running }: { row: FlowProgressRowCopy; running: boolean }) {
+  const { t } = useServices();
+  const live = row.state === 'current' && running && row.endedAt === undefined && row.startedAt !== undefined;
+  const now = useNow(live);
+  if (row.startedAt === undefined) return null;
+  if (live) return <span className="flow-outline-time">{elapsed(t, row.startedAt, now)}</span>;
+  if (row.endedAt !== undefined && row.endedAt >= row.startedAt) return <span className="flow-outline-time">{elapsed(t, row.startedAt, row.endedAt)}</span>;
+  return null;
+}
+
+const progressMark: Record<FlowProgressRowCopy['state'], IconName> = { done: 'circle-check', current: 'circle-dot', pending: 'circle', stopped: 'circle-stop', failed: 'circle-x' };
+const statusTone = (status: string) => (status === 'running' ? 'run' : status === 'completed' ? 'done' : status === 'error' ? 'err' : status === 'stopped' ? 'stop' : status === 'waiting' ? 'wait' : 'idle');
+
+/** Panes whose progress panel is folded: per pane, for as long as the page runs (never saved). */
+const progressFolded = new Set<string>();
 
 /**
- * The advisor's band beside a run (FlowAdvisor): its header (the advisor, its model, what it is doing), a row for each consultation that fits (who
- * asked in its ink, when and how long, where in the caller's work and how it ended), the line about replies with no text, and the totals. A row's
- * click goes to the block that asked. No advice is shown that the CLI did not give as text: the row's help holds it when it did.
+ * The role view's progress panel (macOS MightyGraphProgressPanel, Core FlowSteps.Progress), over the diagram's top-left corner where it stays while
+ * the diagram scrolls under it: the request in view ("요청 27" and its first line) with its state, then its plan — every step with its mark (done, the
+ * one in progress with its time running, not begun) and the time each took. The request line leads to the request; a step that began leads to its
+ * card. Folded, it keeps its header and the request line. A press or a wheel in it never pans the diagram.
  */
-export const AdvisorBandNode = memo(function AdvisorBandNode({ id, x, y, w, h, band, onReveal }: {
-  id: string; x: number; y: number; w: number; h: number; band: FlowAdvisorCopy; onReveal: (nodeId: string) => void;
-}) {
+export function ProgressPanel({ paneId, progress, onReveal }: { paneId: string; progress: FlowProgressCopy; onReveal: (nodeId: string) => void }) {
   const { t } = useServices();
-  const shown = advisorVisible(band, h);
+  const [collapsed, setCollapsed] = useState(() => progressFolded.has(paneId));
+  const toggle = () => {
+    const next = !collapsed;
+    if (next) progressFolded.add(paneId); else progressFolded.delete(paneId);
+    setCollapsed(next);
+  };
+  const label = t(collapsed ? 'graph.steps.expand' : 'graph.steps.collapse');
   return (
-    <div className="mighty-flow-advisor" data-block-id={id} data-kind="advisor" data-fixed="1" data-testid={'mighty-node-' + id} aria-label={band.header + ', ' + band.totals}
-      style={{ left: x, top: y, width: w, height: h }}>
-      <span className="flow-bar flow-bar-advisor" aria-hidden="true" />
-      <div className="flow-advisor-body">
-        <div className="flow-advisor-head" title={band.header} data-testid={'mighty-advisor-header-' + id}>
-          <Icon name="lightbulb" size={11} weight={2} className="flow-advisor-bulb" />
-          <span className="flow-advisor-name">{t('graph.identity.role.advisor')}</span>
-          {band.model && <span className="flow-advisor-model">{band.model}</span>}
-          <span className="flow-card-spacer" />
-          {band.state && <span className={'flow-advisor-state' + (band.consulting ? ' consulting' : '')}>{band.state}</span>}
-        </div>
-        {band.empty && <div className="flow-advisor-empty" data-testid={'mighty-advisor-empty-' + id}>{band.empty}</div>}
-        {shown.earlier > 0 && <div className="flow-advisor-earlier" data-testid={'mighty-advisor-earlier-' + id}>{t('graph.advisor.earlier', { count: shown.earlier })}</div>}
-        {shown.rows.map((row) => (
-          <button key={row.id} type="button" className="flow-advisor-row" title={row.help} data-testid={'mighty-advisor-row-' + row.id}
-            aria-label={[row.caller, row.when, row.line].filter((s) => s !== '').join(', ')} onClick={() => onReveal(row.callerNodeId)}>
-            <span className="flow-advisor-row-head">
-              <span className="flow-advisor-caller" style={{ color: inkVar(row.ink) }}>{row.caller}</span>
-              <span className="flow-card-spacer" />
-              <span className="flow-advisor-when">{row.when}</span>
-            </span>
-            <span className={'flow-advisor-line state-' + row.state}>{row.line}</span>
-          </button>
-        ))}
-        <span className="flow-card-spacer" />
-        {band.note && <div className="flow-advisor-note" data-testid={'mighty-advisor-note-' + id}>{band.note}</div>}
-        <div className="flow-advisor-totals" title={band.totalsHelp ?? band.totals} data-testid={'mighty-advisor-totals-' + id}>{band.totals}</div>
+    <section className="mighty-progress" data-testid="mighty-progress" data-collapsed={collapsed ? '' : undefined} aria-label={progress.title + ' ' + progress.heading}
+      onPointerDown={(event) => event.stopPropagation()}>
+      <div className="flow-outline-head">
+        <span className="flow-outline-glyph" aria-hidden="true"><Icon name="clipboard-list" size={14} weight={1.75} /></span>
+        <span className="flow-outline-title">{progress.title}</span>
+        {progress.count && <span className="flow-outline-progress" data-testid="mighty-progress-count">{progress.count}</span>}
+        <span className="flow-head-spacer" />
+        <button className="mighty-icon" title={label} aria-label={label} aria-expanded={!collapsed} onClick={toggle} data-testid="mighty-progress-fold">
+          <Icon name={collapsed ? 'chevron-down' : 'chevron-up'} size={12} weight={2} />
+        </button>
       </div>
-      {band.consulting && <Marching w={w} h={h} />}
-    </div>
+      <button type="button" className="mighty-progress-request" title={progress.requestHelp} data-testid="mighty-progress-request" onClick={() => onReveal(progress.requestNodeId)}>
+        <span className="mighty-progress-heading">
+          <span className="mighty-progress-ordinal">{progress.heading}</span>
+          <span className={'mighty-pill tone-' + statusTone(progress.status)}>{progress.stateWord}</span>
+        </span>
+        {progress.request !== '' && <span className="mighty-progress-text">{progress.request}</span>}
+      </button>
+      {!collapsed && progress.rows.length > 0 && (
+        <div className="flow-outline-rows mighty-progress-rows">
+          {progress.rows.map((row) => (
+            <button key={row.index} type="button" className={'flow-outline-row state-' + row.state} title={row.text} disabled={row.nodeId === undefined}
+              data-testid={'mighty-progress-row-' + row.index} onClick={() => { if (row.nodeId) onReveal(row.nodeId); }}>
+              <span className={'flow-outline-mark state-' + row.state} aria-hidden="true"><Icon name={progressMark[row.state]} size={12} weight={2} /></span>
+              <span className="flow-outline-text">{row.text}</span>
+              <span className="flow-head-spacer" />
+              <ProgressTime row={row} running={progress.running} />
+            </button>
+          ))}
+          {progress.hidden > 0 && progress.more && <div className="flow-outline-more" data-testid="mighty-progress-more">{progress.more}</div>}
+        </div>
+      )}
+    </section>
   );
-});
+}
 
 /**
  * The session log under a Claude pane's flow (FlowLog): its header is the status line, each part in its role's ink, and while open the last few

@@ -3,7 +3,7 @@ using MightyCode.Core;
 
 /// <summary>
 /// The role view's layout for the runs of native/contracts/fixtures/flow-vectors.json, which the web page's layout reads too
-/// (native/windows/web/src/mighty/flow.test.ts): every node with its kind, frame and card, every edge, the advisor's dotted links, the canvas
+/// (native/windows/web/src/mighty/flow.test.ts): every node with its kind, frame and card, every edge (and whether it leaves a spine block's side), the canvas
 /// size and origin, within 0.001. The Core's layout is what the WinUI host reads the page's copy from, so both sides must lay out the same nodes.
 /// </summary>
 internal static class FlowVectorVerification
@@ -44,10 +44,10 @@ internal static class FlowVectorVerification
                 Near(node.Frame.W, want.GetProperty("w").GetDouble(), label + " w");
                 Near(node.Frame.H, want.GetProperty("h").GetDouble(), label + " h");
             }
-            var edges = expect.GetProperty("edges").EnumerateArray().Select(e => (e.GetProperty("source").GetString(), e.GetProperty("target").GetString(), e.GetProperty("joins").GetBoolean())).ToList();
-            Check(layout.Edges.Select(e => ((string?)e.Source, (string?)e.Target, e.Joins)).SequenceEqual(edges), name + ": edges");
-            var links = expect.GetProperty("advisorLinks").EnumerateArray().Select(e => (e.GetProperty("band").GetString(), e.GetProperty("target").GetString())).ToList();
-            Check(layout.AdvisorLinks.Select(l => ((string?)l.Band, (string?)l.Target)).SequenceEqual(links), name + ": the advisor's links");
+            var edges = expect.GetProperty("edges").EnumerateArray().Select(e => (e.GetProperty("source").GetString(), e.GetProperty("target").GetString(), e.GetProperty("joins").GetBoolean(),
+                e.TryGetProperty("side", out var side) && side.GetBoolean())).ToList();
+            var laid = layout.Edges.Select(e => ((string?)e.Source, (string?)e.Target, e.Joins, e.Side)).ToList();
+            Check(laid.SequenceEqual(edges), $"{name}: edges expected [{string.Join(", ", edges)}], laid out [{string.Join(", ", laid)}]");
             Near(layout.Size.W, expect.GetProperty("size").GetProperty("w").GetDouble(), name + ": width");
             Near(layout.Size.H, expect.GetProperty("size").GetProperty("h").GetDouble(), name + ": height");
             Near(layout.OriginX, expect.GetProperty("originX").GetDouble(), name + ": origin x");

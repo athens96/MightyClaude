@@ -31,7 +31,9 @@ internal static class AutoPermissionVerification
         var args = ProviderCatalog.Arguments(request, "/tmp/plugin");
         Check(args[args.IndexOf("--permission-mode") + 1] == "auto", "Auto was translated into another mode.");
         Check(args[args.IndexOf("--permission-prompts") + 1] == "none", "Windows silently claimed an approval channel.");
-        Check(!args.Contains("bypassPermissions") && !args.Contains("--allowedTools"), "Auto weakened explicit policy.");
+        // Auto widens nothing: the one tool list it names is Claude Code's own task tools, which the request's plan needs.
+        Check(!args.Contains("bypassPermissions") && args.Count(a => a == "--allowedTools") == 1
+            && args[args.IndexOf("--allowedTools") + 1] == string.Join(",", FlowSteps.TaskTools), "Auto weakened explicit policy.");
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(selected, Wire.Json));
         Check(json.RootElement.EnumerateObject().Count() == 4, "New wire fields broke legacy shape.");
         Check(JsonSerializer.Deserialize<RunSettings>(json.RootElement, Wire.Json) == selected, "Auto wire value was lost.");

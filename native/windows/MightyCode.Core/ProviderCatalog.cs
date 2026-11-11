@@ -627,19 +627,12 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         if (request.Provider == "claude")
         {
             args.AddRange(["--print", "--verbose", "--output-format", "stream-json", "--permission-prompts", "none", "--permission-mode", (request.PermissionModeOverride ?? settings.PermissionMode) is "fullAccess" ? "bypassPermissions" : request.PermissionModeOverride ?? settings.PermissionMode, "--plugin-dir", pluginDirectory]);
-            if (request.StyleAutoAllow is { Count: > 0 } styleTools)
-                args.AddRange(["--allowedTools", string.Join(",", styleTools)]);
+            // With the app's stream-json input Claude Code loads its task tools only when they are allowed by name (the request's plan,
+            // FlowSteps): one --allowedTools with a style's own tools.
+            args.AddRange(["--allowedTools", string.Join(",", (request.StyleAutoAllow ?? []).Concat(FlowSteps.TaskTools).Distinct(StringComparer.Ordinal))]);
             // Build a single --settings env JSON merging effort + phase model aliases.
             var env = new Dictionary<string, string?>();
             if (settings.Effort != "default") { args.AddRange(["--effort", settings.Effort]); env["CLAUDE_CODE_EFFORT_LEVEL"] = settings.Effort; }
-            // The advisor, as the pane chose it: a model is named beside the main one, off is the CLI's own switch for this run alone, and a pane
-            // that follows Claude's settings passes nothing. The CLI checks the model itself (an advisor weaker than the main model is refused in
-            // its own words) (macOS ProviderService.arguments).
-            if (settings.Advisor is { } advisor)
-            {
-                if (advisor == RunSettings.AdvisorOff) env[ClaudeAdvisorSettings.DisableVariable] = "1";
-                else args.AddRange(["--advisor", advisor]);
-            }
             if (phaseModels is not null)
             {
                 if (phaseModels.ClaudeOpusAlias != "default") env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = phaseModels.ClaudeOpusAlias;
@@ -651,6 +644,8 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             // When the session model is default and claudeMain is set, override with --model.
             if (request.Model == "default" && (phaseModels?.ClaudeMain is { } claudeMain && claudeMain != "default" || request.ResumeId is not null))
                 args.AddRange(["--model", phaseModels?.ClaudeMain ?? "default"]);
+            // The request's plan in the role view (FlowSteps) is Claude's own task list: ask for one whenever there is work.
+            args.AddRange(["--append-system-prompt", FlowSteps.PlanInstruction]);
             if (settings.MaxTurns is int turns) args.AddRange(["--max-turns", turns.ToString(CultureInfo.InvariantCulture)]);
             if (settings.MaxBudgetUsd is double budget) args.AddRange(["--max-budget-usd", budget.ToString(CultureInfo.InvariantCulture)]);
         }

@@ -44,7 +44,7 @@ internal static class MobileFlowVerification
         foreach (var run in mighty["runs"]!.AsArray())
         {
             var kept = new JsonObject();
-            foreach (var key in new[] { "id", "status", "returning", "advisor" }) if (run![key] is { } value) kept[key] = value.DeepClone();
+            foreach (var key in new[] { "id", "status", "returning", "progress" }) if (run![key] is { } value) kept[key] = value.DeepClone();
             var blocks = new JsonArray();
             foreach (var block in run!["blocks"]!.AsArray())
             {
@@ -81,12 +81,12 @@ internal static class MobileFlowVerification
         {
             var plain = MobileMightySupport.Runs(runs, outputTails: Tails(item));
             var text = Json(plain);
-            foreach (var key in new[] { "role", "card", "delegate", "returning", "advisor" }) Check(!text.Contains("\"" + key + "\"", StringComparison.Ordinal), key + " went to an older phone");
+            foreach (var key in new[] { "role", "card", "delegate", "returning", "progress" }) Check(!text.Contains("\"" + key + "\"", StringComparison.Ordinal), key + " went to an older phone");
             Check(Json(plain.Select(r => r.Blocks.Select(b => b.Id))) == """[["r1:main"],["r1:notice:1:main","r1:notice:1:bg"],["r2:main","scout","deep"]]""", "a request's background blocks wait for their notice run: " + Json(plain.Select(r => r.Blocks.Select(b => b.Id))));
             var claude = MobileMightySupport.Runs(runs, roles: new MobileFlow.Roles(true));
             Check(claude[2].Blocks.Select(b => b.Id).SequenceEqual(["r2:main", "scout", "ci", "wt", "deep"]), "the fan-out is the request's blocks as they were recorded");
             var other = MobileMightySupport.Runs(runs, roles: new MobileFlow.Roles(false));
-            Check(other[2].Blocks.Select(b => b.Id).SequenceEqual(["r2:main", "scout", "deep"]) && other[2].Blocks.All(b => b.Card is null && b.Delegate is null) && other[2].Returning is null && other[2].Advisor is null
+            Check(other[2].Blocks.Select(b => b.Id).SequenceEqual(["r2:main", "scout", "deep"]) && other[2].Blocks.All(b => b.Card is null && b.Delegate is null) && other[2].Returning is null
                 && other[2].Blocks.Select(b => b.Role?.Name).SequenceEqual(["lead", "subagent", "subagent"]), "another agent's pane says who each block is and fans nothing out");
             return 0;
         });

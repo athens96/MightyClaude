@@ -5,9 +5,9 @@ namespace MightyCode.Core;
 
 /// <summary>
 /// A sub-agent, or a command the session runs in the background, as the flow diagram's compact card: who is working, what it is doing right now
-/// and how far it is, in four lines. A running sub-agent is a card; one that ran in the foreground becomes its full block when it ends, as it always
-/// was, and one that ran in the background stays a card, since its full block is the copy in its notice run (<see cref="BackgroundNoticeRuns"/>). A
-/// background command is a card from its launch on, for the same reason. Every figure on it is one the app observed: the time since it saw the agent
+/// and how far it is. Every sub-agent and command is a card, running or ended, and so is a finished background one's copy in its notice run
+/// (<see cref="BackgroundNoticeRuns"/>): only the result is drawn whole, and a click opens any card into its block. The 실행 block and a request's
+/// steps (<see cref="FlowSteps"/>) are cards the same way. Every figure on it is one the app observed: the time since it saw the agent
 /// start, the tool calls it counted, the tokens the CLI reported, the exit code the CLI named. Nothing is estimated and nothing is a percentage: an
 /// agent does not say how much of its work is left (macOS FlowCard).
 /// </summary>
@@ -15,31 +15,29 @@ public static class FlowCard
 {
     /// <summary>The card's size in the diagram. It is never dragged: opened, the block has its own saved size.</summary>
     public const double Width = 236, Height = 86;
+    /// <summary>A card beside a request's step: one more line, the step it was launched in (<see cref="FlowSteps.StepLabel"/>).</summary>
+    public const double StepHeight = 104;
 
     /// <summary>Whether the flow draws sub-agent <paramref name="agent"/> as a card. <paramref name="opened"/>: the user opened it into its full block,
-    /// which stays open until they fold it back. A copy in a notice run is always the full block, and so is a block that is no sub-agent.</summary>
+    /// which stays open until they fold it back. A block that is no sub-agent or command (a steer, a question, a compaction) is always its block.</summary>
     public static bool IsCompact(MightyGraphAgent agent, bool opened) => FoldsToCard(agent) && !opened;
 
-    /// <summary>Whether the block has a card to fold back to: a request's own background sub-agent or background command at any time, a foreground
-    /// sub-agent while it runs.</summary>
-    public static bool FoldsToCard(MightyGraphAgent agent)
-    {
-        if (agent.SourceBlockId is not null) return false;
-        if (agent.IsTask) return true;
-        if (!agent.IsSubagent) return false;
-        return agent.Background == true || !MightyGraphLayout.Terminal(agent.Status);
-    }
+    /// <summary>Whether the block has a card to fold back to: every sub-agent and background command, running or ended, a copy in a notice run too.</summary>
+    public static bool FoldsToCard(MightyGraphAgent agent) => agent.IsTask || agent.IsSubagent;
 
     /// <summary>What a card says. <c>Title</c>: the block's title. <c>Identity</c>: "Explore · Haiku 5.5", or a command's "작업 · &lt;command&gt;".
     /// <c>Activity</c>: what it is doing now while it runs, what it answered once it ended (a command's last line). <c>Status</c>/<c>StateWord</c>: its
     /// status bucket and word. <c>Nested</c>: sub-agents under it, which a card counts instead of drawing.</summary>
     public sealed record Content(string Title, string? Identity, string? Activity, string Status, string StateWord, DateTimeOffset? StartedAt, DateTimeOffset? EndedAt,
-        int? ToolCalls, long? Tokens, int Nested, IReadOnlyList<FlowMark> Marks, FlowInk Ink, string Summary, bool IsTask = false, int? ExitCode = null)
+        int? ToolCalls, long? Tokens, int Nested, IReadOnlyList<FlowMark> Marks, FlowInk Ink, string Summary, bool IsTask = false, int? ExitCode = null,
+        bool IsPending = false, bool Prose = false)
     {
-        public bool Running => !MightyGraphLayout.Terminal(Status);
+        /// <summary>A step not begun (<see cref="FlowSteps"/>) has no time running. <c>Prose</c>: its line is what the main session said, set as text.</summary>
+        public bool Running => !IsPending && !MightyGraphLayout.Terminal(Status);
         public bool Equals(Content? other) => other is not null && Title == other.Title && Identity == other.Identity && Activity == other.Activity && Status == other.Status
             && StateWord == other.StateWord && StartedAt == other.StartedAt && EndedAt == other.EndedAt && ToolCalls == other.ToolCalls && Tokens == other.Tokens
-            && Nested == other.Nested && Marks.SequenceEqual(other.Marks) && Ink == other.Ink && Summary == other.Summary && IsTask == other.IsTask && ExitCode == other.ExitCode;
+            && Nested == other.Nested && Marks.SequenceEqual(other.Marks) && Ink == other.Ink && Summary == other.Summary && IsTask == other.IsTask && ExitCode == other.ExitCode
+            && IsPending == other.IsPending && Prose == other.Prose;
         public override int GetHashCode() => HashCode.Combine(Title, Identity, Activity, Status, Nested, Ink);
     }
 

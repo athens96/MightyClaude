@@ -39,8 +39,11 @@ describe('where an aim from another view lands', () => {
     const aim = { nodeId: id('agent:child'), fallbackNodeId: id('request') };
     // The running writer is a card that folds its child: the child stands behind it.
     expect(aimLanding(aim, layoutOf(all), all, true, new Set())).toEqual({ open: id('agent:writer') });
+    // Opened, the writer draws its child, an ended sub-agent and so a card too: it opens next.
     const opened = new Set([id('agent:writer')]);
-    const landing = aimLanding(aim, layoutOf(all, opened), all, true, opened);
+    expect(aimLanding(aim, layoutOf(all, opened), all, true, opened)).toEqual({ open: id('agent:child') });
+    const both = new Set([id('agent:writer'), id('agent:child')]);
+    const landing = aimLanding(aim, layoutOf(all, both), all, true, both);
     expect(landing && 'land' in landing ? landing.land.id : null).toBe(id('agent:child'));
   });
 

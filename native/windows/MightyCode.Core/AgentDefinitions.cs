@@ -92,6 +92,16 @@ public static class AgentDefinitions
     /// <summary>The definitions of the agents <paramref name="types"/> name, by type: project and user agents by their name, a plugin's agent by
     /// <c>plugin:agent</c>. <paramref name="workspace"/> is the pane's local folder (null reads no project agents). Folders are read again only when a
     /// file in them came, went or changed (<see cref="Cache"/>).</summary>
+    /// <summary>Claude's user folder: <c>CLAUDE_CONFIG_DIR</c> when set (from <paramref name="environment"/>, else this process's), else
+    /// <c>~/.claude</c>.</summary>
+    public static string ConfigDirectory(string home, IReadOnlyDictionary<string, string>? environment = null)
+    {
+        string? configured = null;
+        if (environment is not null) environment.TryGetValue("CLAUDE_CONFIG_DIR", out configured);
+        else configured = Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR");
+        return !string.IsNullOrWhiteSpace(configured) ? Path.GetFullPath(configured, home) : Path.Combine(home, ".claude");
+    }
+
     public static Dictionary<string, AgentDefinition> Load(IReadOnlySet<string> types, string? workspace, string configDirectory, Cache? cache = null)
     {
         var held = cache ?? Cache.Shared;

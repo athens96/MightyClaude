@@ -2,16 +2,16 @@ namespace MightyCode.Core;
 
 /// <summary>
 /// The role view as a phone draws it (docs/mobile-remote.md, "역할 보기"): who each block is, a running sub-agent's or a background command's
-/// compact row, the delegate line, the way back, the advisor and the session log's status line (M/MightyCore/Remote/MobileFlow.swift). Every word
+/// compact row, the delegate line, the way back and the session log's status line (M/MightyCore/Remote/MobileFlow.swift). Every word
 /// is the desktop's own, read with the very rules the flow is drawn by (<see cref="FlowRoles"/>, <see cref="FlowCard"/>, <see cref="FlowDelegation"/>,
-/// <see cref="FlowReturn"/>, <see cref="FlowAdvisor"/>, <see cref="FlowLog"/>); the phone only lays it out and keeps a card's elapsed time against its
+/// <see cref="FlowReturn"/>, <see cref="FlowLog"/>); the phone only lays it out and keeps a card's elapsed time against its
 /// own clock. Inks travel as design token names (<see cref="FlowRoles.Token"/>), times as milliseconds since 1970. Sent only to a phone that asked
 /// for it (<c>roles=1</c>, capability <c>roles</c>); both hosts' tests produce native/contracts/fixtures/mobile-roles.json.
 /// </summary>
 public static class MobileFlow
 {
     /// <summary>What a payload with the role view is built with. <c>FanOut</c>: the pane draws the role view (a Claude pane): a request's background
-    /// blocks travel in it as compact rows, with the delegate lines, the way back, the advisor and the log. Without it a block still says who it is.
+    /// blocks travel in it as compact rows, with the delegate lines, the way back and the log. Without it a block still says who it is.
     /// <c>Definitions</c> are the custom agents the blocks' types name (<see cref="AgentDefinitions"/>).</summary>
     public sealed record Roles(bool FanOut, IReadOnlyDictionary<string, AgentDefinition>? Definitions = null)
     {
@@ -57,7 +57,21 @@ public static class MobileFlow
         if (agent.Background == true && MightyGraphLayout.Terminal(agent.Status))
             for (var index = window.Count - 1; index >= 0 && copy is null; index--)
                 if (window[index].NoticeRun == true && window[index].Agents.LastOrDefault(a => a.SourceBlockId == agent.Id) is { } copied) copy = new(window[index].Id, copied.Id);
-        return new(content.Activity, before, after, Milliseconds(content.StartedAt), Milliseconds(content.EndedAt), content.Nested > 0 ? content.Nested : null, copy);
+        return new(content.Activity, before, after, Milliseconds(content.StartedAt), Milliseconds(content.EndedAt), content.Nested > 0 ? content.Nested : null, copy,
+            FlowSteps.StepLabel(agent, run));
+    }
+
+    /// <summary>The progress of request <c>runs[index]</c> (<see cref="FlowSteps.ProgressOf"/>), headed by its request number; null for a notice run and
+    /// outside the role view (Mac MobileFlow.progress).</summary>
+    public static MobileProgress? Progress(int index, IReadOnlyList<MightyGraphRun> runs, int ordinal, Roles roles)
+    {
+        if (!roles.FanOut || index < 0 || index >= runs.Count || runs[index].NoticeRun == true) return null;
+        var value = FlowSteps.ProgressOf(index, runs, Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
+        var rows = value.Rows.Select(row => new MobileProgressRow(row.Index, row.Text, row.State.ToString().ToLowerInvariant(),
+            row.StartedAt?.ToUnixTimeMilliseconds(), row.EndedAt?.ToUnixTimeMilliseconds())).ToList();
+        return new(value.Title, value.Heading, value.Request, value.StateWord, value.Status, value.Count, rows, value.Hidden,
+            value.Hidden > 0 ? Locale.Get("graph.progress.more", new Dictionary<string, string> { ["count"] = value.Hidden.ToString(System.Globalization.CultureInfo.InvariantCulture) }) : null,
+            value.Running);
     }
 
     /// <summary>The line over the rows block <paramref name="key"/> (<see cref="FlowDelegation.MainKey"/>, or a sub-agent's id) delegated to; null when it
@@ -73,23 +87,14 @@ public static class MobileFlow
     public static MobileReturn? Returning(MightyGraphRun run, Roles roles) =>
         roles.FanOut && !MightyGraphLayout.HasResult(run) && FlowReturn.Of(run) is { } state ? new(state.Text, state.Waiting) : null;
 
-    /// <summary>The advisor's band of <paramref name="run"/> (<see cref="FlowAdvisor.Of"/>): every consultation it keeps, oldest first.</summary>
-    public static MobileAdvisor? Advisor(MightyGraphRun run, Roles roles)
-    {
-        if (!roles.FanOut || FlowAdvisor.Of(run, roles.Known) is not { } band) return null;
-        var rows = band.Rows.Select(row => new MobileAdvisorRow(row.Id, row.Caller, FlowRoles.Token(row.Ink), Milliseconds(row.Started),
-            row.Seconds is { } seconds ? (int)seconds : null, row.Line, row.State)).ToList();
-        return new(band.Header, band.Advising switch { FlowAdvisor.State.Consulting => "consulting", FlowAdvisor.State.OnCall => "onCall", _ => null }, rows, band.Calls,
-            band.Totals, band.Note, band.Empty);
-    }
 
     /// <summary>The session log strip of a pane's runs (<see cref="FlowLog"/>): its status line in parts and the newest activity's last rows, oldest
     /// first. Null for a pane without a request.</summary>
     public static MobileFlowLog? Log(IReadOnlyList<MightyGraphRun> source, IReadOnlyDictionary<string, AgentDefinition>? definitions = null)
     {
         var runs = MightyGraphSupport.ShownRuns(source);
-        if (FlowLog.StatusOf(runs, FlowAdvisor.Status(runs)) is not { } status) return null;
-        var rows = FlowLog.Rows(runs, definitions: definitions, advisor: FlowAdvisor.Notes(runs))
+        if (FlowLog.StatusOf(runs) is not { } status) return null;
+        var rows = FlowLog.Rows(runs, definitions: definitions)
             .Select(row => new MobileFlowLogRow(row.Id, row.Time.ToUnixTimeMilliseconds(), row.Who, FlowRoles.Token(row.Ink), row.What)).ToList();
         return new(status.Parts.Select(p => new MobileInkedText(p.Text, FlowRoles.Token(FlowRoles.Ink(p.Role)))).ToList(), rows);
     }
@@ -108,7 +113,16 @@ public sealed record MobileCopyRef(string RunId, string BlockId);
 /// <summary>The compact row of a sub-agent or a background command (<c>MobileBlock.card</c>, <see cref="FlowCard"/>): what it does now, the figures'
 /// words before and after its time, which the phone reads against its own clock from <c>StartedAt</c> (milliseconds since 1970), the sub-agents
 /// under it and, once a background block ended, its copy in a notice run.</summary>
-public sealed record MobileBlockCard(string? Activity, IReadOnlyList<string> Before, IReadOnlyList<string> After, long? StartedAt, long? EndedAt, int? Nested, MobileCopyRef? Copy);
+public sealed record MobileBlockCard(string? Activity, IReadOnlyList<string> Before, IReadOnlyList<string> After, long? StartedAt, long? EndedAt, int? Nested, MobileCopyRef? Copy,
+    string? Step = null);
+
+/// <summary>A request's progress on the phone (<c>MobileMightyRun.progress</c>, <see cref="FlowSteps.Progress"/>): the panel pinned over the session's
+/// Mighty view. <c>Count</c>: "2/3", null without a plan; <c>More</c>: the line that counts the steps the rows leave out.</summary>
+public sealed record MobileProgress(string Title, string Heading, string Request, string StateWord, string Status, string? Count, IReadOnlyList<MobileProgressRow> Rows,
+    int Hidden, string? More, bool Running);
+
+/// <summary>One step of a request's plan: <c>State</c> is done, current, pending, stopped or failed; times in milliseconds since 1970.</summary>
+public sealed record MobileProgressRow(int Index, string Text, string State, long? StartedAt, long? EndedAt);
 
 /// <summary>The line over the rows a block delegated to (<c>MobileBlock.delegate</c>, <see cref="FlowDelegation.Line"/>).</summary>
 public sealed record MobileDelegateLine(string Head, IReadOnlyList<MobileInkedText>? Parts, string? Model, string? Progress, string Text);
@@ -116,13 +130,6 @@ public sealed record MobileDelegateLine(string Head, IReadOnlyList<MobileInkedTe
 /// <summary>The way back to the main session where a request's result will come (<c>MobileMightyRun.returning</c>, <see cref="FlowReturn"/>).</summary>
 public sealed record MobileReturn(string Text, bool Waiting);
 
-/// <summary>The advisor of a run (<c>MobileMightyRun.advisor</c>, <see cref="FlowAdvisor.Band"/>). <c>State</c>: consulting or onCall while the run goes
-/// on. <c>Calls</c>: every consultation seen, more than <c>Rows</c> once older ones were let go.</summary>
-public sealed record MobileAdvisor(string Header, string? State, IReadOnlyList<MobileAdvisorRow> Rows, int Calls, string Totals, string? Note, string? Empty);
-
-/// <summary>One consultation: who asked (in that role's ink), when (milliseconds since 1970), how many whole seconds the reply took, where in the caller's
-/// work and how it ended.</summary>
-public sealed record MobileAdvisorRow(string Id, string Caller, string Ink, long? At, int? Seconds, string Line, string State);
 
 /// <summary>The session log strip (<c>MobileMighty.log</c>, <see cref="FlowLog"/>): the status line's parts and the newest activity's last rows.</summary>
 public sealed record MobileFlowLog(IReadOnlyList<MobileInkedText> Status, IReadOnlyList<MobileFlowLogRow> Rows);

@@ -327,12 +327,14 @@ public static class MightyGraphBlockModel
         string draft,
         string providerLabel,
         bool animationsEnabled,
-        IReadOnlyList<ModelOption>? catalog = null)
+        IReadOnlyList<ModelOption>? catalog = null,
+        bool? splitsExecution = null)
     {
         var blocks = new List<MightyGraphBlock>();
         runs = MightyGraphSupport.WithBackgroundWaiting(runs);
-        // Laid out with its 실행 blocks (MightyGraphLayout.Make splitsExecution), a request block holds what was asked alone.
-        var split = layout.Nodes.Any(n => n.Kind == MightyGraphLayout.WorkKind);
+        // Laid out with its 실행 blocks (MightyGraphLayout.Make splitsExecution), a request block holds what was asked alone. The role view draws a
+        // 실행 block only until the answer is there, so its caller says so.
+        var split = splitsExecution ?? layout.Nodes.Any(n => n.Kind == MightyGraphLayout.WorkKind);
         // Request numbers: a notice run (BackgroundNoticeRuns) takes none and is titled after the work it reports on.
         var ordinals = MightyGraphSupport.RequestOrdinals(runs);
         string Title(MightyGraphRun run, int runIndex) => run.NoticeRun == true ? BackgroundNoticeRuns.Heading(run) : RequestTitle(ordinals[runIndex], providerLabel);

@@ -299,10 +299,10 @@ internal static class FlowRolesVerification
 
         // Claude Code's own folder follows CLAUDE_CONFIG_DIR.
         var home = Path.Combine(Path.GetTempPath(), "someone");
-        Same(ClaudeAdvisorSettings.ConfigDirectory(home, new Dictionary<string, string>()), Path.Combine(home, ".claude"), "the home's .claude");
-        Same(ClaudeAdvisorSettings.ConfigDirectory(home, new Dictionary<string, string> { ["CLAUDE_CONFIG_DIR"] = "" }), Path.Combine(home, ".claude"), "an empty variable");
+        Same(AgentDefinitions.ConfigDirectory(home, new Dictionary<string, string>()), Path.Combine(home, ".claude"), "the home's .claude");
+        Same(AgentDefinitions.ConfigDirectory(home, new Dictionary<string, string> { ["CLAUDE_CONFIG_DIR"] = "" }), Path.Combine(home, ".claude"), "an empty variable");
         var configured = Path.Combine(Path.GetTempPath(), "claude-config");
-        Same(ClaudeAdvisorSettings.ConfigDirectory(home, new Dictionary<string, string> { ["CLAUDE_CONFIG_DIR"] = configured }), Path.GetFullPath(configured), "the variable's folder");
+        Same(AgentDefinitions.ConfigDirectory(home, new Dictionary<string, string> { ["CLAUDE_CONFIG_DIR"] = configured }), Path.GetFullPath(configured), "the variable's folder");
         return Task.CompletedTask;
     }
 
@@ -316,18 +316,18 @@ internal static class FlowRolesVerification
         Check(!FlowCard.IsCompact(A(), true), "until the user opens it");
         Check(FlowCard.IsCompact(A("waiting"), false), "a waiting one too");
         foreach (var status in new[] { "completed", "error", "stopped", "failed", "cancelled", "interrupted" })
-            Check(!FlowCard.IsCompact(A(status), false) && !FlowCard.FoldsToCard(A(status)), "a foreground sub-agent that ended is its block: " + status);
+            Check(FlowCard.IsCompact(A(status), false) && FlowCard.FoldsToCard(A(status)) && !FlowCard.IsCompact(A(status), true), "a foreground sub-agent that ended stays a card until opened: " + status);
         foreach (var status in new[] { "running", "completed", "error", "stopped" })
         {
             Check(FlowCard.IsCompact(A(status, true), false) && FlowCard.FoldsToCard(A(status, true)), "a background sub-agent stays a card: " + status);
             Check(!FlowCard.IsCompact(A(status, true), true), "opened in place: " + status);
         }
-        Check(!FlowCard.IsCompact(A("completed", true, source: "original"), false) && !FlowCard.IsCompact(A("running", true, source: "original"), false), "a copy is never a card");
+        Check(FlowCard.IsCompact(A("completed", true, source: "original"), false) && !FlowCard.IsCompact(A("completed", true, source: "original"), true), "a copy is a card too, until opened");
         foreach (var kind in ChildKinds.Where(k => k != "task"))
             Check(!FlowCard.IsCompact(A("running", true, kind), false) && !FlowCard.FoldsToCard(A("running", kind: kind)), kind + " is never a card");
         foreach (var status in new[] { "running", "completed", "error" })
             Check(FlowCard.IsCompact(A(status, true, "task"), false) && !FlowCard.IsCompact(A(status, true, "task"), true), "a command is a card until opened: " + status);
-        Check(!FlowCard.IsCompact(A("completed", true, "task", "original"), false), "a command's copy is its block");
+        Check(FlowCard.IsCompact(A("completed", true, "task", "original"), false), "a command's copy is a card too");
         return Task.CompletedTask;
     }
 
@@ -443,7 +443,7 @@ internal static class FlowRolesVerification
         return Task.CompletedTask;
     }
 
-    // ── ClaudeAdvisorSettingsTests ──
+    // ── The advisor, removed ──
 
     private static StartRunRequest Request(string? advisor, string effort = "default", string provider = "claude", string mode = "plan") =>
         new("run", "workspace", "claude", "go", [], "sonnet", provider, new RunSettings(effort, mode, Advisor: advisor));
@@ -454,118 +454,17 @@ internal static class FlowRolesVerification
         using var document = JsonDocument.Parse(arguments[index + 1]);
         return document.RootElement.GetProperty("env").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? "");
     }
-    private static string Words(Dictionary<string, string>? env) => env is null ? "none" : string.Join(",", env.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value));
     private static readonly string Plugin = Path.Combine(Path.GetTempPath(), "plugin");
 
-    internal static Task ThePanesAdvisorSettingReachesTheCLIAsTheMacPassesIt()
+    /// <summary>The app names no advisor (macOS, 2026-11-12): a pane's saved choice, a model or off, is read but never reaches the CLI.</summary>
+    internal static Task TheAppNeverPassesAnAdvisor()
     {
-        var plain = ProviderCatalog.Arguments(Request(null), Plugin);
-        Check(!plain.Contains("--advisor") && Environment(plain) is null, "following Claude's settings passes nothing");
-        Same(Words(Environment(ProviderCatalog.Arguments(Request(null, "high"), Plugin))), "CLAUDE_CODE_EFFORT_LEVEL=high", "the effort alone");
-        var model = ProviderCatalog.Arguments(Request("opus"), Plugin);
-        Same(model[model.IndexOf("--advisor") + 1], "opus", "a model as --advisor");
-        Same(model[model.IndexOf("--model") + 1], "sonnet", "beside the main model");
-        Same(Environment(model), null, "no switch: the CLI checks the model itself");
-        var full = ProviderCatalog.Arguments(Request("claude-opus-5-5[1m]"), Plugin);
-        Same(full[full.IndexOf("--advisor") + 1], "claude-opus-5-5[1m]", "a full model id");
-        var off = ProviderCatalog.Arguments(Request(RunSettings.AdvisorOff), Plugin);
-        Check(!off.Contains("--advisor"), "off names no model");
-        Same(Words(Environment(off)), "CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1", "off is the disable variable for that run");
-        Same(Words(Environment(ProviderCatalog.Arguments(Request(RunSettings.AdvisorOff, "high"), Plugin))), "CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1,CLAUDE_CODE_EFFORT_LEVEL=high", "beside the effort");
-        var codex = ProviderCatalog.Arguments(Request("opus", provider: "codex", mode: "acceptEdits"), Plugin);
-        Check(!codex.Contains("--advisor") && !string.Join(" ", codex).Contains("ADVISOR", StringComparison.Ordinal), "another agent never reads it");
-        var refused = 0;
-        try { ProviderCatalog.Arguments(Request("two words"), Plugin); } catch (ArgumentException) { refused++; }
-        try { Request("--dangerous").Validate(); } catch (ArgumentException) { refused++; }
-        Same(refused, 2, "a value that is no model is refused");
-
-        Check(!JsonSerializer.Serialize(new RunSettings(), Wire.Json).Contains("advisor"), "written only when set");
-        var older = JsonSerializer.Deserialize<RunSettings>("""{"effort":"high","permissionMode":"plan","maxTurns":null,"maxBudgetUsd":null}""", Wire.Json)!;
-        Check(older.Advisor is null && older.Effort == "high", "older state decodes");
-        foreach (var value in new[] { "opus", RunSettings.AdvisorOff })
-            Same(JsonSerializer.Deserialize<RunSettings>(JsonSerializer.Serialize(new RunSettings(Advisor: value), Wire.Json), Wire.Json)!.Advisor, value, "kept: " + value);
-        Same(JsonSerializer.Deserialize<RunSettings>("""{"advisor":""}""", Wire.Json)!.Advisor, null, "an empty value is no choice");
-        Same(JsonSerializer.Deserialize<RunSettings>("""{"advisor":7}""", Wire.Json)!.Advisor, null, "a malformed value is no choice");
-        var pane = new RunSession { Id = "pane", WorkspaceId = "space", Title = "Claude", Provider = "claude", Settings = new RunSettings(Advisor: "opus") };
-        Same(JsonSerializer.Deserialize<RunSession>(JsonSerializer.Serialize(pane, Wire.Json), Wire.Json)!.Settings.Advisor, "opus", "the pane keeps it");
-        foreach (var value in new[] { "opus", RunSettings.AdvisorOff, "claude-opus-5-5[1m]" })
-            Same(ProviderCatalog.NormalizeSettings("claude", new RunSettings(Advisor: value)).Advisor, value, "a Claude pane's choice: " + value);
-        Same(ProviderCatalog.NormalizeSettings("claude", new RunSettings()).Advisor, null, "none");
-        Same(ProviderCatalog.NormalizeSettings("claude", new RunSettings(Advisor: "two words")).Advisor, null, "no model");
-        Same(ProviderCatalog.NormalizeSettings("codex", new RunSettings(Advisor: "opus")).Advisor, null, "no other agent's");
-        // Never sent to another computer's host.
-        Same(RemoteWireRequest.From(Request("opus"), "host-workspace").Settings.Advisor, null, "a remote request carries none");
-        return Task.CompletedTask;
-    }
-
-    internal static Task ClaudesSettingsFilesSayWhetherTheAdvisorIsOn()
-    {
-        static ClaudeAdvisorSettings.Entry Entry(string text) => ClaudeAdvisorSettings.Read(System.Text.Encoding.UTF8.GetBytes(text));
-        var opus = ClaudeAdvisorSettings.Choice.Of("opus");
-        var off = ClaudeAdvisorSettings.Choice.Off;
-        Same(Entry("""{"advisorModel":"opus"}"""), new ClaudeAdvisorSettings.Entry(opus), "a model");
-        Same(Entry("""{"model":"sonnet","advisorModel":"claude-opus-5-5[1m]","permissions":{"allow":[]}}""").Model, ClaudeAdvisorSettings.Choice.Of("claude-opus-5-5[1m]"), "a full id");
-        foreach (var text in new[] { """{"advisorModel":"off"}""", """{"advisorModel":"OFF"}""", """{"advisorModel":""}""", """{"advisorModel":null}""", """{"advisorModel":false}""", """{"advisorModel":"two words"}""" })
-            Same(Entry(text).Model, off, "off: " + text);
-        foreach (var text in new[] { """{"model":"sonnet"}""", "[1,2]", "{ not json", "" }) Same(Entry(text), new ClaudeAdvisorSettings.Entry(), "nothing: " + text);
-        Same(Entry("""{"advisorModel":"opus","env":{"CLAUDE_CODE_DISABLE_ADVISOR_TOOL":"1"}}"""), new ClaudeAdvisorSettings.Entry(opus, true), "the disable variable");
-        Same(Entry("""{"env":{"CLAUDE_CODE_DISABLE_ADVISOR_TOOL":"0"}}"""), new ClaudeAdvisorSettings.Entry(Disabled: false), "set to nothing that disables");
-        Same(Entry("""{"env":{"OTHER":"1"}}"""), new ClaudeAdvisorSettings.Entry(), "another variable");
-        foreach (var value in new[] { "1", "true", "TRUE", " yes ", "on" }) Check(ClaudeAdvisorSettings.Truthy(value), "truthy " + value);
-        foreach (var value in new[] { "0", "false", "", "no", "off" }) Check(!ClaudeAdvisorSettings.Truthy(value), "not truthy " + value);
-        Check(ClaudeAdvisorSettings.Truthy(JsonSerializer.SerializeToElement(true)) && ClaudeAdvisorSettings.Truthy(JsonSerializer.SerializeToElement(1))
-            && !ClaudeAdvisorSettings.Truthy((string?)null) && !ClaudeAdvisorSettings.Truthy(JsonSerializer.SerializeToElement(0)), "switches of other types");
-
-        Same(ClaudeAdvisorSettings.Resolve([]), null, "no file");
-        Same(ClaudeAdvisorSettings.Resolve([new(opus)]), "opus", "one");
-        Same(ClaudeAdvisorSettings.Resolve([new(opus), new(ClaudeAdvisorSettings.Choice.Of("sonnet")), new()]), "sonnet", "a later file wins; one without the key changes nothing");
-        Same(ClaudeAdvisorSettings.Resolve([new(opus), new(), new(off)]), null, "a later off");
-        Same(ClaudeAdvisorSettings.Resolve([new(off), new(opus)]), "opus", "a later model");
-        Same(ClaudeAdvisorSettings.Resolve([new(opus, true)]), null, "disabled");
-        Same(ClaudeAdvisorSettings.Resolve([new(Disabled: true), new(opus)]), null, "disabled whatever names a model");
-        Same(ClaudeAdvisorSettings.Resolve([new(opus, true), new(Disabled: false)]), "opus", "until a later file sets it back");
-
-        string home = Verification.Temp(), workspace = Verification.Temp();
-        try
+        foreach (var saved in new string?[] { null, "opus", RunSettings.AdvisorOff })
         {
-            var files = ClaudeAdvisorSettings.Files(workspace, home);
-            SameList(files, [Path.Combine(home, "settings.json"), Path.Combine(workspace, ".claude", "settings.json"), Path.Combine(workspace, ".claude", "settings.local.json")], "the user's, then the folder's two");
-            Same(ClaudeAdvisorSettings.Files(null, home).Count, 1, "without a folder the user's alone");
-            var cache = new ClaudeAdvisorSettings.Cache();
-            string? Model() => ClaudeAdvisorSettings.Model(workspace, home, cache);
-            void Put(string file, string text) { Directory.CreateDirectory(Path.GetDirectoryName(file)!); File.WriteAllText(file, text); }
-            Same(Model(), null, "no file at all");
-            Put(files[0], """{"advisorModel":"opus"}""");
-            Same(Model(), "opus", "the user's");
-            Put(files[1], """{"advisorModel":"sonnet"}""");
-            Same(Model(), "sonnet", "the project's");
-            Put(files[2], """{"advisorModel":"off"}""");
-            Same(Model(), null, "the local file's off");
-            Same(ClaudeAdvisorSettings.Model(null, home, cache), "opus", "without a folder");
-            Put(files[2], """{"advisorModel":"claude-opus-5-5","note":"changed"}""");
-            Same(Model(), "claude-opus-5-5", "a changed file is read again");
-            File.Delete(files[2]);
-            Same(Model(), "sonnet", "a file that went says nothing");
-            Put(files[1], "{\"advisorModel\":\"opus\",\"pad\":\"" + new string('x', ClaudeAdvisorSettings.MaximumBytes) + "\"}");
-            Same(Model(), "opus", "a file too large says nothing");
-            File.Delete(files[1]);
-            Directory.CreateDirectory(files[1]);
-            Same(Model(), "opus", "a folder in a file's place says nothing");
-            Same(File.ReadAllText(files[0]), """{"advisorModel":"opus"}""", "nothing was written");
+            var arguments = ProviderCatalog.Arguments(Request(saved), Plugin);
+            Check(!arguments.Contains("--advisor") && Environment(arguments) is null, "nothing for " + (saved ?? "none"));
         }
-        finally { foreach (var folder in new[] { home, workspace }) try { Directory.Delete(folder, true); } catch (IOException) { } }
-
-        var read = 0;
-        Func<string?> Settings(string? value) => () => { read++; return value; };
-        Same(ClaudeAdvisorSettings.Configured("opus", false, Settings("sonnet")), "opus", "the pane's own model");
-        Same(ClaudeAdvisorSettings.Configured(RunSettings.AdvisorOff, false, Settings("sonnet")), null, "the pane turned it off");
-        Same(read, 0, "Claude's settings not even read");
-        Same(ClaudeAdvisorSettings.Configured(null, false, Settings("sonnet")), "sonnet", "a pane that follows them");
-        Same(ClaudeAdvisorSettings.Configured(null, false, Settings(null)), null, "nothing named");
-        Same(read, 2, "read for a pane that follows them");
-        Same(ClaudeAdvisorSettings.Configured("opus", true, Settings("sonnet")), null, "the run's environment turns it off");
-        Same(ClaudeAdvisorSettings.Configured(null, true, Settings("sonnet")), null, "whatever is named");
-        Same(ClaudeAdvisorSettings.Configured("two words", false, Settings("sonnet")), null, "a pane value that is no model");
+        Same(Environment(ProviderCatalog.Arguments(Request("opus", "high"), Plugin))?.Count, 1, "the effort alone");
         return Task.CompletedTask;
     }
 }

@@ -78,10 +78,12 @@ internal static class WebDelta
     internal static bool SameRun(MightyGraphRun a, MightyGraphRun b) => ReferenceEquals(a, b)
         || a.Id == b.Id && a.Input == b.Input && a.Status == b.Status && a.SourceRunID == b.SourceRunID && a.FinalOutput == b.FinalOutput
             && a.Provider == b.Provider && a.NodeModelLabel == b.NodeModelLabel && a.ConfiguredModel == b.ConfiguredModel && a.NoticeRun == b.NoticeRun && a.NoticeTitle == b.NoticeTitle && Equals(a.Usage, b.Usage)
-            // The role view reads them (Core FlowRoles, FlowAdvisor): the run's effort and its advisor.
-            && a.ConfiguredEffort == b.ConfiguredEffort && a.ConfiguredAdvisor == b.ConfiguredAdvisor && Equals(a.Advisor, b.Advisor)
+            // The role view reads them (Core FlowRoles, FlowSteps): the run's effort and its checklist's steps.
+            && a.ConfiguredEffort == b.ConfiguredEffort && StepsEqual(a.Steps, b.Steps)
             && SameList(a.RootEntries, b.RootEntries, SameEntry) && SameList(a.ResultEntries, b.ResultEntries, SameEntry)
             && SameList(a.Agents, b.Agents, SameAgent) && SameList(a.ResponseRecords, b.ResponseRecords, (x, y) => Equals(x, y));
+
+    private static bool StepsEqual(List<FlowStep>? a, List<FlowStep>? b) => SameList(a, b, (x, y) => x == y);
 
     private static bool SameAgent(MightyGraphAgent a, MightyGraphAgent b) => ReferenceEquals(a, b)
         || a.Id == b.Id && a.ParentID == b.ParentID && a.Title == b.Title && a.Input == b.Input && a.Status == b.Status && a.Kind == b.Kind

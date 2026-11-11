@@ -197,7 +197,7 @@ internal static class StylesVerification
             // Launch: a host that shows the card judges each request and so launches without the list; one that cannot still gets it.
             File.WriteAllBytes(file,bytes);
             var bound=StyleRunPermissions.Bind(new StartRunRequest(pane.Id,pane.WorkspaceId,"claude","test",[]),pane,profile,workspace);
-            var listed=ProviderCatalog.Arguments(bound,"/plugin");Check(listed[listed.IndexOf("--allowedTools")+1]==AutoAllowTool,"a host without the card launches with the list");
+            var listed=ProviderCatalog.Arguments(bound,"/plugin");Check(listed[listed.IndexOf("--allowedTools")+1]==string.Join(",",new[]{AutoAllowTool}.Concat(FlowSteps.TaskTools))&&listed.Count(a=>a=="--allowedTools")==1,"a host without the card launches with the list (and the task tools, in the one list)");
             var hosted=ProviderInput.Prepare(bound,"/plugin",allowPermissionPrompts:true).Arguments;Check(!hosted.Contains("--allowedTools")&&!hosted.Contains(AutoAllowTool)&&hosted[hosted.IndexOf("--permission-prompts")+1]=="host","a host with the card launches without it");
             Check(ProviderInput.Prepare(bound,"/plugin",allowPermissionPrompts:false).Arguments.Contains("--allowedTools"),"prompts off keeps the list");
         }

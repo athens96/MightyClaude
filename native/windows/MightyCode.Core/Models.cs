@@ -188,7 +188,8 @@ public sealed record RunSession : IJsonOnDeserializing
 
     internal RunSession Apply(RunEvent ev)
     {
-        var value = ClaudePlanMode.Record(this, ev); var timing = RunTiming;
+        // A checklist change goes on the request's steps before the pane's list is replaced with it (FlowSteps).
+        var value = ClaudePlanMode.Record(FlowSteps.RecordSteps(this, ev, DateTimeOffset.UtcNow), ev); var timing = RunTiming;
         if (Kind != "shell")
         {
             if (ev.Type == "status" && ev.Status == "running") timing = timing is null || timing.FinishedAt is not null ? AgentRunTiming.Begin() : timing.Observe();
@@ -236,6 +237,8 @@ public sealed record RunSession : IJsonOnDeserializing
             // request: it starts with its own lines only, which come after it.
             var shown = at >= 0 ? runs[at].RootEntries : newRun.NoticeRun == true ? Enumerable.Empty<LogEntry>() : value.Logs.Skip(value.Logs.FindLastIndex(l => l.Kind == "user") + 1);
             newRun = newRun.Copy(); newRun.RootEntries = MightyGraphSupport.MergeRootEntries(shown, newRun.RootEntries);
+            // The pipeline's graph carries no checklist: the steps the pane recorded for the request stay (FlowSteps).
+            if (at >= 0) { newRun.Steps ??= runs[at].Steps; newRun.StepsCarried ??= runs[at].StepsCarried; }
             if (at >= 0) runs[at] = newRun; else runs.Add(newRun);
             var bounded = MightyGraphSupport.BoundedLiveHistory([.. runs.TakeLast(128)]);
             return value with { GraphRuns = bounded.Count > 0 ? bounded : null };

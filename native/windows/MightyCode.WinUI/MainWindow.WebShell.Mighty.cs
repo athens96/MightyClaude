@@ -18,7 +18,8 @@ namespace MightyCode.WinUI;
 /// it wears the task's terminal symbol and no provider mark. A result whose request awaits notices carries its rows (<c>Awaiting</c>): the page
 /// draws it as the 알림 대기 block. A result that is the result so far says so (<c>SoFar</c>, <see cref="MightyGraphBlock.SoFar"/>): its strip and
 /// symbol are neutral. Each is absent otherwise. <c>Flow</c> is the role view's copy of the node (Core FlowCopy.Block): who a 실행 or sub-agent block is,
-/// a card's lines, a delegate line, the return node or the advisor's band; a delegate line, a return node and a band have no other copy of their own.
+/// a card's lines (the 실행 card's and a step's too), what a step holds, the plan column, a delegate line or the return node; a step, the plan column, a
+/// delegate line and a return node have no other copy of their own.
 /// </summary>
 internal sealed record WebMightyBlock(string Kind, string Title, string State, string? Capsule, string Help, string Indicator, string Outline, string Status, string Tone,
     string? FilesRunId, string? RecordId, bool FromRecord, string? Provider, bool? Background = null, IReadOnlyList<string>? OutputTail = null, string? NoticeReply = null, bool? Notice = null,
@@ -35,11 +36,12 @@ internal sealed record WebMightyAC(string Title, string Status, string StatusWor
 internal sealed record WebMightyHistory(string Text, bool Acts, string Phase);
 
 /// <summary>What the page's layout needs besides the runs it holds, and the toolbar's words. <c>FanOut</c>: the role view (a Claude pane), whose session log
-/// strip is <c>Log</c> (Core FlowCopy.LogOf; none without a request). The log goes in every view, so the strip stands under the diagram the moment it shows
+/// strip is <c>Log</c> (Core FlowCopy.LogOf; none without a request) and whose progress panel reads <c>Progress</c> (Core FlowCopy.ProgressOf, by request run id). The log goes in every view, so the strip stands under the diagram the moment it shows
 /// again (the Mac draws it from the pane's runs) instead of coming with the next push and shrinking the diagram under a camera that just landed.</summary>
 internal sealed record WebMightyInputs(string? PlanRunID, IReadOnlyList<object> PlanRecords, IReadOnlyList<object> Galleries, IReadOnlyList<object> Executions,
     string? ResultFilesRunID, Dictionary<string, List<WebMightyFile>> Files, int Older, int RetainedStart, WebMightyHistory? History, string Summary, string SummaryHelp,
-    Dictionary<string, WebMightyExecution> ExecutionCards, bool Animations, string Header, bool? FanOut = null, FlowCopy.Log? Log = null);
+    Dictionary<string, WebMightyExecution> ExecutionCards, bool Animations, string Header, bool? FanOut = null, FlowCopy.Log? Log = null,
+    Dictionary<string, FlowCopy.ProgressCopy>? Progress = null);
 
 /// <summary>One 기록 row; <c>Ink</c> is its block's role ink (a design token's name, Core FlowRoles.Token) as the diagram's header wears it, absent for a
 /// block that is no 실행 or sub-agent block.</summary>
@@ -360,7 +362,7 @@ public sealed partial class MainWindow
             var root = LocalPath(Workspace);
             var galleries = MightyGraphImages.Galleries(runs, root, older.Count);
             var records = PlanCardSupport.DiagramRecords(pane.PlanHistory, runs);
-            // A Claude pane's flow is its role view (docs/mighty-mode.md "역할 보기"): cards, delegate lines, the return node and the advisor's band. The page
+            // A Claude pane's flow is its role view (docs/mighty-mode.md "역할 보기"): cards, steps and delegate lines, with the progress panel (FlowCopy.ProgressOf). The page
             // decides which card is open; every card is laid out open here, so every block it may open has its copy.
             var fanOut = pane.Kind == "claude" && pane.Provider == "claude";
             // The copy is the layout's blocks; frames do not matter here, so the layout is made without a viewport.
@@ -370,7 +372,7 @@ public sealed partial class MainWindow
             graphPlanNodeId = planRunId is null ? null : MightyGraphBlockSize.NodeId(planRunId, MightyGraphLayout.PlanSuffix);
             graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
             var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
-            var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog);
+            var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog, splitsExecution: true);
             // The background sub-agents and tasks by their diagram node, for their kind, output lines and notice reply.
             var tails = owner.BackgroundOutputFor(pane.Id);
             var background = new Dictionary<string, MightyGraphAgent>(StringComparer.Ordinal);
@@ -404,12 +406,15 @@ public sealed partial class MainWindow
                     block.Awaiting is { } awaiting ? new WebMightyAwaiting(awaiting.Tasks.Select(task => new WebMightyAwaitedTask(task.Title, task.Status, task.Word)).ToList(), awaiting.Progress) : null,
                     block.SoFar ? true : null, flow.GetValueOrDefault(block.Id));
             }
-            // A delegate line, a return node and an advisor's band have only their role-view copy.
+            // A step, a delegate line and a return node have only their role-view copy: a step its title, state and status.
             foreach (var node in layout.Nodes)
             {
-                if (node.Kind is not (MightyGraphLayout.DelegateKind or MightyGraphLayout.ReturnKind or MightyGraphLayout.AdvisorKind) || flow.GetValueOrDefault(node.Id) is not { } own) continue;
-                var tone = node.Kind == MightyGraphLayout.ReturnKind || own.Advisor?.Consulting == true ? "run" : "idle";
-                copy[node.Id] = new(node.Kind, "", "", null, "", "none", MightyGraphActivity.None, "", tone, null, null, false, null, Flow: own);
+                if (node.Kind is not (MightyGraphLayout.DelegateKind or MightyGraphLayout.ReturnKind or MightyGraphLayout.StepKind)
+                    || flow.GetValueOrDefault(node.Id) is not { } own) continue;
+                var tone = node.Kind == MightyGraphLayout.ReturnKind ? "run"
+                    : own.Step is { } held ? held.Status switch { "running" => "run", "completed" => "done", "error" => "err", "stopped" => "stop", _ => "idle" } : "idle";
+                copy[node.Id] = new(node.Kind, own.Step?.Title ?? "", own.Step?.StateWord ?? "", null, "", "none",
+                    MightyGraphActivity.None, own.Step?.Status ?? "", tone, null, null, false, null, Flow: own);
             }
             WebMightyHistory? history = null;
             if (ShowsHistoryBlock(pane, retained))
@@ -427,7 +432,8 @@ public sealed partial class MainWindow
                 executions.Select(e => (object)new { runID = e.RunID, key = e.Key }).ToList(),
                 graphResultFilesRunId, files.ToDictionary(f => f.Key, f => f.Value.Select(file => new WebMightyFile(file.Path, file.Line)).ToList()),
                 older.Count, older.Count, history, summary, MightyGraphBlockModel.ToolbarHelp(retained), cards, AnimationsEnabled, header,
-                fanOut ? true : null, fanOut ? FlowCopy.LogOf(runs, pane.FlowLogCollapsed == true, definitions) : null);
+                fanOut ? true : null, fanOut ? FlowCopy.LogOf(runs, pane.FlowLogCollapsed == true, definitions) : null,
+                fanOut ? FlowCopy.ProgressOf(runs) : null);
             var olderKey = older.Count + ":" + string.Join(",", older.Select(run => run.Id + "/" + run.Status + "/" + run.Agents.Count));
             return new(copy, inputs, olderKey, older,
                 presentation == "timeline" ? WebTimeline(pane, runs, older.Count, catalog) : null,
@@ -450,7 +456,7 @@ public sealed partial class MainWindow
             _ = Task.Run(() =>
             {
                 Dictionary<string, AgentDefinition>? found = null;
-                try { found = AgentDefinitions.Load(types, root, ClaudeAdvisorSettings.ConfigDirectory(home)); }
+                try { found = AgentDefinitions.Load(types, root, AgentDefinitions.ConfigDirectory(home)); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
                 Container.DispatcherQueue.TryEnqueue(() =>
                 {

@@ -3,6 +3,7 @@
 import type { PlanRecord, GraphBlockSize, MightyGraphRun } from '../store/models';
 import type { BlockExtra } from './Block';
 import { ImagesSuffix, PlanRecordSuffix, runOf, suffixOf, type Layout } from './layout';
+import { runSteps, stepEntries, stepSuffix } from './flow';
 import type { MightyInputs } from './types';
 
 export function sameExtra(a: BlockExtra, b: BlockExtra): boolean {
@@ -35,6 +36,19 @@ export function blockExtras({ layout, runs, inputs, draft, planHistory, resultSi
     switch (node.kind) {
       case 'request': extra = { input: run?.input }; break;
       case 'work': extra = { entries: run?.rootEntries }; break;
+      case 'step': {
+        // What the main session recorded during the step: in the request and in the notice turns after it (macOS FlowSteps.entries).
+        const steps = run ? runSteps(run) : [];
+        const index = steps.findIndex((step) => stepSuffix(step) === suffix);
+        if (run && index >= 0) {
+          const source = run.sourceRunID;
+          const activity = [run, ...runs.filter((r) => r.noticeRun === true && source !== undefined && (r.sourceRunID ?? '').startsWith(source + ':notice:'))];
+          const cached = previous.get(node.id)?.entries;
+          const entries = stepEntries(index, steps, activity.flatMap((r) => r.rootEntries));
+          extra = { entries: cached && cached.length === entries.length && cached.every((e, i) => e === entries[i]) ? cached : entries };
+        }
+        break;
+      }
       case 'agent': { const agent = run?.agents.find((a) => 'agent:' + a.id === suffix); extra = { input: agent?.input, entries: agent?.entries }; break; }
       case 'result': {
         const files = filesOf(run);

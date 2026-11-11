@@ -745,7 +745,7 @@ public sealed partial class MainWindow
             _ = Task.Run(() =>
             {
                 Dictionary<string, AgentDefinition>? found = null;
-                try { found = AgentDefinitions.Load(types, root, ClaudeAdvisorSettings.ConfigDirectory(home)); }
+                try { found = AgentDefinitions.Load(types, root, AgentDefinitions.ConfigDirectory(home)); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
                 Container.DispatcherQueue.TryEnqueue(() =>
                 {

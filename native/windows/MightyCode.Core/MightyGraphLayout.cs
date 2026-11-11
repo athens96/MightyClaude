@@ -5,14 +5,11 @@ public sealed class MightyGraphLayout
 {
     /// <param name="IsCompact">A sub-agent or a background command drawn as its compact card (<see cref="FlowCard"/>), not as its block.</param>
     public sealed record Node(string Id, string Kind, GraphRect Frame, bool IsCompact = false);
-    public sealed record Edge(string Source, string Target, bool Joins = false);
-    /// <summary>A dotted connector from an advisor's band to a block that consulted it (<see cref="FlowAdvisor.Callers"/>). It is no edge of the flow:
-    /// nothing is laid out by it and no camera follows it (macOS AdvisorLink).</summary>
-    public sealed record AdvisorLink(string Band, string Target);
+    /// <param name="Side">From a spine block's trailing edge to a block it launched, beside it (<see cref="FlowSteps"/>).</param>
+    public sealed record Edge(string Source, string Target, bool Joins = false, bool Side = false);
 
     public List<Node> Nodes { get; init; } = [];
     public List<Edge> Edges { get; init; } = [];
-    public List<AdvisorLink> AdvisorLinks { get; init; } = [];
 
     /// <summary>The role view of a Claude pane's request (<see cref="Make"/> <c>fanOut</c>): every sub-agent and background command of the run stands under
     /// the block that launched it, a background one too, which the other views leave to the strip and the notice runs; a running one is a compact card
@@ -23,15 +20,15 @@ public sealed class MightyGraphLayout
         public bool IsOpened(string id) => OpenAll || Opened?.Contains(id) == true;
     }
     /// <summary>The delegate line's node: its kind and its suffix, <c>delegate:&lt;key&gt;</c> (<see cref="FlowDelegation"/>); the return node's
-    /// (<see cref="FlowReturn"/>); the advisor's band (<see cref="FlowAdvisor"/>).</summary>
+    /// (<see cref="FlowReturn"/>); a request's step (<see cref="FlowSteps"/>).</summary>
     public const string DelegateKind = "delegate", DelegateSuffix = "delegate:";
     public const string ReturnKind = "return", ReturnSuffix = "return";
-    public const string AdvisorKind = "advisor";
+    public const string StepKind = "step";
     /// <summary>From a block's bottom to its delegate line, and from the line to the row under it.</summary>
     public const double DelegateGap = 18, DelegateRowGap = 26;
     /// <summary>Neither selected nor resized: a click goes to what it holds and a wheel pans past it. The history block at the top, the role view's line,
     /// return node and advisor band, and a compact card, which has nothing to scroll (macOS Node.isFixed).</summary>
-    public static bool IsFixed(Node node) => node.IsCompact || node.Kind is "history" or DelegateKind or ReturnKind or AdvisorKind;
+    public static bool IsFixed(Node node) => node.IsCompact || node.Kind is "history" or DelegateKind or ReturnKind;
     public (double W, double H) Size { get; set; }
     public double OriginX { get; set; }
     /// Older requests loaded from the session record sit above the first
@@ -115,7 +112,7 @@ public sealed class MightyGraphLayout
     /// Blocks with the corner handle and the edge bands (macOS Node.isResizable): the flow's own blocks, and the
     /// answered plans although they hang beside it.
     /// </summary>
-    public static bool IsResizable(string kind) => kind is "request" or WorkKind or "agent" or "result" or "draft" or "plan" or "planRecord";
+    public static bool IsResizable(string kind) => kind is "request" or WorkKind or "agent" or "result" or "draft" or "plan" or "planRecord" or StepKind;
     /// <summary>A laid-out node with the corner handle: a resizable kind that is no compact card, which is never dragged (macOS Node.isResizable).</summary>
     public static bool IsResizable(Node node) => !node.IsCompact && IsResizable(node.Kind);
     /// <summary>The block that holds a point given in node coordinates, the first laid out when two overlap (macOS <c>frames.first { contains }</c>).</summary>
@@ -344,8 +341,6 @@ public sealed class MightyGraphLayout
 
         var trees = new List<Tree>();
         ((double W, double H) Size, (double W, double H)? Limit, (double W, double H)? WindowFit)? planFit = null;
-        // Each run's own flow nodes (its request, 실행, blocks, line, return node, plan and result): the advisor's band reaches down to the lowest.
-        var flowNodes = new List<HashSet<string>>();
         for (var runIndex = 0; runIndex < runs.Count; runIndex++)
         {
             var run = runs[runIndex];
@@ -361,6 +356,8 @@ public sealed class MightyGraphLayout
             // With a fan-out the run's background sub-agents and commands are laid out too, each where it was launched (macOS make(fanOut:)).
             var agents = fanOut is null ? run.Agents : run.FlowAgents;
             List<int> Ordered(IEnumerable<int> values) => fanOut is null ? values.ToList() : values.OrderBy(run.FlowOrder).ToList();
+            // The blocks launched from the main session in one of the request's steps: their cards name the step (FlowSteps.StepLabel).
+            var inStep = fanOut is null ? [] : Enumerable.Range(0, agents.Count).Where(i => FlowSteps.StepLabel(agents[i], run) is not null).ToHashSet();
             var indexes = new Dictionary<string, int>();
             for (var ai = 0; ai < agents.Count; ai++)
                 if (!indexes.ContainsKey(agents[ai].Id)) indexes[agents[ai].Id] = ai;
@@ -377,7 +374,7 @@ public sealed class MightyGraphLayout
                 var agent = agents[index];
                 var id = NodeID(run, "agent:" + agent.Id);
                 var compact = fanOut is not null && FlowCard.IsCompact(agent, fanOut.IsOpened(id));
-                (double W, double H) cardSize = compact ? (FlowCard.Width, FlowCard.Height) : Size(id, 360, expanded.Contains(id) ? 480 : agent.IsTask && agent.NoticeReply is not null ? 320 : 240);
+                (double W, double H) cardSize = compact ? (FlowCard.Width, inStep.Contains(index) ? FlowCard.StepHeight : FlowCard.Height) : Size(id, 360, expanded.Contains(id) ? 480 : agent.IsTask && agent.NoticeReply is not null ? 320 : 240);
                 var height = cardSize.H;
                 var below = Ordered(Enumerable.Range(0, agents.Count).Where(ci => ci != index && agents[ci].ParentID == agent.Id));
                 if (compact) foreach (var ci in below) Fold(ci, depth + 1);
@@ -417,64 +414,123 @@ public sealed class MightyGraphLayout
                 return result;
             }
 
-            var branches = new List<Tree>();
-            foreach (var ai in Ordered(Enumerable.Range(0, agents.Count)))
+            bool IsTop(int ai) => agents[ai].ParentID is not { } parent || !indexes.ContainsKey(parent) || parent == agents[ai].Id;
+            // A plan waiting for its answer stands where the result will.
+            var planWaits = run.Id == planRunID && !Finished(run);
+            // The role view (FanOut): the request, what happened between it and its answer, and the answer. While there is no answer yet the main
+            // session's card stands in its place (the 실행 block, a card until opened) (macOS make(fanOut:)).
+            var endsInWork = fanOut is not null && splitsExecution && !HasResult(run) && !planWaits;
+            var workCompact = fanOut is not null && !fanOut.IsOpened(workID);
+            (double W, double H)? workShown = workCompact ? (FlowSteps.CardWidth, FlowSteps.CardHeight) : workSize;
+            // The request's steps that began, by their index among all its steps; one not begun is only in the plan column.
+            var started = fanOut is null ? [] : FlowSteps.Steps(run).Select((step, index) => (Index: index, Step: step)).Where(s => !s.Step.IsPending).ToList();
+            double treeWidth;
+            Tree tree;
+            if (started.Count > 0)
             {
-                var parent = agents[ai].ParentID;
-                if (parent is null || !indexes.ContainsKey(parent) || parent == agents[ai].Id)
+                // The request's spine: the request, then each step that began, every block launched from the main session beside the one whose time it
+                // was launched in (FlowSteps.Slot; before the first step, beside the request).
+                var spineSteps = started.Select(s => s.Step).ToList();
+                var slots = Enumerable.Range(0, started.Count + 1).Select(_ => new List<Tree>()).ToList();
+                foreach (var ai in Ordered(Enumerable.Range(0, agents.Count)).Where(IsTop))
+                    if (Branch(ai) is { } t) slots[FlowSteps.Slot(agents[ai], spineSteps)].Add(t);
+                for (var ai = 0; ai < agents.Count; ai++)
+                    if (!visited.Contains(ai) && Branch(ai) is { } t) slots[0].Add(t);
+                var spine = new List<(string Id, string Kind, (double W, double H) Size, bool Compact)> { (mainID, "request", mainSize, false) };
+                foreach (var (index, step) in started)
                 {
-                    var t = Branch(ai);
-                    if (t is not null) branches.Add(t);
+                    var id = NodeID(run, FlowSteps.NodeSuffix(step));
+                    var compact = !fanOut!.IsOpened(id);
+                    spine.Add((id, StepKind, compact ? (FlowSteps.CardWidth, FlowSteps.CardHeight) : Size(id, 360, expanded.Contains(id) ? 480 : 240), compact));
                 }
-            }
-            for (var ai = 0; ai < agents.Count; ai++)
-            {
-                if (!visited.Contains(ai)) { var t = Branch(ai); if (t is not null) branches.Add(t); }
-            }
-
-            var branchWidth = branches.Sum(b => b.Width) + Math.Max(0, branches.Count - 1) * SiblingGap;
-            var treeWidth = Math.Max(Math.Max(mainSize.W, workSize?.W ?? 0), Math.Max(branchWidth, HasResult(run) ? resultSize.W : 0));
-            var mainNode = new Node(mainID, "request", new((treeWidth - mainSize.W) / 2, 0, mainSize.W, mainHeight));
-            var tree = new Tree { Nodes = [mainNode], Width = treeWidth, Height = mainHeight, Top = mainID, Leaves = [mainID] };
-            // The block the sub-agents branch from: the 실행 block right under the request, or the request itself.
-            var parentID = mainID;
-            if (workSize is { } work)
-            {
-                tree.Nodes.Add(new Node(workID, WorkKind, new((treeWidth - work.W) / 2, mainHeight + RowGap, work.W, work.H)));
-                tree.Edges.Add(new Edge(mainID, workID));
-                tree.Leaves = [workID];
-                tree.Height += RowGap + work.H;
-                parentID = workID;
-            }
-            if (branches.Count > 0)
-            {
-                tree.Leaves = [];
-                var top = tree.Height + RowGap;
-                // The main session's delegate line stands between it and the row (FlowDelegation).
-                if (fanOut is not null && FlowDelegation.Children(FlowDelegation.MainKey, run).Count > 0)
+                // The spine stands on the run's centreline: the column beside it is matched by room on the other side.
+                var half = Math.Max(HasResult(run) ? resultSize.W : 0, endsInWork ? workShown?.W ?? 0 : 0) / 2;
+                for (var slot = 0; slot < spine.Count; slot++)
                 {
-                    var line = NodeID(run, DelegateSuffix + FlowDelegation.MainKey);
-                    var frame = new GraphRect((treeWidth - FlowDelegation.Width) / 2, tree.Height + DelegateGap, FlowDelegation.Width, FlowDelegation.Height);
-                    tree.Nodes.Add(new Node(line, DelegateKind, frame));
-                    tree.Edges.Add(new Edge(parentID, line));
-                    parentID = line;
-                    top = frame.MaxY + DelegateRowGap;
+                    var column = slots[slot].Count > 0 ? slots[slot].Max(t => t.Width) : 0;
+                    half = Math.Max(half, spine[slot].Size.W / 2 + (column > 0 ? FlowSteps.SideGap + column : 0));
                 }
-                var x = (treeWidth - branchWidth) / 2;
-                foreach (var branch in branches)
+                treeWidth = 2 * half;
+                tree = new Tree { Width = treeWidth, Height = 0, Top = mainID, Leaves = [] };
+                var spineY = 0.0;
+                string? previousBlock = null;
+                for (var slot = 0; slot < spine.Count; slot++)
                 {
-                    branch.Offset(x, top);
-                    tree.Nodes.AddRange(branch.Nodes);
-                    tree.Edges.Add(new Edge(parentID, branch.Top));
-                    tree.Edges.AddRange(branch.Edges);
-                    tree.Leaves.AddRange(branch.Leaves);
-                    tree.Height = Math.Max(tree.Height, top + branch.Height);
-                    x += branch.Width + SiblingGap;
+                    var block = spine[slot];
+                    var frame = new GraphRect(half - block.Size.W / 2, previousBlock is null ? 0 : spineY + RowGap, block.Size.W, block.Size.H);
+                    tree.Nodes.Add(new Node(block.Id, block.Kind, frame, block.Compact));
+                    if (previousBlock is not null) tree.Edges.Add(new Edge(previousBlock, block.Id));
+                    double lowest = frame.MaxY, top = frame.Y;
+                    foreach (var child in slots[slot])
+                    {
+                        child.Offset(frame.MaxX + FlowSteps.SideGap, top);
+                        tree.Nodes.AddRange(child.Nodes);
+                        tree.Edges.Add(new Edge(block.Id, child.Top, Side: true));
+                        tree.Edges.AddRange(child.Edges);
+                        lowest = Math.Max(lowest, top + child.Height);
+                        top += child.Height + SiblingGap;
+                    }
+                    spineY = lowest;
+                    previousBlock = block.Id;
+                }
+                tree.Height = spineY;
+                tree.Leaves = [previousBlock ?? mainID];
+            }
+            else
+            {
+                var branches = new List<Tree>();
+                foreach (var ai in Ordered(Enumerable.Range(0, agents.Count)).Where(IsTop))
+                    if (Branch(ai) is { } t) branches.Add(t);
+                for (var ai = 0; ai < agents.Count; ai++)
+                {
+                    if (!visited.Contains(ai)) { var t = Branch(ai); if (t is not null) branches.Add(t); }
+                }
+                var branchWidth = branches.Sum(b => b.Width) + Math.Max(0, branches.Count - 1) * SiblingGap;
+                // The role view draws the 실행 block only where the answer will be (below); every other view right under the request.
+                var workUnder = fanOut is null ? workShown : null;
+                treeWidth = new[] { mainSize.W, workUnder?.W ?? 0, branchWidth, HasResult(run) ? resultSize.W : 0, endsInWork ? workShown?.W ?? 0 : 0 }.Max();
+                var mainNode = new Node(mainID, "request", new((treeWidth - mainSize.W) / 2, 0, mainSize.W, mainHeight));
+                tree = new Tree { Nodes = [mainNode], Width = treeWidth, Height = mainHeight, Top = mainID, Leaves = [mainID] };
+                // The block the sub-agents branch from: the 실행 block right under the request, or the request itself.
+                var parentID = mainID;
+                if (workUnder is { } work)
+                {
+                    tree.Nodes.Add(new Node(workID, WorkKind, new((treeWidth - work.W) / 2, mainHeight + RowGap, work.W, work.H)));
+                    tree.Edges.Add(new Edge(mainID, workID));
+                    tree.Leaves = [workID];
+                    tree.Height += RowGap + work.H;
+                    parentID = workID;
+                }
+                if (branches.Count > 0)
+                {
+                    tree.Leaves = [];
+                    var top = tree.Height + RowGap;
+                    // The main session's delegate line stands between it and the row (FlowDelegation).
+                    if (fanOut is not null && FlowDelegation.Children(FlowDelegation.MainKey, run).Count > 0)
+                    {
+                        var line = NodeID(run, DelegateSuffix + FlowDelegation.MainKey);
+                        var frame = new GraphRect((treeWidth - FlowDelegation.Width) / 2, tree.Height + DelegateGap, FlowDelegation.Width, FlowDelegation.Height);
+                        tree.Nodes.Add(new Node(line, DelegateKind, frame));
+                        tree.Edges.Add(new Edge(parentID, line));
+                        parentID = line;
+                        top = frame.MaxY + DelegateRowGap;
+                    }
+                    var x = (treeWidth - branchWidth) / 2;
+                    foreach (var branch in branches)
+                    {
+                        branch.Offset(x, top);
+                        tree.Nodes.AddRange(branch.Nodes);
+                        tree.Edges.Add(new Edge(parentID, branch.Top));
+                        tree.Edges.AddRange(branch.Edges);
+                        tree.Leaves.AddRange(branch.Leaves);
+                        tree.Height = Math.Max(tree.Height, top + branch.Height);
+                        x += branch.Width + SiblingGap;
+                    }
                 }
             }
             // A plan waiting for an answer goes where the result will: the run
             // is still going, so nothing is below it yet.
-            if (run.Id == planRunID && !Finished(run))
+            if (planWaits)
             {
                 var planID = NodeID(run, PlanSuffix);
                 var fit = PlanSize(planSize, viewport, zoom);
@@ -490,15 +546,13 @@ public sealed class MightyGraphLayout
                 tree.Leaves = [planID];
                 tree.Height += RowGap + planBlock.H;
             }
-            // Until the result is there, the branches of a run that delegated come back into the return node standing in its place (FlowReturn): a
-            // plan waiting for its answer already stands there.
-            if (fanOut is not null && !HasResult(run) && !(run.Id == planRunID && !Finished(run)) && FlowReturn.Of(run) is not null)
+            // The role view: the main session at work, where its answer will come, until it is there.
+            if (endsInWork && workShown is { } atWork)
             {
-                var id = NodeID(run, ReturnSuffix);
-                tree.Nodes.Add(new Node(id, ReturnKind, new((tree.Width - FlowReturn.Width) / 2, tree.Height + RowGap, FlowReturn.Width, FlowReturn.Height)));
-                tree.Edges.AddRange(tree.Leaves.Select(l => new Edge(l, id, true)));
-                tree.Leaves = [id];
-                tree.Height += RowGap + FlowReturn.Height;
+                tree.Nodes.Add(new Node(workID, WorkKind, new((treeWidth - atWork.W) / 2, tree.Height + RowGap, atWork.W, atWork.H), workCompact));
+                tree.Edges.AddRange(tree.Leaves.Select(l => new Edge(l, workID, true)));
+                tree.Leaves = [workID];
+                tree.Height += RowGap + atWork.H;
             }
             if (HasResult(run))
             {
@@ -508,7 +562,6 @@ public sealed class MightyGraphLayout
                 tree.Leaves = [resultID];
                 tree.Height += RowGap + height;
             }
-            flowNodes.Add(tree.Nodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal));
             trees.Add(tree);
         }
 
@@ -582,6 +635,11 @@ public sealed class MightyGraphLayout
             var sharing = layout.Nodes.Where(n => n.Frame.Y < top + height && n.Frame.MaxY > top).Select(n => n.Frame.MaxX).ToList();
             return Math.Max(sharing.Count > 0 ? sharing.Max() : owner.MaxX, owner.MaxX) + AttachmentGap;
         }
+        // The block attachments hang off: the 실행 block (the main agent started them), else the request, which the role view's 실행 card
+        // stands under only until the answer is there.
+        Node? Anchor(int runIndex) =>
+            (splitsExecution ? layout.Nodes.FirstOrDefault(n => n.Kind == WorkKind && n.Id == NodeID(runs[runIndex], WorkSuffix)) : null)
+            ?? layout.Nodes.FirstOrDefault(n => n.Kind == "request" && n.Id == NodeID(runs[runIndex], "request"));
         void Grow(GraphRect frame) => layout.Size = (Math.Max(layout.Size.W, frame.MaxX + 24 - layout.OriginX), Math.Max(layout.Size.H, frame.MaxY + 24 - layout.OriginY));
         // A picture preview hangs off the top of the step that produced it, right of every card it would share rows
         // with: an attachment, like the file list (no edge, no centreline, nothing already placed moves).
@@ -604,7 +662,7 @@ public sealed class MightyGraphLayout
         foreach (var execution in executions ?? [])
         {
             if (RunIndex(execution.RunID) is not (>= 0 and var runIndex)) continue;
-            if (layout.Nodes.FirstOrDefault(n => splitsExecution ? n.Kind == WorkKind && n.Id == NodeID(runs[runIndex], WorkSuffix) : n.Kind == "request" && n.Id == NodeID(runs[runIndex], "request")) is not { } owner) continue;
+            if (Anchor(runIndex) is not { } owner) continue;
             var id = NodeID(runs[runIndex], ExecutionSuffix + execution.Key);
             if (layout.Nodes.Any(n => n.Id == id)) continue;
             var top = nextY.TryGetValue(runIndex, out var stacked) ? stacked : owner.Frame.Y;
@@ -621,8 +679,7 @@ public sealed class MightyGraphLayout
             var runIndex = -1;
             for (var i = 0; i < runs.Count; i++) if (runs[i].Id == runID) { runIndex = i; break; }
             if (runIndex < 0) continue;
-            var request = layout.Nodes.FirstOrDefault(n => splitsExecution ? n.Kind == WorkKind && n.Id == NodeID(runs[runIndex], WorkSuffix) : n.Kind == "request" && n.Id == NodeID(runs[runIndex], "request"));
-            if (request is null) continue;
+            if (Anchor(runIndex) is not { } request) continue;
             var id = NodeID(runs[runIndex], PlanRecordSuffix + recordID);
             if (layout.Nodes.Any(n => n.Id == id)) continue;
             var top = nextY.TryGetValue(runIndex, out var stacked) ? stacked : request.Frame.Y;
@@ -635,45 +692,6 @@ public sealed class MightyGraphLayout
             layout.Nodes.Add(new Node(id, "planRecord", frame));
             layout.Size = (Math.Max(layout.Size.W, frame.MaxX + 24 - layout.OriginX), Math.Max(layout.Size.H, frame.MaxY + 24 - layout.OriginY));
             nextY[runIndex] = frame.MaxY + AttachmentGap;
-        }
-        // The advisor's band stands left of its run's column, from the 실행 block's top to the run's last block, left of every card it would share rows
-        // with: an attachment as well, so no edge, no centreline, and nothing already placed moves. Only the leading canvas extent grows. Dotted links go
-        // from it to the blocks that asked (macOS make(fanOut:)).
-        if (fanOut is not null)
-        {
-            for (var runIndex = 0; runIndex < runs.Count; runIndex++)
-            {
-                var run = runs[runIndex];
-                if (!FlowAdvisor.Shows(run)) continue;
-                var anchorID = NodeID(run, splitsExecution ? WorkSuffix : "request");
-                if (layout.Nodes.FirstOrDefault(n => n.Id == anchorID) is not { } work) continue;
-                var id = NodeID(run, FlowAdvisor.Suffix);
-                if (layout.Nodes.Any(n => n.Id == id)) continue;
-                var own = flowNodes[runIndex];
-                var bottoms = layout.Nodes.Where(n => own.Contains(n.Id)).Select(n => n.Frame.MaxY).ToList();
-                var lowest = bottoms.Count > 0 ? bottoms.Max() : work.Frame.MaxY;
-                var top = work.Frame.Y;
-                var height = Math.Max(FlowAdvisor.MinimumHeight, lowest - top);
-                var lefts = layout.Nodes.Where(n => n.Frame.Y < top + height && n.Frame.MaxY > top).Select(n => n.Frame.X).ToList();
-                var left = lefts.Count > 0 ? lefts.Min() : work.Frame.X;
-                var frame = new GraphRect(Math.Min(left, work.Frame.X) - FlowAdvisor.Gap - FlowAdvisor.Width, top, FlowAdvisor.Width, height);
-                var drawn = layout.Nodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
-                layout.Nodes.Add(new Node(id, AdvisorKind, frame));
-                var linked = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var caller in FlowAdvisor.Callers(run))
-                {
-                    // A caller under a folded card is laid out nowhere: the card above it stands for it.
-                    if (FlowLog.DrawnNode(caller, run, drawn.Contains) is not { } target || !linked.Add(target)) continue;
-                    layout.AdvisorLinks.Add(new AdvisorLink(id, target));
-                }
-                var origin = MightyGraphCamera.OriginX(frame.X);
-                if (origin < layout.OriginX)
-                {
-                    layout.Size = (layout.Size.W + layout.OriginX - origin, layout.Size.H);
-                    layout.OriginX = origin;
-                }
-                layout.Size = (layout.Size.W, Math.Max(layout.Size.H, frame.MaxY + 24 - layout.OriginY));
-            }
         }
         layout.FittedResultID = FittedResultId(runs, viewport, hasSharedResultSize);
         layout.ResultLimit = resultLimit;

@@ -351,8 +351,6 @@ export function Toolbar({ paneId, pills, busy, showUsage, onUsageShown, resumed 
       {pill('model', <><span className="pill-glyph"><ProviderMark provider={pills.provider} size={12} /></span><span className="pill-text">{pills.model}</span></>, pills.modelTip)}
       <AskPill paneId={paneId} targets={askTargets} current={askTarget} compact={narrow} />
       {!narrow && pills.showsEffort && pill('effort', <>{glyph('brain')}<span className="pill-text">{pills.effort}</span></>, pills.effortTip, pills.effortEnabled)}
-      {/* The advisor beside the effort (M/SessionPaneView.swift advisorMenu): a chosen model's name, else the bulb alone. */}
-      {!narrow && pills.showsAdvisor && pill('advisor', <>{glyph('lightbulb')}{pills.advisor ? <span className="pill-text pill-advisor">{pills.advisor}</span> : null}</>, pills.advisorTip ?? '', true, (pills.advisor ?? '') !== '')}
       {!narrow && pill('permission', <>{glyph(pills.unlocked ? 'lock-open' : 'shield-half')}<span className="pill-text">{pills.permission}</span></>, pills.permissionHelp, true, pills.unlocked)}
       {!narrow && pills.showsFast && (
         <button type="button" className={'composer-pill' + (pills.fast ? ' on' : '')} aria-pressed={pills.fast} title={t('composer.fast.tooltip')} disabled={busy || !pills.fastEnabled} onClick={() => void bridge.call('toggleFast', { paneId }).catch(fail)}>

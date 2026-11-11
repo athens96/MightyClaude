@@ -18,11 +18,6 @@ export interface Pills {
   moreOn: boolean;
   contextPercent: number | null;
   resuming: boolean;
-  /** A Claude pane on this computer names its advisor (Core ComposerAdvisor): the pill's words (a chosen model, else none), its help, and off. Absent from an older host. */
-  showsAdvisor?: boolean;
-  advisor?: string;
-  advisorTip?: string;
-  advisorOff?: boolean;
 }
 
 export type MenuRow =
@@ -35,7 +30,7 @@ export type MenuRow =
   | { kind: 'runSettings'; text: string }
   | { kind: 'submenu'; text: string; enabled: boolean; items: MenuRow[] };
 
-export type MenuName = 'model' | 'effort' | 'advisor' | 'permission' | 'options' | 'actions' | 'style';
+export type MenuName = 'model' | 'effort' | 'permission' | 'options' | 'actions' | 'style';
 
 export interface RunSettingsValues {
   fastMode: boolean;

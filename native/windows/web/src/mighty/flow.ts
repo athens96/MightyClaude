@@ -1,37 +1,36 @@
 // The role view of a Claude pane's flow (docs/mighty-mode.md "역할 보기"), the page's side: the rules the layout and the drawing read from
-// the runs the page holds, ported from Core FlowCard/FlowLines/FlowAdvisor/FlowLog/FlowRoles (macOS MightyCore of the same names). Every
+// the runs the page holds, ported from Core FlowCard/FlowLines/FlowLog/FlowRoles/FlowSteps (macOS MightyCore of the same names). Every
 // word and model name comes from the host's copy (Core FlowCopy, `MightyBlockCopy.flow`); what is here is what the page decides from its own
-// drawing and its own clock: which block is a card, where the delegate lines, the return node and the advisor's band stand, which edges are
-// live, how a card's time reads now, which chips fit a header, which advisor rows fit a band. Pure.
+// drawing and its own clock: which block is a card, where the delegate lines, the steps and the plan column stand, which edges are live, how a
+// card's time reads now, which chips fit a header. Pure.
 import type { Translate } from '../i18n/locale';
-import type { MightyGraphAgent, MightyGraphRun } from '../store/models';
-import type { FlowAdvisorCopy, FlowCardCopy, FlowRoleCopy } from './types';
+import type { FlowStep, LogEntry, MightyGraphAgent, MightyGraphRun } from '../store/models';
+import type { FlowCardCopy, FlowRoleCopy } from './types';
 import { newestRequestIndex } from './notice';
 
-// ── sizes (Core FlowCard, FlowDelegation, FlowReturn, FlowAdvisor, MightyGraphLayout) ──
+// ── sizes (Core FlowCard, FlowDelegation, FlowSteps, MightyGraphLayout) ──
+/** A sub-agent's or a background command's card. */
 export const CardWidth = 236;
 export const CardHeight = 86;
+/** A card beside a request's step: one more line, the step it was launched in (Core/macOS FlowCard.stepSize). */
+export const StepCardHeight = 104;
+/** The 실행 card and a step's card: as wide as the request above them (Core/macOS FlowSteps.cardSize). */
+export const WideCardWidth = 500;
 export const DelegateWidth = 340;
 export const DelegateHeight = 24;
-export const ReturnWidth = 340;
-export const ReturnHeight = 34;
 export const DelegateGap = 18;
 export const DelegateRowGap = 26;
 export const DelegateKind = 'delegate';
 export const DelegateSuffix = 'delegate:';
-export const ReturnKind = 'return';
-export const ReturnSuffix = 'return';
-export const AdvisorKind = 'advisor';
-export const AdvisorSuffix = 'advisor';
 export const MainKey = 'main';
-export const AdvisorWidth = 248;
-export const AdvisorGap = 28;
-export const AdvisorHeaderHeight = 28;
-export const AdvisorRowHeight = 38;
-export const AdvisorEarlierHeight = 18;
-export const AdvisorNoteHeight = 32;
-export const AdvisorFooterHeight = 24;
-export const AdvisorMinimumHeight = AdvisorHeaderHeight + AdvisorEarlierHeight + AdvisorRowHeight + AdvisorNoteHeight + AdvisorFooterHeight;
+/** A request's step on its spine (macOS FlowSteps, MightyGraphLayout.Content.step). */
+export const StepKind = 'step';
+export const StepSuffix = 'step:';
+/** From a spine block's trailing edge to the column of what it launched. */
+export const SideGap = 44;
+/** The progress panel over the role view's top-left corner (macOS MightyGraphProgressPanel, FlowSteps.progress). */
+export const ProgressWidth = 280;
+export const ProgressRowHeight = 24;
 /** The rows an open log strip keeps room for (Core FlowLog.VisibleRows). */
 export const LogRows = 5;
 /** The log strip's header (its status line) and its open rows, in px (mighty.css: .mighty-log-head, --log-row, .mighty-log-rows' padding). */
@@ -76,13 +75,9 @@ export const flowAgents = (run: MightyGraphRun): MightyGraphAgent[] => {
 /** The place flowAgents[index] had among the run's blocks as recorded (Core MightyGraphRun.FlowOrder). */
 export const flowOrder = (run: MightyGraphRun, index: number): number => (run as FlowRun).flowOrder?.[index] ?? index;
 
-/** Whether the block has a card to fold back to: a request's own background sub-agent or command at any time, a foreground sub-agent while it runs. */
-export function foldsToCard(agent: MightyGraphAgent): boolean {
-  if (agent.sourceBlockId !== undefined && agent.sourceBlockId !== null) return false;
-  if (isTask(agent)) return true;
-  if (!isSubagent(agent)) return false;
-  return agent.background === true || !ended(agent.status);
-}
+/** Whether the block has a card to fold back to: every sub-agent and background command, running or ended, a notice run's copy too
+ * (Core/macOS FlowCard.FoldsToCard). Only the result is drawn whole. */
+export const foldsToCard = (agent: MightyGraphAgent): boolean => isTask(agent) || isSubagent(agent);
 
 /** Whether the role view draws the block as its card: it folds to one and the user did not open it (Core FlowCard.IsCompact). */
 export const isCompact = (agent: MightyGraphAgent, opened: boolean) => foldsToCard(agent) && !opened;
@@ -102,27 +97,6 @@ export function delegationChildren(key: string, run: MightyGraphRun): MightyGrap
     });
 }
 
-/** Whether a run has its way back: it hands work to a sub-agent or a background command and is no notice run (Core FlowReturn.Of is not null). */
-export const hasReturn = (run: MightyGraphRun) =>
-  run.noticeRun !== true && flowAgents(run).some((a) => (isSubagent(a) || isTask(a)) && (a.sourceBlockId === undefined || a.sourceBlockId === null));
-
-/** Whether a run has the advisor's band: its stream showed an advisor at work, or it is a request started with one on (Core FlowAdvisor.Shows). */
-export const advisorShows = (run: MightyGraphRun) =>
-  (run.provider ?? 'claude') === 'claude' && (run.advisor !== undefined || (run.configuredAdvisor !== undefined && run.noticeRun !== true));
-
-/** The blocks that consulted the advisor, each once, in the order they first asked (Core FlowAdvisor.Callers). */
-export function advisorCallers(run: MightyGraphRun, node: (suffix: string) => string): string[] {
-  const agents = flowAgents(run);
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const call of run.advisor?.calls ?? []) {
-    const agent = call.caller ? agents.find((a) => a.id === call.caller) : undefined;
-    const id = node(agent ? 'agent:' + agent.id : 'execution');
-    if (!seen.has(id)) { seen.add(id); result.push(id); }
-  }
-  return result;
-}
-
 /** The block that stands for `nodeId` on the diagram: itself when drawn, else the nearest drawn block above it, else the run's 실행 block (Core FlowLog.DrawnNode). */
 export function drawnNode(nodeId: string, run: MightyGraphRun, node: (suffix: string) => string, drawn: (id: string) => boolean): string | null {
   if (drawn(nodeId)) return nodeId;
@@ -138,8 +112,8 @@ export function drawnNode(nodeId: string, run: MightyGraphRun, node: (suffix: st
     if (drawn(candidate)) return candidate;
     above = parent.parentID;
   }
-  const work = node('execution');
-  return drawn(work) ? work : null;
+  for (const suffix of ['execution', 'result', 'request']) { const id = node(suffix); if (drawn(id)) return id; }
+  return null;
 }
 
 /** Where a log row's click goes among the newest activity's runs (Core FlowLog.Target). */
@@ -149,6 +123,11 @@ export function logTarget(nodeId: string, runs: readonly MightyGraphRun[], node:
   const start = newestRequestIndex(runs) ?? runs.length - 1;
   for (let index = runs.length - 1; index >= start; index--) {
     const run = runs[index]!;
+    // The role view draws the 실행 block only until the answer is there: then the main session is its result (macOS FlowLog.target).
+    if (nodeId === node(run, 'execution')) {
+      for (const suffix of ['result', 'request']) { const id = node(run, suffix); if (drawn(id)) return id; }
+      return null;
+    }
     const found = drawnNode(nodeId, run, (suffix) => node(run, suffix), drawn);
     if (found) return found;
     if (flowAgents(run).some((a) => node(run, 'agent:' + a.id) === nodeId)) return null;
@@ -228,47 +207,122 @@ export function headerFit(width: number, title: string, status: string | null, c
   return fit;
 }
 
-// ── the advisor's band ──
-
-/** The rows a band of `height` shows, the newest last, and how many stand before them (Core FlowAdvisor.Visible). */
-export function advisorVisible(band: FlowAdvisorCopy, height: number): { rows: FlowAdvisorCopy['rows']; earlier: number } {
-  const room = height - AdvisorHeaderHeight - AdvisorFooterHeight - (band.hidesText ? AdvisorNoteHeight : 0);
-  const whole = Math.max(0, Math.floor(room / AdvisorRowHeight));
-  if (band.earlier === 0 && band.rows.length <= whole) return { rows: band.rows, earlier: 0 };
-  const shown = Math.max(0, Math.floor((room - AdvisorEarlierHeight) / AdvisorRowHeight));
-  const rows = shown === 0 ? [] : band.rows.slice(-shown);
-  return { rows, earlier: band.calls - rows.length };
-}
-
-export interface Box { x: number; y: number; w: number; h: number }
-const intersects = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-
-/** From a band's trailing edge to the block that asked: straight at the block header's height when nothing stands between them, else along the gap
- * above the block's row and down into its top by its leading corner (Core/macOS MightyGraphLayout.advisorRoute). */
-export function advisorRoute(band: Box, target: Box, others: readonly Box[]): { x: number; y: number }[] {
-  const inset = 8;
-  const onBand = (y: number) => Math.min(Math.max(y, band.y + inset), Math.max(band.y + inset, band.y + band.h - inset));
-  const level = target.y + AdvisorHeaderHeight / 2;
-  const path = { x: band.x + band.w, y: level - 1, w: Math.max(0, target.x - (band.x + band.w)), h: 2 };
-  if (level === onBand(level) && level <= target.y + target.h && !others.some((o) => intersects(o, path))) {
-    return [{ x: band.x + band.w, y: level }, { x: target.x, y: level }];
-  }
-  const lane = target.y - 6, start = onBand(lane), corner = target.x + 14;
-  const points = [{ x: band.x + band.w, y: start }];
-  if (start !== lane) {
-    const step = band.x + band.w + AdvisorGap / 2;
-    points.push({ x: step, y: start }, { x: step, y: lane });
-  }
-  return [...points, { x: corner, y: lane }, { x: corner, y: target.y }];
-}
-
-/** The ids whose incoming edges are live (blue): running blocks, every return node (it stands only while its run goes on) and a delegate line that
- * leads to a running block (macOS MightyGraphLayout.liveFlowIDs). */
+/** The ids whose incoming edges are live (blue): running blocks and a delegate line that leads to a running block (macOS
+ * MightyGraphLayout.liveFlowIDs). */
 export function liveFlowIds(layout: { nodes: readonly { id: string; kind: string }[]; edges: readonly { source: string; target: string }[] }, running: ReadonlySet<string>): Set<string> {
   const ids = new Set(running);
-  for (const node of layout.nodes) if (node.kind === ReturnKind) ids.add(node.id);
   const lines = new Set(layout.nodes.filter((n) => n.kind === DelegateKind).map((n) => n.id));
   for (const edge of layout.edges) if (lines.has(edge.source) && running.has(edge.target)) ids.add(edge.source);
   return ids;
 }
 
+
+// ── a request's steps (macOS FlowSteps) ──
+
+/** FNV-1a, 64 bits, in hex (lowercase, no leading zeros): the same as the Mac's and the Core's. */
+export function stableHash(text: string): string {
+  let hash = 0xcbf29ce484222325n;
+  const prime = 0x100000001b3n;
+  for (const byte of new TextEncoder().encode(text)) {
+    hash ^= BigInt(byte);
+    hash = (hash * prime) & 0xffffffffffffffffn;
+  }
+  return hash.toString(16);
+}
+
+/** A step block's node suffix: `step:` and a hash of its key, so a node id never carries the item's words. */
+export const stepSuffix = (step: Pick<FlowStep, 'key'>) => StepSuffix + stableHash(step.key);
+
+/** The steps a run draws: its own, never a notice run's. */
+export const runSteps = (run: MightyGraphRun): FlowStep[] => (run.noticeRun === true ? [] : run.steps ?? []);
+
+const time = (stamp: string | undefined | null): number | null => {
+  if (!stamp) return null;
+  const value = Date.parse(stamp);
+  return Number.isFinite(value) ? value : null;
+};
+export const stepStarted = (step: FlowStep) => time(step.startedAt);
+export const stepEnded = (step: FlowStep) => time(step.endedAt);
+export const isPendingStep = (step: FlowStep) => step.status === 'pending';
+
+/** The step whose span holds `at` (ms), the one that started last where spans meet; null for the main session's own time between steps. A step's
+ * start counts from its whole second, as the records' times do (macOS FlowSteps.stepIndex). */
+export function stepIndex(at: number, steps: readonly FlowStep[]): number | null {
+  let best: { index: number; start: number } | null = null;
+  steps.forEach((step, index) => {
+    const start = stepStarted(step);
+    if (start === null || Math.floor(start / 1000) * 1000 > at) return;
+    const end = stepEnded(step);
+    if (end !== null && end < at) return;
+    if (best === null || start >= best.start) best = { index, start };
+  });
+  return (best as { index: number } | null)?.index ?? null;
+}
+
+/** Where on the spine a block launched from the main session stands: 0 beside the request, k beside step k (macOS FlowSteps.slot). */
+export function stepSlot(agent: MightyGraphAgent, steps: readonly FlowStep[]): number {
+  const start = time(agent.figures?.startedAt);
+  if (start === null) return 0;
+  const index = stepIndex(start, steps);
+  return index === null ? 0 : index + 1;
+}
+
+/** Whether `agent`, a block of `run`, was launched from the main session inside one of the request's steps that began: its card names the step
+ * on a line of its own (Core/macOS FlowSteps.StepLabel is not null). */
+export function launchedInStep(agent: MightyGraphAgent, run: MightyGraphRun, agents: readonly MightyGraphAgent[]): boolean {
+  if (agent.parentID != null && agent.parentID !== agent.id && agents.some((a) => a.id === agent.parentID)) return false;
+  const started = runSteps(run).filter((step) => !isPendingStep(step));
+  return started.length > 0 && stepSlot(agent, started) > 0;
+}
+
+/** One request's rows on the diagram: from its request block to its last block, a notice run's counted as its request's. */
+export interface RequestSpan { id: string; top: number; bottom: number }
+
+/** Each request's rows (macOS MightyGraphView.requestSpans). `runIndexOf` names the run a node is about (null for none of them). */
+export function requestSpans(nodes: readonly { id: string; frame: { y: number; h: number } }[], runs: readonly MightyGraphRun[],
+  runIndexOf: (nodeId: string) => number | null): RequestSpan[] {
+  const owner: number[] = [];
+  let current: number | null = null;
+  runs.forEach((run, index) => {
+    if (run.noticeRun !== true || current === null) current = index;
+    owner.push(current);
+  });
+  const spans = new Map<number, { top: number; bottom: number }>();
+  for (const node of nodes) {
+    const index = runIndexOf(node.id);
+    if (index === null || owner[index] === undefined) continue;
+    const at = owner[index]!;
+    const span = spans.get(at) ?? { top: node.frame.y, bottom: node.frame.y + node.frame.h };
+    spans.set(at, { top: Math.min(span.top, node.frame.y), bottom: Math.max(span.bottom, node.frame.y + node.frame.h) });
+  }
+  return [...spans.keys()].sort((a, b) => a - b).map((at) => ({ id: runs[at]!.id, ...spans.get(at)! }));
+}
+
+/** The request a view from `top`, `height` high (diagram coordinates), is about: the one whose rows cross a third of the way down, else the
+ * nearest (macOS MightyGraphView.focus). */
+export function focusedRequest(spans: readonly RequestSpan[], top: number, height: number): string | null {
+  const line = top + height / 3;
+  const hit = [...spans].reverse().find((s) => s.top <= line && line <= s.bottom);
+  if (hit) return hit.id;
+  let best: RequestSpan | null = null, distance = Infinity;
+  for (const span of spans) {
+    const d = Math.min(Math.abs(span.top - line), Math.abs(span.bottom - line));
+    if (d < distance) { distance = d; best = span; }
+  }
+  return best?.id ?? null;
+}
+
+/** Which request the progress panel shows: a new request it was pinned to (until the user scrolls), else the one in view, else the newest. */
+export function progressRequest(pinned: string | null, focused: string | null, newest: string | null, has: (id: string) => boolean): string | null {
+  if (pinned !== null && has(pinned)) return pinned;
+  if (focused !== null && has(focused)) return focused;
+  return newest !== null && has(newest) ? newest : null;
+}
+
+/** The record ids a step holds, among `entries` (the activity's main-session records). */
+export function stepEntries(step: number, steps: readonly FlowStep[], entries: readonly LogEntry[]): LogEntry[] {
+  return entries.filter((entry) => {
+    const at = time(entry.timestamp);
+    return at !== null && stepIndex(at, steps) === step;
+  });
+}

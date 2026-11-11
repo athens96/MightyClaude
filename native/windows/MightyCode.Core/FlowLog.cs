@@ -10,20 +10,16 @@ namespace MightyCode.Core;
 /// </summary>
 public static class FlowLog
 {
-    /// <summary>Who a row is about: the main session, a sub-agent (by its block's id), or the advisor a Claude session consulted.</summary>
+    /// <summary>Who a row is about: the main session, or a sub-agent (by its block's id).</summary>
     public sealed record Actor(FlowRole Role, string? AgentId = null)
     {
         public static readonly Actor Lead = new(FlowRole.Lead);
-        public static readonly Actor Advisor = new(FlowRole.Advisor);
         public static Actor Subagent(string id) => new(FlowRole.Subagent, id);
     }
 
-    /// <summary>One row. <c>Who</c>: the actor in words (the main session's model, a sub-agent's name, the advisor). <c>Ink</c>: its role's, or a custom
+    /// <summary>One row. <c>Who</c>: the actor in words (the main session's model, a sub-agent's name). <c>Ink</c>: its role's, or a custom
     /// agent's own colour. <c>NodeID</c>: the diagram block the row is about.</summary>
     public sealed record Row(string Id, DateTimeOffset Time, Actor Actor, string Who, FlowInk Ink, string What, string NodeID);
-
-    /// <summary>Something the advisor did, for the log: fed by the run's advisor calls (<see cref="FlowAdvisor.Notes"/>).</summary>
-    public sealed record AdvisorNote(string Id, string Time, string Who, string What, string NodeID);
 
     /// <summary>The rows the strip shows when it is open.</summary>
     public const int VisibleRows = 5;
@@ -37,11 +33,10 @@ public static class FlowLog
     private delegate Row Make(DateTimeOffset time);
 
     /// <summary>The last <paramref name="limit"/> rows of the newest activity, oldest first. <paramref name="definitions"/> are the custom agents the
-    /// blocks' types name (their colour is the row's ink); <paramref name="advisor"/> is what the advisor did in that activity. Of each block only its
+    /// blocks' types name (their colour is the row's ink). Of each block only its
     /// last <paramref name="limit"/> events are taken, read from the end: one that is not among a block's own last few cannot be among the last few of
     /// all. Only those few have their time read.</summary>
-    public static List<Row> Rows(IReadOnlyList<MightyGraphRun> runs, int limit = VisibleRows, IReadOnlyDictionary<string, AgentDefinition>? definitions = null,
-        IReadOnlyList<AdvisorNote>? advisor = null)
+    public static List<Row> Rows(IReadOnlyList<MightyGraphRun> runs, int limit = VisibleRows, IReadOnlyDictionary<string, AgentDefinition>? definitions = null)
     {
         if (limit <= 0) return [];
         definitions ??= new Dictionary<string, AgentDefinition>();
@@ -62,13 +57,17 @@ public static class FlowLog
                 if (arrived is not null && Line(Locale.Get("graph.log.notice", new Dictionary<string, string> { ["title"] = BackgroundNoticeRuns.Heading(run) })) is { } line)
                     candidates.Add(Lead(run.Id + ":notice", arrived, line, MightyGraphLayout.NodeID(run, "request")));
             }
+            // A request's own record in one of its steps is that step's (FlowSteps).
+            var steps = FlowSteps.Steps(run);
+            string NodeOf(LogEntry entry) => steps.Count > 0 && AgentRunTiming.Parse(entry.Timestamp) is { } time && FlowSteps.StepIndex(time, steps) is { } step
+                ? MightyGraphLayout.NodeID(run, FlowSteps.NodeSuffix(steps[step])) : leadNode;
             // Read from the end and put back in the order they were recorded.
             var latest = new List<(string, Make)>();
             for (var at = run.RootEntries.Count - 1; at >= 0 && latest.Count < limit; at--)
             {
                 var entry = run.RootEntries[at];
                 if (LeadWords(entry) is not { } what) continue;
-                latest.Add(Lead(run.Id + ":" + entry.Id, entry.Timestamp, what));
+                latest.Add(Lead(run.Id + ":" + entry.Id, entry.Timestamp, what, NodeOf(entry)));
             }
             latest.Reverse();
             candidates.AddRange(latest);
@@ -102,8 +101,6 @@ public static class FlowLog
                     candidates.Add(Note(node + ":end", finished, FlowCard.StateWord(MobileMightySupport.Status(agent.Status))));
             }
         }
-        foreach (var item in advisor ?? [])
-            candidates.Add((item.Time, time => new Row(item.Id, time, Actor.Advisor, item.Who, FlowRoles.Ink(FlowRole.Advisor), item.What, item.NodeID)));
         // Each in the order it was read, so two things of one second stay as they were recorded.
         var timed = new List<(DateTimeOffset Time, int Order, Make Make)>();
         for (var order = 0; order < candidates.Count; order++)
@@ -120,6 +117,9 @@ public static class FlowLog
         var span = Activity(runs);
         for (var index = span.End - 1; index >= span.Start; index--)
         {
+            // The role view draws the 실행 block only until the answer is there: then the main session is its result.
+            if (row.NodeID == MightyGraphLayout.NodeID(runs[index], MightyGraphLayout.WorkSuffix))
+                return new[] { "result", "request" }.Select(suffix => MightyGraphLayout.NodeID(runs[index], suffix)).FirstOrDefault(drawn);
             if (DrawnNode(row.NodeID, runs[index], drawn) is { } node) return node;
             if (runs[index].FlowAgents.Any(a => MightyGraphLayout.NodeID(runs[index], "agent:" + a.Id) == row.NodeID)) return null;
         }
@@ -142,8 +142,7 @@ public static class FlowLog
             if (drawn(node)) return node;
             above = parent.ParentID;
         }
-        var work = MightyGraphLayout.NodeID(run, MightyGraphLayout.WorkSuffix);
-        return drawn(work) ? work : null;
+        return new[] { MightyGraphLayout.WorkSuffix, "result", "request" }.Select(suffix => MightyGraphLayout.NodeID(run, suffix)).FirstOrDefault(drawn);
     }
 
     /// <summary>What a record of the main session's says in the log: a tool call as the transcript words it, a question it asked the user, a context
@@ -182,22 +181,13 @@ public static class FlowLog
 
     // ── Status ──
 
-    /// <summary>What the advisor is doing, for the status line (<see cref="FlowAdvisor.Status"/>): on call while the activity goes on, at work on a
-    /// consultation, or how often it was consulted once the activity ended.</summary>
-    public sealed record AdvisorState(string Kind, int Count = 0)
-    {
-        public static readonly AdvisorState OnCall = new("onCall");
-        public static readonly AdvisorState Consulting = new("consulting");
-        public static AdvisorState Consulted(int count) => new("consulted", count);
-    }
-
     /// <summary>One part of the status line with the role whose ink it takes.</summary>
     public sealed record Part(FlowRole Role, string Text);
 
     /// <summary>The strip's header: who is doing what right now, in one line. <c>Lead</c>: "Haiku 5.5 실행 중". <c>Subagents</c>: "하위 에이전트 2/3 실행 중",
     /// or how many ended once nothing of the request's row runs; null when the request delegated to none. <c>Tasks</c>: "작업 2개 실행 중" while background
-    /// commands of the request run. <c>Advisor</c>: "조언자 대기", "조언자 검토 중" or "조언자 호출 2"; null without an advisor.</summary>
-    public sealed record Status(string Lead, string? Subagents, string? Tasks, string? Advisor)
+    /// commands of the request run.</summary>
+    public sealed record Status(string Lead, string? Subagents, string? Tasks)
     {
         public string Text => string.Join(" · ", Parts.Select(p => p.Text));
         /// <summary>The line's parts in order, each with the role whose ink it takes.</summary>
@@ -208,7 +198,6 @@ public static class FlowLog
                 var parts = new List<Part> { new(FlowRole.Lead, Lead) };
                 if (Subagents is not null) parts.Add(new(FlowRole.Subagent, Subagents));
                 if (Tasks is not null) parts.Add(new(FlowRole.Task, Tasks));
-                if (Advisor is not null) parts.Add(new(FlowRole.Advisor, Advisor));
                 return parts;
             }
         }
@@ -217,7 +206,7 @@ public static class FlowLog
     /// <summary>The status of the pane's newest activity, null for a pane without a request. The main session's state is the state of the run the views
     /// follow (<see cref="MightyGraphSupport.FollowRunIndex"/>): the request while it runs or awaits its notices, a notice turn while Claude answers one.
     /// The sub-agents are the newest request's.</summary>
-    public static Status? StatusOf(IReadOnlyList<MightyGraphRun> runs, AdvisorState? advisor = null)
+    public static Status? StatusOf(IReadOnlyList<MightyGraphRun> runs)
     {
         if (MightyGraphSupport.NewestRequestIndex(runs) is not { } newest) return null;
         var request = runs[newest];
@@ -236,13 +225,6 @@ public static class FlowLog
             else if (back.Subagents > 0 && back.TasksRunning == 0) subagents = Locale.Get("graph.log.subagentsDone", new Dictionary<string, string> { ["total"] = N(back.Subagents) });
             if (back.TasksRunning > 0) tasks = Locale.Get("graph.log.tasksRunning", new Dictionary<string, string> { ["count"] = N(back.TasksRunning) });
         }
-        var advising = advisor?.Kind switch
-        {
-            "onCall" => Locale.Get("graph.log.advisorOnCall"),
-            "consulting" => Locale.Get("graph.log.advisorConsulting"),
-            "consulted" => Locale.Get("graph.log.advisorCalls", new Dictionary<string, string> { ["count"] = N(advisor.Count) }),
-            _ => null,
-        };
-        return new(LeadName(followed, request) + " " + state, subagents, tasks, advising);
+        return new(LeadName(followed, request) + " " + state, subagents, tasks);
     }
 }

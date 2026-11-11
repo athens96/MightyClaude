@@ -131,6 +131,9 @@ public sealed partial class ExecutionGraphTracker
     private sealed record SentMessage(Owner Owner, string? To, string? Summary, string? Message);
     /// <summary>SendMessage calls by tool-use ID until their result says whether the message resumed an agent that had ended.</summary>
     private readonly Dictionary<string, SentMessage> sentMessages = [];
+    /// <summary>The tools the stream showed each call to be: a frame or a Mods spawn under a call that is no Agent or Task call (a Bash
+    /// call's heartbeat, <c>tool_progress</c>) is not a sub-agent of the request (macOS <c>toolNames</c>).</summary>
+    private readonly Dictionary<string, string> toolNames = new(StringComparer.Ordinal);
     private readonly Dictionary<string, GraphTokenUsage> messageUsage = [];
     private readonly Dictionary<string, string> messageModel = [];
     private readonly Dictionary<string, IReadOnlyList<string>> messageActivityIds = [];
@@ -457,7 +460,12 @@ public sealed partial class ExecutionGraphTracker
         if (Provider == "opencode") { ConsumeAcp(value); return; }
         // Hermes reports its session's running token counts, not the request's: the block carries none.
         if (Provider == "hermes") return;
+        // A running tool's heartbeat (Claude Code 2.1.322 sends one 30 s into a foreground Bash call) names that call as its parent:
+        // it is no sub-agent's message, and nothing of the run changes by it.
+        if (value.Text("type") == "tool_progress") return;
         var parentTool = Key(MetadataJson.Property(value, "parent_tool_use_id"));
+        // Only an Agent (or Task) call has frames of its own: one under a call the stream showed as another tool is no sub-agent.
+        if (parentTool is not null && toolNames.TryGetValue(parentTool, out var parentName) && !AgentTool(parentName)) return;
         if (parentTool is not null) EnsureAgent(parentTool);
         // Over-cap child events are omitted, never reclassified as main text.
         var current = parentTool is null ? mainID : ExecutionGraphSupport.AgentNodeID(runID, parentTool);
@@ -515,6 +523,7 @@ public sealed partial class ExecutionGraphTracker
             {
                 if (Key(MetadataJson.Property(block, "id")) is not { } toolID) continue;
                 RememberTool(toolID, owner);
+                if (block.Text("name") is { } toolName && (toolNames.ContainsKey(toolID) || toolNames.Count < 4096)) toolNames[toolID] = toolName;
                 if (parentTool is not null && current != mainID) CountTool(toolID, current);
                 var input = MetadataJson.Property(block, "input");
                 if (input.ValueKind != JsonValueKind.Object) input = default;
@@ -1332,6 +1341,7 @@ public sealed partial class ExecutionGraphTracker
         string? id;
         if (Key(metadata.ParentToolUseId) is { } toolID)
         {
+            if (toolNames.TryGetValue(toolID, out var toolName) && !AgentTool(toolName)) return;
             id = EnsureAgent(toolID);
             if (id is not null)
             {
@@ -1356,7 +1366,8 @@ public sealed partial class ExecutionGraphTracker
     }
     private void Apply(ModGraphMetadata metadata, string id) => Update(id, node =>
     {
-        if ((metadata.Name ?? metadata.AgentType) is { Length: > 0 } title) node = node with { Title = title };
+        // Mods names a block the stream has not titled; the call's own description, once read, stays its title.
+        if ((metadata.Name ?? metadata.AgentType) is { Length: > 0 } title && (node.Title.Length == 0 || node.Title == Locale.Get("graph.block.agent"))) node = node with { Title = title };
         if (metadata.Input is not null) node = node with { Input = metadata.Input };
         if (metadata.Output is not null) node = node with { Output = metadata.Output };
         var state = metadata.Phase == "starting" ? "running" : metadata.Phase;

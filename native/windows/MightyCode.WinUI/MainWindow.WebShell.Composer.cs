@@ -386,7 +386,6 @@ public sealed partial class MainWindow
             {
                 "model" => ModelMenu(pane, catalog),
                 "effort" => ChoiceMenu(EffortChoices(pane, levels)),
-                "advisor" => ChoiceMenu(AdvisorChoices(pane, catalog)),
                 "permission" => ChoiceMenu(PermissionChoices(pane, Capabilities)),
                 "options" => OptionsMenu(pane, Capabilities, levels),
                 "actions" => PaneActionsMenu(pane),
@@ -450,9 +449,6 @@ public sealed partial class MainWindow
                 moreOn = pane.Settings.WebSearch != "default" || pane.Settings.NetworkAccess || pane.Settings.MaxTurns is not null || pane.Settings.MaxBudgetUsd is not null,
                 contextPercent = usage?.ContextPercent is { } percent && double.IsFinite(percent) ? Math.Round(percent) : (double?)null,
                 resuming = pane.ResumeId is not null,
-                // A Claude pane on this computer names its advisor beside its effort (Core ComposerAdvisor, M/SessionPaneView.swift advisorMenu).
-                showsAdvisor = ComposerAdvisor.Shows(pane, owner.service.IsRemoteSession(pane.Id)), advisor = ComposerAdvisor.PillTitle(pane, catalog),
-                advisorTip = ComposerAdvisor.Help(pane, catalog), advisorOff = pane.Settings.Advisor == RunSettings.AdvisorOff,
             };
         }
 

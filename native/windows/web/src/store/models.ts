@@ -48,7 +48,7 @@ export interface RunSettings {
   fastMode?: boolean;
   webSearch?: string;
   networkAccess?: boolean;
-  /** A Claude pane's advisor (Core RunSettings.Advisor): absent follows Claude's settings, a model's name is passed as --advisor, "off" turns it off. */
+  /** An advisor an older build let the pane name (Core RunSettings.Advisor): read, never sent (the app has no advisor). */
   advisor?: string;
 }
 
@@ -214,10 +214,25 @@ export interface MightyGraphRun {
   noticeTitle?: string;
   /** The pane's effort when the request started ("default" when the CLI decides); absent in older saves. */
   configuredEffort?: string;
-  /** The run's consultations of the advisor (absent in a run that never consulted it). */
+  /** The run's consultations of the advisor, as an older build recorded them: read, never drawn (the app has no advisor). */
   advisor?: GraphAdvisor;
-  /** The advisor's model the request started with, when one was known to be on. */
+  /** The advisor's model an older build recorded for the request: read, never drawn. */
   configuredAdvisor?: string;
+  /** The request's checklist as steps, with when each began and ended (Core/macOS FlowSteps); absent without a list and in notice runs. */
+  steps?: FlowStep[];
+  /** The keys of the earlier request's done items, which are never this request's steps. */
+  stepsCarried?: string[];
+}
+
+/** One step of a request's checklist (Core/macOS FlowStep): times are ISO 8601, when the app saw it start and end. */
+export interface FlowStep {
+  key: string;
+  content: string;
+  activeForm?: string;
+  /** pending, in_progress or completed. */
+  status: string;
+  startedAt?: string;
+  endedAt?: string;
 }
 
 export interface GraphBlockSize {

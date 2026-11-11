@@ -95,7 +95,8 @@ internal static class FlowLayoutVerification
     {
         var request = Plain("r", [Sub("a"), Sub("b", background: true), Sub("c")]);
         var graph = FlowFixtures.Layout([request]);
-        var work = Must(graph, Node(request, MightyGraphLayout.WorkSuffix));
+        // The main session's line hangs from the request: the 실행 card stands where the answer will come.
+        var work = Must(graph, Node(request, "request"));
         var line = Must(graph, Line(request));
         Same(line.Kind, MightyGraphLayout.DelegateKind, "a delegate line");
         Check(line.Frame.W == FlowDelegation.Width && line.Frame.H == FlowDelegation.Height, "its size");
@@ -133,22 +134,23 @@ internal static class FlowLayoutVerification
         var narrowLine = Must(narrow, Line(nested, "lead"));
         foreach (var other in narrow.Nodes.Where(n => n.Id != narrowLine.Id)) Check(!FlowFixtures.Overlap(other.Frame, narrowLine.Frame), "a narrow block holds its line: " + other.Id);
 
-        // The return node stands where the result will, until it is there.
+        // The main session's card stands where the result will, until it is there; no return node.
         var running = Plain("r", [Sub("a"), Sub("b")]);
         var flow = FlowFixtures.Layout([running]);
-        var back = Must(flow, Node(running, MightyGraphLayout.ReturnSuffix));
-        Same(back.Kind, MightyGraphLayout.ReturnKind, "a return node");
-        Check(back.Frame.W == FlowReturn.Width && back.Frame.H == FlowReturn.Height, "its size");
+        Same(Find(flow, Node(running, MightyGraphLayout.ReturnSuffix)), null, "no return node");
+        var back = Must(flow, Node(running, MightyGraphLayout.WorkSuffix));
+        Same(back.Kind, MightyGraphLayout.WorkKind, "the 실행 block");
+        Check(back.IsCompact && back.Frame.W == FlowSteps.CardWidth && back.Frame.H == FlowSteps.CardHeight, "as its card");
         Check(MightyGraphLayout.IsFixed(back) && !MightyGraphLayout.IsResizable(back) && !MightyGraphLayout.IsAuxiliary(back.Kind), "fixed");
         var cards = new[] { "a", "b" }.Select(c => Must(flow, Agent(running, c))).ToList();
         foreach (var card in cards) Check(flow.Edges.Any(e => e.Source == card.Id && e.Target == back.Id && e.Joins), "the branches converge into it");
         Same(back.Frame.Y, cards[0].Frame.MaxY + 32, "a row gap under the cards");
-        Check(Math.Abs(back.Frame.MidX - Must(flow, Node(running, MightyGraphLayout.WorkSuffix)).Frame.MidX) < 0.5, "on the centreline");
+        Check(Math.Abs(back.Frame.MidX - Must(flow, Node(running, "request")).Frame.MidX) < 0.5, "on the centreline");
         Same(Find(flow, Node(running, "result")), null, "no result yet");
         running.Status = "completed"; running.FinalOutput = "done";
         foreach (var agent in running.Agents) agent.Status = "completed";
         var done = FlowFixtures.Layout([running], running: false);
-        Same(Find(done, Node(running, MightyGraphLayout.ReturnSuffix)), null, "the result takes its place");
+        Same(Find(done, Node(running, MightyGraphLayout.WorkSuffix)), null, "the result takes its place");
         var result = Must(done, Node(running, "result"));
         foreach (var child in new[] { "a", "b" }) Check(done.Edges.Any(e => e.Source == Agent(running, child) && e.Target == result.Id && e.Joins), "into the result: " + child);
 
@@ -161,7 +163,7 @@ internal static class FlowLayoutVerification
         var shownAwaiting = MightyGraphSupport.ShownRuns([awaiting]);
         Check(BackgroundNoticeRuns.AwaitingNotice(shownAwaiting[0], shownAwaiting) is not null, "it awaits the notice");
         var turn = Plain("r", [Sub("bg", background: true)]);
-        Check(FlowFixtures.Layout([turn]).Edges.Any(e => e.Source == Agent(turn, "bg") && e.Target == Node(turn, MightyGraphLayout.ReturnSuffix)), "while the turn runs, into the return node");
+        Check(FlowFixtures.Layout([turn]).Edges.Any(e => e.Source == Agent(turn, "bg") && e.Target == Node(turn, MightyGraphLayout.WorkSuffix)), "while the turn runs, into the main session's card");
         var planned = Plain("r", [Sub("a", status: "completed")]);
         var planLayout = FlowFixtures.Layout([planned], plan: "r");
         Check(Find(planLayout, Node(planned, MightyGraphLayout.ReturnSuffix)) is null && Find(planLayout, Node(planned, MightyGraphLayout.PlanSuffix)) is not null, "the plan stands there");
@@ -180,7 +182,7 @@ internal static class FlowLayoutVerification
         var runs = MightyGraphSupport.ShownRuns([request]);
         var graph = MightyGraphLayout.Make(runs, "", true, new HashSet<string>(), splitsExecution: true, fanOut: new MightyGraphLayout.FanOut());
         var followed = MightyGraphFollow.TargetID(graph, runs);
-        Same(followed, Node(request, MightyGraphLayout.ReturnSuffix), "the return node, never a delegate line");
+        Same(followed, Node(request, MightyGraphLayout.WorkSuffix), "the main session's card, never a delegate line");
         var back = Must(graph, followed!);
         var watch = new MightyGraphFollow.Watch();
         var camera = MightyGraphFollow.CameraOffset(back.Frame, viewport, 1, false, false, true);
@@ -271,7 +273,7 @@ internal static class FlowLayoutVerification
         var card = Must(graph, Agent(single, "bg"));
         Check(card.IsCompact && card.Frame.W == FlowCard.Width && card.Frame.H == FlowCard.Height, "a card");
         Check(!MightyGraphLayout.IsResizable(card) && MightyGraphLayout.IsFixed(card), "never resized, fixed");
-        var work = Must(graph, Node(single, MightyGraphLayout.WorkSuffix));
+        var work = Must(graph, Node(single, "request"));
         Check(graph.Edges.Any(e => e.Source == work.Id && e.Target == Line(single)) && graph.Edges.Any(e => e.Source == Line(single) && e.Target == card.Id), "through the line");
         Same(card.Frame.Y, work.Frame.MaxY + LineDrop, "under the line");
         Check(Math.Abs(card.Frame.MidX - work.Frame.MidX) < 0.5, "centred");
@@ -288,15 +290,14 @@ internal static class FlowLayoutVerification
         var foreground = Plain("r", [Fan("fg", status: "running")]);
         Check(Must(FlowFixtures.Layout([foreground]), Agent(foreground, "fg")).IsCompact, "a running foreground sub-agent is a card");
         foreground.Agents[0].Status = "completed";
-        var full = FlowFixtures.Layout([foreground]);
-        var block = Must(full, Agent(foreground, "fg"));
-        Check(!block.IsCompact && MightyGraphLayout.IsResizable(block) && !MightyGraphLayout.IsFixed(block) && block.Frame.W == 360 && block.Frame.H == 240, "its block once it ends");
-        var was = Must(PlainLayout([foreground]), block.Id);
-        Check(block.Frame.W == was.Frame.W && block.Frame.X == was.Frame.X, "where the layout always drew it");
-        Same(block.Frame.Y, was.Frame.Y + LineDrop - 32, "under the line now above the row");
-        var saved = Must(FlowFixtures.Layout([foreground], sizes: new() { [block.Id] = new GraphBlockSize(420, 300) }), block.Id);
+        var endedID = Agent(foreground, "fg");
+        Check(Must(FlowFixtures.Layout([foreground]), endedID).IsCompact, "and a card once it ends");
+        // Opened, it is the block the layout always drew for it, with its saved size and its opened height.
+        var block = Must(FlowFixtures.Layout([foreground], opened: [endedID]), endedID);
+        Check(!block.IsCompact && MightyGraphLayout.IsResizable(block) && !MightyGraphLayout.IsFixed(block) && block.Frame.W == 360 && block.Frame.H == 240, "its block once opened");
+        var saved = Must(FlowFixtures.Layout([foreground], opened: [endedID], sizes: new() { [endedID] = new GraphBlockSize(420, 300) }), endedID);
         Check(saved.Frame.W == 420 && saved.Frame.H == 300, "its saved size is back");
-        Same(Must(FlowFixtures.Layout([foreground], expanded: [block.Id]), block.Id).Frame.H, 480d, "its opened height");
+        Same(Must(FlowFixtures.Layout([foreground], opened: [endedID], expanded: [endedID]), endedID).Frame.H, 480d, "its opened height");
 
         var cardOnly = Plain("r", [Fan("fg", status: "running")]);
         var cardID = Agent(cardOnly, "fg");
@@ -317,7 +318,7 @@ internal static class FlowLayoutVerification
         Check(Must(folded, Agent(deep, "lead")).IsCompact, "the lead is a card");
         foreach (var hidden in new[] { "child", "grand", "note" }) Same(Find(folded, Agent(deep, hidden)), null, "nothing under the card: " + hidden);
         SameList(folded.Nodes.Select(n => n.Id).Order(StringComparer.Ordinal),
-            new[] { Node(deep, "request"), Node(deep, MightyGraphLayout.WorkSuffix), Line(deep), Agent(deep, "lead"), Node(deep, MightyGraphLayout.ReturnSuffix) }.Order(StringComparer.Ordinal), "five nodes, no stray root");
+            new[] { Node(deep, "request"), Line(deep), Agent(deep, "lead"), Node(deep, MightyGraphLayout.WorkSuffix) }.Order(StringComparer.Ordinal), "four nodes, no stray root");
         Same(FlowCard.Nested(agents[0], deep), 2, "the card counts them");
         var leadID = Agent(deep, "lead");
         var opened = FlowFixtures.Layout([deep], opened: [leadID]);
@@ -325,7 +326,7 @@ internal static class FlowLayoutVerification
         var childCard = Must(opened, Agent(deep, "child"));
         Check(childCard.IsCompact && Find(opened, Agent(deep, "grand")) is null && !Must(opened, Agent(deep, "note")).IsCompact, "its running child a card, the compaction a block");
         Check(opened.Edges.Any(e => e.Source == leadID && e.Target == Line(deep, "lead")) && opened.Edges.Any(e => e.Source == Line(deep, "lead") && e.Target == childCard.Id), "its own line");
-        Same(opened.Nodes.Count, 8, "eight nodes");
+        Same(opened.Nodes.Count, 7, "seven nodes: no return node, the main session's card instead");
 
         var order = Plain("r", [Fan("first", status: "running"), Fan("second", status: "running", background: true), Fan("third", status: "running"), Fan("fourth", status: "running", background: true)]);
         var rowLayout = FlowFixtures.Layout([order]);
@@ -333,17 +334,16 @@ internal static class FlowLayoutVerification
         SameList(row.Select(n => n.Frame.X), row.Select(n => n.Frame.X).Order(), "left to right in launch order");
         Same(row.Select(n => n.Frame.Y).Distinct().Count(), 1, "one row");
         for (var i = 1; i < row.Count; i++) Same(row[i].Frame.X - row[i - 1].Frame.MaxX, 20d, "the sibling gap");
-        Check(Math.Abs((row[0].Frame.X + row[3].Frame.MaxX) / 2 - Must(rowLayout, Node(order, MightyGraphLayout.WorkSuffix)).Frame.MidX) < 0.5, "centred under the block");
+        Check(Math.Abs((row[0].Frame.X + row[3].Frame.MaxX) / 2 - Must(rowLayout, Node(order, "request")).Frame.MidX) < 0.5, "centred under the request");
         SameList(MightyGraphSupport.ShownRuns([order])[0].FlowAgents.Select(a => a.Id), ["first", "third", "second", "fourth"], "the visible blocks first");
 
         var request = Plain("r", [Fan("bg", background: true)], "completed");
         var notice = Plain("r:notice:1", [Fan("r:notice:1:bg", background: true, source: "bg")], "completed", true);
         var copies = FlowFixtures.Layout([request, notice], running: false);
         var copy = Must(copies, Agent(notice, "r:notice:1:bg"));
-        Check(!copy.IsCompact && copy.Frame.W == 360 && copy.Frame.H == 240, "a copy is its full block");
-        var copyBefore = Must(MightyGraphLayout.Make(MightyGraphSupport.ShownRuns([request, notice]), "", false, new HashSet<string>(), splitsExecution: true), copy.Id);
-        Check(copy.Frame.W == copyBefore.Frame.W && copy.Frame.X == copyBefore.Frame.X, "where it always was");
-        Same(copy.Frame.Y, copyBefore.Frame.Y + FlowCard.Height + LineDrop, "lower by the request's card row");
+        Check(copy.IsCompact && copy.Frame.W == FlowCard.Width && copy.Frame.H == FlowCard.Height, "a copy is a card too");
+        var openedCopy = Must(FlowFixtures.Layout([request, notice], running: false, opened: [copy.Id]), copy.Id);
+        Check(!openedCopy.IsCompact && openedCopy.Frame.W == 360 && openedCopy.Frame.H == 240, "opened, its full block");
         Check(Must(copies, Agent(request, "bg")).IsCompact, "the request keeps its card");
         var shown = MightyGraphSupport.ShownRuns([request, notice]);
         Same(FlowCard.CopyNodeID(shown[0].FlowAgents[0], shown), copy.Id, "which leads to the copy");
@@ -351,9 +351,9 @@ internal static class FlowLayoutVerification
         var commands = Plain("r", [Fan("task", status: "running", background: true, kind: "task"), Fan("bg", status: "running", background: true), Fan("fg")]);
         var commandLayout = FlowFixtures.Layout([commands]);
         MightyGraphLayout.Node task = Must(commandLayout, Agent(commands, "task")), bg = Must(commandLayout, Agent(commands, "bg")), fgBlock = Must(commandLayout, Agent(commands, "fg"));
-        Check(task.IsCompact && task.Frame.W == FlowCard.Width && bg.IsCompact && !fgBlock.IsCompact, "the command and the background agent are cards");
+        Check(task.IsCompact && task.Frame.W == FlowCard.Width && bg.IsCompact && fgBlock.IsCompact, "the command and both agents are cards");
         Check(task.Frame.Y == bg.Frame.Y && task.Frame.Y == fgBlock.Frame.Y && task.Frame.MaxX < bg.Frame.X && bg.Frame.MaxX < fgBlock.Frame.X, "one row in launch order");
-        Check(Find(commandLayout, Line(commands)) is not null && Find(commandLayout, Node(commands, MightyGraphLayout.ReturnSuffix)) is not null, "the line and the way back");
+        Check(Find(commandLayout, Line(commands)) is not null && Find(commandLayout, Node(commands, MightyGraphLayout.WorkSuffix)) is not null, "the line and the main session's card");
         Check(!Must(FlowFixtures.Layout([commands], opened: [task.Id]), task.Id).IsCompact, "opened, its block");
         // (The edges into the running command's and agent's cards are live on the Mac, liveNodeIDs: the web page draws them, flow.ts liveFlowIds.)
         Check(!MightyGraphLayout.Make([commands.Shown], "", true, new HashSet<string>(), splitsExecution: true).Nodes.Any(n => n.Id == task.Id), "without a fan-out it is not there");
@@ -361,7 +361,7 @@ internal static class FlowLayoutVerification
         var two = Plain("r", [Fan("one", status: "running", background: true), Fan("two", status: "running", background: true)]);
         var twoRuns = MightyGraphSupport.ShownRuns([two]);
         Same(MightyGraphFollow.TargetID(MightyGraphLayout.Make(twoRuns, "", true, new HashSet<string>(), splitsExecution: true, fanOut: new MightyGraphLayout.FanOut()), twoRuns),
-            Node(two, MightyGraphLayout.ReturnSuffix), "the return node under the cards is the lowest");
+            Node(two, MightyGraphLayout.WorkSuffix), "the main session's card under the cards is the lowest");
         two.Status = "completed"; two.FinalOutput = "launched";
         var endedRuns = MightyGraphSupport.ShownRuns([two]);
         var endedGraph = MightyGraphLayout.Make(endedRuns, "", true, new HashSet<string>(), splitsExecution: true, fanOut: new MightyGraphLayout.FanOut());
@@ -456,9 +456,9 @@ internal static class FlowLayoutVerification
             Same(FlowCard.Of(ended, shown[0]).Activity, "b.txt: 3", "its answer's first line");
             var graph = MightyGraphLayout.Make(shown, "", false, new HashSet<string>(), splitsExecution: true, fanOut: new MightyGraphLayout.FanOut());
             var copy = FlowCard.CopyNodeID(ended, shown) ?? throw new InvalidOperationException("no copy");
-            Check(graph.Nodes.Any(n => n.Id == copy && !n.IsCompact), "its copy is a full block");
+            Check(graph.Nodes.Any(n => n.Id == copy && n.IsCompact), "its copy is a card too");
             Check(graph.Nodes.Any(n => n.Id == Node(shown[0], "agent:" + ended.Id) && n.IsCompact), "its card");
-            Check(!FlowCard.IsCompact(shown[0].FlowAgents.First(a => a.Title == "count a"), false), "the foreground agent ended as its block");
+            Check(FlowCard.IsCompact(shown[0].FlowAgents.First(a => a.Title == "count a"), false), "the foreground agent that ended is a card too");
         });
         return Task.CompletedTask;
     }
@@ -537,9 +537,9 @@ internal static class FlowLayoutVerification
             Same(FlowReturn.Of(FlowFixtures.Run("r:notice:1", agents: [Command("c", status: "completed", source: "ci")], notice: true)), null, "a notice run");
 
             var release = MightyGraphSupport.ShownRuns([FlowFixtures.Run("r", agents: [Helper("notes", "completed", true), Command("ci"), Command("apk")])]);
-            var status = FlowLog.StatusOf(release, FlowLog.AdvisorState.OnCall)!;
-            Same(status.Text, "Sonnet 5.5 실행 중 · 작업 2개 실행 중 · 조언자 대기", "the mock's moment");
-            SameList(status.Parts.Select(p => p.Role), [FlowRole.Lead, FlowRole.Task, FlowRole.Advisor], "in their roles' inks");
+            var status = FlowLog.StatusOf(release)!;
+            Same(status.Text, "Sonnet 5.5 실행 중 · 작업 2개 실행 중", "the mock's moment");
+            SameList(status.Parts.Select(p => p.Role), [FlowRole.Lead, FlowRole.Task], "in their roles' inks");
             Same(FlowLog.StatusOf(MightyGraphSupport.ShownRuns([FlowFixtures.Run("r", agents: [Helper("notes", background: true), Command("ci"), Command("apk", status: "completed")])]))?.Text,
                 "Sonnet 5.5 실행 중 · 하위 에이전트 1/1 실행 중 · 작업 1개 실행 중", "side by side");
             Same(FlowLog.StatusOf(MightyGraphSupport.ShownRuns([FlowFixtures.Run("r", agents: [Helper("notes", "completed", true), Command("ci", status: "completed")])]))?.Text,
@@ -554,8 +554,8 @@ internal static class FlowLayoutVerification
             Check(row[0].Frame.MaxX < row[1].Frame.X && row[1].Frame.MaxX < row[2].Frame.X, "left to right");
             var mockLine = Must(mockGraph, Line(mock));
             SameList(mockGraph.Edges.Where(e => e.Source == mockLine.Id).Select(e => e.Target), row.Select(n => n.Id), "under one line");
-            var mockBack = Must(mockGraph, Node(mock, MightyGraphLayout.ReturnSuffix));
-            SameList(mockGraph.Edges.Where(e => e.Target == mockBack.Id).Select(e => e.Source).Order(StringComparer.Ordinal), row.Select(n => n.Id).Order(StringComparer.Ordinal), "into the way back");
+            var mockBack = Must(mockGraph, Node(mock, MightyGraphLayout.WorkSuffix));
+            SameList(mockGraph.Edges.Where(e => e.Target == mockBack.Id).Select(e => e.Source).Order(StringComparer.Ordinal), row.Select(n => n.Id).Order(StringComparer.Ordinal), "into the main session's card");
             // (Which of these edges are live is the web page's: flow.ts liveFlowIds, the Mac's liveFlowIDs.)
             Same(MightyGraphSupport.ShownRuns([mock])[0].Agents.Count, 0, "no command block for the other views");
             Check(!PlainLayout([mock]).Nodes.Any(n => n.Id == row[1].Id), "nor without the fan-out");

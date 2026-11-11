@@ -29,7 +29,7 @@ export interface MightyBlockCopy {
   awaiting?: MightyAwaiting;
   /** A result that is the result so far (Core MightyGraphBlock.SoFar): its strip and symbol are neutral, its tone stays the request's. */
   soFar?: boolean;
-  /** The role view's words for this node (Core FlowCopy.Block): who the block is, its card, a delegate line, the return node or the advisor's band. */
+  /** The role view's words for this node (Core FlowCopy.Block): who the block is, its card, a delegate line, a step or the plan column. */
   flow?: FlowBlockCopy;
 }
 
@@ -38,7 +38,7 @@ export interface FlowMarkCopy { name: 'background' | 'fork' | 'worktree'; help: 
 
 /** Who a block is (Core FlowCopy.Role): its role, its ink (a design token's name), its type chip, the lead's effort, its marks, all of it in one line. */
 export interface FlowRoleCopy {
-  name: 'lead' | 'subagent' | 'task' | 'advisor';
+  name: 'lead' | 'subagent' | 'task';
   ink: string;
   type?: string;
   typeChip?: string;
@@ -71,36 +71,56 @@ export interface FlowCardCopy {
   /** A finished background block's full copy in its notice run: where its card's click goes. */
   copyNodeId?: string;
   activateHelp: string;
+  /** The activity is what the main session said (the 실행 card, a step's card): set as text, not as a command. */
+  prose?: boolean;
+  /** A step not begun: no time runs and nothing on it moves. */
+  pending?: boolean;
+  /** The step of the request's plan it was launched in ("2. 노트 작성"), on a line of its own; `stepHelp` says it in a sentence. */
+  step?: string;
+  stepHelp?: string;
 }
 
 export interface FlowPartCopy { text: string; ink: string }
 /** The delegate line (Core FlowDelegation.Line). */
 export interface FlowLineCopy { head: string; parts: FlowPartCopy[]; model?: string; progress?: string; text: string }
-/** The return node (Core FlowReturn.State). */
-export interface FlowBackCopy { text: string; waiting: boolean }
-export interface FlowAdvisorRowCopy { id: string; caller: string; ink: string; callerNodeId: string; when: string; line: string; state: string; help: string }
-/** The advisor's band (Core FlowAdvisor.Band): every row it keeps; the page shows the newest that fit its height. */
-export interface FlowAdvisorCopy {
-  header: string;
-  model?: string;
-  state?: string;
-  consulting: boolean;
-  rows: FlowAdvisorRowCopy[];
-  earlier: number;
-  calls: number;
-  totals: string;
-  totalsHelp?: string;
-  note?: string;
-  empty?: string;
-  hidesText: boolean;
+/** A step of a request opened into its block (Core/macOS FlowSteps): its title, its state, and the main session's records during it, by id. */
+export interface FlowStepCopy { title: string; stateWord: string; status: string; entryIds: string[] }
+export type FlowProgressState = 'done' | 'current' | 'pending' | 'stopped' | 'failed';
+export interface FlowProgressRowCopy {
+  /** The step's index among the request's steps. */
+  index: number;
+  /** The step's card on the spine, when it began. */
+  nodeId?: string;
+  text: string;
+  state: FlowProgressState;
+  /** Milliseconds since 1970. */
+  startedAt?: number;
+  endedAt?: number;
+}
+/** A request's progress panel (Core FlowCopy.ProgressCopy, macOS FlowSteps.Progress): "진행 상황", "요청 27", its first line and state, and its plan. */
+export interface FlowProgressCopy {
+  title: string;
+  heading: string;
+  request: string;
+  stateWord: string;
+  /** The request's state bucket, or "waiting" while it awaits its notices. */
+  status: string;
+  /** "3/9"; absent for a request without a plan. */
+  count?: string;
+  rows: FlowProgressRowCopy[];
+  hidden: number;
+  more?: string;
+  running: boolean;
+  /** Where the request line leads, and what it says on hover. */
+  requestNodeId: string;
+  requestHelp: string;
 }
 
 export interface FlowBlockCopy {
   role?: FlowRoleCopy;
   card?: FlowCardCopy;
   line?: FlowLineCopy;
-  back?: FlowBackCopy;
-  advisor?: FlowAdvisorCopy;
+  step?: FlowStepCopy;
 }
 
 /** The session log strip under a Claude pane's flow (Core FlowCopy.Log). */
@@ -158,11 +178,13 @@ export interface MightyInputs {
   executionCards: Record<string, MightyExecutionCard>;
   animations: boolean;
   header: string;
-  /** The role view (a Claude pane): sub-agents and background commands stand in fan-out rows as cards, with delegate lines, a return node and the
-   * advisor's band (Core MightyGraphLayout.FanOut). Absent elsewhere and from an older host. */
+  /** The role view (a Claude pane): the request's steps or its row of sub-agents and background commands as cards, the main session's card where the
+   * answer will come, and the plan column (Core MightyGraphLayout.FanOut). Absent elsewhere and from an older host. */
   fanOut?: boolean;
   /** The session log strip under the flow, for a role view with a request. */
   log?: FlowLogCopy;
+  /** The progress panel's copy of each request, by its run id (Core FlowCopy.ProgressOf), in the role view. */
+  progress?: Record<string, FlowProgressCopy>;
 }
 
 export interface TimelineRow {

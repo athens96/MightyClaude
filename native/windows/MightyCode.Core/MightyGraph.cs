@@ -77,6 +77,12 @@ public sealed class MightyGraphRun
     /// settings name (<see cref="ClaudeAdvisorSettings"/>). Absent when none was known, when the pane turned it off, in older saves and in
     /// runs the app did not start.</summary>
     [JsonPropertyName("configuredAdvisor")] public string? ConfiguredAdvisor { get; set; }
+    /// <summary>The request's checklist as steps, with when each began and ended (<see cref="FlowSteps"/>). Absent in a run whose main session kept no
+    /// list, in notice runs and in older saves.</summary>
+    [JsonPropertyName("steps")] public List<FlowStep>? Steps { get; set; }
+    /// <summary>The keys of the items the pane's list already had done when this request first sent one: the earlier request's, which are never this
+    /// one's steps. Absent when there were none.</summary>
+    [JsonPropertyName("stepsCarried")] public List<string>? StepsCarried { get; set; }
     /// <summary>The background sub-agents and commands <see cref="Shown"/> took out of <see cref="Agents"/>, with the blocks under them, in the order
     /// they stood: the flow diagram alone still draws them, under the block that launched them (<see cref="FlowAgents"/>). Never saved.</summary>
     [JsonIgnore] internal List<MightyGraphAgent>? ShownFanOut { get; set; }
@@ -105,6 +111,7 @@ public sealed class MightyGraphRun
         ResponseRecords = ResponseRecords is null ? null : [.. ResponseRecords], Provider = Provider,
         NodeModelLabel = NodeModelLabel, ConfiguredModel = ConfiguredModel, NoticeRun = NoticeRun, NoticeTitle = NoticeTitle, ShownBackgroundWaiting = ShownBackgroundWaiting, RequestBackgroundWaiting = RequestBackgroundWaiting,
         ShownAwaiting = ShownAwaiting, ConfiguredEffort = ConfiguredEffort, Advisor = Advisor, ConfiguredAdvisor = ConfiguredAdvisor,
+        Steps = Steps is null ? null : [.. Steps], StepsCarried = StepsCarried is null ? null : [.. StepsCarried],
         ShownFanOut = ShownFanOut is null ? null : [.. ShownFanOut.Select(a => a.Copy())], ShownFlowOrder = ShownFlowOrder is null ? null : [.. ShownFlowOrder],
     };
     /// Tokens of the main block alone; this adds every child block.
@@ -378,6 +385,13 @@ public static class MightyGraphSupport
         return Normalized(kept, restoring: false, budget: ref budget);
     }
 
+    /// <summary>A block an earlier build made from a running Bash call's heartbeat (Claude Code's <c>tool_progress</c>, which names the call as its parent):
+    /// asked nothing, no one, and holding only the call's output as its answer. A sub-agent the stream or Mods started always has its prompt.</summary>
+    internal static bool IsHeartbeatBlock(MightyGraphAgent agent) =>
+        agent.Kind is null && agent.Input.Length == 0 && agent.Identity is null && agent.Usage is null
+        && agent.ResponseRecords is null && agent.Background != true && agent.SourceBlockId is null
+        && agent.Entries.Count > 0 && agent.Entries.All(e => e.Kind == "assistant" && e.Id.EndsWith("-answer", StringComparison.Ordinal));
+
     public static List<MightyGraphRun> Normalized(List<MightyGraphRun> values, bool restoring, ref int budget, string? provider = null)
     {
         int Bytes(string? v) => v is null ? 0 : Encoding.UTF8.GetByteCount(v);
@@ -397,7 +411,9 @@ public static class MightyGraphSupport
         var result = new List<MightyGraphRun>();
         foreach (var run in values.TakeLast(128).Reverse())
         {
-            var agents = run.Agents.Take(128).Where(a => Wire.Identifier(a.Id)).GroupBy(a => a.Id).Select(g => g.First()).ToList();
+            // Only Claude sends a running tool's heartbeat; another agent's sub-agent may well have no prompt of its own.
+            var claude = (provider ?? run.Provider ?? "claude") == "claude";
+            var agents = run.Agents.Take(128).Where(a => Wire.Identifier(a.Id) && !(claude && IsHeartbeatBlock(a))).GroupBy(a => a.Id).Select(g => g.First()).ToList();
             var overhead = 512 + Bytes(run.Id) + Bytes(run.SourceRunID)
                 + agents.Sum(a => 512 + Bytes(a.Id) + Bytes(a.ParentID));
             if (budget < overhead || !Wire.Identifier(run.Id) || !ids.Add(run.Id)) continue;
@@ -434,6 +450,21 @@ public static class MightyGraphSupport
                 : Bounded(run.FinalOutput, Math.Min(32_768, Math.Max(0, budget / 3)), ref budget);
             if (r.FinalOutput != null) budget -= Bytes(r.FinalOutput) * 2;
             r.RootEntries = LimitedEntries(run.RootEntries, 131_072, restoring, ref budget);
+            // The checklist's steps, as many as a list holds, each item's words bounded as the list bounds them.
+            if (r.NoticeRun != true && run.Steps is { } savedSteps)
+            {
+                var steps = new List<FlowStep>();
+                foreach (var step in savedSteps.Take(TodoProgress.MaximumItems))
+                {
+                    var key = step.Key.Length > 1_100 ? step.Key[..1_100] : step.Key;
+                    var content = Bounded(step.Content, 1_024, ref budget);
+                    string? active = step.ActiveForm is { } form ? Bounded(form, 1_024, ref budget) : null;
+                    steps.Add(new FlowStep(key, content, active, step.Status is "pending" or "in_progress" or "completed" ? step.Status : "pending",
+                        AgentRunTiming.Parse(step.StartedAt) is null ? null : step.StartedAt, AgentRunTiming.Parse(step.EndedAt) is null ? null : step.EndedAt));
+                }
+                r.Steps = steps;
+            }
+            r.StepsCarried = run.StepsCarried?.Take(256).Select(k => k.Length > 1_100 ? k[..1_100] : k).ToList() is { Count: > 0 } carried ? carried : null;
 
             var builtAgents = new List<MightyGraphAgent>();
             foreach (var agent in agents)

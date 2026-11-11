@@ -172,6 +172,7 @@ function blockSymbol(kind: string, tone: string): IconName {
   switch (kind) {
     case 'request': return 'circle-arrow-up';
     case 'work': return 'cog';
+    case 'step': return 'list-checks';
     case 'agent': return 'square-user-round';
     case 'task': return 'square-terminal';
     case 'steer': return 'message-square-text';
@@ -405,7 +406,7 @@ export const Block = memo(function Block(props: BlockProps) {
   const documentPlan = recorded?.plan ?? (kind === 'plan' ? extra.markdown : undefined);
   // A result whose request awaits notices is drawn as its own kind, the 알림 대기 block; it still acts as the result it stands in for.
   const shownKind = kind === 'result' && copy?.awaiting ? 'awaitingNotice' : kind;
-  // Who the block is (Core FlowCopy.Role): its role's ink as a bar and on its icon, and the chips that fit beside what the header always shows
+  // Who the block is (Core FlowCopy.Role): its role's ink on its icon, and the chips that fit beside what the header always shows
   // (flow.ts headerFit): the marks, the lead's effort, the type, which give way first in a narrow block.
   const role = copy?.flow?.role;
   const ink = role ? inkVar(role.ink) : undefined;
@@ -418,7 +419,6 @@ export const Block = memo(function Block(props: BlockProps) {
       data-pending-request={extra.pending ? id : undefined}
       style={{ left: x, top: y, width: w, height: h }} title={copy?.fromRecord ? t('graph.history.tag') : undefined}>
       <div className={'mighty-head' + (role ? ' with-role' : '')}>
-        {role && <span className="flow-head-bar" style={{ background: ink }} aria-hidden="true" />}
         <span className={'mighty-symbol kind-' + (copy?.notice ? 'task' : shownKind)} style={role ? { color: ink } : undefined}
           aria-hidden={role ? undefined : 'true'} role={role ? 'img' : undefined} aria-label={role?.summary} title={role?.summary} data-testid={role ? 'mighty-role-' + id : undefined}>
           <Icon name={copy?.notice ? 'terminal' : blockSymbol(shownKind, copy?.soFar ? 'idle' : tone)} size={14} weight={1.75} /></span>

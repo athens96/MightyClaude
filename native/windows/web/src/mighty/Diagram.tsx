@@ -11,8 +11,9 @@ import {
   finished, isAuxiliaryKind, isFixed, isResizable, latestResultID, makeLayout, MaximumHeight, MaximumWidth, minimumBlockSize, normalizedSizeFor,
   nodeId, resultDrag, resultDragSides, runNodeId, runOf, WorkSuffix, type Layout, type Size,
 } from './layout';
-import { AdvisorKind, DelegateKind, ReturnKind, advisorRoute, liveFlowIds, logRowsFit, logTarget } from './flow';
-import { AdvisorBandNode, DelegateLineNode, FlowCardNode, FlowLogStrip, ReturnNode } from './FlowParts';
+import { CardHeight, DelegateKind, StepKind, focusedRequest, liveFlowIds, logRowsFit, logTarget, progressRequest, requestSpans, type RequestSpan } from './flow';
+import { newestRequestRun } from './notice';
+import { DelegateLineNode, FlowCardNode, FlowLogStrip, ProgressPanel } from './FlowParts';
 import { blockExtras } from './extras';
 import { edgesCursor, pinnedAnchor, pinnedCamera, pinnedUnit, resizedSize, resizeTarget, type Edges } from './resize';
 import { setBlockSize } from './prefs';
@@ -58,35 +59,45 @@ const HeldCorner = { x: 0, y: 0 };
 interface Drag { id: string; edges: Edges; start: Size; origin: { x: number; y: number }; layout: Layout; target: 'result' | 'plan' | 'block' }
 
 
-/** The edges as one path each (MightyGraph.cs edges): bottom-centre out, one turn 26 from the joining end, top-centre in under an arrow head. */
+/** The points of an edge (macOS MightyGraphLayout.route): bottom-centre out, one turn 26 from the joining end, top-centre in; a side edge out of the
+ * spine block's trailing edge at its card's middle, along a lane in the gap, into the leading edge of the block it launched. */
+export function edgeRoute(from: { x: number; y: number; w: number; h: number }, to: { x: number; y: number; w: number; h: number }, joins: boolean, side = false): { x: number; y: number }[] {
+  if (side) {
+    const start = { x: from.x + from.w, y: from.y + Math.min(from.h / 2, CardHeight / 2) };
+    const end = { x: to.x, y: to.y + Math.min(to.h / 2, CardHeight / 2) };
+    const lane = start.x + Math.min(22, Math.max(0, (end.x - start.x) / 2));
+    return [start, { x: lane, y: start.y }, { x: lane, y: end.y }, end];
+  }
+  const sx = from.x + from.w / 2, sy = from.y + from.h, ex = to.x + to.w / 2, ey = to.y;
+  const clearance = Math.min(26, Math.max(0, (ey - sy) / 2));
+  const middle = joins ? ey - clearance : sy + clearance;
+  return [{ x: sx, y: sy }, { x: sx, y: middle }, { x: ex, y: middle }, { x: ex, y: ey }];
+}
+
+/** An edge as one path: its legs and an arrow head that points the way the last leg runs (down into a block's top, or across into a side block). */
+export function edgePath(points: readonly { x: number; y: number }[]): string {
+  if (points.length < 2) return '';
+  const end = points[points.length - 1]!;
+  let from = points[points.length - 2]!;
+  for (let i = points.length - 2; i >= 0 && from.x === end.x && from.y === end.y; i--) from = points[i]!;
+  const length = Math.max(0.001, Math.hypot(end.x - from.x, end.y - from.y));
+  const dx = (end.x - from.x) / length, dy = (end.y - from.y) / length;
+  const legs = points.map((p, i) => (i === 0 ? 'M' : 'L') + p.x + ' ' + p.y).join('');
+  const wing = (sign: number) => `${end.x - 6 * dx - sign * 4 * dy} ${end.y - 6 * dy + sign * 4 * dx}`;
+  return `${legs}M${wing(1)}L${end.x} ${end.y}L${wing(-1)}`;
+}
+
+/** The edges as one path each (MightyGraph.cs edges). */
 function edgePaths(layout: Layout, running: ReadonlySet<string>): { quiet: string; live: string } {
   const frames = new Map(layout.nodes.map((n) => [n.id, n.frame]));
   let quiet = '', live = '';
   for (const edge of layout.edges) {
     const from = frames.get(edge.source), to = frames.get(edge.target);
     if (!from || !to) continue;
-    const sx = from.x + from.w / 2, sy = from.y + from.h, ex = to.x + to.w / 2, ey = to.y;
-    const clearance = Math.min(26, Math.max(0, (ey - sy) / 2));
-    const middle = edge.joins ? ey - clearance : sy + clearance;
-    const d = `M${sx} ${sy}V${middle}H${ex}V${ey}M${ex - 4} ${ey - 6}L${ex} ${ey}L${ex + 4} ${ey - 6}`;
+    const d = edgePath(edgeRoute(from, to, edge.joins, edge.side === true));
     if (running.has(edge.target)) live += d; else quiet += d;
   }
   return { quiet, live };
-}
-
-/** The advisor's dotted links (Core MightyGraphLayout.AdvisorLink), each from its band to the block that asked, around the blocks between. */
-function advisorPaths(layout: Layout): string {
-  if (layout.advisorLinks.length === 0) return '';
-  const frames = new Map(layout.nodes.map((n) => [n.id, n.frame]));
-  let d = '';
-  for (const link of layout.advisorLinks) {
-    const band = frames.get(link.band), target = frames.get(link.target);
-    if (!band || !target) continue;
-    const others = layout.nodes.filter((n) => n.id !== link.band && n.id !== link.target).map((n) => n.frame);
-    const points = advisorRoute(band, target, others);
-    d += points.map((point, index) => (index === 0 ? 'M' : 'L') + point.x + ' ' + point.y).join('');
-  }
-  return d;
 }
 
 /**
@@ -182,7 +193,7 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   // A released drag shows its size at once; the saved sizes coming back from the host take over.
   const savedSizes = pending && pending.base === session.graphBlockSizes ? pending.sizes : session.graphBlockSizes ?? null;
   const latest = latestResultID(runs);
-  // The role view of a Claude pane: cards, delegate lines, the return node and the advisor's band (the host says when).
+  // The role view of a Claude pane: cards, delegate lines, steps and the plan column (the host says when).
   const fanOut = inputs?.fanOut === true;
   const blockSizes = useMemo(() => (live && live.target === 'block' ? { ...(savedSizes ?? {}), [live.id]: live.size } : savedSizes), [savedSizes, live]);
   const layout = useMemo(() => makeLayout(runs, session.draft, session.status === 'running', expanded, {
@@ -204,12 +215,32 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   }), [runs, session.draft, session.status, expanded, inputs, viewport, zoom, live, session.graphResultSize, session.graphPlanSize, latest, measured, blockSizes, fanOut, opened]);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  // The progress panel's request (macOS MightyGraphView focusedRunID, pinnedRunID): the one in view, read as the camera moves; a new request it is
+  // pinned to until the user scrolls themselves (a wheel, a drag), whatever else is in view.
+  const [focusedRun, setFocusedRun] = useState<string | null>(null);
+  const [pinnedRun, setPinnedRun] = useState<string | null>(null);
+  const pinnedRef = useRef(pinnedRun);
+  pinnedRef.current = pinnedRun;
+  const spans = useMemo<RequestSpan[]>(() => {
+    if (!fanOut) return [];
+    // The longest prefix first: a notice run's id begins with its request's.
+    const prefixes = runs.map((run, index) => ({ prefix: runNodeId(run, ''), index })).sort((a, b) => b.prefix.length - a.prefix.length);
+    return requestSpans(layout.nodes.filter((n) => n.kind !== 'history' && n.kind !== 'draft'), runs,
+      (id) => prefixes.find((p) => id.startsWith(p.prefix))?.index ?? null);
+  }, [fanOut, layout, runs]);
+  const spansRef = useRef(spans);
+  spansRef.current = spans;
+  const newestRequestID = newestRequestRun(runs)?.id ?? null;
+  const seenNewest = useRef(newestRequestID);
+  useEffect(() => {
+    if (newestRequestID !== null && newestRequestID !== seenNewest.current && fanOut) setPinnedRun(newestRequestID);
+    seenNewest.current = newestRequestID;
+  }, [newestRequestID, fanOut]);
 
   const running = useMemo(() => new Set(Object.entries(mighty.blocks).filter(([, b]) => b.tone === 'run').map(([id]) => id)), [mighty.blocks]);
-  // The role view's own nodes in motion: a return node, and a delegate line that leads to a running block (flow.ts liveFlowIds).
+  // The role view's own nodes in motion: a delegate line that leads to a running block (flow.ts liveFlowIds).
   const liveIds = useMemo(() => (fanOut ? liveFlowIds(layout, running) : running), [fanOut, layout, running]);
   const edges = useMemo(() => edgePaths(layout, liveIds), [layout, liveIds]);
-  const advisorLinks = useMemo(() => advisorPaths(layout), [layout]);
 
   // ── the camera: transforms set directly, the visible set recomputed only when it changes ──
   const frame = useRef(0);
@@ -222,6 +253,11 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
     const left = (-cam.x - Overscan) / z, top = (-cam.y - Overscan) / z, right = (w - cam.x + Overscan) / z, bottom = (h - cam.y + Overscan) / z;
     const ids = l.nodes.filter((n) => n.frame.x < right && n.frame.x + n.frame.w > left && n.frame.y < bottom && n.frame.y + n.frame.h > top).map((n) => n.id).join('\n');
     setVisibleKey((key) => (key === ids ? key : ids));
+    // The request in view; only a change of it is told.
+    if (spansRef.current.length > 0) {
+      const focused = focusedRequest(spansRef.current, -cam.y / z, h / z);
+      setFocusedRun((was) => (was === focused ? was : focused));
+    }
   }, []);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
@@ -385,7 +421,7 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
     if (copy && layoutRef.current.nodes.some((n) => n.id === copy)) reveal(copy);
     else openCard(id, true);
   }, [reveal, openCard]);
-  /** An advisor row's or a log row's click: the block, or what stands for it on the diagram while a folded card hides it. */
+  /** A log row's or a plan row's click: the block, or what stands for it on the diagram while a folded card hides it. */
   const revealFlow = useCallback((nodeID: string) => {
     const drawn = new Set(layoutRef.current.nodes.map((n) => n.id));
     const target = logTarget(nodeID, shared.current, (run, suffix) => runNodeId(run, suffix), (id) => drawn.has(id));
@@ -398,6 +434,8 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   const pan = useCallback((dx: number, dy: number) => {
     stopTween();
     held.current = null;
+    // The user's own scroll: the progress panel reads the request in view again.
+    if (pinnedRef.current !== null) setPinnedRun(null);
     camera.current = { x: camera.current.x + dx, y: camera.current.y + dy };
     applyCamera();
   }, [applyCamera, stopTween]);
@@ -410,7 +448,7 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
     if (!element) return;
     const wheel = (event: WheelEvent) => {
       // The steps panel scrolls its own list.
-      if ((event.target as Element).closest?.('.mighty-steps')) return;
+      if ((event.target as Element).closest?.('.mighty-steps, .mighty-progress')) return;
       const hovered = (event.target as Element).closest?.('[data-block-id]') as HTMLElement | null;
       const id = hovered?.dataset.blockId ?? null;
       const kind = hovered?.dataset.kind ?? '';
@@ -452,7 +490,7 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
     if (hit && !(event.target as Element).closest('button')) { actions.startResize(hit.id, hit.edges, event); return; }
     const block = (event.target as Element).closest('[data-block-id]') as HTMLElement | null;
     if (block) {
-      // A card, a delegate line, the return node and the advisor's band are never selected (Core MightyGraphLayout.IsFixed).
+      // A card, a delegate line and the plan column are never selected (Core MightyGraphLayout.IsFixed).
       if (block.dataset.kind !== 'history' && block.dataset.fixed !== '1') setSelected(block.dataset.blockId ?? null);
       return;
     }
@@ -477,7 +515,7 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
     }
     const p = panning.current;
     // Over the steps panel no block border is under the pointer: a press there never resizes.
-    if (!p) { showResizeCursor((event.target as Element).closest('.mighty-steps') ? '' : edgesCursor(resizeAt(event.clientX, event.clientY)?.edges ?? 0)); return; }
+    if (!p) { showResizeCursor((event.target as Element).closest('.mighty-steps, .mighty-progress') ? '' : edgesCursor(resizeAt(event.clientX, event.clientY)?.edges ?? 0)); return; }
     pan(event.clientX - p.x, event.clientY - p.y);
     panning.current = { ...p, x: event.clientX, y: event.clientY };
   };
@@ -582,7 +620,11 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   }, [extras, request, pendingState, pendingRunIdOf, mighty.blocks]);
 
   const visible = useMemo(() => new Set(visibleKey.split('\n')), [visibleKey]);
-  const steps = useMemo(() => stepsModel(session, runs), [session, runs]);
+  // The step list over the diagram for every other pane; the role view has its progress panel there instead.
+  const steps = useMemo(() => (fanOut ? null : stepsModel(session, runs)), [session, runs, fanOut]);
+  const progressCopy = inputs?.progress;
+  const progressID = fanOut && progressCopy ? progressRequest(pinnedRun, focusedRun, newestRequestID, (id) => progressCopy[id] !== undefined) : null;
+  const progress = progressID !== null ? progressCopy?.[progressID] : undefined;
   const unfinished = useMemo(() => new Set(runs.filter((r) => !finished(r)).map((r) => r.id)), [runs]);
   const toolbarZoom = (
     <span className="mighty-zoom">
@@ -608,10 +650,10 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
           <g ref={edgesRef} data-testid="mighty-edges">
             <path className="mighty-edges-quiet" d={edges.quiet} />
             <path className="mighty-edges-live" d={edges.live} />
-            {advisorLinks !== '' && <path className="mighty-advisor-links" d={advisorLinks} data-testid="mighty-advisor-links" />}
           </g>
         </svg>
         {steps && <StepsPanel key={paneId} paneId={paneId} model={steps} t={t} />}
+        {progress && <ProgressPanel key={paneId} paneId={paneId} progress={progress} onReveal={revealFlow} />}
         <div className="mighty-world" ref={worldRef} onClick={onReferenceClick}>
           {layout.nodes.map((node) => {
             const copy = mighty.blocks[node.id] ?? copies?.get(node.id);
@@ -619,12 +661,13 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
             // The role view's own nodes (FlowParts.tsx), each drawn from its copy; a node whose copy has not come yet waits for it.
             if (node.compact) {
               const card = copy?.flow?.card;
-              return card ? <FlowCardNode key={node.id} id={node.id} x={x} y={y} w={w} h={h} card={card} outline={copy?.outline === 'marching' || copy?.outline === 'solid'}
+              // The 실행 card wears the 실행 block's gears, a step's card the checklist, a sub-agent or a command its own symbol.
+              const icon = node.kind === 'work' ? 'cog' : node.kind === StepKind ? 'list-checks' : copy?.kind === 'task' || card?.isTask ? 'square-terminal' : 'square-user-round';
+              return card ? <FlowCardNode key={node.id} id={node.id} kind={node.kind} icon={icon} x={x} y={y} w={w} h={h} card={card}
+                outline={copy?.outline === 'marching' || copy?.outline === 'solid' || (card.running && node.kind !== 'agent')}
                 onActivate={activateCard} onOpen={(id) => openCard(id, true)} /> : null;
             }
             if (node.kind === DelegateKind) return copy?.flow?.line ? <DelegateLineNode key={node.id} id={node.id} x={x} y={y} w={w} h={h} line={copy.flow.line} /> : null;
-            if (node.kind === ReturnKind) return copy?.flow?.back ? <ReturnNode key={node.id} id={node.id} x={x} y={y} w={w} h={h} back={copy.flow.back} /> : null;
-            if (node.kind === AdvisorKind) return copy?.flow?.advisor ? <AdvisorBandNode key={node.id} id={node.id} x={x} y={y} w={w} h={h} band={copy.flow.advisor} onReveal={revealFlow} /> : null;
             return (
               <Block key={node.id} paneId={paneId} provider={session.provider} id={node.id} kind={node.kind}
                 x={x} y={y} w={w} h={h}

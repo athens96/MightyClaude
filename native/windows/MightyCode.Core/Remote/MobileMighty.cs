@@ -44,10 +44,11 @@ public sealed record MobileBlock(string Id, string Kind, string Title, string St
 /// (<see cref="MightyGraphSupport.BackgroundWaiting"/>): its result card reads 현재까지의 결과 meanwhile. <c>AwaitingNotice</c>: the request awaits the notices of
 /// its background work (<see cref="BackgroundNoticeRuns.AwaitingNotice"/>): its result card is the 알림 대기 block. Each absent when none (and from older hosts).
 /// <c>ResultFiles</c> is the desktop's 결과에 나온 파일 list for a run that carries <c>Result</c> and completed (<see cref="MobileMightySupport.RunResultFiles"/>).
-/// Absent when it names none, on a workspace of another computer, and from older hosts. <c>Returning</c> and <c>Advisor</c>: the role view
-/// (<see cref="MobileFlow"/>, <c>roles=1</c> on a Claude pane): the way back where the result will come, while it is not there, and the run's advisor.</summary>
+/// Absent when it names none, on a workspace of another computer, and from older hosts. <c>Returning</c>: the role view
+/// (<see cref="MobileFlow"/>, <c>roles=1</c> on a Claude pane): the way back where the result will come, while it is not there.</summary>
 public sealed record MobileMightyRun(string Id, string Input, string? Title, string Status, IReadOnlyList<MobileBlock> Blocks, string? Result = null, bool? NoticeRun = null,
-    int? BackgroundWaiting = null, IReadOnlyList<MobileResultFile>? ResultFiles = null, MobileAwaitingNotice? AwaitingNotice = null, MobileReturn? Returning = null, MobileAdvisor? Advisor = null);
+    int? BackgroundWaiting = null, IReadOnlyList<MobileResultFile>? ResultFiles = null, MobileAwaitingNotice? AwaitingNotice = null, MobileReturn? Returning = null,
+    MobileProgress? Progress = null);
 /// <summary>One file a run's final result names: <c>Path</c> relative to the workspace root, joined with "/" — what
 /// <c>GET /m1/workspaces/{id}/file?path=</c> takes — and the line the result pointed at, if any.</summary>
 public sealed record MobileResultFile(string Path, int? Line = null);
@@ -246,7 +247,8 @@ public static class MobileMightySupport
             result.Add(new(run.Id, ActivitySupport.Clean(run.Input, MobileWire.MaximumText), notice ? BackgroundNoticeRuns.Heading(run) : title?.Invoke(run.Input), state, Blocks(run, ordinals[index], outputTails, roles, request, window),
                 output, notice ? true : null, waiting > 0 ? waiting : null, output is null ? null : RunResultFiles(run, workspaceRoot, resultFiles),
                 MobileAwaitingNotice.From(BackgroundNoticeRuns.AwaitingNotice(run, values)),
-                roles is null ? null : MobileFlow.Returning(run, roles), roles is null ? null : MobileFlow.Advisor(run, roles)));
+                roles is null ? null : MobileFlow.Returning(run, roles),
+                roles is null ? null : MobileFlow.Progress(index, values, ordinals[index], roles)));
         }
         resultFiles?.Prune();
         return result;
@@ -343,6 +345,8 @@ public static class MobileMightySupport
                 hash.Add(agent.Figures?.ToolCalls); hash.Add(agent.Figures?.EndedAt); hash.Add(agent.Usage?.Total); hash.Add(agent.Identity?.ResolvedModel);
             }
             // The advisor's band and the status line move with each consultation.
+            // The progress panel moves with each step's state and times.
+            foreach (var step in run.Steps ?? []) { hash.Add(step.Key); hash.Add(step.Status); hash.Add(step.StartedAt); hash.Add(step.EndedAt); }
             hash.Add(run.Advisor?.Count); hash.Add(run.Advisor?.Usage?.Total);
             foreach (var call in run.Advisor?.Consultations ?? []) { hash.Add(call.Id); hash.Add(call.State); }
         }
