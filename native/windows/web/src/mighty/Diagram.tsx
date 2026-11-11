@@ -11,7 +11,7 @@ import {
   finished, isAuxiliaryKind, isFixed, isResizable, latestResultID, makeLayout, MaximumHeight, MaximumWidth, minimumBlockSize, normalizedSizeFor,
   nodeId, resultDrag, resultDragSides, runNodeId, runOf, WorkSuffix, type Layout, type Size,
 } from './layout';
-import { AdvisorKind, DelegateKind, ReturnKind, advisorRoute, liveFlowIds, logTarget } from './flow';
+import { AdvisorKind, DelegateKind, ReturnKind, advisorRoute, liveFlowIds, logRowsFit, logTarget } from './flow';
 import { AdvisorBandNode, DelegateLineNode, FlowCardNode, FlowLogStrip, ReturnNode } from './FlowParts';
 import { blockExtras } from './extras';
 import { edgesCursor, pinnedAnchor, pinnedCamera, pinnedUnit, resizedSize, resizeTarget, type Edges } from './resize';
@@ -124,6 +124,9 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   const paneId = session.id;
   const inputs = mighty.inputs;
   const viewportRef = useRef<HTMLDivElement>(null);
+  /** The flow's whole box: the diagram's view and the session log strip under it (logRowsFit). */
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState(0);
   const worldRef = useRef<HTMLDivElement>(null);
   const edgesRef = useRef<SVGGElement>(null);
   const dotsRef = useRef<SVGPatternElement>(null);
@@ -263,6 +266,13 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
     const element = viewportRef.current;
     if (!element) return;
     const observer = new ResizeObserver(() => setViewport((v) => (v.w === element.clientWidth && v.h === element.clientHeight ? v : { w: element.clientWidth, h: element.clientHeight })));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const element = rootRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => setRoom((h) => (h === element.clientHeight ? h : element.clientHeight)));
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
@@ -583,7 +593,7 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   );
 
   return (
-    <div className="mighty-diagram" data-testid="mighty-diagram" data-node-count={layout.nodes.length} data-edge-count={layout.edges.length}>
+    <div className="mighty-diagram" ref={rootRef} data-testid="mighty-diagram" data-node-count={layout.nodes.length} data-edge-count={layout.edges.length}>
       <div className="mighty-diagram-zoom">{toolbarZoom}</div>
       <div className="mighty-viewport" ref={viewportRef} tabIndex={0} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerLeave={() => { if (!drag.current) showResizeCursor(''); }}
         onPointerUp={(e) => endDrag(e, false)} onPointerCancel={() => endDrag(null, true)} onLostPointerCapture={() => { if (drag.current || panning.current) endDrag(null, !!drag.current); }}
@@ -628,7 +638,7 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
         </div>
       </div>
       {/* The session log under a Claude pane's flow, above the composer (FlowLog): no strip without a request. */}
-      {fanOut && inputs?.log && <FlowLogStrip paneId={paneId} log={inputs.log} onToggle={toggleLog} onReveal={revealFlow} />}
+      {fanOut && inputs?.log && <FlowLogStrip paneId={paneId} log={inputs.log} squeezed={!logRowsFit(room)} onToggle={toggleLog} onReveal={revealFlow} />}
     </div>
   );
 }

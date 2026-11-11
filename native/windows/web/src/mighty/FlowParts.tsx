@@ -167,19 +167,21 @@ export const AdvisorBandNode = memo(function AdvisorBandNode({ id, x, y, w, h, b
  * The session log under a Claude pane's flow (FlowLog): its header is the status line, each part in its role's ink, and while open the last few
  * events with their time, who and what, in the room of five rows so the diagram over it does not move as rows come in. A row leads to its block.
  */
-export function FlowLogStrip({ paneId, log, onToggle, onReveal }: { paneId: string; log: FlowLogCopy; onToggle: () => void; onReveal: (nodeId: string) => void }) {
+/** The session log under the flow. `squeezed`: the pane is too short for its rows beside the diagram (flow.ts logRowsFit), so it shows its
+ * status line alone and offers no fold of its own; the pane's fold comes back with the room. */
+export function FlowLogStrip({ paneId, log, squeezed = false, onToggle, onReveal }: { paneId: string; log: FlowLogCopy; squeezed?: boolean; onToggle: () => void; onReveal: (nodeId: string) => void }) {
   const { t } = useServices();
-  const open = !log.collapsed;
+  const open = !log.collapsed && !squeezed;
   return (
-    <div className="mighty-log" data-testid={'mighty-log-' + paneId}>
+    <div className="mighty-log" data-testid={'mighty-log-' + paneId} data-squeezed={squeezed ? '1' : undefined}>
       <div className="mighty-log-head">
         <Icon name="list" size={12} weight={1.75} className="mighty-log-glyph" />
         <span className="mighty-log-title">{t('graph.log.title')}</span>
         <span className="mighty-log-status" title={log.statusText} aria-label={log.statusText} data-testid={'mighty-log-status-' + paneId}>
           {log.status.map((part, index) => <span key={index}>{index > 0 && <span className="flow-dot-sep"> · </span>}<span style={{ color: inkVar(part.ink) }}>{part.text}</span></span>)}
         </span>
-        <button type="button" className="mighty-icon mighty-log-toggle" title={t(open ? 'graph.log.hide' : 'graph.log.show')} aria-label={t(open ? 'graph.log.hide' : 'graph.log.show')}
-          aria-expanded={open} data-testid={'mighty-log-toggle-' + paneId} onClick={onToggle}><Icon name={open ? 'chevron-down' : 'chevron-up'} size={12} weight={2} /></button>
+        {!squeezed && <button type="button" className="mighty-icon mighty-log-toggle" title={t(open ? 'graph.log.hide' : 'graph.log.show')} aria-label={t(open ? 'graph.log.hide' : 'graph.log.show')}
+          aria-expanded={open} data-testid={'mighty-log-toggle-' + paneId} onClick={onToggle}><Icon name={open ? 'chevron-down' : 'chevron-up'} size={12} weight={2} /></button>}
       </div>
       {open && (
         <div className="mighty-log-rows" style={{ minHeight: `calc(${LogRows} * var(--log-row, 18px))` }}>

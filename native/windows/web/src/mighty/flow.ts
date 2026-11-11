@@ -34,6 +34,20 @@ export const AdvisorFooterHeight = 24;
 export const AdvisorMinimumHeight = AdvisorHeaderHeight + AdvisorEarlierHeight + AdvisorRowHeight + AdvisorNoteHeight + AdvisorFooterHeight;
 /** The rows an open log strip keeps room for (Core FlowLog.VisibleRows). */
 export const LogRows = 5;
+/** The log strip's header (its status line) and its open rows, in px (mighty.css: .mighty-log-head, --log-row, .mighty-log-rows' padding). */
+export const LogHeadHeight = 27;
+export const LogRowsHeight = LogRows * 18 + 5;
+/** What the diagram's own view keeps of the pane's flow before the log strip shows its rows. */
+export const LogDiagramRoom = 160;
+
+/**
+ * Whether the log strip shows its rows in a flow `room` px high (the diagram's view and the strip under it): only while the diagram still keeps
+ * {@link LogDiagramRoom} beside them. A shorter pane shows the strip's status line alone, whatever the pane's fold, so the log never takes the
+ * diagram's whole height (a view 0 px high draws every block as off screen). An unmeasured flow (0) shows them.
+ */
+export function logRowsFit(room: number): boolean {
+  return room <= 0 || room >= LogHeadHeight + LogRowsHeight + LogDiagramRoom;
+}
 
 const ended = (status: string) =>
   status === 'completed' || status === 'error' || status === 'failed' || status === 'stopped' || status === 'cancelled' || status === 'interrupted';
