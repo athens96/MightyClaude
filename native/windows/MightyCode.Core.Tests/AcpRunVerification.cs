@@ -62,6 +62,11 @@ internal static class AcpRunVerification
     private static ProviderCatalog Fake(string provider, string state, string fixture, string version, params string[] options) =>
         new((asked, _) => Task.FromResult<CliCommand?>(asked == provider ? Verification.Self(["--fake-acp", state, AcpVerification.FixturePath(provider, fixture), .. options]) with { Version = version } : null));
     private static string[] Lines(string path) => File.Exists(path) ? File.ReadAllLines(path).Where(l => l.Length > 0).ToArray() : [];
+    /// <summary>The request's graph as the pane last got it: RunManager feeds the channel's events to the tracker and the parser's shown reply to
+    /// its answer (AcpGraphVerification replays every recording through the same wiring).</summary>
+    private static MightyGraphRun? LastGraph(IEnumerable<RunEvent> events) => events.LastOrDefault(e => e.Type == "graph_run")?.GraphRun;
+    private static string Described(MightyGraphRun? run) =>
+        run is null ? "no graph" : JsonSerializer.Serialize(new { run.Provider, run.Status, run.Input, run.FinalOutput, run.Usage, blocks = run.Agents.Count });
 
     internal static async Task AnOpencodeRunSpeaksAcpAndCompletesWhetherTheServerExitsOrIsEnded()
     {
@@ -82,6 +87,10 @@ internal static class AcpRunVerification
                 Check(all.Any(e => e.Type == "log" && e.Entry is { Kind: "assistant", Text: "Hello! How can I help with this project?" }), "the answer");
                 Check(all.Any(e => e.Type == "resume" && e.ResumeId == AcpVerification.OpencodeSession), "the session");
                 Check(all.Any(e => e.Type == "usage" && e.Usage is { Provider: "opencode", CostUSD: 0.0123 }), "usage");
+                // The pane's graph: the request's one block with the answer and the turn's tokens.
+                var graph = LastGraph(all);
+                Check(graph is { Provider: "opencode", Status: "completed", Input: "hi there", FinalOutput: "Hello! How can I help with this project?", Agents.Count: 0, Usage: { InputTokens: 1203, OutputTokens: 18 } },
+                    "the graph: " + Described(graph));
                 Check(JsonSerializer.Deserialize<string[]>(File.ReadAllText(Path.Combine(directory, "argv.json")))!.SequenceEqual(["acp"]), "argv is acp");
                 var env = JsonSerializer.Deserialize<Dictionary<string, string?>>(File.ReadAllText(Path.Combine(directory, "env.json")))!;
                 Check(env["OPENCODE_CONFIG_CONTENT"] == OpencodeAgent.ConfigContent("manual", AgentFiles.Find(OpencodeAgent.QuestionInstructionsName)), "the run's rules: " + env["OPENCODE_CONFIG_CONTENT"]);
@@ -146,6 +155,9 @@ internal static class AcpRunVerification
                 }
                 var all = events.ToList();
                 Check(all.Last(e => e.Type == "status").Status == "completed", mode + ": completed: " + string.Join(" | ", all.Where(e => e.Type is "status" or "log").Select(e => e.Status ?? e.Entry?.Kind + ": " + e.Entry?.Text)));
+                // The pane's graph: the request's one block with the answer, and no tokens (Hermes reports its session's running totals).
+                var graph = LastGraph(all);
+                Check(graph is { Provider: "hermes", Status: "completed", Input: "hi there", FinalOutput: "Hi.", Agents.Count: 0, Usage: null }, mode + ": the graph: " + Described(graph));
                 var env = JsonSerializer.Deserialize<Dictionary<string, string?>>(File.ReadAllText(Path.Combine(directory, "env.json")))!;
                 Check(env["HERMES_YOLO_MODE"] == (mode == "fullAccess" ? "1" : null), mode + ": yolo " + env["HERMES_YOLO_MODE"]);
                 var stdin = Lines(Path.Combine(directory, "stdin.txt"));

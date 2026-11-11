@@ -119,11 +119,11 @@ public sealed partial class OutputParser
         if (activity is null && state != "running" && !string.IsNullOrEmpty(output)) log("output", output);
     }
 
-    /// <summary>The reply streamed so far, logged whole.</summary>
+    /// <summary>The reply streamed so far, logged whole; the latest one is also the request's answer in the graph (M/MightyCore/CLIStreamParser.swift flushText).</summary>
     private void AcpFlushText()
     {
         var text = TrailingTrimmed(pending.ToString());
-        if (text.Length > 0) Assistant(text, "acp:" + (acpMessage ?? ""));
+        if (text.Length > 0) { Assistant(text, "acp:" + (acpMessage ?? "")); answer?.Invoke(text); }
         if (pendingTruncated) log("system", Locale.Get("run.notice.messageTruncated"));
         pending.Clear(); pendingTruncated = false;
     }

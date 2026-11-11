@@ -51,6 +51,8 @@ describe('pending requests', () => {
     expect(settle(started, { ...entryOnly, kind: 'shell' })).toEqual([]);
     expect(drawsDiagram({ ...entryOnly, kind: 'shell' })).toBe(false);
     expect(drawsDiagram(entryOnly)).toBe(true);
+    // Every agent's pane draws the diagram, opencode and Hermes too (MightyGraphSupport.Providers).
+    for (const provider of ['codex', 'gemini', 'pi', 'opencode', 'hermes'] as const) expect(drawsDiagram({ ...entryOnly, provider })).toBe(true);
   });
 
   it('matches a delta that came before the answer by its exact words, and a start without ids by any new request', () => {

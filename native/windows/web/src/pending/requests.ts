@@ -71,7 +71,7 @@ const ClockSlack = 2000;
 const sameWords = (a: string, b: string) => a.trim() === b.trim();
 
 /** A pane that draws the Mighty diagram (MightyGraphViewModel.SupportsMighty): its request also comes as a graph run. */
-export const drawsDiagram = (session: RunSession) => session.kind === 'claude' && ['claude', 'codex', 'gemini', 'pi'].includes(session.provider);
+export const drawsDiagram = (session: RunSession) => session.kind === 'claude' && ['claude', 'codex', 'gemini', 'pi', 'opencode', 'hermes'].includes(session.provider);
 
 /** The graph runs that came after the request's Enter. */
 export function runsSince(request: PendingRequest, runs: readonly MightyGraphRun[]): MightyGraphRun[] {

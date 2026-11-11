@@ -65,7 +65,8 @@ public sealed partial class ExecutionGraphTracker
     {
         lock (sync)
         {
-            if (finished || Provider != "gemini" || text.Length == 0) return;
+            // An ACP agent's (opencode, Hermes) streamed reply is its answer the same way (M/MightyCore/ExecutionGraphTracker.swift antigravityAnswer).
+            if (finished || Provider is not ("gemini" or "opencode" or "hermes") || text.Length == 0) return;
             Update(mainID, n => n with { Output = text });
         }
     }
