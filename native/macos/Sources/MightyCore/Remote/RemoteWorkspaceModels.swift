@@ -214,7 +214,8 @@ enum RemoteWorkspaceValidation {
         }
         for provider in value.runtime.providers ?? [] {
             guard ProviderOptions.ids.contains(provider.id), provider.name.count <= 120, provider.detail.count <= 2_000, (provider.version?.count ?? 0) <= 80,
-                  provider.modelCatalog.models.count <= 128, provider.modelCatalog.detail.count <= 2_000,
+                  // A longer list is cut before this (`bounded`), never refused: one long list (opencode lists hundreds) would drop the whole host.
+                  provider.modelCatalog.models.count <= maximumModels(provider.id), provider.modelCatalog.detail.count <= 2_000,
                   // A newer host says why its latest read failed and when a kept list was read; an older one says neither.
                   (provider.modelCatalog.readFailure?.count ?? 0) <= 2_000, (provider.modelCatalog.listedAt?.count ?? 0) <= 64,
                   provider.modelCatalog.models.allSatisfy({ CoreValidation.model($0.value) && $0.displayName.count <= 160 && $0.description.count <= 2_400 }),
@@ -222,6 +223,30 @@ enum RemoteWorkspaceValidation {
                 throw MightyError(L("remote.connect.error.badRuntime"))
             }
         }
+    }
+
+    /// The most models one provider's list holds on the wire: its own default and as many of the CLI's as this app's own read of
+    /// that CLI keeps (`ProviderOptions.listedModelLimit`: opencode and Hermes 1,024, pi 512, the others 128).
+    static func maximumModels(_ provider: String) -> Int { 1 + ProviderOptions.listedModelLimit(provider) }
+
+    /// A host's runtime with each provider's model list cut to its first `maximumModels`. The host sends no more, and a client
+    /// keeps an older host's longer list to that many instead of refusing the host's whole `/v2/info` for it.
+    static func bounded(_ runtime: RuntimeInfo) -> RuntimeInfo {
+        func cut(_ catalog: ModelCatalog, _ provider: String) -> ModelCatalog {
+            guard catalog.models.count > maximumModels(provider) else { return catalog }
+            var kept = catalog
+            kept.models = Array(catalog.models.prefix(maximumModels(provider)))
+            return kept
+        }
+        var runtime = runtime
+        // The older field, Claude's list again.
+        runtime.modelCatalog = runtime.modelCatalog.map { cut($0, "claude") }
+        runtime.providers = runtime.providers?.map { provider in
+            var kept = provider
+            kept.modelCatalog = cut(provider.modelCatalog, provider.id)
+            return kept
+        }
+        return runtime
     }
 
     static func permissionMode(_ mode: String, provider: String) -> Bool {

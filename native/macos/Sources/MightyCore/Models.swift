@@ -716,6 +716,16 @@ public enum ProviderOptions {
     public static let piReadOnlyTools = "read,grep,find,ls"
     /// The variants opencode's models commonly have (`--variant`, ACP's `effort` option).
     public static let opencodeEfforts = ["low", "medium", "high", "max"]
+    /// The most models a provider's list keeps besides its own default: what each read of that CLI keeps (`ProviderService`'s
+    /// normalizers, `HermesAgent`'s picker), so a list holds at most one more. A remote workspace's host sends no more, and
+    /// its client keeps no more of an older host's longer list (`RemoteWorkspaceValidation.bounded`).
+    public static func listedModelLimit(_ id: String) -> Int {
+        switch id {
+        case "opencode", "hermes": 1_024
+        case "pi": 512
+        default: 128
+        }
+    }
     public static let webSearchModes = ["default", "disabled", "cached", "live"]
     /// Schema support preserves saved choices independently of CLI discovery.
     /// Runtime advertisements omit opt-in approval modes until a supported CLI is found.

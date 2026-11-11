@@ -448,7 +448,7 @@ public actor ProviderService {
     public nonisolated static func normalizeCodexCatalog(_ rows: [[String: Any]]) -> ModelCatalog {
         let fallback = ProviderOptions.fallbackCatalog("codex")
         var models = [fallback.models[0]]; var seen = Set(["default"])
-        for row in rows.prefix(128) {
+        for row in rows.prefix(ProviderOptions.listedModelLimit("codex")) {
             guard let value = row["model"] as? String, CoreValidation.model(value), row["hidden"] as? Bool != true, seen.insert(value).inserted else { continue }
             // The efforts the CLI names for the model, `ultra` among them (`ProviderOptions.codexEfforts`).
             let levels = (row["supportedReasoningEfforts"] as? [[String: Any]])?.compactMap { $0["reasoningEffort"] as? String }.filter { ProviderOptions.codexEfforts.contains($0) }
@@ -469,7 +469,7 @@ public actor ProviderService {
         var models = [fallback.models[0]]; var seen = Set(["default"])
         for line in text.split(whereSeparator: \.isNewline).prefix(256) {
             let fields = line.split(separator: "\t", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-            guard fields.count == 2, CoreValidation.model(fields[0]), !fields[1].isEmpty, seen.insert(fields[0]).inserted, models.count <= 128 else { continue }
+            guard fields.count == 2, CoreValidation.model(fields[0]), !fields[1].isEmpty, seen.insert(fields[0]).inserted, models.count <= ProviderOptions.listedModelLimit("gemini") else { continue }
             models.append(ModelOption(value: fields[0], displayName: ActivitySupport.clean(fields[1], maximumBytes: 160, singleLine: true)))
         }
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.antigravitySource")) : fallback
@@ -485,7 +485,7 @@ public actor ProviderService {
             let fields = line.split(whereSeparator: \.isWhitespace).map(String.init)
             guard fields.count >= 6, fields[0] != "provider", fields[4] == "yes" || fields[4] == "no" else { continue }
             let value = fields[0] + "/" + fields[1]
-            guard CoreValidation.model(value), seen.insert(value).inserted, models.count <= 512 else { continue }
+            guard CoreValidation.model(value), seen.insert(value).inserted, models.count <= ProviderOptions.listedModelLimit("pi") else { continue }
             models.append(ModelOption(value: value, displayName: value, description: L("provider.catalog.piModelRow", ["context": fields[2], "output": fields[3]]), supportsEffort: fields[4] == "yes"))
         }
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.piSource")) : fallback
@@ -499,7 +499,7 @@ public actor ProviderService {
         for line in text.split(whereSeparator: \.isNewline).prefix(4_096) {
             let value = line.trimmingCharacters(in: .whitespaces)
             guard let slash = value.firstIndex(of: "/"), slash != value.startIndex, value.index(after: slash) != value.endIndex,
-                  !value.contains(" "), CoreValidation.model(value), seen.insert(value).inserted, models.count <= 1_024 else { continue }
+                  !value.contains(" "), CoreValidation.model(value), seen.insert(value).inserted, models.count <= ProviderOptions.listedModelLimit("opencode") else { continue }
             let provider = String(value[..<slash])
             models.append(ModelOption(value: value, displayName: value, description: L("provider.catalog.opencodeModelRow", ["provider": provider])))
         }
@@ -508,7 +508,7 @@ public actor ProviderService {
     public nonisolated static func normalizeClaudeCatalog(_ rows: [[String: Any]]) -> ModelCatalog {
         let fallback = ProviderOptions.fallbackCatalog("claude")
         var models = [fallback.models[0]]; var seen = Set<String>()
-        for row in rows.prefix(128) {
+        for row in rows.prefix(ProviderOptions.listedModelLimit("claude")) {
             guard let value = row["value"] as? String, CoreValidation.model(value), seen.insert(value).inserted else { continue }
             let supports = row["supportsEffort"] as? Bool
             let levels = (row["supportedEffortLevels"] as? [String])?.filter { ProviderOptions.efforts.contains($0) }
