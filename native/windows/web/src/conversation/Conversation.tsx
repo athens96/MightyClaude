@@ -2,7 +2,7 @@ import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, use
 import { useServices, useStoreState } from '../app/context';
 import type { AgentActivity, LogEntry, RunSession } from '../store/models';
 import { Entry, type EntryProps } from './Entry';
-import { providerLabel } from './format';
+import { providerIsBeta, providerLabel } from './format';
 import { ProviderMark } from './ProviderMark';
 import { ReferenceContext, clickedAt, linkAt, type Clicked } from './referenceClick';
 import { HeightCache, estimateHeight, layout, nearBottom, visibleRange } from './virtual';
@@ -275,7 +275,7 @@ function EmptyPane({ session }: { session: RunSession }) {
   const { t } = useServices();
   if (session.kind !== 'claude' && session.kind !== 'shell') return <div className="conversation" data-testid="conversation" data-entry-count={0} />;
   const shell = session.kind === 'shell';
-  const beta = !shell && (session.provider === 'codex' || session.provider === 'gemini' || session.provider === 'pi');
+  const beta = !shell && providerIsBeta(session.provider);
   return (
     <div className="conversation" data-testid="conversation" data-entry-count={0}>
       <div className="pane-empty" data-testid="pane-empty">
