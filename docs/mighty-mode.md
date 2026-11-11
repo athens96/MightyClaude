@@ -266,7 +266,7 @@ Codex 실행 창은 `codex exec --json`이 내보내는 JSONL을 사용한다. �
 
 ## Windows
 
-Windows 앱에서도 Claude·Codex·Antigravity 실행 창은 마이티 보기로 보인다. 셸·브라우저·파일·작업 지도 창은 그대로다. 실행 창의 `RunSession.AgentViewMode`는 지원하는 에이전트 창에서 늘 `mighty`이며, 저장된 `default`·빈 값은 불러올 때 `mighty`가 된다. 구버전 휴대폰이 `agentViewMode`로 `plain`을 요청해도 받아들이되 실행 창은 마이티에 머문다.
+Windows 앱에서도 Claude·Codex·Antigravity·pi·opencode·Hermes 실행 창은 마이티 보기로 보인다(`MightyGraphSupport.Providers`, 웹 `drawsDiagram`; opencode·Hermes는 2026-11-11부터: Mac처럼 요청 하나가 블록 하나이고 답은 파서가 보인 글, 토큰은 opencode만, [opencode](opencode-agent.md)·[Hermes](hermes-agent.md)의 Windows 절). 셸·브라우저·파일·작업 지도 창은 그대로다. 실행 창의 `RunSession.AgentViewMode`는 지원하는 에이전트 창에서 늘 `mighty`이며, 저장된 `default`·빈 값은 불러올 때 `mighty`가 된다. 구버전 휴대폰이 `agentViewMode`로 `plain`을 요청해도 받아들이되 실행 창은 마이티에 머문다.
 
 **macOS와 같은 것**
 

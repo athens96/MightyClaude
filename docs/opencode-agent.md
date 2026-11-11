@@ -184,4 +184,5 @@ OpenCode 2.2.7 실물로 확인했고 fixture는 그 녹화다(`opencode-acp-que
 - 구성 요소 항목은 공유 계약의 Windows 항목이다(위 "설치와 로그인": Node.js 뒤 npm, OpenCode 1 제거, 찾는 순서).
 - `ses_` 세션 id는 `Wire.SessionIdentifier`가 받는다(실행 요청, 저장된 창, resume 이벤트, 파서).
 - 로그인 판정·업데이트·계정 사용량은 [CLI 계정](cli-accounts.md)의 Windows 목록, 모델 목록은 `ProviderCatalog.OpencodeCatalog`.
-- Windows PC에서만 확인할 것: npm 심 `opencode.cmd`(cmd.exe를 거친다)로 실제 실행, 첫 실행의 부팅 시간(45초 안), 실제 `opencode.db` 읽기, 마이티 그래프 블록(흐름 쪽 이식 뒤).
+- 마이티 흐름: Mac처럼 요청 하나가 블록 하나다(제목 `opencode`). 답은 파서가 보인 글(하위 세션 `_meta["opencode/child-session"]`의 글은 빼고), 토큰은 프롬프트 응답의 `usage`, 도구 호출은 요청의 행이고 질문은 카드다(`ExecutionGraphTracker.Acp.cs`, `MightyGraphSupport.Providers`, 웹 `drawsDiagram`). 역할 보기의 펼침 줄·위임 줄·조언자는 Claude 창의 것이라 없고, 실행 블록은 메인 잉크와 사고 강도를 받는다. 일곱 녹화를 Mac `AcpGraphTests`와 같은 블록으로 재생하고(`native/contracts/fixtures/acp-graphs.json`, `AcpGraphVerification`), 실제 `RunManager`로 돈 대역 실행이 창에 넘기는 그래프도 본다(`AcpRunVerification`).
+- Windows PC에서만 확인할 것: npm 심 `opencode.cmd`(cmd.exe를 거친다)로 실제 실행, 첫 실행의 부팅 시간(45초 안), 실제 `opencode.db` 읽기, 실제 실행의 마이티 흐름.

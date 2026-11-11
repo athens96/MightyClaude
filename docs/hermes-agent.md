@@ -233,4 +233,5 @@ Hermes Agent는 Windows에서 그대로 돈다. 그렇게 판단한 근거(소�
 - clarify: 앱 실행마다 Hermes(실행 파일·`HERMES_HOME`)별로 한 번 `hermes config get --json platform_toolsets.acp`, 없으면 Mac과 같은 `["hermes-acp","clarify","x_search"]`(`kanban`이 옛 목록에 있으면 더함)를 `hermes config set`으로 쓰고 다시 읽어 확인(`HermesQuestionTool`), 켜진 동안 요청 뒤에 안내 문단.
 - 모델 피커는 앱 프로필 폴더의 `hermes-models.json`(`%APPDATA%\MightyCode`)에 간직하고 Hermes 실행이 끝나면 창의 목록을 다시 읽는다.
 - 로그인 판정(initialize의 `authMethods`)·업데이트(`hermes update --yes`)·계정 사용량 없음은 [CLI 계정](cli-accounts.md)의 Windows 목록, 세션 목록은 `HermesSessions`(`AcpSessions.cs`).
-- Windows PC에서만 확인할 것: 설치기를 앱으로 끝까지 돌리기, 게이트웨이 데몬 첫 기동 시간(이름 있는 파이프), `hermes.cmd` 대체 실행 파일로 넘기는 `config set` JSON 인자, 실제 턴과 clarify, 마이티 그래프 블록(흐름 쪽 이식 뒤).
+- 마이티 흐름: Mac처럼 요청 하나가 블록 하나다(제목 `Hermes`). 답은 파서가 보인 글(한 번 더 오는 답은 한 번만), 토큰은 싣지 않는다(Hermes는 세션의 누계를 알려 준다), 도구 호출은 요청의 행이고 clarify는 카드다(`ExecutionGraphTracker.Acp.cs`, `MightyGraphSupport.Providers`, 웹 `drawsDiagram`). 역할 보기의 펼침 줄·위임 줄·조언자는 Claude 창의 것이라 없고, 실행 블록은 메인 잉크와 사고 강도를 받는다. 아홉 녹화를 Mac `AcpGraphTests`와 같은 블록으로 재생하고(`native/contracts/fixtures/acp-graphs.json`, `AcpGraphVerification`), 실제 `RunManager`로 돈 대역 실행이 창에 넘기는 그래프도 본다(`AcpRunVerification`).
+- Windows PC에서만 확인할 것: 설치기를 앱으로 끝까지 돌리기, 게이트웨이 데몬 첫 기동 시간(이름 있는 파이프), `hermes.cmd` 대체 실행 파일로 넘기는 `config set` JSON 인자, 실제 턴과 clarify, 실제 실행의 마이티 흐름.

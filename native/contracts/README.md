@@ -699,6 +699,25 @@ return node 340 × 34 at the result's place; the band 248 wide, 28 left of what
 shares its rows, from the 실행 block's top to the run's last block and at
 least 140 high.
 
+## ACP runs' graphs (`fixtures/acp-graphs.json`)
+
+The Mighty graph of an opencode or Hermes run for each shared ACP recording
+(`fixtures/opencode-acp-*.jsonl`, `fixtures/hermes-acp-*.jsonl`): the recording
+replayed through the ACP channel, the stream parser and the graph tracker with
+the case's request (its input, and the resume id and permission mode the
+recording was made with) and no card answered, then ended completed when the
+turn completed and nothing failed, else in error. `expect` is that end state
+and, for each block in the order it first came, the last thing the tracker
+emitted of it: kind, state, title, input, output and tokens. A request of these
+agents is one block titled by the agent's name; its output is the streamed
+answer as the parser showed it (a reply Hermes sends once more whole counts
+once, the text of an opencode child session marked
+`_meta["opencode/child-session"]` is not the answer); its tokens are opencode's
+prompt result, and Hermes's block carries none (Hermes reports its session's
+running totals). Tool calls stay rows of the request, questions are cards. The
+Mac (`AcpGraphTests`) and the Windows Core (`AcpGraphVerification`, embedded by
+the test project, wired as `RunManager` wires a run) produce exactly this.
+
 ## The phone's role view (`fixtures/mobile-roles.json`)
 
 What a host sends a phone that asks for the role view (`GET
