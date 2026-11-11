@@ -145,6 +145,9 @@ Hermes에는 승인이 둘 있다.
 
 - Hermes에는 세션 없이 모델을 나열하는 명령이 없다(`hermes model`은 대화형이다). 세션 응답의 `configOptions.model.options`가 로그인한 제공자의 모델 목록이다.
 - 앱은 Hermes 세션이 열릴 때마다 그 목록을 `~/Library/Application Support/MightyCode/hermes-models.json`에 간직하고(`HermesAgent.saveModels`), 모델 메뉴가 그것을 읽는다(`HermesAgent.cachedCatalog`). `~/.hermes`에는 쓰지 않는다.
+- 이 파일의 자리는 앱의 프로필 폴더다(`ProviderService.hermesModelCacheURL`, `--profile`이면 그 폴더). 저장 폴더 없이 만든 `ProviderService`(테스트)는 이 파일이 없어, 가짜 Hermes의 세션이 사용자의 목록을 덮어쓰지 않는다. 전에는 테스트가 실제 파일에 픽스처 목록(`hermes-acp-resume.jsonl`의 19개, `custom:llm.example.com:…` 포함)을 써 넣었다. 다음 실제 Hermes 세션이 그것을 다시 덮어쓴다.
+- Hermes 실행이 끝나면 앱이 Hermes 모델 목록을 다시 읽는다. 첫 요청이 가져온 모델이 손으로 새로 고치지 않아도 메뉴에 나온다.
+- Hermes 목록은 아래 [CLI 계정](cli-accounts.md#모델-목록을-읽지-못할-때)의 "이전 목록 간직"에서 빠진다. 제공자가 없어 목록을 지운 것(`forgetModels`)을 이전 목록으로 되살리지 않는다.
 - 그래서 **첫 요청을 보내기 전에는 "Hermes 설정 따름"(`default`)뿐**이다. 그때는 `hermes model`로 정한 기본 모델로 간다. 이유를 목록 설명에 적는다(`provider.catalog.hermesEmpty`).
 - 목록에 없는 모델을 고른 채 보내면 한 줄 알리고 세션의 모델로 간다.
 - 값의 모양: `anthropic:claude-opus-4-6`, 사용자 정의 끝점은 `custom:모델`과 `custom:호스트:모델` 두 가지로 함께 나온다. 둘 다 고를 수 있다.

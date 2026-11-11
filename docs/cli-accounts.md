@@ -63,6 +63,47 @@ Bedrock 계정 상태 확인에서 터미널 환경과 Claude 사용자 설정�
 
 CLI 탐색·모델 조회·실제 실행은 해당 작업 폴더의 로그인 셸 환경을 공유합니다. 계정 상태 확인과 로그아웃도 같은 방식으로 사용자 홈에서 환경을 읽습니다. 인증 또는 모델 목록을 갱신하면 환경도 다시 읽으며 새 셸에서 명시적으로 `unset`된 변수는 사라지지만, 선언 줄만 삭제하면 앱 시작 환경에서 상속된 값이 남을 수 있어 앱과 터미널을 다시 시작해야 합니다. 환경은 메모리에만 보관합니다. 셸 실행에 실패하면 앱 시작 환경을 사용했다는 안내를 표시하며, 읽지 못한 터미널의 키와 충돌한다고 단정하지 않습니다. CLI 자체의 설정 파일 우선순위는 바꾸지 않으므로, 셸 환경 동기화만으로 설정 파일에 있는 잘못된 키나 403 오류가 해결되는 것은 아닙니다.
 
+### 모델 목록을 읽지 못할 때
+
+각 CLI의 모델 목록은 아래 명령으로 읽습니다(`ProviderService.modelListArguments`). 버전은 이 Mac에서 그 명령을 직접 실행해 확인한 것이고, 실제 출력은 `native/contracts/fixtures/model-list-*`에 계정·호스트 정보를 지우고 넣었습니다.
+
+| CLI (확인한 버전) | 명령 | 읽는 것 |
+|---|---|---|
+| Claude (2.1.322) | `claude --print --input-format stream-json --output-format stream-json --verbose --permission-prompts none --tools "" --strict-mcp-config --mcp-config {"mcpServers":{}} --no-session-persistence --safe-mode`에 `initialize` 하나 | 초기화 응답의 `models` |
+| Codex (0.167.0) | `codex app-server --listen stdio://`에 `initialize`, `model/list` | `data`의 행, 기본 모델은 `isDefault` |
+| Antigravity (agy 1.5.5) | `agy models` | 표준 출력의 `slug<TAB>이름` 줄(`Fetching available models...`는 표준 오류) |
+| pi (1.5.2) | `pi --list-models` | 표의 행 |
+| opencode (2.2.7) | `opencode models --standalone` | `provider/model` 줄. OpenCode 2의 백그라운드 서비스를 띄우지 않는다 |
+| Hermes (0.23.1) | 없음 | 마지막 세션이 준 선택지(`hermes-models.json`, [Hermes](hermes-agent.md)) |
+
+`ModelListProbeTests`가 이 인자를 고정하고, 픽스처를 읽어 새 모델이 목록에 들어가는지 보며, 다른 인자를 실제 CLI처럼 거절하는 가짜 CLI로 끝까지 읽어 봅니다. 한 CLI의 플래그가 다른 CLI의 명령으로 옮겨 가면 테스트가 실패합니다. OpenCode 2 변경 때 opencode에 붙일 `--standalone`이 agy 명령에 붙어, agy 1.5.5가 `flags provided but not defined: -standalone`으로 거절했고 Antigravity 메뉴는 늘 기본 목록(새 Gemini 4 Carbon 없음)이었습니다. 이제 agy는 `models`, opencode는 `models --standalone`입니다. Claude 조회 환경에는 `DISABLE_TELEMETRY`를 넣지 않습니다. 넣으면 CLI가 내장 목록(`claude-fable-5-1[1m]` 등 다섯 개)으로 답해 Fable 5.2가 빠집니다.
+
+읽기가 실패하면(종료 코드가 0이 아님, 시간 초과, 출력이 너무 큼, 출력에 모델이 없음, CLI를 찾지 못함) 목록을 기본 목록으로 바꾸지 않습니다.
+
+- 그 제공자가 목록을 준 적이 있으면 마지막 목록을 그대로 두고 이전 목록으로 표시합니다(`ModelCatalog.readFailure`·`listedAt`). 같은 워크스페이스에서 읽은 목록, 없으면 그 제공자의 가장 최근 목록입니다. 준 적이 없으면 기본 목록에 이유를 붙입니다.
+- 마지막 목록은 `~/Library/Application Support/MightyCode/model-lists.json`에 남아(제공자·워크스페이스별, 최대 24개, 2 MiB, 권한 0600) 앱을 다시 시작한 뒤 읽기가 실패해도 그 목록을 씁니다. 목록이 바뀌었거나 저장한 지 5분이 지났을 때만 다시 쓰고, 망가진 파일과 맞지 않는 항목은 건너뜁니다. Hermes는 넣지 않습니다(제공자가 없어 지운 목록을 되살리지 않는다).
+- 이전 목록과 기본 목록은 선택을 바꾸지 않습니다. 저장된 모델을 기본값으로 돌리는 것은 새로 읽은 목록뿐입니다(`ModelCatalog.isFresh`). Antigravity의 "목록에 없는 모델은 기본값으로 시작"과 Claude 모델 초기화의 성공 판정도 같습니다.
+- 작성창 모델 메뉴의 **모델 목록 새로고침** 아래에 흐린 줄이 하나 생깁니다. 기본 목록이면 `기본 목록 · CLI에서 목록을 읽지 못했습니다`, 이전 목록이면 `이전 목록 · 새로 읽지 못했습니다 (5분 전 목록)`이고, 마우스를 올리면 이유가 나옵니다(예: `agy models: 종료 코드 1 · Error: authentication required. Run 'agy' to log in, then retry.`, 홈 폴더는 `~`). 새로 읽은 목록이거나 아직 읽기 전이면 줄이 없습니다.
+- 실패한 읽기의 결과는 보내기 직전 확인에서 15초 동안 다시 쓰므로, 보낼 때마다 CLI가 다시 실패하기를 기다리지 않습니다. 창 선택과 새로고침 단추는 바로 다시 읽습니다. 새로 읽은 목록은 전처럼 2초(창 선택)·60초(보내기 직전) 동안 다시 씁니다.
+
+다시 읽는 때:
+
+- CLI 업데이트(수동·자동)가 끝났을 때, 설치 화면의 설치로 CLI 버전이 바뀌었을 때: 모든 목록 캐시를 버리고 다시 읽습니다(전과 같음).
+- 로그인 완료·로그아웃(CLI 계정, 설치 화면의 로그인 창, 계정 새로고침이 기다리던 로그인을 확인했을 때): 그 제공자의 목록을 워크스페이스와 관계없이 모두 버린 뒤 메뉴가 다시 읽습니다. 다른 컴퓨터에 주는 호스트의 목록도 포함합니다. 로그인 복구는 전처럼 전부 버립니다.
+- Hermes 실행이 끝났을 때: Hermes 목록을 다시 읽습니다.
+
+원격 작업 공간과 휴대폰: 새 Mac 호스트의 `/v2/info`에서 `modelCatalog`에 `readFailure`·`listedAt`이 붙을 수 있습니다. 둘 다 선택 필드라 예전 Mac·Windows 클라이언트는 무시하고, 새 Mac 클라이언트는 예전 호스트가 보내지 않으면 없는 것으로 읽습니다(2,000자·64자를 넘으면 거절). 원격 창의 메뉴도 호스트의 실패를 같은 줄로 보입니다. 공유 픽스처 `remote-v2/info-darwin.json`은 그대로입니다(Windows가 그대로 왕복 비교한다). 휴대폰은 모델 이름 목록만 받으므로 바뀌는 것이 없습니다.
+
+확인했지만 이번에 바꾸지 않은 것: Claude 2.1.322는 Haiku 5.5가 추론 강도(low~max)를 지원한다고 답하지만, 앱은 이름에 `haiku`가 든 모델의 추론 강도를 모두 끕니다(`normalizeClaudeCatalog`, `validation.run.haikuEffort`). Codex 0.167.0은 `ultra` 강도를 알리지만 앱의 강도 목록에 없어 빠집니다.
+
+Windows가 따라야 할 것(아직 하지 않음):
+
+- `native/windows/MightyCode.Core/ProviderCatalog.cs`의 `QuietEnvironment()`가 Claude 모델 목록 조회(`ClaudeHeadlessEnvironment`)에도 `DISABLE_TELEMETRY=1`을 넣습니다. Claude가 내장 목록으로 답해 Fable 5.2가 빠지므로, Claude 조회에서는 빼야 합니다(Mac의 `quietClaudeEnvironment`).
+- 실패한 읽기에 이전 목록 간직(`readFailure`·`listedAt`, 저장 파일), 메뉴의 흐린 줄(`composer.model.listFallback`·`composer.model.listKept`, 이유는 도움말), 이유 문구(`provider.catalog.failure.exit`·`provider.catalog.failure.noModels`).
+- `ModelSelectionSupport.Reconcile`과 Antigravity의 실행 전 기본값 전환이 `Source == "cli"`가 아니라 새로 읽은 목록(`readFailure` 없음)만 믿도록.
+- 로그인 완료·로그아웃 때 그 제공자의 목록 캐시를 워크스페이스와 관계없이 버리기.
+- 목록 명령 인자를 고정하는 테스트(agy는 `models`만 받는다).
+
 ### Bedrock 인증 진단
 
 기존 Bedrock 설정을 지우고 Claude Code에서 다시 설정하려면 `python3 scripts/reset-claude-bedrock.py`로 삭제 계획을 확인한 뒤 `--apply`를 붙여 실행합니다. 이 도구는 사용자 Claude 설정과 셸 시작 파일의 식별 가능한 Bedrock 항목을 정리하며 원본을 비공개 백업에 보관합니다. Codex 로그인, Claude OAuth 자격 증명, `~/.aws` 프로필은 삭제하지 않습니다. 홈 폴더 쓰기가 허용된 사용자 터미널에서 실행해야 합니다.
