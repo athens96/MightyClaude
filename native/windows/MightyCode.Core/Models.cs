@@ -44,8 +44,16 @@ public sealed record Workspace
     public RemoteWorkspaceReference? Remote { get; init; }
     [JsonIgnore] public bool IsRemote => Remote is not null;
 }
+/// <param name="Advisor">A Claude pane's advisor (Claude Code's experimental server-side advisor tool): null follows Claude's own settings and passes
+/// nothing, a model's name is passed as <c>--advisor</c>, <see cref="AdvisorOff"/> turns it off for the run. Absent in older saves; other agents never
+/// read it, and it is never sent to another computer's host (macOS RunSettings.advisor).</param>
 [JsonConverter(typeof(RunSettingsJsonConverter))]
-public sealed record RunSettings(string Effort = "default", string PermissionMode = "manual", int? MaxTurns = null, double? MaxBudgetUsd = null, bool FastMode = false, string WebSearch = "default", bool NetworkAccess = false);
+public sealed record RunSettings(string Effort = "default", string PermissionMode = "manual", int? MaxTurns = null, double? MaxBudgetUsd = null, bool FastMode = false, string WebSearch = "default", bool NetworkAccess = false,
+    string? Advisor = null)
+{
+    /// <summary><see cref="Advisor"/> for a pane that turned the advisor off.</summary>
+    public const string AdvisorOff = "off";
+}
 
 // Legacy v1 hosts reject unknown settings. Keep their four-field payload when
 // extensions are at their defaults, while retaining explicit nullable limits.
@@ -64,7 +72,9 @@ public sealed class RunSettingsJsonConverter : JsonConverter<RunSettings>
                 value.TryGetProperty("maxBudgetUsd", out var budget) && budget.ValueKind != JsonValueKind.Null ? budget.GetDouble() : null,
                 value.TryGetProperty("fastMode", out var fast) && fast.GetBoolean(),
                 value.TryGetProperty("webSearch", out var web) ? web.GetString() ?? throw new JsonException(Locale.Get("wire.runSettings.invalidWebSearch")) : "default",
-                value.TryGetProperty("networkAccess", out var network) && network.GetBoolean());
+                value.TryGetProperty("networkAccess", out var network) && network.GetBoolean(),
+                // Anything but a name loads as no choice (macOS RunSettings init(from:)).
+                value.TryGetProperty("advisor", out var advisor) && advisor.ValueKind == JsonValueKind.String && advisor.GetString() is { Length: > 0 } named ? named : null);
         }
         catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException) { throw new JsonException(Locale.Get("wire.runSettings.invalidValueType"), ex); }
     }
@@ -76,6 +86,7 @@ public sealed class RunSettingsJsonConverter : JsonConverter<RunSettings>
         if (value.FastMode) writer.WriteBoolean("fastMode", true);
         if (value.WebSearch != "default") writer.WriteString("webSearch", value.WebSearch);
         if (value.NetworkAccess) writer.WriteBoolean("networkAccess", true);
+        if (value.Advisor is { } advisor) writer.WriteString("advisor", advisor);
         writer.WriteEndObject();
     }
 }
@@ -128,6 +139,11 @@ public sealed record RunSession : IJsonOnDeserializing
     // The Mighty presentation, independent of the outer default/Mighty choice.
     [JsonPropertyName("graphViewMode"), JsonConverter(typeof(MightyGraphViewModeConverter))]
     public string? GraphViewMode { get; init; }
+    // The flow's session log strip folded down to its status line (FlowLog, macOS RunSession.flowLogCollapsed): written only when folded, so
+    // null (older saves, a pane that never folded it, any other token) is open.
+    [JsonPropertyName("flowLogCollapsed"), JsonConverter(typeof(LenientNullableBoolConverter))]
+    public bool? FlowLogCollapsed { get => flowLogCollapsed; init => flowLogCollapsed = value == true ? true : null; }
+    private bool? flowLogCollapsed;
     // Browser pane fields — serialized with the same keys as macOS RunSession.
     [JsonPropertyName("workspaceProfileKey")] public string? WorkspaceProfileKey { get; init; }
     [JsonPropertyName("ownerSessionId")] public string? OwnerSessionId { get; init; }
@@ -423,7 +439,7 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
         if (!Wire.Identifier(SessionId) || !Wire.Identifier(WorkspaceId) || Kind is not ("claude" or "shell") || !Wire.Model(Model) || !Wire.Providers.Contains(Provider) || ResumeId is not null && !Wire.Identifier(ResumeId)) throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
         if (Input is null || string.IsNullOrWhiteSpace(Input) && files is null || Input.Length > 100000 || Input.Contains('\0')) throw new ArgumentException(Locale.Get("wire.startRun.emptyInput"));
         if (Kind == "shell" && files is not null) throw new ArgumentException(Locale.Get("wire.startRun.attachmentAiOnly"));
-        if (settings.Effort != "default" && !(Provider == "pi" ? Wire.PiThinkingLevels : Wire.Efforts).Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "onRequest" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
+        if (settings.Effort != "default" && !(Provider == "pi" ? Wire.PiThinkingLevels : Wire.Efforts).Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "onRequest" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live") || settings.Advisor is { } advisor && !Wire.Model(advisor)) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
         if (settings.PermissionMode == "onRequest" && (Provider != "codex" || Kind != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
         if (settings.PermissionMode == "auto" && (Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.autoModeClaudeOnly"));
         if (PermissionModeOverride is { } mode && (mode != "plan" || Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("plan.error.overrideClaudeOnly"));

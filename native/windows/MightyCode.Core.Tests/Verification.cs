@@ -211,6 +211,17 @@ internal static class Verification
         await Test("agent notices: hand-backs, notice results and background sub-agent streams follow native/contracts/fixtures/agent-notices.json", AgentNoticeVerification.TheSharedCasesHold);
         await Test("agent notices: a recorded hand-back turn settles the agent as live", AgentNoticeVerification.ARecordedHandBackTurnSettlesTheAgentAsLive);
         await Test("agent notices: a queued hand-back settles the agent by its name", AgentNoticeVerification.AQueuedHandBackSettlesTheAgentByItsName);
+        await Test("flow tracker: the Agent call, the launch result, task_started and Mods name who a block is", FlowTrackerVerification.TheAgentCallTheLaunchResultTheCLIAndModsNameWhoABlockIs);
+        await Test("flow tracker: a notice run's copy carries the identity, only a sub-agent keeps one, saves and the run's effort", FlowTrackerVerification.ANoticeRunsCopyCarriesTheIdentityAndOnlyASubagentKeepsOne);
+        await Test("flow tracker: the recorded sub-agents, fork and worktree agent are who the CLI said (claude-stream-subagents, -fork-worktree)", FlowTrackerVerification.TheRecordedSubagentsAreWhoTheCLISaid);
+        await Test("flow tracker: a foreground sub-agent's notification opens no notice run, recorded and built", FlowTrackerVerification.AForegroundAgentsNotificationOpensNoNoticeRun);
+        await Test("flow tracker: a foreground result is the report under its hand-back frame only", FlowTrackerVerification.AResultIsTheReportUnderItsHandBackFrameOnly);
+        await Test("flow tracker: a response record names every tool call its message made", FlowTrackerVerification.AResponseRecordNamesEveryToolCallItsMessageMade);
+        await Test("flow tracker: the recorded background commands keep their start, end and exit code (claude-stream-background-commands)", FlowTrackerVerification.TheRecordedCommandsKeepTheirStartEndAndExitCode);
+        await Test("flow tracker: a sub-agent counts its tool calls once and keeps its start and end", FlowTrackerVerification.ASubagentCountsItsToolCallsOnceAndKeepsItsStartAndEnd);
+        await Test("flow tracker: the recorded consultation is kept on the run and makes no block (claude-stream-advisor)", FlowTrackerVerification.TheRecordedConsultationIsKeptOnTheRunAndMakesNoBlock);
+        await Test("flow tracker: the advisor's results, the work around it and who asked", FlowTrackerVerification.TheAdvisorsResultsTheWorkAroundItAndWhoAsked);
+        await Test("flow tracker: the advisor's tokens, model, bounds and saves", FlowTrackerVerification.TheAdvisorsTokensModelBoundsAndSaves);
         await Test("background notice runs: ids, the views' filter and the saved flags", BackgroundNoticeRunsVerification.RunIDsAndTheFilter);
         await Test("background notice runs: the newest request, the followed run, numbers, result cards, 기록 and 파이프라인", BackgroundNoticeRunsVerification.TheRunRulesAndTheViews);
         await Test("background notice runs: the pane keeps the notice run apart with its own lines, and the phone and the strip get theirs", BackgroundNoticeRunsVerification.ThePaneKeepsTheNoticeRunApart);

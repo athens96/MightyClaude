@@ -12,8 +12,8 @@ public static class AgentHandback
 {
     public const string Opening = "<agent-message";
     public const string Closing = "</agent-message>";
-    private const string Frame = "[Subagent hand-back]";
-    private const string Marker = "The report follows";
+    internal const string Frame = "[Subagent hand-back]";
+    internal const string Marker = "The report follows";
     private const int MaximumMessages = 64;
 
     /// <summary>

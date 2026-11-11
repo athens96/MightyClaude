@@ -189,7 +189,8 @@ public sealed record RemoteWireRequest(string SessionId, string WorkspaceId, str
     public IReadOnlyList<RunAttachment>? Attachments { get; init; } = Attachments is { Count: > 0 } ? Attachments : null;
 
     public static RemoteWireRequest From(StartRunRequest request, string hostWorkspaceId) =>
-        new(request.SessionId, hostWorkspaceId, request.Kind, request.Input, request.Model, request.Provider, request.Settings ?? new(), request.ResumeId, request.Attachments);
+        // The advisor is this computer's choice for its own Claude: another computer's host runs with its own CLI and settings (macOS).
+        new(request.SessionId, hostWorkspaceId, request.Kind, request.Input, request.Model, request.Provider, (request.Settings ?? new()) with { Advisor = null }, request.ResumeId, request.Attachments);
 }
 
 /// <summary>RegisteredModelEntry as the Mac writes it, supportedEffortLevels always present, and reads it: both flags optional.</summary>

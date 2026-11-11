@@ -92,10 +92,10 @@ public static class ModelUsageFormat
     public static string? VersionedNodeLabel(string? label)
     {
         if (label is null) return null;
-        var marker = " " + Locale.Get("graph.nodeModel.configuredSuffix");
-        var configured = label.EndsWith(marker, StringComparison.Ordinal);
-        var text = ModelLabel.Text(configured ? label[..^marker.Length] : label);
-        return configured ? text + marker : text;
+        // A sub-agent's requested alias carries its own marker (GraphModelLabel.AgentModelLabel).
+        foreach (var marker in new[] { " " + Locale.Get("graph.nodeModel.configuredSuffix"), " " + Locale.Get("graph.nodeModel.requestedSuffix") })
+            if (label.EndsWith(marker, StringComparison.Ordinal)) return ModelLabel.Text(label[..^marker.Length]) + marker;
+        return ModelLabel.Text(label);
     }
 
     /// <summary>
