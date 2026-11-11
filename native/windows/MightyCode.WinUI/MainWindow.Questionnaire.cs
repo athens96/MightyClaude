@@ -93,7 +93,10 @@ public sealed partial class MainWindow
             var kind = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             kind.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); kind.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             kind.Children.Add(new TextBlock { Text = question.Header, TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
-            var mode = new TextBlock { Text = Locale.Get(question.MultiSelect ? "phone.questionnaire.multiple" : "phone.questionnaire.single"), TextSize = 10.5, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            // Another agent's question may offer no choices (M/UserQuestionnaireCard.swift, AgentQuestions): the typed answer is the only one, open and required.
+            var typedOnly = question.Options.Count == 0;
+            if (typedOnly) draft.Custom.Add(step);
+            var mode = new TextBlock { Text = typedOnly ? "" : Locale.Get(question.MultiSelect ? "phone.questionnaire.multiple" : "phone.questionnaire.single"), Visibility = typedOnly ? Visibility.Collapsed : Visibility.Visible, TextSize = 10.5, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(mode, 1); kind.Children.Add(mode); section.Children.Add(kind);
             section.Children.Add(new TextBlock { Text = question.Question, TextSize = 14.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
             var picks = draft.Picks.GetValueOrDefault(step) ?? []; draft.Picks[step] = picks;
@@ -115,7 +118,8 @@ public sealed partial class MainWindow
                 if (!draft.Custom.Remove(step)) { draft.Custom.Add(step); if (!question.MultiSelect) picks.Clear(); }
                 draft.Error = null; RenderToolPermissions();
             });
-            custom.IsEnabled = !draft.Sending; AutomationProperties.SetAutomationId(custom, "questionnaire-custom-" + step); choices.Children.Add(custom); section.Children.Add(choices);
+            custom.IsEnabled = !draft.Sending; AutomationProperties.SetAutomationId(custom, "questionnaire-custom-" + step); choices.Children.Add(custom);
+            if (!typedOnly) section.Children.Add(choices);
             Button? next = null;
             bool ValidAnswers()
             {
@@ -207,7 +211,7 @@ public sealed partial class MainWindow
 
         private static IReadOnlyDictionary<string, UserQuestionAnswer> QuestionnaireAnswers(UserQuestionnaire questionnaire, QuestionDraft draft) =>
             questionnaire.Questions.Select((q, index) => (q, index)).ToDictionary(pair => pair.q.Question,
-                pair => new UserQuestionAnswer(pair.q.Options.Where(o => draft.Picks.GetValueOrDefault(pair.index)?.Contains(o.Label) == true).Select(o => o.Label).ToList(), draft.Custom.Contains(pair.index) ? draft.Text.GetValueOrDefault(pair.index) : null), StringComparer.Ordinal);
+                pair => new UserQuestionAnswer(pair.q.Options.Where(o => draft.Picks.GetValueOrDefault(pair.index)?.Contains(o.Label) == true).Select(o => o.Label).ToList(), draft.Custom.Contains(pair.index) || pair.q.Options.Count == 0 ? draft.Text.GetValueOrDefault(pair.index) : null), StringComparer.Ordinal);
 
         private void UpdateQuestionnaireWaiting(int count)
         {
