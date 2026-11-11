@@ -263,7 +263,7 @@ internal static class RemoteWireFixtureVerification
         InfoRefused(info with { Runtime = info.Runtime with { Providers = [codex with { Capabilities = codex.Capabilities with { PermissionModes = [.. codex.Capabilities.PermissionModes, "auto"] } }] } }, "auto on codex");
         InfoRefused(info with { Runtime = info.Runtime with { Providers = [claude with { Capabilities = claude.Capabilities with { PermissionModes = ["onRequest"] } }] } }, "onRequest on claude");
         InfoRefused(info with { Runtime = info.Runtime with { Providers = [claude with { ModelCatalog = claude.ModelCatalog with { Models = [claude.ModelCatalog.Models[0] with { Value = "bad model!" }] } }] } }, "an invalid model value");
-        InfoRefused(info with { Runtime = info.Runtime with { Providers = [claude, codex, info.Runtime.Providers[2], claude, codex] } }, "more providers than there are");
+        InfoRefused(info with { Runtime = info.Runtime with { Providers = [claude, codex, info.Runtime.Providers[2], claude, codex, claude, codex] } }, "more providers than there are");
         // Nulls the Mac's decoder refuses, should a value be built in code rather than read.
         InfoRefused(info with { Runtime = info.Runtime with { AppVersion = null! } }, "a null appVersion");
         InfoRefused(info with { Runtime = info.Runtime with { Providers = [claude with { Detail = null! }] } }, "a null provider detail");

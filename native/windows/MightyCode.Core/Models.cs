@@ -13,7 +13,14 @@ public static class Wire
     public static bool Model(string? value) => value is { Length: > 0 and <= 200 } && Regex.IsMatch(value, @"^[a-zA-Z0-9][a-zA-Z0-9._:/@\[\]-]*\z");
     public static string Clean(string? value, int limit = 32768) { var clean = Regex.Replace(value ?? "", @"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", ""); return clean[..Math.Min(clean.Length, limit)]; }
     public static T Clone<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, Json), Json)!;
-    public static readonly string[] Providers = ["claude", "codex", "gemini", "pi"];
+    public static readonly string[] Providers = ["claude", "codex", "gemini", "pi", "opencode", "hermes"];
+    /// <summary>
+    /// A CLI's own session id, the pane's resume id (M/MightyCore/Models.swift CoreValidation.sessionIdentifier): an <see cref="Identifier"/>
+    /// (Hermes's <c>local-</c> and 64 hex digits is one), or opencode's <c>ses_&lt;base62&gt;</c>, whose underscore an identifier does not take.
+    /// </summary>
+    public static bool SessionIdentifier(string? value) => Identifier(value) || value is not null && Regex.IsMatch(value, @"^ses_[a-zA-Z0-9]{1,124}\z");
+    /// <summary>The variants opencode's models commonly have (ACP's <c>effort</c> option); one a model lacks is named and skipped at the run.</summary>
+    public static readonly string[] OpencodeEfforts = ["low", "medium", "high", "max"];
     /// <summary>pi's <c>--thinking</c> levels: its effort setting, off included (M/MightyCore/Models.swift piThinkingLevels).</summary>
     public static readonly string[] PiThinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"];
     /// <summary>The tools pi's read-only mode leaves on (<c>--tools</c>); full access passes none.</summary>
@@ -432,7 +439,7 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     {
         var settings = Settings ?? new();
         var files = AttachmentSupport.Validate(Attachments);
-        if (!Wire.Identifier(SessionId) || !Wire.Identifier(WorkspaceId) || Kind is not ("claude" or "shell") || !Wire.Model(Model) || !Wire.Providers.Contains(Provider) || ResumeId is not null && !Wire.Identifier(ResumeId)) throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
+        if (!Wire.Identifier(SessionId) || !Wire.Identifier(WorkspaceId) || Kind is not ("claude" or "shell") || !Wire.Model(Model) || !Wire.Providers.Contains(Provider) || ResumeId is not null && !Wire.SessionIdentifier(ResumeId)) throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
         if (Input is null || string.IsNullOrWhiteSpace(Input) && files is null || Input.Length > 100000 || Input.Contains('\0')) throw new ArgumentException(Locale.Get("wire.startRun.emptyInput"));
         if (Kind == "shell" && files is not null) throw new ArgumentException(Locale.Get("wire.startRun.attachmentAiOnly"));
         if (settings.Effort != "default" && !Wire.RunEfforts(Provider).Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "onRequest" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
@@ -467,7 +474,7 @@ public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = n
 {
     public static RunEvent Log(string id, string kind, string text, string? provider = null) => new(id, "log", new(Wire.Id(), kind, ActivitySupport.Clean(text, kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768), Wire.Now(), provider));
     public static RunEvent State(string id, string state, string? reason = null) => new(id, "status", Status: state, Reason: reason);
-    public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.Identifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && LogEntry.Stored.Contains(Entry.Kind) && (Entry.Kind != "image" || AgentImageSupport.Normalized(Entry.Images) is not null) && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage" || Type == "graph_run" && GraphRun is not null && Wire.Identifier(GraphRun.Id) || Type == "plan" && Plan is not null && Wire.Identifier(Plan.Id) && PlanOutcome.All.Contains(Plan.Outcome) || Type == "todos" && Todos is not null || Type == "background" && Background is not null
+    public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.SessionIdentifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && LogEntry.Stored.Contains(Entry.Kind) && (Entry.Kind != "image" || AgentImageSupport.Normalized(Entry.Images) is not null) && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage" || Type == "graph_run" && GraphRun is not null && Wire.Identifier(GraphRun.Id) || Type == "plan" && Plan is not null && Wire.Identifier(Plan.Id) && PlanOutcome.All.Contains(Plan.Outcome) || Type == "todos" && Todos is not null || Type == "background" && Background is not null
         || Type == "antigravityPermission" && AntigravityPermission is { } card && RemoteWorkspaceValidation.AntigravityCard(card));
 }
 public sealed record ModelOption(string Value, string DisplayName, string Description, string? ResolvedModel = null, bool? SupportsEffort = null, string[]? SupportedEffortLevels = null);

@@ -130,8 +130,8 @@ internal static class WindowsParityVerification
         var absent = ComponentSection.SectionRows(Runtime(Provider("claude", false, null) with { Detail = "not found" }));
         Check(absent.First(row => row.Id == "claude").Detail == "not found" + Install("claude"), "a missing CLI says its runtime's words and the command to install it");
         Check(old.First(row => row.Id == "claude").Detail == Locale.Get("settings.components.modsNeedsVersion", new Dictionary<string, string> { ["version"] = "2.1.271" }), "an old Claude names the Mods version it needs");
-        var ready = ComponentSection.SectionRows(Runtime(Provider("claude", true, "2.1.271"), Provider("codex", true, "0.153.4"), Provider("gemini", true, "1.0.0"), Provider("pi", true, "0.73.1")));
-        Check(ready.Select(row => row.Detail).SequenceEqual(new[] { Locale.Get("settings.components.readyClaude"), Locale.Get("settings.components.readyCodex"), Locale.Get("settings.components.ready"), Locale.Get("settings.components.ready") }), "each ready CLI says its own ready sentence");
+        var ready = ComponentSection.SectionRows(Runtime(Provider("claude", true, "2.1.271"), Provider("codex", true, "0.153.4"), Provider("gemini", true, "1.0.0"), Provider("pi", true, "0.73.1"), Provider("opencode", true, "opencode v2.2.7"), Provider("hermes", true, "Hermes Agent v0.23.1 (2026.9.24)")));
+        Check(ready.Select(row => row.Detail).SequenceEqual(new[] { Locale.Get("settings.components.readyClaude"), Locale.Get("settings.components.readyCodex"), Locale.Get("settings.components.ready"), Locale.Get("settings.components.ready"), Locale.Get("settings.components.ready"), Locale.Get("settings.components.ready") }), "each ready CLI says its own ready sentence");
         foreach (var language in Locale.Languages)
             foreach (var key in new[] { "settings.components.copyInstallCommand", "settings.components.updateCLI" })
                 foreach (var state in new[] { "settings.components.statusMissing", "settings.components.statusAttention" })
@@ -139,7 +139,7 @@ internal static class WindowsParityVerification
         Check(ComponentSection.CopiedMessage("npm install -g x") == Locale.Get("settings.components.copied", new Dictionary<string, string> { ["command"] = "npm install -g x" }) && ComponentSection.CopiedMessage("npm install -g x").Contains("npm install -g x", StringComparison.Ordinal), "the confirmation must name the command that was copied");
         Check(ComponentSection.RecheckInterval == TimeSpan.FromSeconds(5), "the open section looks again every 5 s, as on the Mac");
         Check(ComponentSection.NeedsRecheck(missing) && ComponentSection.NeedsRecheck(old), "a row that still needs the user keeps the section looking");
-        Check(!ComponentSection.NeedsRecheck(ComponentSection.SectionRows(Runtime(Provider("claude", true, "2.1.271"), Provider("codex", true, "0.153.4"), Provider("gemini", true, "1.0.0"), Provider("pi", true, "0.73.1")))), "with every CLI ready there is nothing to look for");
+        Check(!ComponentSection.NeedsRecheck(ComponentSection.SectionRows(Runtime(Provider("claude", true, "2.1.271"), Provider("codex", true, "0.153.4"), Provider("gemini", true, "1.0.0"), Provider("pi", true, "0.73.1"), Provider("opencode", true, "opencode v2.2.7"), Provider("hermes", true, "Hermes Agent v0.23.1")))), "with every CLI ready there is nothing to look for");
         return Task.CompletedTask;
     }
 

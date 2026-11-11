@@ -10,7 +10,7 @@ public static class CliAuthFailure
 {
     public static bool IsAuthenticationFailure(string text) => Claude(text) || Codex(text);
     /// <summary>The providers whose lost sign-in raises the card and may start a sign-in.</summary>
-    public static readonly IReadOnlyList<string> Providers = ["claude", "codex", "gemini", "pi"];
+    public static readonly IReadOnlyList<string> Providers = ["claude", "codex", "gemini", "pi", "opencode", "hermes"];
     private static string Bounded(string text) => text[..Math.Min(text.Length, 16_384)].ToLowerInvariant();
     private static bool ExternalDenial(string text) => text.Contains("bedrock") || text.Contains("service control policy") || text.Contains("explicit deny");
     public static bool Claude(string text)
@@ -47,6 +47,36 @@ public static class CliAuthFailure
     {
         var value = Bounded(text);
         return new[] { "no api key", "no models available", "use /login", "run /login", "please /login" }.Any(phrase => value.Contains(phrase, StringComparison.Ordinal));
+    }
+    /// <summary>
+    /// OpenCode 2's own sign-in failures, as an ACP error or a failed call's words (M/MightyCore/CLILoginRecovery.swift opencode): its
+    /// <c>provider.auth</c> error (ACP -32000 "provider authentication required", "Authorization failed"), the free models' limit ("Free usage
+    /// limit reached. Connect a provider …"), a provider's 401 or an invalid key, and its hint to run <c>opencode auth login</c>. A candidate
+    /// signal only: recovery confirms with <c>opencode auth list</c>. A proxy's "407 Proxy Authentication Required" is not a lost sign-in.
+    /// </summary>
+    public static bool Opencode(string text)
+    {
+        var value = Bounded(text);
+        if (value.Contains("proxy authentication", StringComparison.Ordinal)) return false;
+        if (new[] { "provider authentication required", "provider.auth", "authorization failed", "free usage limit reached", "connect a provider", "providerautherror", "authentication required", "auth required", "api key is missing", "invalid api key", "invalid x-api-key", "incorrect api key", "opencode auth login", "token has expired", "please log in", "not logged in" }
+            .Any(phrase => value.Contains(phrase, StringComparison.Ordinal))) return true;
+        return value.Contains("401", StringComparison.Ordinal) && (value.Contains("unauthorized", StringComparison.Ordinal) || value.Contains("authentication", StringComparison.Ordinal));
+    }
+    /// <summary>
+    /// Hermes's own words for a missing or lost model provider, in a failed turn's reply or an ACP error (M/MightyCore/CLILoginRecovery.swift
+    /// hermes): "provider 'auto' has no endpoint configured" (what a session created before any provider was set up answers), "Hermes is not
+    /// connected to any AI provider yet", "No LLM provider configured", its hints to run <c>hermes model</c> / <c>hermes setup</c> /
+    /// <c>hermes auth add</c>, a provider's 401 or an invalid key. A candidate signal only: recovery confirms with the sign-in probe.
+    /// </summary>
+    public static bool Hermes(string text)
+    {
+        var value = Bounded(text);
+        if (value.Contains("proxy authentication", StringComparison.Ordinal)) return false;
+        if (new[] { "has no endpoint configured", "no endpoint configured", "not connected to any ai provider", "no llm provider configured", "no inference provider", "run `hermes model`", "run hermes model", "run `hermes setup`", "run hermes setup",
+                "hermes auth add", "run `hermes auth`", "not logged into", "credentials available", "configure an api key", "api key is missing", "invalid api key", "invalid x-api-key",
+                "incorrect api key", "authentication_error", "token has expired", "needs refresh", "please log in", "not logged in" }
+            .Any(phrase => value.Contains(phrase, StringComparison.Ordinal))) return true;
+        return value.Contains("401", StringComparison.Ordinal) && (value.Contains("unauthorized", StringComparison.Ordinal) || value.Contains("authentication", StringComparison.Ordinal));
     }
     /// <summary>An Antigravity stream-json line that is the run's successful result: it clears an earlier sign-in signal, as on the Mac.</summary>
     public static bool AntigravitySucceeded(string line)
@@ -287,11 +317,17 @@ public static class CliTerminalLogin
 /// <param name="TitleKey">The terminal's title, when it carries an instruction.</param>
 public sealed record CliTerminalSignIn(string Provider, string WaitingKey, string? TitleKey)
 {
-    /// <summary>Antigravity opens the browser on its first run. pi signs in inside itself: <c>/login</c>, then a subscription or an API key.</summary>
+    /// <summary>
+    /// Antigravity opens the browser on its first run. pi signs in inside itself: <c>/login</c>, then a subscription or an API key. opencode asks
+    /// in <c>opencode auth login</c>: a provider, then its browser sign-in or an API key. Hermes asks in <c>hermes model</c>: a provider, its
+    /// sign-in or key, then the default model.
+    /// </summary>
     public static readonly IReadOnlyDictionary<string, CliTerminalSignIn> Table = new Dictionary<string, CliTerminalSignIn>
     {
         ["gemini"] = new("gemini", "loginRecovery.antigravityTerminal", null),
         ["pi"] = new("pi", "loginRecovery.piTerminal", "loginRecovery.piTerminalTitle"),
+        ["opencode"] = new("opencode", "loginRecovery.opencodeTerminal", "loginRecovery.opencodeTerminalTitle"),
+        ["hermes"] = new("hermes", "loginRecovery.hermesTerminal", "loginRecovery.hermesTerminalTitle"),
     };
     /// <summary>The command the terminal runs.</summary>
     public IReadOnlyList<string>? Command => CliAccountSupport.LoginArguments(Provider);

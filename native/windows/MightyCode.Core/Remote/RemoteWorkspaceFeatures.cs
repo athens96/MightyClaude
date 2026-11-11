@@ -12,8 +12,8 @@ public static class RemoteWorkspaceFeatures
     /// add a workspace as in a local one (macOS <c>WorkspaceAddMenuItems</c>). Each adds a workspace on this PC, never on the host.
     /// </summary>
     public static IReadOnlyList<string> AddPaneEntries(Workspace? workspace) => workspace?.Remote is null ? AddPaneMenu.Entries()
-        // pi runs on this PC only for now: a remote workspace's menu leaves it out (M/WorkspaceView.swift).
-        : [.. Wire.Providers.Where(p => p != "pi").Select(p => AddPaneMenu.AgentPrefix + p), AddPaneMenu.Separator, AddPaneMenu.Shell, AddPaneMenu.Separator, AddPaneMenu.OpenProject, AddPaneMenu.NewFolder, AddPaneMenu.FromGit];
+        // pi, opencode and Hermes run on this PC only for now: a remote workspace's menu leaves them out (M/WorkspaceView.swift).
+        : [.. Wire.Providers.Where(p => !ProviderCatalog.IsLocalOnly(p)).Select(p => AddPaneMenu.AgentPrefix + p), AddPaneMenu.Separator, AddPaneMenu.Shell, AddPaneMenu.Separator, AddPaneMenu.OpenProject, AddPaneMenu.NewFolder, AddPaneMenu.FromGit];
 
     /// <summary>
     /// The workspace's folder on this PC, or null for a remote workspace, whose path is its host's (a UNC path among them): the one way

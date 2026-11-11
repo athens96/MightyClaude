@@ -200,7 +200,7 @@ internal static class PiVerification
         var none = "No models available. Use /login to log into a provider via OAuth or API key. See:\n  /x/docs/providers.md\n";
         Check(ProviderCatalog.PiCatalog(none) == ProviderCatalog.Fallback("pi") || ProviderCatalog.PiCatalog(none).Models.Select(m => m.Value).SequenceEqual(["default"]), "no sign-in keeps the fallback");
         Check(ProviderCatalog.PiCatalog("").Models.Select(m => m.Value).SequenceEqual(["default"]) && ProviderCatalog.Fallback("pi").Models.Select(m => m.Value).SequenceEqual(["default"]), "the fallback");
-        Check(ProviderMark.Label("pi") == "pi" && ProviderCatalog.Executable("pi") == "pi" && ProviderCatalog.Name("pi") == "pi" && Wire.Providers[^1] == "pi", "name and place");
+        Check(ProviderMark.Label("pi") == "pi" && ProviderCatalog.Executable("pi") == "pi" && ProviderCatalog.Name("pi") == "pi" && Wire.Providers.SequenceEqual(["claude", "codex", "gemini", "pi", "opencode", "hermes"]), "name and place");
         return Task.CompletedTask;
     });
 

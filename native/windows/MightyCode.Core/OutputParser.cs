@@ -162,7 +162,7 @@ public sealed class OutputParser
         catch (AgentImageException ex) { log("system", AgentImageSupport.FailureText(ex.Error)); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { log("system", AgentImageSupport.FailureText(AgentImageError.Undecodable)); }
     }
-    private void Resume(string? value) { if (Wire.Identifier(value) && value != lastResume) { lastResume = value; resume(value!); } }
+    private void Resume(string? value) { if (Wire.SessionIdentifier(value) && value != lastResume) { lastResume = value; resume(value!); } }
     private void Assistant(string text, string? key = null)
     {
         if (text.Length == 0) return;

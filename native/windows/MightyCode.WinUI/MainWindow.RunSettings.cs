@@ -240,6 +240,10 @@ public sealed partial class MainWindow
             if (provider == "claude") return Locale.Get(mode switch { "plan" => "permission.claude.plan", "acceptEdits" => "permission.claude.acceptEdits", "auto" => "permission.claude.auto", "fullAccess" => "permission.claude.fullAccess", _ => "permission.claude.default" });
             // pi has no approval window: read-only tools, or every tool without asking.
             if (provider == "pi") return Locale.Get(mode == "fullAccess" ? "permission.pi.fullAccess" : "permission.pi.default");
+            // opencode's own rules for the run; what they leave at "ask" comes to the pane as a card.
+            if (provider == "opencode") return Locale.Get(mode switch { "plan" => "permission.opencode.plan", "acceptEdits" => "permission.opencode.acceptEdits", "fullAccess" => "permission.opencode.fullAccess", _ => "permission.opencode.default" });
+            // Hermes's own approvals: edits by the session's edit mode, dangerous commands by its approvals setting.
+            if (provider == "hermes") return Locale.Get(mode switch { "acceptEdits" => "permission.hermes.acceptEdits", "fullAccess" => "permission.hermes.fullAccess", _ => "permission.hermes.default" });
             if (mode == "fullAccess") return Locale.Get("permission.other.fullAccess");
             if (provider == "codex") return Locale.Get(mode == "onRequest" ? "permission.codex.onRequest" : mode == "acceptEdits" ? "permission.codex.acceptEdits" : "permission.codex.default");
             // Headless Antigravity declines what it would ask about instead of asking.

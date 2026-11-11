@@ -111,7 +111,7 @@ internal static class SlashCommandVerification
             foreach (var provider in Wire.Providers)
             {
                 Locale.LanguagePreference = locale;
-                string[] expected = locale == "en" ? ["review", provider is "codex" or "pi" ? "new" : "clear"] : ["review"];
+                string[] expected = locale == "en" ? ["review", provider is "codex" or "pi" or "opencode" or "hermes" ? "new" : "clear"] : ["review"];
                 Check(SlashPalette.Rows(provider, "claude", "/rev", fixture).Select(c => c.Invocation).SequenceEqual(expected),
                     "Partial search must include English previous-description matches after the review prefix, and retain the Korean result.");
                 Check(SlashPalette.Rows(provider, "claude", "/review", fixture).Select(c => c.Invocation).SequenceEqual(["review"]),

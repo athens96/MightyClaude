@@ -111,6 +111,15 @@ public static class SlashCommandCatalog
                 App("session", Locale.Get("slash.builtin.usage"), SlashCommandAction.ShowUsage),
                 App("settings", Locale.Get("slash.builtin.settings"), SlashCommandAction.OpenSettings), rename, help
             ],
+            // The ACP agents (M/MightyCore/SlashCommands.swift): pi's words, /usage for the session's usage.
+            "opencode" or "hermes" =>
+            [
+                model,
+                App("permissions", Locale.Get("slash.builtin.permission"), argument: SlashArgument.Permission),
+                App("new", Locale.Get("slash.builtin.newConversation"), SlashCommandAction.NewConversation),
+                App("usage", Locale.Get("slash.builtin.usage"), SlashCommandAction.ShowUsage),
+                App("settings", Locale.Get("slash.builtin.settings"), SlashCommandAction.OpenSettings), rename, help
+            ],
             _ => []
         };
     }
@@ -358,6 +367,8 @@ public static class SlashCommandCatalog
         "codex" => "Codex",
         "gemini" => "Antigravity",
         "pi" => "pi",
+        "opencode" => "opencode",
+        "hermes" => "Hermes",
         _ => provider
     };
 }

@@ -31,7 +31,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     /// The <c>gemini</c> id is kept for saved panes and the wire; it runs Google's Antigravity CLI (<c>agy</c>), which also runs
     /// Claude and GPT-OSS models (M/MightyCore/Models.swift ProviderOptions.label/executable).
     /// </summary>
-    public static string Name(string provider) => provider == "claude" ? "Claude Code" : provider == "codex" ? "Codex CLI" : provider == "pi" ? "pi" : "Antigravity CLI";
+    public static string Name(string provider) => provider switch { "claude" => "Claude Code", "codex" => "Codex CLI", "pi" => "pi", "opencode" => "opencode CLI", "hermes" => "Hermes CLI", _ => "Antigravity CLI" };
     /// <summary>The executable the app runs, finds, version-checks, updates and signs in with.</summary>
     public static string Executable(string provider) => provider == "gemini" ? "agy" : provider;
     /// <summary>
@@ -40,15 +40,26 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     /// </summary>
     public static string AntigravityInstallFolder(IReadOnlyDictionary<string, string>? environment = null) =>
         Path.Combine(environment?.GetValueOrDefault("LOCALAPPDATA") is { Length: > 0 } local ? local : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "agy", "bin");
-    // Claude is official; Codex, Antigravity and pi are beta. The one Windows answer every beta
+    // Claude is official; Codex, Antigravity, pi, opencode and Hermes are beta. The one Windows answer every beta
     // badge asks — the badge sits beside Name and never becomes part of it.
-    public static bool IsBeta(string provider) => provider is "codex" or "gemini" or "pi";
+    public static bool IsBeta(string provider) => provider is "codex" or "gemini" or "pi" or "opencode" or "hermes";
+    /// <summary>
+    /// pi, opencode and Hermes run on this computer only (M/MightyCore/Models.swift isLocalOnly): a remote workspace, whose host may be a Mac
+    /// or an older Windows, offers none of them, and a pane of one in a remote workspace is refused (<c>run.blocked.*Remote</c>).
+    /// </summary>
+    public static bool IsLocalOnly(string provider) => provider is "pi" or "opencode" or "hermes";
+    /// <summary>The agents that speak the Agent Client Protocol (<c>opencode acp</c>, <c>hermes acp</c>) through <see cref="AcpChannel"/>.</summary>
+    public static bool IsAcp(string provider) => provider is "opencode" or "hermes";
     // Menu items and plain text rows cannot host the badge, so it rides in their text.
     public static string BetaLabel(string provider, string text) => IsBeta(provider) ? text + " · " + Locale.Get("badge.beta") : text;
     // A sidebar row or tab carries the capsule after its title only for a beta agent's pane
     // (macOS paneRow / PaneDockView: kind "claude" and isBeta); shells, browsers and files never do.
     public static bool ShowsBetaBadge(RunSession session) => session.Kind == "claude" && IsBeta(session.Provider);
-    public static string[] PermissionModes(string provider, bool includeAuto = true) => provider == "pi" ? ["manual", "fullAccess"] : provider == "codex" ? ["manual", "onRequest", "acceptEdits", "fullAccess"] : provider == "claude" && includeAuto ? ["plan", "manual", "acceptEdits", "auto", "fullAccess"] : ["manual", "plan", "acceptEdits", "fullAccess"];
+    /// <summary>
+    /// The permission modes a pane of <paramref name="provider"/> offers: pi's read-only or all on; Hermes asks before edits (or not) and
+    /// before dangerous commands and has no read-only or plan mode (M/MightyCore/Models.swift permissionModes).
+    /// </summary>
+    public static string[] PermissionModes(string provider, bool includeAuto = true) => provider == "pi" ? ["manual", "fullAccess"] : provider == "hermes" ? ["manual", "acceptEdits", "fullAccess"] : provider == "codex" ? ["manual", "onRequest", "acceptEdits", "fullAccess"] : provider == "claude" && includeAuto ? ["plan", "manual", "acceptEdits", "auto", "fullAccess"] : ["manual", "plan", "acceptEdits", "fullAccess"];
     public static ProviderCapabilities Capabilities(string provider, string? version = null) => new(provider != "gemini", PermissionModes(provider, provider == "claude" && SupportsMods(version)).Where(mode => mode != "onRequest" || SupportsCodexApprovals(version)).ToArray(), provider == "claude", provider == "claude", true, provider == "codex", provider == "codex", provider == "codex", true);
     public static RunSettings NormalizeSettings(string provider, RunSettings? value)
     {
@@ -59,9 +70,10 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     public static ModelCatalog Fallback(string provider)
     {
         var models = new List<ModelOption> { new("default", Locale.Get("provider.fallback.defaultLabel", new Dictionary<string, string> { ["name"] = ProviderMark.Label(provider) }), Locale.Get("provider.fallback.defaultDescription")) };
-        // pi lists its models from `pi --list-models` once signed in; until then only its own default.
+        // pi and opencode list their models (`pi --list-models`, `opencode models`) once signed in, Hermes the picker its last session
+        // offered (HermesAgent.CachedCatalog); until then only their own default.
         if (provider == "gemini") foreach (var (slug, name) in AntigravityModels) models.Add(new(slug, name, Locale.Get("provider.fallback.exampleDescription")));
-        else if (provider != "pi") foreach (var value in provider switch { "claude" => new[] { "best", "fable", "opus", "sonnet", "haiku", "opusplan" }, _ => new[] { "gpt-5.6-sol", "gpt-6-astra" } }) models.Add(new(value, value, Locale.Get("provider.fallback.exampleDescription"), SupportsEffort: value.Contains("haiku") ? false : null));
+        else if (provider is not ("pi" or "opencode" or "hermes")) foreach (var value in provider switch { "claude" => new[] { "best", "fable", "opus", "sonnet", "haiku", "opusplan" }, _ => new[] { "gpt-5.6-sol", "gpt-6-astra" } }) models.Add(new(value, value, Locale.Get("provider.fallback.exampleDescription"), SupportsEffort: value.Contains("haiku") ? false : null));
         return new("fallback", models, Locale.Get("provider.fallback.source"));
     }
     /// <summary>
@@ -130,6 +142,24 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         }
         return models.Count > 1 ? new("cli", models, Locale.Get("provider.catalog.piSource")) : fallback;
     }
+    /// <summary>
+    /// <c>opencode models --standalone</c> (M/MightyCore/ProviderService.swift normalizeOpencodeCatalog), without OpenCode 2's background
+    /// service: one <c>provider/model</c> per line. Without a sign-in it lists Zen's free models, which still run. Anything that is not a
+    /// <c>provider/model</c> (a notice, a refresh line) is left out; an empty list keeps the fallback.
+    /// </summary>
+    public static ModelCatalog OpencodeCatalog(string text)
+    {
+        var fallback = Fallback("opencode");
+        var models = new List<ModelOption> { fallback.Models[0] }; var seen = new HashSet<string> { "default" };
+        foreach (var line in text.Split('\n').Take(4_096))
+        {
+            var value = line.Trim(' ', '\t', '\r');
+            var slash = value.IndexOf('/');
+            if (slash <= 0 || slash == value.Length - 1 || value.Contains(' ') || !Wire.Model(value) || models.Count > Wire.ListedModelLimit("opencode") || !seen.Add(value)) continue;
+            models.Add(new(value, value, Locale.Get("provider.catalog.opencodeModelRow", new Dictionary<string, string> { ["provider"] = value[..slash] })));
+        }
+        return models.Count > 1 ? new("cli", models, Locale.Get("provider.catalog.opencodeSource")) : fallback;
+    }
     /// <summary>Asks <c>pi --list-models</c> for its list (15 s): the list, or the fallback list marked with why (<see cref="ReadListCommandAsync"/>).</summary>
     public static Task<ModelCatalog> ReadPiModelsAsync(CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null) =>
         ReadListCommandAsync("pi", command, cancellation, workingDirectory);
@@ -142,7 +172,9 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     /// <item>claude 2.1.322: the headless stream-json launch the work map's summary shares (<see cref="ClaudeHeadlessArguments"/>), sent only
     /// <c>initialize</c> (its answer lists the models).</item>
     /// <item>codex 0.167.0: <c>app-server</c> over stdio, <c>initialize</c> then <c>model/list</c>.</item>
-    /// <item>agy 1.5.5: <c>models</c>. pi 1.5.2: <c>--list-models</c>.</item>
+    /// <item>agy 1.5.5: <c>models</c>. pi 1.5.2: <c>--list-models</c>. opencode 2.2.7: <c>models --standalone</c>, without starting OpenCode 2's
+    /// background service.</item>
+    /// <item>Hermes 0.23.1 has no list command (null): the picker its last session offered is read instead (<c>HermesAgent.CachedCatalog</c>).</item>
     /// </list>
     /// </summary>
     public static IReadOnlyList<string>? ModelListArguments(string provider) => provider switch
@@ -151,6 +183,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         "codex" => ["app-server", "--listen", "stdio://"],
         "gemini" => ["models"],
         "pi" => ["--list-models"],
+        "opencode" => ["models", "--standalone"],
         _ => null,
     };
 
@@ -190,17 +223,18 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     {
         string problem, output = "";
         if (ModelListArguments(provider) is not { } arguments) return Fallback(provider) with { ReadFailure = ReadFailure(provider, Locale.Get("provider.catalog.failure.noModels")) };
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        // opencode's first read may build its model cache: 20 s, and its list is the longest (M/ProviderService.swift readListCommand).
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(provider == "opencode" ? 20 : 15));
         try
         {
             await using var child = StartCli(command.Binary, command.Prefix.Concat(arguments), workingDirectory ?? Path.GetTempPath(), QuietEnvironment());
             child.Input.Close();
             var errors = new ErrorTail(child.Error, timeout.Token);
-            var text = await ReadBoundedAsync(child.Output, provider == "pi" ? 1_048_576 : 262_144, timeout.Token);
+            var text = await ReadBoundedAsync(child.Output, provider == "opencode" ? 2_097_152 : provider == "pi" ? 1_048_576 : 262_144, timeout.Token);
             var code = await child.Completion.WaitAsync(timeout.Token);
             if (code == 0)
             {
-                var catalog = provider == "pi" ? PiCatalog(text) : AntigravityCatalog(text);
+                var catalog = provider == "pi" ? PiCatalog(text) : provider == "opencode" ? OpencodeCatalog(text) : AntigravityCatalog(text);
                 if (catalog.IsFresh) return catalog;
                 problem = Locale.Get("provider.catalog.failure.noModels"); output = text + "\n" + await errors.TextAsync();
             }
@@ -248,6 +282,10 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     {
         if (provider == "gemini") return [];
         if (provider == "pi") return catalog.Models.FirstOrDefault(m => m.Value == model)?.SupportsEffort == false ? [] : Wire.PiThinkingLevels;
+        // opencode's effort is the model's variant (ACP's `effort` option); one a model lacks is named and skipped at the run.
+        if (provider == "opencode") return model == "default" || catalog.Models.FirstOrDefault(m => m.Value == model)?.SupportsEffort == false ? [] : Wire.OpencodeEfforts;
+        // Hermes takes a reasoning effort for the session (`reasoning_effort`), whatever the model.
+        if (provider == "hermes") return Wire.Efforts;
         var row = catalog.Models.FirstOrDefault(m => m.Value == model || m.ResolvedModel == model);
         if (row?.SupportsEffort == false) return [];
         // A Codex model's list may name `ultra`; Claude's never offers it, whatever its list says.
@@ -331,7 +369,9 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     {
         var command = await FindAsync(id, closing.Token);
         var read = command is null ? Fallback(id) with { ReadFailure = Locale.Get("run.error.cliExecutableMissing", new Dictionary<string, string> { ["name"] = ProviderMark.Label(id) }) }
-            : id is "gemini" or "pi" ? await ReadListCommandAsync(id, command, closing.Token, directory) : await ReadModelsAsync(id, command, closing.Token, directory);
+            // Hermes lists models only inside a session: the picker its last session offered is kept and read here.
+            : id == "hermes" ? HermesModels()
+            : id is "gemini" or "pi" or "opencode" ? await ReadListCommandAsync(id, command, closing.Token, directory) : await ReadModelsAsync(id, command, closing.Token, directory);
         var catalog = await SettleAsync(id, read, workspace);
         return new(id, Name(id), command is not null && (id != "claude" || SupportsMods(command.Version)), command?.Version, command is null ? Locale.Get("provider.notInstalled") : id == "claude" && !SupportsMods(command.Version) ? Locale.Get("provider.unsupportedVersion") : Locale.Get("provider.available"), catalog, Capabilities(id, command?.Version));
     }
@@ -342,12 +382,17 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     /// </summary>
     private async Task<ModelCatalog> SettleAsync(string provider, ModelCatalog read, string? workspace)
     {
+        // Hermes's picker is its own kept list: one forgotten for a Hermes with no provider is not brought back as an earlier list.
+        if (provider == "hermes") return read;
         if (read.IsFresh) { await KeepAsync(read, provider, workspace); return read; }
         var reason = read.ReadFailure ?? ReadFailure(provider, Locale.Get("provider.catalog.failure.noModels"));
         KeptModelLists.Entry? entry;
         lock (keptGate) entry = LoadedKeptLists().List(provider, workspace);
         return entry is not null ? KeptModelLists.Kept(entry, reason) : Fallback(provider) with { ReadFailure = reason };
     }
+
+    /// <summary>The picker the last Hermes session offered, kept in the storage folder (none without one: the checks never read a user's).</summary>
+    private ModelCatalog HermesModels() => Fallback("hermes");
 
     /// <summary>Keeps a list the CLI just gave, writing the file (in the storage folder only) when it changed or is five minutes old.</summary>
     private async Task KeepAsync(ModelCatalog catalog, string provider, string? workspace)

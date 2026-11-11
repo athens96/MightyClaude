@@ -202,6 +202,10 @@ public static class CliAccountSupport
         "gemini" => ["agy"],
         // pi signs in inside itself: the terminal shows `pi`, where `/login` is typed.
         "pi" => ["pi"],
+        // opencode: a provider, then its browser sign-in or an API key. Hermes: a provider, its sign-in or key, then the default model
+        // (what ACP's terminal auth, `hermes acp --setup`, runs too).
+        "opencode" => ["opencode", "auth", "login"],
+        "hermes" => ["hermes", "model"],
         _ => null,
     };
 

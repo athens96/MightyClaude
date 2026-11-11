@@ -104,6 +104,10 @@ public static class ComponentSection
         "codex" => "npm install -g @openai/codex",
         "gemini" => "irm https://antigravity.google/cli/install.ps1 | iex",
         "pi" => "npm install -g @mariozechner/pi-coding-agent",
+        "opencode" => "npm install -g @opencode/cli",
+        // Hermes Agent's own PowerShell installer, run so its parameters bind: -NonInteractive skips its setup wizard and gateway service
+        // (the app signs in with `hermes model`, and `hermes acp` starts the gateway when it needs one).
+        "hermes" => "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive",
         _ => null,
     };
 
@@ -113,6 +117,8 @@ public static class ComponentSection
         "codex" => "Codex",
         "gemini" => "Antigravity CLI",
         "pi" => "pi",
+        "opencode" => "opencode",
+        "hermes" => "Hermes Agent",
         _ => id,
     };
 }

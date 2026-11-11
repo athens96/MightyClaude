@@ -8,9 +8,15 @@ public sealed record UserQuestionOption(string Label, string Description);
 public sealed record UserQuestion(string Header, string Question, bool MultiSelect, IReadOnlyList<UserQuestionOption> Options);
 public sealed record UserQuestionAnswer(IReadOnlyList<string> SelectedOptions, string? CustomText = null);
 
-/// <summary>The complete bounded AskUserQuestion input. Question text is a protocol key, never shortened.</summary>
+/// <summary>
+/// The complete bounded AskUserQuestion input. Question text is a protocol key, never shortened. Claude asks one to four questions of two
+/// to four options; the questions other agents ask through the same card (<see cref="AgentQuestions"/>: ACP forms, Hermes's clarify, pi's
+/// dialogs) may have up to eight questions and twelve options, or none (a typed answer) (M/MightyCore/UserQuestionnaire.swift).
+/// </summary>
 public sealed record UserQuestionnaire(IReadOnlyList<UserQuestion> Questions)
 {
+    public const int MaximumQuestions = 8;
+    public const int MaximumOptions = 12;
     public static UserQuestionnaire? Parse(string input)
     {
         // The input is a JSON object or it is nothing: a transcript asks this of every reply and every code
@@ -19,14 +25,14 @@ public sealed record UserQuestionnaire(IReadOnlyList<UserQuestion> Questions)
         try
         {
             using var document = JsonDocument.Parse(input);
-            if (!document.RootElement.TryGetProperty("questions", out var questions) || questions.ValueKind != JsonValueKind.Array || questions.GetArrayLength() is < 1 or > 4) return null;
+            if (!document.RootElement.TryGetProperty("questions", out var questions) || questions.ValueKind != JsonValueKind.Array || questions.GetArrayLength() is < 1 or > MaximumQuestions) return null;
             var result = new List<UserQuestion>();
             foreach (var q in questions.EnumerateArray())
             {
                 if (q.ValueKind != JsonValueKind.Object || !q.TryGetProperty("header", out var header) || header.ValueKind != JsonValueKind.String || !Valid(header.GetString()!, 256)
                     || !q.TryGetProperty("question", out var question) || question.ValueKind != JsonValueKind.String || !Valid(question.GetString()!, 8192)
                     || !q.TryGetProperty("multiSelect", out var multi) || multi.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
-                    || !q.TryGetProperty("options", out var options) || options.ValueKind != JsonValueKind.Array || options.GetArrayLength() is < 2 or > 4) return null;
+                    || !q.TryGetProperty("options", out var options) || options.ValueKind != JsonValueKind.Array || options.GetArrayLength() > MaximumOptions) return null;
                 var choices = new List<UserQuestionOption>();
                 foreach (var option in options.EnumerateArray())
                 {

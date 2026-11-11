@@ -41,6 +41,8 @@ internal static class ModelListProbeVerification
         ["gemini"] = ["models"],
         // pi 1.5.2
         ["pi"] = ["--list-models"],
+        // opencode 2.2.7, without OpenCode 2's background service
+        ["opencode"] = ["models", "--standalone"],
     };
 
     /// <summary>With DISABLE_TELEMETRY Claude Code answers with its built-in list (Fable 5.2 read as Fable 5.1 [1m]).</summary>
@@ -61,7 +63,9 @@ internal static class ModelListProbeVerification
         foreach (var (provider, arguments) in Verified)
             Check(ProviderCatalog.ModelListArguments(provider)?.SequenceEqual(arguments) == true, provider + ": " + string.Join(' ', ProviderCatalog.ModelListArguments(provider) ?? []));
         Check(ProviderCatalog.ModelListArguments("hermes") is null && ProviderCatalog.ModelListArguments("other") is null, "no list command for anything else");
-        Check(Wire.Providers.All(Verified.ContainsKey), "every provider's read is pinned");
+        // Hermes 0.23.1 has no list command: its menu is the picker its last session offered.
+        Check(Wire.Providers.Where(p => p != "hermes").All(Verified.ContainsKey), "every provider's read is pinned");
+        Check(ProviderCatalog.ModelListCommand("opencode") == "opencode models --standalone", "opencode is named with its arguments");
         Check(ProviderCatalog.ModelListCommand("gemini") == "agy models" && ProviderCatalog.ModelListCommand("pi") == "pi --list-models", "agy and pi are named with their arguments");
         Check(ProviderCatalog.ModelListCommand("claude") == "claude" && ProviderCatalog.ModelListCommand("codex") == "codex app-server --listen stdio://", "claude by its name alone");
         return Task.CompletedTask;
@@ -160,7 +164,7 @@ internal static class ModelListProbeVerification
             if (provider == "gemini") { await Say(stderr, Fixture("model-list-agy-unknown-flag.txt")); Environment.ExitCode = 1; return; }
             await Say(stderr, "error: unexpected arguments: " + string.Join(' ', args) + "\n"); Environment.ExitCode = 2; return;
         }
-        if (provider is "gemini" or "pi")
+        if (provider is "gemini" or "pi" or "opencode")
         {
             if (provider == "gemini") await Say(stderr, "Fetching available models...\n");
             var replaced = Path.Combine(state, name + "-output");
@@ -184,10 +188,10 @@ internal static class ModelListProbeVerification
 
     internal static Task AFakeCliGivesItsFixtureList() => Korean(async () =>
     {
-        var expected = new Dictionary<string, string> { ["claude"] = "fable", ["codex"] = "gpt-6.1-sol", ["gemini"] = "gemini-4-carbon-medium", ["pi"] = "anthropic/claude-fable-5-2" };
+        var expected = new Dictionary<string, string> { ["claude"] = "fable", ["codex"] = "gpt-6.1-sol", ["gemini"] = "gemini-4-carbon-medium", ["pi"] = "anthropic/claude-fable-5-2", ["opencode"] = "opencode/big-pickle" };
         using var fake = new FakeListClis();
         await using var catalog = fake.Catalog();
-        foreach (var provider in Wire.Providers)
+        foreach (var provider in Wire.Providers.Where(Verified.ContainsKey))
         {
             var runtime = await catalog.RefreshProviderAsync(provider, fake.State);
             Check(runtime.ModelCatalog.IsFresh, provider + ": " + runtime.ModelCatalog.ReadFailure);

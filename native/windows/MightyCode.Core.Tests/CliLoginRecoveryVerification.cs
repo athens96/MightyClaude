@@ -273,8 +273,15 @@ internal static class CliLoginRecoveryVerification
         Check(!CliAuthFailure.SignInCanFix(new() { Provider = "pi", Detail = "offline" }) && !CliAuthFailure.SignInCanFix(new() { Provider = "pi", Installed = false, LoggedIn = false }), "unknown or no CLI opens none");
         Check(CliAuthFailure.SignInCanFix(PiAccounts.Status(0, "No models available. Use /login to log in.", null, new Dictionary<string, string>())), "pi's own no-models reading can be fixed by signing in");
 
-        Check(CliAuthFailure.Providers.SequenceEqual(["claude", "codex", "gemini", "pi"]), "the providers whose lost sign-in raises the card");
-        Check(CliTerminalSignIn.Table.Keys.Order().SequenceEqual(["gemini", "pi"]), "Antigravity and pi sign in in a terminal");
+        Check(CliAuthFailure.Providers.SequenceEqual(["claude", "codex", "gemini", "pi", "opencode", "hermes"]), "the providers whose lost sign-in raises the card");
+        Check(CliTerminalSignIn.Table.Keys.Order().SequenceEqual(["gemini", "hermes", "opencode", "pi"]), "Antigravity, pi, opencode and Hermes sign in in a terminal");
+        // M/MightyCore/CLILoginRecovery.swift: opencode asks in `opencode auth login`, Hermes in `hermes model`.
+        Check(CliTerminalSignIn.Table["opencode"].Command?.SequenceEqual(["opencode", "auth", "login"]) == true && CliTerminalSignIn.Table["hermes"].Command?.SequenceEqual(["hermes", "model"]) == true
+            && CliTerminalSignIn.Table["opencode"].Title == Locale.Get("loginRecovery.opencodeTerminalTitle") && CliTerminalSignIn.Table["hermes"].Title == Locale.Get("loginRecovery.hermesTerminalTitle"), "opencode's and Hermes's terminals");
+        Check(CliAuthFailure.Opencode("provider authentication required") && CliAuthFailure.Opencode("Free usage limit reached. Connect a provider to keep going") && CliAuthFailure.Opencode("401 Unauthorized")
+            && !CliAuthFailure.Opencode("407 Proxy Authentication Required") && !CliAuthFailure.Opencode("rate limited"), "opencode's sign-in words");
+        Check(CliAuthFailure.Hermes("⚠️ provider 'auto' has no endpoint configured, so the request is not sent anywhere") && CliAuthFailure.Hermes("Hermes is not connected to any AI provider yet. Run `hermes model`.")
+            && !CliAuthFailure.Hermes("407 Proxy Authentication Required") && !CliAuthFailure.Hermes("The file is written."), "Hermes's sign-in words");
         Check(CliTerminalSignIn.Table["pi"].Command?.SequenceEqual(["pi"]) == true && CliTerminalSignIn.Table["pi"].TitleKey is not null, "pi's terminal runs pi, titled with what to type");
         Check(CliTerminalSignIn.Table["gemini"].Command?.SequenceEqual([ProviderCatalog.Executable("gemini")]) == true, "Antigravity's runs agy");
         Check(CliTerminalSignIn.Table.Values.All(entry => CliAuthFailure.Providers.Contains(entry.Provider) && Locale.Get(entry.WaitingKey) != entry.WaitingKey), "each has its card sentence");

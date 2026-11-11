@@ -858,8 +858,8 @@ public sealed partial class MainWindow : Window
         private MenuFlyout ModelMenu(RunSession pane, ModelCatalog catalog)
         {
             var rows = new List<MenuFlyoutItemBase> { MenuHeader(Locale.Get("composer.label.runner")) };
-            // pi runs on this PC only for now: a remote workspace's pane does not offer it.
-            foreach (var value in Wire.Providers.Where(p => p != "pi" || !owner.service.IsRemoteSession(pane.Id))) rows.Add(Choice(ProviderCatalog.BetaLabel(value, ProviderMark.Label(value)), () => ChangeProvider(value), pane.Provider == value));
+            // pi, opencode and Hermes run on this PC only for now: a remote workspace's pane does not offer them.
+            foreach (var value in Wire.Providers.Where(p => !ProviderCatalog.IsLocalOnly(p) || !owner.service.IsRemoteSession(pane.Id))) rows.Add(Choice(ProviderCatalog.BetaLabel(value, ProviderMark.Label(value)), () => ChangeProvider(value), pane.Provider == value));
             rows.Add(new MenuFlyoutSeparator());
             var refresh = Item(Locale.Get(refreshingPaneModels ? "composer.model.refreshing" : "composer.model.refresh"), RefreshPaneModels); refresh.IsEnabled = !refreshingPaneModels;
             rows.Add(refresh);
