@@ -91,6 +91,7 @@
   "composer.effort.label": "Thinking effort",
   "composer.effort.menu": "Thinking effort · {effort}",
   "composer.effort.unknownLevels": "The levels this model supports could not be confirmed, so Auto is used.",
+  "composer.effort.ultra": "Ultra · auto-delegation",
   "composer.advisor.label": "Advisor",
   "composer.advisor.follow": "Follow Claude's settings",
   "composer.advisor.off": "Off",

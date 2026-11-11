@@ -704,8 +704,14 @@ public struct RuntimeInfo: Codable, Sendable, Equatable {
 public enum ProviderOptions {
     public static let ids = ["claude", "codex", "gemini", "pi", "opencode", "hermes"]
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
+    /// Codex's reasoning efforts: the shared five and `ultra`, which Codex 0.167.0 lists for most of its models ("Maximum
+    /// reasoning with automatic task delegation": it also turns on Codex's proactive multi-agent mode). No other agent
+    /// is offered it.
+    public static let codexEfforts = efforts + ["ultra"]
     /// pi's `--thinking` levels: its effort setting, off included.
     public static let piThinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"]
+    /// The efforts a pane of `provider` may be set to besides "default": pi's thinking levels, Codex's own, else the shared five.
+    public static func runEfforts(_ provider: String) -> [String] { provider == "pi" ? piThinkingLevels : provider == "codex" ? codexEfforts : efforts }
     /// The tools pi's read-only mode leaves on (`--tools`); full access passes none.
     public static let piReadOnlyTools = "read,grep,find,ls"
     /// The variants opencode's models commonly have (`--variant`, ACP's `effort` option).
@@ -782,7 +788,8 @@ public enum ProviderOptions {
         if provider == "hermes" { return efforts }
         let option = catalog?.models.first { $0.value == model || $0.resolvedModel == model }
         if option?.supportsEffort == false { return [] }
-        if let levels = option?.supportedEffortLevels { return levels.filter { efforts.contains($0) } }
+        // A Codex model's list may name `ultra`; Claude's never offers it, whatever its list says.
+        if let levels = option?.supportedEffortLevels { return levels.filter { (provider == "codex" ? codexEfforts : efforts).contains($0) } }
         if option == nil, let reg = registeredModels.first(where: { $0.name == model }) {
             if !reg.supportsEffort { return [] }
             return reg.supportedEffortLevels.filter { efforts.contains($0) }
@@ -795,7 +802,7 @@ public enum ProviderOptions {
     public static func normalizedSettings(provider: String, settings: RunSettings) -> RunSettings {
         var caps = fallbackRuntime(provider).capabilities
         caps.permissionModes = permissionModes(provider: provider)
-        return RunSettings(effort: caps.effort && (provider == "pi" ? piThinkingLevels : efforts).contains(settings.effort) ? settings.effort : "default", permissionMode: caps.permissionModes.contains(settings.permissionMode) ? settings.permissionMode : "manual", maxTurns: caps.maxTurns && (1...1000).contains(settings.maxTurns ?? 0) ? settings.maxTurns : nil, maxBudgetUsd: caps.maxBudgetUsd && (settings.maxBudgetUsd ?? 0).isFinite && (settings.maxBudgetUsd ?? 0) > 0 && (settings.maxBudgetUsd ?? 0) <= 10_000 ? settings.maxBudgetUsd : nil, fastMode: caps.fastMode && settings.fastMode, webSearch: caps.webSearch && webSearchModes.contains(settings.webSearch) ? settings.webSearch : "default", networkAccess: caps.networkAccess && ["acceptEdits", "onRequest"].contains(settings.permissionMode) && settings.networkAccess,
+        return RunSettings(effort: caps.effort && runEfforts(provider).contains(settings.effort) ? settings.effort : "default", permissionMode: caps.permissionModes.contains(settings.permissionMode) ? settings.permissionMode : "manual", maxTurns: caps.maxTurns && (1...1000).contains(settings.maxTurns ?? 0) ? settings.maxTurns : nil, maxBudgetUsd: caps.maxBudgetUsd && (settings.maxBudgetUsd ?? 0).isFinite && (settings.maxBudgetUsd ?? 0) > 0 && (settings.maxBudgetUsd ?? 0) <= 10_000 ? settings.maxBudgetUsd : nil, fastMode: caps.fastMode && settings.fastMode, webSearch: caps.webSearch && webSearchModes.contains(settings.webSearch) ? settings.webSearch : "default", networkAccess: caps.networkAccess && ["acceptEdits", "onRequest"].contains(settings.permissionMode) && settings.networkAccess,
                            // Only Claude has an advisor: a model's name, or off.
                            advisor: provider == "claude" ? settings.advisor.flatMap { CoreValidation.model($0) ? $0 : nil } : nil)
     }
@@ -808,7 +815,7 @@ public enum CoreValidation {
     public static func sessionIdentifier(_ value: String) -> Bool { identifier(value) || value.range(of: "^ses_[a-zA-Z0-9]{1,124}$", options: .regularExpression) != nil }
     public static func model(_ value: String) -> Bool { value.count <= 200 && value.range(of: "^[a-zA-Z0-9][a-zA-Z0-9._:/@\\[\\]-]*$", options: .regularExpression) != nil }
     /// An effort a pane of any provider may be set to: "default" (the CLI decides) or one of the levels.
-    public static func effort(_ value: String) -> Bool { value == "default" || ProviderOptions.efforts.contains(value) || ProviderOptions.piThinkingLevels.contains(value) }
+    public static func effort(_ value: String) -> Bool { value == "default" || ProviderOptions.codexEfforts.contains(value) || ProviderOptions.piThinkingLevels.contains(value) }
     public static func validate(_ request: StartRunRequest) throws {
         guard identifier(request.sessionId), identifier(request.workspaceId), SessionKind.runnable.contains(request.kind), ProviderOptions.ids.contains(request.provider), model(request.model) else { throw MightyError(L("validation.run.badRequest")) }
         try AttachmentSupport.validate(request.attachments)
@@ -816,7 +823,7 @@ public enum CoreValidation {
         guard !request.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !request.attachments.isEmpty, request.input.utf8.count <= 400_000, request.input.count <= 100_000, !request.input.contains("\0") else { throw MightyError(L("validation.run.badInput")) }
         if let resume = request.resumeId, !sessionIdentifier(resume) { throw MightyError(L("validation.run.badResumeId")) }
         let s = request.settings
-        guard (["default"] + (request.provider == "pi" ? ProviderOptions.piThinkingLevels : ProviderOptions.efforts)).contains(s.effort), ["manual", "plan", "acceptEdits", "auto", "onRequest", "fullAccess"].contains(s.permissionMode), ProviderOptions.webSearchModes.contains(s.webSearch), s.maxTurns == nil || (1...1000).contains(s.maxTurns!), s.maxBudgetUsd == nil || (s.maxBudgetUsd!.isFinite && s.maxBudgetUsd! > 0 && s.maxBudgetUsd! <= 10_000), s.advisor.map(model) ?? true else { throw MightyError(L("wire.startRun.invalidSettings")) }
+        guard (["default"] + ProviderOptions.runEfforts(request.provider)).contains(s.effort), ["manual", "plan", "acceptEdits", "auto", "onRequest", "fullAccess"].contains(s.permissionMode), ProviderOptions.webSearchModes.contains(s.webSearch), s.maxTurns == nil || (1...1000).contains(s.maxTurns!), s.maxBudgetUsd == nil || (s.maxBudgetUsd!.isFinite && s.maxBudgetUsd! > 0 && s.maxBudgetUsd! <= 10_000), s.advisor.map(model) ?? true else { throw MightyError(L("wire.startRun.invalidSettings")) }
         if s.permissionMode == "auto", request.kind != "claude" || request.provider != "claude" { throw MightyError(L("wire.startRun.autoModeClaudeOnly")) }
         if let mode = request.permissionModeOverride, mode != "plan" || request.kind != "claude" || request.provider != "claude" { throw MightyError(L("plan.error.overrideClaudeOnly")) }
         if s.permissionMode == "onRequest", request.kind != "claude" || request.provider != "codex" { throw MightyError(L("validation.run.onRequestCodexOnly")) }

@@ -46,6 +46,8 @@ Session model (`session.model`) always wins over `claudeMain` when not `"default
 | `codexSubagentDefault` | `-c agents.default_subagent_model="<value>"` |
 | `codexPlanModeReasoningEffort` | `-c plan_mode_reasoning_effort="<value>"` (non-model knob) |
 
+Codex's effort knobs (planning `plan_mode_reasoning_effort`, execution `model_reasoning_effort`, subagents `agents.default_subagent_reasoning_effort`) offer the shared levels Codex's models list, but not `ultra` (codex-cli 0.167.0), which a Codex pane may take for a model that lists it: a knob reaches every run whatever its model, a sub-agent's included, and an older Mac or a Windows host refuses a run whose knobs carry an effort it does not know.
+
 ### omc (scanned, file-based)
 Reads agent list from the installed oh-my-claudecode plugin.
 Writes `agents.<camelCaseKey>.model` in `~/.config/claude-omc/config.jsonc` only.

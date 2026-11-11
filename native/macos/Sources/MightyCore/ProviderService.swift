@@ -450,7 +450,8 @@ public actor ProviderService {
         var models = [fallback.models[0]]; var seen = Set(["default"])
         for row in rows.prefix(128) {
             guard let value = row["model"] as? String, CoreValidation.model(value), row["hidden"] as? Bool != true, seen.insert(value).inserted else { continue }
-            let levels = (row["supportedReasoningEfforts"] as? [[String: Any]])?.compactMap { $0["reasoningEffort"] as? String }.filter { ProviderOptions.efforts.contains($0) }
+            // The efforts the CLI names for the model, `ultra` among them (`ProviderOptions.codexEfforts`).
+            let levels = (row["supportedReasoningEfforts"] as? [[String: Any]])?.compactMap { $0["reasoningEffort"] as? String }.filter { ProviderOptions.codexEfforts.contains($0) }
             models.append(ModelOption(value: value, displayName: String((row["displayName"] as? String ?? value).prefix(160)), description: String((row["description"] as? String ?? "").prefix(2400)), supportsEffort: levels.map { !$0.isEmpty }, supportedEffortLevels: levels))
             if row["isDefault"] as? Bool == true {
                 models[0].resolvedModel = value

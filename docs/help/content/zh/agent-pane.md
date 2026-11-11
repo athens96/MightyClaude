@@ -33,7 +33,7 @@ section: agent-pane
 点击模型按钮，可以选择{{ui:composer.label.runner}}（Claude、Codex、Antigravity、pi、opencode、Hermes）和{{ui:composer.label.model}}。如果列表不对，请点击{{ui:composer.model.refresh}}。切换智能体会开始新的对话。
 
 ### 思考强度 {#effort}
-{{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 没有此项；pi 有 Off、Minimal、Low、Medium、High、XHigh；opencode 有 Low、Medium、High、Max，即模型提供的变体；Hermes 有 Low、Medium、High、XHigh、Max。
+{{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Codex 模型支持时还有 {{ui:composer.effort.ultra}}：思考最深，并可能把部分工作交给 Codex 自己的子代理，因此用量可能更多。Antigravity 没有此项；pi 有 Off、Minimal、Low、Medium、High、XHigh；opencode 有 Low、Medium、High、Max，即模型提供的变体；Hermes 有 Low、Medium、High、XHigh、Max。
 
 ### 顾问 {#advisor}
 {{platform:mac}} Claude 窗格在{{ui:composer.effort.label}}旁边有一个灯泡形状的{{ui:composer.advisor.label}}按钮。这是 Claude Code 的实验性功能：Claude 在工作过程中向另一个模型征求建议。{{ui:composer.advisor.follow}}（默认）不传递任何内容，按 Claude Code 自己的设置运行。选择某个模型后，它就是顾问；{{ui:composer.advisor.off}}只在这个窗格的请求里关闭顾问。使用顾问会多用令牌。如果选择比主模型弱的模型，Claude Code 会报错，错误会显示在窗格里。其他电脑上的工作区和其他智能体的窗格没有这个按钮。

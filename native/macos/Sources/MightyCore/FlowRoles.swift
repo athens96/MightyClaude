@@ -154,6 +154,8 @@ public enum FlowRoles {
         case "high": "High"
         case "xhigh": "XHigh"
         case "max": "Max"
+        // Codex's: short as the others in a block's chip; the composer's menu says what it does (`composer.effort.ultra`).
+        case "ultra": "Ultra"
         default: nil
         }
     }

@@ -170,7 +170,8 @@ public enum StatusLineSupport {
             object["exceeds_200k_tokens"] = false
         }
         object["context_window"] = window
-        if let effort = context.effort, ["low", "medium", "high", "xhigh", "max"].contains(effort) { object["effort"] = ["level": effort] }
+        // Claude Code's five levels, and Codex's `ultra` for a Codex pane set to it.
+        if let effort = context.effort, ProviderOptions.codexEfforts.contains(effort) { object["effort"] = ["level": effort] }
         var limits: [String: Any] = [:]
         let formatter = ISO8601DateFormatter()
         let fractional = ISO8601DateFormatter(); fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
