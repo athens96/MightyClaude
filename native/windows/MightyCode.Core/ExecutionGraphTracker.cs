@@ -158,6 +158,9 @@ public sealed partial class ExecutionGraphTracker
     private readonly List<string> noticeRuns = [];
     /// <summary>Each copied block's latest notice run.</summary>
     private readonly Dictionary<string, string> copiedIn = [];
+    /// <summary>The block each of the CLI's task runs settled (a live <c>task_notification</c>'s <c>run_id</c>): the result of the turn that
+    /// answers a notification names that run (<c>origin.runId</c>), and finds by it the notice run that already holds the work (macOS taskRuns).</summary>
+    private readonly Dictionary<string, string> taskRuns = [];
     /// <summary>What opened a notice run and what it names while it holds no copy (<see cref="BackgroundNoticeRuns.Title(string, IReadOnlyList{string})"/>).</summary>
     /// <c>Senders</c> says who each name stands for (its agent block, or the name when no block sent it), so a sender is named once.
     private sealed record NoticeOpening(BackgroundNoticeRuns.Opener Opener, IReadOnlyList<string> Names, IReadOnlyList<string> Lines, IReadOnlyList<string> Senders);
@@ -603,9 +606,10 @@ public sealed partial class ExecutionGraphTracker
             ReportTools(value);
             var summary = value.Text("summary");
             var tool = Key(MetadataJson.Property(value, "tool_use_id"));
+            var taskRun = Key(MetadataJson.Property(value, "run_id"));
             var file = value.Text("output_file");
             SettleTasks("<task-notification><task-id>" + notifiedTask + "</task-id>" + (tool is null ? "" : "<tool-use-id>" + tool + "</tool-use-id>")
-                + (file is { Length: > 0 } ? "<output-file>" + file + "</output-file>" : "") + "<status>" + (value.Text("status") ?? "completed") + "</status>"
+                + (taskRun is null ? "" : "<run-id>" + taskRun + "</run-id>") + (file is { Length: > 0 } ? "<output-file>" + file + "</output-file>" : "") + "<status>" + (value.Text("status") ?? "completed") + "</status>"
                 + (summary is { Length: > 0 } ? "<summary>" + summary + "</summary>" : "") + "</task-notification>", parentTool is null);
         }
         else if (type == "system" && value.Text("subtype") == "task_progress") ReportTools(value);
@@ -662,6 +666,11 @@ public sealed partial class ExecutionGraphTracker
             }
             var peer = MetadataJson.Property(value, "origin") is { ValueKind: JsonValueKind.Object } origin && origin.Text("kind") == "peer";
             var opener = peer ? BackgroundNoticeRuns.Opener.Message : BackgroundNoticeRuns.Opener.Work;
+            // Claude Code answers each notification in a turn of its own. When two pieces of work end close together, both notices come
+            // before the first turn's answer and join its run; the second turn brings no notice of its own, only its result naming its
+            // notification's task run (origin.runId). That answer goes on in the run that already holds the work, as a later turn about
+            // blocks an earlier run holds does (mergeTurn): no empty run (macOS).
+            if (!peer && lines.Count == 0 && HeldRun(value) is { } earlier) { AnswerAgain(earlier, lines, answer, failed); return; }
             if (opener == BackgroundNoticeRuns.Opener.Message && MessageRun(lines) is { } again) { AnswerAgain(again, lines, answer, failed); return; }
             var (names, senders) = Senders(lines);
             bool OpenOwn(bool reserving)
@@ -1027,6 +1036,7 @@ public sealed partial class ExecutionGraphTracker
                 if (notice) JoinTurn(BackgroundNoticeRuns.Opener.Work, null, Tag(body, "summary") ?? Tag(body, "status"));
                 continue;
             }
+            if (Tag(body, "run-id") is { } taskRun && (taskRuns.ContainsKey(taskRun) || taskRuns.Count < 512)) taskRuns[taskRun] = id;
             // Claude Code reports a foreground sub-agent's end as it does a background task's, right before the Agent call's own result (2.1.322).
             // A sub-agent that was never launched in the background (no `run_in_background`, no asynchronous launch acknowledged) stands in the
             // request's diagram and settles by that result: there is no finished background work here, so the notification settles nothing,
@@ -1175,6 +1185,11 @@ public sealed partial class ExecutionGraphTracker
         if (SoleAgent(lines) is { } agent && messageAgents.GetValueOrDefault(latest) == agent && LatestNoticeRun == latest) return latest;
         return messageRunCount >= MessageRunLimit ? latest : null;
     }
+    /// <summary>The notice run that already holds the work a notification turn's result answers: the block of the task run its <c>origin.runId</c>
+    /// names (<see cref="taskRuns"/>), as its latest notice run copied it (<see cref="copiedIn"/>) (macOS heldRun).</summary>
+    private string? HeldRun(JsonElement result) =>
+        MetadataJson.Property(result, "origin") is { ValueKind: JsonValueKind.Object } origin && Key(MetadataJson.Property(origin, "runId")) is { } task
+        && taskRuns.GetValueOrDefault(task) is { } block && copiedIn.GetValueOrDefault(block) is { } run && nodes.ContainsKey(ExecutionGraphSupport.MainNodeID(run)) ? run : null;
     /// <summary>The latest notice run opened, if any.</summary>
     private string? LatestNoticeRun => noticeIndex > 0 && BackgroundNoticeRuns.RunID(runID, noticeIndex) is var run && nodes.ContainsKey(ExecutionGraphSupport.MainNodeID(run)) ? run : null;
     /// <summary>The one agent block that sent every one of these lines, if they all came from one.</summary>

@@ -466,4 +466,38 @@ internal static class BackgroundNoticeRunsVerification
         tracker.Consume(Json(new { type = "user", origin = new { kind = "task-notification" }, message = new { content = "<task-notification>\n<task-id>ag2</task-id>\n<status>completed</status>\n<summary>Two done</summary>\n</task-notification>" } }));
         Check(Block(tracker, "a1").Status == "completed" && Block(tracker, "a2").Status == "completed", "the notifications settle them");
     }
+
+    /// <summary>Claude Code answers each notification in a turn of its own (2.1.322, claude-stream-background-commands.jsonl). When two commands
+    /// end close together, both notices come before the first notice turn's answer and join its run; the second turn brings no notice of its
+    /// own, only its result's <c>origin.runId</c> naming the notification's task run. Its answer goes on in the run that holds that work, as a
+    /// later turn about copied blocks does, and opens no empty run. A result naming work no notice run holds, or naming none, opens a run of
+    /// its own as before (macOS BackgroundNoticeRunsTests.aLaterTurnAnsweringAHeldNotificationGoesOnInItsRun).</summary>
+    internal static Task ALaterTurnAnsweringAHeldNotificationGoesOnInItsRun()
+    {
+        var nodes = new Dictionary<string, ExecutionGraphNode>();
+        var tracker = new ExecutionGraphTracker("proc-1", "two commands", "claude", null, node => nodes[node.Id] = node);
+        JsonElement Live(string task, string tool, string run) =>
+            Json(new { type = "system", subtype = "task_notification", task_id = task, tool_use_id = tool, run_id = run, status = "completed", output_file = $"/tmp/{task}.output", summary = task + " ended" });
+        JsonElement Answered(string text, string? run) => run is null ? Result(text, notice: true)
+            : Json(new { type = "result", subtype = "success", is_error = false, result = text, origin = new { kind = "task-notification", producer = "session-task", runId = run } });
+        List<string> NoticeRuns() => [.. nodes.Values.Where(n => n.Kind == "main" && BackgroundNoticeRuns.IsNoticeRun(n.RunId)).Select(n => n.RunId).Order(StringComparer.Ordinal)];
+        string? Output(string run) => nodes.GetValueOrDefault(ExecutionGraphSupport.MainNodeID(run))?.Output;
+        string Runs() => string.Join(", ", NoticeRuns());
+        foreach (var value in new[] { Command("one", "sleep 3", "count"), Launched("one", "b1"), Command("two", "sleep 2; exit 3", "fail"), Launched("two", "b2"), Result("launched."),
+                     Live("b2", "two", "r2"), Live("b1", "one", "r1"), Text("done.", "m2"), Answered("done.", "r2") }) tracker.Consume(value);
+        Check(NoticeRuns().SequenceEqual(["proc-1:notice:1"]) && Output("proc-1:notice:1") == "done.", "both notices joined the first turn's run: " + Runs());
+        // The second notification's own turn.
+        foreach (var value in new[] { Text("done.", "m3"), Answered("done.", "r1") }) tracker.Consume(value);
+        Check(NoticeRuns().SequenceEqual(["proc-1:notice:1"]), "no empty run: " + Runs());
+        Same(Output("proc-1:notice:1"), "done.\n\ndone.", "the answer goes on in the run that holds its work");
+        Same(nodes.GetValueOrDefault(ExecutionGraphSupport.MainNodeID("proc-1:notice:1"))?.State, "completed", "and the run ends as the turn did");
+        Same(nodes.Values.Count(n => n.RunId == "proc-1:notice:1" && n.SourceBlockId is not null), 2, "both copies");
+        // Work no notice run holds, or no task run named: a run of its own, as before.
+        foreach (var value in new[] { Text("Another.", "m4"), Answered("Another.", "r9"), Text("And one.", "m5"), Answered("And one.", null) }) tracker.Consume(value);
+        Check(NoticeRuns().SequenceEqual(["proc-1:notice:1", "proc-1:notice:2", "proc-1:notice:3"]), "an unknown task run and none open runs of their own: " + Runs());
+        Same(Output("proc-1:notice:2"), "Another.", "an unknown task run's answer");
+        Same(Output("proc-1:notice:3"), "And one.", "an answer naming no task run");
+        Same(Output("proc-1:notice:1"), "done.\n\ndone.", "the first run keeps its two answers");
+        return Task.CompletedTask;
+    }
 }

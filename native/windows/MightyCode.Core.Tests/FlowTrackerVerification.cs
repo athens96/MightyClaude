@@ -408,6 +408,28 @@ internal static class FlowTrackerVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>Both commands ended before the first notice turn answered, so both notices joined its run. Claude Code then answered the second
+    /// notification in a turn of its own that brings no notice, only its result's origin.runId (taskrun-1): that answer goes on in the same run,
+    /// which used to leave an empty second notice run (macOS FlowTaskTests.bothNotificationsAndTheirTwoTurnsMakeOneNoticeRun; the Mac's pane names
+    /// the request's run by its log entry, request-one, where the tracker's own runs here keep the run's id).</summary>
+    internal static Task BothNotificationsAndTheirTwoTurnsMakeOneNoticeRun()
+    {
+        InLanguage("ko", () =>
+        {
+            var runs = Replay("claude-stream-background-commands", "recorded");
+            SameList(runs.Select(r => r.Id), ["recorded", "recorded:notice:1"], "the request and one notice run");
+            var notice = runs[^1];
+            Check(notice.NoticeRun == true && notice.Status == "completed", "a completed notice run");
+            SameList(notice.Agents.Select(a => a.SourceBlockId).OfType<string>().Order(StringComparer.Ordinal), runs[0].Agents.Where(a => a.IsTask).Select(a => a.Id).Order(StringComparer.Ordinal), "both copies");
+            Same(notice.NoticeTitle, "백그라운드 작업 완료 · fail on purpose 외 1개", "its title");
+            Same(notice.Input, "fail on purpose · 실패\ncount to three · 완료", "its request lines");
+            // Its result is both turns' answers, a paragraph each; the request keeps its own.
+            Same(notice.FinalOutput, "done.\n\ndone.", "both answers");
+            Same(runs[0].FinalOutput, "launched.", "the request's own result");
+        });
+        return Task.CompletedTask;
+    }
+
     internal static Task ASubagentCountsItsToolCallsOnceAndKeepsItsStartAndEnd()
     {
         var runs = Replay("claude-stream-subagents", "recorded");

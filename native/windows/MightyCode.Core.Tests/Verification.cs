@@ -218,6 +218,7 @@ internal static class Verification
         await Test("flow tracker: a foreground result is the report under its hand-back frame only", FlowTrackerVerification.AResultIsTheReportUnderItsHandBackFrameOnly);
         await Test("flow tracker: a response record names every tool call its message made", FlowTrackerVerification.AResponseRecordNamesEveryToolCallItsMessageMade);
         await Test("flow tracker: the recorded background commands keep their start, end and exit code (claude-stream-background-commands)", FlowTrackerVerification.TheRecordedCommandsKeepTheirStartEndAndExitCode);
+        await Test("flow tracker: both recorded notifications and their two turns make one notice run (claude-stream-background-commands)", FlowTrackerVerification.BothNotificationsAndTheirTwoTurnsMakeOneNoticeRun);
         await Test("flow tracker: a sub-agent counts its tool calls once and keeps its start and end", FlowTrackerVerification.ASubagentCountsItsToolCallsOnceAndKeepsItsStartAndEnd);
         await Test("flow tracker: the recorded consultation is kept on the run and makes no block (claude-stream-advisor)", FlowTrackerVerification.TheRecordedConsultationIsKeptOnTheRunAndMakesNoBlock);
         await Test("flow tracker: the advisor's results, the work around it and who asked", FlowTrackerVerification.TheAdvisorsResultsTheWorkAroundItAndWhoAsked);
@@ -256,6 +257,7 @@ internal static class Verification
         await Test("background notice runs: a command started in a notice turn is settled by its notification", BackgroundNoticeRunsVerification.ACommandStartedInANoticeTurnIsSettledByItsNotification);
         await Test("background notice runs: a notice run reads the request's waiting count", BackgroundNoticeRunsVerification.ANoticeRunReadsTheRequestsWaitingCount);
         await Test("background notice runs: an async launch result keeps the agent running", BackgroundNoticeRunsVerification.AnAsyncLaunchResultKeepsTheAgentRunning);
+        await Test("background notice runs: a later turn answering a held notification goes on in its run; an unknown task run or none opens its own", BackgroundNoticeRunsVerification.ALaterTurnAnsweringAHeldNotificationGoesOnInItsRun);
         await Test("MightyTimelineVerification TheRequestRowHoldsTheInputAndTheExecutionRowTheWork", MightyTimelineVerification.TheRequestRowHoldsTheInputAndTheExecutionRowTheWork);
         await Test("MightyTimelineVerification StatusRailsCountsAndDurationStayHonest", MightyTimelineVerification.StatusRailsCountsAndDurationStayHonest);
         await Test("mighty execution block: a stable node id", MightyGraphExecutionBlockVerification.TheExecutionBlockHasAStableNodeID);
