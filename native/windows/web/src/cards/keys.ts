@@ -43,8 +43,8 @@ export function forwardIndex(ids: readonly string[], enabled: readonly boolean[]
 
 /**
  * Where the keyboard goes after a card is drawn again, or when the card itself is pressed: the answer with the same id when
- * it is still there and enabled, else the chosen answer, else the question's first answer tile, else the card's first button
- * (RestoreCardFocus); -1 when none can take it.
+ * it is still there and enabled, else the chosen answer, else the question's first answer tile (or, for a question with
+ * nothing to pick, its typed answer), else the card's first button (RestoreCardFocus); -1 when none can take it.
  */
 export function restoreIndex(ids: readonly string[], enabled: readonly boolean[], previous: string | null, checked: readonly boolean[] = []): number {
   if (previous !== null) {
@@ -53,7 +53,7 @@ export function restoreIndex(ids: readonly string[], enabled: readonly boolean[]
   }
   const chosen = ids.findIndex((_, index) => checked[index] === true && enabled[index]);
   if (chosen >= 0) return chosen;
-  const option = ids.findIndex((id, index) => id.startsWith('option-') && enabled[index]);
+  const option = ids.findIndex((id, index) => (id.startsWith('option-') || id.startsWith('typed-')) && enabled[index]);
   if (option >= 0) return option;
   return enabled.indexOf(true);
 }

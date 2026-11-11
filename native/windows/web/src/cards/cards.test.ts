@@ -1,17 +1,27 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import en from '@locales/en.json';
+import { ServicesContext, type AppServices } from '../app/context';
+import { translator } from '../i18n/locale';
+import { Questionnaire } from './Cards';
 import { cardKey, forwardIndex, moveFocus, restoreIndex } from './keys';
-import { answered, answers, back, canJump, canSubmit, emptyDraft, jump, next, pick, setText, toggleCustom } from './questionnaire';
+import { answered, answers, back, canJump, canSubmit, emptyDraft, jump, next, pick, setText, toggleCustom, typing } from './questionnaire';
 import type { Question } from './types';
 import { reduce, emptyState } from '../store/store';
 
 const single: Question = { header: 'Color', question: 'Which colour?', multiSelect: false, options: [{ label: 'Red', description: '' }, { label: 'Blue', description: '' }] };
 const multiple: Question = { header: 'Sides', question: 'Which sides?', multiSelect: true, options: [{ label: 'Left', description: '' }, { label: 'Right', description: '' }] };
+/** Another agent's questions: one with nothing to pick (a typed answer), one of twelve options, and eight to a card. */
+const typedOnly: Question = { header: 'Name', question: 'What should the branch be called?', multiSelect: false, options: [] };
+const twelve: Question = { header: 'Model', question: 'Which model?', multiSelect: false, options: Array.from({ length: 12 }, (_, i) => ({ label: 'Model ' + (i + 1), description: '' })) };
+const eight: Question[] = Array.from({ length: 8 }, (_, i) => ({ ...single, question: `Colour ${i + 1}?` }));
 
 describe('questionnaire draft', () => {
   it('a single question keeps one pick and drops its own answer', () => {
     let draft = toggleCustom(emptyDraft, single);
     draft = setText(draft, 'green');
-    expect(answered(draft, 0)).toBe(true);
+    expect(answered(draft, [single], 0)).toBe(true);
     draft = pick(draft, single, 'Red');
     draft = pick(draft, single, 'Blue');
     expect(draft.picks[0]).toEqual(['Blue']);
@@ -33,26 +43,105 @@ describe('questionnaire draft', () => {
     let draft = pick(emptyDraft, single, 'Red');
     draft = toggleCustom(draft, single);
     expect(draft.picks[0]).toEqual([]);
-    expect(answered(draft, 0)).toBe(false);
+    expect(answered(draft, [single], 0)).toBe(false);
     draft = setText(draft, '   ');
-    expect(answered(draft, 0)).toBe(false);
+    expect(answered(draft, [single], 0)).toBe(false);
   });
 
   it('next, back, the dots and send follow the answered steps', () => {
-    let draft = next(emptyDraft, 2);
+    const questions = [single, multiple];
+    let draft = next(emptyDraft, questions);
     expect(draft.step).toBe(0);
-    expect(canJump(draft, 1)).toBe(false);
+    expect(canJump(draft, questions, 1)).toBe(false);
     draft = pick(draft, single, 'Red');
-    expect(canJump(draft, 1)).toBe(true);
-    draft = next(draft, 2);
+    expect(canJump(draft, questions, 1)).toBe(true);
+    draft = next(draft, questions);
     expect(draft.step).toBe(1);
-    expect(next(draft, 2).step).toBe(1);
-    expect(canSubmit(draft, 2)).toBe(false);
+    expect(next(draft, questions).step).toBe(1);
+    expect(canSubmit(draft, questions)).toBe(false);
     draft = pick(draft, multiple, 'Left');
-    expect(canSubmit(draft, 2)).toBe(true);
+    expect(canSubmit(draft, questions)).toBe(true);
     expect(back(draft).step).toBe(0);
     expect(back(back(draft)).step).toBe(0);
-    expect(jump(emptyDraft, 1).step).toBe(0);
+    expect(jump(emptyDraft, questions, 1).step).toBe(0);
+  });
+
+  it('a question with nothing to pick is answered in words alone, which it needs to go on and to send', () => {
+    const questions = [typedOnly, single];
+    expect(typing(emptyDraft, questions, 0)).toBe(true);
+    expect(typing(emptyDraft, questions, 1)).toBe(false);
+    expect(answered(emptyDraft, questions, 0)).toBe(false);
+    expect(next(emptyDraft, questions).step).toBe(0);
+    let draft = setText(emptyDraft, '   ');
+    expect(answered(draft, questions, 0)).toBe(false);
+    draft = setText(draft, 'feature/agents');
+    expect(answered(draft, questions, 0)).toBe(true);
+    expect(canJump(draft, questions, 1)).toBe(true);
+    draft = next(draft, questions);
+    expect(draft.step).toBe(1);
+    expect(canSubmit(draft, questions)).toBe(false);
+    draft = pick(draft, single, 'Blue');
+    expect(canSubmit(draft, questions)).toBe(true);
+    expect(answers(draft, questions)).toEqual([{ picks: [], custom: 'feature/agents' }, { picks: ['Blue'], custom: null }]);
+    expect(canSubmit(emptyDraft, [typedOnly])).toBe(false);
+    expect(answers(setText(emptyDraft, 'x'), [{ ...typedOnly, multiSelect: true }])).toEqual([{ picks: [], custom: 'x' }]);
+  });
+
+  it('twelve options: the last is picked like the first, and several come back in the options order', () => {
+    expect(answers(pick(emptyDraft, twelve, 'Model 12'), [twelve])).toEqual([{ picks: ['Model 12'], custom: null }]);
+    const many: Question = { ...twelve, multiSelect: true };
+    const draft = ['Model 11', 'Model 2', 'Model 7'].reduce((current, label) => pick(current, many, label), emptyDraft);
+    expect(answers(draft, [many])).toEqual([{ picks: ['Model 2', 'Model 7', 'Model 11'], custom: null }]);
+  });
+
+  it('eight questions: each dot opens once the steps before it are answered, and Send waits for all eight', () => {
+    let draft = emptyDraft;
+    for (let step = 0; step < 8; step++) {
+      expect(draft.step).toBe(step);
+      expect(canJump(draft, eight, 7)).toBe(step === 7);
+      expect(canSubmit(draft, eight)).toBe(false);
+      draft = next(pick(draft, eight[step]!, step % 2 ? 'Blue' : 'Red'), eight);
+    }
+    expect(draft.step).toBe(7);
+    expect(canSubmit(draft, eight)).toBe(true);
+    expect(jump(draft, eight, 2).step).toBe(2);
+    expect(answers(draft, eight).map((answer) => answer.picks[0])).toEqual(['Red', 'Blue', 'Red', 'Blue', 'Red', 'Blue', 'Red', 'Blue']);
+  });
+});
+
+describe('question card', () => {
+  const services = { bridge: { call: () => Promise.resolve(null) }, store: {}, t: translator([en]) } as unknown as AppServices;
+  const draw = (questions: Question[]) => renderToStaticMarkup(createElement(ServicesContext.Provider, { value: services },
+    createElement(Questionnaire, { card: { kind: 'questionnaire', requestId: 'r', count: 1, questions }, reply: () => Promise.resolve({ ok: true as const, value: null }) })));
+  const count = (html: string, text: string) => html.split(text).length - 1;
+
+  it('with nothing to pick, shows the typed answer at once as the only input, and Send waits for it', () => {
+    const html = draw([typedOnly]);
+    expect(html).toContain('What should the branch be called?');
+    expect(html).not.toContain('question-choices');
+    expect(html).not.toContain('data-answer="custom-0"');
+    expect(html).not.toContain(en['phone.questionnaire.single']);
+    expect(html).toMatch(/<textarea[^>]*data-answer="typed-0"[^>]*aria-required="true"/);
+    expect(html).toMatch(/<button[^>]*data-answer="submit"[^>]*disabled=""/);
+  });
+
+  it('draws twelve options as tiles, then the own-answer tile, with the typed answer closed until it is chosen', () => {
+    const html = draw([twelve]);
+    expect(count(html, 'class="question-choice"')).toBe(13);
+    expect(html).toContain('data-answer="option-0-11"');
+    expect(html).toContain('>Model 12<');
+    expect(html).toContain('data-answer="custom-0"');
+    expect(html).toContain(en['phone.questionnaire.single']);
+    expect(html).not.toContain('<textarea');
+  });
+
+  it('draws a dot for each of eight questions, the first one now and the others shut', () => {
+    const html = draw(eight);
+    expect(html).toContain('Question 1/8');
+    expect(count(html, 'data-answer="step-')).toBe(8);
+    expect(html).toContain('class="question-dot now"');
+    expect(html).toMatch(/data-answer="step-7"[^>]*disabled=""/);
+    expect(html).toContain('data-answer="next"');
   });
 });
 
@@ -85,6 +174,9 @@ describe('card keyboard', () => {
     expect(restoreIndex(ids, on, 'cancel', [false, false, true, false, false, false])).toBe(4);
     // Next turned into Send: the same answer is gone, so the step's chosen or first answer takes the keyboard.
     expect(restoreIndex(['option-1-0', 'option-1-1', 'submit'], [true, true, false], 'next')).toBe(0);
+    // A step with nothing to pick: its typed answer, not the first dot or Cancel.
+    expect(restoreIndex(['step-0', 'step-1', 'typed-1', 'cancel', 'back', 'submit'], [true, true, true, true, true, false], 'next')).toBe(2);
+    expect(restoreIndex(['typed-0', 'cancel', 'submit'], [true, true, false], null)).toBe(0);
   });
 
   it('Enter picks a single question\'s answer and goes on; Space, buttons and several answers keep their own press', () => {
