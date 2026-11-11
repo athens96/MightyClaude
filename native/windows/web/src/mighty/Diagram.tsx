@@ -8,9 +8,11 @@ import {
   wheelScrollTarget, zoomAnchored, zoomIn, zoomLabel, zoomOut, ZoomDefault, ZoomMax, ZoomMin, type Point,
 } from './camera';
 import {
-  finished, isAuxiliaryKind, isResizable, latestResultID, makeLayout, MaximumHeight, MaximumWidth, minimumBlockSize, normalizedSizeFor,
-  nodeId, resultDrag, resultDragSides, runOf, WorkSuffix, type Layout, type Size,
+  finished, isAuxiliaryKind, isFixed, isResizable, latestResultID, makeLayout, MaximumHeight, MaximumWidth, minimumBlockSize, normalizedSizeFor,
+  nodeId, resultDrag, resultDragSides, runNodeId, runOf, WorkSuffix, type Layout, type Size,
 } from './layout';
+import { AdvisorKind, DelegateKind, ReturnKind, advisorRoute, liveFlowIds, logTarget } from './flow';
+import { AdvisorBandNode, DelegateLineNode, FlowCardNode, FlowLogStrip, ReturnNode } from './FlowParts';
 import { blockExtras } from './extras';
 import { edgesCursor, pinnedAnchor, pinnedCamera, pinnedUnit, resizedSize, resizeTarget, type Edges } from './resize';
 import { setBlockSize } from './prefs';
@@ -52,6 +54,21 @@ function edgePaths(layout: Layout, running: ReadonlySet<string>): { quiet: strin
     if (running.has(edge.target)) live += d; else quiet += d;
   }
   return { quiet, live };
+}
+
+/** The advisor's dotted links (Core MightyGraphLayout.AdvisorLink), each from its band to the block that asked, around the blocks between. */
+function advisorPaths(layout: Layout): string {
+  if (layout.advisorLinks.length === 0) return '';
+  const frames = new Map(layout.nodes.map((n) => [n.id, n.frame]));
+  let d = '';
+  for (const link of layout.advisorLinks) {
+    const band = frames.get(link.band), target = frames.get(link.target);
+    if (!band || !target) continue;
+    const others = layout.nodes.filter((n) => n.id !== link.band && n.id !== link.target).map((n) => n.frame);
+    const points = advisorRoute(band, target, others);
+    d += points.map((point, index) => (index === 0 ? 'M' : 'L') + point.x + ' ' + point.y).join('');
+  }
+  return d;
 }
 
 /**
@@ -104,6 +121,8 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
   const [viewport, setViewport] = useState<Size>({ w: 0, h: 0 });
   const [zoom, setZoom] = useState(ZoomDefault);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  /** The cards the user opened into their full blocks, while the app runs (macOS MightyGraphView openedCards). */
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
   const [selected, setSelected] = useState<string | null>(null);
   const [visibleKey, setVisibleKey] = useState('');
   const [live, setLive] = useState<{ id: string; size: GraphBlockSize; target: Drag['target'] } | null>(null);
@@ -137,6 +156,8 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
   // A released drag shows its size at once; the saved sizes coming back from the host take over.
   const savedSizes = pending && pending.base === session.graphBlockSizes ? pending.sizes : session.graphBlockSizes ?? null;
   const latest = latestResultID(runs);
+  // The role view of a Claude pane: cards, delegate lines, the return node and the advisor's band (the host says when).
+  const fanOut = inputs?.fanOut === true;
   const blockSizes = useMemo(() => (live && live.target === 'block' ? { ...(savedSizes ?? {}), [live.id]: live.size } : savedSizes), [savedSizes, live]);
   const layout = useMemo(() => makeLayout(runs, session.draft, session.status === 'running', expanded, {
     resultFilesRunID: inputs?.resultFilesRunID ?? null,
@@ -153,12 +174,16 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     splitsExecution: true,
     galleries: inputs?.galleries ?? [],
     executions: inputs?.executions ?? [],
-  }), [runs, session.draft, session.status, expanded, inputs, viewport, zoom, live, session.graphResultSize, session.graphPlanSize, latest, measured, blockSizes]);
+    fanOut: fanOut ? { opened } : null,
+  }), [runs, session.draft, session.status, expanded, inputs, viewport, zoom, live, session.graphResultSize, session.graphPlanSize, latest, measured, blockSizes, fanOut, opened]);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
   const running = useMemo(() => new Set(Object.entries(mighty.blocks).filter(([, b]) => b.tone === 'run').map(([id]) => id)), [mighty.blocks]);
-  const edges = useMemo(() => edgePaths(layout, running), [layout, running]);
+  // The role view's own nodes in motion: a return node, and a delegate line that leads to a running block (flow.ts liveFlowIds).
+  const liveIds = useMemo(() => (fanOut ? liveFlowIds(layout, running) : running), [fanOut, layout, running]);
+  const edges = useMemo(() => edgePaths(layout, liveIds), [layout, liveIds]);
+  const advisorLinks = useMemo(() => advisorPaths(layout), [layout]);
 
   // ── the camera: transforms set directly, the visible set recomputed only when it changes ──
   const frame = useRef(0);
@@ -290,6 +315,40 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
   const inputsRef = useRef(inputs);
   inputsRef.current = inputs;
 
+  /** The camera to a block, as another view's aim does: it stops following; a block (not a card, a line or the band) is selected. */
+  const reveal = useCallback((id: string) => {
+    const l = layoutRef.current;
+    const node = l.nodes.find((n) => n.id === id);
+    const vp = { w: viewportRef.current?.clientWidth ?? 0, h: viewportRef.current?.clientHeight ?? 0 };
+    if (!node || vp.w <= 0 || vp.h <= 0) return;
+    stopTween();
+    pin.current = null;
+    camera.current = cameraOffset(node.frame, vp, zoomRef.current, false);
+    const targetID = followTargetID(l, shared.current);
+    watch.current.moved(targetID, frameOf(targetID), camera.current, vp, zoomRef.current);
+    if (!isFixed(node)) setSelected(id);
+    applyCamera();
+  }, [applyCamera, stopTween]);
+  /** A card opened into its block in place, or folded back (macOS openedCards). */
+  const openCard = useCallback((id: string, open: boolean) => {
+    watch.current.userChangedLayout();
+    setOpened((s) => { if (s.has(id) === open) return s; const n = new Set(s); if (open) n.add(id); else n.delete(id); return n; });
+  }, []);
+  /** A card's click: a finished background block's copy in its notice run, shown and selected; any other card opens in place. */
+  const activateCard = useCallback((id: string, copy: string | undefined) => {
+    if (copy && layoutRef.current.nodes.some((n) => n.id === copy)) reveal(copy);
+    else openCard(id, true);
+  }, [reveal, openCard]);
+  /** An advisor row's or a log row's click: the block, or what stands for it on the diagram while a folded card hides it. */
+  const revealFlow = useCallback((nodeID: string) => {
+    const drawn = new Set(layoutRef.current.nodes.map((n) => n.id));
+    const target = logTarget(nodeID, shared.current, (run, suffix) => runNodeId(run, suffix), (id) => drawn.has(id));
+    if (target) reveal(target);
+  }, [reveal]);
+  const toggleLog = useCallback(() => {
+    void bridge.call('mightyLogCollapsed', { paneId, collapsed: inputsRef.current?.log?.collapsed !== true });
+  }, [bridge, paneId]);
+
   const pan = useCallback((dx: number, dy: number) => {
     stopTween();
     camera.current = { x: camera.current.x + dx, y: camera.current.y + dy };
@@ -326,7 +385,7 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     const vp = viewportRef.current;
     if (!vp) return null;
     const box = vp.getBoundingClientRect(), cam = camera.current, z = zoomRef.current;
-    const frames = layoutRef.current.nodes.filter((n) => isResizable(n.kind))
+    const frames = layoutRef.current.nodes.filter((n) => isResizable(n.kind) && !isFixed(n))
       .map((n) => ({ id: n.id, frame: { x: n.frame.x * z + cam.x, y: n.frame.y * z + cam.y, w: n.frame.w * z, h: n.frame.h * z } }));
     return resizeTarget(clientX - box.left, clientY - box.top, frames, z);
   };
@@ -344,7 +403,8 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     if (hit && !(event.target as Element).closest('button')) { actions.startResize(hit.id, hit.edges, event); return; }
     const block = (event.target as Element).closest('[data-block-id]') as HTMLElement | null;
     if (block) {
-      if (block.dataset.kind !== 'history') setSelected(block.dataset.blockId ?? null);
+      // A card, a delegate line, the return node and the advisor's band are never selected (Core MightyGraphLayout.IsFixed).
+      if (block.dataset.kind !== 'history' && block.dataset.fixed !== '1') setSelected(block.dataset.blockId ?? null);
       return;
     }
     setSelected(null);
@@ -431,7 +491,8 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
     openFile(file: MightyFile, runId: string | null) { showReference.current?.({ path: file.path, line: file.line ?? null, ...(runId ? { runId } : {}) }); },
     loadOlder() { void bridge.call('mightyLoadOlder', { paneId }); },
     measured(id, height) { setMeasured((m) => (Math.abs((m[id] ?? -1) - height) < 1 ? m : { ...m, [id]: height })); },
-  }), [bridge, paneId]);
+    foldToCard(id) { openCard(id, false); },
+  }), [bridge, paneId, openCard]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key !== 'Escape') return;
@@ -496,20 +557,37 @@ export function Diagram({ session, mighty, aim, onAimed, pending: request, own =
           <g ref={edgesRef} data-testid="mighty-edges">
             <path className="mighty-edges-quiet" d={edges.quiet} />
             <path className="mighty-edges-live" d={edges.live} />
+            {advisorLinks !== '' && <path className="mighty-advisor-links" d={advisorLinks} data-testid="mighty-advisor-links" />}
           </g>
         </svg>
         {steps && <StepsPanel key={paneId} paneId={paneId} model={steps} t={t} />}
         <div className="mighty-world" ref={worldRef} onClick={onReferenceClick}>
-          {layout.nodes.map((node) => (
-            <Block key={node.id} paneId={paneId} provider={session.provider} id={node.id} kind={node.kind}
-              x={node.frame.x} y={node.frame.y} w={node.frame.w} h={node.frame.h}
-              copy={mighty.blocks[node.id] ?? copies?.get(node.id)} extra={drawnExtras.get(node.id) ?? {}} visible={visible.has(node.id)}
-              selected={selected === node.id} expanded={expanded.has(node.id)}
-              running={unfinished.has(runOf(node.id) ?? '')}
-              actions={actions} />
-          ))}
+          {layout.nodes.map((node) => {
+            const copy = mighty.blocks[node.id] ?? copies?.get(node.id);
+            const { x, y, w, h } = node.frame;
+            // The role view's own nodes (FlowParts.tsx), each drawn from its copy; a node whose copy has not come yet waits for it.
+            if (node.compact) {
+              const card = copy?.flow?.card;
+              return card ? <FlowCardNode key={node.id} id={node.id} x={x} y={y} w={w} h={h} card={card} outline={copy?.outline === 'marching' || copy?.outline === 'solid'}
+                onActivate={activateCard} onOpen={(id) => openCard(id, true)} /> : null;
+            }
+            if (node.kind === DelegateKind) return copy?.flow?.line ? <DelegateLineNode key={node.id} id={node.id} x={x} y={y} w={w} h={h} line={copy.flow.line} /> : null;
+            if (node.kind === ReturnKind) return copy?.flow?.back ? <ReturnNode key={node.id} id={node.id} x={x} y={y} w={w} h={h} back={copy.flow.back} /> : null;
+            if (node.kind === AdvisorKind) return copy?.flow?.advisor ? <AdvisorBandNode key={node.id} id={node.id} x={x} y={y} w={w} h={h} band={copy.flow.advisor} onReveal={revealFlow} /> : null;
+            return (
+              <Block key={node.id} paneId={paneId} provider={session.provider} id={node.id} kind={node.kind}
+                x={x} y={y} w={w} h={h}
+                copy={copy} extra={drawnExtras.get(node.id) ?? {}} visible={visible.has(node.id)}
+                selected={selected === node.id} expanded={expanded.has(node.id)}
+                running={unfinished.has(runOf(node.id) ?? '')}
+                foldable={fanOut && copy?.flow?.card !== undefined}
+                actions={actions} />
+            );
+          })}
         </div>
       </div>
+      {/* The session log under a Claude pane's flow, above the composer (FlowLog): no strip without a request. */}
+      {fanOut && inputs?.log && <FlowLogStrip paneId={paneId} log={inputs.log} onToggle={toggleLog} onReveal={revealFlow} />}
     </div>
   );
 }

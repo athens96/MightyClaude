@@ -29,6 +29,86 @@ export interface MightyBlockCopy {
   awaiting?: MightyAwaiting;
   /** A result that is the result so far (Core MightyGraphBlock.SoFar): its strip and symbol are neutral, its tone stays the request's. */
   soFar?: boolean;
+  /** The role view's words for this node (Core FlowCopy.Block): who the block is, its card, a delegate line, the return node or the advisor's band. */
+  flow?: FlowBlockCopy;
+}
+
+/** A mark on a sub-agent's header (Core FlowMark): background, fork or worktree, and what it says on hover. */
+export interface FlowMarkCopy { name: 'background' | 'fork' | 'worktree'; help: string }
+
+/** Who a block is (Core FlowCopy.Role): its role, its ink (a design token's name), its type chip, the lead's effort, its marks, all of it in one line. */
+export interface FlowRoleCopy {
+  name: 'lead' | 'subagent' | 'task' | 'advisor';
+  ink: string;
+  type?: string;
+  typeChip?: string;
+  effort?: string;
+  effortHelp?: string;
+  marks: FlowMarkCopy[];
+  summary: string;
+  modelLabel?: string;
+}
+
+/** A compact card (Core FlowCopy.Card): the figures' parts on either side of its time, which the page reads against its own clock. */
+export interface FlowCardCopy {
+  title: string;
+  identity?: string;
+  activity?: string;
+  status: string;
+  stateWord: string;
+  before: string[];
+  after: string[];
+  /** Milliseconds since 1970. */
+  startedAt?: number;
+  endedAt?: number;
+  running: boolean;
+  nested: number;
+  nestedHelp?: string;
+  marks: FlowMarkCopy[];
+  ink: string;
+  summary: string;
+  isTask: boolean;
+  /** A finished background block's full copy in its notice run: where its card's click goes. */
+  copyNodeId?: string;
+  activateHelp: string;
+}
+
+export interface FlowPartCopy { text: string; ink: string }
+/** The delegate line (Core FlowDelegation.Line). */
+export interface FlowLineCopy { head: string; parts: FlowPartCopy[]; model?: string; progress?: string; text: string }
+/** The return node (Core FlowReturn.State). */
+export interface FlowBackCopy { text: string; waiting: boolean }
+export interface FlowAdvisorRowCopy { id: string; caller: string; ink: string; callerNodeId: string; when: string; line: string; state: string; help: string }
+/** The advisor's band (Core FlowAdvisor.Band): every row it keeps; the page shows the newest that fit its height. */
+export interface FlowAdvisorCopy {
+  header: string;
+  model?: string;
+  state?: string;
+  consulting: boolean;
+  rows: FlowAdvisorRowCopy[];
+  earlier: number;
+  calls: number;
+  totals: string;
+  totalsHelp?: string;
+  note?: string;
+  empty?: string;
+  hidesText: boolean;
+}
+
+export interface FlowBlockCopy {
+  role?: FlowRoleCopy;
+  card?: FlowCardCopy;
+  line?: FlowLineCopy;
+  back?: FlowBackCopy;
+  advisor?: FlowAdvisorCopy;
+}
+
+/** The session log strip under a Claude pane's flow (Core FlowCopy.Log). */
+export interface FlowLogCopy {
+  status: FlowPartCopy[];
+  statusText: string;
+  rows: { id: string; clock: string; who: string; ink: string; what: string; nodeId: string }[];
+  collapsed: boolean;
 }
 
 /** The 알림 대기 block's rows (Core BackgroundNoticeRuns.Awaiting): each awaited task's title, status and word, and "알림 n/m". */
@@ -78,6 +158,11 @@ export interface MightyInputs {
   executionCards: Record<string, MightyExecutionCard>;
   animations: boolean;
   header: string;
+  /** The role view (a Claude pane): sub-agents and background commands stand in fan-out rows as cards, with delegate lines, a return node and the
+   * advisor's band (Core MightyGraphLayout.FanOut). Absent elsewhere and from an older host. */
+  fanOut?: boolean;
+  /** The session log strip under the flow, for a role view with a request. */
+  log?: FlowLogCopy;
 }
 
 export interface TimelineRow {
@@ -95,6 +180,8 @@ export interface TimelineRow {
   capsule?: string;
   input?: string;
   agentIndex?: number;
+  /** The block's role ink (a design token's name) as its diagram header wears it: the 실행 row's lead teal, a sub-agent's own (Core FlowRoles). */
+  ink?: string;
 }
 
 export interface TimelineGroup {

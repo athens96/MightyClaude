@@ -8,6 +8,7 @@ import { useReferenceClick } from '../conversation/referenceClick';
 import { Icon, type IconName } from '../icons/Icon';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { providerLabel } from '../conversation/format';
+import { inkVar } from './FlowParts';
 import { Pending } from '../pending/Pending';
 import type { PendingState } from '../pending/display';
 import { holding, pendingRunId, requestState, runsFor, type PendingRequest } from '../pending/requests';
@@ -89,7 +90,8 @@ const Row = memo(function Row({ row, run, paneId, provider, open, onToggle, firs
         <button className="timeline-card-head" onClick={() => onToggle(row.nodeId)} disabled={!entries && !row.input}>
           <span className="timeline-card-words">
             <span className="timeline-title">{row.title}</span>
-            <span className="timeline-meta"><span className={'timeline-kind tint-' + rowTint(row.kind)}><Icon name={symbol} size={10} weight={2.4} /></span>{meta}</span>
+            {/* The glyph in the block's role ink when it has one, as its diagram header wears it (M/MightyGraphView.swift timelineLook). */}
+            <span className="timeline-meta"><span className={'timeline-kind tint-' + rowTint(row.kind)} style={row.ink ? { color: inkVar(row.ink) } : undefined}><Icon name={symbol} size={10} weight={2.4} /></span>{meta}</span>
             {row.latest && <span className="timeline-latest">{row.tone === 'run' && <span className="timeline-pulse" />}<span>{row.latest}</span></span>}
           </span>
           {row.statusWord && <span className={'mighty-pill tone-' + row.tone}>{row.statusWord}</span>}

@@ -1,16 +1,25 @@
 // The Mighty diagram's layout, ported from Core/MightyGraphLayout.cs (itself the macOS MightyGraphLayout): pure, checked
 // against native/contracts/graph-vectors.json (splitsExecution off) and the Windows rules (splitsExecution on).
 import { newestRequestRun, quietNotice, reopenedWithReply, shownAgents, shownRuns } from './notice';
-import type { GraphBlockSize, MightyGraphRun } from '../store/models';
+import {
+  AdvisorGap, AdvisorKind, AdvisorMinimumHeight, AdvisorSuffix, AdvisorWidth, CardHeight, CardWidth, DelegateGap, DelegateHeight, DelegateKind,
+  DelegateRowGap, DelegateSuffix, DelegateWidth, MainKey, ReturnHeight, ReturnKind, ReturnSuffix, ReturnWidth, advisorCallers, advisorShows,
+  delegationChildren, drawnNode, flowAgents, flowOrder, hasReturn, isCompact,
+} from './flow';
+import type { GraphBlockSize, MightyGraphAgent, MightyGraphRun } from '../store/models';
 
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Size { w: number; h: number }
-export interface LayoutNode { id: string; kind: string; frame: Rect }
+/** `compact`: a sub-agent or a background command drawn as its card (flow.ts isCompact), not as its block. */
+export interface LayoutNode { id: string; kind: string; frame: Rect; compact?: boolean }
 export interface LayoutEdge { source: string; target: string; joins: boolean }
+/** A dotted connector from an advisor's band to a block that asked (Core MightyGraphLayout.AdvisorLink): no edge, nothing is laid out by it. */
+export interface AdvisorLink { band: string; target: string }
 
 export interface Layout {
   nodes: LayoutNode[];
   edges: LayoutEdge[];
+  advisorLinks: AdvisorLink[];
   size: Size;
   originX: number;
   originY: number;
@@ -113,6 +122,10 @@ export function minimumBlockSize(kind: string): Size {
 }
 
 export const isAuxiliaryKind = (kind: string) => kind === 'resultFiles' || kind === 'planRecord' || kind === ExecutionKind || kind === ImagesKind;
+/** Neither selected nor resized: a click goes to what it holds and a wheel pans past it (Core MightyGraphLayout.IsFixed): the history block, the role
+ * view's line, return node and advisor band, and a card. */
+export const isFixed = (node: { kind: string; compact?: boolean }) =>
+  node.compact === true || node.kind === 'history' || node.kind === DelegateKind || node.kind === ReturnKind || node.kind === AdvisorKind;
 export const isResizable = (kind: string) =>
   kind === 'request' || kind === WorkKind || kind === 'agent' || kind === 'result' || kind === 'draft' || kind === 'plan' || kind === 'planRecord';
 
@@ -229,6 +242,9 @@ export interface MakeOptions {
   splitsExecution?: boolean;
   galleries?: readonly { runID: string; step: string; count: number }[];
   executions?: readonly { runID: string; key: string }[];
+  /** The role view of a Claude pane (Core MightyGraphLayout.FanOut): every sub-agent and background command stands under the block that launched
+   * it, a running one a card unless the user opened it (`opened`, node ids). Absent lays the runs out as every other view does. */
+  fanOut?: { opened: ReadonlySet<string> } | null;
 }
 
 export function makeLayout(given: readonly MightyGraphRun[], draft: string, running: boolean, expanded: ReadonlySet<string>, options: MakeOptions = {}): Layout {
@@ -236,6 +252,7 @@ export function makeLayout(given: readonly MightyGraphRun[], draft: string, runn
   const runs = shownRuns(given);
   const viewport = options.viewport ?? null;
   const zoom = options.zoom ?? null;
+  const fanOut = options.fanOut ?? null;
   const splitsExecution = options.splitsExecution ?? false;
   const resultFilesRunID = options.resultFilesRunID ?? null;
   const latest = latestResultID(runs);
@@ -258,6 +275,8 @@ export function makeLayout(given: readonly MightyGraphRun[], draft: string, runn
 
   const trees: Tree[] = [];
   let planFit: ReturnType<typeof planSize> | null = null;
+  // Each run's own flow nodes: the advisor's band reaches down to the lowest.
+  const flowNodes: Set<string>[] = [];
   for (const run of runs) {
     const mainID = runNodeId(run, 'request');
     const mainSize = sizeOf(mainID, RequestWidth, splitsExecution ? requestHeight(expanded.has(mainID)) : expanded.has(mainID) ? 540 : 280);
@@ -270,37 +289,58 @@ export function makeLayout(given: readonly MightyGraphRun[], draft: string, runn
     const runResult = hasResult(run);
 
     const visited = new Set<number>();
+    // With a fan-out the run's background sub-agents and commands are laid out too, each where it was launched (Core MightyGraphLayout.Make fanOut).
+    const agents: MightyGraphAgent[] = fanOut ? flowAgents(run) : run.agents;
+    const ordered = (values: number[]) => (fanOut ? [...values].sort((a, b) => flowOrder(run, a) - flowOrder(run, b)) : values);
     const indexes = new Map<string, number>();
-    run.agents.forEach((a, i) => { if (!indexes.has(a.id)) indexes.set(a.id, i); });
+    agents.forEach((a, i) => { if (!indexes.has(a.id)) indexes.set(a.id, i); });
+    // A card counts the blocks under it instead of drawing them: they are laid out nowhere.
+    const fold = (index: number, depth: number): void => {
+      if (depth >= 64 || visited.has(index)) return;
+      visited.add(index);
+      for (let ci = 0; ci < agents.length; ci++) if (ci !== index && agents[ci]!.parentID === agents[index]!.id) fold(ci, depth + 1);
+    };
 
     const branch = (index: number, depth = 0): Tree | null => {
       if (depth >= 64 || visited.has(index)) return null;
       visited.add(index);
-      const agent = run.agents[index]!;
+      const agent = agents[index]!;
       const id = runNodeId(run, 'agent:' + agent.id);
+      const compact = fanOut !== null && isCompact(agent, fanOut.opened.has(id));
       // A task card with Claude's reply to its notice is taller (M/MightyCore/MightyGraphLayout.swift).
-      const card = sizeOf(id, 360, expanded.has(id) ? 480 : agent.kind === 'task' && agent.noticeReply != null ? 320 : 240);
+      const card = compact ? { w: CardWidth, h: CardHeight } : sizeOf(id, 360, expanded.has(id) ? 480 : agent.kind === 'task' && agent.noticeReply != null ? 320 : 240);
       const height = card.h;
+      const below = ordered(agents.map((_, ci) => ci).filter((ci) => ci !== index && agents[ci]!.parentID === agent.id));
+      if (compact) for (const ci of below) fold(ci, depth + 1);
       const children: Tree[] = [];
-      for (let ci = 0; ci < run.agents.length; ci++) {
-        if (ci !== index && run.agents[ci]!.parentID === agent.id) {
-          const child = branch(ci, depth + 1);
-          if (child) children.push(child);
-        }
-      }
+      if (!compact) for (const ci of below) { const child = branch(ci, depth + 1); if (child) children.push(child); }
       const childrenWidth = children.reduce((s, c) => s + c.width, 0) + Math.max(0, children.length - 1) * SiblingGap;
-      const width = Math.max(card.w, childrenWidth);
-      const result: Tree = { nodes: [{ id, kind: 'agent', frame: { x: (width - card.w) / 2, y: 0, w: card.w, h: height } }], edges: [], width, height, top: id, leaves: [id] };
+      // A block that delegated says so on the branch to its row (flow.ts delegationChildren).
+      const delegates = fanOut !== null && children.length > 0 && delegationChildren(agent.id, run).length > 0;
+      const width = Math.max(card.w, childrenWidth, delegates ? DelegateWidth : 0);
+      const node: LayoutNode = { id, kind: 'agent', frame: { x: (width - card.w) / 2, y: 0, w: card.w, h: height } };
+      if (compact) node.compact = true;
+      const result: Tree = { nodes: [node], edges: [], width, height, top: id, leaves: [id] };
       if (children.length > 0) {
         result.leaves = [];
+        let source = id;
+        let top = height + RowGap;
+        if (delegates) {
+          const line = runNodeId(run, DelegateSuffix + agent.id);
+          const frame = { x: (width - DelegateWidth) / 2, y: height + DelegateGap, w: DelegateWidth, h: DelegateHeight };
+          result.nodes.push({ id: line, kind: DelegateKind, frame });
+          result.edges.push({ source: id, target: line, joins: false });
+          source = line;
+          top = maxY(frame) + DelegateRowGap;
+        }
         let x = (width - childrenWidth) / 2;
         for (const child of children) {
-          offset(child, x, height + RowGap);
+          offset(child, x, top);
           result.nodes.push(...child.nodes);
-          result.edges.push({ source: id, target: child.top, joins: false });
+          result.edges.push({ source, target: child.top, joins: false });
           result.edges.push(...child.edges);
           result.leaves.push(...child.leaves);
-          result.height = Math.max(result.height, height + RowGap + child.height);
+          result.height = Math.max(result.height, top + child.height);
           x += child.width + SiblingGap;
         }
       }
@@ -308,14 +348,14 @@ export function makeLayout(given: readonly MightyGraphRun[], draft: string, runn
     };
 
     const branches: Tree[] = [];
-    run.agents.forEach((a, ai) => {
-      const parent = a.parentID;
-      if (parent === undefined || parent === null || !indexes.has(parent) || parent === a.id) {
+    for (const ai of ordered(agents.map((_, i) => i))) {
+      const parent = agents[ai]!.parentID;
+      if (parent === undefined || parent === null || !indexes.has(parent) || parent === agents[ai]!.id) {
         const t = branch(ai);
         if (t) branches.push(t);
       }
-    });
-    run.agents.forEach((_, ai) => {
+    }
+    agents.forEach((_, ai) => {
       if (!visited.has(ai)) { const t = branch(ai); if (t) branches.push(t); }
     });
 
@@ -335,7 +375,16 @@ export function makeLayout(given: readonly MightyGraphRun[], draft: string, runn
     }
     if (branches.length > 0) {
       tree.leaves = [];
-      const top = tree.height + RowGap;
+      let top = tree.height + RowGap;
+      // The main session's delegate line stands between it and the row.
+      if (fanOut !== null && delegationChildren(MainKey, run).length > 0) {
+        const line = runNodeId(run, DelegateSuffix + MainKey);
+        const frame = { x: (treeWidth - DelegateWidth) / 2, y: tree.height + DelegateGap, w: DelegateWidth, h: DelegateHeight };
+        tree.nodes.push({ id: line, kind: DelegateKind, frame });
+        tree.edges.push({ source: parentID, target: line, joins: false });
+        parentID = line;
+        top = maxY(frame) + DelegateRowGap;
+      }
       let x = (treeWidth - branchWidth) / 2;
       for (const b of branches) {
         offset(b, x, top);
@@ -361,12 +410,22 @@ export function makeLayout(given: readonly MightyGraphRun[], draft: string, runn
       tree.leaves = [planID];
       tree.height += RowGap + block.h;
     }
+    // Until the result is there, the branches of a run that delegated come back into the return node standing in its place: a plan waiting for its
+    // answer already stands there.
+    if (fanOut !== null && !runResult && !(run.id === options.planRunID && !runFinished) && hasReturn(run)) {
+      const id = runNodeId(run, ReturnSuffix);
+      tree.nodes.push({ id, kind: ReturnKind, frame: { x: (tree.width - ReturnWidth) / 2, y: tree.height + RowGap, w: ReturnWidth, h: ReturnHeight } });
+      tree.edges.push(...tree.leaves.map((l) => ({ source: l, target: id, joins: true })));
+      tree.leaves = [id];
+      tree.height += RowGap + ReturnHeight;
+    }
     if (runResult) {
       tree.nodes.push({ id: resultID, kind: 'result', frame: { x: (treeWidth - resSize.w) / 2, y: tree.height + RowGap, w: resSize.w, h: resSize.h } });
       tree.edges.push(...tree.leaves.map((l) => ({ source: l, target: resultID, joins: true })));
       tree.leaves = [resultID];
       tree.height += RowGap + resSize.h;
     }
+    flowNodes.push(new Set(tree.nodes.map((n) => n.id)));
     trees.push(tree);
   }
 
@@ -378,7 +437,7 @@ export function makeLayout(given: readonly MightyGraphRun[], draft: string, runn
   }
 
   const layout: Layout = {
-    nodes: [], edges: [], size: { w: 0, h: 0 }, originX: 0, originY: 0, fittedResultID: null, viewportBoundResultID: null,
+    nodes: [], edges: [], advisorLinks: [], size: { w: 0, h: 0 }, originX: 0, originY: 0, fittedResultID: null, viewportBoundResultID: null,
     resultLimit: null, resultWindowFit: null, planLimit: null, planWindowFit: null,
   };
   const split = Math.min(Math.max(0, options.retainedStart ?? 0), runs.length);
@@ -483,6 +542,41 @@ export function makeLayout(given: readonly MightyGraphRun[], draft: string, runn
     layout.nodes.push({ id, kind: 'planRecord', frame });
     grow(frame);
     nextY.set(index, maxY(frame) + AttachmentGap);
+  }
+  // The advisor's band stands left of its run's column, from the 실행 block's top to the run's last block, left of every card it would share rows
+  // with: an attachment, so nothing already placed moves and only the leading canvas extent grows. Dotted links go to the blocks that asked.
+  if (fanOut !== null) {
+    runs.forEach((run, runIndex) => {
+      if (!advisorShows(run)) return;
+      const work = ownerOf(runIndex);
+      if (!work) return;
+      const id = runNodeId(run, AdvisorSuffix);
+      if (layout.nodes.some((n) => n.id === id)) return;
+      const own = flowNodes[runIndex] ?? new Set<string>();
+      const bottoms = layout.nodes.filter((n) => own.has(n.id)).map((n) => maxY(n.frame));
+      const bottom = bottoms.length > 0 ? Math.max(...bottoms) : maxY(work.frame);
+      const top = work.frame.y;
+      const height = Math.max(AdvisorMinimumHeight, bottom - top);
+      const lefts = layout.nodes.filter((n) => n.frame.y < top + height && maxY(n.frame) > top).map((n) => n.frame.x);
+      const left = lefts.length > 0 ? Math.min(...lefts) : work.frame.x;
+      const frame = { x: Math.min(left, work.frame.x) - AdvisorGap - AdvisorWidth, y: top, w: AdvisorWidth, h: height };
+      const drawn = new Set(layout.nodes.map((n) => n.id));
+      layout.nodes.push({ id, kind: AdvisorKind, frame });
+      const linked = new Set<string>();
+      for (const caller of advisorCallers(run, (suffix) => runNodeId(run, suffix))) {
+        // A caller under a folded card is laid out nowhere: the card above it stands for it.
+        const target = drawnNode(caller, run, (suffix) => runNodeId(run, suffix), (nodeID) => drawn.has(nodeID));
+        if (target === null || linked.has(target)) continue;
+        linked.add(target);
+        layout.advisorLinks.push({ band: id, target });
+      }
+      const origin = originXOf(frame.x);
+      if (origin < layout.originX) {
+        layout.size = { w: layout.size.w + layout.originX - origin, h: layout.size.h };
+        layout.originX = origin;
+      }
+      layout.size = { w: layout.size.w, h: Math.max(layout.size.h, maxY(frame) + 24 - layout.originY) };
+    });
   }
   layout.fittedResultID = viewport && !hasShared ? latest : null;
   layout.resultLimit = resultLimit;

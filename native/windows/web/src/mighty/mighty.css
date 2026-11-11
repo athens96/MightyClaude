@@ -375,3 +375,93 @@
 .structure-card.waiting { padding: calc(var(--space-sm) - 1px) calc(var(--inset-graph-block-body-h) - 1px); }
 /* A sub-agent card in the 2px line gives the extra pixel back, so it keeps its size as it starts, waits and ends. */
 .structure-node.live, .structure-node.waiting { padding: calc(var(--space-xs) - 1px) calc(var(--space-xs) - 1px) calc(var(--space-xs) - 1px) calc(var(--space-md) - 1px); }
+
+/* ── the role view of a Claude pane's flow (docs/mighty-mode.md "역할 보기"; FlowParts.tsx, macOS MightyGraphAgentCard and friends) ── */
+/* A block's header says who it is: its role's ink as a bar at its left end and on its icon, then its marks, the lead's effort and its type. */
+.mighty-head.with-role { position: relative; }
+.mighty-head.with-role .mighty-title { flex: 0 1 auto; }
+.flow-head-bar { position: absolute; left: 0; top: var(--space-sm); bottom: var(--space-sm); width: 3px; border-radius: 0 2px 2px 0; }
+.flow-head-spacer { flex: 1; min-width: 0; }
+.flow-mark { flex: none; display: inline-grid; place-items: center; width: 12px; color: var(--ink2); }
+.flow-effort { flex: none; display: inline-flex; align-items: center; gap: var(--space-xxs); color: var(--ink2); font-size: var(--type-small); font-weight: 600; white-space: nowrap; }
+.flow-type-box { flex: none; display: inline-flex; overflow: hidden; }
+.flow-type { max-width: 100%; box-sizing: border-box; padding: var(--space-xxs) var(--space-sm); border-radius: 9px; font-size: var(--type-small); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* A running sub-agent's, a background agent's or a background command's card (236 × 86): its role's ink as a bar, four lines. */
+.mighty-flow-card { position: absolute; box-sizing: border-box; display: flex; border-radius: 10px; border: var(--stroke-line) solid var(--line); background: var(--card); color: var(--ink); overflow: hidden; cursor: pointer; contain: layout paint style; }
+.mighty-flow-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.flow-bar { flex: none; width: 3px; }
+.flow-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-xxs); padding: var(--space-sm) var(--inset-graph-block-body-h); }
+.flow-card-head { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; }
+.flow-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-block); font-weight: 700; }
+.flow-card-nested { flex: none; font-size: var(--type-small); font-weight: 600; color: var(--ink2); }
+.flow-card-spacer { flex: 1; min-width: 0; min-height: 0; }
+.flow-card-open { flex: none; min-width: 18px; height: 18px; }
+.flow-card-identity { font-size: var(--type-small); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-card-identity.code { font-family: var(--font-mono); font-weight: 400; color: var(--ink2); }
+.flow-card-activity { font-family: var(--font-mono); font-size: var(--type-small); color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-card-figures { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; font-size: var(--type-small); font-variant-numeric: tabular-nums; }
+.flow-card-figures-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-card-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--run); }
+.flow-card-dot.tone-done { background: var(--done); }
+.flow-card-dot.tone-err { background: var(--err); }
+.flow-card-dot.tone-stop { background: var(--stop); }
+.flow-card-dot.tone-wait { background: var(--wait); }
+.flow-card-figures.tone-run { color: var(--accent); }
+.flow-card-figures.tone-done { color: var(--done-text); }
+.flow-card-figures.tone-err { color: var(--err-text); }
+.flow-card-figures.tone-stop { color: var(--stop-text); }
+.flow-card-figures.tone-wait { color: var(--wait-text); }
+
+/* The delegate line on the branch to a row: a capsule label, nothing in it is clicked. */
+.mighty-flow-line { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: var(--space-xs); padding: 0 var(--space-md);
+  border-radius: 12px; border: var(--stroke-line) solid var(--line); background: var(--sidebar); color: var(--ink); font-size: var(--type-small); font-weight: 600; white-space: nowrap; overflow: hidden; }
+.flow-line-icon { display: inline-grid; color: var(--agent-text); }
+.flow-line-part { display: inline-flex; gap: var(--space-xs); }
+.flow-dot-sep { color: var(--ink2); }
+.flow-line-model { color: var(--agent-text); }
+.flow-line-progress { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* The return node where the result will go: the lead's ink, the running edge. */
+.mighty-flow-return { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: var(--space-sm); padding: 0 var(--space-md);
+  border-radius: 10px; border: var(--stroke-line) solid var(--line); background: var(--card); color: var(--task-text); font-size: var(--type-pill); font-weight: 600; white-space: nowrap; }
+.flow-return-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* The advisor's band beside a run, in the advisor's ink; its dotted links to the blocks that asked. */
+.mighty-flow-advisor { position: absolute; box-sizing: border-box; display: flex; border-radius: 10px; border: var(--stroke-line) solid var(--line); background: var(--card); color: var(--ink); overflow: hidden; contain: layout paint style; }
+.flow-bar-advisor { background: var(--steer-text); }
+.flow-advisor-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.flow-advisor-head { flex: none; display: flex; align-items: center; gap: var(--space-xs); height: calc(var(--layout-block-head) - 1px); padding: 0 var(--inset-graph-block-body-h); border-bottom: var(--stroke-line) solid var(--line); }
+.flow-advisor-bulb { color: var(--steer-text); }
+.flow-advisor-name { flex: none; font-size: var(--type-block); font-weight: 700; }
+.flow-advisor-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--steer-text); font-size: var(--type-small); font-weight: 600; }
+.flow-advisor-state { flex: none; font-size: var(--type-small); font-weight: 600; color: var(--ink2); }
+.flow-advisor-state.consulting { color: var(--accent); }
+.flow-advisor-empty { height: 38px; display: flex; align-items: center; padding: 0 var(--inset-graph-block-body-h); color: var(--ink2); font-size: var(--type-small); }
+.flow-advisor-earlier { height: 18px; display: flex; align-items: center; padding: 0 var(--inset-graph-block-body-h); color: var(--ink2); font-size: var(--type-small); }
+.flow-advisor-row { flex: none; height: 38px; display: flex; flex-direction: column; justify-content: center; gap: var(--space-xxs); padding: 0 var(--inset-graph-block-body-h); border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
+.flow-advisor-row:hover { background: var(--track); }
+.flow-advisor-row-head { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; }
+.flow-advisor-caller { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-small); font-weight: 600; }
+.flow-advisor-when { flex: none; color: var(--ink2); font-size: var(--type-small); font-variant-numeric: tabular-nums; }
+.flow-advisor-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink2); font-size: var(--type-small); }
+.flow-advisor-line.state-error { color: var(--err-text); }
+.flow-advisor-line.state-consulting { color: var(--accent); }
+.flow-advisor-note { flex: none; height: 32px; display: flex; align-items: center; padding: 0 var(--inset-graph-block-body-h); color: var(--ink2); font-size: var(--type-small); line-height: 1.2; overflow: hidden; }
+.flow-advisor-totals { flex: none; height: 23px; display: flex; align-items: center; padding: 0 var(--inset-graph-block-body-h); border-top: var(--stroke-line) solid var(--line); color: var(--ink2); font-size: var(--type-small); font-weight: 600; font-variant-numeric: tabular-nums; }
+.mighty-advisor-links { fill: none; stroke: var(--steer-text); stroke-width: 1.5; stroke-dasharray: 2 4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* The session log under the flow, above the composer: its status line, and while open the last five events. */
+.mighty-log { flex: none; display: flex; flex-direction: column; border-top: var(--stroke-line) solid var(--line); background: var(--card); --log-row: 18px; }
+.mighty-log-head { display: flex; align-items: center; gap: var(--space-md); min-height: 26px; padding: 0 var(--inset-graph-bar-h); }
+.mighty-log-glyph { flex: none; color: var(--ink2); }
+.mighty-log-title { flex: none; font-size: var(--type-pill); font-weight: 600; white-space: nowrap; }
+.mighty-log-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-pill); }
+.mighty-log-toggle { flex: none; }
+.mighty-log-rows { display: flex; flex-direction: column; padding: var(--space-xxs) 0; border-top: var(--stroke-line) solid var(--line); }
+.mighty-log-empty { height: var(--log-row); display: flex; align-items: center; padding: 0 var(--inset-graph-bar-h); color: var(--ink2); font-size: var(--type-pill); }
+.mighty-log-row { height: var(--log-row); display: flex; align-items: center; gap: var(--space-md); padding: 0 var(--inset-graph-bar-h); border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
+.mighty-log-row:hover { background: var(--track); }
+.mighty-log-clock { flex: none; color: var(--ink2); font-size: var(--type-small); font-variant-numeric: tabular-nums; }
+.mighty-log-who { flex: none; width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-pill); font-weight: 600; }
+.mighty-log-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-pill); }

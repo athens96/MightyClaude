@@ -107,7 +107,9 @@ export function followTargetID(layout: Layout, runs: readonly MightyGraphRun[]):
   const newest = nodeId(last.id, '');
   let best: Layout['nodes'][number] | null = null;
   for (const node of layout.nodes) {
-    const flow = node.kind === 'request' || node.kind === WorkKind || node.kind === 'result' || node.kind === 'plan' || node.kind === 'agent';
+    // The return node stands where the result will: it is the run's lowest block until then; a delegate line is a label on a branch, never a
+    // block to follow (Core MightyGraphFollow.TargetID).
+    const flow = node.kind === 'request' || node.kind === WorkKind || node.kind === 'result' || node.kind === 'plan' || node.kind === 'agent' || node.kind === 'return';
     if (flow && node.id.startsWith(newest) && maxY(node.frame) >= (best ? maxY(best.frame) : -Infinity)) best = node;
   }
   return best?.id ?? null;
