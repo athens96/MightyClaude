@@ -1,5 +1,5 @@
 {
-  "about": "The role view a host sends a phone that asked for it (GET /m1/sessions/{id}?roles=1, capability \"roles\"; docs/mobile-remote.md \"역할 보기\"): for the saved runs of a case, in Korean, what the Mighty payload carries. Both hosts produce it from the runs (the Mac MobileFlowTests, Windows Core MobileFlowVerification) and the phone renders it (mobile/src/__tests__/flow-roles.test.ts). `expect` lists of each run its id and status, and of each block id, kind, title, status, background and the role view's role, card and delegate; of each run its returning and advisor; and the payload's fanOut and log. A key that is absent here is absent on the wire. `outputTails` are a background command's last output lines by block id, which a host holds in memory. Times on the wire are milliseconds since 1970.",
+  "about": "The role view a host sends a phone that asked for it (GET /m1/sessions/{id}?roles=1, capability \"roles\"; docs/mobile-remote.md \"역할 보기\"): for the saved runs of a case, in Korean, what the Mighty payload carries. Both hosts produce it from the runs (the Mac MobileFlowTests, Windows Core MobileFlowVerification) and the phone renders it (mobile/src/__tests__/flow-roles.test.ts). `expect` lists of each run its id and status, and of each block id, kind, title, status, background and the role view's role, card and delegate; of each run its returning and advisor; and the payload's fanOut and log. A key that is absent here is absent on the wire. `outputTails` are a background command's last output lines by block id, which a host holds in memory. Times on the wire are milliseconds since 1970. A request also carries its progress (progress: the panel pinned over the phone's Mighty view: its heading, state, first line and its plan's rows), and a compact row launched in one of its steps names that step (card.step).",
   "cases": [
     {
       "name": "a Claude request fans its background work out under the request, with the delegate lines, the way back, the advisor and the log",
@@ -260,11 +260,11 @@
         "log": {
           "rows": [
             {
-              "at": 1794304997000,
-              "id": "2:r2:advisor:srvtoolu_1:end",
-              "ink": "steerText",
-              "what": "조언 전달 · 내용 비표시",
-              "who": "조언자 · Opus 5.5"
+              "at": 1794304980000,
+              "id": "r2:r2-read",
+              "ink": "taskText",
+              "what": "src/login.ts",
+              "who": "Sonnet 5.5"
             },
             {
               "at": 1794305040000,
@@ -307,10 +307,6 @@
             {
               "ink": "ink2",
               "text": "작업 1개 실행 중"
-            },
-            {
-              "ink": "steerText",
-              "text": "조언자 대기"
             }
           ]
         },
@@ -368,6 +364,16 @@
               }
             ],
             "id": "r1",
+            "progress": {
+              "heading": "요청 1",
+              "hidden": 0,
+              "request": "로그인 버그 찾아 줘",
+              "rows": [],
+              "running": false,
+              "stateWord": "완료",
+              "status": "completed",
+              "title": "진행 상황"
+            },
             "status": "completed"
           },
           {
@@ -386,6 +392,12 @@
               },
               {
                 "background": true,
+                "card": {
+                  "after": [],
+                  "before": [
+                    "완료"
+                  ]
+                },
                 "id": "r1:notice:1:bg",
                 "kind": "agent",
                 "role": {
@@ -405,24 +417,6 @@
             "status": "completed"
           },
           {
-            "advisor": {
-              "calls": 1,
-              "header": "조언자 · Opus 5.5 · 대기 중",
-              "note": "조언은 암호화되어 Claude에게만 전달됩니다. 내용은 표시되지 않습니다.",
-              "rows": [
-                {
-                  "at": 1794304990000,
-                  "caller": "메인",
-                  "id": "srvtoolu_1",
-                  "ink": "taskText",
-                  "line": "파일 변경 전 · 조언 전달 · 내용 비표시",
-                  "seconds": 7,
-                  "state": "done"
-                }
-              ],
-              "state": "onCall",
-              "totals": "호출 1 · 읽은 토큰 34K"
-            },
             "blocks": [
               {
                 "delegate": {
@@ -550,6 +544,16 @@
               }
             ],
             "id": "r2",
+            "progress": {
+              "heading": "요청 2",
+              "hidden": 0,
+              "request": "고치고 릴리스 준비해 줘",
+              "rows": [],
+              "running": true,
+              "stateWord": "실행 중",
+              "status": "running",
+              "title": "진행 상황"
+            },
             "returning": {
               "text": "병렬 4/4 실행 중 · 보고를 기다리는 중",
               "waiting": true
@@ -611,6 +615,185 @@
               }
             ],
             "id": "c1",
+            "status": "running"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a Claude request with a plan: its progress (a done step, the step in progress with the background agent launched in it, a step not begun), and the agent's row names its step",
+      "provider": "claude",
+      "runs": [
+        {
+          "id": "p1",
+          "input": "릴리스 해줘\n순서대로",
+          "status": "running",
+          "provider": "claude",
+          "sourceRunID": "p1",
+          "rootEntries": [],
+          "resultEntries": [],
+          "responseRecords": [
+            {
+              "responseId": "pm1",
+              "model": "claude-sonnet-5-5",
+              "usage": {
+                "inputTokens": 100,
+                "outputTokens": 20,
+                "cacheReadTokens": 0,
+                "cacheCreationTokens": 0
+              },
+              "activityIds": [],
+              "markedAsConfigured": false
+            }
+          ],
+          "steps": [
+            {
+              "key": "text:점검",
+              "content": "점검",
+              "status": "completed",
+              "startedAt": "2026-11-12T10:00:00.000Z",
+              "endedAt": "2026-11-12T10:00:10.000Z"
+            },
+            {
+              "key": "text:노트",
+              "content": "노트 작성",
+              "activeForm": "노트 쓰는 중",
+              "status": "in_progress",
+              "startedAt": "2026-11-12T10:00:10.500Z"
+            },
+            {
+              "key": "text:CI",
+              "content": "CI",
+              "status": "pending"
+            }
+          ],
+          "agents": [
+            {
+              "id": "notes",
+              "title": "릴리스 노트 쓰기",
+              "input": "노트를 써라",
+              "status": "running",
+              "background": true,
+              "identity": {
+                "type": "release-notes",
+                "resolvedModel": "claude-haiku-5-5"
+              },
+              "figures": {
+                "startedAt": "2026-11-12T10:00:12.000Z",
+                "toolCalls": 2
+              },
+              "entries": []
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "fanOut": true,
+        "log": {
+          "rows": [
+            {
+              "at": 1794477612000,
+              "id": "2:p1:agent:notes:start",
+              "ink": "agentText",
+              "what": "시작 · release-notes · Haiku 5.5",
+              "who": "릴리스 노트 쓰기"
+            }
+          ],
+          "status": [
+            {
+              "ink": "taskText",
+              "text": "Sonnet 5.5 실행 중"
+            },
+            {
+              "ink": "agentText",
+              "text": "하위 에이전트 1/1 실행 중"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "blocks": [
+              {
+                "delegate": {
+                  "head": "하위 에이전트 1개에 위임",
+                  "model": "Haiku 5.5",
+                  "progress": "1/1 실행 중",
+                  "text": "하위 에이전트 1개에 위임 · Haiku 5.5 · 1/1 실행 중"
+                },
+                "id": "p1:main",
+                "kind": "main",
+                "role": {
+                  "identity": "Sonnet 5.5",
+                  "ink": "taskText",
+                  "name": "lead",
+                  "summary": "메인"
+                },
+                "status": "running",
+                "title": "요청 1"
+              },
+              {
+                "background": true,
+                "card": {
+                  "activity": "노트를 써라",
+                  "after": [
+                    "도구 2"
+                  ],
+                  "before": [
+                    "실행 중"
+                  ],
+                  "startedAt": 1794477612000,
+                  "step": "2. 노트 작성"
+                },
+                "id": "notes",
+                "kind": "agent",
+                "role": {
+                  "identity": "release-notes · Haiku 5.5",
+                  "ink": "agentText",
+                  "marks": [
+                    "background"
+                  ],
+                  "name": "subagent",
+                  "summary": "하위 에이전트 · release-notes · Haiku 5.5 · 백그라운드"
+                },
+                "status": "running",
+                "title": "릴리스 노트 쓰기"
+              }
+            ],
+            "id": "p1",
+            "progress": {
+              "count": "1/3",
+              "heading": "요청 1",
+              "hidden": 0,
+              "request": "릴리스 해줘",
+              "rows": [
+                {
+                  "endedAt": 1794477610000,
+                  "index": 0,
+                  "startedAt": 1794477600000,
+                  "state": "done",
+                  "text": "1. 점검"
+                },
+                {
+                  "index": 1,
+                  "startedAt": 1794477610500,
+                  "state": "current",
+                  "text": "2. 노트 쓰는 중"
+                },
+                {
+                  "index": 2,
+                  "state": "pending",
+                  "text": "3. CI"
+                }
+              ],
+              "running": true,
+              "stateWord": "실행 중",
+              "status": "running",
+              "title": "진행 상황"
+            },
+            "returning": {
+              "text": "하위 에이전트 1/1 실행 중 · 보고를 기다리는 중",
+              "waiting": true
+            },
             "status": "running"
           }
         ]

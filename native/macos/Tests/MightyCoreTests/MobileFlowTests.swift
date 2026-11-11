@@ -33,7 +33,7 @@ struct MobileFlowTests {
         for key in ["fanOut", "log"] { if let value = json[key] { out[key] = value } }
         out["runs"] = try #require(json["runs"] as? [[String: Any]]).map { run -> [String: Any] in
             var kept: [String: Any] = [:]
-            for key in ["id", "status", "returning", "advisor"] { if let value = run[key] { kept[key] = value } }
+            for key in ["id", "status", "returning", "progress"] { if let value = run[key] { kept[key] = value } }
             kept["blocks"] = (run["blocks"] as? [[String: Any]] ?? []).map { block -> [String: Any] in
                 var shown: [String: Any] = [:]
                 for key in ["id", "kind", "title", "status", "background", "role", "card", "delegate"] { if let value = block[key] { shown[key] = value } }
@@ -46,6 +46,14 @@ struct MobileFlowTests {
 
     private static func pretty(_ value: Any) -> String {
         (try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? "?"
+    }
+
+    /// `MIGHTY_WRITE_MOBILE_ROLES=<path>` writes what the Mac sends for every case, a JSON array in the cases' order, for when the role
+    /// view's payload changes on purpose.
+    @Test func writesTheExpectationsWhenAsked() throws {
+        guard let path = ProcessInfo.processInfo.environment["MIGHTY_WRITE_MOBILE_ROLES"], !path.isEmpty else { return }
+        let made = try LocaleOverride.$language.withValue(.ko) { try Self.cases().map { try Self.projection(Self.payload($0)) } }
+        try JSONSerialization.data(withJSONObject: made, options: [.sortedKeys]).write(to: URL(fileURLWithPath: path))
     }
 
     @Test func theSharedFixtureIsWhatTheMacSends() throws {
@@ -69,7 +77,7 @@ struct MobileFlowTests {
             let item = try #require(try Self.cases().first)
             let plain = MobileMightySupport.runs(try Self.runs(item), outputTails: item["outputTails"] as? [String: [String]] ?? [:])
             let json = String(decoding: try JSONEncoder().encode(MobileMighty(style: "cli", runs: plain)), as: UTF8.self)
-            for key in ["role", "card", "delegate", "returning", "advisor", "fanOut", "log"] { #expect(!json.contains("\"\(key)\""), "\(key) went to an older phone") }
+            for key in ["role", "card", "delegate", "returning", "progress", "fanOut", "log"] { #expect(!json.contains("\"\(key)\""), "\(key) went to an older phone") }
             #expect(plain.map { $0.blocks.map(\.id) } == [["r1:main"], ["r1:notice:1:main", "r1:notice:1:bg"], ["r2:main", "scout", "deep"]])
         }
     }
@@ -84,7 +92,7 @@ struct MobileFlowTests {
             #expect(claude[2].blocks.map(\.id) == ["r2:main", "scout", "ci", "wt", "deep"])
             let other = MobileMightySupport.runs(runs, roles: MobileFlow.Roles(fanOut: false))
             #expect(other[2].blocks.map(\.id) == ["r2:main", "scout", "deep"])
-            #expect(other[2].blocks.allSatisfy { $0.card == nil && $0.delegate == nil } && other[2].returning == nil && other[2].advisor == nil)
+            #expect(other[2].blocks.allSatisfy { $0.card == nil && $0.delegate == nil } && other[2].returning == nil)
             #expect(other[2].blocks.map { $0.role?.name } == ["lead", "subagent", "subagent"])
         }
     }

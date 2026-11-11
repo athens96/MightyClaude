@@ -346,13 +346,6 @@ public actor ProviderService {
             // Build --settings env JSON: effort + phase model alias pins.
             var envVars: [String: String] = [:]
             if s.effort != "default" { envVars["CLAUDE_CODE_EFFORT_LEVEL"] = s.effort }
-            // The advisor, as the pane chose it: a model is named beside the main one, off is the CLI's own switch for
-            // this run alone, and a pane that follows Claude's settings passes nothing. The CLI checks the model itself
-            // (an advisor weaker than the main model is refused in its own words).
-            if let advisor = s.advisor {
-                if advisor == RunSettings.advisorOff { envVars[ClaudeAdvisorSettings.disableVariable] = "1" }
-                else { args += ["--advisor", advisor] }
-            }
             if phaseModels.claudeOpusAlias != "default" { envVars["ANTHROPIC_DEFAULT_OPUS_MODEL"] = phaseModels.claudeOpusAlias }
             if phaseModels.claudeSonnetAlias != "default" { envVars["ANTHROPIC_DEFAULT_SONNET_MODEL"] = phaseModels.claudeSonnetAlias }
             if phaseModels.claudeHaikuAlias != "default" { envVars["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = phaseModels.claudeHaikuAlias }
@@ -362,6 +355,9 @@ public actor ProviderService {
                 let data = try JSONSerialization.data(withJSONObject: ["env": envVars], options: [.sortedKeys])
                 args += ["--settings", String(decoding: data, as: UTF8.self)]
             }
+            // The request's plan in the role view (`FlowSteps`) is Claude's own task list: ask for one whenever there is work.
+            // With the app's stream-json input Claude Code loads its task tools only when they are allowed by name.
+            args += ["--append-system-prompt", FlowSteps.planInstruction, "--allowedTools", FlowSteps.taskTools.joined(separator: ",")]
             if let turns = s.maxTurns { args += ["--max-turns", String(turns)] }
             if let budget = s.maxBudgetUsd { args += ["--max-budget-usd", String(budget)] }
             if let resume = request.resumeId { args += ["--resume", resume] }

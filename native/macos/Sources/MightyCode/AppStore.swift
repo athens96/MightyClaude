@@ -1370,9 +1370,7 @@ final class AppStore: ObservableObject, DelegationHost {
         updateSession(id) {
             if startsStyle { $0.mightyStyleSince = inputEntry.timestamp }
             // 전송 중 until the run's first event (natural submit B1).
-            // The advisor the pane itself names is known at once; what Claude's settings say is read below.
-            $0.beginGraphRun(input: logText, id: inputEntry.id, configuredModel: session.model, configuredEffort: session.settings.effort,
-                             configuredAdvisor: workspace.remote == nil ? ClaudeAdvisorSettings.configured(pane: session.settings.advisor) { nil } : nil, status: "starting")
+            $0.beginGraphRun(input: logText, id: inputEntry.id, configuredModel: session.model, configuredEffort: session.settings.effort, status: "starting")
             $0.logs.append(inputEntry); $0.logs = TranscriptRetention.trimmed($0.logs)
             if let shortened = autoTitle { $0.title = shortened }
         }
@@ -1428,22 +1426,8 @@ final class AppStore: ObservableObject, DelegationHost {
                     try CoreValidation.validateSelection(request, catalog: provider.modelCatalog, registeredModels: registered)
                     try CoreValidation.validateCapabilities(request, capabilities: provider.capabilities)
                 }
-                if currentWorkspace.remote != nil {
-                    // The host runs its own CLI with its own settings; a host that does not know the key would refuse it.
-                    request.settings.advisor = nil
-                } else if current.kind == "claude", current.provider == "claude" {
-                    // Whether an advisor is on for this request, for its diagram: the pane's own choice, else what
-                    // Claude's settings files name. They are read off the main actor and never written.
-                    let pane = current.settings.advisor
-                    let folder = URL(fileURLWithPath: DelegationPanes.runWorkspace(for: current, in: currentWorkspace).path, isDirectory: true)
-                    let disabled = ClaudeAdvisorSettings.truthy(ProcessInfo.processInfo.environment[ClaudeAdvisorSettings.disableVariable])
-                    let advisor = await Task.detached(priority: .userInitiated) {
-                        ClaudeAdvisorSettings.configured(pane: pane, environmentDisables: disabled) {
-                            ClaudeAdvisorSettings.model(workspace: folder, configDirectory: AgentDefinitions.configDirectory())
-                        }
-                    }.value
-                    updateSession(id) { $0.noteGraphRunAdvisor(advisor, runID: inputEntry.id) }
-                }
+                // The app names no advisor (a saved pane's old choice is not passed on); Claude's own settings are its own.
+                request.settings.advisor = nil
                 companion.recordInput(sessionID: id, text: logText)
                 if current.kind != "shell" { companion.beginRun(sessionID: id) }
                 updateSession(id) { $0.beginRunTiming(); $0.status = "running" }
@@ -1592,6 +1576,8 @@ final class AppStore: ObservableObject, DelegationHost {
             session.recordRunTiming(event, at: receivedAt)
             session.recordSessionUsage(event)
             session.recordGraph(event)
+            // Before the pane's list is replaced: the request's steps read the list it had.
+            session.recordSteps(event, at: receivedAt)
             session.recordPlanMode(event)
             switch event.type {
             case "log":

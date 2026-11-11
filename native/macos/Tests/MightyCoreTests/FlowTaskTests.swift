@@ -206,9 +206,9 @@ struct FlowTaskTests {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             // The mock's moment: the notes are done, CI and the APK build run.
             let release = MightyGraphSupport.shownRuns([run("r", agents: [agent("notes", status: "completed", background: true), task("ci"), task("apk")])])
-            let status = try #require(FlowLog.status(release, advisor: .onCall))
-            #expect(status.text == "Sonnet 5.5 실행 중 · 작업 2개 실행 중 · 조언자 대기")
-            #expect(status.parts.map(\.role) == [.lead, .task, .advisor])
+            let status = try #require(FlowLog.status(release))
+            #expect(status.text == "Sonnet 5.5 실행 중 · 작업 2개 실행 중")
+            #expect(status.parts.map(\.role) == [.lead, .task])
             // Sub-agents and commands running side by side.
             let both = MightyGraphSupport.shownRuns([run("r", agents: [agent("notes", background: true), task("ci"), task("apk", status: "completed")])])
             #expect(FlowLog.status(both)?.text == "Sonnet 5.5 실행 중 · 하위 에이전트 1/1 실행 중 · 작업 1개 실행 중")
@@ -235,7 +235,7 @@ struct FlowTaskTests {
             #expect(cards[0].frame.maxX < cards[1].frame.minX && cards[1].frame.maxX < cards[2].frame.minX)
             let line = try #require(node(MightyGraphLayout.delegateSuffix + FlowDelegation.mainKey))
             #expect(graph.edges.filter { $0.source == line.id }.map(\.target) == cards.map(\.id))
-            let back = try #require(node(MightyGraphLayout.returnSuffix))
+            let back = try #require(node(MightyGraphLayout.workSuffix))
             #expect(Set(graph.edges.filter { $0.target == back.id }.map(\.source)) == Set(cards.map(\.id)))
             #expect(FlowReturn.state(runs[0])?.text == "병렬 2/3 실행 중 · 보고를 기다리는 중")
             // The edges into the running commands' cards and into their line are live; into the ended agent's, not.

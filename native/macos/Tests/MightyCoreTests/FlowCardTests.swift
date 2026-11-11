@@ -27,10 +27,11 @@ struct FlowCardTests {
         #expect(FlowCard.isCompact(agent(status: "waiting"), opened: false))
     }
 
-    @Test func aForegroundSubagentThatEndedIsItsFullBlockAsBefore() {
+    @Test func aForegroundSubagentThatEndedStaysACardUntilOpened() {
         for status in ["completed", "error", "stopped", "failed", "cancelled", "interrupted"] {
-            #expect(!FlowCard.isCompact(agent(status: status), opened: false), "\(status)")
-            #expect(!FlowCard.foldsToCard(agent(status: status)), "\(status)")
+            #expect(FlowCard.isCompact(agent(status: status), opened: false), "\(status)")
+            #expect(FlowCard.foldsToCard(agent(status: status)), "\(status)")
+            #expect(!FlowCard.isCompact(agent(status: status), opened: true), "\(status)")
         }
     }
 
@@ -43,10 +44,12 @@ struct FlowCardTests {
         }
     }
 
-    @Test func aNoticeRunsCopyAndABlockThatIsNoSubagentAreNeverCards() {
-        #expect(!FlowCard.isCompact(agent(status: "completed", background: true, source: "original"), opened: false))
-        #expect(!FlowCard.isCompact(agent(status: "running", background: true, source: "original"), opened: false))
-        // A background command is the one other kind with a card: the request's own, running or ended, until opened.
+    @Test func aNoticeRunsCopyIsACardAndABlockThatIsNoSubagentNeverIs() {
+        // Only the result is drawn whole: a notice run's copy is a card too, until the user (or its card's click) opens it.
+        #expect(FlowCard.isCompact(agent(status: "completed", background: true, source: "original"), opened: false))
+        #expect(!FlowCard.isCompact(agent(status: "completed", background: true, source: "original"), opened: true))
+        #expect(FlowCard.isCompact(agent(status: "completed", background: true, kind: "task", source: "original"), opened: false))
+        // A steer, a question or a compaction is never a card.
         for kind in MightyGraphSupport.childKinds where kind != "task" {
             #expect(!FlowCard.isCompact(agent(status: "running", background: true, kind: kind), opened: false), "\(kind)")
             #expect(!FlowCard.foldsToCard(agent(status: "running", kind: kind)), "\(kind)")
@@ -55,7 +58,6 @@ struct FlowCardTests {
             #expect(FlowCard.isCompact(agent(status: status, background: true, kind: "task"), opened: false), "\(status)")
             #expect(!FlowCard.isCompact(agent(status: status, background: true, kind: "task"), opened: true), "\(status)")
         }
-        #expect(!FlowCard.isCompact(agent(status: "completed", background: true, kind: "task", source: "original"), opened: false))
     }
 
     // MARK: What the card says

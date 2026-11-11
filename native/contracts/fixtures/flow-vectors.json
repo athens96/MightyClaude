@@ -1,8 +1,8 @@
 {
- "about": "The role view's layout (MightyGraphLayout.Make with fanOut, the web page's makeLayout with fanOut) for the same runs on every platform that lays it out: the Mac (MightyCoreTests FlowVectorTests), the Windows Core (C#) and the Windows web page (TypeScript) all assert these frames, cards, delegate lines, return nodes, advisor bands and dotted links. splitsExecution is on, no draft, nothing expanded; opened lists the node suffixes of cards the user opened.",
+ "about": "The role view's layout (MightyGraphLayout.Make with fanOut, the web page's makeLayout with fanOut) for the same runs on every platform that lays it out: the Mac (MightyCoreTests FlowVectorTests), the Windows Core (C#) and the Windows web page (TypeScript) all assert these frames, cards, delegate lines and plan columns. A request stands over what happened (its steps that began, each with what it launched beside it — an edge with side: true leaves a block's trailing edge — or the row under its delegate line) and its answer; until the answer is there the main session's card (kind work) stands in its place. A card launched in a step is 236×104: one more line names the step. The plan is no block of the diagram (the progress panel over it shows it). Every block but the result is a card until opened. splitsExecution is on, no draft, nothing expanded; opened lists the node suffixes of cards the user opened.",
  "cases": [
   {
-   "name": "a running background sub-agent is a card under the delegate line of the 실행 block",
+   "name": "a running background sub-agent is a card under the request's delegate line, into the main session's card where the answer will come",
    "running": true,
    "opened": [],
    "runs": [
@@ -36,18 +36,10 @@
       "h": 140
      },
      {
-      "id": "1:r:execution",
-      "kind": "work",
-      "x": 24,
-      "y": 196,
-      "w": 500,
-      "h": 280
-     },
-     {
       "id": "1:r:delegate:main",
       "kind": "delegate",
       "x": 104,
-      "y": 494,
+      "y": 182,
       "w": 340,
       "h": 24
      },
@@ -55,28 +47,24 @@
       "id": "1:r:agent:bg",
       "kind": "agent",
       "x": 156,
-      "y": 544,
+      "y": 232,
       "w": 236,
       "h": 86,
       "compact": true
      },
      {
-      "id": "1:r:return",
-      "kind": "return",
-      "x": 104,
-      "y": 662,
-      "w": 340,
-      "h": 34
+      "id": "1:r:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 350,
+      "w": 500,
+      "h": 86,
+      "compact": true
      }
     ],
     "edges": [
      {
       "source": "1:r:request",
-      "target": "1:r:execution",
-      "joins": false
-     },
-     {
-      "source": "1:r:execution",
       "target": "1:r:delegate:main",
       "joins": false
      },
@@ -87,14 +75,13 @@
      },
      {
       "source": "1:r:agent:bg",
-      "target": "1:r:return",
+      "target": "1:r:execution",
       "joins": true
      }
     ],
-    "advisorLinks": [],
     "size": {
-     "w": 548,
-     "h": 720
+     "h": 460,
+     "w": 548
     },
     "originX": 0,
     "originY": 0
@@ -151,42 +138,34 @@
       "h": 140
      },
      {
-      "id": "1:r:execution",
-      "kind": "work",
-      "x": 24,
-      "y": 196,
-      "w": 500,
-      "h": 280
-     },
-     {
       "id": "1:r:delegate:main",
       "kind": "delegate",
       "x": 104,
-      "y": 494,
+      "y": 182,
       "w": 340,
       "h": 24
      },
      {
       "id": "1:r:agent:fg",
       "kind": "agent",
-      "x": -96,
-      "y": 544,
+      "x": -34,
+      "y": 232,
       "w": 360,
       "h": 240
      },
      {
       "id": "1:r:delegate:fg",
       "kind": "delegate",
-      "x": -86,
-      "y": 802,
+      "x": -24,
+      "y": 490,
       "w": 340,
       "h": 24
      },
      {
       "id": "1:r:agent:child",
       "kind": "agent",
-      "x": -34,
-      "y": 852,
+      "x": 28,
+      "y": 540,
       "w": 236,
       "h": 86,
       "compact": true
@@ -194,28 +173,25 @@
      {
       "id": "1:r:agent:done",
       "kind": "agent",
-      "x": 284,
-      "y": 544,
-      "w": 360,
-      "h": 240
+      "x": 346,
+      "y": 232,
+      "w": 236,
+      "h": 86,
+      "compact": true
      },
      {
-      "id": "1:r:return",
-      "kind": "return",
-      "x": 104,
-      "y": 970,
-      "w": 340,
-      "h": 34
+      "id": "1:r:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 658,
+      "w": 500,
+      "h": 86,
+      "compact": true
      }
     ],
     "edges": [
      {
       "source": "1:r:request",
-      "target": "1:r:execution",
-      "joins": false
-     },
-     {
-      "source": "1:r:execution",
       "target": "1:r:delegate:main",
       "joins": false
      },
@@ -241,21 +217,20 @@
      },
      {
       "source": "1:r:agent:child",
-      "target": "1:r:return",
+      "target": "1:r:execution",
       "joins": true
      },
      {
       "source": "1:r:agent:done",
-      "target": "1:r:return",
+      "target": "1:r:execution",
       "joins": true
      }
     ],
-    "advisorLinks": [],
     "size": {
-     "w": 788,
-     "h": 1028
+     "h": 768,
+     "w": 664
     },
-    "originX": -120,
+    "originX": -58,
     "originY": 0
    }
   },
@@ -303,18 +278,10 @@
       "h": 140
      },
      {
-      "id": "1:r:execution",
-      "kind": "work",
-      "x": 24,
-      "y": 196,
-      "w": 500,
-      "h": 280
-     },
-     {
       "id": "1:r:delegate:main",
       "kind": "delegate",
       "x": 104,
-      "y": 494,
+      "y": 182,
       "w": 340,
       "h": 24
      },
@@ -322,28 +289,24 @@
       "id": "1:r:agent:scout",
       "kind": "agent",
       "x": 156,
-      "y": 544,
+      "y": 232,
       "w": 236,
       "h": 86,
       "compact": true
      },
      {
-      "id": "1:r:return",
-      "kind": "return",
-      "x": 104,
-      "y": 662,
-      "w": 340,
-      "h": 34
+      "id": "1:r:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 350,
+      "w": 500,
+      "h": 86,
+      "compact": true
      }
     ],
     "edges": [
      {
       "source": "1:r:request",
-      "target": "1:r:execution",
-      "joins": false
-     },
-     {
-      "source": "1:r:execution",
       "target": "1:r:delegate:main",
       "joins": false
      },
@@ -354,21 +317,20 @@
      },
      {
       "source": "1:r:agent:scout",
-      "target": "1:r:return",
+      "target": "1:r:execution",
       "joins": true
      }
     ],
-    "advisorLinks": [],
     "size": {
-     "w": 548,
-     "h": 720
+     "h": 460,
+     "w": 548
     },
     "originX": 0,
     "originY": 0
    }
   },
   {
-   "name": "the release row: an ended background agent and two running commands in launch order, into the return node",
+   "name": "the release row: an ended background agent and two running commands in launch order, into the main session's card",
    "running": true,
    "opened": [],
    "runs": [
@@ -420,18 +382,10 @@
       "h": 140
      },
      {
-      "id": "1:r:execution",
-      "kind": "work",
-      "x": 24,
-      "y": 196,
-      "w": 500,
-      "h": 280
-     },
-     {
       "id": "1:r:delegate:main",
       "kind": "delegate",
       "x": 104,
-      "y": 494,
+      "y": 182,
       "w": 340,
       "h": 24
      },
@@ -439,7 +393,7 @@
       "id": "1:r:agent:notes",
       "kind": "agent",
       "x": -100,
-      "y": 544,
+      "y": 232,
       "w": 236,
       "h": 86,
       "compact": true
@@ -448,7 +402,7 @@
       "id": "1:r:agent:ci",
       "kind": "agent",
       "x": 156,
-      "y": 544,
+      "y": 232,
       "w": 236,
       "h": 86,
       "compact": true
@@ -457,28 +411,24 @@
       "id": "1:r:agent:apk",
       "kind": "agent",
       "x": 412,
-      "y": 544,
+      "y": 232,
       "w": 236,
       "h": 86,
       "compact": true
      },
      {
-      "id": "1:r:return",
-      "kind": "return",
-      "x": 104,
-      "y": 662,
-      "w": 340,
-      "h": 34
+      "id": "1:r:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 350,
+      "w": 500,
+      "h": 86,
+      "compact": true
      }
     ],
     "edges": [
      {
       "source": "1:r:request",
-      "target": "1:r:execution",
-      "joins": false
-     },
-     {
-      "source": "1:r:execution",
       "target": "1:r:delegate:main",
       "joins": false
      },
@@ -499,24 +449,23 @@
      },
      {
       "source": "1:r:agent:notes",
-      "target": "1:r:return",
+      "target": "1:r:execution",
       "joins": true
      },
      {
       "source": "1:r:agent:ci",
-      "target": "1:r:return",
+      "target": "1:r:execution",
       "joins": true
      },
      {
       "source": "1:r:agent:apk",
-      "target": "1:r:return",
+      "target": "1:r:execution",
       "joins": true
      }
     ],
-    "advisorLinks": [],
     "size": {
-     "w": 796,
-     "h": 720
+     "h": 460,
+     "w": 796
     },
     "originX": -124,
     "originY": 0
@@ -586,26 +535,18 @@
       "h": 140
      },
      {
-      "id": "2:r1:execution",
-      "kind": "work",
-      "x": 24,
-      "y": 196,
-      "w": 500,
-      "h": 280
-     },
-     {
       "id": "2:r1:delegate:main",
       "kind": "delegate",
       "x": 104,
-      "y": 494,
+      "y": 182,
       "w": 340,
       "h": 24
      },
      {
       "id": "2:r1:agent:bg",
       "kind": "agent",
-      "x": -34,
-      "y": 544,
+      "x": 28,
+      "y": 232,
       "w": 236,
       "h": 86,
       "compact": true
@@ -613,16 +554,17 @@
      {
       "id": "2:r1:agent:fg",
       "kind": "agent",
-      "x": 222,
-      "y": 544,
-      "w": 360,
-      "h": 240
+      "x": 284,
+      "y": 232,
+      "w": 236,
+      "h": 86,
+      "compact": true
      },
      {
       "id": "2:r1:result",
       "kind": "result",
       "x": 24,
-      "y": 816,
+      "y": 350,
       "w": 500,
       "h": 200
      },
@@ -630,31 +572,24 @@
       "id": "11:r1:notice:1:request",
       "kind": "request",
       "x": 24,
-      "y": 1048,
+      "y": 582,
       "w": 500,
       "h": 140
      },
      {
-      "id": "11:r1:notice:1:execution",
-      "kind": "work",
-      "x": 24,
-      "y": 1220,
-      "w": 500,
-      "h": 280
-     },
-     {
       "id": "11:r1:notice:1:agent:copy",
       "kind": "agent",
-      "x": 94,
-      "y": 1532,
-      "w": 360,
-      "h": 240
+      "x": 156,
+      "y": 754,
+      "w": 236,
+      "h": 86,
+      "compact": true
      },
      {
       "id": "11:r1:notice:1:result",
       "kind": "result",
       "x": 24,
-      "y": 1804,
+      "y": 872,
       "w": 500,
       "h": 200
      },
@@ -662,7 +597,7 @@
       "id": "pending-input",
       "kind": "draft",
       "x": 24,
-      "y": 2036,
+      "y": 1104,
       "w": 500,
       "h": 140
      }
@@ -670,11 +605,6 @@
     "edges": [
      {
       "source": "2:r1:request",
-      "target": "2:r1:execution",
-      "joins": false
-     },
-     {
-      "source": "2:r1:execution",
       "target": "2:r1:delegate:main",
       "joins": false
      },
@@ -705,11 +635,6 @@
      },
      {
       "source": "11:r1:notice:1:request",
-      "target": "11:r1:notice:1:execution",
-      "joins": false
-     },
-     {
-      "source": "11:r1:notice:1:execution",
       "target": "11:r1:notice:1:agent:copy",
       "joins": false
      },
@@ -724,59 +649,42 @@
       "joins": true
      }
     ],
-    "advisorLinks": [],
     "size": {
-     "w": 664,
-     "h": 2200
+     "h": 1268,
+     "w": 548
     },
-    "originX": -58,
+    "originX": 0,
     "originY": 0
    }
   },
   {
-   "name": "the advisor's band beside a run, linked to the 실행 block and, through a folded card, to a sub-agent that asked",
-   "running": true,
-   "opened": [],
+   "name": "an ended foreground sub-agent stays a card under the request's line, into the result; no 실행 block once the answer is there",
+   "running": false,
+   "opened": [
+    "execution"
+   ],
    "runs": [
     {
-     "id": "r",
-     "input": "요청 r",
-     "status": "running",
+     "id": "f",
+     "input": "요청 f",
+     "status": "completed",
      "provider": "claude",
-     "configuredAdvisor": "opus",
+     "sourceRunID": "f",
      "rootEntries": [],
-     "resultEntries": [],
-     "advisor": {
-      "model": "claude-opus-5-5",
-      "calls": [
-       {
-        "id": "srvtoolu_a",
-        "state": "done",
-        "startedAt": "2026-11-10T10:00:00Z",
-        "endedAt": "2026-11-10T10:00:07Z"
-       },
-       {
-        "id": "srvtoolu_b",
-        "caller": "deep",
-        "state": "consulting",
-        "startedAt": "2026-11-10T10:01:00Z"
-       }
-      ]
-     },
+     "resultEntries": [
+      {
+       "id": "a",
+       "kind": "assistant",
+       "text": "끝",
+       "timestamp": "2026-11-11T10:00:09Z"
+      }
+     ],
      "agents": [
       {
-       "id": "scout",
-       "title": "scout",
-       "input": "확인",
-       "status": "running",
-       "entries": []
-      },
-      {
-       "id": "deep",
-       "parentID": "scout",
-       "title": "deep",
-       "input": "확인",
-       "status": "running",
+       "id": "fg",
+       "title": "조사",
+       "input": "찾기",
+       "status": "completed",
        "entries": []
       }
      ]
@@ -785,7 +693,7 @@
    "expect": {
     "nodes": [
      {
-      "id": "1:r:request",
+      "id": "1:f:request",
       "kind": "request",
       "x": 24,
       "y": 24,
@@ -793,127 +701,27 @@
       "h": 140
      },
      {
-      "id": "1:r:execution",
-      "kind": "work",
-      "x": 24,
-      "y": 196,
-      "w": 500,
-      "h": 280
-     },
-     {
-      "id": "1:r:delegate:main",
+      "id": "1:f:delegate:main",
       "kind": "delegate",
       "x": 104,
-      "y": 494,
+      "y": 182,
       "w": 340,
       "h": 24
      },
      {
-      "id": "1:r:agent:scout",
+      "id": "1:f:agent:fg",
       "kind": "agent",
       "x": 156,
-      "y": 544,
+      "y": 232,
       "w": 236,
       "h": 86,
       "compact": true
      },
      {
-      "id": "1:r:return",
-      "kind": "return",
-      "x": 104,
-      "y": 662,
-      "w": 340,
-      "h": 34
-     },
-     {
-      "id": "1:r:advisor",
-      "kind": "advisor",
-      "x": -252,
-      "y": 196,
-      "w": 248,
-      "h": 500
-     }
-    ],
-    "edges": [
-     {
-      "source": "1:r:request",
-      "target": "1:r:execution",
-      "joins": false
-     },
-     {
-      "source": "1:r:execution",
-      "target": "1:r:delegate:main",
-      "joins": false
-     },
-     {
-      "source": "1:r:delegate:main",
-      "target": "1:r:agent:scout",
-      "joins": false
-     },
-     {
-      "source": "1:r:agent:scout",
-      "target": "1:r:return",
-      "joins": true
-     }
-    ],
-    "advisorLinks": [
-     {
-      "band": "1:r:advisor",
-      "target": "1:r:execution"
-     },
-     {
-      "band": "1:r:advisor",
-      "target": "1:r:agent:scout"
-     }
-    ],
-    "size": {
-     "w": 824,
-     "h": 720
-    },
-    "originX": -276,
-    "originY": 0
-   }
-  },
-  {
-   "name": "a request started with the advisor on and nothing delegated: its band from the 실행 block, at least its least height",
-   "running": false,
-   "opened": [],
-   "runs": [
-    {
-     "id": "r",
-     "input": "요청 r",
-     "status": "completed",
-     "finalOutput": "결과 r",
-     "provider": "claude",
-     "configuredAdvisor": "opus",
-     "rootEntries": [],
-     "resultEntries": [],
-     "agents": []
-    }
-   ],
-   "expect": {
-    "nodes": [
-     {
-      "id": "1:r:request",
-      "kind": "request",
-      "x": 24,
-      "y": 24,
-      "w": 500,
-      "h": 140
-     },
-     {
-      "id": "1:r:execution",
-      "kind": "work",
-      "x": 24,
-      "y": 196,
-      "w": 500,
-      "h": 280
-     },
-     {
-      "id": "1:r:result",
+      "id": "1:f:result",
       "kind": "result",
       "x": 24,
-      "y": 508,
+      "y": 350,
       "w": 500,
       "h": 200
      },
@@ -921,42 +729,216 @@
       "id": "pending-input",
       "kind": "draft",
       "x": 24,
-      "y": 740,
+      "y": 582,
       "w": 500,
       "h": 140
-     },
-     {
-      "id": "1:r:advisor",
-      "kind": "advisor",
-      "x": -252,
-      "y": 196,
-      "w": 248,
-      "h": 512
      }
     ],
     "edges": [
      {
-      "source": "1:r:request",
-      "target": "1:r:execution",
+      "source": "1:f:request",
+      "target": "1:f:delegate:main",
       "joins": false
      },
      {
-      "source": "1:r:execution",
-      "target": "1:r:result",
+      "source": "1:f:delegate:main",
+      "target": "1:f:agent:fg",
+      "joins": false
+     },
+     {
+      "source": "1:f:agent:fg",
+      "target": "1:f:result",
       "joins": true
      },
      {
-      "source": "1:r:result",
+      "source": "1:f:result",
       "target": "pending-input",
       "joins": true
      }
     ],
-    "advisorLinks": [],
     "size": {
-     "w": 824,
-     "h": 904
+     "h": 746,
+     "w": 548
     },
-    "originX": -276,
+    "originX": 0,
+    "originY": 0
+   }
+  },
+  {
+   "name": "a request's steps on its spine: the sub-agent launched before the first step beside the request, a done step, the step in progress with a background agent and a command beside it, the main session's card after them; the step not begun only in the progress panel",
+   "running": true,
+   "opened": [],
+   "runs": [
+    {
+     "id": "s",
+     "input": "릴리스",
+     "status": "running",
+     "provider": "claude",
+     "sourceRunID": "s",
+     "rootEntries": [],
+     "resultEntries": [],
+     "steps": [
+      {
+       "key": "text:점검",
+       "content": "점검",
+       "status": "completed",
+       "startedAt": "2026-11-11T10:00:00.000Z",
+       "endedAt": "2026-11-11T10:00:10.000Z"
+      },
+      {
+       "key": "text:노트",
+       "content": "노트",
+       "status": "in_progress",
+       "startedAt": "2026-11-11T10:00:10.500Z"
+      },
+      {
+       "key": "text:CI",
+       "content": "CI",
+       "status": "pending"
+      }
+     ],
+     "agents": [
+      {
+       "id": "early",
+       "title": "early",
+       "input": "먼저",
+       "status": "completed",
+       "entries": [],
+       "figures": {
+        "startedAt": "2026-11-11T10:00:05.000Z"
+       }
+      },
+      {
+       "id": "notes",
+       "title": "notes",
+       "input": "노트 쓰기",
+       "status": "running",
+       "entries": [],
+       "background": true,
+       "figures": {
+        "startedAt": "2026-11-11T10:00:12.000Z"
+       }
+      },
+      {
+       "id": "ci",
+       "title": "ci",
+       "kind": "task",
+       "input": "python scripts/release.py ci",
+       "status": "running",
+       "entries": [],
+       "background": true,
+       "figures": {
+        "startedAt": "2026-11-11T10:00:13.000Z"
+       }
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "nodes": [
+     {
+      "id": "1:s:request",
+      "kind": "request",
+      "x": 24,
+      "y": 24,
+      "w": 500,
+      "h": 140
+     },
+     {
+      "id": "1:s:step:818301147174f5bc",
+      "kind": "step",
+      "x": 24,
+      "y": 196,
+      "w": 500,
+      "h": 86,
+      "compact": true
+     },
+     {
+      "id": "1:s:agent:early",
+      "kind": "agent",
+      "x": 568,
+      "y": 196,
+      "w": 236,
+      "h": 104,
+      "compact": true
+     },
+     {
+      "id": "1:s:step:6b57ae41604508f5",
+      "kind": "step",
+      "x": 24,
+      "y": 332,
+      "w": 500,
+      "h": 86,
+      "compact": true
+     },
+     {
+      "id": "1:s:agent:notes",
+      "kind": "agent",
+      "x": 568,
+      "y": 332,
+      "w": 236,
+      "h": 104,
+      "compact": true
+     },
+     {
+      "id": "1:s:agent:ci",
+      "kind": "agent",
+      "x": 568,
+      "y": 456,
+      "w": 236,
+      "h": 104,
+      "compact": true
+     },
+     {
+      "id": "1:s:execution",
+      "kind": "work",
+      "x": 24,
+      "y": 592,
+      "w": 500,
+      "h": 86,
+      "compact": true
+     }
+    ],
+    "edges": [
+     {
+      "source": "1:s:request",
+      "target": "1:s:step:818301147174f5bc",
+      "joins": false
+     },
+     {
+      "source": "1:s:step:818301147174f5bc",
+      "target": "1:s:agent:early",
+      "joins": false,
+      "side": true
+     },
+     {
+      "source": "1:s:step:818301147174f5bc",
+      "target": "1:s:step:6b57ae41604508f5",
+      "joins": false
+     },
+     {
+      "source": "1:s:step:6b57ae41604508f5",
+      "target": "1:s:agent:notes",
+      "joins": false,
+      "side": true
+     },
+     {
+      "source": "1:s:step:6b57ae41604508f5",
+      "target": "1:s:agent:ci",
+      "joins": false,
+      "side": true
+     },
+     {
+      "source": "1:s:step:6b57ae41604508f5",
+      "target": "1:s:execution",
+      "joins": true
+     }
+    ],
+    "size": {
+     "h": 702,
+     "w": 828
+    },
+    "originX": 0,
     "originY": 0
    }
   }

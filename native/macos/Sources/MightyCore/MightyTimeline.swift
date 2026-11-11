@@ -206,7 +206,7 @@ extension MightyGraphLayout {
         for edge in edges {
             guard let source = frames[edge.source], let target = frames[edge.target] else { continue }
             if let visible, !visible.intersects(source.union(target)) { continue }
-            let route = Self.route(from: source, to: target, joins: edge.joins)
+            let route = Self.route(from: source, to: target, joins: edge.joins, side: edge.side)
             if targets.contains(edge.target) { into.append(route) } else { other.append(route) }
         }
         return (into, other)

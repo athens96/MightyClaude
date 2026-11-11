@@ -12,14 +12,11 @@ public enum FlowLog {
         case lead
         /// A sub-agent, by its block's id.
         case subagent(String)
-        /// The advisor a Claude session consulted.
-        case advisor
 
         public var role: FlowRole {
             switch self {
             case .lead: .lead
             case .subagent: .subagent
-            case .advisor: .advisor
             }
         }
     }
@@ -28,7 +25,7 @@ public enum FlowLog {
         public var id: String
         public var time: Date
         public var actor: Actor
-        /// The actor in words: the main session's model, a sub-agent's name, the advisor.
+        /// The actor in words: the main session's model, a sub-agent's name.
         public var who: String
         /// The actor's ink: its role's, or a custom agent's own colour.
         public var ink: FlowInk
@@ -38,22 +35,6 @@ public enum FlowLog {
 
         public init(id: String, time: Date, actor: Actor, who: String, ink: FlowInk, what: String, nodeID: String) {
             self.id = id; self.time = time; self.actor = actor; self.who = who; self.ink = ink; self.what = what; self.nodeID = nodeID
-        }
-    }
-
-    /// Something the advisor did, for the log: fed by the run's advisor calls. The strip words and inks it as it does
-    /// every other row.
-    public struct AdvisorNote: Equatable, Sendable {
-        public var id: String
-        /// When it happened, as the app recorded it.
-        public var time: String
-        /// The advisor in words (its model, else its role's name).
-        public var who: String
-        public var what: String
-        /// The block that consulted it.
-        public var nodeID: String
-        public init(id: String, time: String, who: String, what: String, nodeID: String) {
-            self.id = id; self.time = time; self.who = who; self.what = what; self.nodeID = nodeID
         }
     }
 
@@ -79,12 +60,11 @@ public enum FlowLog {
     }
 
     /// The last `limit` rows of the newest activity, oldest first. `definitions` are the custom agents the blocks'
-    /// types name (their colour is the row's ink); `advisor` is what the advisor did in that activity.
+    /// types name (their colour is the row's ink).
     ///
     /// Of each block only its last `limit` events are taken, read from the end: one that is not among a block's own
     /// last `limit` cannot be among the last `limit` of all. Only those few have their time read.
-    public static func rows(_ runs: [MightyGraphRun], limit: Int = visibleRows, definitions: [String: AgentDefinition] = [:],
-                            advisor: [AdvisorNote] = []) -> [Row] {
+    public static func rows(_ runs: [MightyGraphRun], limit: Int = visibleRows, definitions: [String: AgentDefinition] = [:]) -> [Row] {
         guard limit > 0 else { return [] }
         typealias Candidate = (stamp: String, make: (Date) -> Row)
         var candidates: [Candidate] = []
@@ -104,11 +84,18 @@ public enum FlowLog {
                     candidates.append(lead(run.id + ":notice", arrived, line, node: MightyGraphLayout.nodeID(run, suffix: "request")))
                 }
             }
+            // A request's own record in one of its steps is that step's (`FlowSteps`).
+            let steps = FlowSteps.steps(run)
+            func node(of entry: LogEntry) -> String {
+                guard !steps.isEmpty, let time = AgentRunTiming.parseTimestamp(entry.timestamp),
+                      let step = FlowSteps.stepIndex(at: time, in: steps) else { return leadNode }
+                return MightyGraphLayout.nodeID(run, suffix: FlowSteps.nodeSuffix(steps[step]))
+            }
             // Read from the end and put back in the order they were recorded.
             var latest: [Candidate] = []
             for entry in run.rootEntries.reversed() where latest.count < limit {
                 guard let what = leadWords(entry) else { continue }
-                latest.append(lead(run.id + ":" + entry.id, entry.timestamp, what))
+                latest.append(lead(run.id + ":" + entry.id, entry.timestamp, what, node: node(of: entry)))
             }
             candidates += latest.reversed()
             // The turn's own end: at its result, which stands at its last record. A notice taken into a running turn has
@@ -139,9 +126,6 @@ public enum FlowLog {
                 }
             }
         }
-        for item in advisor {
-            candidates.append((item.time, { Row(id: item.id, time: $0, actor: .advisor, who: item.who, ink: FlowRoles.ink(.advisor), what: item.what, nodeID: item.nodeID) }))
-        }
         // Each in the order it was read, so two things of one second stay as they were recorded.
         var timed: [(time: Date, order: Int, make: (Date) -> Row)] = []
         for (order, candidate) in candidates.enumerated() {
@@ -157,6 +141,10 @@ public enum FlowLog {
     public static func target(_ row: Row, in runs: [MightyGraphRun], drawn: (String) -> Bool) -> String? {
         if drawn(row.nodeID) { return row.nodeID }
         for index in activity(runs).reversed() {
+            // The role view draws the 실행 block only until the answer is there: then the main session is its result.
+            if row.nodeID == MightyGraphLayout.nodeID(runs[index], suffix: MightyGraphLayout.workSuffix) {
+                return ["result", "request"].map { MightyGraphLayout.nodeID(runs[index], suffix: $0) }.first(where: drawn)
+            }
             if let node = drawnNode(row.nodeID, in: runs[index], drawn: drawn) { return node }
             if runs[index].flowAgents.contains(where: { MightyGraphLayout.nodeID(runs[index], suffix: "agent:" + $0.id) == row.nodeID }) { return nil }
         }
@@ -176,8 +164,7 @@ public enum FlowLog {
             above = parent.parentID
             depth += 1
         }
-        let work = MightyGraphLayout.nodeID(run, suffix: MightyGraphLayout.workSuffix)
-        return drawn(work) ? work : nil
+        return [MightyGraphLayout.workSuffix, "result", "request"].map { MightyGraphLayout.nodeID(run, suffix: $0) }.first(where: drawn)
     }
 
     /// What a record of the main session's says in the log: a tool call as the transcript words it, a question it
@@ -221,10 +208,6 @@ public enum FlowLog {
 
     // MARK: Status
 
-    /// What the advisor is doing, for the status line (`FlowAdvisor.status`): on call while the activity goes on, at
-    /// work on a consultation, or how often it was consulted once the activity ended. Nil when the session has none.
-    public enum AdvisorState: Equatable, Sendable { case onCall, consulting, consulted(Int) }
-
     /// The strip's header: who is doing what right now, in one line.
     public struct Status: Equatable, Sendable {
         /// "Haiku 5.5 실행 중": the main session and its state.
@@ -234,13 +217,10 @@ public enum FlowLog {
         public var subagents: String?
         /// "작업 2개 실행 중" while background commands of the request run; nil otherwise.
         public var tasks: String?
-        /// "조언자 대기", "조언자 검토 중" or "조언자 호출 2"; nil without an advisor.
-        public var advisor: String?
         public var text: String { parts.map(\.text).joined(separator: " · ") }
         /// The line's parts in order, each with the role whose ink it takes.
         public var parts: [Part] {
-            [Part(role: .lead, text: lead)] + [subagents.map { Part(role: .subagent, text: $0) }, tasks.map { Part(role: .task, text: $0) },
-                                               advisor.map { Part(role: .advisor, text: $0) }].compactMap { $0 }
+            [Part(role: .lead, text: lead)] + [subagents.map { Part(role: .subagent, text: $0) }, tasks.map { Part(role: .task, text: $0) }].compactMap { $0 }
         }
         public struct Part: Equatable, Sendable {
             public var role: FlowRole
@@ -251,7 +231,7 @@ public enum FlowLog {
     /// The status of the pane's newest activity, nil for a pane without a request. The main session's state is the
     /// state of the run the views follow (`MightyGraphSupport.followRunIndex`): the request while it runs or awaits its
     /// notices, a notice turn while Claude answers one. The sub-agents are the newest request's.
-    public static func status(_ runs: [MightyGraphRun], advisor: AdvisorState? = nil) -> Status? {
+    public static func status(_ runs: [MightyGraphRun]) -> Status? {
         guard let newest = MightyGraphSupport.newestRequestIndex(runs) else { return nil }
         let request = runs[newest]
         let followed = runs[MightyGraphSupport.followRunIndex(runs) ?? newest]
@@ -269,12 +249,6 @@ public enum FlowLog {
             }
             if back.tasksRunning > 0 { tasks = L("graph.log.tasksRunning", ["count": "\(back.tasksRunning)"]) }
         }
-        let advising: String? = switch advisor {
-        case .onCall: L("graph.log.advisorOnCall")
-        case .consulting: L("graph.log.advisorConsulting")
-        case .consulted(let count): L("graph.log.advisorCalls", ["count": "\(count)"])
-        case nil: nil
-        }
-        return Status(lead: leadName(followed, else: request) + " " + state, subagents: subagents, tasks: tasks, advisor: advising)
+        return Status(lead: leadName(followed, else: request) + " " + state, subagents: subagents, tasks: tasks)
     }
 }

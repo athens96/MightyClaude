@@ -61,6 +61,9 @@ final class ExecutionGraphTracker {
     }
     /// SendMessage calls by tool-use ID until their result says whether the message resumed an agent that had ended.
     private var sentMessages: [String: SentMessage] = [:]
+    /// The tools the stream showed each call to be: a frame or a Mods spawn under a call that is no Agent or Task call (a Bash
+    /// call's heartbeat, `tool_progress`) is not a sub-agent of the request.
+    private var toolNames: [String: String] = [:]
     private var messageUsage: [String: GraphTokenUsage] = [:]
     private var messageModel: [String: String] = [:]
     private var messageActivityIds: [String: [String]] = [:]
@@ -334,9 +337,14 @@ final class ExecutionGraphTracker {
         if provider == "opencode" { consumeACP(value); return }
         // Hermes reports its session's running token counts, not the request's: the block carries none.
         if provider == "hermes" { return }
+        // A running tool's heartbeat (Claude Code 2.1.322 sends one 30 s into a foreground Bash call) names that call as its
+        // parent: it is no sub-agent's message, and nothing of the run changes by it.
+        if value["type"] as? String == "tool_progress" { return }
         frameTime = Self.frameTime(value)
         defer { frameTime = nil }
         let parentTool = Self.parentToolID(value)
+        // Only an Agent (or Task) call has frames of its own: one under a call the stream showed as another tool is no sub-agent.
+        if let parentTool, let name = toolNames[parentTool], !Self.agentTool(name) { return }
         if let parentTool { ensureAgent(toolID: parentTool) }
         // Over-cap child events are omitted, never reclassified as main text.
         let current = parentTool.map { ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: $0) } ?? mainID
@@ -387,6 +395,7 @@ final class ExecutionGraphTracker {
             for block in blocks where block["type"] as? String == "tool_use" {
                 guard let toolID = Self.key(block["id"]) else { continue }
                 rememberTool(toolID, owner: owner)
+                if let name = block["name"] as? String, toolNames[toolID] != nil || toolNames.count < 4_096 { toolNames[toolID] = name }
                 if parentTool != nil, current != mainID { countTool(toolID, for: current) }
                 let input = block["input"] as? [String: Any]
                 let background = input?["run_in_background"] as? Bool == true
@@ -1486,6 +1495,7 @@ final class ExecutionGraphTracker {
         guard let metadata = value.graph, metadata.version == 1 else { return }
         let id: String?
         if let toolID = Self.key(metadata.parentToolUseId) {
+            if let name = toolNames[toolID], !Self.agentTool(name) { return }
             id = ensureAgent(toolID: toolID)
             if let id {
                 let parent: Owner = Self.key(metadata.parentAgentId).map(Owner.agent) ?? .node(mainID)
@@ -1510,7 +1520,8 @@ final class ExecutionGraphTracker {
     }
     private func apply(_ metadata: ModGraphMetadata, to id: String) {
         update(id) { node in
-            if let title = metadata.name ?? metadata.agentType, !title.isEmpty { node.title = title }
+            // Mods names a block the stream has not titled; the call's own description, once read, stays its title.
+            if let title = metadata.name ?? metadata.agentType, !title.isEmpty, node.title.isEmpty || node.title == L("graph.block.agent") { node.title = title }
             if let input = metadata.input { node.input = input }
             if let output = metadata.output { node.output = output }
             let state = metadata.phase == "starting" ? "running" : metadata.phase

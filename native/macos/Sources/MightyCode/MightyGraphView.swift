@@ -159,6 +159,13 @@ struct MightyGraphView: View {
     @ViewState private var stepsCollapsed = false
     /// The step list's measured size, which the canvas keeps block titles clear of.
     @ViewState private var stepsPanelSize: CGSize?
+    /// The request the role view's progress panel is about: the one in view (`MightyGraphCanvas.onFocusRun`), nil before the
+    /// canvas said, which reads the newest.
+    @ViewState private var focusedRunID: String?
+    /// The progress panel shows its heading alone: per pane, in memory, never saved.
+    @ViewState private var progressCollapsed = false
+    /// A new request the progress panel shows whatever else is in view, from when it came until the user scrolls.
+    @ViewState private var pinnedRunID: String?
     private static let timelineEndID = "timeline-end"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -213,6 +220,45 @@ struct MightyGraphView: View {
     /// A Claude pane's flow draws the run's sub-agents in a fan-out row, background ones too; any other pane's flow is
     /// laid out as it always was.
     private var fanOut: MightyGraphLayout.FanOut? { showsFanOut && provider == "claude" ? .init(opened: openedCards) : nil }
+    /// The step list over the diagram, unless the role view draws the newest request's steps on its spine (`FlowSteps`).
+    private var stepsPanel: ProgressSteps.Panel? { fanOut != nil ? nil : progressSteps }
+    /// The role view's progress panel: the request in view, else the newest (`FlowSteps.progress`). Nil without a request.
+    private func progressPanel(ordinals: [Int]) -> (index: Int, progress: FlowSteps.Progress)? {
+        guard fanOut != nil else { return nil }
+        let pinned = pinnedRunID.flatMap { id in runs.firstIndex { $0.id == id } }
+        let focused = focusedRunID.flatMap { id in runs.firstIndex { $0.id == id } }
+        guard let index = pinned ?? focused ?? MightyGraphSupport.newestRequestIndex(runs) else { return nil }
+        return (index, FlowSteps.progress(index, in: runs, heading: L("graph.timeline.requestOrdinal", ["n": "\(ordinals[index])"])))
+    }
+    /// Which request a stretch of the diagram is about: each request's rows, from its request block to its last block, a
+    /// notice run's counted as its request's.
+    private static func requestSpans(_ graph: MightyGraphLayout, runs: [MightyGraphRun]) -> [(id: String, top: CGFloat, bottom: CGFloat)] {
+        var owner: [Int] = []
+        var current: Int?
+        for (index, run) in runs.enumerated() {
+            if run.noticeRun != true || current == nil { current = index }
+            owner.append(current!)
+        }
+        var spans: [Int: (top: CGFloat, bottom: CGFloat)] = [:]
+        for node in graph.nodes {
+            let index: Int?
+            switch node.content {
+            case .request(let i), .work(let i), .result(let i), .plan(let i), .agent(let i, _), .delegate(let i, _), .returning(let i), .step(let i, _): index = i
+            default: index = nil
+            }
+            guard let index, owner.indices.contains(index) else { continue }
+            let span = spans[owner[index]] ?? (node.frame.minY, node.frame.maxY)
+            spans[owner[index]] = (min(span.top, node.frame.minY), max(span.bottom, node.frame.maxY))
+        }
+        return spans.keys.sorted().map { (runs[$0].id, spans[$0]!.top, spans[$0]!.bottom) }
+    }
+    /// The request a view from `top`, `height` high (diagram coordinates), is about: the one whose rows cross a third of the way
+    /// down, else the nearest.
+    private static func focus(_ spans: [(id: String, top: CGFloat, bottom: CGFloat)], top: CGFloat, height: CGFloat) -> String? {
+        let line = top + height / 3
+        if let hit = spans.last(where: { $0.top <= line && line <= $0.bottom }) { return hit.id }
+        return spans.min { min(abs($0.top - line), abs($0.bottom - line)) < min(abs($1.top - line), abs($1.bottom - line)) }?.id
+    }
     /// The blocks the diagram drew for a run, which `Content.agent` indexes.
     private func flowAgents(_ run: MightyGraphRun) -> [MightyGraphAgent] { fanOut == nil ? run.agents : run.flowAgents }
     /// The diagram request the pending plan card goes under, nil when it is docked.
@@ -291,6 +337,9 @@ struct MightyGraphView: View {
         // Before anything aimed it, the camera follows: the newest block right above the composer.
         let target = scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: fallbackNodeID, alignTop: false, follows: true)
         let live = MightyGraphLayout.liveNodeIDs(runs, fanOut: fanOut != nil)
+        let ordinalsForPanel = MightyGraphSupport.requestOrdinals(runs)
+        let panel = progressPanel(ordinals: ordinalsForPanel)
+        let spans = fanOut == nil ? [] : Self.requestSpans(graph, runs: runs)
         let ordinals = MightyGraphSupport.requestOrdinals(runs)
         VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.md) {
@@ -347,9 +396,13 @@ struct MightyGraphView: View {
                               onResize: { resize(graph, $0, $1, $2, $3) }, onResetSize: resetSize,
                               onStranded: { reaim(graph, after: $0) }, newestRunID: MightyGraphSupport.newestRequestRun(runs)?.id,
                               onReachTop: { if history?.phase == .idle { onLoadOlder() } },
-                              avoid: progressSteps == nil ? nil : stepsPanelSize.map {
+                              // The user's own scroll: the panel reads the request in view again.
+                              onUserScroll: { if pinnedRunID != nil { pinnedRunID = nil } },
+                              avoid: stepsPanel == nil && panel == nil ? nil : stepsPanelSize.map {
                                   CGRect(origin: CGPoint(x: DesignMetrics.Spacing.md, y: DesignMetrics.Spacing.md), size: $0)
                               },
+                              focusRun: fanOut == nil ? nil : { Self.focus(spans, top: $0, height: $1) },
+                              onFocusRun: { id in if focusedRunID != id { focusedRunID = id } },
                               card: { card($0, executions: linksByKey, ordinals: ordinals) })
                 // The canvas changing height — the composer growing as a draft is typed,
                 // shrinking after a send, the pane resizing — never re-aims the camera: a
@@ -364,14 +417,40 @@ struct MightyGraphView: View {
                     guard let id else { return }
                     scrollTarget = MightyGraphScrollTarget(token: "plan:" + id + ":" + (planRequest?.id ?? ""), nodeID: id, alignTop: true)
                 }
+                // A new request: the progress panel is about it until the user scrolls, whatever else is in view.
+                .onChange(of: MightyGraphSupport.newestRequestRun(runs)?.id) { old, new in
+                    if fanOut != nil, let new, new != old { pinnedRunID = new }
+                }
                 // A block the user opened or folded never moves the camera; it follows on
                 // only if the newest block is still in view.
                 .onChange(of: expanded) { _, _ in follow.watch.userChangedLayout() }
                 .onChange(of: openedCards) { _, _ in follow.watch.userChangedLayout() }
                 // The agent's step list sits over the diagram's top-left corner; outside it the canvas still pans and zooms.
                 .overlay(alignment: .topLeading) {
-                    if let progressSteps {
-                        MightyGraphStepsPanel(sessionID: sessionID, panel: progressSteps, areaHeight: canvasViewport?.height, collapsed: $stepsCollapsed)
+                    if let panel {
+                        // The role view: the request in view and how far its plan got, fixed while the diagram scrolls under it.
+                        MightyGraphProgressPanel(sessionID: sessionID, progress: panel.progress, collapsed: $progressCollapsed,
+                                                 onRequest: {
+                                                     onFocus()
+                                                     publish(.reaim(nodeID: MightyGraphLayout.nodeID(runs[panel.index], suffix: "request"), alignTop: true), animated: true)
+                                                 },
+                                                 onStep: { step in
+                                                     let steps = FlowSteps.steps(runs[panel.index])
+                                                     guard steps.indices.contains(step) else { return }
+                                                     let id = MightyGraphLayout.nodeID(runs[panel.index], suffix: FlowSteps.nodeSuffix(steps[step]))
+                                                     guard graph.nodes.contains(where: { $0.id == id }) else { return }
+                                                     onFocus()
+                                                     selectedNodeID = nil
+                                                     publish(.reaim(nodeID: id, alignTop: false), animated: true)
+                                                 })
+                            .background(GeometryReader { geo in
+                                Color.clear
+                                    .onAppear { stepsPanelSize = geo.size }
+                                    .onChange(of: geo.size) { _, new in stepsPanelSize = new }
+                            })
+                            .padding(DesignMetrics.Spacing.md)
+                    } else if let stepsPanel {
+                        MightyGraphStepsPanel(sessionID: sessionID, panel: stepsPanel, areaHeight: canvasViewport?.height, collapsed: $stepsCollapsed)
                             .background(GeometryReader { geo in
                                 Color.clear
                                     .onAppear { stepsPanelSize = geo.size }
@@ -382,9 +461,9 @@ struct MightyGraphView: View {
                 }
                 // The role view's session log, between the diagram and the composer: who is doing what, and the last
                 // things that happened. Its rows are read only while it is open.
-                if fanOut != nil, let status = FlowLog.status(runs, advisor: FlowAdvisor.status(runs)) {
+                if fanOut != nil, let status = FlowLog.status(runs) {
                     MightyGraphLogStrip(sessionID: sessionID, status: status,
-                                        rows: logOpen && !logSqueezed ? FlowLog.rows(runs, definitions: agentDefinitions.definitions, advisor: FlowAdvisor.notes(runs)) : [], open: logOpen,
+                                        rows: logOpen && !logSqueezed ? FlowLog.rows(runs, definitions: agentDefinitions.definitions) : [], open: logOpen,
                                         squeezed: logSqueezed,
                                         onToggle: {
                                             onFocus()
@@ -689,9 +768,6 @@ struct MightyGraphView: View {
                 .stroke(Palette.ink2.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
             Self.edgePath(split.into)
                 .stroke(Palette.run, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-            // An advisor's band to the blocks that asked it: dotted, in the advisor's ink, and no arrow of the flow.
-            Self.linkPath(graph.advisorRoutes(in: visible))
-                .stroke(Palette.flow(.advisor), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [1, 5]))
         }
         // Routed in node coordinates, drawn in the container's, which starts at
         // the diagram's leading edge rather than at x = 0, and at its top
@@ -700,26 +776,19 @@ struct MightyGraphView: View {
         .allowsHitTesting(false).accessibilityHidden(true)
     }
 
-    /// Plain polylines, without the arrow head an edge of the flow ends in.
-    private static func linkPath(_ routes: [[CGPoint]]) -> Path {
-        Path { path in
-            for points in routes {
-                guard let start = points.first else { continue }
-                path.move(to: start)
-                for point in points.dropFirst() { path.addLine(to: point) }
-            }
-        }
-    }
-
     private static func edgePath(_ routes: [[CGPoint]]) -> Path {
         Path { path in
             for points in routes {
                 guard let start = points.first, let end = points.last else { continue }
                 path.move(to: start)
                 for point in points.dropFirst() { path.addLine(to: point) }
-                path.move(to: CGPoint(x: end.x - 4, y: end.y - 6))
+                // The head points the way the last leg runs: down into a block's top, or across into a side block.
+                let from = points.dropLast().last { $0 != end } ?? CGPoint(x: end.x, y: end.y - 1)
+                let length = max(0.001, hypot(end.x - from.x, end.y - from.y))
+                let dx = (end.x - from.x) / length, dy = (end.y - from.y) / length
+                path.move(to: CGPoint(x: end.x - 6 * dx - 4 * dy, y: end.y - 6 * dy + 4 * dx))
                 path.addLine(to: end)
-                path.addLine(to: CGPoint(x: end.x + 4, y: end.y - 6))
+                path.addLine(to: CGPoint(x: end.x - 6 * dx + 4 * dy, y: end.y - 6 * dy - 4 * dx))
             }
         }
     }
@@ -757,6 +826,13 @@ struct MightyGraphView: View {
             transcriptCard(node, title: title, titleProvider: provider, icon: icon, status: run.status,
                            input: run.input, entries: [], tint: notice ? Palette.taskText : Palette.tint(styleTitles.tint(run.input)),
                            fromRecord: index < olderCount, inputOnly: true)
+        case .work(let index) where node.isCompact:
+            // The role view's 실행 card: who the main session is, what it is doing or answered, its figures.
+            let run = runs[index]
+            MightyGraphAgentCard(nodeID: node.id, content: FlowSteps.leadCard(run, title: BackgroundNoticeRuns.executionTitle(notice: run.noticeRun == true, ordinal: ordinals[index])),
+                                 icon: Self.executionIcon,
+                                 onActivate: { onFocus(); openedCards.insert(node.id) }, activateHelp: L("graph.card.open"),
+                                 onOpen: { onFocus(); openedCards.insert(node.id) })
         case .work(let index):
             // The main agent's own work for the request: its replies, tool calls, status and tokens.
             let run = runs[index]
@@ -767,22 +843,39 @@ struct MightyGraphView: View {
             transcriptCard(node, title: BackgroundNoticeRuns.executionTitle(notice: run.noticeRun == true, ordinal: ordinals[index]), icon: Self.executionIcon, status: run.status, statusText: Self.runStatusLabel(run),
                            input: "", entries: run.rootEntries, tint: Palette.flow(lead.ink), usage: run.usage,
                            records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks,
-                           fromRecord: index < olderCount, pending: pendingState(run.id), identity: lead)
+                           fromRecord: index < olderCount, pending: pendingState(run.id), identity: lead,
+                           onFoldToCard: fanOut != nil ? { foldToCard(node.id) } : nil)
+        case .step(let index, let step):
+            // A step of the request's checklist: its card, or opened, what the main session recorded during it.
+            if node.isCompact, let content = FlowSteps.card(step, of: index, in: runs) {
+                MightyGraphAgentCard(nodeID: node.id, content: content, icon: Self.stepIcon,
+                                     onActivate: { onFocus(); openedCards.insert(node.id) }, activateHelp: L("graph.card.open"),
+                                     onOpen: { onFocus(); openedCards.insert(node.id) })
+            } else if let content = FlowSteps.card(step, of: index, in: runs) {
+                let lead = FlowRoles.lead(runs[index])
+                transcriptCard(node, title: content.title, icon: Self.stepIcon, status: content.isPending ? "completed" : content.status, statusText: content.stateWord,
+                               input: "", entries: FlowSteps.entries(step, of: index, in: runs), tint: Palette.flow(lead.ink),
+                               fromRecord: index < olderCount, identity: lead, onFoldToCard: { foldToCard(node.id) })
+            }
         case .agent(let runIndex, let agentIndex):
             let run = runs[runIndex]
             let agents = flowAgents(run)
             let agent = agents[agentIndex]
             if node.isCompact {
-                // A running sub-agent, or a background one of this request: its card. A finished background agent's full
-                // block is the copy in its notice run, where the click goes; any other card opens in place.
+                // A sub-agent or a command: its card. A finished background agent's full block is the copy in its notice
+                // run, where the click goes and which it opens; any other card opens in place.
                 let copy = agent.background == true && MightyGraphLayout.terminal(agent.status) ? FlowCard.copyNodeID(of: agent, in: runs) : nil
                 // A background command's card shows the last line it wrote, as the strip above the composer reads it.
-                MightyGraphAgentCard(nodeID: node.id, content: FlowCard.content(agent, in: run, definition: definition(agent),
-                                                                                output: agent.isTask ? backgroundOutput.lines[agent.id] ?? [] : []),
+                MightyGraphAgentCard(nodeID: node.id, content: {
+                                         var content = FlowCard.content(agent, in: run, definition: definition(agent), output: agent.isTask ? backgroundOutput.lines[agent.id] ?? [] : [])
+                                         content.step = FlowSteps.stepLabel(agent, in: run)
+                                         return content
+                                     }(),
+                                     icon: Self.agentPresentation(agent).icon,
                                      onActivate: {
                                          onFocus()
                                          // The copy is shown and selected, so it is plain which block the card led to.
-                                         if let copy { selectedNodeID = copy; publish(.reaim(nodeID: copy, alignTop: false), animated: true) }
+                                         if let copy { openedCards.insert(copy); selectedNodeID = copy; publish(.reaim(nodeID: copy, alignTop: false), animated: true) }
                                          else { openedCards.insert(node.id) }
                                      },
                                      activateHelp: copy == nil ? L("graph.card.open") : L("graph.card.showCopy"),
@@ -843,17 +936,6 @@ struct MightyGraphView: View {
             if let state = FlowReturn.state(runs[index]) {
                 MightyGraphReturnNode(nodeID: node.id, state: state)
             }
-        case .advisor(let index):
-            // Beside the run: the advisor its session asks, and each time it was asked.
-            if let band = FlowAdvisor.band(runs[index], definitions: agentDefinitions.definitions) {
-                MightyGraphAdvisorBand(nodeID: node.id, band: band, height: node.frame.height) { caller in
-                    // The block that asked, or what stands for it on the diagram while a folded card hides it.
-                    let drawn = Set(layout.nodes.map(\.id))
-                    guard let id = FlowLog.drawnNode(caller, in: runs[index], drawn: drawn.contains) else { return }
-                    onFocus()
-                    publish(.reaim(nodeID: id, alignTop: false), animated: true)
-                }
-            }
         case .plan:
             // The plan alone on the block card, its page scrolling inside;
             // its answers wait in the composer.
@@ -887,6 +969,8 @@ struct MightyGraphView: View {
 
     /// The 실행 block's glyph, in the diagram and on its timeline row.
     static let executionIcon = "gearshape.2"
+    /// An opened step's glyph (`FlowSteps`).
+    static let stepIcon = "checklist"
     /// A result's glyph while it is the result so far (현재까지의 결과): neutral, for the request is not done with its background work.
     static let resultSoFarIcon = "clock"
     /// The 알림 대기 block's glyph: the request is not done until its background work's notices are in.
@@ -1010,13 +1094,6 @@ struct MightyGraphView: View {
                 }
             }.padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).frame(height: Self.blockHeaderHeight)
             .background(headerFill ?? Color.clear)
-            // The role's ink down the header's leading edge: who the block is, at any width.
-            .overlay(alignment: .leading) {
-                if let identity, !onStrip {
-                    Rectangle().fill(Palette.flow(identity.ink)).frame(width: DesignMetrics.Pipeline.cardBarWidth)
-                        .allowsHitTesting(false).accessibilityHidden(true)
-                }
-            }
             if !onStrip { Divider().overlay(Palette.border) }
             if let kindLine { backgroundKindLine(kindLine, tint: tint, nodeID: node.id) }
             if let backgroundRun {
@@ -1513,9 +1590,14 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     var newestRunID: String? = nil
     /// Scrolling up past the top of the diagram asks for older requests.
     var onReachTop: () -> Void = {}
+    /// The user moved the camera themselves (a wheel, a drag), not an aim or a follow.
+    var onUserScroll: () -> Void = {}
     /// What floats over the canvas's top-left corner (the step list), in viewport
     /// points: a landing or a resize keeps block titles out from under it.
     var avoid: CGRect? = nil
+    /// Which request a view from a top, so high (diagram coordinates), is about; told to `onFocusRun` when it changes.
+    var focusRun: ((CGFloat, CGFloat) -> String?)? = nil
+    var onFocusRun: (String?) -> Void = { _ in }
     let card: (MightyGraphLayout.Node) -> Card
     @ViewState private var cameraOffset: CGPoint?
     /// The token of the animated target whose landing glides, once.
@@ -1558,6 +1640,8 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                        width: viewport.size.width / zoom + 448, height: viewport.size.height / zoom + 448)
             }
             let visible = glideFrom.map { culled(displayedOffset).union(culled($0)) } ?? culled(displayedOffset)
+            // The request in view, read as the camera moves; only a change of it is told.
+            let focused = focusRun?(-displayedOffset.y / zoom, viewport.size.height / zoom)
             let diagram = ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
                     edges(visible)
@@ -1617,6 +1701,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                 alignTop: alignTop, alignBottom: alignBottom, follows: follows, followTargetID: defaultNodeID, follow: follow,
                 drawnNodeIDs: Set(graph.nodes.lazy.filter { visible.intersects($0.frame) }.map(\.id)), diagnosticActions: diagnosticActions, selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
                 onUserPan: { old, new in
+                    onUserScroll()
                     // Only the user's own move towards the top, once the top
                     // shows: re-aims and zoom never load more.
                     guard new.y > old.y, let top = graph.nodes.first(where: { $0.content == .history })?.frame.minY,
@@ -1627,6 +1712,8 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                 content: diagram.environment(\.colorScheme, colorScheme))
                 .frame(width: viewport.size.width, height: viewport.size.height)
             .accessibilityIdentifier("mighty-graph-canvas-\(sessionID)")
+            .onAppear { if focusRun != nil { onFocusRun(focused) } }
+            .onChange(of: focused) { _, id in onFocusRun(id) }
             .onChange(of: zoom) { old, new in
                 guard old > 0 else { return }
                 let center = CGPoint(x: viewport.size.width / 2, y: viewport.size.height / 2)

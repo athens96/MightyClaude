@@ -25,8 +25,8 @@ public struct MightyGraphLayout {
         /// The way back to the main session, where a run's result will go, until the result is there (`FlowReturn`):
         /// a run index. Only with a fan-out.
         case returning(Int)
-        /// The advisor's band beside a run that has an advisor (`FlowAdvisor`): a run index. Only with a fan-out.
-        case advisor(Int)
+        /// A step of a request's checklist on its spine (`FlowSteps`): a run index and an index into its steps. Only with a fan-out.
+        case step(Int, Int)
     }
     public struct Node: Identifiable {
         public let id: String
@@ -40,7 +40,7 @@ public struct MightyGraphLayout {
         public var isFixed: Bool {
             if isCompact { return true }
             switch content {
-            case .history, .delegate, .returning, .advisor: return true
+            case .history, .delegate, .returning: return true
             default: return false
             }
         }
@@ -56,8 +56,8 @@ public struct MightyGraphLayout {
         public var isResizable: Bool {
             if isCompact { return false }
             switch content {
-            case .request, .work, .agent, .result, .draft, .plan, .planRecord: return true
-            case .resultFiles, .execution, .images, .history, .delegate, .returning, .advisor: return false
+            case .request, .work, .agent, .result, .draft, .plan, .planRecord, .step: return true
+            case .resultFiles, .execution, .images, .history, .delegate, .returning: return false
             }
         }
         /// The least a drag may make it: an answered plan may stay as short as it folds.
@@ -76,6 +76,8 @@ public struct MightyGraphLayout {
     /// The Mac's role view of a request (`make(fanOut:)`): every sub-agent of the run stands under the block that
     /// launched it, a background one too, which the other views leave to the strip and the notice runs; a running one
     /// is a compact card (`FlowCard`) unless the user opened it.
+    /// Every block but the result is a card there until opened: the 실행 block, the request's steps (`FlowSteps`), each on
+    /// the request's spine with what it launched beside it, and every sub-agent and background command.
     public struct FanOut: Equatable, Sendable {
         /// The nodes the user opened from their card into the full block.
         public var opened: Set<String>
@@ -141,18 +143,12 @@ public struct MightyGraphLayout {
         public let source: String
         public let target: String
         public var joins: Bool = false
+        /// From a spine block's trailing edge to a block it launched, beside it (`FlowSteps`).
+        public var side: Bool = false
         public var id: String { source + "→" + target }
-    }
-    /// A dotted connector from an advisor's band to a block that consulted it (`FlowAdvisor.callers`). It is no edge of
-    /// the flow: nothing is laid out by it and no camera follows it.
-    public struct AdvisorLink: Identifiable, Equatable {
-        public let band: String
-        public let target: String
-        public var id: String { band + "⇢" + target }
     }
     public var nodes: [Node] = []
     public var edges: [Edge] = []
-    public var advisorLinks: [AdvisorLink] = []
     public var size: CGSize = .zero
     /// Node coordinates keep a fixed origin, so a wide tree reaches into
     /// negative x rather than pushing the diagram. The drawn container starts
@@ -306,7 +302,7 @@ public struct MightyGraphLayout {
     public func route(_ edge: Edge) -> [CGPoint] {
         guard let source = nodes.first(where: { $0.id == edge.source })?.frame,
               let target = nodes.first(where: { $0.id == edge.target })?.frame else { return [] }
-        return Self.route(from: source, to: target, joins: edge.joins)
+        return Self.route(from: source, to: target, joins: edge.joins, side: edge.side)
     }
     /// Every edge's route with the nodes looked up once. With `visible`, an
     /// edge whose whole span lies outside it is left out, as offscreen cards are.
@@ -315,41 +311,17 @@ public struct MightyGraphLayout {
         return edges.compactMap { edge in
             guard let source = frames[edge.source], let target = frames[edge.target] else { return nil }
             if let visible, !visible.intersects(source.union(target)) { return nil }
-            return Self.route(from: source, to: target, joins: edge.joins)
+            return Self.route(from: source, to: target, joins: edge.joins, side: edge.side)
         }
     }
-    /// Every advisor link's route (`advisorRoute`), with the nodes looked up once; with `visible`, one whose whole span
-    /// lies outside it is left out.
-    public func advisorRoutes(in visible: CGRect? = nil) -> [[CGPoint]] {
-        guard !advisorLinks.isEmpty else { return [] }
-        let frames = Dictionary(nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
-        return advisorLinks.compactMap { link in
-            guard let band = frames[link.band], let target = frames[link.target] else { return nil }
-            if let visible, !visible.intersects(band.union(target)) { return nil }
-            return Self.advisorRoute(from: band, to: target, around: nodes.filter { $0.id != link.band && $0.id != link.target }.map(\.frame))
+    static func route(from source: CGRect, to target: CGRect, joins: Bool, side: Bool = false) -> [CGPoint] {
+        if side {
+            // Out of the trailing edge at the card's middle (a block's header), along a lane in the gap, into the leading edge.
+            let start = CGPoint(x: source.maxX, y: source.minY + min(source.height / 2, FlowCard.size.height / 2))
+            let end = CGPoint(x: target.minX, y: target.minY + min(target.height / 2, FlowCard.size.height / 2))
+            let lane = source.maxX + min(FlowSteps.sideGap / 2, max(0, (end.x - start.x) / 2))
+            return [start, CGPoint(x: lane, y: start.y), CGPoint(x: lane, y: end.y), end]
         }
-    }
-    /// From a band's trailing edge to the block that asked: straight into the block's leading edge at its header's
-    /// height when nothing stands between them; else along the gap above the block's row and down into its top by its
-    /// leading corner, so the line passes over no block of that row.
-    static func advisorRoute(from band: CGRect, to target: CGRect, around others: [CGRect]) -> [CGPoint] {
-        let inset: CGFloat = 8
-        func onBand(_ y: CGFloat) -> CGFloat { min(max(y, band.minY + inset), max(band.minY + inset, band.maxY - inset)) }
-        let level = target.minY + DesignMetrics.Layout.blockHead / 2
-        let path = CGRect(x: band.maxX, y: level - 1, width: max(0, target.minX - band.maxX), height: 2)
-        if level == onBand(level), level <= target.maxY, !others.contains(where: { $0.intersects(path) }) {
-            return [CGPoint(x: band.maxX, y: level), CGPoint(x: target.minX, y: level)]
-        }
-        let lane = target.minY - 6, start = onBand(lane), corner = target.minX + 14
-        var points = [CGPoint(x: band.maxX, y: start)]
-        if start != lane {
-            // The band ends above or below the lane: step over to it right beside the band.
-            let step = band.maxX + FlowAdvisor.gap / 2
-            points += [CGPoint(x: step, y: start), CGPoint(x: step, y: lane)]
-        }
-        return points + [CGPoint(x: corner, y: lane), CGPoint(x: corner, y: target.minY)]
-    }
-    static func route(from source: CGRect, to target: CGRect, joins: Bool) -> [CGPoint] {
         let start = CGPoint(x: source.midX, y: source.maxY)
         let end = CGPoint(x: target.midX, y: target.minY)
         let clearance = min(26, max(0, (end.y - start.y) / 2))
@@ -464,6 +436,8 @@ public struct MightyGraphLayout {
             let resultID = nodeID(run, suffix: "result")
             let resultSize = size(resultID, width: MightyGraphCamera.requestWidth, height: expanded.contains(resultID) ? 440 : 200)
             var visited = Set<Int>()
+            // The blocks launched from the main session in one of the request's steps: their cards name the step.
+            let inStep: Set<Int> = fanOut == nil ? [] : Set(run.flowAgents.indices.filter { FlowSteps.stepLabel(run.flowAgents[$0], in: run) != nil })
             // With a fan-out the run's background sub-agents are laid out too, each where it was launched.
             let agents = fanOut == nil ? run.agents : run.flowAgents
             func ordered(_ indexes: [Int]) -> [Int] {
@@ -481,8 +455,8 @@ public struct MightyGraphLayout {
                 let id = nodeID(run, suffix: "agent:\(agent.id)")
                 let compact = fanOut.map { FlowCard.isCompact(agent, opened: $0.opened.contains(id)) } ?? false
                 // A background run with Claude's reply to its notice holds its command, output
-                // lines and that reply above its summary, so it opens taller.
-                let cardSize = compact ? FlowCard.size
+                // lines and that reply above its summary, so it opens taller. A card beside a step says which (`FlowSteps.stepLabel`).
+                let cardSize = compact ? (inStep.contains(index) ? FlowCard.stepSize : FlowCard.size)
                     : size(id, width: 360, height: expanded.contains(id) ? 480 : agent.isTask && agent.noticeReply != nil ? 320 : 240)
                 let height = cardSize.height
                 let below = ordered(agents.indices.filter { $0 != index && agents[$0].parentID == agent.id })
@@ -517,54 +491,114 @@ public struct MightyGraphLayout {
                 }
                 return result
             }
-            var branches: [Tree] = []
-            for index in ordered(Array(agents.indices)) {
+            func isTop(_ index: Int) -> Bool {
                 let parent = agents[index].parentID
-                if parent == nil || indexes[parent!] == nil || parent == agents[index].id {
+                return parent == nil || indexes[parent!] == nil || parent == agents[index].id
+            }
+            // A plan waiting for its answer stands where the result will.
+            let planWaits = run.id == planRunID && !finished(run)
+            // The role view (`FanOut`): the request, what happened between it and its answer, and the answer. While there is
+            // no answer yet the main session's card stands in its place (the 실행 block, a card until opened).
+            let endsInWork = fanOut != nil && splitsExecution && !hasResult(run) && !planWaits
+            let workCompact = fanOut.map { !$0.opened.contains(workID) } ?? false
+            let workShown = workCompact ? FlowSteps.cardSize : workSize
+            // The request's steps that began, by their index among all its steps (`Content.step`); one not begun is only
+            // in the plan column (`Content.outline`).
+            let started = fanOut == nil ? [] : FlowSteps.steps(run).enumerated().filter { !$0.element.isPending }.map { (index: $0.offset, step: $0.element) }
+            let width: CGFloat
+            var tree: Tree
+            if !started.isEmpty {
+                // The request's spine: the request, then each step that began, every block launched from the main session
+                // beside the one whose time it was launched in (`FlowSteps.slot`; before the first step, beside the request).
+                let spineSteps = started.map(\.step)
+                var slots = [[Tree]](repeating: [], count: started.count + 1)
+                for index in ordered(Array(agents.indices)) where isTop(index) {
+                    if let branch = branch(index) { slots[FlowSteps.slot(of: agents[index], steps: spineSteps)].append(branch) }
+                }
+                for index in agents.indices where !visited.contains(index) {
+                    if let branch = branch(index) { slots[0].append(branch) }
+                }
+                var spine: [(id: String, content: Content, size: CGSize, compact: Bool)] = [(mainID, .request(runIndex), mainSize, false)]
+                for (index, step) in started {
+                    let id = nodeID(run, suffix: FlowSteps.nodeSuffix(step))
+                    let compact = fanOut.map { !$0.opened.contains(id) } ?? true
+                    spine.append((id, .step(runIndex, index), compact ? FlowSteps.cardSize : size(id, width: 360, height: expanded.contains(id) ? 480 : 240), compact))
+                }
+                // The spine stands on the run's centreline: the column beside it is matched by room on the other side.
+                var half = max(hasResult(run) ? resultSize.width : 0, endsInWork ? workShown?.width ?? 0 : 0) / 2
+                for (slot, block) in spine.enumerated() {
+                    let column = slots[slot].map(\.width).max() ?? 0
+                    half = max(half, block.size.width / 2 + (column > 0 ? FlowSteps.sideGap + column : 0))
+                }
+                width = 2 * half
+                tree = Tree(nodes: [], edges: [], width: width, height: 0, top: mainID, leaves: [])
+                var y: CGFloat = 0, above: String?
+                for (slot, block) in spine.enumerated() {
+                    let frame = CGRect(x: half - block.size.width / 2, y: above == nil ? 0 : y + rowGap, width: block.size.width, height: block.size.height)
+                    tree.nodes.append(Node(id: block.id, content: block.content, frame: frame, isCompact: block.compact))
+                    if let above { tree.edges.append(Edge(source: above, target: block.id)) }
+                    var bottom = frame.maxY, top = frame.minY
+                    for var child in slots[slot] {
+                        child.offset(x: frame.maxX + FlowSteps.sideGap, y: top)
+                        tree.nodes += child.nodes
+                        tree.edges += [Edge(source: block.id, target: child.top, side: true)] + child.edges
+                        bottom = max(bottom, top + child.height)
+                        top += child.height + siblingGap
+                    }
+                    y = bottom
+                    above = block.id
+                }
+                tree.height = y
+                tree.leaves = above.map { [$0] } ?? [mainID]
+            } else {
+                var branches: [Tree] = []
+                for index in ordered(Array(agents.indices)) where isTop(index) {
                     if let tree = branch(index) { branches.append(tree) }
                 }
-            }
-            // Malformed/cyclic legacy data still remains visible, once per agent.
-            for index in agents.indices where !visited.contains(index) {
-                if let tree = branch(index) { branches.append(tree) }
-            }
-            let branchWidth = branches.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, branches.count - 1)) * siblingGap
-            let width = max(mainSize.width, workSize?.width ?? 0, branchWidth, hasResult(run) ? resultSize.width : 0)
-            var tree = Tree(nodes: [Node(id: mainID, content: .request(runIndex), frame: CGRect(x: (width - mainSize.width) / 2, y: 0, width: mainSize.width, height: mainHeight))], edges: [], width: width, height: mainHeight, top: mainID, leaves: [mainID])
-            // The block the sub-agents branch from: the 실행 block right under the request, or the request itself.
-            var parentID = mainID
-            if let workSize {
-                tree.nodes.append(Node(id: workID, content: .work(runIndex), frame: CGRect(x: (width - workSize.width) / 2, y: mainHeight + rowGap, width: workSize.width, height: workSize.height)))
-                tree.edges.append(Edge(source: mainID, target: workID))
-                tree.leaves = [workID]
-                tree.height += rowGap + workSize.height
-                parentID = workID
-            }
-            if !branches.isEmpty {
-                tree.leaves = []
-                var top = tree.height + rowGap
-                // The main session's delegate line stands between it and the row (`FlowDelegation`).
-                if fanOut != nil, !FlowDelegation.children(of: FlowDelegation.mainKey, in: run).isEmpty {
-                    let line = nodeID(run, suffix: delegateSuffix + FlowDelegation.mainKey)
-                    let frame = CGRect(x: (width - FlowDelegation.size.width) / 2, y: tree.height + delegateGap, width: FlowDelegation.size.width, height: FlowDelegation.size.height)
-                    tree.nodes.append(Node(id: line, content: .delegate(runIndex, FlowDelegation.mainKey), frame: frame))
-                    tree.edges.append(Edge(source: parentID, target: line))
-                    parentID = line
-                    top = frame.maxY + delegateRowGap
+                // Malformed/cyclic legacy data still remains visible, once per agent.
+                for index in agents.indices where !visited.contains(index) {
+                    if let tree = branch(index) { branches.append(tree) }
                 }
-                var x = (width - branchWidth) / 2
-                for var child in branches {
-                    child.offset(x: x, y: top)
-                    tree.nodes += child.nodes
-                    tree.edges += [Edge(source: parentID, target: child.top)] + child.edges
-                    tree.leaves += child.leaves
-                    tree.height = max(tree.height, top + child.height)
-                    x += child.width + siblingGap
+                let branchWidth = branches.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, branches.count - 1)) * siblingGap
+                // The role view draws the 실행 block only where the answer will be (below); every other view right under the request.
+                let workUnder = fanOut == nil ? workShown : nil
+                width = max(mainSize.width, workUnder?.width ?? 0, branchWidth, hasResult(run) ? resultSize.width : 0, endsInWork ? workShown?.width ?? 0 : 0)
+                tree = Tree(nodes: [Node(id: mainID, content: .request(runIndex), frame: CGRect(x: (width - mainSize.width) / 2, y: 0, width: mainSize.width, height: mainHeight))], edges: [], width: width, height: mainHeight, top: mainID, leaves: [mainID])
+                // The block the sub-agents branch from: the 실행 block right under the request, or the request itself.
+                var parentID = mainID
+                if let workUnder {
+                    tree.nodes.append(Node(id: workID, content: .work(runIndex), frame: CGRect(x: (width - workUnder.width) / 2, y: mainHeight + rowGap, width: workUnder.width, height: workUnder.height)))
+                    tree.edges.append(Edge(source: mainID, target: workID))
+                    tree.leaves = [workID]
+                    tree.height += rowGap + workUnder.height
+                    parentID = workID
+                }
+                if !branches.isEmpty {
+                    tree.leaves = []
+                    var top = tree.height + rowGap
+                    // The main session's delegate line stands between it and the row (`FlowDelegation`).
+                    if fanOut != nil, !FlowDelegation.children(of: FlowDelegation.mainKey, in: run).isEmpty {
+                        let line = nodeID(run, suffix: delegateSuffix + FlowDelegation.mainKey)
+                        let frame = CGRect(x: (width - FlowDelegation.size.width) / 2, y: tree.height + delegateGap, width: FlowDelegation.size.width, height: FlowDelegation.size.height)
+                        tree.nodes.append(Node(id: line, content: .delegate(runIndex, FlowDelegation.mainKey), frame: frame))
+                        tree.edges.append(Edge(source: parentID, target: line))
+                        parentID = line
+                        top = frame.maxY + delegateRowGap
+                    }
+                    var x = (width - branchWidth) / 2
+                    for var child in branches {
+                        child.offset(x: x, y: top)
+                        tree.nodes += child.nodes
+                        tree.edges += [Edge(source: parentID, target: child.top)] + child.edges
+                        tree.leaves += child.leaves
+                        tree.height = max(tree.height, top + child.height)
+                        x += child.width + siblingGap
+                    }
                 }
             }
             // A plan waiting for an answer goes where the result will: the
             // run is still going, so nothing is below it yet.
-            if run.id == planRunID, !finished(run) {
+            if planWaits {
                 let id = nodeID(run, suffix: planSuffix)
                 let fit = Self.planSize(saved: savedPlanSize, viewport: viewport, zoom: zoom)
                 planFit = fit
@@ -579,15 +613,12 @@ public struct MightyGraphLayout {
                 tree.leaves = [id]
                 tree.height += rowGap + planSize.height
             }
-            // Until the result is there, the branches of a run that delegated come back into the return node standing in
-            // its place (`FlowReturn`): a plan waiting for its answer already stands there.
-            if fanOut != nil, !hasResult(run), !(run.id == planRunID && !finished(run)), FlowReturn.state(run) != nil {
-                let id = nodeID(run, suffix: returnSuffix)
-                let size = FlowReturn.size
-                tree.nodes.append(Node(id: id, content: .returning(runIndex), frame: CGRect(x: (tree.width - size.width) / 2, y: tree.height + rowGap, width: size.width, height: size.height)))
-                tree.edges += tree.leaves.map { Edge(source: $0, target: id, joins: true) }
-                tree.leaves = [id]
-                tree.height += rowGap + size.height
+            // The role view: the main session at work, where its answer will come, until it is there.
+            if endsInWork, let workShown {
+                tree.nodes.append(Node(id: workID, content: .work(runIndex), frame: CGRect(x: (width - workShown.width) / 2, y: tree.height + rowGap, width: workShown.width, height: workShown.height), isCompact: workCompact))
+                tree.edges += tree.leaves.map { Edge(source: $0, target: workID, joins: true) }
+                tree.leaves = [workID]
+                tree.height += rowGap + workShown.height
             }
             if hasResult(run) {
                 let id = resultID
@@ -670,7 +701,9 @@ public struct MightyGraphLayout {
         // card they would share rows with — attachments, like the file list: no
         // edge, no centreline, and nothing already placed moves.
         func anchor(_ runIndex: Int) -> Node? {
-            result.nodes.first(where: { $0.content == (splitsExecution ? .work(runIndex) : .request(runIndex)) })
+            // The role view draws the 실행 block only while the answer is not there: then the request is the anchor.
+            (splitsExecution ? result.nodes.first(where: { $0.content == .work(runIndex) }) : nil)
+                ?? result.nodes.first(where: { $0.content == .request(runIndex) })
         }
         var nextY: [Int: CGFloat] = [:]
         for execution in executions {
@@ -704,40 +737,6 @@ public struct MightyGraphLayout {
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
             result.size.height = max(result.size.height, frame.maxY + 24 - result.originY)
             nextY[runIndex] = frame.maxY + executionGap
-        }
-        // The advisor's band stands left of its run's column, from the 실행 block's top to the run's last block, left of
-        // every card it would share rows with: an attachment as well, so no edge, no centreline, and nothing already
-        // placed moves. Only the leading canvas extent grows. Dotted links go from it to the blocks that asked.
-        if fanOut != nil {
-            func flowRun(_ content: Content) -> Int? {
-                switch content {
-                case .request(let index), .work(let index), .result(let index), .plan(let index), .agent(let index, _), .delegate(let index, _), .returning(let index): index
-                default: nil
-                }
-            }
-            for (runIndex, run) in runs.enumerated() where FlowAdvisor.shows(run) {
-                guard let work = anchor(runIndex) else { continue }
-                let id = nodeID(run, suffix: FlowAdvisor.suffix)
-                guard !result.nodes.contains(where: { $0.id == id }) else { continue }
-                let bottom = result.nodes.filter { flowRun($0.content) == runIndex }.map(\.frame.maxY).max() ?? work.frame.maxY
-                let y = work.frame.minY, height = max(FlowAdvisor.minimumHeight, bottom - y)
-                let left = result.nodes.filter { $0.frame.minY < y + height && $0.frame.maxY > y }.map(\.frame.minX).min() ?? work.frame.minX
-                let frame = CGRect(x: min(left, work.frame.minX) - FlowAdvisor.gap - FlowAdvisor.width, y: y, width: FlowAdvisor.width, height: height)
-                let drawn = Set(result.nodes.map(\.id))
-                result.nodes.append(Node(id: id, content: .advisor(runIndex), frame: frame))
-                var linked = Set<String>()
-                for caller in FlowAdvisor.callers(run) {
-                    // A caller under a folded card is laid out nowhere: the card above it stands for it.
-                    guard let target = FlowLog.drawnNode(caller, in: run, drawn: drawn.contains), linked.insert(target).inserted else { continue }
-                    result.advisorLinks.append(AdvisorLink(band: id, target: target))
-                }
-                let origin = MightyGraphCamera.originX(leadingMinX: frame.minX)
-                if origin < result.originX {
-                    result.size.width += result.originX - origin
-                    result.originX = origin
-                }
-                result.size.height = max(result.size.height, frame.maxY + 24 - result.originY)
-            }
         }
         result.fittedResultID = Self.fittedResultID(runs: runs, viewport: viewport, sharedResultSize: sharedResultSize)
         result.resultLimit = resultLimit

@@ -366,7 +366,7 @@ public enum MobileMightySupport {
             mobile.awaitingNotice = MobileAwaitingNotice(BackgroundNoticeRuns.awaitingNotice(run, in: values))
             if let roles {
                 mobile.returning = MobileFlow.returning(run, roles: roles)
-                mobile.advisor = MobileFlow.advisor(run, roles: roles)
+                mobile.progress = MobileFlow.progress(offset + index, in: values, ordinal: ordinals[offset + index], roles: roles)
             }
             return mobile
         }
@@ -442,6 +442,8 @@ public enum MobileMightySupport {
                 hasher.combine(agent.figures?.toolCalls); hasher.combine(agent.figures?.endedAt); hasher.combine(agent.usage?.total)
                 hasher.combine(agent.identity?.resolvedModel)
             }
+            // The progress panel moves with each step's state and times.
+            for step in run.steps ?? [] { hasher.combine(step.key); hasher.combine(step.status); hasher.combine(step.startedAt); hasher.combine(step.endedAt) }
             // The advisor's band and the status line move with each consultation.
             hasher.combine(run.advisor?.count); hasher.combine(run.advisor?.usage?.total)
             for call in run.advisor?.calls ?? [] { hasher.combine(call.id); hasher.combine(call.state) }

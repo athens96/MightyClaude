@@ -511,9 +511,9 @@ public struct MobileMightyRun: Codable, Sendable, Equatable, Identifiable {
     /// the 알림 대기 block. Absent otherwise (and from older hosts).
     public var awaitingNotice: MobileAwaitingNotice?
     /// The role view (`MobileFlow`, `roles=1` on a Claude pane): the way back where the result will come, while it is not
-    /// there; the run's advisor.
+    /// there; a request's progress (its request in brief, its state and how far its plan got).
     public var returning: MobileReturn?
-    public var advisor: MobileAdvisor?
+    public var progress: MobileProgress?
     public init(id: String, input: String, title: String? = nil, status: String, blocks: [MobileBlock], result: String? = nil, noticeRun: Bool? = nil) {
         self.id = id; self.input = input; self.title = title; self.status = status; self.blocks = blocks; self.result = result
         self.noticeRun = noticeRun == true ? true : nil

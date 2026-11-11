@@ -75,6 +75,19 @@ struct ExecutionGraphTests {
         #expect(try latest(nodes, childID).output == "Actual child final answer")
     }
 
+    /// A Mods spawn on a call the stream showed as Bash makes no sub-agent block, and the call's output never becomes one's
+    /// answer. A spawn on an Agent call is the sub-agent's, as before.
+    @Test func aModsSpawnOnACallThatIsNoAgentCallMakesNoBlock() throws {
+        var nodes: [ExecutionGraphNode] = []
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "mods-run", activity: { _ in }, graph: { nodes.append($0) })
+        try send(assistant([["type": "tool_use", "id": "bash-1", "name": "Bash", "input": ["command": "swift test"]],
+                            ["type": "tool_use", "id": "agent-1", "name": "Agent", "input": ["description": "Map", "prompt": "Map the repo"]]], id: "m1"), to: parser)
+        parser.receiveMod(ModMetadata(claudeSessionId: "session", event: "agent.spawn", graph: ModGraphMetadata(phase: "starting", parentToolUseId: "bash-1")))
+        parser.receiveMod(ModMetadata(claudeSessionId: "session", event: "agent.spawn", graph: ModGraphMetadata(phase: "running", agentId: "a1", parentToolUseId: "agent-1", name: "Map")))
+        #expect(!nodes.contains { $0.id == ExecutionGraphSupport.agentNodeID(runId: "mods-run", toolUseId: "bash-1") })
+        #expect(nodes.contains { $0.id == ExecutionGraphSupport.agentNodeID(runId: "mods-run", toolUseId: "agent-1") && $0.title == "Map" })
+    }
+
     @Test func modsAliasOutOfOrderCompletionAndNestedParentsUseOneNode() throws {
         var nodes: [ExecutionGraphNode] = []; var activities: [AgentActivity] = []
         let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "mods-run", activity: { activities.append($0) }, graph: { nodes.append($0) })

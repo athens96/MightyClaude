@@ -362,16 +362,4 @@ struct GraphAdvisorTests {
         #expect(ExecutionGraphSupport.normalized(main)?.advisor == kept)
         #expect(ExecutionGraphSupport.normalized(main, restoring: true)?.advisor?.calls.first?.state == "stopped")
     }
-
-    @Test func aRequestRemembersTheAdvisorItWasStartedWithAndItsNoticeRunsDoToo() throws {
-        var session = RunSession(id: "pane", workspaceId: "space", title: "Claude", provider: "claude")
-        session.beginGraphRun(input: "go", id: "r1", configuredModel: "sonnet", configuredAdvisor: "opus")
-        session.beginGraphRun(input: "again", id: "r2", configuredModel: "sonnet", configuredAdvisor: "not a model")
-        session.beginGraphRun(input: "plain", id: "r3", configuredModel: "sonnet")
-        #expect(session.graphRuns?.map(\.configuredAdvisor) == ["opus", nil, nil])
-        // Another agent has no advisor.
-        var codex = RunSession(id: "codex", workspaceId: "space", title: "Codex", provider: "codex")
-        codex.beginGraphRun(input: "go", id: "c1", configuredModel: "default", configuredAdvisor: "opus")
-        #expect(codex.graphRuns?.map(\.configuredAdvisor) == [nil])
-    }
 }

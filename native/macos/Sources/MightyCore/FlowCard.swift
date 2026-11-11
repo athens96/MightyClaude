@@ -2,32 +2,29 @@ import CoreGraphics
 import Foundation
 
 /// A sub-agent, or a command the session runs in the background, as the flow diagram's compact card: who is working,
-/// what it is doing right now and how far it is, in four lines. A running sub-agent is a card; one that ran in the
-/// foreground becomes its full block when it ends, as it always was, and one that ran in the background stays a card,
-/// since its full block is the copy in its notice run (`BackgroundNoticeRuns`). A background command is a card from
-/// its launch on, for the same reason. Every figure on it is one the app observed: the time since it saw the agent
+/// what it is doing right now and how far it is, in four lines. Every sub-agent and command is a card, running or
+/// ended, and so is a finished background one's copy in its notice run (`BackgroundNoticeRuns`): only the result is drawn
+/// whole, and a click opens any card into its block. The 실행 block and a request's steps (`FlowSteps`) are cards
+/// the same way. Every figure on it is one the app observed: the time since it saw the agent
 /// start, the tool calls it counted, the tokens the CLI reported, the exit code the CLI named. Nothing is estimated
 /// and nothing is a percentage: an agent does not say how much of its work is left.
 public enum FlowCard {
     /// The card's size in the diagram. It is never dragged: opened, the block has its own saved size.
     public static let size = CGSize(width: 236, height: 86)
+    /// A card beside a request's step: one more line, the step it was launched in (`FlowSteps.stepLabel`).
+    public static let stepSize = CGSize(width: 236, height: 104)
 
     /// Whether the flow draws sub-agent `agent` as a card. `opened`: the user opened it into its full block, which
-    /// stays open until they fold it back. A copy in a notice run is always the full block, and so is a block that
-    /// is no sub-agent.
+    /// stays open until they fold it back. A block that is no sub-agent or command (a steer, a question, a compaction) is
+    /// always its block.
     public static func isCompact(_ agent: MightyGraphAgent, opened: Bool) -> Bool {
         guard foldsToCard(agent), !opened else { return false }
         return true
     }
 
-    /// Whether the block has a card to fold back to: a request's own background sub-agent or background command at any
-    /// time, a foreground sub-agent while it runs.
-    public static func foldsToCard(_ agent: MightyGraphAgent) -> Bool {
-        guard agent.sourceBlockId == nil else { return false }
-        if agent.isTask { return true }
-        guard agent.isSubagent else { return false }
-        return agent.background == true || !MightyGraphLayout.terminal(agent.status)
-    }
+    /// Whether the block has a card to fold back to: every sub-agent and background command, running or ended, a copy
+    /// in a notice run too.
+    public static func foldsToCard(_ agent: MightyGraphAgent) -> Bool { agent.isTask || agent.isSubagent }
 
     /// What a card says.
     public struct Content: Equatable, Sendable {
@@ -55,8 +52,14 @@ public enum FlowCard {
         /// its exit code and time.
         public var isTask = false
         public var exitCode: Int? = nil
+        /// A step not begun (`FlowSteps`): no time runs and no outline moves.
+        public var isPending = false
+        /// The one line is what the main session said (`FlowSteps`), set as text rather than as a command.
+        public var proseActivity = false
+        /// The step of the request's plan it was launched in ("2. 노트 작성"), on a line of its own (`FlowSteps.stepLabel`).
+        public var step: String? = nil
 
-        public var running: Bool { !MightyGraphLayout.terminal(status) }
+        public var running: Bool { !isPending && !MightyGraphLayout.terminal(status) }
     }
 
     /// The card of `agent`, a block of `run`. `definition` is the custom agent its type names (`AgentDefinitions`);

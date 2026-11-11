@@ -51,7 +51,7 @@ struct FlowLogTests {
             #expect(rows[0].nodeID == MightyGraphLayout.nodeID(request, suffix: MightyGraphLayout.workSuffix))
             #expect(rows[1].actor == .subagent("scout") && rows[1].ink == .agent)
             #expect(rows[1].nodeID == MightyGraphLayout.nodeID(request, suffix: "agent:scout"))
-            #expect(rows[1].actor.role == .subagent && rows[0].actor.role == .lead && FlowLog.Actor.advisor.role == .advisor)
+            #expect(rows[1].actor.role == .subagent && rows[0].actor.role == .lead)
             // Every row has an id of its own.
             #expect(Set(rows.map(\.id)).count == rows.count)
         }
@@ -137,18 +137,6 @@ struct FlowLogTests {
         #expect(rows.map(\.who) == ["plain", "custom", "nested"])
     }
 
-    @Test func theAdvisorsNotesAreRowsInTheAdvisorsInk() {
-        let request = run("r", root: [tool("a", "read", at: 5)])
-        let work = MightyGraphLayout.nodeID(request, suffix: MightyGraphLayout.workSuffix)
-        let notes = [FlowLog.AdvisorNote(id: "adv-1", time: stamp(3), who: "Opus 5.5", what: "검토 중", nodeID: work),
-                     FlowLog.AdvisorNote(id: "adv-2", time: stamp(7), who: "Opus 5.5", what: "조언 전달", nodeID: work),
-                     FlowLog.AdvisorNote(id: "adv-3", time: "never", who: "Opus 5.5", what: "lost", nodeID: work)]
-        let rows = FlowLog.rows([request], advisor: notes)
-        #expect(words(rows) == ["Opus 5.5 | 검토 중", "Sonnet 5.5 | read", "Opus 5.5 | 조언 전달"])
-        #expect(rows.map(\.actor) == [.advisor, .lead, .advisor])
-        #expect(rows[0].ink == FlowRoles.ink(.advisor) && rows[0].nodeID == work)
-    }
-
     @Test func theMainSessionIsNamedByTheModelThatAnswered() {
         LocaleOverride.$language.withValue(.ko) {
             #expect(FlowLog.leadName(run("r")) == "Sonnet 5.5")
@@ -208,14 +196,8 @@ struct FlowLogTests {
             let running = try #require(FlowLog.status([run("r", agents: agents)]))
             #expect(running.lead == "Sonnet 5.5 실행 중")
             #expect(running.subagents == "하위 에이전트 2/3 실행 중")
-            #expect(running.advisor == nil)
             #expect(running.text == "Sonnet 5.5 실행 중 · 하위 에이전트 2/3 실행 중")
             #expect(running.parts == [.init(role: .lead, text: "Sonnet 5.5 실행 중"), .init(role: .subagent, text: "하위 에이전트 2/3 실행 중")])
-            #expect(FlowLog.status([run("r", agents: agents)], advisor: .onCall)?.parts.map(\.role) == [.lead, .subagent, .advisor])
-            #expect(FlowLog.status([run("r")], advisor: .consulting)?.parts.map(\.role) == [.lead, .advisor])
-            // With an advisor, waiting or at work.
-            #expect(FlowLog.status([run("r", agents: agents)], advisor: .onCall)?.text == "Sonnet 5.5 실행 중 · 하위 에이전트 2/3 실행 중 · 조언자 대기")
-            #expect(FlowLog.status([run("r")], advisor: .consulting)?.text == "Sonnet 5.5 실행 중 · 조언자 검토 중")
             // Every sub-agent ended.
             let ended = agents.map { agent -> MightyGraphAgent in var agent = agent; agent.status = "completed"; return agent }
             #expect(FlowLog.status([run("r", status: "completed", agents: Array(ended.prefix(2)), output: "done")])?.text == "Sonnet 5.5 완료 · 하위 에이전트 2개 끝남")

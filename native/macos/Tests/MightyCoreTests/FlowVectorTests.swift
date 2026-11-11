@@ -7,7 +7,7 @@ import Testing
 /// platform that lays it out: the Windows Core (native/windows/MightyCode.Core.Tests/FlowVectorVerification.cs) and the Windows web page
 /// (native/windows/web/src/mighty/flow.test.ts) assert these frames, and this suite runs the Mac's layout on the same cases, as they do:
 /// the runs as written, `splitsExecution` on, no draft, nothing expanded, `opened` naming the node suffixes of cards the user opened.
-/// Every node with its kind, frame and card, every edge, the advisor's dotted links, the canvas size and origin, within 0.001. A case that
+/// Every node with its kind, frame and card, every edge, the canvas size and origin, within 0.001. A case that
 /// differs fails with each difference named (a node's id and how far it moved, a missing or extra edge or link, the size or origin).
 struct FlowVectorTests {
     private static let url = GraphAgentIdentityTests.root.appendingPathComponent("native/contracts/fixtures/flow-vectors.json")
@@ -33,7 +33,7 @@ struct FlowVectorTests {
         case .planRecord: return "planRecord"
         case .delegate: return "delegate"
         case .returning: return "return"
-        case .advisor: return "advisor"
+        case .step: return "step"
         }
     }
 
@@ -71,15 +71,14 @@ struct FlowVectorTests {
                 .filter { !near($0.1, $0.2) }.map { "\($0.0) \(signed($0.1 - $0.2)) (\(String(format: "%g", Double($0.1))) for \(String(format: "%g", Double($0.2))))" }
             if !deltas.isEmpty { found.append("\(id): " + deltas.joined(separator: ", ")) }
         }
-        let edges = (expect["edges"] as? [[String: Any]] ?? []).map { "\($0["source"] as? String ?? "")→\($0["target"] as? String ?? "")\(($0["joins"] as? Bool ?? false) ? " joins" : "")" }
-        let laidEdges = layout.edges.map { "\($0.source)→\($0.target)\($0.joins ? " joins" : "")" }
+        let edges = (expect["edges"] as? [[String: Any]] ?? []).map {
+            "\($0["source"] as? String ?? "")→\($0["target"] as? String ?? "")\(($0["joins"] as? Bool ?? false) ? " joins" : "")\(($0["side"] as? Bool ?? false) ? " side" : "")"
+        }
+        let laidEdges = layout.edges.map { "\($0.source)→\($0.target)\($0.joins ? " joins" : "")\($0.side ? " side" : "")" }
         if laidEdges != edges {
             let missing = edges.filter { !laidEdges.contains($0) }, extra = laidEdges.filter { !edges.contains($0) }
             found.append("edges:" + (missing.isEmpty ? "" : " missing \(missing)") + (extra.isEmpty ? "" : " extra \(extra)") + (missing.isEmpty && extra.isEmpty ? " in another order" : ""))
         }
-        let links = (expect["advisorLinks"] as? [[String: Any]] ?? []).map { "\($0["band"] as? String ?? "")⇢\($0["target"] as? String ?? "")" }
-        let laidLinks = layout.advisorLinks.map { "\($0.band)⇢\($0.target)" }
-        if laidLinks != links { found.append("advisor links: expected \(links), laid out \(laidLinks)") }
         let size = expect["size"] as? [String: Any] ?? [:]
         for (label, actual, expected) in [("width", layout.size.width, number(size["w"])), ("height", layout.size.height, number(size["h"])),
                                           ("origin x", layout.originX, number(expect["originX"])), ("origin y", layout.originY, number(expect["originY"]))]
@@ -87,6 +86,31 @@ struct FlowVectorTests {
             found.append("\(label) \(signed(actual - expected)) (\(String(format: "%g", Double(actual))) for \(String(format: "%g", Double(expected))))")
         }
         return found
+    }
+
+    /// `MIGHTY_WRITE_FLOW_VECTORS=<path>` writes every case's expectation as the Mac lays it out to that file, a JSON array in the
+    /// cases' order, for `scripts/flow-vectors.py` to put into the fixture when the role view's layout changes on purpose.
+    @Test func writesTheExpectationsWhenAsked() throws {
+        guard let path = ProcessInfo.processInfo.environment["MIGHTY_WRITE_FLOW_VECTORS"], !path.isEmpty else { return }
+        let written: [[String: Any]] = try LocaleOverride.$language.withValue(.ko) { () throws in
+            try Self.cases().map { item in
+                let layout = try Self.layout(item)
+                func n(_ value: CGFloat) -> Any { value.rounded() == value ? Int(value) as Any : Double(value) as Any }
+                let nodes: [[String: Any]] = layout.nodes.map { node in
+                    var row: [String: Any] = ["id": node.id, "kind": Self.kind(node.content), "x": n(node.frame.minX), "y": n(node.frame.minY), "w": n(node.frame.width), "h": n(node.frame.height)]
+                    if node.isCompact { row["compact"] = true }
+                    return row
+                }
+                let edges: [[String: Any]] = layout.edges.map { edge in
+                    var row: [String: Any] = ["source": edge.source, "target": edge.target, "joins": edge.joins]
+                    if edge.side { row["side"] = true }
+                    return row
+                }
+                return ["nodes": nodes, "edges": edges,
+                        "size": ["w": n(layout.size.width), "h": n(layout.size.height)], "originX": n(layout.originX), "originY": n(layout.originY)]
+            }
+        }
+        try JSONSerialization.data(withJSONObject: written, options: [.sortedKeys]).write(to: URL(fileURLWithPath: path))
     }
 
     @Test func theMacLaysOutTheSharedCasesAsWindowsDoes() throws {

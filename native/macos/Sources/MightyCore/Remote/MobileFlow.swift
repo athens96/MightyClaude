@@ -61,8 +61,24 @@ public enum MobileFlow {
                 if let copied = notice.agents.last(where: { $0.sourceBlockId == agent.id }) { copy = MobileCopyRef(runId: notice.id, blockId: copied.id); break }
             }
         }
-        return MobileBlockCard(activity: content.activity, before: before, after: after, startedAt: milliseconds(content.startedAt),
-                               endedAt: milliseconds(content.endedAt), nested: content.nested > 0 ? content.nested : nil, copy: copy)
+        var card = MobileBlockCard(activity: content.activity, before: before, after: after, startedAt: milliseconds(content.startedAt),
+                                   endedAt: milliseconds(content.endedAt), nested: content.nested > 0 ? content.nested : nil, copy: copy)
+        card.step = FlowSteps.stepLabel(agent, in: run)
+        return card
+    }
+
+    /// The progress of request `runs[index]` (`FlowSteps.progress`), headed by its request number; nil for a notice run and
+    /// outside the role view.
+    public static func progress(_ index: Int, in runs: [MightyGraphRun], ordinal: Int, roles: Roles) -> MobileProgress? {
+        guard roles.fanOut, runs.indices.contains(index), runs[index].noticeRun != true else { return nil }
+        let value = FlowSteps.progress(index, in: runs, heading: L("graph.timeline.requestOrdinal", ["n": "\(ordinal)"]))
+        let rows = value.rows.map { row in
+            MobileProgressRow(index: row.index, text: row.text, state: MobileProgressRow.word(row.state),
+                              startedAt: milliseconds(row.startedAt), endedAt: milliseconds(row.endedAt))
+        }
+        return MobileProgress(title: value.title, heading: value.heading, request: value.request, stateWord: value.stateWord, status: value.status,
+                              count: value.count, rows: rows, hidden: value.hidden,
+                              more: value.hidden > 0 ? L("graph.progress.more", ["count": "\(value.hidden)"]) : nil, running: value.running)
     }
 
     /// The line over the rows block `key` (`FlowDelegation.mainKey`, or a sub-agent's id) delegated to; nil when it
@@ -79,23 +95,12 @@ public enum MobileFlow {
         return MobileReturn(text: state.text, waiting: state.waiting)
     }
 
-    /// The advisor's band of `run` (`FlowAdvisor.band`): every consultation it keeps, oldest first.
-    public static func advisor(_ run: MightyGraphRun, roles: Roles) -> MobileAdvisor? {
-        guard roles.fanOut, let band = FlowAdvisor.band(run, definitions: roles.definitions) else { return nil }
-        let rows = band.rows.map { row in
-            MobileAdvisorRow(id: row.id, caller: row.caller, ink: row.ink.tokenName, at: milliseconds(row.started), seconds: row.seconds.map { Int($0) },
-                             line: row.line, state: row.state)
-        }
-        return MobileAdvisor(header: band.header, state: band.state.map { $0 == .consulting ? "consulting" : "onCall" }, rows: rows, calls: band.calls,
-                             totals: band.totals, note: band.note, empty: band.empty)
-    }
-
     /// The session log strip of a pane's runs (`FlowLog`): its status line in parts and the newest activity's last rows,
     /// oldest first. Nil for a pane without a request.
     public static func log(_ source: [MightyGraphRun], definitions: [String: AgentDefinition] = [:]) -> MobileFlowLog? {
         let runs = MightyGraphSupport.shownRuns(source)
-        guard let status = FlowLog.status(runs, advisor: FlowAdvisor.status(runs)) else { return nil }
-        let rows = FlowLog.rows(runs, definitions: definitions, advisor: FlowAdvisor.notes(runs)).map { row in
+        guard let status = FlowLog.status(runs) else { return nil }
+        let rows = FlowLog.rows(runs, definitions: definitions).map { row in
             MobileFlowLogRow(id: row.id, at: milliseconds(row.time) ?? 0, who: row.who, ink: row.ink.tokenName, what: row.what)
         }
         return MobileFlowLog(status: status.parts.map { MobileInkedText(text: $0.text, ink: FlowRoles.ink($0.role).tokenName) }, rows: rows)
@@ -150,9 +155,63 @@ public struct MobileBlockCard: Codable, Sendable, Equatable {
     public var nested: Int?
     /// A finished background block's full copy in a notice run the payload carries; absent otherwise.
     public var copy: MobileCopyRef?
+    /// The step of the request's plan it was launched in ("2. 노트 작성", `FlowSteps.stepLabel`); absent otherwise.
+    public var step: String? = nil
     public init(activity: String?, before: [String], after: [String], startedAt: Int?, endedAt: Int?, nested: Int?, copy: MobileCopyRef?) {
         self.activity = activity; self.before = before; self.after = after; self.startedAt = startedAt; self.endedAt = endedAt
         self.nested = nested; self.copy = copy
+    }
+}
+
+/// A request's progress on the phone (`MobileMightyRun.progress`, `FlowSteps.Progress`): the panel pinned over the session's
+/// Mighty view.
+public struct MobileProgress: Codable, Sendable, Equatable {
+    /// "진행 상황".
+    public var title: String
+    /// "요청 27".
+    public var heading: String
+    /// The request's first line.
+    public var request: String
+    public var stateWord: String
+    /// A status bucket (`MobileMightySupport.status`), or `waiting` while the request awaits its notices.
+    public var status: String
+    /// "2/3"; absent for a request without a plan.
+    public var count: String?
+    public var rows: [MobileProgressRow]
+    /// Steps the rows leave out, and the line that counts them.
+    public var hidden: Int
+    public var more: String?
+    /// The activity still goes on: the time of the step in progress runs on the phone's clock.
+    public var running: Bool
+    public init(title: String, heading: String, request: String, stateWord: String, status: String, count: String?, rows: [MobileProgressRow],
+                hidden: Int, more: String?, running: Bool) {
+        self.title = title; self.heading = heading; self.request = request; self.stateWord = stateWord; self.status = status
+        self.count = count; self.rows = rows; self.hidden = hidden; self.more = more; self.running = running
+    }
+}
+
+/// One step of a request's plan (`FlowSteps.Progress.Row`).
+public struct MobileProgressRow: Codable, Sendable, Equatable {
+    /// The step's index among the request's steps.
+    public var index: Int
+    /// "3. 버전 커밋"; the step in progress reads its activeForm while it runs.
+    public var text: String
+    /// `done`, `current`, `pending`, `stopped` or `failed`.
+    public var state: String
+    /// Milliseconds since 1970: when it began and ended; absent when it did not.
+    public var startedAt: Int?
+    public var endedAt: Int?
+    public init(index: Int, text: String, state: String, startedAt: Int?, endedAt: Int?) {
+        self.index = index; self.text = text; self.state = state; self.startedAt = startedAt; self.endedAt = endedAt
+    }
+    static func word(_ state: FlowSteps.Progress.State) -> String {
+        switch state {
+        case .done: "done"
+        case .current: "current"
+        case .pending: "pending"
+        case .stopped: "stopped"
+        case .failed: "failed"
+        }
     }
 }
 
@@ -179,45 +238,6 @@ public struct MobileReturn: Codable, Sendable, Equatable {
     /// Something it handed work to still runs.
     public var waiting: Bool
     public init(text: String, waiting: Bool) { self.text = text; self.waiting = waiting }
-}
-
-/// The advisor of a run (`MobileMightyRun.advisor`, `FlowAdvisor.Band`).
-public struct MobileAdvisor: Codable, Sendable, Equatable {
-    /// "조언자 · Opus 5.5 · 검토 중".
-    public var header: String
-    /// `consulting` or `onCall` while the run goes on; absent once it and everything it started ended.
-    public var state: String?
-    /// Every consultation the run keeps, oldest first.
-    public var rows: [MobileAdvisorRow]
-    /// Every consultation seen (more than `rows` once older ones were let go).
-    public var calls: Int
-    /// "호출 1 · 읽은 토큰 34K".
-    public var totals: String
-    /// The reply went to Claude encrypted, and nothing of it is shown.
-    public var note: String?
-    /// What it says in its rows' place before any consultation.
-    public var empty: String?
-    public init(header: String, state: String?, rows: [MobileAdvisorRow], calls: Int, totals: String, note: String?, empty: String?) {
-        self.header = header; self.state = state; self.rows = rows; self.calls = calls; self.totals = totals; self.note = note; self.empty = empty
-    }
-}
-
-/// One consultation of the advisor.
-public struct MobileAdvisorRow: Codable, Sendable, Equatable {
-    public var id: String
-    /// The main session's word or the sub-agent's name, in that role's ink.
-    public var caller: String
-    public var ink: String
-    /// Milliseconds since 1970 when it was asked; how many whole seconds the reply took once it came.
-    public var at: Int?
-    public var seconds: Int?
-    /// "답 직전 마지막 단계 · 조언 전달 · 내용 비표시": where in the caller's work, and how it ended.
-    public var line: String
-    /// `consulting`, `done`, `declined`, `error` or `stopped`.
-    public var state: String
-    public init(id: String, caller: String, ink: String, at: Int?, seconds: Int?, line: String, state: String) {
-        self.id = id; self.caller = caller; self.ink = ink; self.at = at; self.seconds = seconds; self.line = line; self.state = state
-    }
 }
 
 /// The session log strip (`MobileMighty.log`, `FlowLog`).

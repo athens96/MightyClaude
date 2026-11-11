@@ -111,7 +111,8 @@ struct FlowLinesTests {
     @Test func theDelegateLineStandsBetweenABlockAndItsRow() throws {
         let request = run("r", agents: [agent("a"), agent("b", background: true), agent("c")])
         let graph = layout([request])
-        let work = try #require(graph.nodes.first { $0.content == .work(0) })
+        // The main session's line hangs from the request: the 실행 card stands where the answer will come.
+        let work = try #require(graph.nodes.first { $0.content == .request(0) })
         let line = try #require(node(graph, id(request, MightyGraphLayout.delegateSuffix + FlowDelegation.mainKey)))
         #expect(line.content == .delegate(0, FlowDelegation.mainKey))
         #expect(line.frame.size == FlowDelegation.size)
@@ -164,26 +165,27 @@ struct FlowLinesTests {
         for other in narrow.nodes where other.id != narrowLine.id { #expect(!other.frame.intersects(narrowLine.frame), "\(other.id)") }
     }
 
-    @Test func theReturnNodeStandsWhereTheResultWillUntilItIsThere() throws {
+    @Test func theMainSessionsCardStandsWhereTheResultWillUntilItIsThere() throws {
         var request = run("r", agents: [agent("a"), agent("b")])
         let graph = layout([request])
-        let back = try #require(node(graph, id(request, MightyGraphLayout.returnSuffix)))
-        #expect(back.content == .returning(0))
-        #expect(back.frame.size == FlowReturn.size)
+        #expect(node(graph, id(request, MightyGraphLayout.returnSuffix)) == nil)
+        let back = try #require(node(graph, id(request, MightyGraphLayout.workSuffix)))
+        #expect(back.content == .work(0))
+        #expect(back.isCompact && back.frame.size == FlowSteps.cardSize)
         #expect(back.isFixed && !back.isResizable && !back.isAuxiliary)
         let cards = try ["a", "b"].map { try #require(node(graph, id(request, "agent:" + $0))) }
         // The row's branches converge into it, as they will into the result.
         for card in cards { #expect(graph.edges.contains { $0.source == card.id && $0.target == back.id && $0.joins }) }
         #expect(back.frame.minY == cards[0].frame.maxY + 32)
-        let work = try #require(graph.nodes.first { $0.content == .work(0) })
-        #expect(abs(back.frame.midX - work.frame.midX) < 0.5)
+        let main = try #require(graph.nodes.first { $0.content == .request(0) })
+        #expect(abs(back.frame.midX - main.frame.midX) < 0.5)
         #expect(node(graph, id(request, "result")) == nil)
 
         // The run ended with everything it draws: the result takes the node's place, at the same top.
         request.status = "completed"; request.finalOutput = "done"
         request.agents = request.agents.map { var agent = $0; agent.status = "completed"; return agent }
         let done = layout([request], running: false)
-        #expect(node(done, id(request, MightyGraphLayout.returnSuffix)) == nil)
+        #expect(node(done, id(request, MightyGraphLayout.workSuffix)) == nil)
         let result = try #require(node(done, id(request, "result")))
         for child in ["a", "b"] { #expect(done.edges.contains { $0.source == id(request, "agent:" + child) && $0.target == result.id && $0.joins }) }
     }
@@ -196,10 +198,10 @@ struct FlowLinesTests {
         let result = try #require(node(graph, id(request, "result")))
         #expect(graph.edges.contains { $0.source == id(request, "agent:bg") && $0.target == result.id && $0.joins })
         #expect(BackgroundNoticeRuns.awaitingNotice(MightyGraphSupport.shownRuns([request])[0], in: MightyGraphSupport.shownRuns([request])) != nil)
-        // While the turn still runs, the same background agent's card leads into the return node.
+        // While the turn still runs, the same background agent's card leads into the main session's card.
         let turn = run("r", agents: [agent("bg", background: true)], status: "running")
         let running = layout([turn])
-        #expect(running.edges.contains { $0.source == id(turn, "agent:bg") && $0.target == id(turn, MightyGraphLayout.returnSuffix) })
+        #expect(running.edges.contains { $0.source == id(turn, "agent:bg") && $0.target == id(turn, MightyGraphLayout.workSuffix) })
     }
 
     @Test func aPlanWaitingForItsAnswerStandsThereInsteadAndANoticeRunHasNeither() {
@@ -219,14 +221,14 @@ struct FlowLinesTests {
 
     // MARK: Camera and live edges
 
-    @Test func theFollowedBlockIsTheReturnNodeAndThenTheResult() throws {
+    @Test func theFollowedBlockIsTheMainSessionsCardAndThenTheResult() throws {
         let viewport = CGSize(width: 900, height: 600)
         var request = run("r", agents: [agent("a"), agent("b")])
         let runs = MightyGraphSupport.shownRuns([request])
         let graph = MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [], splitsExecution: true, fanOut: .init())
-        // The lowest block of the newest work: the return node, never a delegate line.
+        // The lowest block of the newest work: the main session's card where the answer will come, never a delegate line.
         let followed = try #require(MightyGraphFollow.targetID(graph, runs: runs))
-        #expect(followed == id(request, MightyGraphLayout.returnSuffix))
+        #expect(followed == id(request, MightyGraphLayout.workSuffix))
         let back = try #require(node(graph, followed))
         var watch = MightyGraphFollow.Watch()
         let camera = MightyGraphFollow.cameraOffset(for: back.frame, viewport: viewport, zoom: 1, alignTop: false, alignBottom: false, follows: true)
@@ -277,14 +279,14 @@ struct FlowLinesTests {
         let graph = MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [], splitsExecution: true, fanOut: .init())
         let live = graph.liveFlowIDs(MightyGraphLayout.liveNodeIDs(runs, fanOut: true))
         let line = id(request, MightyGraphLayout.delegateSuffix + FlowDelegation.mainKey)
-        // The running card, the line that leads to it, and the return node the run comes back into.
+        // The running card, the line that leads to it, and the main session's card the run comes back into.
         #expect(live.contains(id(request, "agent:a")))
         #expect(live.contains(line))
-        #expect(live.contains(id(request, MightyGraphLayout.returnSuffix)))
+        #expect(live.contains(id(request, MightyGraphLayout.workSuffix)))
         #expect(!live.contains(id(request, "agent:b")))
         let split = graph.routes(into: live)
-        // Into the 실행 block, the line, the running card and (from both cards) the return node; the ended card's branch is quiet.
-        #expect(split.into.count == 5 && split.other.count == 1)
+        // Into the line, the running card and (from both cards) the main session's card; the ended card's branch is quiet.
+        #expect(split.into.count == 4 && split.other.count == 1)
         // A row whose every card ended has a quiet line.
         let ended = run("r", agents: [agent("a", status: "completed"), agent("b", status: "completed", background: true)], status: "completed")
         let endedRuns = MightyGraphSupport.shownRuns([ended])

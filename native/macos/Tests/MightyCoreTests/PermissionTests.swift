@@ -233,7 +233,9 @@ struct PermissionTests {
             #expect(try response(Data(contentsOf: root.appendingPathComponent("response.json")))["behavior"] as? String == "deny")
             let autoFlags = try String(contentsOf: root.appendingPathComponent("arguments.txt"), encoding: .utf8)
             #expect(autoFlags.contains("--permission-mode\nauto\n")); #expect(autoFlags.contains("--permission-prompts\nhost\n"))
-            #expect(!autoFlags.contains("bypassPermissions")); #expect(!autoFlags.contains("--allowedTools"))
+            // Auto mode widens nothing: the one tool list it names is Claude Code's own task tools, which the request's plan needs.
+            #expect(!autoFlags.contains("bypassPermissions"))
+            #expect(autoFlags.components(separatedBy: "--allowedTools\n").count == 2 && autoFlags.contains("--allowedTools\nTaskCreate,TaskUpdate,TaskList,TaskGet\n"))
 
             try FileManager.default.removeItem(at: root.appendingPathComponent("response.json"))
             try await runner.start(request: request, workspace: workspace, allowPermissionPrompts: true)

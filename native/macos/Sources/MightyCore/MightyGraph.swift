@@ -90,6 +90,12 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     /// Claude's settings name (`ClaudeAdvisorSettings`). Absent when none was known, when the pane turned it off, in
     /// older saves and in runs the app did not start.
     public var configuredAdvisor: String?
+    /// The request's checklist as steps, with when each began and ended (`FlowSteps`). Absent in a run whose main session
+    /// kept no list, in notice runs and in older saves.
+    public var steps: [FlowStep]?
+    /// The keys of the items the pane's list already had done when this request first sent one: the earlier request's,
+    /// which are never this one's steps. Absent when there were none.
+    public var stepsCarried: [String]?
     /// `backgroundWaiting` of the run `shown` was made from, whose background blocks it no longer holds. Never saved.
     fileprivate var shownBackgroundWaiting: Int?
     /// The background work of the whole request this run belongs to (`MightyGraphSupport.withBackgroundWaiting`), which a notice run
@@ -119,6 +125,7 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
         case id, input, status, rootEntries, agents, resultEntries, sourceRunID, finalOutput, usage, responseRecords, provider, nodeModelLabel, configuredModel, noticeRun, noticeTitle
         case configuredEffort
         case advisor, configuredAdvisor
+        case steps, stepsCarried
     }
     public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, responseRecords: [GraphResponseRecord]? = nil, provider: String? = nil, nodeModelLabel: String? = nil, configuredModel: String? = nil,
                 noticeRun: Bool? = nil, noticeTitle: String? = nil, configuredEffort: String? = nil, advisor: GraphAdvisor? = nil, configuredAdvisor: String? = nil) {
@@ -334,12 +341,23 @@ public enum MightyGraphSupport {
 
     /// Share a bounded persistence budget with the rest of the saved profile.
     /// Malformed graph metadata cannot invalidate the original transcript.
+    /// A block an earlier build made from a running Bash call's heartbeat (Claude Code's `tool_progress`, which names the call
+    /// as its parent): asked nothing, no one, and holding only the call's output as its answer. A sub-agent the stream or
+    /// Mods started always has its prompt.
+    static func isHeartbeatBlock(_ agent: MightyGraphAgent) -> Bool {
+        agent.kind == nil && agent.input.isEmpty && agent.identity == nil && agent.usage == nil
+            && agent.responseRecords == nil && agent.background != true && agent.sourceBlockId == nil
+            && !agent.entries.isEmpty && agent.entries.allSatisfy { $0.kind == "assistant" && $0.id.hasSuffix("-answer") }
+    }
+
     public static func normalized(_ values: [MightyGraphRun], restoring: Bool, budget: inout Int, provider: String? = nil) -> [MightyGraphRun] {
         var ids = Set<String>()
         var result: [MightyGraphRun] = []
         for var run in values.suffix(128).reversed() {
             var agentIDs = Set<String>()
-            let agents = run.agents.prefix(128).filter { CoreValidation.identifier($0.id) && agentIDs.insert($0.id).inserted }
+            // Only Claude sends a running tool's heartbeat; another agent's sub-agent may well have no prompt of its own.
+            let claude = (provider ?? run.provider ?? "claude") == "claude"
+            let agents = run.agents.prefix(128).filter { CoreValidation.identifier($0.id) && !(claude && isHeartbeatBlock($0)) && agentIDs.insert($0.id).inserted }
             // Reserve the whole tree before spending text bytes: clipping an
             // active child's text must never remove its unfinished identity.
             let overhead = 512 + run.id.utf8.count + (run.sourceRunID?.utf8.count ?? 0)
@@ -366,6 +384,19 @@ public enum MightyGraphSupport {
             run.finalOutput = run.finalOutput.map { bounded($0, maximum: min(32_768, max(0, budget / 3)), budget: &budget) }
             budget -= (run.finalOutput?.utf8.count ?? 0) * 2
             run.rootEntries = limitedEntries(run.rootEntries, maximum: 131_072, restoring: restoring, budget: &budget)
+            // The checklist's steps, as many as a list holds, each item's words bounded as the list bounds them.
+            run.steps = run.noticeRun == true ? nil : run.steps.map { steps in
+                Array(steps.prefix(TodoProgress.maximumItems)).map { step in
+                    var step = step
+                    step.key = String(step.key.prefix(1_100)); step.content = bounded(step.content, maximum: 1_024, budget: &budget)
+                    step.activeForm = step.activeForm.map { bounded($0, maximum: 1_024, budget: &budget) }
+                    if !["pending", "in_progress", "completed"].contains(step.status) { step.status = "pending" }
+                    if step.startedAt.flatMap(AgentRunTiming.parseTimestamp) == nil { step.startedAt = nil }
+                    if step.endedAt.flatMap(AgentRunTiming.parseTimestamp) == nil { step.endedAt = nil }
+                    return step
+                }
+            }
+            run.stepsCarried = run.stepsCarried.map { Array($0.prefix(256)).map { String($0.prefix(1_100)) } }.flatMap { $0.isEmpty ? nil : $0 }
             run.agents = agents.map { original in
                 var agent = original
                 agent.title = bounded(agent.title, maximum: 240, budget: &budget)
@@ -585,15 +616,13 @@ extension RunSession {
     /// `status` "starting" is a request this app sent that reads 전송 중 until its run's
     /// first event (natural submit B1; `recordGraph` moves it on).
     /// `configuredEffort` is the pane's effort setting at that moment, kept for the 실행 block's header.
-    /// `configuredAdvisor` is the advisor's model when one is known to be on for the request (`MightyGraphRun.configuredAdvisor`).
     public mutating func beginGraphRun(input: String, id: String = UUID().uuidString, configuredModel: String, configuredEffort: String? = nil,
-                                       configuredAdvisor: String? = nil, status: String = "running") {
+                                       status: String = "running") {
         guard kind == "claude", MightyGraphSupport.providers.contains(provider) else { return }
         if graphRuns == nil { graphRuns = MightyGraphSupport.legacyRuns(self) }
         graphRuns?.append(MightyGraphRun(id: id, input: input, status: status, provider: provider,
                                          nodeModelLabel: GraphModelLabel.nodeModelLabel(cliReportedModel: nil, configuredModel: configuredModel),
-                                         configuredModel: configuredModel, configuredEffort: configuredEffort,
-                                         configuredAdvisor: provider == "claude" ? configuredAdvisor.flatMap { CoreValidation.model($0) ? $0 : nil } : nil))
+                                         configuredModel: configuredModel, configuredEffort: configuredEffort))
         graphRuns = graphRuns.map { MightyGraphSupport.boundedLiveHistory(Array($0.suffix(128))) }
     }
 
@@ -605,20 +634,10 @@ extension RunSession {
         graphRuns?[index].configuredEffort = effort
     }
 
-    /// The advisor request `runID`'s run starts with, once Claude's settings were read for a pane that follows them
-    /// (`ClaudeAdvisorSettings.configured`); nil when none is known to be on.
-    public mutating func noteGraphRunAdvisor(_ model: String?, runID: String) {
-        guard provider == "claude", let index = graphRuns?.firstIndex(where: { $0.id == runID }) else { return }
-        let value = model.flatMap { CoreValidation.model($0) ? $0 : nil }
-        guard graphRuns?[index].configuredAdvisor != value else { return }
-        graphRuns?[index].configuredAdvisor = value
-    }
-
     public mutating func recordGraph(_ event: RunEvent) {
         guard kind == "claude", MightyGraphSupport.providers.contains(provider), event.sessionId == id else { return }
         if event.type == "log", let entry = event.entry, entry.kind == "user" {
-            beginGraphRun(input: entry.text, id: entry.id, configuredModel: model, configuredEffort: settings.effort,
-                          configuredAdvisor: ClaudeAdvisorSettings.configured(pane: settings.advisor) { nil })
+            beginGraphRun(input: entry.text, id: entry.id, configuredModel: model, configuredEffort: settings.effort)
             return
         }
         guard var runs = graphRuns, !runs.isEmpty else { return }
