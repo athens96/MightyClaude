@@ -509,9 +509,12 @@ public actor ProviderService {
         var models = [fallback.models[0]]; var seen = Set<String>()
         for row in rows.prefix(128) {
             guard let value = row["value"] as? String, CoreValidation.model(value), seen.insert(value).inserted else { continue }
-            let haiku = value.lowercased().contains("haiku")
+            let supports = row["supportsEffort"] as? Bool
             let levels = (row["supportedEffortLevels"] as? [String])?.filter { ProviderOptions.efforts.contains($0) }
-            let option = ModelOption(value: value, displayName: String((row["displayName"] as? String ?? value).prefix(160)), description: String((row["description"] as? String ?? "").prefix(2400)), resolvedModel: (row["resolvedModel"] as? String).flatMap { CoreValidation.model($0) ? $0 : nil }, supportsEffort: haiku ? false : row["supportsEffort"] as? Bool, supportedEffortLevels: haiku ? [] : levels)
+            // What the CLI says about a model's effort wins: Claude Code 2.1.322 gives Haiku 5.5 low to max. A Haiku model it
+            // says nothing about (Haiku 4.5 there) keeps the old rule, no effort (`ProviderOptions.silentHaiku`).
+            let silent = ProviderOptions.silentHaiku(value, supportsEffort: supports, levels: levels)
+            let option = ModelOption(value: value, displayName: String((row["displayName"] as? String ?? value).prefix(160)), description: String((row["description"] as? String ?? "").prefix(2400)), resolvedModel: (row["resolvedModel"] as? String).flatMap { CoreValidation.model($0) ? $0 : nil }, supportsEffort: silent ? false : supports, supportedEffortLevels: silent ? [] : levels)
             if value == "default" {
                 models[0].resolvedModel = option.resolvedModel
                 models[0].supportsEffort = option.supportsEffort

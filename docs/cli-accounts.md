@@ -94,7 +94,9 @@ CLI 탐색·모델 조회·실제 실행은 해당 작업 폴더의 로그인 �
 
 원격 작업 공간과 휴대폰: 새 Mac 호스트의 `/v2/info`에서 `modelCatalog`에 `readFailure`·`listedAt`이 붙을 수 있습니다. 둘 다 선택 필드라 예전 Mac·Windows 클라이언트는 무시하고, 새 Mac 클라이언트는 예전 호스트가 보내지 않으면 없는 것으로 읽습니다(2,000자·64자를 넘으면 거절). 원격 창의 메뉴도 호스트의 실패를 같은 줄로 보입니다. 공유 픽스처 `remote-v2/info-darwin.json`은 그대로입니다(Windows가 그대로 왕복 비교한다). 휴대폰은 모델 이름 목록만 받으므로 바뀌는 것이 없습니다.
 
-확인했지만 이번에 바꾸지 않은 것: Claude 2.1.322는 Haiku 5.5가 추론 강도(low~max)를 지원한다고 답하지만, 앱은 이름에 `haiku`가 든 모델의 추론 강도를 모두 끕니다(`normalizeClaudeCatalog`, `validation.run.haikuEffort`). Codex 0.167.0은 `ultra` 강도를 알리지만 앱의 강도 목록에 없어 빠집니다.
+추론 강도도 목록이 말하는 대로입니다. Claude 2.1.322는 Haiku 5.5(`haiku`, 지금 가리키는 `claude-haiku-5-5`)가 low~max를 지원한다고 답하고, 앱은 그 단계를 메뉴에 그대로 보이고 다른 Claude 모델처럼 실행에 넘깁니다(`--effort`, `CLAUDE_CODE_EFFORT_LEVEL`). 전에는 이름에 `haiku`가 든 모델의 추론 강도를 모두 껐습니다. "Haiku는 추론 강도 없음"이라는 옛 규칙은 CLI가 그 모델에 대해 아무 말도 하지 않을 때만 남습니다(`ProviderOptions.silentHaiku`): 목록에 `supportsEffort`도 단계도 없는 Haiku 4.5(`claude-haiku-4-5-20251001`), 기본 목록의 `haiku`, 목록에 없는 Haiku 모델. `supportsEffort: true`만 있고 단계가 없으면 다른 모델처럼 low·medium·high입니다. 그런 Haiku에 강도를 고른 실행은 전처럼 `validation.run.haikuEffort`로 거절하되, 판정은 모델 이름만 보는 검사(`CoreValidation.validate`)가 아니라 그 작업 폴더의 목록을 아는 실행 직전 확인(`validateSelection`)이 합니다. 목록에 없는 단계를 고른 것은 Haiku라도 `validation.run.effortUnknown`입니다. 설정 → 모델의 실행 단계 강도(`runEffort`), 새로 읽은 목록의 선택 보정(`ModelSelectionSupport.reconcile`), 사람이 연 하위 창이 물려받는 모델·강도도 같은 목록으로 판정합니다(`ModelEffortTests`).
+
+확인했지만 이번에 바꾸지 않은 것: Codex 0.167.0은 `ultra` 강도를 알리지만 앱의 강도 목록에 없어 빠집니다.
 
 Windows가 따라야 할 것(아직 하지 않음):
 
@@ -103,6 +105,7 @@ Windows가 따라야 할 것(아직 하지 않음):
 - `ModelSelectionSupport.Reconcile`과 Antigravity의 실행 전 기본값 전환이 `Source == "cli"`가 아니라 새로 읽은 목록(`readFailure` 없음)만 믿도록.
 - 로그인 완료·로그아웃 때 그 제공자의 목록 캐시를 워크스페이스와 관계없이 버리기.
 - 목록 명령 인자를 고정하는 테스트(agy는 `models`만 받는다).
+- Haiku 추론 강도를 CLI 목록대로: `ProviderCatalog.cs`의 Claude 목록 정규화(`value.Contains("haiku")`이면 강도를 끈다)와 강도 단계(`model.Contains("haiku")`이면 없음), `Models.cs`의 실행 검사(`Model.Contains("haiku")`에 강도가 있으면 거절)가 아직 이름으로 판정합니다. CLI가 `supportsEffort`나 단계를 주면 그대로 쓰고 아무 말도 없을 때만 옛 규칙을 남기며, Haiku 거절은 목록을 아는 실행 직전 확인으로 옮겨야 합니다.
 
 ### Bedrock 인증 진단
 

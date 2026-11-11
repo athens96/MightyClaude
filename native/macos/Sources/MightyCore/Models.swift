@@ -767,6 +767,12 @@ public enum ProviderOptions {
     public static func fallbackRuntime(_ id: String) -> ProviderRuntime {
         ProviderRuntime(id: id, name: id == "claude" ? "Claude Code" : "\(label(id)) CLI", detail: L("provider.fallback.checkInstall"), modelCatalog: fallbackCatalog(id), capabilities: ProviderCapabilities(effort: id != "gemini", permissionModes: permissionModes(provider: id, includeAuto: false, includeOnRequest: false), maxTurns: id == "claude", maxBudgetUsd: id == "claude", fastMode: id == "codex", webSearch: id == "codex", networkAccess: id == "codex", attachments: true))
     }
+    /// A Haiku model the CLI says nothing about: no `supportsEffort` and no levels in its list, or no list that names it.
+    /// Haiku took no effort before Claude Code named levels for it, so such a model still takes none; what the CLI says
+    /// wins (2.1.322 gives Haiku 5.5 low to max, and nothing for Haiku 4.5).
+    public static func silentHaiku(_ model: String, supportsEffort: Bool?, levels: [String]?) -> Bool {
+        supportsEffort == nil && levels == nil && model.lowercased().contains("haiku")
+    }
     public static func effortLevels(provider: String, model: String, catalog: ModelCatalog? = nil, registeredModels: [RegisteredModelEntry]) -> [String] {
         if provider == "gemini" { return [] }
         if provider == "pi" { return catalog?.models.first { $0.value == model }?.supportsEffort == false ? [] : piThinkingLevels }
@@ -781,7 +787,7 @@ public enum ProviderOptions {
             if !reg.supportsEffort { return [] }
             return reg.supportedEffortLevels.filter { efforts.contains($0) }
         }
-        if provider == "codex" || model.lowercased().contains("haiku") { return [] }
+        if provider == "codex" || silentHaiku(model, supportsEffort: option?.supportsEffort, levels: option?.supportedEffortLevels) { return [] }
         if model.range(of: "(?:opus|sonnet)[-.]4[-.]6", options: .regularExpression) != nil { return efforts.filter { $0 != "xhigh" } }
         if model.range(of: "^(?:default|best|fable|opus|sonnet|opusplan)(?:\\[1m\\])?$|(?:fable[-.]5|opus[-.](?:5|4[-.][78])|sonnet[-.]5)", options: .regularExpression) != nil { return efforts }
         return option?.supportsEffort == true ? ["low", "medium", "high"] : []
@@ -815,11 +821,11 @@ public enum CoreValidation {
         if let mode = request.permissionModeOverride, mode != "plan" || request.kind != "claude" || request.provider != "claude" { throw MightyError(L("plan.error.overrideClaudeOnly")) }
         if s.permissionMode == "onRequest", request.kind != "claude" || request.provider != "codex" { throw MightyError(L("validation.run.onRequestCodexOnly")) }
         if request.kind == "shell", s.fastMode || s.webSearch != "default" || s.networkAccess { throw MightyError(L("validation.run.shellSettings")) }
+        // Whether a model takes the effort (Haiku among them) is its CLI list's to say, in `validateSelection`.
         if request.kind == "claude" {
             var caps = ProviderOptions.fallbackRuntime(request.provider).capabilities
             caps.permissionModes = ProviderOptions.permissionModes(provider: request.provider)
             try validateCapabilities(request, capabilities: caps)
-            if request.provider == "claude", request.model.lowercased().contains("haiku"), s.effort != "default" { throw MightyError(L("validation.run.haikuEffort")) }
         }
     }
     public static func validateCapabilities(_ request: StartRunRequest, capabilities caps: ProviderCapabilities) throws {
@@ -838,7 +844,12 @@ public enum CoreValidation {
             let isRegistered = registeredModels.contains(where: { $0.name == request.model })
             guard official || inCatalog || isRegistered else { throw MightyError(L("validation.run.modelNotFound")) }
         }
-        if request.settings.effort != "default", !ProviderOptions.effortLevels(provider: request.provider, model: request.model, catalog: catalog, registeredModels: registeredModels).contains(request.settings.effort) { throw MightyError(L("validation.run.effortUnknown")) }
+        guard request.settings.effort != "default" else { return }
+        let levels = ProviderOptions.effortLevels(provider: request.provider, model: request.model, catalog: catalog, registeredModels: registeredModels)
+        guard !levels.contains(request.settings.effort) else { return }
+        // A Haiku model that takes no effort at all (one the CLI says nothing about) is refused in Haiku's words.
+        if request.provider == "claude", levels.isEmpty, request.model.lowercased().contains("haiku") { throw MightyError(L("validation.run.haikuEffort")) }
+        throw MightyError(L("validation.run.effortUnknown"))
     }
     /// Validates a model name for registration. Trims whitespace and rejects empty names,
     /// the reserved value "default", names failing CoreValidation.model, provider duplicates,
