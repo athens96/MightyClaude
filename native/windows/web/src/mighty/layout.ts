@@ -561,7 +561,9 @@ export function makeLayout(given: readonly MightyGraphRun[], draft: string, runn
     if (gallery.count <= 0 || index < 0) continue;
     const run = runs[index]!;
     const stepID = runNodeId(run, splitsExecution && gallery.step === RequestStep ? WorkSuffix : gallery.step);
-    const step = layout.nodes.find((n) => n.id === stepID && !isAuxiliaryKind(n.kind));
+    // The role view draws no 실행 block once the answer is there: the request's pictures hang off the request then.
+    const step = layout.nodes.find((n) => n.id === stepID && !isAuxiliaryKind(n.kind))
+      ?? (gallery.step === RequestStep ? layout.nodes.find((n) => n.id === runNodeId(run, 'request')) : undefined);
     if (!step) continue;
     const id = runNodeId(run, ImagesSuffix + gallery.step);
     if (layout.nodes.some((n) => n.id === id)) continue;

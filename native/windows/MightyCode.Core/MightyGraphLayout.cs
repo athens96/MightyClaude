@@ -648,7 +648,10 @@ public sealed class MightyGraphLayout
             if (gallery.Count <= 0 || RunIndex(gallery.RunID) is not (>= 0 and var runIndex)) continue;
             // The request step's pictures come from the main agent's records: with a 실행 block they hang off it.
             var stepID = NodeID(runs[runIndex], splitsExecution && gallery.Step == MightyGraphImages.RequestStep ? WorkSuffix : gallery.Step);
-            if (layout.Nodes.FirstOrDefault(n => n.Id == stepID && !IsAuxiliary(n.Kind)) is not { } step) continue;
+            // The role view draws no 실행 block once the answer is there: the request's pictures hang off the request then.
+            var requestID = NodeID(runs[runIndex], "request");
+            if ((layout.Nodes.FirstOrDefault(n => n.Id == stepID && !IsAuxiliary(n.Kind))
+                    ?? (gallery.Step == MightyGraphImages.RequestStep ? layout.Nodes.FirstOrDefault(n => n.Id == requestID) : null)) is not { } step) continue;
             var id = NodeID(runs[runIndex], ImagesSuffix + gallery.Step);
             if (layout.Nodes.Any(n => n.Id == id)) continue;
             var height = ImagesHeight(gallery.Count, expanded.Contains(id));

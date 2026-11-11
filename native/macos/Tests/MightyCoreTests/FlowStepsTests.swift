@@ -16,6 +16,13 @@ struct FlowStepsTests {
     private func request(_ id: String = "r", status: String = "running", entries: [LogEntry] = [], agents: [MightyGraphAgent] = []) -> MightyGraphRun {
         MightyGraphRun(id: id, input: "릴리스", status: status, rootEntries: entries, agents: agents, sourceRunID: id, provider: "claude")
     }
+    /// Step `index` of a thirty-step plan: twenty done, the twenty-first in progress, the rest not begun.
+    private func longStep(_ index: Int) -> FlowStep {
+        let status: String
+        if index < 20 { status = "completed" } else if index == 20 { status = "in_progress" } else { status = "pending" }
+        let started: String? = index <= 20 ? stamp(Double(index)) : nil
+        return FlowStep(key: String(index), content: "단계 " + String(index), status: status, startedAt: started)
+    }
     private func tool(_ id: String, _ summary: String, at seconds: Double) -> LogEntry {
         LogEntry(id: id, kind: "system", text: summary, timestamp: stamp(seconds), provider: "claude",
                  activity: AgentActivity(id: id, provider: "claude", kind: "command", state: "completed", toolName: "Bash", summary: summary))
@@ -221,7 +228,7 @@ struct FlowStepsTests {
             #expect(halted.rows[1].state == .stopped && halted.stateWord == "중단" && !halted.running)
             // More steps than the panel holds: the one in progress stays in view and the rest are counted.
             var long = run
-            long.steps = (0..<30).map { FlowStep(key: "\($0)", content: "단계 \($0)", status: $0 < 20 ? "completed" : $0 == 20 ? "in_progress" : "pending", startedAt: $0 <= 20 ? stamp(Double($0)) : nil) }
+            long.steps = (0..<30).map(longStep)
             let window = FlowSteps.progress(0, in: [long], heading: "요청 1")
             #expect(window.rows.count == FlowSteps.progressVisibleRows - 1 && window.rows.contains { $0.state == .current })
             #expect(window.hidden + window.rows.count == 30)
@@ -256,6 +263,18 @@ struct FlowStepsTests {
         #expect(FlowSteps.planInstruction.contains("TaskCreate") && !FlowSteps.planInstruction.contains("\n"))
         let windows = try String(contentsOf: GraphAgentIdentityTests.root.appendingPathComponent("native/windows/MightyCode.Core/FlowSteps.cs"), encoding: .utf8)
         #expect(windows.contains("PlanInstruction = \"" + FlowSteps.planInstruction.replacingOccurrences(of: "\"", with: "\\\"") + "\";"))
+    }
+
+    @Test func aFinishedRequestsPicturesHangOffItsRequestInTheRoleView() throws {
+        var run = request(status: "completed")
+        run.finalOutput = "done"
+        let gallery = MightyGraphLayout.ImageGallery(runID: run.id, step: MightyGraphImages.requestStep, count: 2)
+        let graph = MightyGraphLayout.make(runs: [run], draft: "", running: false, expanded: [], galleries: [gallery], splitsExecution: true, fanOut: .init())
+        // No 실행 block once the answer is there: the pictures stand beside the request.
+        #expect(!graph.nodes.contains { $0.content == .work(0) })
+        let images = try #require(graph.nodes.first { if case .images = $0.content { true } else { false } })
+        let main = try #require(graph.nodes.first { $0.content == .request(0) })
+        #expect(images.frame.minY == main.frame.minY && images.frame.minX > main.frame.maxX)
     }
 
     @Test func aNodeIdNeverCarriesTheStepsWords() {

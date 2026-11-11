@@ -685,7 +685,10 @@ public struct MightyGraphLayout {
             guard let runIndex = runs.firstIndex(where: { $0.id == gallery.runID }) else { continue }
             // The request step's pictures come from the main agent's records: with a 실행 block they hang off it.
             let stepID = nodeID(runs[runIndex], suffix: splitsExecution && gallery.step == MightyGraphImages.requestStep ? workSuffix : gallery.step)
-            guard let step = result.nodes.first(where: { $0.id == stepID && !$0.isAuxiliary }) else { continue }
+            // The role view draws no 실행 block once the answer is there: the request's pictures hang off the request then.
+            let requestID = nodeID(runs[runIndex], suffix: "request")
+            guard let step = result.nodes.first(where: { $0.id == stepID && !$0.isAuxiliary })
+                    ?? (gallery.step == MightyGraphImages.requestStep ? result.nodes.first(where: { $0.id == requestID }) : nil) else { continue }
             let id = nodeID(runs[runIndex], suffix: imagesSuffix + gallery.step)
             guard !result.nodes.contains(where: { $0.id == id }) else { continue }
             let height = imagesHeight(count: gallery.count, expanded: expanded.contains(id))

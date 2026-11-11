@@ -222,9 +222,10 @@ public sealed partial class MainWindow
             {
                 AgentViewMode = "mighty", GraphViewMode = "diagram", GraphRuns = [Finished(1), Finished(2), Finished(3), Running("writing")],
             }).ToList() });
-            // 3 × (request, 실행, sub-agent, result) and the running request's request, 실행 and two sub-agents.
-            const string Blocks = "document.querySelectorAll('[data-testid=mighty-diagram] .mighty-block').length";
-            var drawn = await Wait(Blocks + " >= 16 && !!document.querySelector('.mighty-edges-quiet')?.getAttribute('d') && !!document.querySelector('.mighty-edges-live')?.getAttribute('d') && !!document.querySelector('[data-outline]')");
+            // A Claude pane's role view: 3 × (request, the sub-agent's card, result) and the running request's request, its two
+            // sub-agents' cards and the main session's card where its answer will come; blocks and cards are its drawn nodes.
+            const string Blocks = "document.querySelectorAll('[data-testid=mighty-diagram] .mighty-block, [data-testid=mighty-diagram] .mighty-flow-card').length";
+            var drawn = await Wait(Blocks + " >= 13 && !!document.querySelector('.mighty-edges-quiet')?.getAttribute('d') && !!document.querySelector('.mighty-edges-live')?.getAttribute('d') && !!document.querySelector('[data-outline]')");
             var counts = await Read("JSON.stringify({ blocks: " + Blocks + ", edges: document.querySelector('[data-testid=mighty-diagram]')?.dataset.edgeCount, outline: document.querySelector('[data-outline]')?.dataset.outline ?? null, titled: [...document.querySelectorAll('.mighty-title')].filter(e => e.textContent.length > 0).length })");
             result["mightyDiagram"] = new { drawn, counts };
             // A Claude pane draws a running sub-agent as a card (docs/mighty-mode.md "역할 보기"), so the writer is opened into its block first,
@@ -304,8 +305,8 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// The diagram's 진행 단계 panel on the Mighty fixture (its newest request is smoke-run-4): a three-step list naming that run
-    /// draws the title, 1/3 and a done, a current and a waiting row; the same list naming smoke-run-3 draws nothing.
+    /// The role view's progress panel on the Mighty fixture (its newest request is smoke-run-4): a three-step plan on that run draws
+    /// 1/3 and a done, a current and a pending row; without a plan the panel has no rows and no count. The 진행 단계 panel is the other panes' and never stands in a Claude pane's role view.
     /// </summary>
     private async Task<bool> RunWebStepsSmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, string paneId, Dictionary<string, object?> result)
     {
@@ -315,19 +316,26 @@ public sealed partial class MainWindow
             while (DateTime.UtcNow < deadline) { if (await core.ExecuteScriptAsync(script) == "true") return true; await Task.Delay(100); }
             return false;
         }
+        var start = DateTimeOffset.UtcNow.AddMinutes(-2);
+        string At(int seconds) => start.AddSeconds(seconds).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        List<FlowStep> Plan() => [new("text:Implement", "Implement the app", null, "completed", At(0), At(10)),
+            new("text:Build", "Build the app", "Building the app", "in_progress", At(10)), new("text:Deploy", "Deploy the app")];
         Task Steps(string runId) => service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with
         {
-            TodoProgress = new([new TodoItem("Implement the app", "completed"), new TodoItem("Build the app", "in_progress", "Building the app"), new TodoItem("Deploy the app", "pending")], runId),
+            GraphRuns = s.GraphRuns?.Select(g => { var copy = g.Copy(); copy.Steps = g.Id == runId ? Plan() : null; return copy; }).ToList(),
         }).ToList() });
-        const string Rows = "document.querySelectorAll('[data-testid=mighty-diagram] [data-testid=mighty-steps] .mighty-step')";
+        const string Panel = "document.querySelector('[data-testid=mighty-progress]')";
+        const string Rows = "document.querySelectorAll('[data-testid=mighty-progress] [data-testid^=mighty-progress-row-]')";
         await Steps("smoke-run-4");
-        var drawn = await Wait(Rows + ".length === 3");
-        var read = JsonDocument.Parse(JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("JSON.stringify({ title: document.querySelector('[data-testid=mighty-steps-title]')?.textContent ?? null, count: document.querySelector('[data-testid=mighty-steps-count]')?.textContent ?? null, "
-            + "rows: Number(" + Rows + ".length), states: [..." + Rows + "].map(e => e.dataset.state).join(','), provider: '" + (service.Snapshot.Sessions.FirstOrDefault(s => s.Id == paneId)?.Provider ?? "") + "' })")) ?? "{}").RootElement.Clone();
-        var right = drawn && read.Text("title") == Locale.Get("graph.steps.title") && read.Text("count") == "1/3" && read.Text("states") == "completed,inProgress,pending"
-            && read.TryGetProperty("rows", out var rows) && rows.GetInt32() == 3;
-        await Steps("smoke-run-3");
-        var hidden = await Wait("!document.querySelector('[data-testid=mighty-diagram] [data-testid=mighty-steps]')");
+        var drawn = await Wait("!!" + Panel + " && " + Rows + ".length === 3");
+        var read = JsonDocument.Parse(JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("JSON.stringify({ count: document.querySelector('[data-testid=mighty-progress-count]')?.textContent ?? null, "
+            + "rows: Number(" + Rows + ".length), states: [..." + Rows + "].map(e => [...e.classList].find(c => c.startsWith('state-'))?.slice(6) ?? '').join(','), "
+            + "oldPanel: !!document.querySelector('[data-testid=mighty-diagram] [data-testid=mighty-steps]') })")) ?? "{}").RootElement.Clone();
+        var right = drawn && read.Text("count") == "1/3" && read.Text("states") == "done,current,pending"
+            && read.TryGetProperty("rows", out var rows) && rows.GetInt32() == 3 && read.TryGetProperty("oldPanel", out var old) && !old.GetBoolean();
+        // Without a plan the panel still names the request, with no rows and no count.
+        await Steps("");
+        var hidden = await Wait("!!" + Panel + " && " + Rows + ".length === 0 && !document.querySelector('[data-testid=mighty-progress-count]')");
         result["mightySteps"] = new { drawn, read, right, hiddenForAnOlderRun = hidden };
         return right && hidden;
     }
