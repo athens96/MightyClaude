@@ -87,6 +87,23 @@ struct FlowTaskTests {
         }
     }
 
+    @Test func bothNotificationsAndTheirTwoTurnsMakeOneNoticeRun() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            let runs = try replay()
+            // Both commands ended before the first notice turn answered, so both notices joined its run. Claude Code then
+            // answered the second notification in a turn of its own that brings no notice, only its result's origin.runId
+            // (taskrun-1): that answer goes on in the same run, which used to leave an empty second notice run.
+            #expect(runs.map(\.id) == ["request-one", "recorded:notice:1"])
+            let notice = try #require(runs.last)
+            #expect(notice.noticeRun == true && notice.status == "completed")
+            #expect(Set(notice.agents.compactMap(\.sourceBlockId)) == Set(runs[0].agents.filter(\.isTask).map(\.id)))
+            #expect(notice.noticeTitle == "백그라운드 작업 완료 · fail on purpose 외 1개")
+            #expect(notice.input == "fail on purpose · 실패\ncount to three · 완료")
+            // Its result is both turns' answers, a paragraph each; the request keeps its own.
+            #expect(notice.finalOutput == "done.\n\ndone." && runs[0].finalOutput == "launched.")
+        }
+    }
+
     // MARK: The card
 
     @Test func aCommandsCardIsItsDescriptionItsCommandItsLastLineAndItsState() throws {

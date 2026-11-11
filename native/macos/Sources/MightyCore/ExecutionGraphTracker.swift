@@ -87,6 +87,9 @@ final class ExecutionGraphTracker {
     private var noticeCopies: [String: [String]] = [:]
     /// Each copied block's latest notice run.
     private var copiedIn: [String: String] = [:]
+    /// The block each of the CLI's task runs settled (a live `task_notification`'s `run_id`): the result of the turn that answers
+    /// a notification names that run (`origin.runId`), and finds by it the notice run that already holds the work.
+    private var taskRuns: [String: String] = [:]
     /// What opened each notice run and what it names while it holds no copy (`BackgroundNoticeRuns.title(kind:names:)`).
     /// `senders` says who each name stands for (its agent block, or the name when no block sent it), so a sender is named once.
     private typealias NoticeOpening = (opener: BackgroundNoticeRuns.Opener, names: [String], lines: [String], senders: [String])
@@ -470,6 +473,7 @@ final class ExecutionGraphTracker {
             reportTools(value)
             var body = "<task-notification><task-id>\(task)</task-id>"
             if let tool = Self.key(value["tool_use_id"]) { body += "<tool-use-id>\(tool)</tool-use-id>" }
+            if let run = Self.key(value["run_id"]) { body += "<run-id>\(run)</run-id>" }
             if let file = value["output_file"] as? String, !file.isEmpty { body += "<output-file>\(file)</output-file>" }
             let status = value["status"] as? String ?? "completed"
             body += "<status>\(status)</status>"
@@ -532,6 +536,11 @@ final class ExecutionGraphTracker {
             }
             let peer = (value["origin"] as? [String: Any])?["kind"] as? String == "peer"
             let opener: BackgroundNoticeRuns.Opener = peer ? .message : .work
+            // Claude Code answers each notification in a turn of its own. When two pieces of work end close together, both
+            // notices come before the first turn's answer and join its run; the second turn brings no notice of its own,
+            // only its result naming its notification's task run (`origin.runId`). That answer goes on in the run that
+            // already holds the work, as a later turn about blocks an earlier run holds does (`mergeTurn`): no empty run.
+            if !peer, lines.isEmpty, let earlier = heldRun(answering: value) { answerAgain(in: earlier, lines, answer: answer, failed: failed); return }
             if opener == .message, let run = messageRun(lines) { answerAgain(in: run, lines, answer: answer, failed: failed); return }
             let named = Self.senders(lines)
             func openOwn(reserving: Bool) -> Bool {
@@ -1197,6 +1206,7 @@ final class ExecutionGraphTracker {
                 if notice { joinTurn(.work, name: nil, line: Self.tag(body, "summary") ?? Self.tag(body, "status")) }
                 continue
             }
+            if let run = Self.tag(body, "run-id"), taskRuns[run] != nil || taskRuns.count < 512 { taskRuns[run] = id }
             // Claude Code reports a foreground sub-agent's end as it does a background task's, right before the Agent call's
             // own result (2.1.322). A sub-agent that was never launched in the background (no `run_in_background`, no
             // asynchronous launch acknowledged) stands in the request's diagram and settles by that result: there is no
@@ -1340,6 +1350,13 @@ final class ExecutionGraphTracker {
         guard let latest = latestMessageRun, nodes[ExecutionGraphSupport.mainNodeID(runId: latest)] != nil else { return nil }
         if let agent = Self.soleAgent(lines), messageAgents[latest] == agent, latestNoticeRun == latest { return latest }
         return messageRunCount >= Self.messageRunLimit ? latest : nil
+    }
+    /// The notice run that already holds the work a notification turn's result answers: the block of the task run its
+    /// `origin.runId` names (`taskRuns`), as its latest notice run copied it (`copiedIn`).
+    private func heldRun(answering result: [String: Any]) -> String? {
+        guard let origin = result["origin"] as? [String: Any], let task = Self.key(origin["runId"]), let block = taskRuns[task],
+              let run = copiedIn[block], nodes[ExecutionGraphSupport.mainNodeID(runId: run)] != nil else { return nil }
+        return run
     }
     /// The latest notice run opened, if any.
     private var latestNoticeRun: String? {

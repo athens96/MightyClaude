@@ -161,7 +161,7 @@ public enum HermesAgent {
         guard let option = (configOptions as? [[String: Any]])?.first(where: { $0["id"] as? String == modelOption }) else { return [] }
         var seen = Set<String>(), models: [ModelOption] = []
         func add(_ entry: [String: Any]) {
-            guard let value = entry["value"] as? String, value != "default", CoreValidation.model(value), seen.insert(value).inserted, models.count < 1_024 else { return }
+            guard let value = entry["value"] as? String, value != "default", CoreValidation.model(value), seen.insert(value).inserted, models.count < ProviderOptions.listedModelLimit("hermes") else { return }
             let name = ActivitySupport.clean(entry["name"] as? String ?? value, maximumBytes: 160, singleLine: true)
             let provider = value.firstIndex(of: ":").map { String(value[..<$0]) } ?? ""
             models.append(ModelOption(value: value, displayName: name.isEmpty ? value : name, description: provider.isEmpty ? "" : L("provider.catalog.hermesModelRow", ["provider": provider])))
@@ -190,7 +190,7 @@ public enum HermesAgent {
             return ModelCatalog(models: [fallback.models[0]], detail: L("provider.catalog.hermesEmpty"))
         }
         var seen = Set(["default"])
-        let models = stored.prefix(1_024).filter { CoreValidation.model($0.value) && seen.insert($0.value).inserted }
+        let models = stored.prefix(ProviderOptions.listedModelLimit("hermes")).filter { CoreValidation.model($0.value) && seen.insert($0.value).inserted }
         guard !models.isEmpty else { return ModelCatalog(models: [fallback.models[0]], detail: L("provider.catalog.hermesEmpty")) }
         return ModelCatalog(source: "cli", models: [fallback.models[0]] + models, detail: L("provider.catalog.hermesSource"))
     }

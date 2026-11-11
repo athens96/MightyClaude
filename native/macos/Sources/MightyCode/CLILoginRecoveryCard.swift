@@ -13,8 +13,9 @@ struct CLILoginRecoveryCard: View {
     @ViewState private var code = ""
 
     private var state: BackgroundLoginState? { store.backgroundLogins[provider] }
-    /// Antigravity signs in in a terminal pane already, so it has no second terminal button.
-    private var signsInInTerminal: Bool { provider == "gemini" }
+    /// A provider whose sign-in already runs in a terminal pane (`CLITerminalSignIn.table`: Antigravity, pi,
+    /// opencode, Hermes) has no second terminal button.
+    private var signsInInTerminal: Bool { CLITerminalSignIn.table[provider] != nil }
 
     var body: some View {
         HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {

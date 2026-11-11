@@ -94,7 +94,11 @@ CLI 탐색·모델 조회·실제 실행은 해당 작업 폴더의 로그인 �
 
 원격 작업 공간과 휴대폰: 새 Mac 호스트의 `/v2/info`에서 `modelCatalog`에 `readFailure`·`listedAt`이 붙을 수 있습니다. 둘 다 선택 필드라 예전 Mac·Windows 클라이언트는 무시하고, 새 Mac 클라이언트는 예전 호스트가 보내지 않으면 없는 것으로 읽습니다(2,000자·64자를 넘으면 거절). 원격 창의 메뉴도 호스트의 실패를 같은 줄로 보입니다. 공유 픽스처 `remote-v2/info-darwin.json`은 그대로입니다(Windows가 그대로 왕복 비교한다). 휴대폰은 모델 이름 목록만 받으므로 바뀌는 것이 없습니다.
 
-확인했지만 이번에 바꾸지 않은 것: Claude 2.1.322는 Haiku 5.5가 추론 강도(low~max)를 지원한다고 답하지만, 앱은 이름에 `haiku`가 든 모델의 추론 강도를 모두 끕니다(`normalizeClaudeCatalog`, `validation.run.haikuEffort`). Codex 0.167.0은 `ultra` 강도를 알리지만 앱의 강도 목록에 없어 빠집니다.
+추론 강도도 목록이 말하는 대로입니다. Claude 2.1.322는 Haiku 5.5(`haiku`, 지금 가리키는 `claude-haiku-5-5`)가 low~max를 지원한다고 답하고, 앱은 그 단계를 메뉴에 그대로 보이고 다른 Claude 모델처럼 실행에 넘깁니다(`--effort`, `CLAUDE_CODE_EFFORT_LEVEL`). 전에는 이름에 `haiku`가 든 모델의 추론 강도를 모두 껐습니다. "Haiku는 추론 강도 없음"이라는 옛 규칙은 CLI가 그 모델에 대해 아무 말도 하지 않을 때만 남습니다(`ProviderOptions.silentHaiku`): 목록에 `supportsEffort`도 단계도 없는 Haiku 4.5(`claude-haiku-4-5-20251001`), 기본 목록의 `haiku`, 목록에 없는 Haiku 모델. `supportsEffort: true`만 있고 단계가 없으면 다른 모델처럼 low·medium·high입니다. 그런 Haiku에 강도를 고른 실행은 전처럼 `validation.run.haikuEffort`로 거절하되, 판정은 모델 이름만 보는 검사(`CoreValidation.validate`)가 아니라 그 작업 폴더의 목록을 아는 실행 직전 확인(`validateSelection`)이 합니다. 목록에 없는 단계를 고른 것은 Haiku라도 `validation.run.effortUnknown`입니다. 설정 → 모델의 실행 단계 강도(`runEffort`), 새로 읽은 목록의 선택 보정(`ModelSelectionSupport.reconcile`), 사람이 연 하위 창이 물려받는 모델·강도도 같은 목록으로 판정합니다(`ModelEffortTests`).
+
+Codex 0.167.0은 아홉 모델 가운데 여섯(`gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-6.1-terra`, `gpt-5.6-terra`)에 `ultra` 강도를 알립니다("Maximum reasoning with automatic task delegation"). 앱은 Codex 모델이 알리는 강도를 그대로 받아(`ProviderOptions.codexEfforts`: 공통 다섯 단계와 `ultra`) 그 모델의 메뉴에 **Ultra · 자동 위임**(`composer.effort.ultra`, 네 언어)으로 보이고, 고르면 다른 강도처럼 넘깁니다: `codex exec`는 `-c model_reasoning_effort="ultra"`, 승인 요청 모드의 app-server는 같은 설정과 `turn/start`의 `effort`. 휴대폰의 선택지도 같은 이름입니다. 입력창 알약과 블록의 칩은 다른 단계처럼 짧게 `Ultra`이고, 상태 줄 명령에 넘기는 JSON에도 `effort.level`로 들어갑니다. 알리지 않는 모델(`gpt-6-luna`, `gpt-5.6-luna`, `gpt-5.5`)에는 보이지 않고 실행 직전 확인이 거절합니다. 설정 → 모델의 Codex 강도(계획 `plan_mode_reasoning_effort`, 실행 `model_reasoning_effort`, 하위 에이전트 `agents.default_subagent_reasoning_effort`)에는 넣지 않습니다. 모델을 가리지 않고 모든 실행(하위 에이전트 포함)에 넘어가 그 단계를 모르는 모델(`gpt-6-luna` 등)에도 가고, 그 값을 담은 실행 요청은 예전 Mac·Windows 호스트가 통째로 거절하기 때문입니다(`RemoteWorkspaceValidation.phaseModels`). Claude·Antigravity·pi·opencode·Hermes에는 어떤 목록이 말해도 없고, 그런 창에 저장된 `ultra`는 불러올 때 CLI 기본값으로 돌아갑니다(`normalizedSettings`). 예전 저장은 전처럼 읽힙니다.
+
+확인한 것(codex-cli 0.167.0): 앱의 argv 그대로(`-c approval_policy="never" -c sandbox_mode="read-only" … exec --json --skip-git-repo-check --model gpt-6.1-sol -c model_reasoning_effort="ultra" -`, 입력 `Reply with ok.`, `/tmp`의 빈 폴더) 한 번 실행하니 CLI는 그 설정으로 스레드와 턴을 시작했고, 이 Mac의 Codex가 로그인돼 있지 않아(`codex login status`: Not logged in) API가 401로 거절해 모델의 답까지는 보지 못했습니다. 모델을 부르지 않고 설정만 확인하는 길은 없습니다. `codex debug prompt-input -c model_reasoning_effort="ultra"`는 모델에게 가는 개발자 메시지를 "Proactive multi-agent delegation is active…"로 바꾸지만(max면 위임을 끄는 문장), 모르는 값(`bogus`)도 오류 없이 받습니다. CLI 안의 강도 값은 minimal, low, medium, high, xhigh, max, ultra, persistent이고, Codex TUI는 Ultra를 고르면 "Ultra reasoning may proactively use multiple agents…"라며 사용량이 늘 수 있다고 알립니다. 로그인한 Mac에서 Ultra로 한 번 보내 답을 확인하는 일이 남았습니다.
 
 Windows(2026-11-11 반영, `native/windows/MightyCode.Core`):
 
@@ -105,6 +109,11 @@ Windows(2026-11-11 반영, `native/windows/MightyCode.Core`):
 - 메뉴의 흐린 줄: WinUI 메뉴는 새로고침 아래 비활성 항목(`MenuNote`, 이유는 툴팁·도움말 텍스트), 웹 화면은 `note` 행(`title`이 이유). 원격 창은 호스트의 실패를 같은 줄로 보입니다.
 - 로그인 확인(설정의 터미널 로그인 대기가 로그인으로 끝남)·로그아웃·로그인 복구의 로그인 때 그 제공자의 목록을 워크스페이스와 관계없이 버리고(`ModelCatalogRefresh.Invalidate`), 이어지는 전체 읽기가 지금 워크스페이스의 목록을 새로 가져옵니다.
 - opencode·Hermes는 Windows에 아직 없습니다(2부).
+
+Windows가 따라야 할 것(아직 하지 않음):
+
+- Haiku 추론 강도를 CLI 목록대로: `ProviderCatalog.cs`의 Claude 목록 정규화(`value.Contains("haiku")`이면 강도를 끈다)와 강도 단계(`model.Contains("haiku")`이면 없음), `Models.cs`의 실행 검사(`Model.Contains("haiku")`에 강도가 있으면 거절)가 아직 이름으로 판정합니다. CLI가 `supportsEffort`나 단계를 주면 그대로 쓰고 아무 말도 없을 때만 옛 규칙을 남기며, Haiku 거절은 목록을 아는 실행 직전 확인으로 옮겨야 합니다.
+- Codex `ultra`: `Models.cs`의 `Efforts`(다섯 단계)가 Codex 목록의 `ultra`를 거르고 실행 검사도 거절합니다. Codex 모델에만 받아(목록 정규화, 강도 단계, 실행 검사, 저장 정규화; 단계별 모델의 강도에는 넣지 않는다) 다른 강도처럼 `-c model_reasoning_effort`·app-server `effort`로 넘기고, 메뉴 이름은 `composer.effort.ultra`, 상태 줄(`StatusLine.cs`의 `s_validEfforts`)에도 넣어야 합니다. 다른 제공자에는 주지 않습니다.
 
 ### Bedrock 인증 진단
 

@@ -91,6 +91,7 @@
   "composer.effort.label": "사고 강도",
   "composer.effort.menu": "사고 강도 · {effort}",
   "composer.effort.unknownLevels": "이 모델에서 지원되는 강도를 확인하지 못해 Auto를 사용합니다.",
+  "composer.effort.ultra": "Ultra · 자동 위임",
   "composer.advisor.label": "조언자",
   "composer.advisor.follow": "Claude 설정 따름",
   "composer.advisor.off": "끔",

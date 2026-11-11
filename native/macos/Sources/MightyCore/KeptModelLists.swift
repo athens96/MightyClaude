@@ -23,7 +23,7 @@ public struct KeptModelLists: Sendable, Equatable {
     public static let maximumBytes = 2 * 1_048_576
     public static let maximumEntries = 24
     /// The most rows a normalizer keeps (opencode: its default and 1 024 models).
-    public static let maximumModels = 1_025
+    public static let maximumModels = 1 + ProviderOptions.listedModelLimit("opencode")
     /// A list read again unchanged is written again only once its saved time is this old.
     public static let rewriteAge: TimeInterval = 300
 

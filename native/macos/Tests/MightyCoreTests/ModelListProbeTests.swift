@@ -80,8 +80,8 @@ struct ModelListProbeTests {
         #expect(catalog.isFresh)
         #expect(catalog.models.map(\.value) == ["default", "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-6.1-terra", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"])
         #expect(catalog.models[0].resolvedModel == "gpt-6.1-sol")
-        // codex lists an `ultra` effort the app has no setting for; the others stay.
-        #expect(catalog.models[1].supportedEffortLevels == ["low", "medium", "high", "xhigh", "max"])
+        // codex lists an `ultra` effort for it, which a Codex pane may be set to (`ProviderOptions.codexEfforts`).
+        #expect(catalog.models[1].supportedEffortLevels == ["low", "medium", "high", "xhigh", "max", "ultra"])
     }
 
     @Test func claudesInitializeAnswerNamesFable52() throws {

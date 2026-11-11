@@ -401,7 +401,7 @@ struct SessionPaneView: View {
         Menu {
             effortOptions
         } label: {
-            ComposerPill(title: effortLabel(session.settings.effort), systemImage: "brain", chevron: true, maximumTextWidth: 48, compact: compact)
+            ComposerPill(title: effortPillTitle(session.settings.effort), systemImage: "brain", chevron: true, maximumTextWidth: 48, compact: compact)
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
         .accessibilityLabel(L("composer.effort.label")).accessibilityValue(effortLabel(session.settings.effort))
@@ -546,7 +546,7 @@ struct SessionPaneView: View {
                 Menu("\(L("composer.ask.menuLabel")) · \(askPillTitle(current))") { askOptions(targets, current: current) }
             }
             if showsEffort {
-                Menu(L("composer.effort.menu", ["effort": effortLabel(session.settings.effort)])) { effortOptions }
+                Menu(L("composer.effort.menu", ["effort": effortPillTitle(session.settings.effort)])) { effortOptions }
                     .disabled(running || (effortLevels.isEmpty && session.settings.effort == "default"))
             }
             if showsAdvisor {
@@ -925,7 +925,7 @@ struct SessionPaneView: View {
             let width = max(0, geometry.size.width - actionsWidth - ComposerToolbarMetrics.spacing)
             let targets = askTargets
             let current = AskTargets.effective(saved: session.askTarget, available: targets)
-            let style = ComposerToolbarMetrics.style(width: width, model: selectedModelName, effort: showsEffort ? effortLabel(session.settings.effort) : nil, permission: permissionLabel(session.settings.permissionMode, provider: session.provider), fast: showsFast,
+            let style = ComposerToolbarMetrics.style(width: width, model: selectedModelName, effort: showsEffort ? effortPillTitle(session.settings.effort) : nil, permission: permissionLabel(session.settings.permissionMode, provider: session.provider), fast: showsFast,
                                                      ask: targets.isEmpty ? nil : askPillTitle(current), advisor: showsAdvisor ? advisorPillTitle : nil)
             HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
                 if session.kind != "shell" {
@@ -1228,9 +1228,14 @@ struct SessionPaneView: View {
     }
 }
 
+/// An effort level as the composer's menu and the phone's picker name it. Codex's `ultra` says in words that it also
+/// hands work to sub-agents of its own (`composer.effort.ultra`).
 func effortLabel(_ effort: String) -> String {
-    switch effort { case "off": return "Off"; case "minimal": return "Minimal"; case "low": return "Low"; case "medium": return "Medium"; case "high": return "High"; case "xhigh": return "XHigh"; case "max": return "Max"; default: return "Auto" }
+    switch effort { case "off": return "Off"; case "minimal": return "Minimal"; case "low": return "Low"; case "medium": return "Medium"; case "high": return "High"; case "xhigh": return "XHigh"; case "max": return "Max"; case "ultra": return L("composer.effort.ultra"); default: return "Auto" }
 }
+
+/// The effort pill's title: the level's short name, as a block's chip has it (`FlowRoles.effortName`), else the menu's.
+func effortPillTitle(_ effort: String) -> String { FlowRoles.effortName(effort) ?? effortLabel(effort) }
 
 /// The last reply's parsed `next:` options, kept while that reply's id and
 /// length stay the same so a render does not parse it again.

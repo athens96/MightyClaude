@@ -287,7 +287,8 @@ public actor RemoteHostService {
 
     private func info(generation revision: UUID) async throws -> HTTPResponse {
         let workspaces = try await sharedWorkspaces()
-        let runtime = await providers.runtimeInfo(appVersion: appVersion)
+        // Each provider's list as long as a client keeps it (`RemoteWorkspaceValidation.bounded`).
+        let runtime = RemoteWorkspaceValidation.bounded(await providers.runtimeInfo(appVersion: appVersion))
         guard revision == generation else { throw Failure(503, L("remote.host.error.stopped")) }
         return reply(200, RemoteWireInfo(hostId: hostId, hostName: hostName.isEmpty ? "Mac" : hostName,
                                          workspaces: workspaces.map { RemoteSharedWorkspace(id: $0.id, name: $0.name, path: $0.path) }, runtime: runtime))

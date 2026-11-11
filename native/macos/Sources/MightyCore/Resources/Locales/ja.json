@@ -91,6 +91,7 @@
   "composer.effort.label": "思考レベル",
   "composer.effort.menu": "思考レベル · {effort}",
   "composer.effort.unknownLevels": "このモデルが対応するレベルを確認できなかったため、Autoを使います。",
+  "composer.effort.ultra": "Ultra · 自動委任",
   "composer.advisor.label": "アドバイザー",
   "composer.advisor.follow": "Claudeの設定に従う",
   "composer.advisor.off": "オフ",
