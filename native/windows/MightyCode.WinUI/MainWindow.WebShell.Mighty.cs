@@ -223,6 +223,11 @@ public sealed partial class MainWindow
             var drawn = await Wait(Blocks + " >= 16 && !!document.querySelector('.mighty-edges-quiet')?.getAttribute('d') && !!document.querySelector('.mighty-edges-live')?.getAttribute('d') && !!document.querySelector('[data-outline]')");
             var counts = await Read("JSON.stringify({ blocks: " + Blocks + ", edges: document.querySelector('[data-testid=mighty-diagram]')?.dataset.edgeCount, outline: document.querySelector('[data-outline]')?.dataset.outline ?? null, titled: [...document.querySelectorAll('.mighty-title')].filter(e => e.textContent.length > 0).length })");
             result["mightyDiagram"] = new { drawn, counts };
+            // A Claude pane draws a running sub-agent as a card (docs/mighty-mode.md "역할 보기"), so the writer is opened into its block first,
+            // as a person would with a click; a block the user opened stays open while it runs, and the stream below must redraw it alone.
+            await core.ExecuteScriptAsync($"document.querySelector('.mighty-flow-card[data-block-id=\"{writerId}\"]')?.click()");
+            var cardOpened = await Wait($"!!document.querySelector('.mighty-block[data-block-id=\"{writerId}\"]') && !document.querySelector('.mighty-flow-card[data-block-id=\"{writerId}\"]')");
+            result["mightyCardOpened"] = cardOpened;
             // Every block's draw count before the stream, then one word more in the writer's entry, as a streamed graph_run.
             const string Renders = "JSON.stringify(Object.fromEntries([...document.querySelectorAll('.mighty-block')].map(e => [e.dataset.blockId, e.dataset.renders])))";
             // The diagram settles first (the newest result's height is measured after its first draw and moves what is under it):
@@ -279,7 +284,7 @@ public sealed partial class MainWindow
             var settledResult = await Wait(Kind("result", "!e.querySelector('[data-testid=mighty-awaiting]')"));
             var awaitingLook = await Read($"(() => {{ const e = {resultBlock}; return JSON.stringify({{ kind: e?.dataset.kind ?? null, className: e?.className ?? null }}); }})()");
             result["mightyAwaiting"] = new { awaitingRunning, awaitingAnswer, settledResult, after = awaitingLook };
-            return drawn && onlyChanged && stepsShown && timeline && structure && revealed && awaitingRunning && awaitingAnswer && settledResult;
+            return drawn && cardOpened && onlyChanged && stepsShown && timeline && structure && revealed && awaitingRunning && awaitingAnswer && settledResult;
         }
         finally
         {
