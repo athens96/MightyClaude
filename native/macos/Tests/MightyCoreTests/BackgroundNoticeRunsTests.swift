@@ -555,4 +555,37 @@ struct BackgroundNoticeRunsTests {
                          "message": ["content": "<task-notification>\n<task-id>ag2</task-id>\n<status>completed</status>\n<summary>Two done</summary>\n</task-notification>"]])
         #expect(block("a1")?.state == "completed" && block("a2")?.state == "completed")
     }
+
+    /// Claude Code answers each notification in a turn of its own (2.1.322, claude-stream-background-commands.jsonl). When two
+    /// commands end close together, both notices come before the first notice turn's answer and join its run; the second turn
+    /// brings no notice of its own, only its result's `origin.runId` naming the notification's task run. Its answer goes on in
+    /// the run that holds that work, as a later turn about copied blocks does, and opens no empty run. A result naming work no
+    /// notice run holds, or naming none, opens a run of its own as before.
+    @Test func aLaterTurnAnsweringAHeldNotificationGoesOnInItsRun() {
+        let box = NodeBox()
+        let tracker = ExecutionGraphTracker(runID: "proc-1", input: "two commands", emit: { box.nodes[$0.id] = $0 })
+        func live(_ task: String, tool: String, run: String) -> [String: Any] {
+            var event = systemNotification(task, tool: tool, summary: task + " ended"); event["run_id"] = run; return event
+        }
+        func answered(_ text: String, run: String?) -> [String: Any] {
+            var event = result(text, notice: true)
+            if let run { event["origin"] = ["kind": "task-notification", "producer": "session-task", "runId": run] }
+            return event
+        }
+        func noticeRuns() -> [String] { box.nodes.values.filter { $0.kind == "main" && BackgroundNoticeRuns.isNoticeRun($0.runId) }.map(\.runId).sorted() }
+        func output(_ run: String) -> String? { box.nodes[ExecutionGraphSupport.mainNodeID(runId: run)]?.output }
+        for event in [command("one", "sleep 3", description: "count"), launched("one", task: "b1"), command("two", "sleep 2; exit 3", description: "fail"),
+                      launched("two", task: "b2"), result("launched."), live("b2", tool: "two", run: "r2"), live("b1", tool: "one", run: "r1"),
+                      text("done.", id: "m2"), answered("done.", run: "r2")] { tracker.consume(event) }
+        #expect(noticeRuns() == ["proc-1:notice:1"] && output("proc-1:notice:1") == "done.")
+        // The second notification's own turn.
+        for event in [text("done.", id: "m3"), answered("done.", run: "r1")] { tracker.consume(event) }
+        #expect(noticeRuns() == ["proc-1:notice:1"])
+        #expect(output("proc-1:notice:1") == "done.\n\ndone." && box.nodes[ExecutionGraphSupport.mainNodeID(runId: "proc-1:notice:1")]?.state == "completed")
+        #expect(box.nodes.values.filter { $0.runId == "proc-1:notice:1" && $0.sourceBlockId != nil }.count == 2)
+        // Work no notice run holds, or no task run named: a run of its own, as before.
+        for event in [text("Another.", id: "m4"), answered("Another.", run: "r9"), text("And one.", id: "m5"), answered("And one.", run: nil)] { tracker.consume(event) }
+        #expect(noticeRuns() == ["proc-1:notice:1", "proc-1:notice:2", "proc-1:notice:3"])
+        #expect(output("proc-1:notice:2") == "Another." && output("proc-1:notice:3") == "And one." && output("proc-1:notice:1") == "done.\n\ndone.")
+    }
 }
