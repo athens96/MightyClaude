@@ -180,3 +180,12 @@ gh workflow run release-manifest.yml --ref main -f version=<버전> \
 
 - 도움말 사이트를 바꿨다면 따로 올린다: `node scripts/help/build.mjs --shots <dir>` 후 `scripts/help/upload.sh --dry-run`, 그다음 `scripts/help/upload.sh`.
 - 테스트: `python -m unittest scripts/tests/test_release.py` (네트워크·실제 키 없이 페이지 치환, 매니페스트 서명 확인, CI 서명 호출·실행 찾기·받기(가짜 gh와 일회용 키), 단계 순서, wrangler 명령을 본다).
+
+## Claude Code로 릴리스할 때
+
+저장소의 `.claude/`에 릴리스를 돕는 역할이 있고, 이 저장소에서 연 Claude Code가 읽는다. 할 일과 순서는 이 문서 그대로다.
+
+- 스킬 `release`(`.claude/skills/release/SKILL.md`): "릴리즈 해"처럼 릴리스를 부탁하면 위 단계를 밟는다. 노트는 `release-notes`에게 백그라운드로 맡기고, `ci`와 (폰 앱이 바뀌었으면) EAS `preview` APK 빌드를 백그라운드 명령으로 나란히 돌린 뒤, 알림이 오면 `download`부터 `verify`와 `scripts/help/upload.sh`까지 잇는다. `--yes` 단계는 사용자가 릴리스를 부탁했을 때만 돌린다.
+- 에이전트 `release-notes`(Haiku): 마지막 릴리스 커밋(`(release) x.y.z:`) 뒤의 커밋으로 `release/<버전>-notes.md`(한국어·English·简体中文·日本語)와 `release/<버전>/update-notes.md`를 채운다. 다른 파일은 건드리지 않고 커밋·push·`release.py`를 하지 않는다.
+- 에이전트 `ci-failure`(Haiku): 실패한 실행을 `gh run view --log-failed`로 읽고 실패한 잡, 테스트나 파일, 오류 글, 그럴듯한 원인을 알려 준다. 읽기만 한다.
+- 두 에이전트에는 `color:`가 없다. Claude Code의 여덟 색이 모두 Mighty Code 흐름의 상태나 역할 색이라(파랑 실행, 청록 메인, 분홍 조언자, 노랑·주황 대기, 초록 완료, 빨강 오류, 보라 하위 에이전트) 기본 하위 에이전트 보라로 둔다.
