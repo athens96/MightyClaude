@@ -6,9 +6,8 @@ import { Chip } from '@/components/ui';
 import { t } from '@/lib/i18n';
 import { kindLabel, providerIsBeta, providerLabel, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
-const PROVIDERS: Provider[] = ['claude', 'codex', 'gemini'];
-/** pi is offered only by a host that advertises the `pi` capability. */
-const PI: Provider = 'pi';
+/** What a host that names none of the later agents runs (`newPaneProviders`). */
+const BASE_PROVIDERS: readonly Provider[] = ['claude', 'codex', 'gemini'];
 
 export interface NewSessionChoice {
   kind: SessionKind;
@@ -20,7 +19,7 @@ export function NewSessionSheet({
   workspaceName,
   busy,
   antigravity = true,
-  offersPi = false,
+  providers = BASE_PROVIDERS,
   onCancel,
   onCreate,
 }: {
@@ -29,8 +28,8 @@ export function NewSessionSheet({
   busy: boolean;
   /** The host runs Antigravity for `gemini` (`hostRunsAntigravity`); else it is named Gemini. */
   antigravity?: boolean;
-  /** The host advertises the `pi` capability. */
-  offersPi?: boolean;
+  /** The agents this host runs (`newPaneProviders`): pi, opencode and Hermes only where it lists them. */
+  providers?: readonly Provider[];
   onCancel: () => void;
   onCreate: (choice: NewSessionChoice) => void;
 }) {
@@ -82,7 +81,7 @@ export function NewSessionSheet({
         <>
           <Text style={styles.label}>{t('phone.newPane.provider')}</Text>
           <View style={styles.chips}>
-            {(offersPi ? [...PROVIDERS, PI] : PROVIDERS).map((value) => (
+            {providers.map((value) => (
               <Chip
                 key={value}
                 label={providerLabel(value, antigravity)}

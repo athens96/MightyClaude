@@ -1,5 +1,5 @@
 import { CAPABILITIES, type HostInfo } from '@/api/types';
-import { hasCapability, parseCapabilities } from '@/lib/capabilities';
+import { hasCapability, newPaneProviders, parseCapabilities } from '@/lib/capabilities';
 
 function info(capabilities: unknown): HostInfo {
   return {
@@ -16,6 +16,12 @@ describe('parseCapabilities', () => {
   it('reads the pi capability only when the host lists it', () => {
     expect(hasCapability(parseCapabilities(info(['queue', 'pi'])), 'pi')).toBe(true);
     expect(hasCapability(parseCapabilities(info(['queue'])), 'pi')).toBe(false);
+  });
+
+  it('reads the opencode and hermes capabilities only when the host lists them', () => {
+    const both = parseCapabilities(info(['pane', 'opencode', 'hermes']));
+    expect(hasCapability(both, 'opencode') && hasCapability(both, 'hermes')).toBe(true);
+    expect(hasCapability(parseCapabilities(info(['pane', 'pi'])), 'opencode')).toBe(false);
   });
 
   it('reads the names the contract lists', () => {
@@ -66,5 +72,23 @@ describe('hasCapability', () => {
   it('is false while nothing has been fetched yet', () => {
     expect(hasCapability(undefined, 'queue')).toBe(false);
     expect(hasCapability([], 'queue')).toBe(false);
+  });
+});
+
+describe('newPaneProviders', () => {
+  it("offers the three every host runs, then each later agent the host lists, in the desktops' order", () => {
+    expect(newPaneProviders(undefined)).toEqual(['claude', 'codex', 'gemini']);
+    expect(newPaneProviders(parseCapabilities(info(['pane'])))).toEqual(['claude', 'codex', 'gemini']);
+    expect(newPaneProviders(parseCapabilities(info(['pane', 'pi'])))).toEqual(['claude', 'codex', 'gemini', 'pi']);
+    // A host lists them in any order; the sheet keeps the desktops' (ProviderOptions.ids).
+    expect(newPaneProviders(parseCapabilities(info(['hermes', 'pane', 'opencode', 'pi'])))).toEqual([
+      'claude',
+      'codex',
+      'gemini',
+      'pi',
+      'opencode',
+      'hermes',
+    ]);
+    expect(newPaneProviders(parseCapabilities(info(['hermes'])))).toEqual(['claude', 'codex', 'gemini', 'hermes']);
   });
 });

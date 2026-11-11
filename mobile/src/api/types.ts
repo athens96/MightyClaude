@@ -55,7 +55,7 @@ export type PaneKind = SessionKind | 'browser' | AgentIOPaneKind;
 export function isAgentIOPane(kind: string): kind is AgentIOPaneKind {
   return kind === 'agent-terminal' || kind === 'agent-browser';
 }
-export type Provider = 'claude' | 'codex' | 'gemini' | 'pi';
+export type Provider = 'claude' | 'codex' | 'gemini' | 'pi' | 'opencode' | 'hermes';
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error' | 'stopped';
 export type LogEntryKind = 'user' | 'assistant' | 'system' | 'output' | 'error';
 export type SubmitAccepted = 'started' | 'steered' | 'queued';
@@ -93,7 +93,11 @@ export type Capability =
   | 'workMap'
   | 'appUpdate'
   /** The host runs pi as a fourth agent (provider `pi`); a phone offers it for a new pane only then. */
-  | 'pi';
+  | 'pi'
+  /** The host runs opencode (provider `opencode`); a phone offers it for a new pane only then. */
+  | 'opencode'
+  /** The host runs Hermes Agent (provider `hermes`); a phone offers it for a new pane only then. */
+  | 'hermes';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -114,6 +118,8 @@ export const CAPABILITIES: readonly Capability[] = [
   'workMap',
   'appUpdate',
   'pi',
+  'opencode',
+  'hermes',
 ] as const;
 
 export interface HostInfo {

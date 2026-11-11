@@ -35,7 +35,7 @@ function onCurvePoints(outline: string): number[] {
 }
 
 describe('provider marks', () => {
-  const names = ['claude', 'codex', 'gemini', 'pi'] as const;
+  const names = ['claude', 'codex', 'gemini', 'pi', 'opencode', 'hermes'] as const;
 
   it.each(names)('%s is a closed outline of absolute commands', (name) => {
     const outline = providerMarkOutlines[name];
@@ -69,5 +69,15 @@ describe('provider marks', () => {
     expect(providerMarkOutline('claude')).toBe(providerMarkOutlines.claude);
     expect(providerMarkOutline('rovo')).toBeUndefined();
     expect(providerMarkOutline('')).toBeUndefined();
+    // A host's word that names a property of every object is no provider either.
+    for (const key of ['constructor', '__proto__', 'toString']) expect(providerMarkOutline(key)).toBeUndefined();
+  });
+
+  it("draws opencode and Hermes from the desktops' outlines", () => {
+    // native/macos/Sources/MightyCore/ProviderMark.swift and native/windows/MightyCode.Core/ProviderMark.cs.
+    expect(providerMarkOutline('opencode')).toBe('M3 3 L21 3 L21 21 L3 21 Z M7 7 L7 13 L17 13 L17 7 Z');
+    expect(providerMarkOutline('hermes')).toBe(
+      'M7 6 L10 6 L10 10.5 L14 10.5 L14 6 L17 6 L17 21 L14 21 L14 13.5 L10 13.5 L10 21 L7 21 Z M1 3 L6 5.5 L6 9.5 L3.5 9.5 Z M23 3 L18 5.5 L18 9.5 L20.5 9.5 Z',
+    );
   });
 });
