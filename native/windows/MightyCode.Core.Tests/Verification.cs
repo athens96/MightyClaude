@@ -517,6 +517,7 @@ internal static class Verification
         await Test("acp hermes: its log and tracebacks on stderr stay out of the pane; yolo and edit policy", AcpVerification.HermessLogAndTracebacksOnStderrStayOutOfThePane);
         await Test("acp hermes: the model menu is the picker the last session offered", AcpVerification.TheHermesMenuIsThePickerTheLastSessionOffered);
         await Test("acp hermes: the clarify config value is the Mac's", AcpVerification.TheClarifyConfigValueIsTheMacs);
+        await Test("acp: attached copies are named in the prompt and pictures are image blocks", AcpVerification.AttachedCopiesAreNamedInThePromptAndPicturesAreImageBlocks);
         await Test("acp hermes: a session is continued only where its yolo and its answers allow", AcpVerification.AHermesSessionIsContinuedOnlyWhereItsYoloAndAnswerAllow);
         await Test("acp run: an opencode run speaks ACP and completes whether its server exits or is ended", AcpRunVerification.AnOpencodeRunSpeaksAcpAndCompletesWhetherTheServerExitsOrIsEnded);
         await Test("acp run: a signed-out opencode run ends in error with the sign-in reason", AcpRunVerification.ASignedOutOpencodeRunEndsInErrorWithTheSignInReason);
@@ -700,8 +701,8 @@ internal static class Verification
         });
         await Test("Codex, Antigravity and pi are beta, Claude is official, and Name never carries the badge", () =>
         {
-            Check(!ProviderCatalog.IsBeta("claude") && ProviderCatalog.IsBeta("codex") && ProviderCatalog.IsBeta("gemini") && ProviderCatalog.IsBeta("pi") && !ProviderCatalog.IsBeta("unknown"), "beta providers");
-            Check(Wire.Providers.Select(ProviderCatalog.Name).SequenceEqual(new[] { "Claude Code", "Codex CLI", "Antigravity CLI", "pi" }), "provider names");
+            Check(!ProviderCatalog.IsBeta("claude") && ProviderCatalog.IsBeta("codex") && ProviderCatalog.IsBeta("gemini") && ProviderCatalog.IsBeta("pi") && ProviderCatalog.IsBeta("opencode") && ProviderCatalog.IsBeta("hermes") && !ProviderCatalog.IsBeta("unknown"), "beta providers");
+            Check(Wire.Providers.Select(ProviderCatalog.Name).SequenceEqual(new[] { "Claude Code", "Codex CLI", "Antigravity CLI", "pi", "opencode CLI", "Hermes CLI" }), "provider names");
             var badge = Locale.Get("badge.beta"); Check(badge is "베타" or "Beta", "badge text " + badge);
             Check(Locale.Get("badge.betaAccessibility") is "베타 기능" or "Beta feature", "badge accessibility text");
             Check(ProviderCatalog.BetaLabel("claude", "Claude Code") == "Claude Code", "official label untouched");
@@ -891,7 +892,8 @@ internal static class Verification
             try
             {
                 var plugin = Path.Combine(directory, "plugin"); Directory.CreateDirectory(Path.Combine(plugin, ".claude-plugin")); await File.WriteAllTextAsync(Path.Combine(plugin, ".claude-plugin", "plugin.json"), "{}");
-                foreach (var provider in Wire.Providers.Where(p => p != "pi"))
+                // pi and the ACP agents take their attachments in their own channels (PiVerification, AcpVerification).
+                foreach (var provider in Wire.Providers.Where(p => p != "pi" && !ProviderCatalog.IsAcp(p)))
                 {
                     var record = Path.Combine(directory, provider); await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Self("--fake-cli", provider, record, "--verify-attachments"))); await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, events.Enqueue);
                     await manager.StartAsync(new(provider, workspace.Id, "claude", "", [], Provider: provider, Attachments: files)); await Until(() => !manager.IsRunning(provider));

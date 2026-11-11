@@ -47,7 +47,8 @@ internal static class SettingsVerification
         foreach (var provider in Wire.Providers)
         {
             var args = ProviderCatalog.Arguments(request with { Provider = provider, Settings = new(PermissionMode: "fullAccess") }, "/fixture-plugin");
-            var expected = provider switch { "claude" => "bypassPermissions", "gemini" => "--dangerously-skip-permissions", "pi" => "rpc", _ => "sandbox_mode=\"danger-full-access\"" };
+            // opencode's and Hermes's full access is the run's environment (OPENCODE_CONFIG_CONTENT, HERMES_YOLO_MODE), never an argument.
+            var expected = provider switch { "claude" => "bypassPermissions", "gemini" => "--dangerously-skip-permissions", "pi" => "rpc", "opencode" or "hermes" => "acp", _ => "sandbox_mode=\"danger-full-access\"" };
             Check(args.Contains(expected), "Full access mapped to the wrong provider policy.");
         }
         foreach (var provider in new[] { "claude", "gemini" })

@@ -506,6 +506,22 @@ internal static class AcpVerification
         return Task.CompletedTask;
     }
 
+    internal static Task AttachedCopiesAreNamedInThePromptAndPicturesAreImageBlocks()
+    {
+        var writes = new List<JsonObject>();
+        const string reference = "Attached file \"notes.txt\": \"C:\\Users\\me\\AppData\\Local\\Temp\\m\\0-notes.txt\" (read this copy as needed).";
+        var channel = new AcpChannel("run-opencode", null, "/tmp/project", AcpChannel.PromptText(" ", [reference], null), [("image/png", "iVBORw0KGgo=")], [],
+            frame => writes.Add(JsonNode.Parse(frame)!.AsObject()), _ => { }, _ => { }, (_, _) => { }, _ => { }, _ => { }, () => { });
+        channel.Start();
+        var lines = Fixture("opencode", "answer");
+        channel.Receive(lines[0]); channel.Receive(lines[1]);
+        var blocks = writes.Last(w => Text(w["method"]) == "session/prompt")["params"]!["prompt"]!.AsArray();
+        // No words of the user's own: the attachments' default words, then each copy by its plain path.
+        Check(Text(blocks[0]!["text"]) == Locale.Get("attachments.prompt.default") + "\n\n" + reference, "the text block: " + Text(blocks[0]!["text"]));
+        Check(blocks.Count == 2 && Text(blocks[1]!["type"]) == "image" && Text(blocks[1]!["data"]) == "iVBORw0KGgo=" && Text(blocks[1]!["mimeType"]) == "image/png", "a picture is an image block");
+        return Task.CompletedTask;
+    }
+
     internal static Task TheClarifyConfigValueIsTheMacs()
     {
         Check(HermesQuestionTool.Value([]).SequenceEqual(["hermes-acp", "clarify", "x_search"]) && HermesQuestionTool.Value(["kanban"]).SequenceEqual(["hermes-acp", "clarify", "x_search", "kanban"]), "the saved list");

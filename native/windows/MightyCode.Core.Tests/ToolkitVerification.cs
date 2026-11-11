@@ -588,7 +588,7 @@ internal static class ToolkitVerification
             Check(row.State == "missing", row.Id + " missing when not in runtime");
 
         // All three installed.
-        var fullRuntime = MakeRuntime(["claude", "codex", "gemini", "pi"]);
+        var fullRuntime = MakeRuntime([.. Wire.Providers]);
         var fullRows = ComponentSection.SectionRows(fullRuntime);
         Check(fullRows.All(r => r.State == "installed"), "all installed when all available");
 
