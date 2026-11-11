@@ -210,7 +210,9 @@ struct AntigravityTests {
         folder="$(/usr/bin/dirname "$0")"
         case "$1" in
           --version) if [ -e "$folder/updated" ]; then printf '1.3.6\\n'; else printf '1.3.5\\n'; fi; exit 0;;
-          models) if [ -e "$folder/signed-out" ]; then printf "Error: authentication required. Run 'agy' to log in, then retry.\\n" >&2; exit 1; fi
+          models) # agy 1.5.5 refuses any flag here ("flags provided but not defined"), as this stand-in does.
+                  if [ "$#" -ne 1 ]; then printf 'Usage: agy models [flags]\\nError: flags provided but not defined: %s\\n' "$2" >&2; exit 1; fi
+                  if [ -e "$folder/signed-out" ]; then printf "Error: authentication required. Run 'agy' to log in, then retry.\\n" >&2; exit 1; fi
                   printf 'Fetching available models...\\ngemini-3.8-flash-low\\tGemini 3.8 Flash (Low)\\n'; exit 0;;
           update) : > "$folder/updated"; exit 0;;
         esac

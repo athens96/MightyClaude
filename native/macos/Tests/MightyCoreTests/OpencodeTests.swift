@@ -480,7 +480,11 @@ struct OpencodeTests {
         let source = """
         #!/bin/sh
         if [ "$1" = "--version" ]; then printf '\(version)\\n'; exit 0; fi
-        if [ "$1" = "models" ]; then printf 'opencode/big-pickle\\n'; exit 0; fi
+        if [ "$1" = "models" ]; then
+          # The app lists with `models --standalone`, which skips OpenCode 2's background service.
+          if [ "$*" != "models --standalone" ]; then printf 'unexpected: %s\\n' "$*" >&2; exit 2; fi
+          printf 'opencode/big-pickle\\n'; exit 0
+        fi
         printf '%s\\n' "$@" > argv.txt
         printf '%s\\n' "$OPENCODE_CONFIG_CONTENT" > config.txt
         exec 3<&0

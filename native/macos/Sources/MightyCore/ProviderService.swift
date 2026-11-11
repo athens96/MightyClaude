@@ -212,6 +212,24 @@ public actor ProviderService {
         for key in keys { await invalidateModelCatalog(provider: provider, workspacePath: key.workspacePath) }
     }
 
+    /// The arguments (after the executable) of each CLI's model-list read. Each was run against the CLI named here,
+    /// and ModelListProbeTests pins them: a flag one CLI takes is not another's (agy 1.5.5 refuses `models --standalone`).
+    /// - claude 2.1.322: a headless stream-json session that is sent only `initialize` (its answer lists the models).
+    /// - codex 0.167.0: `app-server` over stdio, `initialize` then `model/list`.
+    /// - agy 1.5.5: `models`. pi 1.5.2: `--list-models`. opencode 2.2.7: `models --standalone`, without starting
+    ///   OpenCode 2's background service.
+    /// - Hermes 0.23.1 has no list command (nil): the picker its last session offered is read instead.
+    public nonisolated static func modelListArguments(_ provider: String) -> [String]? {
+        switch provider {
+        case "claude": return ["--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-prompts", "none", "--tools", "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence", "--safe-mode"]
+        case "codex": return ["app-server", "--listen", "stdio://"]
+        case "gemini": return ["models"]
+        case "pi": return ["--list-models"]
+        case "opencode": return ["models", "--standalone"]
+        default: return nil
+        }
+    }
+
     /// `phaseModels` nil takes the request's own, which is how the app launches.
     /// `codexHome` is where a Codex run's user config lives; nil resolves it
     /// from this process's environment.
@@ -347,9 +365,9 @@ public actor ProviderService {
         }
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.codexSource")) : fallback
     }
-    /// `agy models`: a "Fetching available models..." line, then one
-    /// `slug<TAB>Display Name` line per model. It needs the network and a
-    /// sign-in; anything else keeps the fallback list.
+    /// `agy models`: one `slug<TAB>Display Name` line per model on standard output (agy 1.5.5 writes its
+    /// "Fetching available models..." line to standard error; an older agy wrote it first on standard output).
+    /// It needs the network and a sign-in; anything else keeps the fallback list.
     public nonisolated static func normalizeAntigravityCatalog(_ text: String) -> ModelCatalog {
         let fallback = ProviderOptions.fallbackCatalog("gemini")
         var models = [fallback.models[0]]; var seen = Set(["default"])
@@ -361,7 +379,7 @@ public actor ProviderService {
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.antigravitySource")) : fallback
     }
     static func antigravityCatalog(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
-        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: ["models", "--standalone"], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 262_144),
+        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: modelListArguments("gemini") ?? [], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 262_144),
               result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("gemini") }
         return normalizeAntigravityCatalog(String(decoding: result.stdout, as: UTF8.self))
     }
@@ -382,7 +400,7 @@ public actor ProviderService {
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.piSource")) : fallback
     }
     static func piCatalog(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
-        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: ["--list-models"], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 1_048_576),
+        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: modelListArguments("pi") ?? [], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 1_048_576),
               result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("pi") }
         return normalizePiCatalog(String(decoding: result.stdout, as: UTF8.self))
     }
@@ -402,7 +420,7 @@ public actor ProviderService {
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.opencodeSource")) : fallback
     }
     static func opencodeCatalog(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
-        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: ["models"], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 20, maximumBytes: 2_097_152),
+        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: modelListArguments("opencode") ?? [], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 20, maximumBytes: 2_097_152),
               result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("opencode") }
         return normalizeOpencodeCatalog(String(decoding: result.stdout, as: UTF8.self))
     }
@@ -487,7 +505,7 @@ private final class CLIModelProbe: @unchecked Sendable {
             do {
                 try Task.checkCancellation()
                 let claude = command.provider == "claude"
-                let arguments = claude ? ["--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-prompts", "none", "--tools", "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence", "--safe-mode"] : ["app-server", "--listen", "stdio://"]
+                let arguments = ProviderService.modelListArguments(command.provider) ?? []
                 var env = environment
                 if claude { env.merge(ProviderService.quietClaudeEnvironment) { _, new in new } }
                 let child = try NativeChildProcess(executable: command.executable, arguments: arguments, environment: env, cwd: workspace ?? FileManager.default.temporaryDirectory, stdout: { state.consume($0) }, stderr: { _ in }, exited: { _ in state.complete(nil) })
