@@ -108,7 +108,7 @@ public final class CLIStreamParser {
         self.provider = provider; self.log = log; self.resume = resume; self.requestedResume = requestedResume
         self.antigravityPermission = provider == "gemini" ? antigravityPermission : nil
         self.piReply = provider == "pi" ? piReply : nil
-        self.todos = provider == "claude" || provider == "codex" ? todos : nil; self.background = provider == "claude" ? background : nil
+        self.todos = ["claude", "codex", "opencode", "hermes"].contains(provider) ? todos : nil; self.background = provider == "claude" ? background : nil
         todoTracker = TodoProgressTracker(progress: savedTodos); self.settled = settled
         backgroundTracker = BackgroundTaskTracker(clock: backgroundClock)
         self.imageCache = images; self.imageRoot = imageRoot; self.imageEntry = imageEntry; self.maximumLineBytes = maximumLineBytes
@@ -644,6 +644,15 @@ public final class CLIStreamParser {
                     return (entry["status"] as? String == "completed" ? "[x] " : "[ ] ") + ActivitySupport.clean(text, maximumBytes: 400, singleLine: true)
                 }
                 if !lines.isEmpty { log("system", lines.joined(separator: "\n")) }
+                // The same plan as the request's steps (`FlowSteps`): ACP sends the whole list each time.
+                if let todos {
+                    let items = entries.compactMap { entry -> TodoItem? in
+                        guard let text = entry["content"] as? String else { return nil }
+                        let status = entry["status"] as? String
+                        return TodoItem(content: text, status: ["pending", "in_progress", "completed"].contains(status ?? "") ? status! : "pending")
+                    }
+                    if let progress = TodoProgress.normalized(TodoProgress(items: items)), !progress.items.isEmpty { todos(progress) }
+                }
             default: break // thoughts, usage, commands, modes and options are not transcript lines
             }
         case "acp.prompt_result":

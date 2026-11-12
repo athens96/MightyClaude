@@ -136,16 +136,23 @@ struct MightyStatusMark: View {
         }
     }
 
+    /// One row, whatever holds it: inside the `TimelineView` of a request's pending state two loose views would stack.
     @ViewBuilder private func mark(_ indicator: PendingIndicator?, pendingNow: Bool) -> some View {
         if indicator == .loading {
-            PendingBars()
-            MightyStatusPill(text: L("graph.state.sending"), tone: .run, height: pillHeight).tintedCardEdge(edge)
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                PendingBars()
+                MightyStatusPill(text: L("graph.state.sending"), tone: .run, height: pillHeight).tintedCardEdge(edge)
+            }
+            .fixedSize()
         } else if pendingNow {
             // Sent a moment ago: nothing yet, so a quick start never flashes 전송 중.
             EmptyView()
         } else {
-            if showsActivity { MightyGraphActivityIndicator(status: status, tint: Palette.run) }
-            MightyStatusPill(text: text, tone: tone, height: pillHeight).tintedCardEdge(edge)
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                if showsActivity { MightyGraphActivityIndicator(status: status, tint: Palette.run) }
+                MightyStatusPill(text: text, tone: tone, height: pillHeight).tintedCardEdge(edge)
+            }
+            .fixedSize()
         }
     }
 }

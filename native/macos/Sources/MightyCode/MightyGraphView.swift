@@ -221,10 +221,13 @@ struct MightyGraphView: View {
     /// laid out as it always was.
     private var fanOut: MightyGraphLayout.FanOut? { showsFanOut && provider == "claude" ? .init(opened: openedCards) : nil }
     /// The step list over the diagram, unless the role view draws the newest request's steps on its spine (`FlowSteps`).
-    private var stepsPanel: ProgressSteps.Panel? { fanOut != nil ? nil : progressSteps }
+    /// Every agent pane has the progress panel (the diagnostics' own diagrams aside); the 진행 단계 panel is what stands
+    /// without it.
+    private var showsProgress: Bool { showsFanOut }
+    private var stepsPanel: ProgressSteps.Panel? { showsProgress ? nil : progressSteps }
     /// The role view's progress panel: the request in view, else the newest (`FlowSteps.progress`). Nil without a request.
     private func progressPanel(ordinals: [Int]) -> (index: Int, progress: FlowSteps.Progress)? {
-        guard fanOut != nil else { return nil }
+        guard showsProgress else { return nil }
         let pinned = pinnedRunID.flatMap { id in runs.firstIndex { $0.id == id } }
         let focused = focusedRunID.flatMap { id in runs.firstIndex { $0.id == id } }
         guard let index = pinned ?? focused ?? MightyGraphSupport.newestRequestIndex(runs) else { return nil }
@@ -339,7 +342,7 @@ struct MightyGraphView: View {
         let live = MightyGraphLayout.liveNodeIDs(runs, fanOut: fanOut != nil)
         let ordinalsForPanel = MightyGraphSupport.requestOrdinals(runs)
         let panel = progressPanel(ordinals: ordinalsForPanel)
-        let spans = fanOut == nil ? [] : Self.requestSpans(graph, runs: runs)
+        let spans = showsProgress ? Self.requestSpans(graph, runs: runs) : []
         let ordinals = MightyGraphSupport.requestOrdinals(runs)
         VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.md) {
@@ -401,7 +404,7 @@ struct MightyGraphView: View {
                               avoid: stepsPanel == nil && panel == nil ? nil : stepsPanelSize.map {
                                   CGRect(origin: CGPoint(x: DesignMetrics.Spacing.md, y: DesignMetrics.Spacing.md), size: $0)
                               },
-                              focusRun: fanOut == nil ? nil : { Self.focus(spans, top: $0, height: $1) },
+                              focusRun: showsProgress ? { Self.focus(spans, top: $0, height: $1) } : nil,
                               onFocusRun: { id in if focusedRunID != id { focusedRunID = id } },
                               card: { card($0, executions: linksByKey, ordinals: ordinals) })
                 // The canvas changing height — the composer growing as a draft is typed,
@@ -419,7 +422,7 @@ struct MightyGraphView: View {
                 }
                 // A new request: the progress panel is about it until the user scrolls, whatever else is in view.
                 .onChange(of: MightyGraphSupport.newestRequestRun(runs)?.id) { old, new in
-                    if fanOut != nil, let new, new != old { pinnedRunID = new }
+                    if showsProgress, let new, new != old { pinnedRunID = new }
                 }
                 // A block the user opened or folded never moves the camera; it follows on
                 // only if the newest block is still in view.

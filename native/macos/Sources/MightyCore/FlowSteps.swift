@@ -323,7 +323,8 @@ extension RunSession {
     /// A checklist change of the main session's, kept on the request it belongs to with the time it came (`FlowSteps.record`).
     /// Read before `recordPlanMode`, which replaces the pane's list with it.
     public mutating func recordSteps(_ event: RunEvent, at now: Date) {
-        guard event.type == "todos", kind == "claude", provider == "claude", let progress = TodoProgress.normalized(event.todos),
+        // Every agent that keeps a plan: Claude's task list, Codex's plan, an ACP agent's (opencode, Hermes) plan updates.
+        guard event.type == "todos", kind == "claude", let progress = TodoProgress.normalized(event.todos),
               var runs = graphRuns, !runs.isEmpty else { return }
         FlowSteps.record(progress, into: &runs, previous: todoProgress, at: now)
         graphRuns = runs

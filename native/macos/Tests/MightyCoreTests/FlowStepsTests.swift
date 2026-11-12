@@ -277,6 +277,35 @@ struct FlowStepsTests {
         #expect(images.frame.minY == main.frame.minY && images.frame.minX > main.frame.maxX)
     }
 
+    /// Every agent that keeps a plan has steps: an ACP agent's (opencode, Hermes) plan update becomes its checklist, which the
+    /// pane keeps on the request as Claude's; an agent with no plan (Antigravity) has the panel's request and state alone.
+    @Test func anACPAgentsPlanIsTheRequestsStepsToo() throws {
+        var lists: [TodoProgress] = []
+        for provider in ["opencode", "hermes"] {
+            let parser = CLIStreamParser(provider: provider, log: { _, _ in }, resume: { _ in }, todos: { lists.append($0) })
+            let plan: [String: Any] = ["type": "acp.update", "update": ["sessionUpdate": "plan", "entries": [
+                ["content": "Read the README", "status": "completed", "priority": "high"],
+                ["content": "Summarize it", "status": "in_progress", "priority": "medium"],
+                ["content": "Answer", "status": "odd", "priority": "low"]]]]
+            parser.push(try JSONSerialization.data(withJSONObject: plan) + Data([10]))
+            parser.flush()
+        }
+        #expect(lists.count == 2)
+        #expect(lists[0].items.map(\.content) == ["Read the README", "Summarize it", "Answer"])
+        #expect(lists[0].items.map(\.status) == ["completed", "in_progress", "pending"])
+        var session = RunSession(id: "s", workspaceId: "w", title: "t", kind: "claude", provider: "opencode", model: "default", settings: RunSettings(), status: "running")
+        session.graphRuns = [MightyGraphRun(id: "r", input: "요약", status: "running", sourceRunID: "r", provider: "opencode")]
+        var list = lists[0]; list.runId = "r"
+        session.recordSteps(RunEvent(sessionId: "s", type: "todos", todos: list), at: at(1))
+        #expect(session.graphRuns?[0].steps?.map(\.status) == ["completed", "in_progress", "pending"])
+        // Antigravity sends no plan: its panel is the request and its state.
+        let agy = MightyGraphRun(id: "g", input: "주식 뉴스", status: "running", sourceRunID: "g", provider: "gemini")
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            let panel = FlowSteps.progress(0, in: [agy], heading: "요청 1")
+            #expect(panel.rows.isEmpty && panel.count == nil && panel.request == "주식 뉴스" && panel.stateWord == "실행 중")
+        }
+    }
+
     @Test func aNodeIdNeverCarriesTheStepsWords() {
         let suffix = FlowSteps.nodeSuffix(FlowStep(key: "text:릴리스 노트 / 검토", content: "릴리스 노트 / 검토"))
         #expect(suffix.hasPrefix("step:") && suffix.dropFirst(5).allSatisfy { $0.isHexDigit })
