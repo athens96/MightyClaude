@@ -222,6 +222,8 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   const [focusedRun, setFocusedRun] = useState<string | null>(null);
   const [pinnedRun, setPinnedRun] = useState<string | null>(null);
   const pinnedRef = useRef(pinnedRun);
+  /** An own send waiting for its request to be laid out, by the newest request it was sent after ('' for none). */
+  const sendTop = useRef<string | null>(null);
   pinnedRef.current = pinnedRun;
   const spans = useMemo<RequestSpan[]>(() => {
     if (!showsProgress) return [];
@@ -325,6 +327,9 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
     const ownSend = own !== ownSeen.current;
     ownSeen.current = own;
     if (ownSend && submitScroll('diagram', true, true, watch.current.following).scroll === 'toRequest') watch.current.start();
+    // The diagram with its progress panel (macOS handleOwnSubmit): an own send's request goes to the top once it is there, the
+    // request in view and the one the panel is pinned to, with its work coming in under it.
+    if (ownSend && showsProgress) sendTop.current = newestRequestRun(runs)?.id ?? '';
     // The user's requests: a notice run (notice.ts) never starts following by itself; a following camera moves on to it.
     const ids = runs.filter((r) => r.noticeRun !== true).map((r) => r.id);
     const previous = runIds.current;
@@ -343,6 +348,16 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
     const targetID = followTargetID(layout, runs);
     const next = watch.current.observe(targetID, frameOf(targetID), camera.current, viewport, zoom);
     if (next) camera.current = next;
+    if (sendTop.current !== null) {
+      const newest = newestRequestRun(runs);
+      const frame = newest && newest.id !== sendTop.current ? frameOf(runNodeId(newest, 'request')) : null;
+      if (newest && frame) {
+        sendTop.current = null;
+        watch.current.stop();
+        camera.current = cameraOffset(frame, viewport, zoom, true);
+        setPinnedRun(newest.id);
+      }
+    }
     // A block asked for from another view: after the run-id rules, so a send is followed first and this wins.
     if (aim) {
       const landing = aimLanding(aim, layout, runs, fanOut, opened);
@@ -436,8 +451,9 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   const pan = useCallback((dx: number, dy: number) => {
     stopTween();
     held.current = null;
-    // The user's own scroll: the progress panel reads the request in view again.
+    // The user's own scroll: the progress panel reads the request in view again, and a send's move to the top is off.
     if (pinnedRef.current !== null) setPinnedRun(null);
+    sendTop.current = null;
     camera.current = { x: camera.current.x + dx, y: camera.current.y + dy };
     applyCamera();
   }, [applyCamera, stopTween]);

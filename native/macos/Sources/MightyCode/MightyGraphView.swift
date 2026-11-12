@@ -553,7 +553,14 @@ struct MightyGraphView: View {
             let decision = SubmitScroll.target(view: view, own: true, chosenBoardIsNewest: structureCache.memory.navigation.onNewest(in: boards),
                                                nearBottom: follow.watch.following)
             if decision.resetBoard { structureCache.memory.navigation.showNewest(in: boards) }
-            publishFollow(animated: viewMode == .diagram)
+            if viewMode == .diagram, showsProgress {
+                // The diagram with its progress panel: the new request goes to the top, so it is the request in view, the one
+                // the panel (pinned to it) reads, with its work coming in under it.
+                pinnedRunID = id
+                publish(.reaim(nodeID: MightyGraphLayout.nodeID(runs.first { $0.id == id }!, suffix: "request"), alignTop: true), animated: true)
+            } else {
+                publishFollow(animated: viewMode == .diagram)
+            }
             if viewMode == .timeline { timelineReveal = TimelineReveal(serial: own.serial, id: id) }
         case .steer(let text):
             let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1704,7 +1711,8 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                 alignTop: alignTop, alignBottom: alignBottom, follows: follows, followTargetID: defaultNodeID, follow: follow,
                 drawnNodeIDs: Set(graph.nodes.lazy.filter { visible.intersects($0.frame) }.map(\.id)), diagnosticActions: diagnosticActions, selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
                 onUserPan: { old, new in
-                    onUserScroll()
+                    // The camera landing on an aim or a follow is no scroll of the user's.
+                    if abs(new.x - initialOffset.x) >= 0.5 || abs(new.y - initialOffset.y) >= 0.5 { onUserScroll() }
                     // Only the user's own move towards the top, once the top
                     // shows: re-aims and zoom never load more.
                     guard new.y > old.y, let top = graph.nodes.first(where: { $0.content == .history })?.frame.minY,

@@ -67,10 +67,10 @@ public enum MobileFlow {
         return card
     }
 
-    /// The progress of request `runs[index]` (`FlowSteps.progress`), headed by its request number; nil for a notice run and
-    /// outside the role view.
+    /// The progress of request `runs[index]` (`FlowSteps.progress`), headed by its request number, for every agent pane as the
+    /// desktop shows it; nil for a notice run.
     public static func progress(_ index: Int, in runs: [MightyGraphRun], ordinal: Int, roles: Roles) -> MobileProgress? {
-        guard roles.fanOut, runs.indices.contains(index), runs[index].noticeRun != true else { return nil }
+        guard runs.indices.contains(index), runs[index].noticeRun != true else { return nil }
         let value = FlowSteps.progress(index, in: runs, heading: L("graph.timeline.requestOrdinal", ["n": "\(ordinal)"]))
         let rows = value.rows.map { row in
             MobileProgressRow(index: row.index, text: row.text, state: MobileProgressRow.word(row.state),

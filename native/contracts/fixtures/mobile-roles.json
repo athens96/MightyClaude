@@ -615,6 +615,16 @@
               }
             ],
             "id": "c1",
+            "progress": {
+              "heading": "요청 1",
+              "hidden": 0,
+              "request": "타입 오류 고쳐 줘",
+              "rows": [],
+              "running": true,
+              "stateWord": "실행 중",
+              "status": "running",
+              "title": "진행 상황"
+            },
             "status": "running"
           }
         ]

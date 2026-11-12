@@ -65,7 +65,8 @@ public static class MobileFlow
     /// outside the role view (Mac MobileFlow.progress).</summary>
     public static MobileProgress? Progress(int index, IReadOnlyList<MightyGraphRun> runs, int ordinal, Roles roles)
     {
-        if (!roles.FanOut || index < 0 || index >= runs.Count || runs[index].NoticeRun == true) return null;
+        // Every agent pane, as the desktop shows it; never a notice run.
+        if (index < 0 || index >= runs.Count || runs[index].NoticeRun == true) return null;
         var value = FlowSteps.ProgressOf(index, runs, Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
         var rows = value.Rows.Select(row => new MobileProgressRow(row.Index, row.Text, row.State.ToString().ToLowerInvariant(),
             row.StartedAt?.ToUnixTimeMilliseconds(), row.EndedAt?.ToUnixTimeMilliseconds())).ToList();
